@@ -152,8 +152,9 @@ func (s *Server) collectSources(rootPath string) ([]*ast.Source, error) {
 
 	// Use cached file lists instead of walking the filesystem each time.
 	// These caches are populated during initialize and refreshed by
-	// workspace/didCreateFiles, workspace/didDeleteFiles, and
-	// workspace/didRenameFiles, so they stay in sync with the filesystem.
+	// workspace/didChangeWatchedFiles, workspace/didCreateFiles,
+	// workspace/didDeleteFiles, and workspace/didRenameFiles, so they
+	// stay in sync with the filesystem.
 	// A didOpen for an existing file does not need to update the cache
 	// because the file is already on disk and was found during the last scan.
 	libFiles := s.cachedLibFilesSnapshot()
@@ -250,6 +251,32 @@ func (s *Server) isBinEscFileURI(uri string) bool {
 		return false
 	}
 	return strings.HasPrefix(rel, "bin/") || strings.HasPrefix(rel, "bin\\")
+}
+
+func (s *Server) workspaceDidChangeWatchedFiles(context *glsp.Context, params *protocol.DidChangeWatchedFilesParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, event := range params.Changes {
+		uri := string(event.URI)
+		switch event.Type {
+		case protocol.FileChangeTypeCreated:
+			if s.isLibEscFileURI(uri) {
+				s.libFilesCache[uriToPath(uri)] = struct{}{}
+			}
+			if s.isBinEscFileURI(uri) {
+				s.binFilesCache[uriToPath(uri)] = struct{}{}
+			}
+		case protocol.FileChangeTypeDeleted:
+			if s.isLibEscFileURI(uri) {
+				delete(s.libFilesCache, uriToPath(uri))
+			}
+			if s.isBinEscFileURI(uri) {
+				delete(s.binFilesCache, uriToPath(uri))
+			}
+		// FileChangeTypeChanged doesn't affect the file list, so no cache update needed.
+		}
+	}
+	return nil
 }
 
 func (s *Server) workspaceDidCreateFiles(context *glsp.Context, params *protocol.CreateFilesParams) error {

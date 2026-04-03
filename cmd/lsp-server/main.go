@@ -104,10 +104,11 @@ func NewServer() *Server {
 		TextDocumentCodeAction:     s.textDocumentCodeAction,
 
 		// Workspace
-		WorkspaceExecuteCommand: s.workspaceExecuteCommand,
-		WorkspaceDidCreateFiles: s.workspaceDidCreateFiles,
-		WorkspaceDidRenameFiles: s.workspaceDidRenameFiles,
-		WorkspaceDidDeleteFiles: s.workspaceDidDeleteFiles,
+		WorkspaceExecuteCommand:            s.workspaceExecuteCommand,
+		WorkspaceDidChangeWatchedFiles:     s.workspaceDidChangeWatchedFiles,
+		WorkspaceDidCreateFiles:            s.workspaceDidCreateFiles,
+		WorkspaceDidRenameFiles:            s.workspaceDidRenameFiles,
+		WorkspaceDidDeleteFiles:            s.workspaceDidDeleteFiles,
 	}
 
 	return &s

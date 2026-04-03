@@ -263,6 +263,167 @@ func TestWorkspaceDidDeleteFiles_IgnoresNonLibFile(t *testing.T) {
 	assert.Equal(t, before, libCacheKeys(s))
 }
 
+// --- workspaceDidChangeWatchedFiles ---
+
+func TestDidChangeWatchedFiles_CreatedAddsToLibCache(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/a.esc"})
+	require.NoError(t, s.refreshLibFilesCache())
+	assert.Len(t, libCacheKeys(s), 1)
+
+	newFile := filepath.Join(root, "lib", "b.esc")
+	require.NoError(t, os.WriteFile(newFile, []byte("val y: number = 2\n"), 0o644))
+
+	err := s.workspaceDidChangeWatchedFiles(
+		&glsp.Context{},
+		&protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{URI: protocol.DocumentUri(pathToURI(newFile)), Type: protocol.FileChangeTypeCreated},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	cache := libCacheKeys(s)
+	assert.Len(t, cache, 2)
+	assert.Contains(t, cache, newFile)
+}
+
+func TestDidChangeWatchedFiles_DeletedRemovesFromLibCache(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/a.esc", "lib/b.esc"})
+	require.NoError(t, s.refreshLibFilesCache())
+	assert.Len(t, libCacheKeys(s), 2)
+
+	deletedFile := filepath.Join(root, "lib", "a.esc")
+	require.NoError(t, os.Remove(deletedFile))
+
+	err := s.workspaceDidChangeWatchedFiles(
+		&glsp.Context{},
+		&protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{URI: protocol.DocumentUri(pathToURI(deletedFile)), Type: protocol.FileChangeTypeDeleted},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	cache := libCacheKeys(s)
+	assert.Len(t, cache, 1)
+	assert.NotContains(t, cache, deletedFile)
+}
+
+func TestDidChangeWatchedFiles_ChangedDoesNotAffectCache(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/a.esc"})
+	require.NoError(t, s.refreshLibFilesCache())
+
+	existingFile := filepath.Join(root, "lib", "a.esc")
+	before := libCacheKeys(s)
+
+	err := s.workspaceDidChangeWatchedFiles(
+		&glsp.Context{},
+		&protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{URI: protocol.DocumentUri(pathToURI(existingFile)), Type: protocol.FileChangeTypeChanged},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, before, libCacheKeys(s))
+}
+
+func TestDidChangeWatchedFiles_CreatedAddsToBinCache(t *testing.T) {
+	s, root := newTestServerWithBin(t, nil, []string{"bin/main.esc"})
+	require.NoError(t, s.refreshBinFilesCache())
+	assert.Len(t, binCacheKeys(s), 1)
+
+	newFile := filepath.Join(root, "bin", "other.esc")
+	require.NoError(t, os.WriteFile(newFile, []byte("val y = 2\n"), 0o644))
+
+	err := s.workspaceDidChangeWatchedFiles(
+		&glsp.Context{},
+		&protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{URI: protocol.DocumentUri(pathToURI(newFile)), Type: protocol.FileChangeTypeCreated},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	cache := binCacheKeys(s)
+	assert.Len(t, cache, 2)
+	assert.Contains(t, cache, newFile)
+}
+
+func TestDidChangeWatchedFiles_DeletedRemovesFromBinCache(t *testing.T) {
+	s, root := newTestServerWithBin(t, nil, []string{"bin/main.esc", "bin/other.esc"})
+	require.NoError(t, s.refreshBinFilesCache())
+	assert.Len(t, binCacheKeys(s), 2)
+
+	deletedFile := filepath.Join(root, "bin", "main.esc")
+	require.NoError(t, os.Remove(deletedFile))
+
+	err := s.workspaceDidChangeWatchedFiles(
+		&glsp.Context{},
+		&protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{URI: protocol.DocumentUri(pathToURI(deletedFile)), Type: protocol.FileChangeTypeDeleted},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	cache := binCacheKeys(s)
+	assert.Len(t, cache, 1)
+	assert.NotContains(t, cache, deletedFile)
+}
+
+func TestDidChangeWatchedFiles_IgnoresNonEscFiles(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/a.esc"})
+	require.NoError(t, s.refreshLibFilesCache())
+
+	jsFile := filepath.Join(root, "lib", "a.js")
+	before := libCacheKeys(s)
+
+	err := s.workspaceDidChangeWatchedFiles(
+		&glsp.Context{},
+		&protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{URI: protocol.DocumentUri(pathToURI(jsFile)), Type: protocol.FileChangeTypeCreated},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, before, libCacheKeys(s))
+}
+
+func TestDidChangeWatchedFiles_MultipleEventsInOneNotification(t *testing.T) {
+	s, root := newTestServerWithBin(t, []string{"lib/a.esc"}, []string{"bin/main.esc"})
+	require.NoError(t, s.refreshLibFilesCache())
+	require.NoError(t, s.refreshBinFilesCache())
+
+	newLibFile := filepath.Join(root, "lib", "b.esc")
+	require.NoError(t, os.WriteFile(newLibFile, []byte("val y = 2\n"), 0o644))
+
+	deletedBinFile := filepath.Join(root, "bin", "main.esc")
+	require.NoError(t, os.Remove(deletedBinFile))
+
+	err := s.workspaceDidChangeWatchedFiles(
+		&glsp.Context{},
+		&protocol.DidChangeWatchedFilesParams{
+			Changes: []protocol.FileEvent{
+				{URI: protocol.DocumentUri(pathToURI(newLibFile)), Type: protocol.FileChangeTypeCreated},
+				{URI: protocol.DocumentUri(pathToURI(deletedBinFile)), Type: protocol.FileChangeTypeDeleted},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	assert.Len(t, libCacheKeys(s), 2)
+	assert.Contains(t, libCacheKeys(s), newLibFile)
+	assert.Empty(t, binCacheKeys(s))
+}
+
 // --- bin files cache helpers ---
 
 // binCacheKeys returns a copy of the server's bin file cache.
