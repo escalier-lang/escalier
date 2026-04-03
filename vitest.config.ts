@@ -33,11 +33,8 @@ export default defineConfig({
                 },
                 test: {
                     name: 'unit',
-                    exclude: [
-                        '**/node_modules/**',
-                        '**/out/**',
-                        '**/e2e/**',
-                    ],
+                    include: ['**/*.test.{ts,tsx}'],
+                    exclude: ['**/node_modules/**', '**/out/**'],
                 },
             },
             {
