@@ -89,6 +89,10 @@ jobs:
       - name: Run Tests
         run: pnpm coverage
 
+      - name: Playwright E2E tests
+        working-directory: playground
+        run: pnpm e2e
+
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
         with:
