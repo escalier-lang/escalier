@@ -211,17 +211,25 @@ fn foo(obj) {
 
 ### 5. Open vs. Closed Object Types
 
-The inferred object type for an unannotated parameter should be **open** — the
-function only requires the properties it actually uses, and callers may pass
-objects with additional properties.
+The inferred object type for an unannotated parameter should be **open** during
+inference of the function body — the property set can grow as new usages are
+encountered. Once the function body has been fully inferred, the parameter's
+object type should be **closed** — its property set is finalized and no further
+widening is allowed.
 
 - Object types from **type annotations** remain **closed** by default, as they
   are today. (Exactness is a separate concern — see Definitions.)
-- Object types from **inference** are **open** — they have an implicit row
-  variable (`RestSpreadElem`) representing additional unknown properties. Their
-  property set can grow during inference as new usages are encountered.
-- When an inferred open type is unified with a closed type, the open type's row
-  variable is resolved to "empty" (no additional properties), effectively closing it.
+- Object types from **inference** are **open** while the enclosing function body
+  is being inferred. They have an implicit row variable (`RestSpreadElem`)
+  representing additional unknown properties, and their property set can grow
+  as new usages are encountered.
+- **After inference completes** for the function body, all open object types on
+  the function's parameters are closed: the `RestSpreadElem` is removed, marking
+  the property set as final. From the perspective of callers, the function's
+  parameter types are fully known closed types.
+- When an inferred open type is unified with a closed type during inference, the
+  open type's row variable is resolved to "empty" (no additional properties),
+  effectively closing it early.
 - When two open types are unified, their known properties are unified pairwise,
   and their row variables are merged.
 
@@ -454,7 +462,14 @@ Note: assigning different types to the same property — whether sequentially or
 across branches — is not an error. The property type widens to a union (see
 Section 6d).
 
-**Example — missing property at call site (error):**
+The following are concrete error scenarios with suggested message content.
+These are follow-up/implementation details for user-facing diagnostics.
+
+#### 9a. Missing property at call site
+
+When a caller passes an object that is missing a property required by the
+inferred type (Section 6c — open unified with closed):
+
 ```
 fn foo(obj) {
     obj.bar = "hello"
@@ -462,6 +477,68 @@ fn foo(obj) {
 }
 foo({bar: "hi"})   // error: property `baz` is missing
 ```
+
+Suggested message:
+> Argument of type `{bar: "hi"}` is missing property `baz` required by
+> parameter `obj` of `foo`. Property `baz` is required because it is
+> assigned at <source location>.
+
+Message elements: (1) identifies parameter `obj`, (2) shows the usage site
+where `baz` was assigned, (3) the type mismatch is clear enough that an
+annotation suggestion is not needed here.
+
+#### 9b. Numeric indexing vs. property access conflict
+
+When the same parameter is used with both property access and numeric indexing
+(Section 3):
+
+```
+fn foo(obj) {
+    let name = obj.name
+    let first = obj[0]      // error
+}
+```
+
+Suggested message:
+> Cannot index parameter `obj` with a numeric index because it was already
+> constrained to an object type by property access `obj.name` at
+> <source location>. Consider adding a type annotation to `obj`.
+
+Message elements: (1) identifies parameter `obj`, (2) shows the conflicting
+usage sites (property access and numeric index), (3) suggests adding an
+explicit type annotation.
+
+#### 9c. Open-to-closed unification property type mismatch
+
+When an inferred property type is incompatible with the corresponding property
+in a closed type during unification (Section 6c):
+
+```
+fn foo(obj) {
+    obj.bar = 5
+}
+foo({bar: "hi"})   // error: number is not assignable to string
+```
+
+Suggested message:
+> Type `number` is not assignable to type `string` for property `bar` of
+> parameter `obj` in `foo`. Property `bar` was inferred as `number` from
+> assignment at <source location>.
+
+Message elements: (1) identifies parameter `obj` and property `bar`,
+(2) shows the inference site, (3) the mismatch is self-explanatory — no
+annotation suggestion needed.
+
+#### 9d. When to suggest explicit annotations
+
+Error messages should suggest adding a type annotation when the conflict arises
+from the inference mechanism itself (not from a straightforward type mismatch).
+Specifically:
+- **Suggest annotation**: numeric-indexing-vs-property-access conflicts (9b),
+  and any case where the inferred type is surprising or non-obvious to the user.
+- **Don't suggest annotation**: missing properties (9a) or simple type
+  mismatches (9c), where the fix is to change the call site argument rather than
+  annotate the parameter.
 
 ### 10. Scope and Limitations
 
@@ -498,5 +575,11 @@ These can be addressed in follow-up work.
    type variable for unannotated params. The new `getMemberType` behavior will
    naturally constrain these type variables as the function body is inferred.
 
-5. **Add tests**: Cover property access, method calls, array indexing, optional
-   chaining, passing to typed functions, conflicting constraints, and error cases.
+5. **Close open types after function body inference**: After inferring a function
+   body, walk the function's parameter types and remove any remaining
+   `RestSpreadElem` entries from inferred open `ObjectType`s. This finalizes the
+   parameter types so callers see closed types with a fixed set of properties.
+
+6. **Add tests**: Cover property access, method calls, array indexing, optional
+   chaining, passing to typed functions, widening, closing after inference, and
+   error cases.
