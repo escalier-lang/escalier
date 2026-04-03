@@ -108,12 +108,12 @@ export function setupLanguage(client: Client) {
             }
 
             if (params.uri.endsWith('.esc')) {
-                // The LSP server compiles the full package and writes
-                // output files directly to the VFS. We just need to
-                // trigger the command and handle errors.
-                // Only compile for files that are open in the editor —
-                // the LSP publishes diagnostics for all project files,
-                // but the compile command requires the file to be open.
+                // Trigger a full package recompilation. The compile
+                // command writes output files directly to the VFS.
+                // We only do this for files open in the editor (checked
+                // by the !model guard above) because the LSP publishes
+                // diagnostics for all project files, but the compile
+                // command requires the document to be open.
                 client
                     .workspaceExecuteCommand({
                         command: 'compile',

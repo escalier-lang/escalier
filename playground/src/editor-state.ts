@@ -17,7 +17,12 @@ export type EditorState = {
     activeRightTabIndex: number | null;
     focusedSide: Side;
     notification: Notification | null;
-    /** Incremented by resetTabs to force model recreation in the editor. */
+    /**
+     * Incremented by resetTabs when the user switches projects. This causes
+     * the editor to dispose all existing Monaco models so they get recreated
+     * with fresh content from BrowserFS, rather than showing stale content
+     * from the previous project's files at the same paths.
+     */
     refreshKey: number;
 };
 
