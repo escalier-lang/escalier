@@ -13,6 +13,7 @@
         "storybook": "storybook dev -p 6006",
         "build-storybook": "storybook build",
         "e2e": "make -C .. lsp-server-wasm && playwright test",
+        "e2e:ci": "playwright test",
         "e2e:headed": "make -C .. lsp-server-wasm && playwright test --headed",
         "e2e:ui": "make -C .. lsp-server-wasm && playwright test --ui"
     },

@@ -17,36 +17,39 @@ test.describe('Editor', () => {
     test('right editor shows compiled output', async ({ page }) => {
         // Open a build output file to populate the right pane.
         // Expand the build directory, then navigate to the output file.
-        await page.getByRole('button', { name: /^▸ build$/ }).click();
+        await page.getByRole('button', { name: /^[▸▾] build$/ }).click();
         await page
-            .getByRole('button', { name: /^▸ lib$|^▾ lib$/ })
+            .getByRole('button', { name: /^[▸▾] lib$/ })
             .nth(1)
             .click();
         await page
             .getByRole('button', { name: 'index.js', exact: true })
             .click();
 
-        // The output panel should now show compiled JavaScript
+        // The output panel should now show compiled JavaScript.
+        // Monaco may take a moment to render after the panel becomes visible.
         const outputPanel = page.locator('#output-panel');
         await expect(outputPanel.locator('.view-lines')).toContainText(
             'function',
+            { timeout: 10_000 },
         );
     });
 
     test('editing source triggers recompilation', async ({ page }) => {
-        // Click into the left editor and add a new exported function
+        // Click into the editor content area and navigate to end of file
         const inputPanel = page.locator('#input-panel');
-        await inputPanel.click();
-        await page.keyboard.press('End');
-        await page.keyboard.press('Enter');
-        await page.keyboard.press('Enter');
-        await page.keyboard.type('export fn added() -> string { return "hi" }');
+        await inputPanel.locator('.view-lines').click();
+        const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await page.keyboard.press(`${modifier}+End`);
+        await page.keyboard.type(
+            '\n\nexport fn added() -> string { return "hi" }',
+        );
 
         // Open the build output to verify recompilation produced new content.
         // Expand build/lib/ and open index.js.
-        await page.getByRole('button', { name: /^▸ build$/ }).click();
+        await page.getByRole('button', { name: /^[▸▾] build$/ }).click();
         await page
-            .getByRole('button', { name: /^▸ lib$|^▾ lib$/ })
+            .getByRole('button', { name: /^[▸▾] lib$/ })
             .nth(1)
             .click();
 

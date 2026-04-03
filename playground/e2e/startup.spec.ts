@@ -19,8 +19,12 @@ test.describe('App Loading', () => {
         await expect(
             page.getByRole('button', { name: /^▸ lib$|^▾ lib$/ }),
         ).toBeVisible();
-        await expect(page.getByText('escalier.toml')).toBeVisible();
-        await expect(page.getByText('package.json')).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'escalier.toml' }),
+        ).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'package.json' }),
+        ).toBeVisible();
 
         // Build directory should exist (compilation succeeded)
         await expect(page.getByRole('button', { name: /build/ })).toBeVisible();
@@ -51,11 +55,13 @@ test.describe('App Loading', () => {
 
         // Should still load and compile successfully (hello-world fallback)
         await expect(page.getByRole('button', { name: /build/ })).toBeVisible({
-            timeout: 45_000,
+            timeout: 15_000,
         });
 
         // File explorer should show hello-world structure
-        await expect(page.getByText('escalier.toml')).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'escalier.toml' }),
+        ).toBeVisible();
     });
 
     test('compilation produces build output', async ({ page }) => {
@@ -63,7 +69,7 @@ test.describe('App Loading', () => {
 
         // The build directory should eventually appear after compilation
         await expect(page.getByRole('button', { name: /build/ })).toBeVisible({
-            timeout: 45_000,
+            timeout: 15_000,
         });
     });
 });
