@@ -840,6 +840,11 @@ The following are explicitly **out of scope** for the initial implementation:
 - **Conditional property access**: Inferring that a property exists only in
   certain branches (e.g. `if (cond) { obj.x }` should not require `x` if
   `cond` is false). All accessed properties are required unconditionally.
+- **Non-literal string index signatures**: When `obj[strVar]` is used where
+  `strVar` is type `string` (not a literal), Section 3 specifies that the type
+  variable should be constrained to have a string index signature. This is
+  deferred from the initial implementation. For now, this case produces an
+  error. Numeric indexing and string-literal indexing are in scope.
 
 These can be addressed in follow-up work.
 
@@ -1072,9 +1077,9 @@ properties from earlier elements (including from earlier spreads).
      then delegate to `getObjectAccess`
      (see Section 3, case 2).
    - **Non-literal string index** (the key is an `IndexKey` with a `string`
-     type): bind the `TypeVarType` to an open `ObjectType` (`Open: true`) with
-     a string index signature and a `RestSpreadElem` row variable, and return
-     the index signature's value type (see Section 3, case 3).
+     type): deferred from initial implementation (see Section 10). Eventually
+     this should bind the `TypeVarType` to an open `ObjectType` with a string
+     index signature, but for now it produces an error.
 
 2. **Modify `getObjectAccess`** to handle open `ObjectType`s: when a property is
    not found and the `ObjectType` has `Open: true`, add a new `PropertyElem`

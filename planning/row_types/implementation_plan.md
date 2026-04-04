@@ -52,10 +52,11 @@ Sections 1–6.
 
 4. **`internal/type_system/types.go`** — `ObjectType` printing (`String()` or
    equivalent):
-   - When `Open` is `true`, no visual change is needed in the printed
-     representation — the `RestSpreadElem` already conveys openness. If desired,
-     add a comment in the code noting that `Open` is an internal-only flag not
-     shown to users.
+   - `ObjectType.Open` is an internal-only flag that controls whether the
+     property set can grow during inference. It does not need to appear in the
+     printed representation. `RestSpreadElem` models row variables and spread
+     sources — it does **not** indicate openness (the two are orthogonal per
+     the Definitions section in the requirements).
    - Audit all call sites that construct `ObjectType` to ensure they default to
      `Open: false` (Go zero-value is `false`, so existing code is safe).
 
