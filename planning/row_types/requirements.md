@@ -264,10 +264,45 @@ When unifying two open object types:
 
 #### 6c. Open object type with closed object type
 
-1. All properties required by the open type must exist in the closed type.
-2. The closed type may have additional properties.
-3. Unify matching property types.
-4. The row variable in the open type is resolved (bound to empty).
+When an open object type is unified with a closed object type during inference
+(e.g. passing an inferred param to a typed function), the open type must **not**
+be closed prematurely. Properties may still be added to it later in the function
+body. Instead:
+
+1. Unify all shared property names pairwise.
+2. Properties present in the closed type but not the open type are **added** to
+   the open `ObjectType`'s `Elems` list (the closed type's requirements become
+   part of the inferred type).
+3. Properties present in the open type but not the closed type are allowed
+   (structural subtyping — the inferred type may have more properties than the
+   closed type requires).
+4. The `RestSpreadElem` **remains** — the open type stays open so that subsequent
+   property accesses within the function body can still add new properties.
+
+Closing only happens after the function body is fully inferred (see Section 5
+and implementation step 5).
+
+**Why this matters:** Without this rule, the order of operations within a
+function body would affect inference results. For example:
+
+```
+fn foo(obj) {
+    obj.z = true           // obj becomes {z: boolean, ...R}
+    bar(obj)               // bar expects {x: number, y: string}
+    obj.w = "hello"        // needs to add w — must still be open
+}
+// inferred: fn foo(obj: {z: boolean, x: number, y: string, w: string}) -> void
+```
+
+If 6c closed the type at step 2 (the `bar(obj)` call), step 3 would fail
+because `w` couldn't be added. By keeping the type open, all three operations
+contribute to the final inferred type regardless of order.
+
+**Note:** The existing unifier code already handles `RestSpreadElem` by
+collecting leftover properties and unifying them with the rest type variable.
+The change needed is to **not bind the row variable** when the open type is
+still under inference — instead, add the closed type's properties directly to
+the open `ObjectType`'s `Elems`.
 
 #### 6d. Property type widening (union accumulation)
 
@@ -367,8 +402,8 @@ fn foo(obj) {
 #### 8b. Return type inference
 
 If an inferred-type param is returned from the function, the return type should
-reflect the inferred open type. See 8g for details on how the row variable
-connects input to output for callers.
+reflect the inferred open type. See 8g and Section 11 for details on how the
+row variable connects input to output for callers.
 
 #### 8c. Multiple parameters
 
@@ -432,9 +467,9 @@ fn foo({bar, baz}) {
 #### 8g. Return type row variable propagation
 
 When an inferred-type param is returned from the function, the return type
-preserves the open object type including its row variable. This means the row
-variable connects the input to the output — callers see that extra properties
-are preserved through the function:
+should preserve extra properties that callers pass in. This requires **row
+polymorphism** — the function's type must be generic over the row variable so
+that callers can instantiate it with their specific extra properties:
 
 ```
 fn foo(obj) {
@@ -446,9 +481,9 @@ let result = foo({x: 1, y: 2})
 // result type: {x: number, y: number}
 ```
 
-The row variable in `obj`'s type is unified with the extra properties from the
-call site argument, and that same row variable appears in the return type,
-so `result` retains the `y` property.
+Without row polymorphism, the function's closed signature would be
+`fn foo(obj: {x: number}) -> {x: number}`, and `y` would be lost in the return
+type. See Section 11 for how row polymorphism makes this work.
 
 ### 9. Error Reporting
 
@@ -546,15 +581,209 @@ The following are explicitly **out of scope** for the initial implementation:
 
 - **Recursive object types**: Inferring that `obj.child` has the same type as
   `obj` (self-referential structures). These require explicit annotations.
-- **Higher-order row polymorphism**: Passing open object types through generic
-  type parameters while preserving the row variable.
 - **Conditional property access**: Inferring that a property exists only in
   certain branches (e.g. `if (cond) { obj.x }` should not require `x` if
   `cond` is false). All accessed properties are required unconditionally.
-- **Spread into inferred types**: Using `{...obj, extra: 1}` to extend an
-  inferred type.
 
 These can be addressed in follow-up work.
+
+### 11. Row Polymorphism
+
+Row polymorphism allows functions with inferred parameter types to preserve
+extra properties through their return types. Without it, a function like:
+
+```
+fn foo(obj) {
+    obj.x = 1:number
+    return obj
+}
+```
+
+would have the closed signature `fn foo(obj: {x: number}) -> {x: number}`,
+and calling `foo({x: 1, y: 2})` would return `{x: number}` — losing `y`.
+
+#### 11a. Row-polymorphic function types
+
+When a function has an inferred parameter type that is returned (or part of the
+return type), the function should be **generic over the row variable**. Instead
+of closing the row variable after inference, it is preserved as a type parameter
+in the function's type:
+
+```
+fn foo(obj) {
+    obj.x = 1:number
+    return obj
+}
+// type: fn foo<R>(obj: {x: number, ...R}) -> {x: number, ...R}
+```
+
+The row variable `R` appears in both the parameter and return type, connecting
+them. When the function is called, `R` is instantiated with the caller's extra
+properties:
+
+```
+let result = foo({x: 1, y: 2})
+// R = {y: number}, so result: {x: number, y: number}
+```
+
+#### 11b. When to preserve row variables
+
+Not all inferred parameters need row polymorphism. A row variable should be
+preserved (not closed) only when it appears in a position visible to callers —
+specifically:
+
+1. **Return type**: If the parameter (or a property derived from it) is returned,
+   the row variable must appear in the return type.
+2. **Output parameters**: If the parameter is mutated and the mutations are
+   visible to the caller (e.g. the object is passed by reference), the row
+   variable should be preserved so callers know their extra properties are
+   retained.
+
+If the parameter's row variable does NOT appear in the return type or any other
+externally visible position, it can be closed after inference (the caller's
+extra properties are accepted but not tracked).
+
+#### 11c. Implementation sketch
+
+1. **After inferring the function body**, identify which row variables (from
+   `RestSpreadElem`s on inferred open `ObjectType`s) appear in the return type.
+2. For those that do: promote the row variable to a **type parameter** on the
+   function. The `RestSpreadElem` remains in both the parameter type and the
+   return type, referencing the same type variable.
+3. For those that don't: close the open type as before (remove the
+   `RestSpreadElem`).
+4. **At call sites**, when instantiating a row-polymorphic function:
+   - Create a fresh type variable for the row parameter.
+   - Unify the argument with the parameter type. The row variable binds to an
+     `ObjectType` containing the caller's extra properties.
+   - The return type, sharing the same row variable, reflects the extra
+     properties.
+
+This extends the existing generic function instantiation mechanism
+(`handleFuncCall`) — row type parameters are instantiated the same way as
+regular type parameters, with fresh type variables that get solved during
+argument unification.
+
+#### 11d. Interaction with Section 5 (closing)
+
+The closing rule from Section 5 is refined:
+
+- Row variables that appear in the function's return type are **not** closed.
+  They become type parameters.
+- Row variables that do NOT appear in the return type are closed (RestSpreadElem
+  removed) after inference completes.
+
+#### 11e. Limitations
+
+Row polymorphism adds complexity. The following are initially out of scope:
+
+- **Explicit row type parameters**: The syntax `fn foo<R>(obj: {x: number, ...R})`
+  already parses since rest spreads are supported in object type annotations.
+  However, `R` would need a type constraint indicating it is an object type
+  (e.g. `R extends {}` or similar). Explicit row type parameters are not
+  required for the initial implementation since row polymorphism is inferred,
+  but the syntactic support is already in place for future use.
+- **Row variables in generic type arguments**: Passing `{x: number, ...R}` as a
+  type argument to a generic type like `Promise<{x: number, ...R}>`. This
+  requires row variables to flow through generic instantiation.
+- **Multiple row variables**: Functions where multiple parameters each have their
+  own row variable that appears in the return type.
+
+### 12. Object Spread and Multiple RestSpreadElems
+
+Object spread expressions (`{...obj, extra: 1}`) are parsed but not yet handled
+by the checker. Additionally, the unifier currently rejects the case where both
+sides of a unification have `RestSpreadElem`s. This section addresses both gaps.
+
+#### 12a. Handling ObjSpreadExpr in ObjectExpr inference
+
+The `ObjectExpr` inference code must handle `ObjSpreadExpr` elements. When
+inferring `{...a, x: 1, ...b, y: 2}`:
+
+1. Infer the type of each spread source (`a`, `b`).
+2. Create the resulting `ObjectType` with explicit `PropertyElem`s for the
+   non-spread elements (`x`, `y`) and a `RestSpreadElem` for each spread source.
+3. The resulting type is: `{x: number, y: number, ...typeof a, ...typeof b}`.
+
+**Example with inferred types:**
+```
+fn foo(obj) {
+    let extended = {...obj, extra: 1}
+}
+// obj is open: {...R}
+// extended type: {extra: number, ...R}
+```
+
+The spread of an open type propagates the row variable into the new object's
+type, connecting the two.
+
+**Example with multiple spreads:**
+```
+fn merge(a, b) {
+    return {...a, ...b}
+}
+// inferred: fn merge<R1, R2>(a: {...R1}, b: {...R2}) -> {...R1, ...R2}
+```
+
+#### 12b. Multiple RestSpreadElems in ObjectType
+
+Currently, `ObjectType.Elems` can contain at most one `RestSpreadElem`, and the
+unifier errors on the two-rest-elem case. To support multiple spreads:
+
+1. Allow `ObjectType.Elems` to contain **multiple** `RestSpreadElem`s, each
+   representing a distinct spread source.
+2. During unification, when an `ObjectType` with multiple rest elements is
+   unified with a concrete type, each rest element contributes its properties.
+   The known properties are unified first, then the remaining properties must
+   be distributed across the rest elements.
+
+#### 12c. Unification with multiple rest elements
+
+When unifying `{x: number, ...R1, ...R2}` with `{x: number, y: string, z: boolean}`:
+
+1. Unify shared explicit properties pairwise (`x: number`).
+2. The remaining properties (`y: string, z: boolean`) must come from `R1`, `R2`,
+   or some combination. If one rest element is already bound, subtract its
+   properties and assign the remainder to the other. If both are unbound, this
+   is ambiguous.
+
+**Ambiguity resolution:** When multiple rest elements are unbound and there are
+remaining properties to distribute, this is an error — the system cannot
+determine which rest element should receive which properties. In practice, this
+case is rare because at least one spread source typically has a known type.
+
+When one rest element is already bound (e.g. `R1 = {y: string}`):
+1. Subtract `R1`'s properties from the remaining set.
+2. Bind `R2` to the leftover properties (`{z: boolean}`).
+
+When both are already bound:
+1. Merge all properties from both rest elements with the explicit properties.
+2. Unify the merged result with the target type.
+
+#### 12d. Property override semantics
+
+In JavaScript/TypeScript, later spreads override earlier ones for shared
+property names. The same should apply here:
+
+```
+let result = {...a, ...b}
+```
+
+If both `a` and `b` have property `x`, the result's `x` comes from `b`. During
+type inference, the rightmost definition of a property wins. When building the
+`ObjectType` from the `ObjectExpr`, properties from later elements shadow
+properties from earlier elements (including from earlier spreads).
+
+#### 12e. Implementation notes
+
+- **Add `ObjSpreadExpr` case** to `ObjectExpr` inference in `infer_expr.go`:
+  infer the spread source type and add a `RestSpreadElem` to the result's
+  `Elems`.
+- **Update the unifier** to handle the two-rest-elem case instead of returning
+  `UnimplementedError`. Implement the distribution logic from 12c.
+- **Update `getObjectAccess`** to look through `RestSpreadElem`s when searching
+  for a property — if the property isn't found in the explicit elements, check
+  each rest element's type.
 
 ## Implementation Approach (Summary)
 
@@ -568,18 +797,29 @@ These can be addressed in follow-up work.
    handle open-vs-closed and open-vs-open cases.
 
 3. **Adjust unification for open objects**: When unifying an open object with a
-   closed object, verify all required properties exist and bind the row variable.
-   When unifying two open objects, merge properties and row variables.
+   closed object during inference, add the closed type's properties to the open
+   type's `Elems` without closing it (see 6c). When unifying two open objects,
+   merge properties and row variables.
 
 4. **Update `inferFuncParams`**: No changes needed — it already creates a fresh
    type variable for unannotated params. The new `getMemberType` behavior will
    naturally constrain these type variables as the function body is inferred.
 
-5. **Close open types after function body inference**: After inferring a function
-   body, walk the function's parameter types and remove any remaining
-   `RestSpreadElem` entries from inferred open `ObjectType`s. This finalizes the
-   parameter types so callers see closed types with a fixed set of properties.
+5. **Promote or close row variables after function body inference**: After
+   inferring a function body, check which row variables (from `RestSpreadElem`s)
+   appear in the return type. Promote those to type parameters on the function
+   (row polymorphism — see Section 11). Close the rest by removing their
+   `RestSpreadElem` entries.
 
-6. **Add tests**: Cover property access, method calls, array indexing, optional
-   chaining, passing to typed functions, widening, closing after inference, and
-   error cases.
+6. **Handle row-polymorphic calls**: Extend `handleFuncCall` to instantiate row
+   type parameters with fresh type variables, solved during argument
+   unification. Extra properties from the caller flow through to the return type.
+
+7. **Handle object spread expressions**: Add `ObjSpreadExpr` handling to
+   `ObjectExpr` inference, support multiple `RestSpreadElem`s in `ObjectType`,
+   and update the unifier to distribute properties across multiple rest elements
+   (see Section 12).
+
+8. **Add tests**: Cover property access, method calls, array indexing, optional
+   chaining, passing to typed functions, widening, closing after inference, row
+   polymorphism (return type propagation), object spread, and error cases.
