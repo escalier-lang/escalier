@@ -13,7 +13,7 @@ structural object types from usage. When a function accesses `obj.bar` and
 `obj.baz`, the system should infer that `obj` has at least those properties —
 without requiring the programmer to spell out the type.
 
-```
+```esc
 fn foo(obj) {
     obj.bar = "hello":string
     obj.baz = 5:number
@@ -58,7 +58,7 @@ unannotated parameter), the system must:
    additions).
 
 **Example — read access:**
-```
+```esc
 fn foo(obj) {
     let x = obj.bar   // obj must have property `bar`
     let y = obj.baz   // obj must also have property `baz`
@@ -67,7 +67,7 @@ fn foo(obj) {
 ```
 
 **Example — write access (assignment):**
-```
+```esc
 fn foo(obj) {
     obj.bar = "hello":string   // obj.bar: string
     obj.baz = 5:number         // obj.baz: number
@@ -79,7 +79,7 @@ When a property is written to (assigned), the assigned value's type should unify
 with the property's fresh type variable, giving it a concrete type.
 
 **Example — multiple assignments to the same property:**
-```
+```esc
 fn foo(obj) {
     obj.bar = "hello"
     // do something with obj.bar
@@ -90,7 +90,7 @@ fn foo(obj) {
 ```
 
 **Example — same property in different branches:**
-```
+```esc
 fn foo(obj, cond) {
     if cond {
         obj.bar = "hello"
@@ -132,7 +132,7 @@ When a method is called on a value whose type is a type variable, the system mus
 3. Return the method's return type variable as the type of the call expression.
 
 **Example:**
-```
+```esc
 fn foo(obj) {
     let result = obj.process(42:number, "hello":string)
 }
@@ -143,7 +143,7 @@ If the same method is called multiple times with different argument types,
 the parameter types widen to a union — the same widening rule as property types
 (see Section 6d). For example:
 
-```
+```esc
 fn foo(obj) {
     obj.process(42:number)
     obj.process("hello":string)
@@ -164,14 +164,14 @@ the system must:
    have a string index signature, and return the index signature's value type.
 
 **Example — numeric index:**
-```
+```esc
 fn foo(obj) {
     let x = obj[0]    // obj is Array<t1> or has numeric index signature
 }
 ```
 
 **Example — string literal index:**
-```
+```esc
 fn foo(obj) {
     let x = obj["bar"]   // equivalent to obj.bar
 }
@@ -202,7 +202,7 @@ the system must:
    evidence that the parameter can be nullish.
 
 **Example:**
-```
+```esc
 fn foo(obj) {
     let x = obj?.bar
 }
@@ -223,10 +223,12 @@ widening is allowed.
   is being inferred. They have an implicit row variable (`RestSpreadElem`)
   representing additional unknown properties, and their property set can grow
   as new usages are encountered.
-- **After inference completes** for the function body, all open object types on
-  the function's parameters are closed: the `RestSpreadElem` is removed, marking
-  the property set as final. From the perspective of callers, the function's
-  parameter types are fully known closed types.
+- **After inference completes** for the function body, open object types on the
+  function's parameters are closed: the `RestSpreadElem` is removed, marking
+  the property set as final. **Exception:** row variables that are visible in
+  the function's return type are **not** closed — they are promoted to type
+  parameters instead (see Section 11). Only `RestSpreadElem`s whose row
+  variables do not appear in the return type are removed.
 - When an inferred open type is unified with a closed type during inference, the
   open type's row variable is resolved to "empty" (no additional properties),
   effectively closing it early.
@@ -285,7 +287,7 @@ and implementation step 5).
 **Why this matters:** Without this rule, the order of operations within a
 function body would affect inference results. For example:
 
-```
+```esc
 fn foo(obj) {
     obj.z = true           // obj becomes {z: boolean, ...R}
     bar(obj)               // bar expects {x: number, y: string}
@@ -390,7 +392,7 @@ already exists in the type system and can serve as the row variable.
 When a value with an inferred (open) object type is passed to a function with a
 typed parameter, the open type should unify with the parameter's type:
 
-```
+```esc
 fn bar(x: {bar: string}) -> string { return x.bar }
 
 fn foo(obj) {
@@ -409,7 +411,7 @@ row variable connects input to output for callers.
 
 Each unannotated parameter gets its own independent set of inferred constraints:
 
-```
+```esc
 fn foo(a, b) {
     a.x = 1:number
     b.y = "hello":string
@@ -422,7 +424,7 @@ fn foo(a, b) {
 If an unannotated parameter is assigned to a local variable and then properties
 are accessed on that variable, the constraints should flow back to the parameter:
 
-```
+```esc
 fn foo(obj) {
     let alias = obj
     alias.x = 1:number
@@ -438,7 +440,7 @@ same type variable as `obj`.
 When a property is accessed on a property of an inferred object, the inner
 property's fresh type variable undergoes the same Option C binding recursively:
 
-```
+```esc
 fn foo(obj) {
     obj.foo.bar = 5:number
 }
@@ -457,7 +459,7 @@ types, destructured parameters should produce **open** object types, just like
 non-destructured parameters that have properties accessed on them. This allows
 callers to pass objects with additional properties beyond those destructured.
 
-```
+```esc
 fn foo({bar, baz}) {
     // bar and baz are available as bindings
 }
@@ -471,7 +473,7 @@ should preserve extra properties that callers pass in. This requires **row
 polymorphism** — the function's type must be generic over the row variable so
 that callers can instantiate it with their specific extra properties:
 
-```
+```esc
 fn foo(obj) {
     obj.x = 1:number
     return obj
@@ -505,7 +507,7 @@ These are follow-up/implementation details for user-facing diagnostics.
 When a caller passes an object that is missing a property required by the
 inferred type (Section 6c — open unified with closed):
 
-```
+```esc
 fn foo(obj) {
     obj.bar = "hello"
     obj.baz = 5
@@ -527,7 +529,7 @@ annotation suggestion is not needed here.
 When the same parameter is used with both property access and numeric indexing
 (Section 3):
 
-```
+```esc
 fn foo(obj) {
     let name = obj.name
     let first = obj[0]      // error
@@ -548,7 +550,7 @@ explicit type annotation.
 When an inferred property type is incompatible with the corresponding property
 in a closed type during unification (Section 6c):
 
-```
+```esc
 fn foo(obj) {
     obj.bar = 5
 }
@@ -592,7 +594,7 @@ These can be addressed in follow-up work.
 Row polymorphism allows functions with inferred parameter types to preserve
 extra properties through their return types. Without it, a function like:
 
-```
+```esc
 fn foo(obj) {
     obj.x = 1:number
     return obj
@@ -609,7 +611,7 @@ return type), the function should be **generic over the row variable**. Instead
 of closing the row variable after inference, it is preserved as a type parameter
 in the function's type:
 
-```
+```esc
 fn foo(obj) {
     obj.x = 1:number
     return obj
@@ -621,7 +623,7 @@ The row variable `R` appears in both the parameter and return type, connecting
 them. When the function is called, `R` is instantiated with the caller's extra
 properties:
 
-```
+```esc
 let result = foo({x: 1, y: 2})
 // R = {y: number}, so result: {x: number, y: number}
 ```
@@ -706,7 +708,7 @@ inferring `{...a, x: 1, ...b, y: 2}`:
 3. The resulting type is: `{x: number, y: number, ...typeof a, ...typeof b}`.
 
 **Example with inferred types:**
-```
+```esc
 fn foo(obj) {
     let extended = {...obj, extra: 1}
 }
@@ -718,7 +720,7 @@ The spread of an open type propagates the row variable into the new object's
 type, connecting the two.
 
 **Example with multiple spreads:**
-```
+```esc
 fn merge(a, b) {
     return {...a, ...b}
 }
@@ -765,7 +767,7 @@ When both are already bound:
 In JavaScript/TypeScript, later spreads override earlier ones for shared
 property names. The same should apply here:
 
-```
+```esc
 let result = {...a, ...b}
 ```
 
