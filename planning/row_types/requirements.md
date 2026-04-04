@@ -59,8 +59,10 @@ When a property is accessed on a value whose type is a type variable (i.e. an
 unannotated parameter), the system must:
 
 1. Bind the type variable to an open `ObjectType` (`Open: true`) containing a
-   `PropertyElem` with a fresh type variable for the value and a
-   `RestSpreadElem` with a fresh row variable.
+   `PropertyElem` with a fresh widenable type variable for the value and a
+   `RestSpreadElem` with a fresh row variable. The `ObjectType` is wrapped in
+   `MutabilityType{Uncertain}` to allow both reads and writes during inference
+   (see Section 5a).
 2. Return the fresh property type variable as the type of the member expression.
 3. If additional properties are accessed on the same object, add new
    `PropertyElem`s to the already-bound open `ObjectType`. Since the type
@@ -100,7 +102,7 @@ fn foo(obj) {
     obj.bar = 5
     // do something else with obj.bar
 }
-// inferred: fn foo(obj: mut {bar: "hello" | 5}) -> void
+// inferred: fn foo(obj: mut {bar: string | number}) -> void
 ```
 
 **Example — same property in different branches:**
@@ -112,7 +114,7 @@ fn foo(obj, cond) {
         obj.bar = 5
     }
 }
-// inferred: fn foo(obj: mut {bar: "hello" | 5}, cond: boolean) -> void
+// inferred: fn foo(obj: mut {bar: string | number}, cond: boolean) -> void
 ```
 
 When the same property is assigned different types — whether sequentially in the
@@ -125,11 +127,12 @@ With the chosen Option C approach (eagerly binding to an open `ObjectType`),
 this works as follows:
 
 1. The first assignment (`obj.bar = "hello"`) creates the property with a fresh
-   type variable and unifies it with `"hello"`.
+   widenable type variable and unifies it with `"hello"`. The literal is widened
+   to `string` per Section 6e, so the type variable is bound to `string`.
 2. The second assignment (`obj.bar = 5`) finds the existing property and unifies
-   its type variable with `5`.
-3. Since the type variable is already bound to `"hello"` and now must also accept
-   `5`, the type variable widens to `"hello" | 5`.
+   its type variable with `5`. The literal `5` is widened to `number`.
+3. Since the type variable is already bound to `string` and now must also accept
+   `number`, the type variable widens to `string | number` per Section 6d.
 
 This requires the unifier to support **widening** a widenable property type
 variable when it encounters a new incompatible concrete type: rather than
@@ -140,8 +143,11 @@ reporting a conflict, it should produce a union. See Section 6d for details.
 When a method is called on a value whose type is a type variable, the system must:
 
 1. Bind the type variable to an open `ObjectType` (if not already bound) and add
-   a `MethodElem` with a `FuncType` containing fresh type variables for each
-   parameter and the return type.
+   a `PropertyElem` whose value is a fresh type variable. When the property is
+   called, bind the type variable to a `FuncType` containing fresh widenable
+   type variables for each parameter and the return type. (Using `PropertyElem`
+   with a `FuncType` value rather than `MethodElem` is simpler — the property's
+   type variable naturally gets bound to the `FuncType` via the call.)
 2. Unify the supplied argument types with the method's fresh parameter types.
 3. Return the method's return type variable as the type of the call expression.
 
@@ -588,10 +594,10 @@ type variable for the value and a `RestSpreadElem` with a fresh row variable.
 Subsequent accesses on the same variable find the bound `ObjectType` and either
 return the existing property's type or add a new `PropertyElem` (gated by `Open`).
 
-When a method is called (property access followed by a call), a `MethodElem` is
-added instead, with a `FuncType` containing fresh type variables for each
-parameter and the return type. The supplied arguments are then unified with the
-fresh parameter types.
+When a method is called (property access followed by a call), the property's
+fresh type variable is bound to a `FuncType` containing fresh widenable type
+variables for each parameter and the return type. The supplied arguments are
+then unified with the fresh parameter types.
 
 - Pro: No new constraint mechanism needed — works within the existing type system.
   `getMemberType` naturally handles `ObjectType`.
@@ -1060,9 +1066,10 @@ properties from earlier elements (including from earlier spreads).
      This is the "numeric-first indexing" path (see Section 3, case 1).
    - **Property/method access or string-literal index** (the key is a
      `PropertyKey`, or an `IndexKey` with a string literal type): bind the
-     `TypeVarType` to an open `ObjectType` (`Open: true`) containing a
-     `PropertyElem` with a fresh type variable for the value and a
-     `RestSpreadElem` row variable, then delegate to `getObjectAccess`
+     `TypeVarType` to a `MutabilityType{Uncertain}` wrapping an open
+     `ObjectType` (`Open: true`) containing a `PropertyElem` with a fresh
+     widenable type variable for the value and a `RestSpreadElem` row variable,
+     then delegate to `getObjectAccess`
      (see Section 3, case 2).
    - **Non-literal string index** (the key is an `IndexKey` with a `string`
      type): bind the `TypeVarType` to an open `ObjectType` (`Open: true`) with
@@ -1091,9 +1098,9 @@ properties from earlier elements (including from earlier spreads).
    intersection — merging properties for open object types, or reducing to
    `never` for incompatible non-object types (see 6a).
 
-6. **Update `inferFuncParams`**: No changes needed — it already creates a fresh
-   type variable for unannotated params. The new `getMemberType` behavior will
-   naturally constrain these type variables as the function body is inferred.
+6. **Update `inferFuncParams`**: Set `IsParam: true` on the fresh type variable
+   created for unannotated params (see Section 6a). This flag is checked in
+   `bind()` to keep the type open when binding to a closed `ObjectType`.
 
 7. **Close and clean up after function body inference**: After inferring a
    function body: (a) set `Open` to `false` on all inferred `ObjectType`s,

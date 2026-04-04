@@ -243,7 +243,8 @@ correctly without closing the type prematurely.
                    NewRestSpreadElem(c.FreshVar(nil))),
                Open: true,
            }
-           typeVar.Instance = openCopy
+           // Wrap in MutabilityUncertain (same as Phase 2)
+           typeVar.Instance = NewMutabilityType(nil, openCopy, MutabilityUncertain)
            return nil
        }
    }
@@ -374,9 +375,9 @@ property type widens to a union instead of producing an error.
    ```
 
    **Deduplication:** Before widening, check whether the new type is already a
-   member of the existing type (or union). If `t1` is already `"hello" | 5` and
-   `t2` is `"hello"`, no widening needed. Use a helper `typeContains(haystack,
-   needle)` that checks union members.
+   member of the existing type (or union). If `t1` is already `string | number`
+   and `t2` is `string` (after literal widening), no widening needed. Use a
+   helper `typeContains(haystack, needle)` that checks union members.
 
    **Gating:** Only widen if the TypeVarType has `Widenable: true`. For
    ordinary type variables (`Widenable: false`), conflicting bindings remain
