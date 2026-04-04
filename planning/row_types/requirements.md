@@ -155,6 +155,20 @@ fn foo(obj) {
 // inferred: fn foo(obj: {process: fn(number | string) -> t1}) -> void
 ```
 
+Similarly, if the same method's return type is used in contexts expecting
+different types, the return type widens to a union. For example:
+
+```esc
+fn foo(obj) {
+    let x: number = obj.getValue()
+    let y: string = obj.getValue()
+}
+// inferred: fn foo(obj: {getValue: fn() -> number | string}) -> void
+```
+
+Here, the first call unifies `getValue`'s return type variable with `number`,
+and the second call widens it to `number | string` per Section 6d.
+
 ### 3. Array Indexing Inference
 
 When a value whose type is a type variable is indexed with bracket notation,
@@ -817,6 +831,16 @@ unifier errors on the two-rest-elem case. To support multiple spreads:
    unified with a concrete type, each rest element contributes its properties.
    The known properties are unified first, then the remaining properties must
    be distributed across the rest elements.
+
+**Implementation note:** Multiple `RestSpreadElem`s should remain as separate
+entries in `ObjectType.Elems` in the internal representation — they are not
+eagerly merged when the `ObjectType` is constructed. Merging (flattening the
+`RestSpreadElem`s into explicit properties) is performed only when the
+`ObjectType` must be expanded, such as during unification (Section 12c),
+compatibility checking, or when producing a concrete/displayable type. At
+expansion time, `RestSpreadElem`s are merged left-to-right so that properties
+from later rest elements override earlier ones (see Section 12d for override
+semantics).
 
 #### 12c. Unification with multiple rest elements
 
