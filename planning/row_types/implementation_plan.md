@@ -44,7 +44,13 @@ Sections 1–6.
      `Widenable` type variable, the binding widens to a union instead of
      producing an error (Phase 4).
 
-3. **`internal/type_system/types.go`** — `ObjectType` printing (`String()` or
+3. **`internal/type_system/types.go`** — `PropertyElem` struct (~line 1057):
+   - Add `Written bool` field. Set to `true` when a property is assigned to
+     during inference. Used at closing time (Phase 6) to determine whether the
+     inferred object type needs `mut`. Go zero-value is `false`, so existing
+     code is safe.
+
+4. **`internal/type_system/types.go`** — `ObjectType` printing (`String()` or
    equivalent):
    - When `Open` is `true`, no visual change is needed in the printed
      representation — the `RestSpreadElem` already conveys openness. If desired,
@@ -88,12 +94,19 @@ variable to an open `ObjectType` instead of producing `ExpectedObjectError`.
        NewRestSpreadElem(rowTV),
    })
    openObj.Open = true
-   typeVar.Instance = openObj
+   // Wrap in MutabilityUncertain so that property assignments don't
+   // immediately error (the assignment handler checks for MutabilityType).
+   // Mutability is resolved at closing time (Phase 6) based on whether
+   // any properties were written to.
+   typeVar.Instance = NewMutabilityType(nil, openObj, MutabilityUncertain)
    return propTV
    ```
-   This eagerly binds the type variable to an open `ObjectType` containing one
-   `PropertyElem` and one `RestSpreadElem` (the row variable). For string-literal
-   `IndexKey`, extract the string value and treat identically to a `PropertyKey`.
+   This eagerly binds the type variable to a `MutabilityType{Uncertain}` wrapping
+   an open `ObjectType` containing one `PropertyElem` and one `RestSpreadElem`
+   (the row variable). `getMemberType` already handles `MutabilityType` by
+   unwrapping and recursing (~line 501), so subsequent property lookups work
+   through the wrapper. For string-literal `IndexKey`, extract the string value
+   and treat identically to a `PropertyKey`.
 
    **b. Numeric IndexKey (key type is `number` or a numeric literal):**
    ```go
@@ -129,6 +142,18 @@ variable to an open `ObjectType` instead of producing `ExpectedObjectError`.
    Apply the same logic in the `IndexKey` branch for string-literal keys that
    aren't found on the object.
 
+3. **`internal/checker/infer_expr.go`** — Assignment handler (~line 34,
+   `MemberExpr` branch of `BinaryExpr` with `Assign`):
+   After the existing mutability and readonly checks, when the LHS property is
+   found on an open `ObjectType`, set `Written: true` on the `PropertyElem`:
+   ```go
+   if propElem, ok := /* find the PropertyElem by name */; ok {
+       propElem.Written = true
+   }
+   ```
+   This tracks which properties were assigned to, used at closing time (Phase 6)
+   to determine whether the inferred type needs `mut`.
+
 ### How subsequent accesses work
 
 After the first access (`obj.bar`), `typeVar.Instance` points to the open
@@ -160,11 +185,11 @@ New test file `internal/checker/tests/row_types_test.go`:
   includes `bar`.
 - **Multiple reads:** `fn foo(obj) { let x = obj.bar; let y = obj.baz }` — two
   properties inferred.
-- **Write access:** `fn foo(obj) { obj.bar = "hello":string }` — `bar` type
+- **Write access:** `fn foo(obj) { obj.bar = "hello" }` — `bar` type
   unifies with `string`.
-- **Read + write:** `fn foo(obj) { let x = obj.bar; obj.baz = 5:number }` —
+- **Read + write:** `fn foo(obj) { let x = obj.bar; obj.baz = 5 }` —
   mixed access.
-- **Nested access:** `fn foo(obj) { obj.foo.bar = 5:number }` — nested open
+- **Nested access:** `fn foo(obj) { obj.foo.bar = 5 }` — nested open
   objects.
 - **Deeply nested:** `fn foo(obj) { obj.a.b.c = true }` — three levels.
 - **Numeric index:** `fn foo(obj) { let x = obj[0] }` — binds to `Array<t1>`.
@@ -172,7 +197,7 @@ New test file `internal/checker/tests/row_types_test.go`:
   to `obj.bar`.
 - **Conflict:** `fn foo(obj) { let x = obj.name; let y = obj[0] }` — error
   (numeric index on object type).
-- **Multiple parameters:** `fn foo(a, b) { a.x = 1:number; b.y = "hi":string }`
+- **Multiple parameters:** `fn foo(a, b) { a.x = 1; b.y = "hi" }`
   — each parameter gets independent constraints.
 
 ---
@@ -303,26 +328,28 @@ correctly without closing the type prematurely.
   `fn foo(arg) { takes_num(arg); takes_str(arg) }` — `arg` becomes `never`
   (number & string = never).
 - **Aliasing:**
-  `fn foo(obj) { let alias = obj; alias.x = 1:number }` — `obj` inferred as
+  `fn foo(obj) { let alias = obj; alias.x = 1 }` — `obj` inferred as
   `{x: number}`.
 - **Multiple parameters:**
   `fn foo(a, b) { bar(a); baz(b) }` — each parameter independently constrained.
 - **Open-vs-closed shared property unification:**
-  `fn bar(x: {name: string}) {...}; fn foo(obj) { obj.name = "hi":string; bar(obj) }`
+  `fn bar(x: {name: string}) {...}; fn foo(obj) { obj.name = "hi"; bar(obj) }`
   — shared property `name` is unified pairwise; open type keeps extra properties
   if any.
 - **Open-vs-closed extra properties in open type:**
-  `fn bar(x: {a: number}) {...}; fn foo(obj) { obj.a = 1:number; obj.b = "hi":string; bar(obj) }`
+  `fn bar(x: {a: number}) {...}; fn foo(obj) { obj.a = 1; obj.b = "hi"; bar(obj) }`
   — `obj` has both `a` and `b`; `bar(obj)` succeeds (structural subtyping).
 
 ---
 
 ## Phase 4: Property Widening (Union Accumulation)
 
-**Requirements covered:** Section 6d (property type widening).
+**Requirements covered:** Section 6d (property type widening), Section 6e
+(literal type widening to primitives).
 
-**Goal:** When the same property on an inferred open object is assigned different
-types, the property type widens to a union instead of producing an error.
+**Goal:** When a literal is unified with a widenable type variable, widen it to
+its primitive type. When the same property is assigned different types, the
+property type widens to a union instead of producing an error.
 
 ### Changes
 
@@ -361,7 +388,36 @@ types, the property type widens to a union instead of producing an error.
    types, and method return types. All of these are created with
    `Widenable: true` in Phases 2 and 5.
 
-2. **Helper function** — `typeContains(haystack Type, needle Type) bool`:
+2. **`internal/checker/unify.go`** — Literal widening in `bind()` (Section 6e):
+   When binding a `Widenable` TypeVarType to a literal type, widen the literal
+   to its primitive type before setting `Instance`:
+   ```go
+   func widenLiteral(t Type) Type {
+       if lit, ok := t.(*LitType); ok {
+           switch lit.Lit.(type) {
+           case *NumLit:
+               return NewNumPrimType(nil)
+           case *StrLit:
+               return NewStrPrimType(nil)
+           case *BoolLit:
+               return NewBoolPrimType(nil)
+           }
+       }
+       return t  // not a literal, return unchanged
+   }
+   ```
+   In `bind()`, when the target TypeVarType has `Widenable: true`:
+   ```go
+   if typeVar.Widenable {
+       targetType = widenLiteral(targetType)
+   }
+   typeVar.Instance = targetType
+   ```
+   This ensures `obj.bar = "hello"` infers `bar: string` instead of
+   `bar: "hello"`. The same widening applies to method parameters: calling
+   `obj.process(42)` infers the parameter type as `number`, not `42`.
+
+3. **Helper function** — `typeContains(haystack Type, needle Type) bool`:
    - If `haystack` is a `UnionType`, check if any member equals `needle`.
    - Otherwise, check if `haystack` equals `needle`.
    - Place in `internal/checker/unify.go` or a utility file.
@@ -378,29 +434,36 @@ then unifies the right-hand side type with the left-hand side type via
    `getMemberType`, which (via the TypeVarType case or `getObjectAccess` on the
    open ObjectType) creates `PropertyElem{bar: t1}` where `t1` is a fresh
    `Widenable` TypeVarType, and returns `t1`. Unification of `"hello"` with
-   `t1` sets `t1.Instance = "hello"`.
+   `t1` goes through `bind()`, which widens the literal to `string` (Section 6e)
+   and sets `t1.Instance = string`.
 2. `obj.bar = 5` — `inferExpr` on `obj.bar` calls `getMemberType` →
    `getObjectAccess` finds the existing `bar` property, returns `t1`.
    Unification calls `unifyWithDepth(t1, number(5))`. `Prune(t1)` returns
-   `"hello"`. Unifying `"hello"` with `5` fails. The check finds `origT1 = t1`
-   is `Widenable`, so it replaces `t1.Instance` with `"hello" | 5`.
-3. `obj.bar = true` — same flow, widens to `"hello" | 5 | true`.
+   `string`. The new value `5` is widened to `number`. Unifying `string` with
+   `number` fails. The check finds `origT1 = t1` is `Widenable`, so it replaces
+   `t1.Instance` with `string | number`.
+3. `obj.bar = true` — same flow, widens to `string | number | boolean`.
 
 ### Tests
 
-- **Sequential widening:**
-  `fn foo(obj) { obj.bar = "hello"; obj.bar = 5 }` — `bar: "hello" | 5`.
+- **Literal widening (Section 6e):**
+  `fn foo(obj) { obj.bar = "hello" }` — `bar: string` (not `"hello"`).
+- **Literal widening with number:**
+  `fn foo(obj) { obj.bar = 42 }` — `bar: number` (not `42`).
+- **Same-kind literals collapse:**
+  `fn foo(obj) { obj.bar = "hello"; obj.bar = "world" }` — `bar: string`
+  (both widen to `string`, deduplication gives just `string`).
+- **Different-kind literals produce union of primitives:**
+  `fn foo(obj) { obj.bar = "hello"; obj.bar = 5 }` — `bar: string | number`.
 - **Branch widening:**
   `fn foo(obj, cond) { if cond { obj.bar = "hello" } else { obj.bar = 5 } }` —
-  same result.
-- **Widening with different literals:**
-  `fn foo(obj) { obj.bar = "hello"; obj.bar = "world" }` — `bar: "hello" | "world"`.
-- **Deduplication:**
-  `fn foo(obj) { obj.bar = "hello"; obj.bar = "hello" }` — `bar: "hello"` (not
-  `"hello" | "hello"`).
+  `bar: string | number`.
 - **Three-way widening:**
   `fn foo(obj) { obj.bar = "a"; obj.bar = 1; obj.bar = true }` —
-  `bar: "a" | 1 | true`.
+  `bar: string | number | boolean`.
+- **Non-literal types are not widened:**
+  `fn foo(obj) { obj.bar = someStringVar }` — `bar: string` (already a
+  primitive, no widening needed).
 - **Normal type variable conflict still errors:**
   `let x: number = "hello"` — error, not widened (no `Widenable` flag).
 - **Widening does not apply to non-widenable variables:**
@@ -487,16 +550,16 @@ with appropriate parameters and return type.
 ### Tests
 
 - **Basic method call:**
-  `fn foo(obj) { let r = obj.process(42:number, "hello":string) }` — `process`
+  `fn foo(obj) { let r = obj.process(42, "hello") }` — `process`
   is `fn(number, string) -> t1`.
 - **Method parameter widening:**
-  `fn foo(obj) { obj.process(42:number); obj.process("hello":string) }` —
+  `fn foo(obj) { obj.process(42); obj.process("hello") }` —
   `process` is `fn(number | string) -> t1`.
 - **Method return type widening:**
   `fn foo(obj) { let x: number = obj.getValue(); let y: string = obj.getValue() }`
   — `getValue` is `fn() -> number | string`.
 - **Method + property on same object:**
-  `fn foo(obj) { obj.x = 1:number; let r = obj.process(obj.x) }` — both
+  `fn foo(obj) { obj.x = 1; let r = obj.process(obj.x) }` — both
   property and method inferred.
 - **Zero-arg method:**
   `fn foo(obj) { let r = obj.getData() }` — `getData` is `fn() -> t1`.
@@ -505,11 +568,13 @@ with appropriate parameters and return type.
 
 ## Phase 6: Closing After Function Body Inference
 
-**Requirements covered:** Section 5 (open vs. closed lifecycle), Section 11d
-(interaction with closing).
+**Requirements covered:** Section 5 (open vs. closed lifecycle), Section 5a
+(mutability inference), Section 11d (interaction with closing).
 
 **Goal:** After a function body is fully inferred, close all open object types on
-parameters. Remove row variables that don't escape to callers.
+parameters. Remove row variables that don't escape to callers. Resolve
+mutability: if any property was written to, the parameter type becomes `mut`;
+otherwise the `MutabilityType` wrapper is removed.
 
 ### Changes
 
@@ -519,8 +584,36 @@ parameters. Remove row variables that don't escape to callers.
    ```go
    for _, param := range funcSigType.Params {
        paramType := Prune(param.Type)
+
+       // Unwrap MutabilityType to get at the ObjectType
+       var mutWrapper *MutabilityType
+       if mut, ok := paramType.(*MutabilityType); ok {
+           mutWrapper = mut
+           paramType = Prune(mut.Type)
+       }
+
        if objType, ok := paramType.(*ObjectType); ok && objType.Open {
            objType.Open = false
+
+           // Resolve mutability (Section 5a):
+           // Check if any PropertyElem was written to
+           hasWrites := false
+           for _, elem := range objType.Elems {
+               if prop, ok := elem.(*PropertyElem); ok && prop.Written {
+                   hasWrites = true
+                   break
+               }
+           }
+           if mutWrapper != nil {
+               if hasWrites {
+                   mutWrapper.Mutability = MutabilityMutable
+               } else {
+                   // Read-only: remove the MutabilityType wrapper
+                   // by pointing the param's type past it
+                   param.Type = objType // or update typeVar.Instance
+               }
+           }
+
            // Collect type var IDs in the return type
            returnVarIDs := collectTypeVarIDs(funcSigType.Return)
            // Remove RestSpreadElems whose row vars don't appear in return type
@@ -612,17 +705,24 @@ parameters. Remove row variables that don't escape to callers.
 
 ### Tests
 
-- **Closed after inference:**
-  `fn foo(obj) { obj.bar = 5:number }` — after inference, `obj` type is
-  `{bar: number}` (closed, no `RestSpreadElem`).
+- **Closed with mut (writes):**
+  `fn foo(obj) { obj.bar = 5 }` — after inference, `obj` type is
+  `mut {bar: number}` (closed, mutable, no `RestSpreadElem`).
+- **Closed without mut (reads only):**
+  `fn foo(obj) { let x = obj.bar }` — after inference, `obj` type is
+  `{bar: t1}` (closed, immutable, no `MutabilityType` wrapper).
+- **Mixed reads and writes:**
+  `fn foo(obj) { let x = obj.bar; obj.baz = 5 }` — `obj` type is
+  `mut {bar: t1, baz: number}` (any write makes the whole object `mut`).
 - **RestSpreadElem preserved when in return type:**
-  `fn foo(obj) { obj.x = 1:number; return obj }` — `RestSpreadElem` kept
+  `fn foo(obj) { obj.x = 1; return obj }` — `RestSpreadElem` kept
   (tested further in Phase 7).
 - **Multiple params, each closed independently:**
-  `fn foo(a, b) { a.x = 1:number; b.y = "hi":string }` — both closed.
+  `fn foo(a, b) { a.x = 1; b.y = "hi" }` — both closed, both
+  `mut`.
 - **Nested function:**
-  `fn outer(a) { fn inner(b) { b.x = 1:number }; a.y = "hi":string }` — each
-  closed after its own body.
+  `fn outer(a) { fn inner(b) { b.x = 1 }; a.y = "hi" }` — each
+  closed after its own body, each `mut`.
 
 ---
 
@@ -686,20 +786,20 @@ parameter on the function, enabling callers to preserve extra properties.
 
 - **Basic row polymorphism:**
   ```esc
-  fn foo(obj) { obj.x = 1:number; return obj }
+  fn foo(obj) { obj.x = 1; return obj }
   let r = foo({x: 1, y: 2})
   ```
   — `r` type is `{x: number, y: number}`.
 
 - **Multiple extra properties:**
   ```esc
-  fn foo(obj) { obj.x = 1:number; return obj }
+  fn foo(obj) { obj.x = 1; return obj }
   let r = foo({x: 1, y: 2, z: "hi"})
   ```
   — `r` has all three properties.
 
 - **No return — row variable removed:**
-  `fn foo(obj) { obj.x = 1:number }` — no type parameter, `RestSpreadElem`
+  `fn foo(obj) { obj.x = 1 }` — no type parameter, `RestSpreadElem`
   removed.
 
 - **Derived return (property of param):**
@@ -964,7 +1064,7 @@ row polymorphism.
 - **Basic spread:**
   `let r = {...{x: 1}, y: 2}` — `r: {x: number, y: number}`.
 - **Spread with inferred type:**
-  `fn foo(obj) { return {...obj, extra: 1:number} }` — return type has
+  `fn foo(obj) { return {...obj, extra: 1} }` — return type has
   `RestSpreadElem` from `obj`.
 - **Multiple spreads:**
   `fn merge(a, b) { return {...a, ...b} }` — two row variables, two type params.
