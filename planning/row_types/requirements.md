@@ -25,17 +25,26 @@ fn foo(obj) {
 
 - **Row variable**: A type variable that represents the "rest" of an object type's
   properties. Analogous to a regular type variable, but unifies with sets of
-  object properties rather than whole types.
-- **Open object type**: An object type that contains a row variable, meaning it may
-  have additional properties beyond those explicitly listed.
-  e.g. `{bar: string, baz: number, ...R}` where `R` is a row variable.
-- **Closed object type**: An object type with no row variable — its set of
-  properties is fully known. All object types written by programmers in type
-  annotations are closed. Note: open/closed is orthogonal to **exactness**
-  (`Exact` field on `ObjectType`). Exactness controls whether an object type
-  can unify with another that has additional properties. Open/closed controls
-  whether an object type's property set can be **widened during inference**
-  within a function body.
+  object properties rather than whole types. Row variables are represented as
+  `RestSpreadElem`s in `ObjectType.Elems`.
+- **Open object type**: An object type with `Open: true` on the `ObjectType`
+  struct. Open types can gain new properties during inference — when a property
+  is accessed that doesn't yet exist, it is added automatically rather than
+  producing an error.
+  e.g. during inference of `fn foo(obj) { obj.bar; obj.baz }`, `obj` is bound
+  to an open `ObjectType` that accumulates `bar` and `baz` as they are accessed.
+- **Closed object type**: An object type with `Open: false`. Its property set is
+  fixed and cannot gain new properties. All object types written by programmers
+  in type annotations are closed. Inferred types are closed after the enclosing
+  function body is fully inferred.
+- **Open vs. row variable**: Open/closed (`Open` field) and row variables
+  (`RestSpreadElem`) are **orthogonal**. An open type may or may not have a row
+  variable, and a closed type may have a row variable (for row polymorphism).
+  Open/closed controls whether the property set can grow during inference.
+  A `RestSpreadElem` represents a row variable for row polymorphism or a spread
+  source. Both are also orthogonal to **exactness** (`Exact` field), which
+  controls whether an object type can unify with another that has additional
+  properties.
 - **Row constraint**: With Option C, row constraints are represented implicitly
   by the `PropertyElem`s and `MethodElem`s within an open `ObjectType`. When a
   property is accessed on a type variable, it is eagerly bound to an open
@@ -49,16 +58,16 @@ fn foo(obj) {
 When a property is accessed on a value whose type is a type variable (i.e. an
 unannotated parameter), the system must:
 
-1. Bind the type variable to an open `ObjectType` containing a `PropertyElem`
-   with a fresh type variable for the value and a `RestSpreadElem` with a fresh
-   row variable.
+1. Bind the type variable to an open `ObjectType` (`Open: true`) containing a
+   `PropertyElem` with a fresh type variable for the value and a
+   `RestSpreadElem` with a fresh row variable.
 2. Return the fresh property type variable as the type of the member expression.
 3. If additional properties are accessed on the same object, add new
    `PropertyElem`s to the already-bound open `ObjectType`. Since the type
    variable has been pruned to the `ObjectType`, subsequent accesses go through
    `getObjectAccess`. Currently, `getObjectAccess` returns an
    `UnknownPropertyError` when a property is not found. **It must be modified**
-   to detect open `ObjectType`s (those with a `RestSpreadElem`) and, instead of
+   to detect open `ObjectType`s (those with `Open: true`) and, instead of
    erroring, add a new `PropertyElem` with a fresh type variable and return it.
 
 **Example — read access:**
@@ -253,21 +262,21 @@ encountered. Once the function body has been fully inferred, the parameter's
 object type should be **closed** — its property set is finalized and no further
 widening is allowed.
 
-- Object types from **type annotations** remain **closed** by default, as they
-  are today. (Exactness is a separate concern — see Definitions.)
-- Object types from **inference** are **open** while the enclosing function body
-  is being inferred. They have an implicit row variable (`RestSpreadElem`)
-  representing additional unknown properties, and their property set can grow
-  as new usages are encountered.
+- Object types from **type annotations** remain **closed** (`Open: false`) by
+  default, as they are today. (Exactness is a separate concern — see Definitions.)
+- Object types from **inference** are **open** (`Open: true`) while the enclosing
+  function body is being inferred. They also have a `RestSpreadElem` with a
+  fresh row variable for row polymorphism. Their property set can grow as new
+  usages are encountered because `Open` is `true`.
 - **After inference completes** for the function body, open object types on the
-  function's parameters are closed: the `RestSpreadElem` is removed, marking
-  the property set as final. **Exception:** row variables that are visible in
-  the function's return type are **not** closed — they are promoted to type
-  parameters instead (see Section 11). Only `RestSpreadElem`s whose row
-  variables do not appear in the return type are removed.
+  function's parameters are closed: `Open` is set to `false`, marking the
+  property set as final. Separately, row variables whose `RestSpreadElem`s
+  are visible in the function's return type are **not** removed — they are
+  promoted to type parameters instead (see Section 11). Only `RestSpreadElem`s
+  whose row variables do not appear in the return type are removed.
 - Open types are **never** closed prematurely during inference. When an inferred
   open type is unified with a closed type during inference, the closed type's
-  properties are added to the open type but the `RestSpreadElem` remains (see
+  properties are added to the open type but `Open` remains `true` (see
   Section 6c). Closing only happens at the end of the function scope.
 - When two open types are unified, their known properties are unified pairwise,
   and their row variables are merged.
@@ -289,7 +298,8 @@ call): unification proceeds as open-vs-closed (6c) or open-vs-open (6b).
 with the parameter type via `bind()`. Since the parameter is unannotated, it
 must remain open if the target is an `ObjectType`. When `bind()` encounters a
 closed `ObjectType`, it should bind the type variable to an open `ObjectType`
-with the same properties plus a `RestSpreadElem` with a fresh row variable.
+(`Open: true`) with the same properties plus a `RestSpreadElem` with a fresh
+row variable.
 
 If the target is not an `ObjectType` (e.g. `number`, `string`), `bind()` binds
 directly as usual — openness only applies to object types.
@@ -347,8 +357,8 @@ body. Instead:
 3. Properties present in the open type but not the closed type are allowed
    (structural subtyping — the inferred type may have more properties than the
    closed type requires).
-4. The `RestSpreadElem` **remains** — the open type stays open so that subsequent
-   property accesses within the function body can still add new properties.
+4. The type stays open (`Open` remains `true`) so that subsequent property
+   accesses within the function body can still add new properties.
 
 Closing only happens after the function body is fully inferred (see Section 5
 and implementation step 5).
@@ -371,9 +381,9 @@ contribute to the final inferred type regardless of order.
 
 **Note:** The existing unifier code already handles `RestSpreadElem` by
 collecting leftover properties and unifying them with the rest type variable.
-The change needed is to **not bind the row variable** when the open type is
-still under inference — instead, add the closed type's properties directly to
-the open `ObjectType`'s `Elems`.
+The change needed is to check `Open` on the `ObjectType` — when it is `true`,
+add the closed type's properties directly to the open `ObjectType`'s `Elems`
+instead of binding the row variable.
 
 #### 6d. Property type widening (union accumulation)
 
@@ -433,10 +443,10 @@ finally unified with a concrete type, the accumulated constraints are verified.
 
 **Option C — Eagerly build open ObjectType (chosen):**
 When a property is accessed on a type variable, immediately bind the type variable
-to an open `ObjectType` containing a `PropertyElem` with a fresh type variable for
-the value and a `RestSpreadElem` with a fresh row variable. Subsequent accesses on
-the same variable find the bound `ObjectType` and either return the existing
-property's type or add a new `PropertyElem`.
+to an open `ObjectType` (`Open: true`) containing a `PropertyElem` with a fresh
+type variable for the value and a `RestSpreadElem` with a fresh row variable.
+Subsequent accesses on the same variable find the bound `ObjectType` and either
+return the existing property's type or add a new `PropertyElem` (gated by `Open`).
 
 When a method is called (property access followed by a call), a `MethodElem` is
 added instead, with a `FuncType` containing fresh type variables for each
@@ -445,14 +455,15 @@ fresh parameter types.
 
 - Pro: No new constraint mechanism needed — works within the existing type system.
   `getMemberType` naturally handles `ObjectType`.
-- Con: Requires introducing the concept of "open" object types via `RestSpreadElem`
-  (or similar). Eagerly binding may complicate some unification scenarios.
+- Con: Requires introducing the concept of "open" object types (via `Open` field
+  and `RestSpreadElem`). Eagerly binding may complicate some unification scenarios.
 
 **Decision:** Option C is the chosen approach. It is the most incremental path. It reuses the
 existing `ObjectType` and `RestSpreadElem` structures, avoids a separate
 constraint-tracking system, and makes property access on inferred types go through
-the same `getObjectAccess` code path as annotated types. The `RestSpreadElem`
-already exists in the type system and can serve as the row variable.
+the same `getObjectAccess` code path as annotated types. The `Open` field on
+`ObjectType` controls whether new properties can be added, while `RestSpreadElem`
+serves as the row variable for row polymorphism — the two concerns are orthogonal.
 
 ### 8. Integration with Existing Inference
 
@@ -534,9 +545,14 @@ fn foo({bar, baz}) {
 // inferred: fn foo({bar, baz}: {bar: t1, baz: t2}) -> void
 ```
 
-When the destructuring pattern includes a **rest element**, the parameter should
-be **open** — the rest element captures additional properties beyond those
-explicitly named:
+When the destructuring pattern includes a **rest element**, the parameter type
+should have a `RestSpreadElem` with a row variable — the rest element captures
+additional properties beyond those explicitly named. However, the type remains
+**closed** (`Open: false`) because the pattern fully specifies the explicit
+properties and the parameter itself is not accessible by name (only the bindings
+are), so no new explicit properties can be added during inference. This is the
+`Open: false` + `RestSpreadElem` case — a natural example of the orthogonality
+between openness and row variables.
 
 ```esc
 fn foo({bar, ...rest}) {
@@ -545,15 +561,17 @@ fn foo({bar, ...rest}) {
 // inferred: fn foo({bar, ...rest}: {bar: t1, ...R}) -> void
 // where R is a fresh type variable constrained to be an ObjectType
 // rest has type R
+// the ObjectType has Open: false (explicit props are fixed) but has a
+// RestSpreadElem for R (row polymorphism for extra properties)
 ```
 
 **Mechanism:** `inferPattern` creates a closed `ObjectType` from the pattern. If
 the pattern has a rest element and the parameter lacks a type annotation,
 `inferFuncParams` should add a `RestSpreadElem` with a fresh row variable `R`
-to the pattern-inferred `ObjectType`, making it open. The rest binding's type
-is `R`, connecting it to the row variable so that when `R` is resolved, the rest
-binding's type reflects the remaining properties. Without a rest element, the
-type stays closed as-is.
+to the pattern-inferred `ObjectType`, but leave `Open` as `false`. The rest
+binding's type is `R`, connecting it to the row variable so that when `R` is
+resolved, the rest binding's type reflects the remaining properties. Without a
+rest element, the type stays closed with no `RestSpreadElem`.
 
 #### 8g. Return type row variable propagation
 
@@ -737,14 +755,16 @@ extra properties are accepted but not tracked).
 
 #### 11c. Implementation sketch
 
-1. **After inferring the function body**, identify which row variables (from
-   `RestSpreadElem`s on inferred open `ObjectType`s) appear in the return type.
-2. For those that do: promote the row variable to a **type parameter** on the
+1. **After inferring the function body**, set `Open` to `false` on all inferred
+   `ObjectType`s — the property set is now final.
+2. Identify which row variables (from `RestSpreadElem`s on inferred `ObjectType`s)
+   appear in the return type.
+3. For those that do: promote the row variable to a **type parameter** on the
    function. The `RestSpreadElem` remains in both the parameter type and the
    return type, referencing the same type variable.
-3. For those that don't: close the open type as before (remove the
-   `RestSpreadElem`).
-4. **At call sites**, when instantiating a row-polymorphic function:
+4. For those that don't: remove the `RestSpreadElem` (the row variable is not
+   needed since it doesn't escape to callers).
+5. **At call sites**, when instantiating a row-polymorphic function:
    - Create a fresh type variable for the row parameter.
    - Unify the argument with the parameter type. The row variable binds to an
      `ObjectType` containing the caller's extra properties.
@@ -760,10 +780,11 @@ argument unification.
 
 The closing rule from Section 5 is refined:
 
-- Row variables that appear in the function's return type are **not** closed.
-  They become type parameters.
-- Row variables that do NOT appear in the return type are closed (RestSpreadElem
-  removed) after inference completes.
+- All inferred `ObjectType`s are closed (`Open` set to `false`) after inference.
+- Row variables that appear in the function's return type are preserved — their
+  `RestSpreadElem`s remain, and they become type parameters.
+- Row variables that do NOT appear in the return type have their
+  `RestSpreadElem`s removed after inference completes.
 
 #### 11e. Limitations
 
@@ -888,7 +909,8 @@ properties from earlier elements (including from earlier spreads).
   `UnimplementedError`. Implement the distribution logic from 12c.
 - **Update `getObjectAccess`** to look through `RestSpreadElem`s when searching
   for a property — if the property isn't found in the explicit elements, check
-  each rest element's type.
+  each rest element's type. Note: adding new properties via `getObjectAccess`
+  is gated by the `Open` field, not by the presence of `RestSpreadElem`s.
 
 ## Implementation Approach (Summary)
 
@@ -898,44 +920,47 @@ properties from earlier elements (including from earlier spreads).
      This is the "numeric-first indexing" path (see Section 3, case 1).
    - **Property/method access or string-literal index** (the key is a
      `PropertyKey`, or an `IndexKey` with a string literal type): bind the
-     `TypeVarType` to an open `ObjectType` containing a `PropertyElem` with a
-     fresh type variable for the value and a `RestSpreadElem` row variable,
-     then delegate to `getObjectAccess` (see Section 3, case 2).
+     `TypeVarType` to an open `ObjectType` (`Open: true`) containing a
+     `PropertyElem` with a fresh type variable for the value and a
+     `RestSpreadElem` row variable, then delegate to `getObjectAccess`
+     (see Section 3, case 2).
    - **Non-literal string index** (the key is an `IndexKey` with a `string`
-     type): bind the `TypeVarType` to an open `ObjectType` with a string index
-     signature and a `RestSpreadElem` row variable, and return the index
-     signature's value type (see Section 3, case 3).
+     type): bind the `TypeVarType` to an open `ObjectType` (`Open: true`) with
+     a string index signature and a `RestSpreadElem` row variable, and return
+     the index signature's value type (see Section 3, case 3).
 
 2. **Modify `getObjectAccess`** to handle open `ObjectType`s: when a property is
-   not found and the `ObjectType` has a `RestSpreadElem`, add a new
-   `PropertyElem` with a fresh type variable instead of returning
-   `UnknownPropertyError`.
+   not found and the `ObjectType` has `Open: true`, add a new `PropertyElem`
+   with a fresh type variable instead of returning `UnknownPropertyError`.
 
-3. **Introduce open object type semantics**: Use the presence of a `RestSpreadElem`
-   in an `ObjectType.Elems` to indicate the type is open. Adjust unification to
-   handle open-vs-closed and open-vs-open cases.
+3. **Add `Open` field to `ObjectType`**: Use `Open: true` to indicate the type
+   can gain new properties during inference. This is orthogonal to the presence
+   of `RestSpreadElem` (which represents row variables for row polymorphism or
+   spread sources). Adjust unification to handle open-vs-closed and open-vs-open
+   cases based on the `Open` field.
 
 4. **Adjust unification for open objects**: When unifying an open object with a
    closed object during inference, add the closed type's properties to the open
-   type's `Elems` without closing it (see 6c). When unifying two open objects,
-   merge properties and row variables.
+   type's `Elems` without setting `Open` to `false` (see 6c). When unifying two
+   open objects, merge properties and row variables.
 
 5. **Adjust `bind()` for row-inferred type variables**: When binding a
    row-inferred `TypeVarType` to a closed `ObjectType`, bind to an open
-   `ObjectType` with the same properties plus a `RestSpreadElem`. When the
-   type variable is already bound, compose via intersection — merging
-   properties for open object types, or reducing to `never` for incompatible
-   non-object types (see 6a).
+   `ObjectType` (`Open: true`) with the same properties plus a
+   `RestSpreadElem`. When the type variable is already bound, compose via
+   intersection — merging properties for open object types, or reducing to
+   `never` for incompatible non-object types (see 6a).
 
 6. **Update `inferFuncParams`**: No changes needed — it already creates a fresh
    type variable for unannotated params. The new `getMemberType` behavior will
    naturally constrain these type variables as the function body is inferred.
 
-7. **Promote or close row variables after function body inference**: After
-   inferring a function body, check which row variables (from `RestSpreadElem`s)
-   appear in the return type. Promote those to type parameters on the function
-   (row polymorphism — see Section 11). Close the rest by removing their
-   `RestSpreadElem` entries.
+7. **Close and clean up after function body inference**: After inferring a
+   function body: (a) set `Open` to `false` on all inferred `ObjectType`s,
+   (b) identify which row variables (from `RestSpreadElem`s) appear in the
+   return type and promote those to type parameters on the function (row
+   polymorphism — see Section 11), (c) remove `RestSpreadElem`s whose row
+   variables do not appear in the return type.
 
 8. **Handle row-polymorphic calls**: Extend `handleFuncCall` to instantiate row
    type parameters with fresh type variables, solved during argument
