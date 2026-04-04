@@ -36,9 +36,11 @@ fn foo(obj) {
   can unify with another that has additional properties. Open/closed controls
   whether an object type's property set can be **widened during inference**
   within a function body.
-- **Row constraint**: A constraint recorded against a type variable (or row variable)
-  that requires it to have certain properties. Accumulated during inference and
-  resolved during unification.
+- **Row constraint**: With Option C, row constraints are represented implicitly
+  by the `PropertyElem`s and `MethodElem`s within an open `ObjectType`. When a
+  property is accessed on a type variable, it is eagerly bound to an open
+  `ObjectType` containing that property — the constraint is the structure of
+  the `ObjectType` itself, not a separate data structure.
 
 ## Requirements
 
@@ -52,10 +54,12 @@ unannotated parameter), the system must:
    row variable.
 2. Return the fresh property type variable as the type of the member expression.
 3. If additional properties are accessed on the same object, add new
-   `PropertyElem`s to the already-bound open `ObjectType` (since the type
+   `PropertyElem`s to the already-bound open `ObjectType`. Since the type
    variable has been pruned to the `ObjectType`, subsequent accesses go through
-   `getObjectAccess` which finds existing properties or triggers further
-   additions).
+   `getObjectAccess`. Currently, `getObjectAccess` returns an
+   `UnknownPropertyError` when a property is not found. **It must be modified**
+   to detect open `ObjectType`s (those with a `RestSpreadElem`) and, instead of
+   erroring, add a new `PropertyElem` with a fresh type variable and return it.
 
 **Example — read access:**
 ```esc
@@ -190,9 +194,11 @@ variable should be bound to `Array<T>` rather than an open `ObjectType`.
 When optional chaining (`?.`) is used on a value whose type is a type variable,
 the system must:
 
-1. Record the same property/method constraint as non-optional access.
-2. The inferred property type in the constraint should be `T`, not `T | undefined`
-   — the optionality is a feature of the access, not the property itself.
+1. Bind the type variable to an open `ObjectType` with the accessed property
+   (same as non-optional access via Option C), but also wrap the parameter's
+   type as `T | null | undefined` where `T` is the open object type.
+2. The inferred property type should be `T`, not `T | undefined` — the
+   optionality is a feature of the access, not the property itself.
 3. The resulting expression type should be `T | undefined` (as with current
    optional chaining semantics).
 4. The inferred object type for the parameter should be
@@ -207,6 +213,22 @@ fn foo(obj) {
     let x = obj?.bar
 }
 // inferred: fn foo(obj: {bar: t1} | null | undefined) -> void, x: t1 | undefined
+```
+
+**Chained optional access:** When optional chaining is nested (e.g. `a?.b?.c`),
+each `?.` adds nullability to the accessed property's type. In `a?.b?.c`:
+
+- `a` is inferred as `{b: T1} | null | undefined`
+- `b`'s type `T1` is `{c: T2} | null | undefined` (because `?.` is used on `b`)
+- `c`'s type `T2` is a fresh type variable
+- The overall expression type is `T2 | undefined`
+
+```esc
+fn foo(a) {
+    let x = a?.b?.c
+}
+// inferred: fn foo(a: {b: {c: t1} | null | undefined} | null | undefined) -> void
+// x: t1 | undefined
 ```
 
 ### 5. Open vs. Closed Object Types
@@ -229,9 +251,10 @@ widening is allowed.
   the function's return type are **not** closed — they are promoted to type
   parameters instead (see Section 11). Only `RestSpreadElem`s whose row
   variables do not appear in the return type are removed.
-- When an inferred open type is unified with a closed type during inference, the
-  open type's row variable is resolved to "empty" (no additional properties),
-  effectively closing it early.
+- Open types are **never** closed prematurely during inference. When an inferred
+  open type is unified with a closed type during inference, the closed type's
+  properties are added to the open type but the `RestSpreadElem` remains (see
+  Section 6c). Closing only happens at the end of the function scope.
 - When two open types are unified, their known properties are unified pairwise,
   and their row variables are merged.
 
@@ -239,30 +262,62 @@ widening is allowed.
 
 The unifier must be extended to handle the following cases:
 
-#### 6a. TypeVarType bound to open ObjectType
+#### 6a. Unifying row-inferred TypeVarTypes
 
-With Option C, accessing a property on a `TypeVarType` eagerly binds it to an
-open `ObjectType`. From that point on, the type variable prunes to the
-`ObjectType`, so subsequent unification is between `ObjectType`s — covered by
-6b and 6c below.
+An unannotated parameter starts as a bare `TypeVarType`. It may be constrained
+by property access (Option C — eagerly binds to an open `ObjectType`), by being
+passed to typed functions, or both. This section covers the function-call path.
 
-The key implication: when an unannotated parameter is passed to a function with a
-typed parameter (e.g. `bar(obj)` where `bar` expects `{bar: string}`), the type
-variable may or may not already be bound to an open `ObjectType`:
+**Already bound to an open ObjectType** (properties were accessed before the
+call): unification proceeds as open-vs-closed (6c) or open-vs-open (6b).
 
-- **Already bound** (properties were accessed before the call): unification
-  proceeds as open-vs-closed (6c) or open-vs-open (6b).
-- **Not yet bound** (no properties accessed yet): the type variable unifies
-  directly with the parameter type, binding it to that type. If properties are
-  accessed later, they must be compatible with the now-bound type.
+**Not yet bound** (no properties accessed yet): the type variable is unified
+with the parameter type via `bind()`. Since the parameter is unannotated, it
+must remain open if the target is an `ObjectType`. When `bind()` encounters a
+closed `ObjectType`, it should bind the type variable to an open `ObjectType`
+with the same properties plus a `RestSpreadElem` with a fresh row variable.
 
-#### 6b. Open object type with open object type
+If the target is not an `ObjectType` (e.g. `number`, `string`), `bind()` binds
+directly as usual — openness only applies to object types.
 
-When unifying two open object types:
+**Multiple function calls** compose via intersection. Each call constrains the
+type variable further. When the type variable is already bound and a new
+unification occurs, the result is the intersection of the existing type and the
+new constraint:
+
+```esc
+fn foo(obj) {
+    bar(obj)       // bar expects {x: number} — obj becomes {x: number, ...R1}
+    baz(obj)       // baz expects {y: string} — obj becomes {x: number, ...R1} & {y: string, ...R2}
+                   // which simplifies to {x: number, y: string, ...R}
+    obj.z = true   // adds z to the open type
+}
+// inferred: fn foo(obj: {x: number, y: string, z: true}) -> void
+```
+
+When two open `ObjectType`s are intersected, their properties are merged and
+their row variables unified (see 6b).
+
+#### 6b. Multiple constraints on a type variable
+
+When a type variable is constrained by multiple function calls, the constraints
+compose via intersection. For open object types, this means merging properties
+and row variables:
 
 1. Unify all shared property names pairwise.
 2. Properties present in one but not the other are added to the merged result.
 3. The resulting type is still open (row variables merge).
+
+When the intersection involves non-object types, normal intersection rules
+apply:
+
+```esc
+fn foo(arg) {
+    bar(arg)       // bar expects number — arg becomes number
+    baz(arg)       // baz expects string — arg becomes number & string = never
+    arg.z = true   // error: properties don't exist on never
+}
+```
 
 #### 6c. Open object type with closed object type
 
@@ -454,17 +509,37 @@ Option C again, binding it to a new open `ObjectType` with property `bar`.
 #### 8f. Destructuring patterns on params
 
 Destructuring patterns already infer structural object types from the pattern
-shape (e.g. `fn foo({bar, baz})` infers `obj: {bar: t1, baz: t2}`). With row
-types, destructured parameters should produce **open** object types, just like
-non-destructured parameters that have properties accessed on them. This allows
-callers to pass objects with additional properties beyond those destructured.
+shape (e.g. `fn foo({bar, baz})` infers `obj: {bar: t1, baz: t2}`). Destructured
+parameters without a rest element produce **closed** object types — the pattern
+fully specifies the expected properties:
 
 ```esc
 fn foo({bar, baz}) {
     // bar and baz are available as bindings
 }
-// inferred: fn foo({bar, baz}: {bar: t1, baz: t2, ...}) -> void
+// inferred: fn foo({bar, baz}: {bar: t1, baz: t2}) -> void
 ```
+
+When the destructuring pattern includes a **rest element**, the parameter should
+be **open** — the rest element captures additional properties beyond those
+explicitly named:
+
+```esc
+fn foo({bar, ...rest}) {
+    // bar is a binding, rest captures remaining properties
+}
+// inferred: fn foo({bar, ...rest}: {bar: t1, ...R}) -> void
+// where R is a fresh type variable constrained to be an ObjectType
+// rest has type R
+```
+
+**Mechanism:** `inferPattern` creates a closed `ObjectType` from the pattern. If
+the pattern has a rest element and the parameter lacks a type annotation,
+`inferFuncParams` should add a `RestSpreadElem` with a fresh row variable `R`
+to the pattern-inferred `ObjectType`, making it open. The rest binding's type
+is `R`, connecting it to the row variable so that when `R` is resolved, the rest
+binding's type reflects the remaining properties. Without a rest element, the
+type stays closed as-is.
 
 #### 8g. Return type row variable propagation
 
@@ -505,7 +580,8 @@ These are follow-up/implementation details for user-facing diagnostics.
 #### 9a. Missing property at call site
 
 When a caller passes an object that is missing a property required by the
-inferred type (Section 6c — open unified with closed):
+inferred type (at the call site, the parameter type is closed per Section 5,
+so this is standard closed-vs-closed unification):
 
 ```esc
 fn foo(obj) {
@@ -688,8 +764,11 @@ Row polymorphism adds complexity. The following are initially out of scope:
 - **Row variables in generic type arguments**: Passing `{x: number, ...R}` as a
   type argument to a generic type like `Promise<{x: number, ...R}>`. This
   requires row variables to flow through generic instantiation.
-- **Multiple row variables**: Functions where multiple parameters each have their
-  own row variable that appears in the return type.
+
+Note: **multiple row variables** (functions where multiple parameters each have
+their own row variable that appears in the return type) are **in scope**. This
+is needed for patterns like `fn merge(a, b) { return {...a, ...b} }` (see
+Section 12).
 
 ### 12. Object Spread and Multiple RestSpreadElems
 
@@ -797,36 +876,52 @@ properties from earlier elements (including from earlier spreads).
      `PropertyKey`, or an `IndexKey` with a string literal type): bind the
      `TypeVarType` to an open `ObjectType` containing a `PropertyElem` with a
      fresh type variable for the value and a `RestSpreadElem` row variable,
-     then delegate to `getObjectAccess` (see Section 3, cases 2–3).
+     then delegate to `getObjectAccess` (see Section 3, case 2).
+   - **Non-literal string index** (the key is an `IndexKey` with a `string`
+     type): bind the `TypeVarType` to an open `ObjectType` with a string index
+     signature and a `RestSpreadElem` row variable, and return the index
+     signature's value type (see Section 3, case 3).
 
-2. **Introduce open object type semantics**: Use the presence of a `RestSpreadElem`
+2. **Modify `getObjectAccess`** to handle open `ObjectType`s: when a property is
+   not found and the `ObjectType` has a `RestSpreadElem`, add a new
+   `PropertyElem` with a fresh type variable instead of returning
+   `UnknownPropertyError`.
+
+3. **Introduce open object type semantics**: Use the presence of a `RestSpreadElem`
    in an `ObjectType.Elems` to indicate the type is open. Adjust unification to
    handle open-vs-closed and open-vs-open cases.
 
-3. **Adjust unification for open objects**: When unifying an open object with a
+4. **Adjust unification for open objects**: When unifying an open object with a
    closed object during inference, add the closed type's properties to the open
    type's `Elems` without closing it (see 6c). When unifying two open objects,
    merge properties and row variables.
 
-4. **Update `inferFuncParams`**: No changes needed — it already creates a fresh
+5. **Adjust `bind()` for row-inferred type variables**: When binding a
+   row-inferred `TypeVarType` to a closed `ObjectType`, bind to an open
+   `ObjectType` with the same properties plus a `RestSpreadElem`. When the
+   type variable is already bound, compose via intersection — merging
+   properties for open object types, or reducing to `never` for incompatible
+   non-object types (see 6a).
+
+6. **Update `inferFuncParams`**: No changes needed — it already creates a fresh
    type variable for unannotated params. The new `getMemberType` behavior will
    naturally constrain these type variables as the function body is inferred.
 
-5. **Promote or close row variables after function body inference**: After
+7. **Promote or close row variables after function body inference**: After
    inferring a function body, check which row variables (from `RestSpreadElem`s)
    appear in the return type. Promote those to type parameters on the function
    (row polymorphism — see Section 11). Close the rest by removing their
    `RestSpreadElem` entries.
 
-6. **Handle row-polymorphic calls**: Extend `handleFuncCall` to instantiate row
+8. **Handle row-polymorphic calls**: Extend `handleFuncCall` to instantiate row
    type parameters with fresh type variables, solved during argument
    unification. Extra properties from the caller flow through to the return type.
 
-7. **Handle object spread expressions**: Add `ObjSpreadExpr` handling to
+9. **Handle object spread expressions**: Add `ObjSpreadExpr` handling to
    `ObjectExpr` inference, support multiple `RestSpreadElem`s in `ObjectType`,
    and update the unifier to distribute properties across multiple rest elements
    (see Section 12).
 
-8. **Add tests**: Cover property access, method calls, array indexing, optional
-   chaining, passing to typed functions, widening, closing after inference, row
-   polymorphism (return type propagation), object spread, and error cases.
+10. **Add tests**: Cover property access, method calls, array indexing, optional
+    chaining, passing to typed functions, widening, closing after inference, row
+    polymorphism (return type propagation), object spread, and error cases.
