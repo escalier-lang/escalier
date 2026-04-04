@@ -130,7 +130,7 @@ this works as follows:
 3. Since the type variable is already bound to `"hello"` and now must also accept
    `5`, the type variable widens to `"hello" | 5`.
 
-This requires the unifier to support **widening** a row-inferred property type
+This requires the unifier to support **widening** a widenable property type
 variable when it encounters a new incompatible concrete type: rather than
 reporting a conflict, it should produce a union. See Section 6d for details.
 
@@ -285,7 +285,7 @@ widening is allowed.
 
 The unifier must be extended to handle the following cases:
 
-#### 6a. Unifying row-inferred TypeVarTypes
+#### 6a. Unifying unannotated-parameter TypeVarTypes
 
 An unannotated parameter starts as a bare `TypeVarType`. It may be constrained
 by property access (Option C — eagerly binds to an open `ObjectType`), by being
@@ -396,9 +396,9 @@ The unifier must handle this by **widening** the type to a union:
 
 1. If a type variable has already been bound to a concrete type `A`, and a new
    unification attempts to bind it to an incompatible concrete type `B`, and
-   the type variable originated from row-type inference (i.e. it is a type
-   variable within an inferred open object), then instead of reporting an error,
-   widen the binding to `A | B`.
+   the type variable is widenable (i.e. it is a type variable whose type was
+   inferred from usage within an inferred open object), then instead of
+   reporting an error, widen the binding to `A | B`.
 2. Subsequent unifications with further types `C` widen to `A | B | C`, etc.
 3. If the new type is already a member of the existing union, no widening is
    needed (e.g. assigning `"hello"` twice does not produce `"hello" | "hello"`).
@@ -414,9 +414,12 @@ fundamentally different from ordinary type variable unification, where a
 conflict means a genuine type error.
 
 **Implementation note:** One way to implement this is to mark type variables
-created during row inference with a flag (e.g. on `TypeVarType`). When `bind()`
+inferred from usage with a `Widenable` flag on `TypeVarType`. When `bind()`
 encounters a conflict on such a variable, it creates a union instead of
-returning an error.
+returning an error. The name `Widenable` is preferred over `RowInferred` because
+the flag applies to both property values on objects and parameter/return types
+on inferred method signatures — the common behavior is widening, not
+specifically "row" inference.
 
 ### 7. Constraint Representation
 
@@ -944,8 +947,8 @@ properties from earlier elements (including from earlier spreads).
    type's `Elems` without setting `Open` to `false` (see 6c). When unifying two
    open objects, merge properties and row variables.
 
-5. **Adjust `bind()` for row-inferred type variables**: When binding a
-   row-inferred `TypeVarType` to a closed `ObjectType`, bind to an open
+5. **Adjust `bind()` for unannotated-parameter type variables**: When binding an
+   unannotated-parameter `TypeVarType` to a closed `ObjectType`, bind to an open
    `ObjectType` (`Open: true`) with the same properties plus a
    `RestSpreadElem`. When the type variable is already bound, compose via
    intersection — merging properties for open object types, or reducing to
