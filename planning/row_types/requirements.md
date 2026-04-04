@@ -789,10 +789,15 @@ properties from earlier elements (including from earlier spreads).
 
 ## Implementation Approach (Summary)
 
-1. **Extend `getMemberType`** to handle `TypeVarType`: when a property/method/index
-   is accessed on a type variable, bind it to an open `ObjectType` with the
-   accessed property and a `RestSpreadElem` row variable, then delegate to
-   `getObjectAccess`.
+1. **Extend `getMemberType`** to handle `TypeVarType` with two branches:
+   - **Numeric index access** (the key is an `IndexKey` with a numeric type):
+     bind the `TypeVarType` to `Array<T>` for a fresh `T`, and return `T`.
+     This is the "numeric-first indexing" path (see Section 3, case 1).
+   - **Property/method access or string-literal index** (the key is a
+     `PropertyKey`, or an `IndexKey` with a string literal type): bind the
+     `TypeVarType` to an open `ObjectType` containing a `PropertyElem` with a
+     fresh type variable for the value and a `RestSpreadElem` row variable,
+     then delegate to `getObjectAccess` (see Section 3, cases 2–3).
 
 2. **Introduce open object type semantics**: Use the presence of a `RestSpreadElem`
    in an `ObjectType.Elems` to indicate the type is open. Adjust unification to
