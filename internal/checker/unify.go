@@ -1630,6 +1630,10 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				if typeVar2, ok := t2.(*type_system.TypeVarType); ok {
 					if typeVar1.Constraint != nil && typeVar2.Constraint != nil {
 						errors = c.Unify(ctx, typeVar1.Constraint, typeVar2.Constraint)
+					} else if typeVar1.Constraint != nil && typeVar2.Constraint == nil {
+						// Propagate the constraint to typeVar2 since it becomes the
+						// representative of this equivalence class after binding.
+						typeVar2.Constraint = typeVar1.Constraint
 					}
 					typeVar1.Instance = t2
 					typeVar1.SetProvenance(&type_system.TypeProvenance{

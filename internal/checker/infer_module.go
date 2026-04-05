@@ -700,8 +700,13 @@ func (c *Checker) InferComponent(
 			// However, TypeDecl, InterfaceDecl, and EnumDecl still need their types
 			// to be inferred and unified with their placeholders.
 			if decl.Declare() {
-				switch decl.(type) {
-				case *ast.FuncDecl, *ast.VarDecl:
+				switch d := decl.(type) {
+				case *ast.FuncDecl:
+					if ft, ok := funcTypeForDecl[d]; ok {
+						GeneralizeFuncType(ft)
+					}
+					continue
+				case *ast.VarDecl:
 					continue
 				}
 			}
@@ -724,6 +729,9 @@ func (c *Checker) InferComponent(
 						declCtx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
 					errors = slices.Concat(errors, inferErrors)
 				}
+
+				// Generalize any remaining unresolved type variables into type parameters
+				GeneralizeFuncType(funcType)
 
 			case *ast.VarDecl:
 				// Skip if this VarDecl was processed in a previous component

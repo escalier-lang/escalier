@@ -411,7 +411,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t3, y: t5) -> number throws never",
+				"add": "fn (x: number, y: number) -> number throws never",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnn": {
@@ -469,7 +469,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"FuncExprWithoutReturn": {
 			input: `val log = fn (msg) {}`,
 			expectedTypes: map[string]string{
-				"log": "fn (msg: t3) -> void throws never",
+				"log": "fn <T0>(msg: T0) -> void throws never",
 			},
 		},
 		"FuncExprMultipleReturns": {
@@ -484,7 +484,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t3, y: t5) -> true | false throws never",
+				"add": "fn (x: number, y: number) -> true | false throws never",
 			},
 		},
 		// TODO: figure out how to infer throws types in mutually recursive functions
@@ -730,6 +730,57 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"x":        "number",
 				"y":        "string",
 				"z":        "number",
+			},
+		},
+		"InferredGenericFunctions": {
+			input: `
+				fn fst(a, b) { return a }
+				fn snd(a, b) { return b }
+			`,
+			expectedTypes: map[string]string{
+				"fst": "fn <T0, T1>(a: T0, b: T1) -> T0 throws never",
+				"snd": "fn <T0, T1>(a: T0, b: T1) -> T1 throws never",
+			},
+		},
+		"InferredConstraintsFromGenericCall": {
+			input: `
+				fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }
+				fn fstNumWrapper(a, b) { return fstNum(a, b) }
+			`,
+			expectedTypes: map[string]string{
+				"fstNum":        "fn <A: number, B: number>(a: A, b: B) -> A throws never",
+				"fstNumWrapper": "fn <T0: number, T1: number>(a: T0, b: T1) -> T0 throws never",
+			},
+		},
+		"GeneralizeAvoidNameCollision": {
+			input: `
+				fn foo<T0>(x: T0, y) { return x }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(x: T0, y: T1) -> T0 throws never",
+			},
+		},
+		"GeneralizeDeclareFunction": {
+			input: `
+				declare fn bar(x) -> number
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn <T0>(x: T0) -> number throws never",
+			},
+		},
+		"GeneralizeNestedFunction": {
+			input: `
+				fn outer() {
+					fn inner(x) {
+						return x
+					}
+					val a = inner("hello")
+					val b = inner(5)
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"outer": "fn () -> [\"hello\", 5] throws never",
 			},
 		},
 		"GenericFunctionWithConstraint": {
