@@ -32,8 +32,15 @@ func TestGeneralizeFuncType_TypeVarConstraintWithNestedTypeVar(t *testing.T) {
 	assert.Len(t, funcType.TypeParams, 2)
 	assert.Equal(t, "T0", funcType.TypeParams[0].Name)
 	assert.Equal(t, "T1", funcType.TypeParams[1].Name)
-	// T0's constraint should reference T1 (Array<T1>)
-	assert.NotNil(t, funcType.TypeParams[0].Constraint)
+	// T0's constraint should be Array<T1>
+	constraint, ok := funcType.TypeParams[0].Constraint.(*ts.TypeRefType)
+	assert.True(t, ok, "constraint should be a TypeRefType")
+	assert.Equal(t, "Array", ts.QualIdentToString(constraint.Name))
+	assert.Len(t, constraint.TypeArgs, 1)
+	// The type arg resolves (via Prune) to a TypeRefType referencing T1
+	typeArg, ok := ts.Prune(constraint.TypeArgs[0]).(*ts.TypeRefType)
+	assert.True(t, ok, "type arg should resolve to a TypeRefType")
+	assert.Equal(t, "T1", ts.QualIdentToString(typeArg.Name))
 }
 
 func TestGeneralizeFuncType_TypeVarDefaultWithNestedTypeVar(t *testing.T) {
