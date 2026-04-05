@@ -986,12 +986,9 @@ func (c *Checker) inferCallExpr(
 
 		// Collect the call site — don't bind the TypeVar yet so that
 		// multiple calls with different arg types can produce an intersection.
-		if ctx.CallSites == nil {
-			callSites := make(map[int][]*type_system.FuncType)
-			callSiteTypeVars := make(map[int]*type_system.TypeVarType)
-			ctx.CallSites = &callSites
-			ctx.CallSiteTypeVars = &callSiteTypeVars
-		}
+		// Note: ctx.CallSites is always non-nil here because a TypeVarType
+		// callee requires a function param binding, which only exists inside
+		// function bodies where the caller allocates CallSites.
 
 		retType := c.FreshVar(nil)
 		synthFuncType := type_system.NewFuncType(nil, nil, params, retType, type_system.NewNeverType(nil))

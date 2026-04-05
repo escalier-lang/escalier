@@ -179,6 +179,11 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 	default:
 		// Leaf types (LitType, PrimType, NeverType, VoidType, etc.)
 		// contain no TypeVars and are never mutated by Unify.
+		// TODO(#381): Add cloning for composite types (ObjectType, CondType,
+		// IndexType, TemplateLitType, etc.) when deepCloneType is used for
+		// the probe-then-commit fix in unify.go's union/intersection handling.
+		// Currently only synthetic call-site FuncTypes are cloned, whose
+		// params and return types are limited to types already handled above.
 		return t
 	}
 }
@@ -236,9 +241,13 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 	}
 
 	// Unify return types across all sites so the merged function has one return type.
+	// If any unification fails, abort the merge and let the caller fall back to intersection.
 	base := sorted[0]
 	for _, site := range sorted[1:] {
-		c.Unify(ctx, site.Return, base.Return)
+		errs := c.Unify(ctx, site.Return, base.Return)
+		if len(errs) > 0 {
+			return nil
+		}
 	}
 
 	return type_system.NewFuncType(nil, nil, params, base.Return, type_system.NewNeverType(nil))
@@ -257,6 +266,10 @@ func (c *Checker) resolveCallSites(ctx Context) {
 			continue
 		}
 		// If the TypeVar was already resolved (e.g., by unification elsewhere), skip.
+		// This is safe because: (1) overwriting tv.Instance would discard the
+		// existing binding, and (2) the call sites' arg types were already unified
+		// against the synthetic FuncType params during handleFuncCall, so type
+		// constraints from the calls have already been captured.
 		if type_system.Prune(tv) != tv {
 			continue
 		}
@@ -264,13 +277,13 @@ func (c *Checker) resolveCallSites(ctx Context) {
 		if len(sites) == 1 {
 			tv.Instance = sites[0]
 		} else {
-			// Deep-clone each site for trial unification so that Unify cannot
-			// mutate TypeVarType instances shared with the originals.
+			// Deep-clone the base once and cumulatively unify all site clones
+			// into it, so mutual compatibility across all sites is checked.
 			allCompatible := true
+			baseMapping := make(map[int]*type_system.TypeVarType)
+			baseClone := c.deepCloneType(sites[0], baseMapping).(*type_system.FuncType)
 			for _, site := range sites[1:] {
-				baseMapping := make(map[int]*type_system.TypeVarType)
 				siteMapping := make(map[int]*type_system.TypeVarType)
-				baseClone := c.deepCloneType(sites[0], baseMapping).(*type_system.FuncType)
 				siteClone := c.deepCloneType(site, siteMapping).(*type_system.FuncType)
 				errs := c.Unify(ctx, siteClone, baseClone)
 				if len(errs) > 0 {
