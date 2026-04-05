@@ -752,6 +752,37 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"fstNumWrapper": "fn <T0: number, T1: number>(a: T0, b: T1) -> T0 throws never",
 			},
 		},
+		"GeneralizeAvoidNameCollision": {
+			input: `
+				fn foo<T0>(x: T0, y) { return x }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T1, T0>(x: T0, y: T1) -> T0 throws never",
+			},
+		},
+		"GeneralizeDeclareFunction": {
+			input: `
+				declare fn bar(x) -> number
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn <T0>(x: T0) -> number throws never",
+			},
+		},
+		"GeneralizeNestedFunction": {
+			input: `
+				fn outer() {
+					fn inner(x) {
+						return x
+					}
+					val a = inner("hello")
+					val b = inner(5)
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"outer": "fn () -> [\"hello\", 5] throws never",
+			},
+		},
 		"GenericFunctionWithConstraint": {
 			input: `
 				val fst = fn<A: number, B: number>(a: A, b: B) -> A {

@@ -53,6 +53,12 @@ func collectUnresolvedTypeVars(
 				collectUnresolvedTypeVars(e.Value, vars, order)
 			case *type_system.MappedElem:
 				collectUnresolvedTypeVars(e.Value, vars, order)
+				collectUnresolvedTypeVars(e.Name, vars, order)
+				collectUnresolvedTypeVars(e.Check, vars, order)
+				collectUnresolvedTypeVars(e.Extends, vars, order)
+				if e.TypeParam != nil {
+					collectUnresolvedTypeVars(e.TypeParam.Constraint, vars, order)
+				}
 			}
 		}
 	case *type_system.TupleType:
@@ -90,6 +96,9 @@ func collectUnresolvedTypeVars(
 	case *type_system.AnyType:
 	case *type_system.UniqueSymbolType:
 	case *type_system.TemplateLitType:
+		for _, t := range t.Types {
+			collectUnresolvedTypeVars(t, vars, order)
+		}
 	case *type_system.GlobalThisType:
 	case *type_system.ErrorType:
 	case *type_system.RegexType:
@@ -132,11 +141,24 @@ func GeneralizeFuncType(funcType *type_system.FuncType) {
 		return
 	}
 
+	// Collect existing type param names to avoid collisions
+	existingNames := map[string]bool{}
+	for _, tp := range funcType.TypeParams {
+		existingNames[tp.Name] = true
+	}
+
 	// Create type params and bind each unresolved type var
 	newTypeParams := make([]*type_system.TypeParam, len(order))
+	nameIndex := 0
 	for i, id := range order {
 		tv := vars[id]
-		name := fmt.Sprintf("T%d", i)
+		name := fmt.Sprintf("T%d", nameIndex)
+		for existingNames[name] {
+			nameIndex++
+			name = fmt.Sprintf("T%d", nameIndex)
+		}
+		nameIndex++
+		existingNames[name] = true
 		tp := &type_system.TypeParam{
 			Name:       name,
 			Constraint: tv.Constraint,
