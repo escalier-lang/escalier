@@ -196,6 +196,7 @@ the system must:
    dot notation), constraining the type variable to have that property.
 3. If the index is a string type (non-literal): constrain the type variable to
    have a string index signature, and return the index signature's value type.
+   *(Deferred from initial implementation — see Section 10.)*
 
 **Example — numeric index:**
 ```esc

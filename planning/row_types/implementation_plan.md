@@ -229,6 +229,11 @@ correctly without closing the type prematurely.
    same pattern, placed alongside `FromBinding`:
    ```go
    // At ~line 1661 (typeVar1 branch) and ~line 1694 (typeVar2 branch):
+   // Note: IsParam and FromBinding are on different TypeVarTypes —
+   // IsParam is on the typeAnn FreshVar, FromBinding is on the pattern's
+   // FreshVar. They are unified together but the IsParam variable is the
+   // one stored in FuncParam.Type, so both flags won't be true on the
+   // same TypeVarType.
    if typeVar.IsParam {
        if closedObj, ok := targetType.(*ObjectType); ok && !closedObj.Open {
            // Open: true allows new properties to be added during inference.
@@ -483,21 +488,18 @@ with appropriate parameters and return type.
 ### Changes
 
 1. **`internal/checker/infer_expr.go`** — `inferCallExpr` (~line 865 switch):
-   Add a `*type_system.TypeVarType` case. The callee type comes from
-   `c.inferExpr(ctx, expr.Callee)` which may return an unpruned TypeVarType
-   (e.g. the fresh type variable for `obj.process`). The existing switch at
-   line 865 (`switch t := calleeType.(type)`) does not prune first, so an
-   unbound TypeVarType will reach this case directly. A bound TypeVarType
-   (from a second call to the same method) would need a `Prune` call to reach
-   the `FuncType` case — add `calleeType = type_system.Prune(calleeType)`
-   before the switch, or handle both bound and unbound TypeVarTypes in the new
-   case.
+   Add `calleeType = type_system.Prune(calleeType)` before the existing switch
+   at line 865. This ensures that a bound TypeVarType (e.g. from a second call
+   to the same method) resolves to its `FuncType` Instance and hits the
+   `FuncType` case correctly. Only truly unbound TypeVarTypes reach the new
+   `TypeVarType` case.
 
-   The new case goes after the `IntersectionType` case (~line 923) and before
+   Add the new case after the `IntersectionType` case (~line 923) and before
    the default case (~line 951):
 
    ```go
    case *type_system.TypeVarType:
+       // Only reached for unbound TypeVarTypes (Prune above resolves bound ones)
        // Row inference: callee is a fresh type variable (e.g. from obj.process)
        // Create a fresh FuncType matching the call's argument count
        params := make([]*FuncParam, len(argTypes))
@@ -532,10 +534,10 @@ with appropriate parameters and return type.
      `TypeVarType` case.
    - `t_process.Instance` is set to the fresh `FuncType`.
    - Subsequent calls (`obj.process("hello")`) find `t_process` already bound
-     to a `FuncType` via `Prune`. If `calleeType` is pruned before the switch
-     (recommended), the `FuncType` case handles it normally, unifying parameter
-     types — which widens via Phase 4 since the param TypeVarTypes are
-     `Widenable`.
+     to a `FuncType`. The `Prune` call before the switch resolves it to the
+     `FuncType`, so the existing `FuncType` case handles it normally, unifying
+     parameter types — which widens via Phase 4 since the param TypeVarTypes
+     are `Widenable`.
 
 3. **MethodElem vs PropertyElem with FuncType:** The current approach stores
    methods as `PropertyElem` with a `FuncType` value, not as `MethodElem`. This
@@ -899,8 +901,11 @@ row polymorphism.
        NewRestSpreadElem(rowTV),
    })
    openObj.Open = true
+   // Wrap the open object in MutabilityUncertain (same as Phase 2's
+   // non-optional path) so writes through optional chaining work.
+   mutObj := NewMutabilityType(nil, openObj, MutabilityUncertain)
    // Wrap in union with null and undefined
-   typeVar.Instance = NewUnionType(nil, openObj, NewNullType(nil), NewUndefinedType(nil))
+   typeVar.Instance = NewUnionType(nil, mutObj, NewNullType(nil), NewUndefinedType(nil))
    // Return propTV | undefined (the ?. expression itself may produce undefined)
    return NewUnionType(nil, propTV, NewUndefinedType(nil))
    ```
