@@ -164,6 +164,9 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 		errors = slices.Concat(errors, inferErrors)
 	}
 
+	// Generalize any remaining unresolved type variables into type parameters
+	GeneralizeFuncType(funcType)
+
 	binding := type_system.Binding{
 		Source:  &ast.NodeProvenance{Node: decl},
 		Type:    funcType,

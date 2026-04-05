@@ -215,8 +215,14 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
 			t := type_system.Prune(binding.Type)
-			exprType = t.Copy()
-			exprType.SetProvenance(&ast.NodeProvenance{Node: expr})
+			// Don't copy TypeVarType — preserving pointer identity is essential
+			// so that unification constraints flow back to the function signature.
+			if _, isTypeVar := t.(*type_system.TypeVarType); isTypeVar {
+				exprType = t
+			} else {
+				exprType = t.Copy()
+				exprType.SetProvenance(&ast.NodeProvenance{Node: expr})
+			}
 			expr.Source = binding.Source
 			errors = nil
 		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
@@ -416,6 +422,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
+
+		// Generalize any remaining unresolved type variables into type parameters
+		GeneralizeFuncType(funcType)
 
 		exprType = funcType
 	case *ast.IfElseExpr:
@@ -1043,8 +1052,13 @@ func (c *Checker) handleFuncCall(
 			}
 		}
 
-		returnType := fnType.Return.Copy()
-		returnType.SetProvenance(provneance)
+		returnType := fnType.Return
+		// Don't copy TypeVarType — preserving pointer identity is essential
+		// so that unification constraints flow back to the caller.
+		if _, isTypeVar := type_system.Prune(returnType).(*type_system.TypeVarType); !isTypeVar {
+			returnType = returnType.Copy()
+			returnType.SetProvenance(provneance)
+		}
 		return returnType, errors
 	} else {
 		// No rest parameters
@@ -1071,8 +1085,13 @@ func (c *Checker) handleFuncCall(
 			paramErrors := c.Unify(ctx, argType, paramType)
 			errors = slices.Concat(errors, paramErrors)
 		}
-		returnType := fnType.Return.Copy()
-		returnType.SetProvenance(provneance)
+		returnType := fnType.Return
+		// Don't copy TypeVarType — preserving pointer identity is essential
+		// so that unification constraints flow back to the caller.
+		if _, isTypeVar := type_system.Prune(returnType).(*type_system.TypeVarType); !isTypeVar {
+			returnType = returnType.Copy()
+			returnType.SetProvenance(provneance)
+		}
 		return returnType, errors
 	}
 }

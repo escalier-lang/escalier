@@ -725,6 +725,9 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, inferErrors)
 				}
 
+				// Generalize any remaining unresolved type variables into type parameters
+				GeneralizeFuncType(funcType)
+
 			case *ast.VarDecl:
 				// Skip if this VarDecl was processed in a previous component
 				// (destructuring patterns create multiple binding keys sharing the same VarDecl)
