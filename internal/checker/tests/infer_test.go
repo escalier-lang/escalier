@@ -757,7 +757,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				fn foo<T0>(x: T0, y) { return x }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T1, T0>(x: T0, y: T1) -> T0 throws never",
+				"foo": "fn <T0, T1>(x: T0, y: T1) -> T0 throws never",
 			},
 		},
 		"GeneralizeDeclareFunction": {

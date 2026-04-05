@@ -23,8 +23,15 @@ func collectUnresolvedTypeVars(
 		if _, seen := vars[t.ID]; !seen {
 			vars[t.ID] = t
 			*order = append(*order, t.ID)
+			collectUnresolvedTypeVars(t.Constraint, vars, order)
+			collectUnresolvedTypeVars(t.Default, vars, order)
+
 		}
 	case *type_system.FuncType:
+		for _, tp := range t.TypeParams {
+			collectUnresolvedTypeVars(tp.Constraint, vars, order)
+			collectUnresolvedTypeVars(tp.Default, vars, order)
+		}
 		for _, param := range t.Params {
 			collectUnresolvedTypeVars(param.Type, vars, order)
 		}
@@ -174,5 +181,5 @@ func GeneralizeFuncType(funcType *type_system.FuncType) {
 		})
 	}
 
-	funcType.TypeParams = append(newTypeParams, funcType.TypeParams...)
+	funcType.TypeParams = append(funcType.TypeParams, newTypeParams...)
 }
