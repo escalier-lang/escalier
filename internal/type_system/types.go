@@ -1457,16 +1457,20 @@ func (t *ObjectType) String() string {
 						if i > 0 || elem.MutSelf != nil {
 							result += ", "
 						}
-						switch param.Pattern.(type) {
-						case *TuplePat, *ObjectPat:
-							// Use inline type annotations for object and tuple patterns
-							result += patternStringWithInlineTypes(param.Pattern, param.Type)
-						default:
-							result += param.Pattern.String()
-							if param.Optional {
-								result += "?"
+						if param.Pattern == nil {
+							result += param.Type.String()
+						} else {
+							switch param.Pattern.(type) {
+							case *TuplePat, *ObjectPat:
+								// Use inline type annotations for object and tuple patterns
+								result += patternStringWithInlineTypes(param.Pattern, param.Type)
+							default:
+								result += param.Pattern.String()
+								if param.Optional {
+									result += "?"
+								}
+								result += ": " + param.Type.String()
 							}
-							result += ": " + param.Type.String()
 						}
 					}
 				}
@@ -1484,7 +1488,11 @@ func (t *ObjectType) String() string {
 				}
 			case *SetterElem:
 				result += "set " + elem.Name.String() + "(mut self, "
+				if elem.Fn.Params[0].Pattern != nil {
 				result += elem.Fn.Params[0].Pattern.String() + ": " + elem.Fn.Params[0].Type.String()
+			} else {
+				result += elem.Fn.Params[0].Type.String()
+			}
 				result += ") -> undefined"
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()

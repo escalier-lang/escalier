@@ -122,8 +122,11 @@ func collectUnresolvedTypeVars(
 // to either a single FuncType (if all call sites are compatible) or an
 // IntersectionType (if they are not). Must be called before GeneralizeFuncType.
 func (c *Checker) resolveCallSites(ctx Context) {
-	for id, sites := range c.CallSites {
-		tv := c.CallSiteTypeVars[id]
+	if ctx.CallSites == nil {
+		return
+	}
+	for id, sites := range *ctx.CallSites {
+		tv := (*ctx.CallSiteTypeVars)[id]
 		if tv == nil {
 			continue
 		}
@@ -135,17 +138,23 @@ func (c *Checker) resolveCallSites(ctx Context) {
 		if len(sites) == 1 {
 			tv.Instance = sites[0]
 		} else {
-			// Try to unify all call sites with the first one.
-			base := sites[0]
+			// Trial-unify copies to check compatibility without mutating originals.
+			baseCopy := sites[0].Copy().(*type_system.FuncType)
 			allCompatible := true
 			for _, site := range sites[1:] {
-				errs := c.Unify(ctx, site, base)
+				siteCopy := site.Copy().(*type_system.FuncType)
+				errs := c.Unify(ctx, siteCopy, baseCopy)
 				if len(errs) > 0 {
 					allCompatible = false
 					break
 				}
 			}
 			if allCompatible {
+				// Safe to unify originals since trial succeeded.
+				base := sites[0]
+				for _, site := range sites[1:] {
+					c.Unify(ctx, site, base)
+				}
 				tv.Instance = base
 			} else {
 				// Create an intersection of all call site FuncTypes (overloaded function).
@@ -158,8 +167,10 @@ func (c *Checker) resolveCallSites(ctx Context) {
 		}
 	}
 	// Clear processed call sites.
-	c.CallSites = make(map[int][]*type_system.FuncType)
-	c.CallSiteTypeVars = make(map[int]*type_system.TypeVarType)
+	callSites := make(map[int][]*type_system.FuncType)
+	callSiteTypeVars := make(map[int]*type_system.TypeVarType)
+	*ctx.CallSites = callSites
+	*ctx.CallSiteTypeVars = callSiteTypeVars
 }
 
 // GeneralizeFuncType finds unresolved type variables in a function's signature

@@ -846,7 +846,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(f: fn (number) -> T0 throws never & fn (string) -> T0 throws never) -> [T0, T0] throws never",
+				"foo": "fn <T0>(f: fn (5) -> T0 throws never & fn (\"hello\") -> T0 throws never) -> [T0, T0] throws never",
 			},
 		},
 		"InferredFuncCalledWithSameKindLiterals": {
@@ -856,7 +856,17 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(f: fn (number) -> T0 throws never) -> [T0, T0] throws never",
+				"foo": "fn <T0>(f: fn (5) -> T0 throws never & fn (10) -> T0 throws never) -> [T0, T0] throws never",
+			},
+		},
+		"UncalledCallbackParam": {
+			input: `
+				val foo = fn (f) {
+					return 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: T0) -> 5 throws never",
 			},
 		},
 		"GenericFunctionWithConstraint": {

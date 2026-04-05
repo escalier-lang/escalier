@@ -215,14 +215,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
 			t := type_system.Prune(binding.Type)
-			// Instantiate generic functions with fresh type variables at every
-			// use site. This is standard HM "instantiation at use" — each reference
-			// to a polymorphic binding gets its own fresh type variables.
-			if funcType, ok := t.(*type_system.FuncType); ok && len(funcType.TypeParams) > 0 {
-				t = c.instantiateGenericFunc(funcType)
-				t.SetProvenance(&ast.NodeProvenance{Node: expr})
-				exprType = t
-			} else if _, isTypeVar := t.(*type_system.TypeVarType); isTypeVar {
+			if _, isTypeVar := t.(*type_system.TypeVarType); isTypeVar {
 				// Don't copy TypeVarType — preserving pointer identity is essential
 				// so that unification constraints flow back to the function signature.
 				exprType = t
@@ -427,6 +420,15 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
 		errors = slices.Concat(errors, sigErrors)
 
+		// Allocate call-site maps for outermost FuncExprs. Nested FuncExprs
+		// inherit the parent's maps via Context copying.
+		if !ctx.InFuncBody {
+			callSites := make(map[int][]*type_system.FuncType)
+			callSiteTypeVars := make(map[int]*type_system.TypeVarType)
+			funcCtx.CallSites = &callSites
+			funcCtx.CallSiteTypeVars = &callSiteTypeVars
+		}
+
 		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 
@@ -434,7 +436,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// bodies) share type variables with outer functions, so their generalization
 		// is deferred to the outermost function.
 		if !ctx.InFuncBody {
-			c.resolveCallSites(ctx)
+			c.resolveCallSites(funcCtx)
 			GeneralizeFuncType(funcType)
 		}
 
@@ -983,16 +985,10 @@ func (c *Checker) inferCallExpr(
 
 		// Collect the call site — don't bind the TypeVar yet so that
 		// multiple calls with different arg types can produce an intersection.
-		c.CallSites[t.ID] = append(c.CallSites[t.ID], synthFuncType)
-		c.CallSiteTypeVars[t.ID] = t
+		(*ctx.CallSites)[t.ID] = append((*ctx.CallSites)[t.ID], synthFuncType)
+		(*ctx.CallSiteTypeVars)[t.ID] = t
 
-		// Widen literal arg types to primitives (5→number, "hi"→string, etc.)
-		// so that calls like f(5) and f(10) unify cleanly as fn(number)->...
-		widenedArgTypes := make([]type_system.Type, len(argTypes))
-		for i, argType := range argTypes {
-			widenedArgTypes[i] = widenLiteral(argType)
-		}
-		return c.handleFuncCall(ctx, synthFuncType, expr, widenedArgTypes, provneance, errors)
+		return c.handleFuncCall(ctx, synthFuncType, expr, argTypes, provneance, errors)
 
 	default:
 		return type_system.NewNeverType(provneance), []Error{
@@ -1073,6 +1069,10 @@ func (c *Checker) handleFuncCall(
 		// Unify fixed parameters (before rest)
 		for i := 0; i < restIndex; i++ {
 			argType := argTypes[i]
+			// Instantiate generic function arguments at the call site.
+			if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+				argType = c.instantiateGenericFunc(ft)
+			}
 			paramType := fnType.Params[i].Type
 			paramErrors := c.Unify(ctx, argType, paramType)
 			errors = slices.Concat(errors, paramErrors)
@@ -1085,6 +1085,9 @@ func (c *Checker) handleFuncCall(
 				elementType := arrayType.TypeArgs[0]
 				for i := restIndex; i < len(expr.Args); i++ {
 					argType := argTypes[i]
+					if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+						argType = c.instantiateGenericFunc(ft)
+					}
 					paramErrors := c.Unify(ctx, argType, elementType)
 					errors = slices.Concat(errors, paramErrors)
 				}
@@ -1124,6 +1127,10 @@ func (c *Checker) handleFuncCall(
 		}
 		// Unify each provided argument with its corresponding parameter.
 		for i, argType := range argTypes {
+			// Instantiate generic function arguments at the call site.
+			if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+				argType = c.instantiateGenericFunc(ft)
+			}
 			// Since we have already validated the count, i is safe.
 			param := fnType.Params[i]
 			paramType := param.Type
@@ -1276,24 +1283,3 @@ func (c *Checker) inferBlock(
 	return resultType, errors
 }
 
-// widenLiteral converts a literal type to its corresponding primitive type.
-// Used when calling inferred function parameters so that f(5) and f(10) both
-// see number rather than conflicting literal types.
-func widenLiteral(t type_system.Type) type_system.Type {
-	inner := t
-	// Unwrap MutabilityType since literal expressions are wrapped in one.
-	if mut, ok := inner.(*type_system.MutabilityType); ok {
-		inner = mut.Type
-	}
-	if lit, ok := inner.(*type_system.LitType); ok {
-		switch lit.Lit.(type) {
-		case *type_system.NumLit:
-			return type_system.NewNumPrimType(nil)
-		case *type_system.StrLit:
-			return type_system.NewStrPrimType(nil)
-		case *type_system.BoolLit:
-			return type_system.NewBoolPrimType(nil)
-		}
-	}
-	return t
-}

@@ -16,12 +16,6 @@ type Checker struct {
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
 	GlobalScope           *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
 	FileScopes            map[int]*Scope             // Populated by InferModule: SourceID → file-specific scope
-	// CallSites collects synthetic FuncTypes created when a TypeVarType is called
-	// as a function. Keyed by TypeVar ID. Resolved before generalization.
-	CallSites map[int][]*type_system.FuncType
-	// CallSiteTypeVars maps TypeVar ID → the TypeVarType pointer, so we can
-	// bind it when resolving call sites.
-	CallSiteTypeVars map[int]*type_system.TypeVarType
 }
 
 func NewChecker() *Checker {
@@ -33,8 +27,6 @@ func NewChecker() *Checker {
 		OverloadDecls:         make(map[string][]*ast.FuncDecl),
 		PackageRegistry:       NewPackageRegistry(),
 		GlobalScope:           nil, // Will be set by initializeGlobalScope() during prelude loading
-		CallSites:             make(map[int][]*type_system.FuncType),
-		CallSiteTypeVars:      make(map[int]*type_system.TypeVarType),
 	}
 }
 
@@ -80,6 +72,13 @@ type Context struct {
 	// generalization of nested FuncExprs, which must defer generalization to
 	// the outermost enclosing function.
 	InFuncBody bool
+	// CallSites collects synthetic FuncTypes created when a TypeVarType is called
+	// as a function. Keyed by TypeVar ID. Pointer so nested scopes share state
+	// with the outermost enclosing function.
+	CallSites *map[int][]*type_system.FuncType
+	// CallSiteTypeVars maps TypeVar ID → the TypeVarType pointer, so we can
+	// bind it when resolving call sites. Pointer for the same reason as CallSites.
+	CallSiteTypeVars *map[int]*type_system.TypeVarType
 }
 
 func (ctx *Context) AddYieldedType(t type_system.Type) {
@@ -102,6 +101,8 @@ func (ctx *Context) WithNewScope() Context {
 		YieldedTypes:           ctx.YieldedTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
 		InFuncBody:             ctx.InFuncBody,
+		CallSites:              ctx.CallSites,
+		CallSiteTypeVars:       ctx.CallSiteTypeVars,
 	}
 }
 
@@ -120,6 +121,8 @@ func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context 
 		YieldedTypes:      ctx.YieldedTypes,
 		GeneratorNextType: ctx.GeneratorNextType,
 		InFuncBody:        ctx.InFuncBody,
+		CallSites:         ctx.CallSites,
+		CallSiteTypeVars:  ctx.CallSiteTypeVars,
 	}
 }
 
@@ -138,6 +141,8 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		YieldedTypes:           ctx.YieldedTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
 		InFuncBody:             ctx.InFuncBody,
+		CallSites:              ctx.CallSites,
+		CallSiteTypeVars:       ctx.CallSiteTypeVars,
 	}
 }
 
