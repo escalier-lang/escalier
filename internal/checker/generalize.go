@@ -203,7 +203,7 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 	}
 
 	// The shortest site defines the required prefix. Each subsequent site
-	// must have the same prefix params (by pruned string comparison).
+	// must have the same prefix params (by structural equality).
 	shortest := sorted[0]
 	longest := sorted[len(sorted)-1]
 	prefixLen := len(shortest.Params)
@@ -213,7 +213,7 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 			return nil // shouldn't happen after sort, but defensive
 		}
 		for j := 0; j < prefixLen; j++ {
-			if type_system.Prune(site.Params[j].Type).String() != type_system.Prune(shortest.Params[j].Type).String() {
+			if !type_system.Equals(type_system.Prune(site.Params[j].Type), type_system.Prune(shortest.Params[j].Type)) {
 				return nil // prefix doesn't match
 			}
 		}
@@ -222,7 +222,7 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 		// corresponding prefix of the longest.
 		for j := prefixLen; j < len(site.Params); j++ {
 			if j < len(longest.Params) {
-				if type_system.Prune(site.Params[j].Type).String() != type_system.Prune(longest.Params[j].Type).String() {
+				if !type_system.Equals(type_system.Prune(site.Params[j].Type), type_system.Prune(longest.Params[j].Type)) {
 					return nil
 				}
 			}
