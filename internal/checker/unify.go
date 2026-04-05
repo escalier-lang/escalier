@@ -1079,6 +1079,8 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 				return c.Unify(ctx, distributed1, distributed2)
 			}
 
+			// TODO(#381): Trial unification here can leave TypeVars partially mutated
+			// on failure. Use deepCloneType probe-then-commit pattern to fix.
 			// For A & B <: C & D, every constraint in C & D must be satisfied by A & B
 			// This means for each part of t2, at least one part of t1 must be a subtype
 			errors := []Error{}
@@ -1115,6 +1117,8 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 			return c.Unify(ctx, distributed, t2)
 		}
 
+		// TODO(#381): Trial unification here can leave TypeVars partially mutated
+		// on failure. Use deepCloneType probe-then-commit pattern to fix.
 		// Try to unify each part with t2
 		// If any part successfully unifies, the intersection is a valid subtype
 		var allErrors []Error
@@ -1330,6 +1334,8 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	}
 	// | _, UnionType -> ...
 	if union, ok := t2.(*type_system.UnionType); ok {
+		// TODO(#381): Trial unification here can leave TypeVars partially mutated
+		// on failure. Use deepCloneType probe-then-commit pattern to fix.
 		// Try to unify t1 with any type in the union
 		for _, unionType := range union.Types {
 			// fmt.Fprintf(os.Stderr, "Trying to unify %s with union member %s\n", t1.String(), unionType.String())

@@ -118,6 +118,71 @@ func collectUnresolvedTypeVars(
 	}
 }
 
+// deepCloneType recursively clones a type, replacing all TypeVarType instances
+// with fresh type variables. The varMapping ensures consistent replacement: if
+// the same TypeVar is referenced multiple times, it maps to the same fresh var.
+// Container types (FuncType, TupleType, etc.) are rebuilt; leaf types (LitType,
+// PrimType, NeverType, etc.) are shared since Unify never mutates them.
+func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_system.TypeVarType) type_system.Type {
+	t = type_system.Prune(t)
+	switch t := t.(type) {
+	case *type_system.TypeVarType:
+		if fresh, ok := varMapping[t.ID]; ok {
+			return fresh
+		}
+		fresh := c.FreshVar(nil)
+		varMapping[t.ID] = fresh
+		return fresh
+	case *type_system.FuncType:
+		params := make([]*type_system.FuncParam, len(t.Params))
+		for i, p := range t.Params {
+			params[i] = &type_system.FuncParam{
+				Pattern:  p.Pattern,
+				Type:     c.deepCloneType(p.Type, varMapping),
+				Optional: p.Optional,
+			}
+		}
+		return type_system.NewFuncType(nil, t.TypeParams, params,
+			c.deepCloneType(t.Return, varMapping),
+			c.deepCloneType(t.Throws, varMapping))
+	case *type_system.MutabilityType:
+		return &type_system.MutabilityType{
+			Type:       c.deepCloneType(t.Type, varMapping),
+			Mutability: t.Mutability,
+		}
+	case *type_system.TupleType:
+		elems := make([]type_system.Type, len(t.Elems))
+		for i, e := range t.Elems {
+			elems[i] = c.deepCloneType(e, varMapping)
+		}
+		return type_system.NewTupleType(nil, elems...)
+	case *type_system.UnionType:
+		types := make([]type_system.Type, len(t.Types))
+		for i, u := range t.Types {
+			types[i] = c.deepCloneType(u, varMapping)
+		}
+		return type_system.NewUnionType(nil, types...)
+	case *type_system.IntersectionType:
+		types := make([]type_system.Type, len(t.Types))
+		for i, u := range t.Types {
+			types[i] = c.deepCloneType(u, varMapping)
+		}
+		return type_system.NewIntersectionType(nil, types...)
+	case *type_system.TypeRefType:
+		args := make([]type_system.Type, len(t.TypeArgs))
+		for i, a := range t.TypeArgs {
+			args[i] = c.deepCloneType(a, varMapping)
+		}
+		return type_system.NewTypeRefType(nil, type_system.QualIdentToString(t.Name), t.TypeAlias, args...)
+	case *type_system.RestSpreadType:
+		return type_system.NewRestSpreadType(nil, c.deepCloneType(t.Type, varMapping))
+	default:
+		// Leaf types (LitType, PrimType, NeverType, VoidType, etc.)
+		// contain no TypeVars and are never mutated by Unify.
+		return t
+	}
+}
+
 // resolveCallSites binds each TypeVarType that was used as a function callee
 // to either a single FuncType (if all call sites are compatible) or an
 // IntersectionType (if they are not). Must be called before GeneralizeFuncType.
@@ -138,19 +203,22 @@ func (c *Checker) resolveCallSites(ctx Context) {
 		if len(sites) == 1 {
 			tv.Instance = sites[0]
 		} else {
-			// Trial-unify copies to check compatibility without mutating originals.
-			baseCopy := sites[0].Copy().(*type_system.FuncType)
+			// Deep-clone each site for trial unification so that Unify cannot
+			// mutate TypeVarType instances shared with the originals.
 			allCompatible := true
 			for _, site := range sites[1:] {
-				siteCopy := site.Copy().(*type_system.FuncType)
-				errs := c.Unify(ctx, siteCopy, baseCopy)
+				baseMapping := make(map[int]*type_system.TypeVarType)
+				siteMapping := make(map[int]*type_system.TypeVarType)
+				baseClone := c.deepCloneType(sites[0], baseMapping).(*type_system.FuncType)
+				siteClone := c.deepCloneType(site, siteMapping).(*type_system.FuncType)
+				errs := c.Unify(ctx, siteClone, baseClone)
 				if len(errs) > 0 {
 					allCompatible = false
 					break
 				}
 			}
 			if allCompatible {
-				// Safe to unify originals since trial succeeded.
+				// Trial succeeded — safe to unify originals.
 				base := sites[0]
 				for _, site := range sites[1:] {
 					c.Unify(ctx, site, base)

@@ -980,11 +980,27 @@ func (c *Checker) inferCallExpr(
 		for i := range argTypes {
 			params[i] = &type_system.FuncParam{Type: c.FreshVar(nil)}
 		}
-		retType := c.FreshVar(nil)
-		synthFuncType := type_system.NewFuncType(nil, nil, params, retType, type_system.NewNeverType(nil))
 
 		// Collect the call site — don't bind the TypeVar yet so that
 		// multiple calls with different arg types can produce an intersection.
+		if ctx.CallSites == nil {
+			callSites := make(map[int][]*type_system.FuncType)
+			callSiteTypeVars := make(map[int]*type_system.TypeVarType)
+			ctx.CallSites = &callSites
+			ctx.CallSiteTypeVars = &callSiteTypeVars
+		}
+
+		// Share the return TypeVar across all call sites for the same callee.
+		// All calls to the same function must produce the same return type.
+		var retType type_system.Type
+		existingSites := (*ctx.CallSites)[t.ID]
+		if len(existingSites) > 0 {
+			retType = existingSites[0].Return
+		} else {
+			retType = c.FreshVar(nil)
+		}
+		synthFuncType := type_system.NewFuncType(nil, nil, params, retType, type_system.NewNeverType(nil))
+
 		(*ctx.CallSites)[t.ID] = append((*ctx.CallSites)[t.ID], synthFuncType)
 		(*ctx.CallSiteTypeVars)[t.ID] = t
 
