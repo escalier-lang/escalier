@@ -177,6 +177,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 
 	// Create context for the function body
 	bodyCtx := ctx.WithNewScope()
+	bodyCtx.InFuncBody = true
 	bodyCtx.IsAsync = isAsync
 	bodyCtx.ContainsYield = &containsYield
 	bodyCtx.YieldedTypes = &yieldedTypes

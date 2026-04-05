@@ -164,7 +164,8 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 		errors = slices.Concat(errors, inferErrors)
 	}
 
-	// Generalize any remaining unresolved type variables into type parameters
+	// Resolve deferred call sites and generalize type variables into type parameters
+	c.resolveCallSites(ctx)
 	GeneralizeFuncType(funcType)
 
 	binding := type_system.Binding{

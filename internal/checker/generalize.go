@@ -118,6 +118,50 @@ func collectUnresolvedTypeVars(
 	}
 }
 
+// resolveCallSites binds each TypeVarType that was used as a function callee
+// to either a single FuncType (if all call sites are compatible) or an
+// IntersectionType (if they are not). Must be called before GeneralizeFuncType.
+func (c *Checker) resolveCallSites(ctx Context) {
+	for id, sites := range c.CallSites {
+		tv := c.CallSiteTypeVars[id]
+		if tv == nil {
+			continue
+		}
+		// If the TypeVar was already resolved (e.g., by unification elsewhere), skip.
+		if type_system.Prune(tv) != tv {
+			continue
+		}
+
+		if len(sites) == 1 {
+			tv.Instance = sites[0]
+		} else {
+			// Try to unify all call sites with the first one.
+			base := sites[0]
+			allCompatible := true
+			for _, site := range sites[1:] {
+				errs := c.Unify(ctx, site, base)
+				if len(errs) > 0 {
+					allCompatible = false
+					break
+				}
+			}
+			if allCompatible {
+				tv.Instance = base
+			} else {
+				// Create an intersection of all call site FuncTypes (overloaded function).
+				types := make([]type_system.Type, len(sites))
+				for i, s := range sites {
+					types[i] = s
+				}
+				tv.Instance = type_system.NewIntersectionType(nil, types...)
+			}
+		}
+	}
+	// Clear processed call sites.
+	c.CallSites = make(map[int][]*type_system.FuncType)
+	c.CallSiteTypeVars = make(map[int]*type_system.TypeVarType)
+}
+
 // GeneralizeFuncType finds unresolved type variables in a function's signature
 // and converts them into proper type parameters. This must be called after type
 // inference completes for the function body.

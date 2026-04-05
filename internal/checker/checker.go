@@ -16,6 +16,12 @@ type Checker struct {
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
 	GlobalScope           *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
 	FileScopes            map[int]*Scope             // Populated by InferModule: SourceID → file-specific scope
+	// CallSites collects synthetic FuncTypes created when a TypeVarType is called
+	// as a function. Keyed by TypeVar ID. Resolved before generalization.
+	CallSites map[int][]*type_system.FuncType
+	// CallSiteTypeVars maps TypeVar ID → the TypeVarType pointer, so we can
+	// bind it when resolving call sites.
+	CallSiteTypeVars map[int]*type_system.TypeVarType
 }
 
 func NewChecker() *Checker {
@@ -27,6 +33,8 @@ func NewChecker() *Checker {
 		OverloadDecls:         make(map[string][]*ast.FuncDecl),
 		PackageRegistry:       NewPackageRegistry(),
 		GlobalScope:           nil, // Will be set by initializeGlobalScope() during prelude loading
+		CallSites:             make(map[int][]*type_system.FuncType),
+		CallSiteTypeVars:      make(map[int]*type_system.TypeVarType),
 	}
 }
 
@@ -68,6 +76,10 @@ type Context struct {
 	// fn foo(): Generator<number, void, string>, this field would be set to
 	// the annotated TNext so that yield expressions evaluate to that type.
 	GeneratorNextType type_system.Type
+	// InFuncBody is true when we're inside a function body. Used to suppress
+	// generalization of nested FuncExprs, which must defer generalization to
+	// the outermost enclosing function.
+	InFuncBody bool
 }
 
 func (ctx *Context) AddYieldedType(t type_system.Type) {
@@ -89,6 +101,7 @@ func (ctx *Context) WithNewScope() Context {
 		ContainsYield:          ctx.ContainsYield,
 		YieldedTypes:           ctx.YieldedTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
+		InFuncBody:             ctx.InFuncBody,
 	}
 }
 
@@ -106,6 +119,7 @@ func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context 
 		ContainsYield:     ctx.ContainsYield,
 		YieldedTypes:      ctx.YieldedTypes,
 		GeneratorNextType: ctx.GeneratorNextType,
+		InFuncBody:        ctx.InFuncBody,
 	}
 }
 
@@ -123,6 +137,7 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		ContainsYield:          ctx.ContainsYield,
 		YieldedTypes:           ctx.YieldedTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
+		InFuncBody:             ctx.InFuncBody,
 	}
 }
 

@@ -703,6 +703,7 @@ func (c *Checker) InferComponent(
 				switch d := decl.(type) {
 				case *ast.FuncDecl:
 					if ft, ok := funcTypeForDecl[d]; ok {
+						c.resolveCallSites(ctx)
 						GeneralizeFuncType(ft)
 					}
 					continue
@@ -730,7 +731,8 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, inferErrors)
 				}
 
-				// Generalize any remaining unresolved type variables into type parameters
+				// Resolve deferred call sites and generalize type variables into type parameters
+				c.resolveCallSites(nsCtx)
 				GeneralizeFuncType(funcType)
 
 			case *ast.VarDecl:
@@ -754,6 +756,14 @@ func (c *Checker) InferComponent(
 						patType := decl.InferredType
 						unifyErrors := c.Unify(ctx, initType, patType)
 						errors = slices.Concat(errors, unifyErrors)
+					}
+					// Generalize VarDecl bindings that resolve to FuncType.
+					// This handles cases like `val I = S(K)(K)` where the
+					// initializer is a call returning a FuncType with unresolved vars.
+					prunedType := type_system.Prune(decl.InferredType)
+					if funcType, ok := prunedType.(*type_system.FuncType); ok {
+						c.resolveCallSites(nsCtx)
+						GeneralizeFuncType(funcType)
 					}
 				}
 			case *ast.TypeDecl:

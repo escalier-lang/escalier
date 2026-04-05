@@ -959,16 +959,20 @@ func (t *FuncType) String() string {
 			if i > 0 {
 				result += ", "
 			}
-			switch param.Pattern.(type) {
-			case *TuplePat, *ObjectPat:
-				// Use inline type annotations for object and tuple patterns
-				result += patternStringWithInlineTypes(param.Pattern, param.Type)
-			default:
-				result += param.Pattern.String()
-				if param.Optional {
-					result += "?"
+			if param.Pattern == nil {
+				result += param.Type.String()
+			} else {
+				switch param.Pattern.(type) {
+				case *TuplePat, *ObjectPat:
+					// Use inline type annotations for object and tuple patterns
+					result += patternStringWithInlineTypes(param.Pattern, param.Type)
+				default:
+					result += param.Pattern.String()
+					if param.Optional {
+						result += "?"
+					}
+					result += ": " + param.Type.String()
 				}
-				result += ": " + param.Type.String()
 			}
 		}
 	}
