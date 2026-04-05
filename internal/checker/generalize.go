@@ -183,6 +183,67 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 	}
 }
 
+// tryMergeCallSitesWithOptionalParams checks if call sites with different param
+// counts can be merged into a single FuncType with optional trailing params.
+// This handles the case where f(a) and f(a, b) should produce fn(a, b?) -> T
+// rather than an intersection. Returns nil if sites are not prefix-compatible.
+func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type_system.FuncType) *type_system.FuncType {
+	// Sort sites by param count (ascending) to find the prefix chain.
+	sorted := make([]*type_system.FuncType, len(sites))
+	copy(sorted, sites)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && len(sorted[j].Params) < len(sorted[j-1].Params); j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+
+	// The shortest site defines the required prefix. Each subsequent site
+	// must have the same prefix params (by pruned string comparison).
+	shortest := sorted[0]
+	longest := sorted[len(sorted)-1]
+	prefixLen := len(shortest.Params)
+
+	for _, site := range sorted[1:] {
+		if len(site.Params) < prefixLen {
+			return nil // shouldn't happen after sort, but defensive
+		}
+		for j := 0; j < prefixLen; j++ {
+			if type_system.Prune(site.Params[j].Type).String() != type_system.Prune(shortest.Params[j].Type).String() {
+				return nil // prefix doesn't match
+			}
+		}
+		// Also check that intermediate sites are prefixes of longer ones.
+		// e.g., for f(), f(a), f(a, b): each intermediate must match the
+		// corresponding prefix of the longest.
+		for j := prefixLen; j < len(site.Params); j++ {
+			if j < len(longest.Params) {
+				if type_system.Prune(site.Params[j].Type).String() != type_system.Prune(longest.Params[j].Type).String() {
+					return nil
+				}
+			}
+		}
+	}
+
+	// All sites are prefix-compatible. Build merged FuncType using the
+	// longest param list, marking params beyond the shortest as optional.
+	params := make([]*type_system.FuncParam, len(longest.Params))
+	for i, p := range longest.Params {
+		params[i] = &type_system.FuncParam{
+			Pattern:  p.Pattern,
+			Type:     p.Type,
+			Optional: i >= prefixLen,
+		}
+	}
+
+	// Unify return types across all sites so the merged function has one return type.
+	base := sorted[0]
+	for _, site := range sorted[1:] {
+		c.Unify(ctx, site.Return, base.Return)
+	}
+
+	return type_system.NewFuncType(nil, nil, params, base.Return, type_system.NewNeverType(nil))
+}
+
 // resolveCallSites binds each TypeVarType that was used as a function callee
 // to either a single FuncType (if all call sites are compatible) or an
 // IntersectionType (if they are not). Must be called before GeneralizeFuncType.
@@ -224,6 +285,8 @@ func (c *Checker) resolveCallSites(ctx Context) {
 					c.Unify(ctx, site, base)
 				}
 				tv.Instance = base
+			} else if merged := c.tryMergeCallSitesWithOptionalParams(ctx, sites); merged != nil {
+				tv.Instance = merged
 			} else {
 				// Create an intersection of all call site FuncTypes (overloaded function).
 				types := make([]type_system.Type, len(sites))

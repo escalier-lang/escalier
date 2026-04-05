@@ -790,7 +790,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"applyTwice": "fn <T0>(f: fn (T0) -> T0 throws never, x: T0) -> T0 throws never",
+				"applyTwice": "fn <T0>(f: fn (arg0: T0) -> T0 throws never, x: T0) -> T0 throws never",
 			},
 		},
 		"SKI_K": {
@@ -816,7 +816,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"S": "fn <T0, T1, T2>(f: fn (T0) -> fn (T1) -> T2 throws never throws never) -> fn (g: fn (T0) -> T1 throws never) -> fn (x: T0) -> T2 throws never throws never throws never",
+				"S": "fn <T0, T1, T2>(f: fn (arg0: T0) -> fn (arg0: T1) -> T2 throws never throws never) -> fn (g: fn (arg0: T0) -> T1 throws never) -> fn (x: T0) -> T2 throws never throws never throws never",
 			},
 		},
 		"SKI_I": {
@@ -846,7 +846,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(f: fn (5) -> T0 throws never & fn (\"hello\") -> T0 throws never) -> [T0, T0] throws never",
+				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 throws never & fn (arg0: \"hello\") -> T1 throws never) -> [T0, T1] throws never",
 			},
 		},
 		"InferredFuncCalledWithSameKindLiterals": {
@@ -856,7 +856,17 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(f: fn (5) -> T0 throws never & fn (10) -> T0 throws never) -> [T0, T0] throws never",
+				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 throws never & fn (arg0: 10) -> T1 throws never) -> [T0, T1] throws never",
+			},
+		},
+		"InferredFuncCalledWithDifferentArgCounts": {
+			input: `
+				val foo = fn (f) {
+					return [f(5), f(5, "hello")]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: fn (arg0: 5, arg1?: \"hello\") -> T0 throws never) -> [T0, T0] throws never",
 			},
 		},
 		"UncalledCallbackParam": {
@@ -876,7 +886,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"applyTwice": "fn <T0>(f: fn (T0) -> T0 throws never, x: T0) -> T0 throws never",
+				"applyTwice": "fn <T0>(f: fn (arg0: T0) -> T0 throws never, x: T0) -> T0 throws never",
 			},
 		},
 		"InferredFuncCalledWithDifferentTypes_fn": {
@@ -886,7 +896,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(f: fn (mut? 5) -> T0 throws never & fn (mut? \"hello\") -> T0 throws never) -> [T0, T0] throws never",
+				"foo": "fn <T0, T1>(f: fn (arg0: mut? 5) -> T0 throws never & fn (arg0: mut? \"hello\") -> T1 throws never) -> [T0, T1] throws never",
 			},
 		},
 		"InferredFuncCalledWithSameKindLiterals_fn": {
@@ -896,7 +906,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(f: fn (mut? 5) -> T0 throws never & fn (mut? 10) -> T0 throws never) -> [T0, T0] throws never",
+				"foo": "fn <T0, T1>(f: fn (arg0: mut? 5) -> T0 throws never & fn (arg0: mut? 10) -> T1 throws never) -> [T0, T1] throws never",
 			},
 		},
 		"UncalledCallbackParam_fn": {

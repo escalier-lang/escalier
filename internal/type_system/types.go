@@ -711,7 +711,11 @@ type FuncParam struct {
 
 func (p *FuncParam) String() string {
 	if p.Pattern == nil {
-		return p.Type.String()
+		result := p.Type.String()
+		if p.Optional {
+			result += "?"
+		}
+		return result
 	}
 	switch p.Pattern.(type) {
 	case *TuplePat, *ObjectPat:
@@ -1477,7 +1481,9 @@ func (t *ObjectType) String() string {
 				}
 			case *SetterElem:
 				result += "set " + elem.Name.String() + "(mut self, "
-				result += elem.Fn.Params[0].String()
+				if len(elem.Fn.Params) > 0 {
+					result += elem.Fn.Params[0].String()
+				}
 				result += ") -> undefined"
 				if elem.Fn.Throws != nil {
 					result += " throws " + elem.Fn.Throws.String()
