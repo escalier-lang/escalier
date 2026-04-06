@@ -175,13 +175,18 @@ When a method is called on a value whose type is a type variable, the system mus
 
 > **Status (2026-04-06):** The callback inference work (#380) added a
 > `TypeVarType` case to `inferCallExpr` that creates a synthetic `FuncType` when
-> an unbound TypeVar is called. This handles the case where a *parameter itself*
-> is called (`cb(42)`), but not the method-on-object case (`obj.process(42)`).
-> The method case requires Phase 2 (property access on TypeVarType) to be
-> implemented first so that `obj.process` returns a TypeVarType, at which point
-> the existing `TypeVarType` case in `inferCallExpr` will handle the call
-> naturally. The `Widenable` flag still needs to be added to the synthetic
-> FuncType's params/return for proper widening behavior (Section 6d).
+> an unbound TypeVar is called. The synthetic `FuncType` is **not** immediately
+> bound to the TypeVar — instead it is appended to `CallSites` for deferred
+> resolution. This allows multiple calls with different arg types to accumulate
+> (e.g. `obj.process(42); obj.process("hello")`); `resolveCallSites` later
+> merges or intersects them and binds the TypeVar. This handles the case where
+> a *parameter itself* is called (`cb(42)`), but not the method-on-object case
+> (`obj.process(42)`). The method case requires Phase 2 (property access on
+> TypeVarType) to be implemented first so that `obj.process` returns a
+> TypeVarType, at which point the existing `TypeVarType` case in
+> `inferCallExpr` will handle the call naturally. The `Widenable` flag still
+> needs to be added to the synthetic FuncType's params/return for proper
+> widening behavior (Section 6d).
 
 **Example:**
 ```esc
@@ -961,22 +966,33 @@ regular type parameters, with fresh type variables that get solved during
 argument unification.
 
 > **Status (2026-04-06):** The function generalization work (#379) added
-> `GeneralizeFuncType` in `generalize.go`, which implements the core of steps
-> 2–4 for *regular* type variables: it collects unresolved type vars in
-> params/return, promotes them to type parameters, and binds them to
-> `TypeRefType` references. The row-variable case needs a specialization:
-> `collectUnresolvedTypeVars` already walks `RestSpreadElem` values, so
-> unresolved row variables in the return type will be found. However, the
-> promotion step may need adjustment to ensure the `RestSpreadElem` structure
-> is preserved (rather than replacing the TypeVar with a `TypeRefType`). The
-> call-site instantiation (step 5) is handled by `instantiateGenericFunc`,
-> which was also extracted in #380.
+> `GeneralizeFuncType` in `generalize.go`, which implements steps 2–4 for
+> regular type variables and **also handles row variables without special
+> treatment**. Verified behavior:
+>
+> - `collectUnresolvedTypeVars` walks into `RestSpreadElem.Value` and collects
+>   the inner unresolved `TypeVarType` like any other.
+> - `GeneralizeFuncType` promotes that TypeVar by setting
+>   `tv.Instance = TypeRefType{Name: "T0", ...}`. This binds the TypeVar
+>   inside the `RestSpreadElem` — it does **not** replace the
+>   `RestSpreadElem` itself. After generalization, the structure is:
+>   `RestSpreadElem{Value: TypeVarType{Instance: TypeRefType{Name: "T0"}}}`.
+>   `Prune()` resolves the inner value to the `TypeRefType`, preserving the
+>   `RestSpreadElem` wrapper.
+> - At call sites, `instantiateGenericFunc` calls `SubstituteTypeParams`,
+>   which uses the visitor pattern. `RestSpreadElem.Accept()` calls
+>   `r.Value.Accept(v)`, substituting the `TypeRefType` with a fresh TypeVar
+>   while returning a new `RestSpreadElem{Value: freshTypeVar}`. The wrapper
+>   is preserved.
+> - **No changes to `GeneralizeFuncType` or `instantiateGenericFunc` are
+>   needed** for row polymorphism. The existing machinery handles
+>   `RestSpreadElem`-wrapped row variables correctly.
 >
 > **Mapping to implementation phases:** Step 1 (close inferred ObjectTypes) is
 > Phase 6 in the implementation plan. Steps 2–4 (identify, promote, and remove
-> row variables) are Phase 7, which delegates to `GeneralizeFuncType` rather
-> than implementing promotion manually. Step 5 (call-site instantiation) is
-> also Phase 7, handled by the existing `instantiateGenericFunc` /
+> row variables) are Phase 7, which delegates to `GeneralizeFuncType` — no
+> manual promotion code is needed. Step 5 (call-site instantiation) is also
+> Phase 7, handled by the existing `instantiateGenericFunc` /
 > `SubstituteTypeParams` machinery.
 
 #### 11d. Interaction with Section 5 (closing)

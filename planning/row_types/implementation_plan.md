@@ -577,30 +577,45 @@ with appropriate parameters and return type.
    retType.(*type_system.TypeVarType).Widenable = true
    ```
 
-2. **Interaction with Phase 2:** When `obj.process(42)` is inferred:
+2. **Interaction with Phase 2 (deferred call-site resolution):**
+   When `obj.process(42)` is inferred:
    - `inferExpr` on `obj.process` calls `getMemberType` → TypeVarType case →
      creates `PropertyElem{process: t_process}` on the open ObjectType, returns
      `t_process` (an unbound TypeVarType).
-   - `inferCallExpr` receives `t_process` as the callee type, hits the new
+   - `inferCallExpr` receives `t_process` as the callee type, hits the
      `TypeVarType` case.
-   - `t_process.Instance` is set to the fresh `FuncType`.
-   - Subsequent calls (`obj.process("hello")`) find `t_process` already bound
-     to a `FuncType`. The `Prune` call before the switch resolves it to the
-     `FuncType`, so the existing `FuncType` case handles it normally, unifying
-     parameter types — which widens via Phase 4 since the param TypeVarTypes
-     are `Widenable`.
+   - A synthetic `FuncType` is created and appended to
+     `(*ctx.CallSites)[t_process.ID]`. The TypeVar pointer is stored in
+     `(*ctx.CallSiteTypeVars)[t_process.ID]`. **`t_process.Instance` is NOT
+     set** — the TypeVar stays unbound so that multiple calls can accumulate.
+   - `handleFuncCall` is called with the synthetic `FuncType` to unify the
+     supplied argument (`42`, widened to `number`) with the fresh param type.
+   - A subsequent call (`obj.process("hello")`) again finds `t_process`
+     unbound (since `Prune(t_process)` still returns `t_process`), hits the
+     `TypeVarType` case again, creates a second synthetic `FuncType`, and
+     appends it to `CallSites[t_process.ID]`.
+   - After the enclosing function body is fully inferred, `resolveCallSites`
+     runs. It finds two call sites for `t_process.ID` and attempts to unify
+     them (via deep-clone probing). If compatible, it merges them into one
+     `FuncType` and sets `t_process.Instance`. If incompatible, it tries
+     optional-param merging, and finally falls back to an `IntersectionType`.
+   - In the row-types case, both calls' param TypeVars have `Widenable: true`,
+     so the merged `FuncType` param type widens to `number | string` via
+     Phase 4 during the `resolveCallSites` unification step.
 
 3. **MethodElem vs PropertyElem with FuncType:** The current approach stores
    methods as `PropertyElem` with a `FuncType` value, not as `MethodElem`. This
-   is simpler and works because the property's type variable gets bound to the
-   `FuncType`. We can refine this later if `MethodElem` semantics are needed.
+   is simpler and works because `resolveCallSites` binds the property's type
+   variable to the resolved `FuncType`. We can refine this later if `MethodElem`
+   semantics are needed.
 
 4. **Multiple calls with different arities:** If the same method is called with
    different numbers of arguments (e.g. `obj.process(1)` then
-   `obj.process(1, 2)`), the second call finds the existing `FuncType` and tries
-   to unify. The arity mismatch would be handled by `handleFuncCall`'s existing
-   parameter count checking. This would produce an error, which is correct — a
-   method can't have two different arities.
+   `obj.process(1, 2)`), `resolveCallSites` collects both synthetic `FuncType`s.
+   The unification probe fails (arity mismatch), so `resolveCallSites` tries
+   `tryMergeCallSitesWithOptionalParams` — if the shorter call is a prefix of
+   the longer one, the extra params become optional. Otherwise, it creates an
+   `IntersectionType` (overloaded signature).
 
 ### Tests
 
@@ -757,16 +772,16 @@ type propagation).
 **Goal:** When an inferred parameter is returned, its row variable becomes a type
 parameter on the function, enabling callers to preserve extra properties.
 
-> **Status (2026-04-06):** `GeneralizeFuncType` (#379) already promotes
-> unresolved type vars to type parameters. Row variables in `RestSpreadElem`s
-> are walked by `collectUnresolvedTypeVars`, so they will be found if they
-> appear in the return type. The main question is whether the standard
-> promotion path (binding to `TypeRefType`) works correctly for row variables
-> inside `RestSpreadElem`s, or whether special handling is needed to preserve
-> the spread structure. The call-site instantiation is handled by
-> `instantiateGenericFunc` (extracted in #380), which uses
-> `SubstituteTypeParams` — this already walks `RestSpreadElem.Value` via the
-> `Accept()` visitor.
+> **Status (2026-04-06, verified):** `GeneralizeFuncType` (#379) handles row
+> variables without any special treatment. `collectUnresolvedTypeVars` walks
+> into `RestSpreadElem.Value` and collects the inner TypeVar.
+> `GeneralizeFuncType` sets `tv.Instance = TypeRefType{...}`, which binds the
+> TypeVar *inside* the `RestSpreadElem` — the wrapper is untouched. After
+> generalization: `RestSpreadElem{Value: TypeVarType{Instance: TypeRefType}}`.
+> At call sites, `instantiateGenericFunc` → `SubstituteTypeParams` →
+> `RestSpreadElem.Accept()` substitutes the inner `TypeRefType` with a fresh
+> TypeVar while preserving the `RestSpreadElem` wrapper. **No changes to
+> `GeneralizeFuncType` or `instantiateGenericFunc` are needed.**
 
 ### Changes
 
@@ -775,24 +790,32 @@ parameter on the function, enabling callers to preserve extra properties.
    `RestSpreadElem`s that don't appear in the return type, the remaining row
    variables are still unresolved `TypeVarType`s inside `RestSpreadElem`s.
    `GeneralizeFuncType` (which runs after closing — see Phase 6 status note)
-   already:
-   - Calls `collectUnresolvedTypeVars` on params and return, which walks
-     `RestSpreadElem.Value` and finds unresolved row variables.
-   - Promotes them to `TypeParam`s with generated names.
-   - Binds the original `TypeVarType` to a `TypeRefType` referencing the new
-     type parameter.
+   handles them automatically:
+   - `collectUnresolvedTypeVars` walks into `RestSpreadElem.Value` and finds
+     unresolved row variables.
+   - Promotes them to `TypeParam`s with generated names (e.g. `T0`, `T1`).
+   - Sets `tv.Instance = TypeRefType{Name: "T0", ...}` on each TypeVar.
 
-   **Potential issue:** `GeneralizeFuncType` binds the TypeVar's `Instance` to
-   a `TypeRefType`. Since the `RestSpreadElem.Value` points to the original
-   `TypeVarType`, after generalization `Prune(rest.Value)` will return the
-   `TypeRefType`. Verify that `SubstituteTypeParams` at call sites correctly
-   substitutes through `RestSpreadElem`s containing `TypeRefType`s (it should,
-   since `Accept()` walks `RestSpreadElem.Value`). If the standard promotion
-   path produces incorrect structure, add a post-generalization fixup that
-   ensures `RestSpreadElem`s reference the `TypeRefType` directly.
+   The `RestSpreadElem` wrapper is naturally preserved: the TypeVar *inside*
+   it is bound via `Instance`, but the `RestSpreadElem` struct itself is
+   untouched. After generalization, the structure is:
+   `RestSpreadElem{Value: TypeVarType{Instance: TypeRefType{Name: "T0"}}}`.
+   `Prune()` resolves the inner value to the `TypeRefType`.
 
-   **Row variable naming:** `GeneralizeFuncType` generates names like `T1`,
-   `T2`. For readability, row type parameters could use `R1`, `R2` instead.
+   **Post-generalization shape example:**
+   ```
+   // Before generalization (Phase 6 has closed the ObjectType):
+   //   param type: {x: number, ...TypeVarType{ID:5}}
+   //   return type: MutabilityType{...{x: number, ...TypeVarType{ID:5}}}
+   //
+   // After GeneralizeFuncType:
+   //   TypeParams: [TypeParam{Name: "T0"}]
+   //   param type: {x: number, ...TypeVarType{ID:5, Instance: TypeRefType{Name: "T0"}}}
+   //   return type: MutabilityType{...{x: number, ...TypeVarType{ID:5, Instance: TypeRefType{Name: "T0"}}}}
+   ```
+
+   **Row variable naming:** `GeneralizeFuncType` generates names like `T0`,
+   `T1`. For readability, row type parameters could use `R0`, `R1` instead.
    This is a cosmetic enhancement that can be added by checking whether the
    TypeVar came from a `RestSpreadElem` during collection.
 
