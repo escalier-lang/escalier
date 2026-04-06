@@ -17,6 +17,18 @@ the bound `ObjectType` and either return existing property types or add new
 `PropertyElem`s (gated by `Open`). No separate constraint data structure is
 needed.
 
+### Recent Merges from `main` (2026-04-06)
+
+The following PRs have been merged and provide infrastructure that the row types
+work builds upon. Affected phases are annotated below.
+
+| PR | Summary | Relevant phases |
+|----|---------|-----------------|
+| #379 (fe20b6a) | **Function generalization** — `GeneralizeFuncType` and `collectUnresolvedTypeVars` in `generalize.go`. Promotes unresolved type vars to type params. | Phase 6 (use existing `collectUnresolvedTypeVars`), Phase 7 (row var promotion via `GeneralizeFuncType`) |
+| #380 (84c1ec5) | **Callback inference** — `TypeVarType` case in `inferCallExpr` creates synthetic `FuncType`s; `resolveCallSites` defers binding; `deepCloneType` added; `InFuncBody`/`CallSites`/`CallSiteTypeVars` on Context. | Phase 5 (method call on inferred objects — existing TypeVarType case handles calls once property access returns a TypeVar) |
+| #382 (7013ec2) | **Probe-then-commit unification** — `deepCloneType` used in union/intersection unification to avoid partial TypeVar mutation. Constraint propagation in `bind()`. | Phase 3, Phase 4 (unification robustness) |
+| #384 (d7072ec) | **`throws never`** — missing `throws` clause = `NeverType`. `IsNeverType` helper. `FuncParam.String()` extracted. | Phase 1 (types.go changes), Phase 5 (synthetic FuncTypes should use `NewNeverType(nil)` for throws) |
+
 ---
 
 ## Phase 1: Core Type System Extensions
@@ -24,8 +36,9 @@ needed.
 **Requirements covered:** Definitions, Section 7 (Option C), prerequisites for
 Sections 1–6.
 
-**Goal:** Add the `Open` field to `ObjectType` and `Widenable` flag to
-`TypeVarType` so later phases can build on them.
+**Goal:** Add the `Open` field to `ObjectType`, `Widenable` and `IsParam` flags
+to `TypeVarType`, and `Written` flag to `PropertyElem` so later phases can build
+on them. Confirm that `MutabilityUncertain` already exists.
 
 ### Changes
 
@@ -50,7 +63,13 @@ Sections 1–6.
      inferred object type needs `mut`. Go zero-value is `false`, so existing
      code is safe.
 
-4. **`internal/type_system/types.go`** — `ObjectType` printing (`String()` or
+4. **`internal/type_system/types.go`** — `TypeVarType` struct (~line 106):
+   - Add `IsParam bool` field. Set to `true` for type variables created by
+     `inferFuncParams` for unannotated parameters. Used in `bind()` (Phase 3)
+     to decide whether to keep the type open when binding to a closed
+     `ObjectType`. Go zero-value is `false`, so existing code is safe.
+
+5. **`internal/type_system/types.go`** — `ObjectType` printing (`String()` or
    equivalent):
    - `ObjectType.Open` is an internal-only flag that controls whether the
      property set can grow during inference. It does not need to appear in the
@@ -59,6 +78,24 @@ Sections 1–6.
      the Definitions section in the requirements).
    - Audit all call sites that construct `ObjectType` to ensure they default to
      `Open: false` (Go zero-value is `false`, so existing code is safe).
+
+6. **No changes needed for `MutabilityUncertain`:** The `MutabilityUncertain`
+   constant already exists in `types.go` (alongside `MutabilityMutable`). It is
+   used in Phases 2 and 3 to wrap inferred `ObjectType`s so that both reads and
+   writes are permitted during inference, with mutability resolved at closing
+   time (Phase 6).
+
+### Notes on merged changes
+
+- **#384** modified `types.go` extensively: `FuncType.String()` now hides
+  `throws never` (uses `IsNeverType`), `FuncParam.String()` was extracted, and
+  `ObjectType.String()` was updated for setter/getter printing. These changes
+  don't conflict with the new fields above but affect line numbers — verify
+  exact insertion points before implementing.
+- **#380** added synthetic `FuncParam` creation with `NewIdentPat` pattern names
+  (e.g. `arg0`, `arg1`). The `FuncParam` struct gained no new fields, but the
+  new `String()` method should be tested with the `Written` field if it affects
+  display.
 
 ### Tests
 
@@ -75,6 +112,14 @@ Sections 1–6.
 
 **Goal:** Accessing `obj.bar` on an unannotated parameter binds the type
 variable to an open `ObjectType` instead of producing `ExpectedObjectError`.
+
+> **Note (2026-04-06):** The `InFuncBody` flag on `Context` (added in #380)
+> can be used to determine whether we're inside a function body, which is useful
+> for gating row-type inference behavior (e.g. only creating open ObjectTypes
+> for property access during function body inference). Also, `inferExpr` for
+> `Ident` now preserves TypeVarType pointer identity (doesn't call `.Copy()`)
+> which is essential for row types — property accesses on a parameter variable
+> must flow constraints back to the original TypeVar in the function signature.
 
 ### Changes
 
@@ -208,21 +253,25 @@ New test file `internal/checker/tests/row_types_test.go`:
 **Requirements covered:** Sections 6a, 6b, 6c, 8a (passing to typed
 functions), 8c (multiple parameters), 8d (aliasing).
 
+> **Note (2026-04-06):** The `bind()` function in `unify.go` was updated in
+> #382 to propagate constraints when binding two TypeVarTypes where one has a
+> constraint and the other doesn't. This means when a row-typed parameter's
+> TypeVar is unified with another TypeVar, constraints are properly preserved.
+> Also, the probe-then-commit pattern (#382) in union/intersection unification
+> prevents partial TypeVar mutation on failure, which is important for the
+> open-vs-closed unification path described below.
+
 **Goal:** Passing an open-typed function parameter to a typed function unifies
 correctly without closing the type prematurely.
 
 ### Changes
 
-1. **`internal/type_system/types.go`** — `TypeVarType` struct:
-   - Add `IsParam bool` field. Set to `true` for type variables created by
-     `inferFuncParams` for unannotated parameters. Used in `bind()` to decide
-     whether to keep the type open when binding to a closed `ObjectType`.
-
-2. **`internal/checker/infer_func.go`** — `inferFuncParams` (~line 26):
+1. **`internal/checker/infer_func.go`** — `inferFuncParams` (~line 26):
    - When creating a `FreshVar()` for an unannotated parameter, set
-     `IsParam: true` on the resulting `TypeVarType`.
+     `IsParam: true` on the resulting `TypeVarType` (the `IsParam` field is
+     added in Phase 1).
 
-3. **`internal/checker/unify.go`** — `bind()` (~line 1609):
+2. **`internal/checker/unify.go`** — `bind()` (~line 1609):
    The existing `bind()` already has a pattern for special handling before
    setting `Instance`: it checks `typeVar.FromBinding` (~lines 1661, 1694) and
    calls `removeUncertainMutability` when true. The `IsParam` check follows the
@@ -261,7 +310,7 @@ correctly without closing the type prematurely.
    - If the TypeVarType is already bound (via `Prune`), this path is not
      reached — `bind()` is only called for unbound variables.
 
-4. **`internal/checker/unify.go`** — ObjectType-vs-ObjectType branch
+3. **`internal/checker/unify.go`** — ObjectType-vs-ObjectType branch
    (~line 874):
    Add checks for `Open` at the top of this branch, after the existing nominal
    check (~line 877–888). Three paths:
@@ -300,18 +349,18 @@ correctly without closing the type prematurely.
    add the other side's properties to the open type's `Elems` directly instead of
    binding the row variable to them.
 
-5. **Section 6b — Multiple constraints via intersection:**
+4. **Section 6b — Multiple constraints via intersection:**
    When a type variable is constrained by multiple function calls
    (`bar(obj); baz(obj)`), the constraints compose via intersection. After the
    first call, the type variable is bound to an open `ObjectType`. The second
    call unifies that open `ObjectType` with the second function's parameter type.
-   This goes through the open-vs-closed path (4a above), which merges properties.
+   This goes through the open-vs-closed path (3a above), which merges properties.
    No additional intersection logic is needed.
 
    For non-object constraints (`takes_num(arg); takes_str(arg)`), the existing
    unifier handles `number` vs `string` normally (produces an error or `never`).
 
-6. **Aliasing (Section 8d):**
+5. **Aliasing (Section 8d):**
    When `let alias = obj` is inferred, the assignment unifies `alias`'s type
    with `obj`'s type. Since both start as type variables, one's `Instance` is
    set to the other. Subsequent accesses on `alias` therefore constrain `obj`.
@@ -353,6 +402,13 @@ correctly without closing the type prematurely.
 
 **Requirements covered:** Section 6d (property type widening), Section 6e
 (literal type widening to primitives).
+
+> **Note (2026-04-06):** The `deepCloneType` function added in #382
+> (`generalize.go`) and the probe-then-commit pattern in `unifyWithDepth` are
+> relevant here. When implementing widening, the probe-then-commit approach
+> should be considered for the widening check itself — try unifying clones
+> first, and only widen the original if the probe fails. This avoids partial
+> mutations when the widening decision depends on multiple TypeVars.
 
 **Goal:** When a literal is unified with a widenable type variable, widen it to
 its primitive type. When the same property is assigned different types, the
@@ -485,46 +541,41 @@ then unifies the right-hand side type with the left-hand side type via
 **Goal:** Calling a method on an inferred object creates a `FuncType` binding
 with appropriate parameters and return type.
 
+> **Status (2026-04-06):** The callback inference work (#380) **already added**
+> a `TypeVarType` case to `inferCallExpr` that creates a synthetic `FuncType`
+> when an unbound TypeVar is called. This handles callback parameters called
+> directly (`cb(42)`). For the method-on-object case (`obj.process(42)`), once
+> Phase 2 is implemented, `obj.process` will return an unbound TypeVarType, and
+> the existing `TypeVarType` case will handle the call naturally.
+>
+> Key differences from the original plan:
+> - Uses **deferred call-site resolution** (`CallSites` map +
+>   `resolveCallSites`) rather than immediately binding `t.Instance`.
+> - Supports multiple calls with different arg types (merged or intersected).
+> - Synthetic params do **not** yet have `Widenable: true` — add this for
+>   row types widening (Phase 4).
+> - Uses `NewNeverType(nil)` for throws (correct per #384).
+> - Params get named patterns (`arg0`, `arg1`) via `NewIdentPat`.
+
 ### Changes
 
-1. **`internal/checker/infer_expr.go`** — `inferCallExpr` (~line 865 switch):
-   Add `calleeType = type_system.Prune(calleeType)` before the existing switch
-   at line 865. This ensures that a bound TypeVarType (e.g. from a second call
-   to the same method) resolves to its `FuncType` Instance and hits the
-   `FuncType` case correctly. Only truly unbound TypeVarTypes reach the new
-   `TypeVarType` case.
+1. **`internal/checker/infer_expr.go`** — `inferCallExpr`, `TypeVarType` case
+   (**already exists** from #380):
+   The case creates a synthetic `FuncType` with fresh params and return type,
+   collects it in `CallSites`, and delegates to `handleFuncCall`. The deferred
+   resolution via `resolveCallSites` handles multiple calls with different arg
+   types by either merging (compatible), creating optional params (prefix-
+   compatible), or intersecting (incompatible).
 
-   Add the new case after the `IntersectionType` case (~line 923) and before
-   the default case (~line 951):
-
+   **Remaining change for row types:** Add `Widenable: true` to synthetic param
+   and return TypeVars when the callee is a property on an open `ObjectType`:
    ```go
-   case *type_system.TypeVarType:
-       // Only reached for unbound TypeVarTypes (Prune above resolves bound ones)
-       // Row inference: callee is a fresh type variable (e.g. from obj.process)
-       // Create a fresh FuncType matching the call's argument count
-       params := make([]*FuncParam, len(argTypes))
-       for i := range argTypes {
-           paramTV := c.FreshVar(nil)
-           paramTV.Widenable = true
-           params[i] = &FuncParam{Type: paramTV}
-       }
-       retTV := c.FreshVar(nil)
-       retTV.Widenable = true
-       freshFn := &FuncType{
-           Params: params,
-           Return: retTV,
-       }
-       t.Instance = freshFn
-       return c.handleFuncCall(ctx, freshFn, expr, argTypes, provenance, errors)
+   // After creating params and retType in the TypeVarType case:
+   for _, p := range params {
+       p.Type.(*type_system.TypeVarType).Widenable = true
+   }
+   retType.(*type_system.TypeVarType).Widenable = true
    ```
-
-   The fresh parameter types are unified with the supplied argument types inside
-   `handleFuncCall`. The return type variable is returned as the call's result
-   type.
-
-   **Note:** All fresh type variables (params and return) have
-   `Widenable: true`, enabling widening if the same method is called multiple
-   times with different argument types (Phase 4 handles the widening).
 
 2. **Interaction with Phase 2:** When `obj.process(42)` is inferred:
    - `inferExpr` on `obj.process` calls `getMemberType` → TypeVarType case →
@@ -580,6 +631,14 @@ parameters. Remove row variables that don't escape to callers. Resolve
 mutability: if any property was written to, the parameter type becomes `mut`;
 otherwise the `MutabilityType` wrapper is removed.
 
+> **Status (2026-04-06):** The generalization work (#379) added
+> `GeneralizeFuncType` and `collectUnresolvedTypeVars` in `generalize.go`. The
+> The closing pass below uses `collectUnresolvedTypeVars` (from `generalize.go`)
+> to determine which row variables escape to the return type. This replaces the
+> originally planned `collectTypeVarIDs` helper. The closing pass should
+> run **before** `resolveCallSites` and `GeneralizeFuncType`, which are now
+> called after `inferFuncBodyWithFuncSigType` in `infer_module.go`.
+
 ### Changes
 
 1. **`internal/checker/infer_func.go`** — After `inferFuncBody` returns
@@ -618,14 +677,17 @@ otherwise the `MutabilityType` wrapper is removed.
                }
            }
 
-           // Collect type var IDs in the return type
-           returnVarIDs := collectTypeVarIDs(funcSigType.Return)
+           // Collect unresolved type vars in the return type using the
+           // existing helper from generalize.go (added in #379).
+           returnVars := map[int]*TypeVarType{}
+           returnOrder := &[]int{}
+           collectUnresolvedTypeVars(funcSigType.Return, returnVars, returnOrder)
            // Remove RestSpreadElems whose row vars don't appear in return type
            filtered := make([]ObjTypeElem, 0, len(objType.Elems))
            for _, elem := range objType.Elems {
                if rest, ok := elem.(*RestSpreadElem); ok {
                    if tv, ok := Prune(rest.Value).(*TypeVarType); ok {
-                       if !returnVarIDs[tv.ID] {
+                       if _, found := returnVars[tv.ID]; !found {
                            continue // remove this RestSpreadElem
                        }
                    }
@@ -637,63 +699,20 @@ otherwise the `MutabilityType` wrapper is removed.
    }
    ```
 
-2. **Helper function** — `collectTypeVarIDs(t Type) map[int]bool`:
-   Recursively walk a type tree and collect all `TypeVarType` IDs encountered.
-   Handles `UnionType`, `ObjectType` (including nested `PropertyElem`,
-   `MethodElem`, `RestSpreadElem`), `FuncType` (params + return), `TypeRefType`
-   (type args), `TupleType` (elements), `IntersectionType`, etc.
-
-   Place in `internal/type_system/types.go` or a new utility file like
-   `internal/checker/type_utils.go`:
-
+2. **No new helper needed.** Use the existing `collectUnresolvedTypeVars`
+   from `generalize.go` (added in #379). It recursively walks a type tree,
+   follows `Prune()`, and collects all unresolved `TypeVarType` nodes into a
+   `map[int]*TypeVarType`. Its signature:
    ```go
-   func collectTypeVarIDs(t Type) map[int]bool {
-       ids := map[int]bool{}
-       var walk func(Type)
-       walk = func(t Type) {
-           t = Prune(t)
-           switch t := t.(type) {
-           case *TypeVarType:
-               ids[t.ID] = true
-           case *ObjectType:
-               for _, elem := range t.Elems {
-                   switch e := elem.(type) {
-                   case *PropertyElem:
-                       walk(e.Value)
-                   case *MethodElem:
-                       walk(e.Fn)
-                   case *RestSpreadElem:
-                       walk(e.Value)
-                   // ... other elem types
-                   }
-               }
-           case *UnionType:
-               for _, m := range t.Types {
-                   walk(m)
-               }
-           case *FuncType:
-               for _, p := range t.Params {
-                   walk(p.Type)
-               }
-               walk(t.Return)
-           case *TypeRefType:
-               for _, arg := range t.TypeArgs {
-                   walk(arg)
-               }
-           case *TupleType:
-               for _, e := range t.Elems {
-                   walk(e)
-               }
-           case *IntersectionType:
-               for _, m := range t.Types {
-                   walk(m)
-               }
-           }
-       }
-       walk(t)
-       return ids
-   }
+   func collectUnresolvedTypeVars(
+       t type_system.Type,
+       vars map[int]*type_system.TypeVarType,
+       order *[]int,
+   )
    ```
+   This covers all composite types (`ObjectType`, `FuncType`, `UnionType`,
+   `IntersectionType`, `TupleType`, `TypeRefType`, etc.) including
+   `RestSpreadElem` values — so row variables in the return type are found.
 
 3. **Scope:** Closing happens per-function. Each function's parameter types are
    closed after **that** function's body is inferred. Nested functions close
@@ -738,35 +757,46 @@ type propagation).
 **Goal:** When an inferred parameter is returned, its row variable becomes a type
 parameter on the function, enabling callers to preserve extra properties.
 
+> **Status (2026-04-06):** `GeneralizeFuncType` (#379) already promotes
+> unresolved type vars to type parameters. Row variables in `RestSpreadElem`s
+> are walked by `collectUnresolvedTypeVars`, so they will be found if they
+> appear in the return type. The main question is whether the standard
+> promotion path (binding to `TypeRefType`) works correctly for row variables
+> inside `RestSpreadElem`s, or whether special handling is needed to preserve
+> the spread structure. The call-site instantiation is handled by
+> `instantiateGenericFunc` (extracted in #380), which uses
+> `SubstituteTypeParams` — this already walks `RestSpreadElem.Value` via the
+> `Accept()` visitor.
+
 ### Changes
 
-1. **`internal/checker/infer_func.go`** — Extend the Phase 6 closing logic:
-   Instead of just removing `RestSpreadElem`s in the return type, **promote**
-   their row variables to type parameters:
-   ```go
-   returnVarIDs := collectTypeVarIDs(funcSigType.Return)
-   for _, elem := range objType.Elems {
-       if rest, ok := elem.(*RestSpreadElem); ok {
-           if tv, ok := Prune(rest.Value).(*TypeVarType); ok {
-               if returnVarIDs[tv.ID] {
-                   // Promote to type parameter
-                   funcSigType.TypeParams = append(funcSigType.TypeParams, &TypeParam{
-                       Name:       fmt.Sprintf("R%d", tv.ID),
-                       Constraint: nil,
-                   })
-                   // RestSpreadElem remains in both param and return types,
-                   // referencing the same type variable.
-               }
-           }
-       }
-   }
-   ```
+1. **Row variable promotion via `GeneralizeFuncType`** — No manual TypeParam
+   creation is needed. After Phase 6 closes inferred ObjectTypes and removes
+   `RestSpreadElem`s that don't appear in the return type, the remaining row
+   variables are still unresolved `TypeVarType`s inside `RestSpreadElem`s.
+   `GeneralizeFuncType` (which runs after closing — see Phase 6 status note)
+   already:
+   - Calls `collectUnresolvedTypeVars` on params and return, which walks
+     `RestSpreadElem.Value` and finds unresolved row variables.
+   - Promotes them to `TypeParam`s with generated names.
+   - Binds the original `TypeVarType` to a `TypeRefType` referencing the new
+     type parameter.
 
-2. **`TypeParam` naming:** Row type parameters get generated names like `R1`,
-   `R2` based on their type variable IDs. These names appear in printed function
-   signatures but are internal — users don't write them.
+   **Potential issue:** `GeneralizeFuncType` binds the TypeVar's `Instance` to
+   a `TypeRefType`. Since the `RestSpreadElem.Value` points to the original
+   `TypeVarType`, after generalization `Prune(rest.Value)` will return the
+   `TypeRefType`. Verify that `SubstituteTypeParams` at call sites correctly
+   substitutes through `RestSpreadElem`s containing `TypeRefType`s (it should,
+   since `Accept()` walks `RestSpreadElem.Value`). If the standard promotion
+   path produces incorrect structure, add a post-generalization fixup that
+   ensures `RestSpreadElem`s reference the `TypeRefType` directly.
 
-3. **Call-site instantiation** — `internal/checker/infer_expr.go`
+   **Row variable naming:** `GeneralizeFuncType` generates names like `T1`,
+   `T2`. For readability, row type parameters could use `R1`, `R2` instead.
+   This is a cosmetic enhancement that can be added by checking whether the
+   TypeVar came from a `RestSpreadElem` during collection.
+
+2. **Call-site instantiation** — `internal/checker/infer_expr.go`
    `handleFuncCall` (~line 957):
    The existing generic function instantiation mechanism creates fresh type
    variables for each `TypeParam` and substitutes them throughout the function
@@ -781,7 +811,7 @@ parameter on the function, enabling callers to preserve extra properties.
    calls `r.Value.Accept(v)`, so substitution correctly walks into
    `RestSpreadElem` values. No changes needed.
 
-4. **Multiple row variables:** When multiple parameters each have row variables
+3. **Multiple row variables:** When multiple parameters each have row variables
    in the return type (e.g. `fn merge(a, b) { return {...a, ...b} }`), each gets
    its own type parameter. This is naturally handled since each parameter has a
    distinct `RestSpreadElem` with a distinct row variable ID.
@@ -911,7 +941,8 @@ row polymorphism.
    ```
 
    The null/undefined type constructors are `NewNullType(nil)` and
-   `NewUndefinedType(nil)` (or equivalent — check `types.go` for exact names).
+   `NewUndefinedType(nil)` (confirmed in `types.go` — both return `*LitType`
+   wrapping `NullLit{}` and `UndefinedLit{}` respectively).
 
 2. **Subsequent accesses on the union:** After `obj?.bar`, `typeVar.Instance` is
    `{bar: t1, ...R} | null | undefined`. If the user subsequently accesses
@@ -1236,11 +1267,12 @@ All phases above feed into:
 
 | File | Phases |
 |------|--------|
-| `internal/type_system/types.go` | 1, 6 (`collectTypeVarIDs` helper) |
+| `internal/type_system/types.go` | 1 |
 | `internal/checker/expand_type.go` | 2, 9, 10 |
 | `internal/checker/unify.go` | 3, 4, 10 |
+| `internal/checker/generalize.go` | 6 (`collectUnresolvedTypeVars`), 7 (`GeneralizeFuncType`) |
 | `internal/checker/infer_func.go` | 3, 6, 7, 8 |
-| `internal/checker/infer_expr.go` | 5, 10 |
+| `internal/checker/infer_expr.go` | 2 (assignment handler sets `Written`), 5, 10 |
 | `internal/checker/errors.go` | 11 |
 | `internal/checker/tests/row_types_test.go` | All (new file) |
 

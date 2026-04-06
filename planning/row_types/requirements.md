@@ -8,6 +8,28 @@ cannot refine it through property access, method calls, or indexing within the
 function body. This means property access on an unannotated parameter produces an
 `ExpectedObjectError` because `getMemberType` has no handler for `TypeVarType`.
 
+> **Note (updated 2026-04-06):** Several foundational features have been merged
+> from `main` that overlap with or support the row types work:
+>
+> - **Function generalization** (#379): `GeneralizeFuncType` in `generalize.go`
+>   collects unresolved type vars in a function's signature and promotes them to
+>   type parameters. This provides the infrastructure needed for Section 11 (row
+>   polymorphism) — row variables that escape to the return type can be promoted
+>   using this same mechanism.
+> - **Callback inference** (#380): When a `TypeVarType` is called as a function,
+>   the checker now creates a synthetic `FuncType` and defers resolution via
+>   `resolveCallSites`. This partially addresses Section 2 (method call inference)
+>   for the case where callback parameters are called directly. However, Section 2
+>   specifically covers *method* calls on inferred objects (`obj.process(42)`),
+>   which requires the property access path (Phase 2) to be in place first.
+> - **`deepCloneType`** (#382): A probe-then-commit pattern for union/intersection
+>   unification now avoids partial TypeVar mutation on failure. This infrastructure
+>   is useful for the widening logic in Section 6d.
+> - **`throws never` semantics** (#384): Missing `throws` clause now means
+>   `throws never` instead of a fresh TypeVar. This simplifies FuncType creation
+>   throughout the row types implementation (synthetic FuncTypes should use
+>   `NewNeverType(nil)` for throws).
+
 Row types (also known as row polymorphism) enable the type system to infer
 structural object types from usage. When a function accesses `obj.bar` and
 `obj.baz`, the system should infer that `obj` has at least those properties —
@@ -150,6 +172,16 @@ When a method is called on a value whose type is a type variable, the system mus
    type variable naturally gets bound to the `FuncType` via the call.)
 2. Unify the supplied argument types with the method's fresh parameter types.
 3. Return the method's return type variable as the type of the call expression.
+
+> **Status (2026-04-06):** The callback inference work (#380) added a
+> `TypeVarType` case to `inferCallExpr` that creates a synthetic `FuncType` when
+> an unbound TypeVar is called. This handles the case where a *parameter itself*
+> is called (`cb(42)`), but not the method-on-object case (`obj.process(42)`).
+> The method case requires Phase 2 (property access on TypeVarType) to be
+> implemented first so that `obj.process` returns a TypeVarType, at which point
+> the existing `TypeVarType` case in `inferCallExpr` will handle the call
+> naturally. The `Widenable` flag still needs to be added to the synthetic
+> FuncType's params/return for proper widening behavior (Section 6d).
 
 **Example:**
 ```esc
@@ -927,6 +959,25 @@ This extends the existing generic function instantiation mechanism
 (`handleFuncCall`) — row type parameters are instantiated the same way as
 regular type parameters, with fresh type variables that get solved during
 argument unification.
+
+> **Status (2026-04-06):** The function generalization work (#379) added
+> `GeneralizeFuncType` in `generalize.go`, which implements the core of steps
+> 2–4 for *regular* type variables: it collects unresolved type vars in
+> params/return, promotes them to type parameters, and binds them to
+> `TypeRefType` references. The row-variable case needs a specialization:
+> `collectUnresolvedTypeVars` already walks `RestSpreadElem` values, so
+> unresolved row variables in the return type will be found. However, the
+> promotion step may need adjustment to ensure the `RestSpreadElem` structure
+> is preserved (rather than replacing the TypeVar with a `TypeRefType`). The
+> call-site instantiation (step 5) is handled by `instantiateGenericFunc`,
+> which was also extracted in #380.
+>
+> **Mapping to implementation phases:** Step 1 (close inferred ObjectTypes) is
+> Phase 6 in the implementation plan. Steps 2–4 (identify, promote, and remove
+> row variables) are Phase 7, which delegates to `GeneralizeFuncType` rather
+> than implementing promotion manually. Step 5 (call-site instantiation) is
+> also Phase 7, handled by the existing `instantiateGenericFunc` /
+> `SubstituteTypeParams` machinery.
 
 #### 11d. Interaction with Section 5 (closing)
 
