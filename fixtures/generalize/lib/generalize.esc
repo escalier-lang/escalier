@@ -1,0 +1,25 @@
+fn add(a, b) {
+    return a + b
+}
+
+fn identity(x) {
+    return x
+}
+
+fn fst(a, b) {
+    return a
+}
+
+fn snd(a, b) {
+    return b
+}
+
+fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }
+fn fstNumWrapper(a, b) { return fstNum(a, b) }
+
+val sum = add(1, 2)
+val x = identity(5)
+val y = identity("hello")
+val first = fst(1, "a")
+val second = snd(1, "a")
+val w = fstNumWrapper(1, 2)

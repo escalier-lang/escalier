@@ -1079,14 +1079,21 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 				return c.Unify(ctx, distributed1, distributed2)
 			}
 
+			// Probe-then-commit: trial-unify clones to avoid partially mutating
+			// TypeVars on failure (see #381).
 			// For A & B <: C & D, every constraint in C & D must be satisfied by A & B
 			// This means for each part of t2, at least one part of t1 must be a subtype
 			errors := []Error{}
 			for _, t2Part := range intersection2.Types {
 				found := false
 				for _, t1Part := range intersection1.Types {
-					unifyErrors := c.Unify(ctx, t1Part, t2Part)
-					if len(unifyErrors) == 0 {
+					varMapping := make(map[int]*type_system.TypeVarType)
+					t1Clone := c.deepCloneType(t1Part, varMapping)
+					t2Clone := c.deepCloneType(t2Part, varMapping)
+					probeErrors := c.Unify(ctx, t1Clone, t2Clone)
+					if len(probeErrors) == 0 {
+						// Probe succeeded — safe to unify originals.
+						c.Unify(ctx, t1Part, t2Part)
 						found = true
 						break
 					}
@@ -1115,16 +1122,20 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 			return c.Unify(ctx, distributed, t2)
 		}
 
-		// Try to unify each part with t2
-		// If any part successfully unifies, the intersection is a valid subtype
+		// Probe-then-commit: trial-unify clones to avoid partially mutating
+		// TypeVars on failure (see #381).
 		var allErrors []Error
 		for _, part := range intersection.Types {
-			unifyErrors := c.Unify(ctx, part, t2)
-			if len(unifyErrors) == 0 {
-				// At least one part is a subtype of t2, so the intersection is valid
+			varMapping := make(map[int]*type_system.TypeVarType)
+			partClone := c.deepCloneType(part, varMapping)
+			t2Clone := c.deepCloneType(t2, varMapping)
+			probeErrors := c.Unify(ctx, partClone, t2Clone)
+			if len(probeErrors) == 0 {
+				// Probe succeeded — safe to unify originals.
+				c.Unify(ctx, part, t2)
 				return nil
 			}
-			allErrors = slices.Concat(allErrors, unifyErrors)
+			allErrors = slices.Concat(allErrors, probeErrors)
 		}
 		// None of the parts successfully unified with t2
 		return allErrors
@@ -1330,13 +1341,16 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	}
 	// | _, UnionType -> ...
 	if union, ok := t2.(*type_system.UnionType); ok {
-		// Try to unify t1 with any type in the union
+		// Probe-then-commit: trial-unify clones to avoid partially mutating
+		// TypeVars on failure (see #381).
 		for _, unionType := range union.Types {
-			// fmt.Fprintf(os.Stderr, "Trying to unify %s with union member %s\n", t1.String(), unionType.String())
-			// Try unifying - if any unification succeeds, we're good
-			unifyErrors := c.Unify(ctx, t1, unionType)
-			if len(unifyErrors) == 0 {
-				// Successfully unified with one of the union types
+			varMapping := make(map[int]*type_system.TypeVarType)
+			t1Clone := c.deepCloneType(t1, varMapping)
+			unionTypeClone := c.deepCloneType(unionType, varMapping)
+			probeErrors := c.Unify(ctx, t1Clone, unionTypeClone)
+			if len(probeErrors) == 0 {
+				// Probe succeeded — safe to unify originals.
+				c.Unify(ctx, t1, unionType)
 				return nil
 			}
 		}
@@ -1630,6 +1644,10 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				if typeVar2, ok := t2.(*type_system.TypeVarType); ok {
 					if typeVar1.Constraint != nil && typeVar2.Constraint != nil {
 						errors = c.Unify(ctx, typeVar1.Constraint, typeVar2.Constraint)
+					} else if typeVar1.Constraint != nil && typeVar2.Constraint == nil {
+						// Propagate the constraint to typeVar2 since it becomes the
+						// representative of this equivalence class after binding.
+						typeVar2.Constraint = typeVar1.Constraint
 					}
 					typeVar1.Instance = t2
 					typeVar1.SetProvenance(&type_system.TypeProvenance{

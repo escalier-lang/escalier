@@ -1,28 +1,28 @@
 // Function overloads using intersection types
-declare fn format(value: number) -> string throws never
-declare fn format(value: string) -> string throws never
+declare fn format(value: number) -> string
+declare fn format(value: string) -> string
 
 val result1 = format(42)
 val result2 = format("hello")
 
 // Multiple overloads
-declare fn process(value: number) -> string throws never
-declare fn process(value: string) -> number throws never
-declare fn process(value: boolean) -> void throws never
+declare fn process(value: number) -> string
+declare fn process(value: string) -> number
+declare fn process(value: boolean) -> void
 
 val r1 = process(123)
 val r2 = process("test")
 val r3 = process(true)
 
 // Overloads with different parameter counts
-declare fn makeArray(value: number) -> Array<number> throws never
-declare fn makeArray(value: number, count: number) -> Array<number> throws never
+declare fn makeArray(value: number) -> Array<number>
+declare fn makeArray(value: number, count: number) -> Array<number>
 
 val arr1 = makeArray(5)
 val arr2 = makeArray(5, 3)
 
 // Generic function overload
-declare fn identity<T>(value: T) -> T throws never
-declare fn identity(value: string) -> string throws never
+declare fn identity<T>(value: T) -> T
+declare fn identity(value: string) -> string
 
 val genResult = identity("world")

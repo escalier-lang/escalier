@@ -520,6 +520,8 @@ func TestUnifyMutableTypes(t *testing.T) {
 		assert.Empty(t, errors, "nested mutable types should unify with exact same nesting")
 	})
 
+	// TODO: add a test for `mut intersection` types
+
 	t.Run("mutable union types require exact same union members", func(t *testing.T) {
 		// mut (number | string) should unify with mut (number | string)
 		// but NOT with mut (number | boolean)
@@ -535,5 +537,207 @@ func TestUnifyMutableTypes(t *testing.T) {
 		errors = checker.Unify(ctx, mutUnion1, mutUnion3)
 		assert.NotEmpty(t, errors, "mutable union types with different members should not unify")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
+	})
+}
+
+// Tests for issue #381: Trial unification in union/intersection handling
+// can leave TypeVars partially mutated when a trial fails.
+func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
+	checker := NewChecker()
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+
+	t.Run("TypeVar matches second union member after first trial fails", func(t *testing.T) {
+		// t1 = {x: TypeVar}
+		// t2 = {x: number, y: string} | {x: string}
+		//
+		// Trial 1: Unify({x: TypeVar}, {x: number, y: string})
+		//   - Binds TypeVar -> number, then fails because {x: TypeVar} has no "y" key
+		//   - BUG: TypeVar is left bound to number
+		// Trial 2: Unify({x: TypeVar}, {x: string})
+		//   - Should succeed, but TypeVar is already bound to number from trial 1
+		//   - So it tries Unify(number, string) which fails
+		tv := checker.FreshVar(nil)
+		t1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(
+				type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "x"},
+				tv,
+			),
+		})
+		t2 := type_system.NewUnionType(nil,
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "x"},
+					type_system.NewNumPrimType(nil),
+				),
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "y"},
+					type_system.NewStrPrimType(nil),
+				),
+			}),
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "x"},
+					type_system.NewStrPrimType(nil),
+				),
+			}),
+		)
+
+		errors := checker.Unify(ctx, t1, t2)
+		assert.Empty(t, errors, "TypeVar should unify with second union member {x: string}")
+
+		// After successful unification, TypeVar should be bound to string
+		resolved := type_system.Prune(tv)
+		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to a PrimType")
+		prim := resolved.(*type_system.PrimType)
+		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
+	})
+
+	t.Run("TypeVar in tuple matches second union member", func(t *testing.T) {
+		// t1 = [TypeVar, boolean]
+		// t2 = [number, number] | [string, boolean]
+		//
+		// Trial 1: Unify([TypeVar, boolean], [number, number])
+		//   - Binds TypeVar -> number, then fails on boolean vs number
+		//   - BUG: TypeVar is left bound to number
+		// Trial 2: Unify([TypeVar, boolean], [string, boolean])
+		//   - Should succeed, but TypeVar is already bound to number
+		tv := checker.FreshVar(nil)
+		t1 := type_system.NewTupleType(nil, tv, type_system.NewBoolPrimType(nil))
+		t2 := type_system.NewUnionType(nil,
+			type_system.NewTupleType(nil, type_system.NewNumPrimType(nil), type_system.NewNumPrimType(nil)),
+			type_system.NewTupleType(nil, type_system.NewStrPrimType(nil), type_system.NewBoolPrimType(nil)),
+		)
+
+		errors := checker.Unify(ctx, t1, t2)
+		assert.Empty(t, errors, "TypeVar in tuple should unify with second union member")
+
+		resolved := type_system.Prune(tv)
+		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to a PrimType")
+		prim := resolved.(*type_system.PrimType)
+		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
+	})
+}
+
+func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
+	checker := NewChecker()
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+
+	t.Run("IntersectionType, _ - TypeVar in t2 corrupted by failed first part", func(t *testing.T) {
+		// t1 = {x: number, a: boolean} & {x: string, a: string}
+		// t2 = {x: TypeVar, a: string}
+		//
+		// Trial 1: Unify({x: number, a: boolean}, {x: TypeVar, a: string})
+		//   - Binds TypeVar -> number
+		//   - Then Unify(boolean, string) fails
+		//   - BUG: TypeVar is left bound to number
+		// Trial 2: Unify({x: string, a: string}, {x: TypeVar, a: string})
+		//   - TypeVar is already bound to number, Unify(string, number) fails
+		//   - But should succeed: TypeVar -> string, a: string matches
+		tv := checker.FreshVar(nil)
+		t1 := type_system.NewIntersectionType(nil,
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "x"},
+					type_system.NewNumPrimType(nil),
+				),
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "a"},
+					type_system.NewBoolPrimType(nil),
+				),
+			}),
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "x"},
+					type_system.NewStrPrimType(nil),
+				),
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "a"},
+					type_system.NewStrPrimType(nil),
+				),
+			}),
+		)
+		t2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(
+				type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "x"},
+				tv,
+			),
+			type_system.NewPropertyElem(
+				type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "a"},
+				type_system.NewStrPrimType(nil),
+			),
+		})
+
+		errors := checker.Unify(ctx, t1, t2)
+		assert.Empty(t, errors, "second intersection part {x: string, a: string} should unify with {x: TypeVar, a: string}")
+
+		resolved := type_system.Prune(tv)
+		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to string")
+		prim := resolved.(*type_system.PrimType)
+		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
+	})
+
+	t.Run("IntersectionType, IntersectionType - TypeVar corrupted by failed inner trial", func(t *testing.T) {
+		// t1 = {a: number, b: boolean} & {a: string, b: string}
+		// t2 = {a: TypeVar, b: string} & {a: number}
+		//
+		// For t2Part = {a: TypeVar, b: string}:
+		//   t1Part = {a: number, b: boolean}:
+		//     Binds TypeVar -> number, then Unify(boolean, string) fails
+		//     BUG: TypeVar left bound to number
+		//   t1Part = {a: string, b: string}:
+		//     TypeVar already bound to number, Unify(string, number) fails
+		//     But should succeed: TypeVar -> string, b: string matches
+		//
+		// For t2Part = {a: number}:
+		//   t1Part = {a: number, b: boolean}: succeeds
+		tv := checker.FreshVar(nil)
+		t1 := type_system.NewIntersectionType(nil,
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "a"},
+					type_system.NewNumPrimType(nil),
+				),
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "b"},
+					type_system.NewBoolPrimType(nil),
+				),
+			}),
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "a"},
+					type_system.NewStrPrimType(nil),
+				),
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "b"},
+					type_system.NewStrPrimType(nil),
+				),
+			}),
+		)
+		t2 := type_system.NewIntersectionType(nil,
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "a"},
+					tv,
+				),
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "b"},
+					type_system.NewStrPrimType(nil),
+				),
+			}),
+			type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+				type_system.NewPropertyElem(
+					type_system.ObjTypeKey{Kind: type_system.StrObjTypeKeyKind, Str: "a"},
+					type_system.NewNumPrimType(nil),
+				),
+			}),
+		)
+
+		errors := checker.Unify(ctx, t1, t2)
+		assert.Empty(t, errors, "intersection types should unify successfully")
+
+		resolved := type_system.Prune(tv)
+		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to string")
+		prim := resolved.(*type_system.PrimType)
+		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
 	})
 }

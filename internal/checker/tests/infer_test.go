@@ -330,7 +330,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{value: number, increment(mut self, amount: number) -> Self throws never}",
+				"obj": "{value: number, increment(mut self, amount: number) -> Self}",
 			},
 		},
 		"ObjectWithGetterSetter": {
@@ -347,7 +347,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{_value: number, get value(self) -> number throws never, set value(mut self, value: number) -> undefined throws never}",
+				"obj": "{_value: number, get value(self) -> number, set value(mut self, value: number) -> undefined}",
 			},
 		},
 		"ObjectWithComputedKeys": {
@@ -365,7 +365,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = obj[bar]()
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{foo: number, bar(self) -> number throws never}",
+				"obj": "{foo: number, bar(self) -> number}",
 				"a":   "number",
 				"b":   "number",
 			},
@@ -411,7 +411,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t3, y: t5) -> number throws never",
+				"add": "fn (x: number, y: number) -> number",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnn": {
@@ -421,7 +421,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({x: number, y: number}) -> number throws never",
+				"add": "fn ({x: number, y: number}) -> number",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndDefaults": {
@@ -432,7 +432,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({x: number, y: number}) -> number throws never",
+				"add": "fn ({x: number, y: number}) -> number",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndDefaultsDeep": {
@@ -443,7 +443,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({a: {b: {c: number}}}) -> number throws never",
+				"add": "fn ({a: {b: {c: number}}}) -> number",
 			},
 		},
 		"FuncExprObjectPatternWithInlineTypeAnnAndRenamining": {
@@ -453,7 +453,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ({x: number, y: number}) -> number throws never",
+				"add": "fn ({x: number, y: number}) -> number",
 			},
 		},
 		"FuncExprTuplePatternWithInlineTypeAnn": {
@@ -463,13 +463,13 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn ([x: number, y: number]) -> number throws never",
+				"add": "fn ([x: number, y: number]) -> number",
 			},
 		},
 		"FuncExprWithoutReturn": {
 			input: `val log = fn (msg) {}`,
 			expectedTypes: map[string]string{
-				"log": "fn (msg: t3) -> void throws never",
+				"log": "fn <T0>(msg: T0) -> void",
 			},
 		},
 		"FuncExprMultipleReturns": {
@@ -484,7 +484,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: t3, y: t5) -> true | false throws never",
+				"add": "fn (x: number, y: number) -> true | false",
 			},
 		},
 		// TODO: figure out how to infer throws types in mutually recursive functions
@@ -498,8 +498,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> number throws never",
-				"bar": "fn () -> number throws never",
+				"foo": "fn () -> number",
+				"bar": "fn () -> number",
 			},
 		},
 		"UnionTypeVariable": {
@@ -517,7 +517,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: number, y: number) -> number throws never",
+				"add": "fn (x: number, y: number) -> number",
 			},
 		},
 		"FuncExprWithSimpleThrows": {
@@ -548,13 +548,13 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"FuncDeclRetVoid": {
 			input: `fn foo() -> void {}`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> void throws never",
+				"foo": "fn () -> void",
 			},
 		},
 		"FuncDeclNoReturn": {
 			input: `fn foo() {}`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> void throws never",
+				"foo": "fn () -> void",
 			},
 		},
 		// "FuncRecursion": {
@@ -579,7 +579,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val result = add(1, 2)
 			`,
 			expectedTypes: map[string]string{
-				"add":    "fn (x: number, y: number) -> number throws never",
+				"add":    "fn (x: number, y: number) -> number",
 				"result": "number",
 			},
 		},
@@ -590,7 +590,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val message2 = greet("Bob")
 			`,
 			expectedTypes: map[string]string{
-				"greet":    "fn (name: string, greeting?: string) -> string throws never",
+				"greet":    "fn (name: string, greeting?: string) -> string",
 				"message1": "string",
 				"message2": "string",
 			},
@@ -604,20 +604,20 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val result2 = add(1, 2)
 			`,
 			expectedTypes: map[string]string{
-				"add":     "fn (x: number, y: number, ...rest: Array<number>) -> number throws never",
+				"add":     "fn (x: number, y: number, ...rest: Array<number>) -> number",
 				"result1": "number",
 				"result2": "number",
 			},
 		},
 		"FuncOverloads": {
 			input: `
-				declare fn format(value: number) -> string throws never
-				declare fn format(value: string) -> string throws never
+				declare fn format(value: number) -> string
+				declare fn format(value: string) -> string
 				val str1 = format(42)
 				val str2 = format("hello")
 			`,
 			expectedTypes: map[string]string{
-				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+				"format": "fn (value: number) -> string & fn (value: string) -> string",
 				"str1":   "string",
 				"str2":   "string",
 			},
@@ -723,13 +723,200 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val z = fst(a, b)
 			`,
 			expectedTypes: map[string]string{
-				"identity": "fn <T>(value: T) -> T throws never",
-				"fst":      "fn <A, B>(a: A, b: B) -> A throws never",
+				"identity": "fn <T>(value: T) -> T",
+				"fst":      "fn <A, B>(a: A, b: B) -> A",
 				"a":        "number",
 				"b":        "string",
 				"x":        "number",
 				"y":        "string",
 				"z":        "number",
+			},
+		},
+		"InferredGenericFunctions": {
+			input: `
+				fn fst(a, b) { return a }
+				fn snd(a, b) { return b }
+			`,
+			expectedTypes: map[string]string{
+				"fst": "fn <T0, T1>(a: T0, b: T1) -> T0",
+				"snd": "fn <T0, T1>(a: T0, b: T1) -> T1",
+			},
+		},
+		"InferredConstraintsFromGenericCall": {
+			input: `
+				fn fstNum<A: number, B: number>(a: A, b: B) -> A { return a }
+				fn fstNumWrapper(a, b) { return fstNum(a, b) }
+			`,
+			expectedTypes: map[string]string{
+				"fstNum":        "fn <A: number, B: number>(a: A, b: B) -> A",
+				"fstNumWrapper": "fn <T0: number, T1: number>(a: T0, b: T1) -> T0",
+			},
+		},
+		"GeneralizeAvoidNameCollision": {
+			input: `
+				fn foo<T0>(x: T0, y) { return x }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(x: T0, y: T1) -> T0",
+			},
+		},
+		"GeneralizeDeclareFunction": {
+			input: `
+				declare fn bar(x) -> number
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn <T0>(x: T0) -> number",
+			},
+		},
+		"GeneralizeNestedFunction": {
+			input: `
+				fn outer() {
+					fn inner(x) {
+						return x
+					}
+					val a = inner("hello")
+					val b = inner(5)
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"outer": "fn () -> [\"hello\", 5]",
+			},
+		},
+		"ApplyTwice": {
+			input: `
+				val applyTwice = fn (f, x) {
+					return f(f(x))
+				}
+			`,
+			expectedTypes: map[string]string{
+				"applyTwice": "fn <T0>(f: fn (arg0: T0) -> T0, x: T0) -> T0",
+			},
+		},
+		"SKI_K": {
+			input: `
+				val K = fn (x) {
+					return fn (y) {
+						return x
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"K": "fn <T0, T1>(x: T0) -> fn (y: T1) -> T0",
+			},
+		},
+		"SKI_S": {
+			input: `
+				val S = fn (f) {
+					return fn (g) {
+						return fn (x) {
+							return f(x)(g(x))
+						}
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"S": "fn <T0, T1, T2>(f: fn (arg0: T0) -> fn (arg0: T1) -> T2) -> fn (g: fn (arg0: T0) -> T1) -> fn (x: T0) -> T2",
+			},
+		},
+		"SKI_I": {
+			input: `
+				val S = fn (f) {
+					return fn (g) {
+						return fn (x) {
+							return f(x)(g(x))
+						}
+					}
+				}
+				val K = fn (x) {
+					return fn (y) {
+						return x
+					}
+				}
+				val I = S(K)(K)
+			`,
+			expectedTypes: map[string]string{
+				"I": "fn <T0>(x: T0) -> T0",
+			},
+		},
+		"InferredFuncCalledWithDifferentTypes": {
+			input: `
+				val foo = fn (f) {
+					return [f(5), f("hello")]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 & fn (arg0: \"hello\") -> T1) -> [T0, T1]",
+			},
+		},
+		"InferredFuncCalledWithSameKindLiterals": {
+			input: `
+				val foo = fn (f) {
+					return [f(5), f(10)]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 & fn (arg0: 10) -> T1) -> [T0, T1]",
+			},
+		},
+		"InferredFuncCalledWithDifferentArgCounts": {
+			input: `
+				val foo = fn (f) {
+					return [f(5), f(5, "hello")]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: fn (arg0: 5, arg1?: \"hello\") -> T0) -> [T0, T0]",
+			},
+		},
+		"UncalledCallbackParam": {
+			input: `
+				val foo = fn (f) {
+					return 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: T0) -> 5",
+			},
+		},
+		"ApplyTwice_fn": {
+			input: `
+				fn applyTwice(f, x) {
+					return f(f(x))
+				}
+			`,
+			expectedTypes: map[string]string{
+				"applyTwice": "fn <T0>(f: fn (arg0: T0) -> T0, x: T0) -> T0",
+			},
+		},
+		"InferredFuncCalledWithDifferentTypes_fn": {
+			input: `
+				fn foo(f) {
+					return [f(5), f("hello")]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: mut? 5) -> T0 & fn (arg0: mut? \"hello\") -> T1) -> [T0, T1]",
+			},
+		},
+		"InferredFuncCalledWithSameKindLiterals_fn": {
+			input: `
+				fn foo(f) {
+					return [f(5), f(10)]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: mut? 5) -> T0 & fn (arg0: mut? 10) -> T1) -> [T0, T1]",
+			},
+		},
+		"UncalledCallbackParam_fn": {
+			input: `
+				fn foo(f) {
+					return 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: T0) -> 5",
 			},
 		},
 		"GenericFunctionWithConstraint": {
@@ -740,7 +927,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val a = fst(5, 10)
 			`,
 			expectedTypes: map[string]string{
-				"fst": "fn <A: number, B: number>(a: A, b: B) -> A throws never",
+				"fst": "fn <A: number, B: number>(a: A, b: B) -> A",
 				"a":   "5",
 			},
 		},
@@ -760,7 +947,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = container.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"container": "{value: number, getValue<T>(self, default: T) -> number | T throws never}",
+				"container": "{value: number, getValue<T>(self, default: T) -> number | T}",
 				"a":         "number | string",
 				"b":         "number | 10",
 			},
@@ -782,7 +969,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn (value: number) -> mut? Box throws never}",
+				"Box": "{new fn (value: number) -> mut? Box}",
 				"box": "Box",
 				"a":   "number | string",
 				"b":   "number | 10",
@@ -797,7 +984,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val {value} = box
 			`,
 			expectedTypes: map[string]string{
-				"Box":   "{new fn <T>(value: T) -> mut? Box<T> throws never}",
+				"Box":   "{new fn <T>(value: T) -> mut? Box<T>}",
 				"box":   "Box<number>",
 				"value": "number",
 			},
@@ -819,7 +1006,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn <T>(value: T) -> mut? Box<T> throws never}",
+				"Box": "{new fn <T>(value: T) -> mut? Box<T>}",
 				"box": "Box<number>",
 				"a":   "number | string",
 				"b":   "number | 10",
@@ -967,8 +1154,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			expectedTypes: map[string]string{
-				"rgb":  "{new fn (r: number, g: number, b: number) -> Color throws never, symbol12(self, subject: RGB) -> [number, number, number] throws never}",
-				"hex":  "{new fn (code: string) -> Color throws never, symbol12(self, subject: Hex) -> [string] throws never}",
+				"rgb":  "{new fn (r: number, g: number, b: number) -> Color, symbol12(self, subject: RGB) -> [number, number, number]}",
+				"hex":  "{new fn (code: string) -> Color, symbol12(self, subject: Hex) -> [string]}",
 				"red":  "Color",
 				"blue": "Color",
 			},
@@ -1006,8 +1193,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"option": "MyOption<number>",
-				"some":   "{new fn <T>(value: T) -> MyOption<T> throws never, symbol12<T>(self, subject: Some<T>) -> [T] throws never}",
-				"none":   "{new fn <T>() -> MyOption<T> throws never, symbol12<T>(self, subject: None<T>) -> [] throws never}",
+				"some":   "{new fn <T>(value: T) -> MyOption<T>, symbol12<T>(self, subject: Some<T>) -> [T]}",
+				"none":   "{new fn <T>() -> MyOption<T>, symbol12<T>(self, subject: None<T>) -> []}",
 				"result": "number | 0",
 			},
 		},
@@ -1047,14 +1234,14 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		},
 		"OutOfOrderInterfaceInUnionInFunction": {
 			input: `
-				declare fn foo() -> string | MyInterface throws never
+				declare fn foo() -> string | MyInterface
 				interface MyInterface {
 					a: number,
 					b: string,
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> string | MyInterface throws never",
+				"foo": "fn () -> string | MyInterface",
 			},
 		},
 		"OutOfOrderInterfaceInUnionInMethod": {
@@ -1096,7 +1283,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = foo.bar("hello")
 			`,
 			expectedTypes: map[string]string{
-				"Foo": "{new fn () -> mut? Foo throws never}",
+				"Foo": "{new fn () -> mut? Foo}",
 				"foo": "Foo",
 				"a":   "5",
 				"b":   "\"hello\"",
@@ -1193,7 +1380,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val arity = func.length
 			`,
 			expectedTypes: map[string]string{
-				"func":  "fn (x: number) -> number throws never",
+				"func":  "fn (x: number) -> number",
 				"arity": "number",
 			},
 		},
@@ -1343,7 +1530,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val textPromise = res.text()
 			`,
 			expectedTypes: map[string]string{
-				"textMethod":  "fn () -> Promise<string> throws never",
+				"textMethod":  "fn () -> Promise<string>",
 				"textPromise": "Promise<string>",
 			},
 		},
@@ -1356,7 +1543,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			val y = foo(x)
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (x: string & {}) -> string & {} throws never",
+				"foo": "fn (x: string & {}) -> string & {}",
 				"y":   "string & {}",
 				"x":   "string & {}",
 			},
@@ -1370,7 +1557,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			val y = foo(x)
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (x: string & {} | 0) -> string & {} | 0 throws never",
+				"foo": "fn (x: string & {} | 0) -> string & {} | 0",
 				"y":   "string & {} | 0",
 				"x":   "string & {} | 0",
 			},

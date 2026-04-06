@@ -137,13 +137,10 @@ func (c *Checker) inferFuncSig(
 
 	var throwsType type_system.Type
 	if sig.Throws == nil {
-		// If no throws clause is specified, we use a fresh type variable which
-		// will be unified later if any throw expressions are found in the
-		// function body.
-		tvar := c.FreshVar(nil)
-		tvar.FromBinding = true
-		throwsType = tvar
+		// No throws clause means the function doesn't throw.
+		throwsType = type_system.NewNeverType(nil)
 	} else {
+		// throws _ infers from the body; throws T checks against T.
 		var throwsErrors []Error
 		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, sig.Throws)
 		errors = slices.Concat(errors, throwsErrors)
@@ -177,6 +174,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 
 	// Create context for the function body
 	bodyCtx := ctx.WithNewScope()
+	bodyCtx.InFuncBody = true
 	bodyCtx.IsAsync = isAsync
 	bodyCtx.ContainsYield = &containsYield
 	bodyCtx.YieldedTypes = &yieldedTypes

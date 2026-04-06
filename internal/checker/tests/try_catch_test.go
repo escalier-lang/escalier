@@ -121,7 +121,7 @@ func TestTryCatchInferenceScript(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"safeDivide": "fn (a: number, b: number) -> number | 0 throws never",
+				"safeDivide": "fn (a: number, b: number) -> number | 0",
 			},
 		},
 		"TryCatchWithObjectPattern": {
@@ -333,7 +333,7 @@ func TestTryCatchInferenceModule(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"safeDivide": "fn (a: number, b: number) -> number | 0 throws never",
+				"safeDivide": "fn (a: number, b: number) -> number | 0",
 			},
 		},
 		"TryCatchWithObjectPattern": {

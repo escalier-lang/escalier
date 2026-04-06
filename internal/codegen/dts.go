@@ -201,22 +201,17 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 
 		localName := extractLocalName(decl.Name.Name)
 
-		// Build type parameters from the declaration
-		typeParams := make([]*TypeParam, len(decl.TypeParams))
-		for i, param := range decl.TypeParams {
+		// Build type parameters from the inferred function type (includes
+		// both explicit type params and generalized ones from inference)
+		typeParams := make([]*TypeParam, len(funcType.TypeParams))
+		for i, param := range funcType.TypeParams {
 			var constraint TypeAnn
 			if param.Constraint != nil {
-				t := param.Constraint.InferredType()
-				if t != nil {
-					constraint = b.buildTypeAnn(t)
-				}
+				constraint = b.buildTypeAnn(param.Constraint)
 			}
 			var default_ TypeAnn
 			if param.Default != nil {
-				t := param.Default.InferredType()
-				if t != nil {
-					default_ = b.buildTypeAnn(t)
-				}
+				default_ = b.buildTypeAnn(param.Default)
 			}
 
 			typeParams[i] = &TypeParam{
@@ -236,7 +231,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			Body:    nil,
 			declare: isTopLevel, // Only add declare modifier for root namespace
 			export:  decl.Export(),
-			async:   decl.Async,
+			async:   false, // async is not allowed in .d.ts files
 			span:    nil,
 			source:  nil,
 		}
@@ -689,11 +684,19 @@ func convertQualIdent(tsIdent type_sys.QualIdent) QualIdent {
 func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 	switch t := type_sys.Prune(t).(type) {
 	case *type_sys.TypeVarType:
-		msg := fmt.Sprintf("TODO: generalize types before building .d.ts files, t = %s", t.String())
-		panic(msg)
+		// After generalization, unresolved type vars should not reach here.
+		// Fall back to unknown as a safety net.
+		return NewUnknownTypeAnn(nil)
 	case *type_sys.TypeRefType:
-		typeArgs := make([]TypeAnn, len(t.TypeArgs))
-		for i, arg := range t.TypeArgs {
+		args := t.TypeArgs
+		// TypeScript's Promise has only one type parameter, so drop the
+		// error type that Escalier tracks as the second type arg.
+		// TODO(#385): Preserve the dropped error type as TSDoc metadata.
+		if type_sys.QualIdentToString(t.Name) == "Promise" && len(args) > 1 {
+			args = args[:1]
+		}
+		typeArgs := make([]TypeAnn, len(args))
+		for i, arg := range args {
 			typeArgs[i] = b.buildTypeAnn(arg)
 		}
 		return NewRefTypeAnn(type_sys.QualIdentToString(t.Name), typeArgs)

@@ -1,0 +1,12 @@
+declare function add(a: number, b: number): number;
+declare function fst<T0, T1>(a: T0, b: T1): T0;
+declare const first: 1;
+declare function fstNum<A extends number, B extends number>(a: A, b: B): A;
+declare function fstNumWrapper<T0 extends number, T1 extends number>(a: T0, b: T1): T0;
+declare function identity<T0>(x: T0): T0;
+declare function snd<T0, T1>(a: T0, b: T1): T1;
+declare const second: "a";
+declare const sum: number;
+declare const w: 1;
+declare const x: 5;
+declare const y: "hello";

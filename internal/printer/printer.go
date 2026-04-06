@@ -1185,8 +1185,10 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 	p.printTypeAnn(typ.Return)
 
 	if typ.Throws != nil {
-		p.writeString(" throws ")
-		p.printTypeAnn(typ.Throws)
+		if _, isNever := typ.Throws.(*ast.NeverTypeAnn); !isNever {
+			p.writeString(" throws ")
+			p.printTypeAnn(typ.Throws)
+		}
 	}
 }
 

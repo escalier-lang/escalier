@@ -687,7 +687,7 @@ func TestIntersectionMemberAccess(t *testing.T) {
 		},
 		"function intersection - access object property": {
 			input: `
-				type Callable = (fn () -> string throws never) & {metadata: string}
+				type Callable = (fn () -> string) & {metadata: string}
 				declare val func: Callable
 				val meta = func.metadata
 			`,
@@ -698,19 +698,19 @@ func TestIntersectionMemberAccess(t *testing.T) {
 		},
 		"function intersection - access Function method": {
 			input: `
-				type Callable = (fn () -> string throws never) & {metadata: string}
+				type Callable = (fn () -> string) & {metadata: string}
 				declare val func: Callable
 				val apply = func.apply
 			`,
 			expectedVars: map[string]string{
 				// TODO: look into why `argArray?: any` isn't `...argArray?: Array<any>`
-				"apply": "fn (this: Function, thisArg: any, argArray?: any) -> any throws never",
+				"apply": "fn (this: Function, thisArg: any, argArray?: any) -> any",
 			},
 			wantErr: false,
 		},
 		"function intersection - multiple object properties": {
 			input: `
-				type EnhancedFunc = (fn (x: number) -> number throws never) & {foo: string} & {foo: number}
+				type EnhancedFunc = (fn (x: number) -> number) & {foo: string} & {foo: number}
 				declare val func: EnhancedFunc
 				val foo = func.foo
 			`,
@@ -721,14 +721,14 @@ func TestIntersectionMemberAccess(t *testing.T) {
 		},
 		"function intersection - access both Function method and custom property": {
 			input: `
-				type Tagged = (fn () -> void throws never) & {tag: string}
+				type Tagged = (fn () -> void) & {tag: string}
 				declare val func: Tagged
 				val tag = func.tag
 				val call = func.call
 			`,
 			expectedVars: map[string]string{
 				"tag":  "string",
-				"call": "fn (this: Function, thisArg: any, ...argArray: Array<any>) -> any throws never",
+				"call": "fn (this: Function, thisArg: any, ...argArray: Array<any>) -> any",
 			},
 			wantErr: false,
 		},
@@ -792,32 +792,32 @@ func TestFunctionOverloads(t *testing.T) {
 	}{
 		"successful call to first overload (number)": {
 			input: `
-				declare fn format(value: number) -> string throws never
-				declare fn format(value: string) -> string throws never
+				declare fn format(value: number) -> string
+				declare fn format(value: string) -> string
 				val result = format(42)
 			`,
 			expectedVars: map[string]string{
-				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+				"format": "fn (value: number) -> string & fn (value: string) -> string",
 				"result": "string",
 			},
 			wantErr: false,
 		},
 		"successful call to second overload (string)": {
 			input: `
-				declare fn format(value: number) -> string throws never
-				declare fn format(value: string) -> string throws never
+				declare fn format(value: number) -> string
+				declare fn format(value: string) -> string
 				val result = format("hello")
 			`,
 			expectedVars: map[string]string{
-				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+				"format": "fn (value: number) -> string & fn (value: string) -> string",
 				"result": "string",
 			},
 			wantErr: false,
 		},
 		"no matching overload": {
 			input: `
-				declare fn format(value: number) -> string throws never
-				declare fn format(value: string) -> string throws never
+				declare fn format(value: number) -> string
+				declare fn format(value: string) -> string
 				val result = format(true)
 			`,
 			expectedVars: map[string]string{},
@@ -825,9 +825,9 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"three overloads - all match correctly": {
 			input: `
-				declare fn process(value: number) -> string throws never
-				declare fn process(value: string) -> number throws never
-				declare fn process(value: boolean) -> void throws never
+				declare fn process(value: number) -> string
+				declare fn process(value: string) -> number
+				declare fn process(value: boolean) -> void
 				val r1 = process(42)
 				val r2 = process("hello")
 				val r3 = process(true)
@@ -841,8 +841,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload with different parameter counts": {
 			input: `
-				declare fn makeArray(value: number) -> Array<number> throws never
-				declare fn makeArray(value: number, count: number) -> Array<number> throws never
+				declare fn makeArray(value: number) -> Array<number>
+				declare fn makeArray(value: number, count: number) -> Array<number>
 				val arr1 = makeArray(5)
 				val arr2 = makeArray(5, 3)
 			`,
@@ -854,8 +854,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload with optional parameters": {
 			input: `
-				declare fn greet(name: string) -> string throws never
-				declare fn greet(name: string, greeting: string) -> string throws never
+				declare fn greet(name: string) -> string
+				declare fn greet(name: string, greeting: string) -> string
 				val msg1 = greet("Alice")
 				val msg2 = greet("Bob", "Hello")
 			`,
@@ -867,8 +867,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload with generic function": {
 			input: `
-				declare fn identity<T>(value: T) -> T throws never
-				declare fn identity(value: string) -> string throws never
+				declare fn identity<T>(value: T) -> T
+				declare fn identity(value: string) -> string
 				val str = identity("hello")
 			`,
 			expectedVars: map[string]string{
@@ -878,8 +878,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload return types are correctly inferred": {
 			input: `
-				declare fn convert(value: number) -> string throws never
-				declare fn convert(value: string) -> number throws never
+				declare fn convert(value: number) -> string
+				declare fn convert(value: string) -> number
 				val strResult = convert(42)
 				val numResult = convert("123")
 			`,
@@ -891,8 +891,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload with rest parameters": {
 			input: `
-				declare fn sum(x: number) -> number throws never
-				declare fn sum(x: number, ...rest: Array<number>) -> number throws never
+				declare fn sum(x: number) -> number
+				declare fn sum(x: number, ...rest: Array<number>) -> number
 				val r1 = sum(1)
 				val r2 = sum(1, 2, 3, 4)
 			`,
@@ -904,18 +904,18 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload intersection type is preserved": {
 			input: `
-				declare fn format(value: number) -> string throws never
-				declare fn format(value: string) -> string throws never
+				declare fn format(value: number) -> string
+				declare fn format(value: string) -> string
 			`,
 			expectedVars: map[string]string{
-				"format": "fn (value: number) -> string throws never & fn (value: string) -> string throws never",
+				"format": "fn (value: number) -> string & fn (value: string) -> string",
 			},
 			wantErr: false,
 		},
 		"wrong argument type for all overloads": {
 			input: `
-				declare fn parse(value: number) -> string throws never
-				declare fn parse(value: string) -> number throws never
+				declare fn parse(value: number) -> string
+				declare fn parse(value: string) -> number
 				val result = parse({x: 5})
 			`,
 			expectedVars: map[string]string{},
@@ -923,8 +923,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload returns first matching signature": {
 			input: `
-				declare fn process(value: string | number) -> string throws never
-				declare fn process(value: number) -> number throws never
+				declare fn process(value: string | number) -> string
+				declare fn process(value: number) -> number
 				val result = process(42)
 			`,
 			expectedVars: map[string]string{
@@ -934,8 +934,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"multiple overloads with incompatible return types": {
 			input: `
-				declare fn getData(id: number) -> {name: string} throws never
-				declare fn getData(id: string) -> {age: number} throws never
+				declare fn getData(id: number) -> {name: string}
+				declare fn getData(id: string) -> {age: number}
 				val data1 = getData(123)
 				val data2 = getData("abc")
 			`,
@@ -947,8 +947,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload with too few arguments": {
 			input: `
-				declare fn calculate(x: number, y: number) -> number throws never
-				declare fn calculate(x: number, y: number, z: number) -> number throws never
+				declare fn calculate(x: number, y: number) -> number
+				declare fn calculate(x: number, y: number, z: number) -> number
 				val result = calculate(5)
 			`,
 			expectedVars: map[string]string{},
@@ -956,8 +956,8 @@ func TestFunctionOverloads(t *testing.T) {
 		},
 		"overload with too many arguments": {
 			input: `
-				declare fn add(x: number) -> number throws never
-				declare fn add(x: number, y: number) -> number throws never
+				declare fn add(x: number) -> number
+				declare fn add(x: number, y: number) -> number
 				val result = add(1, 2, 3)
 			`,
 			expectedVars: map[string]string{},

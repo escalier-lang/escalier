@@ -19,4 +19,4 @@ declare const num: number;
 declare const p1: string;
 declare const p2: string;
 declare const str: string;
-declare async function test(): Promise<void, never>;
+declare function test(): Promise<void>;
