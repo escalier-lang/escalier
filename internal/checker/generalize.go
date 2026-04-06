@@ -132,6 +132,9 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 		}
 		fresh := c.FreshVar(nil)
 		varMapping[t.ID] = fresh
+		if t.Constraint != nil {
+			fresh.Constraint = c.deepCloneType(t.Constraint, varMapping)
+		}
 		return fresh
 	case *type_system.FuncType:
 		params := make([]*type_system.FuncParam, len(t.Params))
@@ -176,14 +179,101 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 		return type_system.NewTypeRefType(nil, type_system.QualIdentToString(t.Name), t.TypeAlias, args...)
 	case *type_system.RestSpreadType:
 		return type_system.NewRestSpreadType(nil, c.deepCloneType(t.Type, varMapping))
+	case *type_system.ObjectType:
+		elems := make([]type_system.ObjTypeElem, len(t.Elems))
+		for i, elem := range t.Elems {
+			switch e := elem.(type) {
+			case *type_system.PropertyElem:
+				elems[i] = &type_system.PropertyElem{
+					Name:     e.Name,
+					Optional: e.Optional,
+					Readonly: e.Readonly,
+					Value:    c.deepCloneType(e.Value, varMapping),
+				}
+			case *type_system.MethodElem:
+				elems[i] = &type_system.MethodElem{
+					Name:    e.Name,
+					Fn:      c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
+					MutSelf: e.MutSelf,
+				}
+			case *type_system.GetterElem:
+				elems[i] = &type_system.GetterElem{
+					Name: e.Name,
+					Fn:   c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
+				}
+			case *type_system.SetterElem:
+				elems[i] = &type_system.SetterElem{
+					Name: e.Name,
+					Fn:   c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
+				}
+			case *type_system.CallableElem:
+				elems[i] = &type_system.CallableElem{
+					Fn: c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
+				}
+			case *type_system.ConstructorElem:
+				elems[i] = &type_system.ConstructorElem{
+					Fn: c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
+				}
+			case *type_system.RestSpreadElem:
+				elems[i] = &type_system.RestSpreadElem{
+					Value: c.deepCloneType(e.Value, varMapping),
+				}
+			case *type_system.MappedElem:
+				var clonedTypeParam *type_system.IndexParam
+				if e.TypeParam != nil {
+					clonedTypeParam = &type_system.IndexParam{
+						Name:       e.TypeParam.Name,
+						Constraint: c.deepCloneType(e.TypeParam.Constraint, varMapping),
+					}
+				}
+				elems[i] = &type_system.MappedElem{
+					TypeParam: clonedTypeParam,
+					Name:      c.deepCloneType(e.Name, varMapping),
+					Value:     c.deepCloneType(e.Value, varMapping),
+					Optional:  e.Optional,
+					Readonly:  e.Readonly,
+					Check:     c.deepCloneType(e.Check, varMapping),
+					Extends:   c.deepCloneType(e.Extends, varMapping),
+				}
+			default:
+				elems[i] = elem
+			}
+		}
+		return &type_system.ObjectType{
+			ID:           t.ID,
+			Elems:        elems,
+			Exact:        t.Exact,
+			Immutable:    t.Immutable,
+			Mutable:      t.Mutable,
+			Nominal:      t.Nominal,
+			Interface:    t.Interface,
+			Extends:      t.Extends,
+			Implements:   t.Implements,
+			SymbolKeyMap: t.SymbolKeyMap,
+		}
+	case *type_system.CondType:
+		return type_system.NewCondType(nil,
+			c.deepCloneType(t.Check, varMapping),
+			c.deepCloneType(t.Extends, varMapping),
+			c.deepCloneType(t.Then, varMapping),
+			c.deepCloneType(t.Else, varMapping),
+		)
+	case *type_system.IndexType:
+		return type_system.NewIndexType(nil,
+			c.deepCloneType(t.Target, varMapping),
+			c.deepCloneType(t.Index, varMapping),
+		)
+	case *type_system.KeyOfType:
+		return type_system.NewKeyOfType(nil, c.deepCloneType(t.Type, varMapping))
+	case *type_system.TemplateLitType:
+		types := make([]type_system.Type, len(t.Types))
+		for i, typ := range t.Types {
+			types[i] = c.deepCloneType(typ, varMapping)
+		}
+		return type_system.NewTemplateLitType(nil, t.Quasis, types)
 	default:
 		// Leaf types (LitType, PrimType, NeverType, VoidType, etc.)
 		// contain no TypeVars and are never mutated by Unify.
-		// TODO(#381): Add cloning for composite types (ObjectType, CondType,
-		// IndexType, TemplateLitType, etc.) when deepCloneType is used for
-		// the probe-then-commit fix in unify.go's union/intersection handling.
-		// Currently only synthetic call-site FuncTypes are cloned, whose
-		// params and return types are limited to types already handled above.
 		return t
 	}
 }
