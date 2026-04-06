@@ -109,6 +109,8 @@ type TypeVarType struct {
 	Constraint  Type
 	Default     Type
 	FromBinding bool
+	Widenable   bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
+	IsParam     bool // true for type vars created for unannotated function parameters
 	provenance  Provenance
 }
 
@@ -1079,6 +1081,7 @@ type PropertyElem struct {
 	Optional bool
 	Readonly bool
 	Value    Type
+	Written  bool // true when property is assigned to during inference
 }
 
 func NewMethodElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElem {
@@ -1189,6 +1192,7 @@ func (p *PropertyElem) Accept(v TypeVisitor) ObjTypeElem {
 			Optional: p.Optional,
 			Readonly: p.Readonly,
 			Value:    newValue,
+			Written:  p.Written,
 		}
 	}
 	return p
@@ -1269,6 +1273,7 @@ type ObjectType struct {
 	// Maps symbols used as keys to the ast.Expr that was used as the computed
 	// key.
 	SymbolKeyMap map[int]any
+	Open         bool // true for inferred object types whose property set can grow during inference
 	// TODO: support multiple provenance entries for different elements so that
 	// we can work back from an element to the interface decl that defined it.
 	provenance Provenance
@@ -1362,6 +1367,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		result.Extends = newExtends
 		result.Implements = newImplements
 		result.SymbolKeyMap = t.SymbolKeyMap
+		result.Open = t.Open
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {

@@ -44,12 +44,17 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						span:     expr.Left.Span(),
 					})
 				} else {
-					// Check if the object type allows mutation
-					if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
-						errors = append(errors, &CannotMutateImmutableError{
-							Type: objType,
-							span: expr.Left.Span(),
-						})
+					pruned := type_system.Prune(objType)
+					// Open object types start without a MutabilityType wrapper —
+					// mark the property as written since we now know mutation occurs.
+					if !markPropertyWritten(pruned, memberExpr.Prop.Name) {
+						// Not an open object — check if the object type allows mutation
+						if _, ok := pruned.(*type_system.MutabilityType); !ok {
+							errors = append(errors, &CannotMutateImmutableError{
+								Type: objType,
+								span: expr.Left.Span(),
+							})
+						}
 					}
 				}
 			} else if indexExpr, ok := expr.Left.(*ast.IndexExpr); ok {
@@ -83,12 +88,23 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						span:     expr.Left.Span(),
 					})
 				} else {
-					// Check if the object type allows mutation
-					if _, ok := type_system.Prune(objType).(*type_system.MutabilityType); !ok {
-						errors = append(errors, &CannotMutateImmutableError{
-							Type: objType,
-							span: expr.Left.Span(),
-						})
+					pruned := type_system.Prune(objType)
+					// Open object types start without a MutabilityType wrapper —
+					// mark the property as written since we now know mutation occurs.
+					marked := false
+					if litType, ok := indexType.(*type_system.LitType); ok {
+						if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
+							marked = markPropertyWritten(pruned, strLit.Value)
+						}
+					}
+					if !marked {
+						// Not an open object — check if the object type allows mutation
+						if _, ok := pruned.(*type_system.MutabilityType); !ok {
+							errors = append(errors, &CannotMutateImmutableError{
+								Type: objType,
+								span: expr.Left.Span(),
+							})
+						}
 					}
 				}
 			}
@@ -218,6 +234,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			if _, isTypeVar := t.(*type_system.TypeVarType); isTypeVar {
 				// Don't copy TypeVarType — preserving pointer identity is essential
 				// so that unification constraints flow back to the function signature.
+				exprType = t
+			} else if openObj, ok := t.(*type_system.ObjectType); ok && openObj.Open {
+				// Don't copy open ObjectTypes — preserving pointer identity is
+				// essential so that property additions during inference (e.g.
+				// accessing obj.baz after obj.bar) flow back to the original type.
 				exprType = t
 			} else {
 				exprType = t.Copy()

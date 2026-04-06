@@ -222,6 +222,11 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.insideKeyOfTarget+1)
 		expandedTarget = type_system.Prune(expandedTarget)
 
+		// Unwrap MutabilityType so keyof sees the actual object type
+		if mut, ok := expandedTarget.(*type_system.MutabilityType); ok {
+			expandedTarget = mut.Type
+		}
+
 		switch target := expandedTarget.(type) {
 		case *type_system.ObjectType:
 			// Extract all keys from the object type (excluding methods)
@@ -485,6 +490,17 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		if _, ok := objType.(*type_system.IntersectionType); ok {
 			break
 		}
+		// Stop expanding TypeVarType so it reaches the switch below directly.
+		// On the first property access a TypeVarType is constrained to an
+		// open ObjectType (via t.Instance).  On subsequent accesses, Prune
+		// follows t.Instance to the ObjectType, and getObjectAccess handles
+		// adding new properties to open objects.
+		if _, ok := objType.(*type_system.TypeVarType); ok {
+			break
+		}
+		if _, ok := objType.(*type_system.MutabilityType); ok {
+			break
+		}
 
 		expandedType, expandErrors := c.ExpandType(ctx, objType, 1)
 		errors = slices.Concat(errors, expandErrors)
@@ -653,6 +669,55 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		return type_system.NewNeverType(nil), errors
 	case *type_system.IntersectionType:
 		return c.getIntersectionAccess(ctx, t, key, errors)
+	case *type_system.TypeVarType:
+		// TODO(#389): Check t.Constraint before synthesizing an open object.
+		// Constrained type variables (e.g. `<T: {name: string}>`) should resolve
+		// properties from their constraint first. Currently this only works for
+		// unannotated parameters where Constraint == nil.
+		switch k := key.(type) {
+		case PropertyKey:
+			propTV, openObj := c.newOpenObjectWithProperty(k.Name)
+			t.Instance = openObj
+			return propTV, errors
+		case IndexKey:
+			var keyType type_system.Type = k.Type
+			if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
+				keyType = mut.Type
+			}
+			// String literal index key — treat like property access
+			if indexLit, ok := keyType.(*type_system.LitType); ok {
+				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
+					propTV, openObj := c.newOpenObjectWithProperty(strLit.Value)
+					t.Instance = openObj
+					return propTV, errors
+				}
+			}
+			// Numeric index key — bind to Array<T>
+			if numPrim, ok := keyType.(*type_system.PrimType); ok && numPrim.Prim == type_system.NumPrim {
+				elemTV := c.FreshVar(nil)
+				t.Instance = &type_system.TypeRefType{
+					Name:     type_system.NewIdent("Array"),
+					TypeArgs: []type_system.Type{elemTV},
+				}
+				return elemTV, errors
+			}
+			if indexLit, ok := keyType.(*type_system.LitType); ok {
+				if _, ok := indexLit.Lit.(*type_system.NumLit); ok {
+					elemTV := c.FreshVar(nil)
+					t.Instance = &type_system.TypeRefType{
+						Name:     type_system.NewIdent("Array"),
+						TypeArgs: []type_system.Type{elemTV},
+					}
+					return elemTV, errors
+				}
+			}
+			// Non-literal string index — defer to later phase
+			errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+			return type_system.NewNeverType(nil), errors
+		default:
+			errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+			return type_system.NewNeverType(nil), errors
+		}
 	default:
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
@@ -689,6 +754,11 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				panic("MappedElems should have been expanded before property access")
 			case *type_system.ConstructorElem:
 			case *type_system.CallableElem:
+				continue
+			case *type_system.RestSpreadElem:
+				// The row variable is an unresolved TypeVarType during inference —
+				// there's no concrete ObjectType to query for properties here.
+				// It gets resolved during unification/generalization, not member lookup.
 				continue
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
@@ -728,6 +798,11 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			errors = append(errors, &ExpectedObjectError{Type: extendsType})
 		}
 
+		// If the object is open, add the new property instead of reporting an error
+		if objType.Open {
+			return c.addPropertyToOpenObject(objType, k.Name), errors
+		}
+
 		errors = append(errors, &UnknownPropertyError{
 			ObjectType: objType,
 			Property:   k.Name,
@@ -755,8 +830,22 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						if elem.Name == type_system.NewStrKey(strLit.Value) {
 							return elem.Fn, errors
 						}
+					case *type_system.GetterElem:
+						if elem.Name == type_system.NewStrKey(strLit.Value) {
+							return elem.Fn.Return, errors
+						}
+					case *type_system.SetterElem:
+						if elem.Name == type_system.NewStrKey(strLit.Value) {
+							return elem.Fn.Params[0].Type, errors
+						}
 					case *type_system.MappedElem:
 						panic("MappedElems should have been expanded before property access")
+					case *type_system.ConstructorElem:
+					case *type_system.CallableElem:
+						continue
+					case *type_system.RestSpreadElem:
+						// See comment in PropertyKey branch above.
+						continue
 					default:
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 					}
@@ -812,6 +901,15 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 
+		// If the object is open and the key is a string literal, add the new property
+		if objType.Open {
+			if indexLit, ok := keyType.(*type_system.LitType); ok {
+				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
+					return c.addPropertyToOpenObject(objType, strLit.Value), errors
+				}
+			}
+		}
+
 		errors = append(errors, &InvalidObjectKeyError{
 			Key:  keyType,
 			span: k.Span(),
@@ -821,6 +919,61 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		errors = append(errors, &ExpectedObjectError{Type: objType})
 		return type_system.NewUndefinedType(nil), errors
 	}
+}
+
+// newOpenObjectWithProperty creates a new open ObjectType with a single property
+// and a rest-spread element, returning the property's type variable and the object.
+func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarType, *type_system.MutabilityType) {
+	propTV := c.FreshVar(nil)
+	propTV.Widenable = true
+	rowTV := c.FreshVar(nil)
+	openObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey(name), propTV),
+		type_system.NewRestSpreadElem(rowTV),
+	})
+	openObj.Open = true
+	return propTV, &type_system.MutabilityType{
+		Type:       openObj,
+		Mutability: type_system.MutabilityUncertain,
+	}
+}
+
+// addPropertyToOpenObject appends a new widenable property to an existing open
+// ObjectType and returns the property's type variable.
+func (c *Checker) addPropertyToOpenObject(objType *type_system.ObjectType, name string) *type_system.TypeVarType {
+	propTV := c.FreshVar(nil)
+	propTV.Widenable = true
+	objType.Elems = append(objType.Elems, type_system.NewPropertyElem(type_system.NewStrKey(name), propTV))
+	return propTV
+}
+
+// markPropertyWritten finds a property by name on an open ObjectType and sets
+// its Written flag. It handles both bare ObjectType and MutabilityType-wrapped
+// ObjectType. Returns true if the property was found and marked.
+func markPropertyWritten(prunedType type_system.Type, propName string) bool {
+	var openObj *type_system.ObjectType
+	switch t := prunedType.(type) {
+	case *type_system.ObjectType:
+		if t.Open {
+			openObj = t
+		}
+	case *type_system.MutabilityType:
+		if obj, ok := t.Type.(*type_system.ObjectType); ok && obj.Open {
+			openObj = obj
+		}
+	}
+	if openObj == nil {
+		return false
+	}
+	for _, elem := range openObj.Elems {
+		if propElem, ok := elem.(*type_system.PropertyElem); ok {
+			if propElem.Name == type_system.NewStrKey(propName) {
+				propElem.Written = true
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // getUnionAccess handles property and index access on UnionType
@@ -894,6 +1047,11 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
+		// Unwrap MutabilityType so inferred open objects (wrapped in mut?)
+		// are classified as object parts of the intersection.
+		if mut, ok := part.(*type_system.MutabilityType); ok {
+			part = mut.Type
+		}
 		if objType, ok := part.(*type_system.ObjectType); ok {
 			objectTypes = append(objectTypes, objType)
 		} else if funcType, ok := part.(*type_system.FuncType); ok {
@@ -964,8 +1122,12 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	// If not found in object types, try other parts (primitives, functions, etc.)
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
-		// Skip object types since we already checked them
-		if _, ok := part.(*type_system.ObjectType); ok {
+		// Skip object types (including MutabilityType-wrapped) since we already checked them
+		unwrapped := part
+		if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+			unwrapped = mut.Type
+		}
+		if _, ok := unwrapped.(*type_system.ObjectType); ok {
 			continue
 		}
 		memberType, memberErrors := c.getMemberType(ctx, part, key)
