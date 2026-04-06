@@ -10,6 +10,7 @@ import (
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRowTypesPropertyAccess(t *testing.T) {
@@ -66,6 +67,16 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"foo": "fn <T0, T1, T2>(obj: {foo: {bar: T0, ...T1}, ...T2}) -> T0",
+			},
+		},
+		"NestedWrite": {
+			input: `
+				fn foo(obj) {
+					obj.foo.bar = 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: mut {foo: mut {bar: 5, ...T0}, ...T1}) -> void",
 			},
 		},
 		"MultipleParams": {
@@ -210,7 +221,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
 				}
 			}
-			assert.Len(t, errors, 0)
+			require.Empty(t, errors)
 
 			c := NewChecker()
 			inferCtx := Context{
@@ -225,23 +236,21 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
 				}
-				assert.Equal(t, inferErrors, []*Error{})
 			}
+			require.Empty(t, inferErrors)
 
 			// Collect actual types for verification
 			actualTypes := make(map[string]string)
 			for name, binding := range scope.Values {
-				assert.NotNil(t, binding)
+				require.NotNil(t, binding)
 				actualTypes[name] = binding.Type.String()
 			}
 
 			// Verify that all expected types match the actual inferred types
 			for expectedName, expectedType := range test.expectedTypes {
 				actualType, exists := actualTypes[expectedName]
-				assert.True(t, exists, "Expected variable %s to be declared", expectedName)
-				if exists {
-					assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
-				}
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
 			}
 		})
 	}
@@ -288,7 +297,7 @@ func TestRowTypesErrors(t *testing.T) {
 					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
 				}
 			}
-			assert.Len(t, errors, 0)
+			require.Empty(t, errors)
 
 			c := NewChecker()
 			inferCtx := Context{
@@ -298,7 +307,7 @@ func TestRowTypesErrors(t *testing.T) {
 			}
 			inferErrors := c.InferModule(inferCtx, module)
 
-			assert.Len(t, inferErrors, len(test.expectedErrs), "expected %d errors, got %d", len(test.expectedErrs), len(inferErrors))
+			require.Len(t, inferErrors, len(test.expectedErrs), "expected %d errors, got %d", len(test.expectedErrs), len(inferErrors))
 			for i, expectedErr := range test.expectedErrs {
 				if i < len(inferErrors) {
 					assert.Contains(t, inferErrors[i].Message(), expectedErr)

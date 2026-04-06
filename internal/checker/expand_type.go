@@ -493,6 +493,9 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		if _, ok := objType.(*type_system.TypeVarType); ok {
 			break
 		}
+		if _, ok := objType.(*type_system.MutabilityType); ok {
+			break
+		}
 
 		expandedType, expandErrors := c.ExpandType(ctx, objType, 1)
 		errors = slices.Concat(errors, expandErrors)
@@ -834,10 +837,6 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 					}
 				}
-				// If the object is open, add the new property instead of reporting an error
-				if objType.Open {
-					return c.addPropertyToOpenObject(objType, strLit.Value), errors
-				}
 			}
 		}
 		// Handle unique symbol keys (e.g. Symbol.iterator)
@@ -889,6 +888,15 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 
+		// If the object is open and the key is a string literal, add the new property
+		if objType.Open {
+			if indexLit, ok := keyType.(*type_system.LitType); ok {
+				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
+					return c.addPropertyToOpenObject(objType, strLit.Value), errors
+				}
+			}
+		}
+
 		errors = append(errors, &InvalidObjectKeyError{
 			Key:  keyType,
 			span: k.Span(),
@@ -902,7 +910,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 // newOpenObjectWithProperty creates a new open ObjectType with a single property
 // and a rest-spread element, returning the property's type variable and the object.
-func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarType, *type_system.ObjectType) {
+func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarType, *type_system.MutabilityType) {
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
 	rowTV := c.FreshVar(nil)
@@ -911,7 +919,10 @@ func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarTy
 		type_system.NewRestSpreadElem(rowTV),
 	})
 	openObj.Open = true
-	return propTV, openObj
+	return propTV, &type_system.MutabilityType{
+		Type:       openObj,
+		Mutability: type_system.MutabilityUncertain,
+	}
 }
 
 // addPropertyToOpenObject appends a new widenable property to an existing open

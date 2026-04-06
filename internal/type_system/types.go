@@ -1192,6 +1192,7 @@ func (p *PropertyElem) Accept(v TypeVisitor) ObjTypeElem {
 			Optional: p.Optional,
 			Readonly: p.Readonly,
 			Value:    newValue,
+			Written:  p.Written,
 		}
 	}
 	return p
