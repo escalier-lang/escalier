@@ -406,6 +406,113 @@ func TestRowTypesIntersectionAccess(t *testing.T) {
 	}
 }
 
+// TestRowTypesPassToTypedFunction tests Phase 3: passing inferred open-typed
+// parameters to functions with typed parameters unifies correctly.
+func TestRowTypesPassToTypedFunction(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"PassToTypedFunction": {
+			input: `
+				fn bar(x: {bar: string}) -> string { return x.bar }
+				fn foo(obj) { bar(obj) }
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn (x: {bar: string}) -> string",
+				"foo": "fn <T0>(obj: {bar: string, ...T0}) -> void",
+			},
+		},
+		"PropertiesSurviveFunctionCall": {
+			input: `
+				fn bar(x: {bar: string}) -> string { return x.bar }
+				fn foo(obj) {
+					obj.z = true
+					bar(obj)
+					obj.w = "hello"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {z: true, ...T0, bar: string, w: \"hello\"}) -> void",
+			},
+		},
+		"MultipleCallsMerge": {
+			input: `
+				fn bar(x: {x: number}) -> number { return x.x }
+				fn baz(y: {y: string}) -> string { return y.y }
+				fn foo(obj) {
+					bar(obj)
+					baz(obj)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {x: number, ...T0, y: string}) -> void",
+			},
+		},
+		"NonObjectBinding": {
+			input: `
+				fn takes_num(x: number) -> number { return x }
+				fn foo(obj) { takes_num(obj) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: number) -> void",
+			},
+		},
+		"MultipleParameters": {
+			input: `
+				fn bar(x: {a: number}) -> number { return x.a }
+				fn baz(y: {b: string}) -> string { return y.b }
+				fn foo(a, b) {
+					bar(a)
+					baz(b)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(a: {a: number, ...T0}, b: {b: string, ...T1}) -> void",
+			},
+		},
+		"OpenVsClosedSharedProperty": {
+			input: `
+				fn bar(x: {name: string}) -> string { return x.name }
+				fn foo(obj) {
+					obj.name = "hi"
+					bar(obj)
+				}
+			`,
+			expectedTypes: map[string]string{
+				// name stays as "hi" because literal widening is Phase 4
+				"foo": "fn <T0>(obj: mut {name: \"hi\", ...T0}) -> void",
+			},
+		},
+		"OpenVsClosedExtraPropertiesInOpen": {
+			input: `
+				fn bar(x: {a: number}) -> number { return x.a }
+				fn foo(obj) {
+					obj.a = 1
+					obj.b = "hi"
+					bar(obj)
+				}
+			`,
+			expectedTypes: map[string]string{
+				// a stays as 1 because literal widening is Phase 4
+				"foo": "fn <T0>(obj: mut {a: 1, ...T0, b: \"hi\"}) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
 // TestRowTypesStringLiteralIndexAfterExtends tests that string-literal index
 // access on open objects checks Extends before adding a new property.
 func TestRowTypesStringLiteralIndexAfterExtends(t *testing.T) {

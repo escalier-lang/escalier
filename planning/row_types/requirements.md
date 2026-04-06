@@ -418,7 +418,11 @@ within the function body.
 
 The unifier must be extended to handle the following cases:
 
-#### 6a. Unifying unannotated-parameter TypeVarTypes
+#### 6a. Unifying unannotated-parameter TypeVarTypes ✅
+
+> **Status (2026-04-06):** Implemented in Phase 3. The `openClosedObjectForParam`
+> helper in `bind()` handles the conversion from closed to open. See Phase 3 in
+> [implementation_plan.md](implementation_plan.md) for details.
 
 An unannotated parameter starts as a bare `TypeVarType`. It may be constrained
 by property access (Option C — eagerly binds to an open `ObjectType`), by being
@@ -430,9 +434,10 @@ call): unification proceeds as open-vs-closed (6c) or open-vs-open (6b).
 **Not yet bound** (no properties accessed yet): the type variable is unified
 with the parameter type via `bind()`. Since the parameter is unannotated, it
 must remain open if the target is an `ObjectType`. When `bind()` encounters a
-closed `ObjectType`, it should bind the type variable to an open `ObjectType`
+closed `ObjectType`, it binds the type variable to an open `ObjectType`
 (`Open: true`) with the same properties plus a `RestSpreadElem` with a fresh
-row variable.
+row variable. No `MutabilityType` wrapper is added — `GeneralizeFuncType` finds
+open objects by checking `ObjectType.Open` directly.
 
 If the target is not an `ObjectType` (e.g. `number`, `string`), `bind()` binds
 directly as usual — openness only applies to object types.
@@ -455,7 +460,10 @@ fn foo(obj) {
 When two open `ObjectType`s are intersected, their properties are merged and
 their row variables unified (see 6b).
 
-#### 6b. Multiple constraints on a type variable
+#### 6b. Multiple constraints on a type variable ✅
+
+> **Status (2026-04-06):** Implemented in Phase 3. Multiple calls compose
+> automatically via the open-vs-closed unification path.
 
 When a type variable is constrained by multiple function calls, the constraints
 compose via intersection. For open object types, this means merging properties
@@ -476,7 +484,11 @@ fn foo(arg) {
 }
 ```
 
-#### 6c. Open object type with closed object type
+#### 6c. Open object type with closed object type ✅
+
+> **Status (2026-04-06):** Implemented in Phase 3. The open-vs-closed and
+> open-vs-open paths are handled in the ObjectType-vs-ObjectType branch of
+> `unifyWithDepth`.
 
 When an open object type is unified with a closed object type during inference
 (e.g. passing an inferred param to a typed function), the open type must **not**
@@ -666,7 +678,9 @@ serves as the row variable for row polymorphism — the two concerns are orthogo
 
 ### 8. Integration with Existing Inference
 
-#### 8a. Passing inferred-type params to typed functions
+#### 8a. Passing inferred-type params to typed functions ✅
+
+> **Status (2026-04-06):** Implemented in Phase 3.
 
 When a value with an inferred (open) object type is passed to a function with a
 typed parameter, the open type should unify with the parameter's type:
@@ -686,7 +700,9 @@ If an inferred-type param is returned from the function, the return type should
 reflect the inferred open type. See 8g and Section 11 for details on how the
 row variable connects input to output for callers.
 
-#### 8c. Multiple parameters
+#### 8c. Multiple parameters ✅
+
+> **Status (2026-04-06):** Implemented in Phase 3.
 
 Each unannotated parameter gets its own independent set of inferred constraints:
 
@@ -698,7 +714,10 @@ fn foo(a, b) {
 // inferred: fn foo(a: mut {x: number}, b: mut {y: string}) -> void
 ```
 
-#### 8d. Aliasing and flow
+#### 8d. Aliasing and flow ✅
+
+> **Status (2026-04-06):** Works automatically via type variable unification.
+> Tested implicitly through Phase 3.
 
 If an unannotated parameter is assigned to a local variable and then properties
 are accessed on that variable, the constraints should flow back to the parameter:

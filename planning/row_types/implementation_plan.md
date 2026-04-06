@@ -260,7 +260,7 @@ on the type variables but `bind()` does not yet widen literals to primitives.
 
 ---
 
-## Phase 3: Unification for Open Object Types
+## Phase 3: Unification for Open Object Types ✅
 
 **Requirements covered:** Sections 6a, 6b, 6c, 8a (passing to typed
 functions), 8c (multiple parameters), 8d (aliasing).
@@ -276,137 +276,88 @@ functions), 8c (multiple parameters), 8d (aliasing).
 **Goal:** Passing an open-typed function parameter to a typed function unifies
 correctly without closing the type prematurely.
 
-### Changes
+### Implementation (completed 2026-04-06)
+
+**Deviation from plan:** The `bind()` helper does **not** wrap the opened object
+in `MutabilityType{Uncertain}`. Instead, the open `ObjectType` is bound directly
+to the type variable. `GeneralizeFuncType` finds open objects by checking
+`ObjectType.Open` (not by looking for a `MutabilityType` wrapper), so no wrapper
+is needed. Mutability is resolved during generalization based on the `Written`
+flag, consistent with Phase 2.
+
+**Changes made:**
 
 1. **`internal/checker/infer_func.go`** — `inferFuncParams` (~line 26):
-   - When creating a `FreshVar()` for an unannotated parameter, set
-     `IsParam: true` on the resulting `TypeVarType` (the `IsParam` field is
-     added in Phase 1).
+   - When creating a `FreshVar()` for an unannotated parameter, sets
+     `IsParam: true` on the resulting `TypeVarType`. Only simple identifier
+     patterns (not destructuring) are marked, since destructuring patterns with
+     inline type annotations already determine their type fully.
 
-2. **`internal/checker/unify.go`** — `bind()` (~line 1609):
-   The existing `bind()` already has a pattern for special handling before
-   setting `Instance`: it checks `typeVar.FromBinding` (~lines 1661, 1694) and
-   calls `removeUncertainMutability` when true. The `IsParam` check follows the
-   same pattern, placed alongside `FromBinding`:
-   ```go
-   // At ~line 1661 (typeVar1 branch) and ~line 1694 (typeVar2 branch):
-   // Note: IsParam and FromBinding are on different TypeVarTypes —
-   // IsParam is on the typeAnn FreshVar, FromBinding is on the pattern's
-   // FreshVar. They are unified together but the IsParam variable is the
-   // one stored in FuncParam.Type, so both flags won't be true on the
-   // same TypeVarType.
-   if typeVar.IsParam {
-       if closedObj, ok := targetType.(*ObjectType); ok && !closedObj.Open {
-           // Open: true allows new properties to be added during inference.
-           // The RestSpreadElem is the row variable for row polymorphism
-           // (Phase 7) — without it, callers' extra properties would be
-           // lost when the parameter is returned. For example:
-           //   fn foo(obj) { bar(obj); return obj }
-           //   foo({x: 1, y: 2})  // y preserved via RestSpreadElem
-           // Open and RestSpreadElem serve different purposes and are both
-           // needed here.
-           openCopy := &ObjectType{
-               Elems: append(slices.Clone(closedObj.Elems),
-                   NewRestSpreadElem(c.FreshVar(nil))),
-               Open: true,
-           }
-           // Wrap in MutabilityUncertain (same as Phase 2)
-           typeVar.Instance = NewMutabilityType(nil, openCopy, MutabilityUncertain)
-           return nil
-       }
-   }
-   // existing FromBinding check follows...
-   ```
-   - If the target is **not** an `ObjectType` (e.g. `number`, `string`), bind
-     directly as usual — openness only applies to object types.
-   - If the TypeVarType is already bound (via `Prune`), this path is not
-     reached — `bind()` is only called for unbound variables.
+2. **`internal/checker/unify.go`** — `openClosedObjectForParam` helper:
+   Extracted a shared helper used by both `typeVar1` and `typeVar2` branches
+   in `bind()`. When a param type variable (`IsParam: true`) is bound to a
+   closed `ObjectType`, the helper:
+   - Creates an open copy with `Open: true` and a fresh `RestSpreadElem` (row
+     variable for row polymorphism).
+   - Binds the type variable's `Instance` directly to the open copy (no
+     `MutabilityType` wrapper).
+   - Sets provenance to the original closed type.
+   - Returns `true` to short-circuit the normal bind path.
+   - If the target is not a closed `ObjectType`, returns `false` and the normal
+     bind path proceeds (e.g. `number`, `string` bind directly).
 
 3. **`internal/checker/unify.go`** — ObjectType-vs-ObjectType branch
-   (~line 874):
-   Add checks for `Open` at the top of this branch, after the existing nominal
-   check (~line 877–888). Three paths:
+   (~line 957):
+   Added checks for `Open` after the existing nominal check. Three paths:
 
-   **a. Open-vs-closed (open type on either side):**
-   1. Unify all shared property names pairwise (by iterating explicit
-      `PropertyElem`s, `MethodElem`s, etc. from both types and matching by
-      `Name`).
-   2. Properties present in the closed type but **not** in the open type: append
-      them as new `PropertyElem`s to the open type's `Elems`. These are
-      requirements from the closed type that become part of the inferred type.
-   3. Properties present in the open type but **not** in the closed type: allowed
-      (structural subtyping — the inferred type has more properties than the
-      closed type requires). No error.
-   4. If the open type has a `RestSpreadElem` and the closed type has unmatched
-      properties, those properties are added to the open type's `Elems` (step 2
-      handles this). The `RestSpreadElem` remains — it represents possible
-      additional properties from future accesses or callers.
-   5. Keep `Open: true` on the open type. Closing only happens after the function
-      body is fully inferred (Phase 6).
-
-   **b. Open-vs-open (both types have `Open: true`):**
+   **a. Open-vs-open (both `Open: true`):**
    1. Unify shared properties pairwise.
    2. Properties in one but not the other are added to both (merge).
-   3. If both have `RestSpreadElem`s, unify their row variables by setting one's
-      `Instance` to the other (so they share the same binding going forward).
-   4. Both remain open.
+   3. If both have `RestSpreadElem`s, unify their row variables.
+   4. Both remain open. Returns early.
+
+   **b. Open-vs-closed (one side has `Open: true`):**
+   1. Unify shared properties pairwise.
+   2. Properties in the closed type but not the open type are added to the open
+      type's `Elems`.
+   3. Properties in the open type but not the closed type are allowed (structural
+      subtyping). Returns early.
 
    **c. Closed-vs-closed (existing path):**
-   Existing code handles this. No changes needed. Ensure the existing logic
-   remains the fallthrough path.
+   Existing code handles this. Falls through when neither type is open.
 
-   **Note on the existing `RestSpreadElem` handling:** The current unifier
-   (~line 927–1061) already collects leftover properties and unifies them with
-   the rest type variable. The key change is: when `Open` is `true` on one side,
-   add the other side's properties to the open type's `Elems` directly instead of
-   binding the row variable to them.
-
-4. **Section 6b — Multiple constraints via intersection:**
-   When a type variable is constrained by multiple function calls
-   (`bar(obj); baz(obj)`), the constraints compose via intersection. After the
-   first call, the type variable is bound to an open `ObjectType`. The second
-   call unifies that open `ObjectType` with the second function's parameter type.
-   This goes through the open-vs-closed path (3a above), which merges properties.
-   No additional intersection logic is needed.
-
-   For non-object constraints (`takes_num(arg); takes_str(arg)`), the existing
-   unifier handles `number` vs `string` normally (produces an error or `never`).
+4. **Multiple constraints via intersection (Section 6b):**
+   Works automatically. After the first call binds the type variable to an open
+   `ObjectType`, the second call unifies that open object with the second
+   function's parameter type via the open-vs-closed path (3b above).
 
 5. **Aliasing (Section 8d):**
-   When `let alias = obj` is inferred, the assignment unifies `alias`'s type
-   with `obj`'s type. Since both start as type variables, one's `Instance` is
-   set to the other. Subsequent accesses on `alias` therefore constrain `obj`.
-   This works automatically — no additional changes needed.
+   Works automatically. `let alias = obj` unifies the type variables, so
+   subsequent accesses on `alias` constrain `obj`.
 
-### Tests
+### Tests (implemented)
 
-- **Pass to typed function:**
-  `fn bar(x: {bar: string}) -> string { return x.bar }; fn foo(obj) { bar(obj) }`
-  — `obj` gets `{bar: string, ...R}` (open during inference).
-- **Properties survive function call:**
-  `fn foo(obj) { obj.z = true; bar(obj); obj.w = "hello" }` — all three
-  properties inferred.
-- **Multiple calls merge:**
-  `fn foo(obj) { bar(obj); baz(obj) }` where `bar` expects `{x: number}` and
-  `baz` expects `{y: string}` — `obj` gets `{x: number, y: string, ...R}`.
-- **Non-object binding:**
-  `fn takes_num(x: number) {...}; fn foo(obj) { takes_num(obj) }` — `obj` binds
-  to `number` directly, not an open object.
-- **Conflicting non-object constraints:**
-  `fn foo(arg) { takes_num(arg); takes_str(arg) }` — `arg` becomes `never`
-  (number & string = never).
-- **Aliasing:**
-  `fn foo(obj) { let alias = obj; alias.x = 1 }` — `obj` inferred as
-  `{x: number}`.
-- **Multiple parameters:**
-  `fn foo(a, b) { bar(a); baz(b) }` — each parameter independently constrained.
-- **Open-vs-closed shared property unification:**
-  `fn bar(x: {name: string}) {...}; fn foo(obj) { obj.name = "hi"; bar(obj) }`
-  — shared property `name` is unified pairwise; open type keeps extra properties
-  if any.
-- **Open-vs-closed extra properties in open type:**
-  `fn bar(x: {a: number}) {...}; fn foo(obj) { obj.a = 1; obj.b = "hi"; bar(obj) }`
-  — `obj` has both `a` and `b`; `bar(obj)` succeeds (structural subtyping).
+Test file: `internal/checker/tests/row_types_test.go`
+
+**`TestRowTypesPassToTypedFunction`** — table-driven tests:
+- **PassToTypedFunction:** `fn bar(x: {bar: string}) ...; fn foo(obj) { bar(obj) }`
+  → `foo: fn <T0>(obj: {bar: string, ...T0}) -> void`
+- **PropertiesSurviveFunctionCall:** property assignments before and after a
+  typed call are preserved → `fn <T0>(obj: mut {z: true, ...T0, bar: string, w: "hello"}) -> void`
+- **MultipleCallsMerge:** two typed calls merge constraints →
+  `fn <T0>(obj: {x: number, ...T0, y: string}) -> void`
+- **NonObjectBinding:** passing to `fn takes_num(x: number)` binds directly →
+  `fn (obj: number) -> void`
+- **MultipleParameters:** independent constraints per parameter →
+  `fn <T0, T1>(a: {a: number, ...T0}, b: {b: string, ...T1}) -> void`
+- **OpenVsClosedSharedProperty:** shared property unified pairwise; literal type
+  preserved (widening is Phase 4) →
+  `fn <T0>(obj: mut {name: "hi", ...T0}) -> void`
+- **OpenVsClosedExtraPropertiesInOpen:** extra properties in open type allowed →
+  `fn <T0>(obj: mut {a: 1, ...T0, b: "hi"}) -> void`
+
+**Note on inferred types:** Property values retain literal types (e.g. `"hi"`
+not `string`) because literal widening (Phase 4) is not yet implemented.
 
 ---
 
@@ -1256,7 +1207,7 @@ These can be addressed in follow-up work.
 ```
 Phase 1: Type System Extensions ✅
 └── Phase 2: Property Access ✅
-    ├── Phase 3: Unification
+    ├── Phase 3: Unification ✅
     │   ├── Phase 4: Widening
     │   │   └── Phase 5: Method Calls
     │   │       └── Phase 6: Closing

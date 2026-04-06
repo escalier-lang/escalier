@@ -954,6 +954,74 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 				}
 			}
 
+			// Open-vs-open: unify shared properties, merge non-shared,
+			// unify row variables.
+			if obj1.Open && obj2.Open {
+				for _, key := range keys1 {
+					if value2, ok := namedElems2[key]; ok {
+						unifyErrors := c.Unify(ctx, namedElems1[key], value2)
+						errors = slices.Concat(errors, unifyErrors)
+					}
+				}
+				// Add properties from obj2 not in obj1 to obj1
+				for _, key := range keys2 {
+					if _, ok := namedElems1[key]; !ok {
+						obj1.Elems = append(obj1.Elems, &type_system.PropertyElem{
+							Name:  key,
+							Value: namedElems2[key],
+						})
+					}
+				}
+				// Add properties from obj1 not in obj2 to obj2
+				for _, key := range keys1 {
+					if _, ok := namedElems2[key]; !ok {
+						obj2.Elems = append(obj2.Elems, &type_system.PropertyElem{
+							Name:  key,
+							Value: namedElems1[key],
+						})
+					}
+				}
+				// Unify row variables if both have RestSpreadElems
+				if restType1 != nil && restType2 != nil {
+					unifyErrors := c.Unify(ctx, restType1, restType2)
+					errors = slices.Concat(errors, unifyErrors)
+				}
+				return errors
+			}
+
+			// Open-vs-closed: unify shared properties, add closed-only
+			// properties to the open type. Open-only properties are allowed
+			// (structural subtyping).
+			if obj1.Open || obj2.Open {
+				var openObj *type_system.ObjectType
+				var openNamedElems, closedNamedElems map[type_system.ObjTypeKey]type_system.Type
+				var closedKeys []type_system.ObjTypeKey
+				if obj1.Open {
+					openObj = obj1
+					openNamedElems, closedNamedElems = namedElems1, namedElems2
+					closedKeys = keys2
+				} else {
+					openObj = obj2
+					openNamedElems, closedNamedElems = namedElems2, namedElems1
+					closedKeys = keys1
+				}
+				for _, key := range closedKeys {
+					closedValue := closedNamedElems[key]
+					if openValue, ok := openNamedElems[key]; ok {
+						unifyErrors := c.Unify(ctx, openValue, closedValue)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						// Property in closed but not in open: add to open type
+						openObj.Elems = append(openObj.Elems, &type_system.PropertyElem{
+							Name:  key,
+							Value: closedValue,
+						})
+					}
+				}
+				return errors
+			}
+
+			// Closed-vs-closed (existing path)
 			if restType1 != nil && restType2 != nil {
 				return []Error{&UnimplementedError{message: "unify types with two rest elems"}}
 			} else if restType1 != nil {
@@ -1675,6 +1743,11 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				if typeVar1.Constraint != nil {
 					errors = c.Unify(ctx, typeVar1.Constraint, t2)
 				}
+				if typeVar1.IsParam {
+					if opened := c.openClosedObjectForParam(typeVar1, t2); opened {
+						return errors
+					}
+				}
 				// We need to know if typeVar1 was inferred from a new binding or not
 				if typeVar1.FromBinding {
 					typeVar1.Instance = removeUncertainMutability(t2)
@@ -1707,6 +1780,11 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 
 				if typeVar2.Constraint != nil {
 					errors = c.Unify(ctx, t1, typeVar2.Constraint)
+				}
+				if typeVar2.IsParam {
+					if opened := c.openClosedObjectForParam(typeVar2, t1); opened {
+						return errors
+					}
 				}
 				// We need to know if typeVar2 was inferred from a new binding or not
 				if typeVar2.FromBinding {
@@ -1747,6 +1825,26 @@ func occursInType(t1, t2 type_system.Type) bool {
 	visitor := &OccursInVisitor{result: false, t1: t1}
 	t2.Accept(visitor)
 	return visitor.result
+}
+
+// openClosedObjectForParam checks if boundType is a closed ObjectType and, if so,
+// converts it to an open object and binds it to the type variable. Returns true if
+// the conversion was performed.
+func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, boundType type_system.Type) bool {
+	closedObj, ok := boundType.(*type_system.ObjectType)
+	if !ok || closedObj.Open {
+		return false
+	}
+	openCopy := &type_system.ObjectType{
+		Elems: append(slices.Clone(closedObj.Elems),
+			type_system.NewRestSpreadElem(c.FreshVar(nil))),
+		Open: true,
+	}
+	typeVar.Instance = openCopy
+	typeVar.SetProvenance(&type_system.TypeProvenance{
+		Type: boundType,
+	})
+	return true
 }
 
 type RemoveUncertainMutabilityVisitor struct{}
