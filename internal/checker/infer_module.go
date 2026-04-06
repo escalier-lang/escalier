@@ -703,6 +703,7 @@ func (c *Checker) InferComponent(
 				switch d := decl.(type) {
 				case *ast.FuncDecl:
 					if ft, ok := funcTypeForDecl[d]; ok {
+						c.resolveCallSites(ctx)
 						GeneralizeFuncType(ft)
 					}
 					continue
@@ -725,12 +726,19 @@ func (c *Checker) InferComponent(
 				declCtx := declCtxMap[decl]
 
 				if decl.Body != nil {
+					// Allocate call-site maps so body inference and resolveCallSites share them.
+					callSites := make(map[int][]*type_system.FuncType)
+					callSiteTypeVars := make(map[int]*type_system.TypeVarType)
+					declCtx.CallSites = &callSites
+					declCtx.CallSiteTypeVars = &callSiteTypeVars
+
 					inferErrors := c.inferFuncBodyWithFuncSigType(
 						declCtx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
 					errors = slices.Concat(errors, inferErrors)
 				}
 
-				// Generalize any remaining unresolved type variables into type parameters
+				// Resolve deferred call sites and generalize type variables into type parameters
+				c.resolveCallSites(declCtx)
 				GeneralizeFuncType(funcType)
 
 			case *ast.VarDecl:
@@ -754,6 +762,14 @@ func (c *Checker) InferComponent(
 						patType := decl.InferredType
 						unifyErrors := c.Unify(ctx, initType, patType)
 						errors = slices.Concat(errors, unifyErrors)
+					}
+					// Generalize VarDecl bindings that resolve to FuncType.
+					// This handles cases like `val I = S(K)(K)` where the
+					// initializer is a call returning a FuncType with unresolved vars.
+					prunedType := type_system.Prune(decl.InferredType)
+					if funcType, ok := prunedType.(*type_system.FuncType); ok {
+						c.resolveCallSites(nsCtx)
+						GeneralizeFuncType(funcType)
 					}
 				}
 			case *ast.TypeDecl:
@@ -1077,10 +1093,12 @@ func (c *Checker) InferComponent(
 							// For static methods, no 'self' parameter is added
 
 							for _, param := range methodType.Fn.Params {
-								paramBindings[param.Pattern.String()] = &type_system.Binding{
-									Source:  &type_system.TypeProvenance{Type: param.Type},
-									Type:    param.Type,
-									Mutable: false,
+								if param.Pattern != nil {
+									paramBindings[param.Pattern.String()] = &type_system.Binding{
+										Source:  &type_system.TypeProvenance{Type: param.Type},
+										Type:    param.Type,
+										Mutable: false,
+									}
 								}
 							}
 
@@ -1135,10 +1153,12 @@ func (c *Checker) InferComponent(
 
 							// Add any explicit parameters from the getter function signature
 							for _, param := range getterType.Fn.Params {
-								paramBindings[param.Pattern.String()] = &type_system.Binding{
-									Source:  &type_system.TypeProvenance{Type: param.Type},
-									Type:    param.Type,
-									Mutable: false,
+								if param.Pattern != nil {
+									paramBindings[param.Pattern.String()] = &type_system.Binding{
+										Source:  &type_system.TypeProvenance{Type: param.Type},
+										Type:    param.Type,
+										Mutable: false,
+									}
 								}
 							}
 
@@ -1196,10 +1216,12 @@ func (c *Checker) InferComponent(
 
 							// Add any explicit parameters from the setter function signature
 							for _, param := range setterType.Fn.Params {
-								paramBindings[param.Pattern.String()] = &type_system.Binding{
-									Source:  &type_system.TypeProvenance{Type: param.Type},
-									Type:    param.Type,
-									Mutable: false,
+								if param.Pattern != nil {
+									paramBindings[param.Pattern.String()] = &type_system.Binding{
+										Source:  &type_system.TypeProvenance{Type: param.Type},
+										Type:    param.Type,
+										Mutable: false,
+									}
 								}
 							}
 

@@ -159,12 +159,19 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 			}
 		}
 	} else if decl.Body != nil {
+		// Allocate call-site maps so body inference and resolveCallSites share them.
+		callSites := make(map[int][]*type_system.FuncType)
+		callSiteTypeVars := make(map[int]*type_system.TypeVarType)
+		ctx.CallSites = &callSites
+		ctx.CallSiteTypeVars = &callSiteTypeVars
+
 		inferErrors := c.inferFuncBodyWithFuncSigType(
 			ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 	}
 
-	// Generalize any remaining unresolved type variables into type parameters
+	// Resolve deferred call sites and generalize type variables into type parameters
+	c.resolveCallSites(ctx)
 	GeneralizeFuncType(funcType)
 
 	binding := type_system.Binding{

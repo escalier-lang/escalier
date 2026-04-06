@@ -215,9 +215,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
 			t := type_system.Prune(binding.Type)
-			// Don't copy TypeVarType — preserving pointer identity is essential
-			// so that unification constraints flow back to the function signature.
 			if _, isTypeVar := t.(*type_system.TypeVarType); isTypeVar {
+				// Don't copy TypeVarType — preserving pointer identity is essential
+				// so that unification constraints flow back to the function signature.
 				exprType = t
 			} else {
 				exprType = t.Copy()
@@ -420,11 +420,25 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
 		errors = slices.Concat(errors, sigErrors)
 
+		// Allocate call-site maps for outermost FuncExprs. Nested FuncExprs
+		// inherit the parent's maps via Context copying.
+		if !ctx.InFuncBody {
+			callSites := make(map[int][]*type_system.FuncType)
+			callSiteTypeVars := make(map[int]*type_system.TypeVarType)
+			funcCtx.CallSites = &callSites
+			funcCtx.CallSiteTypeVars = &callSiteTypeVars
+		}
+
 		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 
-		// Generalize any remaining unresolved type variables into type parameters
-		GeneralizeFuncType(funcType)
+		// Only generalize top-level FuncExprs. Nested FuncExprs (inside function
+		// bodies) share type variables with outer functions, so their generalization
+		// is deferred to the outermost function.
+		if !ctx.InFuncBody {
+			c.resolveCallSites(funcCtx)
+			GeneralizeFuncType(funcType)
+		}
 
 		exprType = funcType
 	case *ast.IfElseExpr:
@@ -957,10 +971,73 @@ func (c *Checker) inferCallExpr(
 		}
 		return type_system.NewNeverType(provneance), append(errors, overloadErr)
 
+	case *type_system.TypeVarType:
+		// The callee is an unresolved type variable (e.g., a function parameter
+		// with no type annotation being called). Create a synthetic FuncType
+		// matching the call site, collect it for deferred resolution, and
+		// delegate to handleFuncCall for argument unification.
+		params := make([]*type_system.FuncParam, len(argTypes))
+		for i := range argTypes {
+			params[i] = &type_system.FuncParam{
+				Pattern: type_system.NewIdentPat(fmt.Sprintf("arg%d", i)),
+				Type:    c.FreshVar(nil),
+			}
+		}
+
+		// Collect the call site — don't bind the TypeVar yet so that
+		// multiple calls with different arg types can produce an intersection.
+		// Note: ctx.CallSites is always non-nil here because a TypeVarType
+		// callee requires a function param binding, which only exists inside
+		// function bodies where the caller allocates CallSites.
+
+		retType := c.FreshVar(nil)
+		synthFuncType := type_system.NewFuncType(nil, nil, params, retType, type_system.NewNeverType(nil))
+
+		(*ctx.CallSites)[t.ID] = append((*ctx.CallSites)[t.ID], synthFuncType)
+		(*ctx.CallSiteTypeVars)[t.ID] = t
+
+		return c.handleFuncCall(ctx, synthFuncType, expr, argTypes, provneance, errors)
+
 	default:
 		return type_system.NewNeverType(provneance), []Error{
 			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 	}
+}
+
+// instantiateGenericFunc creates a fresh instance of a generic function type by
+// replacing all type parameters with fresh type variables. This implements HM
+// "instantiation at use" — each reference to a polymorphic binding gets its
+// own fresh type variables.
+func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_system.FuncType {
+	// Create a copy of the function type without type params
+	fnTypeWithoutParams := type_system.NewFuncType(
+		&type_system.TypeProvenance{Type: fnType},
+		nil,
+		fnType.Params,
+		fnType.Return,
+		fnType.Throws,
+	)
+
+	// Create fresh type variables for each type parameter
+	substitutions := make(map[string]type_system.Type)
+	for _, typeParam := range fnType.TypeParams {
+		t := c.FreshVar(nil)
+		substitutions[typeParam.Name] = t
+	}
+
+	// After all type parameters are in the substitution map,
+	// substitute any type parameter references in the constraints
+	for _, typeParam := range fnType.TypeParams {
+		if typeParam.Constraint != nil {
+			substitutedConstraint := SubstituteTypeParams(typeParam.Constraint, substitutions)
+			if freshVar, ok := substitutions[typeParam.Name].(*type_system.TypeVarType); ok {
+				freshVar.Constraint = substitutedConstraint
+			}
+		}
+	}
+
+	// Substitute type refs in the copied function type with fresh type variables
+	return SubstituteTypeParams(fnTypeWithoutParams, substitutions)
 }
 
 func (c *Checker) handleFuncCall(
@@ -973,35 +1050,7 @@ func (c *Checker) handleFuncCall(
 ) (type_system.Type, []Error) {
 	// Handle generic functions by replacing type refs with fresh type variables
 	if len(fnType.TypeParams) > 0 {
-		// Create a copy of the function type without type params
-		fnTypeWithoutParams := type_system.NewFuncType(
-			&type_system.TypeProvenance{Type: fnType},
-			nil,
-			fnType.Params,
-			fnType.Return,
-			fnType.Throws,
-		)
-
-		// Create fresh type variables for each type parameter
-		substitutions := make(map[string]type_system.Type)
-		for _, typeParam := range fnType.TypeParams {
-			t := c.FreshVar(nil)
-			substitutions[typeParam.Name] = t
-		}
-
-		// After all type parameters are in the substitution map,
-		// substitute any type parameter references in the constraints
-		for _, typeParam := range fnType.TypeParams {
-			if typeParam.Constraint != nil {
-				substitutedConstraint := SubstituteTypeParams(typeParam.Constraint, substitutions)
-				if freshVar, ok := substitutions[typeParam.Name].(*type_system.TypeVarType); ok {
-					freshVar.Constraint = substitutedConstraint
-				}
-			}
-		}
-
-		// Substitute type refs in the copied function type with fresh type variables
-		fnType = SubstituteTypeParams(fnTypeWithoutParams, substitutions)
+		fnType = c.instantiateGenericFunc(fnType)
 	}
 
 	// Find if the function has a rest parameter
@@ -1028,6 +1077,10 @@ func (c *Checker) handleFuncCall(
 		// Unify fixed parameters (before rest)
 		for i := 0; i < restIndex; i++ {
 			argType := argTypes[i]
+			// Instantiate generic function arguments at the call site.
+			if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+				argType = c.instantiateGenericFunc(ft)
+			}
 			paramType := fnType.Params[i].Type
 			paramErrors := c.Unify(ctx, argType, paramType)
 			errors = slices.Concat(errors, paramErrors)
@@ -1040,6 +1093,9 @@ func (c *Checker) handleFuncCall(
 				elementType := arrayType.TypeArgs[0]
 				for i := restIndex; i < len(expr.Args); i++ {
 					argType := argTypes[i]
+					if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+						argType = c.instantiateGenericFunc(ft)
+					}
 					paramErrors := c.Unify(ctx, argType, elementType)
 					errors = slices.Concat(errors, paramErrors)
 				}
@@ -1079,6 +1135,10 @@ func (c *Checker) handleFuncCall(
 		}
 		// Unify each provided argument with its corresponding parameter.
 		for i, argType := range argTypes {
+			// Instantiate generic function arguments at the call site.
+			if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+				argType = c.instantiateGenericFunc(ft)
+			}
 			// Since we have already validated the count, i is safe.
 			param := fnType.Params[i]
 			paramType := param.Type
@@ -1230,3 +1290,4 @@ func (c *Checker) inferBlock(
 
 	return resultType, errors
 }
+

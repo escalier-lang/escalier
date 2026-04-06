@@ -783,6 +783,142 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"outer": "fn () -> [\"hello\", 5] throws never",
 			},
 		},
+		"ApplyTwice": {
+			input: `
+				val applyTwice = fn (f, x) {
+					return f(f(x))
+				}
+			`,
+			expectedTypes: map[string]string{
+				"applyTwice": "fn <T0>(f: fn (arg0: T0) -> T0 throws never, x: T0) -> T0 throws never",
+			},
+		},
+		"SKI_K": {
+			input: `
+				val K = fn (x) {
+					return fn (y) {
+						return x
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"K": "fn <T0, T1>(x: T0) -> fn (y: T1) -> T0 throws never throws never",
+			},
+		},
+		"SKI_S": {
+			input: `
+				val S = fn (f) {
+					return fn (g) {
+						return fn (x) {
+							return f(x)(g(x))
+						}
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"S": "fn <T0, T1, T2>(f: fn (arg0: T0) -> fn (arg0: T1) -> T2 throws never throws never) -> fn (g: fn (arg0: T0) -> T1 throws never) -> fn (x: T0) -> T2 throws never throws never throws never",
+			},
+		},
+		"SKI_I": {
+			input: `
+				val S = fn (f) {
+					return fn (g) {
+						return fn (x) {
+							return f(x)(g(x))
+						}
+					}
+				}
+				val K = fn (x) {
+					return fn (y) {
+						return x
+					}
+				}
+				val I = S(K)(K)
+			`,
+			expectedTypes: map[string]string{
+				"I": "fn <T0>(x: T0) -> T0 throws never",
+			},
+		},
+		"InferredFuncCalledWithDifferentTypes": {
+			input: `
+				val foo = fn (f) {
+					return [f(5), f("hello")]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 throws never & fn (arg0: \"hello\") -> T1 throws never) -> [T0, T1] throws never",
+			},
+		},
+		"InferredFuncCalledWithSameKindLiterals": {
+			input: `
+				val foo = fn (f) {
+					return [f(5), f(10)]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 throws never & fn (arg0: 10) -> T1 throws never) -> [T0, T1] throws never",
+			},
+		},
+		"InferredFuncCalledWithDifferentArgCounts": {
+			input: `
+				val foo = fn (f) {
+					return [f(5), f(5, "hello")]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: fn (arg0: 5, arg1?: \"hello\") -> T0 throws never) -> [T0, T0] throws never",
+			},
+		},
+		"UncalledCallbackParam": {
+			input: `
+				val foo = fn (f) {
+					return 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: T0) -> 5 throws never",
+			},
+		},
+		"ApplyTwice_fn": {
+			input: `
+				fn applyTwice(f, x) {
+					return f(f(x))
+				}
+			`,
+			expectedTypes: map[string]string{
+				"applyTwice": "fn <T0>(f: fn (arg0: T0) -> T0 throws never, x: T0) -> T0 throws never",
+			},
+		},
+		"InferredFuncCalledWithDifferentTypes_fn": {
+			input: `
+				fn foo(f) {
+					return [f(5), f("hello")]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: mut? 5) -> T0 throws never & fn (arg0: mut? \"hello\") -> T1 throws never) -> [T0, T1] throws never",
+			},
+		},
+		"InferredFuncCalledWithSameKindLiterals_fn": {
+			input: `
+				fn foo(f) {
+					return [f(5), f(10)]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(f: fn (arg0: mut? 5) -> T0 throws never & fn (arg0: mut? 10) -> T1 throws never) -> [T0, T1] throws never",
+			},
+		},
+		"UncalledCallbackParam_fn": {
+			input: `
+				fn foo(f) {
+					return 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(f: T0) -> 5 throws never",
+			},
+		},
 		"GenericFunctionWithConstraint": {
 			input: `
 				val fst = fn<A: number, B: number>(a: A, b: B) -> A {

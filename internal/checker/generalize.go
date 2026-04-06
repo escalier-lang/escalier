@@ -118,6 +118,223 @@ func collectUnresolvedTypeVars(
 	}
 }
 
+// deepCloneType recursively clones a type, replacing all TypeVarType instances
+// with fresh type variables. The varMapping ensures consistent replacement: if
+// the same TypeVar is referenced multiple times, it maps to the same fresh var.
+// Container types (FuncType, TupleType, etc.) are rebuilt; leaf types (LitType,
+// PrimType, NeverType, etc.) are shared since Unify never mutates them.
+func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_system.TypeVarType) type_system.Type {
+	t = type_system.Prune(t)
+	switch t := t.(type) {
+	case *type_system.TypeVarType:
+		if fresh, ok := varMapping[t.ID]; ok {
+			return fresh
+		}
+		fresh := c.FreshVar(nil)
+		varMapping[t.ID] = fresh
+		return fresh
+	case *type_system.FuncType:
+		params := make([]*type_system.FuncParam, len(t.Params))
+		for i, p := range t.Params {
+			params[i] = &type_system.FuncParam{
+				Pattern:  p.Pattern,
+				Type:     c.deepCloneType(p.Type, varMapping),
+				Optional: p.Optional,
+			}
+		}
+		return type_system.NewFuncType(nil, t.TypeParams, params,
+			c.deepCloneType(t.Return, varMapping),
+			c.deepCloneType(t.Throws, varMapping))
+	case *type_system.MutabilityType:
+		return &type_system.MutabilityType{
+			Type:       c.deepCloneType(t.Type, varMapping),
+			Mutability: t.Mutability,
+		}
+	case *type_system.TupleType:
+		elems := make([]type_system.Type, len(t.Elems))
+		for i, e := range t.Elems {
+			elems[i] = c.deepCloneType(e, varMapping)
+		}
+		return type_system.NewTupleType(nil, elems...)
+	case *type_system.UnionType:
+		types := make([]type_system.Type, len(t.Types))
+		for i, u := range t.Types {
+			types[i] = c.deepCloneType(u, varMapping)
+		}
+		return type_system.NewUnionType(nil, types...)
+	case *type_system.IntersectionType:
+		types := make([]type_system.Type, len(t.Types))
+		for i, u := range t.Types {
+			types[i] = c.deepCloneType(u, varMapping)
+		}
+		return type_system.NewIntersectionType(nil, types...)
+	case *type_system.TypeRefType:
+		args := make([]type_system.Type, len(t.TypeArgs))
+		for i, a := range t.TypeArgs {
+			args[i] = c.deepCloneType(a, varMapping)
+		}
+		return type_system.NewTypeRefType(nil, type_system.QualIdentToString(t.Name), t.TypeAlias, args...)
+	case *type_system.RestSpreadType:
+		return type_system.NewRestSpreadType(nil, c.deepCloneType(t.Type, varMapping))
+	default:
+		// Leaf types (LitType, PrimType, NeverType, VoidType, etc.)
+		// contain no TypeVars and are never mutated by Unify.
+		// TODO(#381): Add cloning for composite types (ObjectType, CondType,
+		// IndexType, TemplateLitType, etc.) when deepCloneType is used for
+		// the probe-then-commit fix in unify.go's union/intersection handling.
+		// Currently only synthetic call-site FuncTypes are cloned, whose
+		// params and return types are limited to types already handled above.
+		return t
+	}
+}
+
+// tryMergeCallSitesWithOptionalParams checks if call sites with different param
+// counts can be merged into a single FuncType with optional trailing params.
+// This handles the case where f(a) and f(a, b) should produce fn(a, b?) -> T
+// rather than an intersection. Returns nil if sites are not prefix-compatible.
+func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type_system.FuncType) *type_system.FuncType {
+	// Sort sites by param count (ascending) to find the prefix chain.
+	sorted := make([]*type_system.FuncType, len(sites))
+	copy(sorted, sites)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && len(sorted[j].Params) < len(sorted[j-1].Params); j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+
+	// The shortest site defines the required prefix. Each subsequent site
+	// must have the same prefix params (by structural equality).
+	shortest := sorted[0]
+	longest := sorted[len(sorted)-1]
+	prefixLen := len(shortest.Params)
+
+	// Require a contiguous arity chain from shortest to longest.
+	// e.g., f(a) and f(a,b,c) without f(a,b) should not merge, because
+	// we have no call site providing the type of the second param alone.
+	arities := make(map[int]bool)
+	for _, site := range sorted {
+		arities[len(site.Params)] = true
+	}
+	for k := prefixLen; k <= len(longest.Params); k++ {
+		if !arities[k] {
+			return nil
+		}
+	}
+
+	for _, site := range sorted[1:] {
+		if len(site.Params) < prefixLen {
+			return nil // shouldn't happen after sort, but defensive
+		}
+		for j := 0; j < prefixLen; j++ {
+			if !type_system.Equals(type_system.Prune(site.Params[j].Type), type_system.Prune(shortest.Params[j].Type)) {
+				return nil // prefix doesn't match
+			}
+		}
+		// Also check that intermediate sites are prefixes of longer ones.
+		// e.g., for f(), f(a), f(a, b): each intermediate must match the
+		// corresponding prefix of the longest.
+		for j := prefixLen; j < len(site.Params); j++ {
+			if j < len(longest.Params) {
+				if !type_system.Equals(type_system.Prune(site.Params[j].Type), type_system.Prune(longest.Params[j].Type)) {
+					return nil
+				}
+			}
+		}
+	}
+
+	// All sites are prefix-compatible. Build merged FuncType using the
+	// longest param list, marking params beyond the shortest as optional.
+	params := make([]*type_system.FuncParam, len(longest.Params))
+	for i, p := range longest.Params {
+		params[i] = &type_system.FuncParam{
+			Pattern:  p.Pattern,
+			Type:     p.Type,
+			Optional: i >= prefixLen,
+		}
+	}
+
+	// Unify return types across all sites so the merged function has one return type.
+	// If any unification fails, abort the merge and let the caller fall back to intersection.
+	// Note: calling Unify directly on the originals (without deep-cloning) is safe
+	// here because the return types are fresh TypeVars from inferCallExpr, so
+	// unification always succeeds (one var binds to the other). If it did fail,
+	// the partial binding is harmless — we return nil and the caller uses the
+	// original sites for the intersection, where each site retains its own return var.
+	base := sorted[0]
+	for _, site := range sorted[1:] {
+		errs := c.Unify(ctx, site.Return, base.Return)
+		if len(errs) > 0 {
+			return nil
+		}
+	}
+
+	return type_system.NewFuncType(nil, nil, params, base.Return, type_system.NewNeverType(nil))
+}
+
+// resolveCallSites binds each TypeVarType that was used as a function callee
+// to either a single FuncType (if all call sites are compatible) or an
+// IntersectionType (if they are not). Must be called before GeneralizeFuncType.
+func (c *Checker) resolveCallSites(ctx Context) {
+	if ctx.CallSites == nil {
+		return
+	}
+	for id, sites := range *ctx.CallSites {
+		tv := (*ctx.CallSiteTypeVars)[id]
+		if tv == nil {
+			continue
+		}
+		// If the TypeVar was already resolved (e.g., by unification elsewhere), skip.
+		// This is safe because: (1) overwriting tv.Instance would discard the
+		// existing binding, and (2) the call sites' arg types were already unified
+		// against the synthetic FuncType params during handleFuncCall, so type
+		// constraints from the calls have already been captured.
+		if type_system.Prune(tv) != tv {
+			continue
+		}
+
+		if len(sites) == 1 {
+			tv.Instance = sites[0]
+		} else {
+			// Deep-clone the base once and cumulatively unify all site clones
+			// into it, so mutual compatibility across all sites is checked.
+			allCompatible := true
+			baseMapping := make(map[int]*type_system.TypeVarType)
+			baseClone := c.deepCloneType(sites[0], baseMapping).(*type_system.FuncType)
+			for _, site := range sites[1:] {
+				siteMapping := make(map[int]*type_system.TypeVarType)
+				siteClone := c.deepCloneType(site, siteMapping).(*type_system.FuncType)
+				errs := c.Unify(ctx, siteClone, baseClone)
+				if len(errs) > 0 {
+					allCompatible = false
+					break
+				}
+			}
+			if allCompatible {
+				// Trial succeeded — safe to unify originals.
+				base := sites[0]
+				for _, site := range sites[1:] {
+					c.Unify(ctx, site, base)
+				}
+				tv.Instance = base
+			} else if merged := c.tryMergeCallSitesWithOptionalParams(ctx, sites); merged != nil {
+				tv.Instance = merged
+			} else {
+				// Create an intersection of all call site FuncTypes (overloaded function).
+				types := make([]type_system.Type, len(sites))
+				for i, s := range sites {
+					types[i] = s
+				}
+				tv.Instance = type_system.NewIntersectionType(nil, types...)
+			}
+		}
+	}
+	// Clear processed call sites.
+	callSites := make(map[int][]*type_system.FuncType)
+	callSiteTypeVars := make(map[int]*type_system.TypeVarType)
+	*ctx.CallSites = callSites
+	*ctx.CallSiteTypeVars = callSiteTypeVars
+}
+
 // GeneralizeFuncType finds unresolved type variables in a function's signature
 // and converts them into proper type parameters. This must be called after type
 // inference completes for the function body.
