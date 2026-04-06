@@ -31,7 +31,7 @@ work builds upon. Affected phases are annotated below.
 
 ---
 
-## Phase 1: Core Type System Extensions
+## Phase 1: Core Type System Extensions ✅
 
 **Requirements covered:** Definitions, Section 7 (Option C), prerequisites for
 Sections 1–6.
@@ -105,7 +105,7 @@ on them. Confirm that `MutabilityUncertain` already exists.
 
 ---
 
-## Phase 2: Property Access Inference on TypeVarType
+## Phase 2: Property Access Inference on TypeVarType ✅
 
 **Requirements covered:** Section 1 (property access inference), Section 3
 (array indexing), Section 8e (nested property access).
@@ -121,83 +121,71 @@ variable to an open `ObjectType` instead of producing `ExpectedObjectError`.
 > which is essential for row types — property accesses on a parameter variable
 > must flow constraints back to the original TypeVar in the function signature.
 
-### Changes
+### Implementation (completed 2026-04-06)
 
-1. **`internal/checker/expand_type.go`** — `getMemberType` (~line 500 switch):
-   Add a `*type_system.TypeVarType` case **before** the `default` case. Also add
-   `*type_system.TypeVarType` as a break condition in the expansion loop
-   (~line 475–498) so we don't needlessly call `ExpandType`.
+**Deviation from plan:** The implementation does **not** wrap open `ObjectType`s
+in `MutabilityType{Uncertain}`. Instead, the assignment handler in
+`infer_expr.go` directly checks for open `ObjectType`s (via the
+`markPropertyWritten` helper) and bypasses the immutability error for them.
+Mutability is resolved during `GeneralizeFuncType` (Phase 6) based on the
+`Written` flag. This avoids the complexity of `MutabilityType` unwrapping during
+inference and simplifies the property access path.
 
-   The new case handles three sub-cases based on the key type:
+**Changes made:**
+
+1. **`internal/checker/expand_type.go`** — `getMemberType`:
+   - Added `*type_system.TypeVarType` as a break condition in the expansion loop
+     (~line 490) so we don't needlessly call `ExpandType`.
+   - Added a `*type_system.TypeVarType` case in the switch with three sub-cases:
 
    **a. PropertyKey or string-literal IndexKey:**
-   ```go
-   propTV := c.FreshVar(nil)
-   propTV.Widenable = true
-   rowTV := c.FreshVar(nil)
-   openObj := NewObjectType(nil, []ObjTypeElem{
-       NewPropertyElem(NewStrKey(name), propTV),
-       NewRestSpreadElem(rowTV),
-   })
-   openObj.Open = true
-   // Wrap in MutabilityUncertain so that property assignments don't
-   // immediately error (the assignment handler checks for MutabilityType).
-   // Mutability is resolved at closing time (Phase 6) based on whether
-   // any properties were written to.
-   typeVar.Instance = NewMutabilityType(nil, openObj, MutabilityUncertain)
-   return propTV
-   ```
-   This eagerly binds the type variable to a `MutabilityType{Uncertain}` wrapping
-   an open `ObjectType` containing one `PropertyElem` and one `RestSpreadElem`
-   (the row variable). `getMemberType` already handles `MutabilityType` by
-   unwrapping and recursing (~line 501), so subsequent property lookups work
-   through the wrapper. For string-literal `IndexKey`, extract the string value
-   and treat identically to a `PropertyKey`.
+   Uses the `newOpenObjectWithProperty(name)` helper which creates an open
+   `ObjectType` with one `PropertyElem` (widenable fresh TypeVar) and one
+   `RestSpreadElem` (fresh row variable). Sets `typeVar.Instance = openObj`
+   directly (no `MutabilityType` wrapper).
 
    **b. Numeric IndexKey (key type is `number` or a numeric literal):**
-   ```go
-   elemTV := c.FreshVar(nil)
-   arrayType := &TypeRefType{
-       Name:     NewIdent("Array"),
-       TypeArgs: []Type{elemTV},
-   }
-   typeVar.Instance = arrayType
-   return elemTV
-   ```
    Binds the type variable to `Array<T>` for a fresh `T`.
 
    **c. Non-literal string IndexKey:**
-   Defer to a later phase. For now, return `ExpectedObjectError`. This covers
-   `obj[strVar]` where `strVar` is type `string` (not a literal). Requirement 3
-   says this should create a string index signature, but that can be added
-   incrementally.
+   Returns `ExpectedObjectError` (deferred).
 
-2. **`internal/checker/expand_type.go`** — `getObjectAccess` (~line 792,
-   `PropertyKey` branch):
-   Before the `UnknownPropertyError`, check `objType.Open`. If `true`:
-   ```go
-   propTV := c.FreshVar(nil)
-   propTV.Widenable = true
-   objType.Elems = append(objType.Elems, NewPropertyElem(NewStrKey(k.Name), propTV))
-   return propTV
-   ```
-   This mutates the open `ObjectType` in place, adding the new property. The
-   `append` adds to the end of `Elems` — ordering doesn't matter for property
-   lookup since it's a linear scan by name.
+2. **`internal/checker/expand_type.go`** — `getObjectAccess`:
+   - **PropertyKey branch:** Before `UnknownPropertyError`, checks `objType.Open`.
+     If `true`, uses the `addPropertyToOpenObject(objType, name)` helper to
+     append a new widenable property and return its type.
+   - **IndexKey branch (string literal):** Same logic for string-literal keys
+     not found on the object. Also added handling for `GetterElem`, `SetterElem`,
+     `ConstructorElem`, `CallableElem`, and `RestSpreadElem` in the element loop.
+   - Added `RestSpreadElem` as a `continue` case in the PropertyKey element loop.
 
-   Apply the same logic in the `IndexKey` branch for string-literal keys that
-   aren't found on the object.
+3. **`internal/checker/infer_expr.go`** — Assignment handler:
+   - **MemberExpr branch:** Uses `markPropertyWritten(pruned, propName)` to set
+     `Written: true` on the matching `PropertyElem` of an open `ObjectType`.
+     If not an open object, falls through to the existing immutability check.
+   - **IndexExpr branch:** Same logic for string-literal index assignments.
+   - **Ident case (~line 278):** Preserves pointer identity for open `ObjectType`s
+     (avoids `.Copy()`) so that property additions during inference flow back to
+     the original type.
 
-3. **`internal/checker/infer_expr.go`** — Assignment handler (~line 34,
-   `MemberExpr` branch of `BinaryExpr` with `Assign`):
-   After the existing mutability and readonly checks, when the LHS property is
-   found on an open `ObjectType`, set `Written: true` on the `PropertyElem`:
-   ```go
-   if propElem, ok := /* find the PropertyElem by name */; ok {
-       propElem.Written = true
-   }
-   ```
-   This tracks which properties were assigned to, used at closing time (Phase 6)
+4. **Helper functions** (in `expand_type.go`):
+   - `newOpenObjectWithProperty(name)` — creates open ObjectType with one property
+     and a rest-spread row variable.
+   - `addPropertyToOpenObject(objType, name)` — appends a widenable property to
+     an existing open ObjectType.
+   - `markPropertyWritten(prunedType, propName)` — finds a property by name on
+     an open ObjectType (handles both bare and MutabilityType-wrapped) and sets
+     `Written = true`.
+
+5. **`internal/checker/generalize.go`** — `GeneralizeFuncType`:
+   Added a pre-generalization pass that resolves mutability on open objects:
+   - If any `PropertyElem` has `Written: true`, wraps the open object in
+     `MutabilityType{Mutable}` and strips `mut?` from written property values.
+   - If no properties were written, the object remains unwrapped (immutable).
+
+6. **`internal/checker/generalize.go`** — `deepCloneType`:
+   Preserves `Open` field when cloning `ObjectType`.
+   This tracks which properties were assigned to, used during generalization
    to determine whether the inferred type needs `mut`.
 
 ### How subsequent accesses work
@@ -205,10 +193,15 @@ variable to an open `ObjectType` instead of producing `ExpectedObjectError`.
 After the first access (`obj.bar`), `typeVar.Instance` points to the open
 `ObjectType`. The next access (`obj.baz`) calls `getMemberType`, which calls
 `Prune(typeVar)` → returns the `ObjectType`. The `ObjectType` case delegates to
-`getObjectAccess`, which doesn't find `baz`, checks `Open`, and appends a new
-`PropertyElem`.
+`getObjectAccess`, which doesn't find `baz`, checks `Open`, and calls
+`addPropertyToOpenObject` to append a new `PropertyElem`.
 
-Nested access (`obj.foo.bar = 5`) works recursively: `obj.foo` returns a fresh
+Idempotent access (`obj.bar` accessed twice) works correctly: the second access
+finds the existing `PropertyElem` in `getObjectAccess` and returns the same
+type variable. Mixed access (`obj.bar` then `obj["bar"]`) also works — both
+resolve to the same `PropertyElem` by name.
+
+Nested access (`obj.foo.bar`) works recursively: `obj.foo` returns a fresh
 `TypeVarType` (the value of property `foo`). Accessing `.bar` on that triggers
 the `TypeVarType` case again, binding it to another open `ObjectType`. There is
 no depth limit needed — each level creates a distinct type variable.
@@ -223,28 +216,47 @@ finds the `ObjectType` (via Prune) and tries numeric indexing on it. Since
 error message should be improved in Phase 11 (Error Reporting) to mention the
 conflict explicitly.
 
-### Tests
+### Tests (implemented)
 
-New test file `internal/checker/tests/row_types_test.go`:
+Test file: `internal/checker/tests/row_types_test.go`
 
-- **Read access:** `fn foo(obj) { let x = obj.bar }` — no errors, `obj` type
-  includes `bar`.
-- **Multiple reads:** `fn foo(obj) { let x = obj.bar; let y = obj.baz }` — two
-  properties inferred.
-- **Write access:** `fn foo(obj) { obj.bar = "hello" }` — `bar` type
-  unifies with `string`.
-- **Read + write:** `fn foo(obj) { let x = obj.bar; obj.baz = 5 }` —
-  mixed access.
-- **Nested access:** `fn foo(obj) { obj.foo.bar = 5 }` — nested open
-  objects.
-- **Deeply nested:** `fn foo(obj) { obj.a.b.c = true }` — three levels.
-- **Numeric index:** `fn foo(obj) { let x = obj[0] }` — binds to `Array<t1>`.
-- **String literal index:** `fn foo(obj) { let x = obj["bar"] }` — equivalent
-  to `obj.bar`.
-- **Conflict:** `fn foo(obj) { let x = obj.name; let y = obj[0] }` — error
-  (numeric index on object type).
-- **Multiple parameters:** `fn foo(a, b) { a.x = 1; b.y = "hi" }`
-  — each parameter gets independent constraints.
+**`TestRowTypesPropertyAccess`** — table-driven tests verifying inferred types:
+- **ReadAccess:** `fn foo(obj) { return obj.bar }` →
+  `fn <T0, T1>(obj: {bar: T0, ...T1}) -> T0`
+- **MultipleReads:** `fn foo(obj) { return [obj.bar, obj.baz] }` →
+  `fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2}) -> [T0, T2]`
+- **WriteAccess:** `fn foo(obj) { obj.bar = "hello" }` →
+  `fn <T0>(obj: mut {bar: "hello", ...T0}) -> void`
+- **ReadAndWrite:** `fn foo(obj) { val x = obj.bar; obj.baz = 5 }` →
+  `fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: 5}) -> void`
+- **NestedAccess:** `fn foo(obj) { return obj.foo.bar }` →
+  `fn <T0, T1, T2>(obj: {foo: {bar: T0, ...T1}, ...T2}) -> T0`
+- **MultipleParams:** `fn foo(a, b) { return [a.x, b.y] }` →
+  `fn <T0, T1, T2, T3>(a: {x: T0, ...T1}, b: {y: T2, ...T3}) -> [T0, T2]`
+- **DeeplyNested:** `fn foo(obj) { return obj.a.b.c }` →
+  `fn <T0, T1, T2, T3>(obj: {a: {b: {c: T0, ...T1}, ...T2}, ...T3}) -> T0`
+- **NumericIndex:** `fn foo(obj) { return obj[0] }` →
+  `fn <T0>(obj: Array<T0>) -> T0`
+- **StringLiteralIndex:** `fn foo(obj) { return obj["bar"] }` →
+  `fn <T0, T1>(obj: {bar: T0, ...T1}) -> T0`
+- **MultipleStringLiteralIndexes:** both `obj["bar"]` and `obj["baz"]` inferred.
+- **StringLiteralIndexWrite:** `obj["bar"] = "hello"` → `mut` object.
+- **StringLiteralIndexReadAndWrite:** mixed bracket read/write.
+- **MixedDotAndBracketAccess:** `obj.bar` and `obj["baz"]` on same object.
+- **MixedDotReadBracketWrite:** dot read + bracket write → `mut`.
+- **MultipleNumericIndexes:** `obj[0]` and `obj[1]` → same `Array<T0>`.
+- **IdempotentPropertyAccess:** `obj.bar` accessed twice → same type variable.
+- **IdempotentMixedAccess:** `obj.bar` and `obj["bar"]` → same type variable.
+
+**`TestRowTypesErrors`** — tests verifying error cases:
+- **MutateAnnotatedImmutableParam:** `fn foo(obj: {bar: number}) { obj.bar = 5 }`
+  → `CannotMutateImmutableError`.
+- **MutateAnnotatedImmutableParamIndex:** same via bracket notation.
+
+**Note on inferred types:** Property values on written-to objects currently
+retain their literal types (e.g. `bar: "hello"` not `bar: string`) because
+literal widening (Phase 4) is not yet implemented. The `Widenable` flag is set
+on the type variables but `bind()` does not yet widen literals to primitives.
 
 ---
 
@@ -636,7 +648,7 @@ with appropriate parameters and return type.
 
 ---
 
-## Phase 6: Closing After Function Body Inference
+## Phase 6: Closing After Function Body Inference (partially implemented)
 
 **Requirements covered:** Section 5 (open vs. closed lifecycle), Section 5a
 (mutability inference), Section 11d (interaction with closing).
@@ -645,6 +657,17 @@ with appropriate parameters and return type.
 parameters. Remove row variables that don't escape to callers. Resolve
 mutability: if any property was written to, the parameter type becomes `mut`;
 otherwise the `MutabilityType` wrapper is removed.
+
+> **Partial implementation (2026-04-06):** Mutability resolution is implemented
+> in `GeneralizeFuncType` (generalize.go). It runs before type variable
+> promotion and checks `PropertyElem.Written` to determine whether the open
+> object needs a `mut` wrapper. **Not yet implemented:** closing
+> (`Open = false`) and removing `RestSpreadElem`s whose row variables don't
+> appear in the return type. Currently, `Open` remains `true` and all
+> `RestSpreadElem`s are preserved — this means row variables always become type
+> parameters via `GeneralizeFuncType`, which is correct behavior for Phase 7
+> (row polymorphism) but produces extra type parameters when the row variable
+> isn't needed.
 
 > **Status (2026-04-06):** The generalization work (#379) added
 > `GeneralizeFuncType` and `collectUnresolvedTypeVars` in `generalize.go`. The
@@ -1231,8 +1254,8 @@ These can be addressed in follow-up work.
 ## Phase Dependencies
 
 ```
-Phase 1: Type System Extensions
-└── Phase 2: Property Access
+Phase 1: Type System Extensions ✅
+└── Phase 2: Property Access ✅
     ├── Phase 3: Unification
     │   ├── Phase 4: Widening
     │   │   └── Phase 5: Method Calls
@@ -1288,16 +1311,16 @@ All phases above feed into:
 
 ## Critical Files
 
-| File | Phases |
-|------|--------|
-| `internal/type_system/types.go` | 1 |
-| `internal/checker/expand_type.go` | 2, 9, 10 |
-| `internal/checker/unify.go` | 3, 4, 10 |
-| `internal/checker/generalize.go` | 6 (`collectUnresolvedTypeVars`), 7 (`GeneralizeFuncType`) |
-| `internal/checker/infer_func.go` | 3, 6, 7, 8 |
-| `internal/checker/infer_expr.go` | 2 (assignment handler sets `Written`), 5, 10 |
-| `internal/checker/errors.go` | 11 |
-| `internal/checker/tests/row_types_test.go` | All (new file) |
+| File | Phases | Status |
+|------|--------|--------|
+| `internal/type_system/types.go` | 1 | ✅ `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated |
+| `internal/checker/expand_type.go` | 2, 9, 10 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions |
+| `internal/checker/unify.go` | 3, 4, 10 | Not started |
+| `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType` |
+| `internal/checker/infer_func.go` | 3, 6, 7, 8 | Not started |
+| `internal/checker/infer_expr.go` | 2, 5, 10 | ✅ (Phase 2) `markPropertyWritten` in assignment handler, open-object pointer identity preservation |
+| `internal/checker/errors.go` | 11 | Not started |
+| `internal/checker/tests/row_types_test.go` | All | ✅ 18 passing tests (`TestRowTypesPropertyAccess` + `TestRowTypesErrors`) |
 
 ---
 

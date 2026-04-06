@@ -75,24 +75,28 @@ fn foo(obj) {
 
 ## Requirements
 
-### 1. Property Access Inference
+### 1. Property Access Inference ✅
+
+> **Status (2026-04-06):** Implemented. See Phase 2 in
+> [implementation_plan.md](implementation_plan.md) for details.
 
 When a property is accessed on a value whose type is a type variable (i.e. an
 unannotated parameter), the system must:
 
 1. Bind the type variable to an open `ObjectType` (`Open: true`) containing a
    `PropertyElem` with a fresh widenable type variable for the value and a
-   `RestSpreadElem` with a fresh row variable. The `ObjectType` is wrapped in
-   `MutabilityType{Uncertain}` to allow both reads and writes during inference
-   (see Section 5a).
+   `RestSpreadElem` with a fresh row variable.
+   ~~The `ObjectType` is wrapped in `MutabilityType{Uncertain}`.~~
+   **Implemented approach:** The open `ObjectType` is bound directly to the
+   type variable (no `MutabilityType` wrapper). The assignment handler bypasses
+   the immutability check for open objects and marks the `PropertyElem.Written`
+   flag instead. Mutability is resolved during generalization.
 2. Return the fresh property type variable as the type of the member expression.
 3. If additional properties are accessed on the same object, add new
    `PropertyElem`s to the already-bound open `ObjectType`. Since the type
    variable has been pruned to the `ObjectType`, subsequent accesses go through
-   `getObjectAccess`. Currently, `getObjectAccess` returns an
-   `UnknownPropertyError` when a property is not found. **It must be modified**
-   to detect open `ObjectType`s (those with `Open: true`) and, instead of
-   erroring, add a new `PropertyElem` with a fresh type variable and return it.
+   `getObjectAccess`, which detects open `ObjectType`s (via `Open: true`) and
+   adds a new `PropertyElem` with a fresh type variable instead of erroring.
 
 **Example — read access:**
 ```esc
@@ -222,7 +226,9 @@ fn foo(obj) {
 Here, the first call unifies `getValue`'s return type variable with `number`,
 and the second call widens it to `number | string` per Section 6d.
 
-### 3. Array Indexing Inference
+### 3. Array Indexing Inference ✅
+
+> **Status (2026-04-06):** Implemented as part of Phase 2.
 
 When a value whose type is a type variable is indexed with bracket notation,
 the system must:
@@ -326,7 +332,13 @@ widening is allowed.
 - When two open types are unified, their known properties are unified pairwise,
   and their row variables are merged.
 
-### 5a. Mutability Inference
+### 5a. Mutability Inference (partially implemented)
+
+> **Status (2026-04-06):** The `Written` flag on `PropertyElem` and the
+> mutability resolution in `GeneralizeFuncType` are implemented. The
+> `MutabilityType{Uncertain}` wrapping approach described below was **not**
+> used — instead, the assignment handler directly bypasses the immutability
+> check for open objects. See Phase 2 notes in the implementation plan.
 
 When an unannotated parameter's type is inferred from usage, the system must
 also infer whether the parameter needs to be mutable. Currently, property
@@ -602,7 +614,10 @@ fn foo(obj) {
 // inferred: fn foo(obj: mut {bar: string | number}) -> void
 ```
 
-### 7. Constraint Representation
+### 7. Constraint Representation ✅
+
+> **Status (2026-04-06):** Option C implemented in Phase 1 (type system
+> extensions) and Phase 2 (property access inference).
 
 Property constraints on type variables need a representation. Three options were
 considered. **Option C was chosen** as the approach we're going with.
@@ -699,7 +714,10 @@ fn foo(obj) {
 This should work naturally through type variable unification — `alias` gets the
 same type variable as `obj`.
 
-#### 8e. Nested property access
+#### 8e. Nested property access ✅
+
+> **Status (2026-04-06):** Implemented as part of Phase 2. Tested with
+> `NestedAccess` and `DeeplyNested` test cases.
 
 When a property is accessed on a property of an inferred object, the inner
 property's fresh type variable undergoes the same Option C binding recursively:
