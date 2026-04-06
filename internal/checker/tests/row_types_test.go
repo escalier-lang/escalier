@@ -9,6 +9,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -312,6 +313,207 @@ func TestRowTypesErrors(t *testing.T) {
 				if i < len(inferErrors) {
 					assert.Contains(t, inferErrors[i].Message(), expectedErr)
 				}
+			}
+		})
+	}
+}
+
+// TestRowTypesKeyOf tests that keyof works on inferred open object types
+// (which are wrapped in MutabilityType).
+func TestRowTypesKeyOf(t *testing.T) {
+	checker := NewChecker()
+
+	t.Run("KeyOfType unwraps MutabilityType", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		// Simulate an inferred open object wrapped in MutabilityType:
+		// mut? {x: string, y: number}
+		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewStrPrimType(nil)),
+			type_system.NewPropertyElem(type_system.NewStrKey("y"), type_system.NewNumPrimType(nil)),
+		})
+		objType.Open = true
+		mutType := &type_system.MutabilityType{
+			Type:       objType,
+			Mutability: type_system.MutabilityUncertain,
+		}
+
+		keyofType := type_system.NewKeyOfType(nil, mutType)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"x" | "y"`, result.String())
+	})
+
+	t.Run("KeyOfType on bare ObjectType still works", func(t *testing.T) {
+		ctx := Context{
+			Scope:      NewScope(),
+			IsAsync:    false,
+			IsPatMatch: false,
+		}
+
+		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("a"), type_system.NewNumPrimType(nil)),
+		})
+
+		keyofType := type_system.NewKeyOfType(nil, objType)
+		result, errors := checker.ExpandType(ctx, keyofType, 1)
+
+		assert.Empty(t, errors)
+		assert.Equal(t, `"a"`, result.String())
+	})
+}
+
+// TestRowTypesIntersectionAccess tests that getIntersectionAccess unwraps
+// MutabilityType wrappers when classifying intersection parts.
+func TestRowTypesIntersectionAccess(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"IntersectionWithInferredObject": {
+			input: `
+				fn foo(obj: {x: number} & {y: string}) {
+					return [obj.x, obj.y]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: {x: number} & {y: string}) -> [number, string]",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
+				}
+			}
+			require.Empty(t, errors)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
+
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
+				}
+			}
+			require.Empty(t, inferErrors)
+
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Values {
+				require.NotNil(t, binding)
+				actualTypes[name] = binding.Type.String()
+			}
+
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+// TestRowTypesStringLiteralIndexAfterExtends tests that string-literal index
+// access on open objects checks Extends before adding a new property.
+func TestRowTypesStringLiteralIndexAfterExtends(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"StringLiteralIndexFindsInheritedProperty": {
+			input: `
+				type Base = {name: string}
+				fn foo(obj: Base) {
+					return obj["name"]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: Base) -> string",
+			},
+		},
+		"StringLiteralIndexOnOpenObjectAddsProperty": {
+			input: `
+				fn foo(obj) {
+					return obj["bar"]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1}) -> T0",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
+				}
+			}
+			require.Empty(t, errors)
+
+			c := NewChecker()
+			inferCtx := Context{
+				Scope:      Prelude(c),
+				IsAsync:    false,
+				IsPatMatch: false,
+			}
+			inferErrors := c.InferModule(inferCtx, module)
+			scope := inferCtx.Scope.Namespace
+
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
+				}
+			}
+			require.Empty(t, inferErrors)
+
+			actualTypes := make(map[string]string)
+			for name, binding := range scope.Values {
+				require.NotNil(t, binding)
+				actualTypes[name] = binding.Type.String()
+			}
+
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
 			}
 		})
 	}

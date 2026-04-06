@@ -1047,6 +1047,11 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
+		// Unwrap MutabilityType so inferred open objects (wrapped in mut?)
+		// are classified as object parts of the intersection.
+		if mut, ok := part.(*type_system.MutabilityType); ok {
+			part = mut.Type
+		}
 		if objType, ok := part.(*type_system.ObjectType); ok {
 			objectTypes = append(objectTypes, objType)
 		} else if funcType, ok := part.(*type_system.FuncType); ok {
@@ -1117,8 +1122,12 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	// If not found in object types, try other parts (primitives, functions, etc.)
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
-		// Skip object types since we already checked them
-		if _, ok := part.(*type_system.ObjectType); ok {
+		// Skip object types (including MutabilityType-wrapped) since we already checked them
+		unwrapped := part
+		if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+			unwrapped = mut.Type
+		}
+		if _, ok := unwrapped.(*type_system.ObjectType); ok {
 			continue
 		}
 		memberType, memberErrors := c.getMemberType(ctx, part, key)
