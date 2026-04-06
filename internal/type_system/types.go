@@ -587,6 +587,15 @@ func (t *NeverType) String() string {
 	return "never"
 }
 
+// IsNeverType reports whether t is nil or a *NeverType.
+func IsNeverType(t Type) bool {
+	if t == nil {
+		return true
+	}
+	_, ok := t.(*NeverType)
+	return ok
+}
+
 type ErrorType struct {
 	provenance Provenance
 }
@@ -987,10 +996,8 @@ func (t *FuncType) String() string {
 	if t.Return != nil {
 		result += " -> " + t.Return.String()
 	}
-	if t.Throws != nil {
-		if _, isNever := t.Throws.(*NeverType); !isNever {
-			result += " throws " + t.Throws.String()
-		}
+	if !IsNeverType(t.Throws) {
+		result += " throws " + t.Throws.String()
 	}
 	return result
 }
@@ -1473,17 +1480,13 @@ func (t *ObjectType) String() string {
 				if elem.Fn.Return != nil {
 					result += " -> " + elem.Fn.Return.String()
 				}
-				if elem.Fn.Throws != nil {
-					if _, isNever := elem.Fn.Throws.(*NeverType); !isNever {
-						result += " throws " + elem.Fn.Throws.String()
-					}
+				if !IsNeverType(elem.Fn.Throws) {
+					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *GetterElem:
 				result += "get " + elem.Name.String() + "(self) -> " + elem.Fn.Return.String()
-				if elem.Fn.Throws != nil {
-					if _, isNever := elem.Fn.Throws.(*NeverType); !isNever {
-						result += " throws " + elem.Fn.Throws.String()
-					}
+				if !IsNeverType(elem.Fn.Throws) {
+					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *SetterElem:
 				result += "set " + elem.Name.String() + "(mut self, "
@@ -1491,10 +1494,8 @@ func (t *ObjectType) String() string {
 					result += elem.Fn.Params[0].String()
 				}
 				result += ") -> undefined"
-				if elem.Fn.Throws != nil {
-					if _, isNever := elem.Fn.Throws.(*NeverType); !isNever {
-						result += " throws " + elem.Fn.Throws.String()
-					}
+				if !IsNeverType(elem.Fn.Throws) {
+					result += " throws " + elem.Fn.Throws.String()
 				}
 			case *PropertyElem:
 				if elem.Readonly {

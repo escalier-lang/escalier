@@ -691,6 +691,7 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		args := t.TypeArgs
 		// TypeScript's Promise has only one type parameter, so drop the
 		// error type that Escalier tracks as the second type arg.
+		// TODO(#385): Preserve the dropped error type as TSDoc metadata.
 		if type_sys.QualIdentToString(t.Name) == "Promise" && len(args) > 1 {
 			args = args[:1]
 		}

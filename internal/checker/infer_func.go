@@ -139,12 +139,8 @@ func (c *Checker) inferFuncSig(
 	if sig.Throws == nil {
 		// No throws clause means the function doesn't throw.
 		throwsType = type_system.NewNeverType(nil)
-	} else if _, ok := sig.Throws.(*ast.WildcardTypeAnn); ok {
-		// throws _ means infer the throws type from the function body.
-		tvar := c.FreshVar(nil)
-		tvar.FromBinding = true
-		throwsType = tvar
 	} else {
+		// throws _ infers from the body; throws T checks against T.
 		var throwsErrors []Error
 		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, sig.Throws)
 		errors = slices.Concat(errors, throwsErrors)

@@ -284,10 +284,6 @@ func (c *Checker) inferFuncTypeAnn(
 	var throwsType type_system.Type
 	if funcTypeAnn.Throws == nil {
 		throwsType = type_system.NewNeverType(nil)
-	} else if _, ok := funcTypeAnn.Throws.(*ast.WildcardTypeAnn); ok {
-		tvar := c.FreshVar(nil)
-		tvar.FromBinding = true
-		throwsType = tvar
 	} else {
 		var throwsErrors []Error
 		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, funcTypeAnn.Throws)
