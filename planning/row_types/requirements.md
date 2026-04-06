@@ -8,6 +8,28 @@ cannot refine it through property access, method calls, or indexing within the
 function body. This means property access on an unannotated parameter produces an
 `ExpectedObjectError` because `getMemberType` has no handler for `TypeVarType`.
 
+> **Note (updated 2026-04-06):** Several foundational features have been merged
+> from `main` that overlap with or support the row types work:
+>
+> - **Function generalization** (#379): `GeneralizeFuncType` in `generalize.go`
+>   collects unresolved type vars in a function's signature and promotes them to
+>   type parameters. This provides the infrastructure needed for Section 11 (row
+>   polymorphism) — row variables that escape to the return type can be promoted
+>   using this same mechanism.
+> - **Callback inference** (#380): When a `TypeVarType` is called as a function,
+>   the checker now creates a synthetic `FuncType` and defers resolution via
+>   `resolveCallSites`. This partially addresses Section 2 (method call inference)
+>   for the case where callback parameters are called directly. However, Section 2
+>   specifically covers *method* calls on inferred objects (`obj.process(42)`),
+>   which requires the property access path (Phase 2) to be in place first.
+> - **`deepCloneType`** (#382): A probe-then-commit pattern for union/intersection
+>   unification now avoids partial TypeVar mutation on failure. This infrastructure
+>   is useful for the widening logic in Section 6d.
+> - **`throws never` semantics** (#384): Missing `throws` clause now means
+>   `throws never` instead of a fresh TypeVar. This simplifies FuncType creation
+>   throughout the row types implementation (synthetic FuncTypes should use
+>   `NewNeverType(nil)` for throws).
+
 Row types (also known as row polymorphism) enable the type system to infer
 structural object types from usage. When a function accesses `obj.bar` and
 `obj.baz`, the system should infer that `obj` has at least those properties —
@@ -15,10 +37,10 @@ without requiring the programmer to spell out the type.
 
 ```esc
 fn foo(obj) {
-    obj.bar = "hello":string
-    obj.baz = 5:number
+    obj.bar = "hello"
+    obj.baz = 5
 }
-// inferred: fn foo(obj: {bar: string, baz: number}) -> void
+// inferred: fn foo(obj: mut {bar: string, baz: number}) -> void
 ```
 
 ## Definitions
@@ -59,8 +81,10 @@ When a property is accessed on a value whose type is a type variable (i.e. an
 unannotated parameter), the system must:
 
 1. Bind the type variable to an open `ObjectType` (`Open: true`) containing a
-   `PropertyElem` with a fresh type variable for the value and a
-   `RestSpreadElem` with a fresh row variable.
+   `PropertyElem` with a fresh widenable type variable for the value and a
+   `RestSpreadElem` with a fresh row variable. The `ObjectType` is wrapped in
+   `MutabilityType{Uncertain}` to allow both reads and writes during inference
+   (see Section 5a).
 2. Return the fresh property type variable as the type of the member expression.
 3. If additional properties are accessed on the same object, add new
    `PropertyElem`s to the already-bound open `ObjectType`. Since the type
@@ -82,14 +106,15 @@ fn foo(obj) {
 **Example — write access (assignment):**
 ```esc
 fn foo(obj) {
-    obj.bar = "hello":string   // obj.bar: string
-    obj.baz = 5:number         // obj.baz: number
+    obj.bar = "hello"   // obj.bar: string  (literal widened per 6e)
+    obj.baz = 5         // obj.baz: number  (literal widened per 6e)
 }
-// inferred: fn foo(obj: {bar: string, baz: number}) -> void
+// inferred: fn foo(obj: mut {bar: string, baz: number}) -> void
 ```
 
-When a property is written to (assigned), the assigned value's type should unify
-with the property's fresh type variable, giving it a concrete type.
+When a property is written to (assigned), the assigned value's type is widened
+from a literal to its primitive type (see Section 6e) and unified with the
+property's fresh type variable, giving it a concrete type.
 
 **Example — multiple assignments to the same property:**
 ```esc
@@ -99,7 +124,7 @@ fn foo(obj) {
     obj.bar = 5
     // do something else with obj.bar
 }
-// inferred: fn foo(obj: {bar: "hello" | 5}) -> void
+// inferred: fn foo(obj: mut {bar: string | number}) -> void
 ```
 
 **Example — same property in different branches:**
@@ -111,7 +136,7 @@ fn foo(obj, cond) {
         obj.bar = 5
     }
 }
-// inferred: fn foo(obj: {bar: "hello" | 5}, cond: boolean) -> void
+// inferred: fn foo(obj: mut {bar: string | number}, cond: boolean) -> void
 ```
 
 When the same property is assigned different types — whether sequentially in the
@@ -124,13 +149,14 @@ With the chosen Option C approach (eagerly binding to an open `ObjectType`),
 this works as follows:
 
 1. The first assignment (`obj.bar = "hello"`) creates the property with a fresh
-   type variable and unifies it with `"hello"`.
+   widenable type variable and unifies it with `"hello"`. The literal is widened
+   to `string` per Section 6e, so the type variable is bound to `string`.
 2. The second assignment (`obj.bar = 5`) finds the existing property and unifies
-   its type variable with `5`.
-3. Since the type variable is already bound to `"hello"` and now must also accept
-   `5`, the type variable widens to `"hello" | 5`.
+   its type variable with `5`. The literal `5` is widened to `number`.
+3. Since the type variable is already bound to `string` and now must also accept
+   `number`, the type variable widens to `string | number` per Section 6d.
 
-This requires the unifier to support **widening** a row-inferred property type
+This requires the unifier to support **widening** a widenable property type
 variable when it encounters a new incompatible concrete type: rather than
 reporting a conflict, it should produce a union. See Section 6d for details.
 
@@ -139,15 +165,33 @@ reporting a conflict, it should produce a union. See Section 6d for details.
 When a method is called on a value whose type is a type variable, the system must:
 
 1. Bind the type variable to an open `ObjectType` (if not already bound) and add
-   a `MethodElem` with a `FuncType` containing fresh type variables for each
-   parameter and the return type.
+   a `PropertyElem` whose value is a fresh type variable. When the property is
+   called, bind the type variable to a `FuncType` containing fresh widenable
+   type variables for each parameter and the return type. (Using `PropertyElem`
+   with a `FuncType` value rather than `MethodElem` is simpler — the property's
+   type variable naturally gets bound to the `FuncType` via the call.)
 2. Unify the supplied argument types with the method's fresh parameter types.
 3. Return the method's return type variable as the type of the call expression.
+
+> **Status (2026-04-06):** The callback inference work (#380) added a
+> `TypeVarType` case to `inferCallExpr` that creates a synthetic `FuncType` when
+> an unbound TypeVar is called. The synthetic `FuncType` is **not** immediately
+> bound to the TypeVar — instead it is appended to `CallSites` for deferred
+> resolution. This allows multiple calls with different arg types to accumulate
+> (e.g. `obj.process(42); obj.process("hello")`); `resolveCallSites` later
+> merges or intersects them and binds the TypeVar. This handles the case where
+> a *parameter itself* is called (`cb(42)`), but not the method-on-object case
+> (`obj.process(42)`). The method case requires Phase 2 (property access on
+> TypeVarType) to be implemented first so that `obj.process` returns a
+> TypeVarType, at which point the existing `TypeVarType` case in
+> `inferCallExpr` will handle the call naturally. The `Widenable` flag still
+> needs to be added to the synthetic FuncType's params/return for proper
+> widening behavior (Section 6d).
 
 **Example:**
 ```esc
 fn foo(obj) {
-    let result = obj.process(42:number, "hello":string)
+    let result = obj.process(42, "hello")
 }
 // inferred: fn foo(obj: {process: fn(number, string) -> t1}) -> void
 ```
@@ -158,8 +202,8 @@ the parameter types widen to a union — the same widening rule as property type
 
 ```esc
 fn foo(obj) {
-    obj.process(42:number)
-    obj.process("hello":string)
+    obj.process(42)
+    obj.process("hello")
 }
 // inferred: fn foo(obj: {process: fn(number | string) -> t1}) -> void
 ```
@@ -189,6 +233,7 @@ the system must:
    dot notation), constraining the type variable to have that property.
 3. If the index is a string type (non-literal): constrain the type variable to
    have a string index signature, and return the index signature's value type.
+   *(Deferred from initial implementation — see Section 10.)*
 
 **Example — numeric index:**
 ```esc
@@ -281,11 +326,87 @@ widening is allowed.
 - When two open types are unified, their known properties are unified pairwise,
   and their row variables are merged.
 
+### 5a. Mutability Inference
+
+When an unannotated parameter's type is inferred from usage, the system must
+also infer whether the parameter needs to be mutable. Currently, property
+assignment on an object checks that the object's type is wrapped in a
+`MutabilityType` — if not, a `CannotMutateImmutableError` is reported.
+
+**Rule:** If any property on an inferred open object type is **written to**
+(assigned), the parameter's type should be wrapped in
+`MutabilityType{MutabilityMutable}` (i.e. `mut`). If the parameter is only
+**read from**, no `MutabilityType` wrapper is needed.
+
+**Example — write access requires `mut`:**
+```esc
+fn foo(obj) {
+    obj.bar = "hello"
+    obj.baz = 5
+}
+// inferred: fn foo(obj: mut {bar: string, baz: number}) -> void
+```
+
+**Example — read access does not require `mut`:**
+```esc
+fn foo(obj) {
+    let x = obj.bar
+    let y = obj.baz
+}
+// inferred: fn foo(obj: {bar: t1, baz: t2}) -> void
+```
+
+**Example — mixed access requires `mut`:**
+```esc
+fn foo(obj) {
+    let x = obj.bar
+    obj.baz = 5
+}
+// inferred: fn foo(obj: mut {bar: t1, baz: number}) -> void
+```
+
+#### Implementation approach
+
+When `getMemberType` creates the open `ObjectType` for a `TypeVarType` (Phase 2),
+wrap it in `MutabilityType{MutabilityUncertain}`:
+```
+typeVar.Instance = MutabilityType{Uncertain, openObj}
+```
+
+This allows both reads and writes during inference — the assignment code's
+mutability check passes because the type is a `MutabilityType` (any kind).
+`getMemberType` already handles `MutabilityType` by unwrapping and recursing
+(expand_type.go ~line 501), so property lookups work through the wrapper.
+
+After inference completes (Phase 6, closing), resolve the mutability:
+- If any property was **written to**, change `MutabilityUncertain` to
+  `MutabilityMutable` (the parameter must be `mut`).
+- If **no** properties were written to (read-only access), remove the
+  `MutabilityType` wrapper entirely.
+
+To track whether writes occurred, add a `Written bool` field to `PropertyElem`.
+Set it to `true` in the assignment handler (infer_expr.go ~line 34, the
+`MemberExpr` branch of the `Assign` case) when the LHS property is found on an
+open `ObjectType`. At closing time, check if any `PropertyElem` has
+`Written: true`.
+
+#### Interaction with passing to typed functions
+
+When an open-typed parameter is passed to a function expecting `mut {x: number}`,
+the `MutabilityType{Mutable}` on the expected type unifies with the
+`MutabilityType{Uncertain}` on the inferred type. This should resolve the
+uncertain mutability to mutable — the parameter must be `mut` because the
+called function requires it.
+
+When passed to a function expecting `{x: number}` (immutable), the uncertain
+mutability is compatible. Whether it resolves to mutable depends on other usages
+within the function body.
+
 ### 6. Unification Changes
 
 The unifier must be extended to handle the following cases:
 
-#### 6a. Unifying row-inferred TypeVarTypes
+#### 6a. Unifying unannotated-parameter TypeVarTypes
 
 An unannotated parameter starts as a bare `TypeVarType`. It may be constrained
 by property access (Option C — eagerly binds to an open `ObjectType`), by being
@@ -316,7 +437,7 @@ fn foo(obj) {
                    // which simplifies to {x: number, y: string, ...R}
     obj.z = true   // adds z to the open type
 }
-// inferred: fn foo(obj: {x: number, y: string, z: true}) -> void
+// inferred: fn foo(obj: mut {x: number, y: string, z: boolean}) -> void
 ```
 
 When two open `ObjectType`s are intersected, their properties are merged and
@@ -372,7 +493,7 @@ fn foo(obj) {
     bar(obj)               // bar expects {x: number, y: string}
     obj.w = "hello"        // needs to add w — must still be open
 }
-// inferred: fn foo(obj: {z: boolean, x: number, y: string, w: string}) -> void
+// inferred: fn foo(obj: mut {z: boolean, x: number, y: string, w: string}) -> void
 ```
 
 If 6c closed the type at step 2 (the `bar(obj)` call), step 3 would fail
@@ -396,9 +517,9 @@ The unifier must handle this by **widening** the type to a union:
 
 1. If a type variable has already been bound to a concrete type `A`, and a new
    unification attempts to bind it to an incompatible concrete type `B`, and
-   the type variable originated from row-type inference (i.e. it is a type
-   variable within an inferred open object), then instead of reporting an error,
-   widen the binding to `A | B`.
+   the type variable is widenable (i.e. it is a type variable whose type was
+   inferred from usage within an inferred open object), then instead of
+   reporting an error, widen the binding to `A | B`.
 2. Subsequent unifications with further types `C` widen to `A | B | C`, etc.
 3. If the new type is already a member of the existing union, no widening is
    needed (e.g. assigning `"hello"` twice does not produce `"hello" | "hello"`).
@@ -414,9 +535,72 @@ fundamentally different from ordinary type variable unification, where a
 conflict means a genuine type error.
 
 **Implementation note:** One way to implement this is to mark type variables
-created during row inference with a flag (e.g. on `TypeVarType`). When `bind()`
+inferred from usage with a `Widenable` flag on `TypeVarType`. When `bind()`
 encounters a conflict on such a variable, it creates a union instead of
-returning an error.
+returning an error. The name `Widenable` is preferred over `RowInferred` because
+the flag applies to both property values on objects and parameter/return types
+on inferred method signatures — the common behavior is widening, not
+specifically "row" inference.
+
+#### 6e. Literal type widening to primitives
+
+When a literal type (`"hello"`, `5`, `true`, etc.) is unified with a widenable
+type variable, the literal should be **widened to its corresponding primitive
+type** (`string`, `number`, `boolean`) before binding. This applies to the
+initial binding as well as to subsequent unifications (Section 6d).
+
+**Rationale:** An inferred parameter type represents "what types does this
+position need to support." When a function sets `obj.bar = "hello"`, the intent
+is almost never to require callers to pass exactly `"hello"` — it is to accept
+any `string`. Literal types are useful for local variable inference (`let x =
+"hello"` infers `"hello"`), but for inferred parameter constraints, the
+primitive type is the right level of precision.
+
+This removes the need for explicit type annotations on literals in most cases:
+
+```esc
+fn foo(obj) {
+    obj.bar = "hello"     // obj.bar: string  (not "hello")
+    obj.baz = 5           // obj.baz: number  (not 5)
+    obj.flag = true       // obj.flag: boolean (not true)
+}
+// inferred: fn foo(obj: mut {bar: string, baz: number, flag: boolean}) -> void
+```
+
+Without this widening, the user would need to write `"hello":string`,
+`5:number`, `true:boolean` to get the primitive types, which is unnecessarily
+verbose for the common case. Anyone who wants a literal type in an inferred
+parameter can add an explicit type annotation.
+
+**Scope:** This widening applies only to widenable type variables (those with
+`Widenable: true`). It does **not** affect:
+- Local variable inference: `let x = "hello"` still infers `"hello"`.
+- Explicit type annotations: `let x: string = "hello"` works as before.
+- Non-widenable type variable unification: no change to existing behavior.
+
+**Interaction with union accumulation (6d):** With literal widening, multiple
+assignments to the same property with different literals of the same kind
+produce the primitive type rather than a union of literals:
+
+```esc
+fn foo(obj) {
+    obj.bar = "hello"
+    obj.bar = "world"
+}
+// inferred: fn foo(obj: mut {bar: string}) -> void
+// (not {bar: "hello" | "world"})
+```
+
+Assignments with literals of **different** kinds still produce a union of
+primitives:
+
+```esc
+fn foo(obj) {
+    obj.bar = "hello"
+    obj.bar = 5
+}
+// inferred: fn foo(obj: mut {bar: string | number}) -> void
+```
 
 ### 7. Constraint Representation
 
@@ -448,10 +632,10 @@ type variable for the value and a `RestSpreadElem` with a fresh row variable.
 Subsequent accesses on the same variable find the bound `ObjectType` and either
 return the existing property's type or add a new `PropertyElem` (gated by `Open`).
 
-When a method is called (property access followed by a call), a `MethodElem` is
-added instead, with a `FuncType` containing fresh type variables for each
-parameter and the return type. The supplied arguments are then unified with the
-fresh parameter types.
+When a method is called (property access followed by a call), the property's
+fresh type variable is bound to a `FuncType` containing fresh widenable type
+variables for each parameter and the return type. The supplied arguments are
+then unified with the fresh parameter types.
 
 - Pro: No new constraint mechanism needed — works within the existing type system.
   `getMemberType` naturally handles `ObjectType`.
@@ -493,10 +677,10 @@ Each unannotated parameter gets its own independent set of inferred constraints:
 
 ```esc
 fn foo(a, b) {
-    a.x = 1:number
-    b.y = "hello":string
+    a.x = 1
+    b.y = "hello"
 }
-// inferred: fn foo(a: {x: number}, b: {y: string}) -> void
+// inferred: fn foo(a: mut {x: number}, b: mut {y: string}) -> void
 ```
 
 #### 8d. Aliasing and flow
@@ -507,9 +691,9 @@ are accessed on that variable, the constraints should flow back to the parameter
 ```esc
 fn foo(obj) {
     let alias = obj
-    alias.x = 1:number
+    alias.x = 1
 }
-// inferred: fn foo(obj: {x: number}) -> void
+// inferred: fn foo(obj: mut {x: number}) -> void
 ```
 
 This should work naturally through type variable unification — `alias` gets the
@@ -522,9 +706,9 @@ property's fresh type variable undergoes the same Option C binding recursively:
 
 ```esc
 fn foo(obj) {
-    obj.foo.bar = 5:number
+    obj.foo.bar = 5
 }
-// inferred: fn foo(obj: {foo: {bar: number}}) -> void
+// inferred: fn foo(obj: mut {foo: mut {bar: number}}) -> void
 ```
 
 This works because `obj.foo` returns a fresh type variable (the value type of
@@ -582,7 +766,7 @@ that callers can instantiate it with their specific extra properties:
 
 ```esc
 fn foo(obj) {
-    obj.x = 1:number
+    obj.x = 1
     return obj
 }
 
@@ -694,6 +878,11 @@ The following are explicitly **out of scope** for the initial implementation:
 - **Conditional property access**: Inferring that a property exists only in
   certain branches (e.g. `if (cond) { obj.x }` should not require `x` if
   `cond` is false). All accessed properties are required unconditionally.
+- **Non-literal string index signatures**: When `obj[strVar]` is used where
+  `strVar` is type `string` (not a literal), Section 3 specifies that the type
+  variable should be constrained to have a string index signature. This is
+  deferred from the initial implementation. For now, this case produces an
+  error. Numeric indexing and string-literal indexing are in scope.
 
 These can be addressed in follow-up work.
 
@@ -704,13 +893,13 @@ extra properties through their return types. Without it, a function like:
 
 ```esc
 fn foo(obj) {
-    obj.x = 1:number
+    obj.x = 1
     return obj
 }
 ```
 
-would have the closed signature `fn foo(obj: {x: number}) -> {x: number}`,
-and calling `foo({x: 1, y: 2})` would return `{x: number}` — losing `y`.
+would have the closed signature `fn foo(obj: mut {x: number}) -> mut {x: number}`,
+and calling `foo({x: 1, y: 2})` would return `mut {x: number}` — losing `y`.
 
 #### 11a. Row-polymorphic function types
 
@@ -721,10 +910,10 @@ in the function's type:
 
 ```esc
 fn foo(obj) {
-    obj.x = 1:number
+    obj.x = 1
     return obj
 }
-// type: fn foo<R>(obj: {x: number, ...R}) -> {x: number, ...R}
+// type: fn foo<R>(obj: mut {x: number, ...R}) -> mut {x: number, ...R}
 ```
 
 The row variable `R` appears in both the parameter and return type, connecting
@@ -775,6 +964,36 @@ This extends the existing generic function instantiation mechanism
 (`handleFuncCall`) — row type parameters are instantiated the same way as
 regular type parameters, with fresh type variables that get solved during
 argument unification.
+
+> **Status (2026-04-06):** The function generalization work (#379) added
+> `GeneralizeFuncType` in `generalize.go`, which implements steps 2–4 for
+> regular type variables and **also handles row variables without special
+> treatment**. Verified behavior:
+>
+> - `collectUnresolvedTypeVars` walks into `RestSpreadElem.Value` and collects
+>   the inner unresolved `TypeVarType` like any other.
+> - `GeneralizeFuncType` promotes that TypeVar by setting
+>   `tv.Instance = TypeRefType{Name: "T0", ...}`. This binds the TypeVar
+>   inside the `RestSpreadElem` — it does **not** replace the
+>   `RestSpreadElem` itself. After generalization, the structure is:
+>   `RestSpreadElem{Value: TypeVarType{Instance: TypeRefType{Name: "T0"}}}`.
+>   `Prune()` resolves the inner value to the `TypeRefType`, preserving the
+>   `RestSpreadElem` wrapper.
+> - At call sites, `instantiateGenericFunc` calls `SubstituteTypeParams`,
+>   which uses the visitor pattern. `RestSpreadElem.Accept()` calls
+>   `r.Value.Accept(v)`, substituting the `TypeRefType` with a fresh TypeVar
+>   while returning a new `RestSpreadElem{Value: freshTypeVar}`. The wrapper
+>   is preserved.
+> - **No changes to `GeneralizeFuncType` or `instantiateGenericFunc` are
+>   needed** for row polymorphism. The existing machinery handles
+>   `RestSpreadElem`-wrapped row variables correctly.
+>
+> **Mapping to implementation phases:** Step 1 (close inferred ObjectTypes) is
+> Phase 6 in the implementation plan. Steps 2–4 (identify, promote, and remove
+> row variables) are Phase 7, which delegates to `GeneralizeFuncType` — no
+> manual promotion code is needed. Step 5 (call-site instantiation) is also
+> Phase 7, handled by the existing `instantiateGenericFunc` /
+> `SubstituteTypeParams` machinery.
 
 #### 11d. Interaction with Section 5 (closing)
 
@@ -920,14 +1139,15 @@ properties from earlier elements (including from earlier spreads).
      This is the "numeric-first indexing" path (see Section 3, case 1).
    - **Property/method access or string-literal index** (the key is a
      `PropertyKey`, or an `IndexKey` with a string literal type): bind the
-     `TypeVarType` to an open `ObjectType` (`Open: true`) containing a
-     `PropertyElem` with a fresh type variable for the value and a
-     `RestSpreadElem` row variable, then delegate to `getObjectAccess`
+     `TypeVarType` to a `MutabilityType{Uncertain}` wrapping an open
+     `ObjectType` (`Open: true`) containing a `PropertyElem` with a fresh
+     widenable type variable for the value and a `RestSpreadElem` row variable,
+     then delegate to `getObjectAccess`
      (see Section 3, case 2).
    - **Non-literal string index** (the key is an `IndexKey` with a `string`
-     type): bind the `TypeVarType` to an open `ObjectType` (`Open: true`) with
-     a string index signature and a `RestSpreadElem` row variable, and return
-     the index signature's value type (see Section 3, case 3).
+     type): deferred from initial implementation (see Section 10). Eventually
+     this should bind the `TypeVarType` to an open `ObjectType` with a string
+     index signature, but for now it produces an error.
 
 2. **Modify `getObjectAccess`** to handle open `ObjectType`s: when a property is
    not found and the `ObjectType` has `Open: true`, add a new `PropertyElem`
@@ -944,23 +1164,26 @@ properties from earlier elements (including from earlier spreads).
    type's `Elems` without setting `Open` to `false` (see 6c). When unifying two
    open objects, merge properties and row variables.
 
-5. **Adjust `bind()` for row-inferred type variables**: When binding a
-   row-inferred `TypeVarType` to a closed `ObjectType`, bind to an open
+5. **Adjust `bind()` for unannotated-parameter type variables**: When binding an
+   unannotated-parameter `TypeVarType` to a closed `ObjectType`, bind to an open
    `ObjectType` (`Open: true`) with the same properties plus a
    `RestSpreadElem`. When the type variable is already bound, compose via
    intersection — merging properties for open object types, or reducing to
    `never` for incompatible non-object types (see 6a).
 
-6. **Update `inferFuncParams`**: No changes needed — it already creates a fresh
-   type variable for unannotated params. The new `getMemberType` behavior will
-   naturally constrain these type variables as the function body is inferred.
+6. **Update `inferFuncParams`**: Set `IsParam: true` on the fresh type variable
+   created for unannotated params (see Section 6a). This flag is checked in
+   `bind()` to keep the type open when binding to a closed `ObjectType`.
 
 7. **Close and clean up after function body inference**: After inferring a
    function body: (a) set `Open` to `false` on all inferred `ObjectType`s,
    (b) identify which row variables (from `RestSpreadElem`s) appear in the
    return type and promote those to type parameters on the function (row
    polymorphism — see Section 11), (c) remove `RestSpreadElem`s whose row
-   variables do not appear in the return type.
+   variables do not appear in the return type, (d) resolve mutability — if any
+   `PropertyElem` was written to, change `MutabilityUncertain` to
+   `MutabilityMutable`; otherwise remove the `MutabilityType` wrapper
+   (see Section 5a).
 
 8. **Handle row-polymorphic calls**: Extend `handleFuncCall` to instantiate row
    type parameters with fresh type variables, solved during argument
