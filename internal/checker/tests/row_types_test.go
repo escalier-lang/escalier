@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -13,6 +12,53 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// inferModuleTypes parses the input source, runs type inference, and returns
+// the inferred symbol-to-type map. Fails the test immediately on parse or
+// inference errors.
+func inferModuleTypes(t *testing.T, input string) map[string]string {
+	t.Helper()
+
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+	if len(errors) > 0 {
+		for i, err := range errors {
+			t.Logf("Parse Error[%d]: %#v", i, err)
+		}
+	}
+	require.Empty(t, errors)
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	inferErrors := c.InferModule(inferCtx, module)
+	scope := inferCtx.Scope.Namespace
+
+	if len(inferErrors) > 0 {
+		for i, err := range inferErrors {
+			t.Logf("Infer Error[%d]: %s", i, err.Message())
+		}
+	}
+	require.Empty(t, inferErrors)
+
+	actualTypes := make(map[string]string)
+	for name, binding := range scope.Values {
+		require.NotNil(t, binding)
+		actualTypes[name] = binding.Type.String()
+	}
+	return actualTypes
+}
 
 func TestRowTypesPropertyAccess(t *testing.T) {
 	tests := map[string]struct {
@@ -207,47 +253,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "input.esc",
-				Contents: test.input,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-
-			if len(errors) > 0 {
-				for i, err := range errors {
-					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
-				}
-			}
-			require.Empty(t, errors)
-
-			c := NewChecker()
-			inferCtx := Context{
-				Scope:      Prelude(c),
-				IsAsync:    false,
-				IsPatMatch: false,
-			}
-			inferErrors := c.InferModule(inferCtx, module)
-			scope := inferCtx.Scope.Namespace
-
-			if len(inferErrors) > 0 {
-				for i, err := range inferErrors {
-					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
-				}
-			}
-			require.Empty(t, inferErrors)
-
-			// Collect actual types for verification
-			actualTypes := make(map[string]string)
-			for name, binding := range scope.Values {
-				require.NotNil(t, binding)
-				actualTypes[name] = binding.Type.String()
-			}
-
-			// Verify that all expected types match the actual inferred types
+			actualTypes := inferModuleTypes(t, test.input)
 			for expectedName, expectedType := range test.expectedTypes {
 				actualType, exists := actualTypes[expectedName]
 				require.True(t, exists, "Expected variable %s to be declared", expectedName)
@@ -295,7 +301,7 @@ func TestRowTypesErrors(t *testing.T) {
 
 			if len(errors) > 0 {
 				for i, err := range errors {
-					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
+					t.Logf("Parse Error[%d]: %#v", i, err)
 				}
 			}
 			require.Empty(t, errors)
@@ -321,9 +327,8 @@ func TestRowTypesErrors(t *testing.T) {
 // TestRowTypesKeyOf tests that keyof works on inferred open object types
 // (which are wrapped in MutabilityType).
 func TestRowTypesKeyOf(t *testing.T) {
-	checker := NewChecker()
-
 	t.Run("KeyOfType unwraps MutabilityType", func(t *testing.T) {
+		checker := NewChecker()
 		ctx := Context{
 			Scope:      NewScope(),
 			IsAsync:    false,
@@ -350,6 +355,7 @@ func TestRowTypesKeyOf(t *testing.T) {
 	})
 
 	t.Run("KeyOfType on bare ObjectType still works", func(t *testing.T) {
+		checker := NewChecker()
 		ctx := Context{
 			Scope:      NewScope(),
 			IsAsync:    false,
@@ -390,45 +396,7 @@ func TestRowTypesIntersectionAccess(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "input.esc",
-				Contents: test.input,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-
-			if len(errors) > 0 {
-				for i, err := range errors {
-					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
-				}
-			}
-			require.Empty(t, errors)
-
-			c := NewChecker()
-			inferCtx := Context{
-				Scope:      Prelude(c),
-				IsAsync:    false,
-				IsPatMatch: false,
-			}
-			inferErrors := c.InferModule(inferCtx, module)
-			scope := inferCtx.Scope.Namespace
-
-			if len(inferErrors) > 0 {
-				for i, err := range inferErrors {
-					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
-				}
-			}
-			require.Empty(t, inferErrors)
-
-			actualTypes := make(map[string]string)
-			for name, binding := range scope.Values {
-				require.NotNil(t, binding)
-				actualTypes[name] = binding.Type.String()
-			}
-
+			actualTypes := inferModuleTypes(t, test.input)
 			for expectedName, expectedType := range test.expectedTypes {
 				actualType, exists := actualTypes[expectedName]
 				require.True(t, exists, "Expected variable %s to be declared", expectedName)
@@ -471,45 +439,7 @@ func TestRowTypesStringLiteralIndexAfterExtends(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "input.esc",
-				Contents: test.input,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-
-			if len(errors) > 0 {
-				for i, err := range errors {
-					fmt.Printf("Parse Error[%d]: %#v\n", i, err)
-				}
-			}
-			require.Empty(t, errors)
-
-			c := NewChecker()
-			inferCtx := Context{
-				Scope:      Prelude(c),
-				IsAsync:    false,
-				IsPatMatch: false,
-			}
-			inferErrors := c.InferModule(inferCtx, module)
-			scope := inferCtx.Scope.Namespace
-
-			if len(inferErrors) > 0 {
-				for i, err := range inferErrors {
-					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
-				}
-			}
-			require.Empty(t, inferErrors)
-
-			actualTypes := make(map[string]string)
-			for name, binding := range scope.Values {
-				require.NotNil(t, binding)
-				actualTypes[name] = binding.Type.String()
-			}
-
+			actualTypes := inferModuleTypes(t, test.input)
 			for expectedName, expectedType := range test.expectedTypes {
 				actualType, exists := actualTypes[expectedName]
 				require.True(t, exists, "Expected variable %s to be declared", expectedName)
