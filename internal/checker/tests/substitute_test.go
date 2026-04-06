@@ -311,8 +311,8 @@ func TestSubstituteTypeParams(t *testing.T) {
 
 			result := SubstituteTypeParams(outerFunc, substitutions)
 
-			assert.Equal(t, "fn (t: T) -> fn <T>(t: T) -> T throws never", outerFunc.String())
-			assert.Equal(t, "fn (t: number) -> fn <T>(t: T) -> T throws never", result.String())
+			assert.Equal(t, "fn (t: T) -> fn <T>(t: T) -> T", outerFunc.String())
+			assert.Equal(t, "fn (t: number) -> fn <T>(t: T) -> T", result.String())
 		})
 
 		t.Run("object method with shadowed type parameter", func(t *testing.T) {

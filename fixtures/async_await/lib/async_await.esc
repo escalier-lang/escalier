@@ -9,7 +9,7 @@ export async fn fetchWithAwait(url: string) -> Promise<string, string> {
 }
 
 // Async function with error handling
-export async fn fetchWithError(shouldError: boolean) {
+export async fn fetchWithError(shouldError: boolean) -> Promise<_, _> {
     if shouldError {
         throw "Something went wrong"
     }

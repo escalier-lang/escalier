@@ -574,7 +574,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<mut? 1 | mut? 2 | mut? 3, void, never> throws never",
+			"fn () -> Generator<mut? 1 | mut? 2 | mut? 3, void, never>",
 			types["count"])
 	})
 
@@ -588,7 +588,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<mut? 1 | mut? 2, mut? "done", never> throws never`,
+			`fn () -> Generator<mut? 1 | mut? 2, mut? "done", never>`,
 			types["myGen"])
 	})
 
@@ -601,7 +601,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<mut? 1 | mut? "hello", void, never> throws never`,
+			`fn () -> Generator<mut? 1 | mut? "hello", void, never>`,
 			types["mixed"])
 	})
 
@@ -614,7 +614,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<number, void, never> throws never",
+			"fn () -> Generator<number, void, never>",
 			types["delegating"])
 	})
 
@@ -642,7 +642,7 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn (a: number, b: number) -> number throws never",
+			"fn (a: number, b: number) -> number",
 			types["add"])
 	})
 
@@ -656,7 +656,7 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<number, string, never> throws never`,
+			`fn () -> Generator<number, string, never>`,
 			types["count"])
 	})
 
@@ -695,7 +695,7 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> fn () -> Generator<1, void, never> throws never throws never",
+			"fn () -> fn () -> Generator<1, void, never>",
 			types["outer"])
 	})
 }

@@ -5,12 +5,12 @@ export val simpleThrow = throw "Something went wrong"
 export val errorThrow = throw {message: "Custom error", code: 500}
 
 // Throw in conditional expression
-export fn getValueOrThrow(value: string) {
+export fn getValueOrThrow(value: string) -> string throws _ {
     return if value != "" { value } else { throw Error("value is empty") }
 }
 
 // Throw in function expression
-export val throwingFunc = fn(condition: boolean) {
+export val throwingFunc = fn(condition: boolean) -> _ throws _ {
     if condition {
         return "success"
     } else {
@@ -18,7 +18,7 @@ export val throwingFunc = fn(condition: boolean) {
     }
 }
 
-export val multipleThrows = fn (flag: boolean) -> undefined {
+export val multipleThrows = fn (flag: boolean) -> undefined throws _ {
     if flag {
         throw "string error"
     } else {
@@ -26,8 +26,8 @@ export val multipleThrows = fn (flag: boolean) -> undefined {
     }
 }
 
-export val nestedThrows = fn () -> undefined {
-    val innerFunc = fn () -> undefined {
+export val nestedThrows = fn () -> undefined throws _ {
+    val innerFunc = fn () -> undefined throws _ {
         throw "inner error"
     }
     throw "outer error"
