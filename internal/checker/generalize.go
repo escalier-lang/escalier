@@ -208,6 +208,19 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 	longest := sorted[len(sorted)-1]
 	prefixLen := len(shortest.Params)
 
+	// Require a contiguous arity chain from shortest to longest.
+	// e.g., f(a) and f(a,b,c) without f(a,b) should not merge, because
+	// we have no call site providing the type of the second param alone.
+	arities := make(map[int]bool)
+	for _, site := range sorted {
+		arities[len(site.Params)] = true
+	}
+	for k := prefixLen; k <= len(longest.Params); k++ {
+		if !arities[k] {
+			return nil
+		}
+	}
+
 	for _, site := range sorted[1:] {
 		if len(site.Params) < prefixLen {
 			return nil // shouldn't happen after sort, but defensive
@@ -242,6 +255,11 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 
 	// Unify return types across all sites so the merged function has one return type.
 	// If any unification fails, abort the merge and let the caller fall back to intersection.
+	// Note: calling Unify directly on the originals (without deep-cloning) is safe
+	// here because the return types are fresh TypeVars from inferCallExpr, so
+	// unification always succeeds (one var binds to the other). If it did fail,
+	// the partial binding is harmless — we return nil and the caller uses the
+	// original sites for the intersection, where each site retains its own return var.
 	base := sorted[0]
 	for _, site := range sorted[1:] {
 		errs := c.Unify(ctx, site.Return, base.Return)
