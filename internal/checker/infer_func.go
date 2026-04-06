@@ -137,9 +137,10 @@ func (c *Checker) inferFuncSig(
 
 	var throwsType type_system.Type
 	if sig.Throws == nil {
-		// If no throws clause is specified, we use a fresh type variable which
-		// will be unified later if any throw expressions are found in the
-		// function body.
+		// No throws clause means the function doesn't throw.
+		throwsType = type_system.NewNeverType(nil)
+	} else if _, ok := sig.Throws.(*ast.WildcardTypeAnn); ok {
+		// throws _ means infer the throws type from the function body.
 		tvar := c.FreshVar(nil)
 		tvar.FromBinding = true
 		throwsType = tvar

@@ -988,7 +988,9 @@ func (t *FuncType) String() string {
 		result += " -> " + t.Return.String()
 	}
 	if t.Throws != nil {
-		result += " throws " + t.Throws.String()
+		if _, isNever := t.Throws.(*NeverType); !isNever {
+			result += " throws " + t.Throws.String()
+		}
 	}
 	return result
 }
@@ -1472,12 +1474,16 @@ func (t *ObjectType) String() string {
 					result += " -> " + elem.Fn.Return.String()
 				}
 				if elem.Fn.Throws != nil {
-					result += " throws " + elem.Fn.Throws.String()
+					if _, isNever := elem.Fn.Throws.(*NeverType); !isNever {
+						result += " throws " + elem.Fn.Throws.String()
+					}
 				}
 			case *GetterElem:
 				result += "get " + elem.Name.String() + "(self) -> " + elem.Fn.Return.String()
 				if elem.Fn.Throws != nil {
-					result += " throws " + elem.Fn.Throws.String()
+					if _, isNever := elem.Fn.Throws.(*NeverType); !isNever {
+						result += " throws " + elem.Fn.Throws.String()
+					}
 				}
 			case *SetterElem:
 				result += "set " + elem.Name.String() + "(mut self, "
@@ -1486,7 +1492,9 @@ func (t *ObjectType) String() string {
 				}
 				result += ") -> undefined"
 				if elem.Fn.Throws != nil {
-					result += " throws " + elem.Fn.Throws.String()
+					if _, isNever := elem.Fn.Throws.(*NeverType); !isNever {
+						result += " throws " + elem.Fn.Throws.String()
+					}
 				}
 			case *PropertyElem:
 				if elem.Readonly {

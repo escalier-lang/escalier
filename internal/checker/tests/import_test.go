@@ -22,7 +22,7 @@ func TestImportInferenceScript(t *testing.T) {
 				val equal = fde.default
 			`,
 			expectedValues: map[string]string{
-				"equal": "fn (a: any, b: any) -> boolean throws never",
+				"equal": "fn (a: any, b: any) -> boolean",
 			},
 		},
 		"NamespaceImportCsstype": {
@@ -45,7 +45,7 @@ func TestImportInferenceScript(t *testing.T) {
 				val useState = React.useState
 			`,
 			expectedValues: map[string]string{
-				"useState": "fn <S>(initialState: S | fn () -> S throws never) -> [S, Dispatch<SetStateAction<S>>] throws never & fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>] throws never",
+				"useState": "fn <S>(initialState: S | fn () -> S) -> [S, Dispatch<SetStateAction<S>>] & fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>]",
 			},
 		},
 	}

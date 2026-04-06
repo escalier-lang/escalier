@@ -62,6 +62,10 @@ func (c *Checker) inferTypeAnn(
 		t = type_system.NewNeverType(provenance)
 	case *ast.VoidTypeAnn:
 		t = type_system.NewVoidType(provenance)
+	case *ast.WildcardTypeAnn:
+		tvar := c.FreshVar(nil)
+		tvar.FromBinding = true
+		t = tvar
 	case *ast.LitTypeAnn:
 		switch lit := typeAnn.Lit.(type) {
 		case *ast.StrLit:
@@ -277,10 +281,23 @@ func (c *Checker) inferFuncTypeAnn(
 	returnType, returnErrors := c.inferTypeAnn(funcCtx, funcTypeAnn.Return)
 	errors = slices.Concat(errors, returnErrors)
 
+	var throwsType type_system.Type
+	if funcTypeAnn.Throws == nil {
+		throwsType = type_system.NewNeverType(nil)
+	} else if _, ok := funcTypeAnn.Throws.(*ast.WildcardTypeAnn); ok {
+		tvar := c.FreshVar(nil)
+		tvar.FromBinding = true
+		throwsType = tvar
+	} else {
+		var throwsErrors []Error
+		throwsType, throwsErrors = c.inferTypeAnn(funcCtx, funcTypeAnn.Throws)
+		errors = slices.Concat(errors, throwsErrors)
+	}
+
 	funcType := type_system.FuncType{
 		Params:     params,
 		Return:     returnType,
-		Throws:     type_system.NewNeverType(nil),
+		Throws:     throwsType,
 		TypeParams: typeParams,
 	}
 

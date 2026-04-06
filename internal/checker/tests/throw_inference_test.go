@@ -21,21 +21,21 @@ func TestThrowExpressionInference(t *testing.T) {
 		shouldHaveError bool
 	}{
 		"FunctionWithThrowString": {
-			input: `val testFunc = fn () -> undefined {
+			input: `val testFunc = fn () -> undefined throws _ {
 				throw "error message"
 			}`,
 			expectedThrows:  "\"error message\"",
 			shouldHaveError: false,
 		},
 		"FunctionWithThrowError": {
-			input: `val testFunc = fn () -> undefined {
+			input: `val testFunc = fn () -> undefined throws _ {
 				throw Error("error message")
 			}`,
 			expectedThrows:  "Error",
 			shouldHaveError: false,
 		},
 		"FunctionWithMultipleThrows": {
-			input: `val testFunc = fn (flag: boolean) -> undefined {
+			input: `val testFunc = fn (flag: boolean) -> undefined throws _ {
 				if flag {
 					throw "string error"
 				} else {
@@ -46,8 +46,8 @@ func TestThrowExpressionInference(t *testing.T) {
 			shouldHaveError: false,
 		},
 		"FunctionWithNestedThrows": {
-			input: `val testFunc = fn () -> undefined {
-				val innerFunc = fn () -> undefined {
+			input: `val testFunc = fn () -> undefined throws _ {
+				val innerFunc = fn () -> undefined throws _ {
 					throw "inner error"
 				}
 				throw "outer error"

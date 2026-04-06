@@ -231,7 +231,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			Body:    nil,
 			declare: isTopLevel, // Only add declare modifier for root namespace
 			export:  decl.Export(),
-			async:   decl.Async,
+			async:   false, // async is not allowed in .d.ts files
 			span:    nil,
 			source:  nil,
 		}
@@ -688,8 +688,14 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		// Fall back to unknown as a safety net.
 		return NewUnknownTypeAnn(nil)
 	case *type_sys.TypeRefType:
-		typeArgs := make([]TypeAnn, len(t.TypeArgs))
-		for i, arg := range t.TypeArgs {
+		args := t.TypeArgs
+		// TypeScript's Promise has only one type parameter, so drop the
+		// error type that Escalier tracks as the second type arg.
+		if type_sys.QualIdentToString(t.Name) == "Promise" && len(args) > 1 {
+			args = args[:1]
+		}
+		typeArgs := make([]TypeAnn, len(args))
+		for i, arg := range args {
 			typeArgs[i] = b.buildTypeAnn(arg)
 		}
 		return NewRefTypeAnn(type_sys.QualIdentToString(t.Name), typeArgs)

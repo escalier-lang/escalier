@@ -231,6 +231,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Void:
 			p.lexer.consume()
 			typeAnn = ast.NewVoidTypeAnn(token.Span)
+		case Underscore:
+			p.lexer.consume()
+			typeAnn = ast.NewWildcardTypeAnn(token.Span)
 		case Null:
 			p.lexer.consume()
 			typeAnn = ast.NewLitTypeAnn(ast.NewNull(token.Span), token.Span)

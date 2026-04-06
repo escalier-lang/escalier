@@ -257,7 +257,7 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 					Contents: `
 						type Input = {value: number}
 						type Output = {result: number}
-						fn process(input: Input) -> Output throws never {
+						fn process(input: Input) -> Output {
 							return {result: input.value * 2}
 						}
 					`,
@@ -580,8 +580,8 @@ func TestBuildDepGraphV2_OverloadedFunctions(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						declare fn add(a: number, b: number) -> number throws never
-						declare fn add(a: string, b: string) -> string throws never
+						declare fn add(a: number, b: number) -> number
+						declare fn add(a: string, b: string) -> string
 					`,
 				},
 			},
@@ -598,9 +598,9 @@ func TestBuildDepGraphV2_OverloadedFunctions(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						declare fn process(a: number) -> number throws never
-						declare fn process(a: string) -> string throws never
-						declare fn process(a: boolean) -> boolean throws never
+						declare fn process(a: number) -> number
+						declare fn process(a: string) -> string
+						declare fn process(a: boolean) -> boolean
 					`,
 				},
 			},
@@ -617,8 +617,8 @@ func TestBuildDepGraphV2_OverloadedFunctions(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						declare fn overloaded(a: number) -> number throws never
-						declare fn overloaded(a: string) -> string throws never
+						declare fn overloaded(a: number) -> number
+						declare fn overloaded(a: string) -> string
 						fn regular(x) {
 							return x
 						}
@@ -1892,7 +1892,7 @@ func TestBuildDepGraphV2_TypeParameterConstraints(t *testing.T) {
 						interface Comparable {
 							compareTo(other: Comparable) -> number,
 						}
-						fn sort<T: Comparable>(items: Array<T>) -> Array<T> throws never {
+						fn sort<T: Comparable>(items: Array<T>) -> Array<T> {
 							return items
 						}
 					`,

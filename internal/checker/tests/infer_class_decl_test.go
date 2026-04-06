@@ -30,7 +30,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val {x, y, z} = p
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> mut? Point throws never}",
+				"Point": "{new fn (x: number, y: number) -> mut? Point}",
 				"p":     "Point",
 				"x":     "number",
 				"y":     "number",
@@ -59,13 +59,13 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.add(Point(1, 2))
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> mut? Point throws never}",
+				"Point": "{new fn (x: number, y: number) -> mut? Point}",
 				"p":     "Point",
 				"q":     "Point",
 				"len":   "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, length(self) -> number throws never, add(self, other: Point) -> Point throws never}",
+				"Point": "{x: number, y: number, length(self) -> number, add(self, other: Point) -> Point}",
 			},
 		},
 		"ClassWithFluentMutatingMethods": {
@@ -90,12 +90,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.scale(2).translate(1, -1)
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> mut? Point throws never}",
+				"Point": "{new fn (x: number, y: number) -> mut? Point}",
 				"p":     "Point",
 				"q":     "mut Point",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, scale(mut self, factor: number) -> mut Point throws never, translate(mut self, dx: number, dy: number) -> mut Point throws never}",
+				"Point": "{x: number, y: number, scale(mut self, factor: number) -> mut Point, translate(mut self, dx: number, dy: number) -> mut Point}",
 			},
 		},
 		"SimpleDeclWithComputedMembers": {
@@ -114,12 +114,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val fooBaz = foo[baz]()
 			`,
 			expectedTypes: map[string]string{
-				"Foo":    "{new fn () -> mut? Foo throws never}",
+				"Foo":    "{new fn () -> mut? Foo}",
 				"fooBar": "number",
 				"fooBaz": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Foo": "{bar: number, baz(self) -> number throws never}",
+				"Foo": "{bar: number, baz(self) -> number}",
 			},
 		},
 		"ClassWithStaticMethod": {
@@ -134,7 +134,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val result = MyMath.add(5, 3)
 			`,
 			expectedTypes: map[string]string{
-				"MyMath": "{new fn () -> mut? MyMath throws never, add(a: number, b: number) -> number throws never}",
+				"MyMath": "{new fn () -> mut? MyMath, add(a: number, b: number) -> number}",
 				"m":      "MyMath",
 				"result": "number",
 			},
@@ -160,13 +160,13 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val len = p.length()
 			`,
 			expectedTypes: map[string]string{
-				"Point":  "{new fn (x: number, y: number) -> mut? Point throws never, origin() -> Point throws never}",
+				"Point":  "{new fn (x: number, y: number) -> mut? Point, origin() -> Point}",
 				"p":      "Point",
 				"origin": "Point",
 				"len":    "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Point": "{x: number, y: number, length(self) -> number throws never}",
+				"Point": "{x: number, y: number, length(self) -> number}",
 			},
 		},
 		"ClassWithInstanceGetter": {
@@ -182,12 +182,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val area = c.area
 			`,
 			expectedTypes: map[string]string{
-				"Circle": "{new fn (radius: number) -> mut? Circle throws never}",
+				"Circle": "{new fn (radius: number) -> mut? Circle}",
 				"c":      "Circle",
 				"area":   "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Circle": "{radius: number, get area(self) -> number throws never}",
+				"Circle": "{radius: number, get area(self) -> number}",
 			},
 		},
 		"ClassWithInstanceSetter": {
@@ -205,11 +205,11 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Temperature": "{new fn (celsius: number) -> mut? Temperature throws never}",
+				"Temperature": "{new fn (celsius: number) -> mut? Temperature}",
 				"temp":        "mut Temperature",
 			},
 			expectedTypeAliases: map[string]string{
-				"Temperature": "{celsius: number, set fahrenheit(mut self, value: number) -> undefined throws never}",
+				"Temperature": "{celsius: number, set fahrenheit(mut self, value: number) -> undefined}",
 			},
 		},
 		"ClassWithGetterAndSetter": {
@@ -235,12 +235,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Person": "{new fn (firstName: string, lastName: string) -> mut? Person throws never}",
+				"Person": "{new fn (firstName: string, lastName: string) -> mut? Person}",
 				"person": "mut Person",
 				"name":   "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Person": "{firstName: string, lastName: string, get fullName(self) -> string throws never, set fullName(mut self, value: string) -> undefined throws never}",
+				"Person": "{firstName: string, lastName: string, get fullName(self) -> string, set fullName(mut self, value: string) -> undefined}",
 			},
 		},
 		"ClassWithStaticGetter": {
@@ -255,7 +255,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val version = Config.version
 			`,
 			expectedTypes: map[string]string{
-				"Config":  "{new fn () -> mut? Config throws never, get version(self) -> string throws never}",
+				"Config":  "{new fn () -> mut? Config, get version(self) -> string}",
 				"config":  "Config",
 				"version": "string",
 			},
@@ -277,7 +277,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val defaultVal = Counter.defaultValue
 			`,
 			expectedTypes: map[string]string{
-				"Counter":        "{new fn (initialValue: number) -> mut? Counter throws never, totalInstances: number, defaultValue: 100}",
+				"Counter":        "{new fn (initialValue: number) -> mut? Counter, totalInstances: number, defaultValue: 100}",
 				"counter1":       "Counter",
 				"value1":         "number",
 				"totalInstances": "number",
@@ -297,7 +297,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val boxValue = box.value
 			`,
 			expectedTypes: map[string]string{
-				"Box":      "{new fn <T>(value: T) -> mut? Box<T> throws never}",
+				"Box":      "{new fn <T>(value: T) -> mut? Box<T>}",
 				"box":      "Box<number>",
 				"boxValue": "number",
 			},
@@ -326,8 +326,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val dogSound = dog.speak()
 			`,
 			expectedTypes: map[string]string{
-				"Animal":      "{new fn (name: string) -> mut? Animal throws never}",
-				"Dog":         "{new fn (name: string, breed: string) -> mut? Dog throws never}",
+				"Animal":      "{new fn (name: string) -> mut? Animal}",
+				"Dog":         "{new fn (name: string, breed: string) -> mut? Dog}",
 				"animal":      "Animal",
 				"dog":         "Dog",
 				"dogName":     "string",
@@ -336,8 +336,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"dogSound":    "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Animal": "{name: string, speak(self) -> string throws never}",
-				"Dog":    "{breed: string, speak(self) -> string throws never}",
+				"Animal": "{name: string, speak(self) -> string}",
+				"Dog":    "{breed: string, speak(self) -> string}",
 			},
 		},
 		"ClassWithExtendsAccessingParentMethods": {
@@ -364,8 +364,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val carDoors = car.doors
 			`,
 			expectedTypes: map[string]string{
-				"Vehicle":  "{new fn (make: string, model: string) -> mut? Vehicle throws never}",
-				"Car":      "{new fn (make: string, model: string, doors: number) -> mut? Car throws never}",
+				"Vehicle":  "{new fn (make: string, model: string) -> mut? Vehicle}",
+				"Car":      "{new fn (make: string, model: string, doors: number) -> mut? Car}",
 				"car":      "Car",
 				"info":     "string",
 				"fullInfo": "string",
@@ -373,8 +373,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"carDoors": "number",
 			},
 			expectedTypeAliases: map[string]string{
-				"Vehicle": "{make: string, model: string, getInfo(self) -> string throws never}",
-				"Car":     "{doors: number, getFullInfo(self) -> string throws never}",
+				"Vehicle": "{make: string, model: string, getInfo(self) -> string}",
+				"Car":     "{doors: number, getFullInfo(self) -> string}",
 			},
 		},
 		"ClassWithExtendsMultipleFields": {
@@ -396,8 +396,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val extD = ext.d
 			`,
 			expectedTypes: map[string]string{
-				"Base":     "{new fn (a: number, b: string) -> mut? Base throws never}",
-				"Extended": "{new fn (a: number, b: string, c: boolean, d: number) -> mut? Extended throws never}",
+				"Base":     "{new fn (a: number, b: string) -> mut? Base}",
+				"Extended": "{new fn (a: number, b: string, c: boolean, d: number) -> mut? Extended}",
 				"ext":      "Extended",
 				"extA":     "number",
 				"extB":     "string",
@@ -427,15 +427,15 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val circleArea = circle.area
 			`,
 			expectedTypes: map[string]string{
-				"Shape":       "{new fn (color: string) -> mut? Shape throws never}",
-				"Circle":      "{new fn (color: string, radius: number) -> mut? Circle throws never}",
+				"Shape":       "{new fn (color: string) -> mut? Shape}",
+				"Circle":      "{new fn (color: string, radius: number) -> mut? Circle}",
 				"circle":      "Circle",
 				"circleColor": "string",
 				"circleArea":  "number",
 			},
 			expectedTypeAliases: map[string]string{
 				"Shape":  "{color: string}",
-				"Circle": "{radius: number, get area(self) -> number throws never}",
+				"Circle": "{radius: number, get area(self) -> number}",
 			},
 		},
 		"ClassWithExtendsIndexAccess": {
@@ -453,7 +453,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val boxContents = box["contents"]
 			`,
 			expectedTypes: map[string]string{
-				"Box":         "{new fn (size: number, contents: string) -> mut? Box throws never}",
+				"Box":         "{new fn (size: number, contents: string) -> mut? Box}",
 				"box":         "Box",
 				"boxSize":     "number",
 				"boxContents": "string",
@@ -483,9 +483,9 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val childAge = child.age
 			`,
 			expectedTypes: map[string]string{
-				"GrandParent": "{new fn (id: number) -> mut? GrandParent throws never}",
-				"Parent":      "{new fn (id: number, name: string) -> mut? Parent throws never}",
-				"Child":       "{new fn (id: number, name: string, age: number) -> mut? Child throws never}",
+				"GrandParent": "{new fn (id: number) -> mut? GrandParent}",
+				"Parent":      "{new fn (id: number, name: string) -> mut? Parent}",
+				"Child":       "{new fn (id: number, name: string, age: number) -> mut? Child}",
 				"child":       "Child",
 				"childId":     "number",
 				"childName":   "string",
@@ -515,14 +515,14 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val incremented = counter.increment()
 			`,
 			expectedTypes: map[string]string{
-				"Counter":         "{new fn (value: number) -> mut? Counter throws never}",
-				"ExtendedCounter": "{new fn (value: number, step: number) -> mut? ExtendedCounter throws never}",
+				"Counter":         "{new fn (value: number) -> mut? Counter}",
+				"ExtendedCounter": "{new fn (value: number, step: number) -> mut? ExtendedCounter}",
 				"counter":         "ExtendedCounter",
 				"incremented":     "mut ExtendedCounter",
 			},
 			expectedTypeAliases: map[string]string{
 				"Counter":         "{value: number}",
-				"ExtendedCounter": "{step: number, increment(mut self) -> mut ExtendedCounter throws never}",
+				"ExtendedCounter": "{step: number, increment(mut self) -> mut ExtendedCounter}",
 			},
 		},
 		// TODO: Generic class inheritance requires type parameter substitution when accessing parent members
@@ -547,15 +547,15 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val catName = cat.name
 			`,
 			expectedTypes: map[string]string{
-				"Animal":  "{new fn (name: string) -> mut? Animal throws never}",
-				"Cat":     "{new fn (name: string, lives: number) -> mut? Cat throws never}",
+				"Animal":  "{new fn (name: string) -> mut? Animal}",
+				"Cat":     "{new fn (name: string, lives: number) -> mut? Cat}",
 				"cat":     "Cat",
 				"sound":   "string",
 				"catName": "string",
 			},
 			expectedTypeAliases: map[string]string{
-				"Animal": "{name: string, makeSound(self) -> string throws never}",
-				"Cat":    "{lives: number, makeSound(self) -> string throws never}",
+				"Animal": "{name: string, makeSound(self) -> string}",
+				"Cat":    "{lives: number, makeSound(self) -> string}",
 			},
 		},
 		// TODO: figure out how we want to handle static setters
@@ -574,7 +574,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		// 		}
 		// 	`,
 		// 	expectedTypes: map[string]string{
-		// 		"GlobalState": "{new fn () -> GlobalState throws never, set debugMode(mut self, value: boolean) -> undefined throws never}",
+		// 		"GlobalState": "{new fn () -> GlobalState, set debugMode(mut self, value: boolean) -> undefined}",
 		// 		"state":       "mut GlobalState",
 		// 	},
 		// 	expectedTypeAliases: map[string]string{
