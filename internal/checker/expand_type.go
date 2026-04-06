@@ -222,6 +222,11 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.insideKeyOfTarget+1)
 		expandedTarget = type_system.Prune(expandedTarget)
 
+		// Unwrap MutabilityType so keyof sees the actual object type
+		if mut, ok := expandedTarget.(*type_system.MutabilityType); ok {
+			expandedTarget = mut.Type
+		}
+
 		switch target := expandedTarget.(type) {
 		case *type_system.ObjectType:
 			// Extract all keys from the object type (excluding methods)
@@ -665,6 +670,10 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	case *type_system.IntersectionType:
 		return c.getIntersectionAccess(ctx, t, key, errors)
 	case *type_system.TypeVarType:
+		// TODO(#389): Check t.Constraint before synthesizing an open object.
+		// Constrained type variables (e.g. `<T: {name: string}>`) should resolve
+		// properties from their constraint first. Currently this only works for
+		// unannotated parameters where Constraint == nil.
 		switch k := key.(type) {
 		case PropertyKey:
 			propTV, openObj := c.newOpenObjectWithProperty(k.Name)
@@ -747,6 +756,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			case *type_system.CallableElem:
 				continue
 			case *type_system.RestSpreadElem:
+				// The row variable is an unresolved TypeVarType during inference —
+				// there's no concrete ObjectType to query for properties here.
+				// It gets resolved during unification/generalization, not member lookup.
 				continue
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
@@ -832,6 +844,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					case *type_system.CallableElem:
 						continue
 					case *type_system.RestSpreadElem:
+						// See comment in PropertyKey branch above.
 						continue
 					default:
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
