@@ -219,8 +219,15 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 					Value: c.deepCloneType(e.Value, varMapping),
 				}
 			case *type_system.MappedElem:
+				var clonedTypeParam *type_system.IndexParam
+				if e.TypeParam != nil {
+					clonedTypeParam = &type_system.IndexParam{
+						Name:       e.TypeParam.Name,
+						Constraint: c.deepCloneType(e.TypeParam.Constraint, varMapping),
+					}
+				}
 				elems[i] = &type_system.MappedElem{
-					TypeParam: e.TypeParam,
+					TypeParam: clonedTypeParam,
 					Name:      c.deepCloneType(e.Name, varMapping),
 					Value:     c.deepCloneType(e.Value, varMapping),
 					Optional:  e.Optional,
