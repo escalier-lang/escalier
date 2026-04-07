@@ -966,6 +966,12 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 
 			// Open-vs-open: unify shared properties, merge non-shared,
 			// unify row variables.
+			//
+			// Note: we mutate obj1.Elems/obj2.Elems even when c.Unify calls
+			// return errors. This is intentional — the unifier throughout this
+			// file collects errors and continues (best-effort inference).
+			// Partial type information from the merge is better than none for
+			// downstream inference and error reporting.
 			if obj1.Open && obj2.Open {
 				for _, key := range keys1 {
 					if value2, ok := namedElems2[key]; ok {
@@ -974,17 +980,18 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 					}
 				}
 				// Add elems from obj2 not in obj1 to obj1.
-				// Copy PropertyElems to avoid sharing mutable fields (Written)
-				// between the two open objects.
+				// Share the original elem pointers (not copies) so that mutable
+				// fields like Written are visible to both open types — they are
+				// in the same inference scope and represent the same parameter.
 				for _, key := range keys2 {
 					if _, ok := namedElems1[key]; !ok {
-						obj1.Elems = append(obj1.Elems, copyObjTypeElem(origElems2[key]))
+						obj1.Elems = append(obj1.Elems, origElems2[key])
 					}
 				}
 				// Add elems from obj1 not in obj2 to obj2.
 				for _, key := range keys1 {
 					if _, ok := namedElems2[key]; !ok {
-						obj2.Elems = append(obj2.Elems, copyObjTypeElem(origElems1[key]))
+						obj2.Elems = append(obj2.Elems, origElems1[key])
 					}
 				}
 				// Unify row variables if both have RestSpreadElems
@@ -1854,7 +1861,14 @@ func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, bou
 	if typeVar.Instance != nil {
 		return false // already bound (e.g. during constraint unification)
 	}
-	closedObj, ok := boundType.(*type_system.ObjectType)
+	// Unwrap MutabilityType if present (e.g. `fn bar(x: mut {a: number})`).
+	var mutWrapper *type_system.MutabilityType
+	inner := boundType
+	if mut, ok := inner.(*type_system.MutabilityType); ok {
+		mutWrapper = mut
+		inner = mut.Type
+	}
+	closedObj, ok := inner.(*type_system.ObjectType)
 	if !ok || closedObj.Open || closedObj.Nominal {
 		return false
 	}
@@ -1868,7 +1882,15 @@ func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, bou
 		Immutable: closedObj.Immutable,
 		Mutable:   closedObj.Mutable,
 	}
-	typeVar.Instance = openCopy
+	// Re-wrap in MutabilityType if the original was wrapped.
+	if mutWrapper != nil {
+		typeVar.Instance = &type_system.MutabilityType{
+			Type:       openCopy,
+			Mutability: mutWrapper.Mutability,
+		}
+	} else {
+		typeVar.Instance = openCopy
+	}
 	// Provenance points to the original closed type (not the open copy) so
 	// that error messages and diagnostics can trace back to the source
 	// annotation. This early return skips bind()'s normal provenance write,

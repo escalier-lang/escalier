@@ -510,6 +510,19 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				"foo": "fn <T0>(obj: mut {x: 1, ...T0, y: \"hello\"}) -> void",
 			},
 		},
+		"PassToMutableTypedFunction": {
+			input: `
+				fn bar(x: mut {a: number}) -> number { return x.a }
+				fn foo(obj) {
+					bar(obj)
+					obj.b = "hi"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn (x: mut {a: number}) -> number",
+				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: \"hi\"}) -> void",
+			},
+		},
 		"OpenVsOpenViaFunctionCall": {
 			input: `
 				fn bar(x) -> number { return x.a }
