@@ -498,6 +498,104 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				"foo": "fn <T0>(obj: mut {a: 1, ...T0, b: \"hi\"}) -> void",
 			},
 		},
+		"Aliasing": {
+			input: `
+				fn foo(obj) {
+					val alias = obj
+					alias.x = 1
+					alias.y = "hello"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {x: 1, ...T0, y: \"hello\"}) -> void",
+			},
+		},
+		"OpenVsOpenViaFunctionCall": {
+			input: `
+				fn bar(x) -> number { return x.a }
+				fn foo(obj) {
+					obj.b = "hi"
+					bar(obj)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn <T0>(x: {a: number, ...T0}) -> number",
+				"foo": "fn <T0>(obj: mut {b: \"hi\", ...T0, a: number}) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+// TestRowTypesWriteAfterPass tests that writing to a property after passing
+// the parameter to a typed function does not corrupt the callee's type.
+// This exercises the openClosedObjectForParam path followed by markPropertyWritten.
+func TestRowTypesWriteAfterPass(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"WriteAfterPass": {
+			input: `
+				fn bar(x: {name: string}) -> string { return x.name }
+				fn foo(obj) {
+					bar(obj)
+					obj.name = "hi"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn (x: {name: string}) -> string",
+				// bar's annotation provides the concrete type; "hi" is compatible
+				"foo": "fn <T0>(obj: mut {name: string, ...T0}) -> void",
+			},
+		},
+		"WriteNewPropertyAfterPass": {
+			input: `
+				fn bar(x: {a: number}) -> number { return x.a }
+				fn foo(obj) {
+					bar(obj)
+					obj.b = "hi"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn (x: {a: number}) -> number",
+				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: \"hi\"}) -> void",
+			},
+		},
+		"WrittenFlagDoesNotLeakAcrossFunctions": {
+			// foo writes to name after passing obj to bar. The Written flag must
+			// not leak through bar's shared PropertyElem to baz, which only reads.
+			// baz depends on foo (via `val _ = foo(obj)`) to force processing
+			// order: foo is inferred before baz.
+			input: `
+				fn bar(x: {name: string}) -> string { return x.name }
+				fn foo(obj) {
+					bar(obj)
+					obj.name = "hi"
+				}
+				fn baz(a, b) {
+					foo(a)
+					bar(b)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"bar": "fn (x: {name: string}) -> string",
+				"foo": "fn <T0>(obj: mut {name: string, ...T0}) -> void",
+				// baz's second param must NOT be mut — baz never writes to b
+				"baz": "fn <T0, T1>(a: mut {name: string, ...T0}, b: {name: string, ...T1}) -> void",
+			},
+		},
 	}
 
 	for name, test := range tests {

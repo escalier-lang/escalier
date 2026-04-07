@@ -899,6 +899,8 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 
 			namedElems1 := make(map[type_system.ObjTypeKey]type_system.Type)
 			namedElems2 := make(map[type_system.ObjTypeKey]type_system.Type)
+			origElems1 := make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
+			origElems2 := make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
 
 			keys1 := []type_system.ObjTypeKey{} // original order of keys in obj1
 			keys2 := []type_system.ObjTypeKey{} // original order of keys in obj2
@@ -910,12 +912,15 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 				switch elem := elem.(type) {
 				case *type_system.MethodElem:
 					namedElems1[elem.Name] = elem.Fn
+					origElems1[elem.Name] = elem
 					keys1 = append(keys1, elem.Name)
 				case *type_system.GetterElem:
 					namedElems1[elem.Name] = elem.Fn.Return
+					origElems1[elem.Name] = elem
 					keys1 = append(keys1, elem.Name)
 				case *type_system.SetterElem:
 					namedElems1[elem.Name] = elem.Fn.Params[0].Type
+					origElems1[elem.Name] = elem
 					keys1 = append(keys1, elem.Name)
 				case *type_system.PropertyElem:
 					propType := elem.Value
@@ -923,6 +928,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 					}
 					namedElems1[elem.Name] = propType
+					origElems1[elem.Name] = elem
 					keys1 = append(keys1, elem.Name)
 				case *type_system.RestSpreadElem:
 					restType1 = elem.Value
@@ -934,12 +940,15 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 				switch elem := elem.(type) {
 				case *type_system.MethodElem:
 					namedElems2[elem.Name] = elem.Fn
+					origElems2[elem.Name] = elem
 					keys2 = append(keys2, elem.Name)
 				case *type_system.GetterElem:
 					namedElems2[elem.Name] = elem.Fn.Return
+					origElems2[elem.Name] = elem
 					keys2 = append(keys2, elem.Name)
 				case *type_system.SetterElem:
 					namedElems2[elem.Name] = elem.Fn.Params[0].Type
+					origElems2[elem.Name] = elem
 					keys2 = append(keys2, elem.Name)
 				case *type_system.PropertyElem:
 					propType := elem.Value
@@ -947,6 +956,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 					}
 					namedElems2[elem.Name] = propType
+					origElems2[elem.Name] = elem
 					keys2 = append(keys2, elem.Name)
 				case *type_system.RestSpreadElem:
 					restType2 = elem.Value
@@ -963,22 +973,16 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
-				// Add properties from obj2 not in obj1 to obj1
+				// Add elems from obj2 not in obj1 to obj1
 				for _, key := range keys2 {
 					if _, ok := namedElems1[key]; !ok {
-						obj1.Elems = append(obj1.Elems, &type_system.PropertyElem{
-							Name:  key,
-							Value: namedElems2[key],
-						})
+						obj1.Elems = append(obj1.Elems, origElems2[key])
 					}
 				}
-				// Add properties from obj1 not in obj2 to obj2
+				// Add elems from obj1 not in obj2 to obj2
 				for _, key := range keys1 {
 					if _, ok := namedElems2[key]; !ok {
-						obj2.Elems = append(obj2.Elems, &type_system.PropertyElem{
-							Name:  key,
-							Value: namedElems1[key],
-						})
+						obj2.Elems = append(obj2.Elems, origElems1[key])
 					}
 				}
 				// Unify row variables if both have RestSpreadElems
@@ -995,27 +999,33 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 			if obj1.Open || obj2.Open {
 				var openObj *type_system.ObjectType
 				var openNamedElems, closedNamedElems map[type_system.ObjTypeKey]type_system.Type
+				var closedOrigElems map[type_system.ObjTypeKey]type_system.ObjTypeElem
 				var closedKeys []type_system.ObjTypeKey
 				if obj1.Open {
 					openObj = obj1
 					openNamedElems, closedNamedElems = namedElems1, namedElems2
+					closedOrigElems = origElems2
 					closedKeys = keys2
 				} else {
 					openObj = obj2
 					openNamedElems, closedNamedElems = namedElems2, namedElems1
+					closedOrigElems = origElems1
 					closedKeys = keys1
 				}
 				for _, key := range closedKeys {
-					closedValue := closedNamedElems[key]
 					if openValue, ok := openNamedElems[key]; ok {
-						unifyErrors := c.Unify(ctx, openValue, closedValue)
+						unifyErrors := c.Unify(ctx, openValue, closedNamedElems[key])
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
-						// Property in closed but not in open: add to open type
-						openObj.Elems = append(openObj.Elems, &type_system.PropertyElem{
-							Name:  key,
-							Value: closedValue,
-						})
+						// Elem in closed but not in open: copy and add to open type.
+						// Copy PropertyElems to avoid sharing mutable fields (Written).
+						elem := closedOrigElems[key]
+						if prop, ok := elem.(*type_system.PropertyElem); ok {
+							cp := *prop
+							cp.Written = false
+							elem = &cp
+						}
+						openObj.Elems = append(openObj.Elems, elem)
 					}
 				}
 				return errors
@@ -1831,20 +1841,44 @@ func occursInType(t1, t2 type_system.Type) bool {
 // converts it to an open object and binds it to the type variable. Returns true if
 // the conversion was performed.
 func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, boundType type_system.Type) bool {
+	if typeVar.Instance != nil {
+		return false // already bound (e.g. during constraint unification)
+	}
 	closedObj, ok := boundType.(*type_system.ObjectType)
-	if !ok || closedObj.Open {
+	if !ok || closedObj.Open || closedObj.Nominal {
 		return false
 	}
+	// Deep-copy elements so that mutations (e.g. Written flag) on the open
+	// copy do not leak back to the closed source type.
+	elems := copyObjTypeElems(closedObj.Elems)
+	elems = append(elems, type_system.NewRestSpreadElem(c.FreshVar(nil)))
 	openCopy := &type_system.ObjectType{
-		Elems: append(slices.Clone(closedObj.Elems),
-			type_system.NewRestSpreadElem(c.FreshVar(nil))),
-		Open: true,
+		Elems:     elems,
+		Open:      true,
+		Immutable: closedObj.Immutable,
+		Mutable:   closedObj.Mutable,
 	}
 	typeVar.Instance = openCopy
 	typeVar.SetProvenance(&type_system.TypeProvenance{
 		Type: boundType,
 	})
 	return true
+}
+
+// copyObjTypeElems returns a shallow copy of the slice with each PropertyElem
+// replaced by a fresh struct so that mutable fields (Written) are not shared.
+func copyObjTypeElems(elems []type_system.ObjTypeElem) []type_system.ObjTypeElem {
+	out := make([]type_system.ObjTypeElem, len(elems))
+	for i, elem := range elems {
+		if prop, ok := elem.(*type_system.PropertyElem); ok {
+			cp := *prop
+			cp.Written = false
+			out[i] = &cp
+		} else {
+			out[i] = elem
+		}
+	}
+	return out
 }
 
 type RemoveUncertainMutabilityVisitor struct{}
