@@ -122,7 +122,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 
 	// Save original (pre-Prune) types so we can check for Widenable TypeVars
 	// when concrete-vs-concrete unification fails (Phase 4 property widening).
-	origT1, origT2 := t1, t2
+	_, origT2 := t1, t2
 	t1 = type_system.Prune(t1)
 	t2 = type_system.Prune(t2)
 
@@ -131,32 +131,26 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 		return nil
 	}
 
-	// Property widening: when concrete-vs-concrete unification fails and one of
-	// the original (pre-Prune) types was a Widenable TypeVarType, widen its
-	// Instance to a union of the old and new types instead of reporting an error.
+	// Property widening: when concrete-vs-concrete unification fails and the
+	// SECOND (target) type was a Widenable TypeVarType, widen its Instance to a
+	// union of the old and new types instead of reporting an error.
+	//
+	// Only the origT2 branch is checked because property writes always call
+	// Unify(valueType, propertyTV), placing the Widenable TypeVar on the right.
+	// Read sites (e.g. val s: string = obj.bar) call Unify(propertyTV, declaredType),
+	// placing the TypeVar on the left — those must NOT widen, they must report
+	// type errors.
+	//
 	// Strip MutabilityType wrappers before building the union — they come from
 	// the uncertain-mutability wrapper on open object properties and should not
 	// appear inside union members.
-	//
-	// Only widen (and suppress the error) when the Instance is actually extended.
-	// If typeContains returns true, the new type was already present — the failure
-	// is a genuine type error (e.g. reading a string|number property into a string
-	// variable), not an accumulation event.
-	if tv1, ok := origT1.(*type_system.TypeVarType); ok && tv1.Widenable {
-		oldType := unwrapMutability(t1)
-		newType := unwrapMutability(widenLiteral(t2))
-		if !typeContains(oldType, newType) {
-			tv1.Instance = flatUnion(oldType, newType)
-			return nil
-		}
-	}
 	if tv2, ok := origT2.(*type_system.TypeVarType); ok && tv2.Widenable {
 		oldType := unwrapMutability(t2)
 		newType := unwrapMutability(widenLiteral(t1))
 		if !typeContains(oldType, newType) {
 			tv2.Instance = flatUnion(oldType, newType)
-			return nil
 		}
+		return nil
 	}
 
 	return errors
