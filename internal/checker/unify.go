@@ -995,33 +995,33 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 				return errors
 			}
 
-			// Open-vs-closed: unify shared properties, add closed-only
-			// properties to the open type. Open-only properties are allowed
-			// (structural subtyping).
-			if obj1.Open || obj2.Open {
-				var openObj *type_system.ObjectType
-				var openNamedElems, closedNamedElems map[type_system.ObjTypeKey]type_system.Type
-				var closedOrigElems map[type_system.ObjTypeKey]type_system.ObjTypeElem
-				var closedKeys []type_system.ObjTypeKey
-				if obj1.Open {
-					openObj = obj1
-					openNamedElems, closedNamedElems = namedElems1, namedElems2
-					closedOrigElems = origElems2
-					closedKeys = keys2
-				} else {
-					openObj = obj2
-					openNamedElems, closedNamedElems = namedElems2, namedElems1
-					closedOrigElems = origElems1
-					closedKeys = keys1
-				}
-				for _, key := range closedKeys {
-					if openValue, ok := openNamedElems[key]; ok {
-						unifyErrors := c.Unify(ctx, openValue, closedNamedElems[key])
+			// Open(t1)-vs-closed(t2): unify shared properties preserving
+			// t1/t2 directionality, add closed-only properties to the open type.
+			// Open-only properties are allowed (structural subtyping).
+			if obj1.Open && !obj2.Open {
+				for _, key := range keys2 {
+					if value1, ok := namedElems1[key]; ok {
+						unifyErrors := c.Unify(ctx, value1, namedElems2[key])
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
 						// Elem in closed but not in open: copy and add to open type.
 						// Copy PropertyElems to avoid sharing mutable fields (Written).
-						openObj.Elems = append(openObj.Elems, copyObjTypeElem(closedOrigElems[key]))
+						obj1.Elems = append(obj1.Elems, copyObjTypeElem(origElems2[key]))
+					}
+				}
+				return errors
+			}
+
+			// Closed(t1)-vs-open(t2): same logic, but t1 is closed and t2 is open.
+			if !obj1.Open && obj2.Open {
+				for _, key := range keys1 {
+					if value2, ok := namedElems2[key]; ok {
+						unifyErrors := c.Unify(ctx, namedElems1[key], value2)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						// Elem in closed but not in open: copy and add to open type.
+						// Copy PropertyElems to avoid sharing mutable fields (Written).
+						obj2.Elems = append(obj2.Elems, copyObjTypeElem(origElems1[key]))
 					}
 				}
 				return errors
@@ -1842,6 +1842,14 @@ func occursInType(t1, t2 type_system.Type) bool {
 // openClosedObjectForParam checks if boundType is a closed ObjectType and, if so,
 // converts it to an open object and binds it to the type variable. Returns true if
 // the conversion was performed.
+//
+// This is needed because when an unannotated parameter (e.g. `fn foo(obj)`) is
+// passed to a function with a typed parameter (e.g. `fn bar(x: {a: number})`),
+// bind() would normally set the type variable's Instance to the closed ObjectType
+// from bar's annotation. That would prevent the parameter from accepting additional
+// properties inferred from other usage in the function body (e.g. `obj.b = "hi"`).
+// By converting to an open copy with a RestSpreadElem row variable, the parameter
+// picks up bar's constraints while remaining extensible.
 func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, boundType type_system.Type) bool {
 	if typeVar.Instance != nil {
 		return false // already bound (e.g. during constraint unification)
@@ -1875,6 +1883,13 @@ func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, bou
 // (e.g. PropertyElem.Written) are not shared between the source and the copy.
 // All named elem types are copied defensively so that future mutable fields
 // on any elem type are automatically isolated.
+//
+// Written is reset to false on the copy, so this function should only be used
+// when copying elems from a closed type annotation into an open inferred type.
+// In that context the new type hasn't written to the property yet, and any
+// future writes will set Written on the copy without affecting the original.
+// Do NOT use this when copying between two open types in the same function
+// body, as it would incorrectly discard existing Written information.
 func copyObjTypeElem(elem type_system.ObjTypeElem) type_system.ObjTypeElem {
 	switch e := elem.(type) {
 	case *type_system.PropertyElem:
@@ -1895,9 +1910,8 @@ func copyObjTypeElem(elem type_system.ObjTypeElem) type_system.ObjTypeElem {
 	}
 }
 
-// copyObjTypeElems returns a shallow copy of the slice with each PropertyElem
-// replaced by a fresh struct so that mutable fields (Written) are not shared.
-// See copyObjTypeElem for which elem types are copied.
+// copyObjTypeElems returns a shallow copy of the slice, delegating to
+// copyObjTypeElem for each element. See copyObjTypeElem for usage constraints.
 func copyObjTypeElems(elems []type_system.ObjTypeElem) []type_system.ObjTypeElem {
 	out := make([]type_system.ObjTypeElem, len(elems))
 	for i, elem := range elems {

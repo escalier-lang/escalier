@@ -488,7 +488,9 @@ fn foo(arg) {
 
 > **Status (2026-04-06):** Implemented in Phase 3. The open-vs-closed and
 > open-vs-open paths are handled in the ObjectType-vs-ObjectType branch of
-> `unifyWithDepth`.
+> `unifyWithDepth`. Open-vs-closed is split into two separate cases
+> (open(t1)-vs-closed(t2) and closed(t1)-vs-open(t2)) to preserve the
+> directionality of `Unify`, which is not symmetric.
 
 When an open object type is unified with a closed object type during inference
 (e.g. passing an inferred param to a typed function), the open type must **not**

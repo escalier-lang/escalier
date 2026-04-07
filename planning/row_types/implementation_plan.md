@@ -298,32 +298,55 @@ flag, consistent with Phase 2.
    in `bind()`. When a param type variable (`IsParam: true`) is bound to a
    closed `ObjectType`, the helper:
    - Creates an open copy with `Open: true` and a fresh `RestSpreadElem` (row
-     variable for row polymorphism).
+     variable for row polymorphism). Elements are deep-copied via
+     `copyObjTypeElems` so that mutations (e.g. `Written` flag) on the open
+     copy do not leak back to the closed source type.
    - Binds the type variable's `Instance` directly to the open copy (no
      `MutabilityType` wrapper).
-   - Sets provenance to the original closed type.
+   - Sets provenance to the original closed type (for error messages/diagnostics).
    - Returns `true` to short-circuit the normal bind path.
    - If the target is not a closed `ObjectType`, returns `false` and the normal
      bind path proceeds (e.g. `number`, `string` bind directly).
+   - Note: `IsParam` and `Constraint` are not both set today, but
+     `openClosedObjectForParam` checks `Instance != nil` to guard against
+     double-binding if that invariant changes.
 
-3. **`internal/checker/unify.go`** — ObjectType-vs-ObjectType branch
+3. **`internal/checker/unify.go`** — `copyObjTypeElem` / `copyObjTypeElems`:
+   Helpers that shallow-copy all named elem types (`PropertyElem`, `MethodElem`,
+   `GetterElem`, `SetterElem`) so that future mutable fields on any elem type are
+   automatically isolated. `PropertyElem.Written` is reset to `false` on the copy.
+   These helpers should only be used when copying from a closed type annotation
+   into an open inferred type — not when copying between two open types in the
+   same function body, as that would incorrectly discard `Written` information.
+
+4. **`internal/checker/unify.go`** — ObjectType-vs-ObjectType branch
    (~line 957):
-   Added checks for `Open` after the existing nominal check. Three paths:
+   Added checks for `Open` after the existing nominal check. Four paths:
 
    **a. Open-vs-open (both `Open: true`):**
    1. Unify shared properties pairwise.
-   2. Properties in one but not the other are added to both (merge).
+   2. Properties in one but not the other are added to both (merge). These are
+      appended directly (not via `copyObjTypeElem`) to preserve `Written` state.
    3. If both have `RestSpreadElem`s, unify their row variables.
    4. Both remain open. Returns early.
 
-   **b. Open-vs-closed (one side has `Open: true`):**
-   1. Unify shared properties pairwise.
-   2. Properties in the closed type but not the open type are added to the open
-      type's `Elems`.
-   3. Properties in the open type but not the closed type are allowed (structural
-      subtyping). Returns early.
+   **b. Open(t1)-vs-closed(t2):**
+   1. Iterate closed-side keys, unify shared properties as `Unify(t1val, t2val)`
+      to preserve directionality (`Unify` is not symmetric).
+   2. Closed-only properties are copied to the open type via `copyObjTypeElem`.
+   3. Open-only properties are allowed (structural subtyping). Returns early.
 
-   **c. Closed-vs-closed (existing path):**
+   **c. Closed(t1)-vs-open(t2):**
+   1. Iterate closed-side keys, unify shared properties as `Unify(t1val, t2val)`
+      to preserve directionality.
+   2. Closed-only properties are copied to the open type via `copyObjTypeElem`.
+   3. Open-only properties are allowed (structural subtyping). Returns early.
+
+   Cases (b) and (c) are handled separately rather than merged with a
+   swap-and-normalize pattern because `Unify` is asymmetric — the t1/t2
+   argument order must be preserved for correct subtyping.
+
+   **d. Closed-vs-closed (existing path):**
    Existing code handles this. Falls through when neither type is open.
 
 4. **Multiple constraints via intersection (Section 6b):**
