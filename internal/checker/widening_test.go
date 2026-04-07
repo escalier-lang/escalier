@@ -76,6 +76,50 @@ func TestUnwrapMutabilityOnlyStripsUncertain(t *testing.T) {
 	assert.Equal(t, strType, unwrapMutability(strType), "should return non-wrapped type as-is")
 }
 
+// TestWideningWithAliasedTypeVars verifies that when two Widenable TypeVars are
+// aliased (tvA.Instance = tvB) and then widened via tvA, reading through tvB
+// also observes the widened type. This simulates the case where two open objects
+// have the same property, bind aliases their property TypeVars, and a subsequent
+// conflicting write widens one of them.
+func TestWideningWithAliasedTypeVars(t *testing.T) {
+	c := NewChecker()
+	ctx := Context{} // minimal context, enough for Unify
+
+	numType := ts.NewNumPrimType(nil)
+
+	// Create two Widenable TypeVars simulating property TypeVars from
+	// two open objects that share a property.
+	tvA := c.FreshVar(nil)
+	tvA.Widenable = true
+	tvB := c.FreshVar(nil)
+	tvB.Widenable = true
+
+	// Simulate bind aliasing: tvA -> tvB (as if bind(tvA, tvB) was called
+	// when unifying the two open objects' property types).
+	tvA.Instance = tvB
+
+	// Simulate first write binding tvB to number (as if Unify(1, tvB)
+	// went through bind and widened the literal to number).
+	tvB.Instance = numType
+
+	// Sanity: tvB should resolve to number. Do NOT Prune tvA here — that
+	// would path-compress tvA.Instance from tvB to numType, destroying the
+	// alias chain before the widening test.
+	assert.Equal(t, "number", ts.Prune(tvB).String())
+
+	// Conflicting write through tvA: Unify("hello", tvA).
+	// This should trigger widening to number | string.
+	strLit := ts.NewStrLitType(nil, "hello")
+	errors := c.Unify(ctx, strLit, tvA)
+	assert.Empty(t, errors, "widening should suppress the error")
+
+	// Both tvA and tvB should resolve to number | string.
+	assert.Equal(t, "number | string", ts.Prune(tvA).String(),
+		"tvA should see the widened type")
+	assert.Equal(t, "number | string", ts.Prune(tvB).String(),
+		"tvB should also see the widened type (alias consistency)")
+}
+
 // assertFlatUnionMembers verifies that t is a UnionType with exactly the
 // expected members at the top level (no nested unions).
 func assertFlatUnionMembers(t *testing.T, typ ts.Type, expected []ts.Type) {

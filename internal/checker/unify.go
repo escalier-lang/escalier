@@ -120,9 +120,10 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
 
-	// Save original (pre-Prune) types so we can check for Widenable TypeVars
-	// when concrete-vs-concrete unification fails (Phase 4 property widening).
-	_, origT2 := t1, t2
+	// Save the original t2 before Prune so we can read InstanceChain from it.
+	// Prune path-compresses the chain but records it in origT2.InstanceChain
+	// so that the widening fallback can update all aliased TypeVars.
+	origT2 := t2
 	t1 = type_system.Prune(t1)
 	t2 = type_system.Prune(t2)
 
@@ -144,11 +145,20 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	// Strip MutabilityType wrappers before building the union — they come from
 	// the uncertain-mutability wrapper on open object properties and should not
 	// appear inside union members.
-	if tv2, ok := origT2.(*type_system.TypeVarType); ok && tv2.Widenable {
+	//
+	// When bind() aliases two Widenable TypeVars (tvA.Instance = tvB), Prune
+	// path-compresses the chain but records it in tvA.InstanceChain. We use
+	// that chain to update ALL aliased TypeVars so reads through any alias
+	// observe the widened type.
+	if widenableChain := widenableInstanceChain(origT2); len(widenableChain) > 0 {
 		oldType := unwrapMutability(t2)
 		newType := unwrapMutability(widenLiteral(t1))
+		widened := oldType
 		if !typeContains(oldType, newType) {
-			tv2.Instance = flatUnion(oldType, newType)
+			widened = flatUnion(oldType, newType)
+		}
+		for _, tv := range widenableChain {
+			tv.Instance = widened
 		}
 		return nil
 	}
@@ -2097,6 +2107,28 @@ func widenLiteral(t type_system.Type) type_system.Type {
 		return prim
 	}
 	return t
+}
+
+// widenableInstanceChain returns the Widenable TypeVars from t's alias chain.
+// If t is a TypeVarType with an InstanceChain (populated by Prune when it
+// path-compressed through other TypeVars), only the Widenable members are
+// returned. If t is a single Widenable TypeVar with no chain, it is returned
+// as a one-element slice. Returns nil if t is not a Widenable TypeVarType.
+func widenableInstanceChain(t type_system.Type) []*type_system.TypeVarType {
+	tv, ok := t.(*type_system.TypeVarType)
+	if !ok || !tv.Widenable {
+		return nil
+	}
+	if tv.InstanceChain == nil {
+		return []*type_system.TypeVarType{tv}
+	}
+	var widenable []*type_system.TypeVarType
+	for _, member := range tv.InstanceChain {
+		if member.Widenable {
+			widenable = append(widenable, member)
+		}
+	}
+	return widenable
 }
 
 // collectUnionMembers collects the leaf (non-union) types from t. If t is a

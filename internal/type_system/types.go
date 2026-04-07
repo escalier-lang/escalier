@@ -90,28 +90,70 @@ func (*RegexType) isType()        {}
 func (*ErrorType) isType()        {}
 
 func Prune(t Type) Type {
-	switch t := t.(type) {
-	case *TypeVarType:
-		if t.Instance != nil {
-			newInstance := Prune(t.Instance)
-			t.Instance = newInstance
-			return newInstance
-		}
-		return t
-	default:
+	tv, ok := t.(*TypeVarType)
+	if !ok || tv.Instance == nil {
 		return t
 	}
+
+	// Before path compression, record the alias chain if Instance is another
+	// TypeVarType. Build the chain once and assign subslices to each node so
+	// that every TypeVar in the chain gets its own suffix view without
+	// redundant walks. Guarded by nil check so later Prune calls after path
+	// compression don't overwrite with a degenerate chain.
+	if _, isTV := tv.Instance.(*TypeVarType); isTV && tv.InstanceChain == nil {
+		chain := []*TypeVarType{tv}
+		current := tv.Instance
+		for {
+			next, ok := current.(*TypeVarType)
+			if !ok {
+				break
+			}
+			chain = append(chain, next)
+			if next.Instance == nil {
+				break
+			}
+			current = next.Instance
+		}
+		for i, member := range chain {
+			member.InstanceChain = chain[i:]
+		}
+	}
+
+	// Path compression: follow the Instance chain to the terminal concrete
+	// type and point every intermediate node directly at it.
+	concrete := tv.Instance
+	for {
+		next, ok := concrete.(*TypeVarType)
+		if !ok || next.Instance == nil {
+			break
+		}
+		concrete = next.Instance
+	}
+	// Compress all nodes in the chain to point directly at the terminal type.
+	// Stop before the terminal node itself to avoid creating a self-loop
+	// when the terminal is an unbound TypeVar (Instance == nil).
+	for cur := tv; cur != concrete; {
+		next := cur.Instance
+		cur.Instance = concrete
+		nextTV, ok := next.(*TypeVarType)
+		if !ok {
+			break
+		}
+		cur = nextTV
+	}
+	return concrete
 }
 
 type TypeVarType struct {
-	ID          int
-	Instance    Type
-	Constraint  Type
-	Default     Type
-	FromBinding bool
-	Widenable   bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
-	IsParam     bool // true for type vars created for unannotated function parameters
-	provenance  Provenance
+	ID            int
+	Instance      Type
+	Constraint    Type
+	Default       Type
+	FromBinding   bool
+	Widenable     bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
+	IsParam       bool // true for type vars created for unannotated function parameters
+	InstanceChain []*TypeVarType // populated by Prune when this TypeVar's Instance is another TypeVar (alias chain from bind); stores all TypeVars in the chain before path compression collapses it
+	provenance    Provenance
 }
 
 func NewTypeVarType(provenance Provenance, id int) *TypeVarType {
