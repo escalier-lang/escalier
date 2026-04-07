@@ -973,16 +973,18 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
-				// Add elems from obj2 not in obj1 to obj1
+				// Add elems from obj2 not in obj1 to obj1.
+				// Copy PropertyElems to avoid sharing mutable fields (Written)
+				// between the two open objects.
 				for _, key := range keys2 {
 					if _, ok := namedElems1[key]; !ok {
-						obj1.Elems = append(obj1.Elems, origElems2[key])
+						obj1.Elems = append(obj1.Elems, copyObjTypeElem(origElems2[key]))
 					}
 				}
-				// Add elems from obj1 not in obj2 to obj2
+				// Add elems from obj1 not in obj2 to obj2.
 				for _, key := range keys1 {
 					if _, ok := namedElems2[key]; !ok {
-						obj2.Elems = append(obj2.Elems, origElems1[key])
+						obj2.Elems = append(obj2.Elems, copyObjTypeElem(origElems1[key]))
 					}
 				}
 				// Unify row variables if both have RestSpreadElems
@@ -1019,13 +1021,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 					} else {
 						// Elem in closed but not in open: copy and add to open type.
 						// Copy PropertyElems to avoid sharing mutable fields (Written).
-						elem := closedOrigElems[key]
-						if prop, ok := elem.(*type_system.PropertyElem); ok {
-							cp := *prop
-							cp.Written = false
-							elem = &cp
-						}
-						openObj.Elems = append(openObj.Elems, elem)
+						openObj.Elems = append(openObj.Elems, copyObjTypeElem(closedOrigElems[key]))
 					}
 				}
 				return errors
@@ -1753,6 +1749,11 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				if typeVar1.Constraint != nil {
 					errors = c.Unify(ctx, typeVar1.Constraint, t2)
 				}
+				// IsParam is only set on fresh vars for unannotated parameters
+				// (infer_func.go), so IsParam and Constraint won't both be set
+				// today. If that changes, constraint unification above may bind
+				// the type variable as a side effect, and openClosedObjectForParam
+				// checks Instance != nil to avoid double-binding.
 				if typeVar1.IsParam {
 					if opened := c.openClosedObjectForParam(typeVar1, t2); opened {
 						return errors
@@ -1791,6 +1792,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				if typeVar2.Constraint != nil {
 					errors = c.Unify(ctx, t1, typeVar2.Constraint)
 				}
+				// See comment in typeVar1 branch above re: IsParam and Constraint.
 				if typeVar2.IsParam {
 					if opened := c.openClosedObjectForParam(typeVar2, t1); opened {
 						return errors
@@ -1859,24 +1861,47 @@ func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, bou
 		Mutable:   closedObj.Mutable,
 	}
 	typeVar.Instance = openCopy
+	// Provenance points to the original closed type (not the open copy) so
+	// that error messages and diagnostics can trace back to the source
+	// annotation. This early return skips bind()'s normal provenance write,
+	// which would also set it to boundType — so the result is the same.
 	typeVar.SetProvenance(&type_system.TypeProvenance{
 		Type: boundType,
 	})
 	return true
 }
 
+// copyObjTypeElem returns a shallow copy of elem so that mutable fields
+// (e.g. PropertyElem.Written) are not shared between the source and the copy.
+// All named elem types are copied defensively so that future mutable fields
+// on any elem type are automatically isolated.
+func copyObjTypeElem(elem type_system.ObjTypeElem) type_system.ObjTypeElem {
+	switch e := elem.(type) {
+	case *type_system.PropertyElem:
+		cp := *e
+		cp.Written = false
+		return &cp
+	case *type_system.MethodElem:
+		cp := *e
+		return &cp
+	case *type_system.GetterElem:
+		cp := *e
+		return &cp
+	case *type_system.SetterElem:
+		cp := *e
+		return &cp
+	default:
+		return elem
+	}
+}
+
 // copyObjTypeElems returns a shallow copy of the slice with each PropertyElem
 // replaced by a fresh struct so that mutable fields (Written) are not shared.
+// See copyObjTypeElem for which elem types are copied.
 func copyObjTypeElems(elems []type_system.ObjTypeElem) []type_system.ObjTypeElem {
 	out := make([]type_system.ObjTypeElem, len(elems))
 	for i, elem := range elems {
-		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			cp := *prop
-			cp.Written = false
-			out[i] = &cp
-		} else {
-			out[i] = elem
-		}
+		out[i] = copyObjTypeElem(elem)
 	}
 	return out
 }
