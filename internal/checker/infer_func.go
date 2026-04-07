@@ -23,7 +23,15 @@ func (c *Checker) inferFuncParams(
 
 		var typeAnn type_system.Type
 		if param.TypeAnn == nil {
-			typeAnn = c.FreshVar(nil)
+			freshVar := c.FreshVar(nil)
+			// Only mark simple identifier parameters as IsParam so that
+			// bind() keeps the type open. Destructuring patterns infer their
+			// shape from the pattern structure itself, so they don't need the
+			// open-type treatment.
+			if _, isIdent := param.Pattern.(*ast.IdentPat); isIdent {
+				freshVar.IsParam = true
+			}
+			typeAnn = freshVar
 		} else {
 			var typeAnnErrors []Error
 			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
