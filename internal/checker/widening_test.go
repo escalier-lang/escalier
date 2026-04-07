@@ -22,6 +22,17 @@ func TestFlatUnionFlattensNestedUnions(t *testing.T) {
 	assertFlatUnionMembers(t, union3, []ts.Type{strType, numType, boolType})
 }
 
+func TestFlatUnionFlattensNewTypeUnion(t *testing.T) {
+	strType := ts.NewStrPrimType(nil)
+	numType := ts.NewNumPrimType(nil)
+	boolType := ts.NewBoolPrimType(nil)
+
+	// newType is itself a union — flatUnion should flatten both sides.
+	newUnion := ts.NewUnionType(nil, numType, boolType)
+	result := flatUnion(strType, newUnion)
+	assertFlatUnionMembers(t, result, []ts.Type{strType, numType, boolType})
+}
+
 func TestTypeContainsFindsNestedMembers(t *testing.T) {
 	strType := ts.NewStrPrimType(nil)
 	numType := ts.NewNumPrimType(nil)
@@ -35,6 +46,34 @@ func TestTypeContainsFindsNestedMembers(t *testing.T) {
 	assert.True(t, typeContains(nestedUnion, numType), "should find number in nested union")
 	assert.True(t, typeContains(nestedUnion, boolType), "should find boolean in nested union")
 	assert.False(t, typeContains(nestedUnion, ts.NewVoidType(nil)), "should not find void in nested union")
+}
+
+func TestTypeContainsUnionNeedle(t *testing.T) {
+	strType := ts.NewStrPrimType(nil)
+	numType := ts.NewNumPrimType(nil)
+	boolType := ts.NewBoolPrimType(nil)
+
+	haystack := ts.NewUnionType(nil, strType, numType, boolType)
+
+	// Union needle where all members are present.
+	assert.True(t, typeContains(haystack, ts.NewUnionType(nil, strType, numType)),
+		"should find union(string, number) in union(string, number, boolean)")
+
+	// Union needle where one member is missing.
+	assert.False(t, typeContains(haystack, ts.NewUnionType(nil, strType, ts.NewVoidType(nil))),
+		"should not find union(string, void) in union(string, number, boolean)")
+}
+
+func TestUnwrapMutabilityOnlyStripsUncertain(t *testing.T) {
+	strType := ts.NewStrPrimType(nil)
+
+	uncertain := &ts.MutabilityType{Type: strType, Mutability: ts.MutabilityUncertain}
+	assert.Equal(t, strType, unwrapMutability(uncertain), "should strip mut? wrapper")
+
+	mutable := &ts.MutabilityType{Type: strType, Mutability: ts.MutabilityMutable}
+	assert.Equal(t, mutable, unwrapMutability(mutable), "should preserve mut wrapper")
+
+	assert.Equal(t, strType, unwrapMutability(strType), "should return non-wrapped type as-is")
 }
 
 // assertFlatUnionMembers verifies that t is a UnionType with exactly the

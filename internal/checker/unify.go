@@ -2052,11 +2052,13 @@ func distributeIntersectionOverUnion(intersection *type_system.IntersectionType)
 	return type_system.NewUnionType(nil, distributedTypes...), true
 }
 
-// unwrapMutability strips a MutabilityType wrapper if present, returning the
-// inner type. This is used during property widening to avoid leaking mut?
-// wrappers into union members.
+// unwrapMutability strips a synthetic uncertain-mutability (mut?) wrapper if
+// present, returning the inner type. Explicit mut wrappers are preserved.
+// This is used during property widening to avoid leaking mut? wrappers into
+// union members — those wrappers come from the open object constructor and
+// are resolved during generalization.
 func unwrapMutability(t type_system.Type) type_system.Type {
-	if mut, ok := t.(*type_system.MutabilityType); ok {
+	if mut, ok := t.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
 		return mut.Type
 	}
 	return t
@@ -2097,29 +2099,42 @@ func widenLiteral(t type_system.Type) type_system.Type {
 	return t
 }
 
-// flatUnion builds a union from oldType and newType, flattening oldType if it
-// is already a UnionType so the result is always a single-level union.
-func flatUnion(oldType, newType type_system.Type) type_system.Type {
-	if union, ok := oldType.(*type_system.UnionType); ok {
-		members := make([]type_system.Type, len(union.Types), len(union.Types)+1)
-		copy(members, union.Types)
-		members = append(members, newType)
-		return type_system.NewUnionType(nil, members...)
+// collectUnionMembers collects the leaf (non-union) types from t. If t is a
+// UnionType its members are recursively flattened; otherwise t itself is returned.
+func collectUnionMembers(t type_system.Type) []type_system.Type {
+	if union, ok := t.(*type_system.UnionType); ok {
+		var members []type_system.Type
+		for _, m := range union.Types {
+			members = append(members, collectUnionMembers(m)...)
+		}
+		return members
 	}
-	return type_system.NewUnionType(nil, oldType, newType)
+	return []type_system.Type{t}
 }
 
-// typeContains checks whether needle is already present in haystack.
-// If haystack is a UnionType, it recursively checks each member; otherwise it
-// checks direct equality.
+// flatUnion builds a union from oldType and newType, flattening either operand
+// if it is already a UnionType so the result is always a single-level union.
+func flatUnion(oldType, newType type_system.Type) type_system.Type {
+	members := collectUnionMembers(oldType)
+	members = append(members, collectUnionMembers(newType)...)
+	return type_system.NewUnionType(nil, members...)
+}
+
+// typeContains checks whether every leaf type in needle is already present in
+// haystack. Both sides are flattened if they are UnionTypes.
 func typeContains(haystack type_system.Type, needle type_system.Type) bool {
-	if union, ok := haystack.(*type_system.UnionType); ok {
-		for _, member := range union.Types {
-			if typeContains(member, needle) {
-				return true
+	haystackMembers := collectUnionMembers(haystack)
+	for _, n := range collectUnionMembers(needle) {
+		found := false
+		for _, h := range haystackMembers {
+			if type_system.Equals(h, n) {
+				found = true
+				break
 			}
 		}
-		return false
+		if !found {
+			return false
+		}
 	}
-	return type_system.Equals(haystack, needle)
+	return true
 }
