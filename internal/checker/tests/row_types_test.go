@@ -786,6 +786,18 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 			`,
 			expectedTypes: nil,
 		},
+		"ReadWidenedPropertyIntoNarrowType": {
+			// After widening bar to string | number, reading it into a string
+			// variable must produce a type error.
+			input: `
+				fn foo(obj) {
+					obj.bar = "x"
+					obj.bar = 1
+					val s: string = obj.bar
+				}
+			`,
+			expectedTypes: nil,
+		},
 	}
 
 	for name, test := range tests {

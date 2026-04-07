@@ -137,21 +137,26 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	// Strip MutabilityType wrappers before building the union — they come from
 	// the uncertain-mutability wrapper on open object properties and should not
 	// appear inside union members.
+	//
+	// Only widen (and suppress the error) when the Instance is actually extended.
+	// If typeContains returns true, the new type was already present — the failure
+	// is a genuine type error (e.g. reading a string|number property into a string
+	// variable), not an accumulation event.
 	if tv1, ok := origT1.(*type_system.TypeVarType); ok && tv1.Widenable {
 		oldType := unwrapMutability(t1)
 		newType := unwrapMutability(widenLiteral(t2))
 		if !typeContains(oldType, newType) {
 			tv1.Instance = flatUnion(oldType, newType)
+			return nil
 		}
-		return nil
 	}
 	if tv2, ok := origT2.(*type_system.TypeVarType); ok && tv2.Widenable {
 		oldType := unwrapMutability(t2)
 		newType := unwrapMutability(widenLiteral(t1))
 		if !typeContains(oldType, newType) {
 			tv2.Instance = flatUnion(oldType, newType)
+			return nil
 		}
-		return nil
 	}
 
 	return errors
@@ -2082,6 +2087,8 @@ func widenLiteral(t type_system.Type) type_system.Type {
 			prim = type_system.NewStrPrimType(nil)
 		case *type_system.BoolLit:
 			prim = type_system.NewBoolPrimType(nil)
+		case *type_system.BigIntLit:
+			prim = type_system.NewBigIntPrimType(nil)
 		default:
 			return t
 		}
