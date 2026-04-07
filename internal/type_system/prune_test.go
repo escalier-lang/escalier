@@ -172,6 +172,35 @@ func TestPruneUnboundTerminalThreeNodeChain(t *testing.T) {
 	assert.Nil(t, tvC.Instance, "tvC must remain unbound")
 }
 
+func TestPruneMiddleThenHead_PreservesFullChain(t *testing.T) {
+	// Prune tvB first (middle of tvA->tvB->tvC->number), then prune tvA.
+	// tvA's InstanceChain must include tvC even though tvB->tvC was already
+	// path-compressed by the first Prune call.
+	numType := NewNumPrimType(nil)
+	tvA := NewTypeVarType(nil, 1)
+	tvB := NewTypeVarType(nil, 2)
+	tvC := NewTypeVarType(nil, 3)
+	tvA.Instance = tvB
+	tvB.Instance = tvC
+	tvC.Instance = numType
+
+	// Prune middle first — tvB gets [tvB, tvC], tvC gets [tvC].
+	Prune(tvB)
+	assert.Equal(t, []*TypeVarType{tvB, tvC}, tvB.InstanceChain)
+	assert.Equal(t, []*TypeVarType{tvC}, tvC.InstanceChain)
+
+	// Now prune from the head.
+	Prune(tvA)
+
+	// tvA's chain must include all three, not just [tvA, tvB].
+	assert.Equal(t, []*TypeVarType{tvA, tvB, tvC}, tvA.InstanceChain,
+		"tvA.InstanceChain should include tvC from tvB's existing chain")
+
+	// tvB's chain must NOT be truncated to [tvB].
+	assert.Equal(t, []*TypeVarType{tvB, tvC}, tvB.InstanceChain,
+		"tvB.InstanceChain should preserve its original [tvB, tvC]")
+}
+
 func TestPruneCalledOnMiddleOfChain(t *testing.T) {
 	numType := NewNumPrimType(nil)
 	tvA := NewTypeVarType(nil, 1)

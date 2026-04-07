@@ -152,6 +152,12 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	// observe the widened type.
 	if widenableChain := widenableInstanceChain(origT2); len(widenableChain) > 0 {
 		oldType := unwrapMutability(t2)
+		// If oldType is still a TypeVarType (e.g. the chain ended at an unbound
+		// TypeVar and bind failed due to an occurs check), we must not build a
+		// union containing a live TypeVar — propagate the original error instead.
+		if _, isTV := oldType.(*type_system.TypeVarType); isTV {
+			return errors
+		}
 		newType := unwrapMutability(widenLiteral(t1))
 		widened := oldType
 		if !typeContains(oldType, newType) {

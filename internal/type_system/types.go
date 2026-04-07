@@ -108,6 +108,13 @@ func Prune(t Type) Type {
 			if !ok {
 				break
 			}
+			// If this node already has a longer InstanceChain from a prior
+			// Prune (e.g. the middle of a chain was pruned first), append
+			// its chain members and stop — they already cover the rest.
+			if next.InstanceChain != nil {
+				chain = append(chain, next.InstanceChain...)
+				break
+			}
 			chain = append(chain, next)
 			if next.Instance == nil {
 				break
@@ -115,7 +122,12 @@ func Prune(t Type) Type {
 			current = next.Instance
 		}
 		for i, member := range chain {
-			member.InstanceChain = chain[i:]
+			// Only set InstanceChain if not already set or if the new
+			// suffix is longer, to avoid truncating a prior chain.
+			suffix := chain[i:]
+			if len(suffix) > len(member.InstanceChain) {
+				member.InstanceChain = suffix
+			}
 		}
 	}
 
