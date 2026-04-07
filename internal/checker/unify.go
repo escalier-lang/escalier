@@ -120,8 +120,44 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
 
+	// Save original (pre-Prune) types so we can check for Widenable TypeVars
+	// when concrete-vs-concrete unification fails (Phase 4 property widening).
+	origT1, origT2 := t1, t2
 	t1 = type_system.Prune(t1)
 	t2 = type_system.Prune(t2)
+
+	errors := c.unifyPruned(ctx, t1, t2, depth)
+	if len(errors) == 0 {
+		return nil
+	}
+
+	// Property widening: when concrete-vs-concrete unification fails and one of
+	// the original (pre-Prune) types was a Widenable TypeVarType, widen its
+	// Instance to a union of the old and new types instead of reporting an error.
+	// Strip MutabilityType wrappers before building the union — they come from
+	// the uncertain-mutability wrapper on open object properties and should not
+	// appear inside union members.
+	if tv1, ok := origT1.(*type_system.TypeVarType); ok && tv1.Widenable {
+		oldType := unwrapMutability(t1)
+		newType := unwrapMutability(widenLiteral(t2))
+		if !typeContains(oldType, newType) {
+			tv1.Instance = flatUnion(oldType, newType)
+		}
+		return nil
+	}
+	if tv2, ok := origT2.(*type_system.TypeVarType); ok && tv2.Widenable {
+		oldType := unwrapMutability(t2)
+		newType := unwrapMutability(widenLiteral(t1))
+		if !typeContains(oldType, newType) {
+			tv2.Instance = flatUnion(oldType, newType)
+		}
+		return nil
+	}
+
+	return errors
+}
+
+func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) []Error {
 
 	// | TypeVarType, ErrorType -> bind
 	// | ErrorType, TypeVarType -> bind
@@ -1766,15 +1802,21 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 						return errors
 					}
 				}
+				// When binding a Widenable TypeVar, widen literals to their
+				// primitive types (e.g. "hello" -> string, 42 -> number).
+				targetType := t2
+				if typeVar1.Widenable {
+					targetType = widenLiteral(targetType)
+				}
 				// We need to know if typeVar1 was inferred from a new binding or not
 				if typeVar1.FromBinding {
-					typeVar1.Instance = removeUncertainMutability(t2)
+					typeVar1.Instance = removeUncertainMutability(targetType)
 				} else {
-					typeVar1.Instance = t2
+					typeVar1.Instance = targetType
 				}
 				// QUESTION: What should the provenance be if t2 is a type_system.MutabilityType?
 				typeVar1.SetProvenance(&type_system.TypeProvenance{
-					Type: t2,
+					Type: targetType,
 				})
 				return errors
 			}
@@ -1805,15 +1847,21 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 						return errors
 					}
 				}
+				// When binding a Widenable TypeVar, widen literals to their
+				// primitive types (e.g. "hello" -> string, 42 -> number).
+				targetType := t1
+				if typeVar2.Widenable {
+					targetType = widenLiteral(targetType)
+				}
 				// We need to know if typeVar2 was inferred from a new binding or not
 				if typeVar2.FromBinding {
-					typeVar2.Instance = removeUncertainMutability(t1)
+					typeVar2.Instance = removeUncertainMutability(targetType)
 				} else {
-					typeVar2.Instance = t1
+					typeVar2.Instance = targetType
 				}
 				// QUESTION: What should the provenance be if t1 is a type_system.MutabilityType?
 				typeVar2.SetProvenance(&type_system.TypeProvenance{
-					Type: t1,
+					Type: targetType,
 				})
 				return errors
 			}
@@ -2003,4 +2051,74 @@ func distributeIntersectionOverUnion(intersection *type_system.IntersectionType)
 	}
 
 	return type_system.NewUnionType(nil, distributedTypes...), true
+}
+
+// unwrapMutability strips a MutabilityType wrapper if present, returning the
+// inner type. This is used during property widening to avoid leaking mut?
+// wrappers into union members.
+func unwrapMutability(t type_system.Type) type_system.Type {
+	if mut, ok := t.(*type_system.MutabilityType); ok {
+		return mut.Type
+	}
+	return t
+}
+
+// widenLiteral widens a literal type to its corresponding primitive type.
+// If the type is wrapped in a MutabilityType, the wrapper is preserved.
+// If the type is not a literal, it is returned unchanged.
+func widenLiteral(t type_system.Type) type_system.Type {
+	inner := t
+	var mutWrapper *type_system.MutabilityType
+	if mut, ok := inner.(*type_system.MutabilityType); ok {
+		mutWrapper = mut
+		inner = mut.Type
+	}
+	if lit, ok := inner.(*type_system.LitType); ok {
+		var prim type_system.Type
+		switch lit.Lit.(type) {
+		case *type_system.NumLit:
+			prim = type_system.NewNumPrimType(nil)
+		case *type_system.StrLit:
+			prim = type_system.NewStrPrimType(nil)
+		case *type_system.BoolLit:
+			prim = type_system.NewBoolPrimType(nil)
+		default:
+			return t
+		}
+		if mutWrapper != nil {
+			return &type_system.MutabilityType{
+				Type:       prim,
+				Mutability: mutWrapper.Mutability,
+			}
+		}
+		return prim
+	}
+	return t
+}
+
+// flatUnion builds a union from oldType and newType, flattening oldType if it
+// is already a UnionType so the result is always a single-level union.
+func flatUnion(oldType, newType type_system.Type) type_system.Type {
+	if union, ok := oldType.(*type_system.UnionType); ok {
+		members := make([]type_system.Type, len(union.Types), len(union.Types)+1)
+		copy(members, union.Types)
+		members = append(members, newType)
+		return type_system.NewUnionType(nil, members...)
+	}
+	return type_system.NewUnionType(nil, oldType, newType)
+}
+
+// typeContains checks whether needle is already present in haystack.
+// If haystack is a UnionType, it recursively checks each member; otherwise it
+// checks direct equality.
+func typeContains(haystack type_system.Type, needle type_system.Type) bool {
+	if union, ok := haystack.(*type_system.UnionType); ok {
+		for _, member := range union.Types {
+			if typeContains(member, needle) {
+				return true
+			}
+		}
+		return false
+	}
+	return type_system.Equals(haystack, needle)
 }

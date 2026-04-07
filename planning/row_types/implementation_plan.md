@@ -226,9 +226,9 @@ Test file: `internal/checker/tests/row_types_test.go`
 - **MultipleReads:** `fn foo(obj) { return [obj.bar, obj.baz] }` →
   `fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2}) -> [T0, T2]`
 - **WriteAccess:** `fn foo(obj) { obj.bar = "hello" }` →
-  `fn <T0>(obj: mut {bar: "hello", ...T0}) -> void`
+  `fn <T0>(obj: mut {bar: string, ...T0}) -> void`
 - **ReadAndWrite:** `fn foo(obj) { val x = obj.bar; obj.baz = 5 }` →
-  `fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: 5}) -> void`
+  `fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: number}) -> void`
 - **NestedAccess:** `fn foo(obj) { return obj.foo.bar }` →
   `fn <T0, T1, T2>(obj: {foo: {bar: T0, ...T1}, ...T2}) -> T0`
 - **MultipleParams:** `fn foo(a, b) { return [a.x, b.y] }` →
@@ -253,10 +253,10 @@ Test file: `internal/checker/tests/row_types_test.go`
   → `CannotMutateImmutableError`.
 - **MutateAnnotatedImmutableParamIndex:** same via bracket notation.
 
-**Note on inferred types:** Property values on written-to objects currently
-retain their literal types (e.g. `bar: "hello"` not `bar: string`) because
-literal widening (Phase 4) is not yet implemented. The `Widenable` flag is set
-on the type variables but `bind()` does not yet widen literals to primitives.
+**Note on inferred types:** Property values on written-to objects are widened
+to their primitive types (e.g. `bar: string` not `bar: "hello"`) as of
+Phase 4. The `Widenable` flag on type variables triggers `widenLiteral` in
+`bind()` and union accumulation in `unifyWithDepth`.
 
 ---
 
@@ -366,110 +366,75 @@ Test file: `internal/checker/tests/row_types_test.go`
 - **PassToTypedFunction:** `fn bar(x: {bar: string}) ...; fn foo(obj) { bar(obj) }`
   → `foo: fn <T0>(obj: {bar: string, ...T0}) -> void`
 - **PropertiesSurviveFunctionCall:** property assignments before and after a
-  typed call are preserved → `fn <T0>(obj: mut {z: true, ...T0, bar: string, w: "hello"}) -> void`
+  typed call are preserved → `fn <T0>(obj: mut {z: boolean, ...T0, bar: string, w: string}) -> void`
 - **MultipleCallsMerge:** two typed calls merge constraints →
   `fn <T0>(obj: {x: number, ...T0, y: string}) -> void`
 - **NonObjectBinding:** passing to `fn takes_num(x: number)` binds directly →
   `fn (obj: number) -> void`
 - **MultipleParameters:** independent constraints per parameter →
   `fn <T0, T1>(a: {a: number, ...T0}, b: {b: string, ...T1}) -> void`
-- **OpenVsClosedSharedProperty:** shared property unified pairwise; literal type
-  preserved (widening is Phase 4) →
-  `fn <T0>(obj: mut {name: "hi", ...T0}) -> void`
+- **OpenVsClosedSharedProperty:** shared property unified pairwise; literal
+  widened to primitive →
+  `fn <T0>(obj: mut {name: string, ...T0}) -> void`
 - **OpenVsClosedExtraPropertiesInOpen:** extra properties in open type allowed →
-  `fn <T0>(obj: mut {a: 1, ...T0, b: "hi"}) -> void`
-
-**Note on inferred types:** Property values retain literal types (e.g. `"hi"`
-not `string`) because literal widening (Phase 4) is not yet implemented.
+  `fn <T0>(obj: mut {a: number, ...T0, b: string}) -> void`
 
 ---
 
-## Phase 4: Property Widening (Union Accumulation)
+## Phase 4: Property Widening (Union Accumulation) ✅
 
 **Requirements covered:** Section 6d (property type widening), Section 6e
 (literal type widening to primitives).
-
-> **Note (2026-04-06):** The `deepCloneType` function added in #382
-> (`generalize.go`) and the probe-then-commit pattern in `unifyWithDepth` are
-> relevant here. When implementing widening, the probe-then-commit approach
-> should be considered for the widening check itself — try unifying clones
-> first, and only widen the original if the probe fails. This avoids partial
-> mutations when the widening decision depends on multiple TypeVars.
 
 **Goal:** When a literal is unified with a widenable type variable, widen it to
 its primitive type. When the same property is assigned different types, the
 property type widens to a union instead of producing an error.
 
-### Changes
+### Implementation (completed 2026-04-07)
 
-1. **`internal/checker/unify.go`** — `unifyWithDepth` function:
-   Save the original (pre-Prune) types at the top of the function:
-   ```go
-   origT1, origT2 := t1, t2
-   t1 = Prune(t1)
-   t2 = Prune(t2)
-   ```
+**Deviation from plan:** The original plan suggested using the probe-then-commit
+pattern (`deepCloneType`) for the widening check. The implementation instead
+uses a simpler approach: refactor `unifyWithDepth` into an outer function that
+saves pre-Prune types and an inner `unifyPruned` function. When `unifyPruned`
+returns errors and the original type was a `Widenable` TypeVarType, the outer
+function handles widening directly. This avoids the overhead of cloning and is
+correct because widening is a one-way operation (union accumulation).
 
-   When a concrete-vs-concrete unification **fails** (returns errors), before
-   returning those errors, check whether either `origT1` or `origT2` was a
-   `TypeVarType` with `Widenable: true`. If so:
-   ```go
-   // origT1 is the Widenable TypeVarType, t1 is its pruned Instance (old type)
-   // t2 is the new type that conflicts
-   if !typeContains(t1, t2) {  // deduplication check
-       origT1.(*TypeVarType).Instance = NewUnionType(nil, t1, t2)
-   }
-   return nil  // no error — widening succeeded
-   ```
+Additionally, the plan did not account for `MutabilityType` wrappers on
+property values. The implementation strips `MutabilityType` wrappers before
+building unions to prevent `mut?` from leaking into union members.
 
-   **Deduplication:** Before widening, check whether the new type is already a
-   member of the existing type (or union). If `t1` is already `string | number`
-   and `t2` is `string` (after literal widening), no widening needed. Use a
-   helper `typeContains(haystack, needle)` that checks union members.
+**Changes made:**
 
-   **Gating:** Only widen if the TypeVarType has `Widenable: true`. For
-   ordinary type variables (`Widenable: false`), conflicting bindings remain
-   errors. This ensures the widening behavior is scoped to widenable
-   types and doesn't change semantics for normal type inference.
+1. **`internal/checker/unify.go`** — Refactored `unifyWithDepth`:
+   - Saves `origT1, origT2 := t1, t2` before calling `Prune`.
+   - Delegates to `unifyPruned(ctx, t1, t2, depth)` for the core unification.
+   - If `unifyPruned` returns errors, checks whether `origT1` or `origT2` was a
+     `TypeVarType` with `Widenable: true`. If so, strips `MutabilityType`
+     wrappers via `unwrapMutability`, widens the new type's literal via
+     `widenLiteral`, checks `typeContains` for deduplication, and builds a union
+     via `flatUnion` (which flattens existing unions to avoid nesting).
+   - Non-widenable type variables still return the original errors.
 
-   **Scope of Widenable:** Per Section 6d, widening applies to **all** type
-   variables within inferred open objects: property value types, method parameter
-   types, and method return types. All of these are created with
-   `Widenable: true` in Phases 2 and 5.
+2. **`internal/checker/unify.go`** — Literal widening in `bind()`:
+   Both `typeVar1` and `typeVar2` branches now call `widenLiteral(targetType)`
+   before setting `Instance` when the TypeVar has `Widenable: true`. The
+   `widenLiteral` function handles `MutabilityType`-wrapped literals
+   (e.g. `mut? "hello"` → `mut? string`).
 
-2. **`internal/checker/unify.go`** — Literal widening in `bind()` (Section 6e):
-   When binding a `Widenable` TypeVarType to a literal type, widen the literal
-   to its primitive type before setting `Instance`:
-   ```go
-   func widenLiteral(t Type) Type {
-       if lit, ok := t.(*LitType); ok {
-           switch lit.Lit.(type) {
-           case *NumLit:
-               return NewNumPrimType(nil)
-           case *StrLit:
-               return NewStrPrimType(nil)
-           case *BoolLit:
-               return NewBoolPrimType(nil)
-           }
-       }
-       return t  // not a literal, return unchanged
-   }
-   ```
-   In `bind()`, when the target TypeVarType has `Widenable: true`:
-   ```go
-   if typeVar.Widenable {
-       targetType = widenLiteral(targetType)
-   }
-   typeVar.Instance = targetType
-   ```
-   This ensures `obj.bar = "hello"` infers `bar: string` instead of
-   `bar: "hello"`. The same widening applies to method parameters: calling
-   `obj.process(42)` infers the parameter type as `number`, not `42`.
+3. **Helper functions** (in `unify.go`):
+   - `unwrapMutability(t)` — strips `MutabilityType` wrapper if present.
+   - `widenLiteral(t)` — converts `LitType` to corresponding `PrimType`
+     (`NumLit` → `number`, `StrLit` → `string`, `BoolLit` → `boolean`).
+     Preserves `MutabilityType` wrapper if present.
+   - `flatUnion(oldType, newType)` — builds a union, flattening `oldType` if
+     it is already a `UnionType` to produce a single-level union.
+   - `typeContains(haystack, needle)` — recursively checks if `needle` is
+     already a member of `haystack` (handles nested unions).
 
-3. **Helper function** — `typeContains(haystack Type, needle Type) bool`:
-   - If `haystack` is a `UnionType`, check if any member equals `needle`.
-   - Otherwise, check if `haystack` equals `needle`.
-   - Place in `internal/checker/unify.go` or a utility file.
+4. **`internal/checker/widening_test.go`** — Unit tests for `flatUnion` and
+   `typeContains` helpers (verifies flat union construction and recursive
+   member lookup).
 
 ### How it works end-to-end
 
@@ -493,30 +458,38 @@ then unifies the right-hand side type with the left-hand side type via
    `t1.Instance` with `string | number`.
 3. `obj.bar = true` — same flow, widens to `string | number | boolean`.
 
-### Tests
+### Tests (implemented)
 
-- **Literal widening (Section 6e):**
-  `fn foo(obj) { obj.bar = "hello" }` — `bar: string` (not `"hello"`).
-- **Literal widening with number:**
-  `fn foo(obj) { obj.bar = 42 }` — `bar: number` (not `42`).
-- **Same-kind literals collapse:**
-  `fn foo(obj) { obj.bar = "hello"; obj.bar = "world" }` — `bar: string`
-  (both widen to `string`, deduplication gives just `string`).
-- **Different-kind literals produce union of primitives:**
-  `fn foo(obj) { obj.bar = "hello"; obj.bar = 5 }` — `bar: string | number`.
-- **Branch widening:**
-  `fn foo(obj, cond) { if cond { obj.bar = "hello" } else { obj.bar = 5 } }` —
-  `bar: string | number`.
-- **Three-way widening:**
-  `fn foo(obj) { obj.bar = "a"; obj.bar = 1; obj.bar = true }` —
-  `bar: string | number | boolean`.
-- **Non-literal types are not widened:**
-  `fn foo(obj) { obj.bar = someStringVar }` — `bar: string` (already a
-  primitive, no widening needed).
-- **Normal type variable conflict still errors:**
-  `let x: number = "hello"` — error, not widened (no `Widenable` flag).
-- **Widening does not apply to non-widenable variables:**
-  A regular TypeVarType that gets conflicting bindings should still error.
+Test file: `internal/checker/tests/row_types_test.go`
+
+**`TestRowTypesPropertyWidening`** — table-driven tests:
+- **LiteralWideningString:** `obj.bar = "hello"` → `bar: string`
+- **LiteralWideningNumber:** `obj.bar = 42` → `bar: number`
+- **LiteralWideningBoolean:** `obj.bar = true` → `bar: boolean`
+- **SameKindLiteralsCollapse:** `obj.bar = "hello"; obj.bar = "world"` →
+  `bar: string` (both widen to `string`, deduplication gives just `string`)
+- **DifferentKindLiteralsProduceUnion:** `obj.bar = "hello"; obj.bar = 5` →
+  `bar: string | number`
+- **ThreeWayWidening:** `obj.bar = "a"; obj.bar = 1; obj.bar = true` →
+  `bar: string | number | boolean`
+- **BranchWidening:** `if cond { obj.bar = "hello" } else { obj.bar = 5 }` →
+  `bar: string | number`
+- **NonLiteralTypesNotWidened:** `obj.bar = s` (where `s: string`) →
+  `bar: string` (already a primitive, no widening needed)
+- **NormalTypeVarConflictStillErrors:** `val x: number = "hello"` → error
+  (non-widenable type variable)
+
+**Updated existing tests:** All tests in `TestRowTypesPropertyAccess`,
+`TestRowTypesPassToTypedFunction`, and `TestRowTypesWriteAfterPass` that
+previously expected literal types for property writes now expect widened
+primitive types (e.g. `"hello"` → `string`, `5` → `number`, `true` →
+`boolean`).
+
+**`internal/checker/widening_test.go`** — Unit tests for helper functions:
+- **TestFlatUnionFlattensNestedUnions:** verifies 3-step widening produces a
+  flat `string | number | boolean`, not nested unions.
+- **TestTypeContainsFindsNestedMembers:** verifies recursive member lookup in
+  nested unions.
 
 ---
 
@@ -538,8 +511,8 @@ with appropriate parameters and return type.
 > - Uses **deferred call-site resolution** (`CallSites` map +
 >   `resolveCallSites`) rather than immediately binding `t.Instance`.
 > - Supports multiple calls with different arg types (merged or intersected).
-> - Synthetic params do **not** yet have `Widenable: true` — add this for
->   row types widening (Phase 4).
+> - Synthetic params do **not** yet have `Widenable: true` — add this so
+>   that Phase 4's widening logic (now implemented) applies to method params.
 > - Uses `NewNeverType(nil)` for throws (correct per #384).
 > - Params get named patterns (`arg0`, `arg1`) via `NewIdentPat`.
 
@@ -1231,7 +1204,7 @@ These can be addressed in follow-up work.
 Phase 1: Type System Extensions ✅
 └── Phase 2: Property Access ✅
     ├── Phase 3: Unification ✅
-    │   ├── Phase 4: Widening
+    │   ├── Phase 4: Widening ✅
     │   │   └── Phase 5: Method Calls
     │   │       └── Phase 6: Closing
     │   │           └── Phase 7: Row Polymorphism
@@ -1255,10 +1228,10 @@ All phases above feed into:
 
 ## Key Risks
 
-1. **Widening (Phase 4):** Requires saving pre-Prune references in
-   `unifyWithDepth` to detect `Widenable` variables after pruning. Must be
-   carefully gated so it only fires for widenable variables, not normal type
-   inference.
+1. ~~**Widening (Phase 4):**~~ Resolved. The `unifyWithDepth` / `unifyPruned`
+   split cleanly saves pre-Prune references. Gating via `Widenable` ensures
+   normal type inference is unaffected (verified by
+   `NormalTypeVarConflictStillErrors` test).
 
 2. **Optional chaining (Phase 9):** Wrapping the type variable in a union
    (`T | null | undefined`) means subsequent accesses go through
@@ -1289,12 +1262,13 @@ All phases above feed into:
 |------|--------|--------|
 | `internal/type_system/types.go` | 1 | ✅ `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated |
 | `internal/checker/expand_type.go` | 2, 9, 10 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions |
-| `internal/checker/unify.go` | 3, 4, 10 | Not started |
+| `internal/checker/unify.go` | 3, 4, 10 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability` |
 | `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType` |
-| `internal/checker/infer_func.go` | 3, 6, 7, 8 | Not started |
+| `internal/checker/infer_func.go` | 3, 6, 7, 8 | ✅ (Phase 3) `IsParam: true` for unannotated parameters |
 | `internal/checker/infer_expr.go` | 2, 5, 10 | ✅ (Phase 2) `markPropertyWritten` in assignment handler, open-object pointer identity preservation |
 | `internal/checker/errors.go` | 11 | Not started |
-| `internal/checker/tests/row_types_test.go` | All | ✅ 18 passing tests (`TestRowTypesPropertyAccess` + `TestRowTypesErrors`) |
+| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–4 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, PropertyWidening) |
+| `internal/checker/widening_test.go` | 4 | ✅ Unit tests for `flatUnion` and `typeContains` helpers |
 
 ---
 

@@ -532,7 +532,13 @@ The change needed is to check `Open` on the `ObjectType` — when it is `true`,
 add the closed type's properties directly to the open `ObjectType`'s `Elems`
 instead of binding the row variable.
 
-#### 6d. Property type widening (union accumulation)
+#### 6d. Property type widening (union accumulation) ✅
+
+> **Status (2026-04-07):** Implemented in Phase 4. The `unifyWithDepth` function
+> saves pre-Prune types and, when concrete-vs-concrete unification fails on a
+> `Widenable` TypeVarType, widens its Instance to a union via `flatUnion`.
+> `MutabilityType` wrappers are stripped before building the union. See Phase 4
+> in [implementation_plan.md](implementation_plan.md) for details.
 
 When the same element on an inferred open object type is used multiple times with
 different types — whether sequentially or across branches — the element's type
@@ -568,7 +574,12 @@ the flag applies to both property values on objects and parameter/return types
 on inferred method signatures — the common behavior is widening, not
 specifically "row" inference.
 
-#### 6e. Literal type widening to primitives
+#### 6e. Literal type widening to primitives ✅
+
+> **Status (2026-04-07):** Implemented in Phase 4. The `widenLiteral` function
+> in `bind()` converts `LitType` to `PrimType` when binding to a `Widenable`
+> TypeVarType. Handles `MutabilityType`-wrapped literals. See Phase 4 in
+> [implementation_plan.md](implementation_plan.md) for details.
 
 When a literal type (`"hello"`, `5`, `true`, etc.) is unified with a widenable
 type variable, the literal should be **widened to its corresponding primitive

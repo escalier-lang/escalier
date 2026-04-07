@@ -92,7 +92,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: \"hello\", ...T0}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
 			},
 		},
 		"ReadAndWrite": {
@@ -103,7 +103,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: 5}) -> void",
+				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: number}) -> void",
 			},
 		},
 		"NestedAccess": {
@@ -123,7 +123,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {foo: mut {bar: 5, ...T0}, ...T1}) -> void",
+				"foo": "fn <T0, T1>(obj: mut {foo: mut {bar: number, ...T0}, ...T1}) -> void",
 			},
 		},
 		"MultipleParams": {
@@ -183,7 +183,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: \"hello\", ...T0}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
 			},
 		},
 		"StringLiteralIndexReadAndWrite": {
@@ -194,7 +194,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: 5}) -> void",
+				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: number}) -> void",
 			},
 		},
 		"MixedDotAndBracketAccess": {
@@ -215,7 +215,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: 10}) -> void",
+				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: number}) -> void",
 			},
 		},
 		"MultipleNumericIndexes": {
@@ -433,7 +433,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {z: true, ...T0, bar: string, w: \"hello\"}) -> void",
+				"foo": "fn <T0>(obj: mut {z: boolean, ...T0, bar: string, w: string}) -> void",
 			},
 		},
 		"MultipleCallsMerge": {
@@ -480,8 +480,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				// name stays as "hi" because literal widening is Phase 4
-				"foo": "fn <T0>(obj: mut {name: \"hi\", ...T0}) -> void",
+				"foo": "fn <T0>(obj: mut {name: string, ...T0}) -> void",
 			},
 		},
 		"OpenVsClosedExtraPropertiesInOpen": {
@@ -494,8 +493,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				// a stays as 1 because literal widening is Phase 4
-				"foo": "fn <T0>(obj: mut {a: 1, ...T0, b: \"hi\"}) -> void",
+				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: string}) -> void",
 			},
 		},
 		"Aliasing": {
@@ -507,7 +505,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {x: 1, ...T0, y: \"hello\"}) -> void",
+				"foo": "fn <T0>(obj: mut {x: number, ...T0, y: string}) -> void",
 			},
 		},
 		// TODO: `val alias = obj` binds tvObj.Instance = tvAlias, making
@@ -527,7 +525,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 		// 		}
 		// 	`,
 		// 	expectedTypes: map[string]string{
-		// 		"foo": "fn <T0>(obj: mut {a: number, ...T0, x: 1, y: \"hello\"}) -> void",
+		// 		"foo": "fn <T0>(obj: mut {a: number, ...T0, x: number, y: string}) -> void",
 		// 	},
 		// },
 		"PassToMutableTypedFunction": {
@@ -540,7 +538,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: mut {a: number}) -> number",
-				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: \"hi\"}) -> void",
+				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: string}) -> void",
 			},
 		},
 		"PassToMutableTypedFunctionNoLocalWrite": {
@@ -565,7 +563,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn <T0>(x: {a: number, ...T0}) -> number",
-				"foo": "fn <T0>(obj: mut {b: \"hi\", ...T0, a: number}) -> void",
+				"foo": "fn <T0>(obj: mut {b: string, ...T0, a: number}) -> void",
 			},
 		},
 	}
@@ -615,7 +613,7 @@ func TestRowTypesWriteAfterPass(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {a: number}) -> number",
-				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: \"hi\"}) -> void",
+				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: string}) -> void",
 			},
 		},
 		"WrittenFlagDoesNotLeakAcrossFunctions": {
@@ -689,6 +687,134 @@ func TestRowTypesStringLiteralIndexAfterExtends(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+// TestRowTypesPropertyWidening tests Phase 4: literal widening to primitives,
+// same-kind literal deduplication, and different-kind union accumulation.
+func TestRowTypesPropertyWidening(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"LiteralWideningString": {
+			input: `
+				fn foo(obj) { obj.bar = "hello" }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
+			},
+		},
+		"LiteralWideningNumber": {
+			input: `
+				fn foo(obj) { obj.bar = 42 }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: number, ...T0}) -> void",
+			},
+		},
+		"LiteralWideningBoolean": {
+			input: `
+				fn foo(obj) { obj.bar = true }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: boolean, ...T0}) -> void",
+			},
+		},
+		"SameKindLiteralsCollapse": {
+			input: `
+				fn foo(obj) {
+					obj.bar = "hello"
+					obj.bar = "world"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
+			},
+		},
+		"DifferentKindLiteralsProduceUnion": {
+			input: `
+				fn foo(obj) {
+					obj.bar = "hello"
+					obj.bar = 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: string | number, ...T0}) -> void",
+			},
+		},
+		"ThreeWayWidening": {
+			input: `
+				fn foo(obj) {
+					obj.bar = "a"
+					obj.bar = 1
+					obj.bar = true
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: string | number | boolean, ...T0}) -> void",
+			},
+		},
+		"BranchWidening": {
+			input: `
+				fn foo(obj, cond) {
+					if cond { obj.bar = "hello" } else { obj.bar = 5 }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: string | number, ...T0}, cond: boolean) -> void",
+			},
+		},
+		"NonLiteralTypesNotWidened": {
+			input: `
+				fn foo(obj, s: string) { obj.bar = s }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: string, ...T0}, s: string) -> void",
+			},
+		},
+		"NormalTypeVarConflictStillErrors": {
+			input: `
+				val x: number = "hello"
+			`,
+			expectedTypes: nil,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if test.expectedTypes == nil {
+				source := &ast.Source{
+					ID:       0,
+					Path:     "input.esc",
+					Contents: test.input,
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				defer cancel()
+				module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+				require.Empty(t, errors)
+
+				c := NewChecker()
+				inferCtx := Context{
+					Scope:      Prelude(c),
+					IsAsync:    false,
+					IsPatMatch: false,
+				}
+				inferErrors := c.InferModule(inferCtx, module)
+				assert.NotEmpty(t, inferErrors, "Expected type error for non-widenable conflict")
+				return
+			}
+
 			actualTypes := inferModuleTypes(t, test.input)
 			for expectedName, expectedType := range test.expectedTypes {
 				actualType, exists := actualTypes[expectedName]
