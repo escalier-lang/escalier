@@ -1500,10 +1500,35 @@ func (t *ObjectType) Equals(other Type) bool {
 	return false
 }
 
+// collectFlatElems collects all displayable elements from an ObjectType,
+// flattening any RestSpreadElem whose value resolves to an ObjectType by
+// inlining its properties. RestSpreadElems that resolve to empty ObjectTypes
+// are dropped. RestSpreadElems that resolve to non-ObjectTypes (e.g. unresolved
+// TypeVars or TypeRefTypes) are kept as-is.
+func collectFlatElems(elems []ObjTypeElem) []ObjTypeElem {
+	var result []ObjTypeElem
+	for _, elem := range elems {
+		rest, ok := elem.(*RestSpreadElem)
+		if !ok {
+			result = append(result, elem)
+			continue
+		}
+		resolved := Prune(rest.Value)
+		if obj, ok := resolved.(*ObjectType); ok {
+			// Recursively flatten nested RestSpreadElems
+			result = append(result, collectFlatElems(obj.Elems)...)
+		} else {
+			result = append(result, elem)
+		}
+	}
+	return result
+}
+
 func (t *ObjectType) String() string {
 	result := "{"
-	if len(t.Elems) > 0 {
-		for i, elem := range t.Elems {
+	flatElems := collectFlatElems(t.Elems)
+	if len(flatElems) > 0 {
+		for i, elem := range flatElems {
 			if i > 0 {
 				result += ", "
 			}

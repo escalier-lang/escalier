@@ -786,7 +786,13 @@ fn foo(obj) {
 // inferred: fn foo(obj: {bar: string}) -> void
 ```
 
-#### 8b. Return type inference
+#### 8b. Return type inference ✅
+
+> **Status (2026-04-08):** Implemented in Phases 6 and 7. Phase 6 closes
+> inferred object types and preserves `RestSpreadElem`s that appear in the
+> return type. Phase 7 confirms that `GeneralizeFuncType` promotes these to
+> type parameters and that `instantiateGenericFunc` correctly instantiates them
+> at call sites.
 
 If an inferred-type param is returned from the function, the return type should
 reflect the inferred open type. See 8g and Section 11 for details on how the
@@ -886,7 +892,12 @@ binding's type is `R`, connecting it to the row variable so that when `R` is
 resolved, the rest binding's type reflects the remaining properties. Without a
 rest element, the type stays closed with no `RestSpreadElem`.
 
-#### 8g. Return type row variable propagation
+#### 8g. Return type row variable propagation ✅
+
+> **Status (2026-04-08):** Implemented in Phase 7. Extra properties from
+> callers are preserved through row variables. Literal types are preserved (not
+> widened) — e.g. `foo({x: 1, y: 2})` produces `{x: number, y: 2}` where `x`
+> is widened from the function's write but `y` retains its literal type.
 
 When an inferred-type param is returned from the function, the return type
 should preserve extra properties that callers pass in. This requires **row
@@ -899,8 +910,8 @@ fn foo(obj) {
     return obj
 }
 
-let result = foo({x: 1, y: 2})
-// result type: {x: number, y: number}
+val result = foo({x: 1, y: 2})
+// result type: {x: number, y: 2}
 ```
 
 Without row polymorphism, the function's closed signature would be
@@ -1015,7 +1026,10 @@ The following are explicitly **out of scope** for the initial implementation:
 
 These can be addressed in follow-up work.
 
-### 11. Row Polymorphism
+### 11. Row Polymorphism ✅
+
+> **Status (2026-04-08):** Implemented in Phase 7. See subsection status notes
+> below.
 
 Row polymorphism allows functions with inferred parameter types to preserve
 extra properties through their return types. Without it, a function like:
@@ -1030,7 +1044,11 @@ fn foo(obj) {
 would have the closed signature `fn foo(obj: mut {x: number}) -> mut {x: number}`,
 and calling `foo({x: 1, y: 2})` would return `mut {x: number}` — losing `y`.
 
-#### 11a. Row-polymorphic function types
+#### 11a. Row-polymorphic function types ✅
+
+> **Status (2026-04-08):** Implemented in Phase 7. The function type uses
+> `...T0` syntax (shared naming with regular type params). Literal types from
+> callers are preserved through row variables — they are not widened.
 
 When a function has an inferred parameter type that is returned (or part of the
 return type), the function should be **generic over the row variable**. Instead
@@ -1042,19 +1060,25 @@ fn foo(obj) {
     obj.x = 1
     return obj
 }
-// type: fn foo<R>(obj: mut {x: number, ...R}) -> mut {x: number, ...R}
+// type: fn foo<T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}
 ```
 
-The row variable `R` appears in both the parameter and return type, connecting
-them. When the function is called, `R` is instantiated with the caller's extra
+The row variable `T0` appears in both the parameter and return type, connecting
+them. When the function is called, `T0` is instantiated with the caller's extra
 properties:
 
 ```esc
-let result = foo({x: 1, y: 2})
-// R = {y: number}, so result: {x: number, y: number}
+val result = foo({x: 1, y: 2})
+// T0 = {y: 2}, so result: {x: number, y: 2}
 ```
 
-#### 11b. When to preserve row variables
+#### 11b. When to preserve row variables ✅
+
+> **Status (2026-04-08):** Implemented in Phase 6 (`closeObjectType` removes
+> `RestSpreadElem`s not in return type) and Phase 7 (remaining row vars are
+> promoted to type params by `GeneralizeFuncType`). Tested in
+> `TestRowTypesRowPolymorphism` — `NoReturn_RowVarRemoved`,
+> `DerivedReturn_RowVarDoesNotEscape`, `ReturnInStructure_RowVarDoesNotEscape`.
 
 Not all inferred parameters need row polymorphism. A row variable should be
 preserved (not closed) only when it appears in a position visible to callers —
@@ -1071,7 +1095,12 @@ If the parameter's row variable does NOT appear in the return type or any other
 externally visible position, it can be closed after inference (the caller's
 extra properties are accepted but not tracked).
 
-#### 11c. Implementation sketch
+#### 11c. Implementation sketch ✅
+
+> **Status (2026-04-08):** Fully implemented across Phases 6 and 7. All five
+> steps are handled by existing infrastructure — no new code was needed for
+> steps 1–5. The only code change was adding `collectFlatElems` to
+> `ObjectType.String()` for display flattening of resolved `RestSpreadElem`s.
 
 1. **After inferring the function body**, set `Open` to `false` on all inferred
    `ObjectType`s — the property set is now final.
@@ -1094,11 +1123,10 @@ This extends the existing generic function instantiation mechanism
 regular type parameters, with fresh type variables that get solved during
 argument unification.
 
-> **Status (2026-04-06):** The function generalization work (#379) added
-> `GeneralizeFuncType` in `generalize.go`, which implements steps 2–4 for
-> regular type variables and **also handles row variables without special
-> treatment**. Verified behavior:
+> **Implementation details (2026-04-08):**
 >
+> Steps 1–4 are handled by Phase 6 (`closeOpenParams`/`closeObjectType`) and
+> `GeneralizeFuncType` (#379):
 > - `collectUnresolvedTypeVars` walks into `RestSpreadElem.Value` and collects
 >   the inner unresolved `TypeVarType` like any other.
 > - `GeneralizeFuncType` promotes that TypeVar by setting
@@ -1108,21 +1136,17 @@ argument unification.
 >   `RestSpreadElem{Value: TypeVarType{Instance: TypeRefType{Name: "T0"}}}`.
 >   `Prune()` resolves the inner value to the `TypeRefType`, preserving the
 >   `RestSpreadElem` wrapper.
-> - At call sites, `instantiateGenericFunc` calls `SubstituteTypeParams`,
->   which uses the visitor pattern. `RestSpreadElem.Accept()` calls
->   `r.Value.Accept(v)`, substituting the `TypeRefType` with a fresh TypeVar
->   while returning a new `RestSpreadElem{Value: freshTypeVar}`. The wrapper
->   is preserved.
-> - **No changes to `GeneralizeFuncType` or `instantiateGenericFunc` are
->   needed** for row polymorphism. The existing machinery handles
->   `RestSpreadElem`-wrapped row variables correctly.
 >
-> **Mapping to implementation phases:** Step 1 (close inferred ObjectTypes) is
-> Phase 6 in the implementation plan. Steps 2–4 (identify, promote, and remove
-> row variables) are Phase 7, which delegates to `GeneralizeFuncType` — no
-> manual promotion code is needed. Step 5 (call-site instantiation) is also
-> Phase 7, handled by the existing `instantiateGenericFunc` /
-> `SubstituteTypeParams` machinery.
+> Step 5 is handled by `instantiateGenericFunc`/`SubstituteTypeParams`:
+> - `RestSpreadElem.Accept()` calls `r.Value.Accept(v)`, substituting the
+>   `TypeRefType` with a fresh TypeVar while returning a new
+>   `RestSpreadElem{Value: freshTypeVar}`. The wrapper is preserved.
+> - **No changes to `GeneralizeFuncType` or `instantiateGenericFunc` were
+>   needed.**
+>
+> **Display flattening:** `ObjectType.String()` uses `collectFlatElems` to
+> inline properties from resolved `RestSpreadElem`s. For example, `{x: number,
+> ...{y: 2}}` displays as `{x: number, y: 2}`. Empty rest objects are dropped.
 
 #### 11d. Interaction with Section 5 (closing) ✅
 
@@ -1152,9 +1176,10 @@ Row polymorphism adds complexity. The following are initially out of scope:
   requires row variables to flow through generic instantiation.
 
 Note: **multiple row variables** (functions where multiple parameters each have
-their own row variable that appears in the return type) are **in scope**. This
-is needed for patterns like `fn merge(a, b) { return {...a, ...b} }` (see
-Section 12).
+their own row variable that appears in the return type) are **in scope** and
+**implemented**. Tested in `TestRowTypesRowPolymorphism/MultipleParamsRowPolymorphism`.
+The spread-based pattern `fn merge(a, b) { return {...a, ...b} }` requires
+Phase 10 (Object Spread).
 
 ### 12. Object Spread and Multiple RestSpreadElems
 

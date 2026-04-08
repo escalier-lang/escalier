@@ -1101,3 +1101,129 @@ func TestRowTypesClosing(t *testing.T) {
 		})
 	}
 }
+
+func TestRowTypesRowPolymorphism(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"BasicRowPolymorphism": {
+			// Extra properties passed by caller are preserved in the result
+			input: `
+				fn foo(obj) {
+					obj.x = 1
+					return obj
+				}
+				val r = foo({x: 1, y: 2})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
+				"r":   "{x: number, y: 2}",
+			},
+		},
+		"MultipleExtraProperties": {
+			// Multiple extra properties are preserved
+			input: `
+				fn foo(obj) {
+					obj.x = 1
+					return obj
+				}
+				val r = foo({x: 1, y: 2, z: "hi"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
+				"r":   "{x: number, y: 2, z: \"hi\"}",
+			},
+		},
+		"NoReturn_RowVarRemoved": {
+			// No return means row variable is removed
+			input: `
+				fn foo(obj) { obj.x = 1 }
+				val r = foo({x: 1, y: 2})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: mut {x: number}) -> void",
+				"r":   "void",
+			},
+		},
+		"DerivedReturn_RowVarDoesNotEscape": {
+			// Return type is the type of a property, not the full object.
+			// Literal types are preserved for regular type params.
+			input: `
+				fn foo(obj) { return obj.x }
+				val r = foo({x: 5, y: "hi"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {x: T0}) -> T0",
+				"r":   "5",
+			},
+		},
+		"ReturnInStructure_RowVarDoesNotEscape": {
+			// Row variable doesn't escape when returning a derived value.
+			// Literal types are preserved for regular type params.
+			input: `
+				fn foo(obj) { return {y: obj.x} }
+				val r = foo({x: 5, extra: "hi"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {x: T0}) -> {y: T0}",
+				"r":   "{y: 5}",
+			},
+		},
+		"ReadOnlyRowPolymorphism": {
+			// Read-only access with return preserves extra properties
+			input: `
+				fn foo(obj) {
+					val x = obj.x
+					return obj
+				}
+				val r = foo({x: 1, y: "hello"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {x: T0, ...T1}) -> {x: T0, ...T1}",
+				"r":   "{x: 1, y: \"hello\"}",
+			},
+		},
+		"MultipleParamsRowPolymorphism": {
+			// Each parameter gets its own row variable
+			input: `
+				fn foo(a, b) {
+					a.x = 1
+					b.y = "hi"
+					return [a, b]
+				}
+				val r = foo({x: 0, extra1: true}, {y: "", extra2: 42})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(a: mut {x: number, ...T0}, b: mut {y: string, ...T1}) -> [{x: number, ...T0}, {y: string, ...T1}]",
+				"r":   "[{x: number, extra1: true}, {y: string, extra2: 42}]",
+			},
+		},
+		"NoExtraProperties": {
+			// Calling with exact properties — row variable resolves to empty
+			input: `
+				fn foo(obj) {
+					obj.x = 1
+					return obj
+				}
+				val r = foo({x: 5})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
+				"r":   "{x: number}",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}

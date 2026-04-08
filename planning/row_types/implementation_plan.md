@@ -745,7 +745,7 @@ parameter lists trimmed accordingly.
 
 ---
 
-## Phase 7: Row Polymorphism
+## Phase 7: Row Polymorphism ✅
 
 **Requirements covered:** Section 11 (row polymorphism), Section 8b/8g (return
 type propagation).
@@ -753,16 +753,20 @@ type propagation).
 **Goal:** When an inferred parameter is returned, its row variable becomes a type
 parameter on the function, enabling callers to preserve extra properties.
 
-> **Status (2026-04-06, verified):** `GeneralizeFuncType` (#379) handles row
-> variables without any special treatment. `collectUnresolvedTypeVars` walks
-> into `RestSpreadElem.Value` and collects the inner TypeVar.
-> `GeneralizeFuncType` sets `tv.Instance = TypeRefType{...}`, which binds the
-> TypeVar *inside* the `RestSpreadElem` — the wrapper is untouched. After
-> generalization: `RestSpreadElem{Value: TypeVarType{Instance: TypeRefType}}`.
-> At call sites, `instantiateGenericFunc` → `SubstituteTypeParams` →
-> `RestSpreadElem.Accept()` substitutes the inner `TypeRefType` with a fresh
-> TypeVar while preserving the `RestSpreadElem` wrapper. **No changes to
-> `GeneralizeFuncType` or `instantiateGenericFunc` are needed.**
+> **Status (2026-04-08, implemented):** No changes were needed to
+> `GeneralizeFuncType`, `instantiateGenericFunc`, or `SubstituteTypeParams` —
+> the existing infrastructure handles row polymorphism correctly.
+> The only code change was adding `collectFlatElems` to `ObjectType.String()`
+> in `types.go`, which flattens `RestSpreadElem`s whose values resolve (via
+> `Prune`) to `ObjectType`s by inlining their properties into the parent
+> display. Empty resolved `ObjectType`s are dropped entirely.
+>
+> **Literal preservation:** Literal types from arguments are preserved through
+> row variables (not widened). For example, `foo({x: 1, y: 2})` where `foo`
+> returns its argument produces `{x: number, y: 2}` — `x` is `number` because
+> the function wrote to it, while `y` retains the literal type `2` from the
+> caller. This is consistent with Escalier's treatment of generic type
+> parameters, which also preserve literal types.
 
 ### Changes
 
@@ -815,39 +819,70 @@ parameter on the function, enabling callers to preserve extra properties.
    calls `r.Value.Accept(v)`, so substitution correctly walks into
    `RestSpreadElem` values. No changes needed.
 
-3. **Multiple row variables:** When multiple parameters each have row variables
+3. **`ObjectType.String()` flattening** — `internal/type_system/types.go`:
+   Added `collectFlatElems` helper used by `ObjectType.String()`. When a
+   `RestSpreadElem`'s value resolves (via `Prune`) to an `ObjectType`, its
+   elements are inlined into the parent rather than printing `...{y: 2}`.
+   Empty resolved `ObjectType`s (no extra properties) are dropped entirely.
+   Unresolved TypeVars/TypeRefTypes continue to print as `...T0`.
+
+   This is purely a display change — the underlying type structure still uses
+   `RestSpreadElem` wrappers. The flattening is recursive, handling nested
+   RestSpreadElems within resolved rest types.
+
+4. **Multiple row variables:** When multiple parameters each have row variables
    in the return type (e.g. `fn merge(a, b) { return {...a, ...b} }`), each gets
    its own type parameter. This is naturally handled since each parameter has a
    distinct `RestSpreadElem` with a distinct row variable ID.
 
 ### Tests
 
+All tests are in `TestRowTypesRowPolymorphism` in `row_types_test.go`.
+
 - **Basic row polymorphism:**
   ```esc
   fn foo(obj) { obj.x = 1; return obj }
-  let r = foo({x: 1, y: 2})
+  val r = foo({x: 1, y: 2})
   ```
-  — `r` type is `{x: number, y: number}`.
+  — `foo: fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}`,
+  `r: {x: number, y: 2}`.
 
 - **Multiple extra properties:**
   ```esc
   fn foo(obj) { obj.x = 1; return obj }
-  let r = foo({x: 1, y: 2, z: "hi"})
+  val r = foo({x: 1, y: 2, z: "hi"})
   ```
-  — `r` has all three properties.
+  — `r: {x: number, y: 2, z: "hi"}`.
 
 - **No return — row variable removed:**
   `fn foo(obj) { obj.x = 1 }` — no type parameter, `RestSpreadElem`
-  removed.
+  removed. `r: void`.
 
 - **Derived return (property of param):**
-  `fn foo(obj) { return obj.x }` — return type is `t1` (the type of `x`), not
+  `fn foo(obj) { return obj.x }` — return type is `T0` (the type of `x`), not
   the full object. Row variable does not appear in return type, so it's removed.
+  Literal type preserved: `r: 5`.
 
 - **Return in a structure:**
-  `fn foo(obj) { return {y: obj.x} }` — similar; row variable doesn't escape.
+  `fn foo(obj) { return {y: obj.x} }` — row variable doesn't escape.
+  Literal type preserved: `r: {y: 5}`.
 
-- **Multiple row-polymorphic parameters (requires Phase 10 for spread):**
+- **Read-only row polymorphism:**
+  `fn foo(obj) { val x = obj.x; return obj }` — read-only access with return
+  preserves extra properties. `r: {x: 1, y: "hello"}`.
+
+- **Multiple row-polymorphic parameters:**
+  ```esc
+  fn foo(a, b) { a.x = 1; b.y = "hi"; return [a, b] }
+  val r = foo({x: 0, extra1: true}, {y: "", extra2: 42})
+  ```
+  — `r: [{x: number, extra1: true}, {y: string, extra2: 42}]`.
+
+- **No extra properties:**
+  Calling with exact properties — row variable resolves to empty `ObjectType`,
+  which is dropped from display: `r: {x: number}`.
+
+- **Multiple row-polymorphic parameters via spread (requires Phase 10):**
   ```esc
   fn merge(a, b) { return {...a, ...b} }
   let r = merge({x: 1}, {y: "hi"})
@@ -1218,7 +1253,7 @@ Phase 1: Type System Extensions ✅
     │   ├── Phase 4: Widening ✅
     │   │   └── Phase 5: Method Calls ✅
     │   │       └── Phase 6: Closing ✅
-    │   │           └── Phase 7: Row Polymorphism
+    │   │           └── Phase 7: Row Polymorphism ✅
     │   │               └── Phase 8: Destructuring
     │   └── Phase 10: Object Spread (can start here or after Phase 8)
     └── Phase 9: Optional Chaining (can start here or after Phase 8)
@@ -1271,14 +1306,14 @@ All phases above feed into:
 
 | File | Phases | Status |
 |------|--------|--------|
-| `internal/type_system/types.go` | 1 | ✅ `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated |
+| `internal/type_system/types.go` | 1, 7 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s |
 | `internal/checker/expand_type.go` | 2, 9, 10 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions |
 | `internal/checker/unify.go` | 3, 4, 10 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability` |
-| `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType` |
-| `internal/checker/infer_func.go` | 3, 6, 7, 8 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType` |
-| `internal/checker/infer_expr.go` | 2, 5, 10 | ✅ (Phase 2) `markPropertyWritten` in assignment handler, open-object pointer identity preservation |
+| `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically |
+| `internal/checker/infer_func.go` | 3, 6, 7, 8 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed |
+| `internal/checker/infer_expr.go` | 2, 5, 7, 10 | ✅ (Phase 2) `markPropertyWritten` in assignment handler, open-object pointer identity preservation; (Phase 7) No changes needed — `instantiateGenericFunc`/`handleFuncCall` handle row type params automatically |
 | `internal/checker/errors.go` | 11 | Not started |
-| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–6 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing) |
+| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism) |
 | `internal/checker/widening_test.go` | 4 | ✅ Unit tests for `flatUnion` and `typeContains` helpers |
 
 ---
