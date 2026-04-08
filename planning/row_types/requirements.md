@@ -164,7 +164,10 @@ This requires the unifier to support **widening** a widenable property type
 variable when it encounters a new incompatible concrete type: rather than
 reporting a conflict, it should produce a union. See Section 6d for details.
 
-### 2. Method Call Inference
+### 2. Method Call Inference ✅
+
+> **Status (2026-04-08):** Implemented in Phase 5. See
+> [implementation_plan.md](implementation_plan.md) for details.
 
 When a method is called on a value whose type is a type variable, the system must:
 
@@ -177,20 +180,27 @@ When a method is called on a value whose type is a type variable, the system mus
 2. Unify the supplied argument types with the method's fresh parameter types.
 3. Return the method's return type variable as the type of the call expression.
 
-> **Status (2026-04-06):** The callback inference work (#380) added a
+> **Implementation notes:** The callback inference work (#380) added a
 > `TypeVarType` case to `inferCallExpr` that creates a synthetic `FuncType` when
 > an unbound TypeVar is called. The synthetic `FuncType` is **not** immediately
 > bound to the TypeVar — instead it is appended to `CallSites` for deferred
 > resolution. This allows multiple calls with different arg types to accumulate
 > (e.g. `obj.process(42); obj.process("hello")`); `resolveCallSites` later
-> merges or intersects them and binds the TypeVar. This handles the case where
-> a *parameter itself* is called (`cb(42)`), but not the method-on-object case
-> (`obj.process(42)`). The method case requires Phase 2 (property access on
-> TypeVarType) to be implemented first so that `obj.process` returns a
-> TypeVarType, at which point the existing `TypeVarType` case in
-> `inferCallExpr` will handle the call naturally. The `Widenable` flag still
-> needs to be added to the synthetic FuncType's params/return for proper
-> widening behavior (Section 6d).
+> merges or intersects them and binds the TypeVar.
+>
+> For method calls on inferred objects (detected by checking whether the callee
+> is a `MemberExpr`), the synthetic param and return TypeVars are marked
+> `Widenable = true`. For plain callback calls (`f(42)`), params are **not**
+> widenable — those use the existing intersection behavior.
+>
+> The widening doesn't happen via the standard `Unify` widening path (which
+> only applies to already-bound widenable TypeVars on the right side).
+> Instead, when `resolveCallSites`'s probe unification fails (because the
+> param TypeVars have already been resolved to concrete types by
+> `handleFuncCall`), a dedicated `tryMergeCallSitesWithWidening` function
+> merges same-arity call sites by building union types at each param/return
+> position. Unresolved return TypeVars are unified together so they share a
+> single type variable.
 
 **Example:**
 ```esc

@@ -997,11 +997,21 @@ func (c *Checker) inferCallExpr(
 		// with no type annotation being called). Create a synthetic FuncType
 		// matching the call site, collect it for deferred resolution, and
 		// delegate to handleFuncCall for argument unification.
+		//
+		// When the callee is a method on an inferred object (MemberExpr), mark
+		// synthetic params/return as Widenable so that multiple calls with
+		// different arg types produce a union (e.g. number | string) via
+		// tryMergeCallSitesWithWidening instead of an intersection.
+		_, isMethodCall := expr.Callee.(*ast.MemberExpr)
 		params := make([]*type_system.FuncParam, len(argTypes))
 		for i := range argTypes {
+			paramType := c.FreshVar(nil)
+			if isMethodCall {
+				paramType.Widenable = true
+			}
 			params[i] = &type_system.FuncParam{
 				Pattern: type_system.NewIdentPat(fmt.Sprintf("arg%d", i)),
-				Type:    c.FreshVar(nil),
+				Type:    paramType,
 			}
 		}
 
@@ -1012,6 +1022,9 @@ func (c *Checker) inferCallExpr(
 		// function bodies where the caller allocates CallSites.
 
 		retType := c.FreshVar(nil)
+		if isMethodCall {
+			retType.Widenable = true
+		}
 		synthFuncType := type_system.NewFuncType(nil, nil, params, retType, type_system.NewNeverType(nil))
 
 		(*ctx.CallSites)[t.ID] = append((*ctx.CallSites)[t.ID], synthFuncType)
