@@ -2109,6 +2109,9 @@ func widenLiteral(t type_system.Type) type_system.Type {
 		case *type_system.BoolLit:
 			prim = type_system.NewBoolPrimType(nil)
 		case *type_system.BigIntLit:
+			// TODO(#228): bigint literal widening is implemented here but
+			// untestable until the parser supports bigint literals (e.g. 1n)
+			// in all expression positions.
 			prim = type_system.NewBigIntPrimType(nil)
 		default:
 			return t
@@ -2245,8 +2248,22 @@ func collectUnionMembers(t type_system.Type) []type_system.Type {
 // flatUnion builds a union from oldType and newType, flattening either operand
 // if it is already a UnionType so the result is always a single-level union.
 func flatUnion(oldType, newType type_system.Type) type_system.Type {
-	members := collectUnionMembers(oldType)
-	members = append(members, collectUnionMembers(newType)...)
+	oldMembers := collectUnionMembers(oldType)
+	newMembers := collectUnionMembers(newType)
+	// Deduplicate: only add new members that aren't already present.
+	members := oldMembers
+	for _, n := range newMembers {
+		found := false
+		for _, o := range oldMembers {
+			if type_system.Equals(o, n) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			members = append(members, n)
+		}
+	}
 	return type_system.NewUnionType(nil, members...)
 }
 

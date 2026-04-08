@@ -98,9 +98,10 @@ func Prune(t Type) Type {
 	// Before path compression, record the alias chain if Instance is another
 	// TypeVarType. Build the chain once and assign subslices to each node so
 	// that every TypeVar in the chain gets its own suffix view without
-	// redundant walks. Guarded by nil check so later Prune calls after path
-	// compression don't overwrite with a degenerate chain.
-	if _, isTV := tv.Instance.(*TypeVarType); isTV && tv.InstanceChain == nil {
+	// redundant walks. Rebuild the chain when Instance is a TypeVar even if
+	// InstanceChain is already set — the chain may have grown if a tail node
+	// was re-aliased to another TypeVar after the initial Prune.
+	if _, isTV := tv.Instance.(*TypeVarType); isTV {
 		chain := []*TypeVarType{tv}
 		current := tv.Instance
 		for {
@@ -108,10 +109,11 @@ func Prune(t Type) Type {
 			if !ok {
 				break
 			}
-			// If this node already has a longer InstanceChain from a prior
-			// Prune (e.g. the middle of a chain was pruned first), append
-			// its chain members and stop — they already cover the rest.
-			if next.InstanceChain != nil {
+			// If this node has a cached InstanceChain AND its Instance is
+			// no longer a TypeVar (i.e. it hasn't been re-aliased since
+			// the chain was recorded), use the cached chain.
+			_, nextIsTV := next.Instance.(*TypeVarType)
+			if next.InstanceChain != nil && !nextIsTV {
 				chain = append(chain, next.InstanceChain...)
 				break
 			}
@@ -122,8 +124,8 @@ func Prune(t Type) Type {
 			current = next.Instance
 		}
 		for i, member := range chain {
-			// Only set InstanceChain if not already set or if the new
-			// suffix is longer, to avoid truncating a prior chain.
+			// Only set InstanceChain if the new suffix is longer, to
+			// avoid truncating a prior chain.
 			suffix := chain[i:]
 			if len(suffix) > len(member.InstanceChain) {
 				member.InstanceChain = suffix

@@ -33,6 +33,18 @@ func TestFlatUnionFlattensNewTypeUnion(t *testing.T) {
 	assertFlatUnionMembers(t, result, []ts.Type{strType, numType, boolType})
 }
 
+func TestFlatUnionDeduplicatesSharedMembers(t *testing.T) {
+	strType := ts.NewStrPrimType(nil)
+	numType := ts.NewNumPrimType(nil)
+	boolType := ts.NewBoolPrimType(nil)
+
+	// oldType and newType share "number" — the result should not have duplicates.
+	oldUnion := ts.NewUnionType(nil, strType, numType)
+	newUnion := ts.NewUnionType(nil, numType, boolType)
+	result := flatUnion(oldUnion, newUnion)
+	assertFlatUnionMembers(t, result, []ts.Type{strType, numType, boolType})
+}
+
 func TestTypeContainsFindsNestedMembers(t *testing.T) {
 	strType := ts.NewStrPrimType(nil)
 	numType := ts.NewNumPrimType(nil)

@@ -201,6 +201,32 @@ func TestPruneMiddleThenHead_PreservesFullChain(t *testing.T) {
 		"tvB.InstanceChain should preserve its original [tvB, tvC]")
 }
 
+func TestPruneRealiasExtendsCachedChain(t *testing.T) {
+	// Prune tvA (tvA->tvB unbound), then re-alias tvB->tvC.
+	// A second Prune(tvA) must detect the new link and extend the chain.
+	numType := NewNumPrimType(nil)
+	tvA := NewTypeVarType(nil, 1)
+	tvB := NewTypeVarType(nil, 2)
+	tvC := NewTypeVarType(nil, 3)
+
+	tvA.Instance = tvB
+	// tvB is unbound
+
+	// First prune captures chain [tvA, tvB].
+	Prune(tvA)
+	assert.Equal(t, []*TypeVarType{tvA, tvB}, tvA.InstanceChain)
+
+	// Simulate bind re-aliasing tvB to tvC.
+	tvB.Instance = tvC
+	tvC.Instance = numType
+
+	// Second prune should detect the new link and extend the chain.
+	result := Prune(tvA)
+	assert.Equal(t, numType, result)
+	assert.Contains(t, tvA.InstanceChain, tvC,
+		"tvA.InstanceChain should include tvC after re-aliasing")
+}
+
 func TestPruneCalledOnMiddleOfChain(t *testing.T) {
 	numType := NewNumPrimType(nil)
 	tvA := NewTypeVarType(nil, 1)

@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -703,6 +704,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 	tests := map[string]struct {
 		input         string
 		expectedTypes map[string]string
+		expectedError string // when expectedTypes is nil, check that at least one error contains this substring
 	}{
 		"LiteralWideningString": {
 			input: `
@@ -826,6 +828,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				val x: number = "hello"
 			`,
 			expectedTypes: nil,
+			expectedError: `"hello" cannot be assigned to number`,
 		},
 		"ReadWidenedPropertyIntoNarrowType": {
 			// After widening bar to string | number, reading it into a string
@@ -838,6 +841,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: nil,
+			expectedError: "cannot be assigned to string",
 		},
 		"ReadWidenedPropertyIntoDifferentType": {
 			// After widening bar to string, reading it into a boolean variable
@@ -849,6 +853,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: nil,
+			expectedError: "cannot be assigned to boolean",
 		},
 	}
 
@@ -875,7 +880,17 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 					IsPatMatch: false,
 				}
 				inferErrors := c.InferModule(inferCtx, module)
-				assert.NotEmpty(t, inferErrors, "Expected type error for non-widenable conflict")
+				require.NotEmpty(t, inferErrors, "Expected type error")
+				if test.expectedError != "" {
+					found := false
+					for _, e := range inferErrors {
+						if strings.Contains(e.Message(), test.expectedError) {
+							found = true
+							break
+						}
+					}
+					assert.True(t, found, "Expected error containing %q, got: %v", test.expectedError, inferErrors)
+				}
 				return
 			}
 
