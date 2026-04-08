@@ -73,7 +73,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1}) -> T0",
+				"foo": "fn <T0>(obj: {bar: T0}) -> T0",
 			},
 		},
 		"MultipleReads": {
@@ -83,7 +83,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2}) -> [T0, T2]",
+				"foo": "fn <T0, T1>(obj: {bar: T0, baz: T1}) -> [T0, T1]",
 			},
 		},
 		"WriteAccess": {
@@ -93,7 +93,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> void",
 			},
 		},
 		"ReadAndWrite": {
@@ -104,7 +104,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: number}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
 			},
 		},
 		"NestedAccess": {
@@ -114,7 +114,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(obj: {foo: {bar: T0, ...T1}, ...T2}) -> T0",
+				"foo": "fn <T0>(obj: {foo: {bar: T0}}) -> T0",
 			},
 		},
 		"NestedWrite": {
@@ -124,7 +124,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {foo: mut {bar: number, ...T0}, ...T1}) -> void",
+				"foo": "fn (obj: mut {foo: mut {bar: number}}) -> void",
 			},
 		},
 		"MultipleParams": {
@@ -134,7 +134,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2, T3>(a: {x: T0, ...T1}, b: {y: T2, ...T3}) -> [T0, T2]",
+				"foo": "fn <T0, T1>(a: {x: T0}, b: {y: T1}) -> [T0, T1]",
 			},
 		},
 		"DeeplyNested": {
@@ -144,7 +144,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2, T3>(obj: {a: {b: {c: T0, ...T1}, ...T2}, ...T3}) -> T0",
+				"foo": "fn <T0>(obj: {a: {b: {c: T0}}}) -> T0",
 			},
 		},
 		"NumericIndex": {
@@ -164,7 +164,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1}) -> T0",
+				"foo": "fn <T0>(obj: {bar: T0}) -> T0",
 			},
 		},
 		"MultipleStringLiteralIndexes": {
@@ -174,7 +174,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2}) -> [T0, T2]",
+				"foo": "fn <T0, T1>(obj: {bar: T0, baz: T1}) -> [T0, T1]",
 			},
 		},
 		"StringLiteralIndexWrite": {
@@ -184,7 +184,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> void",
 			},
 		},
 		"StringLiteralIndexReadAndWrite": {
@@ -195,7 +195,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: number}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
 			},
 		},
 		"MixedDotAndBracketAccess": {
@@ -205,7 +205,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2}) -> [T0, T2]",
+				"foo": "fn <T0, T1>(obj: {bar: T0, baz: T1}) -> [T0, T1]",
 			},
 		},
 		"MixedDotReadBracketWrite": {
@@ -216,7 +216,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {bar: T0, ...T1, baz: number}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
 			},
 		},
 		"MultipleNumericIndexes": {
@@ -236,7 +236,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1}) -> [T0, T0]",
+				"foo": "fn <T0>(obj: {bar: T0}) -> [T0, T0]",
 			},
 		},
 		"IdempotentMixedAccess": {
@@ -246,7 +246,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1}) -> [T0, T0]",
+				"foo": "fn <T0>(obj: {bar: T0}) -> [T0, T0]",
 			},
 		},
 	}
@@ -421,7 +421,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {bar: string}) -> string",
-				"foo": "fn <T0>(obj: {bar: string, ...T0}) -> void",
+				"foo": "fn (obj: {bar: string}) -> void",
 			},
 		},
 		"PropertiesSurviveFunctionCall": {
@@ -434,7 +434,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {z: boolean, ...T0, bar: string, w: string}) -> void",
+				"foo": "fn (obj: mut {z: boolean, bar: string, w: string}) -> void",
 			},
 		},
 		"MultipleCallsMerge": {
@@ -447,7 +447,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: {x: number, ...T0, y: string}) -> void",
+				"foo": "fn (obj: {x: number, y: string}) -> void",
 			},
 		},
 		"NonObjectBinding": {
@@ -469,7 +469,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(a: {a: number, ...T0}, b: {b: string, ...T1}) -> void",
+				"foo": "fn (a: {a: number}, b: {b: string}) -> void",
 			},
 		},
 		"OpenVsClosedSharedProperty": {
@@ -481,7 +481,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {name: string, ...T0}) -> void",
+				"foo": "fn (obj: mut {name: string}) -> void",
 			},
 		},
 		"OpenVsClosedExtraPropertiesInOpen": {
@@ -494,7 +494,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: string}) -> void",
+				"foo": "fn (obj: mut {a: number, b: string}) -> void",
 			},
 		},
 		"Aliasing": {
@@ -506,7 +506,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {x: number, ...T0, y: string}) -> void",
+				"foo": "fn (obj: mut {x: number, y: string}) -> void",
 			},
 		},
 		// TODO: `val alias = obj` binds tvObj.Instance = tvAlias, making
@@ -539,7 +539,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: mut {a: number}) -> number",
-				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: string}) -> void",
+				"foo": "fn (obj: mut {a: number, b: string}) -> void",
 			},
 		},
 		"PassToMutableTypedFunctionNoLocalWrite": {
@@ -551,7 +551,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: mut {a: number}) -> number",
-				"foo": "fn <T0>(obj: {a: number, ...T0}) -> void",
+				"foo": "fn (obj: {a: number}) -> void",
 			},
 		},
 		"OpenVsOpenViaFunctionCall": {
@@ -563,8 +563,8 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"bar": "fn <T0>(x: {a: number, ...T0}) -> number",
-				"foo": "fn <T0>(obj: mut {b: string, ...T0, a: number}) -> void",
+				"bar": "fn (x: {a: number}) -> number",
+				"foo": "fn (obj: mut {b: string, a: number}) -> void",
 			},
 		},
 	}
@@ -601,7 +601,7 @@ func TestRowTypesWriteAfterPass(t *testing.T) {
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {name: string}) -> string",
 				// bar's annotation provides the concrete type; "hi" is compatible
-				"foo": "fn <T0>(obj: mut {name: string, ...T0}) -> void",
+				"foo": "fn (obj: mut {name: string}) -> void",
 			},
 		},
 		"WriteNewPropertyAfterPass": {
@@ -614,7 +614,7 @@ func TestRowTypesWriteAfterPass(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {a: number}) -> number",
-				"foo": "fn <T0>(obj: mut {a: number, ...T0, b: string}) -> void",
+				"foo": "fn (obj: mut {a: number, b: string}) -> void",
 			},
 		},
 		"WrittenFlagDoesNotLeakAcrossFunctions": {
@@ -635,9 +635,9 @@ func TestRowTypesWriteAfterPass(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {name: string}) -> string",
-				"foo": "fn <T0>(obj: mut {name: string, ...T0}) -> void",
-				// baz's second param must NOT be mut — baz never writes to b
-				"baz": "fn <T0, T1>(a: mut {name: string, ...T0}, b: {name: string, ...T1}) -> void",
+				"foo": "fn (obj: mut {name: string}) -> void",
+				// Neither param is mut — baz never writes to a or b directly
+				"baz": "fn (a: {name: string}, b: {name: string}) -> void",
 			},
 		},
 	}
@@ -680,7 +680,7 @@ func TestRowTypesStringLiteralIndexAfterExtends(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1}) -> T0",
+				"foo": "fn <T0>(obj: {bar: T0}) -> T0",
 			},
 		},
 	}
@@ -713,7 +713,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				fn foo(obj) { val r = obj.process(42, "hello") }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {process: fn (arg0: 42, arg1: \"hello\") -> T0, ...T1}) -> void",
+				"foo": "fn <T0>(obj: {process: fn (arg0: 42, arg1: \"hello\") -> T0}) -> void",
 			},
 		},
 		"MethodParameterIntersection": {
@@ -724,7 +724,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(obj: {process: fn (arg0: 42) -> T0 & fn (arg0: \"hello\") -> T1, ...T2}) -> void",
+				"foo": "fn <T0, T1>(obj: {process: fn (arg0: 42) -> T0 & fn (arg0: \"hello\") -> T1}) -> void",
 			},
 		},
 		"MethodReturnTypeIntersection": {
@@ -735,7 +735,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: {getValue: fn () -> number & fn () -> string, ...T0}) -> void",
+				"foo": "fn (obj: {getValue: fn () -> number & fn () -> string}) -> void",
 			},
 		},
 		"MethodAndPropertyOnSameObject": {
@@ -746,7 +746,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: mut {x: number, ...T0, process: fn (arg0: number) -> T1}) -> void",
+				"foo": "fn <T0>(obj: mut {x: number, process: fn (arg0: number) -> T0}) -> void",
 			},
 		},
 		"ZeroArgMethod": {
@@ -754,7 +754,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				fn foo(obj) { val r = obj.getData() }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {getData: fn () -> T0, ...T1}) -> void",
+				"foo": "fn <T0>(obj: {getData: fn () -> T0}) -> void",
 			},
 		},
 	}
@@ -785,7 +785,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj) { obj.bar = "hello" }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> void",
 			},
 		},
 		"LiteralWideningNumber": {
@@ -793,7 +793,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj) { obj.bar = 42 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: number, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: number}) -> void",
 			},
 		},
 		"LiteralWideningBoolean": {
@@ -801,7 +801,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj) { obj.bar = true }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: boolean, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: boolean}) -> void",
 			},
 		},
 		"SameKindLiteralsCollapse": {
@@ -812,7 +812,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> void",
 			},
 		},
 		"DifferentKindLiteralsProduceUnion": {
@@ -823,7 +823,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string | number, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: string | number}) -> void",
 			},
 		},
 		"ThreeWayWidening": {
@@ -835,7 +835,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string | number | boolean, ...T0}) -> void",
+				"foo": "fn (obj: mut {bar: string | number | boolean}) -> void",
 			},
 		},
 		"BranchWidening": {
@@ -845,7 +845,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string | number, ...T0}, cond: boolean) -> void",
+				"foo": "fn (obj: mut {bar: string | number}, cond: boolean) -> void",
 			},
 		},
 		"NonLiteralTypesNotWidened": {
@@ -853,7 +853,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj, s: string) { obj.bar = s }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: string, ...T0}, s: string) -> void",
+				"foo": "fn (obj: mut {bar: string}, s: string) -> void",
 			},
 		},
 		"DeepWidenObjectLiteral": {
@@ -864,7 +864,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {loc: {x: number, y: number}, ...T0, col: string}) -> void",
+				"foo": "fn (obj: mut {loc: {x: number, y: number}, col: string}) -> void",
 			},
 		},
 		"DeepWidenNestedLiterals": {
@@ -874,7 +874,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {prop: {a: {b: {c: string, d: number}}}, ...T0}) -> void",
+				"foo": "fn (obj: mut {prop: {a: {b: {c: string, d: number}}}}) -> void",
 			},
 		},
 		"DeepWidenTupleLiterals": {
@@ -884,7 +884,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {pair: [number, string], ...T0}) -> void",
+				"foo": "fn (obj: mut {pair: [number, string]}) -> void",
 			},
 		},
 		"DeepWidenNestedTupleInObject": {
@@ -894,7 +894,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {data: {coords: [number, number], label: string}, ...T0}) -> void",
+				"foo": "fn (obj: mut {data: {coords: [number, number], label: string}}) -> void",
 			},
 		},
 		"DeepWidenMethodGetterSetter": {
@@ -909,7 +909,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {config: {_x: number, getValue(self) -> number, get x(self) -> number, set x(mut self, v: number) -> undefined}, ...T0}) -> void",
+				"foo": "fn (obj: mut {config: {_x: number, getValue(self) -> number, get x(self) -> number, set x(mut self, v: number) -> undefined}}) -> void",
 			},
 		},
 		"NormalTypeVarConflictStillErrors": {
@@ -983,6 +983,96 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				return
 			}
 
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+// TestRowTypesClosing tests Phase 6: after a function body is fully inferred,
+// open object types on parameters are closed. RestSpreadElems whose row
+// variables don't escape to the return type are removed. Mutability is resolved
+// based on whether properties were written to.
+func TestRowTypesClosing(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"ClosedWithMut": {
+			// Writes make the param mut; no return means row var removed
+			input: `
+				fn foo(obj) { obj.bar = 5 }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: mut {bar: number}) -> void",
+			},
+		},
+		"ClosedWithoutMut": {
+			// Read-only: no mut wrapper, row var removed
+			input: `
+				fn foo(obj) { val x = obj.bar }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {bar: T0}) -> void",
+			},
+		},
+		"MixedReadsAndWrites": {
+			// Any write makes the whole object mut
+			input: `
+				fn foo(obj) {
+					val x = obj.bar
+					obj.baz = 5
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
+			},
+		},
+		"RestSpreadPreservedWhenInReturnType": {
+			// When the object is returned, the row var escapes and is kept
+			input: `
+				fn foo(obj) {
+					obj.x = 1
+					return obj
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
+			},
+		},
+		"MultipleParamsClosedIndependently": {
+			// Each param is closed independently
+			input: `
+				fn foo(a, b) {
+					a.x = 1
+					b.y = "hi"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (a: mut {x: number}, b: mut {y: string}) -> void",
+			},
+		},
+		"NestedFunctionClosedIndependently": {
+			// Each function's params are closed after its own body
+			input: `
+				fn outer(a) {
+					fn inner(b) { b.x = 1 }
+					a.y = "hi"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"outer": "fn (a: mut {y: string}) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			actualTypes := inferModuleTypes(t, test.input)
 			for expectedName, expectedType := range test.expectedTypes {
 				actualType, exists := actualTypes[expectedName]

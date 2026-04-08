@@ -24,7 +24,7 @@ work builds upon. Affected phases are annotated below.
 
 | PR | Summary | Relevant phases |
 |----|---------|-----------------|
-| #379 (fe20b6a) | **Function generalization** — `GeneralizeFuncType` and `collectUnresolvedTypeVars` in `generalize.go`. Promotes unresolved type vars to type params. | Phase 6 (use existing `collectUnresolvedTypeVars`), Phase 7 (row var promotion via `GeneralizeFuncType`) |
+| #379 (fe20b6a) | **Function generalization** — `GeneralizeFuncType` and `collectUnresolvedTypeVars` in `generalize.go`. Promotes unresolved type vars to type params. | Phase 6 ✅ (used existing `collectUnresolvedTypeVars`), Phase 7 (row var promotion via `GeneralizeFuncType`) |
 | #380 (84c1ec5) | **Callback inference** — `TypeVarType` case in `inferCallExpr` creates synthetic `FuncType`s; `resolveCallSites` defers binding; `deepCloneType` added; `InFuncBody`/`CallSites`/`CallSiteTypeVars` on Context. | Phase 5 ✅ (method calls on inferred objects work naturally via existing TypeVarType case; `mut?` stripping added for clean param types) |
 | #382 (7013ec2) | **Probe-then-commit unification** — `deepCloneType` used in union/intersection unification to avoid partial TypeVar mutation. Constraint propagation in `bind()`. | Phase 3, Phase 4 (unification robustness) |
 | #384 (d7072ec) | **`throws never`** — missing `throws` clause = `NeverType`. `IsNeverType` helper. `FuncParam.String()` extracted. | Phase 1 (types.go changes), Phase 5 ✅ (synthetic FuncTypes use `NewNeverType(nil)` for throws) |
@@ -127,9 +127,10 @@ variable to an open `ObjectType` instead of producing `ExpectedObjectError`.
 in `MutabilityType{Uncertain}`. Instead, the assignment handler in
 `infer_expr.go` directly checks for open `ObjectType`s (via the
 `markPropertyWritten` helper) and bypasses the immutability error for them.
-Mutability is resolved during `GeneralizeFuncType` (Phase 6) based on the
-`Written` flag. This avoids the complexity of `MutabilityType` unwrapping during
-inference and simplifies the property access path.
+Mutability is resolved during `closeOpenParams` (Phase 6) via the
+`finalizeOpenObject` helper based on the `Written` flag. This avoids the
+complexity of `MutabilityType` unwrapping during inference and simplifies the
+property access path.
 
 **Changes made:**
 
@@ -653,7 +654,7 @@ with appropriate parameters and return type.
 
 ---
 
-## Phase 6: Closing After Function Body Inference (partially implemented)
+## Phase 6: Closing After Function Body Inference ✅
 
 **Requirements covered:** Section 5 (open vs. closed lifecycle), Section 5a
 (mutability inference), Section 11d (interaction with closing).
@@ -663,132 +664,84 @@ parameters. Remove row variables that don't escape to callers. Resolve
 mutability: if any property was written to, the parameter type becomes `mut`;
 otherwise the `MutabilityType` wrapper is removed.
 
-> **Partial implementation (2026-04-06):** Mutability resolution is implemented
-> in `GeneralizeFuncType` (generalize.go). It runs before type variable
-> promotion and checks `PropertyElem.Written` to determine whether the open
-> object needs a `mut` wrapper. **Not yet implemented:** closing
-> (`Open = false`) and removing `RestSpreadElem`s whose row variables don't
-> appear in the return type. Currently, `Open` remains `true` and all
-> `RestSpreadElem`s are preserved — this means row variables always become type
-> parameters via `GeneralizeFuncType`, which is correct behavior for Phase 7
-> (row polymorphism) but produces extra type parameters when the row variable
-> isn't needed.
+### Implementation (completed 2026-04-08)
 
-> **Status (2026-04-06):** The generalization work (#379) added
-> `GeneralizeFuncType` and `collectUnresolvedTypeVars` in `generalize.go`. The
-> The closing pass below uses `collectUnresolvedTypeVars` (from `generalize.go`)
-> to determine which row variables escape to the return type. This replaces the
-> originally planned `collectTypeVarIDs` helper. The closing pass should
-> run **before** `resolveCallSites` and `GeneralizeFuncType`, which are now
-> called after `inferFuncBodyWithFuncSigType` in `infer_module.go`.
+**Approach:** Two new functions in `infer_func.go`:
 
-### Changes
+- **`closeOpenParams(funcSigType)`** — iterates over `funcSigType.Params`,
+  finds open `ObjectType`s (unwrapping `TypeVarType` and `MutabilityType`),
+  resolves mutability via the existing `finalizeOpenObject` helper in
+  `generalize.go`, and delegates to `closeObjectType` for closing and
+  `RestSpreadElem` filtering.
+- **`closeObjectType(objType, returnVars)`** — recursively closes an
+  `ObjectType` (sets `Open = false`) and its nested open objects, then removes
+  `RestSpreadElem`s whose row variables don't appear in `returnVars`.
 
-1. **`internal/checker/infer_func.go`** — After `inferFuncBody` returns
-   (~line 190 in `inferFuncBodyWithFuncSigType`):
-   Add a post-inference pass over `funcSigType.Params`:
-   ```go
-   for _, param := range funcSigType.Params {
-       paramType := Prune(param.Type)
+`closeOpenParams` is called at the end of `inferFuncBodyWithFuncSigType`,
+before the function returns. This ensures it runs **before** `resolveCallSites`
+and `GeneralizeFuncType`, which are called after `inferFuncBodyWithFuncSigType`
+in the call sites in `infer_module.go`, `infer_expr.go`, and `infer_stmt.go`.
 
-       // Unwrap MutabilityType to get at the ObjectType
-       var mutWrapper *MutabilityType
-       if mut, ok := paramType.(*MutabilityType); ok {
-           mutWrapper = mut
-           paramType = Prune(mut.Type)
-       }
+**Interaction with `GeneralizeFuncType`:** The mutability resolution code in
+`GeneralizeFuncType` (`finalizeOpenObject` loop) becomes a no-op after Phase 6
+because all open objects are already closed (`Open = false`) when
+`GeneralizeFuncType` runs. The code is left in place as a safety net.
 
-       if objType, ok := paramType.(*ObjectType); ok && objType.Open {
-           objType.Open = false
+**Recursive nested closing:** `closeObjectType` recurses into nested open
+`ObjectType`s found within `PropertyElem` values, so deeply nested inferred
+objects (e.g. `obj.a.b.c`) are also closed and have their unused
+`RestSpreadElem`s removed.
 
-           // Resolve mutability (Section 5a):
-           // Check if any PropertyElem was written to
-           hasWrites := false
-           for _, elem := range objType.Elems {
-               if prop, ok := elem.(*PropertyElem); ok && prop.Written {
-                   hasWrites = true
-                   break
-               }
-           }
-           if mutWrapper != nil {
-               if hasWrites {
-                   mutWrapper.Mutability = MutabilityMutable
-               } else {
-                   // Read-only: remove the MutabilityType wrapper
-                   // by pointing the param's type past it
-                   param.Type = objType // or update typeVar.Instance
-               }
-           }
+**Deviation from plan:** The originally proposed code inlined mutability
+resolution directly. The actual implementation reuses the existing
+`finalizeOpenObject` helper from `generalize.go`, which handles nested objects,
+`mut?` stripping on written properties, and upward write propagation. This
+avoids duplicating the mutability logic.
 
-           // Collect unresolved type vars in the return type using the
-           // existing helper from generalize.go (added in #379).
-           returnVars := map[int]*TypeVarType{}
-           returnOrder := &[]int{}
-           collectUnresolvedTypeVars(funcSigType.Return, returnVars, returnOrder)
-           // Remove RestSpreadElems whose row vars don't appear in return type
-           filtered := make([]ObjTypeElem, 0, len(objType.Elems))
-           for _, elem := range objType.Elems {
-               if rest, ok := elem.(*RestSpreadElem); ok {
-                   if tv, ok := Prune(rest.Value).(*TypeVarType); ok {
-                       if _, found := returnVars[tv.ID]; !found {
-                           continue // remove this RestSpreadElem
-                       }
-                   }
-               }
-               filtered = append(filtered, elem)
-           }
-           objType.Elems = filtered
-       }
-   }
-   ```
+**Return type mutability:** When a parameter is returned (e.g.
+`fn foo(obj) { obj.x = 1; return obj }`), the parameter type shows `mut` but
+the return type does not (e.g. `fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}`).
+This is because `closeOpenParams` sets `tv.Instance` on the param's TypeVar to
+a new `MutabilityType{Mutable}`, but the return type resolves through a
+different TypeVar chain that was established during unification. The return type
+correctly reflects the object's structure without asserting caller-side
+mutability.
 
-2. **No new helper needed.** Use the existing `collectUnresolvedTypeVars`
-   from `generalize.go` (added in #379). It recursively walks a type tree,
-   follows `Prune()`, and collects all unresolved `TypeVarType` nodes into a
-   `map[int]*TypeVarType`. Its signature:
-   ```go
-   func collectUnresolvedTypeVars(
-       t type_system.Type,
-       vars map[int]*type_system.TypeVarType,
-       order *[]int,
-   )
-   ```
-   This covers all composite types (`ObjectType`, `FuncType`, `UnionType`,
-   `IntersectionType`, `TupleType`, `TypeRefType`, etc.) including
-   `RestSpreadElem` values — so row variables in the return type are found.
+### Changes made
 
-3. **Scope:** Closing happens per-function. Each function's parameter types are
-   closed after **that** function's body is inferred. Nested functions close
-   independently — an inner function's parameters are closed after the inner
-   body is inferred, even though the outer function is still being processed.
-   This works because `inferFuncBodyWithFuncSigType` is called recursively for
-   nested function expressions.
+1. **`internal/checker/infer_func.go`**:
+   - Added `closeOpenParams` — collects return-type vars via
+     `collectUnresolvedTypeVars`, iterates params, calls `finalizeOpenObject`
+     for mutability, then `closeObjectType` for closing + filtering.
+   - Added `closeObjectType` — sets `Open = false`, recurses into nested open
+     objects in property values, filters `RestSpreadElem`s not in return vars.
+   - Added `closeOpenParams(funcSigType)` call before each return in
+     `inferFuncBodyWithFuncSigType` (both the generator early-return path and
+     the normal return path).
 
-4. **Unbound RestSpreadElems:** When a `RestSpreadElem`'s row variable is never
-   bound (no callers have instantiated it yet) and it doesn't appear in the
-   return type, it is simply removed. The row variable is abandoned — it was
-   never needed.
+2. **No changes to `generalize.go`** — uses existing `collectUnresolvedTypeVars`
+   and `finalizeOpenObject`. The mutability loop in `GeneralizeFuncType` is now
+   effectively dead code for inferred params (they're already closed) but is
+   retained as a safety net.
 
-### Tests
+### Tests (`TestRowTypesClosing` in `row_types_test.go`)
 
-- **Closed with mut (writes):**
-  `fn foo(obj) { obj.bar = 5 }` — after inference, `obj` type is
-  `mut {bar: number}` (closed, mutable, no `RestSpreadElem`).
-- **Closed without mut (reads only):**
-  `fn foo(obj) { let x = obj.bar }` — after inference, `obj` type is
-  `{bar: t1}` (closed, immutable, no `MutabilityType` wrapper).
-- **Mixed reads and writes:**
-  `fn foo(obj) { let x = obj.bar; obj.baz = 5 }` — `obj` type is
-  `mut {bar: t1, baz: number}` (any write makes the whole object `mut`).
-- **RestSpreadElem preserved when in return type:**
-  `fn foo(obj) { obj.x = 1; return obj }` — `RestSpreadElem` kept
-  (tested further in Phase 7).
-- **Multiple params, each closed independently:**
-  `fn foo(a, b) { a.x = 1; b.y = "hi" }` — both closed, both
-  `mut`.
-- **Nested function:**
-  `fn outer(a) { fn inner(b) { b.x = 1 }; a.y = "hi" }` — each
-  closed after its own body, each `mut`.
+- **ClosedWithMut:** `fn foo(obj) { obj.bar = 5 }` →
+  `fn (obj: mut {bar: number}) -> void`
+- **ClosedWithoutMut:** `fn foo(obj) { val x = obj.bar }` →
+  `fn <T0>(obj: {bar: T0}) -> void`
+- **MixedReadsAndWrites:** `fn foo(obj) { val x = obj.bar; obj.baz = 5 }` →
+  `fn <T0>(obj: mut {bar: T0, baz: number}) -> void`
+- **RestSpreadPreservedWhenInReturnType:** `fn foo(obj) { obj.x = 1; return obj }` →
+  `fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}`
+- **MultipleParamsClosedIndependently:** `fn foo(a, b) { a.x = 1; b.y = "hi" }` →
+  `fn (a: mut {x: number}, b: mut {y: string}) -> void`
+- **NestedFunctionClosedIndependently:** inner and outer functions close after
+  their own bodies.
+
+All existing row types tests updated — `RestSpreadElem`s (`...Tn`) removed from
+types where the row variable doesn't appear in the return type, and type
+parameter lists trimmed accordingly.
 
 ---
 
@@ -1264,7 +1217,7 @@ Phase 1: Type System Extensions ✅
     ├── Phase 3: Unification ✅
     │   ├── Phase 4: Widening ✅
     │   │   └── Phase 5: Method Calls ✅
-    │   │       └── Phase 6: Closing
+    │   │       └── Phase 6: Closing ✅
     │   │           └── Phase 7: Row Polymorphism
     │   │               └── Phase 8: Destructuring
     │   └── Phase 10: Object Spread (can start here or after Phase 8)
@@ -1322,10 +1275,10 @@ All phases above feed into:
 | `internal/checker/expand_type.go` | 2, 9, 10 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions |
 | `internal/checker/unify.go` | 3, 4, 10 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability` |
 | `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType` |
-| `internal/checker/infer_func.go` | 3, 6, 7, 8 | ✅ (Phase 3) `IsParam: true` for unannotated parameters |
+| `internal/checker/infer_func.go` | 3, 6, 7, 8 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType` |
 | `internal/checker/infer_expr.go` | 2, 5, 10 | ✅ (Phase 2) `markPropertyWritten` in assignment handler, open-object pointer identity preservation |
 | `internal/checker/errors.go` | 11 | Not started |
-| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–4 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, PropertyWidening) |
+| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–6 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing) |
 | `internal/checker/widening_test.go` | 4 | ✅ Unit tests for `flatUnion` and `typeContains` helpers |
 
 ---

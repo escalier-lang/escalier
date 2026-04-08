@@ -228,6 +228,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 			funcSigType.Return = inferredGenType
 		}
 		funcSigType.Throws = type_system.NewNeverType(nil)
+		closeOpenParams(funcSigType)
 		return errors
 	}
 
@@ -250,6 +251,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		errors = slices.Concat(errors, unifyReturnErrors, unifyThrowsErrors)
 	}
 
+	closeOpenParams(funcSigType)
 	return errors
 }
 
@@ -412,4 +414,80 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 	}
 
 	return throwTypes, errors
+}
+
+// closeOpenParams closes all open object types on function parameters after
+// body inference is complete. It removes RestSpreadElems whose row variables
+// don't appear in the return type and resolves mutability.
+func closeOpenParams(funcSigType *type_system.FuncType) {
+	// Collect unresolved type vars in the return type to determine which
+	// row variables escape.
+	returnVars := map[int]*type_system.TypeVarType{}
+	returnOrder := []int{}
+	collectUnresolvedTypeVars(funcSigType.Return, returnVars, &returnOrder)
+
+	for _, param := range funcSigType.Params {
+		tv, ok := param.Type.(*type_system.TypeVarType)
+		if !ok {
+			continue
+		}
+		pruned := type_system.Prune(tv)
+		// Unwrap MutabilityType if present (open objects are wrapped in mut?)
+		if mut, ok := pruned.(*type_system.MutabilityType); ok {
+			pruned = mut.Type
+		}
+		objType, ok := pruned.(*type_system.ObjectType)
+		if !ok || !objType.Open {
+			continue
+		}
+
+		// Resolve mutability using the existing helper
+		if finalizeOpenObject(objType) {
+			tv.Instance = &type_system.MutabilityType{
+				Type:       objType,
+				Mutability: type_system.MutabilityMutable,
+			}
+		} else {
+			// Read-only: remove the MutabilityType wrapper
+			tv.Instance = objType
+		}
+
+		// Close the object and recursively close nested objects,
+		// removing RestSpreadElems whose row vars don't escape.
+		closeObjectType(objType, returnVars)
+	}
+}
+
+// closeObjectType closes an open ObjectType and recursively closes nested
+// open objects. Removes RestSpreadElems whose row variables don't appear
+// in returnVars.
+func closeObjectType(objType *type_system.ObjectType, returnVars map[int]*type_system.TypeVarType) {
+	objType.Open = false
+
+	// Recurse into nested open objects within property values
+	for _, elem := range objType.Elems {
+		if prop, ok := elem.(*type_system.PropertyElem); ok {
+			valPruned := type_system.Prune(prop.Value)
+			if mut, ok := valPruned.(*type_system.MutabilityType); ok {
+				valPruned = mut.Type
+			}
+			if nestedObj, ok := valPruned.(*type_system.ObjectType); ok && nestedObj.Open {
+				closeObjectType(nestedObj, returnVars)
+			}
+		}
+	}
+
+	// Remove RestSpreadElems whose row vars don't appear in return type
+	filtered := make([]type_system.ObjTypeElem, 0, len(objType.Elems))
+	for _, elem := range objType.Elems {
+		if rest, ok := elem.(*type_system.RestSpreadElem); ok {
+			if rowVar, ok := type_system.Prune(rest.Value).(*type_system.TypeVarType); ok {
+				if _, found := returnVars[rowVar.ID]; !found {
+					continue // remove this RestSpreadElem
+				}
+			}
+		}
+		filtered = append(filtered, elem)
+	}
+	objType.Elems = filtered
 }
