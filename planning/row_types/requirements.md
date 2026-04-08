@@ -1080,20 +1080,20 @@ val result = foo({x: 1, y: 2})
 > `TestRowTypesRowPolymorphism` — `NoReturn_RowVarRemoved`,
 > `DerivedReturn_RowVarDoesNotEscape`, `ReturnInStructure_RowVarDoesNotEscape`.
 
-Not all inferred parameters need row polymorphism. A row variable should be
-preserved (not closed) only when it appears in a position visible to callers —
-specifically:
+Not all inferred parameters need row polymorphism. A row variable is preserved
+(not closed) **only when it appears in the function's return type**:
 
-1. **Return type**: If the parameter (or a property derived from it) is returned,
+1. **Return type**: If the parameter (or the object containing it) is returned,
    the row variable must appear in the return type.
-2. **Output parameters**: If the parameter is mutated and the mutations are
-   visible to the caller (e.g. the object is passed by reference), the row
-   variable should be preserved so callers know their extra properties are
-   retained.
+2. **Mutation alone is not sufficient**: If the parameter is mutated but not
+   returned, the row variable is removed. The caller's extra properties are
+   accepted but not tracked in the function's type. For example,
+   `fn foo(obj) { obj.x = 1 }` has type `fn (obj: mut {x: number}) -> void`
+   — no row variable, even though `obj` is mutated.
 
-If the parameter's row variable does NOT appear in the return type or any other
-externally visible position, it can be closed after inference (the caller's
-extra properties are accepted but not tracked).
+If the parameter's row variable does NOT appear in the return type, it is
+removed after inference (the caller's extra properties are accepted but not
+tracked).
 
 #### 11c. Implementation sketch ✅
 

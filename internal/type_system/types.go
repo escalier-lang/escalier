@@ -1500,6 +1500,19 @@ func (t *ObjectType) Equals(other Type) bool {
 	return false
 }
 
+// resolveTypeVar follows a TypeVarType's Instance chain to its terminal type
+// without performing path compression or recording instance chains. This is
+// safe to call from side-effect-free contexts like String().
+func resolveTypeVar(t Type) Type {
+	for {
+		tv, ok := t.(*TypeVarType)
+		if !ok || tv.Instance == nil {
+			return t
+		}
+		t = tv.Instance
+	}
+}
+
 // collectFlatElems collects all displayable elements from an ObjectType,
 // flattening any RestSpreadElem whose value resolves to an ObjectType by
 // inlining its properties. RestSpreadElems that resolve to empty ObjectTypes
@@ -1513,7 +1526,7 @@ func collectFlatElems(elems []ObjTypeElem) []ObjTypeElem {
 			result = append(result, elem)
 			continue
 		}
-		resolved := Prune(rest.Value)
+		resolved := resolveTypeVar(rest.Value)
 		if obj, ok := resolved.(*ObjectType); ok {
 			// Recursively flatten nested RestSpreadElems
 			result = append(result, collectFlatElems(obj.Elems)...)

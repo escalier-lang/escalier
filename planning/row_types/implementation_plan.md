@@ -882,7 +882,9 @@ All tests are in `TestRowTypesRowPolymorphism` in `row_types_test.go`.
   Calling with exact properties — row variable resolves to empty `ObjectType`,
   which is dropped from display: `r: {x: number}`.
 
-- **Multiple row-polymorphic parameters via spread (requires Phase 10):**
+**Not yet implemented (requires Phase 10 — Object Spread):**
+
+- **Multiple row-polymorphic parameters via spread:**
   ```esc
   fn merge(a, b) { return {...a, ...b} }
   let r = merge({x: 1}, {y: "hi"})
