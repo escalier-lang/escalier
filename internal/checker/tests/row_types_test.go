@@ -1060,12 +1060,13 @@ func TestRowTypesClosing(t *testing.T) {
 			// Each function's params are closed after its own body
 			input: `
 				fn outer(a) {
-					fn inner(b) { b.x = 1 }
+					val inner = fn (b) { b.x = 1 }
 					a.y = "hi"
+					return inner
 				}
 			`,
 			expectedTypes: map[string]string{
-				"outer": "fn (a: mut {y: string}) -> void",
+				"outer": "fn (a: mut {y: string}) -> fn (b: mut {x: number}) -> void",
 			},
 		},
 		"ArrayElementWriteAccess": {
