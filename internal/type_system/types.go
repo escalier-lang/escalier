@@ -90,28 +90,92 @@ func (*RegexType) isType()        {}
 func (*ErrorType) isType()        {}
 
 func Prune(t Type) Type {
-	switch t := t.(type) {
-	case *TypeVarType:
-		if t.Instance != nil {
-			newInstance := Prune(t.Instance)
-			t.Instance = newInstance
-			return newInstance
+	tv, ok := t.(*TypeVarType)
+	if !ok || tv.Instance == nil {
+		return t
+	}
+
+	// Record the alias chain for Widenable TypeVars before path compression
+	// destroys the links. The chain is used by the widening fallback in
+	// unifyWithDepth to update all aliased property TypeVars atomically.
+	if _, isTV := tv.Instance.(*TypeVarType); isTV && tv.Widenable {
+		recordInstanceChain(tv)
+	}
+
+	// Path compression: follow the Instance chain to the terminal type and
+	// point every intermediate node directly at it. Stops before the terminal
+	// to avoid a self-loop when the terminal is an unbound TypeVar.
+	concrete := tv.Instance
+	for {
+		next, ok := concrete.(*TypeVarType)
+		if !ok || next.Instance == nil {
+			break
 		}
-		return t
-	default:
-		return t
+		concrete = next.Instance
+	}
+	for cur := tv; cur != concrete; {
+		next := cur.Instance
+		cur.Instance = concrete
+		nextTV, ok := next.(*TypeVarType)
+		if !ok {
+			break
+		}
+		cur = nextTV
+	}
+	return concrete
+}
+
+// recordInstanceChain walks the alias chain starting from tv and records all
+// Widenable TypeVars in InstanceChain fields. Each node gets a suffix view of
+// the same chain so that the widening fallback can update all aliases.
+//
+// The chain is rebuilt when Instance is a TypeVar even if InstanceChain is
+// already set — the chain may have grown if a tail node was re-aliased to
+// another TypeVar after the initial Prune.
+func recordInstanceChain(tv *TypeVarType) {
+	chain := []*TypeVarType{tv}
+	current := tv.Instance
+	for {
+		next, ok := current.(*TypeVarType)
+		if !ok {
+			break
+		}
+		// Reuse a previously computed chain when it's still valid.
+		// A cached chain becomes stale when bind() re-aliases the node
+		// to another TypeVar after the chain was recorded — detected by
+		// checking whether Instance is currently a TypeVar. If stale,
+		// we continue walking to discover the new tail nodes.
+		_, nextIsTV := next.Instance.(*TypeVarType)
+		if next.InstanceChain != nil && !nextIsTV {
+			chain = append(chain, next.InstanceChain...)
+			break
+		}
+		chain = append(chain, next)
+		if next.Instance == nil {
+			break
+		}
+		current = next.Instance
+	}
+	for i, member := range chain {
+		// Only set InstanceChain if the new suffix is longer, to
+		// avoid truncating a prior chain.
+		suffix := chain[i:]
+		if len(suffix) > len(member.InstanceChain) {
+			member.InstanceChain = suffix
+		}
 	}
 }
 
 type TypeVarType struct {
-	ID          int
-	Instance    Type
-	Constraint  Type
-	Default     Type
-	FromBinding bool
-	Widenable   bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
-	IsParam     bool // true for type vars created for unannotated function parameters
-	provenance  Provenance
+	ID            int
+	Instance      Type
+	Constraint    Type
+	Default       Type
+	FromBinding   bool
+	Widenable     bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
+	IsParam       bool // true for type vars created for unannotated function parameters
+	InstanceChain []*TypeVarType // populated by Prune when this TypeVar's Instance is another TypeVar (alias chain from bind); stores all TypeVars in the chain before path compression collapses it
+	provenance    Provenance
 }
 
 func NewTypeVarType(provenance Provenance, id int) *TypeVarType {
