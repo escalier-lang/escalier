@@ -998,20 +998,21 @@ func (c *Checker) inferCallExpr(
 		// matching the call site, collect it for deferred resolution, and
 		// delegate to handleFuncCall for argument unification.
 		//
-		// When the callee is a method on an inferred object (MemberExpr), mark
-		// synthetic params/return as Widenable so that multiple calls with
-		// different arg types produce a union (e.g. number | string) via
-		// tryMergeCallSitesWithWidening instead of an intersection.
-		_, isMethodCall := expr.Callee.(*ast.MemberExpr)
-		params := make([]*type_system.FuncParam, len(argTypes))
-		for i := range argTypes {
-			paramType := c.FreshVar(nil)
-			if isMethodCall {
-				paramType.Widenable = true
-			}
+		// Strip uncertain mutability (mut?) from argument types so the
+		// inferred function signature is clean (e.g. fn(42) not fn(mut? 42)).
+		// The mut? wrapper tracks whether a value will be mutated and is
+		// resolved during generalization — it shouldn't leak into inferred
+		// param types.
+		unwrappedArgTypes := make([]type_system.Type, len(argTypes))
+		for i, at := range argTypes {
+			unwrappedArgTypes[i] = unwrapMutability(at)
+		}
+
+		params := make([]*type_system.FuncParam, len(unwrappedArgTypes))
+		for i := range unwrappedArgTypes {
 			params[i] = &type_system.FuncParam{
 				Pattern: type_system.NewIdentPat(fmt.Sprintf("arg%d", i)),
-				Type:    paramType,
+				Type:    c.FreshVar(nil),
 			}
 		}
 
@@ -1022,15 +1023,12 @@ func (c *Checker) inferCallExpr(
 		// function bodies where the caller allocates CallSites.
 
 		retType := c.FreshVar(nil)
-		if isMethodCall {
-			retType.Widenable = true
-		}
 		synthFuncType := type_system.NewFuncType(nil, nil, params, retType, type_system.NewNeverType(nil))
 
 		(*ctx.CallSites)[t.ID] = append((*ctx.CallSites)[t.ID], synthFuncType)
 		(*ctx.CallSiteTypeVars)[t.ID] = t
 
-		return c.handleFuncCall(ctx, synthFuncType, expr, argTypes, provneance, errors)
+		return c.handleFuncCall(ctx, synthFuncType, expr, unwrappedArgTypes, provneance, errors)
 
 	default:
 		return type_system.NewNeverType(provneance), []Error{

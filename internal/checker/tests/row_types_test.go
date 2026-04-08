@@ -700,7 +700,9 @@ func TestRowTypesStringLiteralIndexAfterExtends(t *testing.T) {
 
 // TestRowTypesMethodCallInference tests Phase 5: calling a method on an
 // inferred object creates a FuncType binding with appropriate parameters and
-// return type, with widening applied to synthetic param/return TypeVars.
+// return type. Multiple calls with different arg types produce an intersection
+// (overloaded signature) rather than widening to a union — this preserves
+// per-call-site return type precision.
 func TestRowTypesMethodCallInference(t *testing.T) {
 	tests := map[string]struct {
 		input         string
@@ -711,10 +713,10 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				fn foo(obj) { val r = obj.process(42, "hello") }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {process: fn (arg0: number, arg1: string) -> T0, ...T1}) -> void",
+				"foo": "fn <T0, T1>(obj: {process: fn (arg0: 42, arg1: \"hello\") -> T0, ...T1}) -> void",
 			},
 		},
-		"MethodParameterWidening": {
+		"MethodParameterIntersection": {
 			input: `
 				fn foo(obj) {
 					obj.process(42)
@@ -722,10 +724,10 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {process: fn (arg0: number | string) -> T0, ...T1}) -> void",
+				"foo": "fn <T0, T1, T2>(obj: {process: fn (arg0: 42) -> T0 & fn (arg0: \"hello\") -> T1, ...T2}) -> void",
 			},
 		},
-		"MethodReturnTypeWidening": {
+		"MethodReturnTypeIntersection": {
 			input: `
 				fn foo(obj) {
 					val x: number = obj.getValue()
@@ -733,7 +735,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: {getValue: fn () -> number | string, ...T0}) -> void",
+				"foo": "fn <T0>(obj: {getValue: fn () -> number & fn () -> string, ...T0}) -> void",
 			},
 		},
 		"MethodAndPropertyOnSameObject": {

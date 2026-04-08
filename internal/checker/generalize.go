@@ -131,7 +131,6 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 			return fresh
 		}
 		fresh := c.FreshVar(nil)
-		fresh.Widenable = t.Widenable
 		varMapping[t.ID] = fresh
 		if t.Constraint != nil {
 			fresh.Constraint = c.deepCloneType(t.Constraint, varMapping)
@@ -363,90 +362,6 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 	return type_system.NewFuncType(nil, nil, params, base.Return, type_system.NewNeverType(nil))
 }
 
-// tryMergeCallSitesWithWidening attempts to merge same-arity call sites by
-// building union types at each param/return position. This handles the case
-// where obj.process(42) and obj.process("hello") should produce
-// fn(number | string) -> T instead of an intersection type.
-func (c *Checker) tryMergeCallSitesWithWidening(ctx Context, sites []*type_system.FuncType) *type_system.FuncType {
-	// All sites must have the same arity.
-	arity := len(sites[0].Params)
-	for _, site := range sites[1:] {
-		if len(site.Params) != arity {
-			return nil
-		}
-	}
-
-	// At least one param or return must come from a widenable TypeVar,
-	// otherwise this isn't a method-call widening scenario.
-	hasWidenable := false
-	for _, site := range sites {
-		for _, p := range site.Params {
-			if tv, ok := p.Type.(*type_system.TypeVarType); ok && tv.Widenable {
-				hasWidenable = true
-			}
-		}
-		if tv, ok := site.Return.(*type_system.TypeVarType); ok && tv.Widenable {
-			hasWidenable = true
-		}
-	}
-	if !hasWidenable {
-		return nil
-	}
-
-	// Build merged params: collect pruned types at each position into a union.
-	params := make([]*type_system.FuncParam, arity)
-	for i := range arity {
-		types := make([]type_system.Type, 0, len(sites))
-		for _, site := range sites {
-			pt := type_system.Prune(site.Params[i].Type)
-			// Deduplicate: skip if already present
-			found := false
-			for _, existing := range types {
-				if type_system.Equals(existing, pt) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				types = append(types, pt)
-			}
-		}
-		var paramType type_system.Type
-		if len(types) == 1 {
-			paramType = types[0]
-		} else {
-			paramType = type_system.NewUnionType(nil, types...)
-		}
-		params[i] = &type_system.FuncParam{
-			Pattern: sites[0].Params[i].Pattern,
-			Type:    paramType,
-		}
-	}
-
-	// Build merged return type. Unify unresolved return TypeVars so that
-	// multiple calls to the same method share a single return type variable.
-	// For resolved (concrete) return types, build a union.
-	var retType type_system.Type
-	for _, site := range sites {
-		rt := type_system.Prune(site.Return)
-		if retType == nil {
-			retType = rt
-		} else if !type_system.Equals(retType, rt) {
-			// If both are unresolved TypeVars, unify them.
-			retTV, retIsTV := retType.(*type_system.TypeVarType)
-			rtTV, rtIsTV := rt.(*type_system.TypeVarType)
-			if retIsTV && retTV.Instance == nil && rtIsTV && rtTV.Instance == nil {
-				c.Unify(ctx, rt, retType)
-			} else {
-				// Different concrete types: build a union.
-				retType = flatUnion(retType, rt)
-			}
-		}
-	}
-
-	return type_system.NewFuncType(nil, nil, params, retType, type_system.NewNeverType(nil))
-}
-
 // resolveCallSites binds each TypeVarType that was used as a function callee
 // to either a single FuncType (if all call sites are compatible) or an
 // IntersectionType (if they are not). Must be called before GeneralizeFuncType.
@@ -492,8 +407,6 @@ func (c *Checker) resolveCallSites(ctx Context) {
 					c.Unify(ctx, site, base)
 				}
 				tv.Instance = base
-			} else if merged := c.tryMergeCallSitesWithWidening(ctx, sites); merged != nil {
-				tv.Instance = merged
 			} else if merged := c.tryMergeCallSitesWithOptionalParams(ctx, sites); merged != nil {
 				tv.Instance = merged
 			} else {

@@ -173,34 +173,33 @@ When a method is called on a value whose type is a type variable, the system mus
 
 1. Bind the type variable to an open `ObjectType` (if not already bound) and add
    a `PropertyElem` whose value is a fresh type variable. When the property is
-   called, bind the type variable to a `FuncType` containing fresh widenable
-   type variables for each parameter and the return type. (Using `PropertyElem`
+   called, bind the type variable to a `FuncType` containing fresh type
+   variables for each parameter and the return type. (Using `PropertyElem`
    with a `FuncType` value rather than `MethodElem` is simpler — the property's
    type variable naturally gets bound to the `FuncType` via the call.)
-2. Unify the supplied argument types with the method's fresh parameter types.
+2. Strip uncertain mutability (`mut?`) from argument types and unify them with
+   the method's fresh parameter types. Literal types are preserved (not widened
+   to primitives), matching callback inference behavior.
 3. Return the method's return type variable as the type of the call expression.
 
-> **Implementation notes:** The callback inference work (#380) added a
-> `TypeVarType` case to `inferCallExpr` that creates a synthetic `FuncType` when
-> an unbound TypeVar is called. The synthetic `FuncType` is **not** immediately
-> bound to the TypeVar — instead it is appended to `CallSites` for deferred
+> **Implementation notes:** Method call inference uses the same `TypeVarType`
+> case in `inferCallExpr` as callback inference (#380). The only change from
+> the original callback inference code is that uncertain mutability (`mut?`) is
+> stripped from argument types via `unwrapMutability` before unification, so
+> inferred param types are clean (e.g. `fn(42)` not `fn(mut? 42)`). This
+> applies uniformly to both method calls and callback calls.
+>
+> A synthetic `FuncType` is created and appended to `CallSites` for deferred
 > resolution. This allows multiple calls with different arg types to accumulate
 > (e.g. `obj.process(42); obj.process("hello")`); `resolveCallSites` later
 > merges or intersects them and binds the TypeVar.
 >
-> For method calls on inferred objects (detected by checking whether the callee
-> is a `MemberExpr`), the synthetic param and return TypeVars are marked
-> `Widenable = true`. For plain callback calls (`f(42)`), params are **not**
-> widenable — those use the existing intersection behavior.
->
-> The widening doesn't happen via the standard `Unify` widening path (which
-> only applies to already-bound widenable TypeVars on the right side).
-> Instead, when `resolveCallSites`'s probe unification fails (because the
-> param TypeVars have already been resolved to concrete types by
-> `handleFuncCall`), a dedicated `tryMergeCallSitesWithWidening` function
-> merges same-arity call sites by building union types at each param/return
-> position. Unresolved return TypeVars are unified together so they share a
-> single type variable.
+> Multiple calls with different arg types produce an **intersection**
+> (overloaded signature) rather than widening to a union. This preserves
+> per-call-site return type precision — each overload can have its own return
+> type. Method params are contravariant, so the intersection form
+> `fn(42) -> T1 & fn("hello") -> T2` correctly models "must handle being
+> called with both types" while allowing different return types per call site.
 
 **Example:**
 ```esc
@@ -211,30 +210,31 @@ fn foo(obj) {
 ```
 
 If the same method is called multiple times with different argument types,
-the parameter types widen to a union — the same widening rule as property types
-(see Section 6d). For example:
+the method's type becomes an **intersection** (overloaded signature) rather
+than widening to a union. This preserves per-call-site return type precision:
 
 ```esc
 fn foo(obj) {
     obj.process(42)
     obj.process("hello")
 }
-// inferred: fn foo(obj: {process: fn(number | string) -> t1}) -> void
+// inferred: fn foo(obj: {process: fn(number) -> t1 & fn(string) -> t2}) -> void
 ```
 
 Similarly, if the same method's return type is used in contexts expecting
-different types, the return type widens to a union. For example:
+different types, the return type is captured per-overload:
 
 ```esc
 fn foo(obj) {
     let x: number = obj.getValue()
     let y: string = obj.getValue()
 }
-// inferred: fn foo(obj: {getValue: fn() -> number | string}) -> void
+// inferred: fn foo(obj: {getValue: fn() -> number & fn() -> string}) -> void
 ```
 
-Here, the first call unifies `getValue`'s return type variable with `number`,
-and the second call widens it to `number | string` per Section 6d.
+Here, each call creates a separate synthetic `FuncType` with its own return
+type. `resolveCallSites` produces an intersection, preserving the distinct
+return types `number` and `string`.
 
 ### 3. Array Indexing Inference ✅
 

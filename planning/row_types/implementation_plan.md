@@ -25,7 +25,7 @@ work builds upon. Affected phases are annotated below.
 | PR | Summary | Relevant phases |
 |----|---------|-----------------|
 | #379 (fe20b6a) | **Function generalization** — `GeneralizeFuncType` and `collectUnresolvedTypeVars` in `generalize.go`. Promotes unresolved type vars to type params. | Phase 6 (use existing `collectUnresolvedTypeVars`), Phase 7 (row var promotion via `GeneralizeFuncType`) |
-| #380 (84c1ec5) | **Callback inference** — `TypeVarType` case in `inferCallExpr` creates synthetic `FuncType`s; `resolveCallSites` defers binding; `deepCloneType` added; `InFuncBody`/`CallSites`/`CallSiteTypeVars` on Context. | Phase 5 ✅ (method call on inferred objects — extended with `Widenable` flag on method-call params and `tryMergeCallSitesWithWidening`) |
+| #380 (84c1ec5) | **Callback inference** — `TypeVarType` case in `inferCallExpr` creates synthetic `FuncType`s; `resolveCallSites` defers binding; `deepCloneType` added; `InFuncBody`/`CallSites`/`CallSiteTypeVars` on Context. | Phase 5 ✅ (method calls on inferred objects work naturally via existing TypeVarType case; `mut?` stripping added for clean param types) |
 | #382 (7013ec2) | **Probe-then-commit unification** — `deepCloneType` used in union/intersection unification to avoid partial TypeVar mutation. Constraint propagation in `bind()`. | Phase 3, Phase 4 (unification robustness) |
 | #384 (d7072ec) | **`throws never`** — missing `throws` clause = `NeverType`. `IsNeverType` helper. `FuncParam.String()` extracted. | Phase 1 (types.go changes), Phase 5 ✅ (synthetic FuncTypes use `NewNeverType(nil)` for throws) |
 
@@ -583,79 +583,71 @@ primitive types (e.g. `"hello"` → `string`, `5` → `number`, `true` →
 **Goal:** Calling a method on an inferred object creates a `FuncType` binding
 with appropriate parameters and return type.
 
-> **Status (2026-04-08):** Implemented. The `TypeVarType` case in
-> `inferCallExpr` (from #380) now marks synthetic param and return TypeVars as
-> `Widenable = true` when the callee is a `MemberExpr` (method call on an
-> inferred object). A new `tryMergeCallSitesWithWidening` function in
-> `resolveCallSites` merges same-arity call sites by building union types at
-> each param/return position when the standard probe unification fails.
+> **Status (2026-04-08):** Implemented. Method call inference on inferred
+> objects uses the same `TypeVarType` case in `inferCallExpr` as callback
+> inference (from #380) — no special-casing for method calls. Multiple calls
+> with different arg types produce an intersection (overloaded signature) via
+> the existing `resolveCallSites` fallback. Literal argument types are
+> preserved (not widened to primitives), matching callback behavior.
 
 ### Changes (implemented)
 
 1. **`internal/checker/infer_expr.go`** — `inferCallExpr`, `TypeVarType` case:
-   When the callee is a `MemberExpr` (method call), synthetic param and return
-   TypeVars are created with `Widenable = true`. For plain callback calls
-   (non-MemberExpr), params are **not** widenable — those use the existing
-   intersection behavior from #380.
+   Argument types are stripped of uncertain mutability (`mut?`) via
+   `unwrapMutability` before being passed to `handleFuncCall`. This ensures
+   inferred param types are clean (e.g. `fn(42)` not `fn(mut? 42)`). The
+   `mut?` wrapper tracks whether a value will be mutated and is resolved during
+   generalization — it shouldn't leak into inferred function signatures. This
+   applies to both method calls and callback calls uniformly.
 
-2. **`internal/checker/generalize.go`** — `deepCloneType`, `TypeVarType` case:
-   Now copies the `Widenable` flag when cloning a `TypeVarType`, so the probe
-   unification in `resolveCallSites` correctly sees widenable TypeVars.
-
-3. **`internal/checker/generalize.go`** — new `tryMergeCallSitesWithWidening`:
-   When `resolveCallSites`'s probe unification fails (because `handleFuncCall`
-   already resolved synthetic param TypeVars to concrete types like `number`
-   and `string`), this function attempts to merge same-arity call sites by:
-   - Checking that at least one param or return TypeVar is widenable
-   - Collecting pruned types at each param position and deduplicating
-   - Building union types for positions with different types
-   - Unifying unresolved return TypeVars together (so they share a single
-     type variable) or building a union for resolved concrete return types
-
-   This is called in `resolveCallSites` after the probe fails and before
-   `tryMergeCallSitesWithOptionalParams`.
-
-4. **Interaction with Phase 2 (deferred call-site resolution):**
+2. **Interaction with Phase 2 (deferred call-site resolution):**
    When `obj.process(42)` is inferred:
    - `inferExpr` on `obj.process` calls `getMemberType` → TypeVarType case →
      creates `PropertyElem{process: t_process}` on the open ObjectType, returns
      `t_process` (an unbound TypeVarType).
    - `inferCallExpr` receives `t_process` as the callee type, hits the
-     `TypeVarType` case. Detects `MemberExpr` callee → marks params widenable.
+     `TypeVarType` case. Strips `mut?` from the argument `42`.
    - A synthetic `FuncType` is created and appended to
      `(*ctx.CallSites)[t_process.ID]`. `t_process.Instance` is **NOT set**.
-   - `handleFuncCall` unifies the supplied argument (`42` → `number`) with
-     the fresh widenable param type, binding it.
+   - `handleFuncCall` unifies the unwrapped argument (`42`) with the fresh
+     param type, binding it.
    - A subsequent call (`obj.process("hello")`) creates a second synthetic
-     `FuncType` with its own widenable param bound to `string`.
+     `FuncType` with its own param bound to `"hello"`.
    - After the function body is inferred, `resolveCallSites` runs. The probe
-     unification fails (concrete `number` vs `string`), but
-     `tryMergeCallSitesWithWidening` succeeds — it builds
-     `fn(number | string) -> T` and sets `t_process.Instance`.
+     unification fails (concrete `42` vs `"hello"`), and the fallback
+     creates an `IntersectionType`:
+     `fn(42) -> T0 & fn("hello") -> T1`.
 
-5. **MethodElem vs PropertyElem with FuncType:** Methods are stored as
+3. **Why intersection, not union:** Method params are contravariant — the
+   requirement is "must handle being called with both types." An intersection
+   correctly models overloaded dispatch and preserves per-call-site return type
+   precision. A union would lose the ability to have different return types per
+   call site.
+
+4. **MethodElem vs PropertyElem with FuncType:** Methods are stored as
    `PropertyElem` with a `FuncType` value, not as `MethodElem`. This is simpler
    and works because `resolveCallSites` binds the property's type variable to
-   the resolved `FuncType`.
+   the resolved `FuncType` or `IntersectionType`.
 
-6. **Multiple calls with different arities:** `resolveCallSites` tries
-   widening first (same arity only), then `tryMergeCallSitesWithOptionalParams`
-   (prefix-compatible arities), then falls back to `IntersectionType`.
+5. **Multiple calls with different arities:** `resolveCallSites` tries
+   `tryMergeCallSitesWithOptionalParams` (prefix-compatible arities), then
+   falls back to `IntersectionType` (overloaded signature).
 
 ### Tests (implemented)
 
 - **Basic method call:**
   `fn foo(obj) { val r = obj.process(42, "hello") }` — `process`
-  is `fn(arg0: number, arg1: string) -> T0`.
-- **Method parameter widening:**
+  is `fn(arg0: 42, arg1: "hello") -> T0`.
+- **Method parameter intersection:**
   `fn foo(obj) { obj.process(42); obj.process("hello") }` —
-  `process` is `fn(arg0: number | string) -> T0`.
-- **Method return type widening:**
+  `process` is `fn(arg0: 42) -> T0 & fn(arg0: "hello") -> T1`.
+- **Method return type intersection:**
   `fn foo(obj) { val x: number = obj.getValue(); val y: string = obj.getValue() }`
-  — `getValue` is `fn() -> number | string`.
+  — `getValue` is `fn() -> number & fn() -> string`.
 - **Method + property on same object:**
   `fn foo(obj) { obj.x = 1; val r = obj.process(obj.x) }` — both
-  property and method inferred.
+  property and method inferred (`process` param is `number` because `obj.x`
+  is already resolved via property widening).
 - **Zero-arg method:**
   `fn foo(obj) { val r = obj.getData() }` — `getData` is `fn() -> T0`.
 
