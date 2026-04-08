@@ -997,8 +997,19 @@ func (c *Checker) inferCallExpr(
 		// with no type annotation being called). Create a synthetic FuncType
 		// matching the call site, collect it for deferred resolution, and
 		// delegate to handleFuncCall for argument unification.
-		params := make([]*type_system.FuncParam, len(argTypes))
-		for i := range argTypes {
+		//
+		// Strip uncertain mutability (mut?) from argument types so the
+		// inferred function signature is clean (e.g. fn(42) not fn(mut? 42)).
+		// The mut? wrapper tracks whether a value will be mutated and is
+		// resolved during generalization — it shouldn't leak into inferred
+		// param types.
+		unwrappedArgTypes := make([]type_system.Type, len(argTypes))
+		for i, at := range argTypes {
+			unwrappedArgTypes[i] = unwrapMutability(at)
+		}
+
+		params := make([]*type_system.FuncParam, len(unwrappedArgTypes))
+		for i := range unwrappedArgTypes {
 			params[i] = &type_system.FuncParam{
 				Pattern: type_system.NewIdentPat(fmt.Sprintf("arg%d", i)),
 				Type:    c.FreshVar(nil),
@@ -1017,7 +1028,7 @@ func (c *Checker) inferCallExpr(
 		(*ctx.CallSites)[t.ID] = append((*ctx.CallSites)[t.ID], synthFuncType)
 		(*ctx.CallSiteTypeVars)[t.ID] = t
 
-		return c.handleFuncCall(ctx, synthFuncType, expr, argTypes, provneance, errors)
+		return c.handleFuncCall(ctx, synthFuncType, expr, unwrappedArgTypes, provneance, errors)
 
 	default:
 		return type_system.NewNeverType(provneance), []Error{

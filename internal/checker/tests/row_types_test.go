@@ -698,6 +698,80 @@ func TestRowTypesStringLiteralIndexAfterExtends(t *testing.T) {
 	}
 }
 
+// TestRowTypesMethodCallInference tests Phase 5: calling a method on an
+// inferred object creates a FuncType binding with appropriate parameters and
+// return type. Multiple calls with different arg types produce an intersection
+// (overloaded signature) rather than widening to a union — this preserves
+// per-call-site return type precision.
+func TestRowTypesMethodCallInference(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"BasicMethodCall": {
+			input: `
+				fn foo(obj) { val r = obj.process(42, "hello") }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {process: fn (arg0: 42, arg1: \"hello\") -> T0, ...T1}) -> void",
+			},
+		},
+		"MethodParameterIntersection": {
+			input: `
+				fn foo(obj) {
+					obj.process(42)
+					obj.process("hello")
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1, T2>(obj: {process: fn (arg0: 42) -> T0 & fn (arg0: \"hello\") -> T1, ...T2}) -> void",
+			},
+		},
+		"MethodReturnTypeIntersection": {
+			input: `
+				fn foo(obj) {
+					val x: number = obj.getValue()
+					val y: string = obj.getValue()
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {getValue: fn () -> number & fn () -> string, ...T0}) -> void",
+			},
+		},
+		"MethodAndPropertyOnSameObject": {
+			input: `
+				fn foo(obj) {
+					obj.x = 1
+					val r = obj.process(obj.x)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: mut {x: number, ...T0, process: fn (arg0: number) -> T1}) -> void",
+			},
+		},
+		"ZeroArgMethod": {
+			input: `
+				fn foo(obj) { val r = obj.getData() }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {getData: fn () -> T0, ...T1}) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
 // TestRowTypesPropertyWidening tests Phase 4: literal widening to primitives,
 // same-kind literal deduplication, and different-kind union accumulation.
 func TestRowTypesPropertyWidening(t *testing.T) {
