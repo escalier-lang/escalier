@@ -1068,6 +1068,24 @@ func TestRowTypesClosing(t *testing.T) {
 				"outer": "fn (a: mut {y: string}) -> void",
 			},
 		},
+		"ArrayElementWriteAccess": {
+			// Open object nested inside Array should also be closed
+			input: `
+				fn foo(arr) { arr[0].x = 1 }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (arr: Array<mut {x: number}>) -> void",
+			},
+		},
+		"ArrayElementReadAccess": {
+			// Open object nested inside Array should also be closed
+			input: `
+				fn foo(arr) { return arr[0].bar }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(arr: Array<{bar: T0}>) -> T0",
+			},
+		},
 	}
 
 	for name, test := range tests {

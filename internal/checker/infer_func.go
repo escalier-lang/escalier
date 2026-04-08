@@ -421,59 +421,101 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 // don't appear in the return type and resolves mutability.
 func closeOpenParams(funcSigType *type_system.FuncType) {
 	// Collect unresolved type vars in the return type to determine which
-	// row variables escape.
+	// row variables escape. We intentionally do NOT collect from
+	// funcSigType.Throws: GeneralizeFuncType defaults throws-only type vars
+	// to `never` (not generalized), so row variables that only appear in
+	// throws should be removed, not preserved as type parameters. Preserving
+	// them would create throws-polymorphic signatures (e.g.
+	// fn <R>(obj: {x: number, ...R}) throws {x: number, ...R} -> void)
+	// which adds noise for minimal benefit — thrown values are almost never
+	// pass-through data whose extra properties callers need to recover.
 	returnVars := map[int]*type_system.TypeVarType{}
 	returnOrder := []int{}
 	collectUnresolvedTypeVars(funcSigType.Return, returnVars, &returnOrder)
 
 	for _, param := range funcSigType.Params {
-		tv, ok := param.Type.(*type_system.TypeVarType)
-		if !ok {
-			continue
-		}
-		pruned := type_system.Prune(tv)
-		// Unwrap MutabilityType if present (open objects are wrapped in mut?)
-		if mut, ok := pruned.(*type_system.MutabilityType); ok {
-			pruned = mut.Type
-		}
-		objType, ok := pruned.(*type_system.ObjectType)
-		if !ok || !objType.Open {
-			continue
-		}
-
-		// Resolve mutability using the existing helper
-		if finalizeOpenObject(objType) {
-			tv.Instance = &type_system.MutabilityType{
-				Type:       objType,
-				Mutability: type_system.MutabilityMutable,
-			}
-		} else {
-			// Read-only: remove the MutabilityType wrapper
-			tv.Instance = objType
-		}
-
-		// Close the object and recursively close nested objects,
-		// removing RestSpreadElems whose row vars don't escape.
-		closeObjectType(objType, returnVars)
+		closeOpenObjectsInType(param.Type, returnVars)
 	}
 }
 
-// closeObjectType closes an open ObjectType and recursively closes nested
-// open objects. Removes RestSpreadElems whose row variables don't appear
-// in returnVars.
+// closeOpenObjectsInType walks a type tree and closes any open ObjectTypes
+// found within it. When the input type is a TypeVarType whose pruned value
+// is an open ObjectType (possibly wrapped in MutabilityType), it finalizes
+// mutability and closes the object. Otherwise, it recurses into type
+// constructors (TypeRefType args, TupleType elements, UnionType options, etc.)
+// to find and close nested open objects.
+func closeOpenObjectsInType(t type_system.Type, returnVars map[int]*type_system.TypeVarType) {
+	pruned := type_system.Prune(t)
+
+	// If t is a TypeVar resolving to an open object, finalize and close it.
+	// Setting tv.Instance is the standard union-find mechanism: Prune()
+	// follows Instance chains, so all references that resolve through this
+	// TypeVar (including the return type, if unified) see the updated value.
+	// This is the same pattern used by GeneralizeFuncType in generalize.go.
+	if tv, ok := t.(*type_system.TypeVarType); ok {
+		unwrapped := pruned
+		if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+			unwrapped = mut.Type
+		}
+		if objType, ok := unwrapped.(*type_system.ObjectType); ok && objType.Open {
+			if finalizeOpenObject(objType) {
+				tv.Instance = &type_system.MutabilityType{
+					Type:       objType,
+					Mutability: type_system.MutabilityMutable,
+				}
+			} else {
+				tv.Instance = objType
+			}
+			closeObjectType(objType, returnVars)
+			return
+		}
+	}
+
+	// Recurse into type constructors to find nested open objects.
+	switch p := pruned.(type) {
+	case *type_system.MutabilityType:
+		closeOpenObjectsInType(p.Type, returnVars)
+	case *type_system.ObjectType:
+		for _, elem := range p.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				closeOpenObjectsInType(prop.Value, returnVars)
+			}
+		}
+	case *type_system.TypeRefType:
+		for _, arg := range p.TypeArgs {
+			closeOpenObjectsInType(arg, returnVars)
+		}
+	case *type_system.TupleType:
+		for _, elem := range p.Elems {
+			closeOpenObjectsInType(elem, returnVars)
+		}
+	case *type_system.UnionType:
+		for _, opt := range p.Types {
+			closeOpenObjectsInType(opt, returnVars)
+		}
+	case *type_system.IntersectionType:
+		for _, opt := range p.Types {
+			closeOpenObjectsInType(opt, returnVars)
+		}
+	case *type_system.FuncType:
+		for _, param := range p.Params {
+			closeOpenObjectsInType(param.Type, returnVars)
+		}
+		closeOpenObjectsInType(p.Return, returnVars)
+		closeOpenObjectsInType(p.Throws, returnVars)
+	}
+}
+
+// closeObjectType closes an open ObjectType, recursively closes nested open
+// objects found in property values, and removes RestSpreadElems whose row
+// variables don't appear in returnVars.
 func closeObjectType(objType *type_system.ObjectType, returnVars map[int]*type_system.TypeVarType) {
 	objType.Open = false
 
-	// Recurse into nested open objects within property values
+	// Recurse into property values to close any nested open objects
 	for _, elem := range objType.Elems {
 		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			valPruned := type_system.Prune(prop.Value)
-			if mut, ok := valPruned.(*type_system.MutabilityType); ok {
-				valPruned = mut.Type
-			}
-			if nestedObj, ok := valPruned.(*type_system.ObjectType); ok && nestedObj.Open {
-				closeObjectType(nestedObj, returnVars)
-			}
+			closeOpenObjectsInType(prop.Value, returnVars)
 		}
 	}
 
