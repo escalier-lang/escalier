@@ -90,7 +90,7 @@ unannotated parameter), the system must:
    **Implemented approach:** The open `ObjectType` is bound directly to the
    type variable (no `MutabilityType` wrapper). The assignment handler bypasses
    the immutability check for open objects and marks the `PropertyElem.Written`
-   flag instead. Mutability is resolved during generalization.
+   flag instead. Mutability is resolved during closing (Phase 6).
 2. Return the fresh property type variable as the type of the member expression.
 3. If additional properties are accessed on the same object, add new
    `PropertyElem`s to the already-bound open `ObjectType`. Since the type
@@ -315,7 +315,14 @@ fn foo(a) {
 // x: t1 | undefined
 ```
 
-### 5. Open vs. Closed Object Types
+### 5. Open vs. Closed Object Types ✅
+
+> **Status (2026-04-08):** Fully implemented. `closeOpenParams` in
+> `infer_func.go` closes all open object types on parameters after
+> `inferFuncBodyWithFuncSigType` completes. `closeObjectType` recursively
+> closes nested open objects. `RestSpreadElem`s whose row variables don't
+> appear in the return type are removed. Row variables that escape to the
+> return type are preserved for Phase 7 (row polymorphism).
 
 The inferred object type for an unannotated parameter should be **open** during
 inference of the function body — the property set can grow as new usages are
@@ -342,13 +349,16 @@ widening is allowed.
 - When two open types are unified, their known properties are unified pairwise,
   and their row variables are merged.
 
-### 5a. Mutability Inference (partially implemented)
+### 5a. Mutability Inference ✅
 
-> **Status (2026-04-06):** The `Written` flag on `PropertyElem` and the
-> mutability resolution in `GeneralizeFuncType` are implemented. The
-> `MutabilityType{Uncertain}` wrapping approach described below was **not**
-> used — instead, the assignment handler directly bypasses the immutability
-> check for open objects. See Phase 2 notes in the implementation plan.
+> **Status (2026-04-08):** Fully implemented. Mutability resolution runs during
+> `closeOpenParams` in `infer_func.go` via the `finalizeOpenObject` helper in
+> `generalize.go`. If any `PropertyElem.Written` is `true`, the param is wrapped
+> in `MutabilityType{Mutable}` (`mut`); otherwise the wrapper is removed.
+> Nested objects are handled recursively. The `MutabilityType{Uncertain}`
+> wrapping approach described below was **not** used — instead, the assignment
+> handler directly bypasses the immutability check for open objects. See Phase 2
+> notes in the implementation plan.
 
 When an unannotated parameter's type is inferred from usage, the system must
 also infer whether the parameter needs to be mutable. Currently, property
@@ -1114,7 +1124,10 @@ argument unification.
 > Phase 7, handled by the existing `instantiateGenericFunc` /
 > `SubstituteTypeParams` machinery.
 
-#### 11d. Interaction with Section 5 (closing)
+#### 11d. Interaction with Section 5 (closing) ✅
+
+> **Status (2026-04-08):** Implemented in Phase 6. `closeOpenParams` /
+> `closeObjectType` in `infer_func.go` implement all three rules below.
 
 The closing rule from Section 5 is refined:
 
@@ -1294,7 +1307,7 @@ properties from earlier elements (including from earlier spreads).
    created for unannotated params (see Section 6a). This flag is checked in
    `bind()` to keep the type open when binding to a closed `ObjectType`.
 
-7. **Close and clean up after function body inference**: After inferring a
+7. **Close and clean up after function body inference** ✅: After inferring a
    function body: (a) set `Open` to `false` on all inferred `ObjectType`s,
    (b) identify which row variables (from `RestSpreadElem`s) appear in the
    return type and promote those to type parameters on the function (row
@@ -1302,7 +1315,8 @@ properties from earlier elements (including from earlier spreads).
    variables do not appear in the return type, (d) resolve mutability — if any
    `PropertyElem` was written to, change `MutabilityUncertain` to
    `MutabilityMutable`; otherwise remove the `MutabilityType` wrapper
-   (see Section 5a).
+   (see Section 5a). Implemented by `closeOpenParams` / `closeObjectType` in
+   `infer_func.go`.
 
 8. **Handle row-polymorphic calls**: Extend `handleFuncCall` to instantiate row
    type parameters with fresh type variables, solved during argument
