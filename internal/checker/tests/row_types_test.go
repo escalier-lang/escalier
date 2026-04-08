@@ -780,6 +780,47 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				"foo": "fn <T0>(obj: mut {bar: string, ...T0}, s: string) -> void",
 			},
 		},
+		"DeepWidenObjectLiteral": {
+			input: `
+				fn foo(obj) {
+					obj.loc = {x: 0, y: 0}
+					obj.col = "red"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {loc: {x: number, y: number}, ...T0, col: string}) -> void",
+			},
+		},
+		"DeepWidenNestedLiterals": {
+			input: `
+				fn foo(obj) {
+					obj.prop = {a: {b: {c: "hello", d: 5}}}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {prop: {a: {b: {c: string, d: number}}}, ...T0}) -> void",
+			},
+		},
+		"DeepWidenTupleLiterals": {
+			input: `
+				fn foo(obj) {
+					obj.pair = [1, "hello"]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {pair: [number, string], ...T0}) -> void",
+			},
+		},
+		"DeepWidenNestedTupleInObject": {
+			input: `
+				fn foo(obj) {
+					obj.data = {coords: [1, 2], label: "hi"}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {data: {coords: [number, number], label: string}, ...T0}) -> void",
+			},
+		},
 		"NormalTypeVarConflictStillErrors": {
 			input: `
 				val x: number = "hello"

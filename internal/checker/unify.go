@@ -1818,7 +1818,8 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 					}
 				}
 				// When binding a Widenable TypeVar, widen literals to their
-				// primitive types (e.g. "hello" -> string, 42 -> number).
+				// primitive types and recursively widen object/tuple literals
+				// (e.g. "hello" -> string, {x: 1} -> {x: number}).
 				targetType := t2
 				if typeVar1.Widenable {
 					targetType = widenLiteral(targetType)
@@ -1863,7 +1864,8 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 					}
 				}
 				// When binding a Widenable TypeVar, widen literals to their
-				// primitive types (e.g. "hello" -> string, 42 -> number).
+				// primitive types and recursively widen object/tuple literals
+				// (e.g. "hello" -> string, {x: 1} -> {x: number}).
 				targetType := t1
 				if typeVar2.Widenable {
 					targetType = widenLiteral(targetType)
@@ -2081,8 +2083,12 @@ func unwrapMutability(t type_system.Type) type_system.Type {
 }
 
 // widenLiteral widens a literal type to its corresponding primitive type.
-// If the type is wrapped in a MutabilityType, the wrapper is preserved.
-// If the type is not a literal, it is returned unchanged.
+// If the type is wrapped in a MutabilityType, the wrapper is preserved for
+// explicit mut but stripped for uncertain mut?.
+// For ObjectTypes, property values are recursively widened and uncertain
+// mutability wrappers are stripped, so that e.g. {x: mut? 0, y: mut? "hi"}
+// becomes {x: number, y: string}.
+// If the type is not a literal or object, it is returned unchanged.
 func widenLiteral(t type_system.Type) type_system.Type {
 	inner := t
 	var mutWrapper *type_system.MutabilityType
@@ -2090,6 +2096,9 @@ func widenLiteral(t type_system.Type) type_system.Type {
 		mutWrapper = mut
 		inner = mut.Type
 	}
+	// Follow TypeVar instances so we can widen the underlying concrete type
+	// (e.g. MutabilityType wrapping a TypeVar whose Instance is an ObjectType).
+	inner = type_system.Prune(inner)
 	if lit, ok := inner.(*type_system.LitType); ok {
 		var prim type_system.Type
 		switch lit.Lit.(type) {
@@ -2104,7 +2113,9 @@ func widenLiteral(t type_system.Type) type_system.Type {
 		default:
 			return t
 		}
-		if mutWrapper != nil {
+		// Preserve explicit mut but strip uncertain mut? — widened
+		// primitives don't need uncertain mutability tracking.
+		if mutWrapper != nil && mutWrapper.Mutability != type_system.MutabilityUncertain {
 			return &type_system.MutabilityType{
 				Type:       prim,
 				Mutability: mutWrapper.Mutability,
@@ -2112,7 +2123,88 @@ func widenLiteral(t type_system.Type) type_system.Type {
 		}
 		return prim
 	}
+	if obj, ok := inner.(*type_system.ObjectType); ok {
+		widened := widenObjectLiterals(obj)
+		// Preserve explicit mut but strip uncertain mut? — generalization
+		// is not yet aware of param-level object assignments so mut? would
+		// leak into the inferred signature.
+		if mutWrapper != nil && mutWrapper.Mutability != type_system.MutabilityUncertain {
+			return &type_system.MutabilityType{
+				Type:       widened,
+				Mutability: mutWrapper.Mutability,
+			}
+		}
+		return widened
+	}
+	if tuple, ok := inner.(*type_system.TupleType); ok {
+		widened := widenTupleLiterals(tuple)
+		if mutWrapper != nil && mutWrapper.Mutability != type_system.MutabilityUncertain {
+			return &type_system.MutabilityType{
+				Type:       widened,
+				Mutability: mutWrapper.Mutability,
+			}
+		}
+		return widened
+	}
 	return t
+}
+
+// widenObjectLiterals returns a copy of the ObjectType with all property
+// values recursively widened (literals → primitives) and uncertain mutability
+// wrappers stripped from property values.
+func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
+	newElems := make([]type_system.ObjTypeElem, len(obj.Elems))
+	changed := false
+	for i, elem := range obj.Elems {
+		prop, ok := elem.(*type_system.PropertyElem)
+		if !ok {
+			newElems[i] = elem
+			continue
+		}
+		// Prune through TypeVars, then widen. widenLiteral handles stripping
+		// uncertain mut? from literals while preserving it on objects/tuples
+		// so that generalization can later resolve mutability.
+		val := type_system.Prune(prop.Value)
+		widened := widenLiteral(val)
+		if widened != prop.Value {
+			changed = true
+			newElems[i] = &type_system.PropertyElem{
+				Name:     prop.Name,
+				Optional: prop.Optional,
+				Readonly: prop.Readonly,
+				Value:    widened,
+				Written:  prop.Written,
+			}
+		} else {
+			newElems[i] = elem
+		}
+	}
+	if !changed {
+		return obj
+	}
+	result := type_system.NewObjectType(nil, newElems)
+	result.Open = obj.Open
+	return result
+}
+
+// widenTupleLiterals returns a copy of the TupleType with all element types
+// recursively widened (literals → primitives) and uncertain mutability wrappers
+// stripped.
+func widenTupleLiterals(tuple *type_system.TupleType) *type_system.TupleType {
+	newElems := make([]type_system.Type, len(tuple.Elems))
+	changed := false
+	for i, elem := range tuple.Elems {
+		val := type_system.Prune(elem)
+		widened := widenLiteral(val)
+		if widened != elem {
+			changed = true
+		}
+		newElems[i] = widened
+	}
+	if !changed {
+		return tuple
+	}
+	return type_system.NewTupleType(nil, newElems...)
 }
 
 // widenableInstanceChain returns the Widenable TypeVars from t's alias chain.
