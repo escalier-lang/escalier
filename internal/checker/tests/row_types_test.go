@@ -823,6 +823,21 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				"foo": "fn <T0>(obj: mut {data: {coords: [number, number], label: string}, ...T0}) -> void",
 			},
 		},
+		"DeepWidenMethodGetterSetter": {
+			input: `
+				fn foo(obj) {
+					obj.config = {
+						_x: 0,
+						getValue(self) { return self._x },
+						get x(self) { return self._x },
+						set x(mut self, v) { self._x = v },
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: mut {config: {_x: number, getValue(self) -> number, get x(self) -> number, set x(mut self, v: number) -> undefined}, ...T0}) -> void",
+			},
+		},
 		"NormalTypeVarConflictStillErrors": {
 			input: `
 				val x: number = "hello"

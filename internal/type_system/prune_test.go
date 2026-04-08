@@ -6,6 +6,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// newWidenableTV creates a TypeVarType with Widenable = true (the only kind
+// that triggers InstanceChain recording in Prune).
+func newWidenableTV(id int) *TypeVarType {
+	tv := NewTypeVarType(nil, id)
+	tv.Widenable = true
+	return tv
+}
+
 func TestPruneConcreteType(t *testing.T) {
 	strType := NewStrPrimType(nil)
 	result := Prune(strType)
@@ -60,8 +68,8 @@ func TestPruneThreeTypeVarChain(t *testing.T) {
 
 func TestPruneInstanceChainTwoNodes(t *testing.T) {
 	numType := NewNumPrimType(nil)
-	tvA := NewTypeVarType(nil, 1)
-	tvB := NewTypeVarType(nil, 2)
+	tvA := newWidenableTV(1)
+	tvB := newWidenableTV(2)
 	tvA.Instance = tvB
 	tvB.Instance = numType
 
@@ -79,9 +87,9 @@ func TestPruneInstanceChainTwoNodes(t *testing.T) {
 
 func TestPruneInstanceChainThreeNodes(t *testing.T) {
 	strType := NewStrPrimType(nil)
-	tvA := NewTypeVarType(nil, 1)
-	tvB := NewTypeVarType(nil, 2)
-	tvC := NewTypeVarType(nil, 3)
+	tvA := newWidenableTV(1)
+	tvB := newWidenableTV(2)
+	tvC := newWidenableTV(3)
 	tvA.Instance = tvB
 	tvB.Instance = tvC
 	tvC.Instance = strType
@@ -98,6 +106,19 @@ func TestPruneInstanceChainThreeNodes(t *testing.T) {
 	assert.Equal(t, []*TypeVarType{tvC}, tvC.InstanceChain)
 }
 
+func TestPruneNoInstanceChainForNonWidenableTypeVars(t *testing.T) {
+	numType := NewNumPrimType(nil)
+	tvA := NewTypeVarType(nil, 1) // not Widenable
+	tvB := NewTypeVarType(nil, 2) // not Widenable
+	tvA.Instance = tvB
+	tvB.Instance = numType
+
+	result := Prune(tvA)
+	assert.Equal(t, numType, result, "path compression should still work")
+	assert.Nil(t, tvA.InstanceChain, "non-Widenable TypeVars should not get InstanceChain")
+	assert.Nil(t, tvB.InstanceChain, "non-Widenable TypeVars should not get InstanceChain")
+}
+
 func TestPruneNoInstanceChainForDirectConcreteInstance(t *testing.T) {
 	numType := NewNumPrimType(nil)
 	tv := NewTypeVarType(nil, 1)
@@ -111,8 +132,8 @@ func TestPruneNoInstanceChainForDirectConcreteInstance(t *testing.T) {
 
 func TestPruneInstanceChainNotOverwrittenOnSecondCall(t *testing.T) {
 	numType := NewNumPrimType(nil)
-	tvA := NewTypeVarType(nil, 1)
-	tvB := NewTypeVarType(nil, 2)
+	tvA := newWidenableTV(1)
+	tvB := newWidenableTV(2)
 	tvA.Instance = tvB
 	tvB.Instance = numType
 
@@ -127,8 +148,8 @@ func TestPruneInstanceChainNotOverwrittenOnSecondCall(t *testing.T) {
 
 func TestPruneChainWithUnboundTerminal(t *testing.T) {
 	// Chain where the terminal TypeVar has no Instance (unbound).
-	tvA := NewTypeVarType(nil, 1)
-	tvB := NewTypeVarType(nil, 2)
+	tvA := newWidenableTV(1)
+	tvB := newWidenableTV(2)
 	tvA.Instance = tvB
 	// tvB.Instance is nil (unbound)
 
@@ -177,9 +198,9 @@ func TestPruneMiddleThenHead_PreservesFullChain(t *testing.T) {
 	// tvA's InstanceChain must include tvC even though tvB->tvC was already
 	// path-compressed by the first Prune call.
 	numType := NewNumPrimType(nil)
-	tvA := NewTypeVarType(nil, 1)
-	tvB := NewTypeVarType(nil, 2)
-	tvC := NewTypeVarType(nil, 3)
+	tvA := newWidenableTV(1)
+	tvB := newWidenableTV(2)
+	tvC := newWidenableTV(3)
 	tvA.Instance = tvB
 	tvB.Instance = tvC
 	tvC.Instance = numType
@@ -205,9 +226,9 @@ func TestPruneRealiasExtendsCachedChain(t *testing.T) {
 	// Prune tvA (tvA->tvB unbound), then re-alias tvB->tvC.
 	// A second Prune(tvA) must detect the new link and extend the chain.
 	numType := NewNumPrimType(nil)
-	tvA := NewTypeVarType(nil, 1)
-	tvB := NewTypeVarType(nil, 2)
-	tvC := NewTypeVarType(nil, 3)
+	tvA := newWidenableTV(1)
+	tvB := newWidenableTV(2)
+	tvC := newWidenableTV(3)
 
 	tvA.Instance = tvB
 	// tvB is unbound
@@ -229,9 +250,9 @@ func TestPruneRealiasExtendsCachedChain(t *testing.T) {
 
 func TestPruneCalledOnMiddleOfChain(t *testing.T) {
 	numType := NewNumPrimType(nil)
-	tvA := NewTypeVarType(nil, 1)
-	tvB := NewTypeVarType(nil, 2)
-	tvC := NewTypeVarType(nil, 3)
+	tvA := newWidenableTV(1)
+	tvB := newWidenableTV(2)
+	tvC := newWidenableTV(3)
 	tvA.Instance = tvB
 	tvB.Instance = tvC
 	tvC.Instance = numType

@@ -535,10 +535,14 @@ instead of binding the row variable.
 #### 6d. Property type widening (union accumulation) ✅
 
 > **Status (2026-04-07):** Implemented in Phase 4. The `unifyWithDepth` function
-> saves pre-Prune types and, when concrete-vs-concrete unification fails on a
-> `Widenable` TypeVarType, widens its Instance to a union via `flatUnion`.
-> `MutabilityType` wrappers are stripped before building the union. See Phase 4
-> in [implementation_plan.md](implementation_plan.md) for details.
+> type-asserts `tv2` before Prune, and when concrete-vs-concrete unification
+> fails on a `Widenable` TypeVarType, reads `tv2.InstanceChain` (populated by
+> `Prune` via `recordInstanceChain`) to find all aliased TypeVars, then widens
+> all of their Instances to a deduplicated union via `flatUnion`. Write-site
+> gating ensures only the right-hand side (property write target) is widened;
+> read sites report type errors. Uncertain `MutabilityType` wrappers are
+> stripped. See Phase 4 in
+> [implementation_plan.md](implementation_plan.md) for details.
 
 When the same element on an inferred open object type is used multiple times with
 different types — whether sequentially or across branches — the element's type
@@ -578,7 +582,10 @@ specifically "row" inference.
 
 > **Status (2026-04-07):** Implemented in Phase 4. The `widenLiteral` function
 > in `bind()` converts `LitType` to `PrimType` when binding to a `Widenable`
-> TypeVarType. Handles `MutabilityType`-wrapped literals. See Phase 4 in
+> TypeVarType. Recursively widens literals inside `ObjectType` and `TupleType`
+> values (deep widening), including method return types, getter return types,
+> and setter param types via `widenFuncType`. Strips uncertain `mut?` wrappers
+> from widened results. See Phase 4 in
 > [implementation_plan.md](implementation_plan.md) for details.
 
 When a literal type (`"hello"`, `5`, `true`, etc.) is unified with a widenable
@@ -638,6 +645,58 @@ fn foo(obj) {
 }
 // inferred: fn foo(obj: mut {bar: string | number}) -> void
 ```
+
+**Deep widening of object and tuple literals:** When an object or tuple literal
+is assigned to a widenable property, literal values within the nested structure
+are recursively widened to their primitive types. Uncertain mutability (`mut?`)
+wrappers are stripped from leaf (primitive) values but preserved on nested
+structured types so that generalization can later resolve mutability:
+
+```esc
+fn foo(obj) {
+    obj.loc = {x: 0, y: 0}
+    obj.col = "red"
+}
+// inferred: fn foo(obj: mut {loc: {x: number, y: number}, col: string}) -> void
+```
+
+This also applies to tuples and deeply nested structures:
+
+```esc
+fn foo(obj) {
+    obj.data = {coords: [1, 2], label: "hi"}
+    obj.prop = {a: {b: {c: "hello", d: 5}}}
+}
+// inferred: fn foo(obj: mut {
+//   data: {coords: [number, number], label: string},
+//   prop: {a: {b: {c: string, d: number}}}
+// }) -> void
+```
+
+**Method, getter, and setter widening:** Object literals can contain methods,
+getters, and setters. Their parameter types and return types are also
+recursively widened:
+
+```esc
+fn foo(obj) {
+    obj.config = {
+        _x: 0,
+        getValue(self) { return self._x },
+        get x(self) { return self._x },
+        set x(mut self, v) { self._x = v },
+    }
+}
+// inferred: fn foo(obj: mut {config: {
+//   _x: number,
+//   getValue(self) -> number,
+//   get x(self) -> number,
+//   set x(mut self, v: number) -> undefined
+// }}) -> void
+```
+
+**Note on bigint:** The `widenLiteral` function also handles `BigIntLit` →
+`bigint` widening, but this is not yet testable because the parser does not
+support bigint literal syntax (`1n`) in all expression positions. See issue #228.
 
 ### 7. Constraint Representation ✅
 

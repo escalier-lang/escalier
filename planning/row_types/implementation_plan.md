@@ -407,34 +407,78 @@ building unions to prevent `mut?` from leaking into union members.
 **Changes made:**
 
 1. **`internal/checker/unify.go`** — Refactored `unifyWithDepth`:
-   - Saves `origT1, origT2 := t1, t2` before calling `Prune`.
+   - Type-asserts `tv2` from `t2` before `Prune` reassigns `t2` to the pruned
+     concrete type. `Prune` records the alias chain in `tv2.InstanceChain`,
+     which the widening fallback reads to update all aliased TypeVars.
    - Delegates to `unifyPruned(ctx, t1, t2, depth)` for the core unification.
-   - If `unifyPruned` returns errors, checks whether `origT1` or `origT2` was a
-     `TypeVarType` with `Widenable: true`. If so, strips `MutabilityType`
-     wrappers via `unwrapMutability`, widens the new type's literal via
-     `widenLiteral`, checks `typeContains` for deduplication, and builds a union
-     via `flatUnion` (which flattens existing unions to avoid nesting).
+   - If `unifyPruned` returns errors, reads `tv2.InstanceChain` via
+     `widenableInstanceChain(tv2)` to find all `Widenable` TypeVars in the
+     alias chain. Guards against live TypeVars in `oldType` (from occurs check
+     failures). Strips uncertain `MutabilityType` wrappers via
+     `unwrapMutability`, widens the new type via `widenLiteral`, deduplicates
+     via `typeContains`, and builds a union via `flatUnion`.
+   - Updates ALL TypeVars in the chain (not just the starting one) so reads
+     through any alias observe the widened type.
    - Non-widenable type variables still return the original errors.
 
-2. **`internal/checker/unify.go`** — Literal widening in `bind()`:
+2. **Write-site gating:** Only the `tv2` (right-hand side) is checked for
+   widening. Property writes call `Unify(valueType, propertyTV)`, placing the
+   Widenable TypeVar on the right. Read sites (e.g. `val s: string = obj.bar`)
+   place the TypeVar on the left — those must NOT widen but must report type
+   errors.
+
+3. **`internal/checker/unify.go`** — Literal widening in `bind()`:
    Both `typeVar1` and `typeVar2` branches now call `widenLiteral(targetType)`
-   before setting `Instance` when the TypeVar has `Widenable: true`. The
-   `widenLiteral` function handles `MutabilityType`-wrapped literals
-   (e.g. `mut? "hello"` → `mut? string`).
+   before setting `Instance` when the TypeVar has `Widenable: true`.
 
-3. **Helper functions** (in `unify.go`):
-   - `unwrapMutability(t)` — strips `MutabilityType` wrapper if present.
-   - `widenLiteral(t)` — converts `LitType` to corresponding `PrimType`
-     (`NumLit` → `number`, `StrLit` → `string`, `BoolLit` → `boolean`).
-     Preserves `MutabilityType` wrapper if present.
-   - `flatUnion(oldType, newType)` — builds a union, flattening `oldType` if
-     it is already a `UnionType` to produce a single-level union.
-   - `typeContains(haystack, needle)` — recursively checks if `needle` is
-     already a member of `haystack` (handles nested unions).
+4. **Deep widening of object, tuple, and function literals:** `widenLiteral`
+   uses a top-level switch to dispatch between type kinds:
+   - `LitType` → `widenLitToPrim(lit)` converts to corresponding `PrimType`.
+   - `ObjectType` → `widenObjectLiterals(obj)` prunes property values through
+     TypeVars, then recursively calls `widenLiteral` on each property value.
+     Also handles `MethodElem`, `GetterElem`, and `SetterElem` via
+     `widenFuncType`.
+   - `TupleType` → `widenTupleLiterals(tuple)` widens each element type.
+   - `MutabilityType` wrappers: uncertain `mut?` is stripped from all widened
+     results (primitives are scalar values that don't need mutability tracking;
+     structured types would leak `mut?` into inferred signatures). Explicit
+     `mut` is always preserved.
+   - This handles `obj.loc = {x: 0, y: 0}` → `loc: {x: number, y: number}`.
 
-4. **`internal/checker/widening_test.go`** — Unit tests for `flatUnion` and
-   `typeContains` helpers (verifies flat union construction and recursive
-   member lookup).
+5. **Alias chain tracking via `InstanceChain`:** Added `InstanceChain` field
+   to `TypeVarType` (in `type_system/types.go`). `Prune` calls
+   `recordInstanceChain(tv)` for Widenable TypeVars before path compression,
+   recording all TypeVars in the alias chain. Non-Widenable TypeVars skip
+   chain building since they never enter the widening path. Features:
+   - Subslice assignment: each node gets a suffix view of the same backing
+     array, avoiding redundant walks (O(n) total instead of O(n²)).
+   - Stale chain detection: when a tail node is re-aliased to another TypeVar,
+     `recordInstanceChain` detects it and rebuilds instead of trusting the
+     cached chain.
+   - Longer-suffix preservation: only overwrites a node's chain if the new
+     suffix is longer, preventing truncation when a middle node was pruned
+     first.
+
+6. **Helper functions** (in `unify.go`):
+   - `unwrapMutability(t)` — strips only uncertain `mut?` wrappers, preserving
+     explicit `mut`.
+   - `widenLiteral(t)` — top-level switch dispatching to `widenLitToPrim`,
+     `widenObjectLiterals`, or `widenTupleLiterals`. Prunes through TypeVars,
+     strips uncertain `mut?` from results, preserves explicit `mut`.
+   - `widenLitToPrim(lit)` — converts `LitType` to `PrimType`. Returns nil for
+     unrecognized literal kinds. Includes `BigIntLit` (TODO #228: untestable
+     until parser supports bigint literals in all expression positions).
+   - `widenObjectLiterals(obj)` — deep-widens property values, method
+     params/returns, getter returns, and setter params.
+   - `widenFuncType(fn)` — widens param types and return type.
+   - `widenTupleLiterals(tuple)` — deep-widens tuple element values.
+   - `flatUnion(oldType, newType)` — builds a flattened, deduplicated union
+     from both operands using `collectUnionMembers` and `type_system.Equals`.
+   - `typeContains(haystack, needle)` — recursively checks if all leaf types
+     in `needle` are present in `haystack`.
+   - `collectUnionMembers(t)` — flattens nested unions into leaf types.
+   - `widenableInstanceChain(tv)` — reads the `InstanceChain` from a
+     `*TypeVarType` and filters for `Widenable` members.
 
 ### How it works end-to-end
 
@@ -452,11 +496,21 @@ then unifies the right-hand side type with the left-hand side type via
    and sets `t1.Instance = string`.
 2. `obj.bar = 5` — `inferExpr` on `obj.bar` calls `getMemberType` →
    `getObjectAccess` finds the existing `bar` property, returns `t1`.
-   Unification calls `unifyWithDepth(t1, number(5))`. `Prune(t1)` returns
-   `string`. The new value `5` is widened to `number`. Unifying `string` with
-   `number` fails. The check finds `origT1 = t1` is `Widenable`, so it replaces
-   `t1.Instance` with `string | number`.
+   Unification calls `unifyWithDepth(5, t1)`. Before `Prune`, `tv2` is
+   type-asserted from `t1`. `Prune(t1)` returns `string` and records the alias
+   chain in `tv2.InstanceChain`. Unifying `5` with `string` fails. The
+   widening fallback reads `tv2.InstanceChain` via `widenableInstanceChain`,
+   finds `t1` is `Widenable`, widens `5` to `number`, and replaces
+   `t1.Instance` with `string | number` (via `flatUnion` which deduplicates).
 3. `obj.bar = true` — same flow, widens to `string | number | boolean`.
+4. `obj.loc = {x: 0, y: 0}` — `widenLiteral` recursively enters the
+   `ObjectType` case, pruning each property value through TypeVars, stripping
+   uncertain `mut?` wrappers, and widening literals to primitives. The result
+   is `{x: number, y: number}`.
+5. `obj.pair = [1, "hello"]` — `widenLiteral` enters the `TupleType` case,
+   widening each element: `[number, string]`.
+6. `obj.config = {getValue(self) { return self._x }}` — `widenObjectLiterals`
+   handles `MethodElem` via `widenFuncType`, widening the return type.
 
 ### Tests (implemented)
 
@@ -477,7 +531,22 @@ Test file: `internal/checker/tests/row_types_test.go`
 - **NonLiteralTypesNotWidened:** `obj.bar = s` (where `s: string`) →
   `bar: string` (already a primitive, no widening needed)
 - **NormalTypeVarConflictStillErrors:** `val x: number = "hello"` → error
-  (non-widenable type variable)
+  containing `"hello" cannot be assigned to number`
+- **DeepWidenObjectLiteral:** `obj.loc = {x: 0, y: 0}; obj.col = "red"` →
+  `loc: {x: number, y: number}, col: string`
+- **DeepWidenNestedLiterals:** `obj.prop = {a: {b: {c: "hello", d: 5}}}` →
+  `prop: {a: {b: {c: string, d: number}}}`
+- **DeepWidenTupleLiterals:** `obj.pair = [1, "hello"]` →
+  `pair: [number, string]`
+- **DeepWidenNestedTupleInObject:** `obj.data = {coords: [1, 2], label: "hi"}`
+  → `data: {coords: [number, number], label: string}`
+- **ReadWidenedPropertyIntoNarrowType:** reading `string | number` into
+  `string` variable → error containing `cannot be assigned to string`
+- **ReadWidenedPropertyIntoDifferentType:** reading `string` into `boolean`
+  variable → error containing `cannot be assigned to boolean`
+
+- **DeepWidenMethodGetterSetter:** object literal with method, getter, and
+  setter — return types and param types are widened via `widenFuncType`
 
 **Updated existing tests:** All tests in `TestRowTypesPropertyAccess`,
 `TestRowTypesPassToTypedFunction`, and `TestRowTypesWriteAfterPass` that
@@ -486,10 +555,24 @@ primitive types (e.g. `"hello"` → `string`, `5` → `number`, `true` →
 `boolean`).
 
 **`internal/checker/widening_test.go`** — Unit tests for helper functions:
-- **TestFlatUnionFlattensNestedUnions:** verifies 3-step widening produces a
-  flat `string | number | boolean`, not nested unions.
-- **TestTypeContainsFindsNestedMembers:** verifies recursive member lookup in
-  nested unions.
+- `TestFlatUnionFlattensNestedUnions` — 3-step incremental widening.
+- `TestFlatUnionFlattensNewTypeUnion` — newType is a union.
+- `TestFlatUnionDeduplicatesSharedMembers` — overlapping union members are
+  deduplicated.
+- `TestTypeContainsFindsNestedMembers` — recursive member lookup.
+- `TestTypeContainsUnionNeedle` — union needle matching.
+- `TestUnwrapMutabilityOnlyStripsUncertain` — mut vs mut? handling.
+- `TestWideningWithAliasedTypeVars` — alias chain consistency after widening.
+
+**`internal/type_system/prune_test.go`** — Unit tests for `Prune`:
+- Basic: concrete type, unbound TypeVar, single/multi-node chains.
+- `InstanceChain`: two-node, three-node capture with subslice assignment.
+- Non-Widenable TypeVars: no `InstanceChain` is built.
+- Direct concrete Instance: no `InstanceChain`.
+- Not overwritten on second call.
+- Unbound terminal: no self-loop, three-node chain.
+- Middle-then-head: preserves full chain from prior prune.
+- Re-alias: detects stale chain and extends it.
 
 ---
 
