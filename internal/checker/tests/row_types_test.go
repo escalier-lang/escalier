@@ -1476,3 +1476,111 @@ func TestVariadicTupleSubtyping(t *testing.T) {
 		require.NotEmpty(t, inferErrors)
 	})
 }
+
+func TestVariadicTupleIndexing(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"IndexWithinFixedPrefix": {
+			// Indexing within the fixed prefix returns the element's type.
+			input: `
+				fn foo<T>(items: [number, string, ...T]) {
+					val a = items[0]
+					val b = items[1]
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T>(items: [number, string, ...T]) -> [number, string]",
+			},
+		},
+		"IndexBeyondFixedPrefix": {
+			// Indexing beyond the fixed prefix returns the union of all
+			// element types (fixed + rest).
+			input: `
+				fn foo(items: [number, ...Array<string>]) {
+					val a = items[0]
+					val b = items[2]
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: [number, ...Array<string>]) -> [number, string]",
+			},
+		},
+		"MethodAccessOnVariadicTuple": {
+			// Method access resolves via Array<union of all element types>.
+			input: `
+				fn foo(items: [number, ...Array<string>]) {
+					return items.length
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: [number, ...Array<string>]) -> number",
+			},
+		},
+		"IndexIntoResolvedTupleRest": {
+			// When the rest resolves to a concrete tuple, indexing beyond
+			// the fixed prefix returns the exact element type at that
+			// offset within the rest tuple.
+			input: `
+				fn foo<T>(items: [number, ...T]) -> T { return items }
+				val r = foo([1, "a", true])
+				val a = r[0]
+				val b = r[1]
+			`,
+			expectedTypes: map[string]string{
+				"a": "\"a\"",
+				"b": "true",
+			},
+		},
+		"IndexIntoConcreteSpreadTuple": {
+			// [number, ...[string, boolean]] — the spread is a concrete
+			// tuple. Indexing should see the flattened view:
+			// index 0 → number, index 1 → string, index 2 → boolean.
+			input: `
+				val items: [number, ...[string, boolean]] = [1, "a", true]
+				val a = items[0]
+				val b = items[1]
+				val c = items[2]
+			`,
+			expectedTypes: map[string]string{
+				"items": "[number, string, boolean]",
+				"a":     "number",
+				"b":     "string",
+				"c":     "boolean",
+			},
+		},
+		"IndexIntoNestedVariadicTuple": {
+			// [number, ...[string, ...Array<boolean>]] — the spread is a
+			// variadic tuple. Index 0 → number, index 1 → string (from the
+			// nested fixed prefix), index 2+ → boolean (from the nested rest).
+			input: `
+				val items: [number, ...[string, ...Array<boolean>]] = [1, "a", true, false]
+				val a = items[0]
+				val b = items[1]
+				val c = items[2]
+				val d = items[3]
+			`,
+			expectedTypes: map[string]string{
+				"a": "number",
+				"b": "string",
+				"c": "boolean",
+				"d": "boolean",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
