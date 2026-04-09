@@ -562,16 +562,12 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 						}
 					}
 					// Check if the tuple has a rest element
-					hasRest := false
 					for _, elem := range t.Elems {
-						if _, isRest := elem.(*type_system.RestSpreadType); isRest {
-							hasRest = true
-							break
+						if rest, isRest := elem.(*type_system.RestSpreadType); isRest {
+							// Index beyond fixed prefix — return the rest's element type
+							restIndex := index - fixedCount
+							return restElemType(rest, restIndex), errors
 						}
-					}
-					if hasRest {
-						// Index beyond fixed prefix — return union of all element types
-						return tupleElemUnion(t), errors
 					}
 					errors = append(errors, &OutOfBoundsError{
 						Index:  index,
@@ -1624,6 +1620,52 @@ func (v *InferTypeReplacer) ExitType(t type_system.Type) type_system.Type {
 
 	// For all other types, return nil to let Accept handle the traversal
 	return nil
+}
+
+// restElemType extracts the element type from a RestSpreadType at the given
+// offset within the rest. For a TupleType, if the index falls within bounds
+// it returns the exact element type; otherwise it returns never. For Array<T>
+// it returns T (the index doesn't matter since all elements have the same
+// type). For unresolved types it returns the type as-is.
+func restElemType(rest *type_system.RestSpreadType, index int) type_system.Type {
+	resolved := type_system.Prune(rest.Type)
+	switch r := resolved.(type) {
+	case *type_system.TupleType:
+		// Count fixed (non-rest) elements and find any nested rest spread.
+		fixedCount := 0
+		var nestedRest *type_system.RestSpreadType
+		for _, elem := range r.Elems {
+			if nr, ok := elem.(*type_system.RestSpreadType); ok {
+				nestedRest = nr
+			} else {
+				fixedCount++
+			}
+		}
+		if index < fixedCount {
+			// Map index to actual position, skipping RestSpreadType
+			pos := 0
+			for _, elem := range r.Elems {
+				if _, ok := elem.(*type_system.RestSpreadType); ok {
+					continue
+				}
+				if pos == index {
+					return elem
+				}
+				pos++
+			}
+		}
+		if nestedRest != nil {
+			return restElemType(nestedRest, index-fixedCount)
+		}
+		return type_system.NewNeverType(nil)
+	case *type_system.TypeRefType:
+		if type_system.QualIdentToString(r.Name) == "Array" && len(r.TypeArgs) == 1 {
+			return r.TypeArgs[0]
+		}
+		return resolved
+	default:
+		return resolved
+	}
 }
 
 // tupleElemUnion computes the union of all element types in a tuple,
