@@ -1496,8 +1496,8 @@ func TestVariadicTupleIndexing(t *testing.T) {
 			},
 		},
 		"IndexBeyondFixedPrefix": {
-			// Indexing beyond the fixed prefix returns the union of all
-			// element types (fixed + rest).
+			// Indexing beyond the fixed prefix returns the rest spread's
+			// element type (not a union of all element types).
 			input: `
 				fn foo(items: [number, ...Array<string>]) {
 					val a = items[0]
