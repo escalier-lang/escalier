@@ -2450,6 +2450,12 @@ func (c *Checker) unifyVariadicVsFixed(
 	}
 
 	// Unify suffix elements pairwise from the end, up to the shorter of the two.
+	// Anchoring the suffix to the end of fixedElems is sound regardless of
+	// whether rest1.Type is concrete or unresolved: the suffix's position at the
+	// end of the source tuple is a structural invariant of the type (e.g. in
+	// [...T, string], the string is always last no matter what T resolves to).
+	// The rest absorbs whatever target elements remain between the prefix and
+	// suffix matches.
 	remaining := fixedElems[prefixLen:]
 	suffixLen := min(len(suffix1), len(remaining))
 	for i := range suffixLen {
