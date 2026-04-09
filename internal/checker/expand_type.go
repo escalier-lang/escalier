@@ -1653,12 +1653,5 @@ func tupleElemUnion(t *type_system.TupleType) type_system.Type {
 			types = append(types, elem)
 		}
 	}
-	switch len(types) {
-	case 0:
-		return type_system.NewNeverType(nil)
-	case 1:
-		return types[0]
-	default:
-		return type_system.NewUnionType(nil, types...)
-	}
+	return type_system.NewUnionType(nil, types...)
 }
