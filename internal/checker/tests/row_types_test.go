@@ -63,31 +63,7 @@ func inferModuleTypesAndErrors(t *testing.T, input string) (map[string]string, [
 func inferModuleTypes(t *testing.T, input string) map[string]string {
 	t.Helper()
 
-	source := &ast.Source{
-		ID:       0,
-		Path:     "input.esc",
-		Contents: input,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-
-	if len(errors) > 0 {
-		for i, err := range errors {
-			t.Logf("Parse Error[%d]: %#v", i, err)
-		}
-	}
-	require.Empty(t, errors)
-
-	c := NewChecker()
-	inferCtx := Context{
-		Scope:      Prelude(c),
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-	inferErrors := c.InferModule(inferCtx, module)
-	scope := inferCtx.Scope.Namespace
+	actualTypes, inferErrors := inferModuleTypesAndErrors(t, input)
 
 	if len(inferErrors) > 0 {
 		for i, err := range inferErrors {
@@ -96,11 +72,6 @@ func inferModuleTypes(t *testing.T, input string) map[string]string {
 	}
 	require.Empty(t, inferErrors)
 
-	actualTypes := make(map[string]string)
-	for name, binding := range scope.Values {
-		require.NotNil(t, binding)
-		actualTypes[name] = binding.Type.String()
-	}
 	return actualTypes
 }
 
