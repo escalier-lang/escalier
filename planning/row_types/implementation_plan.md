@@ -1474,9 +1474,16 @@ and display.
    `RestSpreadType`:
 
    The existing code already handles the case where one side has a
-   `RestSpreadType` at the end. Complete the implementation:
+   `RestSpreadType` at the end. Complete the implementation to support
+   `RestSpreadType` at any position (leading, middle, or trailing), and
+   multiple rest spreads within a single tuple.
 
-   **a. Fixed-vs-variadic** (`[A, B]` vs `[C, ...R]`):
+   **General approach:** Partition `TupleType.Elems` into segments of fixed
+   elements separated by `RestSpreadType` boundaries. Fixed elements at the
+   start and end of the tuple anchor the unification — they must match
+   pairwise. The rest spreads absorb the variable-length gaps between anchors.
+
+   **a. Trailing rest — fixed-vs-variadic** (`[A, B]` vs `[C, ...R]`):
    1. Unify positional elements pairwise up to the variadic boundary.
    2. Collect remaining elements from the fixed side.
    3. Unify the `RestSpreadType`'s inner type with a `TupleType` of the
@@ -1487,23 +1494,40 @@ and display.
    // → Unify(number, number), then Unify(R, [string, boolean])
    ```
 
-   **b. Variadic-vs-variadic** (`[A, ...R1]` vs `[B, ...R2]`):
+   **b. Leading rest** (`[...R, string]` vs `[number, number, string]`):
+   1. Unify fixed elements from the end: `Unify(string, string)`.
+   2. Collect remaining elements from the fixed side: `[number, number]`.
+   3. Unify: `Unify(R, [number, number])`.
+
+   **c. Leading and trailing rest** (`[...R1, string, ...R2]` vs fixed):
+   1. Unify fixed interior elements pairwise (here `string`).
+   2. Elements before the first fixed anchor absorb into the leading rest.
+   3. Elements after the last fixed anchor absorb into the trailing rest.
+
+   ```go
+   // [...number[], string, ...boolean[]] vs [1, 2, "hello", true]
+   // → leading rest absorbs [1, 2] (unify with number[])
+   // → fixed: Unify("hello", string)
+   // → trailing rest absorbs [true] (unify with boolean[])
+   ```
+
+   **d. Variadic-vs-variadic** (`[A, ...R1]` vs `[B, ...R2]`):
    1. Unify positional elements pairwise up to the shorter prefix.
    2. If both have the same number of positional elements, unify `R1` with `R2`.
    3. If one has more positional elements, collect the extras and unify the
       shorter side's rest with `[extras..., ...longerRest]`.
 
-   **c. Variadic-vs-Array** (`[A, ...R]` vs `Array<T>`):
+   **e. Variadic-vs-Array** (`[A, ...R]` vs `Array<T>`):
    1. Unify `A` with `T`.
    2. Unify `R` with `Array<T>` (the rest elements must also be arrays of `T`).
 
-   **d. Array-vs-variadic** (`Array<T>` vs `[A, ...R]`):
-   Mirror of (c).
+   **f. Array-vs-variadic** (`Array<T>` vs `[A, ...R]`):
+   Mirror of (e).
 
 2. **`internal/type_system/types.go`** — `TupleType.String()`:
 
-   Update to handle `RestSpreadType` elements. When the last element is a
-   `RestSpreadType`, print it with `...` prefix. If the rest type resolves
+   Update to handle `RestSpreadType` elements at any position. When an element
+   is a `RestSpreadType`, print it with `...` prefix. If the rest type resolves
    (via `Prune`) to a `TupleType`, inline its elements (similar to
    `ObjectType.String()` flattening resolved `RestSpreadElem`s):
 
@@ -1567,6 +1591,15 @@ and display.
 - **Variadic tuple type annotation:**
   `fn foo(items: [number, ...string[]]) { ... }` — parses and type-checks.
 
+- **Type alias with variadic tuple:**
+  ```esc
+  type OneOrMore<T> = [T, ...T[]]
+  fn first<T>(items: OneOrMore<T>) -> T { return items[0] }
+  val r = first([1, 2, 3])
+  ```
+  — `T = number`, `r: number`. Calling `first([])` should produce an error
+  because `[]` is not assignable to `[number, ...number[]]`.
+
 - **Fixed-vs-variadic unification:**
   ```esc
   val x: [number, ...string[]] = [1, "a", "b"]
@@ -1606,6 +1639,28 @@ and display.
 
 - **Method access on variadic tuple:**
   `[number, string, ...T].length` resolves via `Array<number | string | T>`.
+
+- **Leading rest:**
+  ```esc
+  val x: [...number[], string] = [1, 2, "hello"]
+  ```
+  — `[1, 2]` absorbed by `...number[]`, `"hello"` unified with `string`.
+
+- **Leading and trailing rest:**
+  ```esc
+  val x: [...number[], string, ...boolean[]] = [1, 2, "hello", true]
+  ```
+  — `[1, 2]` absorbed by leading `...number[]`, `"hello"` unified with
+  `string`, `[true]` absorbed by trailing `...boolean[]`.
+
+- **Type alias with variadic tuple:**
+  ```esc
+  type OneOrMore<T> = [T, ...T[]]
+  fn first<T>(items: OneOrMore<T>) -> T { return items[0] }
+  val r = first([1, 2, 3])
+  ```
+  — `T = number`, `r: number`. Calling `first([])` should produce an error
+  because `[]` is not assignable to `[number, ...number[]]`.
 
 ---
 

@@ -1513,10 +1513,49 @@ representing the remaining elements. `T` can be:
 - A tuple type: `[number, ...[string, boolean]]` — equivalent to
   `[number, string, boolean]` (flattened in display).
 
-In the type system, this is represented as a `TupleType` whose last element is
-a `RestSpreadType`:
+**Rest spread position:** A `RestSpreadType` is not limited to the trailing
+position. It can appear at the start, middle, or end of a tuple — and multiple
+rest spreads can appear in the same tuple, provided that at most one has an
+unbounded type (to keep length inference decidable). Fixed elements anchor the
+tuple, and rest spreads fill in the variable-length gaps:
+
+```esc
+// Leading rest:
+type LastIsString = [...number[], string]
+val a: LastIsString = ["hello"]         // ok — zero numbers, then string
+val b: LastIsString = [1, 2, "hello"]   // ok — two numbers, then string
+
+// Leading and trailing rest:
+type Sandwich = [...number[], string, ...boolean[]]
+val c: Sandwich = ["hello"]              // ok — zero numbers, string, zero booleans
+val d: Sandwich = [1, 2, "hello"]        // ok — two numbers, string, zero booleans
+val e: Sandwich = ["hello", true]        // ok — zero numbers, string, one boolean
+val f: Sandwich = [1, 2, "hello", true]  // ok — two numbers, string, one boolean
+```
+
+Variadic tuple types can be used in type aliases to express useful constraints:
+
+```esc
+type OneOrMore<T> = [T, ...T[]]
+```
+
+This ensures at least one element is present. A function accepting `OneOrMore<T>`
+is guaranteed a non-empty collection at the type level:
+
+```esc
+fn first<T>(items: OneOrMore<T>) -> T { return items[0] }
+first([1, 2, 3])    // ok — T = number
+first([])           // error — [] is not assignable to [number, ...number[]]
+```
+
+In the type system, this is represented as a `TupleType` with `RestSpreadType`
+elements at any position in `Elems`:
 ```go
-TupleType{Elems: [number, string, RestSpreadType{Type: T}]}
+// [number, ...T]
+TupleType{Elems: [number, RestSpreadType{Type: T}]}
+
+// [...number[], string, ...boolean[]]
+TupleType{Elems: [RestSpreadType{Type: Array<number>}, string, RestSpreadType{Type: Array<boolean>}]}
 ```
 
 The `RestSpreadType` type already exists and can appear in `TupleType.Elems`.
