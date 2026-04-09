@@ -418,7 +418,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			value := p.typeAnn()
 			if value == nil {
 				p.reportError(token.Span, "expected type annotation after '...'")
-				return nil
+				typeAnn = ast.NewErrorTypeAnn(token.Span)
+				break
 			}
 			span := ast.MergeSpans(token.Span, value.Span())
 			typeAnn = ast.NewRestSpreadTypeAnn(value, span)

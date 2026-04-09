@@ -170,6 +170,15 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"IntersectionTypeWithTypeOf": {
 			input: "typeof x & U",
 		},
+		"TupleWithTrailingRestSpread": {
+			input: "[number, ...T]",
+		},
+		"TupleWithLeadingRestSpread": {
+			input: "[...T, string]",
+		},
+		"TupleWithRestSpreadArray": {
+			input: "[number, ...Array<string>]",
+		},
 	}
 
 	for name, test := range tests {
@@ -216,6 +225,9 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 		},
 		"ConditionalTypeMissingThen": {
 			input: "if A : B { } else { D }",
+		},
+		"RestSpreadMissingType": {
+			input: "[number, ...]",
 		},
 	}
 

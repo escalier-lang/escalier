@@ -3472,3 +3472,194 @@ nil
     inferredType: nil,
 }
 ---
+
+[TestParseTypeAnnNoErrors/TupleWithRestSpreadArray - 1]
+&ast.TupleTypeAnn{
+    Elems: {
+        &ast.NumberTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.RestSpreadTypeAnn{
+            Value: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Array",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                    &ast.StringTypeAnn{
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:25},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:26},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:27},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/TupleWithTrailingRestSpread - 1]
+&ast.TupleTypeAnn{
+    Elems: {
+        &ast.NumberTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.RestSpreadTypeAnn{
+            Value: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "T",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:14},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:14},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:15},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnNoErrors/TupleWithLeadingRestSpread - 1]
+&ast.TupleTypeAnn{
+    Elems: {
+        &ast.RestSpreadTypeAnn{
+            Value: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "T",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:5},
+                        End:      ast.Location{Line:1, Column:6},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:5},
+                    End:      ast.Location{Line:1, Column:6},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.StringTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:14},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:15},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnErrorHandling/RestSpreadMissingType - 1]
+&ast.TupleTypeAnn{
+    Elems: {
+        &ast.NumberTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:2},
+                End:      ast.Location{Line:1, Column:8},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        &ast.ErrorTypeAnn{
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:14},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
+
+[TestParseTypeAnnErrorHandling/RestSpreadMissingType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:1, Column:10},
+            End:      ast.Location{Line:1, Column:13},
+            SourceID: 0,
+        },
+        Message: "expected type annotation after '...'",
+    },
+}
+---

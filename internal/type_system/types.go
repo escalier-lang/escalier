@@ -1706,7 +1706,7 @@ func collectFlatTupleElems(elems []Type) []Type {
 			result = append(result, elem)
 			continue
 		}
-		resolved := Prune(rest.Type)
+		resolved := resolveTypeVar(rest.Type)
 		if tuple, ok := resolved.(*TupleType); ok {
 			// Recursively flatten nested RestSpreadTypes
 			result = append(result, collectFlatTupleElems(tuple.Elems)...)

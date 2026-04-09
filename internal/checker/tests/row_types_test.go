@@ -16,6 +16,10 @@ import (
 
 // inferModuleTypesAndErrors parses the input source, runs type inference, and
 // returns the inferred symbol-to-type map along with any inference errors.
+// Parsing must succeed (parse errors cause a test failure via require.Empty).
+// Use this helper for tests that expect successful parsing but want to inspect
+// inference errors. For tests that require both parsing and inference to
+// succeed with no errors, use inferModuleTypes instead.
 func inferModuleTypesAndErrors(t *testing.T, input string) (map[string]string, []Error) {
 	t.Helper()
 
@@ -1349,5 +1353,15 @@ func TestVariadicTupleSubtyping(t *testing.T) {
 			val x: [number, ...Array<string>] = [5]
 		`)
 		assert.Equal(t, "[number, ...Array<string>]", actualTypes["x"])
+	})
+
+	t.Run("IncompatibleElementsRejectAssignment", func(t *testing.T) {
+		t.Parallel()
+		// [1, 2, 3] should NOT conform to [number, ...Array<string>] because
+		// 2 and 3 are numbers, not strings.
+		_, inferErrors := inferModuleTypesAndErrors(t, `
+			val x: [number, ...Array<string>] = [1, 2, 3]
+		`)
+		require.NotEmpty(t, inferErrors)
 	})
 }
