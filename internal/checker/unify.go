@@ -2472,10 +2472,6 @@ func (c *Checker) unifyVariadicVsFixed(
 // - Unify suffixes pairwise up to the shorter suffix
 // - Collect any extra prefix/suffix elements from the longer side
 // - Unify the rest types, wrapping extras in a tuple with rest if needed
-//
-// NOTE: Like TypeScript, we only support a rest element as the last element
-// of a tuple (i.e. no suffix after rest). Support for both prefix and suffix
-// around a rest element is not planned.
 func (c *Checker) unifyVariadicVsVariadic(
 	ctx Context,
 	prefix1 []type_system.Type, rest1 *type_system.RestSpreadType, suffix1 []type_system.Type,
