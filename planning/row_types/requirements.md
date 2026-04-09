@@ -1344,11 +1344,18 @@ based on the usage patterns:
 
 #### 13a. Tuple inference (non-negative integer literal indexes only)
 
-If all index accesses on the parameter use **non-negative integer literal**
-indexes (i.e. `0`, `1`, `2`, ...) and all property accesses and method calls are
-available on the immutable `Array` type (e.g. `.length`, `.map()`, `.filter()`,
-`.slice()`), then the parameter should be inferred as a **tuple type** with one
-element per distinct index accessed. Any other numeric literals — negative
+If all index accesses on the parameter have a **non-negative integer literal
+type** (i.e. the index expression's type is `0`, `1`, `2`, ...) and all property
+accesses and method calls are available on the immutable `Array` type (e.g.
+`.length`, `.map()`, `.filter()`, `.slice()`), then the parameter should be
+inferred as a **tuple type** with one element per distinct index accessed.
+
+The classification is based on the **type** of the index expression, not its
+syntactic form. An expression like `items[i]` where `i` has literal type `5`
+(e.g. `val i = 5`) is treated identically to `items[5]` — both qualify as
+non-negative integer literal indexes. Conversely, if `i` has type `number`
+(e.g. from a function parameter `i: number`), it is a non-literal index
+regardless of its runtime value. Any other numeric literal types — negative
 integers, non-integers like `1.5`, or extremely large values — are treated as
 non-literal numeric access and follow the array inference path (Section 13c):
 
@@ -1362,11 +1369,18 @@ fn foo(items) {
 // where t0 and t1 are fresh type variables for each indexed position
 ```
 
+```esc
+fn bar(items) {
+    val i = 5
+    items[i] = "hello"   // i has literal type 5, so this is items[5]
+}
+// HasIndexAssignment is true → inferred as mut Array, not tuple
+// (but the index itself is treated as a literal index, not a non-literal)
+```
+
 The tuple length is determined by the highest index accessed + 1. If `items[0]`
 and `items[2]` are accessed but not `items[1]`, the tuple has 3 elements:
-`[t0, t1, t2]` where `t1` remains an unresolved type variable. Only
-non-negative integer literals qualify; any other numeric value (negative,
-fractional, etc.) forces array inference per Section 13c.
+`[t0, t1, t2]` where `t1` remains an unresolved type variable.
 
 **Why tuple, not Array:** When only literal indexes are used, the programmer is
 treating the parameter as a fixed-length, positionally-typed sequence. A tuple
@@ -1412,22 +1426,26 @@ array's length at runtime. A tuple has a fixed length, so mutations that add or
 remove elements are incompatible with tuple semantics. The parameter must be an
 array to support these operations.
 
-#### 13c. Non-literal numeric index implies Array
+#### 13c. Non-literal numeric index type implies Array
 
-If the parameter is indexed with a **non-literal** numeric expression (e.g.
-`items[i]` where `i: number`), the parameter should be inferred as `Array<T>`
-(or `mut Array<T>` if mutating methods are also used), not as a tuple:
+If the parameter is indexed with an expression whose **type** is `number` (not a
+literal type like `5`), the parameter should be inferred as `Array<T>` (or
+`mut Array<T>` if mutating methods are also used), not as a tuple:
 
 ```esc
-fn foo(items, i) {
-    let x = items[i]
+fn foo(items, i: number) {
+    let x = items[i]       // i has type number → non-literal
 }
 // inferred: fn foo(items: Array<t0>, i: number) -> void
 ```
 
-**Why:** A non-literal index means the programmer is treating the parameter as a
-variable-length sequence. The exact positions being accessed are unknown at type
-check time, so a tuple would not be meaningful.
+Note that `val i = 5` gives `i` the literal type `5`, so `items[i]` would still
+qualify as a literal index (see Section 13a). Only when the index expression's
+type is the general `number` type (or another non-literal numeric type) does this
+rule apply.
+
+**Why:** A non-literal index type means the position being accessed is unknown at
+type-check time, so a tuple would not be meaningful.
 
 #### 13d. Index assignment implies mut Array
 

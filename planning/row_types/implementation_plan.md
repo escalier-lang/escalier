@@ -1287,6 +1287,8 @@ deferring the commitment until closing time.
    case *type_system.TypeVarType:
        if indexKey, ok := key.(IndexKey); ok && isNumericType(indexKey.Type) {
            constraint := getOrCreateArrayConstraint(typeVar)
+           // Check the *type* of the index expression, not its syntax.
+           // items[i] where i has literal type 5 is the same as items[5].
            if litIndex, ok := asNonNegativeIntLiteral(indexKey.Type); ok {
                // Record literal index with a fresh type variable
                if _, exists := constraint.LiteralIndexes[litIndex]; !exists {
@@ -1294,7 +1296,7 @@ deferring the commitment until closing time.
                }
                return constraint.LiteralIndexes[litIndex], nil
            } else {
-               // Non-literal index — must be Array, not tuple
+               // Non-literal type (e.g. number) — must be Array, not tuple
                constraint.HasNonLiteralIndex = true
                return constraint.ElemTypeVar, nil
            }
