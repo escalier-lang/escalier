@@ -1288,12 +1288,147 @@ properties from earlier elements (including from earlier spreads).
   each rest element's type. Note: adding new properties via `getObjectAccess`
   is gated by the `Open` field, not by the presence of `RestSpreadElem`s.
 
+### 13. Tuple and Array Inference from Indexing Patterns
+
+When a function parameter is used with numeric indexing and/or method calls, the
+system should infer whether the parameter is a **tuple** or a **`mut Array`**
+based on the usage patterns:
+
+#### 13a. Tuple inference (whole-number literal indexes only)
+
+If all index accesses on the parameter use **whole-number literal** indexes
+(e.g. `0`, `1`, `2`) and all property accesses and method calls are available on
+the immutable `Array` type (e.g. `.length`, `.map()`, `.filter()`, `.slice()`),
+then the parameter should be inferred as a **tuple type** with one element per
+distinct index accessed:
+
+```esc
+fn foo(items) {
+    let a = items[0]
+    let b = items[1]
+    let c = items.length
+}
+// inferred: fn foo(items: [t0, t1]) -> void
+// where t0 and t1 are fresh type variables for each indexed position
+```
+
+The tuple length is determined by the highest index accessed + 1. If `items[0]`
+and `items[2]` are accessed but not `items[1]`, the tuple has 3 elements:
+`[t0, t1, t2]` where `t1` remains an unresolved type variable.
+
+**Why tuple, not Array:** When only literal indexes are used, the programmer is
+treating the parameter as a fixed-length, positionally-typed sequence. A tuple
+captures this intent precisely — each position can have a different type, and the
+length is known. An `Array<T>` would lose positional type information by unifying
+all element types into a single `T`.
+
+**Interaction with Array methods:** Read-only `Array` methods like `.map()`,
+`.filter()`, `.length`, etc. are available on tuples (tuples delegate method
+access to `Array<union of element types>` — see Section 3). So accessing
+`.length` or calling `.map()` does not prevent tuple inference.
+
+#### 13b. Array inference (mutating methods)
+
+If the parameter has property accesses or method calls that are only available on
+`mut Array` and not on immutable `Array` — specifically mutating methods like
+`.push()`, `.pop()`, `.shift()`, `.unshift()`, `.splice()`, `.reverse()`,
+`.sort()`, `.fill()`, `.copyWithin()` — then the parameter should be inferred
+as `mut Array<T>`:
+
+```esc
+fn foo(items) {
+    items.push(42)
+    let a = items[0]
+}
+// inferred: fn foo(items: mut Array<number>) -> void
+```
+
+When mutating methods are called, all indexed element types and method argument
+types contribute to the single element type `T` via union accumulation (same
+widening behavior as Section 6d):
+
+```esc
+fn foo(items) {
+    items.push(42)
+    items.push("hello")
+}
+// inferred: fn foo(items: mut Array<string | number>) -> void
+```
+
+**Why `mut Array`, not tuple:** Mutating methods like `.push()` change the
+array's length at runtime. A tuple has a fixed length, so mutations that add or
+remove elements are incompatible with tuple semantics. The parameter must be an
+array to support these operations.
+
+#### 13c. Non-literal numeric index implies Array
+
+If the parameter is indexed with a **non-literal** numeric expression (e.g.
+`items[i]` where `i: number`), the parameter should be inferred as `Array<T>`
+(or `mut Array<T>` if mutating methods are also used), not as a tuple:
+
+```esc
+fn foo(items, i) {
+    let x = items[i]
+}
+// inferred: fn foo(items: Array<t0>, i: number) -> void
+```
+
+**Why:** A non-literal index means the programmer is treating the parameter as a
+variable-length sequence. The exact positions being accessed are unknown at type
+check time, so a tuple would not be meaningful.
+
+#### 13d. Index assignment implies mut Array
+
+If an element is assigned via index notation (`items[i] = value`), the parameter
+should be inferred as `mut Array<T>` regardless of whether the index is a literal
+or a variable:
+
+```esc
+fn foo(items) {
+    items[0] = 42
+}
+// inferred: fn foo(items: mut Array<number>) -> void
+```
+
+**Why:** Assigning to an index mutates the array. Even though `items[0] = 42`
+uses a literal index, the assignment implies the caller's array will be modified,
+which requires `mut`. A tuple would also be mutated, but tuples are
+value-semantics types in Escalier — they cannot be mutated in place.
+
+#### 13e. Summary of inference rules
+
+| Usage pattern | Inferred type |
+|---------------|---------------|
+| Only whole-number literal indexes + read-only Array methods | Tuple `[t0, t1, ...]` |
+| Any non-literal numeric index (read-only) | `Array<T>` |
+| Any index assignment | `mut Array<T>` |
+| Any mutating method (`.push()`, `.pop()`, etc.) | `mut Array<T>` |
+| Mix of literal indexes + mutating methods | `mut Array<T>` |
+
+#### 13f. Interaction with existing Section 3
+
+Section 3 currently binds a type variable to `Array<T>` whenever a numeric index
+is used. This section refines that behavior:
+
+- **Literal numeric index** (e.g. `obj[0]`): defer commitment — the type
+  variable should not be immediately bound to `Array<T>`. Instead, record the
+  index as a tuple constraint. Final resolution to tuple vs. array happens during
+  closing (Section 5), based on whether any array-only patterns were observed.
+- **Non-literal numeric index** (e.g. `obj[i]`): bind to `Array<T>` immediately,
+  as before.
+- **Mutating method call**: bind to `mut Array<T>` (or upgrade an existing
+  constraint to `mut Array<T>`).
+
+This deferred approach avoids premature commitment to `Array<T>` when the usage
+pattern actually indicates a tuple.
+
 ## Implementation Approach (Summary)
 
 1. **Extend `getMemberType`** to handle `TypeVarType` with two branches:
    - **Numeric index access** (the key is an `IndexKey` with a numeric type):
-     bind the `TypeVarType` to `Array<T>` for a fresh `T`, and return `T`.
-     This is the "numeric-first indexing" path (see Section 3, case 1).
+     for non-literal indexes, bind the `TypeVarType` to `Array<T>` for a fresh
+     `T`, and return `T`. For whole-number literal indexes, defer commitment
+     by recording the index on an `ArrayConstraint` (see Section 13).
    - **Property/method access or string-literal index** (the key is a
      `PropertyKey`, or an `IndexKey` with a string literal type): bind the
      `TypeVarType` to a `MutabilityType{Uncertain}` wrapping an open
@@ -1352,6 +1487,15 @@ properties from earlier elements (including from earlier spreads).
    and update the unifier to distribute properties across multiple rest elements
    (see Section 12).
 
-10. **Add tests**: Cover property access, method calls, array indexing, optional
+10. **Refine numeric indexing to support tuple inference**: Instead of immediately
+    binding to `Array<T>` on numeric index access, defer the decision. Track
+    whether indexes are whole-number literals, whether mutating methods are
+    called, and whether index assignments occur. At closing time, resolve to a
+    tuple type (if only literal indexes + read-only Array methods) or
+    `Array<T>` / `mut Array<T>` (if mutating methods, non-literal indexes, or
+    index assignments are present). See Section 13.
+
+11. **Add tests**: Cover property access, method calls, array indexing, optional
     chaining, passing to typed functions, widening, closing after inference, row
-    polymorphism (return type propagation), object spread, and error cases.
+    polymorphism (return type propagation), object spread, tuple/array inference,
+    and error cases.

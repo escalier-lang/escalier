@@ -1162,6 +1162,207 @@ row polymorphism.
 
 ---
 
+## Phase 12: Tuple and Array Inference from Indexing Patterns
+
+**Requirements covered:** Section 13 (tuple and array inference).
+
+**Goal:** When a function parameter is indexed numerically, infer whether it
+should be a tuple or an array based on usage patterns. Whole-number literal
+indexes with read-only Array methods → tuple. Mutating methods or non-literal
+indexes → `mut Array<T>` or `Array<T>`.
+
+### Background
+
+Phase 2 currently binds a TypeVarType to `Array<T>` immediately when a numeric
+index is used. This phase refines that behavior to support tuple inference by
+deferring the commitment until closing time.
+
+### Changes
+
+1. **New tracking structure — `ArrayConstraint`:**
+   Add a new struct to track numeric indexing patterns on a type variable before
+   committing to tuple vs. array:
+
+   ```go
+   // In internal/checker or internal/type_system
+   type ArrayConstraint struct {
+       LiteralIndexes  map[int]Type  // index → element type variable
+       HasNonLiteralIndex bool       // true if items[i] used with non-literal
+       HasMutatingMethod  bool       // true if .push(), .pop(), etc. called
+       HasIndexAssignment bool       // true if items[i] = value used
+       ElemTypeVar     Type          // fresh T for Array<T> (union accumulator)
+   }
+   ```
+
+   This is stored on the `TypeVarType` (e.g. as a new `ArrayConstraint` field)
+   or in a side map on the checker context keyed by TypeVar ID.
+
+2. **`internal/checker/expand_type.go`** — `getMemberType`, TypeVarType case:
+
+   **Modify the numeric IndexKey branch** (currently ~line 522 in Phase 2):
+
+   Instead of immediately binding to `Array<T>`, create or update an
+   `ArrayConstraint`:
+
+   ```go
+   case *type_system.TypeVarType:
+       if indexKey, ok := key.(IndexKey); ok && isNumericType(indexKey.Type) {
+           constraint := getOrCreateArrayConstraint(typeVar)
+           if litIndex, ok := asWholeNumberLiteral(indexKey.Type); ok {
+               // Record literal index with a fresh type variable
+               if _, exists := constraint.LiteralIndexes[litIndex]; !exists {
+                   constraint.LiteralIndexes[litIndex] = c.FreshVar(nil)
+               }
+               return constraint.LiteralIndexes[litIndex], nil
+           } else {
+               // Non-literal index — must be Array, not tuple
+               constraint.HasNonLiteralIndex = true
+               return constraint.ElemTypeVar, nil
+           }
+       }
+   ```
+
+   **Modify the property/method access path:** When a property or method is
+   accessed on a TypeVarType that already has an `ArrayConstraint`, check whether
+   the property/method exists on `Array`:
+
+   - If it's a read-only Array method (`.length`, `.map()`, `.filter()`,
+     `.slice()`, `.concat()`, `.join()`, `.toString()`, `.indexOf()`,
+     `.includes()`, `.find()`, `.findIndex()`, `.every()`, `.some()`,
+     `.reduce()`, `.reduceRight()`, `.flat()`, `.flatMap()`, `.entries()`,
+     `.keys()`, `.values()`, `.forEach()`): allow it without changing the
+     constraint.
+   - If it's a mutating Array method (`.push()`, `.pop()`, `.shift()`,
+     `.unshift()`, `.splice()`, `.reverse()`, `.sort()`, `.fill()`,
+     `.copyWithin()`): set `constraint.HasMutatingMethod = true`.
+   - If it's a property/method that exists on neither `Array` nor `mut Array`:
+     this is an error — the parameter is used as both an array and an object.
+
+3. **`internal/checker/infer_expr.go`** — Assignment handler:
+
+   When `items[i] = value` is detected and the LHS base has an
+   `ArrayConstraint`, set `constraint.HasIndexAssignment = true` and unify the
+   value type with the constraint's `ElemTypeVar`.
+
+4. **`internal/checker/infer_func.go`** — `closeOpenParams` (or new helper):
+
+   At closing time, resolve each `ArrayConstraint` to a concrete type:
+
+   ```go
+   func resolveArrayConstraint(constraint *ArrayConstraint) Type {
+       if constraint.HasMutatingMethod || constraint.HasIndexAssignment ||
+          constraint.HasNonLiteralIndex {
+           // Resolve to Array<T> or mut Array<T>
+           arrayType := NewArrayType(constraint.ElemTypeVar)
+           // Unify all literal index type vars with ElemTypeVar
+           for _, elemTV := range constraint.LiteralIndexes {
+               Unify(elemTV, constraint.ElemTypeVar)
+           }
+           if constraint.HasMutatingMethod || constraint.HasIndexAssignment {
+               return NewMutabilityType(nil, arrayType, MutabilityMutable)
+           }
+           return arrayType
+       }
+       // Resolve to tuple
+       maxIndex := 0
+       for idx := range constraint.LiteralIndexes {
+           if idx > maxIndex {
+               maxIndex = idx
+           }
+       }
+       elems := make([]Type, maxIndex+1)
+       for i := 0; i <= maxIndex; i++ {
+           if tv, ok := constraint.LiteralIndexes[i]; ok {
+               elems[i] = tv
+           } else {
+               elems[i] = c.FreshVar(nil) // gap — unresolved type variable
+           }
+       }
+       return NewTupleType(nil, elems)
+   }
+   ```
+
+   Bind the TypeVarType's `Instance` to the resolved type.
+
+5. **Interaction with passing to typed functions:**
+
+   If the parameter is passed to a function expecting `Array<T>`, `mut Array<T>`,
+   or a tuple type, unification should update the `ArrayConstraint` accordingly:
+
+   - Passed to `fn(x: Array<T>)` → resolve as `Array<T>` (set
+     `HasNonLiteralIndex = true` to force array).
+   - Passed to `fn(x: mut Array<T>)` → resolve as `mut Array<T>`.
+   - Passed to `fn(x: [number, string])` → resolve as tuple, unify element
+     types pairwise.
+
+6. **Method call resolution:**
+
+   When a method like `.push(42)` is called on a parameter with an
+   `ArrayConstraint`:
+   - Set `constraint.HasMutatingMethod = true`.
+   - The argument type (`42`, widened to `number`) is unified with
+     `constraint.ElemTypeVar`.
+   - The return type follows from the Array method signature (e.g. `.push()`
+     returns `number` — the new length).
+
+   Read-only method calls like `.map(fn)` need the element type to determine the
+   callback signature. During inference, the element type is the union of all
+   literal index type variables (or `ElemTypeVar` if resolved to array). This
+   may require deferred resolution similar to `resolveCallSites`.
+
+### Tests
+
+- **Tuple inference from literal indexes:**
+  ```esc
+  fn foo(items) { return [items[0], items[1]] }
+  ```
+  → `fn <T0, T1>(items: [T0, T1]) -> [T0, T1]`
+
+- **Tuple with .length:**
+  ```esc
+  fn foo(items) { let a = items[0]; let l = items.length }
+  ```
+  → `fn <T0>(items: [T0]) -> void`
+
+- **Array from .push():**
+  ```esc
+  fn foo(items) { items.push(42) }
+  ```
+  → `fn (items: mut Array<number>) -> void`
+
+- **Array from non-literal index:**
+  ```esc
+  fn foo(items, i) { let x = items[i] }
+  ```
+  → `fn <T0>(items: Array<T0>, i: number) -> void`
+
+- **Array from index assignment:**
+  ```esc
+  fn foo(items) { items[0] = 42 }
+  ```
+  → `fn (items: mut Array<number>) -> void`
+
+- **Array from mix of literal index + push:**
+  ```esc
+  fn foo(items) { let a = items[0]; items.push("hello") }
+  ```
+  → `fn (items: mut Array<string>) -> void`
+  (literal index element type unified with push argument type)
+
+- **Tuple with read-only method (map):**
+  ```esc
+  fn foo(items) { let a = items[0]; items.map(fn(x) { return x }) }
+  ```
+  → `fn <T0>(items: [T0]) -> void`
+
+- **Conflict: object property + numeric index (unchanged from Section 9b):**
+  ```esc
+  fn foo(obj) { let x = obj.name; let y = obj[0] }
+  ```
+  → error (object property access conflicts with array/tuple indexing)
+
+---
+
 ## Phase 11: Error Reporting
 
 **Requirements covered:** Section 9 (error reporting).
@@ -1258,7 +1459,8 @@ Phase 1: Type System Extensions ✅
     │   │           └── Phase 7: Row Polymorphism ✅
     │   │               └── Phase 8: Destructuring
     │   └── Phase 10: Object Spread (can start here or after Phase 8)
-    └── Phase 9: Optional Chaining (can start here or after Phase 8)
+    ├── Phase 9: Optional Chaining (can start here or after Phase 8)
+    └── Phase 12: Tuple/Array Inference (requires Phase 2 + Phase 5 + Phase 6)
 
 All phases above feed into:
 └── Phase 11: Error Reporting
@@ -1270,6 +1472,9 @@ All phases above feed into:
   their minimum dependency is met: Phase 9 requires Phase 2, Phase 10 requires
   Phase 3. Alternatively, they can be deferred until after Phase 8.
 - Phase 8 (Destructuring) depends on Phases 6/7 for row variable promotion.
+- Phase 12 (Tuple/Array Inference) requires Phase 2 (numeric indexing), Phase 5
+  (method call inference), and Phase 6 (closing) — it modifies how numeric
+  indexes are handled in Phase 2 and resolves during closing in Phase 6.
 - Phase 11 (Error Reporting) depends on all previous phases.
 
 ---
@@ -1302,6 +1507,17 @@ All phases above feed into:
    `ObjectType` and `TypeVarType` to ensure the new fields don't cause
    unexpected behavior.
 
+6. **Tuple vs. Array deferred resolution (Phase 12):** Deferring the
+   commitment from `Array<T>` to tuple requires that numeric index access
+   returns a type variable that works regardless of the final resolution. If
+   the parameter is ultimately resolved to `Array<T>`, all per-index type
+   variables must be unified with `T`. If resolved to a tuple, each position
+   keeps its own type. The deferred approach adds complexity to the closing
+   logic and to method call resolution (e.g. `.map()` needs the element type
+   before closing). Consider resolving eagerly to `Array<T>` when any
+   non-literal usage is observed, and only deferring for the pure literal-index
+   case.
+
 ---
 
 ## Critical Files
@@ -1309,11 +1525,11 @@ All phases above feed into:
 | File | Phases | Status |
 |------|--------|--------|
 | `internal/type_system/types.go` | 1, 7 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s |
-| `internal/checker/expand_type.go` | 2, 9, 10 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions |
+| `internal/checker/expand_type.go` | 2, 9, 10, 12 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; Phase 12: modify TypeVarType numeric index branch to defer tuple/array commitment |
 | `internal/checker/unify.go` | 3, 4, 10 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability` |
 | `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically |
-| `internal/checker/infer_func.go` | 3, 6, 7, 8 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed |
-| `internal/checker/infer_expr.go` | 2, 5, 7, 10 | ✅ (Phase 2) `markPropertyWritten` in assignment handler, open-object pointer identity preservation; (Phase 7) No changes needed — `instantiateGenericFunc`/`handleFuncCall` handle row type params automatically |
+| `internal/checker/infer_func.go` | 3, 6, 7, 8, 12 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed; Phase 12: resolve `ArrayConstraint` during closing |
+| `internal/checker/infer_expr.go` | 2, 5, 7, 10, 12 | ✅ (Phase 2) `markPropertyWritten` in assignment handler; (Phase 7) No changes needed; Phase 12: detect index assignment on `ArrayConstraint` |
 | `internal/checker/errors.go` | 11 | Not started |
 | `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism) |
 | `internal/checker/widening_test.go` | 4 | ✅ Unit tests for `flatUnion` and `typeContains` helpers |
