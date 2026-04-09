@@ -1683,15 +1683,37 @@ func (t *TupleType) Equals(other Type) bool {
 
 func (t *TupleType) String() string {
 	result := "["
-	if len(t.Elems) > 0 {
-		for i, elem := range t.Elems {
-			if i > 0 {
-				result += ", "
-			}
-			result += elem.String()
+	flatElems := collectFlatTupleElems(t.Elems)
+	for i, elem := range flatElems {
+		if i > 0 {
+			result += ", "
 		}
+		result += elem.String()
 	}
 	result += "]"
+	return result
+}
+
+// collectFlatTupleElems collects all displayable elements from a TupleType,
+// flattening any RestSpreadType whose inner type resolves to a TupleType by
+// inlining its elements. RestSpreadTypes that resolve to non-TupleTypes (e.g.
+// unresolved TypeVars or Array types) are kept as-is.
+func collectFlatTupleElems(elems []Type) []Type {
+	var result []Type
+	for _, elem := range elems {
+		rest, ok := elem.(*RestSpreadType)
+		if !ok {
+			result = append(result, elem)
+			continue
+		}
+		resolved := Prune(rest.Type)
+		if tuple, ok := resolved.(*TupleType); ok {
+			// Recursively flatten nested RestSpreadTypes
+			result = append(result, collectFlatTupleElems(tuple.Elems)...)
+		} else {
+			result = append(result, elem)
+		}
+	}
 	return result
 }
 

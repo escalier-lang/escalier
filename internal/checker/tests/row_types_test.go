@@ -14,6 +14,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// inferModuleTypesAndErrors parses the input source, runs type inference, and
+// returns the inferred symbol-to-type map along with any inference errors.
+func inferModuleTypesAndErrors(t *testing.T, input string) (map[string]string, []Error) {
+	t.Helper()
+
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+	if len(errors) > 0 {
+		for i, err := range errors {
+			t.Logf("Parse Error[%d]: %#v", i, err)
+		}
+	}
+	require.Empty(t, errors)
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	inferErrors := c.InferModule(inferCtx, module)
+	scope := inferCtx.Scope.Namespace
+
+	actualTypes := make(map[string]string)
+	for name, binding := range scope.Values {
+		require.NotNil(t, binding)
+		actualTypes[name] = binding.Type.String()
+	}
+	return actualTypes, inferErrors
+}
+
 // inferModuleTypes parses the input source, runs type inference, and returns
 // the inferred symbol-to-type map. Fails the test immediately on parse or
 // inference errors.
@@ -1226,4 +1265,89 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVariadicTupleTypes(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"FixedVsVariadic_TrailingRest": {
+			// [number, string, boolean] vs [number, ...R]
+			// → R = [string, boolean]
+			input: `
+				fn foo<T>(items: [number, ...T]) { return items }
+				val r = foo([1, "a", true])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T>(items: [number, ...T]) -> [number, ...T]",
+				"r":   "[number, \"a\", true]",
+			},
+		},
+		"FixedVsVariadic_AllAbsorbed": {
+			// [1, "a", "b"] vs [number, ...Array<string>]
+			input: `
+				val x: [number, ...Array<string>] = [1, "a", "b"]
+			`,
+			expectedTypes: map[string]string{
+				"x": "[number, ...Array<string>]",
+			},
+		},
+		"VariadicVsVariadic_SamePrefix": {
+			// Both have trailing rest with same prefix length
+			input: `
+				fn foo<R1, R2>(a: [number, ...R1], b: [string, ...R2]) {
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <R1, R2>(a: [number, ...R1], b: [string, ...R2]) -> [[number, ...R1], [string, ...R2]]",
+			},
+		},
+		"Generalization_VariadicRest": {
+			// fn foo<T>(items: [number, ...T]) { return items }
+			// → type: fn <T>(items: [number, ...T]) -> [number, ...T]
+			input: `
+				fn foo<T>(items: [number, ...T]) { return items }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T>(items: [number, ...T]) -> [number, ...T]",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestVariadicTupleSubtyping(t *testing.T) {
+	t.Run("VariadicTupleAssignableToArray", func(t *testing.T) {
+		t.Parallel()
+		// [number, ...string[]] should be assignable to Array<number | string>
+		actualTypes := inferModuleTypes(t, `
+			val x: [number, ...Array<string>] = [1, "a", "b"]
+			val y: Array<number | string> = x
+		`)
+		assert.Equal(t, "[number, ...Array<string>]", actualTypes["x"])
+		assert.Equal(t, "Array<number | string>", actualTypes["y"])
+	})
+
+	t.Run("SingleElementConformsToVariadicTuple", func(t *testing.T) {
+		t.Parallel()
+		// [5] should conform to [number, ...Array<string>] because the
+		// prefix `number` matches and ...Array<string> accepts zero elements.
+		actualTypes := inferModuleTypes(t, `
+			val x: [number, ...Array<string>] = [5]
+		`)
+		assert.Equal(t, "[number, ...Array<string>]", actualTypes["x"])
+	})
 }

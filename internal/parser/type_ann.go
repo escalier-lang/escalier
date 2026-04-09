@@ -413,6 +413,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			// Just return the inner type annotation - parentheses are for grouping only
 		case BackTick: // template literal type
 			typeAnn = p.templateLitTypeAnn(token)
+		case DotDotDot: // rest spread type: ...T
+			p.lexer.consume() // consume '...'
+			value := p.typeAnn()
+			if value == nil {
+				p.reportError(token.Span, "expected type annotation after '...'")
+				return nil
+			}
+			span := ast.MergeSpans(token.Span, value.Span())
+			typeAnn = ast.NewRestSpreadTypeAnn(value, span)
 		default:
 			// Return nil without consuming — signals "no type annotation found."
 			// Callers provide their own contextual error messages.
