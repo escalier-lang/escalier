@@ -899,8 +899,8 @@ All tests are in `TestRowTypesRowPolymorphism` in `row_types_test.go`.
 tuple/array).
 
 **Goal:** Destructured parameters with rest elements get appropriate polymorphic
-types: `RestSpreadElem` for object patterns (row polymorphism), `Array<T>` for
-tuple patterns with rest elements.
+types: `RestSpreadElem` for object patterns (row polymorphism), `RestSpreadType`
+for tuple patterns (variadic tuples of the form `[t0, ...R]`).
 
 ### Changes — Object Destructuring
 
