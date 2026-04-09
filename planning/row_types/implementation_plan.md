@@ -1302,20 +1302,22 @@ deferring the commitment until closing time.
    ```
 
    **Modify the property/method access path:** When a property or method is
-   accessed on a TypeVarType that already has an `ArrayConstraint`, check whether
-   the property/method exists on `Array`:
+   accessed on a TypeVarType that already has an `ArrayConstraint`, classify
+   the access by looking up the property on the actual `Array` and `mut Array`
+   type definitions at runtime (rather than maintaining hardcoded method lists):
 
-   - If it's a read-only Array method (`.length`, `.map()`, `.filter()`,
-     `.slice()`, `.concat()`, `.join()`, `.toString()`, `.indexOf()`,
-     `.includes()`, `.find()`, `.findIndex()`, `.every()`, `.some()`,
-     `.reduce()`, `.reduceRight()`, `.flat()`, `.flatMap()`, `.entries()`,
-     `.keys()`, `.values()`, `.forEach()`): allow it without changing the
-     constraint.
-   - If it's a mutating Array method (`.push()`, `.pop()`, `.shift()`,
-     `.unshift()`, `.splice()`, `.reverse()`, `.sort()`, `.fill()`,
-     `.copyWithin()`): set `constraint.HasMutatingMethod = true`.
-   - If it's a property/method that exists on neither `Array` nor `mut Array`:
-     this is an error — the parameter is used as both an array and an object.
+   - If the property exists on `Array` (immutable): allow it without changing
+     the constraint. This covers `.length`, `.map()`, `.filter()`, `.slice()`,
+     `.indexOf()`, etc.
+   - If the property exists on `mut Array` but not on `Array`: set
+     `constraint.HasMutatingMethod = true`. This covers `.push()`, `.pop()`,
+     `.sort()`, `.reverse()`, etc.
+   - If the property exists on neither `Array` nor `mut Array`: this is an
+     error — the parameter is used as both an array and an object.
+
+   This lookup-based approach keeps the classification in sync with the type
+   system's actual `Array` / `mut Array` definitions, avoiding brittleness if
+   methods are added or changed.
 
 3. **`internal/checker/infer_expr.go`** — Assignment handler:
 
@@ -1503,7 +1505,7 @@ and display.
    (via `Prune`) to a `TupleType`, inline its elements (similar to
    `ObjectType.String()` flattening resolved `RestSpreadElem`s):
 
-   ```
+   ```esc
    [number, string, ...T]           // unresolved rest type variable
    [number, string, boolean, true]  // rest resolved to [boolean, true], flattened
    [number, string, ...Array<any>]  // rest resolved to Array<any>

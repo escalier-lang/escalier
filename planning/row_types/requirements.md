@@ -1497,7 +1497,7 @@ representing the remaining elements. `T` can be:
 
 In the type system, this is represented as a `TupleType` whose last element is
 a `RestSpreadType`:
-```
+```go
 TupleType{Elems: [number, string, RestSpreadType{Type: T}]}
 ```
 
