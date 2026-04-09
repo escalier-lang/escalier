@@ -541,16 +541,44 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if numLit, ok := indexLit.Lit.(*type_system.NumLit); ok {
 					index := int(numLit.Value)
-					if index < len(t.Elems) {
-						return t.Elems[index], errors
-					} else {
-						errors = append(errors, &OutOfBoundsError{
-							Index:  index,
-							Length: len(t.Elems),
-							span:   indexKey.Span(),
-						})
-						return type_system.NewNeverType(nil), errors
+					// Count only non-RestSpreadType elements for literal indexing
+					fixedCount := 0
+					for _, elem := range t.Elems {
+						if _, isRest := elem.(*type_system.RestSpreadType); !isRest {
+							fixedCount++
+						}
 					}
+					if index < fixedCount {
+						// Map index to actual position, skipping RestSpreadType
+						pos := 0
+						for _, elem := range t.Elems {
+							if _, isRest := elem.(*type_system.RestSpreadType); isRest {
+								continue
+							}
+							if pos == index {
+								return elem, errors
+							}
+							pos++
+						}
+					}
+					// Check if the tuple has a rest element
+					hasRest := false
+					for _, elem := range t.Elems {
+						if _, isRest := elem.(*type_system.RestSpreadType); isRest {
+							hasRest = true
+							break
+						}
+					}
+					if hasRest {
+						// Index beyond fixed prefix — return union of all element types
+						return tupleElemUnion(t), errors
+					}
+					errors = append(errors, &OutOfBoundsError{
+						Index:  index,
+						Length: fixedCount,
+						span:   indexKey.Span(),
+					})
+					return type_system.NewNeverType(nil), errors
 				}
 			}
 			errors = append(errors, &InvalidObjectKeyError{
@@ -561,16 +589,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		}
 		// If a property (method) is accessed on a tuple, delegate to Array<T>
 		if _, ok := key.(PropertyKey); ok {
-			// Compute the union of the tuple element types
-			var elemUnion type_system.Type
-			switch len(t.Elems) {
-			case 0:
-				elemUnion = type_system.NewNeverType(nil)
-			case 1:
-				elemUnion = t.Elems[0]
-			default:
-				elemUnion = type_system.NewUnionType(nil, t.Elems...)
-			}
+			elemUnion := tupleElemUnion(t)
 			arrayRef := &type_system.TypeRefType{
 				Name:     type_system.NewIdent("Array"),
 				TypeArgs: []type_system.Type{elemUnion},
@@ -1605,4 +1624,34 @@ func (v *InferTypeReplacer) ExitType(t type_system.Type) type_system.Type {
 
 	// For all other types, return nil to let Accept handle the traversal
 	return nil
+}
+
+// tupleElemUnion computes the union of all element types in a tuple,
+// including the inner type of any RestSpreadType elements. For a
+// RestSpreadType whose inner type is an Array<T>, T is included; for a
+// TupleType, its elements are included; otherwise the rest type itself
+// is included.
+func tupleElemUnion(t *type_system.TupleType) type_system.Type {
+	var types []type_system.Type
+	for _, elem := range t.Elems {
+		if rest, ok := elem.(*type_system.RestSpreadType); ok {
+			resolved := type_system.Prune(rest.Type)
+			switch r := resolved.(type) {
+			case *type_system.TupleType:
+				types = append(types, r.Elems...)
+			case *type_system.TypeRefType:
+				// If it's Array<T>, include T
+				if type_system.QualIdentToString(r.Name) == "Array" && len(r.TypeArgs) == 1 {
+					types = append(types, r.TypeArgs[0])
+				} else {
+					types = append(types, resolved)
+				}
+			default:
+				types = append(types, resolved)
+			}
+		} else {
+			types = append(types, elem)
+		}
+	}
+	return type_system.NewUnionType(nil, types...)
 }

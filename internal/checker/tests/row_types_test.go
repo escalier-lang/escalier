@@ -14,10 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// inferModuleTypes parses the input source, runs type inference, and returns
-// the inferred symbol-to-type map. Fails the test immediately on parse or
-// inference errors.
-func inferModuleTypes(t *testing.T, input string) map[string]string {
+// inferModuleTypesAndErrors parses the input source, runs type inference, and
+// returns the inferred symbol-to-type map along with any inference errors.
+// Parsing must succeed (parse errors cause a test failure via require.Empty).
+// Use this helper for tests that expect successful parsing but want to inspect
+// inference errors. For tests that require both parsing and inference to
+// succeed with no errors, use inferModuleTypes instead.
+func inferModuleTypesAndErrors(t *testing.T, input string) (map[string]string, []Error) {
 	t.Helper()
 
 	source := &ast.Source{
@@ -46,6 +49,22 @@ func inferModuleTypes(t *testing.T, input string) map[string]string {
 	inferErrors := c.InferModule(inferCtx, module)
 	scope := inferCtx.Scope.Namespace
 
+	actualTypes := make(map[string]string)
+	for name, binding := range scope.Values {
+		require.NotNil(t, binding)
+		actualTypes[name] = binding.Type.String()
+	}
+	return actualTypes, inferErrors
+}
+
+// inferModuleTypes parses the input source, runs type inference, and returns
+// the inferred symbol-to-type map. Fails the test immediately on parse or
+// inference errors.
+func inferModuleTypes(t *testing.T, input string) map[string]string {
+	t.Helper()
+
+	actualTypes, inferErrors := inferModuleTypesAndErrors(t, input)
+
 	if len(inferErrors) > 0 {
 		for i, err := range inferErrors {
 			t.Logf("Infer Error[%d]: %s", i, err.Message())
@@ -53,11 +72,6 @@ func inferModuleTypes(t *testing.T, input string) map[string]string {
 	}
 	require.Empty(t, inferErrors)
 
-	actualTypes := make(map[string]string)
-	for name, binding := range scope.Values {
-		require.NotNil(t, binding)
-		actualTypes[name] = binding.Type.String()
-	}
 	return actualTypes
 }
 
@@ -1226,4 +1240,239 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVariadicTupleTypes(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"FixedVsVariadic_TrailingRest": {
+			// [number, string, boolean] vs [number, ...R]
+			// → R = [string, boolean]
+			input: `
+				fn foo<T>(items: [number, ...T]) { return items }
+				val r = foo([1, "a", true])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T>(items: [number, ...T]) -> [number, ...T]",
+				"r":   "[number, \"a\", true]",
+			},
+		},
+		"FixedVsVariadic_AllAbsorbed": {
+			// [1, "a", "b"] vs [number, ...Array<string>]
+			input: `
+				val x: [number, ...Array<string>] = [1, "a", "b"]
+			`,
+			expectedTypes: map[string]string{
+				"x": "[number, ...Array<string>]",
+			},
+		},
+		"VariadicVsVariadic_SamePrefix": {
+			// Both have trailing rest with same prefix length
+			input: `
+				fn foo<R1, R2>(a: [number, ...R1], b: [string, ...R2]) {
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <R1, R2>(a: [number, ...R1], b: [string, ...R2]) -> [[number, ...R1], [string, ...R2]]",
+			},
+		},
+		"Generalization_VariadicRest": {
+			// fn foo<T>(items: [number, ...T]) { return items }
+			// → type: fn <T>(items: [number, ...T]) -> [number, ...T]
+			input: `
+				fn foo<T>(items: [number, ...T]) { return items }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T>(items: [number, ...T]) -> [number, ...T]",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestVariadicVsFixed(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"VariadicSourceAssignedToShorterTarget": {
+			// Source [number, string, ...T] has 2 mandatory prefix elements.
+			// Target [x] only needs 1. The extra source elements are ignored.
+			input: `
+				fn foo<T>(items: [number, string, ...T]) -> [number, string, ...T] {
+					return items
+				}
+				val [x] = foo([1, "a", true])
+			`,
+			expectedTypes: map[string]string{
+				"x": "number",
+			},
+		},
+		"VariadicSourceRestAbsorbsTargetElements": {
+			// Source [number, ...T] with target [number, string].
+			// Prefix: number↔number. Rest T absorbs [string].
+			input: `
+				fn foo<T>(items: [number, ...T]) -> [number, ...T] {
+					return items
+				}
+				val [a, b] = foo([1, "hello"])
+			`,
+			expectedTypes: map[string]string{
+				"a": "number",
+				"b": "\"hello\"",
+			},
+		},
+		"VariadicSourceRestAbsorbsNothing": {
+			// Source [number, ...T] with target [number].
+			// Prefix: number↔number. Rest absorbs nothing (empty tuple).
+			input: `
+				fn foo<T>(items: [number, ...T]) -> [number, ...T] {
+					return items
+				}
+				val [a] = foo([1])
+			`,
+			expectedTypes: map[string]string{
+				"a": "number",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestVariadicTupleSubtyping(t *testing.T) {
+	t.Run("VariadicTupleAssignableToArray", func(t *testing.T) {
+		t.Parallel()
+		// [number, ...string[]] should be assignable to Array<number | string>
+		actualTypes := inferModuleTypes(t, `
+			val x: [number, ...Array<string>] = [1, "a", "b"]
+			val y: Array<number | string> = x
+		`)
+		assert.Equal(t, "[number, ...Array<string>]", actualTypes["x"])
+		assert.Equal(t, "Array<number | string>", actualTypes["y"])
+	})
+
+	t.Run("SingleElementConformsToVariadicTuple", func(t *testing.T) {
+		t.Parallel()
+		// [5] should conform to [number, ...Array<string>] because the
+		// prefix `number` matches and ...Array<string> accepts zero elements.
+		actualTypes := inferModuleTypes(t, `
+			val x: [number, ...Array<string>] = [5]
+		`)
+		assert.Equal(t, "[number, ...Array<string>]", actualTypes["x"])
+	})
+
+	t.Run("IncompatibleElementsRejectAssignment", func(t *testing.T) {
+		t.Parallel()
+		// [1, 2, 3] should NOT conform to [number, ...Array<string>] because
+		// 2 and 3 are numbers, not strings.
+		_, inferErrors := inferModuleTypesAndErrors(t, `
+			val x: [number, ...Array<string>] = [1, 2, 3]
+		`)
+		require.NotEmpty(t, inferErrors)
+		// Optionally verify the error relates to type incompatibility
+		assert.Contains(t, inferErrors[0].Message(), "cannot be assigned")
+	})
+
+	t.Run("TooFewElementsForVariadicTarget", func(t *testing.T) {
+		t.Parallel()
+		// [] cannot conform to [number, string, ...Array<boolean>] because
+		// the target requires at least 2 elements (the prefix) and the
+		// source provides 0.
+		_, inferErrors := inferModuleTypesAndErrors(t, `
+			val x: [number, string, ...Array<boolean>] = []
+		`)
+		require.NotEmpty(t, inferErrors)
+	})
+
+	t.Run("LeadingRest", func(t *testing.T) {
+		t.Parallel()
+		// [...number[], string] — the rest absorbs leading elements,
+		// the last element must be string.
+		actualTypes := inferModuleTypes(t, `
+			val x: [...Array<number>, string] = [1, 2, "hello"]
+		`)
+		assert.Equal(t, "[...Array<number>, string]", actualTypes["x"])
+	})
+
+	t.Run("LeadingRestZeroAbsorbed", func(t *testing.T) {
+		t.Parallel()
+		// [...number[], string] with only the suffix element present.
+		actualTypes := inferModuleTypes(t, `
+			val x: [...Array<number>, string] = ["hello"]
+		`)
+		assert.Equal(t, "[...Array<number>, string]", actualTypes["x"])
+	})
+
+	t.Run("LeadingRestIncompatibleSuffix", func(t *testing.T) {
+		t.Parallel()
+		// [...number[], string] — the last element must be string, not number.
+		_, inferErrors := inferModuleTypesAndErrors(t, `
+			val x: [...Array<number>, string] = [1, 2, 3]
+		`)
+		require.NotEmpty(t, inferErrors)
+	})
+
+	t.Run("FixedOnBothSidesOfRest", func(t *testing.T) {
+		t.Parallel()
+		// [number, ...boolean[], string] — first must be number, last must
+		// be string, middle elements absorbed by ...boolean[].
+		actualTypes := inferModuleTypes(t, `
+			val x: [number, ...Array<boolean>, string] = [1, true, false, "end"]
+		`)
+		assert.Equal(t, "[number, ...Array<boolean>, string]", actualTypes["x"])
+	})
+
+	t.Run("FixedOnBothSidesRestAbsorbsNothing", func(t *testing.T) {
+		t.Parallel()
+		// [number, ...boolean[], string] with no middle elements — the rest
+		// absorbs nothing.
+		actualTypes := inferModuleTypes(t, `
+			val x: [number, ...Array<boolean>, string] = [1, "end"]
+		`)
+		assert.Equal(t, "[number, ...Array<boolean>, string]", actualTypes["x"])
+	})
+
+	t.Run("FixedOnBothSidesTooFewElements", func(t *testing.T) {
+		t.Parallel()
+		// [number, ...boolean[], string] requires at least 2 elements (the
+		// prefix and suffix). A single-element source doesn't have enough.
+		_, inferErrors := inferModuleTypesAndErrors(t, `
+			val x: [number, ...Array<boolean>, string] = [1]
+		`)
+		require.NotEmpty(t, inferErrors)
+	})
+
+	t.Run("FixedOnBothSidesIncompatibleMiddle", func(t *testing.T) {
+		t.Parallel()
+		// [number, ...boolean[], string] — middle elements must be boolean.
+		_, inferErrors := inferModuleTypesAndErrors(t, `
+			val x: [number, ...Array<boolean>, string] = [1, "not bool", "end"]
+		`)
+		require.NotEmpty(t, inferErrors)
+	})
 }

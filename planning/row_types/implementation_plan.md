@@ -1449,9 +1449,19 @@ deferring the commitment until closing time.
 
 ---
 
-## Phase 13: Variadic Tuple Types
+## Phase 13: Variadic Tuple Types ✅
 
 **Requirements covered:** Section 14 (variadic tuple types).
+
+> **Status (2026-04-08):** Implemented. Tuple-vs-tuple unification with
+> `RestSpreadType` at any position (leading, middle, trailing) is complete.
+> `TupleType.String()` flattens resolved rest types. Tuple-vs-array and
+> array-vs-tuple unification handle `RestSpreadType` elements. `getMemberType`
+> includes rest type element types in the union for method resolution. The
+> parser now supports `...T` in tuple type annotations (previously only in
+> object type annotations). Generalization and instantiation work automatically
+> via the existing visitor pattern. Tests cover fixed-vs-variadic,
+> variadic-vs-variadic, generalization, and array-absorbed rest types.
 
 **Goal:** Support `RestSpreadType` elements inside `TupleType` as variadic
 type parameters, enabling types like `[number, string, ...T]` where `T`
@@ -1581,10 +1591,10 @@ and display.
 
 7. **Type annotation parsing:**
 
-   The parser already handles `[number, string, ...T]` in type annotations
-   since `RestSpreadType` is a valid type and tuple types accept arbitrary
-   type elements. Verify that `...T` where `T` is a type reference parses
-   correctly in a tuple type annotation.
+   **Note:** The original plan assumed the parser already handled `...T` in
+   tuple type annotations, but `DotDotDot` was only handled in
+   `objTypeAnnElem` (for object types). A `DotDotDot` case was added to
+   `primaryTypeAnn` in `type_ann.go` to support `[number, ...T]` syntax.
 
 ### Tests
 
@@ -1974,7 +1984,7 @@ Phase 6 → Phase 12: Tuple/Array Inference
 ### Variadic tuples (after Phase 3, independent)
 
 ```
-Phase 3 → Phase 13: Variadic Tuple Types
+Phase 3 → Phase 13: Variadic Tuple Types ✅
             → Phase 14: Tuple Row Polymorphism (also requires Phase 12)
 ```
 
@@ -1989,7 +1999,7 @@ Phase 7, Phase 14 → Phase 8: Destructuring
 ```
 Phase 2 → Phase 9: Optional Chaining
 Phase 3 → Phase 10: Object Spread
-Phase 3 → Phase 13: Variadic Tuple Types
+Phase 3 → Phase 13: Variadic Tuple Types ✅
 ```
 
 ### Error reporting (after all other phases)
@@ -2014,7 +2024,7 @@ All phases → Phase 11: Error Reporting
 | 10: Object Spread              | 3          | 4–14                 |
 | 11: Error Reporting            | all        | —                    |
 | 12: Tuple/Array Inference      | 6          | 7, 13                |
-| 13: Variadic Tuple Types       | 3          | 4–12                 |
+| 13: Variadic Tuple Types ✅    | 3          | 4–12                 |
 | 14: Tuple Row Polymorphism     | 12, 13     | 7                    |
 
 ---
@@ -2058,12 +2068,12 @@ All phases → Phase 11: Error Reporting
    non-literal usage is observed, and only deferring for the pure literal-index
    case.
 
-7. **Variadic tuple unification (Phase 13):** The existing tuple-vs-tuple
-   unification has a `TODO: handle spread` comment and only partial
-   `RestSpreadType` support. Completing this requires careful handling of
-   positional-vs-rest element alignment. The variadic-vs-variadic case (both
-   sides have `RestSpreadType`) with different prefix lengths is the most
-   complex path.
+7. ~~**Variadic tuple unification (Phase 13):**~~ Resolved. The tuple-vs-tuple
+   unification now uses `splitTupleAtRest` to partition elements into
+   prefix/rest/suffix, then delegates to specialized helpers for each case
+   (fixed-vs-variadic, variadic-vs-fixed, variadic-vs-variadic). The
+   variadic-vs-variadic case handles different prefix/suffix lengths by
+   wrapping extras into a tuple with the shorter side's rest.
 
 8. **Tuple row polymorphism interaction with Phase 8 (Phase 14):** Phase 14
    changes Phase 8's tuple destructuring from collapsing `[a, ...rest]` to
@@ -2077,14 +2087,15 @@ All phases → Phase 11: Error Reporting
 
 | File | Phases | Status |
 |------|--------|--------|
-| `internal/type_system/types.go` | 1, 7, 13 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s; Phase 13: `TupleType.String()` flattening of resolved `RestSpreadType` |
-| `internal/checker/expand_type.go` | 2, 9, 10, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; Phase 12: modify TypeVarType numeric index branch to defer tuple/array commitment; Phase 13: variadic tuple element type union for method resolution |
-| `internal/checker/unify.go` | 3, 4, 10, 13 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability`; Phase 13: complete tuple-vs-tuple `RestSpreadType` unification |
+| `internal/type_system/types.go` | 1, 7, 13 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s; ✅ (Phase 13) `collectFlatTupleElems` and `TupleType.String()` flattening of resolved `RestSpreadType` |
+| `internal/checker/expand_type.go` | 2, 9, 10, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; Phase 12: modify TypeVarType numeric index branch to defer tuple/array commitment; ✅ (Phase 13) `tupleElemUnion` helper; `getMemberType` TupleType case handles `RestSpreadType` in both numeric index and method access |
+| `internal/checker/unify.go` | 3, 4, 10, 13 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability`; ✅ (Phase 13) `splitTupleAtRest`, `unifyTuples`, `unifyFixedTuples`, `unifyFixedVsVariadic`, `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`; tuple-vs-array and array-vs-tuple handle `RestSpreadType` |
+| `internal/parser/type_ann.go` | 13 | ✅ (Phase 13) `DotDotDot` case in `primaryTypeAnn` — enables `...T` in tuple type annotations (e.g. `[number, ...T]`) |
 | `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically; Phases 13/14: no changes expected (visitor pattern handles `RestSpreadType` in tuples) |
 | `internal/checker/infer_func.go` | 3, 6, 7, 8, 12, 14 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed; Phase 12: resolve `ArrayConstraint` during closing; Phase 14: `closeTupleType` for rest variable filtering |
 | `internal/checker/infer_expr.go` | 2, 5, 7, 10, 12 | ✅ (Phase 2) `markPropertyWritten` in assignment handler; (Phase 7) No changes needed; Phase 12: detect index assignment on `ArrayConstraint` |
 | `internal/checker/errors.go` | 11 | Not started |
-| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism) |
+| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism); ✅ Phase 13 (VariadicTupleTypes, VariadicTupleSubtyping) |
 | `internal/checker/widening_test.go` | 4 | ✅ Unit tests for `flatUnion` and `typeContains` helpers |
 
 ---

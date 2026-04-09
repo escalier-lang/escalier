@@ -1494,14 +1494,23 @@ is used. This section refines that behavior:
 This deferred approach avoids premature commitment to `Array<T>` when the usage
 pattern actually indicates a tuple.
 
-### 14. Variadic Tuple Types
+### 14. Variadic Tuple Types ✅
+
+> **Status (2026-04-08):** Implemented in Phase 13. Tuple-vs-tuple unification
+> with `RestSpreadType` at any position is complete (`splitTupleAtRest` +
+> specialized helpers in `unify.go`). `TupleType.String()` flattens resolved
+> rest types via `collectFlatTupleElems`. `getMemberType` handles
+> `RestSpreadType` in both numeric index and method access via `tupleElemUnion`.
+> The parser now supports `...T` in tuple type annotations (`primaryTypeAnn` in
+> `type_ann.go`). Generalization and instantiation work automatically via the
+> visitor pattern. Tests: `TestVariadicTupleTypes`, `TestVariadicTupleSubtyping`.
 
 Variadic tuple types extend tuple types with a rest element that captures a
 variable number of trailing elements. This is the tuple analogue of row variables
 (`RestSpreadElem`) in object types — it enables functions to be generic over the
 "tail" of a tuple.
 
-#### 14a. Syntax and representation
+#### 14a. Syntax and representation ✅
 
 A variadic tuple type is written as `[A, B, ...T]` where `A` and `B` are fixed
 positional element types and `T` is a type variable (or concrete type)
@@ -1559,9 +1568,11 @@ TupleType{Elems: [RestSpreadType{Type: Array<number>}, string, RestSpreadType{Ty
 ```
 
 The `RestSpreadType` type already exists and can appear in `TupleType.Elems`.
-The parser already handles `...T` in tuple type annotations.
+The parser handles `...T` in tuple type annotations (support was added to
+`primaryTypeAnn` in Phase 13 — previously `...` was only handled in object type
+annotation elements).
 
-#### 14b. Unification rules
+#### 14b. Unification rules ✅
 
 When unifying tuple types that contain `RestSpreadType` elements:
 
@@ -1595,7 +1606,7 @@ val r = foo([1, "hello", true])
 // T = ["hello", true], r: ["hello", true]
 ```
 
-#### 14c. Interaction with Array methods
+#### 14c. Interaction with Array methods ✅
 
 A variadic tuple like `[number, string, ...T]` supports the same Array methods
 as fixed tuples. The element type union for method resolution includes all
@@ -1606,7 +1617,7 @@ fixed elements plus the rest type's element type:
 - `[number, ...T]` where `T` is unresolved → methods resolve against
   `Array<number | T>`.
 
-#### 14d. Display
+#### 14d. Display ✅
 
 Variadic tuple types display with `...` before the rest type:
 - `[number, string, ...T]` — unresolved rest.
@@ -1797,10 +1808,13 @@ val r = identity([1, "hello"])
     `Array<T>` / `mut Array<T>` (if mutating methods, non-literal indexes, or
     index assignments are present). See Section 13.
 
-11. **Complete variadic tuple type support**: Finish `RestSpreadType` unification
+11. **Complete variadic tuple type support** ✅: Finish `RestSpreadType` unification
     in tuple-vs-tuple, tuple-vs-array, and variadic-vs-variadic paths. Update
     `TupleType.String()` to flatten resolved rest types. Support variadic tuples
     in type annotations, generalization, and instantiation (see Section 14).
+    Implemented in Phase 13: `splitTupleAtRest` + specialized unification helpers
+    in `unify.go`; `collectFlatTupleElems` in `types.go`; `tupleElemUnion` in
+    `expand_type.go`; `DotDotDot` case in `type_ann.go`.
 
 12. **Add tuple row polymorphism**: When an inferred tuple parameter is returned,
     append a `RestSpreadType` with a fresh type variable to capture extra

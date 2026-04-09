@@ -370,92 +370,23 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 	// | TupleType, TupleType -> ...
 	if tuple1, ok := t1.(*type_system.TupleType); ok {
 		if tuple2, ok := t2.(*type_system.TupleType); ok {
-			// TODO: handle spread
-			errors := []Error{}
-
-			// TODO: Don't allow more than one rest element in tuple1
-			restElem2, ok := tuple2.Elems[len(tuple2.Elems)-1].(*type_system.RestSpreadType)
-			if ok {
-				elems2 := tuple2.Elems[:len(tuple2.Elems)-1]
-				elems1 := tuple1.Elems[:len(elems2)]
-
-				for elem1, elem2 := range Zip(elems1, elems2) {
-					unifyErrors := c.Unify(ctx, elem1, elem2)
-					errors = slices.Concat(errors, unifyErrors)
-				}
-				remainingElems := tuple1.Elems[len(elems2):]
-				tuple := type_system.NewTupleType(nil, remainingElems...)
-				unifyErrors := c.Unify(ctx, tuple, restElem2.Type)
-				errors = slices.Concat(errors, unifyErrors)
-				return errors
-			}
-
-			restElem1, ok := tuple1.Elems[len(tuple1.Elems)-1].(*type_system.RestSpreadType)
-			if ok {
-				elems1 := tuple1.Elems[:len(tuple1.Elems)-1]
-				elems2 := tuple2.Elems[:len(elems1)]
-
-				for elem1, elem2 := range Zip(elems1, elems2) {
-					unifyErrors := c.Unify(ctx, elem1, elem2)
-					errors = slices.Concat(errors, unifyErrors)
-				}
-				remainingElems := tuple2.Elems[len(elems1):]
-				tuple := type_system.NewTupleType(nil, remainingElems...)
-				unifyErrors := c.Unify(ctx, restElem1.Type, tuple)
-				errors = slices.Concat(errors, unifyErrors)
-				return errors
-			}
-
-			if len(tuple2.Elems) > len(tuple1.Elems) {
-				// Unify the elements that are present in both tuples
-				for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
-					unifyErrors := c.Unify(ctx, elem1, elem2)
-					errors = slices.Concat(errors, unifyErrors)
-				}
-
-				extraElems := tuple2.Elems[len(tuple1.Elems):]
-				first := GetNode(extraElems[0].Provenance())
-				last := GetNode(extraElems[len(extraElems)-1].Provenance())
-
-				// Any remaining elements in tuple2 should be typed as `undefined`
-				// since they are not present in tuple1.
-				for _, elem2 := range extraElems {
-					node := GetNode(elem2.Provenance())
-					undefined := type_system.NewUndefinedType(&ast.NodeProvenance{Node: node})
-					unifyErrors := c.Unify(ctx, elem2, undefined)
-					errors = slices.Concat(errors, unifyErrors)
-				}
-
-				return slices.Concat(errors, []Error{&NotEnoughElementsToUnpackError{
-					span: ast.MergeSpans(first.Span(), last.Span()),
-				}})
-			}
-
-			if len(tuple1.Elems) != len(tuple2.Elems) {
-				return []Error{&CannotUnifyTypesError{
-					T1: tuple1,
-					T2: tuple2,
-				}}
-			}
-
-			for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
-				unifyErrors := c.Unify(ctx, elem1, elem2)
-				errors = slices.Concat(errors, unifyErrors)
-			}
-
-			return errors
+			return c.unifyTuples(ctx, tuple1, tuple2)
 		}
 	}
 	// | TupleType, ArrayType -> ...
 	if tuple1, ok := t1.(*type_system.TupleType); ok {
 		if array2, ok := t2.(*type_system.TypeRefType); ok && c.isArrayType(array2) {
-			// A tuple can be unified with an array if all tuple elements
-			// can be unified with the array's element type
 			if len(array2.TypeArgs) == 1 {
 				errors := []Error{}
 				for _, elem := range tuple1.Elems {
-					unifyErrors := c.Unify(ctx, elem, array2.TypeArgs[0])
-					errors = slices.Concat(errors, unifyErrors)
+					if rest, ok := elem.(*type_system.RestSpreadType); ok {
+						// Unify rest type with Array<T>
+						unifyErrors := c.Unify(ctx, rest.Type, array2)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						unifyErrors := c.Unify(ctx, elem, array2.TypeArgs[0])
+						errors = slices.Concat(errors, unifyErrors)
+					}
 				}
 				return errors
 			}
@@ -468,13 +399,17 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 	// | ArrayType, TupleType -> ...
 	if array1, ok := t1.(*type_system.TypeRefType); ok && c.isArrayType(array1) {
 		if tuple2, ok := t2.(*type_system.TupleType); ok {
-			// An array can be unified with a tuple if the array's element type
-			// can be unified with all tuple elements
 			if len(array1.TypeArgs) == 1 {
 				errors := []Error{}
 				for _, elem := range tuple2.Elems {
-					unifyErrors := c.Unify(ctx, array1.TypeArgs[0], elem)
-					errors = slices.Concat(errors, unifyErrors)
+					if rest, ok := elem.(*type_system.RestSpreadType); ok {
+						// Unify Array<T> with rest type
+						unifyErrors := c.Unify(ctx, array1, rest.Type)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						unifyErrors := c.Unify(ctx, array1.TypeArgs[0], elem)
+						errors = slices.Concat(errors, unifyErrors)
+					}
 				}
 				return errors
 			}
@@ -2341,4 +2276,268 @@ func typeContains(haystack type_system.Type, needle type_system.Type) bool {
 		}
 	}
 	return true
+}
+
+// splitTupleAtRest splits a tuple's elements into a prefix of fixed elements,
+// the RestSpreadType (if any), and a suffix of fixed elements after the rest.
+// If no RestSpreadType is found, rest is nil and suffix is empty.
+func splitTupleAtRest(elems []type_system.Type) (prefix []type_system.Type, rest *type_system.RestSpreadType, suffix []type_system.Type) {
+	for i, elem := range elems {
+		if r, ok := elem.(*type_system.RestSpreadType); ok {
+			return elems[:i], r, elems[i+1:]
+		}
+	}
+	return elems, nil, nil
+}
+
+// unifyTuples handles all tuple-vs-tuple unification cases including
+// RestSpreadType at any position.
+func (c *Checker) unifyTuples(ctx Context, tuple1, tuple2 *type_system.TupleType) []Error {
+	prefix1, rest1, suffix1 := splitTupleAtRest(tuple1.Elems)
+	prefix2, rest2, suffix2 := splitTupleAtRest(tuple2.Elems)
+
+	// Case: neither side has a rest spread — plain tuple unification
+	if rest1 == nil && rest2 == nil {
+		return c.unifyFixedTuples(ctx, tuple1, tuple2)
+	}
+
+	// Case: only tuple2 has a rest spread — fixed-vs-variadic
+	if rest1 == nil && rest2 != nil {
+		return c.unifyFixedVsVariadic(ctx, tuple1.Elems, prefix2, rest2, suffix2)
+	}
+
+	// Case: only tuple1 has a rest spread — variadic-vs-fixed (mirror)
+	if rest1 != nil && rest2 == nil {
+		return c.unifyVariadicVsFixed(ctx, prefix1, rest1, suffix1, tuple2.Elems)
+	}
+
+	// Case: both sides have a rest spread — variadic-vs-variadic
+	return c.unifyVariadicVsVariadic(ctx, prefix1, rest1, suffix1, prefix2, rest2, suffix2)
+}
+
+// unifyFixedTuples handles unification of two tuples with no RestSpreadType
+// elements. The call convention is Unify(source, target): tuple1 is the value
+// being assigned and tuple2 is the target (pattern or type annotation).
+//
+//   - tuple1 has more elements than tuple2: OK — extras in the value are ignored.
+//   - tuple2 has more elements than tuple1: Error — the target expects more
+//     elements than the value provides (NotEnoughElementsToUnpackError).
+//   - Same length: unify pairwise.
+func (c *Checker) unifyFixedTuples(ctx Context, tuple1, tuple2 *type_system.TupleType) []Error {
+	errors := []Error{}
+
+	if len(tuple2.Elems) > len(tuple1.Elems) {
+		// The target (tuple2) expects more elements than the value (tuple1)
+		// provides. Unify the elements that are present in both tuples, then
+		// report the extra target bindings as unpack errors.
+		for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
+			unifyErrors := c.Unify(ctx, elem1, elem2)
+			errors = slices.Concat(errors, unifyErrors)
+		}
+
+		extraElems := tuple2.Elems[len(tuple1.Elems):]
+		first := GetNode(extraElems[0].Provenance())
+		last := GetNode(extraElems[len(extraElems)-1].Provenance())
+
+		// Type the extra target bindings as `undefined` since they have no
+		// corresponding value element.
+		for _, elem2 := range extraElems {
+			node := GetNode(elem2.Provenance())
+			undefined := type_system.NewUndefinedType(&ast.NodeProvenance{Node: node})
+			unifyErrors := c.Unify(ctx, elem2, undefined)
+			errors = slices.Concat(errors, unifyErrors)
+		}
+
+		return slices.Concat(errors, []Error{&NotEnoughElementsToUnpackError{
+			span: ast.MergeSpans(first.Span(), last.Span()),
+		}})
+	}
+
+	// tuple1 has >= tuple2's length. Unify pairwise up to tuple2's length;
+	// any extra elements in tuple1 (the value) are ignored.
+	for i, elem2 := range tuple2.Elems {
+		unifyErrors := c.Unify(ctx, tuple1.Elems[i], elem2)
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	return errors
+}
+
+// unifyFixedVsVariadic handles: source is a fixed tuple, target is variadic.
+// The call convention is Unify(source, target): fixedElems is the value being
+// assigned and prefix2/rest2/suffix2 describe the target's structure.
+//
+// The target requires at least len(prefix2)+len(suffix2) elements from the
+// source to fill its mandatory positions. If the source doesn't have enough,
+// that's an error. Any extra source elements beyond the mandatory positions
+// are absorbed by the target's rest spread.
+//
+// Example: [1, "a", "b"] vs [number, ...Array<string>]
+// - prefix: Unify(1, number)
+// - rest absorbs ["a", "b"]: Unify(["a", "b"], Array<string>)
+func (c *Checker) unifyFixedVsVariadic(
+	ctx Context,
+	fixedElems []type_system.Type,
+	prefix2 []type_system.Type, rest2 *type_system.RestSpreadType, suffix2 []type_system.Type,
+) []Error {
+	requiredCount := len(prefix2) + len(suffix2)
+	if len(fixedElems) < requiredCount {
+		// The source doesn't have enough elements to fill the target's
+		// mandatory prefix and suffix positions.
+		return []Error{&CannotUnifyTypesError{
+			T1: type_system.NewTupleType(nil, fixedElems...),
+			T2: type_system.NewTupleType(nil, append(append(prefix2, rest2), suffix2...)...),
+		}}
+	}
+
+	errors := []Error{}
+
+	// Unify prefix elements pairwise
+	for i, elem2 := range prefix2 {
+		unifyErrors := c.Unify(ctx, fixedElems[i], elem2)
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// Unify suffix elements pairwise (from the end)
+	for i, elem2 := range suffix2 {
+		fixedIdx := len(fixedElems) - len(suffix2) + i
+		unifyErrors := c.Unify(ctx, fixedElems[fixedIdx], elem2)
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// The middle elements are absorbed by the rest spread
+	middleElems := fixedElems[len(prefix2) : len(fixedElems)-len(suffix2)]
+	restTuple := type_system.NewTupleType(nil, middleElems...)
+	unifyErrors := c.Unify(ctx, restTuple, rest2.Type)
+	errors = slices.Concat(errors, unifyErrors)
+
+	return errors
+}
+
+// unifyVariadicVsFixed handles: source is variadic, target is a fixed tuple.
+// The call convention is Unify(source, target): prefix1/rest1/suffix1 describe
+// the source's structure and fixedElems is the target.
+//
+// The target only needs its own positions filled. The source's prefix and
+// suffix are mandatory elements in the source — we unify them pairwise with
+// the target up to the target's length. If the source has more mandatory
+// elements than the target, the extras are ignored (same convention as
+// unifyFixedTuples). The rest spread binds to the remaining target elements
+// between the prefix and suffix matches.
+//
+// Example: [number, ...T] (source) vs [number, string] (target)
+// - prefix: Unify(number, number)
+// - rest absorbs [string]: Unify(T, [string])
+func (c *Checker) unifyVariadicVsFixed(
+	ctx Context,
+	prefix1 []type_system.Type, rest1 *type_system.RestSpreadType, suffix1 []type_system.Type,
+	fixedElems []type_system.Type,
+) []Error {
+	errors := []Error{}
+
+	// Unify prefix elements pairwise, up to the shorter of the two.
+	// If the source prefix is longer, extras are ignored.
+	prefixLen := min(len(prefix1), len(fixedElems))
+	for i := range prefixLen {
+		unifyErrors := c.Unify(ctx, prefix1[i], fixedElems[i])
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// If the target was exhausted by the prefix, the rest and suffix are
+	// extra source elements — ignored per the source-extras convention.
+	if len(fixedElems) <= len(prefix1) {
+		return errors
+	}
+
+	// Unify suffix elements pairwise from the end, up to the shorter of the two.
+	// Anchoring the suffix to the end of fixedElems is sound regardless of
+	// whether rest1.Type is concrete or unresolved: the suffix's position at the
+	// end of the source tuple is a structural invariant of the type (e.g. in
+	// [...T, string], the string is always last no matter what T resolves to).
+	// The rest absorbs whatever target elements remain between the prefix and
+	// suffix matches.
+	remaining := fixedElems[prefixLen:]
+	suffixLen := min(len(suffix1), len(remaining))
+	for i := range suffixLen {
+		unifyErrors := c.Unify(ctx, suffix1[len(suffix1)-suffixLen+i], remaining[len(remaining)-suffixLen+i])
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// The middle target elements are absorbed by the source's rest spread
+	middleElems := remaining[:len(remaining)-suffixLen]
+	restTuple := type_system.NewTupleType(nil, middleElems...)
+	unifyErrors := c.Unify(ctx, rest1.Type, restTuple)
+	errors = slices.Concat(errors, unifyErrors)
+
+	return errors
+}
+
+// unifyVariadicVsVariadic handles: tuple with rest vs tuple with rest.
+// Example: [A, ...R1, B] vs [C, ...R2, D]
+// - Unify prefixes pairwise up to the shorter prefix
+// - Unify suffixes pairwise up to the shorter suffix
+// - Collect any extra prefix/suffix elements from the longer side
+// - Unify the rest types, wrapping extras in a tuple with rest if needed
+func (c *Checker) unifyVariadicVsVariadic(
+	ctx Context,
+	prefix1 []type_system.Type, rest1 *type_system.RestSpreadType, suffix1 []type_system.Type,
+	prefix2 []type_system.Type, rest2 *type_system.RestSpreadType, suffix2 []type_system.Type,
+) []Error {
+	errors := []Error{}
+
+	// Unify prefixes pairwise up to the shorter one
+	minPrefix := min(len(prefix1), len(prefix2))
+	for i := 0; i < minPrefix; i++ {
+		unifyErrors := c.Unify(ctx, prefix1[i], prefix2[i])
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// Unify suffixes pairwise up to the shorter one (from the end)
+	minSuffix := min(len(suffix1), len(suffix2))
+	for i := 0; i < minSuffix; i++ {
+		unifyErrors := c.Unify(ctx, suffix1[len(suffix1)-minSuffix+i], suffix2[len(suffix2)-minSuffix+i])
+		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// Collect extras from the longer prefix/suffix
+	extraPrefix1 := prefix1[minPrefix:]
+	extraPrefix2 := prefix2[minPrefix:]
+	extraSuffix1 := suffix1[:len(suffix1)-minSuffix]
+	extraSuffix2 := suffix2[:len(suffix2)-minSuffix]
+
+	// Build the types for the rest unification.
+	// If one side has extras, the other side's rest absorbs them.
+	// E.g. [A, B, ...R1] vs [A, ...R2] → Unify(R2, [B, ...R1])
+	if len(extraPrefix1) == 0 && len(extraSuffix1) == 0 && len(extraPrefix2) == 0 && len(extraSuffix2) == 0 {
+		// Same number of fixed elements on both sides — unify rests directly
+		unifyErrors := c.Unify(ctx, rest1.Type, rest2.Type)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if len(extraPrefix2) == 0 && len(extraSuffix2) == 0 {
+		// tuple1 has extra fixed elements; rest2 absorbs them
+		// [A, B, C, ...R1] vs [A, ...R2] → R2 = [B, C, ...R1]
+		var wrapped []type_system.Type
+		wrapped = append(wrapped, extraPrefix1...)
+		wrapped = append(wrapped, rest1)
+		wrapped = append(wrapped, extraSuffix1...)
+		wrappedTuple := type_system.NewTupleType(nil, wrapped...)
+		unifyErrors := c.Unify(ctx, wrappedTuple, rest2.Type)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if len(extraPrefix1) == 0 && len(extraSuffix1) == 0 {
+		// tuple2 has extra fixed elements; rest1 absorbs them
+		var wrapped []type_system.Type
+		wrapped = append(wrapped, extraPrefix2...)
+		wrapped = append(wrapped, rest2)
+		wrapped = append(wrapped, extraSuffix2...)
+		wrappedTuple := type_system.NewTupleType(nil, wrapped...)
+		unifyErrors := c.Unify(ctx, rest1.Type, wrappedTuple)
+		errors = slices.Concat(errors, unifyErrors)
+	} else {
+		// Both sides have extras — cannot unify
+		return []Error{&CannotUnifyTypesError{
+			T1: type_system.NewTupleType(nil, append(append(prefix1, rest1), suffix1...)...),
+			T2: type_system.NewTupleType(nil, append(append(prefix2, rest2), suffix2...)...),
+		}}
+	}
+
+	return errors
 }
