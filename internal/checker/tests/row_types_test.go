@@ -1363,5 +1363,7 @@ func TestVariadicTupleSubtyping(t *testing.T) {
 			val x: [number, ...Array<string>] = [1, 2, 3]
 		`)
 		require.NotEmpty(t, inferErrors)
+		// Optionally verify the error relates to type incompatibility
+		assert.Contains(t, inferErrors[0].Message(), "cannot be assigned")
 	})
 }
