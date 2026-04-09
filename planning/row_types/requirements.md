@@ -852,6 +852,8 @@ Option C again, binding it to a new open `ObjectType` with property `bar`.
 
 #### 8f. Destructuring patterns on params
 
+##### Object destructuring
+
 Destructuring patterns already infer structural object types from the pattern
 shape (e.g. `fn foo({bar, baz})` infers `obj: {bar: t1, baz: t2}`). Destructured
 parameters without a rest element produce **closed** object types — the pattern
@@ -891,6 +893,52 @@ to the pattern-inferred `ObjectType`, but leave `Open` as `false`. The rest
 binding's type is `R`, connecting it to the row variable so that when `R` is
 resolved, the rest binding's type reflects the remaining properties. Without a
 rest element, the type stays closed with no `RestSpreadElem`.
+
+##### Tuple/array destructuring
+
+Tuple destructuring patterns (`[a, b]`) infer a `TupleType` from the pattern
+shape, with one element type per position. `inferPattern` already handles
+`TuplePat` by creating a `TupleType` with a fresh type variable for each
+element.
+
+**Without rest element:** The pattern fully determines the tuple length. Each
+position gets an independent type variable:
+
+```esc
+fn foo([a, b]) {
+    // a and b are available as bindings
+}
+// inferred: fn foo([a, b]: [t1, t2]) -> void
+```
+
+The parameter type is a fixed-length tuple. Callers must pass a tuple (or array)
+with at least that many elements.
+
+**With rest element:** When a tuple destructuring pattern includes a rest element
+(`[a, b, ...rest]`), the leading positions get fixed types and the rest binding
+captures the remaining elements. The parameter should be inferred as a variadic
+tuple `[t1, t2, ...R]` where each positional element gets an independent type
+variable and `R` is a rest type variable representing the remaining elements:
+
+```esc
+fn foo([first, ...rest]) {
+    // first is the first element, rest is the remaining elements
+}
+// inferred: fn foo([first, ...rest]: [t1, ...R]) -> void
+// where t1 is the first element's type, R captures remaining elements
+// first: t1, rest: R
+```
+
+This requires variadic tuple type support (Section 14). The rest variable `R`
+enables row polymorphism for tuples — if the parameter is returned, callers'
+extra elements are preserved (Section 15).
+
+**Interaction with Section 13 (tuple/array inference):** If the function body
+also indexes the parameter by name (which isn't possible for tuple-destructured
+params since the parameter isn't bound to a name), this doesn't apply. However,
+if a tuple-destructured param's bindings are used in ways that constrain their
+types (e.g. `first + 1`), those constraints flow through the type variables
+normally.
 
 #### 8g. Return type row variable propagation ✅
 
@@ -1294,13 +1342,15 @@ When a function parameter is used with numeric indexing and/or method calls, the
 system should infer whether the parameter is a **tuple** or a **`mut Array`**
 based on the usage patterns:
 
-#### 13a. Tuple inference (whole-number literal indexes only)
+#### 13a. Tuple inference (non-negative integer literal indexes only)
 
-If all index accesses on the parameter use **whole-number literal** indexes
-(e.g. `0`, `1`, `2`) and all property accesses and method calls are available on
-the immutable `Array` type (e.g. `.length`, `.map()`, `.filter()`, `.slice()`),
-then the parameter should be inferred as a **tuple type** with one element per
-distinct index accessed:
+If all index accesses on the parameter use **non-negative integer literal**
+indexes (i.e. `0`, `1`, `2`, ...) and all property accesses and method calls are
+available on the immutable `Array` type (e.g. `.length`, `.map()`, `.filter()`,
+`.slice()`), then the parameter should be inferred as a **tuple type** with one
+element per distinct index accessed. Any other numeric literals — negative
+integers, non-integers like `1.5`, or extremely large values — are treated as
+non-literal numeric access and follow the array inference path (Section 13c):
 
 ```esc
 fn foo(items) {
@@ -1314,7 +1364,9 @@ fn foo(items) {
 
 The tuple length is determined by the highest index accessed + 1. If `items[0]`
 and `items[2]` are accessed but not `items[1]`, the tuple has 3 elements:
-`[t0, t1, t2]` where `t1` remains an unresolved type variable.
+`[t0, t1, t2]` where `t1` remains an unresolved type variable. Only
+non-negative integer literals qualify; any other numeric value (negative,
+fractional, etc.) forces array inference per Section 13c.
 
 **Why tuple, not Array:** When only literal indexes are used, the programmer is
 treating the parameter as a fixed-length, positionally-typed sequence. A tuple
@@ -1324,7 +1376,7 @@ all element types into a single `T`.
 
 **Interaction with Array methods:** Read-only `Array` methods like `.map()`,
 `.filter()`, `.length`, etc. are available on tuples (tuples delegate method
-access to `Array<union of element types>` — see Section 3). So accessing
+access to `Array<union of element types>`). So accessing
 `.length` or calling `.map()` does not prevent tuple inference.
 
 #### 13b. Array inference (mutating methods)
@@ -1399,7 +1451,7 @@ value-semantics types in Escalier — they cannot be mutated in place.
 
 | Usage pattern | Inferred type |
 |---------------|---------------|
-| Only whole-number literal indexes + read-only Array methods | Tuple `[t0, t1, ...]` |
+| Only non-negative integer literal indexes + read-only Array methods | Tuple `[t0, t1, ...]` |
 | Any non-literal numeric index (read-only) | `Array<T>` |
 | Any index assignment | `mut Array<T>` |
 | Any mutating method (`.push()`, `.pop()`, etc.) | `mut Array<T>` |
@@ -1410,10 +1462,12 @@ value-semantics types in Escalier — they cannot be mutated in place.
 Section 3 currently binds a type variable to `Array<T>` whenever a numeric index
 is used. This section refines that behavior:
 
-- **Literal numeric index** (e.g. `obj[0]`): defer commitment — the type
-  variable should not be immediately bound to `Array<T>`. Instead, record the
-  index as a tuple constraint. Final resolution to tuple vs. array happens during
-  closing (Section 5), based on whether any array-only patterns were observed.
+- **Non-negative integer literal index** (e.g. `obj[0]`): defer commitment —
+  the type variable should not be immediately bound to `Array<T>`. Instead,
+  record the index as a tuple constraint. Final resolution to tuple vs. array
+  happens during closing (Section 5), based on whether any array-only patterns
+  were observed. Other numeric literals (negative, fractional) are treated as
+  non-literal access.
 - **Non-literal numeric index** (e.g. `obj[i]`): bind to `Array<T>` immediately,
   as before.
 - **Mutating method call**: bind to `mut Array<T>` (or upgrade an existing
@@ -1422,13 +1476,204 @@ is used. This section refines that behavior:
 This deferred approach avoids premature commitment to `Array<T>` when the usage
 pattern actually indicates a tuple.
 
+### 14. Variadic Tuple Types
+
+Variadic tuple types extend tuple types with a rest element that captures a
+variable number of trailing elements. This is the tuple analogue of row variables
+(`RestSpreadElem`) in object types — it enables functions to be generic over the
+"tail" of a tuple.
+
+#### 14a. Syntax and representation
+
+A variadic tuple type is written as `[A, B, ...T]` where `A` and `B` are fixed
+positional element types and `T` is a type variable (or concrete type)
+representing the remaining elements. `T` can be:
+
+- A type variable: `[number, ...T]` — generic over the trailing elements.
+- An array type: `[number, ...string[]]` — fixed first element, then any number
+  of strings.
+- A tuple type: `[number, ...[string, boolean]]` — equivalent to
+  `[number, string, boolean]` (flattened in display).
+
+In the type system, this is represented as a `TupleType` whose last element is
+a `RestSpreadType`:
+```
+TupleType{Elems: [number, string, RestSpreadType{Type: T}]}
+```
+
+The `RestSpreadType` type already exists and can appear in `TupleType.Elems`.
+The parser already handles `...T` in tuple type annotations.
+
+#### 14b. Unification rules
+
+When unifying tuple types that contain `RestSpreadType` elements:
+
+**Fixed-vs-variadic** (`[A, B]` vs `[C, ...R]`):
+1. Unify positional elements pairwise: `Unify(A, C)`.
+2. Bind `R` to a tuple of the remaining elements: `R = [B]`.
+
+**Variadic-vs-fixed** (`[A, ...R]` vs `[B, C]`):
+1. Unify positional elements pairwise: `Unify(A, B)`.
+2. Bind `R` to the remaining elements: `R = [C]`.
+
+**Variadic-vs-variadic** (`[A, ...R1]` vs `[B, ...R2]`):
+1. Unify positional elements pairwise: `Unify(A, B)`.
+2. If both have the same number of positional elements: `Unify(R1, R2)`.
+3. If one has more positional elements, collect the extras and unify the shorter
+   side's rest with a variadic tuple of the extras plus the longer side's rest.
+
+**Variadic-vs-Array** (`[A, ...R]` vs `Array<T>`):
+1. Unify `A` with `T`.
+2. Unify `R` with `Array<T>`.
+
+**Examples:**
+```esc
+// Fixed-vs-variadic
+val x: [number, ...string[]] = [1, "a", "b"]
+// 1 unifies with number, ["a", "b"] unifies with ...string[]
+
+// Variadic generic
+fn foo<T>(items: [number, ...T]) -> T { ... }
+val r = foo([1, "hello", true])
+// T = ["hello", true], r: ["hello", true]
+```
+
+#### 14c. Interaction with Array methods
+
+A variadic tuple like `[number, string, ...T]` supports the same Array methods
+as fixed tuples. The element type union for method resolution includes all
+fixed elements plus the rest type's element type:
+
+- `[number, string, ...Array<boolean>]` → methods resolve against
+  `Array<number | string | boolean>`.
+- `[number, ...T]` where `T` is unresolved → methods resolve against
+  `Array<number | T>`.
+
+#### 14d. Display
+
+Variadic tuple types display with `...` before the rest type:
+- `[number, string, ...T]` — unresolved rest.
+- `[number, string, ...Array<boolean>]` — rest is an array.
+
+When the rest type resolves to a concrete tuple, the elements are **flattened**
+into the parent (same display behavior as `ObjectType.String()` for resolved
+`RestSpreadElem`s):
+- `[number, ...[string, boolean]]` displays as `[number, string, boolean]`.
+- `[number, ...[]]` displays as `[number]` (empty rest dropped).
+
+### 15. Tuple Row Polymorphism (Variadic Inference)
+
+Tuple row polymorphism enables functions with inferred tuple parameters to
+preserve extra elements through their return types. This is the tuple analogue
+of row polymorphism for objects (Section 11).
+
+#### 15a. Motivation
+
+Without tuple row polymorphism, a function like:
+
+```esc
+fn first(items) {
+    return items[0]
+}
+```
+
+has the closed signature `fn first(items: [t0]) -> t0` after Phase 12 infers a
+tuple. Calling `first([1, "hello", true])` works (the extra elements are
+accepted), but a function that returns the whole parameter:
+
+```esc
+fn identity(items) {
+    let x = items[0]
+    return items
+}
+```
+
+would lose extra elements: the signature `fn (items: [t0]) -> [t0]` means
+`identity([1, "hello", true])` returns `[1]`, discarding `"hello"` and `true`.
+
+#### 15b. Row-polymorphic tuple types
+
+When a function parameter is inferred as a tuple (Phase 12) and the parameter
+is returned (or part of the return type), the inferred tuple should include a
+rest type variable to capture extra elements:
+
+```esc
+fn identity(items) {
+    let x = items[0]
+    return items
+}
+// type: fn <T0, R>(items: [T0, ...R]) -> [T0, ...R]
+```
+
+The rest variable `R` appears in both the parameter and return type, connecting
+them. When the function is called, `R` is instantiated with the caller's extra
+elements:
+
+```esc
+val result = identity([1, "hello", true])
+// T0 = 1, R = ["hello", true]
+// result: [1, "hello", true]
+```
+
+#### 15c. When to preserve rest type variables
+
+Same rules as object row polymorphism (Section 11b):
+
+- **Appears in return type:** Preserve the rest variable — it becomes a type
+  parameter.
+- **Does not appear in return type:** Remove the `RestSpreadType` — the tuple
+  becomes fixed-length. Extra elements are accepted but not tracked.
+
+```esc
+fn first(items) {
+    return items[0]
+}
+// Return type is T0, not the tuple → rest removed
+// type: fn <T0>(items: [T0]) -> T0
+```
+
+```esc
+fn identity(items) {
+    let x = items[0]
+    return items
+}
+// Return type includes the tuple → rest preserved
+// type: fn <T0, R>(items: [T0, ...R]) -> [T0, ...R]
+```
+
+#### 15d. Literal preservation
+
+Literal types from callers are preserved through tuple rest variables (not
+widened), matching the behavior of object row polymorphism (Section 11a):
+
+```esc
+fn identity(items) {
+    let x = items[0]
+    return items
+}
+val r = identity([1, "hello"])
+// r: [1, "hello"] — literal types preserved
+```
+
+#### 15e. Interaction with Phase 12 and Phase 8
+
+- **Phase 12 (tuple inference):** When resolving an `ArrayConstraint` to a
+  tuple, append a `RestSpreadType` with a fresh type variable. The rest variable
+  is resolved at closing time (same as row variables on open objects).
+- **Phase 8 (destructuring):** Tuple destructuring without a rest pattern
+  produces a fixed-length tuple (no rest variable). Tuple destructuring with a
+  rest pattern produces a variadic tuple `[t0, t1, ...R]` where `R` is the
+  rest binding's type — this is now possible thanks to variadic tuple support
+  (Phase 13), rather than collapsing to `Array<T>`.
+
 ## Implementation Approach (Summary)
 
 1. **Extend `getMemberType`** to handle `TypeVarType` with two branches:
    - **Numeric index access** (the key is an `IndexKey` with a numeric type):
      for non-literal indexes, bind the `TypeVarType` to `Array<T>` for a fresh
-     `T`, and return `T`. For whole-number literal indexes, defer commitment
-     by recording the index on an `ArrayConstraint` (see Section 13).
+     `T`, and return `T`. For non-negative integer literal indexes, defer
+     commitment by recording the index on an `ArrayConstraint` (see
+     Section 13).
    - **Property/method access or string-literal index** (the key is a
      `PropertyKey`, or an `IndexKey` with a string literal type): bind the
      `TypeVarType` to a `MutabilityType{Uncertain}` wrapping an open
@@ -1489,13 +1734,24 @@ pattern actually indicates a tuple.
 
 10. **Refine numeric indexing to support tuple inference**: Instead of immediately
     binding to `Array<T>` on numeric index access, defer the decision. Track
-    whether indexes are whole-number literals, whether mutating methods are
+    whether indexes are non-negative integer literals, whether mutating methods are
     called, and whether index assignments occur. At closing time, resolve to a
     tuple type (if only literal indexes + read-only Array methods) or
     `Array<T>` / `mut Array<T>` (if mutating methods, non-literal indexes, or
     index assignments are present). See Section 13.
 
-11. **Add tests**: Cover property access, method calls, array indexing, optional
+11. **Complete variadic tuple type support**: Finish `RestSpreadType` unification
+    in tuple-vs-tuple, tuple-vs-array, and variadic-vs-variadic paths. Update
+    `TupleType.String()` to flatten resolved rest types. Support variadic tuples
+    in type annotations, generalization, and instantiation (see Section 14).
+
+12. **Add tuple row polymorphism**: When an inferred tuple parameter is returned,
+    append a `RestSpreadType` with a fresh type variable to capture extra
+    elements. At closing time, preserve rest variables that appear in the return
+    type (promoting to type parameters) and remove those that don't. This is
+    the tuple analogue of object row polymorphism (see Section 15).
+
+13. **Add tests**: Cover property access, method calls, array indexing, optional
     chaining, passing to typed functions, widening, closing after inference, row
     polymorphism (return type propagation), object spread, tuple/array inference,
-    and error cases.
+    variadic tuples, tuple row polymorphism, and error cases.

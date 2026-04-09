@@ -895,12 +895,14 @@ All tests are in `TestRowTypesRowPolymorphism` in `row_types_test.go`.
 
 ## Phase 8: Destructuring Patterns on Parameters
 
-**Requirements covered:** Section 8f (destructuring patterns).
+**Requirements covered:** Section 8f (destructuring patterns — object and
+tuple/array).
 
-**Goal:** Destructured parameters with rest elements get a `RestSpreadElem` for
-row polymorphism.
+**Goal:** Destructured parameters with rest elements get appropriate polymorphic
+types: `RestSpreadElem` for object patterns (row polymorphism), `Array<T>` for
+tuple patterns with rest elements.
 
-### Changes
+### Changes — Object Destructuring
 
 1. **`internal/checker/infer_func.go`** — `inferFuncParams`:
    After `inferPattern` creates a closed `ObjectType` from a destructuring
@@ -933,7 +935,51 @@ row polymorphism.
    passed by callers, while `Open: false` prevents the checker from adding
    properties during inference.
 
-### Tests
+### Changes — Tuple/Array Destructuring
+
+`inferPattern` already handles `TuplePat` by creating a `TupleType` with a
+fresh type variable for each element position. The changes here address the
+rest element case and the interaction with `inferFuncParams`.
+
+5. **`internal/checker/infer_func.go`** — `inferFuncParams`, `TuplePat` case:
+
+   **Without rest element:** `inferPattern` produces a `TupleType` with one
+   element type per position. No changes needed — the parameter type is a
+   fixed-length tuple:
+   ```go
+   // fn foo([a, b]) { ... }
+   // inferPattern returns TupleType{Elems: [t1, t2]}
+   // parameter type: [t1, t2]
+   ```
+
+   **With rest element:** When the `TuplePat` contains a `RestPat`, the
+   parameter should be inferred as a variadic tuple `[t1, t2, ...R]` where
+   each positional element keeps its own type variable and `R` is a fresh
+   rest type variable (requires Phase 13 variadic tuple support):
+   ```go
+   if hasTupleRestElement && param.TypeAnn == nil {
+       restTV := c.FreshVar(nil)
+       // Append a RestSpreadType to the existing tuple elements
+       tupleType.Elems = append(tupleType.Elems,
+           type_system.NewRestSpreadType(nil, restTV))
+       // rest binding's type is restTV
+   }
+   ```
+
+   This preserves per-position types for the leading elements while allowing
+   callers to pass additional trailing elements. The rest variable `R` enables
+   tuple row polymorphism (Phase 14) — if the parameter is returned, extra
+   elements are preserved in the return type.
+
+6. **Rest binding type for tuple patterns:** The rest element's binding should
+   have type `R` (the rest type variable). When `R` is resolved at a call
+   site, the rest binding's type reflects the caller's trailing elements.
+
+7. **Type annotation takes precedence:** If the parameter has a type annotation,
+   use it as-is. Only add a `RestSpreadType` from the rest element when the
+   parameter is unannotated.
+
+### Tests — Object Destructuring
 
 - **Destructuring without rest:**
   `fn foo({bar, baz}) { ... }` — `{bar: t1, baz: t2}` (closed, no rest).
@@ -950,6 +996,36 @@ row polymorphism.
   `fn foo({bar, ...rest}: {bar: number, ...}) { ... }` — if a type annotation
   is present, use it as-is. Only add a `RestSpreadElem` when the parameter is
   unannotated.
+
+### Tests — Tuple/Array Destructuring
+
+- **Tuple destructuring without rest:**
+  `fn foo([a, b]) { ... }` — parameter type: `[t1, t2]`.
+- **Tuple destructuring with type constraints from body:**
+  ```esc
+  fn foo([a, b]) { return a + b }
+  ```
+  — element types constrained by usage (e.g. `[number, number]` if `+` requires
+  numbers).
+- **Tuple destructuring with rest:**
+  ```esc
+  fn foo([first, ...rest]) { ... }
+  ```
+  — parameter type: `[t1, ...R]`, `first: t1`, `rest: R`.
+- **Calling tuple-destructured function:**
+  ```esc
+  fn foo([a, b]) { return a + b }
+  val r = foo([1, 2])
+  ```
+  — `r: number`.
+- **Calling with rest — extra elements preserved:**
+  ```esc
+  fn foo([first, ...rest]) { return rest }
+  val r = foo([1, 2, 3])
+  ```
+  — `R = [2, 3]`, `r: [2, 3]`.
+- **Rest with type annotation:**
+  `fn foo([a, ...rest]: [number, ...string[]]) { ... }` — use annotation as-is.
 
 ---
 
@@ -1167,8 +1243,8 @@ row polymorphism.
 **Requirements covered:** Section 13 (tuple and array inference).
 
 **Goal:** When a function parameter is indexed numerically, infer whether it
-should be a tuple or an array based on usage patterns. Whole-number literal
-indexes with read-only Array methods → tuple. Mutating methods or non-literal
+should be a tuple or an array based on usage patterns. Non-negative integer
+literal indexes with read-only Array methods → tuple. Mutating methods or non-literal
 indexes → `mut Array<T>` or `Array<T>`.
 
 ### Background
@@ -1194,8 +1270,11 @@ deferring the commitment until closing time.
    }
    ```
 
-   This is stored on the `TypeVarType` (e.g. as a new `ArrayConstraint` field)
-   or in a side map on the checker context keyed by TypeVar ID.
+   This is stored directly on `TypeVarType` as a new `ArrayConstraint *ArrayConstraint`
+   field (nil when no numeric indexing has been observed). All code that
+   reads or writes the constraint — `getMemberType`, the assignment handler,
+   `closeOpenParams`, `Prune`/alias flows, and `deepCloneType` — uses
+   `typeVar.ArrayConstraint` as the single source of truth.
 
 2. **`internal/checker/expand_type.go`** — `getMemberType`, TypeVarType case:
 
@@ -1208,7 +1287,7 @@ deferring the commitment until closing time.
    case *type_system.TypeVarType:
        if indexKey, ok := key.(IndexKey); ok && isNumericType(indexKey.Type) {
            constraint := getOrCreateArrayConstraint(typeVar)
-           if litIndex, ok := asWholeNumberLiteral(indexKey.Type); ok {
+           if litIndex, ok := asNonNegativeIntLiteral(indexKey.Type); ok {
                // Record literal index with a fresh type variable
                if _, exists := constraint.LiteralIndexes[litIndex]; !exists {
                    constraint.LiteralIndexes[litIndex] = c.FreshVar(nil)
@@ -1264,6 +1343,9 @@ deferring the commitment until closing time.
            return arrayType
        }
        // Resolve to tuple
+       if len(constraint.LiteralIndexes) == 0 {
+           return NewTupleType(nil, []Type{})
+       }
        maxIndex := 0
        for idx := range constraint.LiteralIndexes {
            if idx > maxIndex {
@@ -1363,6 +1445,364 @@ deferring the commitment until closing time.
 
 ---
 
+## Phase 13: Variadic Tuple Types
+
+**Requirements covered:** Section 14 (variadic tuple types).
+
+**Goal:** Support `RestSpreadType` elements inside `TupleType` as variadic
+type parameters, enabling types like `[number, string, ...T]` where `T`
+represents the remaining elements. This is the tuple analogue of
+`RestSpreadElem` in `ObjectType` for row polymorphism.
+
+### Background
+
+`TupleType.Elems` is `[]Type`, and `RestSpreadType` already exists as a type
+that can appear in that slice (the parser and `inferPattern` already create
+`RestSpreadType` elements for rest patterns). The unifier has partial support
+for `RestSpreadType` in tuple-vs-tuple unification (with a `TODO: handle spread`
+comment). This phase completes that support and makes variadic tuples work
+end-to-end: in type annotations, unification, generalization, instantiation,
+and display.
+
+### Changes
+
+1. **`internal/checker/unify.go`** — Complete tuple-vs-tuple unification with
+   `RestSpreadType`:
+
+   The existing code already handles the case where one side has a
+   `RestSpreadType` at the end. Complete the implementation:
+
+   **a. Fixed-vs-variadic** (`[A, B]` vs `[C, ...R]`):
+   1. Unify positional elements pairwise up to the variadic boundary.
+   2. Collect remaining elements from the fixed side.
+   3. Unify the `RestSpreadType`'s inner type with a `TupleType` of the
+      remaining elements: `Unify(R, [remaining...])`.
+
+   ```go
+   // [number, string, boolean] vs [number, ...R]
+   // → Unify(number, number), then Unify(R, [string, boolean])
+   ```
+
+   **b. Variadic-vs-variadic** (`[A, ...R1]` vs `[B, ...R2]`):
+   1. Unify positional elements pairwise up to the shorter prefix.
+   2. If both have the same number of positional elements, unify `R1` with `R2`.
+   3. If one has more positional elements, collect the extras and unify the
+      shorter side's rest with `[extras..., ...longerRest]`.
+
+   **c. Variadic-vs-Array** (`[A, ...R]` vs `Array<T>`):
+   1. Unify `A` with `T`.
+   2. Unify `R` with `Array<T>` (the rest elements must also be arrays of `T`).
+
+   **d. Array-vs-variadic** (`Array<T>` vs `[A, ...R]`):
+   Mirror of (c).
+
+2. **`internal/type_system/types.go`** — `TupleType.String()`:
+
+   Update to handle `RestSpreadType` elements. When the last element is a
+   `RestSpreadType`, print it with `...` prefix. If the rest type resolves
+   (via `Prune`) to a `TupleType`, inline its elements (similar to
+   `ObjectType.String()` flattening resolved `RestSpreadElem`s):
+
+   ```
+   [number, string, ...T]           // unresolved rest type variable
+   [number, string, boolean, true]  // rest resolved to [boolean, true], flattened
+   [number, string, ...Array<any>]  // rest resolved to Array<any>
+   ```
+
+3. **`internal/type_system/types.go`** — `TupleType.Equals()`:
+
+   Already compares elements pairwise including `RestSpreadType` (via
+   `equals()`), so no changes needed. Verify with a test.
+
+4. **`internal/type_system/types.go`** — `TupleType.Accept()`:
+
+   Already visits all elements including `RestSpreadType` (the visitor
+   recursively calls `elem.Accept(v)` for each element). No changes needed
+   for `SubstituteTypeParams` — it walks via `Accept()`, so `...T` inside a
+   tuple will be substituted when `T` is a type parameter. Verify with a test.
+
+5. **`internal/checker/generalize.go`** — `collectUnresolvedTypeVars`:
+
+   Already walks into `TupleType.Elems` via the visitor pattern. A
+   `RestSpreadType{Type: TypeVarType{...}}` will have its inner TypeVar
+   collected automatically. Verify that `GeneralizeFuncType` promotes it to a
+   type parameter just like row variables in `RestSpreadElem`. The resulting
+   function type should look like:
+   ```
+   fn <T0>(items: [number, ...T0]) -> [number, ...T0]
+   ```
+
+6. **`internal/checker/expand_type.go`** — `getMemberType` for tuples:
+
+   Currently, tuple method/property access computes the union of all element
+   types and delegates to `Array<union>`. With variadic tuples, the union must
+   include the rest type's element type:
+   - `[number, string, ...T]` → methods resolve against
+     `Array<number | string | T>`.
+   - If `T` resolves to `Array<boolean>`, the union becomes
+     `number | string | boolean`.
+   - If `T` resolves to `[boolean, bigint]`, the union becomes
+     `number | string | boolean | bigint`.
+
+   Numeric indexing on variadic tuples:
+   - Literal index within the fixed prefix → returns that element's type.
+   - Literal index beyond the prefix → requires resolving the rest type;
+     if unresolved, return a type variable.
+   - Non-literal index → return the union of all element types (same as
+     arrays).
+
+7. **Type annotation parsing:**
+
+   The parser already handles `[number, string, ...T]` in type annotations
+   since `RestSpreadType` is a valid type and tuple types accept arbitrary
+   type elements. Verify that `...T` where `T` is a type reference parses
+   correctly in a tuple type annotation.
+
+### Tests
+
+- **Variadic tuple type annotation:**
+  `fn foo(items: [number, ...string[]]) { ... }` — parses and type-checks.
+
+- **Fixed-vs-variadic unification:**
+  ```esc
+  val x: [number, ...string[]] = [1, "a", "b"]
+  ```
+  — `1` unifies with `number`, `["a", "b"]` unifies with `...string[]`.
+
+- **Variadic-vs-fixed unification:**
+  ```esc
+  fn foo(items: [number, ...T]) { ... }
+  foo([1, "a", true])
+  ```
+  — `T` binds to `[string, boolean]`.
+
+- **Variadic-vs-variadic unification:**
+  ```esc
+  fn foo(a: [number, ...R1], b: [string, ...R2]) { ... }
+  ```
+  — independent rest type variables.
+
+- **Variadic-vs-Array unification:**
+  ```esc
+  fn foo(items: [number, ...T]) { ... }
+  val arr: Array<number> = [1, 2, 3]
+  foo(arr)
+  ```
+  — `number` unified with `number`, `T` binds to `Array<number>`.
+
+- **Generalization with variadic rest:**
+  ```esc
+  fn foo(items: [number, ...T]) { return items }
+  ```
+  — type: `fn <T>(items: [number, ...T]) -> [number, ...T]`.
+
+- **Display flattening:**
+  Resolved `...T` where `T = [string, boolean]` displays as
+  `[number, string, boolean]`, not `[number, ...[string, boolean]]`.
+
+- **Method access on variadic tuple:**
+  `[number, string, ...T].length` resolves via `Array<number | string | T>`.
+
+---
+
+## Phase 14: Tuple Row Polymorphism (Variadic Inference)
+
+**Requirements covered:** Section 15 (tuple row polymorphism).
+
+**Goal:** When a function parameter is inferred as a tuple (Phase 12) and the
+parameter is returned, preserve extra elements via a variadic rest type variable
+— the tuple analogue of row polymorphism for objects.
+
+### Background
+
+Phase 12 infers tuple types from literal index access. Phase 13 adds variadic
+tuple support (`[A, B, ...T]`). This phase combines them: when an inferred tuple
+parameter is returned from a function, a rest type variable is added to capture
+caller-supplied extra elements, just as `RestSpreadElem` captures extra object
+properties in Phase 7.
+
+Without this phase, `fn foo(items) { return items[0] }` works fine (returns the
+first element), but `fn foo(items) { items[0] = 1; return items }` would lose
+extra elements in the return type — the function would have type
+`fn (items: [number]) -> [number]` and `foo([1, "a", true])` would return
+`[number]`, losing `"a"` and `true`.
+
+### Changes
+
+1. **Phase 12 modification — add rest type variable to inferred tuples:**
+
+   When Phase 12 resolves an `ArrayConstraint` to a tuple (all literal indexes,
+   no mutating methods), append a `RestSpreadType` with a fresh type variable
+   to capture extra elements:
+
+   ```go
+   // In resolveArrayConstraint, tuple path:
+   restTV := c.FreshVar(nil)
+   elems = append(elems, type_system.NewRestSpreadType(nil, restTV))
+   return NewTupleType(nil, elems...)
+   // Result: [t0, t1, ...R] instead of [t0, t1]
+   ```
+
+   This is analogous to Phase 2 adding a `RestSpreadElem` with a row variable
+   to open `ObjectType`s.
+
+2. **`internal/checker/infer_func.go`** — `closeOpenParams` / new helper:
+
+   At closing time, check whether the rest type variable in an inferred
+   variadic tuple appears in the function's return type:
+
+   - **Appears in return type:** Preserve the `RestSpreadType` — the rest
+     variable becomes a type parameter via `GeneralizeFuncType` (same mechanism
+     as Phase 7 for row variables). The function becomes generic over the
+     trailing elements.
+   - **Does not appear in return type:** Remove the `RestSpreadType` from
+     `TupleType.Elems` — the extra elements are accepted but not tracked.
+     The tuple becomes fixed-length.
+
+   This mirrors `closeObjectType`'s logic for removing `RestSpreadElem`s
+   whose row variables don't escape to the return type.
+
+   ```go
+   func closeTupleType(tupleType *TupleType, returnVars map[int]bool) {
+       // Check if the last element is a RestSpreadType with an unresolved TV
+       if len(tupleType.Elems) > 0 {
+           if rest, ok := last(tupleType.Elems).(*RestSpreadType); ok {
+               if tv, ok := Prune(rest.Type).(*TypeVarType); ok {
+                   if !returnVars[tv.ID] {
+                       // Rest var not in return type — remove it
+                       tupleType.Elems = tupleType.Elems[:len(tupleType.Elems)-1]
+                   }
+                   // else: keep it — GeneralizeFuncType will promote it
+               }
+           }
+       }
+   }
+   ```
+
+3. **Generalization — no changes needed:**
+
+   `GeneralizeFuncType` already collects unresolved type variables via the
+   visitor pattern. The TypeVar inside `RestSpreadType` inside `TupleType` will
+   be collected and promoted to a type parameter automatically, just like row
+   variables inside `RestSpreadElem` inside `ObjectType` (Phase 7).
+
+4. **Call-site instantiation — no changes needed:**
+
+   `SubstituteTypeParams` already walks into `TupleType.Elems` and
+   `RestSpreadType.Type` via `Accept()`. A fresh type variable is created for
+   the rest parameter and substituted in. During argument unification, the
+   caller's extra elements flow into the rest variable via the variadic
+   unification from Phase 13.
+
+5. **Display flattening:**
+
+   `TupleType.String()` (updated in Phase 13) already handles resolved
+   `RestSpreadType` by inlining elements. When a caller passes
+   `[1, "a", true]` to `fn <R>(items: [number, ...R]) -> [number, ...R]`,
+   `R` binds to `["a", true]`, and the return type displays as
+   `[number, "a", true]`.
+
+### How it works end-to-end
+
+```esc
+fn foo(items) {
+    items[0] = 1
+    return items
+}
+// Phase 12 infers: items has ArrayConstraint with LiteralIndexes {0: t0}
+//   and HasIndexAssignment = true
+// Wait — HasIndexAssignment means it resolves to mut Array, not tuple.
+```
+
+Better example (read-only with return):
+
+```esc
+fn first(items) {
+    let x = items[0]
+    return items
+}
+// Phase 12: only literal index 0, no mutations → tuple [t0, ...R]
+// Phase 14: R appears in return type → preserved
+// After generalization: fn <T0, R>(items: [T0, ...R]) -> [T0, ...R]
+
+val result = first([1, "hello", true])
+// T0 = 1, R = ["hello", true]
+// result: [1, "hello", true]
+```
+
+```esc
+fn swap(items) {
+    let a = items[0]
+    let b = items[1]
+    return [b, a]
+}
+// Phase 12: literal indexes 0 and 1 → tuple [t0, t1, ...R]
+// Return type is [t1, t0] — a new tuple, not the original param
+// R does NOT appear in return type → removed
+// After generalization: fn <T0, T1>(items: [T0, T1]) -> [T1, T0]
+
+val result = swap([1, "hello"])
+// T0 = 1, T1 = "hello"
+// result: ["hello", 1]
+```
+
+```esc
+fn withDefault(items) {
+    let first = items[0]
+    let second = items[1]
+    return [first, second, ...items]
+}
+// This requires tuple spread in expressions (out of scope for this phase)
+// but illustrates the concept
+```
+
+### Tests
+
+- **Tuple with return — rest preserved:**
+  ```esc
+  fn foo(items) { let x = items[0]; return items }
+  val r = foo([1, "hello", true])
+  ```
+  — `foo: fn <T0, R>(items: [T0, ...R]) -> [T0, ...R]`,
+  `r: [1, "hello", true]`.
+
+- **Tuple without return — rest removed:**
+  ```esc
+  fn foo(items) { let x = items[0] }
+  ```
+  — `foo: fn <T0>(items: [T0]) -> void` (no rest variable).
+
+- **Derived return (element of tuple) — rest does not escape:**
+  ```esc
+  fn foo(items) { return items[0] }
+  val r = foo([42])
+  ```
+  — `foo: fn <T0>(items: [T0]) -> T0`, `r: 42`.
+
+- **Multiple tuple params with return:**
+  ```esc
+  fn foo(a, b) { let x = a[0]; let y = b[0]; return [a, b] }
+  val r = foo([1, 2], ["a", "b"])
+  ```
+  — both rest variables appear in return type, both preserved.
+
+- **No extra elements — rest resolves to empty tuple:**
+  ```esc
+  fn foo(items) { let x = items[0]; return items }
+  val r = foo([42])
+  ```
+  — `R = []` (empty tuple), display flattened: `r: [42]`.
+
+- **Literal types preserved through rest:**
+  ```esc
+  fn foo(items) { let x = items[0]; return items }
+  val r = foo([1, "hello"])
+  ```
+  — `r: [1, "hello"]` (literal types preserved, not widened — same as
+  row polymorphism for objects in Phase 7).
+
+---
+
 ## Phase 11: Error Reporting
 
 **Requirements covered:** Section 9 (error reporting).
@@ -1449,33 +1889,74 @@ These can be addressed in follow-up work.
 
 ## Phase Dependencies
 
+### Core inference pipeline (sequential)
+
 ```
 Phase 1: Type System Extensions ✅
-└── Phase 2: Property Access ✅
-    ├── Phase 3: Unification ✅
-    │   ├── Phase 4: Widening ✅
-    │   │   └── Phase 5: Method Calls ✅
-    │   │       └── Phase 6: Closing ✅
-    │   │           └── Phase 7: Row Polymorphism ✅
-    │   │               └── Phase 8: Destructuring
-    │   └── Phase 10: Object Spread (can start here or after Phase 8)
-    ├── Phase 9: Optional Chaining (can start here or after Phase 8)
-    └── Phase 12: Tuple/Array Inference (requires Phase 2 + Phase 5 + Phase 6)
-
-All phases above feed into:
-└── Phase 11: Error Reporting
+  → Phase 2: Property Access ✅
+    → Phase 3: Unification ✅
+      → Phase 4: Widening ✅
+        → Phase 5: Method Calls ✅
+          → Phase 6: Closing ✅
 ```
 
-**Notes on parallelism:**
-- The main trunk is Phases 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8.
-- Phases 9 (Optional Chaining) and 10 (Object Spread) can each begin as soon as
-  their minimum dependency is met: Phase 9 requires Phase 2, Phase 10 requires
-  Phase 3. Alternatively, they can be deferred until after Phase 8.
-- Phase 8 (Destructuring) depends on Phases 6/7 for row variable promotion.
-- Phase 12 (Tuple/Array Inference) requires Phase 2 (numeric indexing), Phase 5
-  (method call inference), and Phase 6 (closing) — it modifies how numeric
-  indexes are handled in Phase 2 and resolves during closing in Phase 6.
-- Phase 11 (Error Reporting) depends on all previous phases.
+### Object row polymorphism (after Phase 6)
+
+```
+Phase 6 → Phase 7: Row Polymorphism ✅
+```
+
+### Tuple/array inference (after Phase 6, parallel with Phase 7)
+
+```
+Phase 6 → Phase 12: Tuple/Array Inference
+```
+
+### Variadic tuples (after Phase 3, independent)
+
+```
+Phase 3 → Phase 13: Variadic Tuple Types
+            → Phase 14: Tuple Row Polymorphism (also requires Phase 12)
+```
+
+### Destructuring (requires both object and tuple row polymorphism)
+
+```
+Phase 7, Phase 14 → Phase 8: Destructuring
+```
+
+### Independent branches (can start early)
+
+```
+Phase 2 → Phase 9: Optional Chaining
+Phase 3 → Phase 10: Object Spread
+Phase 3 → Phase 13: Variadic Tuple Types
+```
+
+### Error reporting (after all other phases)
+
+```
+All phases → Phase 11: Error Reporting
+```
+
+### Summary
+
+| Phase                          | Depends on | Can parallelize with |
+|--------------------------------|------------|----------------------|
+| 1: Type System Extensions ✅   | —          | —                    |
+| 2: Property Access ✅          | 1          | —                    |
+| 3: Unification ✅              | 2          | —                    |
+| 4: Widening ✅                 | 3          | —                    |
+| 5: Method Calls ✅             | 4          | —                    |
+| 6: Closing ✅                  | 5          | —                    |
+| 7: Row Polymorphism ✅         | 6          | 12                   |
+| 8: Destructuring               | 7, 14      | —                    |
+| 9: Optional Chaining           | 2          | 3–14                 |
+| 10: Object Spread              | 3          | 4–14                 |
+| 11: Error Reporting            | all        | —                    |
+| 12: Tuple/Array Inference      | 6          | 7, 13                |
+| 13: Variadic Tuple Types       | 3          | 4–12                 |
+| 14: Tuple Row Polymorphism     | 12, 13     | 7                    |
 
 ---
 
@@ -1518,17 +1999,30 @@ All phases above feed into:
    non-literal usage is observed, and only deferring for the pure literal-index
    case.
 
+7. **Variadic tuple unification (Phase 13):** The existing tuple-vs-tuple
+   unification has a `TODO: handle spread` comment and only partial
+   `RestSpreadType` support. Completing this requires careful handling of
+   positional-vs-rest element alignment. The variadic-vs-variadic case (both
+   sides have `RestSpreadType`) with different prefix lengths is the most
+   complex path.
+
+8. **Tuple row polymorphism interaction with Phase 8 (Phase 14):** Phase 14
+   changes Phase 8's tuple destructuring from collapsing `[a, ...rest]` to
+   `Array<T>` to using `[t0, ...R]` instead. This means Phase 8's
+   implementation depends on Phase 14 being complete. If Phase 8 needs to
+   ship earlier, the `Array<T>` fallback can be kept as an interim solution.
+
 ---
 
 ## Critical Files
 
 | File | Phases | Status |
 |------|--------|--------|
-| `internal/type_system/types.go` | 1, 7 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s |
-| `internal/checker/expand_type.go` | 2, 9, 10, 12 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; Phase 12: modify TypeVarType numeric index branch to defer tuple/array commitment |
-| `internal/checker/unify.go` | 3, 4, 10 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability` |
-| `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically |
-| `internal/checker/infer_func.go` | 3, 6, 7, 8, 12 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed; Phase 12: resolve `ArrayConstraint` during closing |
+| `internal/type_system/types.go` | 1, 7, 13 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s; Phase 13: `TupleType.String()` flattening of resolved `RestSpreadType` |
+| `internal/checker/expand_type.go` | 2, 9, 10, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; Phase 12: modify TypeVarType numeric index branch to defer tuple/array commitment; Phase 13: variadic tuple element type union for method resolution |
+| `internal/checker/unify.go` | 3, 4, 10, 13 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability`; Phase 13: complete tuple-vs-tuple `RestSpreadType` unification |
+| `internal/checker/generalize.go` | 2, 6, 7 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically; Phases 13/14: no changes expected (visitor pattern handles `RestSpreadType` in tuples) |
+| `internal/checker/infer_func.go` | 3, 6, 7, 8, 12, 14 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed; Phase 12: resolve `ArrayConstraint` during closing; Phase 14: `closeTupleType` for rest variable filtering |
 | `internal/checker/infer_expr.go` | 2, 5, 7, 10, 12 | ✅ (Phase 2) `markPropertyWritten` in assignment handler; (Phase 7) No changes needed; Phase 12: detect index assignment on `ArrayConstraint` |
 | `internal/checker/errors.go` | 11 | Not started |
 | `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism) |
