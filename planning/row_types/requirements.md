@@ -1537,35 +1537,34 @@ positional element types and `T` is a type variable (or concrete type)
 representing the remaining elements. `T` can be:
 
 - A type variable: `[number, ...T]` — generic over the trailing elements.
-- An array type: `[number, ...string[]]` — fixed first element, then any number
+- An array type: `[number, ...Array<string>]` — fixed first element, then any number
   of strings.
 - A tuple type: `[number, ...[string, boolean]]` — equivalent to
   `[number, string, boolean]` (flattened in display).
 
 **Rest spread position:** A `RestSpreadType` is not limited to the trailing
-position. It can appear at the start, middle, or end of a tuple — and multiple
-rest spreads can appear in the same tuple, provided that at most one has an
-unbounded type (to keep length inference decidable). Fixed elements anchor the
-tuple, and rest spreads fill in the variable-length gaps:
+position. It can appear at the start, middle, or end of a tuple, but a tuple
+type may contain **at most one** `RestSpreadType` with an unbounded type (e.g.
+`Array<T>`). Multiple bounded rest spreads (where the inner type is a tuple or
+type variable) are allowed. This matches TypeScript's constraint and keeps
+length inference decidable.
 
 ```esc
 // Leading rest:
-type LastIsString = [...number[], string]
+type LastIsString = [...Array<number>, string]
 val a: LastIsString = ["hello"]         // ok — zero numbers, then string
 val b: LastIsString = [1, 2, "hello"]   // ok — two numbers, then string
 
-// Leading and trailing rest:
-type Sandwich = [...number[], string, ...boolean[]]
-val c: Sandwich = ["hello"]              // ok — zero numbers, string, zero booleans
-val d: Sandwich = [1, 2, "hello"]        // ok — two numbers, string, zero booleans
-val e: Sandwich = ["hello", true]        // ok — zero numbers, string, one boolean
-val f: Sandwich = [1, 2, "hello", true]  // ok — two numbers, string, one boolean
+// Trailing rest:
+type Prefixed = [string, ...Array<number>]
+val c: Prefixed = ["label"]             // ok — string, zero numbers
+val d: Prefixed = ["label", 1, 2, 3]   // ok — string, three numbers
 ```
 
 Variadic tuple types can be used in type aliases to express useful constraints:
 
 ```esc
-type OneOrMore<T> = [T, ...T[]]
+type OneOrMore<T> = [T, ...Array<T>]
 ```
 
 This ensures at least one element is present. A function accepting `OneOrMore<T>`
@@ -1574,7 +1573,7 @@ is guaranteed a non-empty collection at the type level:
 ```esc
 fn first<T>(items: OneOrMore<T>) -> T { return items[0] }
 first([1, 2, 3])    // ok — T = number
-first([])           // error — [] is not assignable to [number, ...number[]]
+first([])           // error — [] is not assignable to [number, ...Array<number>]
 ```
 
 In the type system, this is represented as a `TupleType` with `RestSpreadType`
@@ -1583,8 +1582,8 @@ elements at any position in `Elems`:
 // [number, ...T]
 TupleType{Elems: [number, RestSpreadType{Type: T}]}
 
-// [...number[], string, ...boolean[]]
-TupleType{Elems: [RestSpreadType{Type: Array<number>}, string, RestSpreadType{Type: Array<boolean>}]}
+// [...Array<number>, string]
+TupleType{Elems: [RestSpreadType{Type: Array<number>}, string]}
 ```
 
 The `RestSpreadType` type already exists and can appear in `TupleType.Elems`.
@@ -1617,8 +1616,8 @@ When unifying tuple types that contain `RestSpreadType` elements:
 **Examples:**
 ```esc
 // Fixed-vs-variadic
-val x: [number, ...string[]] = [1, "a", "b"]
-// 1 unifies with number, ["a", "b"] unifies with ...string[]
+val x: [number, ...Array<string>] = [1, "a", "b"]
+// 1 unifies with number, ["a", "b"] unifies with ...Array<string>
 
 // Variadic generic
 fn foo<T>(items: [number, ...T]) -> T { ... }
@@ -1763,6 +1762,156 @@ val r = identity([1, "hello"])
   rest pattern produces a variadic tuple `[t0, t1, ...R]` where `R` is the
   rest binding's type — this is now possible thanks to variadic tuple support
   (Phase 13), rather than collapsing to `Array<T>`.
+
+### 16. Array/Tuple Spread
+
+Array/tuple spread expressions (`[...arr, extra]`) allow spreading an iterable
+into a tuple literal. The checker already handles `ArraySpreadExpr` in
+`TupleExpr` inference (wrapping the spread operand in a `RestSpreadType` with
+`Array<elementType>`), but this section covers the full semantics including
+interaction with inferred types and variadic tuples.
+
+#### 16a. Basic array/tuple spread
+
+Spreading an array or tuple into a tuple literal creates a `RestSpreadType`
+element in the resulting `TupleType`:
+
+```esc
+val arr: Array<number> = [1, 2, 3]
+val result = [0, ...arr, 4]
+// result: [number, ...Array<number>, number]
+```
+
+```esc
+val tup: [string, boolean] = ["hello", true]
+val result = [0, ...tup, 4]
+// result: [number, string, boolean, number]
+// (spread of a concrete tuple is flattened)
+```
+
+When the spread source is a concrete `TupleType`, the elements should be
+inlined into the parent tuple rather than kept as a `RestSpreadType` (same
+flattening behavior as `TupleType.String()` for resolved rest types).
+
+#### 16b. Spread of inferred types (TypeVarType)
+
+When the spread source is an unannotated parameter (TypeVarType), the
+`RestSpreadType` wraps the type variable directly. This enables the spread
+to participate in variadic inference:
+
+```esc
+fn prepend(value, items) {
+    return [value, ...items]
+}
+// inferred: fn <T0, T1>(value: T0, items: T1) -> [T0, ...T1]
+// where T1 is constrained to be iterable
+```
+
+```esc
+fn concat(a, b) {
+    return [...a, ...b]
+}
+// inferred: fn <T0, T1>(a: T0, b: T1) -> [...T0, ...T1]
+// where T0 and T1 are constrained to be iterable
+```
+
+#### 16c. Iterable constraint
+
+The spread operand must be iterable (i.e., it must satisfy the `Iterable`
+interface). This is already checked via `GetIterableElementType` in the
+existing `ArraySpreadExpr` handler. Non-iterable types produce an error:
+
+```esc
+val x = [...42]  // error: Type 'number' is not iterable
+```
+
+#### 16d. Interaction with variadic tuple types (Section 14)
+
+When a spread source has a variadic tuple type, the `RestSpreadType` is
+preserved in the result:
+
+```esc
+fn foo<T>(items: [number, ...T]) -> [string, number, ...T] {
+    return ["prefix", ...items]
+}
+```
+
+When the spread source is an `Array<T>`, the result contains
+`...Array<T>` at that position, which unifies with variadic tuple patterns.
+
+#### 16e. Multiple spreads
+
+A tuple type can contain at most one `RestSpreadType` with an unbounded type
+(e.g. `Array<T>`). When multiple arrays are spread into a single tuple literal,
+the result type collapses to `Array<T1 | T2 | ...>` because the boundary
+between the two variable-length sequences is unknowable at the type level:
+
+```esc
+fn merge(a: Array<number>, b: Array<string>) {
+    return [...a, ...b]
+}
+// return type: Array<number | string>
+```
+
+If one spread source is a fixed-length tuple and the other is an array, the
+tuple elements can remain fixed while the array becomes the single rest:
+
+```esc
+fn prepend(tup: [number, string], arr: Array<boolean>) {
+    return [...tup, ...arr]
+}
+// return type: [number, string, ...Array<boolean>]
+```
+
+Multiple tuple spreads (no arrays) produce a single flattened tuple:
+
+```esc
+fn concat(a: [number, string], b: [boolean]) {
+    return [...a, ...b]
+}
+// return type: [number, string, boolean]
+```
+
+#### 16f. Spread with literal elements
+
+Literal elements adjacent to spreads retain their literal types:
+
+```esc
+val arr: Array<number> = [1, 2, 3]
+val result = [0, ...arr, "end"]
+// result: [0, ...Array<number>, "end"]
+```
+
+#### 16g. Mutability
+
+Spreading does **not** preserve mutability. The result of a spread expression is
+always a fresh, immutable tuple (wrapped in `MutabilityUncertain` like all
+inferred tuple literals). Spreading a `mut Array<T>` or `mut [...]` produces
+the same result type as spreading the immutable version:
+
+```esc
+val arr: mut Array<number> = [1, 2, 3]
+val result = [0, ...arr]
+// result: [number, ...Array<number>] — not mut
+```
+
+#### 16h. Implementation notes
+
+- **Existing handler:** `infer_expr.go` already handles `ArraySpreadExpr` in
+  `TupleExpr` inference by calling `GetIterableElementType` and wrapping the
+  result in `RestSpreadType{Type: Array<elementType>}`. This needs to be
+  refined:
+  - If the spread source is an `ArrayType` or `TypeRefType` referencing `Array`,
+    use `RestSpreadType{Type: sourceType}` directly (preserving the array type).
+  - If the spread source is a `TupleType`, inline the elements directly into
+    the parent tuple.
+  - If the spread source is a `TypeVarType`, use
+    `RestSpreadType{Type: typeVar}` and verify the iterable constraint is
+    deferred appropriately.
+- **Unification:** Tuple-vs-tuple unification with `RestSpreadType` (Phase 13)
+  already handles the mechanics. No additional unification changes needed.
+- **Display:** `TupleType.String()` already handles `RestSpreadType` elements
+  (Phase 13). No display changes needed.
 
 ## Implementation Approach (Summary)
 
