@@ -1990,6 +1990,208 @@ func TestTupleArrayInferenceFixedBugs(t *testing.T) {
 	}
 }
 
+func TestTupleArrayPassToTypedFunction(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"PassToTupleParam": {
+			// Passing to a function with a tuple parameter infers a tuple
+			input: `
+				fn bar(items: [number, string]) -> number { return items[0] }
+				fn foo(items) { bar(items) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: [number, string]) -> void",
+			},
+		},
+		"PassToArrayParam": {
+			// Passing to a function with an Array parameter infers Array
+			input: `
+				fn bar(items: Array<number>) -> number { return items[0] }
+				fn foo(items) { bar(items) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: Array<number>) -> void",
+			},
+		},
+		"PassToMutArrayParam": {
+			// Passing to a function with a mut Array parameter infers mut Array
+			input: `
+				fn bar(items: mut Array<number>) -> void { items[0] = 1 }
+				fn foo(items) { bar(items) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"IndexThenPassToArrayParam": {
+			// Indexing creates an ArrayConstraint, then passing to Array<T>
+			// forces array resolution
+			input: `
+				fn bar(items: Array<number>) -> number { return items[0] }
+				fn foo(items) {
+					val x = items[0]
+					bar(items)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: Array<number>) -> void",
+			},
+		},
+		"IndexThenPassToTupleParam": {
+			// Indexing creates an ArrayConstraint, then passing to a tuple
+			// binds to the tuple type
+			input: `
+				fn bar(items: [number, string]) -> number { return items[0] }
+				fn foo(items) {
+					val x = items[0]
+					bar(items)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: [number, string]) -> void",
+			},
+		},
+		"PassToMultipleTypedFunctions": {
+			// Passing to two functions with different array/tuple params
+			input: `
+				fn bar(items: Array<number>) -> number { return items[0] }
+				fn baz(items: Array<number>) -> number { return items[0] }
+				fn foo(items) {
+					bar(items)
+					baz(items)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: Array<number>) -> void",
+			},
+		},
+		"IndexThenPassToVariadicTupleParam": {
+			// Indexing and then passing to a variadic tuple parameter
+			input: `
+				fn bar(items: [number, ...Array<string>]) -> number { return items[0] }
+				fn foo(items) {
+					val x = items[0]
+					bar(items)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: [number, ...Array<string>]) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleRowPolymorphism(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"TupleWithReturn_RestPreserved": {
+			// When the tuple parameter is returned, the rest variable is preserved
+			input: `
+				fn foo(items) {
+					val x = items[0]
+					return items
+				}
+				val r = foo([1, "hello", true])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, ...T1]) -> [T0, ...T1]",
+				"r":   "[1, \"hello\", true]",
+			},
+		},
+		"TupleWithoutReturn_RestRemoved": {
+			// When the tuple parameter is not returned, the rest variable is removed
+			input: `
+				fn foo(items) { val x = items[0] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> void",
+			},
+		},
+		"DerivedReturn_RestDoesNotEscape": {
+			// Returning an element of the tuple — rest does not escape
+			input: `
+				fn foo(items) { return items[0] }
+				val r = foo([42])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> T0",
+				"r":   "42",
+			},
+		},
+		"MultipleTupleParamsWithReturn": {
+			// Both rest variables appear in return type, both preserved
+			input: `
+				fn foo(a, b) {
+					val x = a[0]
+					val y = b[0]
+					return [a, b]
+				}
+				val r = foo([1, 2], ["a", "b"])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1, T2, T3>(a: [T0, ...T1], b: [T2, ...T3]) -> [[T0, ...T1], [T2, ...T3]]",
+				"r":   "[[1, 2], [\"a\", \"b\"]]",
+			},
+		},
+		"NoExtraElements_RestResolvesToEmptyTuple": {
+			// When caller passes exactly the right number of elements, rest = []
+			input: `
+				fn foo(items) {
+					val x = items[0]
+					return items
+				}
+				val r = foo([42])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, ...T1]) -> [T0, ...T1]",
+				"r":   "[42]",
+			},
+		},
+		"LiteralTypesPreservedThroughRest": {
+			// Literal types are preserved through rest variable
+			input: `
+				fn foo(items) {
+					val x = items[0]
+					return items
+				}
+				val r = foo([1, "hello"])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, ...T1]) -> [T0, ...T1]",
+				"r":   "[1, \"hello\"]",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
 // TestTupleArrayInferenceUnifyErrors verifies that element-type conflicts are
 // properly reported when an array-constrained parameter is bound to an
 // incompatible concrete type.

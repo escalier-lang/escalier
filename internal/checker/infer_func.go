@@ -421,6 +421,14 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 // don't appear in the return type, resolves mutability, and resolves
 // ArrayConstraints to concrete tuple or array types.
 func (c *Checker) closeOpenParams(funcSigType *type_system.FuncType) {
+	// Resolve ArrayConstraints first so that inferred tuple types (including
+	// rest type variables) are visible when we collect return type vars.
+	// Without this ordering, rest type variables created during resolution
+	// wouldn't appear in returnVars and would always be removed.
+	for _, param := range funcSigType.Params {
+		c.resolveArrayConstraintsInType(param.Type)
+	}
+
 	// Collect unresolved type vars in the return type to determine which
 	// row variables escape. We intentionally do NOT collect from
 	// funcSigType.Throws: GeneralizeFuncType defaults throws-only type vars
@@ -435,29 +443,47 @@ func (c *Checker) closeOpenParams(funcSigType *type_system.FuncType) {
 	collectUnresolvedTypeVars(funcSigType.Return, returnVars, &returnOrder)
 
 	for _, param := range funcSigType.Params {
-		c.resolveArrayConstraintsInType(param.Type)
 		closeOpenObjectsInType(param.Type, returnVars)
 	}
 }
 
 // resolveArrayConstraintsInType walks a type tree and resolves any
 // ArrayConstraints on TypeVarTypes to concrete tuple or array types.
+//
+// We only need to check for ArrayConstraint on the incoming TypeVar (before
+// pruning), not on its representative. ArrayConstraints are always set on
+// the Prune-representative of a TypeVar because getMemberType prunes before
+// reaching the TypeVarType case where getOrCreateArrayConstraint is called.
+// The representative either IS the incoming TypeVar (the common case, and
+// the pre-prune check catches it), or the incoming TypeVar's representative
+// is a different param TypeVar that will be processed in its own iteration
+// of closeOpenParams's loop over all params.
 func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
-	// Pruning before the ArrayConstraint check is safe: ArrayConstraints are
-	// only created on parameter TypeVars (IsParam=true), which are always the
-	// representative in their equivalence class (Instance remains nil while
-	// the constraint is active). Prune on a param TypeVar returns itself.
-	t = type_system.Prune(t)
-
+	// Check for ArrayConstraint before pruning: a param TypeVar with an
+	// ArrayConstraint may have had its Instance set during return-type
+	// unification (e.g., `return items` unifies the param TypeVar with the
+	// return TypeVar, setting Instance on one of them). In that case,
+	// Prune() follows Instance and misses the constraint.
 	if tv, ok := t.(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
 		resolved := c.resolveArrayConstraint(tv.ArrayConstraint)
-		tv.Instance = resolved
 		tv.ArrayConstraint = nil
+		// Bind the resolved type to the representative of this TypeVar's
+		// equivalence class. If Instance is set (param was unified with the
+		// return TypeVar), the representative is the other end of the chain;
+		// otherwise the param TypeVar is its own representative.
+		rep := type_system.Prune(tv)
+		if repTV, ok := rep.(*type_system.TypeVarType); ok {
+			repTV.Instance = resolved
+		} else {
+			tv.Instance = resolved
+		}
 		// Recurse into the resolved type to handle nested ArrayConstraints
 		// (e.g. items[0][1] where the element itself is used as a tuple/array).
 		c.resolveArrayConstraintsInType(resolved)
 		return
 	}
+
+	t = type_system.Prune(t)
 
 	// Recurse into type constructors that can appear in inferred parameter types.
 	// We only need to cover shapes produced by inference on unannotated params:
@@ -531,7 +557,8 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 	// Resolve to tuple
 	isMut := constraint.HasIndexAssignment
 	if len(constraint.LiteralIndexes) == 0 {
-		tupleType := type_system.NewTupleType(nil)
+		restTV := c.FreshVar(nil)
+		tupleType := type_system.NewTupleType(nil, type_system.NewRestSpreadType(nil, restTV))
 		if isMut {
 			return &type_system.MutabilityType{
 				Type:       tupleType,
@@ -554,6 +581,12 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 			elems[i] = c.FreshVar(nil) // gap — unresolved type variable
 		}
 	}
+	// Append a rest type variable to capture extra caller-supplied elements.
+	// This is the tuple analogue of the row variable added to open objects.
+	// The rest variable will be removed during closing if it doesn't appear
+	// in the function's return type.
+	restTV := c.FreshVar(nil)
+	elems = append(elems, type_system.NewRestSpreadType(nil, restTV))
 	tupleType := type_system.NewTupleType(nil, elems...)
 	if isMut {
 		return &type_system.MutabilityType{
@@ -615,6 +648,7 @@ func closeOpenObjectsInType(t type_system.Type, returnVars map[int]*type_system.
 		for _, elem := range p.Elems {
 			closeOpenObjectsInType(elem, returnVars)
 		}
+		closeTupleType(p, returnVars)
 	case *type_system.UnionType:
 		for _, opt := range p.Types {
 			closeOpenObjectsInType(opt, returnVars)
@@ -658,4 +692,24 @@ func closeObjectType(objType *type_system.ObjectType, returnVars map[int]*type_s
 		filtered = append(filtered, elem)
 	}
 	objType.Elems = filtered
+}
+
+// closeTupleType removes a trailing RestSpreadType whose type variable doesn't
+// appear in returnVars. This is the tuple analogue of closeObjectType removing
+// RestSpreadElems for objects. If the rest variable appears in the
+// return type, it is kept and GeneralizeFuncType will promote it to a type
+// parameter.
+func closeTupleType(tupleType *type_system.TupleType, returnVars map[int]*type_system.TypeVarType) {
+	if len(tupleType.Elems) == 0 {
+		return
+	}
+	last := tupleType.Elems[len(tupleType.Elems)-1]
+	if rest, ok := last.(*type_system.RestSpreadType); ok {
+		if tv, ok := type_system.Prune(rest.Type).(*type_system.TypeVarType); ok {
+			if _, found := returnVars[tv.ID]; !found {
+				// Rest var not in return type — remove it
+				tupleType.Elems = tupleType.Elems[:len(tupleType.Elems)-1]
+			}
+		}
+	}
 }

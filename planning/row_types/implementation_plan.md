@@ -1648,7 +1648,7 @@ and display.
 
 ---
 
-## Phase 14: Tuple Row Polymorphism (Variadic Inference)
+## Phase 14: Tuple Row Polymorphism (Variadic Inference) ✅
 
 **Requirements covered:** Section 15 (tuple row polymorphism).
 
@@ -1959,7 +1959,7 @@ Phase 6 → Phase 12: Tuple/Array Inference ✅
 
 ```
 Phase 3 → Phase 13: Variadic Tuple Types ✅
-            → Phase 14: Tuple Row Polymorphism (also requires Phase 12)
+            → Phase 14: Tuple Row Polymorphism ✅ (also requires Phase 12)
 ```
 
 ### Destructuring (requires both object and tuple row polymorphism)
@@ -1999,7 +1999,7 @@ All phases → Phase 11: Error Reporting
 | 11: Error Reporting            | all        | —                    |
 | 12: Tuple/Array Inference ✅   | 6          | 7, 13                |
 | 13: Variadic Tuple Types ✅    | 3          | 4–12                 |
-| 14: Tuple Row Polymorphism     | 12, 13     | 7                    |
+| 14: Tuple Row Polymorphism ✅  | 12, 13     | 7                    |
 
 ---
 
@@ -2049,11 +2049,14 @@ All phases → Phase 11: Error Reporting
    variadic-vs-variadic case handles different prefix/suffix lengths by
    wrapping extras into a tuple with the shorter side's rest.
 
-8. **Tuple row polymorphism interaction with Phase 8 (Phase 14):** Phase 14
-   changes Phase 8's tuple destructuring from collapsing `[a, ...rest]` to
-   `Array<T>` to using `[t0, ...R]` instead. This means Phase 8's
-   implementation depends on Phase 14 being complete. If Phase 8 needs to
-   ship earlier, the `Array<T>` fallback can be kept as an interim solution.
+8. ~~**Tuple row polymorphism interaction with Phase 8 (Phase 14):**~~ Resolved.
+   Phase 14 is complete. Inferred tuples now include a `RestSpreadType` with a
+   fresh type variable, and `closeTupleType` removes it when it doesn't escape
+   to the return type. Phase 8 can now use `[t0, ...R]` for tuple destructuring
+   with rest patterns. Key implementation detail: `closeOpenParams` was
+   reordered to resolve ArrayConstraints before collecting `returnVars`, so that
+   rest type variables created during resolution are visible in the return type
+   analysis.
 
 ---
 
@@ -2065,11 +2068,11 @@ All phases → Phase 11: Error Reporting
 | `internal/checker/expand_type.go` | 2, 9, 10, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; ✅ (Phase 12) deferred tuple/array commitment via `ArrayConstraint`; `isArrayMethod`/`isArrayMutatingMethod` for runtime method classification; `getArrayConstraintPropertyAccess`/`getArrayConstraintIndexAccess` for subsequent accesses; ✅ (Phase 13) `tupleElemUnion` helper; `getMemberType` TupleType case handles `RestSpreadType` in both numeric index and method access |
 | `internal/checker/unify.go` | 3, 4, 10, 12, 13 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability`; ✅ (Phase 12) `handleArrayConstraintBinding` — updates constraint when TypeVar with `ArrayConstraint` is bound to Array or tuple type; ✅ (Phase 13) `splitTupleAtRest`, `unifyTuples`, `unifyFixedTuples`, `unifyFixedVsVariadic`, `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`; tuple-vs-array and array-vs-tuple handle `RestSpreadType` |
 | `internal/parser/type_ann.go` | 13 | ✅ (Phase 13) `DotDotDot` case in `primaryTypeAnn` — enables `...T` in tuple type annotations (e.g. `[number, ...T]`) |
-| `internal/checker/generalize.go` | 2, 6, 7, 12 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically; ✅ (Phase 12) `deepCloneType` clones `ArrayConstraint`; `collectUnresolvedTypeVars` collects from `ArrayConstraint`; Phases 13/14: no changes expected (visitor pattern handles `RestSpreadType` in tuples) |
-| `internal/checker/infer_func.go` | 3, 6, 7, 8, 12, 14 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed; ✅ (Phase 12) `closeOpenParams` now a `Checker` method; `resolveArrayConstraintsInType` and `resolveArrayConstraint` resolve constraints during closing; Phase 14: `closeTupleType` for rest variable filtering |
+| `internal/checker/generalize.go` | 2, 6, 7, 12 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically; ✅ (Phase 12) `deepCloneType` clones `ArrayConstraint`; `collectUnresolvedTypeVars` collects from `ArrayConstraint`; ✅ (Phase 13/14) No changes needed — visitor pattern handles `RestSpreadType` in tuples; `collectUnresolvedTypeVars` already walks `TupleType.Elems` and `RestSpreadType.Type` |
+| `internal/checker/infer_func.go` | 3, 6, 7, 8, 12, 14 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed; ✅ (Phase 12) `closeOpenParams` now a `Checker` method; `resolveArrayConstraintsInType` and `resolveArrayConstraint` resolve constraints during closing; ✅ (Phase 14) `closeTupleType` for rest variable filtering; `resolveArrayConstraint` appends `RestSpreadType` with fresh TV to inferred tuples; `resolveArrayConstraintsInType` checks ArrayConstraint before pruning; `closeOpenParams` resolves ArrayConstraints before collecting returnVars |
 | `internal/checker/infer_expr.go` | 2, 5, 7, 10, 12 | ✅ (Phase 2) `markPropertyWritten` in assignment handler; (Phase 7) No changes needed; ✅ (Phase 12) detect index assignment on `ArrayConstraint`, set `HasIndexAssignment` |
 | `internal/checker/errors.go` | 11 | Not started |
-| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism); ✅ Phase 12 (TupleArrayInference, TupleArrayInferenceEdgeCases); ✅ Phase 13 (VariadicTupleTypes, VariadicTupleSubtyping) |
+| `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism); ✅ Phase 12 (TupleArrayInference, TupleArrayInferenceEdgeCases); ✅ Phase 13 (VariadicTupleTypes, VariadicTupleSubtyping); ✅ Phase 14 (TupleRowPolymorphism) |
 | `internal/checker/widening_test.go` | 4 | ✅ Unit tests for `flatUnion` and `typeContains` helpers |
 
 ---

@@ -169,6 +169,13 @@ func recordInstanceChain(tv *TypeVarType) {
 // ArrayConstraint tracks numeric indexing patterns on a type variable before
 // committing to tuple vs. array. It is stored on TypeVarType and resolved
 // during closeOpenParams.
+//
+// This deferred approach is used instead of an Open field on TupleType (like
+// ObjectType has) because the tuple-vs-array decision depends on the full set
+// of access patterns: literal indexes produce tuples, while non-literal indexes
+// or mutating methods (.push, .pop) force mut Array<T>, and read-only methods
+// (.map, .filter) without literal indexes force Array<T>. An open TupleType
+// couldn't represent "might actually be an Array or mut Array".
 type ArrayConstraint struct {
 	LiteralIndexes     map[int]Type // index → element type variable
 	HasNonLiteralIndex bool         // true if items[i] used with non-literal number type
