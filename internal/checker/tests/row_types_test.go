@@ -1650,6 +1650,63 @@ func TestTupleArrayInference(t *testing.T) {
 				"foo": "fn (items: mut Array<string>) -> void",
 			},
 		},
+		"MultiplePushDifferentTypes": {
+			input: `
+				fn foo(items) {
+					items.push(5)
+					items.push("hello")
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number | string>) -> void",
+			},
+		},
+		"MultiplePushSameType": {
+			input: `
+				fn foo(items) {
+					items.push(5)
+					items.push(10)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"PushAndUnshiftDifferentTypes": {
+			input: `
+				fn foo(items) {
+					items.push(5)
+					items.unshift("hello")
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number | string>) -> void",
+			},
+		},
+		"MultiplePushWithLiteralIndex": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					items.push(5)
+					items.push("hello")
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number | string>) -> void",
+			},
+		},
+		"IndexAssignmentDifferentTypes": {
+			// Literal index assignments with different types produce a tuple, not an array.
+			input: `
+				fn foo(items) {
+					items[0] = 5
+					items[1] = "hello"
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [number, string]) -> void",
+			},
+		},
 	}
 
 	for name, test := range tests {

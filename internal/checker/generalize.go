@@ -33,6 +33,9 @@ func collectUnresolvedTypeVars(
 					collectUnresolvedTypeVars(elemTV, vars, order)
 				}
 				collectUnresolvedTypeVars(t.ArrayConstraint.ElemTypeVar, vars, order)
+				for _, mev := range t.ArrayConstraint.MethodElemVars {
+					collectUnresolvedTypeVars(mev, vars, order)
+				}
 			}
 		}
 	case *type_system.FuncType:
@@ -149,6 +152,10 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 			for idx, elemTV := range ac.LiteralIndexes {
 				clonedIndexes[idx] = c.deepCloneType(elemTV, varMapping)
 			}
+			clonedMethodElemVars := make([]*type_system.TypeVarType, len(ac.MethodElemVars))
+			for i, mev := range ac.MethodElemVars {
+				clonedMethodElemVars[i] = c.deepCloneType(mev, varMapping).(*type_system.TypeVarType)
+			}
 			fresh.ArrayConstraint = &type_system.ArrayConstraint{
 				LiteralIndexes:     clonedIndexes,
 				HasNonLiteralIndex: ac.HasNonLiteralIndex,
@@ -156,6 +163,7 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 				HasReadOnlyMethod:  ac.HasReadOnlyMethod,
 				HasIndexAssignment: ac.HasIndexAssignment,
 				ElemTypeVar:        c.deepCloneType(ac.ElemTypeVar, varMapping),
+				MethodElemVars:     clonedMethodElemVars,
 			}
 		}
 		return fresh
