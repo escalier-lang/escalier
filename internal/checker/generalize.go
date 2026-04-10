@@ -33,6 +33,9 @@ func collectUnresolvedTypeVars(
 					collectUnresolvedTypeVars(elemTV, vars, order)
 				}
 				collectUnresolvedTypeVars(t.ArrayConstraint.ElemTypeVar, vars, order)
+				for _, mev := range t.ArrayConstraint.MethodElemVars {
+					collectUnresolvedTypeVars(mev, vars, order)
+				}
 			}
 		}
 	case *type_system.FuncType:
@@ -149,6 +152,24 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 			for idx, elemTV := range ac.LiteralIndexes {
 				clonedIndexes[idx] = c.deepCloneType(elemTV, varMapping)
 			}
+			// Clone MethodElemVars without going through deepCloneType: the
+			// fresh elem vars may already be bound (e.g. after push(5) binds
+			// them to number), and deepCloneType would Prune through to the
+			// concrete type, making the cast to *TypeVarType panic.
+			clonedMethodElemVars := make([]*type_system.TypeVarType, len(ac.MethodElemVars))
+			for i, mev := range ac.MethodElemVars {
+				if existing, ok := varMapping[mev.ID]; ok {
+					clonedMethodElemVars[i] = existing
+				} else {
+					freshMev := c.FreshVar(nil)
+					freshMev.Widenable = mev.Widenable
+					if mev.Instance != nil {
+						freshMev.Instance = c.deepCloneType(mev.Instance, varMapping)
+					}
+					varMapping[mev.ID] = freshMev
+					clonedMethodElemVars[i] = freshMev
+				}
+			}
 			fresh.ArrayConstraint = &type_system.ArrayConstraint{
 				LiteralIndexes:     clonedIndexes,
 				HasNonLiteralIndex: ac.HasNonLiteralIndex,
@@ -156,6 +177,7 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 				HasReadOnlyMethod:  ac.HasReadOnlyMethod,
 				HasIndexAssignment: ac.HasIndexAssignment,
 				ElemTypeVar:        c.deepCloneType(ac.ElemTypeVar, varMapping),
+				MethodElemVars:     clonedMethodElemVars,
 			}
 		}
 		return fresh

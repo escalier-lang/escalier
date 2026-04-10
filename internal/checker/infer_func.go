@@ -532,6 +532,13 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 		IsPatMatch: false,
 	}
 
+	// Unify all per-method-call element type vars with ElemTypeVar.
+	// Each freshElem was bound to the argument type during handleFuncCall;
+	// unifying them all with ElemTypeVar accumulates a union.
+	for _, freshElem := range constraint.MethodElemVars {
+		c.Unify(ctx, freshElem, constraint.ElemTypeVar)
+	}
+
 	// Mutating methods, non-literal indexes, or read-only methods without any
 	// literal indexes force resolution to Array<T>. Read-only methods like
 	// .map() operate on the whole collection, so without positional information

@@ -1092,18 +1092,20 @@ func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.T
 		return type_system.NewNumPrimType(nil), errors
 	}
 
-	// Look up the property on the Array type to resolve the method and determine mutability.
-	// We create a temporary Array<ElemTypeVar> to delegate the lookup.
-	// TODO(#404): This immediately resolves the method signature against ElemTypeVar,
-	// which means a second call with a different type (e.g. push(5) then push("hello"))
-	// fails instead of inferring a union. Needs deferred call-site resolution.
+	// Create a fresh elem var for this call site so that multiple calls
+	// with different types don't conflict — they'll be unified into a
+	// union during resolveArrayConstraint.
 	arrayAlias := c.GlobalScope.Namespace.Types["Array"]
 	if arrayAlias == nil {
 		errors = append(errors, &ExpectedObjectError{Type: t, span: ast.Span{}})
 		return type_system.NewNeverType(nil), errors
 	}
 
-	tempArrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, constraint.ElemTypeVar)
+	freshElem := c.FreshVar(nil)
+	freshElem.Widenable = true
+	constraint.MethodElemVars = append(constraint.MethodElemVars, freshElem)
+
+	tempArrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, freshElem)
 	resultType, accessErrors := c.getMemberType(ctx, tempArrayType, PropertyKey{Name: propName})
 	errors = slices.Concat(errors, accessErrors)
 
