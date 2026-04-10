@@ -1025,7 +1025,7 @@ rest element case and the interaction with `inferFuncParams`.
   ```
   — `R = [2, 3]`, `r: [2, 3]`.
 - **Rest with type annotation:**
-  `fn foo([a, ...rest]: [number, ...string[]]) { ... }` — use annotation as-is.
+  `fn foo([a, ...rest]: [number, ...Array<string>]) { ... }` — use annotation as-is.
 
 ---
 
@@ -1117,12 +1117,15 @@ rest element case and the interaction with `inferFuncParams`.
 
 ---
 
-## Phase 10: Object Spread & Multiple RestSpreadElems
+## Phase 10: Object & Array/Tuple Spread
 
-**Requirements covered:** Section 12 (object spread, multiple RestSpreadElems).
+**Requirements covered:** Section 12 (object spread, multiple RestSpreadElems),
+Section 16 (array/tuple spread).
 
 **Goal:** Handle `ObjSpreadExpr` in object literals and support multiple
-`RestSpreadElem`s in unification.
+`RestSpreadElem`s in unification. Refine `ArraySpreadExpr` handling in tuple
+literals to preserve source types and support inferred (TypeVarType) spread
+sources.
 
 ### Changes
 
@@ -1235,6 +1238,128 @@ rest element case and the interaction with `inferFuncParams`.
   let extended = {...base, z: 3}
   let v = extended.x  // found via RestSpreadElem
   ```
+
+### Array/Tuple Spread Changes
+
+6. **`internal/checker/infer_expr.go`** — `TupleExpr` inference (~line 272):
+   Refine the existing `ArraySpreadExpr` handler. Currently it always wraps the
+   result in `RestSpreadType{Type: Array<elementType>}`. Update to preserve the
+   source type:
+
+   **a. Spread of `TupleType`:** If the spread source's type (after pruning) is
+   a `TupleType`, inline its elements directly into the parent tuple rather
+   than creating a `RestSpreadType`:
+   ```go
+   case *ast.ArraySpreadExpr:
+       spreadType, spreadErrors := c.inferExpr(ctx, spread.Value)
+       errors = slices.Concat(errors, spreadErrors)
+       prunedType := Prune(spreadType)
+       // Unwrap MutabilityType if present
+       if mut, ok := prunedType.(*MutabilityType); ok {
+           prunedType = Prune(mut.Type)
+       }
+       switch st := prunedType.(type) {
+       case *TupleType:
+           // Inline tuple elements directly
+           elemTypes = append(elemTypes, st.Elems...)
+       case *TypeRefType:
+           // Array<T> — preserve as RestSpreadType
+           elemTypes = append(elemTypes, NewRestSpreadType(nil, st))
+       default:
+           // Other iterables — check and wrap
+           elementType := c.GetIterableElementType(ctx, spreadType)
+           if elementType == nil {
+               // ... error handling (existing) ...
+           }
+           elemTypes = append(elemTypes, NewRestSpreadType(nil, &TypeRefType{
+               Name: NewIdent("Array"), TypeArgs: []Type{elementType},
+           }))
+       }
+   ```
+
+   **b. Spread of `TypeVarType`:** If the spread source is a `TypeVarType`
+   (unannotated parameter), use `RestSpreadType{Type: typeVar}` directly
+   without calling `GetIterableElementType`. The iterable constraint is
+   enforced structurally at call sites: when the caller passes a concrete
+   argument, unification will resolve the type variable and the
+   `RestSpreadType` will unify against the argument's elements. If the
+   argument is not iterable, unification will fail at that point. This
+   mirrors how `ArrayConstraint` defers the tuple-vs-array decision —
+   no upfront constraint is needed on the type variable itself.
+
+   **c. Spread of `ArrayType`:** If the spread source resolves to an
+   `ArrayType` directly (rare — usually it's `TypeRefType` with name `Array`),
+   wrap in `RestSpreadType{Type: sourceType}`.
+
+7. **No unification changes needed:** Tuple-vs-tuple unification with
+   `RestSpreadType` at any position is already complete (Phase 13). The
+   `RestSpreadType` elements produced by array/tuple spread will unify using
+   the existing variadic tuple unification logic.
+
+8. **No display changes needed:** `TupleType.String()` already handles
+   `RestSpreadType` elements, including flattening resolved rest types
+   (Phase 13).
+
+### Array/Tuple Spread Tests
+
+- **Spread of array into tuple:**
+  ```esc
+  val arr: Array<number> = [1, 2, 3]
+  val result = [0, ...arr, 4]
+  ```
+  — `result: [0, ...Array<number>, 4]`.
+
+- **Spread of tuple into tuple (flattened):**
+  ```esc
+  val tup: [string, boolean] = ["hello", true]
+  val result = [0, ...tup, 4]
+  ```
+  — `result: [number, string, boolean, number]` (tuple spread inlined).
+
+- **Spread of inferred type:**
+  ```esc
+  fn prepend(value, items: Array<number>) {
+      return [value, ...items]
+  }
+  ```
+  — return type: `[T0, ...Array<number>]`.
+
+- **Multiple array spreads (collapses to Array):**
+  ```esc
+  fn merge(a: Array<number>, b: Array<string>) {
+      return [...a, ...b]
+  }
+  ```
+  — return type: `Array<number | string>`.
+
+- **Tuple + array spread:**
+  ```esc
+  fn prepend(tup: [number, string], arr: Array<boolean>) {
+      return [...tup, ...arr]
+  }
+  ```
+  — return type: `[number, string, ...Array<boolean>]`.
+
+- **Multiple tuple spreads (flattened):**
+  ```esc
+  fn concat(a: [number, string], b: [boolean]) {
+      return [...a, ...b]
+  }
+  ```
+  — return type: `[number, string, boolean]`.
+
+- **Spread of non-iterable (error):**
+  ```esc
+  val x = [...42]
+  ```
+  — error: `Type 'number' is not iterable`.
+
+- **Spread with literal elements:**
+  ```esc
+  val arr: Array<number> = [1, 2, 3]
+  val result = ["start", ...arr, "end"]
+  ```
+  — `result: ["start", ...Array<number>, "end"]`.
 
 ---
 
@@ -1459,13 +1584,13 @@ and display.
 
    The existing code already handles the case where one side has a
    `RestSpreadType` at the end. Complete the implementation to support
-   `RestSpreadType` at any position (leading, middle, or trailing), and
-   multiple rest spreads within a single tuple.
+   `RestSpreadType` at any position (leading, middle, or trailing). A tuple
+   type may contain at most one `RestSpreadType` with an unbounded type
+   (e.g. `Array<T>`), matching TypeScript's constraint.
 
-   **General approach:** Partition `TupleType.Elems` into segments of fixed
-   elements separated by `RestSpreadType` boundaries. Fixed elements at the
-   start and end of the tuple anchor the unification — they must match
-   pairwise. The rest spreads absorb the variable-length gaps between anchors.
+   **General approach:** Fixed elements at the start and end of the tuple
+   anchor the unification — they must match pairwise. The rest spread
+   absorbs the variable-length gap.
 
    **a. Trailing rest — fixed-vs-variadic** (`[A, B]` vs `[C, ...R]`):
    1. Unify positional elements pairwise up to the variadic boundary.
@@ -1483,30 +1608,18 @@ and display.
    2. Collect remaining elements from the fixed side: `[number, number]`.
    3. Unify: `Unify(R, [number, number])`.
 
-   **c. Leading and trailing rest** (`[...R1, string, ...R2]` vs fixed):
-   1. Unify fixed interior elements pairwise (here `string`).
-   2. Elements before the first fixed anchor absorb into the leading rest.
-   3. Elements after the last fixed anchor absorb into the trailing rest.
-
-   ```go
-   // [...number[], string, ...boolean[]] vs [1, 2, "hello", true]
-   // → leading rest absorbs [1, 2] (unify with number[])
-   // → fixed: Unify("hello", string)
-   // → trailing rest absorbs [true] (unify with boolean[])
-   ```
-
-   **d. Variadic-vs-variadic** (`[A, ...R1]` vs `[B, ...R2]`):
+   **c. Variadic-vs-variadic** (`[A, ...R1]` vs `[B, ...R2]`):
    1. Unify positional elements pairwise up to the shorter prefix.
    2. If both have the same number of positional elements, unify `R1` with `R2`.
    3. If one has more positional elements, collect the extras and unify the
       shorter side's rest with `[extras..., ...longerRest]`.
 
-   **e. Variadic-vs-Array** (`[A, ...R]` vs `Array<T>`):
+   **d. Variadic-vs-Array** (`[A, ...R]` vs `Array<T>`):
    1. Unify `A` with `T`.
    2. Unify `R` with `Array<T>` (the rest elements must also be arrays of `T`).
 
-   **f. Array-vs-variadic** (`Array<T>` vs `[A, ...R]`):
-   Mirror of (e).
+   **e. Array-vs-variadic** (`Array<T>` vs `[A, ...R]`):
+   Mirror of (d).
 
 2. **`internal/type_system/types.go`** — `TupleType.String()`:
 
@@ -1573,22 +1686,22 @@ and display.
 ### Tests
 
 - **Variadic tuple type annotation:**
-  `fn foo(items: [number, ...string[]]) { ... }` — parses and type-checks.
+  `fn foo(items: [number, ...Array<string>]) { ... }` — parses and type-checks.
 
 - **Type alias with variadic tuple:**
   ```esc
-  type OneOrMore<T> = [T, ...T[]]
+  type OneOrMore<T> = [T, ...Array<T>]
   fn first<T>(items: OneOrMore<T>) -> T { return items[0] }
   val r = first([1, 2, 3])
   ```
   — `T = number`, `r: number`. Calling `first([])` should produce an error
-  because `[]` is not assignable to `[number, ...number[]]`.
+  because `[]` is not assignable to `[number, ...Array<number>]`.
 
 - **Fixed-vs-variadic unification:**
   ```esc
-  val x: [number, ...string[]] = [1, "a", "b"]
+  val x: [number, ...Array<string>] = [1, "a", "b"]
   ```
-  — `1` unifies with `number`, `["a", "b"]` unifies with `...string[]`.
+  — `1` unifies with `number`, `["a", "b"]` unifies with `...Array<string>`.
 
 - **Variadic-vs-fixed unification:**
   ```esc
@@ -1626,25 +1739,18 @@ and display.
 
 - **Leading rest:**
   ```esc
-  val x: [...number[], string] = [1, 2, "hello"]
+  val x: [...Array<number>, string] = [1, 2, "hello"]
   ```
-  — `[1, 2]` absorbed by `...number[]`, `"hello"` unified with `string`.
-
-- **Leading and trailing rest:**
-  ```esc
-  val x: [...number[], string, ...boolean[]] = [1, 2, "hello", true]
-  ```
-  — `[1, 2]` absorbed by leading `...number[]`, `"hello"` unified with
-  `string`, `[true]` absorbed by trailing `...boolean[]`.
+  — `[1, 2]` absorbed by `...Array<number>`, `"hello"` unified with `string`.
 
 - **Type alias with variadic tuple:**
   ```esc
-  type OneOrMore<T> = [T, ...T[]]
+  type OneOrMore<T> = [T, ...Array<T>]
   fn first<T>(items: OneOrMore<T>) -> T { return items[0] }
   val r = first([1, 2, 3])
   ```
   — `T = number`, `r: number`. Calling `first([])` should produce an error
-  because `[]` is not assignable to `[number, ...number[]]`.
+  because `[]` is not assignable to `[number, ...Array<number>]`.
 
 ---
 
@@ -1972,7 +2078,7 @@ Phase 7, Phase 14 → Phase 8: Destructuring
 
 ```
 Phase 2 → Phase 9: Optional Chaining
-Phase 3 → Phase 10: Object Spread
+Phase 3 → Phase 10: Object & Array/Tuple Spread (also requires Phase 13 for tuple spread)
 Phase 3 → Phase 13: Variadic Tuple Types ✅
 ```
 
@@ -1984,22 +2090,22 @@ All phases → Phase 11: Error Reporting
 
 ### Summary
 
-| Phase                          | Depends on | Can parallelize with |
-|--------------------------------|------------|----------------------|
-| 1: Type System Extensions ✅   | —          | —                    |
-| 2: Property Access ✅          | 1          | —                    |
-| 3: Unification ✅              | 2          | —                    |
-| 4: Widening ✅                 | 3          | —                    |
-| 5: Method Calls ✅             | 4          | —                    |
-| 6: Closing ✅                  | 5          | —                    |
-| 7: Row Polymorphism ✅         | 6          | 12                   |
-| 8: Destructuring               | 7, 14      | —                    |
-| 9: Optional Chaining           | 2          | 3–14                 |
-| 10: Object Spread              | 3          | 4–14                 |
-| 11: Error Reporting            | all        | —                    |
-| 12: Tuple/Array Inference ✅   | 6          | 7, 13                |
-| 13: Variadic Tuple Types ✅    | 3          | 4–12                 |
-| 14: Tuple Row Polymorphism ✅  | 12, 13     | 7                    |
+| Phase                             | Depends on | Can parallelize with |
+|-----------------------------------|------------|----------------------|
+| 1: Type System Extensions ✅      | —          | —                    |
+| 2: Property Access ✅             | 1          | —                    |
+| 3: Unification ✅                 | 2          | —                    |
+| 4: Widening ✅                    | 3          | —                    |
+| 5: Method Calls ✅                | 4          | —                    |
+| 6: Closing ✅                     | 5          | —                    |
+| 7: Row Polymorphism ✅            | 6          | 12                   |
+| 8: Destructuring                  | 7, 14      | —                    |
+| 9: Optional Chaining              | 2          | 3–14                 |
+| 10: Object & Array/Tuple Spread   | 3, 13      | 4–14                 |
+| 11: Error Reporting               | all        | —                    |
+| 12: Tuple/Array Inference ✅      | 6          | 7, 13                |
+| 13: Variadic Tuple Types ✅       | 3          | 4–12                 |
+| 14: Tuple Row Polymorphism ✅     | 12, 13     | 7                    |
 
 ---
 
