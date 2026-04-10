@@ -89,21 +89,26 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					})
 				} else {
 					pruned := type_system.Prune(objType)
-					// Open object types start without a MutabilityType wrapper —
-					// mark the property as written since we now know mutation occurs.
-					marked := false
-					if litType, ok := indexType.(*type_system.LitType); ok {
-						if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
-							marked = markPropertyWritten(pruned, strLit.Value)
+					// Check if the base has an ArrayConstraint — mark index assignment
+					if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
+						tv.ArrayConstraint.HasIndexAssignment = true
+					} else {
+						// Open object types start without a MutabilityType wrapper —
+						// mark the property as written since we now know mutation occurs.
+						marked := false
+						if litType, ok := indexType.(*type_system.LitType); ok {
+							if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
+								marked = markPropertyWritten(pruned, strLit.Value)
+							}
 						}
-					}
-					if !marked {
-						// Not an open object — check if the object type allows mutation
-						if _, ok := pruned.(*type_system.MutabilityType); !ok {
-							errors = append(errors, &CannotMutateImmutableError{
-								Type: objType,
-								span: expr.Left.Span(),
-							})
+						if !marked {
+							// Not an open object — check if the object type allows mutation
+							if _, ok := pruned.(*type_system.MutabilityType); !ok {
+								errors = append(errors, &CannotMutateImmutableError{
+									Type: objType,
+									span: expr.Left.Span(),
+								})
+							}
 						}
 					}
 				}

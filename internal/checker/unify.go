@@ -1752,6 +1752,14 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 						return errors
 					}
 				}
+				// When a TypeVar with an ArrayConstraint is bound to a concrete
+				// Array or tuple type, update the constraint flags so that
+				// resolution at closing time produces the correct type.
+				if typeVar1.ArrayConstraint != nil {
+					if c.handleArrayConstraintBinding(ctx, typeVar1, t2) {
+						return errors
+					}
+				}
 				// When binding a Widenable TypeVar, widen literals to their
 				// primitive types and recursively widen object/tuple literals
 				// (e.g. "hello" -> string, {x: 1} -> {x: number}).
@@ -1850,6 +1858,47 @@ func occursInType(t1, t2 type_system.Type) bool {
 // converts it to an open object and binds it to the type variable. Returns true if
 // the conversion was performed.
 //
+// handleArrayConstraintBinding handles the case where a TypeVarType with an
+// ArrayConstraint is being bound to a concrete type. If the bound type is an
+// Array, mut Array, or tuple, the constraint is updated accordingly and the
+// function returns true to indicate that binding was handled. Otherwise it
+// returns false and normal binding proceeds.
+func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system.TypeVarType, boundType type_system.Type) bool {
+	constraint := typeVar.ArrayConstraint
+	inner := boundType
+	isMut := false
+	if mut, ok := inner.(*type_system.MutabilityType); ok {
+		isMut = mut.Mutability == type_system.MutabilityMutable
+		inner = mut.Type
+	}
+
+	switch t := inner.(type) {
+	case *type_system.TypeRefType:
+		if type_system.QualIdentToString(t.Name) == "Array" && len(t.TypeArgs) > 0 {
+			// Passed to Array<T> or mut Array<T> — force array resolution
+			constraint.HasNonLiteralIndex = true
+			if isMut {
+				constraint.HasMutatingMethod = true
+			}
+			// Unify the constraint's element type var with the array's element type
+			c.Unify(ctx, constraint.ElemTypeVar, t.TypeArgs[0])
+			for _, elemTV := range constraint.LiteralIndexes {
+				c.Unify(ctx, elemTV, t.TypeArgs[0])
+			}
+			return true
+		}
+	case *type_system.TupleType:
+		// Passed to a tuple type — unify element types pairwise
+		for i, elemType := range t.Elems {
+			if tv, ok := constraint.LiteralIndexes[i]; ok {
+				c.Unify(ctx, tv, elemType)
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // This is needed because when an unannotated parameter (e.g. `fn foo(obj)`) is
 // passed to a function with a typed parameter (e.g. `fn bar(x: {a: number})`),
 // bind() would normally set the type variable's Instance to the closed ObjectType

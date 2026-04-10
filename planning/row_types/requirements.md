@@ -1374,8 +1374,8 @@ fn bar(items) {
     val i = 5
     items[i] = "hello"   // i has literal type 5, so this is items[5]
 }
-// HasIndexAssignment is true → inferred as mut Array, not tuple
-// (but the index itself is treated as a literal index, not a non-literal)
+// HasIndexAssignment is true → inferred as mut [T0, T1, T2, T3, T4, string]
+// (mutable tuple — the index is a literal, so tuple shape is preserved)
 ```
 
 The tuple length is determined by the highest index accessed + 1. If `items[0]`
@@ -1447,49 +1447,69 @@ rule apply.
 **Why:** A non-literal index type means the position being accessed is unknown at
 type-check time, so a tuple would not be meaningful.
 
-#### 13d. Index assignment implies mut Array
+#### 13d. Index assignment implies mutability
 
 If an element is assigned via index notation (`items[i] = value`), the parameter
-should be inferred as `mut Array<T>` regardless of whether the index is a literal
-or a variable:
+must be mutable. When only literal indexes are used (no mutating methods or
+non-literal indexes), the parameter is inferred as a **mutable tuple** rather
+than `mut Array<T>`:
 
 ```esc
 fn foo(items) {
     items[0] = 42
 }
+// inferred: fn foo(items: mut [number]) -> void
+```
+
+If a non-literal index is used for assignment, the parameter is inferred as
+`mut Array<T>` (per Section 13c). If mutating methods are also used, `mut Array<T>`
+takes precedence (per Section 13b):
+
+```esc
+fn foo(items) {
+    items[0] = 42
+    items.push(99)
+}
 // inferred: fn foo(items: mut Array<number>) -> void
 ```
 
-**Why:** Assigning to an index mutates the array. Even though `items[0] = 42`
-uses a literal index, the assignment implies the caller's array will be modified,
-which requires `mut`. A tuple would also be mutated, but tuples are
-value-semantics types in Escalier — they cannot be mutated in place.
+**Why:** Index assignment with a literal index mutates a specific known position.
+A mutable tuple (`mut [T]`) captures this precisely — the length is still fixed
+and each position retains its own type. `mut Array<T>` would lose positional type
+information. Note that mutating methods like `.push()` change the length, which
+is incompatible with tuple semantics, so they still force `mut Array<T>`.
 
 #### 13e. Summary of inference rules
 
 | Usage pattern | Inferred type |
 |---------------|---------------|
 | Only non-negative integer literal indexes + read-only Array methods | Tuple `[t0, t1, ...]` |
+| Literal index assignment only (no mutating methods) | `mut [t0, t1, ...]` |
 | Any non-literal numeric index (read-only) | `Array<T>` |
-| Any index assignment | `mut Array<T>` |
 | Any mutating method (`.push()`, `.pop()`, etc.) | `mut Array<T>` |
 | Mix of literal indexes + mutating methods | `mut Array<T>` |
+| Index assignment + mutating methods | `mut Array<T>` |
 
 #### 13f. Interaction with existing Section 3
 
-Section 3 currently binds a type variable to `Array<T>` whenever a numeric index
-is used. This section refines that behavior:
+Section 3 previously bound a type variable to `Array<T>` whenever a numeric index
+was used. This section refines that behavior:
 
 - **Non-negative integer literal index** (e.g. `obj[0]`): defer commitment —
-  the type variable should not be immediately bound to `Array<T>`. Instead,
-  record the index as a tuple constraint. Final resolution to tuple vs. array
-  happens during closing (Section 5), based on whether any array-only patterns
-  were observed. Other numeric literals (negative, fractional) are treated as
-  non-literal access.
-- **Non-literal numeric index** (e.g. `obj[i]`): bind to `Array<T>` immediately,
-  as before.
-- **Mutating method call**: bind to `mut Array<T>` (or upgrade an existing
-  constraint to `mut Array<T>`).
+  the type variable is not immediately bound to `Array<T>`. Instead, an
+  `ArrayConstraint` is created on the `TypeVarType` to record the index as a
+  tuple constraint. Final resolution to tuple vs. array happens during closing
+  (Section 5), based on whether any array-only patterns were observed. Other
+  numeric literals (negative, fractional) are treated as non-literal access.
+- **Non-literal numeric index** (e.g. `obj[i]`): records `HasNonLiteralIndex`
+  on the `ArrayConstraint`, which forces resolution to `Array<T>` at closing
+  time.
+- **Mutating method call**: records `HasMutatingMethod` on the `ArrayConstraint`,
+  which forces resolution to `mut Array<T>` at closing time.
+- **Array method on fresh TypeVar**: When a property like `.push()` or `.length`
+  is accessed on a TypeVarType that doesn't yet have an `ArrayConstraint`, the
+  system checks whether the property exists on the Array type definition. If so,
+  an `ArrayConstraint` is created instead of an open object.
 
 This deferred approach avoids premature commitment to `Array<T>` when the usage
 pattern actually indicates a tuple.

@@ -162,13 +162,14 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 			},
 		},
 		"NumericIndex": {
+			// With Phase 12, a single literal index infers a tuple.
 			input: `
 				fn foo(obj) {
 					return obj[0]
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: Array<T0>) -> T0",
+				"foo": "fn <T0>(obj: [T0]) -> T0",
 			},
 		},
 		"StringLiteralIndex": {
@@ -234,13 +235,14 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 			},
 		},
 		"MultipleNumericIndexes": {
+			// With Phase 12, literal indexes infer a tuple, not an array.
 			input: `
 				fn foo(obj) {
 					return [obj[0], obj[1]]
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: Array<T0>) -> [T0, T0]",
+				"foo": "fn <T0, T1>(obj: [T0, T1]) -> [T0, T1]",
 			},
 		},
 		"IdempotentPropertyAccess": {
@@ -1084,21 +1086,23 @@ func TestRowTypesClosing(t *testing.T) {
 			},
 		},
 		"ArrayElementWriteAccess": {
-			// Open object nested inside Array should also be closed
+			// With Phase 12, a single literal index resolves to a tuple.
+			// The nested open object is still closed.
 			input: `
 				fn foo(arr) { arr[0].x = 1 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (arr: Array<mut {x: number}>) -> void",
+				"foo": "fn (arr: [mut {x: number}]) -> void",
 			},
 		},
 		"ArrayElementReadAccess": {
-			// Open object nested inside Array should also be closed
+			// With Phase 12, a single literal index resolves to a tuple.
+			// The nested open object is still closed.
 			input: `
 				fn foo(arr) { return arr[0].bar }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(arr: Array<{bar: T0}>) -> T0",
+				"foo": "fn <T0>(arr: [{bar: T0}]) -> T0",
 			},
 		},
 	}
@@ -1568,6 +1572,197 @@ func TestVariadicTupleIndexing(t *testing.T) {
 				"b": "string",
 				"c": "boolean",
 				"d": "boolean",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleArrayInference(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"TupleFromLiteralIndexes": {
+			input: `
+				fn foo(items) { return [items[0], items[1]] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, T1]) -> [T0, T1]",
+			},
+		},
+		"TupleWithLength": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					val l = items.length
+					return [a, l]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> [T0, number]",
+			},
+		},
+		"ArrayFromNonLiteralIndex": {
+			input: `
+				fn foo(items, i: number) { return items[i] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: Array<T0>, i: number) -> T0",
+			},
+		},
+		"MutTupleFromIndexAssignment": {
+			// Index assignment forces mutability but keeps tuple shape.
+			input: `
+				fn foo(items) { items[0] = 42 }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [number]) -> void",
+			},
+		},
+		"ArrayFromPush": {
+			input: `
+				fn foo(items) { items.push(42) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"ArrayFromLiteralIndexAndPush": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					items.push("hello")
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<string>) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleArrayInferenceEdgeCases(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"GapIndex": {
+			// Only assigning index 1 creates a 2-tuple with a gap at index 0.
+			input: `
+				fn foo(items) { items[1] = 42 }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: mut [T0, number]) -> void",
+			},
+		},
+		"ObjectLiteralWidening": {
+			// Object literals in index assignment are widened.
+			input: `
+				fn foo(items) { items[0] = {x: 5, y: 10} }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [{x: number, y: number}]) -> void",
+			},
+		},
+		"ReadAndWriteDifferentIndexes": {
+			// Read index 0 and assign index 1 — mixed read/write, mut tuple.
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					items[1] = "hi"
+					return a
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: mut [T0, string]) -> T0",
+			},
+		},
+		"MultipleWritesSameIndex": {
+			// Writing to the same index twice unifies the value types.
+			input: `
+				fn foo(items) {
+					items[0] = 42
+					items[0] = 99
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [number]) -> void",
+			},
+		},
+		"SparseIndexes": {
+			// Non-contiguous literal indexes create a tuple with gaps.
+			input: `
+				fn foo(items) { return [items[0], items[3]] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1, T2, T3>(items: [T0, T1, T2, T3]) -> [T0, T3]",
+			},
+		},
+		"IndexAssignmentAndPush": {
+			// Index assignment + mutating method → mut Array (push forces array).
+			input: `
+				fn foo(items) {
+					items[0] = 42
+					items.push(99)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"SingleIndexReadOnly": {
+			// A single literal index read with no mutation → 1-tuple.
+			input: `
+				fn foo(items) { return items[0] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> T0",
+			},
+		},
+		"ReturnTupleElement": {
+			// Reading two elements, returning one — tuple with both type params.
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					val b = items[1]
+					return a
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, T1]) -> T0",
+			},
+		},
+		"WriteOnlyIndex0": {
+			// Writing without reading — mut tuple with widened type.
+			input: `
+				fn foo(items) { items[0] = "hello" }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [string]) -> void",
 			},
 		},
 	}
