@@ -67,6 +67,14 @@ fn foo(obj) {
   source. Both are also orthogonal to **exactness** (`Exact` field), which
   controls whether an object type can unify with another that has additional
   properties.
+- **`FromBinding`**: A boolean field on `TypeVarType` (`types.go`) that is
+  `true` when the type variable was created from a binding pattern (e.g. an
+  `IdentPat` in a destructuring pattern). `inferPattern` sets this flag for
+  each `IdentPat` it processes. This is used by `closeTupleType` to distinguish
+  pattern-originated rest variables (which should be preserved) from
+  inference-originated rest variables (from `resolveArrayConstraint`, which may
+  be removed when not in the return type). See also `RestSpreadType`,
+  `closeTupleType`, and `TypeVarType`.
 - **Row constraint**: With Option C, row constraints are represented implicitly
   by the `PropertyElem`s and `MethodElem`s within an open `ObjectType`. When a
   property is accessed on a type variable, it is eagerly bound to an open
@@ -933,11 +941,13 @@ fn foo([first, ...rest]) {
 ```
 
 `inferPattern` handles this naturally: `RestPat` inside `TuplePat` creates a
-`RestSpreadType` wrapping the rest binding's fresh type variable. `closeTupleType`
-preserves pattern-originated rest variables (identified by `FromBinding=true` on
-the inner `TypeVarType`) even when the variable doesn't appear in the return
-type — since the user explicitly wrote `...rest`, the function should accept
-variadic arguments.
+`RestSpreadType` wrapping the rest binding's fresh `TypeVarType`. Because the
+inner type variable originates from an `IdentPat`, it has `FromBinding=true`
+(see Definitions). `closeTupleType` checks this flag when deciding whether to
+remove a trailing `RestSpreadType` whose variable doesn't appear in the return
+type: pattern-originated rest variables are preserved (the user explicitly wrote
+`...rest` to accept variadic arguments), while inference-originated rest
+variables from `resolveArrayConstraint` (which lack `FromBinding`) are removed.
 
 This builds on variadic tuple type support (Phase 13). The rest variable `R`
 enables row polymorphism for tuples — if the parameter is returned, callers'
