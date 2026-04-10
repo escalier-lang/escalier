@@ -153,6 +153,7 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 				LiteralIndexes:     clonedIndexes,
 				HasNonLiteralIndex: ac.HasNonLiteralIndex,
 				HasMutatingMethod:  ac.HasMutatingMethod,
+				HasReadOnlyMethod:  ac.HasReadOnlyMethod,
 				HasIndexAssignment: ac.HasIndexAssignment,
 				ElemTypeVar:        c.deepCloneType(ac.ElemTypeVar, varMapping),
 			}

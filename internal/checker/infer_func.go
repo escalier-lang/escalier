@@ -492,8 +492,13 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 		IsPatMatch: false,
 	}
 
-	// Mutating methods or non-literal indexes force resolution to Array<T>.
-	if constraint.HasMutatingMethod || constraint.HasNonLiteralIndex {
+	// Mutating methods, non-literal indexes, or read-only methods without any
+	// literal indexes force resolution to Array<T>. Read-only methods like
+	// .map() operate on the whole collection, so without positional information
+	// from literal indexes a tuple would be meaningless.
+	forceArray := constraint.HasMutatingMethod || constraint.HasNonLiteralIndex ||
+		(constraint.HasReadOnlyMethod && len(constraint.LiteralIndexes) == 0)
+	if forceArray {
 		// Unify all literal index type vars with ElemTypeVar
 		for _, elemTV := range constraint.LiteralIndexes {
 			c.Unify(ctx, elemTV, constraint.ElemTypeVar)

@@ -1765,6 +1765,118 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				"foo": "fn (items: mut [string]) -> void",
 			},
 		},
+		"ArrayFromMapOnlyGeneric": {
+			// Calling .map() alone (no index access) should infer an array,
+			// not a tuple. The identity callback unifies input and output types.
+			input: `
+				fn foo(items) { return items.map(fn (x) { return x }) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: Array<T0>) -> Array<T0>",
+			},
+		},
+		"ArrayFromMapOnly": {
+			// Calling .map() alone (no index access) should infer an array,
+			// not a tuple. The identity callback unifies input and output types.
+			input: `
+				fn foo(items) { return items.map(fn (x) { return x * x }) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: Array<number>) -> Array<number>",
+			},
+		},
+		"PushMultipleSameType": {
+			// Pushing multiple values of the same type works.
+			input: `
+				fn foo(items) {
+					items.push(5)
+					items.push(10)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"LengthOnlyIsNotArray": {
+			// Accessing .length alone should infer an open object, not a tuple
+			// or array — .length is ambiguous (exists on strings, etc.).
+			input: `
+				fn foo(x) { return x.length }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(x: {length: T0}) -> T0",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleArrayInferenceOnProperties(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"PropertyIndexedAsTuple": {
+			// Indexing a property with a literal → tuple on the property.
+			input: `fn foo(obj) { return obj.items[0] }`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {items: [T0]}) -> T0",
+			},
+		},
+		"PropertyIndexedAsTupleTwoElements": {
+			// Two literal indexes on a property → 2-tuple.
+			input: `fn foo(obj) { return [obj.items[0], obj.items[1]] }`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {items: [T0, T1]}) -> [T0, T1]",
+			},
+		},
+		"PropertyPushInfersArray": {
+			// Calling .push() on a property → mut Array on the property.
+			input: `fn foo(obj) { obj.items.push(42) }`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: {items: mut Array<number>}) -> void",
+			},
+		},
+		"PropertyIndexAssignment": {
+			// Index assignment on a property → mut tuple on the property.
+			input: `fn foo(obj) { obj.items[0] = "hi" }`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: {items: mut [string]}) -> void",
+			},
+		},
+		"PropertyMapInfersArray": {
+			// Calling .map() on a property → Array on the property.
+			input: `
+				fn foo(obj) { return obj.items.map(fn (x) { return x }) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {items: Array<T0>}) -> Array<T0>",
+			},
+		},
+		"TwoPropertiesDifferentShapes": {
+			// Two properties with different inference: tuple vs mut Array.
+			input: `
+				fn foo(obj) {
+					val a = obj.names[0]
+					obj.scores.push(100)
+					return a
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {names: [T0], scores: mut Array<number>}) -> T0",
+			},
+		},
 	}
 
 	for name, test := range tests {

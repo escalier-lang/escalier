@@ -718,9 +718,11 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 
 		switch k := key.(type) {
 		case PropertyKey:
-			// If this property exists on Array (e.g. .push, .length, .map),
-			// create an ArrayConstraint instead of an open object.
-			if c.isArrayMethod(k.Name) {
+			// If this property is a method on Array (e.g. .push, .map, .filter),
+			// create an ArrayConstraint instead of an open object. We only check
+			// methods, not properties like .length which are ambiguous (also
+			// exist on strings, etc.).
+			if c.isArrayOnlyMethod(k.Name) {
 				c.getOrCreateArrayConstraint(t)
 				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
 			}
@@ -1092,22 +1094,24 @@ func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.T
 
 	// Look up the property on the Array type to resolve the method and determine mutability.
 	// We create a temporary Array<ElemTypeVar> to delegate the lookup.
+	// TODO(#404): This immediately resolves the method signature against ElemTypeVar,
+	// which means a second call with a different type (e.g. push(5) then push("hello"))
+	// fails instead of inferring a union. Needs deferred call-site resolution.
 	arrayAlias := c.GlobalScope.Namespace.Types["Array"]
 	if arrayAlias == nil {
 		errors = append(errors, &ExpectedObjectError{Type: t, span: ast.Span{}})
 		return type_system.NewNeverType(nil), errors
 	}
 
-	// Build a union of all known element types for method resolution.
-	elemType := c.arrayConstraintElemType(constraint)
-
-	tempArrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, elemType)
+	tempArrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, constraint.ElemTypeVar)
 	resultType, accessErrors := c.getMemberType(ctx, tempArrayType, PropertyKey{Name: propName})
 	errors = slices.Concat(errors, accessErrors)
 
-	// Check if the resolved method is mutating by inspecting MutSelf on the Array ObjectType.
+	// Classify the method as mutating or read-only.
 	if c.isArrayMutatingMethod(propName) {
 		constraint.HasMutatingMethod = true
+	} else {
+		constraint.HasReadOnlyMethod = true
 	}
 
 	return resultType, errors
@@ -1138,16 +1142,11 @@ func (c *Checker) getArrayConstraintIndexAccess(_ Context, t *type_system.TypeVa
 	return type_system.NewNeverType(nil), errors
 }
 
-// arrayConstraintElemType returns a type representing the element type of an ArrayConstraint.
-// If there are literal index type variables, it returns the ElemTypeVar (which will be
-// unified with all literal index types during resolution).
-func (c *Checker) arrayConstraintElemType(constraint *type_system.ArrayConstraint) type_system.Type {
-	return constraint.ElemTypeVar
-}
-
-// isArrayMethod returns true if the given property name exists as a method or
-// property on the Array type (either read-only or mutating).
-func (c *Checker) isArrayMethod(propName string) bool {
+// isArrayOnlyMethod returns true if the given name is a method (not a property)
+// on the Array type. This is used to decide whether accessing a property on a
+// fresh TypeVar should create an ArrayConstraint. Only methods qualify because
+// properties like .length are ambiguous (also exist on strings, etc.).
+func (c *Checker) isArrayOnlyMethod(propName string) bool {
 	arrayAlias := c.GlobalScope.Namespace.Types["Array"]
 	if arrayAlias == nil {
 		return false
@@ -1159,19 +1158,8 @@ func (c *Checker) isArrayMethod(propName string) bool {
 	}
 	key := type_system.NewStrKey(propName)
 	for _, elem := range objType.Elems {
-		switch e := elem.(type) {
-		case *type_system.MethodElem:
-			if e.Name == key {
-				return true
-			}
-		case *type_system.PropertyElem:
-			if e.Name == key {
-				return true
-			}
-		case *type_system.GetterElem:
-			if e.Name == key {
-				return true
-			}
+		if method, ok := elem.(*type_system.MethodElem); ok && method.Name == key {
+			return true
 		}
 	}
 	return false

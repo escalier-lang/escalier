@@ -173,6 +173,7 @@ type ArrayConstraint struct {
 	LiteralIndexes     map[int]Type // index → element type variable
 	HasNonLiteralIndex bool         // true if items[i] used with non-literal number type
 	HasMutatingMethod  bool         // true if .push(), .pop(), etc. called
+	HasReadOnlyMethod  bool         // true if .map(), .filter(), etc. called
 	HasIndexAssignment bool         // true if items[i] = value used
 	ElemTypeVar        Type         // fresh T for Array<T> (union accumulator)
 }
