@@ -1707,6 +1707,20 @@ func TestTupleArrayInference(t *testing.T) {
 				"foo": "fn (items: mut [number, string]) -> void",
 			},
 		},
+		"PushThenPassToCallback": {
+			// Push calls bind MethodElemVars, then passing to a callback triggers
+			// deepCloneType on the ArrayConstraint during resolveCallSites.
+			input: `
+				fn foo(cb, items) {
+					items.push(5)
+					items.push("hello")
+					cb(items)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(cb: fn (arg0: mut Array<number | string>) -> T0, items: mut Array<number | string>) -> void",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -1789,6 +1803,18 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"IndexAssignmentAndPushDifferentTypes": {
+			// Index assignment + push with different types → mut Array with union.
+			input: `
+				fn foo(items) {
+					items[0] = 5
+					items.push("hello")
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<string | number>) -> void",
 			},
 		},
 		"SingleIndexReadOnly": {
