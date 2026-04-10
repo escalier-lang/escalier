@@ -2309,3 +2309,157 @@ func TestTupleArrayInferenceUnifyErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestDestructuringObjectPatterns(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"ObjectDestructuringWithoutRest": {
+			input: `
+				val foo = fn ({bar, baz}) {
+					return [bar, baz]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>({bar: T0, baz: T1}) -> [T0, T1]",
+			},
+		},
+		"ObjectDestructuringWithRest": {
+			input: `
+				val foo = fn ({bar, ...rest}) {
+					return rest
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>({bar: T0, ...rest: T1}) -> T1",
+			},
+		},
+		"ObjectDestructuringWithRestUnused": {
+			input: `
+				val foo = fn ({bar, ...rest}) {
+					return bar
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>({bar: T0, ...rest: T1}) -> T0",
+			},
+		},
+		"ObjectDestructuringWithoutRestBodyConstraint": {
+			input: `
+				val foo = fn ({x, y}) {
+					return x + y
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn ({x: number, y: number}) -> number",
+			},
+		},
+		"ObjectDestructuringWithTypeAnnotation": {
+			input: `
+				val foo = fn ({bar, ...rest}: {bar: number, baz: string}) {
+					return bar
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn ({bar: number, ...rest}) -> number",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestDestructuringTuplePatterns(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"TupleDestructuringWithoutRest": {
+			input: `
+				val foo = fn ([a, b]) {
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>([a: T0, b: T1]) -> [T0, T1]",
+			},
+		},
+		"TupleDestructuringWithBodyConstraint": {
+			input: `
+				val foo = fn ([a, b]) {
+					return a + b
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn ([a: number, b: number]) -> number",
+			},
+		},
+		"TupleDestructuringWithRest": {
+			input: `
+				val foo = fn ([first, ...rest]) {
+					return rest
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>([first: T0, ...rest: T1]) -> T1",
+			},
+		},
+		"TupleDestructuringWithRestUnused": {
+			input: `
+				val foo = fn ([first, ...rest]) {
+					return first
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>([first: T0, ...rest: T1]) -> T0",
+			},
+		},
+		"TupleDestructuringCalledWithRest": {
+			input: `
+				val foo = fn ([first, ...rest]) {
+					return rest
+				}
+				val r = foo([1, 2, 3])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>([first: T0, ...rest: T1]) -> T1",
+				"r":   "[2, 3]",
+			},
+		},
+		"TupleDestructuringCalledWithoutRest": {
+			input: `
+				val foo = fn ([a, b]) {
+					return a + b
+				}
+				val r = foo([1, 2])
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn ([a: number, b: number]) -> number",
+				"r":   "number",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}

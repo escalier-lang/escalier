@@ -713,6 +713,17 @@ func closeTupleType(tupleType *type_system.TupleType, returnVars map[int]*type_s
 	last := tupleType.Elems[len(tupleType.Elems)-1]
 	if rest, ok := last.(*type_system.RestSpreadType); ok {
 		if tv, ok := type_system.Prune(rest.Type).(*type_system.TypeVarType); ok {
+			// Preserve rest variables from explicit destructuring patterns.
+			// For example, in `fn foo([first, ...rest]) { return first }`,
+			// the rest type variable should be kept even though it doesn't
+			// appear in the return type — the user explicitly wrote `...rest`
+			// to accept variadic arguments. Pattern-originated rest bindings
+			// have FromBinding=true (set by inferPattern for IdentPat),
+			// while inferred rest variables from resolveArrayConstraint do
+			// not.
+			if tv.FromBinding {
+				return
+			}
 			if _, found := returnVars[tv.ID]; !found {
 				// Rest var not in return type — remove it
 				tupleType.Elems = tupleType.Elems[:len(tupleType.Elems)-1]

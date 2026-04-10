@@ -964,7 +964,21 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 						elems = append(elems, e.Key+colon)
 					}
 				case *ObjRestPat:
-					elems = append(elems, e.String())
+					// Find the RestSpreadElem in the ObjectType and use its type
+					// for the inline display of the rest pattern binding.
+					var restType Type
+					for _, objElem := range objType.Elems {
+						if rest, ok := objElem.(*RestSpreadElem); ok {
+							restType = rest.Value
+							break
+						}
+					}
+					if restType != nil {
+						innerStr := patternStringWithInlineTypesContext(e.Pattern, restType, "object")
+						elems = append(elems, "..."+innerStr)
+					} else {
+						elems = append(elems, e.String())
+					}
 				}
 			}
 
@@ -1001,6 +1015,14 @@ func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context st
 			result += "]"
 			return result
 		}
+	case *RestPat:
+		// For rest patterns in tuples like [first, ...rest], the paramType is
+		// a RestSpreadType wrapping the rest binding's type.
+		if rest, ok := paramType.(*RestSpreadType); ok {
+			innerStr := patternStringWithInlineTypesContext(p.Pattern, rest.Type, context)
+			return "..." + innerStr
+		}
+		return pattern.String()
 	case *IdentPat:
 		return p.Name + ": " + paramType.String()
 	}
