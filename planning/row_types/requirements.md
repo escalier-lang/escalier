@@ -1649,7 +1649,17 @@ into the parent (same display behavior as `ObjectType.String()` for resolved
 - `[number, ...[string, boolean]]` displays as `[number, string, boolean]`.
 - `[number, ...[]]` displays as `[number]` (empty rest dropped).
 
-### 15. Tuple Row Polymorphism (Variadic Inference)
+### 15. Tuple Row Polymorphism (Variadic Inference) ✅
+
+> **Status (2026-04-09):** Implemented in Phase 14. `resolveArrayConstraint`
+> appends a `RestSpreadType` with a fresh type variable to inferred tuples.
+> `closeTupleType` removes rest variables that don't appear in the return type.
+> `closeOpenParams` was reordered to resolve ArrayConstraints before collecting
+> `returnVars` so that freshly-created rest type variables are visible.
+> Generalization and call-site instantiation required no changes — the existing
+> visitor pattern in `GeneralizeFuncType` and `SubstituteTypeParams` already
+> walks `RestSpreadType` inside `TupleType.Elems`. Tests in
+> `TestTupleRowPolymorphism`.
 
 Tuple row polymorphism enables functions with inferred tuple parameters to
 preserve extra elements through their return types. This is the tuple analogue
@@ -1836,13 +1846,16 @@ val r = identity([1, "hello"])
     in `unify.go`; `collectFlatTupleElems` in `types.go`; `tupleElemUnion` in
     `expand_type.go`; `DotDotDot` case in `type_ann.go`.
 
-12. **Add tuple row polymorphism**: When an inferred tuple parameter is returned,
+12. **Add tuple row polymorphism** ✅: When an inferred tuple parameter is returned,
     append a `RestSpreadType` with a fresh type variable to capture extra
     elements. At closing time, preserve rest variables that appear in the return
     type (promoting to type parameters) and remove those that don't. This is
     the tuple analogue of object row polymorphism (see Section 15).
+    Implemented in Phase 14: `resolveArrayConstraint` appends rest TV;
+    `closeTupleType` filters by `returnVars`; `closeOpenParams` reordered to
+    resolve constraints before collecting return vars.
 
 13. **Add tests**: Cover property access, method calls, array indexing, optional
     chaining, passing to typed functions, widening, closing after inference, row
     polymorphism (return type propagation), object spread, tuple/array inference,
-    variadic tuples, tuple row polymorphism, and error cases.
+    variadic tuples, tuple row polymorphism ✅, and error cases.
