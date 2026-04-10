@@ -1944,6 +1944,23 @@ func TestTupleArrayInferenceFixedBugs(t *testing.T) {
 				"foo": "fn <T0>(items: [T0]) -> number",
 			},
 		},
+		// Binding an ArrayConstraint to a variadic tuple should unify
+		// literal indexes with the correct element types.
+		"BindToVariadicTuple": {
+			input: `
+				fn bar(x: [number, string, ...Array<boolean>]) { }
+				fn foo(items) {
+					val a = items[0]
+					val b = items[1]
+					val c = items[3]
+					bar(items)
+					return [a, b, c]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: [number, string, ...Array<boolean>]) -> [number, string, boolean]",
+			},
+		},
 		// Array constraint resolved inside a function parameter that is a
 		// callback receiving the constrained type via a TypeRefType wrapper
 		// (tests resolveArrayConstraintsInType recursion into nested types).

@@ -443,6 +443,10 @@ func (c *Checker) closeOpenParams(funcSigType *type_system.FuncType) {
 // resolveArrayConstraintsInType walks a type tree and resolves any
 // ArrayConstraints on TypeVarTypes to concrete tuple or array types.
 func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
+	// Pruning before the ArrayConstraint check is safe: ArrayConstraints are
+	// only created on parameter TypeVars (IsParam=true), which are always the
+	// representative in their equivalence class (Instance remains nil while
+	// the constraint is active). Prune on a param TypeVar returns itself.
 	t = type_system.Prune(t)
 
 	if tv, ok := t.(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {

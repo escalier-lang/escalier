@@ -1857,7 +1857,10 @@ func occursInType(t1, t2 type_system.Type) bool {
 	// Defensive: Accept doesn't traverse ArrayConstraint children, so check
 	// them explicitly. In practice a TypeVar is unlikely to occur inside its
 	// own ArrayConstraint, but a missed occurs check could cause an infinite
-	// loop during unification.
+	// loop during unification. Note that this check is already recursive:
+	// the occursInType calls below will themselves hit this same block if
+	// ElemTypeVar or a LiteralIndexes entry is a TypeVar with its own
+	// ArrayConstraint, so nested constraints are covered without additional work.
 	if tv, ok := type_system.Prune(t2).(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
 		if occursInType(t1, tv.ArrayConstraint.ElemTypeVar) {
 			return true
@@ -1910,13 +1913,30 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 			return true, errs
 		}
 	case *type_system.TupleType:
-		// Passed to a tuple type — unify element types pairwise.
-		// Only unify indexes within the tuple's bounds; any LiteralIndexes
-		// beyond the tuple length are ignored.
+		// Passed to a tuple type — unify element types pairwise, handling
+		// RestSpreadType for variadic tuples (e.g. [number, string, ...Array<boolean>]).
+		prefix, rest, suffix := splitTupleAtRest(t.Elems)
 		var errs []Error
-		for i, elemType := range t.Elems {
-			if tv, ok := constraint.LiteralIndexes[i]; ok {
-				if unifyErrs := c.Unify(ctx, tv, elemType); len(unifyErrs) > 0 {
+		for idx, tv := range constraint.LiteralIndexes {
+			var targetType type_system.Type
+			if idx < len(prefix) {
+				// Index falls in the fixed prefix
+				targetType = prefix[idx]
+			} else if rest != nil {
+				// Compute where suffix starts in the logical tuple
+				// (unknown length, so suffix indexes can't be mapped from
+				// literal indexes). Indexes beyond the prefix fall into rest.
+				targetType = rest.Type
+				// Extract element type from Array<T> if the rest is an array
+				if ref, ok := type_system.Prune(targetType).(*type_system.TypeRefType); ok && c.isArrayType(ref) && len(ref.TypeArgs) > 0 {
+					targetType = ref.TypeArgs[0]
+				}
+			} else if idx < len(prefix)+len(suffix) {
+				// No rest, index falls in suffix (fixed tuple)
+				targetType = suffix[idx-len(prefix)]
+			}
+			if targetType != nil {
+				if unifyErrs := c.Unify(ctx, tv, targetType); len(unifyErrs) > 0 {
 					errs = append(errs, unifyErrs...)
 				}
 			}
