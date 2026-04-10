@@ -893,7 +893,7 @@ All tests are in `TestRowTypesRowPolymorphism` in `row_types_test.go`.
 
 ---
 
-## Phase 8: Destructuring Patterns on Parameters
+## Phase 8: Destructuring Patterns on Parameters ✅
 
 **Requirements covered:** Section 8f (destructuring patterns — object and
 tuple/array).
@@ -902,130 +902,79 @@ tuple/array).
 types: `RestSpreadElem` for object patterns (row polymorphism), `RestSpreadType`
 for tuple patterns (variadic tuples of the form `[t0, ...R]`).
 
-### Changes — Object Destructuring
+### What was implemented
 
-1. **`internal/checker/infer_func.go`** — `inferFuncParams`:
-   After `inferPattern` creates a closed `ObjectType` from a destructuring
-   pattern, check if the pattern has a rest element and the parameter lacks a
-   type annotation. If so:
-   ```go
-   if hasRestElement && param.TypeAnn == nil {
-       rowTV := c.FreshVar(nil)
-       objType.Elems = append(objType.Elems, NewRestSpreadElem(rowTV))
-       // objType.Open remains false — the explicit properties are fixed
-       // by the pattern, and the parameter itself isn't accessible by name.
-       // The rest binding's type is rowTV.
-   }
-   ```
+Most of the infrastructure was already in place from earlier phases.
+`inferPattern` in `infer_pat.go` already creates `RestSpreadElem` for
+`ObjRestPat` and `RestSpreadType` for `RestPat` inside `TuplePat`, with fresh
+type variables that are shared between the rest spread and the binding. No
+changes to `inferFuncParams` were needed.
 
-2. **Rest binding type:** The rest element's binding should have type `rowTV`
-   (the same row variable). When checking the pattern, the rest binding in the
-   `bindings` map should have its type set to `rowTV`. This connects the rest
-   binding to the row variable so that when `R` is resolved (at a call site),
-   the rest binding's type reflects the remaining properties.
+#### Object destructuring
 
-3. **Without rest element:** The type stays closed with no `RestSpreadElem`.
-   The pattern fully specifies the expected properties.
+`inferPattern` handles the `ObjRestPat` case by creating a `RestSpreadElem`
+whose value is the same fresh type variable used for the rest binding. The
+resulting `ObjectType` has `Open: false` — the explicit properties are fixed by
+the pattern — but includes a `RestSpreadElem` for row polymorphism.
+`closeOpenObjectsInType` already preserves `RestSpreadElem`s on non-open
+objects, so no changes were needed there.
 
-4. **Open vs. closed:** Destructured parameters are always **closed**
-   (`Open: false`) regardless of rest elements. The pattern fully specifies
-   explicit properties, and the parameter itself isn't accessible by name (only
-   the bindings are), so no new explicit properties can be added during
-   inference. The `RestSpreadElem` provides row polymorphism for extra properties
-   passed by callers, while `Open: false` prevents the checker from adding
-   properties during inference.
+#### Tuple destructuring
 
-### Changes — Tuple/Array Destructuring
+`inferPattern` handles `RestPat` inside `TuplePat` by creating a
+`RestSpreadType` element in the `TupleType`. The key change was in
+`closeTupleType`: it previously removed trailing `RestSpreadType` elements
+whose type variable didn't appear in the return type. Pattern-originated rest
+variables (which have `FromBinding=true` on the inner `TypeVarType`) must be
+preserved even when not in the return type, since the user explicitly wrote
+`...rest` to accept variadic arguments.
 
-`inferPattern` already handles `TuplePat` by creating a `TupleType` with a
-fresh type variable for each element position. The changes here address the
-rest element case and the interaction with `inferFuncParams`.
+#### Type display
 
-5. **`internal/checker/infer_func.go`** — `inferFuncParams`, `TuplePat` case:
+`patternStringWithInlineTypesContext` in `types.go` was updated to:
+- **`ObjRestPat` case:** Look up the `RestSpreadElem` in the `ObjectType` and
+  display the rest binding with its type (e.g. `...rest: T1`).
+- **`RestPat` case (new):** Extract the inner type from `RestSpreadType` and
+  display the rest binding with its type (e.g. `...rest: T1`).
 
-   **Without rest element:** `inferPattern` produces a `TupleType` with one
-   element type per position. No changes needed — the parameter type is a
-   fixed-length tuple:
-   ```go
-   // fn foo([a, b]) { ... }
-   // inferPattern returns TupleType{Elems: [t1, t2]}
-   // parameter type: [t1, t2]
-   ```
+### Changes
 
-   **With rest element:** When the `TuplePat` contains a `RestPat`, the
-   parameter should be inferred as a variadic tuple `[t1, t2, ...R]` where
-   each positional element keeps its own type variable and `R` is a fresh
-   rest type variable (requires Phase 13 variadic tuple support):
-   ```go
-   if hasTupleRestElement && param.TypeAnn == nil {
-       restTV := c.FreshVar(nil)
-       // Append a RestSpreadType to the existing tuple elements
-       tupleType.Elems = append(tupleType.Elems,
-           type_system.NewRestSpreadType(nil, restTV))
-       // rest binding's type is restTV
-   }
-   ```
+1. **`internal/checker/infer_func.go`** — `closeTupleType`:
+   Added a check for `tv.FromBinding` to skip removal of rest spread type
+   variables that originated from explicit destructuring patterns.
 
-   This preserves per-position types for the leading elements while allowing
-   callers to pass additional trailing elements. The rest variable `R` enables
-   tuple row polymorphism (Phase 14) — if the parameter is returned, extra
-   elements are preserved in the return type.
+2. **`internal/type_system/types.go`** — `patternStringWithInlineTypesContext`:
+   - `ObjRestPat` case: looks up `RestSpreadElem` in the `ObjectType` and
+     recursively prints the inner pattern with the rest type.
+   - New `RestPat` case: extracts the inner type from `RestSpreadType` and
+     recursively prints the inner pattern.
 
-6. **Rest binding type for tuple patterns:** The rest element's binding should
-   have type `R` (the rest type variable). When `R` is resolved at a call
-   site, the rest binding's type reflects the caller's trailing elements.
+### Tests (in `row_types_test.go`)
 
-7. **Type annotation takes precedence:** If the parameter has a type annotation,
-   use it as-is. Only add a `RestSpreadType` from the rest element when the
-   parameter is unannotated.
+**Object destructuring (`TestDestructuringObjectPatterns`):**
+- `ObjectDestructuringWithoutRest` — `fn ({bar, baz})` infers
+  `fn <T0, T1>({bar: T0, baz: T1}) -> [T0, T1]`.
+- `ObjectDestructuringWithRest` — `fn ({bar, ...rest})` infers
+  `fn <T0, T1>({bar: T0, ...rest: T1}) -> T1`.
+- `ObjectDestructuringWithRestUnused` — rest var preserved even when not in
+  return type: `fn <T0, T1>({bar: T0, ...rest: T1}) -> T0`.
+- `ObjectDestructuringWithoutRestBodyConstraint` — body usage constrains
+  element types: `fn ({x: number, y: number}) -> number`.
+- `ObjectDestructuringWithTypeAnnotation` — type annotation takes precedence.
 
-### Tests — Object Destructuring
-
-- **Destructuring without rest:**
-  `fn foo({bar, baz}) { ... }` — `{bar: t1, baz: t2}` (closed, no rest).
-- **Destructuring with rest:**
-  `fn foo({bar, ...rest}) { ... }` — `{bar: t1, ...R}` (closed, with rest).
-  `rest` has type `R`.
-- **Calling with extra properties:**
-  ```esc
-  fn foo({bar, ...rest}) { return rest }
-  let r = foo({bar: 1, extra: "hi"})
-  ```
-  — `r` includes `{extra: "hi"}`.
-- **Rest without type annotation only:**
-  `fn foo({bar, ...rest}: {bar: number, ...}) { ... }` — if a type annotation
-  is present, use it as-is. Only add a `RestSpreadElem` when the parameter is
-  unannotated.
-
-### Tests — Tuple/Array Destructuring
-
-- **Tuple destructuring without rest:**
-  `fn foo([a, b]) { ... }` — parameter type: `[t1, t2]`.
-- **Tuple destructuring with type constraints from body:**
-  ```esc
-  fn foo([a, b]) { return a + b }
-  ```
-  — element types constrained by usage (e.g. `[number, number]` if `+` requires
-  numbers).
-- **Tuple destructuring with rest:**
-  ```esc
-  fn foo([first, ...rest]) { ... }
-  ```
-  — parameter type: `[t1, ...R]`, `first: t1`, `rest: R`.
-- **Calling tuple-destructured function:**
-  ```esc
-  fn foo([a, b]) { return a + b }
-  val r = foo([1, 2])
-  ```
-  — `r: number`.
-- **Calling with rest — extra elements preserved:**
-  ```esc
-  fn foo([first, ...rest]) { return rest }
-  val r = foo([1, 2, 3])
-  ```
-  — `R = [2, 3]`, `r: [2, 3]`.
-- **Rest with type annotation:**
-  `fn foo([a, ...rest]: [number, ...Array<string>]) { ... }` — use annotation as-is.
+**Tuple destructuring (`TestDestructuringTuplePatterns`):**
+- `TupleDestructuringWithoutRest` — `fn ([a, b])` infers
+  `fn <T0, T1>([a: T0, b: T1]) -> [T0, T1]`.
+- `TupleDestructuringWithBodyConstraint` — body usage constrains element
+  types: `fn ([a: number, b: number]) -> number`.
+- `TupleDestructuringWithRest` — `fn ([first, ...rest])` infers
+  `fn <T0, T1>([first: T0, ...rest: T1]) -> T1`.
+- `TupleDestructuringWithRestUnused` — rest var preserved even when not in
+  return type: `fn <T0, T1>([first: T0, ...rest: T1]) -> T0`.
+- `TupleDestructuringCalledWithRest` — calling `fn ([first, ...rest]) { return rest }`
+  with `[1, 2, 3]` yields `r: [2, 3]`.
+- `TupleDestructuringCalledWithoutRest` — calling `fn ([a, b]) { return a + b }`
+  with `[1, 2]` yields `r: number`.
 
 ---
 
@@ -2094,7 +2043,7 @@ Phase 3 → Phase 13: Variadic Tuple Types ✅
 ### Destructuring (requires both object and tuple row polymorphism)
 
 ```
-Phase 7, Phase 14 → Phase 8: Destructuring
+Phase 7, Phase 14 → Phase 8: Destructuring ✅
 ```
 
 ### Independent branches (can start early)
@@ -2122,7 +2071,7 @@ All phases → Phase 11: Error Reporting
 | 5: Method Calls ✅                | 4          | —                    |
 | 6: Closing ✅                     | 5          | —                    |
 | 7: Row Polymorphism ✅            | 6          | 12                   |
-| 8: Destructuring                  | 7, 14      | —                    |
+| 8: Destructuring ✅               | 7, 14      | —                    |
 | 9: Optional Chaining              | 2          | 3–14                 |
 | 10: Object & Array/Tuple Spread   | 3, 13      | 4–14                 |
 | 11: Error Reporting               | all        | —                    |

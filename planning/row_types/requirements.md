@@ -67,6 +67,14 @@ fn foo(obj) {
   source. Both are also orthogonal to **exactness** (`Exact` field), which
   controls whether an object type can unify with another that has additional
   properties.
+- **`FromBinding`**: A boolean field on `TypeVarType` (`types.go`) that is
+  `true` when the type variable was created from a binding pattern (e.g. an
+  `IdentPat` in a destructuring pattern). `inferPattern` sets this flag for
+  each `IdentPat` it processes. This is used by `closeTupleType` to distinguish
+  pattern-originated rest variables (which should be preserved) from
+  inference-originated rest variables (from `resolveArrayConstraint`, which may
+  be removed when not in the return type). See also `RestSpreadType`,
+  `closeTupleType`, and `TypeVarType`.
 - **Row constraint**: With Option C, row constraints are represented implicitly
   by the `PropertyElem`s and `MethodElem`s within an open `ObjectType`. When a
   property is accessed on a type variable, it is eagerly bound to an open
@@ -886,12 +894,15 @@ fn foo({bar, ...rest}) {
 // RestSpreadElem for R (row polymorphism for extra properties)
 ```
 
-**Mechanism:** `inferPattern` creates a closed `ObjectType` from the pattern. If
-the pattern has a rest element and the parameter lacks a type annotation,
-`inferFuncParams` should add a `RestSpreadElem` with a fresh row variable `R`
-to the pattern-inferred `ObjectType`, but leave `Open` as `false`. The rest
-binding's type is `R`, connecting it to the row variable so that when `R` is
-resolved, the rest binding's type reflects the remaining properties. Without a
+**Mechanism:** `inferPattern` creates a closed `ObjectType` from the pattern.
+When the pattern contains an `ObjRestPat`, `inferPattern` already creates a
+`RestSpreadElem` whose value is the same fresh type variable used for the rest
+binding — no additional work is needed in `inferFuncParams`. The `ObjectType`
+has `Open: false` (explicit properties are fixed by the pattern). The rest
+binding's type is the row variable `R`, connecting it to the `RestSpreadElem`
+so that when `R` is resolved at a call site, the rest binding's type reflects
+the remaining properties. `closeOpenObjectsInType` preserves `RestSpreadElem`s
+on non-open objects, so the row variable persists through closing. Without a
 rest element, the type stays closed with no `RestSpreadElem`.
 
 ##### Tuple/array destructuring
@@ -916,7 +927,7 @@ with at least that many elements.
 
 **With rest element:** When a tuple destructuring pattern includes a rest element
 (`[a, b, ...rest]`), the leading positions get fixed types and the rest binding
-captures the remaining elements. The parameter should be inferred as a variadic
+captures the remaining elements. The parameter is inferred as a variadic
 tuple `[t1, t2, ...R]` where each positional element gets an independent type
 variable and `R` is a rest type variable representing the remaining elements:
 
@@ -929,9 +940,18 @@ fn foo([first, ...rest]) {
 // first: t1, rest: R
 ```
 
-This requires variadic tuple type support (Section 14). The rest variable `R`
+`inferPattern` handles this naturally: `RestPat` inside `TuplePat` creates a
+`RestSpreadType` wrapping the rest binding's fresh `TypeVarType`. Because the
+inner type variable originates from an `IdentPat`, it has `FromBinding=true`
+(see Definitions). `closeTupleType` checks this flag when deciding whether to
+remove a trailing `RestSpreadType` whose variable doesn't appear in the return
+type: pattern-originated rest variables are preserved (the user explicitly wrote
+`...rest` to accept variadic arguments), while inference-originated rest
+variables from `resolveArrayConstraint` (which lack `FromBinding`) are removed.
+
+This builds on variadic tuple type support (Phase 13). The rest variable `R`
 enables row polymorphism for tuples — if the parameter is returned, callers'
-extra elements are preserved (Section 15).
+extra elements are preserved (Phase 14).
 
 **Interaction with Section 13 (tuple/array inference):** If the function body
 also indexes the parameter by name (which isn't possible for tuple-destructured
