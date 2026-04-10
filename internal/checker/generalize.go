@@ -25,7 +25,15 @@ func collectUnresolvedTypeVars(
 			*order = append(*order, t.ID)
 			collectUnresolvedTypeVars(t.Constraint, vars, order)
 			collectUnresolvedTypeVars(t.Default, vars, order)
-
+			// Defensive: ArrayConstraints are resolved before generalization
+			// runs, so this branch is unlikely to execute. If it does, we
+			// need to collect the element type vars so they get generalized.
+			if t.ArrayConstraint != nil {
+				for _, elemTV := range t.ArrayConstraint.LiteralIndexes {
+					collectUnresolvedTypeVars(elemTV, vars, order)
+				}
+				collectUnresolvedTypeVars(t.ArrayConstraint.ElemTypeVar, vars, order)
+			}
 		}
 	case *type_system.FuncType:
 		for _, tp := range t.TypeParams {
@@ -134,6 +142,21 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 		varMapping[t.ID] = fresh
 		if t.Constraint != nil {
 			fresh.Constraint = c.deepCloneType(t.Constraint, varMapping)
+		}
+		if t.ArrayConstraint != nil {
+			ac := t.ArrayConstraint
+			clonedIndexes := make(map[int]type_system.Type, len(ac.LiteralIndexes))
+			for idx, elemTV := range ac.LiteralIndexes {
+				clonedIndexes[idx] = c.deepCloneType(elemTV, varMapping)
+			}
+			fresh.ArrayConstraint = &type_system.ArrayConstraint{
+				LiteralIndexes:     clonedIndexes,
+				HasNonLiteralIndex: ac.HasNonLiteralIndex,
+				HasMutatingMethod:  ac.HasMutatingMethod,
+				HasReadOnlyMethod:  ac.HasReadOnlyMethod,
+				HasIndexAssignment: ac.HasIndexAssignment,
+				ElemTypeVar:        c.deepCloneType(ac.ElemTypeVar, varMapping),
+			}
 		}
 		return fresh
 	case *type_system.FuncType:

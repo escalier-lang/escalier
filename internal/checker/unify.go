@@ -1752,6 +1752,14 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 						return errors
 					}
 				}
+				// When a TypeVar with an ArrayConstraint is bound to a concrete
+				// Array or tuple type, update the constraint flags so that
+				// resolution at closing time produces the correct type.
+				if typeVar1.ArrayConstraint != nil {
+					if handled, bindErrs := c.handleArrayConstraintBinding(ctx, typeVar1, t2); handled {
+						return append(errors, bindErrs...)
+					}
+				}
 				// When binding a Widenable TypeVar, widen literals to their
 				// primitive types and recursively widen object/tuple literals
 				// (e.g. "hello" -> string, {x: 1} -> {x: number}).
@@ -1843,13 +1851,105 @@ func (v *OccursInVisitor) ExitType(t type_system.Type) type_system.Type {
 func occursInType(t1, t2 type_system.Type) bool {
 	visitor := &OccursInVisitor{result: false, t1: t1}
 	t2.Accept(visitor)
-	return visitor.result
+	if visitor.result {
+		return true
+	}
+	// Defensive: Accept doesn't traverse ArrayConstraint children, so check
+	// them explicitly. In practice a TypeVar is unlikely to occur inside its
+	// own ArrayConstraint, but a missed occurs check could cause an infinite
+	// loop during unification. Note that this check is already recursive:
+	// the occursInType calls below will themselves hit this same block if
+	// ElemTypeVar or a LiteralIndexes entry is a TypeVar with its own
+	// ArrayConstraint, so nested constraints are covered without additional work.
+	if tv, ok := type_system.Prune(t2).(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
+		if occursInType(t1, tv.ArrayConstraint.ElemTypeVar) {
+			return true
+		}
+		for _, elemTV := range tv.ArrayConstraint.LiteralIndexes {
+			if occursInType(t1, elemTV) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
-// openClosedObjectForParam checks if boundType is a closed ObjectType and, if so,
-// converts it to an open object and binds it to the type variable. Returns true if
-// the conversion was performed.
-//
+// handleArrayConstraintBinding handles the case where a TypeVarType with an
+// ArrayConstraint is being bound to a concrete type. If the bound type is an
+// Array, mut Array, or tuple, the constraint is updated accordingly and the
+// function returns true to indicate that binding was handled. Otherwise it
+// returns false and normal binding proceeds.
+func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system.TypeVarType, boundType type_system.Type) (bool, []Error) {
+	constraint := typeVar.ArrayConstraint
+	inner := boundType
+	isMut := false
+	if mut, ok := inner.(*type_system.MutabilityType); ok {
+		isMut = mut.Mutability == type_system.MutabilityMutable
+		inner = mut.Type
+	}
+
+	switch t := inner.(type) {
+	case *type_system.TypeRefType:
+		if c.isArrayType(t) && len(t.TypeArgs) > 0 {
+			// Passed to Array<T> or mut Array<T> — force array resolution
+			constraint.HasNonLiteralIndex = true
+			if isMut {
+				constraint.HasMutatingMethod = true
+			}
+			// Unify the constraint's element type var with the array's element type
+			var errs []Error
+			if unifyErrs := c.Unify(ctx, constraint.ElemTypeVar, t.TypeArgs[0]); len(unifyErrs) > 0 {
+				errs = append(errs, unifyErrs...)
+			}
+			for _, elemTV := range constraint.LiteralIndexes {
+				if unifyErrs := c.Unify(ctx, elemTV, t.TypeArgs[0]); len(unifyErrs) > 0 {
+					errs = append(errs, unifyErrs...)
+				}
+			}
+			// Bind the TypeVar to the array type and clear the constraint so
+			// that resolveArrayConstraintsInType won't re-resolve it.
+			typeVar.Instance = boundType
+			typeVar.ArrayConstraint = nil
+			return true, errs
+		}
+	case *type_system.TupleType:
+		// Passed to a tuple type — unify element types pairwise, handling
+		// RestSpreadType for variadic tuples (e.g. [number, string, ...Array<boolean>]).
+		prefix, rest, suffix := splitTupleAtRest(t.Elems)
+		var errs []Error
+		for idx, tv := range constraint.LiteralIndexes {
+			var targetType type_system.Type
+			if idx < len(prefix) {
+				// Index falls in the fixed prefix
+				targetType = prefix[idx]
+			} else if rest != nil {
+				// Compute where suffix starts in the logical tuple
+				// (unknown length, so suffix indexes can't be mapped from
+				// literal indexes). Indexes beyond the prefix fall into rest.
+				targetType = rest.Type
+				// Extract element type from Array<T> if the rest is an array
+				if ref, ok := type_system.Prune(targetType).(*type_system.TypeRefType); ok && c.isArrayType(ref) && len(ref.TypeArgs) > 0 {
+					targetType = ref.TypeArgs[0]
+				}
+			} else if idx < len(prefix)+len(suffix) {
+				// No rest, index falls in suffix (fixed tuple)
+				targetType = suffix[idx-len(prefix)]
+			}
+			if targetType != nil {
+				if unifyErrs := c.Unify(ctx, tv, targetType); len(unifyErrs) > 0 {
+					errs = append(errs, unifyErrs...)
+				}
+			}
+		}
+		// Bind the TypeVar to the tuple and clear the constraint so that
+		// resolveArrayConstraintsInType won't recreate a different tuple.
+		typeVar.Instance = boundType
+		typeVar.ArrayConstraint = nil
+		return true, errs
+	}
+	return false, nil
+}
+
 // This is needed because when an unannotated parameter (e.g. `fn foo(obj)`) is
 // passed to a function with a typed parameter (e.g. `fn bar(x: {a: number})`),
 // bind() would normally set the type variable's Instance to the closed ObjectType

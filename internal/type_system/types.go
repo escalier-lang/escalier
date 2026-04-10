@@ -166,16 +166,29 @@ func recordInstanceChain(tv *TypeVarType) {
 	}
 }
 
+// ArrayConstraint tracks numeric indexing patterns on a type variable before
+// committing to tuple vs. array. It is stored on TypeVarType and resolved
+// during closeOpenParams.
+type ArrayConstraint struct {
+	LiteralIndexes     map[int]Type // index → element type variable
+	HasNonLiteralIndex bool         // true if items[i] used with non-literal number type
+	HasMutatingMethod  bool         // true if .push(), .pop(), etc. called
+	HasReadOnlyMethod  bool         // true if .map(), .filter(), etc. called
+	HasIndexAssignment bool         // true if items[i] = value used
+	ElemTypeVar        Type         // fresh T for Array<T> (union accumulator)
+}
+
 type TypeVarType struct {
-	ID            int
-	Instance      Type
-	Constraint    Type
-	Default       Type
-	FromBinding   bool
-	Widenable     bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
-	IsParam       bool // true for type vars created for unannotated function parameters
-	InstanceChain []*TypeVarType // populated by Prune when this TypeVar's Instance is another TypeVar (alias chain from bind); stores all TypeVars in the chain before path compression collapses it
-	provenance    Provenance
+	ID              int
+	Instance        Type
+	Constraint      Type
+	Default         Type
+	FromBinding     bool
+	Widenable       bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
+	IsParam         bool // true for type vars created for unannotated function parameters
+	InstanceChain   []*TypeVarType // populated by Prune when this TypeVar's Instance is another TypeVar (alias chain from bind); stores all TypeVars in the chain before path compression collapses it
+	ArrayConstraint *ArrayConstraint // non-nil when numeric indexing has been observed; resolved during closing
+	provenance      Provenance
 }
 
 func NewTypeVarType(provenance Provenance, id int) *TypeVarType {

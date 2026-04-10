@@ -228,7 +228,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 			funcSigType.Return = inferredGenType
 		}
 		funcSigType.Throws = type_system.NewNeverType(nil)
-		closeOpenParams(funcSigType)
+		c.closeOpenParams(funcSigType)
 		return errors
 	}
 
@@ -251,7 +251,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		errors = slices.Concat(errors, unifyReturnErrors, unifyThrowsErrors)
 	}
 
-	closeOpenParams(funcSigType)
+	c.closeOpenParams(funcSigType)
 	return errors
 }
 
@@ -418,8 +418,9 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 
 // closeOpenParams closes all open object types on function parameters after
 // body inference is complete. It removes RestSpreadElems whose row variables
-// don't appear in the return type and resolves mutability.
-func closeOpenParams(funcSigType *type_system.FuncType) {
+// don't appear in the return type, resolves mutability, and resolves
+// ArrayConstraints to concrete tuple or array types.
+func (c *Checker) closeOpenParams(funcSigType *type_system.FuncType) {
 	// Collect unresolved type vars in the return type to determine which
 	// row variables escape. We intentionally do NOT collect from
 	// funcSigType.Throws: GeneralizeFuncType defaults throws-only type vars
@@ -434,8 +435,133 @@ func closeOpenParams(funcSigType *type_system.FuncType) {
 	collectUnresolvedTypeVars(funcSigType.Return, returnVars, &returnOrder)
 
 	for _, param := range funcSigType.Params {
+		c.resolveArrayConstraintsInType(param.Type)
 		closeOpenObjectsInType(param.Type, returnVars)
 	}
+}
+
+// resolveArrayConstraintsInType walks a type tree and resolves any
+// ArrayConstraints on TypeVarTypes to concrete tuple or array types.
+func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
+	// Pruning before the ArrayConstraint check is safe: ArrayConstraints are
+	// only created on parameter TypeVars (IsParam=true), which are always the
+	// representative in their equivalence class (Instance remains nil while
+	// the constraint is active). Prune on a param TypeVar returns itself.
+	t = type_system.Prune(t)
+
+	if tv, ok := t.(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
+		resolved := c.resolveArrayConstraint(tv.ArrayConstraint)
+		tv.Instance = resolved
+		tv.ArrayConstraint = nil
+		// Recurse into the resolved type to handle nested ArrayConstraints
+		// (e.g. items[0][1] where the element itself is used as a tuple/array).
+		c.resolveArrayConstraintsInType(resolved)
+		return
+	}
+
+	// Recurse into type constructors that can appear in inferred parameter types.
+	// We only need to cover shapes produced by inference on unannotated params:
+	// - IntersectionType, FuncType.Throws, and ObjectType methods/getters/setters
+	//   are omitted because ArrayConstraints are only created on unannotated
+	//   parameter TypeVars during body inference, and those types come from
+	//   annotations or type definitions, not from the inference path.
+	// - ObjectType only checks PropertyElem because open objects created during
+	//   inference (via newOpenObjectWithProperty) only contain PropertyElems.
+	switch p := t.(type) {
+	case *type_system.TypeRefType:
+		for _, arg := range p.TypeArgs {
+			c.resolveArrayConstraintsInType(arg)
+		}
+	case *type_system.TupleType:
+		for _, elem := range p.Elems {
+			c.resolveArrayConstraintsInType(elem)
+		}
+	case *type_system.UnionType:
+		for _, opt := range p.Types {
+			c.resolveArrayConstraintsInType(opt)
+		}
+	case *type_system.FuncType:
+		for _, param := range p.Params {
+			c.resolveArrayConstraintsInType(param.Type)
+		}
+		c.resolveArrayConstraintsInType(p.Return)
+	case *type_system.ObjectType:
+		for _, elem := range p.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				c.resolveArrayConstraintsInType(prop.Value)
+			}
+		}
+	case *type_system.MutabilityType:
+		c.resolveArrayConstraintsInType(p.Type)
+	}
+}
+
+// resolveArrayConstraint resolves an ArrayConstraint to a concrete type.
+// Mutating methods (.push, .pop, etc.) or non-literal indexes force Array<T>.
+// Index assignment (items[0] = v) forces mutability but keeps tuple shape.
+func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint) type_system.Type {
+	ctx := Context{
+		Scope:      c.GlobalScope,
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+
+	// Mutating methods, non-literal indexes, or read-only methods without any
+	// literal indexes force resolution to Array<T>. Read-only methods like
+	// .map() operate on the whole collection, so without positional information
+	// from literal indexes a tuple would be meaningless.
+	forceArray := constraint.HasMutatingMethod || constraint.HasNonLiteralIndex ||
+		(constraint.HasReadOnlyMethod && len(constraint.LiteralIndexes) == 0)
+	if forceArray {
+		// Unify all literal index type vars with ElemTypeVar
+		for _, elemTV := range constraint.LiteralIndexes {
+			c.Unify(ctx, elemTV, constraint.ElemTypeVar)
+		}
+		arrayAlias := c.GlobalScope.Namespace.Types["Array"]
+		arrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, constraint.ElemTypeVar)
+		if constraint.HasMutatingMethod || constraint.HasIndexAssignment {
+			return &type_system.MutabilityType{
+				Type:       arrayType,
+				Mutability: type_system.MutabilityMutable,
+			}
+		}
+		return arrayType
+	}
+
+	// Resolve to tuple
+	isMut := constraint.HasIndexAssignment
+	if len(constraint.LiteralIndexes) == 0 {
+		tupleType := type_system.NewTupleType(nil)
+		if isMut {
+			return &type_system.MutabilityType{
+				Type:       tupleType,
+				Mutability: type_system.MutabilityMutable,
+			}
+		}
+		return tupleType
+	}
+	maxIndex := 0
+	for idx := range constraint.LiteralIndexes {
+		if idx > maxIndex {
+			maxIndex = idx
+		}
+	}
+	elems := make([]type_system.Type, maxIndex+1)
+	for i := 0; i <= maxIndex; i++ {
+		if tv, ok := constraint.LiteralIndexes[i]; ok {
+			elems[i] = tv
+		} else {
+			elems[i] = c.FreshVar(nil) // gap — unresolved type variable
+		}
+	}
+	tupleType := type_system.NewTupleType(nil, elems...)
+	if isMut {
+		return &type_system.MutabilityType{
+			Type:       tupleType,
+			Mutability: type_system.MutabilityMutable,
+		}
+	}
+	return tupleType
 }
 
 // closeOpenObjectsInType walks a type tree and closes any open ObjectTypes

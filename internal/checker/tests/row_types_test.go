@@ -162,13 +162,14 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 			},
 		},
 		"NumericIndex": {
+			// With Phase 12, a single literal index infers a tuple.
 			input: `
 				fn foo(obj) {
 					return obj[0]
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: Array<T0>) -> T0",
+				"foo": "fn <T0>(obj: [T0]) -> T0",
 			},
 		},
 		"StringLiteralIndex": {
@@ -234,13 +235,14 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 			},
 		},
 		"MultipleNumericIndexes": {
+			// With Phase 12, literal indexes infer a tuple, not an array.
 			input: `
 				fn foo(obj) {
 					return [obj[0], obj[1]]
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: Array<T0>) -> [T0, T0]",
+				"foo": "fn <T0, T1>(obj: [T0, T1]) -> [T0, T1]",
 			},
 		},
 		"IdempotentPropertyAccess": {
@@ -1084,21 +1086,23 @@ func TestRowTypesClosing(t *testing.T) {
 			},
 		},
 		"ArrayElementWriteAccess": {
-			// Open object nested inside Array should also be closed
+			// With Phase 12, a single literal index resolves to a tuple.
+			// The nested open object is still closed.
 			input: `
 				fn foo(arr) { arr[0].x = 1 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (arr: Array<mut {x: number}>) -> void",
+				"foo": "fn (arr: [mut {x: number}]) -> void",
 			},
 		},
 		"ArrayElementReadAccess": {
-			// Open object nested inside Array should also be closed
+			// With Phase 12, a single literal index resolves to a tuple.
+			// The nested open object is still closed.
 			input: `
 				fn foo(arr) { return arr[0].bar }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(arr: Array<{bar: T0}>) -> T0",
+				"foo": "fn <T0>(arr: [{bar: T0}]) -> T0",
 			},
 		},
 	}
@@ -1580,6 +1584,442 @@ func TestVariadicTupleIndexing(t *testing.T) {
 				actualType, exists := actualTypes[expectedName]
 				require.True(t, exists, "Expected variable %s to be declared", expectedName)
 				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleArrayInference(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"TupleFromLiteralIndexes": {
+			input: `
+				fn foo(items) { return [items[0], items[1]] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, T1]) -> [T0, T1]",
+			},
+		},
+		"TupleWithLength": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					val l = items.length
+					return [a, l]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> [T0, number]",
+			},
+		},
+		"ArrayFromNonLiteralIndex": {
+			input: `
+				fn foo(items, i: number) { return items[i] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: Array<T0>, i: number) -> T0",
+			},
+		},
+		"MutTupleFromIndexAssignment": {
+			// Index assignment forces mutability but keeps tuple shape.
+			input: `
+				fn foo(items) { items[0] = 42 }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [number]) -> void",
+			},
+		},
+		"ArrayFromPush": {
+			input: `
+				fn foo(items) { items.push(42) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"ArrayFromLiteralIndexAndPush": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					items.push("hello")
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<string>) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleArrayInferenceEdgeCases(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"GapIndex": {
+			// Only assigning index 1 creates a 2-tuple with a gap at index 0.
+			input: `
+				fn foo(items) { items[1] = 42 }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: mut [T0, number]) -> void",
+			},
+		},
+		"ObjectLiteralWidening": {
+			// Object literals in index assignment are widened.
+			input: `
+				fn foo(items) { items[0] = {x: 5, y: 10} }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [{x: number, y: number}]) -> void",
+			},
+		},
+		"ReadAndWriteDifferentIndexes": {
+			// Read index 0 and assign index 1 — mixed read/write, mut tuple.
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					items[1] = "hi"
+					return a
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: mut [T0, string]) -> T0",
+			},
+		},
+		"MultipleWritesSameIndex": {
+			// Writing to the same index twice unifies the value types.
+			input: `
+				fn foo(items) {
+					items[0] = 42
+					items[0] = 99
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [number]) -> void",
+			},
+		},
+		"SparseIndexes": {
+			// Non-contiguous literal indexes create a tuple with gaps.
+			input: `
+				fn foo(items) { return [items[0], items[3]] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1, T2, T3>(items: [T0, T1, T2, T3]) -> [T0, T3]",
+			},
+		},
+		"IndexAssignmentAndPush": {
+			// Index assignment + mutating method → mut Array (push forces array).
+			input: `
+				fn foo(items) {
+					items[0] = 42
+					items.push(99)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"SingleIndexReadOnly": {
+			// A single literal index read with no mutation → 1-tuple.
+			input: `
+				fn foo(items) { return items[0] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> T0",
+			},
+		},
+		"ReturnTupleElement": {
+			// Reading two elements, returning one — tuple with both type params.
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					val b = items[1]
+					return a
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, T1]) -> T0",
+			},
+		},
+		"WriteOnlyIndex0": {
+			// Writing without reading — mut tuple with widened type.
+			input: `
+				fn foo(items) { items[0] = "hello" }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut [string]) -> void",
+			},
+		},
+		"ArrayFromMapOnlyGeneric": {
+			// Calling .map() alone (no index access) should infer an array,
+			// not a tuple. The identity callback unifies input and output types.
+			input: `
+				fn foo(items) { return items.map(fn (x) { return x }) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: Array<T0>) -> Array<T0>",
+			},
+		},
+		"ArrayFromMapOnly": {
+			// Calling .map() alone (no index access) should infer an array,
+			// not a tuple. The identity callback unifies input and output types.
+			input: `
+				fn foo(items) { return items.map(fn (x) { return x * x }) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: Array<number>) -> Array<number>",
+			},
+		},
+		"PushMultipleSameType": {
+			// Pushing multiple values of the same type works.
+			input: `
+				fn foo(items) {
+					items.push(5)
+					items.push(10)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>) -> void",
+			},
+		},
+		"LengthOnlyIsNotArray": {
+			// Accessing .length alone should infer an open object, not a tuple
+			// or array — .length is ambiguous (exists on strings, etc.).
+			input: `
+				fn foo(x) { return x.length }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(x: {length: T0}) -> T0",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleArrayInferenceOnProperties(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"PropertyIndexedAsTuple": {
+			// Indexing a property with a literal → tuple on the property.
+			input: `fn foo(obj) { return obj.items[0] }`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {items: [T0]}) -> T0",
+			},
+		},
+		"PropertyIndexedAsTupleTwoElements": {
+			// Two literal indexes on a property → 2-tuple.
+			input: `fn foo(obj) { return [obj.items[0], obj.items[1]] }`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {items: [T0, T1]}) -> [T0, T1]",
+			},
+		},
+		"PropertyPushInfersArray": {
+			// Calling .push() on a property → mut Array on the property.
+			input: `fn foo(obj) { obj.items.push(42) }`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: {items: mut Array<number>}) -> void",
+			},
+		},
+		"PropertyIndexAssignment": {
+			// Index assignment on a property → mut tuple on the property.
+			input: `fn foo(obj) { obj.items[0] = "hi" }`,
+			expectedTypes: map[string]string{
+				"foo": "fn (obj: {items: mut [string]}) -> void",
+			},
+		},
+		"PropertyMapInfersArray": {
+			// Calling .map() on a property → Array on the property.
+			input: `
+				fn foo(obj) { return obj.items.map(fn (x) { return x }) }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {items: Array<T0>}) -> Array<T0>",
+			},
+		},
+		"TwoPropertiesDifferentShapes": {
+			// Two properties with different inference: tuple vs mut Array.
+			input: `
+				fn foo(obj) {
+					val a = obj.names[0]
+					obj.scores.push(100)
+					return a
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {names: [T0], scores: mut Array<number>}) -> T0",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+// TestTupleArrayInferenceFixedBugs covers regressions for specific bugs that
+// were fixed in the tuple/array inference pipeline.
+func TestTupleArrayInferenceFixedBugs(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		// asNonNegativeIntLiteral rejects indexes above maxTupleIndex (20),
+		// so a huge literal index forces Array<T> via isNumericType.
+		"LargeIndexForcesArray": {
+			input: `
+				fn foo(items) { return items[1001] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: Array<T0>) -> T0",
+			},
+		},
+		// Non-literal index combined with index assignment should produce
+		// mut Array<T>, not immutable Array<T>.
+		"NonLiteralIndexWithAssignmentIsMutArray": {
+			input: `
+				fn foo(items, i: number) {
+					items[i] = 42
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>, i: number) -> void",
+			},
+		},
+		// A read-only gap index (no assignment) should produce an immutable
+		// tuple, not a mutable one.
+		"GapIndexReadOnly": {
+			input: `
+				fn foo(items) { return items[1] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, T1]) -> T1",
+			},
+		},
+		// String literal used as index on an array-constrained param should
+		// route to property access (e.g. items["length"] → number).
+		"StringLiteralIndexRoutesToPropertyAccess": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					return items["length"]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> number",
+			},
+		},
+		// Binding an ArrayConstraint to a variadic tuple should unify
+		// literal indexes with the correct element types.
+		"BindToVariadicTuple": {
+			input: `
+				fn bar(x: [number, string, ...Array<boolean>]) { }
+				fn foo(items) {
+					val a = items[0]
+					val b = items[1]
+					val c = items[3]
+					bar(items)
+					return [a, b, c]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: [number, string, ...Array<boolean>]) -> [number, string, boolean]",
+			},
+		},
+		// Array constraint resolved inside a function parameter that is a
+		// callback receiving the constrained type via a TypeRefType wrapper
+		// (tests resolveArrayConstraintsInType recursion into nested types).
+		"ArrayConstraintResolvedInCallback": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					items.push(a)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: mut Array<T0>) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+// TestTupleArrayInferenceUnifyErrors verifies that element-type conflicts are
+// properly reported when an array-constrained parameter is bound to an
+// incompatible concrete type.
+func TestTupleArrayInferenceUnifyErrors(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		expectErrors bool
+	}{
+		// Binding an array-constrained param (with number element) to
+		// Array<string> should produce a unification error.
+		"ArrayConstraintBoundToIncompatibleArray": {
+			input: `
+				fn bar(items: Array<string>) { return items[0] }
+				fn foo(items) {
+					items[0] = 42
+					bar(items)
+				}
+			`,
+			expectErrors: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, errors := inferModuleTypesAndErrors(t, test.input)
+			if test.expectErrors {
+				assert.NotEmpty(t, errors, "Expected unification errors but got none")
+			} else {
+				assert.Empty(t, errors, "Expected no errors")
 			}
 		})
 	}

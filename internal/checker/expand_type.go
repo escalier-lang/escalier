@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"math"
 	"slices"
 
 	"maps"
@@ -689,8 +690,42 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		// Constrained type variables (e.g. `<T: {name: string}>`) should resolve
 		// properties from their constraint first. Currently this only works for
 		// unannotated parameters where Constraint == nil.
+
+		// If this TypeVar already has an ArrayConstraint, handle property access
+		// by looking up the property on the Array type.
+		if t.ArrayConstraint != nil {
+			switch k := key.(type) {
+			case PropertyKey:
+				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
+			case IndexKey:
+				// If the index is a string literal, route to property access
+				// instead of numeric index access.
+				keyType := type_system.Prune(k.Type)
+				if mut, ok := keyType.(*type_system.MutabilityType); ok {
+					keyType = mut.Type
+				}
+				if litType, ok := keyType.(*type_system.LitType); ok {
+					if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
+						return c.getArrayConstraintPropertyAccess(ctx, t, strLit.Value, errors)
+					}
+				}
+				return c.getArrayConstraintIndexAccess(ctx, t, k, errors)
+			default:
+				errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+				return type_system.NewNeverType(nil), errors
+			}
+		}
+
 		switch k := key.(type) {
 		case PropertyKey:
+			// If this property is a method on Array (e.g. .push, .map, .filter),
+			// create an ArrayConstraint instead of an open object. We only check
+			// methods, not properties like .length which are ambiguous (also
+			// exist on strings, etc.).
+			if c.isArrayOnlyMethod(k.Name) {
+				c.getOrCreateArrayConstraint(t)
+				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
+			}
 			propTV, openObj := c.newOpenObjectWithProperty(k.Name)
 			t.Instance = openObj
 			return propTV, errors
@@ -707,26 +742,25 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 					return propTV, errors
 				}
 			}
-			// Numeric index key — bind to Array<T>
-			if numPrim, ok := keyType.(*type_system.PrimType); ok && numPrim.Prim == type_system.NumPrim {
-				elemTV := c.FreshVar(nil)
-				t.Instance = &type_system.TypeRefType{
-					Name:     type_system.NewIdent("Array"),
-					TypeArgs: []type_system.Type{elemTV},
-				}
-				return elemTV, errors
-			}
-			if indexLit, ok := keyType.(*type_system.LitType); ok {
-				if _, ok := indexLit.Lit.(*type_system.NumLit); ok {
+			// Numeric index key — create or update an ArrayConstraint instead of
+			// immediately binding to Array<T>. This defers the tuple-vs-array
+			// decision until closing time.
+			constraint := c.getOrCreateArrayConstraint(t)
+			if litIndex, ok := asNonNegativeIntLiteral(keyType); ok {
+				// Record literal index with a fresh widenable type variable
+				if _, exists := constraint.LiteralIndexes[litIndex]; !exists {
 					elemTV := c.FreshVar(nil)
-					t.Instance = &type_system.TypeRefType{
-						Name:     type_system.NewIdent("Array"),
-						TypeArgs: []type_system.Type{elemTV},
-					}
-					return elemTV, errors
+					elemTV.Widenable = true
+					constraint.LiteralIndexes[litIndex] = elemTV
 				}
+				return constraint.LiteralIndexes[litIndex], errors
 			}
-			// Non-literal string index — defer to later phase
+			if isNumericType(keyType) {
+				// Non-literal numeric type (e.g. number) — must be Array, not tuple
+				constraint.HasNonLiteralIndex = true
+				return constraint.ElemTypeVar, errors
+			}
+			// Non-literal string index — error
 			errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 			return type_system.NewNeverType(nil), errors
 		default:
@@ -985,6 +1019,171 @@ func markPropertyWritten(prunedType type_system.Type, propName string) bool {
 			if propElem.Name == type_system.NewStrKey(propName) {
 				propElem.Written = true
 				return true
+			}
+		}
+	}
+	return false
+}
+
+// isNumericType returns true if the type represents a numeric type.
+// This includes the number primitive and numeric literal types that are not
+// valid non-negative integer tuple indices (e.g. floats, negatives).
+func isNumericType(t type_system.Type) bool {
+	t = type_system.Prune(t)
+	if numPrim, ok := t.(*type_system.PrimType); ok && numPrim.Prim == type_system.NumPrim {
+		return true
+	}
+	if litType, ok := t.(*type_system.LitType); ok {
+		if _, ok := litType.Lit.(*type_system.NumLit); ok {
+			// If it's a valid non-negative int literal, it's handled by
+			// asNonNegativeIntLiteral, not here. Only treat non-integer
+			// or negative numeric literals as generic numeric types.
+			if _, isIndex := asNonNegativeIntLiteral(t); !isIndex {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// asNonNegativeIntLiteral extracts a non-negative integer from a numeric literal type.
+// Returns the integer value and true if successful, or 0 and false otherwise.
+// Rejects integers exceeding maxTupleIndex to prevent huge tuple allocations in
+// resolveArrayConstraint.
+// TODO(#402): Make maxTupleIndex configurable via checker options.
+const maxTupleIndex = 20
+
+func asNonNegativeIntLiteral(t type_system.Type) (int, bool) {
+	t = type_system.Prune(t)
+	if litType, ok := t.(*type_system.LitType); ok {
+		if numLit, ok := litType.Lit.(*type_system.NumLit); ok {
+			val := numLit.Value
+			if val >= 0 && val == math.Floor(val) && int(val) <= maxTupleIndex {
+				return int(val), true
+			}
+		}
+	}
+	return 0, false
+}
+
+// getOrCreateArrayConstraint returns the existing ArrayConstraint on a TypeVarType,
+// or creates and attaches a new one with a fresh element type variable.
+func (c *Checker) getOrCreateArrayConstraint(t *type_system.TypeVarType) *type_system.ArrayConstraint {
+	if t.ArrayConstraint != nil {
+		return t.ArrayConstraint
+	}
+	elemTV := c.FreshVar(nil)
+	elemTV.Widenable = true
+	t.ArrayConstraint = &type_system.ArrayConstraint{
+		LiteralIndexes: make(map[int]type_system.Type),
+		ElemTypeVar:    elemTV,
+	}
+	return t.ArrayConstraint
+}
+
+// getArrayConstraintPropertyAccess handles property/method access on a TypeVarType
+// that already has an ArrayConstraint. It looks up the property on the Array type
+// definition to determine if it's a read-only or mutating method.
+func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.TypeVarType, propName string, errors []Error) (type_system.Type, []Error) {
+	constraint := t.ArrayConstraint
+
+	// Special-case .length — always available on both tuples and arrays
+	if propName == "length" {
+		return type_system.NewNumPrimType(nil), errors
+	}
+
+	// Look up the property on the Array type to resolve the method and determine mutability.
+	// We create a temporary Array<ElemTypeVar> to delegate the lookup.
+	// TODO(#404): This immediately resolves the method signature against ElemTypeVar,
+	// which means a second call with a different type (e.g. push(5) then push("hello"))
+	// fails instead of inferring a union. Needs deferred call-site resolution.
+	arrayAlias := c.GlobalScope.Namespace.Types["Array"]
+	if arrayAlias == nil {
+		errors = append(errors, &ExpectedObjectError{Type: t, span: ast.Span{}})
+		return type_system.NewNeverType(nil), errors
+	}
+
+	tempArrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, constraint.ElemTypeVar)
+	resultType, accessErrors := c.getMemberType(ctx, tempArrayType, PropertyKey{Name: propName})
+	errors = slices.Concat(errors, accessErrors)
+
+	// Classify the method as mutating or read-only.
+	if c.isArrayMutatingMethod(propName) {
+		constraint.HasMutatingMethod = true
+	} else {
+		constraint.HasReadOnlyMethod = true
+	}
+
+	return resultType, errors
+}
+
+// getArrayConstraintIndexAccess handles numeric index access on a TypeVarType
+// that already has an ArrayConstraint.
+func (c *Checker) getArrayConstraintIndexAccess(_ Context, t *type_system.TypeVarType, k IndexKey, errors []Error) (type_system.Type, []Error) {
+	constraint := t.ArrayConstraint
+	var keyType type_system.Type = k.Type
+	if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
+		keyType = mut.Type
+	}
+
+	if litIndex, ok := asNonNegativeIntLiteral(keyType); ok {
+		if _, exists := constraint.LiteralIndexes[litIndex]; !exists {
+			elemTV := c.FreshVar(nil)
+			elemTV.Widenable = true
+			constraint.LiteralIndexes[litIndex] = elemTV
+		}
+		return constraint.LiteralIndexes[litIndex], errors
+	}
+	if isNumericType(keyType) {
+		constraint.HasNonLiteralIndex = true
+		return constraint.ElemTypeVar, errors
+	}
+	errors = append(errors, &ExpectedObjectError{Type: t, span: k.Span()})
+	return type_system.NewNeverType(nil), errors
+}
+
+// isArrayOnlyMethod returns true if the given name is a method (not a property)
+// on the Array type. This is used to decide whether accessing a property on a
+// fresh TypeVar should create an ArrayConstraint. Only methods qualify because
+// properties like .length are ambiguous (also exist on strings, etc.).
+func (c *Checker) isArrayOnlyMethod(propName string) bool {
+	arrayAlias := c.GlobalScope.Namespace.Types["Array"]
+	if arrayAlias == nil {
+		return false
+	}
+	arrayType := type_system.Prune(arrayAlias.Type)
+	objType, ok := arrayType.(*type_system.ObjectType)
+	if !ok {
+		return false
+	}
+	key := type_system.NewStrKey(propName)
+	for _, elem := range objType.Elems {
+		if method, ok := elem.(*type_system.MethodElem); ok && method.Name == key {
+			return true
+		}
+	}
+	return false
+}
+
+// isArrayMutatingMethod returns true if the given method name is a mutating method
+// on Array (i.e., it exists on mut Array but not on immutable Array).
+func (c *Checker) isArrayMutatingMethod(methodName string) bool {
+	arrayAlias := c.GlobalScope.Namespace.Types["Array"]
+	if arrayAlias == nil {
+		return false
+	}
+	arrayType := type_system.Prune(arrayAlias.Type)
+	objType, ok := arrayType.(*type_system.ObjectType)
+	if !ok {
+		return false
+	}
+	for _, elem := range objType.Elems {
+		if method, ok := elem.(*type_system.MethodElem); ok {
+			if method.Name == type_system.NewStrKey(methodName) {
+				if method.MutSelf != nil && *method.MutSelf {
+					return true
+				}
+				return false
 			}
 		}
 	}
