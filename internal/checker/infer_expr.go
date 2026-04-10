@@ -273,20 +273,45 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				spreadType, spreadErrors := c.inferExpr(ctx, spread.Value)
 				errors = slices.Concat(errors, spreadErrors)
 
-				// Check that the spread operand is iterable
-				elementType := c.GetIterableElementType(ctx, spreadType)
-				if elementType == nil {
-					err := NewGenericError(
-						fmt.Sprintf("Type '%s' is not iterable", spreadType),
-						spread.Span(),
-					)
-					errors = append(errors, err)
-					elementType = type_system.NewAnyType(nil)
+				prunedType := type_system.Prune(spreadType)
+				// Unwrap MutabilityType if present
+				if mut, ok := prunedType.(*type_system.MutabilityType); ok {
+					prunedType = type_system.Prune(mut.Type)
 				}
-				elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, &type_system.TypeRefType{
-					Name:     type_system.NewIdent("Array"),
-					TypeArgs: []type_system.Type{elementType},
-				}))
+				handled := false
+				switch st := prunedType.(type) {
+				case *type_system.TupleType:
+					// Inline tuple elements directly
+					elemTypes = append(elemTypes, st.Elems...)
+					handled = true
+				case *type_system.TypeVarType:
+					// Unannotated parameter - defer iterable constraint to call site
+					elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, st))
+					handled = true
+				case *type_system.TypeRefType:
+					if c.isArrayType(st) {
+						// Array<T> - preserve as RestSpreadType
+						elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, st))
+						handled = true
+					}
+				}
+				if !handled {
+					// Other types (including non-Array TypeRefTypes like Generator) -
+					// extract element type via iterability check
+					elementType := c.GetIterableElementType(ctx, spreadType)
+					if elementType == nil {
+						err := NewGenericError(
+							fmt.Sprintf("Type '%s' is not iterable", spreadType),
+							spread.Span(),
+						)
+						errors = append(errors, err)
+						elementType = type_system.NewAnyType(nil)
+					}
+					elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, &type_system.TypeRefType{
+						Name:     type_system.NewIdent("Array"),
+						TypeArgs: []type_system.Type{elementType},
+					}))
+				}
 			} else {
 				elemType, elemErrors := c.inferExpr(ctx, elem)
 				elemTypes = append(elemTypes, elemType)
@@ -350,6 +375,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					types[i] = funcType
 					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key}
 				}
+			case *ast.ObjSpreadExpr:
+				sourceType, spreadErrors := c.inferExpr(ctx, elem.Value)
+				errors = append(errors, spreadErrors...)
+				typeElems[i] = type_system.NewRestSpreadElem(sourceType)
 			}
 		}
 
@@ -433,6 +462,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				inferErrors := c.inferFuncBodyWithFuncSigType(
 					objCtx, funcType, paramBindings, setterExpr.Fn.Body, setterExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
+			case *ast.ObjSpreadExpr:
+				// Already handled in the first loop — nothing to do here.
 			}
 
 			i++

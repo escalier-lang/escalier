@@ -1246,10 +1246,10 @@ Row polymorphism adds complexity. The following are initially out of scope:
 Note: **multiple row variables** (functions where multiple parameters each have
 their own row variable that appears in the return type) are **in scope** and
 **implemented**. Tested in `TestRowTypesRowPolymorphism/MultipleParamsRowPolymorphism`.
-The spread-based pattern `fn merge(a, b) { return {...a, ...b} }` requires
-Phase 10 (Object Spread).
+The spread-based pattern `fn merge(a, b) { return {...a, ...b} }` is
+**implemented** (Phase 10). Tested in `TestObjectSpread/MultipleSpreads`.
 
-### 12. Object Spread and Multiple RestSpreadElems
+### 12. Object Spread and Multiple RestSpreadElems ✅
 
 Object spread expressions (`{...obj, extra: 1}`) are parsed but not yet handled
 by the checker. Additionally, the unifier currently rejects the case where both
@@ -1344,17 +1344,25 @@ type inference, the rightmost definition of a property wins. When building the
 `ObjectType` from the `ObjectExpr`, properties from later elements shadow
 properties from earlier elements (including from earlier spreads).
 
+**Implemented:** `getObjectAccess` searches all elements (explicit properties
+and `RestSpreadElem`s) in a single reverse-order pass so that later elements
+override earlier ones regardless of whether they are explicit or from a spread.
+Tested in `TestObjectSpread/SpreadOverrideSemantics`.
+
 #### 12e. Implementation notes
 
 - **Add `ObjSpreadExpr` case** to `ObjectExpr` inference in `infer_expr.go`:
   infer the spread source type and add a `RestSpreadElem` to the result's
-  `Elems`.
+  `Elems`. ✅
 - **Update the unifier** to handle the two-rest-elem case instead of returning
-  `UnimplementedError`. Implement the distribution logic from 12c.
-- **Update `getObjectAccess`** to look through `RestSpreadElem`s when searching
-  for a property — if the property isn't found in the explicit elements, check
-  each rest element's type. Note: adding new properties via `getObjectAccess`
-  is gated by the `Open` field, not by the presence of `RestSpreadElem`s.
+  `UnimplementedError`. Implement the distribution logic from 12c. ✅
+  (`unifyClosedWithRests` in `unify.go`)
+- **Update `getObjectAccess`** to search all elements in reverse order (both
+  explicit properties and `RestSpreadElem`s in a single pass) so that later
+  elements override earlier ones. Both the `PropertyKey` and `IndexKey`
+  (string-literal) branches use this approach. Note: adding new properties via
+  `getObjectAccess` is gated by the `Open` field, not by the presence of
+  `RestSpreadElem`s. ✅
 
 ### 13. Tuple and Array Inference from Indexing Patterns
 
@@ -1783,7 +1791,7 @@ val r = identity([1, "hello"])
   rest binding's type — this is now possible thanks to variadic tuple support
   (Phase 13), rather than collapsing to `Array<T>`.
 
-### 16. Array/Tuple Spread
+### 16. Array/Tuple Spread ✅
 
 Array/tuple spread expressions (`[...arr, extra]`) allow spreading an iterable
 into a tuple literal. The checker already handles `ArraySpreadExpr` in

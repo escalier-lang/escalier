@@ -2463,3 +2463,149 @@ func TestDestructuringTuplePatterns(t *testing.T) {
 		})
 	}
 }
+
+func TestObjectSpread(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"BasicSpread": {
+			input: `
+				val r = {...{x: 1}, y: 2}
+			`,
+			expectedTypes: map[string]string{
+				"r": "{x: 1, y: 2}",
+			},
+		},
+		"SpreadWithInferredType": {
+			input: `
+				fn foo(obj) { return {...obj, extra: 1} }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: T0) -> {...T0, extra: 1}",
+			},
+		},
+		"MultipleSpreads": {
+			input: `
+				fn merge(a, b) { return {...a, ...b} }
+				val r = merge({x: 1}, {y: "hello"})
+			`,
+			expectedTypes: map[string]string{
+				"merge": "fn <T0, T1>(a: T0, b: T1) -> {...T0, ...T1}",
+				"r":     "{x: 1, y: \"hello\"}",
+			},
+		},
+		"PropertyAccessThroughSpread": {
+			input: `
+				val base = {x: 1, y: 2}
+				val extended = {...base, z: 3}
+				val v = extended.x
+			`,
+			expectedTypes: map[string]string{
+				"base":     "{x: 1, y: 2}",
+				"extended": "{x: 1, y: 2, z: 3}",
+				"v":        "1",
+			},
+		},
+		"SpreadCalledWithConcreteArgs": {
+			input: `
+				fn extend(obj) { return {...obj, extra: 1} }
+				val r = extend({x: "hello", y: true})
+			`,
+			expectedTypes: map[string]string{
+				"r": "{x: \"hello\", y: true, extra: 1}",
+			},
+		},
+		"SpreadOverrideSemantics": {
+			input: `
+				val foo = {b: 5, c: 10}
+				val bar = {a: 1, b: 2, ...foo, c: 3}
+				val {a, b, c} = bar
+			`,
+			expectedTypes: map[string]string{
+				"a": "1",
+				"b": "5",
+				"c": "3",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleSpreadRefined(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"SpreadOfTupleIntoTuple": {
+			input: `
+				val tup: [string, boolean] = ["hello", true]
+				val result = [0, ...tup, 4]
+			`,
+			expectedTypes: map[string]string{
+				"result": "[0, string, boolean, 4]",
+			},
+		},
+		"SpreadOfArrayIntoTuple": {
+			input: `
+				val arr: Array<number> = [1, 2, 3]
+				val result = [0, ...arr, 4]
+			`,
+			expectedTypes: map[string]string{
+				"result": "[0, ...Array<number>, 4]",
+			},
+		},
+		"MultipleTupleSpreads": {
+			input: `
+				fn concat(a: [number, string], b: [boolean]) {
+					return [...a, ...b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"concat": "fn (a: [number, string], b: [boolean]) -> [number, string, boolean]",
+			},
+		},
+		"TuplePlusArraySpread": {
+			input: `
+				fn prepend(tup: [number, string], arr: Array<boolean>) {
+					return [...tup, ...arr]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"prepend": "fn (tup: [number, string], arr: Array<boolean>) -> [number, string, ...Array<boolean>]",
+			},
+		},
+		"SpreadWithLiteralElements": {
+			input: `
+				val arr: Array<number> = [1, 2, 3]
+				val result = ["start", ...arr, "end"]
+			`,
+			expectedTypes: map[string]string{
+				"result": "[\"start\", ...Array<number>, \"end\"]",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}

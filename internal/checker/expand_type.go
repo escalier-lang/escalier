@@ -777,10 +777,14 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
 	switch k := key.(type) {
 	case PropertyKey:
-		for _, elem := range objType.Elems {
-			switch elem := elem.(type) {
+		// Search elements in reverse order so that later elements override
+		// earlier ones. This respects JavaScript spread semantics where
+		// {a: 1, ...{a: 2}} yields a=2 and {...{a: 1}, a: 2} yields a=2.
+		targetKey := type_system.NewStrKey(k.Name)
+		for i := len(objType.Elems) - 1; i >= 0; i-- {
+			switch elem := objType.Elems[i].(type) {
 			case *type_system.PropertyElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					propType := elem.Value
 					if elem.Optional {
 						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
@@ -788,26 +792,29 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					return propType, errors
 				}
 			case *type_system.MethodElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					return elem.Fn, errors
 				}
 			case *type_system.GetterElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					return elem.Fn.Return, errors
 				}
 			case *type_system.SetterElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					return elem.Fn.Params[0].Type, errors
+				}
+			case *type_system.RestSpreadElem:
+				resolved := type_system.Prune(elem.Value)
+				if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
+					propType, propErrors := c.getObjectAccess(resolvedObj, key, nil)
+					if len(propErrors) == 0 {
+						return propType, errors
+					}
 				}
 			case *type_system.MappedElem:
 				panic("MappedElems should have been expanded before property access")
 			case *type_system.ConstructorElem:
 			case *type_system.CallableElem:
-				continue
-			case *type_system.RestSpreadElem:
-				// The row variable is an unresolved TypeVarType during inference —
-				// there's no concrete ObjectType to query for properties here.
-				// It gets resolved during unification/generalization, not member lookup.
 				continue
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
@@ -865,10 +872,12 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		}
 		if indexLit, ok := keyType.(*type_system.LitType); ok {
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
-				for _, elem := range objType.Elems {
-					switch elem := elem.(type) {
+				// Search in reverse order for override semantics (same as PropertyKey).
+				targetKey := type_system.NewStrKey(strLit.Value)
+				for i := len(objType.Elems) - 1; i >= 0; i-- {
+					switch elem := objType.Elems[i].(type) {
 					case *type_system.PropertyElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							propType := elem.Value
 							if elem.Optional {
 								propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
@@ -876,24 +885,30 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 							return propType, errors
 						}
 					case *type_system.MethodElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							return elem.Fn, errors
 						}
 					case *type_system.GetterElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							return elem.Fn.Return, errors
 						}
 					case *type_system.SetterElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							return elem.Fn.Params[0].Type, errors
+						}
+					case *type_system.RestSpreadElem:
+						resolved := type_system.Prune(elem.Value)
+						if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
+							indexKey := PropertyKey{Name: strLit.Value}
+							propType, propErrors := c.getObjectAccess(resolvedObj, indexKey, nil)
+							if len(propErrors) == 0 {
+								return propType, errors
+							}
 						}
 					case *type_system.MappedElem:
 						panic("MappedElems should have been expanded before property access")
 					case *type_system.ConstructorElem:
 					case *type_system.CallableElem:
-						continue
-					case *type_system.RestSpreadElem:
-						// See comment in PropertyKey branch above.
 						continue
 					default:
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))

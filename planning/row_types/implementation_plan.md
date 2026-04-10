@@ -882,14 +882,13 @@ All tests are in `TestRowTypesRowPolymorphism` in `row_types_test.go`.
   Calling with exact properties — row variable resolves to empty `ObjectType`,
   which is dropped from display: `r: {x: number}`.
 
-**Not yet implemented (requires Phase 10 — Object Spread):**
+**Multiple row-polymorphic parameters via spread (Phase 10):**
 
-- **Multiple row-polymorphic parameters via spread:**
-  ```esc
+- ```esc
   fn merge(a, b) { return {...a, ...b} }
-  let r = merge({x: 1}, {y: "hi"})
+  val r = merge({x: 1}, {y: "hello"})
   ```
-  — `r: {x: number, y: string}`.
+  — `r: {x: 1, y: "hello"}`. Tested in `TestObjectSpread/MultipleSpreads`.
 
 ---
 
@@ -1066,7 +1065,7 @@ preserved even when not in the return type, since the user explicitly wrote
 
 ---
 
-## Phase 10: Object & Array/Tuple Spread
+## Phase 10: Object & Array/Tuple Spread ✅
 
 **Requirements covered:** Section 12 (object spread, multiple RestSpreadElems),
 Section 16 (array/tuple spread).
@@ -1149,11 +1148,13 @@ sources.
    ```
 
 4. **`internal/checker/expand_type.go`** — `getObjectAccess`:
-   When a property is not found in explicit elements (and the object is **not**
-   open), check each `RestSpreadElem`'s resolved type (via Prune). If it
-   resolves to an `ObjectType`, search its elements recursively. Search in
-   **reverse** order (rightmost rest element first) to respect override
-   semantics. Return the first match found.
+   Search all elements (explicit properties **and** `RestSpreadElem`s) in a
+   single **reverse-order** pass. The first match from the end wins, which
+   correctly handles JavaScript override semantics: in `{a: 1, ...{a: 2}}` the
+   spread's `a` wins, and in `{...{a: 1}, a: 2}` the explicit `a` wins,
+   because in both cases the later element is found first during the reverse
+   scan. Both the `PropertyKey` and `IndexKey` (string-literal) branches use
+   this approach.
 
    Note: property addition on open objects (Phase 2) is gated by `Open`, not by
    the presence of `RestSpreadElem`s. These are orthogonal.
@@ -1168,25 +1169,26 @@ sources.
 
 ### Tests
 
-- **Basic spread:**
-  `let r = {...{x: 1}, y: 2}` — `r: {x: number, y: number}`.
-- **Spread with inferred type:**
-  `fn foo(obj) { return {...obj, extra: 1} }` — return type has
-  `RestSpreadElem` from `obj`.
-- **Multiple spreads:**
+- **Basic spread (`TestObjectSpread/BasicSpread`):**
+  `val r = {...{x: 1}, y: 2}` — `r: {x: 1, y: 2}`.
+- **Spread with inferred type (`TestObjectSpread/SpreadWithInferredType`):**
+  `fn foo(obj) { return {...obj, extra: 1} }` — return type `{...T0, extra: 1}`.
+- **Multiple spreads (`TestObjectSpread/MultipleSpreads`):**
   `fn merge(a, b) { return {...a, ...b} }` — two row variables, two type params.
-- **Override semantics:**
-  `let r = {...{x: 1}, ...{x: "hi"}}` — `r.x` is `string` (rightmost wins).
-- **Explicit property overrides spread:**
-  `let r = {...{x: 1}, x: "hi"}` — `r.x` is `string`.
-- **Spread of TypeVarType:**
-  `fn foo(obj) { let r = {...obj} }` — `RestSpreadElem{Value: typeVar(obj)}`.
-- **Property access through RestSpreadElem:**
+  Calling `merge({x: 1}, {y: "hello"})` yields `{x: 1, y: "hello"}`.
+- **Override semantics (`TestObjectSpread/SpreadOverrideSemantics`):**
+  `val bar = {a: 1, b: 2, ...{b: 5, c: 10}, c: 3}` — `bar.a` is `1`,
+  `bar.b` is `5` (spread overrides earlier explicit), `bar.c` is `3`
+  (later explicit overrides spread).
+- **Property access through RestSpreadElem (`TestObjectSpread/PropertyAccessThroughSpread`):**
   ```esc
-  let base = {x: 1, y: 2}
-  let extended = {...base, z: 3}
-  let v = extended.x  // found via RestSpreadElem
+  val base = {x: 1, y: 2}
+  val extended = {...base, z: 3}
+  val v = extended.x  // found via RestSpreadElem
   ```
+- **Spread called with concrete args (`TestObjectSpread/SpreadCalledWithConcreteArgs`):**
+  `fn extend(obj) { return {...obj, extra: 1} }` called with
+  `{x: "hello", y: true}` yields `{x: "hello", y: true, extra: 1}`.
 
 ### Array/Tuple Spread Changes
 
@@ -2050,7 +2052,7 @@ Phase 7, Phase 14 → Phase 8: Destructuring ✅
 
 ```
 Phase 2 → Phase 9: Optional Chaining
-Phase 3 → Phase 10: Object & Array/Tuple Spread (also requires Phase 13 for tuple spread)
+Phase 3 → Phase 10: Object & Array/Tuple Spread ✅ (also requires Phase 13 for tuple spread)
 Phase 3 → Phase 13: Variadic Tuple Types ✅
 ```
 
@@ -2073,7 +2075,7 @@ All phases → Phase 11: Error Reporting
 | 7: Row Polymorphism ✅            | 6          | 12                   |
 | 8: Destructuring ✅               | 7, 14      | —                    |
 | 9: Optional Chaining              | 2          | 3–14                 |
-| 10: Object & Array/Tuple Spread   | 3, 13      | 4–14                 |
+| 10: Object & Array/Tuple Spread ✅| 3, 13      | 4–14                 |
 | 11: Error Reporting               | all        | —                    |
 | 12: Tuple/Array Inference ✅      | 6          | 7, 13                |
 | 13: Variadic Tuple Types ✅       | 3          | 4–12                 |
@@ -2094,9 +2096,9 @@ All phases → Phase 11: Error Reporting
    inside the union. May be complex — consider deferring if it destabilizes
    earlier phases.
 
-3. **Multiple RestSpreadElems (Phase 10):** Property distribution across
-   unbound rest elements is inherently ambiguous. Keep the error case for
-   ambiguous distributions.
+3. ~~**Multiple RestSpreadElems (Phase 10):**~~ Resolved. Property distribution
+   across unbound rest elements is inherently ambiguous — the error case for
+   ambiguous distributions is kept as designed in `unifyClosedWithRests`.
 
 4. **Snapshot tests:** Adding `Open` to `ObjectType` shouldn't change printed
    types (it's an internal flag), but changes to `RestSpreadElem` handling in
