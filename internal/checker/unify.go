@@ -1871,10 +1871,6 @@ func occursInType(t1, t2 type_system.Type) bool {
 	return false
 }
 
-// openClosedObjectForParam checks if boundType is a closed ObjectType and, if so,
-// converts it to an open object and binds it to the type variable. Returns true if
-// the conversion was performed.
-//
 // handleArrayConstraintBinding handles the case where a TypeVarType with an
 // ArrayConstraint is being bound to a concrete type. If the bound type is an
 // Array, mut Array, or tuple, the constraint is updated accordingly and the
@@ -1907,10 +1903,16 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 					errs = append(errs, unifyErrs...)
 				}
 			}
+			// Bind the TypeVar to the array type and clear the constraint so
+			// that resolveArrayConstraintsInType won't re-resolve it.
+			typeVar.Instance = boundType
+			typeVar.ArrayConstraint = nil
 			return true, errs
 		}
 	case *type_system.TupleType:
-		// Passed to a tuple type — unify element types pairwise
+		// Passed to a tuple type — unify element types pairwise.
+		// Only unify indexes within the tuple's bounds; any LiteralIndexes
+		// beyond the tuple length are ignored.
 		var errs []Error
 		for i, elemType := range t.Elems {
 			if tv, ok := constraint.LiteralIndexes[i]; ok {
@@ -1919,6 +1921,10 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 				}
 			}
 		}
+		// Bind the TypeVar to the tuple and clear the constraint so that
+		// resolveArrayConstraintsInType won't recreate a different tuple.
+		typeVar.Instance = boundType
+		typeVar.ArrayConstraint = nil
 		return true, errs
 	}
 	return false, nil
