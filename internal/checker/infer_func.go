@@ -449,6 +449,15 @@ func (c *Checker) closeOpenParams(funcSigType *type_system.FuncType) {
 
 // resolveArrayConstraintsInType walks a type tree and resolves any
 // ArrayConstraints on TypeVarTypes to concrete tuple or array types.
+//
+// We only need to check for ArrayConstraint on the incoming TypeVar (before
+// pruning), not on its representative. ArrayConstraints are always set on
+// the Prune-representative of a TypeVar because getMemberType prunes before
+// reaching the TypeVarType case where getOrCreateArrayConstraint is called.
+// The representative either IS the incoming TypeVar (the common case, and
+// the pre-prune check catches it), or the incoming TypeVar's representative
+// is a different param TypeVar that will be processed in its own iteration
+// of closeOpenParams's loop over all params.
 func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
 	// Check for ArrayConstraint before pruning: a param TypeVar with an
 	// ArrayConstraint may have had its Instance set during return-type
