@@ -1887,7 +1887,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 
 	switch t := inner.(type) {
 	case *type_system.TypeRefType:
-		if type_system.QualIdentToString(t.Name) == "Array" && len(t.TypeArgs) > 0 {
+		if c.isArrayType(t) && len(t.TypeArgs) > 0 {
 			// Passed to Array<T> or mut Array<T> — force array resolution
 			constraint.HasNonLiteralIndex = true
 			if isMut {

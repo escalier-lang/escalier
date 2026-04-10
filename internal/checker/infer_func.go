@@ -449,10 +449,20 @@ func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
 		resolved := c.resolveArrayConstraint(tv.ArrayConstraint)
 		tv.Instance = resolved
 		tv.ArrayConstraint = nil
+		// Recurse into the resolved type to handle nested ArrayConstraints
+		// (e.g. items[0][1] where the element itself is used as a tuple/array).
+		c.resolveArrayConstraintsInType(resolved)
 		return
 	}
 
-	// Recurse into type constructors
+	// Recurse into type constructors that can appear in inferred parameter types.
+	// We only need to cover shapes produced by inference on unannotated params:
+	// - IntersectionType, FuncType.Throws, and ObjectType methods/getters/setters
+	//   are omitted because ArrayConstraints are only created on unannotated
+	//   parameter TypeVars during body inference, and those types come from
+	//   annotations or type definitions, not from the inference path.
+	// - ObjectType only checks PropertyElem because open objects created during
+	//   inference (via newOpenObjectWithProperty) only contain PropertyElems.
 	switch p := t.(type) {
 	case *type_system.TypeRefType:
 		for _, arg := range p.TypeArgs {
