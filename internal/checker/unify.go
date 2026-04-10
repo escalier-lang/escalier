@@ -1756,8 +1756,8 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				// Array or tuple type, update the constraint flags so that
 				// resolution at closing time produces the correct type.
 				if typeVar1.ArrayConstraint != nil {
-					if c.handleArrayConstraintBinding(ctx, typeVar1, t2) {
-						return errors
+					if handled, bindErrs := c.handleArrayConstraintBinding(ctx, typeVar1, t2); handled {
+						return append(errors, bindErrs...)
 					}
 				}
 				// When binding a Widenable TypeVar, widen literals to their
@@ -1851,7 +1851,24 @@ func (v *OccursInVisitor) ExitType(t type_system.Type) type_system.Type {
 func occursInType(t1, t2 type_system.Type) bool {
 	visitor := &OccursInVisitor{result: false, t1: t1}
 	t2.Accept(visitor)
-	return visitor.result
+	if visitor.result {
+		return true
+	}
+	// Defensive: Accept doesn't traverse ArrayConstraint children, so check
+	// them explicitly. In practice a TypeVar is unlikely to occur inside its
+	// own ArrayConstraint, but a missed occurs check could cause an infinite
+	// loop during unification.
+	if tv, ok := type_system.Prune(t2).(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
+		if occursInType(t1, tv.ArrayConstraint.ElemTypeVar) {
+			return true
+		}
+		for _, elemTV := range tv.ArrayConstraint.LiteralIndexes {
+			if occursInType(t1, elemTV) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // openClosedObjectForParam checks if boundType is a closed ObjectType and, if so,
@@ -1863,7 +1880,7 @@ func occursInType(t1, t2 type_system.Type) bool {
 // Array, mut Array, or tuple, the constraint is updated accordingly and the
 // function returns true to indicate that binding was handled. Otherwise it
 // returns false and normal binding proceeds.
-func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system.TypeVarType, boundType type_system.Type) bool {
+func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system.TypeVarType, boundType type_system.Type) (bool, []Error) {
 	constraint := typeVar.ArrayConstraint
 	inner := boundType
 	isMut := false
@@ -1881,22 +1898,30 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 				constraint.HasMutatingMethod = true
 			}
 			// Unify the constraint's element type var with the array's element type
-			c.Unify(ctx, constraint.ElemTypeVar, t.TypeArgs[0])
-			for _, elemTV := range constraint.LiteralIndexes {
-				c.Unify(ctx, elemTV, t.TypeArgs[0])
+			var errs []Error
+			if unifyErrs := c.Unify(ctx, constraint.ElemTypeVar, t.TypeArgs[0]); len(unifyErrs) > 0 {
+				errs = append(errs, unifyErrs...)
 			}
-			return true
+			for _, elemTV := range constraint.LiteralIndexes {
+				if unifyErrs := c.Unify(ctx, elemTV, t.TypeArgs[0]); len(unifyErrs) > 0 {
+					errs = append(errs, unifyErrs...)
+				}
+			}
+			return true, errs
 		}
 	case *type_system.TupleType:
 		// Passed to a tuple type — unify element types pairwise
+		var errs []Error
 		for i, elemType := range t.Elems {
 			if tv, ok := constraint.LiteralIndexes[i]; ok {
-				c.Unify(ctx, tv, elemType)
+				if unifyErrs := c.Unify(ctx, tv, elemType); len(unifyErrs) > 0 {
+					errs = append(errs, unifyErrs...)
+				}
 			}
 		}
-		return true
+		return true, errs
 	}
-	return false
+	return false, nil
 }
 
 // This is needed because when an unannotated parameter (e.g. `fn foo(obj)`) is

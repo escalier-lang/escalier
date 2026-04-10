@@ -698,6 +698,17 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			case PropertyKey:
 				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
 			case IndexKey:
+				// If the index is a string literal, route to property access
+				// instead of numeric index access.
+				keyType := type_system.Prune(k.Type)
+				if mut, ok := keyType.(*type_system.MutabilityType); ok {
+					keyType = mut.Type
+				}
+				if litType, ok := keyType.(*type_system.LitType); ok {
+					if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
+						return c.getArrayConstraintPropertyAccess(ctx, t, strLit.Value, errors)
+					}
+				}
 				return c.getArrayConstraintIndexAccess(ctx, t, k, errors)
 			default:
 				errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
@@ -1012,23 +1023,40 @@ func markPropertyWritten(prunedType type_system.Type, propName string) bool {
 	return false
 }
 
-// isNumericType returns true if the type represents a numeric type (number primitive).
+// isNumericType returns true if the type represents a numeric type.
+// This includes the number primitive and numeric literal types that are not
+// valid non-negative integer tuple indices (e.g. floats, negatives).
 func isNumericType(t type_system.Type) bool {
 	t = type_system.Prune(t)
 	if numPrim, ok := t.(*type_system.PrimType); ok && numPrim.Prim == type_system.NumPrim {
 		return true
+	}
+	if litType, ok := t.(*type_system.LitType); ok {
+		if _, ok := litType.Lit.(*type_system.NumLit); ok {
+			// If it's a valid non-negative int literal, it's handled by
+			// asNonNegativeIntLiteral, not here. Only treat non-integer
+			// or negative numeric literals as generic numeric types.
+			if _, isIndex := asNonNegativeIntLiteral(t); !isIndex {
+				return true
+			}
+		}
 	}
 	return false
 }
 
 // asNonNegativeIntLiteral extracts a non-negative integer from a numeric literal type.
 // Returns the integer value and true if successful, or 0 and false otherwise.
+// Rejects integers exceeding maxTupleIndex to prevent huge tuple allocations in
+// resolveArrayConstraint.
+// TODO(#402): Make maxTupleIndex configurable via checker options.
+const maxTupleIndex = 20
+
 func asNonNegativeIntLiteral(t type_system.Type) (int, bool) {
 	t = type_system.Prune(t)
 	if litType, ok := t.(*type_system.LitType); ok {
 		if numLit, ok := litType.Lit.(*type_system.NumLit); ok {
 			val := numLit.Value
-			if val >= 0 && val == math.Floor(val) {
+			if val >= 0 && val == math.Floor(val) && int(val) <= maxTupleIndex {
 				return int(val), true
 			}
 		}

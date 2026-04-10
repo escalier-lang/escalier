@@ -471,6 +471,14 @@ func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
 			c.resolveArrayConstraintsInType(param.Type)
 		}
 		c.resolveArrayConstraintsInType(p.Return)
+	case *type_system.ObjectType:
+		for _, elem := range p.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				c.resolveArrayConstraintsInType(prop.Value)
+			}
+		}
+	case *type_system.MutabilityType:
+		c.resolveArrayConstraintsInType(p.Type)
 	}
 }
 
@@ -492,7 +500,7 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 		}
 		arrayAlias := c.GlobalScope.Namespace.Types["Array"]
 		arrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, constraint.ElemTypeVar)
-		if constraint.HasMutatingMethod {
+		if constraint.HasMutatingMethod || constraint.HasIndexAssignment {
 			return &type_system.MutabilityType{
 				Type:       arrayType,
 				Mutability: type_system.MutabilityMutable,

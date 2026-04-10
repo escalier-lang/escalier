@@ -1779,3 +1779,119 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestTupleArrayInferenceFixedBugs covers regressions for specific bugs that
+// were fixed in the tuple/array inference pipeline.
+func TestTupleArrayInferenceFixedBugs(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		// asNonNegativeIntLiteral rejects indexes above maxTupleIndex (20),
+		// so a huge literal index forces Array<T> via isNumericType.
+		"LargeIndexForcesArray": {
+			input: `
+				fn foo(items) { return items[1001] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: Array<T0>) -> T0",
+			},
+		},
+		// Non-literal index combined with index assignment should produce
+		// mut Array<T>, not immutable Array<T>.
+		"NonLiteralIndexWithAssignmentIsMutArray": {
+			input: `
+				fn foo(items, i: number) {
+					items[i] = 42
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn (items: mut Array<number>, i: number) -> void",
+			},
+		},
+		// A read-only gap index (no assignment) should produce an immutable
+		// tuple, not a mutable one.
+		"GapIndexReadOnly": {
+			input: `
+				fn foo(items) { return items[1] }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(items: [T0, T1]) -> T1",
+			},
+		},
+		// String literal used as index on an array-constrained param should
+		// route to property access (e.g. items["length"] → number).
+		"StringLiteralIndexRoutesToPropertyAccess": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					return items["length"]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: [T0]) -> number",
+			},
+		},
+		// Array constraint resolved inside a function parameter that is a
+		// callback receiving the constrained type via a TypeRefType wrapper
+		// (tests resolveArrayConstraintsInType recursion into nested types).
+		"ArrayConstraintResolvedInCallback": {
+			input: `
+				fn foo(items) {
+					val a = items[0]
+					items.push(a)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(items: mut Array<T0>) -> void",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+// TestTupleArrayInferenceUnifyErrors verifies that element-type conflicts are
+// properly reported when an array-constrained parameter is bound to an
+// incompatible concrete type.
+func TestTupleArrayInferenceUnifyErrors(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		expectErrors bool
+	}{
+		// Binding an array-constrained param (with number element) to
+		// Array<string> should produce a unification error.
+		"ArrayConstraintBoundToIncompatibleArray": {
+			input: `
+				fn bar(items: Array<string>) { return items[0] }
+				fn foo(items) {
+					items[0] = 42
+					bar(items)
+				}
+			`,
+			expectErrors: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, errors := inferModuleTypesAndErrors(t, test.input)
+			if test.expectErrors {
+				assert.NotEmpty(t, errors, "Expected unification errors but got none")
+			} else {
+				assert.Empty(t, errors, "Expected no errors")
+			}
+		})
+	}
+}

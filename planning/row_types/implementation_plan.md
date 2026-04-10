@@ -1398,7 +1398,7 @@ in `internal/checker/tests/row_types_test.go`.
 
 **Edge case tests (`TestTupleArrayInferenceEdgeCases`):**
 
-- **Gap index** — only `items[1]` → `fn <T0>(items: mut [T0, number]) -> void`
+- **Gap index** — only `items[1]` → `fn <T0>(items: [T0, number]) -> void`
   (2-tuple with unresolved T0 at position 0)
 - **Object literal widening** — `items[0] = {x: 5, y: 10}` →
   `fn (items: mut [{x: number, y: number}]) -> void`

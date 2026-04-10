@@ -25,6 +25,9 @@ func collectUnresolvedTypeVars(
 			*order = append(*order, t.ID)
 			collectUnresolvedTypeVars(t.Constraint, vars, order)
 			collectUnresolvedTypeVars(t.Default, vars, order)
+			// Defensive: ArrayConstraints are resolved before generalization
+			// runs, so this branch is unlikely to execute. If it does, we
+			// need to collect the element type vars so they get generalized.
 			if t.ArrayConstraint != nil {
 				for _, elemTV := range t.ArrayConstraint.LiteralIndexes {
 					collectUnresolvedTypeVars(elemTV, vars, order)
