@@ -1906,8 +1906,10 @@ val result = [0, ...arr]
   - If the spread source is a `TupleType`, inline the elements directly into
     the parent tuple.
   - If the spread source is a `TypeVarType`, use
-    `RestSpreadType{Type: typeVar}` and verify the iterable constraint is
-    deferred appropriately.
+    `RestSpreadType{Type: typeVar}` directly without calling
+    `GetIterableElementType`. The iterable constraint is enforced structurally
+    at call sites when unification resolves the type variable — no upfront
+    constraint is needed (same deferred approach as `ArrayConstraint`).
 - **Unification:** Tuple-vs-tuple unification with `RestSpreadType` (Phase 13)
   already handles the mechanics. No additional unification changes needed.
 - **Display:** `TupleType.String()` already handles `RestSpreadType` elements

@@ -1278,12 +1278,14 @@ sources.
    ```
 
    **b. Spread of `TypeVarType`:** If the spread source is a `TypeVarType`
-   (unannotated parameter), use `RestSpreadType{Type: typeVar}` directly. The
-   iterable constraint should be verified — `GetIterableElementType` may need
-   to handle TypeVarType gracefully (returning `nil` and deferring the
-   constraint rather than producing an error immediately). Alternatively, keep
-   the current error for non-iterable types and rely on the caller providing an
-   iterable argument to resolve the type variable.
+   (unannotated parameter), use `RestSpreadType{Type: typeVar}` directly
+   without calling `GetIterableElementType`. The iterable constraint is
+   enforced structurally at call sites: when the caller passes a concrete
+   argument, unification will resolve the type variable and the
+   `RestSpreadType` will unify against the argument's elements. If the
+   argument is not iterable, unification will fail at that point. This
+   mirrors how `ArrayConstraint` defers the tuple-vs-array decision —
+   no upfront constraint is needed on the type variable itself.
 
    **c. Spread of `ArrayType`:** If the spread source resolves to an
    `ArrayType` directly (rare — usually it's `TypeRefType` with name `Array`),
