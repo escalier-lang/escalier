@@ -802,6 +802,13 @@ func getSpreadPropertyType(objType *type_system.ObjectType, name string) type_sy
 			if elem.Name == targetKey {
 				return nil
 			}
+		case *type_system.RestSpreadElem:
+			resolved := type_system.Prune(elem.Value)
+			if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
+				if propType := getSpreadPropertyType(resolvedObj, name); propType != nil {
+					return propType
+				}
+			}
 		}
 	}
 	return nil
@@ -814,6 +821,12 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// Search elements in reverse order so that later elements override
 		// earlier ones. This respects JavaScript spread semantics where
 		// {a: 1, ...{a: 2}} yields a=2 and {...{a: 1}, a: 2} yields a=2.
+		//
+		// Note on RestSpreadElem and MutabilityType: Prune resolves TypeVarType
+		// chains but does not unwrap MutabilityType. This is fine because
+		// MutabilityType wrappers are resolved away during unification before
+		// getObjectAccess is called — RestSpreadElem.Value is always an
+		// ObjectType or an unresolved TypeVarType at this point.
 		targetKey := type_system.NewStrKey(k.Name)
 		for i := len(objType.Elems) - 1; i >= 0; i-- {
 			switch elem := objType.Elems[i].(type) {
@@ -906,6 +919,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		if indexLit, ok := keyType.(*type_system.LitType); ok {
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 				// Search in reverse order for override semantics (same as PropertyKey).
+			// See the PropertyKey branch for the note on MutabilityType and RestSpreadElem.
 				targetKey := type_system.NewStrKey(strLit.Value)
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
 					switch elem := objType.Elems[i].(type) {
@@ -947,7 +961,12 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			}
 		}
-		// Handle unique symbol keys (e.g. Symbol.iterator)
+		// Handle unique symbol keys (e.g. Symbol.iterator).
+		// This branch uses a forward scan and does not handle RestSpreadElem.
+		// This is intentional: symbol-keyed properties (like Symbol.iterator)
+		// come from type declarations and interfaces, not from user-level
+		// object spreads. Users cannot write {[Symbol.iterator]: ...} in
+		// object literals, so spreads never provide symbol-keyed properties.
 		if symType, ok := keyType.(*type_system.UniqueSymbolType); ok {
 			symKey := type_system.NewSymKey(symType.Value)
 			for _, elem := range objType.Elems {

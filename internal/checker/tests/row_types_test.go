@@ -2608,6 +2608,35 @@ func TestObjectSpread(t *testing.T) {
 				"v": "number",
 			},
 		},
+		"SpreadNestedInSpreadSource": {
+			// Nitpick: getSpreadPropertyType should handle nested RestSpreadElems.
+			// val inner = {x: 1}; val outer = {...inner, y: 2}
+			// val result = {...outer, z: 3}; result.x should find x through
+			// the RestSpreadElem inside outer.
+			input: `
+				val inner = {x: 1}
+				val outer = {...inner, y: 2}
+				val result = {...outer, z: 3}
+				val v = result.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "1",
+			},
+		},
+		"SpreadPropertyAccessViaDestructuring": {
+			// Verifies unification path handles MutabilityType-wrapped spread
+			// sources (object literals produce MutabilityType wrappers).
+			input: `
+				val src = {x: 1, y: 2}
+				val dest = {...src, z: 3}
+				val {x, y, z} = dest
+			`,
+			expectedTypes: map[string]string{
+				"x": "1",
+				"y": "2",
+				"z": "3",
+			},
+		},
 	}
 
 	for name, test := range tests {
