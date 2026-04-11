@@ -2705,14 +2705,15 @@ func TestTupleSpreadRefined(t *testing.T) {
 			},
 		},
 		"TwoArraySpreads": {
-			// Two array spreads into a tuple — each produces its own RestSpreadType.
+			// Two array spreads collapse to Array<T1 | T2> since
+			// [...Array<T1>, ...Array<T2>] is not a valid type.
 			input: `
 				val a: Array<number> = [1, 2]
 				val b: Array<string> = ["x", "y"]
 				val result = [...a, ...b]
 			`,
 			expectedTypes: map[string]string{
-				"result": "[...Array<number>, ...Array<string>]",
+				"result": "Array<number | string>",
 			},
 		},
 	}

@@ -319,9 +319,21 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}
 		}
 
-		exprType = &type_system.MutabilityType{
-			Type:       type_system.NewTupleType(provenance, elemTypes...),
-			Mutability: type_system.MutabilityUncertain,
+		// If there are multiple Array rest spreads, merge them into a single
+		// Array<T1 | T2 | ...>. Types like [...Array<T1>, ...Array<T2>] are
+		// not valid in Escalier/TypeScript.
+		mergedType := mergeArrayRestSpreads(c, elemTypes)
+		if mergedType != nil {
+			// All elements were array rest spreads — result is Array<T1 | T2 | ...>.
+			exprType = &type_system.MutabilityType{
+				Type:       mergedType,
+				Mutability: type_system.MutabilityUncertain,
+			}
+		} else {
+			exprType = &type_system.MutabilityType{
+				Type:       type_system.NewTupleType(provenance, elemTypes...),
+				Mutability: type_system.MutabilityUncertain,
+			}
 		}
 	case *ast.ObjectExpr:
 		// Create a context for the object so that we can add a `Self` type to it
@@ -924,6 +936,35 @@ func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, prop
 	}
 
 	return false
+}
+
+// mergeArrayRestSpreads checks whether all elements are Array rest spreads.
+// If so, it returns a single Array<T1 | T2 | ...> type. Types like
+// [...Array<T1>, ...Array<T2>] are not valid in Escalier/TypeScript.
+// Returns nil if there are fewer than 2 array rest spreads or if there are
+// non-array-rest elements present (those remain as valid tuple types).
+func mergeArrayRestSpreads(c *Checker, elems []type_system.Type) type_system.Type {
+	// Check that all elements are Array rest spreads.
+	var unionMembers []type_system.Type
+	for _, elem := range elems {
+		rest, ok := elem.(*type_system.RestSpreadType)
+		if !ok {
+			return nil // has fixed elements — not collapsible
+		}
+		inner := type_system.Prune(rest.Type)
+		ref, ok := inner.(*type_system.TypeRefType)
+		if !ok || !c.isArrayType(ref) || len(ref.TypeArgs) == 0 {
+			return nil // non-array rest spread — not collapsible
+		}
+		unionMembers = append(unionMembers, ref.TypeArgs[0])
+	}
+	if len(unionMembers) < 2 {
+		return nil // 0 or 1 array rests — no merge needed
+	}
+	return &type_system.TypeRefType{
+		Name:     type_system.NewIdent("Array"),
+		TypeArgs: []type_system.Type{type_system.NewUnionType(nil, unionMembers...)},
+	}
 }
 
 func (c *Checker) inferCallExpr(
