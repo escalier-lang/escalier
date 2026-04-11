@@ -1413,11 +1413,6 @@ func (c *Checker) unifyClosedWithRests(
 	//    in source order and inlining bound RestSpreadElems. Later entries
 	//    overwrite earlier ones, giving JavaScript override semantics.
 	//    Unbound rests (TypeVarType) are collected separately.
-	//
-	//    Note: Prune resolves TypeVarType chains but does not unwrap
-	//    MutabilityType. This is fine because MutabilityType wrappers are
-	//    resolved away during unification before this function is called —
-	//    RestSpreadElem.Value is always an ObjectType or unresolved TypeVarType.
 	effectiveKeys := []type_system.ObjTypeKey{}
 	effectiveValues := map[type_system.ObjTypeKey]type_system.Type{}
 	var unboundRests []*type_system.TypeVarType
@@ -1440,6 +1435,9 @@ func (c *Checker) unifyClosedWithRests(
 			addEffective(elem.Name, elem.Fn.Params[0].Type)
 		case *type_system.RestSpreadElem:
 			pruned := type_system.Prune(elem.Value)
+			if mut, ok := pruned.(*type_system.MutabilityType); ok {
+				pruned = type_system.Prune(mut.Type)
+			}
 			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
 				unboundRests = append(unboundRests, tv)
 			} else if obj, ok := pruned.(*type_system.ObjectType); ok {

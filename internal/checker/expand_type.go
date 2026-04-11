@@ -773,6 +773,29 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	}
 }
 
+// resolveToObjectType attempts to resolve a type to an *ObjectType. It handles
+// direct ObjectTypes, MutabilityType wrappers, and TypeRefTypes with aliases.
+func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
+	resolved := type_system.Prune(t)
+	if mut, ok := resolved.(*type_system.MutabilityType); ok {
+		resolved = type_system.Prune(mut.Type)
+	}
+	if obj, ok := resolved.(*type_system.ObjectType); ok {
+		return obj
+	}
+	if ref, ok := resolved.(*type_system.TypeRefType); ok {
+		if ref.TypeAlias != nil {
+			aliasType := ref.TypeAlias.Type
+			if len(ref.TypeAlias.TypeParams) > 0 && len(ref.TypeArgs) > 0 {
+				subs := createTypeParamSubstitutions(ref.TypeArgs, ref.TypeAlias.TypeParams)
+				aliasType = SubstituteTypeParams(aliasType, subs)
+			}
+			return resolveToObjectType(aliasType)
+		}
+	}
+	return nil
+}
+
 // getSpreadPropertyType looks up a property in an ObjectType using JavaScript
 // spread semantics: PropertyElems and MethodElems are copied as-is, GetterElems
 // yield their return type, and SetterElems are skipped (setter-only properties
@@ -804,6 +827,9 @@ func getSpreadPropertyType(objType *type_system.ObjectType, name string) type_sy
 			}
 		case *type_system.RestSpreadElem:
 			resolved := type_system.Prune(elem.Value)
+			if mut, ok := resolved.(*type_system.MutabilityType); ok {
+				resolved = type_system.Prune(mut.Type)
+			}
 			if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
 				if propType := getSpreadPropertyType(resolvedObj, name); propType != nil {
 					return propType
@@ -821,12 +847,6 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// Search elements in reverse order so that later elements override
 		// earlier ones. This respects JavaScript spread semantics where
 		// {a: 1, ...{a: 2}} yields a=2 and {...{a: 1}, a: 2} yields a=2.
-		//
-		// Note on RestSpreadElem and MutabilityType: Prune resolves TypeVarType
-		// chains but does not unwrap MutabilityType. This is fine because
-		// MutabilityType wrappers are resolved away during unification before
-		// getObjectAccess is called — RestSpreadElem.Value is always an
-		// ObjectType or an unresolved TypeVarType at this point.
 		targetKey := type_system.NewStrKey(k.Name)
 		for i := len(objType.Elems) - 1; i >= 0; i-- {
 			switch elem := objType.Elems[i].(type) {
@@ -852,6 +872,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			case *type_system.RestSpreadElem:
 				resolved := type_system.Prune(elem.Value)
+				if mut, ok := resolved.(*type_system.MutabilityType); ok {
+					resolved = type_system.Prune(mut.Type)
+				}
 				if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
 					if propType := getSpreadPropertyType(resolvedObj, k.Name); propType != nil {
 						return propType, errors
@@ -919,7 +942,6 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		if indexLit, ok := keyType.(*type_system.LitType); ok {
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 				// Search in reverse order for override semantics (same as PropertyKey).
-				// See the PropertyKey branch for the note on MutabilityType and RestSpreadElem.
 				targetKey := type_system.NewStrKey(strLit.Value)
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
 					switch elem := objType.Elems[i].(type) {
@@ -946,7 +968,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					case *type_system.RestSpreadElem:
 						resolved := type_system.Prune(elem.Value)
 						if mut, ok := resolved.(*type_system.MutabilityType); ok {
-							resolved = mut.Type
+							resolved = type_system.Prune(mut.Type)
 						}
 						if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
 							if propType := getSpreadPropertyType(resolvedObj, strLit.Value); propType != nil {
@@ -965,15 +987,14 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 		// Handle unique symbol keys (e.g. Symbol.iterator).
-		// This branch uses a forward scan and does not handle RestSpreadElem.
-		// This is intentional: symbol-keyed properties (like Symbol.iterator)
-		// come from type declarations and interfaces, not from user-level
-		// object spreads. Users cannot write {[Symbol.iterator]: ...} in
-		// object literals, so spreads never provide symbol-keyed properties.
+		// Search in reverse order for override semantics, and check
+		// RestSpreadElems so that symbol-keyed properties from spread
+		// sources (e.g. spreading an Array which has Symbol.iterator)
+		// are found.
 		if symType, ok := keyType.(*type_system.UniqueSymbolType); ok {
 			symKey := type_system.NewSymKey(symType.Value)
-			for _, elem := range objType.Elems {
-				switch elem := elem.(type) {
+			for i := len(objType.Elems) - 1; i >= 0; i-- {
+				switch elem := objType.Elems[i].(type) {
 				case *type_system.PropertyElem:
 					if elem.Name == symKey {
 						propType := elem.Value
@@ -985,6 +1006,13 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				case *type_system.MethodElem:
 					if elem.Name == symKey {
 						return elem.Fn, errors
+					}
+				case *type_system.RestSpreadElem:
+					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
+						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, nil)
+						if len(symPropErrors) == 0 {
+							return symPropType, errors
+						}
 					}
 				case *type_system.MappedElem:
 					panic("MappedElems should have been expanded before property access")

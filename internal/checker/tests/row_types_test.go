@@ -2637,6 +2637,18 @@ func TestObjectSpread(t *testing.T) {
 				"z": "3",
 			},
 		},
+		"SpreadPreservesSymbolKeys": {
+			// Symbol-keyed properties from a spread source should be
+			// accessible on the result via index access.
+			input: `
+				declare val arr: Array<number>
+				val obj = {...arr, extra: 1}
+				val iter = obj[Symbol.iterator]
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn () -> ArrayIterator<number>",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -2714,6 +2726,26 @@ func TestTupleSpreadRefined(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"result": "Array<number | string>",
+			},
+		},
+		"SpreadOfSet": {
+			// Spreading a Set extracts its element type via iterability.
+			input: `
+				declare val s: Set<number>
+				val result = [...s]
+			`,
+			expectedTypes: map[string]string{
+				"result": "Array<number>",
+			},
+		},
+		"SpreadOfMap": {
+			// Spreading a Map yields [K, V] tuples via iterability.
+			input: `
+				declare val m: Map<string, number>
+				val result = [...m]
+			`,
+			expectedTypes: map[string]string{
+				"result": "Array<[string, number]>",
 			},
 		},
 	}
