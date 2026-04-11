@@ -950,7 +950,6 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				}
 			}
 
-
 			// Open-vs-open: unify shared properties, merge non-shared,
 			// unify row variables.
 			//
@@ -1033,6 +1032,7 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			} else if hasRests2 && !hasRests1 {
 				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, true))
 			} else if hasRests1 && hasRests2 {
+				// TODO(#410): implement unification when both sides have RestSpreadElems
 				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
 			} else {
 				for _, key2 := range keys2 {
@@ -1498,7 +1498,11 @@ func (c *Checker) unifyClosedWithRests(
 		errors = slices.Concat(errors, unifyErrors)
 	} else if len(unboundRests) > 1 && len(remainingElems) > 0 {
 		errors = append(errors, &UnimplementedError{
-			message: "cannot distribute properties across multiple unbound rest elements",
+			message: fmt.Sprintf(
+				"cannot distribute %d properties across %d unbound rest spread elements; consider using a single spread or explicit property definitions",
+				len(remainingElems),
+				len(unboundRests),
+			),
 		})
 	} else if len(unboundRests) == 0 && len(remainingElems) > 0 {
 		// All rests are bound but there are leftover properties — error.

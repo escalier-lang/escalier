@@ -919,7 +919,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		if indexLit, ok := keyType.(*type_system.LitType); ok {
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 				// Search in reverse order for override semantics (same as PropertyKey).
-			// See the PropertyKey branch for the note on MutabilityType and RestSpreadElem.
+				// See the PropertyKey branch for the note on MutabilityType and RestSpreadElem.
 				targetKey := type_system.NewStrKey(strLit.Value)
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
 					switch elem := objType.Elems[i].(type) {
@@ -945,6 +945,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						}
 					case *type_system.RestSpreadElem:
 						resolved := type_system.Prune(elem.Value)
+						if mut, ok := resolved.(*type_system.MutabilityType); ok {
+							resolved = mut.Type
+						}
 						if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
 							if propType := getSpreadPropertyType(resolvedObj, strLit.Value); propType != nil {
 								return propType, errors
