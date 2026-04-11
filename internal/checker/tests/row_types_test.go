@@ -2410,6 +2410,26 @@ func TestDestructuringObjectPatterns(t *testing.T) {
 				"r":   "[1, [2, {z: 3}]]",
 			},
 		},
+		"ChainedDestructuringWithRestAndSpread": {
+			// Both functions destructure with rest — rest from outer
+			// is passed to inner which also has a rest element.
+			// NOTE: r's type [1, 2, ...{z: 3}] contains a spread of a
+			// non-iterable object type. This should be an error — see #411.
+			input: `
+				val foo = fn ({y, ...rest}) {
+					return [y, ...rest]
+				}
+				val bar = fn ({x, ...rest}) {
+					return [x, ...foo(rest)]
+				}
+				val r = bar({x: 1, y: 2, z: 3})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>({y: T0, ...rest: T1}) -> [T0, ...T1]",
+				"bar": "fn <T0, T1, T2>({x: T0, ...rest: {y: T1, ...T2}}) -> [T0, T1, ...T2]",
+				"r":   "[1, 2, ...{z: 3}]",
+			},
+		},
 		"RestPassedToTypedFunction": {
 			// Rest from destructuring passed to a function with a type annotation.
 			// The rest gets typed as {y: number, z: string} from the process call,

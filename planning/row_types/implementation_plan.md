@@ -1153,8 +1153,14 @@ sources.
    correctly handles JavaScript override semantics: in `{a: 1, ...{a: 2}}` the
    spread's `a` wins, and in `{...{a: 1}, a: 2}` the explicit `a` wins,
    because in both cases the later element is found first during the reverse
-   scan. Both the `PropertyKey` and `IndexKey` (string-literal) branches use
-   this approach.
+   scan. All three branches (`PropertyKey`, `IndexKey` string-literal, and
+   `IndexKey` unique-symbol) use this approach.
+
+   For `RestSpreadElem` lookups, `getSpreadPropertyType` applies JavaScript
+   spread semantics (methods → fn type, getters → return type, setter-only →
+   skip). For symbol keys, `resolveToObjectType` resolves through
+   `MutabilityType` wrappers and `TypeRefType` aliases (e.g. `Array<T>`) to
+   reach the underlying `ObjectType`.
 
    Note: property addition on open objects (Phase 2) is gated by `Open`, not by
    the presence of `RestSpreadElem`s. These are orthogonal.
@@ -1189,6 +1195,19 @@ sources.
 - **Spread called with concrete args (`TestObjectSpread/SpreadCalledWithConcreteArgs`):**
   `fn extend(obj) { return {...obj, extra: 1} }` called with
   `{x: "hello", y: true}` yields `{x: "hello", y: true, extra: 1}`.
+- **Override ordering (`TestObjectSpread/SpreadBeforeExplicitOverride`,
+  `SpreadAfterExplicitOverride`):** `{...obj, x: 1}` vs `{x: 1, ...obj}` —
+  later element wins for shared keys.
+- **Spread of method/getter/setter (`TestObjectSpread/SpreadOfObjectWithMethod`,
+  `SpreadOfObjectWithGetter`, `SpreadOfObjectWithSetterOnly`):** Methods become
+  function-valued properties, getters yield return types, setter-only skipped.
+- **Symbol keys through spread (`TestObjectSpread/SpreadPreservesSymbolKeys`):**
+  `{...arr, extra: 1}` where `arr: Array<number>` — `obj[Symbol.iterator]`
+  found via spread.
+- **Chained destructuring with rest
+  (`TestDestructuringObjectPatterns/ChainedDestructuringWithRest`):**
+  Two functions that each destructure with rest, passing rest from outer to
+  inner. Nested `RestSpreadElem`s in bound rests are collected as unbound rests.
 
 ### Array/Tuple Spread Changes
 
@@ -1311,6 +1330,12 @@ sources.
   val result = ["start", ...arr, "end"]
   ```
   — `result: ["start", ...Array<number>, "end"]`.
+
+- **Single array spread collapses (`TestTupleSpreadRefined/SpreadOfSet`,
+  `SpreadOfMap`):** `[...Set<number>]` → `Array<number>`,
+  `[...Map<string, number>]` → `Array<[string, number]>`. A tuple with only a
+  single `...Array<T>` rest is collapsed to `Array<T>` via
+  `collapseArrayRestSpreads`.
 
 ---
 

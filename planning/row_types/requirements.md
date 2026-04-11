@@ -1359,10 +1359,14 @@ Tested in `TestObjectSpread/SpreadOverrideSemantics`.
   (`unifyClosedWithRests` in `unify.go`)
 - **Update `getObjectAccess`** to search all elements in reverse order (both
   explicit properties and `RestSpreadElem`s in a single pass) so that later
-  elements override earlier ones. Both the `PropertyKey` and `IndexKey`
-  (string-literal) branches use this approach. Note: adding new properties via
-  `getObjectAccess` is gated by the `Open` field, not by the presence of
-  `RestSpreadElem`s. ✅
+  elements override earlier ones. All three branches (`PropertyKey`, `IndexKey`
+  string-literal, and `IndexKey` unique-symbol) use this approach.
+  `getSpreadPropertyType` applies spread semantics for string-key lookups
+  (methods → fn type, getters → return type, setter-only → skip).
+  `resolveToObjectType` resolves through `MutabilityType` and `TypeRefType`
+  aliases for symbol-key lookups (e.g. finding `Symbol.iterator` on a spread
+  `Array<T>`). Note: adding new properties via `getObjectAccess` is gated by
+  the `Open` field, not by the presence of `RestSpreadElem`s. ✅
 
 ### 13. Tuple and Array Inference from Indexing Patterns
 
@@ -1938,6 +1942,10 @@ val result = [0, ...arr]
     `GetIterableElementType`. The iterable constraint is enforced structurally
     at call sites when unification resolves the type variable — no upfront
     constraint is needed (same deferred approach as `ArrayConstraint`).
+- **Collapse array-only tuples:** `collapseArrayRestSpreads` in `infer_expr.go`
+  collapses tuples that contain only `Array<T>` rest spreads into a plain
+  `Array<T>` (single rest) or `Array<T1 | T2>` (multiple rests). This ensures
+  `[...Set<number>]` produces `Array<number>` rather than `[...Array<number>]`.
 - **Unification:** Tuple-vs-tuple unification with `RestSpreadType` (Phase 13)
   already handles the mechanics. No additional unification changes needed.
 - **Display:** `TupleType.String()` already handles `RestSpreadType` elements
