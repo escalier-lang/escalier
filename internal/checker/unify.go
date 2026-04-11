@@ -1416,24 +1416,40 @@ func (c *Checker) unifyClosedWithRests(
 	effectiveKeys := []type_system.ObjTypeKey{}
 	effectiveValues := map[type_system.ObjTypeKey]type_system.Type{}
 	var unboundRests []*type_system.TypeVarType
+	addEffective := func(name type_system.ObjTypeKey, value type_system.Type) {
+		if _, exists := effectiveValues[name]; !exists {
+			effectiveKeys = append(effectiveKeys, name)
+		}
+		effectiveValues[name] = value
+	}
 	for _, elem := range restObj.Elems {
 		switch elem := elem.(type) {
 		case *type_system.PropertyElem:
-			if _, exists := effectiveValues[elem.Name]; !exists {
-				effectiveKeys = append(effectiveKeys, elem.Name)
-			}
-			effectiveValues[elem.Name] = elem.Value
+			addEffective(elem.Name, elem.Value)
+		case *type_system.MethodElem:
+			addEffective(elem.Name, elem.Fn)
+		case *type_system.GetterElem:
+			addEffective(elem.Name, elem.Fn.Return)
+		case *type_system.SetterElem:
+			// Setters on the outer object are kept (direct access).
+			addEffective(elem.Name, elem.Fn.Params[0].Type)
 		case *type_system.RestSpreadElem:
 			pruned := type_system.Prune(elem.Value)
 			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
 				unboundRests = append(unboundRests, tv)
 			} else if obj, ok := pruned.(*type_system.ObjectType); ok {
+				// Apply spread semantics: methods → fn type, getters → return
+				// type, setter-only → skipped.
 				for _, re := range obj.Elems {
-					if prop, ok := re.(*type_system.PropertyElem); ok {
-						if _, exists := effectiveValues[prop.Name]; !exists {
-							effectiveKeys = append(effectiveKeys, prop.Name)
-						}
-						effectiveValues[prop.Name] = prop.Value
+					switch re := re.(type) {
+					case *type_system.PropertyElem:
+						addEffective(re.Name, re.Value)
+					case *type_system.MethodElem:
+						addEffective(re.Name, re.Fn)
+					case *type_system.GetterElem:
+						addEffective(re.Name, re.Fn.Return)
+					case *type_system.SetterElem:
+						// Setter-only not readable via spread — skip.
 					}
 				}
 			}

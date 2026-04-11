@@ -2557,6 +2557,45 @@ func TestObjectSpread(t *testing.T) {
 				"d": "30",
 			},
 		},
+		"SpreadOfObjectWithMethod": {
+			// Methods are copied as function-valued properties.
+			input: `
+				val obj = {x: 1, greet() { return "hello" }}
+				val result = {...obj, y: 2}
+				val g = result.greet
+			`,
+			expectedTypes: map[string]string{
+				"g": "fn () -> \"hello\"",
+			},
+		},
+		"SpreadOfObjectWithGetter": {
+			// Getter's return value becomes a plain property.
+			input: `
+				val obj = {
+					_x: 10,
+					get x(self) { return self._x },
+				}
+				val result = {...obj, y: 2}
+				val v = result.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "10",
+			},
+		},
+		"SpreadOfObjectWithSetterOnly": {
+			// Setter-only properties are omitted from the spread.
+			// The explicit property 'x' in the target is preserved.
+			input: `
+				val obj = {
+					set x(mut self, v: number) { },
+				}
+				val result = {x: "kept", ...obj}
+				val v = result.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "\"kept\"",
+			},
+		},
 		"SpreadOfAnnotatedVariable": {
 			// Spread source has an explicit type annotation — ensures
 			// getObjectAccess can look through a non-MutabilityType spread.

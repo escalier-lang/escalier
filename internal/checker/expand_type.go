@@ -773,6 +773,40 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	}
 }
 
+// getSpreadPropertyType looks up a property in an ObjectType using JavaScript
+// spread semantics: PropertyElems and MethodElems are copied as-is, GetterElems
+// yield their return type, and SetterElems are skipped (setter-only properties
+// are not readable in a spread). Returns nil if the property is not found.
+func getSpreadPropertyType(objType *type_system.ObjectType, name string) type_system.Type {
+	targetKey := type_system.NewStrKey(name)
+	for i := len(objType.Elems) - 1; i >= 0; i-- {
+		switch elem := objType.Elems[i].(type) {
+		case *type_system.PropertyElem:
+			if elem.Name == targetKey {
+				propType := elem.Value
+				if elem.Optional {
+					propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+				}
+				return propType
+			}
+		case *type_system.MethodElem:
+			if elem.Name == targetKey {
+				return elem.Fn
+			}
+		case *type_system.GetterElem:
+			if elem.Name == targetKey {
+				return elem.Fn.Return
+			}
+		case *type_system.SetterElem:
+			// Setter-only properties are not readable in a spread — skip.
+			if elem.Name == targetKey {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
 // getObjectAccess handles property and index access on ObjectType
 func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
 	switch k := key.(type) {
@@ -806,8 +840,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			case *type_system.RestSpreadElem:
 				resolved := type_system.Prune(elem.Value)
 				if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
-					propType, propErrors := c.getObjectAccess(resolvedObj, key, nil)
-					if len(propErrors) == 0 {
+					if propType := getSpreadPropertyType(resolvedObj, k.Name); propType != nil {
 						return propType, errors
 					}
 				}
@@ -899,9 +932,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					case *type_system.RestSpreadElem:
 						resolved := type_system.Prune(elem.Value)
 						if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
-							indexKey := PropertyKey{Name: strLit.Value}
-							propType, propErrors := c.getObjectAccess(resolvedObj, indexKey, nil)
-							if len(propErrors) == 0 {
+							if propType := getSpreadPropertyType(resolvedObj, strLit.Value); propType != nil {
 								return propType, errors
 							}
 						}
