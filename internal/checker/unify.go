@@ -1385,11 +1385,41 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 
 // unifyClosedWithRests unifies a closed ObjectType that has RestSpreadElems
 // (restObj) against a closed ObjectType with no rests (targetObj).
-// It distributes targetObj's extra properties across the rests.
 //
-// restObj is the side with RestSpreadElems, targetObj is the concrete side.
-// restKeys/targetKeys and restNamed/targetNamed are their property maps.
-// restTypes are the RestSpreadElem values from restObj.
+// It first expands restObj.Elems in source order — inlining bound
+// RestSpreadElems and applying JavaScript override semantics (later entries
+// win) — to produce a flat effective property map. It then unifies each
+// effective property against the matching target property.
+//
+// Any target properties not covered by the effective map are "remaining".
+// These are distributed to unbound rest elements (TypeVarTypes) as follows:
+//
+//   - One unbound rest: bind it to an ObjectType containing all remaining
+//     properties.
+//     Note the ordering matters for overrides. Both variants have the
+//     same type shape but different element order, which affects which
+//     value wins for shared keys:
+//
+//     // fn <T0>(obj: T0) -> {x: 1, ...T0}
+//     fn foo(obj) {
+//     return {x: 1, ...obj}
+//     }
+//     foo({x: 5, y: 2}).x // 5
+//
+//     // fn <T0>(obj: T0) -> {...T0, x: 1}
+//     fn foo(obj) {
+//     return {...obj, x: 1}
+//     }
+//     foo({x: 5, y: 2}).x // 1.
+//
+//   - Multiple unbound rests with remaining properties: error — the system
+//     cannot determine which rest should receive which properties. In
+//     practice this case is unlikely to be reached because rests originate
+//     from function parameters, which are bound by call-site arguments
+//     before the return type is unified.
+//
+//   - Zero unbound rests with remaining properties: error — all rests are
+//     bound but the target has extra properties not accounted for.
 func (c *Checker) unifyClosedWithRests(
 	ctx Context,
 	restObj, targetObj *type_system.ObjectType,
@@ -1453,6 +1483,14 @@ func (c *Checker) unifyClosedWithRests(
 						addEffective(re.Name, re.Fn.Return)
 					case *type_system.SetterElem:
 						// Setter-only not readable via spread — skip.
+					case *type_system.RestSpreadElem:
+						// Nested rest from chained destructuring (e.g. the T3 in
+						// {y: T2, ...T3}). Collect so remaining target properties
+						// can flow into it.
+						innerPruned := type_system.Prune(re.Value)
+						if tv, ok := innerPruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
+							unboundRests = append(unboundRests, tv)
+						}
 					}
 				}
 			}

@@ -2365,6 +2365,69 @@ func TestDestructuringObjectPatterns(t *testing.T) {
 				"foo": "fn ({bar: number, ...rest}) -> number",
 			},
 		},
+		"RestPassedToIdentityFunction": {
+			// Rest from destructuring passed to a simple function.
+			input: `
+				fn identity(obj) { return obj }
+				val foo = fn ({x, ...rest}) {
+					return identity(rest)
+				}
+				val r = foo({x: 1, y: 2, z: "hi"})
+			`,
+			expectedTypes: map[string]string{
+				"r": "{y: 2, z: \"hi\"}",
+			},
+		},
+		"TwoFunctionsWithRestCallingEachOther": {
+			// One function destructures and passes rest to another
+			// function that accesses a property on it.
+			input: `
+				fn getY(obj) { return obj.y }
+				val foo = fn ({x, ...rest}) {
+					return [x, getY(rest)]
+				}
+				val r = foo({x: 1, y: 2})
+			`,
+			expectedTypes: map[string]string{
+				"r": "[1, 2]",
+			},
+		},
+		"ChainedDestructuringWithRest": {
+			// Both functions destructure with rest — rest from outer
+			// is passed to inner which also has a rest element.
+			input: `
+				val foo = fn ({y, ...rest}) {
+					return [y, rest]
+				}
+				val bar = fn ({x, ...rest}) {
+					return [x, foo(rest)]
+				}
+				val r = bar({x: 1, y: 2, z: 3})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>({y: T0, ...rest: T1}) -> [T0, T1]",
+				"bar": "fn <T0, T1, T2>({x: T0, ...rest: {y: T1, ...T2}}) -> [T0, [T1, T2]]",
+				"r":   "[1, [2, {z: 3}]]",
+			},
+		},
+		"RestPassedToTypedFunction": {
+			// Rest from destructuring passed to a function with a type annotation.
+			// The rest gets typed as {y: number, z: string} from the process call,
+			// but x stays generic since nothing constrains it.
+			input: `
+				fn process(obj: {y: number, z: string}) {
+					return obj.y
+				}
+				val foo = fn ({x, ...rest}) {
+					return process(rest)
+				}
+				val r = foo({x: true, y: 42, z: "hi"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>({x: T0, ...rest: {y: number, z: string}}) -> number",
+				"r":   "number",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -2514,6 +2577,30 @@ func TestObjectSpread(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"r": "{x: \"hello\", y: true, extra: 1}",
+			},
+		},
+		"SpreadBeforeExplicitOverride": {
+			// {...obj, x: 1} — explicit x comes after spread, so x:1 wins.
+			input: `
+				fn foo(obj) { return {...obj, x: 1} }
+				val r = foo({x: 99, y: 2})
+				val x = r.x
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: T0) -> {...T0, x: 1}",
+				"x":   "1",
+			},
+		},
+		"SpreadAfterExplicitOverride": {
+			// {x: 1, ...obj} — spread comes after, so obj.x wins.
+			input: `
+				fn foo(obj) { return {x: 1, ...obj} }
+				val r = foo({x: 99, y: 2})
+				val x = r.x
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: T0) -> {x: 1, ...T0}",
+				"x":   "99",
 			},
 		},
 		"SpreadOverrideSemantics": {
