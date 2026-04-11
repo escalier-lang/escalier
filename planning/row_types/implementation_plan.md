@@ -2099,6 +2099,10 @@ All phases → Phase 11: Error Reporting
 3. ~~**Multiple RestSpreadElems (Phase 10):**~~ Resolved. Property distribution
    across unbound rest elements is inherently ambiguous — the error case for
    ambiguous distributions is kept as designed in `unifyClosedWithRests`.
+   Note: closed-vs-closed unification where **both** sides contain
+   `RestSpreadElem`s still returns `UnimplementedError` — this case does not
+   arise in normal usage (spread expressions unify against concrete types or
+   type variables, not against other spread expressions).
 
 4. **Snapshot tests:** Adding `Open` to `ObjectType` shouldn't change printed
    types (it's an internal flag), but changes to `RestSpreadElem` handling in

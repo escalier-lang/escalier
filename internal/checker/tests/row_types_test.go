@@ -2520,12 +2520,53 @@ func TestObjectSpread(t *testing.T) {
 			input: `
 				val foo = {b: 5, c: 10}
 				val bar = {a: 1, b: 2, ...foo, c: 3}
+				val a = bar.a
+				val b = bar.b
+				val c = bar.c
+			`,
+			expectedTypes: map[string]string{
+				"a": "1",
+				"b": "5",
+				"c": "3",
+			},
+		},
+		"SpreadOverrideSemanticsWithDestructuring": {
+			input: `
+				val foo = {b: 5, c: 10}
+				val bar = {a: 1, b: 2, ...foo, c: 3}
 				val {a, b, c} = bar
 			`,
 			expectedTypes: map[string]string{
 				"a": "1",
 				"b": "5",
 				"c": "3",
+			},
+		},
+		"MultipleSpreadsOverrideSemantics": {
+			// Two spreads with interleaved explicit property — last provider wins.
+			input: `
+				val foo = {b: 5, c: 10}
+				val bar = {c: 20, d: 30}
+				val result = {a: 1, ...foo, c: 3, ...bar}
+				val {a, b, c, d} = result
+			`,
+			expectedTypes: map[string]string{
+				"a": "1",
+				"b": "5",
+				"c": "20",
+				"d": "30",
+			},
+		},
+		"SpreadOfAnnotatedVariable": {
+			// Spread source has an explicit type annotation — ensures
+			// getObjectAccess can look through a non-MutabilityType spread.
+			input: `
+				val base: {x: number, y: string} = {x: 1, y: "hi"}
+				val ext = {...base, z: true}
+				val v = ext.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "number",
 			},
 		},
 	}
@@ -2593,6 +2634,17 @@ func TestTupleSpreadRefined(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"result": "[\"start\", ...Array<number>, \"end\"]",
+			},
+		},
+		"TwoArraySpreads": {
+			// Two array spreads into a tuple — each produces its own RestSpreadType.
+			input: `
+				val a: Array<number> = [1, 2]
+				val b: Array<string> = ["x", "y"]
+				val result = [...a, ...b]
+			`,
+			expectedTypes: map[string]string{
+				"result": "[...Array<number>, ...Array<string>]",
 			},
 		},
 	}

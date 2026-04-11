@@ -1029,9 +1029,9 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			hasRests2 := len(restTypes2) > 0
 
 			if hasRests1 && !hasRests2 {
-				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj1, obj2, keys1, keys2, namedElems1, namedElems2, restTypes1, false))
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj1, obj2, keys2, namedElems2, false))
 			} else if hasRests2 && !hasRests1 {
-				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys2, keys1, namedElems2, namedElems1, restTypes2, true))
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, true))
 			} else if hasRests1 && hasRests2 {
 				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
 			} else {
@@ -1393,9 +1393,8 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 func (c *Checker) unifyClosedWithRests(
 	ctx Context,
 	restObj, targetObj *type_system.ObjectType,
-	restKeys, targetKeys []type_system.ObjTypeKey,
-	restNamed, targetNamed map[type_system.ObjTypeKey]type_system.Type,
-	restTypes []type_system.Type,
+	targetKeys []type_system.ObjTypeKey,
+	targetNamed map[type_system.ObjTypeKey]type_system.Type,
 	swapped bool,
 ) []Error {
 	errors := []Error{}
@@ -1410,10 +1409,41 @@ func (c *Checker) unifyClosedWithRests(
 		return c.Unify(ctx, restVal, targetVal)
 	}
 
-	// 1. Unify shared explicit properties.
+	// 1. Expand restObj.Elems into a flat effective property map by walking
+	//    in source order and inlining bound RestSpreadElems. Later entries
+	//    overwrite earlier ones, giving JavaScript override semantics.
+	//    Unbound rests (TypeVarType) are collected separately.
+	effectiveKeys := []type_system.ObjTypeKey{}
+	effectiveValues := map[type_system.ObjTypeKey]type_system.Type{}
+	var unboundRests []*type_system.TypeVarType
+	for _, elem := range restObj.Elems {
+		switch elem := elem.(type) {
+		case *type_system.PropertyElem:
+			if _, exists := effectiveValues[elem.Name]; !exists {
+				effectiveKeys = append(effectiveKeys, elem.Name)
+			}
+			effectiveValues[elem.Name] = elem.Value
+		case *type_system.RestSpreadElem:
+			pruned := type_system.Prune(elem.Value)
+			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
+				unboundRests = append(unboundRests, tv)
+			} else if obj, ok := pruned.(*type_system.ObjectType); ok {
+				for _, re := range obj.Elems {
+					if prop, ok := re.(*type_system.PropertyElem); ok {
+						if _, exists := effectiveValues[prop.Name]; !exists {
+							effectiveKeys = append(effectiveKeys, prop.Name)
+						}
+						effectiveValues[prop.Name] = prop.Value
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Unify effective properties against the target.
 	usedTargetKeys := map[type_system.ObjTypeKey]bool{}
-	for _, key := range restKeys {
-		value := restNamed[key]
+	for _, key := range effectiveKeys {
+		value := effectiveValues[key]
 		if targetValue, ok := targetNamed[key]; ok {
 			unifyErrors := unifyPair(value, targetValue)
 			errors = slices.Concat(errors, unifyErrors)
@@ -1429,7 +1459,7 @@ func (c *Checker) unifyClosedWithRests(
 		}
 	}
 
-	// 2. Collect remaining target properties not matched by explicit props.
+	// 3. Collect remaining target properties not matched by effective props.
 	remainingElems := []type_system.ObjTypeElem{}
 	for _, key := range targetKeys {
 		if !usedTargetKeys[key] {
@@ -1440,45 +1470,7 @@ func (c *Checker) unifyClosedWithRests(
 		}
 	}
 
-	// 3. Resolve bound rests — subtract their known properties from remaining.
-	//    Collect unbound rests for later assignment.
-	knownKeys := map[type_system.ObjTypeKey]bool{}
-	var unboundRests []*type_system.TypeVarType
-	for _, rt := range restTypes {
-		pruned := type_system.Prune(rt)
-		if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
-			unboundRests = append(unboundRests, tv)
-		} else if obj, ok := pruned.(*type_system.ObjectType); ok {
-			// Bound rest — unify its properties against the target and track them.
-			for _, elem := range obj.Elems {
-				if prop, ok := elem.(*type_system.PropertyElem); ok {
-					knownKeys[prop.Name] = true
-					if targetValue, ok := targetNamed[prop.Name]; ok {
-						unifyErrors := unifyPair(prop.Value, targetValue)
-						errors = slices.Concat(errors, unifyErrors)
-						usedTargetKeys[prop.Name] = true
-					}
-				}
-			}
-		}
-	}
-
-	// 4. Subtract known keys from remaining.
-	if len(knownKeys) > 0 {
-		filtered := []type_system.ObjTypeElem{}
-		for _, elem := range remainingElems {
-			if prop, ok := elem.(*type_system.PropertyElem); ok {
-				if !knownKeys[prop.Name] {
-					filtered = append(filtered, elem)
-				}
-			} else {
-				filtered = append(filtered, elem)
-			}
-		}
-		remainingElems = filtered
-	}
-
-	// 5. Assign remaining properties to unbound rests.
+	// 4. Assign remaining properties to unbound rests.
 	if len(unboundRests) == 1 {
 		objType := type_system.NewObjectType(nil, remainingElems)
 		unifyErrors := unifyPair(unboundRests[0], objType)
