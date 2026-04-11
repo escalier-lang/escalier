@@ -1330,6 +1330,13 @@ When both are already bound:
 1. Merge all properties from both rest elements with the explicit properties.
 2. Unify the merged result with the target type.
 
+**Limitation (#410):** The above cases describe unification where one side has
+`RestSpreadElem`s and the other is concrete. When **both** sides of a
+closed-vs-closed unification contain `RestSpreadElem`s, the checker returns
+`UnimplementedError`. This case does not arise in normal usage — spread
+expressions unify against concrete types or type variables (bound by call-site
+arguments), not against other spread expressions.
+
 #### 12d. Property override semantics
 
 In JavaScript/TypeScript, later spreads override earlier ones for shared

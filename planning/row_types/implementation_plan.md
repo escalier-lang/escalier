@@ -1337,6 +1337,27 @@ sources.
   single `...Array<T>` rest is collapsed to `Array<T>` via
   `collapseArrayRestSpreads`.
 
+### Known limitations
+
+- **Both-sides RestSpreadElems (#410):** Closed-vs-closed ObjectType
+  unification where **both** sides contain `RestSpreadElem`s returns
+  `UnimplementedError`. `unifyClosedWithRests` handles the common case
+  (one side has rests, the other is concrete) but the both-sides case was
+  intentionally deferred. In practice this doesn't arise because spread
+  expressions unify against concrete types or type variables (bound by
+  call-site arguments), not against other spread expressions.
+
+- **Non-iterable RestSpreadType in tuples (#411):** Spreading an object rest
+  element into a tuple (e.g. `[x, ...rest]` where `rest` is an ObjectType)
+  produces a `RestSpreadType` wrapping a non-iterable type. The type checker
+  does not currently validate that `RestSpreadType` inner types are iterable.
+
+- **Custom symbols as computed keys (#413):** `Symbol()` returns the `symbol`
+  primitive type, not a `UniqueSymbolType`, so custom symbols cannot be used
+  as computed keys in object literals. Only well-known symbols (e.g.
+  `Symbol.iterator`) work as computed keys. Additionally, invalid computed
+  keys cause a nil-entry panic in the ObjectType construction.
+
 ---
 
 ## Phase 12: Tuple and Array Inference from Indexing Patterns ✅
