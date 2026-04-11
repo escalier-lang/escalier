@@ -2715,6 +2715,18 @@ func TestObjectSpread(t *testing.T) {
 				"v": "number",
 			},
 		},
+		"SpreadOfTypeAlias": {
+			// Spread source typed via a type alias.
+			input: `
+				type Point = {x: number, y: number}
+				val p: Point = {x: 1, y: 2}
+				val ext = {...p, z: 3}
+				val v = ext.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "number",
+			},
+		},
 		"SpreadNestedInSpreadSource": {
 			// Nitpick: getSpreadPropertyType should handle nested RestSpreadElems.
 			// val inner = {x: 1}; val outer = {...inner, y: 2}
@@ -2754,6 +2766,18 @@ func TestObjectSpread(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"iter": "fn () -> ArrayIterator<number>",
+			},
+		},
+		"SymbolKeyedGetterAccessViaSpread": {
+			// Spreading an object with a symbol-keyed getter should
+			// make the getter's return type accessible on the result.
+			input: `
+				declare val src: {get [Symbol.iterator]() -> number}
+				val obj = {...src, x: 1}
+				val v = obj[Symbol.iterator]
+			`,
+			expectedTypes: map[string]string{
+				"v": "number",
 			},
 		},
 	}

@@ -1470,7 +1470,7 @@ func (c *Checker) unifyClosedWithRests(
 			}
 			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
 				unboundRests = append(unboundRests, tv)
-			} else if obj, ok := pruned.(*type_system.ObjectType); ok {
+			} else if obj := resolveToObjectType(pruned); obj != nil {
 				// Apply spread semantics: methods → fn type, getters → return
 				// type, setter-only → skipped.
 				for _, re := range obj.Elems {

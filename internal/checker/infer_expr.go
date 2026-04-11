@@ -285,7 +285,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					elemTypes = append(elemTypes, st.Elems...)
 					handled = true
 				case *type_system.TypeVarType:
-					// Unannotated parameter - defer iterable constraint to call site
+					// Unannotated parameter — no upfront iterable constraint is added.
+					// The constraint is enforced structurally at call sites: when the
+					// caller passes a concrete argument, unification resolves the type
+					// variable and validates iterability at that point.
 					elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, st))
 					handled = true
 				case *type_system.TypeRefType:
@@ -331,6 +334,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// Create a context for the object so that we can add a `Self` type to it
 		objCtx := ctx.WithNewScope()
 
+		// TODO(#413): typeElems may contain nil entries when astKeyToTypeKey
+		// fails (e.g. for unsupported computed key types). These nil entries
+		// cause a panic in bind. Filter them out before creating the ObjectType.
 		typeElems := make([]type_system.ObjTypeElem, len(expr.Elems))
 		types := make([]type_system.Type, len(expr.Elems))
 		paramBindingsSlice := make([]map[string]*type_system.Binding, len(expr.Elems))
@@ -379,6 +385,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					types[i] = funcType
 					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key}
 				}
+			// No object-type constraint is enforced on the spread source.
+			// This matches JS/TS semantics where spreading non-objects
+			// (e.g. {...42}) is valid and produces {}.
 			case *ast.ObjSpreadExpr:
 				sourceType, spreadErrors := c.inferExpr(ctx, elem.Value)
 				errors = append(errors, spreadErrors...)
@@ -934,6 +943,11 @@ func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, prop
 // If all elements are Array rest spreads, it collapses them into a single
 // Array<T1 | T2 | ...> (e.g. [...Array<T>] → Array<T>). Otherwise it
 // returns a TupleType with the elements as-is.
+//
+// Note: this function does not Prune elements before checking because it is
+// called during inference before call-site specialization. TypeVarType-based
+// rests (e.g. [...T0]) are still unbound at this point and correctly fall
+// through to the TupleType path.
 func collapseArrayRestSpreads(c *Checker, elems []type_system.Type) type_system.Type {
 	var unionMembers []type_system.Type
 	for _, elem := range elems {

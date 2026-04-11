@@ -826,11 +826,7 @@ func getSpreadPropertyType(objType *type_system.ObjectType, name string) type_sy
 				return nil
 			}
 		case *type_system.RestSpreadElem:
-			resolved := type_system.Prune(elem.Value)
-			if mut, ok := resolved.(*type_system.MutabilityType); ok {
-				resolved = type_system.Prune(mut.Type)
-			}
-			if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
+			if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
 				if propType := getSpreadPropertyType(resolvedObj, name); propType != nil {
 					return propType
 				}
@@ -840,7 +836,10 @@ func getSpreadPropertyType(objType *type_system.ObjectType, name string) type_sy
 	return nil
 }
 
-// getObjectAccess handles property and index access on ObjectType
+// getObjectAccess handles property and index access on ObjectType.
+// TODO(#412): differentiate between read and write access so that
+// GetterElem returns the getter's return type for reads and SetterElem
+// returns the setter's parameter type for writes.
 func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
 	switch k := key.(type) {
 	case PropertyKey:
@@ -871,11 +870,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					return elem.Fn.Params[0].Type, errors
 				}
 			case *type_system.RestSpreadElem:
-				resolved := type_system.Prune(elem.Value)
-				if mut, ok := resolved.(*type_system.MutabilityType); ok {
-					resolved = type_system.Prune(mut.Type)
-				}
-				if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
+				if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
 					if propType := getSpreadPropertyType(resolvedObj, k.Name); propType != nil {
 						return propType, errors
 					}
@@ -966,11 +961,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 							return elem.Fn.Params[0].Type, errors
 						}
 					case *type_system.RestSpreadElem:
-						resolved := type_system.Prune(elem.Value)
-						if mut, ok := resolved.(*type_system.MutabilityType); ok {
-							resolved = type_system.Prune(mut.Type)
-						}
-						if resolvedObj, ok := resolved.(*type_system.ObjectType); ok {
+						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
 							if propType := getSpreadPropertyType(resolvedObj, strLit.Value); propType != nil {
 								return propType, errors
 							}
@@ -1007,6 +998,14 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					if elem.Name == symKey {
 						return elem.Fn, errors
 					}
+				case *type_system.GetterElem:
+					if elem.Name == symKey {
+						return elem.Fn.Return, errors
+					}
+				case *type_system.SetterElem:
+					if elem.Name == symKey {
+						return elem.Fn.Params[0].Type, errors
+					}
 				case *type_system.RestSpreadElem:
 					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
 						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, nil)
@@ -1016,8 +1015,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					}
 				case *type_system.MappedElem:
 					panic("MappedElems should have been expanded before property access")
-				case *type_system.ConstructorElem, *type_system.CallableElem,
-					*type_system.GetterElem, *type_system.SetterElem:
+				case *type_system.ConstructorElem, *type_system.CallableElem:
 					continue
 				default:
 					continue
