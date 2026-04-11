@@ -273,20 +273,48 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				spreadType, spreadErrors := c.inferExpr(ctx, spread.Value)
 				errors = slices.Concat(errors, spreadErrors)
 
-				// Check that the spread operand is iterable
-				elementType := c.GetIterableElementType(ctx, spreadType)
-				if elementType == nil {
-					err := NewGenericError(
-						fmt.Sprintf("Type '%s' is not iterable", spreadType),
-						spread.Span(),
-					)
-					errors = append(errors, err)
-					elementType = type_system.NewAnyType(nil)
+				prunedType := type_system.Prune(spreadType)
+				// Unwrap MutabilityType if present
+				if mut, ok := prunedType.(*type_system.MutabilityType); ok {
+					prunedType = type_system.Prune(mut.Type)
 				}
-				elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, &type_system.TypeRefType{
-					Name:     type_system.NewIdent("Array"),
-					TypeArgs: []type_system.Type{elementType},
-				}))
+				handled := false
+				switch st := prunedType.(type) {
+				case *type_system.TupleType:
+					// Inline tuple elements directly
+					elemTypes = append(elemTypes, st.Elems...)
+					handled = true
+				case *type_system.TypeVarType:
+					// Unannotated parameter — no upfront iterable constraint is added.
+					// The constraint is enforced structurally at call sites: when the
+					// caller passes a concrete argument, unification resolves the type
+					// variable and validates iterability at that point.
+					elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, st))
+					handled = true
+				case *type_system.TypeRefType:
+					if c.isArrayType(st) {
+						// Array<T> - preserve as RestSpreadType
+						elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, st))
+						handled = true
+					}
+				}
+				if !handled {
+					// Other types (including non-Array TypeRefTypes like Generator) -
+					// extract element type via iterability check
+					elementType := c.GetIterableElementType(ctx, spreadType)
+					if elementType == nil {
+						err := NewGenericError(
+							fmt.Sprintf("Type '%s' is not iterable", spreadType),
+							spread.Span(),
+						)
+						errors = append(errors, err)
+						elementType = type_system.NewAnyType(nil)
+					}
+					elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, &type_system.TypeRefType{
+						Name:     type_system.NewIdent("Array"),
+						TypeArgs: []type_system.Type{elementType},
+					}))
+				}
 			} else {
 				elemType, elemErrors := c.inferExpr(ctx, elem)
 				elemTypes = append(elemTypes, elemType)
@@ -294,14 +322,21 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}
 		}
 
+		// Collapse tuples that contain only Array rest spreads into a plain
+		// Array type: [...Array<T>] → Array<T>, and
+		// [...Array<T1>, ...Array<T2>] → Array<T1 | T2>.
+		// Otherwise returns a TupleType.
 		exprType = &type_system.MutabilityType{
-			Type:       type_system.NewTupleType(provenance, elemTypes...),
+			Type:       collapseArrayRestSpreads(c, elemTypes),
 			Mutability: type_system.MutabilityUncertain,
 		}
 	case *ast.ObjectExpr:
 		// Create a context for the object so that we can add a `Self` type to it
 		objCtx := ctx.WithNewScope()
 
+		// TODO(#413): typeElems may contain nil entries when astKeyToTypeKey
+		// fails (e.g. for unsupported computed key types). These nil entries
+		// cause a panic in bind. Filter them out before creating the ObjectType.
 		typeElems := make([]type_system.ObjTypeElem, len(expr.Elems))
 		types := make([]type_system.Type, len(expr.Elems))
 		paramBindingsSlice := make([]map[string]*type_system.Binding, len(expr.Elems))
@@ -350,6 +385,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					types[i] = funcType
 					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key}
 				}
+			// No object-type constraint is enforced on the spread source.
+			// This matches JS/TS semantics where spreading non-objects
+			// (e.g. {...42}) is valid and produces {}.
+			case *ast.ObjSpreadExpr:
+				sourceType, spreadErrors := c.inferExpr(ctx, elem.Value)
+				errors = append(errors, spreadErrors...)
+				typeElems[i] = type_system.NewRestSpreadElem(sourceType)
 			}
 		}
 
@@ -433,6 +475,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				inferErrors := c.inferFuncBodyWithFuncSigType(
 					objCtx, funcType, paramBindings, setterExpr.Fn.Body, setterExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
+			case *ast.ObjSpreadExpr:
+				// Already handled in the first loop — nothing to do here.
 			}
 
 			i++
@@ -893,6 +937,38 @@ func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, prop
 	}
 
 	return false
+}
+
+// collapseArrayRestSpreads builds the result type for a tuple expression.
+// If all elements are Array rest spreads, it collapses them into a single
+// Array<T1 | T2 | ...> (e.g. [...Array<T>] → Array<T>). Otherwise it
+// returns a TupleType with the elements as-is.
+//
+// Note: this function does not Prune elements before checking because it is
+// called during inference before call-site specialization. TypeVarType-based
+// rests (e.g. [...T0]) are still unbound at this point and correctly fall
+// through to the TupleType path.
+func collapseArrayRestSpreads(c *Checker, elems []type_system.Type) type_system.Type {
+	var unionMembers []type_system.Type
+	for _, elem := range elems {
+		rest, ok := elem.(*type_system.RestSpreadType)
+		if !ok {
+			return type_system.NewTupleType(nil, elems...)
+		}
+		inner := type_system.Prune(rest.Type)
+		ref, ok := inner.(*type_system.TypeRefType)
+		if !ok || !c.isArrayType(ref) || len(ref.TypeArgs) == 0 {
+			return type_system.NewTupleType(nil, elems...)
+		}
+		unionMembers = append(unionMembers, ref.TypeArgs[0])
+	}
+	if len(unionMembers) == 0 {
+		return type_system.NewTupleType(nil, elems...)
+	}
+	return &type_system.TypeRefType{
+		Name:     type_system.NewIdent("Array"),
+		TypeArgs: []type_system.Type{type_system.NewUnionType(nil, unionMembers...)},
+	}
 }
 
 func (c *Checker) inferCallExpr(

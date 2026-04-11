@@ -81,6 +81,8 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*type_system.Obj
 		// TODO: return the error
 		keyType, _ := c.inferExpr(ctx, key.Expr) // infer the expression for side-effects
 
+		// TODO(#413): handle custom symbols from Symbol() — currently only
+		// well-known symbols (UniqueSymbolType) are supported as computed keys.
 		switch t := type_system.Prune(keyType).(type) {
 		case *type_system.LitType:
 			switch lit := t.Lit.(type) {

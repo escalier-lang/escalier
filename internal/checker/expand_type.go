@@ -773,14 +773,84 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	}
 }
 
-// getObjectAccess handles property and index access on ObjectType
+// resolveToObjectType attempts to resolve a type to an *ObjectType. It handles
+// direct ObjectTypes, MutabilityType wrappers, and TypeRefTypes with aliases.
+func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
+	resolved := type_system.Prune(t)
+	if mut, ok := resolved.(*type_system.MutabilityType); ok {
+		resolved = type_system.Prune(mut.Type)
+	}
+	if obj, ok := resolved.(*type_system.ObjectType); ok {
+		return obj
+	}
+	if ref, ok := resolved.(*type_system.TypeRefType); ok {
+		if ref.TypeAlias != nil {
+			aliasType := ref.TypeAlias.Type
+			if len(ref.TypeAlias.TypeParams) > 0 && len(ref.TypeArgs) > 0 {
+				subs := createTypeParamSubstitutions(ref.TypeArgs, ref.TypeAlias.TypeParams)
+				aliasType = SubstituteTypeParams(aliasType, subs)
+			}
+			return resolveToObjectType(aliasType)
+		}
+	}
+	return nil
+}
+
+// getSpreadPropertyType looks up a property in an ObjectType using JavaScript
+// spread semantics: PropertyElems and MethodElems are copied as-is, GetterElems
+// yield their return type, and SetterElems are skipped (setter-only properties
+// are not readable in a spread). Returns nil if the property is not found.
+func getSpreadPropertyType(objType *type_system.ObjectType, name string) type_system.Type {
+	targetKey := type_system.NewStrKey(name)
+	for i := len(objType.Elems) - 1; i >= 0; i-- {
+		switch elem := objType.Elems[i].(type) {
+		case *type_system.PropertyElem:
+			if elem.Name == targetKey {
+				propType := elem.Value
+				if elem.Optional {
+					propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+				}
+				return propType
+			}
+		case *type_system.MethodElem:
+			if elem.Name == targetKey {
+				return elem.Fn
+			}
+		case *type_system.GetterElem:
+			if elem.Name == targetKey {
+				return elem.Fn.Return
+			}
+		case *type_system.SetterElem:
+			// Setter-only properties are not readable in a spread — skip.
+			if elem.Name == targetKey {
+				return nil
+			}
+		case *type_system.RestSpreadElem:
+			if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
+				if propType := getSpreadPropertyType(resolvedObj, name); propType != nil {
+					return propType
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// getObjectAccess handles property and index access on ObjectType.
+// TODO(#412): differentiate between read and write access so that
+// GetterElem returns the getter's return type for reads and SetterElem
+// returns the setter's parameter type for writes.
 func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
 	switch k := key.(type) {
 	case PropertyKey:
-		for _, elem := range objType.Elems {
-			switch elem := elem.(type) {
+		// Search elements in reverse order so that later elements override
+		// earlier ones. This respects JavaScript spread semantics where
+		// {a: 1, ...{a: 2}} yields a=2 and {...{a: 1}, a: 2} yields a=2.
+		targetKey := type_system.NewStrKey(k.Name)
+		for i := len(objType.Elems) - 1; i >= 0; i-- {
+			switch elem := objType.Elems[i].(type) {
 			case *type_system.PropertyElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					propType := elem.Value
 					if elem.Optional {
 						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
@@ -788,26 +858,27 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					return propType, errors
 				}
 			case *type_system.MethodElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					return elem.Fn, errors
 				}
 			case *type_system.GetterElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					return elem.Fn.Return, errors
 				}
 			case *type_system.SetterElem:
-				if elem.Name == type_system.NewStrKey(k.Name) {
+				if elem.Name == targetKey {
 					return elem.Fn.Params[0].Type, errors
+				}
+			case *type_system.RestSpreadElem:
+				if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
+					if propType := getSpreadPropertyType(resolvedObj, k.Name); propType != nil {
+						return propType, errors
+					}
 				}
 			case *type_system.MappedElem:
 				panic("MappedElems should have been expanded before property access")
 			case *type_system.ConstructorElem:
 			case *type_system.CallableElem:
-				continue
-			case *type_system.RestSpreadElem:
-				// The row variable is an unresolved TypeVarType during inference —
-				// there's no concrete ObjectType to query for properties here.
-				// It gets resolved during unification/generalization, not member lookup.
 				continue
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
@@ -865,10 +936,12 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		}
 		if indexLit, ok := keyType.(*type_system.LitType); ok {
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
-				for _, elem := range objType.Elems {
-					switch elem := elem.(type) {
+				// Search in reverse order for override semantics (same as PropertyKey).
+				targetKey := type_system.NewStrKey(strLit.Value)
+				for i := len(objType.Elems) - 1; i >= 0; i-- {
+					switch elem := objType.Elems[i].(type) {
 					case *type_system.PropertyElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							propType := elem.Value
 							if elem.Optional {
 								propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
@@ -876,24 +949,27 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 							return propType, errors
 						}
 					case *type_system.MethodElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							return elem.Fn, errors
 						}
 					case *type_system.GetterElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							return elem.Fn.Return, errors
 						}
 					case *type_system.SetterElem:
-						if elem.Name == type_system.NewStrKey(strLit.Value) {
+						if elem.Name == targetKey {
 							return elem.Fn.Params[0].Type, errors
+						}
+					case *type_system.RestSpreadElem:
+						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
+							if propType := getSpreadPropertyType(resolvedObj, strLit.Value); propType != nil {
+								return propType, errors
+							}
 						}
 					case *type_system.MappedElem:
 						panic("MappedElems should have been expanded before property access")
 					case *type_system.ConstructorElem:
 					case *type_system.CallableElem:
-						continue
-					case *type_system.RestSpreadElem:
-						// See comment in PropertyKey branch above.
 						continue
 					default:
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
@@ -901,11 +977,15 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			}
 		}
-		// Handle unique symbol keys (e.g. Symbol.iterator)
+		// Handle unique symbol keys (e.g. Symbol.iterator).
+		// Search in reverse order for override semantics, and check
+		// RestSpreadElems so that symbol-keyed properties from spread
+		// sources (e.g. spreading an Array which has Symbol.iterator)
+		// are found.
 		if symType, ok := keyType.(*type_system.UniqueSymbolType); ok {
 			symKey := type_system.NewSymKey(symType.Value)
-			for _, elem := range objType.Elems {
-				switch elem := elem.(type) {
+			for i := len(objType.Elems) - 1; i >= 0; i-- {
+				switch elem := objType.Elems[i].(type) {
 				case *type_system.PropertyElem:
 					if elem.Name == symKey {
 						propType := elem.Value
@@ -918,10 +998,24 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					if elem.Name == symKey {
 						return elem.Fn, errors
 					}
+				case *type_system.GetterElem:
+					if elem.Name == symKey {
+						return elem.Fn.Return, errors
+					}
+				case *type_system.SetterElem:
+					if elem.Name == symKey {
+						return elem.Fn.Params[0].Type, errors
+					}
+				case *type_system.RestSpreadElem:
+					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
+						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, nil)
+						if len(symPropErrors) == 0 {
+							return symPropType, errors
+						}
+					}
 				case *type_system.MappedElem:
 					panic("MappedElems should have been expanded before property access")
-				case *type_system.ConstructorElem, *type_system.CallableElem,
-					*type_system.GetterElem, *type_system.SetterElem:
+				case *type_system.ConstructorElem, *type_system.CallableElem:
 					continue
 				default:
 					continue

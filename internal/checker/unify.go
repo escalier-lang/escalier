@@ -891,8 +891,8 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			keys1 := []type_system.ObjTypeKey{} // original order of keys in obj1
 			keys2 := []type_system.ObjTypeKey{} // original order of keys in obj2
 
-			var restType1 type_system.Type
-			var restType2 type_system.Type
+			var restTypes1 []type_system.Type
+			var restTypes2 []type_system.Type
 
 			for _, elem := range obj1.Elems {
 				switch elem := elem.(type) {
@@ -917,7 +917,7 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 					origElems1[elem.Name] = elem
 					keys1 = append(keys1, elem.Name)
 				case *type_system.RestSpreadElem:
-					restType1 = elem.Value
+					restTypes1 = append(restTypes1, elem.Value)
 				default: // skip other types of elems
 				}
 			}
@@ -945,7 +945,7 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 					origElems2[elem.Name] = elem
 					keys2 = append(keys2, elem.Name)
 				case *type_system.RestSpreadElem:
-					restType2 = elem.Value
+					restTypes2 = append(restTypes2, elem.Value)
 				default: // skip other types of elems
 				}
 			}
@@ -981,8 +981,8 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 					}
 				}
 				// Unify row variables if both have RestSpreadElems
-				if restType1 != nil && restType2 != nil {
-					unifyErrors := c.Unify(ctx, restType1, restType2)
+				if len(restTypes1) == 1 && len(restTypes2) == 1 {
+					unifyErrors := c.Unify(ctx, restTypes1[0], restTypes2[0])
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				return errors
@@ -1020,87 +1020,20 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				return errors
 			}
 
-			// Closed-vs-closed (existing path)
-			if restType1 != nil && restType2 != nil {
-				return []Error{&UnimplementedError{message: "unify types with two rest elems"}}
-			} else if restType1 != nil {
-				usedKeys2 := map[type_system.ObjTypeKey]bool{}
-				for _, key1 := range keys1 {
-					value1 := namedElems1[key1]
-					if value2, ok := namedElems2[key1]; ok {
-						unifyErrors := c.Unify(ctx, value1, value2)
-						errors = slices.Concat(errors, unifyErrors)
-						usedKeys2[key1] = true
-					} else {
-						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
-							Object: obj2,
-							Key:    key1,
-							span:   getKeyNotFoundSpan(obj2, value1),
-						}})
-						// Unify the missing property's type with 'undefined' so that it gets
-						// properly resolved and doesn't remain as a type variable.
-						// We intentionally discard the errors since we already
-						// reported the KeyNotFoundError above.
-						undefinedType := type_system.NewUndefinedType(nil)
-						c.Unify(ctx, value1, undefinedType)
-					}
-				}
+			// Closed-vs-closed: handle rest element distribution.
+			//
+			// Multiple RestSpreadElems on one side (from object spread) need
+			// to be distributed against the other side's properties.
+			hasRests1 := len(restTypes1) > 0
+			hasRests2 := len(restTypes2) > 0
 
-				restElems := []type_system.ObjTypeElem{}
-				for _, key := range keys2 {
-					if _, ok := usedKeys2[key]; !ok {
-						restElems = append(restElems, &type_system.PropertyElem{
-							Name:     key,
-							Optional: false, // TODO
-							Readonly: false, // TODO
-							Value:    namedElems2[key],
-						})
-					}
-				}
-
-				objType := type_system.NewObjectType(nil, restElems)
-
-				unifyErrors := c.Unify(ctx, objType, restType1)
-				errors = slices.Concat(errors, unifyErrors)
-			} else if restType2 != nil {
-				usedKeys1 := map[type_system.ObjTypeKey]bool{}
-				for _, key2 := range keys2 {
-					value2 := namedElems2[key2]
-					if value1, ok := namedElems1[key2]; ok {
-						unifyErrors := c.Unify(ctx, value1, value2)
-						errors = slices.Concat(errors, unifyErrors)
-						usedKeys1[key2] = true
-					} else {
-						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
-							Object: obj1,
-							Key:    key2,
-							span:   getKeyNotFoundSpan(obj1, value2),
-						}})
-						// Unify the missing property's type with 'undefined' so that it gets
-						// properly resolved and doesn't remain as a type variable.
-						// We intentionally discard the errors since we already
-						// reported the KeyNotFoundError above.
-						undefinedType := type_system.NewUndefinedType(nil)
-						c.Unify(ctx, value2, undefinedType)
-					}
-				}
-
-				restElems := []type_system.ObjTypeElem{}
-				for _, key := range keys1 {
-					if _, ok := usedKeys1[key]; !ok {
-						restElems = append(restElems, &type_system.PropertyElem{
-							Name:     key,
-							Optional: false, // TODO
-							Readonly: false, // TODO
-							Value:    namedElems1[key],
-						})
-					}
-				}
-
-				objType := type_system.NewObjectType(nil, restElems)
-
-				unifyErrors := c.Unify(ctx, restType2, objType)
-				errors = slices.Concat(errors, unifyErrors)
+			if hasRests1 && !hasRests2 {
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj1, obj2, keys2, namedElems2, false))
+			} else if hasRests2 && !hasRests1 {
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, true))
+			} else if hasRests1 && hasRests2 {
+				// TODO(#410): implement unification when both sides have RestSpreadElems
+				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
 			} else {
 				for _, key2 := range keys2 {
 					value2 := namedElems2[key2]
@@ -1448,6 +1381,180 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 		T1: t1,
 		T2: t2,
 	}}
+}
+
+// unifyClosedWithRests unifies a closed ObjectType that has RestSpreadElems
+// (restObj) against a closed ObjectType with no rests (targetObj).
+//
+// It first expands restObj.Elems in source order — inlining bound
+// RestSpreadElems and applying JavaScript override semantics (later entries
+// win) — to produce a flat effective property map. It then unifies each
+// effective property against the matching target property.
+//
+// Any target properties not covered by the effective map are "remaining".
+// These are distributed to unbound rest elements (TypeVarTypes) as follows:
+//
+//   - One unbound rest: bind it to an ObjectType containing all remaining
+//     properties.
+//     Note the ordering matters for overrides. Both variants have the
+//     same type shape but different element order, which affects which
+//     value wins for shared keys:
+//
+//     // fn <T0>(obj: T0) -> {x: 1, ...T0}
+//     fn foo(obj) {
+//     return {x: 1, ...obj}
+//     }
+//     foo({x: 5, y: 2}).x // 5
+//
+//     // fn <T0>(obj: T0) -> {...T0, x: 1}
+//     fn foo(obj) {
+//     return {...obj, x: 1}
+//     }
+//     foo({x: 5, y: 2}).x // 1.
+//
+//   - Multiple unbound rests with remaining properties: error — the system
+//     cannot determine which rest should receive which properties. In
+//     practice this case is unlikely to be reached because rests originate
+//     from function parameters, which are bound by call-site arguments
+//     before the return type is unified.
+//
+//   - Zero unbound rests with remaining properties: error — all rests are
+//     bound but the target has extra properties not accounted for.
+func (c *Checker) unifyClosedWithRests(
+	ctx Context,
+	restObj, targetObj *type_system.ObjectType,
+	targetKeys []type_system.ObjTypeKey,
+	targetNamed map[type_system.ObjTypeKey]type_system.Type,
+	swapped bool,
+) []Error {
+	errors := []Error{}
+
+	// unifyPair preserves the original t1/t2 ordering for Unify calls.
+	// When swapped is false, restObj=t1 and targetObj=t2.
+	// When swapped is true, restObj=t2 and targetObj=t1.
+	unifyPair := func(restVal, targetVal type_system.Type) []Error {
+		if swapped {
+			return c.Unify(ctx, targetVal, restVal)
+		}
+		return c.Unify(ctx, restVal, targetVal)
+	}
+
+	// 1. Expand restObj.Elems into a flat effective property map by walking
+	//    in source order and inlining bound RestSpreadElems. Later entries
+	//    overwrite earlier ones, giving JavaScript override semantics.
+	//    Unbound rests (TypeVarType) are collected separately.
+	effectiveKeys := []type_system.ObjTypeKey{}
+	effectiveValues := map[type_system.ObjTypeKey]type_system.Type{}
+	var unboundRests []*type_system.TypeVarType
+	addEffective := func(name type_system.ObjTypeKey, value type_system.Type) {
+		if _, exists := effectiveValues[name]; !exists {
+			effectiveKeys = append(effectiveKeys, name)
+		}
+		effectiveValues[name] = value
+	}
+	for _, elem := range restObj.Elems {
+		switch elem := elem.(type) {
+		case *type_system.PropertyElem:
+			addEffective(elem.Name, elem.Value)
+		case *type_system.MethodElem:
+			addEffective(elem.Name, elem.Fn)
+		case *type_system.GetterElem:
+			addEffective(elem.Name, elem.Fn.Return)
+		case *type_system.SetterElem:
+			// Setters on the outer object are kept (direct access).
+			addEffective(elem.Name, elem.Fn.Params[0].Type)
+		case *type_system.RestSpreadElem:
+			pruned := type_system.Prune(elem.Value)
+			if mut, ok := pruned.(*type_system.MutabilityType); ok {
+				pruned = type_system.Prune(mut.Type)
+			}
+			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
+				unboundRests = append(unboundRests, tv)
+			} else if obj := resolveToObjectType(pruned); obj != nil {
+				// Apply spread semantics: methods → fn type, getters → return
+				// type, setter-only → skipped.
+				for _, re := range obj.Elems {
+					switch re := re.(type) {
+					case *type_system.PropertyElem:
+						addEffective(re.Name, re.Value)
+					case *type_system.MethodElem:
+						addEffective(re.Name, re.Fn)
+					case *type_system.GetterElem:
+						addEffective(re.Name, re.Fn.Return)
+					case *type_system.SetterElem:
+						// Setter-only not readable via spread — skip.
+					case *type_system.RestSpreadElem:
+						// Nested rest from chained destructuring (e.g. the T3 in
+						// {y: T2, ...T3}). Collect so remaining target properties
+						// can flow into it.
+						innerPruned := type_system.Prune(re.Value)
+						if tv, ok := innerPruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
+							unboundRests = append(unboundRests, tv)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Unify effective properties against the target.
+	usedTargetKeys := map[type_system.ObjTypeKey]bool{}
+	for _, key := range effectiveKeys {
+		value := effectiveValues[key]
+		if targetValue, ok := targetNamed[key]; ok {
+			unifyErrors := unifyPair(value, targetValue)
+			errors = slices.Concat(errors, unifyErrors)
+			usedTargetKeys[key] = true
+		} else {
+			errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+				Object: targetObj,
+				Key:    key,
+				span:   getKeyNotFoundSpan(targetObj, value),
+			}})
+			undefinedType := type_system.NewUndefinedType(nil)
+			c.Unify(ctx, value, undefinedType)
+		}
+	}
+
+	// 3. Collect remaining target properties not matched by effective props.
+	remainingElems := []type_system.ObjTypeElem{}
+	for _, key := range targetKeys {
+		if !usedTargetKeys[key] {
+			remainingElems = append(remainingElems, &type_system.PropertyElem{
+				Name:  key,
+				Value: targetNamed[key],
+			})
+		}
+	}
+
+	// 4. Assign remaining properties to unbound rests.
+	if len(unboundRests) == 1 {
+		objType := type_system.NewObjectType(nil, remainingElems)
+		unifyErrors := unifyPair(unboundRests[0], objType)
+		errors = slices.Concat(errors, unifyErrors)
+	} else if len(unboundRests) > 1 && len(remainingElems) > 0 {
+		errors = append(errors, &UnimplementedError{
+			message: fmt.Sprintf(
+				"cannot distribute %d properties across %d unbound rest spread elements; consider using a single spread or explicit property definitions",
+				len(remainingElems),
+				len(unboundRests),
+			),
+		})
+	} else if len(unboundRests) == 0 && len(remainingElems) > 0 {
+		// All rests are bound but there are leftover properties — error.
+		for _, elem := range remainingElems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok {
+				errors = append(errors, &KeyNotFoundError{
+					Object: restObj,
+					Key:    prop.Name,
+					span:   getKeyNotFoundSpan(restObj, prop.Value),
+				})
+			}
+		}
+	}
+	// else: no remaining properties — all rests stay as-is (empty objects if unbound)
+
+	return errors
 }
 
 // unifyFuncTypes unifies two function types

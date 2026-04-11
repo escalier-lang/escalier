@@ -2365,6 +2365,89 @@ func TestDestructuringObjectPatterns(t *testing.T) {
 				"foo": "fn ({bar: number, ...rest}) -> number",
 			},
 		},
+		"RestPassedToIdentityFunction": {
+			// Rest from destructuring passed to a simple function.
+			input: `
+				fn identity(obj) { return obj }
+				val foo = fn ({x, ...rest}) {
+					return identity(rest)
+				}
+				val r = foo({x: 1, y: 2, z: "hi"})
+			`,
+			expectedTypes: map[string]string{
+				"r": "{y: 2, z: \"hi\"}",
+			},
+		},
+		"TwoFunctionsWithRestCallingEachOther": {
+			// One function destructures and passes rest to another
+			// function that accesses a property on it.
+			input: `
+				fn getY(obj) { return obj.y }
+				val foo = fn ({x, ...rest}) {
+					return [x, getY(rest)]
+				}
+				val r = foo({x: 1, y: 2})
+			`,
+			expectedTypes: map[string]string{
+				"r": "[1, 2]",
+			},
+		},
+		"ChainedDestructuringWithRest": {
+			// Both functions destructure with rest — rest from outer
+			// is passed to inner which also has a rest element.
+			input: `
+				val foo = fn ({y, ...rest}) {
+					return [y, rest]
+				}
+				val bar = fn ({x, ...rest}) {
+					return [x, foo(rest)]
+				}
+				val r = bar({x: 1, y: 2, z: 3})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>({y: T0, ...rest: T1}) -> [T0, T1]",
+				"bar": "fn <T0, T1, T2>({x: T0, ...rest: {y: T1, ...T2}}) -> [T0, [T1, T2]]",
+				"r":   "[1, [2, {z: 3}]]",
+			},
+		},
+		"ChainedDestructuringWithRestAndSpread": {
+			// Both functions destructure with rest — rest from outer
+			// is passed to inner which also has a rest element.
+			// NOTE: r's type [1, 2, ...{z: 3}] contains a spread of a
+			// non-iterable object type. This should be an error — see #411.
+			input: `
+				val foo = fn ({y, ...rest}) {
+					return [y, ...rest]
+				}
+				val bar = fn ({x, ...rest}) {
+					return [x, ...foo(rest)]
+				}
+				val r = bar({x: 1, y: 2, z: 3})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>({y: T0, ...rest: T1}) -> [T0, ...T1]",
+				"bar": "fn <T0, T1, T2>({x: T0, ...rest: {y: T1, ...T2}}) -> [T0, T1, ...T2]",
+				"r":   "[1, 2, ...{z: 3}]",
+			},
+		},
+		"RestPassedToTypedFunction": {
+			// Rest from destructuring passed to a function with a type annotation.
+			// The rest gets typed as {y: number, z: string} from the process call,
+			// but x stays generic since nothing constrains it.
+			input: `
+				fn process(obj: {y: number, z: string}) {
+					return obj.y
+				}
+				val foo = fn ({x, ...rest}) {
+					return process(rest)
+				}
+				val r = foo({x: true, y: 42, z: "hi"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>({x: T0, ...rest: {y: number, z: string}}) -> number",
+				"r":   "number",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -2447,6 +2530,353 @@ func TestDestructuringTuplePatterns(t *testing.T) {
 			expectedTypes: map[string]string{
 				"foo": "fn ([a: number, b: number]) -> number",
 				"r":   "number",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestObjectSpread(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"BasicSpread": {
+			input: `
+				val r = {...{x: 1}, y: 2}
+			`,
+			expectedTypes: map[string]string{
+				"r": "{x: 1, y: 2}",
+			},
+		},
+		"SpreadWithInferredType": {
+			input: `
+				fn foo(obj) { return {...obj, extra: 1} }
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: T0) -> {...T0, extra: 1}",
+			},
+		},
+		"MultipleSpreads": {
+			input: `
+				fn merge(a, b) { return {...a, ...b} }
+				val r = merge({x: 1}, {y: "hello"})
+			`,
+			expectedTypes: map[string]string{
+				"merge": "fn <T0, T1>(a: T0, b: T1) -> {...T0, ...T1}",
+				"r":     "{x: 1, y: \"hello\"}",
+			},
+		},
+		"PropertyAccessThroughSpread": {
+			input: `
+				val base = {x: 1, y: 2}
+				val extended = {...base, z: 3}
+				val v = extended.x
+			`,
+			expectedTypes: map[string]string{
+				"base":     "{x: 1, y: 2}",
+				"extended": "{x: 1, y: 2, z: 3}",
+				"v":        "1",
+			},
+		},
+		"SpreadCalledWithConcreteArgs": {
+			input: `
+				fn extend(obj) { return {...obj, extra: 1} }
+				val r = extend({x: "hello", y: true})
+			`,
+			expectedTypes: map[string]string{
+				"r": "{x: \"hello\", y: true, extra: 1}",
+			},
+		},
+		"SpreadBeforeExplicitOverride": {
+			// {...obj, x: 1} — explicit x comes after spread, so x:1 wins.
+			input: `
+				fn foo(obj) { return {...obj, x: 1} }
+				val r = foo({x: 99, y: 2})
+				val x = r.x
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: T0) -> {...T0, x: 1}",
+				"x":   "1",
+			},
+		},
+		"SpreadAfterExplicitOverride": {
+			// {x: 1, ...obj} — spread comes after, so obj.x wins.
+			input: `
+				fn foo(obj) { return {x: 1, ...obj} }
+				val r = foo({x: 99, y: 2})
+				val x = r.x
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: T0) -> {x: 1, ...T0}",
+				"x":   "99",
+			},
+		},
+		"SpreadOverrideSemantics": {
+			input: `
+				val foo = {b: 5, c: 10}
+				val bar = {a: 1, b: 2, ...foo, c: 3}
+				val a = bar.a
+				val b = bar.b
+				val c = bar.c
+			`,
+			expectedTypes: map[string]string{
+				"a": "1",
+				"b": "5",
+				"c": "3",
+			},
+		},
+		"SpreadOverrideSemanticsWithDestructuring": {
+			input: `
+				val foo = {b: 5, c: 10}
+				val bar = {a: 1, b: 2, ...foo, c: 3}
+				val {a, b, c} = bar
+			`,
+			expectedTypes: map[string]string{
+				"a": "1",
+				"b": "5",
+				"c": "3",
+			},
+		},
+		"MultipleSpreadsOverrideSemantics": {
+			// Two spreads with interleaved explicit property — last provider wins.
+			input: `
+				val foo = {b: 5, c: 10}
+				val bar = {c: 20, d: 30}
+				val result = {a: 1, ...foo, c: 3, ...bar}
+				val {a, b, c, d} = result
+			`,
+			expectedTypes: map[string]string{
+				"a": "1",
+				"b": "5",
+				"c": "20",
+				"d": "30",
+			},
+		},
+		"SpreadOfObjectWithMethod": {
+			// Methods are copied as function-valued properties.
+			input: `
+				val obj = {x: 1, greet() { return "hello" }}
+				val result = {...obj, y: 2}
+				val g = result.greet
+			`,
+			expectedTypes: map[string]string{
+				"g": "fn () -> \"hello\"",
+			},
+		},
+		"SpreadOfObjectWithGetter": {
+			// Getter's return value becomes a plain property.
+			input: `
+				val obj = {
+					_x: 10,
+					get x(self) { return self._x },
+				}
+				val result = {...obj, y: 2}
+				val v = result.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "10",
+			},
+		},
+		"SpreadOfObjectWithSetterOnly": {
+			// Setter-only properties are omitted from the spread.
+			// The explicit property 'x' in the target is preserved.
+			input: `
+				val obj = {
+					set x(mut self, v: number) { },
+				}
+				val result = {x: "kept", ...obj}
+				val v = result.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "\"kept\"",
+			},
+		},
+		"SpreadOfAnnotatedVariable": {
+			// Spread source has an explicit type annotation — ensures
+			// getObjectAccess can look through a non-MutabilityType spread.
+			input: `
+				val base: {x: number, y: string} = {x: 1, y: "hi"}
+				val ext = {...base, z: true}
+				val v = ext.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "number",
+			},
+		},
+		"SpreadOfTypeAlias": {
+			// Spread source typed via a type alias.
+			input: `
+				type Point = {x: number, y: number}
+				val p: Point = {x: 1, y: 2}
+				val ext = {...p, z: 3}
+				val v = ext.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "number",
+			},
+		},
+		"SpreadNestedInSpreadSource": {
+			// Nitpick: getSpreadPropertyType should handle nested RestSpreadElems.
+			// val inner = {x: 1}; val outer = {...inner, y: 2}
+			// val result = {...outer, z: 3}; result.x should find x through
+			// the RestSpreadElem inside outer.
+			input: `
+				val inner = {x: 1}
+				val outer = {...inner, y: 2}
+				val result = {...outer, z: 3}
+				val v = result.x
+			`,
+			expectedTypes: map[string]string{
+				"v": "1",
+			},
+		},
+		"SpreadPropertyAccessViaDestructuring": {
+			// Verifies unification path handles MutabilityType-wrapped spread
+			// sources (object literals produce MutabilityType wrappers).
+			input: `
+				val src = {x: 1, y: 2}
+				val dest = {...src, z: 3}
+				val {x, y, z} = dest
+			`,
+			expectedTypes: map[string]string{
+				"x": "1",
+				"y": "2",
+				"z": "3",
+			},
+		},
+		"SpreadPreservesSymbolKeys": {
+			// Symbol-keyed properties from a spread source should be
+			// accessible on the result via index access.
+			input: `
+				declare val arr: Array<number>
+				val obj = {...arr, extra: 1}
+				val iter = obj[Symbol.iterator]
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn () -> ArrayIterator<number>",
+			},
+		},
+		"SymbolKeyedGetterAccessViaSpread": {
+			// Spreading an object with a symbol-keyed getter should
+			// make the getter's return type accessible on the result.
+			input: `
+				declare val src: {get [Symbol.iterator]() -> number}
+				val obj = {...src, x: 1}
+				val v = obj[Symbol.iterator]
+			`,
+			expectedTypes: map[string]string{
+				"v": "number",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestTupleSpreadRefined(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"SpreadOfTupleIntoTuple": {
+			input: `
+				val tup: [string, boolean] = ["hello", true]
+				val result = [0, ...tup, 4]
+			`,
+			expectedTypes: map[string]string{
+				"result": "[0, string, boolean, 4]",
+			},
+		},
+		"SpreadOfArrayIntoTuple": {
+			input: `
+				val arr: Array<number> = [1, 2, 3]
+				val result = [0, ...arr, 4]
+			`,
+			expectedTypes: map[string]string{
+				"result": "[0, ...Array<number>, 4]",
+			},
+		},
+		"MultipleTupleSpreads": {
+			input: `
+				fn concat(a: [number, string], b: [boolean]) {
+					return [...a, ...b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"concat": "fn (a: [number, string], b: [boolean]) -> [number, string, boolean]",
+			},
+		},
+		"TuplePlusArraySpread": {
+			input: `
+				fn prepend(tup: [number, string], arr: Array<boolean>) {
+					return [...tup, ...arr]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"prepend": "fn (tup: [number, string], arr: Array<boolean>) -> [number, string, ...Array<boolean>]",
+			},
+		},
+		"SpreadWithLiteralElements": {
+			input: `
+				val arr: Array<number> = [1, 2, 3]
+				val result = ["start", ...arr, "end"]
+			`,
+			expectedTypes: map[string]string{
+				"result": "[\"start\", ...Array<number>, \"end\"]",
+			},
+		},
+		"TwoArraySpreads": {
+			// Two array spreads collapse to Array<T1 | T2> since
+			// [...Array<T1>, ...Array<T2>] is not a valid type.
+			input: `
+				val a: Array<number> = [1, 2]
+				val b: Array<string> = ["x", "y"]
+				val result = [...a, ...b]
+			`,
+			expectedTypes: map[string]string{
+				"result": "Array<number | string>",
+			},
+		},
+		"SpreadOfSet": {
+			// Spreading a Set extracts its element type via iterability.
+			input: `
+				declare val s: Set<number>
+				val result = [...s]
+			`,
+			expectedTypes: map[string]string{
+				"result": "Array<number>",
+			},
+		},
+		"SpreadOfMap": {
+			// Spreading a Map yields [K, V] tuples via iterability.
+			input: `
+				declare val m: Map<string, number>
+				val result = [...m]
+			`,
+			expectedTypes: map[string]string{
+				"result": "Array<[string, number]>",
 			},
 		},
 	}
