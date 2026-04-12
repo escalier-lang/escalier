@@ -270,7 +270,7 @@ Remove it while working in this file.
 (`CannotUnifyTypesError` when no members match), not exhaustiveness errors. Exhaustiveness
 checking is deferred to a future phase.
 
-## Phase 5: Validate match targets for extractor patterns
+## Phase 5: Validate match targets for extractor patterns ✅
 
 **Requirements:** R5
 
@@ -285,74 +285,58 @@ extractors with structural patterns still expects the target to be an instance.
 pattern is an extractor pattern and whether the target type is a constructor rather than
 an instance.
 
-**Files to change:**
-- [infer_expr.go](../../internal/checker/infer_expr.go) — Add validation in
-  `inferMatchExpr` after inferring the target type (after line 1328):
+**Files changed:**
+- [infer_expr.go](../../internal/checker/infer_expr.go) — Added validation in
+  `inferMatchExpr` after inferring the target type. Checks if the pruned target type is
+  an `ObjectType` with `CallableElem` or `ConstructorElem` elements, and if any pattern
+  is an `ExtractorPat`, reports a `ConstructorUsedAsMatchTargetError`.
 
-```go
-// Check if target type is a constructor when patterns expect instances
-targetObjType, isObj := type_system.Prune(targetType).(*type_system.ObjectType)
-if isObj {
-    hasCallableOrNewable := false
-    for _, elem := range targetObjType.Elems {
-        switch elem.(type) {
-        case *type_system.CallableElem, *type_system.NewableElem:
-            hasCallableOrNewable = true
-        }
-    }
-    if hasCallableOrNewable {
-        for _, matchCase := range expr.Cases {
-            if _, ok := matchCase.Pattern.(*ast.ExtractorPat); ok {
-                errors = append(errors, &ConstructorUsedAsMatchTargetError{
-                    TargetType: targetType,
-                })
-                break
-            }
-        }
-    }
-}
-```
+- [error.go](../../internal/checker/error.go) — Added `ConstructorUsedAsMatchTargetError`
+  type with message format: `"Match target has type <type> which is a constructor, not an instance"`.
 
-- [errors.go](../../internal/checker/errors.go) (or equivalent) — Add a new error type
-  `ConstructorUsedAsMatchTargetError`.
+**Note:** The plan originally referenced `NewableElem` but the codebase uses
+`ConstructorElem` for constructor signatures.
 
-**Testing:** Write tests for Cases 2 and 3.
+**Testing:** Tests for Cases 2 (constructor target errors) and 3 (correct instance
+matching succeeds) pass.
 
-## Phase 6: Comprehensive testing
+## Phase 6: Comprehensive testing ✅
 
 **Requirements:** R7
 
 **What:** Run the full test suite and write tests for all test cases from the
 requirements doc. Verify no regressions in existing pattern matching behavior.
 
-**Files to change:**
-- [pattern_match_test.go](../../internal/checker/tests/pattern_match_test.go) — Add test
-  cases covering:
-  - Case 1: Structural destructuring of a nominal union (requires Phase 4)
-  - Case 2: Enum constructor as match target - should error (requires Phase 5)
-  - Case 3: Correct enum instance matching - should succeed (requires Phase 5)
-  - Case 4: Structural pattern matching no union member - should error (requires Phase 4)
-  - Case 5: Mixed nominal and structural patterns (requires Phase 4)
+**Files changed:**
+- [pattern_match_test.go](../../internal/checker/tests/pattern_match_test.go) — All test
+  cases now covered:
+  - Case 1: Structural destructuring of a nominal union ✅
+  - Case 2: Enum constructor as match target - should error ✅
+  - Case 3: Correct enum instance matching - should succeed ✅
+  - Case 4: Structural pattern matching no union member - should error ✅
+  - Case 5: Mixed nominal and structural patterns ✅
   - Case 6: Partial match on subset of fields ✅
-  - Case 7: Shared fields across union members produce union bindings (requires Phase 4)
-  - Case 8: Shared field with same type across all union members (requires Phase 4)
-  - Case 9: Pattern field not present in any union member - should error (requires Phase 4)
-  - Case 10: Pattern fields split across union members - should error (requires Phase 4)
-  - Case 11: Object pattern with literal values
+  - Case 7: Shared fields across union members produce union bindings ✅
+  - Case 8: Shared field with same type across all union members ✅
+  - Case 9: Pattern field not present in any union member - should error ✅
+  - Case 10: Pattern fields split across union members - should error ✅
+  - Case 11: Object pattern with literal values ✅
   - Case 12: Structural pattern matches a getter ✅
 
-**Verification:** Run `go test ./...` and confirm all tests pass including existing
-pattern matching tests.
+- [infer_test.go](../../internal/checker/tests/infer_test.go) — Uncommented the
+  `MatchClassesWithObjPat` test that was blocked by #174 (now fixed).
+
+**Verification:** `go test ./...` passes with no regressions.
 
 ## Summary of changes by file
 
 | File | Changes |
 |------|---------|
-| `internal/checker/infer_expr.go` | Set `IsPatMatch = true` for pattern unification; add constructor target validation (Phase 5) |
+| `internal/checker/infer_expr.go` | Set `IsPatMatch = true` for pattern unification ✅; add constructor target validation ✅ (Phase 5) |
 | `internal/checker/unify.go` | Relax nominal check when `IsPatMatch`; add pattern-matching branch in closed-vs-closed; add `collectNamedElems` helper (Phase 4); add `unifyPatternWithUnion` for `ObjectType` vs `UnionType` in pattern mode (Phase 4); remove debug `fmt.Fprintf` at line 1223 (Phase 4) |
-| `internal/checker/error.go` | Add `ConstructorUsedAsMatchTargetError` (Phase 5) and `PropertyNotFoundError` ✅ |
+| `internal/checker/error.go` | Add `ConstructorUsedAsMatchTargetError` ✅ (Phase 5) and `PropertyNotFoundError` ✅ |
 | `internal/type_system/types.go` | Add `MatchedUnionMembers []Type` field to `ObjectType` (Phase 4) |
-| `internal/checker/tests/pattern_match_test.go` | Add test cases ✅ (partial — Cases 6, 12, and error case done) |
+| `internal/checker/tests/pattern_match_test.go` | Add test cases ✅ (all 12 cases covered) |
 
 ## Dependencies between phases
 
@@ -360,9 +344,9 @@ pattern matching tests.
 Phase 1 (activate flag) ✅
   ├──── Phase 2 (relax nominal check) ✅
   │       └──── Phase 3 (validate pattern fields) ✅
-  ├──── Phase 4 (pattern vs union)
-  ├──── Phase 5 (constructor validation)
-  └──── Phase 6 (comprehensive testing) — after all above
+  ├──── Phase 4 (pattern vs union) ✅
+  ├──── Phase 5 (constructor validation) ✅
+  └──── Phase 6 (comprehensive testing) ✅
 ```
 
 Phases 2/3, 4, and 5 are independent of each other and can be worked on in parallel

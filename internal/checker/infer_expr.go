@@ -1327,6 +1327,28 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 	targetType, targetErrors := c.inferExpr(ctx, expr.Target)
 	errors = slices.Concat(errors, targetErrors)
 
+	// Check if target type is a constructor when patterns expect instances
+	targetObjType, isObj := type_system.Prune(targetType).(*type_system.ObjectType)
+	if isObj {
+		hasCallableOrConstructor := false
+		for _, elem := range targetObjType.Elems {
+			switch elem.(type) {
+			case *type_system.CallableElem, *type_system.ConstructorElem:
+				hasCallableOrConstructor = true
+			}
+		}
+		if hasCallableOrConstructor {
+			for _, matchCase := range expr.Cases {
+				if _, ok := matchCase.Pattern.(*ast.ExtractorPat); ok {
+					errors = append(errors, &ConstructorUsedAsMatchTargetError{
+						TargetType: targetType,
+					})
+					break
+				}
+			}
+		}
+	}
+
 	// Collect the types of all case bodies
 	caseTypes := make([]type_system.Type, 0, len(expr.Cases))
 

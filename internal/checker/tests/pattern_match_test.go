@@ -86,6 +86,51 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				"result2": "boolean",
 			},
 		},
+		"Case3_CorrectEnumInstanceMatching": {
+			input: `
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+
+				declare val color: Color
+				val result = match color {
+					Color.RGB(r, g, b) => r + g + b,
+					Color.Hex(code) => code,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | string",
+			},
+		},
+		"Case5_MixedNominalAndStructuralPatterns": {
+			input: `
+				class Point(x: number, y: number) { x, y }
+				class Event(kind: string) { kind }
+
+				declare val obj: Point | Event
+				val result = match obj {
+					Point {x, y} => x + y,
+					{kind} => kind,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | string",
+			},
+		},
+		"Case11_ObjectPatternWithLiteralValues": {
+			input: `
+				type Point = {x: number, y: number}
+				declare val p: Point
+				val result = match p {
+					{x: 0, y: 0} => "origin",
+					{x, y} => "other",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"origin" | "other"`,
+			},
+		},
 		"Case8_SharedFieldSameTypeAcrossAllMembers": {
 			input: `
 				type Shape = {kind: "circle", radius: number} | {kind: "square", side: number} | {kind: "rect", width: number, height: number}
@@ -174,6 +219,22 @@ func TestPatternMatchErrors(t *testing.T) {
 			`,
 			expectedErrs: []string{
 				"cannot be assigned to",
+			},
+		},
+		"Case2_EnumConstructorAsMatchTarget": {
+			input: `
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+
+				val result = match Color.RGB {
+					Color.RGB(r, g, b) => r + g + b,
+					Color.Hex(code) => code,
+				}
+			`,
+			expectedErrs: []string{
+				"constructor, not an instance",
 			},
 		},
 		"PatternFieldMatchesSetterOnly": {
