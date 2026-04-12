@@ -1014,6 +1014,20 @@ Section 6d).
 The following are concrete error scenarios with suggested message content.
 These are follow-up/implementation details for user-facing diagnostics.
 
+> **Status (2026-04-11):** Implemented in Phase 11. Key implementation details:
+>
+> - `PropertyElem` gained a `Provenance provenance.Provenance` field that
+>   records the span of the property access that first inferred the property.
+>   A `MemberAccessKeyProvenance` type (defined in `internal/checker`) wraps the
+>   `MemberAccessKey` that triggered inference and implements `provenance.Provenance`,
+>   avoiding circular dependencies between `ast` and `type_system`.
+> - `PropertyElem.Accept()` was updated to preserve `Provenance` when the
+>   type visitor creates a copy during substitution.
+> - `newOpenObjectWithProperty` and `addPropertyToOpenObject` in
+>   `expand_type.go` now accept an `accessSpan` parameter.
+> - See Phase 11 in [implementation_plan.md](implementation_plan.md) for
+>   per-scenario details.
+
 #### 9a. Missing property at call site
 
 When a caller passes an object that is missing a property required by the
@@ -1037,26 +1051,34 @@ Message elements: (1) identifies parameter `obj`, (2) shows the usage site
 where `baz` was assigned, (3) the type mismatch is clear enough that an
 annotation suggestion is not needed here.
 
-#### 9b. Numeric indexing vs. property access conflict
+> **Status (2026-04-11):** Implemented. `KeyNotFoundError` gained an
+> `InferredAt *MemberAccessKeyProvenance` field. When the missing key's
+> `PropertyElem` has `Provenance` set, the unification path extracts it
+> and stores it as `KeyNotFoundError.InferredAt`, and the message includes
+> "Property bar is required because it is accessed at <location>". The
+> closed-vs-closed unification path in `unify.go` extracts `Provenance`
+> from `origElems2`. Tested in `TestRowTypesErrors/MissingInferredProperty`.
 
-When the same parameter is used with both property access and numeric indexing
-(Section 3):
+#### 9b. Mixed string and numeric keys on inferred objects
+
+The original plan called for an error when the same parameter was used with
+both property access and numeric indexing. However, there is no fundamental
+conflict — objects can have both string-keyed and numeric-keyed properties.
 
 ```esc
 fn foo(obj) {
-    let name = obj.name
-    let first = obj[0]      // error
+    val name = obj.name
+    val first = obj[0]      // ok — infers obj: {name: T0, 0: T1}
 }
 ```
 
-Suggested message:
-> Cannot index parameter `obj` with a numeric index because it was already
-> constrained to an object type by property access `obj.name` at
-> <source location>. Consider adding a type annotation to `obj`.
-
-Message elements: (1) identifies parameter `obj`, (2) shows the conflicting
-usage sites (property access and numeric index), (3) suggests adding an
-explicit type annotation.
+> **Status (2026-04-11):** Numeric literal indexes on open objects add a
+> numeric-keyed property via `addNumericPropertyToOpenObject` in
+> `getObjectAccess`, enabling mixed key types like `{bar: T0, 0: T1}`.
+> The originally planned `IndexingConflictError` was removed — no error is
+> reported for this case. Tested in
+> `TestRowTypesPropertyAccess/MixedStringAndNumericKeys` and
+> `TestRowTypesPropertyAccess/NumericIndexOnReopenedObject`.
 
 #### 9c. Open-to-closed unification property type mismatch
 
@@ -1079,16 +1101,29 @@ Message elements: (1) identifies parameter `obj` and property `bar`,
 (2) shows the inference site, (3) the mismatch is self-explanatory — no
 annotation suggestion needed.
 
+> **Status (2026-04-11):** Infrastructure implemented. `PropertyTypeMismatchError`
+> wraps `CannotUnifyTypesError` with property name and `Provenance`-derived context
+> during closed-vs-closed object unification. However, this error is difficult
+> to trigger in practice: inferred property type variables are `Widenable`,
+> so conflicting types widen to a union (per Section 6d) rather than producing
+> a type error. The error would fire when non-widenable property types conflict
+> (e.g., from explicit type constraints), but no test currently exercises this
+> path.
+
 #### 9d. When to suggest explicit annotations
 
 Error messages should suggest adding a type annotation when the conflict arises
 from the inference mechanism itself (not from a straightforward type mismatch).
 Specifically:
-- **Suggest annotation**: numeric-indexing-vs-property-access conflicts (9b),
-  and any case where the inferred type is surprising or non-obvious to the user.
+- **Suggest annotation**: any case where the inferred type is surprising or
+  non-obvious to the user.
 - **Don't suggest annotation**: missing properties (9a) or simple type
   mismatches (9c), where the fix is to change the call site argument rather than
   annotate the parameter.
+
+> **Status (2026-04-11):** `KeyNotFoundError` and `PropertyTypeMismatchError`
+> do not suggest annotations. The originally planned numeric-indexing conflict
+> (9b) was removed since mixed string/numeric keys are now allowed.
 
 ### 10. Scope and Limitations
 

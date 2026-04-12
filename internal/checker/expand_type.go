@@ -726,7 +726,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				c.getOrCreateArrayConstraint(t)
 				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
 			}
-			propTV, openObj := c.newOpenObjectWithProperty(k.Name)
+			propTV, openObj := c.newOpenObjectWithProperty(k.Name, k)
 			if k.OptChain {
 				// Optional chaining: obj?.bar infers obj: {bar: T} | null | undefined.
 				// Use the unwrapped ObjectType (not MutabilityType) since you can't
@@ -745,7 +745,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			// String literal index key — treat like property access
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
-					propTV, openObj := c.newOpenObjectWithProperty(strLit.Value)
+					propTV, openObj := c.newOpenObjectWithProperty(strLit.Value, k)
 					t.Instance = openObj
 					return propTV, errors
 				}
@@ -928,7 +928,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 		// If the object is open, add the new property instead of reporting an error
 		if objType.Open {
-			return c.addPropertyToOpenObject(objType, k.Name), errors
+			return c.addPropertyToOpenObject(objType, k.Name, k), errors
 		}
 
 		errors = append(errors, &UnknownPropertyError{
@@ -1056,8 +1056,13 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		if objType.Open {
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
-					return c.addPropertyToOpenObject(objType, strLit.Value), errors
+					return c.addPropertyToOpenObject(objType, strLit.Value, k), errors
 				}
+			}
+			// Numeric literal index — add a numeric-keyed property to the open object.
+			// Objects can have both string and numeric keys.
+			if litIndex, isNonNegInt := asNonNegativeIntLiteral(keyType); isNonNegInt {
+				return c.addNumericPropertyToOpenObject(objType, float64(litIndex), k), errors
 			}
 		}
 
@@ -1074,12 +1079,15 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 // newOpenObjectWithProperty creates a new open ObjectType with a single property
 // and a rest-spread element, returning the property's type variable and the object.
-func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarType, *type_system.MutabilityType) {
+// accessKey records the member access that triggered inference of this property.
+func (c *Checker) newOpenObjectWithProperty(name string, accessKey MemberAccessKey) (*type_system.TypeVarType, *type_system.MutabilityType) {
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
 	rowTV := c.FreshVar(nil)
+	prop := type_system.NewPropertyElem(type_system.NewStrKey(name), propTV)
+	prop.Provenance = &MemberAccessKeyProvenance{Key: accessKey}
 	openObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-		type_system.NewPropertyElem(type_system.NewStrKey(name), propTV),
+		prop,
 		type_system.NewRestSpreadElem(rowTV),
 	})
 	openObj.Open = true
@@ -1091,10 +1099,24 @@ func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarTy
 
 // addPropertyToOpenObject appends a new widenable property to an existing open
 // ObjectType and returns the property's type variable.
-func (c *Checker) addPropertyToOpenObject(objType *type_system.ObjectType, name string) *type_system.TypeVarType {
+// accessKey records the member access that triggered inference of this property.
+func (c *Checker) addPropertyToOpenObject(objType *type_system.ObjectType, name string, accessKey MemberAccessKey) *type_system.TypeVarType {
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
-	objType.Elems = append(objType.Elems, type_system.NewPropertyElem(type_system.NewStrKey(name), propTV))
+	prop := type_system.NewPropertyElem(type_system.NewStrKey(name), propTV)
+	prop.Provenance = &MemberAccessKeyProvenance{Key: accessKey}
+	objType.Elems = append(objType.Elems, prop)
+	return propTV
+}
+
+// addNumericPropertyToOpenObject appends a new widenable property with a numeric
+// key to an existing open ObjectType and returns the property's type variable.
+func (c *Checker) addNumericPropertyToOpenObject(objType *type_system.ObjectType, index float64, accessKey MemberAccessKey) *type_system.TypeVarType {
+	propTV := c.FreshVar(nil)
+	propTV.Widenable = true
+	prop := type_system.NewPropertyElem(type_system.NewNumKey(index), propTV)
+	prop.Provenance = &MemberAccessKeyProvenance{Key: accessKey}
+	objType.Elems = append(objType.Elems, prop)
 	return propTV
 }
 

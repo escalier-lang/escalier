@@ -1039,13 +1039,47 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 					value2 := namedElems2[key2]
 					if value1, ok := namedElems1[key2]; ok {
 						unifyErrors := c.Unify(ctx, value1, value2)
+						// Wrap CannotUnifyTypesError with property context when
+						// the property was inferred during row inference.
+						for i, err := range unifyErrors {
+							if cue, ok := err.(*CannotUnifyTypesError); ok {
+								var inferredAt *MemberAccessKeyProvenance
+								if pe, ok := origElems2[key2].(*type_system.PropertyElem); ok {
+									if makp, ok := pe.Provenance.(*MemberAccessKeyProvenance); ok {
+										inferredAt = makp
+									}
+								}
+								if inferredAt == nil {
+									if pe, ok := origElems1[key2].(*type_system.PropertyElem); ok {
+										if makp, ok := pe.Provenance.(*MemberAccessKeyProvenance); ok {
+											inferredAt = makp
+										}
+									}
+								}
+								if inferredAt != nil {
+									unifyErrors[i] = &PropertyTypeMismatchError{
+										Property:   key2,
+										T1:         cue.T1,
+										T2:         cue.T2,
+										InferredAt: inferredAt,
+										span:       cue.Span(),
+									}
+								}
+							}
+						}
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
-						errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+						knfErr := &KeyNotFoundError{
 							Object: obj1,
 							Key:    key2,
 							span:   getKeyNotFoundSpan(obj1, value2),
-						}})
+						}
+						if propElem, ok := origElems2[key2].(*type_system.PropertyElem); ok {
+							if makp, ok := propElem.Provenance.(*MemberAccessKeyProvenance); ok {
+								knfErr.InferredAt = makp
+							}
+						}
+						errors = slices.Concat(errors, []Error{knfErr})
 						// Unify the missing property's type with 'undefined' so that it gets
 						// properly resolved and doesn't remain as a type variable.
 						// We intentionally discard the errors since we already

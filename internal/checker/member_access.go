@@ -31,3 +31,12 @@ func (ik IndexKey) isMemberAccessKey() {}
 func (ik IndexKey) Span() ast.Span {
 	return ik.span
 }
+
+// MemberAccessKeyProvenance wraps a MemberAccessKey as a provenance.Provenance
+// so it can be stored on PropertyElem.Provenance to record which property access
+// or index access triggered inference of the property.
+type MemberAccessKeyProvenance struct {
+	Key MemberAccessKey
+}
+
+func (*MemberAccessKeyProvenance) IsProvenance() {}

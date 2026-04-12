@@ -265,6 +265,29 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				"foo": "fn <T0>(obj: {bar: T0}) -> [T0, T0]",
 			},
 		},
+		"MixedStringAndNumericKeys": {
+			input: `
+				fn foo(obj) {
+					val x = obj.bar
+					return obj[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {bar: T0, 0: T1}) -> T1",
+			},
+		},
+		"NumericIndexOnReopenedObject": {
+			input: `
+				fn bar(obj: {x: number}) -> number { return obj.x }
+				fn foo(v) {
+					bar(v)
+					return v[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(v: {x: number, 0: T0}) -> T0",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -301,6 +324,25 @@ func TestRowTypesErrors(t *testing.T) {
 			`,
 			expectedErrs: []string{"Cannot mutate immutable"},
 		},
+		// Section 9a: missing property at call site mentions inferred provenance
+		"MissingInferredProperty": {
+			input: `
+				fn foo(obj) {
+					return obj.bar
+				}
+				fn main() {
+					foo({baz: 5})
+				}
+			`,
+			expectedErrs: []string{"is required because it is accessed at"},
+		},
+		// Section 9c: property type mismatch at call site between
+		// inferred parameter and argument with wrong property type.
+		// The inferred property type widens to absorb the conflicting
+		// type, so no error occurs. This is expected behavior — the
+		// PropertyTypeMismatchError enhancement fires when two closed
+		// objects are unified directly (not through widenable type vars).
+		// See also: TestRowTypesPassToTypedFunction for related tests.
 	}
 
 	for name, test := range tests {

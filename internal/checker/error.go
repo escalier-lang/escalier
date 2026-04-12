@@ -52,6 +52,7 @@ func (e UnknownComponentError) isError()                    {}
 func (e InvalidKeyPropError) isError()                      {}
 func (e UnexpectedChildrenError) isError()                  {}
 func (e UnresolvedExportAssignmentError) isError()          {}
+func (e PropertyTypeMismatchError) isError()                {}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -123,16 +124,21 @@ func (e InvalidObjectKeyError) Message() string {
 }
 
 type KeyNotFoundError struct {
-	Object *type_system.ObjectType
-	Key    type_system.ObjTypeKey
-	span   ast.Span
+	Object     *type_system.ObjectType
+	Key        type_system.ObjTypeKey
+	InferredAt *MemberAccessKeyProvenance // non-nil when the missing key was inferred by row inference
+	span       ast.Span
 }
 
 func (e KeyNotFoundError) Span() ast.Span {
 	return e.span
 }
 func (e KeyNotFoundError) Message() string {
-	return "Key not found in object: " + e.Key.String() + " in " + e.Object.String()
+	msg := "Key not found in object: " + e.Key.String() + " in " + e.Object.String()
+	if e.InferredAt != nil {
+		msg += ". Property " + e.Key.String() + " is required because it is accessed at " + e.InferredAt.Key.Span().String()
+	}
+	return msg
 }
 
 type InterfaceMergeError struct {
@@ -512,6 +518,25 @@ func (e UnresolvedExportAssignmentError) Span() ast.Span {
 }
 func (e UnresolvedExportAssignmentError) Message() string {
 	return "Unresolved identifier in export assignment: " + e.Name
+}
+
+type PropertyTypeMismatchError struct {
+	Property   type_system.ObjTypeKey
+	T1         type_system.Type
+	T2         type_system.Type
+	InferredAt *MemberAccessKeyProvenance // non-nil when the property was inferred
+	span       ast.Span
+}
+
+func (e PropertyTypeMismatchError) Span() ast.Span {
+	return e.span
+}
+func (e PropertyTypeMismatchError) Message() string {
+	msg := e.T1.String() + " is not assignable to " + e.T2.String() + " for property " + e.Property.String()
+	if e.InferredAt != nil {
+		msg += ". Property " + e.Property.String() + " was inferred from access at " + e.InferredAt.Key.Span().String()
+	}
+	return msg
 }
 
 // TODO: make this a sum type so that different error type can reference other

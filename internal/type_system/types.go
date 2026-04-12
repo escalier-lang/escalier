@@ -192,9 +192,9 @@ type TypeVarType struct {
 	Constraint      Type
 	Default         Type
 	FromBinding     bool
-	Widenable       bool // true for type vars whose type is inferred from usage (e.g. property values on open objects)
-	IsParam         bool // true for type vars created for unannotated function parameters
-	InstanceChain   []*TypeVarType // populated by Prune when this TypeVar's Instance is another TypeVar (alias chain from bind); stores all TypeVars in the chain before path compression collapses it
+	Widenable       bool             // true for type vars whose type is inferred from usage (e.g. property values on open objects)
+	IsParam         bool             // true for type vars created for unannotated function parameters
+	InstanceChain   []*TypeVarType   // populated by Prune when this TypeVar's Instance is another TypeVar (alias chain from bind); stores all TypeVars in the chain before path compression collapses it
 	ArrayConstraint *ArrayConstraint // non-nil when numeric indexing has been observed; resolved during closing
 	provenance      Provenance
 }
@@ -1184,11 +1184,12 @@ type SetterElem struct {
 	Fn   *FuncType
 }
 type PropertyElem struct {
-	Name     ObjTypeKey
-	Optional bool
-	Readonly bool
-	Value    Type
-	Written  bool // true when property is assigned to during inference
+	Name       ObjTypeKey
+	Optional   bool
+	Readonly   bool
+	Value      Type
+	Written    bool                  // true when property is assigned to during inference
+	Provenance provenance.Provenance // span of the property access that inferred this property (nil for declared properties)
 }
 
 func NewMethodElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElem {
@@ -1295,11 +1296,12 @@ func (p *PropertyElem) Accept(v TypeVisitor) ObjTypeElem {
 	newValue := p.Value.Accept(v)
 	if newValue != p.Value {
 		return &PropertyElem{
-			Name:     p.Name,
-			Optional: p.Optional,
-			Readonly: p.Readonly,
-			Value:    newValue,
-			Written:  p.Written,
+			Name:       p.Name,
+			Optional:   p.Optional,
+			Readonly:   p.Readonly,
+			Value:      newValue,
+			Written:    p.Written,
+			Provenance: p.Provenance,
 		}
 	}
 	return p
