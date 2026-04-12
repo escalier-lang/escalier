@@ -1482,6 +1482,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		result.Implements = newImplements
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
+		result.MatchedUnionMembers = t.MatchedUnionMembers
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
