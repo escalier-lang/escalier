@@ -297,7 +297,32 @@ val result = match fb {
 }
 ```
 
-### Case 10: Structural pattern matches a getter
+### Case 10: Object pattern with literal values
+
+```ts
+type Point = {x: number, y: number}
+declare val p: Point
+val result = match p {
+    {x: 0, y: 0} => "origin",
+    {x, y} => `(${x}, ${y})`,
+}
+// result: string
+```
+
+### Case 11: Tuple patterns of different lengths against an array
+
+```ts
+declare val arr: number[]
+val result = match arr {
+    [] => "empty",
+    [x] => `one: ${x}`,
+    [x, y] => `two: ${x}, ${y}`,
+    [x, y, ...rest] => `many: ${x}, ${y}, and ${rest.length} more`,
+}
+// result: string
+```
+
+### Case 12: Structural pattern matches a getter
 
 ```ts
 class Circle(radius: number) {
