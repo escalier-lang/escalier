@@ -1241,16 +1241,23 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			}
 
 			matchingTypes := make(map[type_system.ObjTypeKey][]type_system.Type)
+			// Track which destructured fields exist as write-only (setter)
+			// across union members so we can distinguish "field doesn't exist"
+			// from "field exists but is not readable."
+			writeOnlyFields := make(map[type_system.ObjTypeKey]bool)
 			// Track remaining fields for rest spread handling
 			remainingFields := make(map[type_system.ObjTypeKey][]type_system.Type)
 			remainingFieldsOrder := []type_system.ObjTypeKey{} // Track order of keys
 
 			for _, unionType := range union.Types {
-				if unionObj, ok := unionType.(*type_system.ObjectType); ok {
+				expanded, _ := c.ExpandType(ctx, unionType, 1)
+				if unionObj, ok := expanded.(*type_system.ObjectType); ok {
 					collectedUnionObj := collectObjElemTypes(unionObj, false)
 					for name := range destructuredFields {
 						if t, ok := collectedUnionObj.Read[name]; ok {
 							matchingTypes[name] = append(matchingTypes[name], t)
+						} else if _, ok := collectedUnionObj.Write[name]; ok {
+							writeOnlyFields[name] = true
 						}
 					}
 
@@ -1274,8 +1281,15 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			}
 			errors := []Error{}
 			for name, t := range destructuredFields {
-				// if destructuredFields[name] doesn't exist, unify `undefined` with `t`
 				if _, ok := matchingTypes[name]; !ok {
+					if writeOnlyFields[name] {
+						// Field exists as a setter on at least one union
+						// member but is not readable — report an error.
+						errors = append(errors, &UnknownPropertyError{
+							ObjectType: union,
+							Property:   name.String(),
+						})
+					}
 					undefined := type_system.NewUndefinedType(nil)
 					unifyErrors := c.Unify(ctx, undefined, t)
 					errors = slices.Concat(errors, unifyErrors)

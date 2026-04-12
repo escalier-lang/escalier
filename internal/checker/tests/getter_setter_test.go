@@ -184,10 +184,12 @@ func TestGetterSetterAccess(t *testing.T) {
 					set s(mut self, v: string) {},
 				}
 				fn foo(u: A | B) {
-					val {x, ...rest} = u
+					val {x, s, ...rest} = u
 				}
 			`,
-			expectedErrors: nil,
+			expectedErrors: []string{
+				"Unknown property 's' in object type A | B",
+			},
 		},
 	}
 
