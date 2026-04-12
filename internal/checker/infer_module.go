@@ -874,7 +874,7 @@ func (c *Checker) InferComponent(
 							OptChain: false,
 							span:     DEFAULT_SPAN,
 						}
-						customMatcher, _ := c.getMemberType(ctx, symbol.Type, symKey)
+						customMatcher, _ := c.getMemberType(ctx, symbol.Type, symKey, AccessRead)
 
 						// Create the SymbolKeyMap for the object type
 						symbolKeyMap := make(map[int]any)

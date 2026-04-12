@@ -24,16 +24,19 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		neverType := type_system.NewNeverType(nil)
 
 		if expr.Op == ast.Assign {
-			// TODO: check if expr.Left is a valid lvalue
-			leftType, leftErrors := c.inferExpr(ctx, expr.Left)
 			rightType, rightErrors := c.inferExpr(ctx, expr.Right)
+			errors = rightErrors
 
-			errors = slices.Concat(leftErrors, rightErrors)
+			var leftType type_system.Type
 
-			// Check if we're trying to mutate an immutable object
 			if memberExpr, ok := expr.Left.(*ast.MemberExpr); ok {
 				objType, objErrors := c.inferExpr(ctx, memberExpr.Object)
 				errors = slices.Concat(errors, objErrors)
+
+				key := PropertyKey{Name: memberExpr.Prop.Name, OptChain: memberExpr.OptChain, span: memberExpr.Prop.Span()}
+				var leftErrors []Error
+				leftType, leftErrors = c.getMemberType(ctx, objType, key, AccessWrite)
+				errors = slices.Concat(errors, leftErrors)
 
 				// Check if the property is readonly (this check takes precedence)
 				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
@@ -59,19 +62,22 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				}
 			} else if indexExpr, ok := expr.Left.(*ast.IndexExpr); ok {
 				objType, objErrors := c.inferExpr(ctx, indexExpr.Object)
-				errors = slices.Concat(errors, objErrors)
-
-				// Check if the property is readonly when using string literal index
 				indexType, indexErrors := c.inferExpr(ctx, indexExpr.Index)
-				errors = slices.Concat(errors, indexErrors)
+				errors = slices.Concat(errors, objErrors, indexErrors)
+
+				key := IndexKey{Type: indexType, span: indexExpr.Index.Span()}
+				var leftErrors []Error
+				leftType, leftErrors = c.getMemberType(ctx, objType, key, AccessWrite)
+				errors = slices.Concat(errors, leftErrors)
 
 				// Unwrap MutabilityType if present
-				if mutType, ok := indexType.(*type_system.MutabilityType); ok {
-					indexType = mutType.Type
+				unwrappedIndexType := indexType
+				if mutType, ok := unwrappedIndexType.(*type_system.MutabilityType); ok {
+					unwrappedIndexType = mutType.Type
 				}
 
 				isReadonly := false
-				if litType, ok := indexType.(*type_system.LitType); ok {
+				if litType, ok := unwrappedIndexType.(*type_system.LitType); ok {
 					if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
 						if c.isPropertyReadonly(ctx, objType, strLit.Value) {
 							isReadonly = true
@@ -84,7 +90,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					// Even if the type is mutable, readonly properties cannot be mutated
 					errors = append(errors, &CannotMutateReadonlyPropertyError{
 						Type:     objType,
-						Property: indexType.String(),
+						Property: unwrappedIndexType.String(),
 						span:     expr.Left.Span(),
 					})
 				} else {
@@ -96,7 +102,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						// Open object types start without a MutabilityType wrapper —
 						// mark the property as written since we now know mutation occurs.
 						marked := false
-						if litType, ok := indexType.(*type_system.LitType); ok {
+						if litType, ok := unwrappedIndexType.(*type_system.LitType); ok {
 							if strLit, ok := litType.Lit.(*type_system.StrLit); ok {
 								marked = markPropertyWritten(pruned, strLit.Value)
 							}
@@ -112,6 +118,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						}
 					}
 				}
+			} else {
+				// IdentExpr or other — infer normally (variable assignment, not member access)
+				var leftErrors []Error
+				leftType, leftErrors = c.inferExpr(ctx, expr.Left)
+				errors = slices.Concat(errors, leftErrors)
 			}
 
 			// RHS must be a subtype of LHS because we're assigning RHS to LHS
@@ -202,7 +213,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			errors = objErrors
 		} else {
 			key := PropertyKey{Name: expr.Prop.Name, OptChain: expr.OptChain, span: expr.Prop.Span()}
-			propType, propErrors := c.getMemberType(ctx, objType, key)
+			propType, propErrors := c.getMemberType(ctx, objType, key, AccessRead)
 
 			exprType = propType
 
@@ -226,7 +237,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			exprType = type_system.NewErrorType(nil)
 		} else {
 			key := IndexKey{Type: indexType, span: expr.Index.Span()}
-			accessType, accessErrors := c.getMemberType(ctx, objType, key)
+			accessType, accessErrors := c.getMemberType(ctx, objType, key, AccessRead)
 			exprType = accessType
 			errors = slices.Concat(errors, accessErrors)
 		}
