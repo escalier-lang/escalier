@@ -727,6 +727,14 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
 			}
 			propTV, openObj := c.newOpenObjectWithProperty(k.Name)
+			if k.OptChain {
+				// Optional chaining: obj?.bar infers obj: {bar: T} | null | undefined.
+				// Use the unwrapped ObjectType (not MutabilityType) since you can't
+				// mutate through optional chaining — the object might be null/undefined.
+				t.Instance = type_system.NewUnionType(nil, openObj.Type, type_system.NewNullType(nil), type_system.NewUndefinedType(nil))
+				// The expression obj?.bar itself may produce undefined
+				return type_system.NewUnionType(nil, propTV, type_system.NewUndefinedType(nil)), errors
+			}
 			t.Instance = openObj
 			return propTV, errors
 		case IndexKey:
@@ -1312,8 +1320,12 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 
 		pType, pErrors := c.getMemberType(ctx, definedElems[0], key)
 		errors = slices.Concat(errors, pErrors)
-		propType := type_system.NewUnionType(nil, pType, type_system.NewUndefinedType(nil))
-		return propType, errors
+		// Only add undefined if the inner result doesn't already contain it
+		// (e.g. from a nested optional chain on a TypeVarType).
+		if !typeContainsUndefined(pType) {
+			pType = type_system.NewUnionType(nil, pType, type_system.NewUndefinedType(nil))
+		}
+		return pType, errors
 	}
 
 	if len(definedElems) > 1 {
@@ -1335,7 +1347,8 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		resultType := type_system.NewUnionType(nil, memberTypes...)
 
 		// If there are undefined elements, add undefined to the union
-		if undefinedCount > 0 {
+		// (unless the result already contains it from a nested optional chain).
+		if undefinedCount > 0 && !typeContainsUndefined(resultType) {
 			resultType = type_system.NewUnionType(nil, resultType, type_system.NewUndefinedType(nil))
 		}
 

@@ -2893,3 +2893,112 @@ func TestTupleSpreadRefined(t *testing.T) {
 		})
 	}
 }
+
+func TestRowTypesOptionalChaining(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedTypes map[string]string
+	}{
+		"BasicOptionalChaining": {
+			input: `
+				fn foo(obj) {
+					return obj?.bar
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {bar: T0} | null | undefined) -> T0 | undefined",
+			},
+		},
+		"NestedOptionalChaining": {
+			input: `
+				fn foo(a) {
+					return a?.b?.c
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(a: {b: {c: T0} | null | undefined} | null | undefined) -> T0 | undefined",
+			},
+		},
+		"AllOptional": {
+			// Second ?. adds baz to the open ObjectType inside the union
+			input: `
+				fn foo(obj) {
+					val x = obj?.bar
+					val y = obj?.baz
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {bar: T0, baz: T1} | null | undefined) -> void",
+			},
+		},
+		"OptionalChainingWithReturn": {
+			// Returning the nullable object preserves the row variable
+			input: `
+				fn foo(obj) {
+					val x = obj?.bar
+					return obj
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1} | null | undefined) -> {bar: T0, ...T1} | null | undefined",
+			},
+		},
+		"OptionalChainingRowPolyCall": {
+			// Calling a function that uses ?. with extra properties
+			input: `
+				fn foo(obj) {
+					return obj?.bar
+				}
+				val r = foo({bar: 1, baz: "hello"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {bar: T0} | null | undefined) -> T0 | undefined",
+				"r":   "1 | undefined",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes := inferModuleTypes(t, test.input)
+			for expectedName, expectedType := range test.expectedTypes {
+				actualType, exists := actualTypes[expectedName]
+				require.True(t, exists, "Expected variable %s to be declared", expectedName)
+				assert.Equal(t, expectedType, actualType, "Type mismatch for variable %s", expectedName)
+			}
+		})
+	}
+}
+
+func TestRowTypesOptionalChainingErrors(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		expectedErrs []string
+	}{
+		"MixOptionalAndNonOptional": {
+			// After obj?.bar, obj is nullable — non-optional .baz should error
+			input: `
+				fn foo(obj) {
+					val x = obj?.bar
+					val y = obj.baz
+				}
+			`,
+			expectedErrs: []string{"Expected an object type"},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, inferErrors := inferModuleTypesAndErrors(t, test.input)
+
+			require.Len(t, inferErrors, len(test.expectedErrs), "expected %d errors, got %d", len(test.expectedErrs), len(inferErrors))
+			for i, expectedErr := range test.expectedErrs {
+				if i < len(inferErrors) {
+					assert.Contains(t, inferErrors[i].Message(), expectedErr)
+				}
+			}
+		})
+	}
+}

@@ -977,7 +977,7 @@ preserved even when not in the return type, since the user explicitly wrote
 
 ---
 
-## Phase 9: Optional Chaining
+## Phase 9: Optional Chaining ✅
 
 **Requirements covered:** Section 4 (optional chaining).
 
@@ -986,28 +986,19 @@ preserved even when not in the return type, since the user explicitly wrote
 ### Changes
 
 1. **`internal/checker/expand_type.go`** — `getMemberType`, TypeVarType case:
-   When the key is a `PropertyKey` with `OptChain: true`:
+   When the key is a `PropertyKey` with `OptChain: true`, reuses
+   `newOpenObjectWithProperty` but unwraps the `MutabilityType` — the open
+   `ObjectType` is placed directly into the union because you cannot mutate
+   through optional chaining (the object might be null/undefined):
    ```go
-   propTV := c.FreshVar(nil)
-   propTV.Widenable = true
-   rowTV := c.FreshVar(nil)
-   openObj := NewObjectType(nil, []ObjTypeElem{
-       NewPropertyElem(NewStrKey(k.Name), propTV),
-       NewRestSpreadElem(rowTV),
-   })
-   openObj.Open = true
-   // Wrap the open object in MutabilityUncertain (same as Phase 2's
-   // non-optional path) so writes through optional chaining work.
-   mutObj := NewMutabilityType(nil, openObj, MutabilityUncertain)
-   // Wrap in union with null and undefined
-   typeVar.Instance = NewUnionType(nil, mutObj, NewNullType(nil), NewUndefinedType(nil))
-   // Return propTV | undefined (the ?. expression itself may produce undefined)
-   return NewUnionType(nil, propTV, NewUndefinedType(nil))
+   propTV, openObj := c.newOpenObjectWithProperty(k.Name)
+   if k.OptChain {
+       // Use the unwrapped ObjectType (not MutabilityType) since you can't
+       // mutate through optional chaining.
+       t.Instance = NewUnionType(nil, openObj.Type, NewNullType(nil), NewUndefinedType(nil))
+       return NewUnionType(nil, propTV, NewUndefinedType(nil))
+   }
    ```
-
-   The null/undefined type constructors are `NewNullType(nil)` and
-   `NewUndefinedType(nil)` (confirmed in `types.go` — both return `*LitType`
-   wrapping `NullLit{}` and `UndefinedLit{}` respectively).
 
 2. **Subsequent accesses on the union:** After `obj?.bar`, `typeVar.Instance` is
    `{bar: t1, ...R} | null | undefined`. If the user subsequently accesses
@@ -1015,7 +1006,7 @@ preserved even when not in the return type, since the user explicitly wrote
    `getMemberType` hits the `UnionType` case → `getUnionAccess`.
 
    **How `getUnionAccess` handles this:** `getUnionAccess` (expand_type.go
-   ~line 827) already handles unions containing null/undefined:
+   ~line 1290) already handles unions containing null/undefined:
    - It calls `c.getDefinedElems(unionType)` to filter out null/undefined
      members.
    - If null/undefined are present **without** optional chaining (`?.`), it
@@ -1027,19 +1018,21 @@ preserved even when not in the return type, since the user explicitly wrote
 
    This means:
    - `obj?.baz` on `{bar: t1} | null | undefined` works: accesses the open
-     ObjectType, adds `baz`, returns `t2 | undefined`.
+     ObjectType via `getObjectAccess`, adds `baz`, returns `t2 | undefined`.
    - `obj.baz` (non-optional) on the same union correctly errors — the user
      should use `?.` since the type is nullable. No special handling needed.
 
 3. **Nested optional chaining (`a?.b?.c`):**
    - `a?.b` binds `a` to `{b: t_b, ...R} | null | undefined`, returns
      `t_b | undefined`.
-   - `(t_b | undefined)?.c`: the `?.` operator strips `undefined` from the
-     receiver. The remaining type is `t_b`, which is a `TypeVarType`. This
-     triggers the TypeVarType case again, binding `t_b` to
+   - `(t_b | undefined)?.c`: `getUnionAccess` strips `undefined` via
+     `getDefinedElems`. The remaining type is `t_b`, which is a `TypeVarType`.
+     This triggers the TypeVarType case again, binding `t_b` to
      `{c: t_c, ...R2} | null | undefined`.
    - Result: `a: {b: {c: t_c, ...R2} | null | undefined, ...R} | null | undefined`,
-     expression type `t_c | undefined`.
+     expression type `t_c | undefined`. (`getUnionAccess` skips adding
+     `| undefined` when the inner result already contains it, via
+     `typeContainsUndefined` in `utils.go`.)
 
 4. **Return type of optional chaining expression:** The expression `obj?.bar`
    has type `propTV | undefined`. The inferred property type itself is just
@@ -1047,21 +1040,52 @@ preserved even when not in the return type, since the user explicitly wrote
    the access expression, not the property. This matches existing optional
    chaining semantics.
 
+5. **No `MutabilityType` wrapper:** Unlike the non-optional path which wraps
+   the open object in `MutabilityUncertain`, the optional chaining path uses
+   the raw `ObjectType`. Since the object might be null/undefined, mutation
+   through `?.` is not meaningful.
+
+6. **Closing:** `closeOpenObjectsInType` in `infer_func.go` now closes open
+   `ObjectType`s found inside unions (not just those directly behind a
+   TypeVar → MutabilityType chain). The `ObjectType` case in the switch
+   calls `closeObjectType` when `p.Open` is true, which sets `Open = false`,
+   recurses into property values, and removes `RestSpreadElem`s whose row
+   variables don't appear in the return type. This means the final inferred
+   parameter type is `{bar: T0} | null | undefined` (closed, no rest spread),
+   matching the non-optional equivalent.
+
+7. **Undefined deduplication:** `getUnionAccess` uses `typeContainsUndefined`
+   (in `utils.go`) before adding `| undefined` to the result. This prevents
+   nested optional chains from producing `T | undefined | undefined`: the
+   inner TypeVarType case returns `T | undefined`, and `getUnionAccess` sees
+   undefined is already present and skips adding another.
+
 ### Tests
 
+Tests are in `TestRowTypesOptionalChaining` and
+`TestRowTypesOptionalChainingErrors` in `row_types_test.go`.
+
 - **Basic optional chaining:**
-  `fn foo(obj) { let x = obj?.bar }` — `obj: {bar: t1} | null | undefined`,
-  `x: t1 | undefined`.
+  `fn foo(obj) { return obj?.bar }` →
+  `fn <T0>(obj: {bar: T0} | null | undefined) -> T0 | undefined`.
 - **Nested optional:**
-  `fn foo(a) { let x = a?.b?.c }` — nested nullability as described above.
-- **Mix of optional and non-optional:**
-  `fn foo(obj) { let x = obj?.bar; let y = obj.baz }` — error on `obj.baz`
-  because `obj` is `{bar: t1} | null | undefined` and non-optional `.` on a
-  nullable type is an error (`getUnionAccess` reports it).
+  `fn foo(a) { return a?.b?.c }` →
+  `fn <T0>(a: {b: {c: T0} | null | undefined} | null | undefined) -> T0 | undefined`.
 - **All optional:**
-  `fn foo(obj) { let x = obj?.bar; let y = obj?.baz }` — `obj` is
-  `{bar: t1, baz: t2} | null | undefined` (second `?.` adds `baz` to the open
-  ObjectType inside the union).
+  `fn foo(obj) { val x = obj?.bar; val y = obj?.baz }` →
+  `fn <T0, T1>(obj: {bar: T0, baz: T1} | null | undefined) -> void`
+  (second `?.` adds `baz` to the open ObjectType inside the union).
+- **Optional chaining with return (row polymorphism):**
+  `fn foo(obj) { val x = obj?.bar; return obj }` →
+  `fn <T0, T1>(obj: {bar: T0, ...T1} | null | undefined) -> {bar: T0, ...T1} | null | undefined`
+  (row variable preserved because it escapes to the return type).
+- **Optional chaining row poly call:**
+  `fn foo(obj) { return obj?.bar }; val r = foo({bar: 1, baz: "hello"})` →
+  `r: 1 | undefined` (extra properties accepted, closed row variable removed).
+- **Mix of optional and non-optional (error):**
+  `fn foo(obj) { val x = obj?.bar; val y = obj.baz }` → error on `obj.baz`
+  because `obj` is nullable and non-optional `.` on a nullable type is flagged
+  by `getUnionAccess`.
 
 ---
 
@@ -2097,7 +2121,7 @@ Phase 7, Phase 14 → Phase 8: Destructuring ✅
 ### Independent branches (can start early)
 
 ```
-Phase 2 → Phase 9: Optional Chaining
+Phase 2 → Phase 9: Optional Chaining ✅
 Phase 3 → Phase 10: Object & Array/Tuple Spread ✅ (also requires Phase 13 for tuple spread)
 Phase 3 → Phase 13: Variadic Tuple Types ✅
 ```
@@ -2120,7 +2144,7 @@ All phases → Phase 11: Error Reporting
 | 6: Closing ✅                     | 5          | —                    |
 | 7: Row Polymorphism ✅            | 6          | 12                   |
 | 8: Destructuring ✅               | 7, 14      | —                    |
-| 9: Optional Chaining              | 2          | 3–14                 |
+| 9: Optional Chaining ✅           | 2          | 3–14                 |
 | 10: Object & Array/Tuple Spread ✅| 3, 13      | 4–14                 |
 | 11: Error Reporting               | all        | —                    |
 | 12: Tuple/Array Inference ✅      | 6          | 7, 13                |
