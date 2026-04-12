@@ -881,72 +881,17 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 
 			errors := []Error{}
 
-			namedElems1 := make(map[type_system.ObjTypeKey]type_system.Type)
-			namedElems2 := make(map[type_system.ObjTypeKey]type_system.Type)
-			origElems1 := make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
-			origElems2 := make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
+			collected1 := collectObjElemTypes(obj1, true, true)
+			namedElems1 := collected1.Named
+			origElems1 := collected1.OrigElems
+			keys1 := collected1.Keys
+			restTypes1 := collected1.RestTypes
 
-			keys1 := []type_system.ObjTypeKey{} // original order of keys in obj1
-			keys2 := []type_system.ObjTypeKey{} // original order of keys in obj2
-
-			var restTypes1 []type_system.Type
-			var restTypes2 []type_system.Type
-
-			for _, elem := range obj1.Elems {
-				switch elem := elem.(type) {
-				case *type_system.MethodElem:
-					namedElems1[elem.Name] = elem.Fn
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.GetterElem:
-					namedElems1[elem.Name] = elem.Fn.Return
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.SetterElem:
-					namedElems1[elem.Name] = elem.Fn.Params[0].Type
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.PropertyElem:
-					propType := elem.Value
-					if elem.Optional {
-						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-					}
-					namedElems1[elem.Name] = propType
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.RestSpreadElem:
-					restTypes1 = append(restTypes1, elem.Value)
-				default: // skip other types of elems
-				}
-			}
-
-			for _, elem := range obj2.Elems {
-				switch elem := elem.(type) {
-				case *type_system.MethodElem:
-					namedElems2[elem.Name] = elem.Fn
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.GetterElem:
-					namedElems2[elem.Name] = elem.Fn.Return
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.SetterElem:
-					namedElems2[elem.Name] = elem.Fn.Params[0].Type
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.PropertyElem:
-					propType := elem.Value
-					if elem.Optional {
-						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-					}
-					namedElems2[elem.Name] = propType
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.RestSpreadElem:
-					restTypes2 = append(restTypes2, elem.Value)
-				default: // skip other types of elems
-				}
-			}
+			collected2 := collectObjElemTypes(obj2, true, true)
+			namedElems2 := collected2.Named
+			origElems2 := collected2.OrigElems
+			keys2 := collected2.Keys
+			restTypes2 := collected2.RestTypes
 
 			// Open-vs-open: unify shared properties, merge non-shared,
 			// unify row variables.
@@ -1217,26 +1162,11 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 	if union, ok := t1.(*type_system.UnionType); ok {
 		// special-case unification of union with object type
 		if obj, ok := t2.(*type_system.ObjectType); ok {
-			destructuredFields := make(map[type_system.ObjTypeKey]type_system.Type)
+			collectedObj := collectObjElemTypes(obj, true, false)
+			destructuredFields := collectedObj.Named
 			var restType type_system.Type
-			for _, elem := range obj.Elems {
-				switch elem := elem.(type) {
-				case *type_system.MethodElem:
-					destructuredFields[elem.Name] = elem.Fn
-				case *type_system.GetterElem:
-					destructuredFields[elem.Name] = elem.Fn.Return
-				case *type_system.SetterElem:
-					destructuredFields[elem.Name] = elem.Fn.Params[0].Type
-				case *type_system.PropertyElem:
-					propType := elem.Value
-					if elem.Optional {
-						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-					}
-					destructuredFields[elem.Name] = propType
-				case *type_system.RestSpreadElem:
-					restType = elem.Value
-				default: // skip other types of elems
-				}
+			if len(collectedObj.RestTypes) > 0 {
+				restType = collectedObj.RestTypes[0]
 			}
 
 			matchingTypes := make(map[type_system.ObjTypeKey][]type_system.Type)
@@ -1246,76 +1176,21 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 
 			for _, unionType := range union.Types {
 				if unionObj, ok := unionType.(*type_system.ObjectType); ok {
+					collectedUnionObj := collectObjElemTypes(unionObj, true, false)
 					for name := range destructuredFields {
-						var t type_system.Type
-						// Find the type of the field with this name in the union object
-						for _, elem := range unionObj.Elems {
-							switch elem := elem.(type) {
-							case *type_system.MethodElem:
-								if elem.Name == name {
-									t = elem.Fn
-								}
-							case *type_system.GetterElem:
-								if elem.Name == name {
-									t = elem.Fn.Return
-								}
-							case *type_system.SetterElem:
-								if elem.Name == name {
-									t = elem.Fn.Params[0].Type
-								}
-							case *type_system.PropertyElem:
-								if elem.Name == name {
-									propType := elem.Value
-									if elem.Optional {
-										propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-									}
-									t = propType
-								}
-							default: // skip other types of elems
-							}
-						}
-						if t != nil {
+						if t, ok := collectedUnionObj.Named[name]; ok {
 							matchingTypes[name] = append(matchingTypes[name], t)
 						}
 					}
 
 					// If restType is specified, collect remaining fields
 					if restType != nil {
-						for _, elem := range unionObj.Elems {
-							switch elem := elem.(type) {
-							case *type_system.MethodElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn)
+						for _, key := range collectedUnionObj.Keys {
+							if _, ok := destructuredFields[key]; !ok {
+								if _, exists := remainingFields[key]; !exists {
+									remainingFieldsOrder = append(remainingFieldsOrder, key)
 								}
-							case *type_system.GetterElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Return)
-								}
-							case *type_system.SetterElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Params[0].Type)
-								}
-							case *type_system.PropertyElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									propType := elem.Value
-									if elem.Optional {
-										propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-									}
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], propType)
-								}
-							default: // skip other types of elems
+								remainingFields[key] = append(remainingFields[key], collectedUnionObj.Named[key])
 							}
 						}
 					}
@@ -2810,25 +2685,63 @@ func (c *Checker) unifyVariadicVsVariadic(
 	return errors
 }
 
-// collectNamedElems extracts readable named property types from an ObjectType.
-// It handles PropertyElem (including optional), MethodElem, and GetterElem.
-// SetterElem is excluded because setters are write-only and cannot be read
-// during pattern matching.
-func collectNamedElems(obj *type_system.ObjectType) map[type_system.ObjTypeKey]type_system.Type {
-	result := make(map[type_system.ObjTypeKey]type_system.Type)
+// elemNameAndType returns the name and readable type for a named element.
+// Returns ok=false for non-named elements (CallableElem, ConstructorElem,
+// MappedElem, RestSpreadElem, etc.).
+// When includeSetters is false, SetterElem returns ok=false.
+// Optional PropertyElems have their type wrapped as T | undefined.
+func elemNameAndType(elem type_system.ObjTypeElem, includeSetters bool) (
+	name type_system.ObjTypeKey, typ type_system.Type, ok bool,
+) {
+	switch elem := elem.(type) {
+	case *type_system.PropertyElem:
+		propType := elem.Value
+		if elem.Optional {
+			propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+		}
+		return elem.Name, propType, true
+	case *type_system.MethodElem:
+		return elem.Name, elem.Fn, true
+	case *type_system.GetterElem:
+		return elem.Name, elem.Fn.Return, true
+	case *type_system.SetterElem:
+		if includeSetters {
+			return elem.Name, elem.Fn.Params[0].Type, true
+		}
+		return type_system.ObjTypeKey{}, nil, false
+	default:
+		return type_system.ObjTypeKey{}, nil, false
+	}
+}
+
+// collectedElemTypes holds the result of collectObjElemTypes.
+type collectedElemTypes struct {
+	Named     map[type_system.ObjTypeKey]type_system.Type
+	Keys      []type_system.ObjTypeKey                        // in insertion order
+	OrigElems map[type_system.ObjTypeKey]type_system.ObjTypeElem // nil if not requested
+	RestTypes []type_system.Type
+}
+
+// collectObjElemTypes extracts named property types from an ObjectType.
+// It handles PropertyElem (including optional→T|undefined), MethodElem,
+// GetterElem, and optionally SetterElem. RestSpreadElem values are collected
+// separately in RestTypes.
+func collectObjElemTypes(obj *type_system.ObjectType, includeSetters bool, collectOrigElems bool) collectedElemTypes {
+	result := collectedElemTypes{
+		Named: make(map[type_system.ObjTypeKey]type_system.Type),
+	}
+	if collectOrigElems {
+		result.OrigElems = make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
+	}
 	for _, elem := range obj.Elems {
-		switch elem := elem.(type) {
-		case *type_system.PropertyElem:
-			propType := elem.Value
-			if elem.Optional {
-				propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+		if name, typ, ok := elemNameAndType(elem, includeSetters); ok {
+			result.Named[name] = typ
+			result.Keys = append(result.Keys, name)
+			if collectOrigElems {
+				result.OrigElems[name] = elem
 			}
-			result[elem.Name] = propType
-		case *type_system.MethodElem:
-			result[elem.Name] = elem.Fn
-		case *type_system.GetterElem:
-			result[elem.Name] = elem.Fn.Return
-		default: // skip SetterElem, CallableElem, NewableElem, RestSpreadElem, etc.
+		} else if rest, ok := elem.(*type_system.RestSpreadElem); ok {
+			result.RestTypes = append(result.RestTypes, rest.Value)
 		}
 	}
 	return result
@@ -2840,7 +2753,7 @@ func (c *Checker) unifyPatternWithUnion(
 	union *type_system.UnionType,
 ) []Error {
 	// 1. Collect pattern field names and their type variables
-	patFields := collectNamedElems(pat)
+	patFields := collectObjElemTypes(pat, false, false).Named
 
 	// 2. For each union member, check if it has ALL pattern fields.
 	//    Union members may be TypeRefTypes (e.g. class names) that need expansion.
@@ -2852,7 +2765,7 @@ func (c *Checker) unifyPatternWithUnion(
 		if !ok {
 			continue // skip non-object union members (e.g. primitive types)
 		}
-		memberFields := collectNamedElems(memberObj)
+		memberFields := collectObjElemTypes(memberObj, false, false).Named
 
 		allMatch := true
 		for key := range patFields {
