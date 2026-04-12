@@ -297,7 +297,19 @@ val result = match fb {
 }
 ```
 
-### Case 10: Object pattern with literal values
+### Case 10: Pattern fields split across union members (should error)
+
+```ts
+class Point(x: number, y: number) { x, y }
+class Event(kind: string) { kind }
+
+declare val obj: Point | Event
+val result = match obj {
+    {x, kind} => x,  // ERROR: no single member has both 'x' and 'kind'
+}
+```
+
+### Case 11: Object pattern with literal values
 
 ```ts
 type Point = {x: number, y: number}
