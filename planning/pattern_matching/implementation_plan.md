@@ -167,9 +167,11 @@ lines 1236-1260 of `unify.go`, but factored into a reusable helper. The existing
 code should also be refactored to call this helper.
 
 ```go
-// collectNamedElems extracts named property types from an ObjectType.
-// It handles PropertyElem (including optional), MethodElem, GetterElem,
-// and SetterElem — matching the extraction logic at unify.go:1236-1260.
+// collectNamedElems extracts readable named property types from an ObjectType.
+// It handles PropertyElem (including optional), MethodElem, and GetterElem.
+// SetterElem is excluded because setters are write-only and cannot be read
+// during pattern matching. This mirrors the extraction logic at
+// unify.go:1236-1260 but omits setters for correctness in read contexts.
 func collectNamedElems(obj *type_system.ObjectType) map[type_system.ObjTypeKey]type_system.Type {
     result := make(map[type_system.ObjTypeKey]type_system.Type)
     for _, elem := range obj.Elems {
@@ -184,9 +186,7 @@ func collectNamedElems(obj *type_system.ObjectType) map[type_system.ObjTypeKey]t
             result[elem.Name] = elem.Fn
         case *type_system.GetterElem:
             result[elem.Name] = elem.Fn.Return
-        case *type_system.SetterElem:
-            result[elem.Name] = elem.Fn.Params[0].Type
-        default: // skip CallableElem, NewableElem, RestSpreadElem, etc.
+        default: // skip SetterElem, CallableElem, NewableElem, RestSpreadElem, etc.
         }
     }
     return result
@@ -244,14 +244,14 @@ func (c *Checker) unifyPatternWithUnion(
     pat.MatchedUnionMembers = matchedMembers
 
     // 5. Unify each pattern field's type variable with the union of matched types.
-    //    Clear IsPatMatch for these recursive calls — we are unifying individual
-    //    type variables against concrete types, not matching patterns against targets.
-    fieldCtx := ctx
-    fieldCtx.IsPatMatch = false
+    //    Preserve IsPatMatch for recursive calls — if a pattern field is itself a
+    //    nested object pattern (e.g. {a: {x, y}}), the inner object may need to
+    //    match against nominal types structurally. Only TypeVar-vs-concrete
+    //    unification is unaffected by IsPatMatch, so it is safe to keep it set.
     errors := []Error{}
     for key, patType := range patFields {
         fieldUnion := type_system.NewUnionType(nil, matchingFieldTypes[key]...)
-        unifyErrors := c.Unify(fieldCtx, patType, fieldUnion)
+        unifyErrors := c.Unify(ctx, patType, fieldUnion)
         errors = append(errors, unifyErrors...)
     }
     return errors
@@ -354,11 +354,11 @@ pattern matching tests.
 | `internal/checker/unify.go` | Relax nominal check when `IsPatMatch`; add pattern field existence check; add `collectNamedElems` helper; add `unifyPatternWithUnion` for `ObjectType` vs `UnionType` in pattern mode; remove debug `fmt.Fprintf` at line 1223 |
 | `internal/checker/errors.go` | Add `ConstructorUsedAsMatchTargetError` and `PropertyNotFoundError` |
 | `internal/type_system/types.go` | Add `MatchedUnionMembers []Type` field to `ObjectType` |
-| `internal/checker/tests/infer_test.go` | Add test cases 1-9 |
+| `internal/checker/tests/infer_test.go` | Add test cases 1-10 |
 
 ## Dependencies between phases
 
-```
+```text
 Phase 1 (activate flag)
   ├──── Phase 2 (relax nominal check)
   │       └──── Phase 3 (validate pattern fields)
