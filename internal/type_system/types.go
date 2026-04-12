@@ -1384,6 +1384,10 @@ type ObjectType struct {
 	// key.
 	SymbolKeyMap map[int]any
 	Open         bool // true for inferred object types whose property set can grow during inference
+	// MatchedUnionMembers records which union members a structural pattern matched
+	// during pattern-matching unification. Nil outside of pattern matching. Used by
+	// downstream passes (e.g. exhaustiveness checking).
+	MatchedUnionMembers []Type
 	// TODO: support multiple provenance entries for different elements so that
 	// we can work back from an element to the interface decl that defined it.
 	provenance Provenance
@@ -1478,6 +1482,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		result.Implements = newImplements
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
+		result.MatchedUnionMembers = t.MatchedUnionMembers
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {

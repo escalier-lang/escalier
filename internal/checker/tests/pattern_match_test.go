@@ -54,6 +54,51 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				"result": "number",
 			},
 		},
+		"Case1_StructuralDestructuringOfNominalUnion": {
+			input: `
+				class Point(x: number, y: number) { x, y }
+				class Event(kind: string) { kind }
+
+				declare val obj: Point | Event
+				val result = match obj {
+					{x, y} => x + y,
+					{kind} => kind,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | string",
+			},
+		},
+		"Case7_SharedFieldsProduceUnionBindings": {
+			input: `
+				type FooBarBaz = {kind: "foo", value: string} | {kind: "bar", value: number} | {kind: "baz", flag: boolean}
+
+				declare val fbb: FooBarBaz
+				val result1 = match fbb {
+					{value} => value,
+				}
+				val result2 = match fbb {
+					{flag} => flag,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result1": "string | number",
+				"result2": "boolean",
+			},
+		},
+		"Case8_SharedFieldSameTypeAcrossAllMembers": {
+			input: `
+				type Shape = {kind: "circle", radius: number} | {kind: "square", side: number} | {kind: "rect", width: number, height: number}
+
+				declare val shape: Shape
+				val result = match shape {
+					{kind} => kind,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"circle" | "square" | "rect"`,
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -88,6 +133,47 @@ func TestPatternMatchErrors(t *testing.T) {
 			// Verify the unresolved pattern field resolves to undefined (not a leaked type var)
 			expectedValues: map[string]string{
 				"result": "undefined",
+			},
+		},
+		"Case4_PatternFieldNotInAnyUnionMember": {
+			input: `
+				class Point(x: number, y: number) { x, y }
+				class Event(kind: string) { kind }
+
+				declare val obj: Point | Event
+				val result = match obj {
+					{foo} => foo,
+				}
+			`,
+			expectedErrs: []string{
+				"cannot be assigned to",
+			},
+		},
+		"Case9_PatternFieldNotInAnyUnionMember_TypeAlias": {
+			input: `
+				type FooBar = {kind: "foo", value: string} | {kind: "bar", value: number}
+
+				declare val fb: FooBar
+				val result = match fb {
+					{missing} => missing,
+				}
+			`,
+			expectedErrs: []string{
+				"cannot be assigned to",
+			},
+		},
+		"Case10_PatternFieldsSplitAcrossMembers": {
+			input: `
+				class Point(x: number, y: number) { x, y }
+				class Event(kind: string) { kind }
+
+				declare val obj: Point | Event
+				val result = match obj {
+					{x, kind} => x,
+				}
+			`,
+			expectedErrs: []string{
+				"cannot be assigned to",
 			},
 		},
 		"PatternFieldMatchesSetterOnly": {

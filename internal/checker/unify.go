@@ -1239,10 +1239,6 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				}
 			}
 
-			for name, t := range destructuredFields {
-				fmt.Fprintf(os.Stderr, "%s: %s\n", name.String(), t.String())
-			}
-
 			matchingTypes := make(map[type_system.ObjTypeKey][]type_system.Type)
 			// Track remaining fields for rest spread handling
 			remainingFields := make(map[type_system.ObjTypeKey][]type_system.Type)
@@ -1392,6 +1388,14 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			}
 		}
 		return nil
+	}
+	// | ObjectType, UnionType (pattern matching) -> ...
+	if ctx.IsPatMatch {
+		if patObj, ok := t1.(*type_system.ObjectType); ok {
+			if union, ok := t2.(*type_system.UnionType); ok {
+				return c.unifyPatternWithUnion(ctx, patObj, union)
+			}
+		}
 	}
 	// | _, UnionType -> ...
 	if union, ok := t2.(*type_system.UnionType); ok {
@@ -2803,5 +2807,84 @@ func (c *Checker) unifyVariadicVsVariadic(
 		}}
 	}
 
+	return errors
+}
+
+// collectNamedElems extracts readable named property types from an ObjectType.
+// It handles PropertyElem (including optional), MethodElem, and GetterElem.
+// SetterElem is excluded because setters are write-only and cannot be read
+// during pattern matching.
+func collectNamedElems(obj *type_system.ObjectType) map[type_system.ObjTypeKey]type_system.Type {
+	result := make(map[type_system.ObjTypeKey]type_system.Type)
+	for _, elem := range obj.Elems {
+		switch elem := elem.(type) {
+		case *type_system.PropertyElem:
+			propType := elem.Value
+			if elem.Optional {
+				propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+			}
+			result[elem.Name] = propType
+		case *type_system.MethodElem:
+			result[elem.Name] = elem.Fn
+		case *type_system.GetterElem:
+			result[elem.Name] = elem.Fn.Return
+		default: // skip SetterElem, CallableElem, NewableElem, RestSpreadElem, etc.
+		}
+	}
+	return result
+}
+
+func (c *Checker) unifyPatternWithUnion(
+	ctx Context,
+	pat *type_system.ObjectType,
+	union *type_system.UnionType,
+) []Error {
+	// 1. Collect pattern field names and their type variables
+	patFields := collectNamedElems(pat)
+
+	// 2. For each union member, check if it has ALL pattern fields.
+	//    Union members may be TypeRefTypes (e.g. class names) that need expansion.
+	matchingFieldTypes := make(map[type_system.ObjTypeKey][]type_system.Type)
+	matchedMembers := []type_system.Type{}
+	for _, member := range union.Types {
+		expanded, _ := c.ExpandType(ctx, member, 1)
+		memberObj, ok := expanded.(*type_system.ObjectType)
+		if !ok {
+			continue // skip non-object union members (e.g. primitive types)
+		}
+		memberFields := collectNamedElems(memberObj)
+
+		allMatch := true
+		for key := range patFields {
+			if _, ok := memberFields[key]; !ok {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			matchedMembers = append(matchedMembers, member)
+			for key := range patFields {
+				matchingFieldTypes[key] = append(
+					matchingFieldTypes[key], memberFields[key],
+				)
+			}
+		}
+	}
+
+	// 3. If no members matched, error
+	if len(matchedMembers) == 0 {
+		return []Error{&CannotUnifyTypesError{T1: pat, T2: union}}
+	}
+
+	// 4. Store matched members for future exhaustiveness checking.
+	pat.MatchedUnionMembers = matchedMembers
+
+	// 5. Unify each pattern field's type variable with the union of matched types.
+	errors := []Error{}
+	for key, patType := range patFields {
+		fieldUnion := type_system.NewUnionType(nil, matchingFieldTypes[key]...)
+		unifyErrors := c.Unify(ctx, patType, fieldUnion)
+		errors = append(errors, unifyErrors...)
+	}
 	return errors
 }
