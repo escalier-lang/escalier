@@ -107,7 +107,7 @@ pattern matching needs.
 
 **Testing:** Test for pattern field `{foo}` not present on a nominal `Point` type passes.
 
-## Phase 4: Handle structural patterns against union types
+## Phase 4: Handle structural patterns against union types ✅
 
 **Requirements:** R3, R4, R9
 
