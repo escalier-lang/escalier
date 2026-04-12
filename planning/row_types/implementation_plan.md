@@ -1030,7 +1030,9 @@ preserved even when not in the return type, since the user explicitly wrote
      This triggers the TypeVarType case again, binding `t_b` to
      `{c: t_c, ...R2} | null | undefined`.
    - Result: `a: {b: {c: t_c, ...R2} | null | undefined, ...R} | null | undefined`,
-     expression type `t_c | undefined | undefined`.
+     expression type `t_c | undefined`. (`getUnionAccess` skips adding
+     `| undefined` when the inner result already contains it, via
+     `typeContainsUndefined` in `utils.go`.)
 
 4. **Return type of optional chaining expression:** The expression `obj?.bar`
    has type `propTV | undefined`. The inferred property type itself is just
@@ -1054,7 +1056,7 @@ Tests are in `TestRowTypesOptionalChaining` and
   `fn <T0, T1>(obj: {bar: T0, ...T1} | null | undefined) -> T0 | undefined`.
 - **Nested optional:**
   `fn foo(a) { return a?.b?.c }` →
-  `fn <T0, T1, T2>(a: {b: {c: T0, ...T1} | null | undefined, ...T2} | null | undefined) -> T0 | undefined | undefined`.
+  `fn <T0, T1, T2>(a: {b: {c: T0, ...T1} | null | undefined, ...T2} | null | undefined) -> T0 | undefined`.
 - **All optional:**
   `fn foo(obj) { val x = obj?.bar; val y = obj?.baz }` →
   `fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2} | null | undefined) -> void`

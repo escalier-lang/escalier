@@ -148,6 +148,32 @@ func (c *Checker) getDefinedElems(unionType *type_system.UnionType) []type_syste
 	return definedElems
 }
 
+// typeContainsUndefined reports whether t is undefined or is a union that
+// already contains an undefined member. Used to avoid duplicate undefined
+// entries when building result types for optional chaining.
+func typeContainsUndefined(t type_system.Type) bool {
+	if isUndefinedLitType(t) {
+		return true
+	}
+	if u, ok := t.(*type_system.UnionType); ok {
+		for _, elem := range u.Types {
+			if isUndefinedLitType(elem) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isUndefinedLitType(t type_system.Type) bool {
+	if lit, ok := t.(*type_system.LitType); ok {
+		if _, ok := lit.Lit.(*type_system.UndefinedLit); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveQualifiedTypeAlias resolves a qualified type name by traversing namespace hierarchy
 func resolveQualifiedTypeAlias(ctx Context, qualIdent type_system.QualIdent) *type_system.TypeAlias {
 	switch qi := qualIdent.(type) {

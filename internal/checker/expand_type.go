@@ -1320,8 +1320,12 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 
 		pType, pErrors := c.getMemberType(ctx, definedElems[0], key)
 		errors = slices.Concat(errors, pErrors)
-		propType := type_system.NewUnionType(nil, pType, type_system.NewUndefinedType(nil))
-		return propType, errors
+		// Only add undefined if the inner result doesn't already contain it
+		// (e.g. from a nested optional chain on a TypeVarType).
+		if !typeContainsUndefined(pType) {
+			pType = type_system.NewUnionType(nil, pType, type_system.NewUndefinedType(nil))
+		}
+		return pType, errors
 	}
 
 	if len(definedElems) > 1 {
@@ -1343,7 +1347,8 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		resultType := type_system.NewUnionType(nil, memberTypes...)
 
 		// If there are undefined elements, add undefined to the union
-		if undefinedCount > 0 {
+		// (unless the result already contains it from a nested optional chain).
+		if undefinedCount > 0 && !typeContainsUndefined(resultType) {
 			resultType = type_system.NewUnionType(nil, resultType, type_system.NewUndefinedType(nil))
 		}
 

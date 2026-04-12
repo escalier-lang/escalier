@@ -2916,7 +2916,7 @@ func TestRowTypesOptionalChaining(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(a: {b: {c: T0, ...T1} | null | undefined, ...T2} | null | undefined) -> T0 | undefined | undefined",
+				"foo": "fn <T0, T1, T2>(a: {b: {c: T0, ...T1} | null | undefined, ...T2} | null | undefined) -> T0 | undefined",
 			},
 		},
 		"AllOptional": {
