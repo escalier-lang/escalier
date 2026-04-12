@@ -14,15 +14,16 @@ import (
 )
 
 type Builder struct {
-	tempId        int
-	depGraph      *dep_graph.DepGraph
-	hasExtractor  bool
-	hasJsx        bool // tracks if _jsx is used
-	hasJsxs       bool // tracks if _jsxs is used
-	hasFragment   bool // tracks if _Fragment is used
-	isModule      bool
-	inBlockScope  bool
-	overloadDecls map[string][]*ast.FuncDecl // Function name -> list of overload declarations
+	tempId          int
+	depGraph        *dep_graph.DepGraph
+	hasExtractor    bool
+	hasJsx          bool // tracks if _jsx is used
+	hasJsxs         bool // tracks if _jsxs is used
+	hasFragment     bool // tracks if _Fragment is used
+	isModule        bool
+	inBlockScope    bool
+	overloadDecls   map[string][]*ast.FuncDecl // Function name -> list of overload declarations
+	classParamNames map[string]bool            // constructor param names for the current class (used to emit this.paramName in getters/methods)
 }
 
 func (b *Builder) NewTempId() string {
@@ -798,9 +799,21 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	case *ast.ClassDecl:
 		allStmts := []Stmt{}
 
-		// Build class body elements
+		// Collect constructor param names so getters/methods can reference them as this.paramName
+		prevClassParamNames := b.classParamNames
+		b.classParamNames = make(map[string]bool)
+		for _, param := range d.Params {
+			if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
+				b.classParamNames[identPat.Name] = true
+			}
+		}
+
+		// Build class body elements (getters/methods will use classParamNames)
 		classElems, classStmts := b.buildClassElems(d.Body)
 		allStmts = slices.Concat(allStmts, classStmts)
+
+		// Clear classParamNames before building constructor body
+		b.classParamNames = nil
 
 		// Use buildParams to handle parameter patterns and generate temp variables
 		params, paramStmts := b.buildParams(d.Params)
@@ -880,6 +893,38 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			}
 		}
 
+		// For constructor params not already covered by field declarations,
+		// assign them to instance properties so getters/methods can access them
+		fieldNames := make(map[string]bool)
+		for _, elem := range d.Body {
+			if fieldElem, ok := elem.(*ast.FieldElem); ok && !fieldElem.Static {
+				if fieldElem.Name != nil {
+					if name, ok := fieldElem.Name.(*ast.IdentExpr); ok {
+						fieldNames[name.Name] = true
+					}
+				}
+			}
+		}
+		for _, param := range d.Params {
+			if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
+				if !fieldNames[identPat.Name] {
+					lhs := NewMemberExpr(
+						NewIdentExpr("this", "", nil),
+						NewIdentifier(identPat.Name, param.Pattern),
+						false,
+						nil,
+					)
+					rhs := NewIdentExpr(identPat.Name, "", param.Pattern)
+					assignment := &ExprStmt{
+						Expr:   NewBinaryExpr(lhs, Assign, rhs, param.Pattern),
+						span:   nil,
+						source: param.Pattern,
+					}
+					constructorBodyStmts = append(constructorBodyStmts, assignment)
+				}
+			}
+		}
+
 		// Create constructor method
 		constructorMethod := NewMethodElem(
 			NewIdentExpr("constructor", "", d),
@@ -891,6 +936,9 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 
 		// Add constructor as the first element in the class body
 		classElems = append([]ClassElem{constructorMethod}, classElems...)
+
+		// Restore classParamNames
+		b.classParamNames = prevClassParamNames
 
 		// Create the class declaration
 		classDecl := &ClassDecl{
@@ -1500,6 +1548,15 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
+		// In getter/method bodies, translate constructor param references to this.paramName
+		if b.classParamNames != nil && b.classParamNames[expr.Name] {
+			return NewMemberExpr(
+				NewIdentExpr("this", "", nil),
+				NewIdentifier(expr.Name, expr),
+				false,
+				expr,
+			), []Stmt{}
+		}
 		var namespaceStr string
 		if b.depGraph != nil {
 			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
@@ -2644,12 +2701,32 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		// Tuple patterns: check length and recursively check element conditions only (not bindings)
 		var conditions []Expr
 
-		// Check if target is an array and has the right length
-		lengthCheck := b.buildArrayLengthCheck(targetExpr, len(pat.Elems), pat)
-		conditions = append(conditions, lengthCheck)
+		// Check if the tuple has a rest element and count non-rest elements
+		hasRest := false
+		nonRestCount := 0
+		for _, elem := range pat.Elems {
+			if _, ok := elem.(*ast.RestPat); ok {
+				hasRest = true
+			} else {
+				nonRestCount++
+			}
+		}
+
+		// Use >= for rest patterns (minimum length), == for exact length
+		if hasRest {
+			lengthCheck := b.buildArrayMinLengthCheck(targetExpr, nonRestCount, pat)
+			conditions = append(conditions, lengthCheck)
+		} else {
+			lengthCheck := b.buildArrayLengthCheck(targetExpr, len(pat.Elems), pat)
+			conditions = append(conditions, lengthCheck)
+		}
 
 		// For each element, recursively build only the condition (ignore bindings)
 		for i, elem := range pat.Elems {
+			// Skip rest patterns in condition building
+			if _, ok := elem.(*ast.RestPat); ok {
+				continue
+			}
 			elemTarget := NewIndexExpr(targetExpr, NewLitExpr(NewNumLit(float64(i), pat), pat), false, pat)
 			cond, _ := b.buildPatternCondition(elem, elemTarget)
 			conditions = append(conditions, cond)
@@ -2713,8 +2790,11 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				cond, _ := b.buildPatternCondition(objElem.Value, propTarget)
 				conditions = append(conditions, cond)
 
-				valuePat := b.buildDestructuringPattern(objElem.Value)
-				objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
+				// Skip destructuring for literal patterns (no binding needed)
+				if _, isLit := objElem.Value.(*ast.LitPat); !isLit {
+					valuePat := b.buildDestructuringPattern(objElem.Value)
+					objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
+				}
 
 			case *ast.ObjShorthandPat:
 				// Check that the property exists: "propName" in object
@@ -2762,7 +2842,10 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		// Combine all binding statements (defaults first, then destructuring)
 		var allBindingStmts []Stmt
 		allBindingStmts = append(allBindingStmts, defaultStmts...)
-		allBindingStmts = append(allBindingStmts, bindingStmt)
+		// Only generate destructuring if there are actual bindings
+		if len(objPatElems) > 0 {
+			allBindingStmts = append(allBindingStmts, bindingStmt)
+		}
 
 		// Combine all conditions with &&
 		finalCondition := combineConditions(conditions, pat)
@@ -2940,6 +3023,18 @@ func (b *Builder) buildDestructuringPattern(pattern ast.Pat) Pat {
 		// For other patterns, default to an identifier pattern
 		return NewIdentPat("_", nil, pat)
 	}
+}
+
+// buildArrayMinLengthCheck creates a condition to check if an array has at least the expected length
+func (b *Builder) buildArrayMinLengthCheck(arrayExpr Expr, minLength int, source ast.Node) Expr {
+	lengthAccess := NewMemberExpr(
+		arrayExpr,
+		NewIdentifier("length", source),
+		false,
+		source,
+	)
+	minLengthExpr := NewLitExpr(NewNumLit(float64(minLength), source), source)
+	return NewBinaryExpr(lengthAccess, GreaterThanEqual, minLengthExpr, source)
 }
 
 // buildArrayLengthCheck creates a condition to check if an array has the expected length

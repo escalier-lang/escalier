@@ -1342,6 +1342,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 				if _, ok := matchCase.Pattern.(*ast.ExtractorPat); ok {
 					errors = append(errors, &ConstructorUsedAsMatchTargetError{
 						TargetType: targetType,
+						span:       matchCase.Pattern.Span(),
 					})
 					break
 				}

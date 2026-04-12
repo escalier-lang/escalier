@@ -151,6 +151,7 @@ type FooBarBaz = {kind: "foo", value: string} | {kind: "bar", value: number} | {
 declare val fbb: FooBarBaz
 export val sharedFieldsMatch = match fbb {
 	{value} => value,
+	_ => undefined,
 }
 
 // Case 8: Shared field with same type across all members

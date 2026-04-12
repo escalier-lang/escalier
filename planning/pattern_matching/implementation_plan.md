@@ -305,7 +305,7 @@ matching succeeds) pass.
 **Requirements:** R7
 
 **What:** Run the full test suite and write tests for all test cases from the
-requirements doc. Verify no regressions in existing pattern matching behavior.
+requirements doc. Verify no regressions in existing pattern-matching behavior.
 
 **Files changed:**
 - [pattern_match_test.go](../../internal/checker/tests/pattern_match_test.go) — All test

@@ -46,7 +46,7 @@ declare const result1: number | string;
 declare const result2: number | string;
 declare const shape: Shape;
 export declare const sharedFieldSameType: "circle" | "square" | "rect";
-export declare const sharedFieldsMatch: string | number;
+export declare const sharedFieldsMatch: string | number | undefined;
 export declare const structuralUnionMatch: number | string;
 export declare const tupleValue: [number, number, number];
 export declare const tupleMatch: number | 0;

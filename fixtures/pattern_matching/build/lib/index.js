@@ -2,9 +2,10 @@ import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 export class Circle {
   constructor(temp1) {
     const radius = temp1;
+    this.radius = radius;
   }
   get area() {
-    return 3.14159 * radius * radius;
+    return 3.14159 * this.radius * this.radius;
   }
 }
 export class Color {
@@ -92,7 +93,6 @@ let temp19;
 let temp20;
 temp20 = point;
 if (temp20 != null && "x" in temp20 && temp20.x == 0 && "y" in temp20 && temp20.y == 0) {
-  const {x: _, y: _} = temp20;
   temp19 = "origin";
 } else if (temp20 != null && "x" in temp20 && "y" in temp20) {
   const {x, y} = temp20;
@@ -243,6 +243,8 @@ temp50 = fbb;
 if (temp50 != null && "value" in temp50) {
   const {value} = temp50;
   temp49 = value;
+} else {
+  temp49 = undefined;
 }
 export const sharedFieldsMatch = temp49;
 let temp51;
@@ -270,7 +272,7 @@ export const tupleMatch = temp53;
 let temp55;
 let temp56;
 temp56 = longTuple;
-if (temp56.length == 2) {
+if (temp56.length >= 1) {
   const [first = 0, ...rest] = temp56;
   temp55 = rest;
 } else {
