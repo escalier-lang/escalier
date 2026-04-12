@@ -726,7 +726,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				c.getOrCreateArrayConstraint(t)
 				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
 			}
-			propTV, openObj := c.newOpenObjectWithProperty(k.Name)
+			propTV, openObj := c.newOpenObjectWithProperty(k.Name, k.Span())
 			if k.OptChain {
 				// Optional chaining: obj?.bar infers obj: {bar: T} | null | undefined.
 				// Use the unwrapped ObjectType (not MutabilityType) since you can't
@@ -745,7 +745,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			// String literal index key — treat like property access
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
-					propTV, openObj := c.newOpenObjectWithProperty(strLit.Value)
+					propTV, openObj := c.newOpenObjectWithProperty(strLit.Value, k.Span())
 					t.Instance = openObj
 					return propTV, errors
 				}
@@ -928,7 +928,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 		// If the object is open, add the new property instead of reporting an error
 		if objType.Open {
-			return c.addPropertyToOpenObject(objType, k.Name), errors
+			return c.addPropertyToOpenObject(objType, k.Name, k.Span()), errors
 		}
 
 		errors = append(errors, &UnknownPropertyError{
@@ -1056,8 +1056,17 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		if objType.Open {
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
-					return c.addPropertyToOpenObject(objType, strLit.Value), errors
+					return c.addPropertyToOpenObject(objType, strLit.Value, k.Span()), errors
 				}
+			}
+			// Numeric index on an open object inferred from property access — conflict
+			_, isNonNegInt := asNonNegativeIntLiteral(keyType)
+			if isNumericType(keyType) || isNonNegInt {
+				errors = append(errors, &IndexingConflictError{
+					PropertySpan: firstInferredPropertySpan(objType),
+					span:         k.Span(),
+				})
+				return type_system.NewUndefinedType(nil), errors
 			}
 		}
 
@@ -1074,12 +1083,15 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 // newOpenObjectWithProperty creates a new open ObjectType with a single property
 // and a rest-spread element, returning the property's type variable and the object.
-func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarType, *type_system.MutabilityType) {
+// accessSpan records the source location of the property access that triggered inference.
+func (c *Checker) newOpenObjectWithProperty(name string, accessSpan ast.Span) (*type_system.TypeVarType, *type_system.MutabilityType) {
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
 	rowTV := c.FreshVar(nil)
+	prop := type_system.NewPropertyElem(type_system.NewStrKey(name), propTV)
+	prop.Provenance = spanProvenance(accessSpan)
 	openObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-		type_system.NewPropertyElem(type_system.NewStrKey(name), propTV),
+		prop,
 		type_system.NewRestSpreadElem(rowTV),
 	})
 	openObj.Open = true
@@ -1091,11 +1103,38 @@ func (c *Checker) newOpenObjectWithProperty(name string) (*type_system.TypeVarTy
 
 // addPropertyToOpenObject appends a new widenable property to an existing open
 // ObjectType and returns the property's type variable.
-func (c *Checker) addPropertyToOpenObject(objType *type_system.ObjectType, name string) *type_system.TypeVarType {
+// accessSpan records the source location of the property access that triggered inference.
+func (c *Checker) addPropertyToOpenObject(objType *type_system.ObjectType, name string, accessSpan ast.Span) *type_system.TypeVarType {
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
-	objType.Elems = append(objType.Elems, type_system.NewPropertyElem(type_system.NewStrKey(name), propTV))
+	prop := type_system.NewPropertyElem(type_system.NewStrKey(name), propTV)
+	prop.Provenance = spanProvenance(accessSpan)
+	objType.Elems = append(objType.Elems, prop)
 	return propTV
+}
+
+// firstInferredPropertySpan returns the InferredAt span of the first inferred
+// property on an open ObjectType, or nil if none have one.
+func firstInferredPropertySpan(objType *type_system.ObjectType) *provenance.SpanProvenance {
+	for _, elem := range objType.Elems {
+		if prop, ok := elem.(*type_system.PropertyElem); ok {
+			if sp, ok := prop.Provenance.(*provenance.SpanProvenance); ok {
+				return sp
+			}
+		}
+	}
+	return nil
+}
+
+// spanProvenance converts an ast.Span to a provenance.SpanProvenance for storage
+// on inferred PropertyElems without creating a circular dependency on the ast package.
+func spanProvenance(s ast.Span) *provenance.SpanProvenance {
+	return &provenance.SpanProvenance{
+		StartLine:   s.Start.Line,
+		StartColumn: s.Start.Column,
+		EndLine:     s.End.Line,
+		EndColumn:   s.End.Column,
+	}
 }
 
 // markPropertyWritten finds a property by name on an open ObjectType and sets
