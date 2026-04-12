@@ -5,6 +5,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// AccessMode indicates whether a member access is a read (rvalue) or write (lvalue).
+type AccessMode int
+
+const (
+	AccessRead  AccessMode = iota // reading a property (getters apply)
+	AccessWrite                   // writing to a property (setters apply)
+)
+
 // MemberAccessKey represents either a property name or an index for accessing object/array elements
 type MemberAccessKey interface {
 	isMemberAccessKey()

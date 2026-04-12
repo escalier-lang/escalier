@@ -103,7 +103,7 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		span: ast.Span{},
 	}
 
-	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey)
+	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey, AccessRead)
 	if len(errors) > 0 {
 		return nil
 	}
@@ -138,7 +138,7 @@ func (c *Checker) unifyIteratorNextReturn(ctx Context, t type_system.Type) (type
 
 	// Look up the `next` method on the candidate type
 	nextKey := PropertyKey{Name: "next", span: ast.Span{}}
-	nextMethod, errors := c.getMemberType(ctx, t, nextKey)
+	nextMethod, errors := c.getMemberType(ctx, t, nextKey, AccessRead)
 	if len(errors) > 0 {
 		return nil, nil
 	}
@@ -217,7 +217,7 @@ func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_sy
 		span: ast.Span{},
 	}
 
-	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey)
+	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey, AccessRead)
 	if len(errors) > 0 {
 		return nil
 	}
@@ -255,7 +255,7 @@ func (c *Checker) GetAsyncIterableElementType(ctx Context, t type_system.Type) t
 		span: ast.Span{},
 	}
 
-	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey)
+	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey, AccessRead)
 	if len(errors) > 0 {
 		return nil
 	}

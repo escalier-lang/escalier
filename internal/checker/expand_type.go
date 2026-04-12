@@ -96,7 +96,7 @@ func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident type_system.QualIden
 			OptChain: false,
 			span:     span,
 		}
-		memberType, memberErrors := v.checker.getMemberType(v.ctx, leftType, propKey)
+		memberType, memberErrors := v.checker.getMemberType(v.ctx, leftType, propKey, AccessRead)
 		v.errors = slices.Concat(v.errors, memberErrors)
 		return memberType
 	default:
@@ -456,7 +456,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 
 		// Use getMemberType to resolve the property access
 		key := IndexKey{Type: expandedIndex, span: span}
-		memberType, memberErrors := v.checker.getMemberType(v.ctx, expandedTarget, key)
+		memberType, memberErrors := v.checker.getMemberType(v.ctx, expandedTarget, key, AccessRead)
 		v.errors = slices.Concat(v.errors, memberErrors)
 		return memberType
 	case *type_system.TypeOfType:
@@ -470,8 +470,10 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 	return nil
 }
 
-// getMemberType is a unified function for getting types from objects via property access or indexing
-func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key MemberAccessKey) (type_system.Type, []Error) {
+// getMemberType is a unified function for getting types from objects via property access or indexing.
+// mode indicates whether the access is a read (rvalue) or write (lvalue), which affects
+// getter/setter resolution: reads use getters, writes use setters.
+func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key MemberAccessKey, mode AccessMode) (type_system.Type, []Error) {
 	errors := []Error{}
 
 	objType = type_system.Prune(objType)
@@ -517,7 +519,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	switch t := objType.(type) {
 	case *type_system.MutabilityType:
 		// For mutable types, get the access from the inner type
-		return c.getMemberType(ctx, t.Type, key)
+		return c.getMemberType(ctx, t.Type, key, mode)
 	case *type_system.TypeRefType:
 		// Handle Array numeric index access (skip symbol keys like Symbol.iterator)
 		if indexKey, ok := key.(IndexKey); ok && type_system.QualIdentToString(t.Name) == "Array" && !isSymbolIndexKey(key) {
@@ -528,7 +530,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 
 		// Try to expand the type alias and call getAccessType recursively
 		expandType, expandErrors := c.expandTypeRef(ctx, t)
-		accessType, accessErrors := c.getMemberType(ctx, expandType, key)
+		accessType, accessErrors := c.getMemberType(ctx, expandType, key, mode)
 
 		errors = slices.Concat(errors, accessErrors, expandErrors)
 
@@ -591,7 +593,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				Name:     type_system.NewIdent("Array"),
 				TypeArgs: []type_system.Type{elemUnion},
 			}
-			return c.getMemberType(ctx, arrayRef, key)
+			return c.getMemberType(ctx, arrayRef, key, mode)
 		}
 		// TupleType doesn't support other property access
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
@@ -615,7 +617,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				TypeArgs: []type_system.Type{},
 			}
 			if _, ok := key.(PropertyKey); ok || isSymbolIndexKey(key) {
-				return c.getMemberType(ctx, builtinRef, key)
+				return c.getMemberType(ctx, builtinRef, key, mode)
 			}
 		}
 		// Not a supported primitive method call
@@ -641,7 +643,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				TypeArgs: []type_system.Type{},
 			}
 			if _, ok := key.(PropertyKey); ok || isSymbolIndexKey(key) {
-				return c.getMemberType(ctx, builtinRef, key)
+				return c.getMemberType(ctx, builtinRef, key, mode)
 			}
 		}
 		// Fallback handling for other literals
@@ -655,16 +657,16 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				Name:     type_system.NewIdent("Function"),
 				TypeArgs: []type_system.Type{},
 			}
-			return c.getMemberType(ctx, functionRef, key)
+			return c.getMemberType(ctx, functionRef, key, mode)
 		}
 		// FuncType doesn't support index access
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 
 	case *type_system.ObjectType:
-		return c.getObjectAccess(t, key, errors)
+		return c.getObjectAccess(t, key, mode, errors)
 	case *type_system.UnionType:
-		return c.getUnionAccess(ctx, t, key, errors)
+		return c.getUnionAccess(ctx, t, key, mode, errors)
 	case *type_system.NamespaceType:
 		if propKey, ok := key.(PropertyKey); ok {
 			if value := t.Namespace.Values[propKey.Name]; value != nil {
@@ -684,7 +686,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	case *type_system.IntersectionType:
-		return c.getIntersectionAccess(ctx, t, key, errors)
+		return c.getIntersectionAccess(ctx, t, key, mode, errors)
 	case *type_system.TypeVarType:
 		// TODO(#389): Check t.Constraint before synthesizing an open object.
 		// Constrained type variables (e.g. `<T: {name: string}>`) should resolve
@@ -804,51 +806,9 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 	return nil
 }
 
-// getSpreadPropertyType looks up a property in an ObjectType using JavaScript
-// spread semantics: PropertyElems and MethodElems are copied as-is, GetterElems
-// yield their return type, and SetterElems are skipped (setter-only properties
-// are not readable in a spread). Returns nil if the property is not found.
-func getSpreadPropertyType(objType *type_system.ObjectType, name string) type_system.Type {
-	targetKey := type_system.NewStrKey(name)
-	for i := len(objType.Elems) - 1; i >= 0; i-- {
-		switch elem := objType.Elems[i].(type) {
-		case *type_system.PropertyElem:
-			if elem.Name == targetKey {
-				propType := elem.Value
-				if elem.Optional {
-					propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-				}
-				return propType
-			}
-		case *type_system.MethodElem:
-			if elem.Name == targetKey {
-				return elem.Fn
-			}
-		case *type_system.GetterElem:
-			if elem.Name == targetKey {
-				return elem.Fn.Return
-			}
-		case *type_system.SetterElem:
-			// Setter-only properties are not readable in a spread — skip.
-			if elem.Name == targetKey {
-				return nil
-			}
-		case *type_system.RestSpreadElem:
-			if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-				if propType := getSpreadPropertyType(resolvedObj, name); propType != nil {
-					return propType
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // getObjectAccess handles property and index access on ObjectType.
-// TODO(#412): differentiate between read and write access so that
-// GetterElem returns the getter's return type for reads and SetterElem
-// returns the setter's parameter type for writes.
-func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
+// mode controls getter/setter resolution: AccessRead uses getters, AccessWrite uses setters.
+func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, mode AccessMode, errors []Error) (type_system.Type, []Error) {
 	switch k := key.(type) {
 	case PropertyKey:
 		// Search elements in reverse order so that later elements override
@@ -870,17 +830,18 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					return elem.Fn, errors
 				}
 			case *type_system.GetterElem:
-				if elem.Name == targetKey {
+				if elem.Name == targetKey && mode == AccessRead {
 					return elem.Fn.Return, errors
 				}
 			case *type_system.SetterElem:
-				if elem.Name == targetKey {
+				if elem.Name == targetKey && mode == AccessWrite {
 					return elem.Fn.Params[0].Type, errors
 				}
 			case *type_system.RestSpreadElem:
 				if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-					if propType := getSpreadPropertyType(resolvedObj, k.Name); propType != nil {
-						return propType, errors
+					spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+					if len(spreadErrors) == 0 {
+						return spreadType, errors
 					}
 				}
 			case *type_system.MappedElem:
@@ -918,7 +879,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
 				// Recursively check the extended type
-				return c.getObjectAccess(extendsObjType, key, errors)
+				return c.getObjectAccess(extendsObjType, key, mode, errors)
 			}
 
 			// If the extended type cannot be resolved to an ObjectType,
@@ -961,17 +922,18 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 							return elem.Fn, errors
 						}
 					case *type_system.GetterElem:
-						if elem.Name == targetKey {
+						if elem.Name == targetKey && mode == AccessRead {
 							return elem.Fn.Return, errors
 						}
 					case *type_system.SetterElem:
-						if elem.Name == targetKey {
+						if elem.Name == targetKey && mode == AccessWrite {
 							return elem.Fn.Params[0].Type, errors
 						}
 					case *type_system.RestSpreadElem:
 						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-							if propType := getSpreadPropertyType(resolvedObj, strLit.Value); propType != nil {
-								return propType, errors
+							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+							if len(spreadErrors) == 0 {
+								return spreadType, errors
 							}
 						}
 					case *type_system.MappedElem:
@@ -1007,16 +969,16 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						return elem.Fn, errors
 					}
 				case *type_system.GetterElem:
-					if elem.Name == symKey {
+					if elem.Name == symKey && mode == AccessRead {
 						return elem.Fn.Return, errors
 					}
 				case *type_system.SetterElem:
-					if elem.Name == symKey {
+					if elem.Name == symKey && mode == AccessWrite {
 						return elem.Fn.Params[0].Type, errors
 					}
 				case *type_system.RestSpreadElem:
 					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, nil)
+						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
 						if len(symPropErrors) == 0 {
 							return symPropType, errors
 						}
@@ -1048,7 +1010,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
 				// Recursively check the extended type
-				return c.getObjectAccess(extendsObjType, key, errors)
+				return c.getObjectAccess(extendsObjType, key, mode, errors)
 			}
 		}
 
@@ -1230,7 +1192,7 @@ func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.T
 	constraint.MethodElemVars = append(constraint.MethodElemVars, freshElem)
 
 	tempArrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, freshElem)
-	resultType, accessErrors := c.getMemberType(ctx, tempArrayType, PropertyKey{Name: propName})
+	resultType, accessErrors := c.getMemberType(ctx, tempArrayType, PropertyKey{Name: propName}, AccessRead)
 	errors = slices.Concat(errors, accessErrors)
 
 	// Classify the method as mutating or read-only.
@@ -1317,7 +1279,7 @@ func (c *Checker) isArrayMutatingMethod(methodName string) bool {
 }
 
 // getUnionAccess handles property and index access on UnionType
-func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
+func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, key MemberAccessKey, mode AccessMode, errors []Error) (type_system.Type, []Error) {
 	propKey, isPropertyKey := key.(PropertyKey)
 
 	definedElems := c.getDefinedElems(unionType)
@@ -1332,7 +1294,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 
 	if len(definedElems) == 1 {
 		if undefinedCount == 0 {
-			return c.getMemberType(ctx, definedElems[0], key)
+			return c.getMemberType(ctx, definedElems[0], key, mode)
 		}
 
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
@@ -1340,7 +1302,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 			return type_system.NewUndefinedType(nil), errors
 		}
 
-		pType, pErrors := c.getMemberType(ctx, definedElems[0], key)
+		pType, pErrors := c.getMemberType(ctx, definedElems[0], key, mode)
 		errors = slices.Concat(errors, pErrors)
 		// Only add undefined if the inner result doesn't already contain it
 		// (e.g. from a nested optional chain on a TypeVarType).
@@ -1354,7 +1316,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		// Get the member type from each element in the union and combine them
 		memberTypes := []type_system.Type{}
 		for _, elem := range definedElems {
-			memberType, memberErrors := c.getMemberType(ctx, elem, key)
+			memberType, memberErrors := c.getMemberType(ctx, elem, key, mode)
 			errors = slices.Concat(errors, memberErrors)
 			memberTypes = append(memberTypes, memberType)
 		}
@@ -1381,7 +1343,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 }
 
 // getIntersectionAccess handles property and index access on IntersectionType
-func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_system.IntersectionType, key MemberAccessKey, errors []Error) (type_system.Type, []Error) {
+func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_system.IntersectionType, key MemberAccessKey, mode AccessMode, errors []Error) (type_system.Type, []Error) {
 	// For an intersection A & B, member access should:
 	// 1. If all parts are object types, merge their properties (the result is the intersection of matching property types)
 	// 2. Otherwise, try to access from each part and use the first successful one
@@ -1410,7 +1372,7 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 		foundAny := false
 
 		for _, objType := range objectTypes {
-			memberType, memberErrors := c.getObjectAccess(objType, key, nil)
+			memberType, memberErrors := c.getObjectAccess(objType, key, mode, nil)
 			// Only include results from object types that have this property
 			if len(memberErrors) == 0 {
 				memberTypes = append(memberTypes, memberType)
@@ -1448,7 +1410,7 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	// First, collect all properties from object type parts
 	memberTypesFromObjects := []type_system.Type{}
 	for _, objType := range objectTypes {
-		memberType, memberErrors := c.getObjectAccess(objType, key, nil)
+		memberType, memberErrors := c.getObjectAccess(objType, key, mode, nil)
 		if len(memberErrors) == 0 {
 			memberTypesFromObjects = append(memberTypesFromObjects, memberType)
 		}
@@ -1475,7 +1437,7 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 		if _, ok := unwrapped.(*type_system.ObjectType); ok {
 			continue
 		}
-		memberType, memberErrors := c.getMemberType(ctx, part, key)
+		memberType, memberErrors := c.getMemberType(ctx, part, key, mode)
 		if len(memberErrors) == 0 {
 			return memberType, errors
 		}

@@ -536,7 +536,7 @@ func (c *Checker) resolveJSXComponentType(ctx Context, tagName ast.QualIdent) (t
 
 		// Get the property from the resolved type
 		key := PropertyKey{Name: name.Right.Name, OptChain: false, span: name.Right.Span()}
-		propType, propErrors := c.getMemberType(ctx, leftType, key)
+		propType, propErrors := c.getMemberType(ctx, leftType, key, AccessRead)
 		errors = append(errors, propErrors...)
 
 		if propType == nil {

@@ -881,72 +881,15 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 
 			errors := []Error{}
 
-			namedElems1 := make(map[type_system.ObjTypeKey]type_system.Type)
-			namedElems2 := make(map[type_system.ObjTypeKey]type_system.Type)
-			origElems1 := make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
-			origElems2 := make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
+			collected1 := collectObjElemTypes(obj1, true)
+			namedElems1 := collected1.Read
+			keys1 := collected1.Keys
+			restTypes1 := collected1.RestTypes
 
-			keys1 := []type_system.ObjTypeKey{} // original order of keys in obj1
-			keys2 := []type_system.ObjTypeKey{} // original order of keys in obj2
-
-			var restTypes1 []type_system.Type
-			var restTypes2 []type_system.Type
-
-			for _, elem := range obj1.Elems {
-				switch elem := elem.(type) {
-				case *type_system.MethodElem:
-					namedElems1[elem.Name] = elem.Fn
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.GetterElem:
-					namedElems1[elem.Name] = elem.Fn.Return
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.SetterElem:
-					namedElems1[elem.Name] = elem.Fn.Params[0].Type
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.PropertyElem:
-					propType := elem.Value
-					if elem.Optional {
-						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-					}
-					namedElems1[elem.Name] = propType
-					origElems1[elem.Name] = elem
-					keys1 = append(keys1, elem.Name)
-				case *type_system.RestSpreadElem:
-					restTypes1 = append(restTypes1, elem.Value)
-				default: // skip other types of elems
-				}
-			}
-
-			for _, elem := range obj2.Elems {
-				switch elem := elem.(type) {
-				case *type_system.MethodElem:
-					namedElems2[elem.Name] = elem.Fn
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.GetterElem:
-					namedElems2[elem.Name] = elem.Fn.Return
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.SetterElem:
-					namedElems2[elem.Name] = elem.Fn.Params[0].Type
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.PropertyElem:
-					propType := elem.Value
-					if elem.Optional {
-						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-					}
-					namedElems2[elem.Name] = propType
-					origElems2[elem.Name] = elem
-					keys2 = append(keys2, elem.Name)
-				case *type_system.RestSpreadElem:
-					restTypes2 = append(restTypes2, elem.Value)
-				default: // skip other types of elems
-				}
-			}
+			collected2 := collectObjElemTypes(obj2, true)
+			namedElems2 := collected2.Read
+			keys2 := collected2.Keys
+			restTypes2 := collected2.RestTypes
 
 			// Open-vs-open: unify shared properties, merge non-shared,
 			// unify row variables.
@@ -958,24 +901,61 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			// downstream inference and error reporting.
 			if obj1.Open && obj2.Open {
 				for _, key := range keys1 {
-					if value2, ok := namedElems2[key]; ok {
-						unifyErrors := c.Unify(ctx, namedElems1[key], value2)
+					value1, has1 := namedElems1[key]
+					value2, has2 := namedElems2[key]
+					if has1 && has2 {
+						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
+					}
+					if wt1, ok1 := collected1.Write[key]; ok1 {
+						if wt2, ok2 := collected2.Write[key]; ok2 {
+							unifyErrors := c.Unify(ctx, wt1, wt2)
+							errors = slices.Concat(errors, unifyErrors)
+						}
 					}
 				}
 				// Add elems from obj2 not in obj1 to obj1.
 				// Share the original elem pointers (not copies) so that mutable
-				// fields like Written are visible to both open types — they are
+				// fields like Written are visible to both open types - they are
 				// in the same inference scope and represent the same parameter.
+				//
+				// Read and write presence are checked independently because a
+				// property name can be split across separate GetterElem (read)
+				// and SetterElem (write) elements, tracked in different maps.
+				// For example, given:
+				//   obj1 = { get x(self) -> number }  // Read["x"] exists, Write["x"] absent
+				//   obj2 = { set x(mut self, v: number) }  // Read["x"] absent, Write["x"] exists
+				// A single check against namedElems1 (the read map) would see
+				// "x" already present in obj1 and skip the merge, losing obj2's
+				// setter. By checking read and write separately, the setter is
+				// correctly appended so obj1 ends up with both get x and set x.
 				for _, key := range keys2 {
-					if _, ok := namedElems1[key]; !ok {
-						obj1.Elems = append(obj1.Elems, origElems2[key])
+					re := collected2.OrigRead[key]
+					we := collected2.OrigWrite[key]
+					if re != nil {
+						if _, has := namedElems1[key]; !has {
+							obj1.Elems = append(obj1.Elems, re)
+						}
+					}
+					if we != nil && we != re {
+						if _, has := collected1.Write[key]; !has {
+							obj1.Elems = append(obj1.Elems, we)
+						}
 					}
 				}
 				// Add elems from obj1 not in obj2 to obj2.
 				for _, key := range keys1 {
-					if _, ok := namedElems2[key]; !ok {
-						obj2.Elems = append(obj2.Elems, origElems1[key])
+					re := collected1.OrigRead[key]
+					we := collected1.OrigWrite[key]
+					if re != nil {
+						if _, has := namedElems2[key]; !has {
+							obj2.Elems = append(obj2.Elems, re)
+						}
+					}
+					if we != nil && we != re {
+						if _, has := collected2.Write[key]; !has {
+							obj2.Elems = append(obj2.Elems, we)
+						}
 					}
 				}
 				// Unify row variables if both have RestSpreadElems
@@ -991,13 +971,23 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			// Open-only properties are allowed (structural subtyping).
 			if obj1.Open && !obj2.Open {
 				for _, key := range keys2 {
-					if value1, ok := namedElems1[key]; ok {
-						unifyErrors := c.Unify(ctx, value1, namedElems2[key])
+					value1, has1 := namedElems1[key]
+					value2, has2 := namedElems2[key]
+					if has1 && has2 {
+						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
-					} else {
-						// Elem in closed but not in open: copy and add to open type.
-						// Copy PropertyElems to avoid sharing mutable fields (Written).
-						obj1.Elems = append(obj1.Elems, copyObjTypeElem(origElems2[key]))
+					}
+					re := collected2.OrigRead[key]
+					we := collected2.OrigWrite[key]
+					// Copy missing read elem from closed to open.
+					if re != nil && !has1 {
+						obj1.Elems = append(obj1.Elems, copyObjTypeElem(re))
+					}
+					// Copy missing write elem from closed to open (skip if same as read elem).
+					if we != nil && we != re {
+						if _, hasW1 := collected1.Write[key]; !hasW1 {
+							obj1.Elems = append(obj1.Elems, copyObjTypeElem(we))
+						}
 					}
 				}
 				return errors
@@ -1006,13 +996,23 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			// Closed(t1)-vs-open(t2): same logic, but t1 is closed and t2 is open.
 			if !obj1.Open && obj2.Open {
 				for _, key := range keys1 {
-					if value2, ok := namedElems2[key]; ok {
-						unifyErrors := c.Unify(ctx, namedElems1[key], value2)
+					value1, has1 := namedElems1[key]
+					value2, has2 := namedElems2[key]
+					if has1 && has2 {
+						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
-					} else {
-						// Elem in closed but not in open: copy and add to open type.
-						// Copy PropertyElems to avoid sharing mutable fields (Written).
-						obj2.Elems = append(obj2.Elems, copyObjTypeElem(origElems1[key]))
+					}
+					re := collected1.OrigRead[key]
+					we := collected1.OrigWrite[key]
+					// Copy missing read elem from closed to open.
+					if re != nil && !has2 {
+						obj2.Elems = append(obj2.Elems, copyObjTypeElem(re))
+					}
+					// Copy missing write elem from closed to open (skip if same as read elem).
+					if we != nil && we != re {
+						if _, hasW2 := collected2.Write[key]; !hasW2 {
+							obj2.Elems = append(obj2.Elems, copyObjTypeElem(we))
+						}
 					}
 				}
 				return errors
@@ -1036,10 +1036,11 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				// In pattern-matching mode: unify shared properties, and verify
 				// all pattern fields (keys1) exist on the target (keys2).
 				// Target fields not in the pattern are silently skipped (partial matching).
+				// namedElems2 is the Read map, so setter-only properties won't appear
+				// here and are correctly treated as not found for pattern matching.
 				for _, key1 := range keys1 {
-					_, isSetter := origElems2[key1].(*type_system.SetterElem)
 					value2, found := namedElems2[key1]
-					if found && !isSetter {
+					if found {
 						unifyErrors := c.Unify(ctx, namedElems1[key1], value2)
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
@@ -1056,7 +1057,22 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				}
 			} else {
 				for _, key2 := range keys2 {
-					value2 := namedElems2[key2]
+					value2, has2 := namedElems2[key2]
+					// Unify write types for setter-only keys.
+					if !has2 {
+						wt1, hasW1 := collected1.Write[key2]
+						wt2, hasW2 := collected2.Write[key2]
+						if hasW1 && hasW2 {
+							unifyErrors := c.Unify(ctx, wt1, wt2)
+							errors = slices.Concat(errors, unifyErrors)
+						} else if hasW2 && !hasW1 {
+							errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+								Object: obj1,
+								Key:    key2,
+							}})
+						}
+						continue
+					}
 					if value1, ok := namedElems1[key2]; ok {
 						unifyErrors := c.Unify(ctx, value1, value2)
 						// Wrap CannotUnifyTypesError with property context when
@@ -1064,13 +1080,13 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 						for i, err := range unifyErrors {
 							if cue, ok := err.(*CannotUnifyTypesError); ok {
 								var inferredAt *MemberAccessKeyProvenance
-								if pe, ok := origElems2[key2].(*type_system.PropertyElem); ok {
+								if pe, ok := collected2.OrigRead[key2].(*type_system.PropertyElem); ok {
 									if makp, ok := pe.Provenance.(*MemberAccessKeyProvenance); ok {
 										inferredAt = makp
 									}
 								}
 								if inferredAt == nil {
-									if pe, ok := origElems1[key2].(*type_system.PropertyElem); ok {
+									if pe, ok := collected1.OrigRead[key2].(*type_system.PropertyElem); ok {
 										if makp, ok := pe.Provenance.(*MemberAccessKeyProvenance); ok {
 											inferredAt = makp
 										}
@@ -1094,7 +1110,7 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 							Key:    key2,
 							span:   getKeyNotFoundSpan(obj1, value2),
 						}
-						if propElem, ok := origElems2[key2].(*type_system.PropertyElem); ok {
+						if propElem, ok := collected2.OrigRead[key2].(*type_system.PropertyElem); ok {
 							if makp, ok := propElem.Provenance.(*MemberAccessKeyProvenance); ok {
 								knfErr.InferredAt = makp
 							}
@@ -1217,105 +1233,47 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 	if union, ok := t1.(*type_system.UnionType); ok {
 		// special-case unification of union with object type
 		if obj, ok := t2.(*type_system.ObjectType); ok {
-			destructuredFields := make(map[type_system.ObjTypeKey]type_system.Type)
+			collectedObj := collectObjElemTypes(obj, false)
+			destructuredFields := collectedObj.Read
 			var restType type_system.Type
-			for _, elem := range obj.Elems {
-				switch elem := elem.(type) {
-				case *type_system.MethodElem:
-					destructuredFields[elem.Name] = elem.Fn
-				case *type_system.GetterElem:
-					destructuredFields[elem.Name] = elem.Fn.Return
-				case *type_system.SetterElem:
-					destructuredFields[elem.Name] = elem.Fn.Params[0].Type
-				case *type_system.PropertyElem:
-					propType := elem.Value
-					if elem.Optional {
-						propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-					}
-					destructuredFields[elem.Name] = propType
-				case *type_system.RestSpreadElem:
-					restType = elem.Value
-				default: // skip other types of elems
-				}
+			if len(collectedObj.RestTypes) > 0 {
+				restType = collectedObj.RestTypes[0]
 			}
 
 			matchingTypes := make(map[type_system.ObjTypeKey][]type_system.Type)
+			// Track which destructured fields exist as write-only (setter)
+			// across union members so we can distinguish "field doesn't exist"
+			// from "field exists but is not readable."
+			writeOnlyFields := make(map[type_system.ObjTypeKey]bool)
 			// Track remaining fields for rest spread handling
 			remainingFields := make(map[type_system.ObjTypeKey][]type_system.Type)
 			remainingFieldsOrder := []type_system.ObjTypeKey{} // Track order of keys
 
 			for _, unionType := range union.Types {
-				if unionObj, ok := unionType.(*type_system.ObjectType); ok {
+				expanded, _ := c.ExpandType(ctx, unionType, 1)
+				if unionObj, ok := expanded.(*type_system.ObjectType); ok {
+					collectedUnionObj := collectObjElemTypes(unionObj, false)
 					for name := range destructuredFields {
-						var t type_system.Type
-						// Find the type of the field with this name in the union object
-						for _, elem := range unionObj.Elems {
-							switch elem := elem.(type) {
-							case *type_system.MethodElem:
-								if elem.Name == name {
-									t = elem.Fn
-								}
-							case *type_system.GetterElem:
-								if elem.Name == name {
-									t = elem.Fn.Return
-								}
-							case *type_system.SetterElem:
-								if elem.Name == name {
-									t = elem.Fn.Params[0].Type
-								}
-							case *type_system.PropertyElem:
-								if elem.Name == name {
-									propType := elem.Value
-									if elem.Optional {
-										propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-									}
-									t = propType
-								}
-							default: // skip other types of elems
-							}
-						}
-						if t != nil {
+						if t, ok := collectedUnionObj.Read[name]; ok {
 							matchingTypes[name] = append(matchingTypes[name], t)
+						} else if _, ok := collectedUnionObj.Write[name]; ok {
+							writeOnlyFields[name] = true
 						}
 					}
 
 					// If restType is specified, collect remaining fields
 					if restType != nil {
-						for _, elem := range unionObj.Elems {
-							switch elem := elem.(type) {
-							case *type_system.MethodElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn)
+						for _, key := range collectedUnionObj.Keys {
+							readType := collectedUnionObj.Read[key]
+							if readType == nil {
+								// Setter-only key — not readable, skip.
+								continue
+							}
+							if _, ok := destructuredFields[key]; !ok {
+								if _, exists := remainingFields[key]; !exists {
+									remainingFieldsOrder = append(remainingFieldsOrder, key)
 								}
-							case *type_system.GetterElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Return)
-								}
-							case *type_system.SetterElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], elem.Fn.Params[0].Type)
-								}
-							case *type_system.PropertyElem:
-								if _, ok := destructuredFields[elem.Name]; !ok {
-									propType := elem.Value
-									if elem.Optional {
-										propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
-									}
-									if _, exists := remainingFields[elem.Name]; !exists {
-										remainingFieldsOrder = append(remainingFieldsOrder, elem.Name)
-									}
-									remainingFields[elem.Name] = append(remainingFields[elem.Name], propType)
-								}
-							default: // skip other types of elems
+								remainingFields[key] = append(remainingFields[key], readType)
 							}
 						}
 					}
@@ -1323,8 +1281,15 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			}
 			errors := []Error{}
 			for name, t := range destructuredFields {
-				// if destructuredFields[name] doesn't exist, unify `undefined` with `t`
 				if _, ok := matchingTypes[name]; !ok {
+					if writeOnlyFields[name] {
+						// Field exists as a setter on at least one union
+						// member but is not readable — report an error.
+						errors = append(errors, &UnknownPropertyError{
+							ObjectType: union,
+							Property:   name.String(),
+						})
+					}
 					undefined := type_system.NewUndefinedType(nil)
 					unifyErrors := c.Unify(ctx, undefined, t)
 					errors = slices.Concat(errors, unifyErrors)
@@ -1578,9 +1543,14 @@ func (c *Checker) unifyClosedWithRests(
 	remainingElems := []type_system.ObjTypeElem{}
 	for _, key := range targetKeys {
 		if !usedTargetKeys[key] {
+			value := targetNamed[key]
+			if value == nil {
+				// Setter-only key — not readable, skip.
+				continue
+			}
 			remainingElems = append(remainingElems, &type_system.PropertyElem{
 				Name:  key,
-				Value: targetNamed[key],
+				Value: value,
 			})
 		}
 	}
@@ -2810,12 +2780,33 @@ func (c *Checker) unifyVariadicVsVariadic(
 	return errors
 }
 
-// collectNamedElems extracts readable named property types from an ObjectType.
-// It handles PropertyElem (including optional), MethodElem, and GetterElem.
-// SetterElem is excluded because setters are write-only and cannot be read
-// during pattern matching.
-func collectNamedElems(obj *type_system.ObjectType) map[type_system.ObjTypeKey]type_system.Type {
-	result := make(map[type_system.ObjTypeKey]type_system.Type)
+// collectedElemTypes holds the result of collectObjElemTypes.
+// Read and Write maps track readable and writable types separately:
+//   - PropertyElem/MethodElem populate Read (and PropertyElem also populates Write)
+//   - GetterElem populates Read only
+//   - SetterElem populates Write only
+type collectedElemTypes struct {
+	Read      map[type_system.ObjTypeKey]type_system.Type        // readable types (Property, Method, Getter)
+	Write     map[type_system.ObjTypeKey]type_system.Type        // writable types (Property, Setter)
+	Keys      []type_system.ObjTypeKey                           // all names, deduplicated, in insertion order
+	OrigRead  map[type_system.ObjTypeKey]type_system.ObjTypeElem // original readable elem; nil if not requested
+	OrigWrite map[type_system.ObjTypeKey]type_system.ObjTypeElem // original writable elem; nil if not requested
+	RestTypes []type_system.Type
+}
+
+// collectObjElemTypes extracts named property types from an ObjectType into
+// separate Read and Write maps. RestSpreadElem values are collected separately
+// in RestTypes.
+func collectObjElemTypes(obj *type_system.ObjectType, collectOrigElems bool) collectedElemTypes {
+	result := collectedElemTypes{
+		Read:  make(map[type_system.ObjTypeKey]type_system.Type),
+		Write: make(map[type_system.ObjTypeKey]type_system.Type),
+	}
+	if collectOrigElems {
+		result.OrigRead = make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
+		result.OrigWrite = make(map[type_system.ObjTypeKey]type_system.ObjTypeElem)
+	}
+	seen := make(map[type_system.ObjTypeKey]bool)
 	for _, elem := range obj.Elems {
 		switch elem := elem.(type) {
 		case *type_system.PropertyElem:
@@ -2823,12 +2814,47 @@ func collectNamedElems(obj *type_system.ObjectType) map[type_system.ObjTypeKey]t
 			if elem.Optional {
 				propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
 			}
-			result[elem.Name] = propType
+			result.Read[elem.Name] = propType
+			result.Write[elem.Name] = propType
+			if !seen[elem.Name] {
+				result.Keys = append(result.Keys, elem.Name)
+				seen[elem.Name] = true
+			}
+			if collectOrigElems {
+				result.OrigRead[elem.Name] = elem
+				result.OrigWrite[elem.Name] = elem
+			}
 		case *type_system.MethodElem:
-			result[elem.Name] = elem.Fn
+			result.Read[elem.Name] = elem.Fn
+			if !seen[elem.Name] {
+				result.Keys = append(result.Keys, elem.Name)
+				seen[elem.Name] = true
+			}
+			if collectOrigElems {
+				result.OrigRead[elem.Name] = elem
+			}
 		case *type_system.GetterElem:
-			result[elem.Name] = elem.Fn.Return
-		default: // skip SetterElem, CallableElem, NewableElem, RestSpreadElem, etc.
+			result.Read[elem.Name] = elem.Fn.Return
+			if !seen[elem.Name] {
+				result.Keys = append(result.Keys, elem.Name)
+				seen[elem.Name] = true
+			}
+			if collectOrigElems {
+				result.OrigRead[elem.Name] = elem
+			}
+		case *type_system.SetterElem:
+			result.Write[elem.Name] = elem.Fn.Params[0].Type
+			if !seen[elem.Name] {
+				result.Keys = append(result.Keys, elem.Name)
+				seen[elem.Name] = true
+			}
+			if collectOrigElems {
+				result.OrigWrite[elem.Name] = elem
+			}
+		case *type_system.RestSpreadElem:
+			result.RestTypes = append(result.RestTypes, elem.Value)
+		default:
+			// skip CallableElem, ConstructorElem, MappedElem, etc.
 		}
 	}
 	return result
@@ -2840,7 +2866,7 @@ func (c *Checker) unifyPatternWithUnion(
 	union *type_system.UnionType,
 ) []Error {
 	// 1. Collect pattern field names and their type variables
-	patFields := collectNamedElems(pat)
+	patFields := collectObjElemTypes(pat, false).Read
 
 	// 2. For each union member, check if it has ALL pattern fields.
 	//    Union members may be TypeRefTypes (e.g. class names) that need expansion.
@@ -2852,7 +2878,7 @@ func (c *Checker) unifyPatternWithUnion(
 		if !ok {
 			continue // skip non-object union members (e.g. primitive types)
 		}
-		memberFields := collectNamedElems(memberObj)
+		memberFields := collectObjElemTypes(memberObj, false).Read
 
 		allMatch := true
 		for key := range patFields {

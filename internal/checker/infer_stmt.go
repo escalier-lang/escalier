@@ -512,7 +512,7 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 			}
 			// Symbol.customMatcher is a well-known global that is always present
 			// in the prelude, so the error can safely be ignored here.
-			customMatcher, _ := c.getMemberType(ctx, symbol.Type, symKey)
+			customMatcher, _ := c.getMemberType(ctx, symbol.Type, symKey, AccessRead)
 
 			symbolKeyMap := make(map[int]any)
 
