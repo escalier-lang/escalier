@@ -1,10 +1,11 @@
 package tests
 
 import (
+	"strings"
 	"testing"
 
+	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPatternMatchStructuralVsNominal(t *testing.T) {
@@ -67,22 +68,69 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 }
 
 func TestPatternMatchErrors(t *testing.T) {
-	t.Run("PatternFieldNotFoundOnNominalType", func(t *testing.T) {
-		t.Parallel()
-		input := `
-			class Point(x: number, y: number) { x, y }
+	tests := map[string]struct {
+		input          string
+		expectedErrs   []string
+		expectedValues map[string]string
+	}{
+		"PatternFieldNotFoundOnNominalType": {
+			input: `
+				class Point(x: number, y: number) { x, y }
 
-			declare val p: Point
-			val result = match p {
-				{foo} => foo,
+				declare val p: Point
+				val result = match p {
+					{foo} => foo,
+				}
+			`,
+			expectedErrs: []string{
+				"Property foo does not exist on type {x: number, y: number}",
+			},
+			// Verify the unresolved pattern field resolves to undefined (not a leaked type var)
+			expectedValues: map[string]string{
+				"result": "undefined",
+			},
+		},
+		"PatternFieldMatchesSetterOnly": {
+			input: `
+				declare val obj: {
+					get readable() -> string,
+					set writable(value: number) -> undefined
+				}
+				val result = match obj {
+					{writable} => writable,
+				}
+			`,
+			expectedErrs: []string{
+				"writable",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			actualTypes, inferErrors := inferModuleTypesAndErrors(t, test.input)
+			for _, expected := range test.expectedErrs {
+				found := false
+				for _, err := range inferErrors {
+					if strings.Contains(err.Message(), expected) {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "expected error containing %q, got %v", expected, errMessages(inferErrors))
 			}
-		`
-		_, inferErrors := inferModuleTypesAndErrors(t, input)
-		require.GreaterOrEqual(t, len(inferErrors), 1)
-		assert.Contains(
-			t,
-			inferErrors[0].Message(),
-			"Property foo does not exist on type {x: number, y: number}",
-		)
-	})
+			for key, expected := range test.expectedValues {
+				assert.Equal(t, expected, actualTypes[key])
+			}
+		})
+	}
+}
+
+func errMessages(errors []Error) []string {
+	msgs := make([]string, len(errors))
+	for i, err := range errors {
+		msgs[i] = err.Message()
+	}
+	return msgs
 }
