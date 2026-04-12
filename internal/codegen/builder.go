@@ -2404,6 +2404,10 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 		case *ast.FieldElem:
 			// Only handle static fields here; instance fields are handled by the constructor
 			if e.Static {
+				// Static fields should not rewrite identifiers to this.paramName
+				savedClassParamNames := b.classParamNames
+				b.classParamNames = nil
+
 				name, nameStmts := b.buildObjKey(e.Name)
 				allStmts = slices.Concat(allStmts, nameStmts)
 
@@ -2413,6 +2417,8 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 					value, valueStmts = b.buildExpr(e.Value, nil)
 					allStmts = slices.Concat(allStmts, valueStmts)
 				}
+
+				b.classParamNames = savedClassParamNames
 
 				fieldElem := &FieldElem{
 					Name:    name,
@@ -2429,6 +2435,12 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			if e.Fn == nil {
 				continue
 			}
+			// Static methods should not rewrite identifiers to this.paramName
+			var savedClassParamNames map[string]bool
+			if e.Static {
+				savedClassParamNames = b.classParamNames
+				b.classParamNames = nil
+			}
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
@@ -2437,6 +2449,9 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 				b.inBlockScope = prevInBlockScope
+			}
+			if e.Static {
+				b.classParamNames = savedClassParamNames
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -2462,6 +2477,12 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			if e.Fn == nil {
 				continue
 			}
+			// Static getters should not rewrite identifiers to this.paramName
+			var savedClassParamNames map[string]bool
+			if e.Static {
+				savedClassParamNames = b.classParamNames
+				b.classParamNames = nil
+			}
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
 				// Mark that we're inside a getter body
@@ -2469,6 +2490,9 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 				b.inBlockScope = prevInBlockScope
+			}
+			if e.Static {
+				b.classParamNames = savedClassParamNames
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -2488,6 +2512,12 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			if e.Fn == nil {
 				continue
 			}
+			// Static setters should not rewrite identifiers to this.paramName
+			var savedClassParamNames2 map[string]bool
+			if e.Static {
+				savedClassParamNames2 = b.classParamNames
+				b.classParamNames = nil
+			}
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
@@ -2496,6 +2526,9 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 				b.inBlockScope = prevInBlockScope
+			}
+			if e.Static {
+				b.classParamNames = savedClassParamNames2
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -2815,8 +2848,12 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				cond, _ := b.buildPatternCondition(objElem.Value, propTarget)
 				conditions = append(conditions, cond)
 
-				// Skip destructuring for literal patterns (no binding needed)
-				if _, isLit := objElem.Value.(*ast.LitPat); !isLit {
+				// Skip destructuring for patterns that introduce no bindings
+				// (e.g. {x: 0} or {x: _}) to avoid invalid duplicate "_" bindings
+				switch objElem.Value.(type) {
+				case *ast.LitPat, *ast.WildcardPat:
+					// no binding needed
+				default:
 					valuePat := b.buildDestructuringPattern(objElem.Value)
 					objPatElems = append(objPatElems, NewObjKeyValuePat(objElem.Key.Name, valuePat, nil, objElem))
 				}
