@@ -2037,15 +2037,18 @@ failures.
        span           ast.Span
    }
    ```
-   Detected in `getObjectAccess` when a numeric `IndexKey` (either
-   `isNumericType` or `asNonNegativeIntLiteral`) is used on an `ObjectType`
-   with `Open: true`. The `firstInferredAccess` helper extracts the
-   provenance of the first inferred property for the error message.
+   Detected in `getObjectAccess` when a numeric `IndexKey` is used on an open
+   `ObjectType` **that was inferred from property access** (checked via
+   `firstInferredAccess`). If the open object was not created by property
+   access inference (e.g., from `openClosedObjectForParam`), numeric indexes
+   are allowed and add a numeric-keyed property via
+   `addNumericPropertyToOpenObject`. This enables objects with mixed string
+   and numeric keys, e.g. `fn foo(v) { bar(v); return v[0] }` infers
+   `v: {x: number, 0: T0}`.
 
-   Message:
-   > Cannot index parameter 'obj' with a numeric index because it was already
-   > constrained to an object type by property access at 2:15-2:22. Consider
-   > adding a type annotation to 'obj'
+   Message (when conflict is detected):
+   > Cannot index the parameter with a numeric index because it was already
+   > constrained to an object type by property access at 2:15-2:22
 
    **Design note:** The `Param` field is not populated by the current
    implementation because `getObjectAccess` doesn't have access to the
@@ -2082,15 +2085,19 @@ failures.
 
 ### Tests
 
-Tests added to `TestRowTypesErrors` in
-`internal/checker/tests/row_types_test.go`:
+Tests in `internal/checker/tests/row_types_test.go`:
 
-- **MissingInferredProperty** (9a): Verifies that calling a function with a
-  missing inferred property produces a `KeyNotFoundError` whose message
-  includes "is required because it is accessed at".
-- **IndexingConflictAfterPropertyAccess** (9b): Verifies that using a numeric
-  index on a parameter already constrained by property access produces an
-  `IndexingConflictError` with "Cannot index" in the message.
+- **MissingInferredProperty** (9a, in `TestRowTypesErrors`): Verifies that
+  calling a function with a missing inferred property produces a
+  `KeyNotFoundError` whose message includes "is required because it is
+  accessed at".
+- **IndexingConflictAfterPropertyAccess** (9b, in `TestRowTypesErrors`):
+  Verifies that using a numeric index on a parameter already constrained by
+  property access produces an `IndexingConflictError`.
+- **NumericIndexOnReopenedObject** (9b, in `TestRowTypesPropertyAccess`):
+  Verifies that numeric indexing on an open object without prior property
+  access inference succeeds and adds a numeric-keyed property, inferring
+  `fn <T0>(v: {x: number, 0: T0}) -> T0`.
 - Section 9c is not directly testable in the current architecture due to
   widenable type variables (see note above). The `PropertyTypeMismatchError`
   infrastructure is tested indirectly through the unification code path.
@@ -2257,7 +2264,7 @@ All phases → Phase 11: Error Reporting ✅
 | File | Phases | Status |
 |------|--------|--------|
 | `internal/type_system/types.go` | 1, 7, 11, 12, 13 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s; ✅ (Phase 11) `Provenance provenance.Provenance` field on `PropertyElem`; `PropertyElem.Accept()` preserves `Provenance` on copy; ✅ (Phase 12) `ArrayConstraint` struct with `MethodElemVars` field for per-call-site deferred resolution, `ArrayConstraint` field on `TypeVarType`; ✅ (Phase 13) `collectFlatTupleElems` and `TupleType.String()` flattening of resolved `RestSpreadType` |
-| `internal/checker/expand_type.go` | 2, 9, 10, 11, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; ✅ (Phase 11) `newOpenObjectWithProperty` and `addPropertyToOpenObject` accept `MemberAccessKey` and set `Provenance`; `firstInferredAccess` helper; `getObjectAccess` detects numeric index on open object and raises `IndexingConflictError`; ✅ (Phase 12) deferred tuple/array commitment via `ArrayConstraint`; `isArrayMethod`/`isArrayMutatingMethod` for runtime method classification; `getArrayConstraintPropertyAccess` uses fresh elem var per method call for deferred union resolution; `getArrayConstraintIndexAccess` for subsequent accesses; ✅ (Phase 13) `tupleElemUnion` helper; `getMemberType` TupleType case handles `RestSpreadType` in both numeric index and method access |
+| `internal/checker/expand_type.go` | 2, 9, 10, 11, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; ✅ (Phase 11) `newOpenObjectWithProperty` and `addPropertyToOpenObject` accept `MemberAccessKey` and set `Provenance`; `addNumericPropertyToOpenObject` for numeric-keyed properties; `firstInferredAccess` helper; `getObjectAccess` detects numeric index conflict on inferred-from-property-access objects, allows numeric keys otherwise; ✅ (Phase 12) deferred tuple/array commitment via `ArrayConstraint`; `isArrayMethod`/`isArrayMutatingMethod` for runtime method classification; `getArrayConstraintPropertyAccess` uses fresh elem var per method call for deferred union resolution; `getArrayConstraintIndexAccess` for subsequent accesses; ✅ (Phase 13) `tupleElemUnion` helper; `getMemberType` TupleType case handles `RestSpreadType` in both numeric index and method access |
 | `internal/checker/unify.go` | 3, 4, 10, 11, 12, 13 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability`; ✅ (Phase 11) closed-vs-closed path extracts `Provenance` from `origElems` for `KeyNotFoundError.InferredAt`; wraps `CannotUnifyTypesError` in `PropertyTypeMismatchError` when property has `Provenance` set; ✅ (Phase 12) `handleArrayConstraintBinding` — updates constraint when TypeVar with `ArrayConstraint` is bound to Array or tuple type; ✅ (Phase 13) `splitTupleAtRest`, `unifyTuples`, `unifyFixedTuples`, `unifyFixedVsVariadic`, `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`; tuple-vs-array and array-vs-tuple handle `RestSpreadType` |
 | `internal/parser/type_ann.go` | 13 | ✅ (Phase 13) `DotDotDot` case in `primaryTypeAnn` — enables `...T` in tuple type annotations (e.g. `[number, ...T]`) |
 | `internal/checker/generalize.go` | 2, 6, 7, 12 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically; ✅ (Phase 12) `deepCloneType` clones `ArrayConstraint` including `MethodElemVars`; `collectUnresolvedTypeVars` collects from `ArrayConstraint` including `MethodElemVars`; ✅ (Phase 13/14) No changes needed — visitor pattern handles `RestSpreadType` in tuples; `collectUnresolvedTypeVars` already walks `TupleType.Elems` and `RestSpreadType.Type` |

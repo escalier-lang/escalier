@@ -1081,11 +1081,17 @@ usage sites (property access and numeric index), (3) suggests adding an
 explicit type annotation.
 
 > **Status (2026-04-11):** Implemented. `IndexingConflictError` is raised in
-> `getObjectAccess` when a numeric `IndexKey` is used on an open `ObjectType`.
-> The `Param` field is not populated (parameter name is not available at that
-> call depth), but the error span points to the index expression and the
-> message includes the span of the first inferred property. Tested in
-> `TestRowTypesErrors/IndexingConflictAfterPropertyAccess`.
+> `getObjectAccess` when a numeric `IndexKey` is used on an open `ObjectType`
+> **only if the object was inferred from property access** (checked via
+> `firstInferredAccess`). If the open object was not created by property
+> access inference (e.g., from `openClosedObjectForParam`), numeric indexes
+> are allowed and add a numeric-keyed property via
+> `addNumericPropertyToOpenObject`, enabling mixed string/numeric key objects
+> like `{x: number, 0: T0}`. The `Param` field is not populated (parameter
+> name is not available at that call depth), but the error span points to the
+> index expression and the message includes the span of the first inferred
+> property. Tested in `TestRowTypesErrors/IndexingConflictAfterPropertyAccess`
+> and `TestRowTypesPropertyAccess/NumericIndexOnReopenedObject`.
 
 #### 9c. Open-to-closed unification property type mismatch
 
