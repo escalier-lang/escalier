@@ -288,7 +288,10 @@ variable should be bound to `Array<T>` rather than an open `ObjectType`.
 > `ObjectType` is placed directly in the union (no `MutabilityType` wrapper)
 > since mutation through `?.` is not meaningful. Existing `getUnionAccess`
 > handles subsequent accesses on the nullable union, including error reporting
-> for non-optional access on a nullable type.
+> for non-optional access on a nullable type. Open objects inside unions are
+> properly closed by `closeOpenObjectsInType` after body inference, and row
+> polymorphism works correctly (row variables that escape to the return type
+> are preserved).
 
 When optional chaining (`?.`) is used on a value whose type is a type variable,
 the system must:
@@ -332,12 +335,15 @@ fn foo(a) {
 
 ### 5. Open vs. Closed Object Types ✅
 
-> **Status (2026-04-08):** Fully implemented. `closeOpenParams` in
+> **Status (2026-04-11):** Fully implemented. `closeOpenParams` in
 > `infer_func.go` closes all open object types on parameters after
 > `inferFuncBodyWithFuncSigType` completes. `closeObjectType` recursively
 > closes nested open objects. `RestSpreadElem`s whose row variables don't
 > appear in the return type are removed. Row variables that escape to the
 > return type are preserved for Phase 7 (row polymorphism).
+> `closeOpenObjectsInType` also closes open `ObjectType`s found inside
+> unions (e.g. from optional chaining, where the parameter type is
+> `{bar: T} | null | undefined`).
 
 The inferred object type for an unannotated parameter should be **open** during
 inference of the function body — the property set can grow as new usages are
