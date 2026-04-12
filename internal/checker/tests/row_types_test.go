@@ -2906,7 +2906,7 @@ func TestRowTypesOptionalChaining(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1} | null | undefined) -> T0 | undefined",
+				"foo": "fn <T0>(obj: {bar: T0} | null | undefined) -> T0 | undefined",
 			},
 		},
 		"NestedOptionalChaining": {
@@ -2916,7 +2916,7 @@ func TestRowTypesOptionalChaining(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(a: {b: {c: T0, ...T1} | null | undefined, ...T2} | null | undefined) -> T0 | undefined",
+				"foo": "fn <T0>(a: {b: {c: T0} | null | undefined} | null | undefined) -> T0 | undefined",
 			},
 		},
 		"AllOptional": {
@@ -2928,7 +2928,32 @@ func TestRowTypesOptionalChaining(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2} | null | undefined) -> void",
+				"foo": "fn <T0, T1>(obj: {bar: T0, baz: T1} | null | undefined) -> void",
+			},
+		},
+		"OptionalChainingWithReturn": {
+			// Returning the nullable object preserves the row variable
+			input: `
+				fn foo(obj) {
+					val x = obj?.bar
+					return obj
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {bar: T0, ...T1} | null | undefined) -> {bar: T0, ...T1} | null | undefined",
+			},
+		},
+		"OptionalChainingRowPolyCall": {
+			// Calling a function that uses ?. with extra properties
+			input: `
+				fn foo(obj) {
+					return obj?.bar
+				}
+				val r = foo({bar: 1, baz: "hello"})
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(obj: {bar: T0} | null | undefined) -> T0 | undefined",
+				"r":   "1 | undefined",
 			},
 		},
 	}

@@ -1043,8 +1043,22 @@ preserved even when not in the return type, since the user explicitly wrote
 5. **No `MutabilityType` wrapper:** Unlike the non-optional path which wraps
    the open object in `MutabilityUncertain`, the optional chaining path uses
    the raw `ObjectType`. Since the object might be null/undefined, mutation
-   through `?.` is not meaningful. This means the inferred parameter type
-   prints as `{bar: T0, ...T1} | null | undefined` (no `mut?` prefix).
+   through `?.` is not meaningful.
+
+6. **Closing:** `closeOpenObjectsInType` in `infer_func.go` now closes open
+   `ObjectType`s found inside unions (not just those directly behind a
+   TypeVar → MutabilityType chain). The `ObjectType` case in the switch
+   calls `closeObjectType` when `p.Open` is true, which sets `Open = false`,
+   recurses into property values, and removes `RestSpreadElem`s whose row
+   variables don't appear in the return type. This means the final inferred
+   parameter type is `{bar: T0} | null | undefined` (closed, no rest spread),
+   matching the non-optional equivalent.
+
+7. **Undefined deduplication:** `getUnionAccess` uses `typeContainsUndefined`
+   (in `utils.go`) before adding `| undefined` to the result. This prevents
+   nested optional chains from producing `T | undefined | undefined`: the
+   inner TypeVarType case returns `T | undefined`, and `getUnionAccess` sees
+   undefined is already present and skips adding another.
 
 ### Tests
 
@@ -1053,14 +1067,21 @@ Tests are in `TestRowTypesOptionalChaining` and
 
 - **Basic optional chaining:**
   `fn foo(obj) { return obj?.bar }` →
-  `fn <T0, T1>(obj: {bar: T0, ...T1} | null | undefined) -> T0 | undefined`.
+  `fn <T0>(obj: {bar: T0} | null | undefined) -> T0 | undefined`.
 - **Nested optional:**
   `fn foo(a) { return a?.b?.c }` →
-  `fn <T0, T1, T2>(a: {b: {c: T0, ...T1} | null | undefined, ...T2} | null | undefined) -> T0 | undefined`.
+  `fn <T0>(a: {b: {c: T0} | null | undefined} | null | undefined) -> T0 | undefined`.
 - **All optional:**
   `fn foo(obj) { val x = obj?.bar; val y = obj?.baz }` →
-  `fn <T0, T1, T2>(obj: {bar: T0, ...T1, baz: T2} | null | undefined) -> void`
+  `fn <T0, T1>(obj: {bar: T0, baz: T1} | null | undefined) -> void`
   (second `?.` adds `baz` to the open ObjectType inside the union).
+- **Optional chaining with return (row polymorphism):**
+  `fn foo(obj) { val x = obj?.bar; return obj }` →
+  `fn <T0, T1>(obj: {bar: T0, ...T1} | null | undefined) -> {bar: T0, ...T1} | null | undefined`
+  (row variable preserved because it escapes to the return type).
+- **Optional chaining row poly call:**
+  `fn foo(obj) { return obj?.bar }; val r = foo({bar: 1, baz: "hello"})` →
+  `r: 1 | undefined` (extra properties accepted, closed row variable removed).
 - **Mix of optional and non-optional (error):**
   `fn foo(obj) { val x = obj?.bar; val y = obj.baz }` → error on `obj.baz`
   because `obj` is nullable and non-optional `.` on a nullable type is flagged

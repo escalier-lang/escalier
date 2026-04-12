@@ -642,9 +642,13 @@ func closeOpenObjectsInType(t type_system.Type, returnVars map[int]*type_system.
 	case *type_system.MutabilityType:
 		closeOpenObjectsInType(p.Type, returnVars)
 	case *type_system.ObjectType:
-		for _, elem := range p.Elems {
-			if prop, ok := elem.(*type_system.PropertyElem); ok {
-				closeOpenObjectsInType(prop.Value, returnVars)
+		if p.Open {
+			closeObjectType(p, returnVars)
+		} else {
+			for _, elem := range p.Elems {
+				if prop, ok := elem.(*type_system.PropertyElem); ok {
+					closeOpenObjectsInType(prop.Value, returnVars)
+				}
 			}
 		}
 	case *type_system.TypeRefType:
