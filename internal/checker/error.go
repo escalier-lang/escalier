@@ -127,7 +127,7 @@ func (e InvalidObjectKeyError) Message() string {
 type KeyNotFoundError struct {
 	Object     *type_system.ObjectType
 	Key        type_system.ObjTypeKey
-	InferredAt *provenance.SpanProvenance // non-nil when the missing key was inferred by row inference
+	InferredAt *MemberAccessKeyProvenance // non-nil when the missing key was inferred by row inference
 	span       ast.Span
 }
 
@@ -137,7 +137,7 @@ func (e KeyNotFoundError) Span() ast.Span {
 func (e KeyNotFoundError) Message() string {
 	msg := "Key not found in object: " + e.Key.String() + " in " + e.Object.String()
 	if e.InferredAt != nil {
-		msg += ". Property " + e.Key.String() + " is required because it is accessed at " + e.InferredAt.String()
+		msg += ". Property " + e.Key.String() + " is required because it is accessed at " + e.InferredAt.Key.Span().String()
 	}
 	return msg
 }
@@ -525,7 +525,7 @@ type PropertyTypeMismatchError struct {
 	Property   type_system.ObjTypeKey
 	T1         type_system.Type
 	T2         type_system.Type
-	InferredAt *provenance.SpanProvenance // non-nil when the property was inferred
+	InferredAt *MemberAccessKeyProvenance // non-nil when the property was inferred
 	span       ast.Span
 }
 
@@ -535,15 +535,15 @@ func (e PropertyTypeMismatchError) Span() ast.Span {
 func (e PropertyTypeMismatchError) Message() string {
 	msg := e.T1.String() + " is not assignable to " + e.T2.String() + " for property " + e.Property.String()
 	if e.InferredAt != nil {
-		msg += ". Property " + e.Property.String() + " was inferred from access at " + e.InferredAt.String()
+		msg += ". Property " + e.Property.String() + " was inferred from access at " + e.InferredAt.Key.Span().String()
 	}
 	return msg
 }
 
 type IndexingConflictError struct {
-	Param        string
-	PropertySpan *provenance.SpanProvenance // location of property access
-	span         ast.Span                   // location of numeric index
+	Param          string
+	PropertyAccess *MemberAccessKeyProvenance // location of property access
+	span           ast.Span                   // location of numeric index
 }
 
 func (e IndexingConflictError) Span() ast.Span {
@@ -555,8 +555,8 @@ func (e IndexingConflictError) Message() string {
 		subject = "parameter '" + e.Param + "'"
 	}
 	msg := "Cannot index " + subject + " with a numeric index because it was already constrained to an object type"
-	if e.PropertySpan != nil {
-		msg += " by property access at " + e.PropertySpan.String()
+	if e.PropertyAccess != nil {
+		msg += " by property access at " + e.PropertyAccess.Key.Span().String()
 	}
 	if e.Param != "" {
 		msg += ". Consider adding a type annotation to '" + e.Param + "'"

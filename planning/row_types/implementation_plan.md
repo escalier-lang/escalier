@@ -2009,15 +2009,16 @@ failures.
    Added `Provenance provenance.Provenance` field to `PropertyElem` in
    `internal/type_system/types.go`. When creating a `PropertyElem` during row
    inference (in `newOpenObjectWithProperty` and `addPropertyToOpenObject`),
-   the span of the property access is stored as a `provenance.SpanProvenance`.
-   This avoids a circular dependency between `ast` and `type_system` by using
-   a new `SpanProvenance` type in the `provenance` package with line/column
-   fields. The `PropertyElem.Accept()` visitor method was also updated to
+   the `MemberAccessKey` that triggered inference is stored as a
+   `*MemberAccessKeyProvenance` (defined in `internal/checker`). This avoids
+   a circular dependency between `ast` and `type_system` by using the
+   `provenance.Provenance` interface. The `PropertyElem.Accept()` visitor
+   method was also updated to
    preserve `Provenance` when creating copies during type substitution.
 
 2. **Section 9a — Missing property at call site:** ✅
    Enhanced `KeyNotFoundError` in `internal/checker/error.go` with an
-   `InferredAt *provenance.SpanProvenance` field. When the missing property
+   `InferredAt *MemberAccessKeyProvenance` field. When the missing property
    was inferred during row inference, the error message now includes the
    inference location:
    > Key not found in object: bar in {baz: mut? 5}. Property bar is required
@@ -2031,15 +2032,15 @@ failures.
    Added `IndexingConflictError` in `internal/checker/error.go`:
    ```go
    type IndexingConflictError struct {
-       Param        string
-       PropertySpan *provenance.SpanProvenance
-       span         ast.Span
+       Param          string
+       PropertyAccess *MemberAccessKeyProvenance
+       span           ast.Span
    }
    ```
    Detected in `getObjectAccess` when a numeric `IndexKey` (either
    `isNumericType` or `asNonNegativeIntLiteral`) is used on an `ObjectType`
-   with `Open: true`. The `firstInferredPropertySpan` helper extracts the
-   span of the first inferred property for the error message.
+   with `Open: true`. The `firstInferredAccess` helper extracts the
+   provenance of the first inferred property for the error message.
 
    Message:
    > Cannot index parameter 'obj' with a numeric index because it was already
@@ -2058,13 +2059,13 @@ failures.
        Property   type_system.ObjTypeKey
        T1         type_system.Type
        T2         type_system.Type
-       InferredAt *provenance.SpanProvenance
+       InferredAt *MemberAccessKeyProvenance
        span       ast.Span
    }
    ```
    In the closed-vs-closed unification path, when `c.Unify` on shared
    properties produces a `CannotUnifyTypesError` and either side's
-   `PropertyElem` has `Provenance` set (as a `*provenance.SpanProvenance`),
+   `PropertyElem` has `Provenance` set (as a `*MemberAccessKeyProvenance`),
    the error is wrapped in a `PropertyTypeMismatchError` with property
    context and inference location.
 
@@ -2256,14 +2257,14 @@ All phases → Phase 11: Error Reporting ✅
 | File | Phases | Status |
 |------|--------|--------|
 | `internal/type_system/types.go` | 1, 7, 11, 12, 13 | ✅ (Phase 1) `Open`, `Widenable`, `IsParam`, `Written` fields added; `Accept`/`Copy` updated; (Phase 7) `collectFlatElems` and `ObjectType.String()` flattening of resolved `RestSpreadElem`s; ✅ (Phase 11) `Provenance provenance.Provenance` field on `PropertyElem`; `PropertyElem.Accept()` preserves `Provenance` on copy; ✅ (Phase 12) `ArrayConstraint` struct with `MethodElemVars` field for per-call-site deferred resolution, `ArrayConstraint` field on `TypeVarType`; ✅ (Phase 13) `collectFlatTupleElems` and `TupleType.String()` flattening of resolved `RestSpreadType` |
-| `internal/checker/expand_type.go` | 2, 9, 10, 11, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; ✅ (Phase 11) `newOpenObjectWithProperty` and `addPropertyToOpenObject` accept `accessSpan` and set `Provenance`; `spanProvenance` and `firstInferredPropertySpan` helpers; `getObjectAccess` detects numeric index on open object and raises `IndexingConflictError`; ✅ (Phase 12) deferred tuple/array commitment via `ArrayConstraint`; `isArrayMethod`/`isArrayMutatingMethod` for runtime method classification; `getArrayConstraintPropertyAccess` uses fresh elem var per method call for deferred union resolution; `getArrayConstraintIndexAccess` for subsequent accesses; ✅ (Phase 13) `tupleElemUnion` helper; `getMemberType` TupleType case handles `RestSpreadType` in both numeric index and method access |
+| `internal/checker/expand_type.go` | 2, 9, 10, 11, 12, 13 | ✅ (Phase 2) `TypeVarType` case in `getMemberType`, open-object handling in `getObjectAccess`, helper functions; ✅ (Phase 11) `newOpenObjectWithProperty` and `addPropertyToOpenObject` accept `MemberAccessKey` and set `Provenance`; `firstInferredAccess` helper; `getObjectAccess` detects numeric index on open object and raises `IndexingConflictError`; ✅ (Phase 12) deferred tuple/array commitment via `ArrayConstraint`; `isArrayMethod`/`isArrayMutatingMethod` for runtime method classification; `getArrayConstraintPropertyAccess` uses fresh elem var per method call for deferred union resolution; `getArrayConstraintIndexAccess` for subsequent accesses; ✅ (Phase 13) `tupleElemUnion` helper; `getMemberType` TupleType case handles `RestSpreadType` in both numeric index and method access |
 | `internal/checker/unify.go` | 3, 4, 10, 11, 12, 13 | ✅ (Phase 3) `openClosedObjectForParam`, open-vs-open/closed paths; (Phase 4) `unifyPruned` refactor, `widenLiteral`, `flatUnion`, `typeContains`, `unwrapMutability`; ✅ (Phase 11) closed-vs-closed path extracts `Provenance` from `origElems` for `KeyNotFoundError.InferredAt`; wraps `CannotUnifyTypesError` in `PropertyTypeMismatchError` when property has `Provenance` set; ✅ (Phase 12) `handleArrayConstraintBinding` — updates constraint when TypeVar with `ArrayConstraint` is bound to Array or tuple type; ✅ (Phase 13) `splitTupleAtRest`, `unifyTuples`, `unifyFixedTuples`, `unifyFixedVsVariadic`, `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`; tuple-vs-array and array-vs-tuple handle `RestSpreadType` |
 | `internal/parser/type_ann.go` | 13 | ✅ (Phase 13) `DotDotDot` case in `primaryTypeAnn` — enables `...T` in tuple type annotations (e.g. `[number, ...T]`) |
 | `internal/checker/generalize.go` | 2, 6, 7, 12 | ✅ (Phase 2) Mutability resolution in `GeneralizeFuncType`, `Open` preserved in `deepCloneType`; (Phase 7) No changes needed — handles row variables automatically; ✅ (Phase 12) `deepCloneType` clones `ArrayConstraint` including `MethodElemVars`; `collectUnresolvedTypeVars` collects from `ArrayConstraint` including `MethodElemVars`; ✅ (Phase 13/14) No changes needed — visitor pattern handles `RestSpreadType` in tuples; `collectUnresolvedTypeVars` already walks `TupleType.Elems` and `RestSpreadType.Type` |
 | `internal/checker/infer_func.go` | 3, 6, 7, 8, 12, 14 | ✅ (Phase 3) `IsParam: true` for unannotated parameters; (Phase 6) `closeOpenParams`, `closeObjectType`; (Phase 7) No changes needed; ✅ (Phase 12) `closeOpenParams` now a `Checker` method; `resolveArrayConstraintsInType` and `resolveArrayConstraint` resolve constraints during closing; `resolveArrayConstraint` unifies `MethodElemVars` with `ElemTypeVar` before resolution to accumulate union types from multiple method calls; ✅ (Phase 14) `closeTupleType` for rest variable filtering; `resolveArrayConstraint` appends `RestSpreadType` with fresh TV to inferred tuples; `resolveArrayConstraintsInType` checks ArrayConstraint before pruning; `closeOpenParams` resolves ArrayConstraints before collecting returnVars |
 | `internal/checker/infer_expr.go` | 2, 5, 7, 10, 12 | ✅ (Phase 2) `markPropertyWritten` in assignment handler; (Phase 7) No changes needed; ✅ (Phase 12) detect index assignment on `ArrayConstraint`, set `HasIndexAssignment` |
 | `internal/checker/error.go` | 11 | ✅ (Phase 11) `KeyNotFoundError` gained `InferredAt` field; new `IndexingConflictError` and `PropertyTypeMismatchError` types |
-| `internal/provenance/provenance.go` | 11 | ✅ (Phase 11) New `SpanProvenance` type with line/column fields to avoid circular ast↔type_system imports |
+| `internal/checker/member_access.go` | 11 | ✅ (Phase 11) `MemberAccessKeyProvenance` struct wrapping `MemberAccessKey` as `provenance.Provenance` |
 | `internal/checker/tests/row_types_test.go` | All | ✅ Tests for Phases 1–7 (PropertyAccess, Errors, KeyOf, IntersectionAccess, PassToTypedFunction, WriteAfterPass, StringLiteralIndex, MethodCallInference, PropertyWidening, Closing, RowPolymorphism); ✅ Phase 11 (MissingInferredProperty, IndexingConflictAfterPropertyAccess); ✅ Phase 12 (TupleArrayInference, TupleArrayInferenceEdgeCases); ✅ Phase 13 (VariadicTupleTypes, VariadicTupleSubtyping); ✅ Phase 14 (TupleRowPolymorphism) |
 | `internal/checker/widening_test.go` | 4 | ✅ Unit tests for `flatUnion` and `typeContains` helpers |
 

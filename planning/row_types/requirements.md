@@ -1018,8 +1018,9 @@ These are follow-up/implementation details for user-facing diagnostics.
 >
 > - `PropertyElem` gained a `Provenance provenance.Provenance` field that
 >   records the span of the property access that first inferred the property.
->   A new `provenance.SpanProvenance` type (with line/column fields) avoids
->   circular dependencies between `ast` and `type_system`.
+>   A `MemberAccessKeyProvenance` type (defined in `internal/checker`) wraps the
+>   `MemberAccessKey` that triggered inference and implements `provenance.Provenance`,
+>   avoiding circular dependencies between `ast` and `type_system`.
 > - `PropertyElem.Accept()` was updated to preserve `Provenance` when the
 >   type visitor creates a copy during substitution.
 > - `newOpenObjectWithProperty` and `addPropertyToOpenObject` in
@@ -1051,7 +1052,7 @@ where `baz` was assigned, (3) the type mismatch is clear enough that an
 annotation suggestion is not needed here.
 
 > **Status (2026-04-11):** Implemented. `KeyNotFoundError` gained an
-> `InferredAt *provenance.SpanProvenance` field. When the missing key's
+> `InferredAt *MemberAccessKeyProvenance` field. When the missing key's
 > `PropertyElem` has `Provenance` set, the unification path extracts it
 > and stores it as `KeyNotFoundError.InferredAt`, and the message includes
 > "Property bar is required because it is accessed at <location>". The
