@@ -72,10 +72,13 @@ constructor/static object) is not assignable to `Color` (a union of nominal inst
 
 Object patterns should not require listing every field of the type being matched. A
 pattern like `{x}` should match any object type that has an `x` property, regardless of
-how many other properties that type has. This is important because:
+how many other properties that type has. Conversely, every field that *is* listed in the
+pattern must exist on the target type — a pattern like `{foo}` against a type that has no
+`foo` property is an error. This is important because:
 
 - Objects may have many fields and requiring all of them would be verbose and impractical.
 - Patterns should express the shape the developer cares about, not the full structure.
+- Fields that are listed must be validated to catch typos and incorrect assumptions.
 
 ### R2: Structural object patterns must be able to match against nominal types
 
@@ -129,12 +132,13 @@ The type of the match target expression must be checked for compatibility with t
 
 ### R6: Pattern matching unification must be distinguishable from general unification
 
-The unification logic needs a way to know it is operating in a pattern-matching context:
+The unification logic needs a way to know it is operating in a pattern-matching context.
+The `Context` struct already has an `IsPatMatch` field
+([checker.go:45](../../internal/checker/checker.go#L45)) but it is never set to `true`:
 
-- Introduce a mechanism (e.g. a flag, a separate mode, or a wrapper function) to indicate
-  pattern-matching unification.
+- Activate this flag when unifying patterns in `inferMatchExpr`.
 - In pattern-matching mode, relax the nominal ID check for structural-vs-nominal
-  unification (per R1).
+  unification (per R2).
 - In non-pattern-matching contexts, preserve existing nominal type checking behavior
   unchanged.
 
@@ -152,7 +156,14 @@ The following pattern kinds must remain functional and not regress:
 - Rest patterns (`...rest`)
 - Guard expressions (`{x, y} if x > 0 => ...`)
 
-### R8: Narrowing within match arms
+### R8: Getters and methods are matchable as readable properties
+
+Structural patterns should treat getters and methods as readable properties. A pattern
+like `{bar}` should match a type that has a getter `get bar(): T` (binding `bar` to `T`)
+or a method `bar(): T` (binding `bar` to the method's function type). From the pattern's
+perspective, any named member that produces a value when read is a matchable property.
+
+### R9: Narrowing within match arms
 
 When a structural pattern matches a subset of a union's members:
 
@@ -284,4 +295,18 @@ declare val fb: FooBar
 val result = match fb {
     {missing} => missing,  // ERROR: no member has a 'missing' field
 }
+```
+
+### Case 10: Structural pattern matches a getter
+
+```ts
+class Circle(radius: number) {
+    get area(): number { 3.14159 * radius * radius }
+}
+
+declare val circle: Circle
+val result = match circle {
+    {area} => area,  // getter is treated as a readable property, area: number
+}
+// result: number
 ```

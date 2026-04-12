@@ -30,7 +30,7 @@ anywhere.
 
 ## Phase 2: Relax the nominal check in pattern-matching mode
 
-**Requirements:** R1, R2, R6
+**Requirements:** R2, R6
 
 **What:** In `Unify`'s object-vs-object branch, when `IsPatMatch` is true and the pattern
 (t1) is structural while the target (t2) is nominal, skip the nominal ID check and fall
@@ -72,10 +72,13 @@ Case 6 (partial match on a subset of fields).
 
 ## Phase 3: Validate pattern fields exist on the target type
 
-**Requirements:** R1
+**Requirements:** R1, R3
 
-**What:** After the open-vs-closed unification in pattern-matching mode, ensure that
-every field in the pattern actually exists on the target type. The current open-vs-closed
+**What:** R1 states that patterns need not include all fields, but the converse must also
+hold: every field that *is* listed in the pattern must exist on the target type. This is
+the error case of R3 — when a pattern matches no union member because its fields don't
+exist on any member. After the open-vs-closed unification in pattern-matching mode, ensure
+that every field in the pattern actually exists on the target type. The current open-vs-closed
 logic (lines 994-1005) only iterates the closed type's keys, so pattern fields that don't
 exist on the nominal type are silently ignored.
 
@@ -110,7 +113,7 @@ if obj1.Open && !obj2.Open {
 
 ## Phase 4: Handle structural patterns against union types
 
-**Requirements:** R3, R4, R8
+**Requirements:** R3, R4, R9
 
 **What:** The existing `_, UnionType` branch in `Unify` (lines 1377-1395) uses a
 probe-then-commit strategy that tries each union member and commits to the first match.
@@ -150,6 +153,46 @@ if ctx.IsPatMatch {
 }
 ```
 
+**Note:** This new branch only intercepts `ObjectType` (structural object patterns) against
+`UnionType`. Other pattern kinds (tuple patterns, literal patterns, identifier patterns)
+will continue to fall through to the generic `_, UnionType` probe-then-commit handler at
+line 1377. This is intentional — only structural object patterns need the multi-member
+matching behavior described in R3/R4.
+
+**New helper — `collectNamedElems`:** This function does not currently exist and must be
+created. It extracts a `map[ObjTypeKey]Type` from an `ObjectType`'s `Elems`, handling all
+element kinds (properties, methods, getters, setters, optional properties). This mirrors
+the inline extraction logic already used in the `UnionType, ObjectType` branch at
+lines 1236-1260 of `unify.go`, but factored into a reusable helper. The existing inline
+code should also be refactored to call this helper.
+
+```go
+// collectNamedElems extracts named property types from an ObjectType.
+// It handles PropertyElem (including optional), MethodElem, GetterElem,
+// and SetterElem — matching the extraction logic at unify.go:1236-1260.
+func collectNamedElems(obj *type_system.ObjectType) map[type_system.ObjTypeKey]type_system.Type {
+    result := make(map[type_system.ObjTypeKey]type_system.Type)
+    for _, elem := range obj.Elems {
+        switch elem := elem.(type) {
+        case *type_system.PropertyElem:
+            propType := elem.Value
+            if elem.Optional {
+                propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+            }
+            result[elem.Name] = propType
+        case *type_system.MethodElem:
+            result[elem.Name] = elem.Fn
+        case *type_system.GetterElem:
+            result[elem.Name] = elem.Fn.Return
+        case *type_system.SetterElem:
+            result[elem.Name] = elem.Fn.Params[0].Type
+        default: // skip CallableElem, NewableElem, RestSpreadElem, etc.
+        }
+    }
+    return result
+}
+```
+
 The `unifyPatternWithUnion` helper should:
 
 ```go
@@ -162,11 +205,17 @@ func (c *Checker) unifyPatternWithUnion(
     patFields := collectNamedElems(pat)
 
     // 2. For each union member, check if it has ALL pattern fields.
-    //    Union members may be nominal — extract their properties structurally.
-    matchingFieldTypes := map[ObjTypeKey][]Type{}
+    //    Union members may be nominal ObjectTypes (class instances). Since we are
+    //    in pattern-matching mode, we read their properties structurally via
+    //    collectNamedElems regardless of the Nominal flag.
+    matchingFieldTypes := make(map[type_system.ObjTypeKey][]type_system.Type)
     matchedMembers := []type_system.Type{}
     for _, member := range union.Types {
-        memberFields := collectNamedElems(member)
+        memberObj, ok := member.(*type_system.ObjectType)
+        if !ok {
+            continue // skip non-object union members (e.g. primitive types)
+        }
+        memberFields := collectNamedElems(memberObj)
 
         allMatch := true
         for key := range patFields {
@@ -194,20 +243,24 @@ func (c *Checker) unifyPatternWithUnion(
     //    exhaustiveness checking. See "Future: Exhaustiveness Checking" below.
     pat.MatchedUnionMembers = matchedMembers
 
-    // 5. Unify each pattern field's type variable with the union of matched types
+    // 5. Unify each pattern field's type variable with the union of matched types.
+    //    Clear IsPatMatch for these recursive calls — we are unifying individual
+    //    type variables against concrete types, not matching patterns against targets.
+    fieldCtx := ctx
+    fieldCtx.IsPatMatch = false
     errors := []Error{}
     for key, patType := range patFields {
         fieldUnion := type_system.NewUnionType(nil, matchingFieldTypes[key]...)
-        unifyErrors := c.Unify(ctx, patType, fieldUnion)
+        unifyErrors := c.Unify(fieldCtx, patType, fieldUnion)
         errors = append(errors, unifyErrors...)
     }
     return errors
 }
 ```
 
-**Note:** When collecting named elements from union members, the members may be nominal
-object types (class instances). Since we're in pattern-matching mode, we read their
-properties structurally regardless of nominality.
+**Cleanup:** The existing `UnionType, ObjectType` branch has a leftover debug statement at
+[unify.go:1223](../../internal/checker/unify.go#L1223) (`fmt.Fprintf(os.Stderr, ...)`).
+Remove it while working in this file.
 
 **Additional change required:**
 - [types.go](../../internal/type_system/types.go) — Add a `MatchedUnionMembers []Type`
@@ -216,19 +269,24 @@ properties structurally regardless of nominality.
   field is not used for type equality or unification — it is metadata for downstream
   passes (e.g. exhaustiveness checking).
 
-**Testing:** Write tests for Cases 1, 7, 8, and 9.
+**Testing:** Write tests for Cases 1, 7, 8, and 9. Note that the errors in Cases 4 and 9
+(pattern field not present in any union member) are *unification* errors from step 3
+(`CannotUnifyTypesError` when no members match), not exhaustiveness errors. Exhaustiveness
+checking is deferred to a future phase.
 
 ## Phase 5: Validate match targets for extractor patterns
 
 **Requirements:** R5
 
-**What:** When all patterns in a match expression are extractor patterns (e.g.
+**What:** When any pattern in a match expression is an extractor pattern (e.g.
 `Color.RGB(...)`, `Color.Hex(...)`), the target expression's type should be validated
 as a valid instance type. If the target is a constructor/static object (has callable or
-newable signatures), it should be rejected.
+newable signatures), it should be rejected. The check triggers on the presence of *any*
+extractor pattern, not only when *all* patterns are extractors — a match expression mixing
+extractors with structural patterns still expects the target to be an instance.
 
-**Approach:** In `inferMatchExpr`, after inferring the target type, check whether the
-patterns are extractor patterns and whether the target type is a constructor rather than
+**Approach:** In `inferMatchExpr`, after inferring the target type, check whether any
+pattern is an extractor pattern and whether the target type is a constructor rather than
 an instance.
 
 **Files to change:**
@@ -268,7 +326,7 @@ if isObj {
 
 **Requirements:** R7
 
-**What:** Run the full test suite and write tests for all 9 test cases from the
+**What:** Run the full test suite and write tests for all 10 test cases from the
 requirements doc. Verify no regressions in existing pattern matching behavior.
 
 **Files to change:**
@@ -283,6 +341,7 @@ requirements doc. Verify no regressions in existing pattern matching behavior.
   - Case 7: Shared fields across union members produce union bindings
   - Case 8: Shared field with same type across all union members
   - Case 9: Pattern field not present in any union member (should error)
+  - Case 10: Structural pattern matches a getter (R8)
 
 **Verification:** Run `go test ./...` and confirm all tests pass including existing
 pattern matching tests.
@@ -292,8 +351,8 @@ pattern matching tests.
 | File | Changes |
 |------|---------|
 | `internal/checker/infer_expr.go` | Set `IsPatMatch = true` for pattern unification; add constructor target validation |
-| `internal/checker/unify.go` | Relax nominal check when `IsPatMatch`; add pattern field existence check; add `unifyPatternWithUnion` for `ObjectType` vs `UnionType` in pattern mode |
-| `internal/checker/errors.go` | Add `ConstructorUsedAsMatchTargetError` (and `PropertyNotFoundError` if not already present) |
+| `internal/checker/unify.go` | Relax nominal check when `IsPatMatch`; add pattern field existence check; add `collectNamedElems` helper; add `unifyPatternWithUnion` for `ObjectType` vs `UnionType` in pattern mode; remove debug `fmt.Fprintf` at line 1223 |
+| `internal/checker/errors.go` | Add `ConstructorUsedAsMatchTargetError` and `PropertyNotFoundError` |
 | `internal/type_system/types.go` | Add `MatchedUnionMembers []Type` field to `ObjectType` |
 | `internal/checker/tests/infer_test.go` | Add test cases 1-9 |
 
