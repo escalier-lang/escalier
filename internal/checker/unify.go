@@ -861,10 +861,10 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 	if obj1, ok := t1.(*type_system.ObjectType); ok {
 		if obj2, ok := t2.(*type_system.ObjectType); ok {
 			if obj2.Nominal {
-				// NOTE: We can't do an early return because if one of the object
-				// types was inferred from a pattern, some of its properties may
-				// be type variables that need to be unified.
-				if obj1.ID != obj2.ID {
+				if ctx.IsPatMatch && !obj1.Nominal {
+					// In pattern-matching mode, allow structural patterns to match
+					// against nominal types by falling through to property comparison.
+				} else if obj1.ID != obj2.ID {
 					// TODO: check what classes the objects extend
 					return []Error{&CannotUnifyTypesError{
 						T1: obj1,
@@ -1034,6 +1034,21 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			} else if hasRests1 && hasRests2 {
 				// TODO(#410): implement unification when both sides have RestSpreadElems
 				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
+			} else if ctx.IsPatMatch {
+				// In pattern-matching mode: unify shared properties, and verify
+				// all pattern fields (keys1) exist on the target (keys2).
+				// Target fields not in the pattern are silently skipped (partial matching).
+				for _, key1 := range keys1 {
+					if value2, ok := namedElems2[key1]; ok {
+						unifyErrors := c.Unify(ctx, namedElems1[key1], value2)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						errors = append(errors, &PropertyNotFoundError{
+							Property: key1,
+							Object:   obj2,
+						})
+					}
+				}
 			} else {
 				for _, key2 := range keys2 {
 					value2 := namedElems2[key2]
