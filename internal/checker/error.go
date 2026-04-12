@@ -52,7 +52,6 @@ func (e UnknownComponentError) isError()                    {}
 func (e InvalidKeyPropError) isError()                      {}
 func (e UnexpectedChildrenError) isError()                  {}
 func (e UnresolvedExportAssignmentError) isError()          {}
-func (e IndexingConflictError) isError()                    {}
 func (e PropertyTypeMismatchError) isError()                {}
 
 type CannotMutateImmutableError struct {
@@ -536,30 +535,6 @@ func (e PropertyTypeMismatchError) Message() string {
 	msg := e.T1.String() + " is not assignable to " + e.T2.String() + " for property " + e.Property.String()
 	if e.InferredAt != nil {
 		msg += ". Property " + e.Property.String() + " was inferred from access at " + e.InferredAt.Key.Span().String()
-	}
-	return msg
-}
-
-type IndexingConflictError struct {
-	Param          string
-	PropertyAccess *MemberAccessKeyProvenance // location of property access
-	span           ast.Span                   // location of numeric index
-}
-
-func (e IndexingConflictError) Span() ast.Span {
-	return e.span
-}
-func (e IndexingConflictError) Message() string {
-	subject := "the parameter"
-	if e.Param != "" {
-		subject = "parameter '" + e.Param + "'"
-	}
-	msg := "Cannot index " + subject + " with a numeric index because it was already constrained to an object type"
-	if e.PropertyAccess != nil {
-		msg += " by property access at " + e.PropertyAccess.Key.Span().String()
-	}
-	if e.Param != "" {
-		msg += ". Consider adding a type annotation to '" + e.Param + "'"
 	}
 	return msg
 }

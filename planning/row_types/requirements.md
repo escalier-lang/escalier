@@ -1059,39 +1059,26 @@ annotation suggestion is not needed here.
 > closed-vs-closed unification path in `unify.go` extracts `Provenance`
 > from `origElems2`. Tested in `TestRowTypesErrors/MissingInferredProperty`.
 
-#### 9b. Numeric indexing vs. property access conflict
+#### 9b. Mixed string and numeric keys on inferred objects
 
-When the same parameter is used with both property access and numeric indexing
-(Section 3):
+The original plan called for an error when the same parameter was used with
+both property access and numeric indexing. However, there is no fundamental
+conflict — objects can have both string-keyed and numeric-keyed properties.
 
 ```esc
 fn foo(obj) {
     val name = obj.name
-    val first = obj[0]      // error
+    val first = obj[0]      // ok — infers obj: {name: T0, 0: T1}
 }
 ```
 
-Suggested message:
-> Cannot index parameter `obj` with a numeric index because it was already
-> constrained to an object type by property access `obj.name` at
-> <source location>. Consider adding a type annotation to `obj`.
-
-Message elements: (1) identifies parameter `obj`, (2) shows the conflicting
-usage sites (property access and numeric index), (3) suggests adding an
-explicit type annotation.
-
-> **Status (2026-04-11):** Implemented. `IndexingConflictError` is raised in
-> `getObjectAccess` when a numeric `IndexKey` is used on an open `ObjectType`
-> **only if the object was inferred from property access** (checked via
-> `firstInferredAccess`). If the open object was not created by property
-> access inference (e.g., from `openClosedObjectForParam`), numeric indexes
-> are allowed and add a numeric-keyed property via
-> `addNumericPropertyToOpenObject`, enabling mixed string/numeric key objects
-> like `{x: number, 0: T0}`. The `Param` field is not populated (parameter
-> name is not available at that call depth), but the error span points to the
-> index expression and the message includes the span of the first inferred
-> property. Tested in `TestRowTypesErrors/IndexingConflictAfterPropertyAccess`
-> and `TestRowTypesPropertyAccess/NumericIndexOnReopenedObject`.
+> **Status (2026-04-11):** Numeric literal indexes on open objects add a
+> numeric-keyed property via `addNumericPropertyToOpenObject` in
+> `getObjectAccess`, enabling mixed key types like `{bar: T0, 0: T1}`.
+> The originally planned `IndexingConflictError` was removed — no error is
+> reported for this case. Tested in
+> `TestRowTypesPropertyAccess/MixedStringAndNumericKeys` and
+> `TestRowTypesPropertyAccess/NumericIndexOnReopenedObject`.
 
 #### 9c. Open-to-closed unification property type mismatch
 
@@ -1128,15 +1115,15 @@ annotation suggestion needed.
 Error messages should suggest adding a type annotation when the conflict arises
 from the inference mechanism itself (not from a straightforward type mismatch).
 Specifically:
-- **Suggest annotation**: numeric-indexing-vs-property-access conflicts (9b),
-  and any case where the inferred type is surprising or non-obvious to the user.
+- **Suggest annotation**: any case where the inferred type is surprising or
+  non-obvious to the user.
 - **Don't suggest annotation**: missing properties (9a) or simple type
   mismatches (9c), where the fix is to change the call site argument rather than
   annotate the parameter.
 
-> **Status (2026-04-11):** Implemented as specified. `IndexingConflictError`
-> includes "Consider adding a type annotation". `KeyNotFoundError` and
-> `PropertyTypeMismatchError` do not suggest annotations.
+> **Status (2026-04-11):** `KeyNotFoundError` and `PropertyTypeMismatchError`
+> do not suggest annotations. The originally planned numeric-indexing conflict
+> (9b) was removed since mixed string/numeric keys are now allowed.
 
 ### 10. Scope and Limitations
 

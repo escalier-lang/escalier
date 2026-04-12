@@ -1059,26 +1059,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					return c.addPropertyToOpenObject(objType, strLit.Value, k), errors
 				}
 			}
-			// Numeric index on an open object: if the object was inferred from
-			// property access, report a conflict; otherwise add a numeric property.
+			// Numeric literal index — add a numeric-keyed property to the open object.
+			// Objects can have both string and numeric keys.
 			if litIndex, isNonNegInt := asNonNegativeIntLiteral(keyType); isNonNegInt {
-				if inferred := firstInferredAccess(objType); inferred != nil {
-					errors = append(errors, &IndexingConflictError{
-						PropertyAccess: inferred,
-						span:           k.Span(),
-					})
-					return type_system.NewUndefinedType(nil), errors
-				}
 				return c.addNumericPropertyToOpenObject(objType, float64(litIndex), k), errors
-			}
-			if isNumericType(keyType) {
-				if inferred := firstInferredAccess(objType); inferred != nil {
-					errors = append(errors, &IndexingConflictError{
-						PropertyAccess: inferred,
-						span:           k.Span(),
-					})
-					return type_system.NewUndefinedType(nil), errors
-				}
 			}
 		}
 
@@ -1134,19 +1118,6 @@ func (c *Checker) addNumericPropertyToOpenObject(objType *type_system.ObjectType
 	prop.Provenance = &MemberAccessKeyProvenance{Key: accessKey}
 	objType.Elems = append(objType.Elems, prop)
 	return propTV
-}
-
-// firstInferredAccess returns the MemberAccessKeyProvenance of the first inferred
-// property on an open ObjectType, or nil if none have one.
-func firstInferredAccess(objType *type_system.ObjectType) *MemberAccessKeyProvenance {
-	for _, elem := range objType.Elems {
-		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			if makp, ok := prop.Provenance.(*MemberAccessKeyProvenance); ok {
-				return makp
-			}
-		}
-	}
-	return nil
 }
 
 // markPropertyWritten finds a property by name on an open ObjectType and sets

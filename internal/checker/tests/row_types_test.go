@@ -265,6 +265,17 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				"foo": "fn <T0>(obj: {bar: T0}) -> [T0, T0]",
 			},
 		},
+		"MixedStringAndNumericKeys": {
+			input: `
+				fn foo(obj) {
+					val x = obj.bar
+					return obj[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0, T1>(obj: {bar: T0, 0: T1}) -> T1",
+			},
+		},
 		"NumericIndexOnReopenedObject": {
 			input: `
 				fn bar(obj: {x: number}) -> number { return obj.x }
@@ -324,16 +335,6 @@ func TestRowTypesErrors(t *testing.T) {
 				}
 			`,
 			expectedErrs: []string{"is required because it is accessed at"},
-		},
-		// Section 9b: numeric indexing conflicts with property access
-		"IndexingConflictAfterPropertyAccess": {
-			input: `
-				fn foo(obj) {
-					val x = obj.bar
-					return obj[0]
-				}
-			`,
-			expectedErrs: []string{"Cannot index the parameter with a numeric index because it was already constrained to an object type by property access at"},
 		},
 		// Section 9c: property type mismatch at call site between
 		// inferred parameter and argument with wrong property type.
