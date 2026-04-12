@@ -124,3 +124,55 @@ val result2 = match obj {
 	Color(r, g, blue = 0) => r + g + blue,
 	Event(kind = "default") => kind,
 }
+
+// Case 1: Structural destructuring of a nominal union
+declare val obj2: Color | Event
+export val structuralUnionMatch = match obj2 {
+	{r, g, b} => r + g + b,
+	{kind} => kind,
+}
+
+// Case 5: Mixed nominal and structural patterns
+declare val obj3: Color | Event
+export val mixedNominalStructural = match obj3 {
+	Color {r, g, b} => r + g + b,
+	{kind} => kind,
+}
+
+// Case 6: Partial match on subset of fields
+class User(name: string, age: number, email: string) { name, age, email }
+declare val user: User
+export val partialMatch = match user {
+	{name} => name,
+}
+
+// Case 7: Shared fields across union members produce union bindings
+type FooBarBaz = {kind: "foo", value: string} | {kind: "bar", value: number} | {kind: "baz", flag: boolean}
+declare val fbb: FooBarBaz
+export val sharedFieldsMatch = match fbb {
+	{value} => value,
+	_ => undefined,
+}
+
+// Case 8: Shared field with same type across all members
+type Shape = {kind: "circle", radius: number} | {kind: "square", side: number} | {kind: "rect", width: number, height: number}
+declare val shape: Shape
+export val sharedFieldSameType = match shape {
+	{kind} => kind,
+}
+
+// Case 11: Object pattern with literal values
+declare val point: Point
+export val literalPatternMatch = match point {
+	{x: 0, y: 0} => "origin",
+	{x, y} => "other",
+}
+
+// Case 12: Structural pattern matches a getter
+class Circle(radius: number) {
+	get area(self) -> number { return 3.14159 * radius * radius },
+}
+declare val circle: Circle
+export val getterMatch = match circle {
+	{area} => area,
+}

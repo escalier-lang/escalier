@@ -553,6 +553,19 @@ func (e PropertyNotFoundError) Message() string {
 	return "Property " + e.Property.String() + " does not exist on type " + e.Object.String()
 }
 
+type ConstructorUsedAsMatchTargetError struct {
+	TargetType type_system.Type
+	span       ast.Span
+}
+
+func (e ConstructorUsedAsMatchTargetError) isError()        {}
+func (e ConstructorUsedAsMatchTargetError) Span() ast.Span {
+	return e.span
+}
+func (e ConstructorUsedAsMatchTargetError) Message() string {
+	return "Match target has type " + e.TargetType.String() + " which is a constructor, not an instance"
+}
+
 // TODO: make this a sum type so that different error type can reference other
 // types if necessary
 // type Error struct {

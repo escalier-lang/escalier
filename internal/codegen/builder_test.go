@@ -421,6 +421,37 @@ class Color__RGB {
 }
 Color.RGB = Color__RGB;`,
 		},
+		"ClassDecl_InstanceGetter_RewritesParamToThis": {
+			declSource: `class Circle(radius: number) {
+	get area(self) -> number { return 3.14159 * radius * radius },
+}`,
+			ns: "",
+			expected: `class Circle {
+  constructor(temp1) {
+    const radius = temp1;
+    this.radius = radius;
+  }
+  get area() {
+    return 3.14159 * this.radius * this.radius;
+  }
+}`,
+		},
+		"ClassDecl_StaticMethod_DoesNotRewriteParams": {
+			declSource: `class Foo(x: number) {
+	static create(x: number) -> number { return x * 2 },
+}`,
+			ns: "",
+			expected: `class Foo {
+  constructor(temp2) {
+    const x = temp2;
+    this.x = x;
+  }
+  static create(temp1) {
+    const x = temp1;
+    return x * 2;
+  }
+}`,
+		},
 	}
 
 	for name, test := range tests {
