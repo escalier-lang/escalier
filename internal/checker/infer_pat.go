@@ -96,6 +96,12 @@ func (c *Checker) inferPattern(
 				case *ast.ObjRestPat:
 					t, restErrors := inferPatRec(elem.Pattern)
 					errors = slices.Concat(errors, restErrors)
+					// Mark the type variable as originating from an object rest
+					// pattern so that spreading it into a tuple can be flagged
+					// as an error (objects are not iterable).
+					if tvar, ok := t.(*type_system.TypeVarType); ok {
+						tvar.IsObjectRest = true
+					}
 					elems = append(elems, type_system.NewRestSpreadElem(t))
 				}
 			}

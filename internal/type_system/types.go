@@ -195,6 +195,7 @@ type TypeVarType struct {
 	Widenable       bool             // true for type vars whose type is inferred from usage (e.g. property values on open objects)
 	IsParam         bool             // true for type vars created for unannotated function parameters
 	InstanceChain   []*TypeVarType   // populated by Prune when this TypeVar's Instance is another TypeVar (alias chain from bind); stores all TypeVars in the chain before path compression collapses it
+	IsObjectRest    bool             // true for type vars created for object rest patterns (e.g. {a, ...rest})
 	ArrayConstraint *ArrayConstraint // non-nil when numeric indexing has been observed; resolved during closing
 	provenance      Provenance
 }

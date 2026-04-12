@@ -1857,6 +1857,9 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 						// representative of this equivalence class after binding.
 						typeVar2.Constraint = typeVar1.Constraint
 					}
+					// Propagate IsObjectRest so that Prune() returns a TypeVar
+					// that preserves the marker for the tuple spread check.
+					typeVar2.IsObjectRest = typeVar2.IsObjectRest || typeVar1.IsObjectRest
 					typeVar1.Instance = t2
 					typeVar1.SetProvenance(&type_system.TypeProvenance{
 						Type: t2,

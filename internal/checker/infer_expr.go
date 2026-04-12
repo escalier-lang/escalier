@@ -285,11 +285,22 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					elemTypes = append(elemTypes, st.Elems...)
 					handled = true
 				case *type_system.TypeVarType:
-					// Unannotated parameter — no upfront iterable constraint is added.
-					// The constraint is enforced structurally at call sites: when the
-					// caller passes a concrete argument, unification resolves the type
-					// variable and validates iterability at that point.
-					elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, st))
+					// If the type variable originated from an object rest pattern
+					// (e.g. {a, ...rest}), it must be an object and is not iterable.
+					if st.IsObjectRest {
+						err := NewGenericError(
+							"Object rest type is not iterable",
+							spread.Span(),
+						)
+						errors = append(errors, err)
+						elementType := type_system.NewAnyType(nil)
+						elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, &type_system.TypeRefType{
+							Name:     type_system.NewIdent("Array"),
+							TypeArgs: []type_system.Type{elementType},
+						}))
+					} else {
+						elemTypes = append(elemTypes, type_system.NewRestSpreadType(nil, st))
+					}
 					handled = true
 				case *type_system.TypeRefType:
 					if c.isArrayType(st) {

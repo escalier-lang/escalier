@@ -142,6 +142,7 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 			return fresh
 		}
 		fresh := c.FreshVar(nil)
+		fresh.IsObjectRest = t.IsObjectRest
 		varMapping[t.ID] = fresh
 		if t.Constraint != nil {
 			fresh.Constraint = c.deepCloneType(t.Constraint, varMapping)
