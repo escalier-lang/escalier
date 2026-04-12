@@ -1346,7 +1346,9 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		// Unify the pattern type with the target type to ensure they're compatible
 		// The pattern type must be a subtype of the target type.
 		// This is opposite of what we do when inferring variable declarations.
-		unifyErrors := c.Unify(caseCtx, patternType, targetType)
+		patMatchCtx := caseCtx
+		patMatchCtx.IsPatMatch = true
+		unifyErrors := c.Unify(patMatchCtx, patternType, targetType)
 		errors = slices.Concat(errors, unifyErrors)
 
 		// If there's a guard, check that it's a boolean

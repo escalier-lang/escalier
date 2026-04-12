@@ -53,6 +53,7 @@ func (e InvalidKeyPropError) isError()                      {}
 func (e UnexpectedChildrenError) isError()                  {}
 func (e UnresolvedExportAssignmentError) isError()          {}
 func (e PropertyTypeMismatchError) isError()                {}
+func (e PropertyNotFoundError) isError()                    {}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -537,6 +538,19 @@ func (e PropertyTypeMismatchError) Message() string {
 		msg += ". Property " + e.Property.String() + " was inferred from access at " + e.InferredAt.Key.Span().String()
 	}
 	return msg
+}
+
+type PropertyNotFoundError struct {
+	Property type_system.ObjTypeKey
+	Object   *type_system.ObjectType
+	span     ast.Span
+}
+
+func (e PropertyNotFoundError) Span() ast.Span {
+	return e.span
+}
+func (e PropertyNotFoundError) Message() string {
+	return "Property " + e.Property.String() + " does not exist on type " + e.Object.String()
 }
 
 // TODO: make this a sum type so that different error type can reference other

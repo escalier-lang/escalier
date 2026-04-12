@@ -3,7 +3,7 @@
 This plan implements the requirements from [requirements.md](requirements.md) to fix
 pattern matching unification for structural patterns against nominal types and unions.
 
-## Phase 1: Activate the `IsPatMatch` flag
+## Phase 1: Activate the `IsPatMatch` flag ✅
 
 **Requirements:** R6
 
@@ -11,24 +11,19 @@ pattern matching unification for structural patterns against nominal types and u
 ([checker.go:45](../../internal/checker/checker.go#L45)) but it is never set to `true`.
 Set it to `true` when unifying patterns in `inferMatchExpr`.
 
-**Files to change:**
-- [infer_expr.go](../../internal/checker/infer_expr.go) — In `inferMatchExpr` (line 1349),
-  create a pattern-matching context before the `Unify` call:
+**Files changed:**
+- [infer_expr.go](../../internal/checker/infer_expr.go) — In `inferMatchExpr`, created a
+  pattern-matching context before the `Unify` call:
 
 ```go
-// Before:
-unifyErrors := c.Unify(caseCtx, patternType, targetType)
-
-// After:
 patMatchCtx := caseCtx
 patMatchCtx.IsPatMatch = true
 unifyErrors := c.Unify(patMatchCtx, patternType, targetType)
 ```
 
-**Testing:** Existing tests should continue to pass since `IsPatMatch` is not yet read
-anywhere.
+**Testing:** Existing tests continue to pass since `IsPatMatch` is not yet read anywhere.
 
-## Phase 2: Relax the nominal check in pattern-matching mode
+## Phase 2: Relax the nominal check in pattern-matching mode ✅
 
 **Requirements:** R2, R6
 
@@ -36,18 +31,10 @@ anywhere.
 (t1) is structural while the target (t2) is nominal, skip the nominal ID check and fall
 through to structural property matching.
 
-**Files to change:**
-- [unify.go](../../internal/checker/unify.go) — Modify the nominal check at lines 863-873:
+**Files changed:**
+- [unify.go](../../internal/checker/unify.go) — Modified the nominal check:
 
 ```go
-// Before:
-if obj2.Nominal {
-    if obj1.ID != obj2.ID {
-        return []Error{&CannotUnifyTypesError{T1: obj1, T2: obj2}}
-    }
-}
-
-// After:
 if obj2.Nominal {
     if ctx.IsPatMatch && !obj1.Nominal {
         // In pattern-matching mode, allow structural patterns to match
@@ -59,57 +46,66 @@ if obj2.Nominal {
 ```
 
 **What this enables:** A structural pattern like `{x, y}` can now unify against a nominal
-type like `Point` by comparing properties structurally. The existing open-vs-closed
-unification logic handles the property matching — the pattern's object type is open (from
-`inferPattern`), and the nominal type is closed, so the `open-vs-closed` branch
-(lines 994-1005) applies: shared properties are unified, and closed-only properties
-(those in the nominal type but not the pattern) are copied to the open type. Pattern-only
-properties that don't exist on the nominal type won't produce an error in this branch,
-which needs to be addressed (see Phase 3).
+type like `Point` by comparing properties structurally.
 
-**Testing:** Write tests for Case 1 (structural destructuring of a nominal type) and
-Case 6 (partial match on a subset of fields).
+**Key discovery:** Pattern object types created by `inferPattern` are **closed** (not open).
+`NewObjectType` sets `Open: false` by default. This means the `open-vs-closed` branch does
+not apply for patterns. Instead, the `closed-vs-closed` branch handles property comparison,
+which required a pattern-matching-specific path (see Phase 3).
 
-## Phase 3: Validate pattern fields exist on the target type
+**Testing:** Tests for Case 6 (partial match on a subset of fields) and Case 12 (structural
+pattern matches a getter) pass.
+
+## Phase 3: Validate pattern fields exist on the target type ✅
 
 **Requirements:** R1, R3
 
 **What:** R1 states that patterns need not include all fields, but the converse must also
 hold: every field that *is* listed in the pattern must exist on the target type. This is
 the error case of R3 — when a pattern matches no union member because its fields don't
-exist on any member. After the open-vs-closed unification in pattern-matching mode, ensure
-that every field in the pattern actually exists on the target type. The current open-vs-closed
-logic (lines 994-1005) only iterates the closed type's keys, so pattern fields that don't
-exist on the nominal type are silently ignored.
+exist on any member.
 
-**Approach:** When `IsPatMatch` is true and the pattern (t1) is open while the target (t2)
-is closed, after the standard open-vs-closed unification, check that every key in the
-pattern exists in the target. If a pattern field is not found, report an error.
+**Key discovery:** Since pattern object types are **closed** (not open as originally
+assumed), the validation needed to be added in the `closed-vs-closed` branch rather than
+the `open-vs-closed` branch. The existing closed-vs-closed logic iterates the *target's*
+keys and reports `KeyNotFoundError` for any key not in the pattern — the opposite of what
+pattern matching needs.
 
-**Files to change:**
-- [unify.go](../../internal/checker/unify.go) — Add a check after the open-vs-closed
-  block (around line 1005):
+**Approach:** Added a new `ctx.IsPatMatch` branch in the closed-vs-closed path that:
+1. Iterates only pattern fields (keys1) — target fields not in the pattern are silently
+   skipped (partial matching per R1).
+2. For each pattern field, checks it exists on the target and unifies the types.
+3. Reports `PropertyNotFoundError` for pattern fields not found on the target.
+
+**Files changed:**
+- [unify.go](../../internal/checker/unify.go) — Added pattern-matching branch in the
+  closed-vs-closed `else` block:
 
 ```go
-if obj1.Open && !obj2.Open {
-    // ... existing unification logic ...
-
-    // In pattern-matching mode, verify all pattern fields exist on the target
-    if ctx.IsPatMatch {
-        for _, key := range keys1 {
-            if _, ok := namedElems2[key]; !ok {
-                errors = append(errors, &PropertyNotFoundError{
-                    Property: key,
-                    Object:   obj2,
-                })
-            }
+} else if ctx.IsPatMatch {
+    // In pattern-matching mode: unify shared properties, and verify
+    // all pattern fields (keys1) exist on the target (keys2).
+    // Target fields not in the pattern are silently skipped (partial matching).
+    for _, key1 := range keys1 {
+        if value2, ok := namedElems2[key1]; ok {
+            unifyErrors := c.Unify(ctx, namedElems1[key1], value2)
+            errors = slices.Concat(errors, unifyErrors)
+        } else {
+            errors = append(errors, &PropertyNotFoundError{
+                Property: key1,
+                Object:   obj2,
+            })
         }
     }
-    return errors
+} else {
+    // ... existing closed-vs-closed logic ...
 }
 ```
 
-**Testing:** Write test for Case 4 (pattern field `{foo}` not present in any union member).
+- [error.go](../../internal/checker/error.go) — Added `PropertyNotFoundError` type with
+  message format: `"Property <name> does not exist on type <obj>"`.
+
+**Testing:** Test for pattern field `{foo}` not present on a nominal `Point` type passes.
 
 ## Phase 4: Handle structural patterns against union types
 
@@ -326,22 +322,24 @@ if isObj {
 
 **Requirements:** R7
 
-**What:** Run the full test suite and write tests for all 10 test cases from the
+**What:** Run the full test suite and write tests for all test cases from the
 requirements doc. Verify no regressions in existing pattern matching behavior.
 
 **Files to change:**
-- [infer_test.go](../../internal/checker/tests/infer_test.go) — Add new test cases to
-  `TestMatchExprInference` covering:
-  - Case 1: Structural destructuring of a nominal union
-  - Case 2: Enum constructor as match target (should error)
-  - Case 3: Correct enum instance matching (should succeed)
-  - Case 4: Structural pattern matching no union member (should error)
-  - Case 5: Mixed nominal and structural patterns
-  - Case 6: Partial match on subset of fields
-  - Case 7: Shared fields across union members produce union bindings
-  - Case 8: Shared field with same type across all union members
-  - Case 9: Pattern field not present in any union member (should error)
-  - Case 10: Structural pattern matches a getter (R8)
+- [pattern_match_test.go](../../internal/checker/tests/pattern_match_test.go) — Add test
+  cases covering:
+  - Case 1: Structural destructuring of a nominal union (requires Phase 4)
+  - Case 2: Enum constructor as match target - should error (requires Phase 5)
+  - Case 3: Correct enum instance matching - should succeed (requires Phase 5)
+  - Case 4: Structural pattern matching no union member - should error (requires Phase 4)
+  - Case 5: Mixed nominal and structural patterns (requires Phase 4)
+  - Case 6: Partial match on subset of fields ✅
+  - Case 7: Shared fields across union members produce union bindings (requires Phase 4)
+  - Case 8: Shared field with same type across all union members (requires Phase 4)
+  - Case 9: Pattern field not present in any union member - should error (requires Phase 4)
+  - Case 10: Pattern fields split across union members - should error (requires Phase 4)
+  - Case 11: Object pattern with literal values
+  - Case 12: Structural pattern matches a getter ✅
 
 **Verification:** Run `go test ./...` and confirm all tests pass including existing
 pattern matching tests.
@@ -350,18 +348,18 @@ pattern matching tests.
 
 | File | Changes |
 |------|---------|
-| `internal/checker/infer_expr.go` | Set `IsPatMatch = true` for pattern unification; add constructor target validation |
-| `internal/checker/unify.go` | Relax nominal check when `IsPatMatch`; add pattern field existence check; add `collectNamedElems` helper; add `unifyPatternWithUnion` for `ObjectType` vs `UnionType` in pattern mode; remove debug `fmt.Fprintf` at line 1223 |
-| `internal/checker/errors.go` | Add `ConstructorUsedAsMatchTargetError` and `PropertyNotFoundError` |
-| `internal/type_system/types.go` | Add `MatchedUnionMembers []Type` field to `ObjectType` |
-| `internal/checker/tests/infer_test.go` | Add test cases 1-10 |
+| `internal/checker/infer_expr.go` | Set `IsPatMatch = true` for pattern unification; add constructor target validation (Phase 5) |
+| `internal/checker/unify.go` | Relax nominal check when `IsPatMatch`; add pattern-matching branch in closed-vs-closed; add `collectNamedElems` helper (Phase 4); add `unifyPatternWithUnion` for `ObjectType` vs `UnionType` in pattern mode (Phase 4); remove debug `fmt.Fprintf` at line 1223 (Phase 4) |
+| `internal/checker/error.go` | Add `ConstructorUsedAsMatchTargetError` (Phase 5) and `PropertyNotFoundError` ✅ |
+| `internal/type_system/types.go` | Add `MatchedUnionMembers []Type` field to `ObjectType` (Phase 4) |
+| `internal/checker/tests/pattern_match_test.go` | Add test cases ✅ (partial — Cases 6, 12, and error case done) |
 
 ## Dependencies between phases
 
 ```text
-Phase 1 (activate flag)
-  ├──── Phase 2 (relax nominal check)
-  │       └──── Phase 3 (validate pattern fields)
+Phase 1 (activate flag) ✅
+  ├──── Phase 2 (relax nominal check) ✅
+  │       └──── Phase 3 (validate pattern fields) ✅
   ├──── Phase 4 (pattern vs union)
   ├──── Phase 5 (constructor validation)
   └──── Phase 6 (comprehensive testing) — after all above
@@ -369,6 +367,16 @@ Phase 1 (activate flag)
 
 Phases 2/3, 4, and 5 are independent of each other and can be worked on in parallel
 after Phase 1 is complete.
+
+## Implementation notes
+
+**Pattern object types are closed, not open:** The original plan assumed `inferPattern`
+produces open object types, but `NewObjectType` creates closed types by default. This
+means the `open-vs-closed` unification branch does not apply for patterns. Instead, the
+`closed-vs-closed` branch needed a pattern-matching-specific code path that:
+- Iterates only pattern fields (not target fields), enabling partial matching
+- Reports `PropertyNotFoundError` for non-existent pattern fields
+- Unifies matching field types normally
 
 ## Future: Exhaustiveness Checking
 

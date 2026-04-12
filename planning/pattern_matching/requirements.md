@@ -68,7 +68,7 @@ constructor/static object) is not assignable to `Color` (a union of nominal inst
 
 ## Requirements
 
-### R1: Partial matching — patterns need not include all fields
+### R1: Partial matching — patterns need not include all fields ✅ (for single nominal types)
 
 Object patterns should not require listing every field of the type being matched. A
 pattern like `{x}` should match any object type that has an `x` property, regardless of
@@ -80,7 +80,7 @@ pattern must exist on the target type — a pattern like `{foo}` against a type 
 - Patterns should express the shape the developer cares about, not the full structure.
 - Fields that are listed must be validated to catch typos and incorrect assumptions.
 
-### R2: Structural object patterns must be able to match against nominal types
+### R2: Structural object patterns must be able to match against nominal types ✅
 
 When a structural (non-nominal) object pattern is unified against a nominal object type
 during pattern matching:
@@ -130,7 +130,7 @@ The type of the match target expression must be checked for compatibility with t
 - The type checker should report an error when the target type is an object with
   callable/newable signatures (a constructor) where an instance type is expected.
 
-### R6: Pattern matching unification must be distinguishable from general unification
+### R6: Pattern matching unification must be distinguishable from general unification ✅
 
 The unification logic needs a way to know it is operating in a pattern-matching context.
 The `Context` struct already has an `IsPatMatch` field
@@ -244,7 +244,7 @@ val result = match obj {
 // result: number | string
 ```
 
-### Case 6: Partial match — pattern uses subset of fields
+### Case 6: Partial match — pattern uses subset of fields ✅
 
 ```ts
 class User(name: string, age: number, email: string) { name, age, email }
@@ -334,11 +334,11 @@ val result = match arr {
 // result: string
 ```
 
-### Case 12: Structural pattern matches a getter
+### Case 12: Structural pattern matches a getter ✅
 
 ```ts
 class Circle(radius: number) {
-    get area(): number { 3.14159 * radius * radius }
+    get area(self) -> number { return 3.14159 * radius * radius }
 }
 
 declare val circle: Circle

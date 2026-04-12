@@ -860,12 +860,11 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*type_system.ObjectType); ok {
 		if obj2, ok := t2.(*type_system.ObjectType); ok {
-			if obj2.Nominal {
-				// NOTE: We can't do an early return because if one of the object
-				// types was inferred from a pattern, some of its properties may
-				// be type variables that need to be unified.
+			// In pattern-matching mode, allow structural patterns to match
+			// against nominal types by falling through to property comparison.
+			if obj2.Nominal && !ctx.IsPatMatch {
 				if obj1.ID != obj2.ID {
-					// TODO: check what classes the objects extend
+					// TODO(#424): check what classes the objects extend
 					return []Error{&CannotUnifyTypesError{
 						T1: obj1,
 						T2: obj2,
@@ -873,13 +872,12 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				}
 			}
 
-			// TODO: handle exactness
-			// TODO: handle unnamed elems, e.g. callable and newable signatures
-			// TODO: handle spread
-			// TODO: handle mapped type elems
-			// TODO: handle getters/setters appropriately (we need to know which
-			// type is being read from and which is being written to... does that
-			// question even make sense?)
+			// TODO(#419): handle exactness
+			// TODO(#420): handle unnamed elems, e.g. callable and newable signatures
+			// TODO(#421): handle spread when both closed sides have RestSpreadElems
+			// TODO(#422): handle mapped type elems
+			// TODO(#423): handle getters/setters with proper variance (currently
+			// flattened into the same map as properties, losing read/write directionality)
 
 			errors := []Error{}
 
@@ -1034,6 +1032,28 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			} else if hasRests1 && hasRests2 {
 				// TODO(#410): implement unification when both sides have RestSpreadElems
 				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
+			} else if ctx.IsPatMatch {
+				// In pattern-matching mode: unify shared properties, and verify
+				// all pattern fields (keys1) exist on the target (keys2).
+				// Target fields not in the pattern are silently skipped (partial matching).
+				for _, key1 := range keys1 {
+					_, isSetter := origElems2[key1].(*type_system.SetterElem)
+					value2, found := namedElems2[key1]
+					if found && !isSetter {
+						unifyErrors := c.Unify(ctx, namedElems1[key1], value2)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						errors = append(errors, &PropertyNotFoundError{
+							Property: key1,
+							Object:   obj2,
+							span:     getKeyNotFoundSpan(obj1, namedElems1[key1]),
+						})
+						// Resolve the pattern field's type to undefined so it doesn't
+						// leak as an unresolved type variable into the match arm result.
+						undefinedType := type_system.NewUndefinedType(nil)
+						c.Unify(ctx, namedElems1[key1], undefinedType)
+					}
+				}
 			} else {
 				for _, key2 := range keys2 {
 					value2 := namedElems2[key2]
