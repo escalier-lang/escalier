@@ -281,7 +281,14 @@ access would fail because `ObjectType` doesn't support numeric indexing (unless
 a numeric index signature is added). If only numeric indexing is used, the type
 variable should be bound to `Array<T>` rather than an open `ObjectType`.
 
-### 4. Optional Chaining
+### 4. Optional Chaining ✅
+
+> **Status (2026-04-11):** Implemented. See Phase 9 in
+> [implementation_plan.md](implementation_plan.md) for details. The open
+> `ObjectType` is placed directly in the union (no `MutabilityType` wrapper)
+> since mutation through `?.` is not meaningful. Existing `getUnionAccess`
+> handles subsequent accesses on the nullable union, including error reporting
+> for non-optional access on a nullable type.
 
 When optional chaining (`?.`) is used on a value whose type is a type variable,
 the system must:

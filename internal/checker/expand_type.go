@@ -727,6 +727,14 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				return c.getArrayConstraintPropertyAccess(ctx, t, k.Name, errors)
 			}
 			propTV, openObj := c.newOpenObjectWithProperty(k.Name)
+			if k.OptChain {
+				// Optional chaining: obj?.bar infers obj: {bar: T} | null | undefined.
+				// Use the unwrapped ObjectType (not MutabilityType) since you can't
+				// mutate through optional chaining — the object might be null/undefined.
+				t.Instance = type_system.NewUnionType(nil, openObj.Type, type_system.NewNullType(nil), type_system.NewUndefinedType(nil))
+				// The expression obj?.bar itself may produce undefined
+				return type_system.NewUnionType(nil, propTV, type_system.NewUndefinedType(nil)), errors
+			}
 			t.Instance = openObj
 			return propTV, errors
 		case IndexKey:
