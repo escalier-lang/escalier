@@ -354,6 +354,19 @@ func TestRowTypesErrors(t *testing.T) {
 			`,
 			expectedErrs: []string{"Object rest type is not iterable"},
 		},
+		"AliasedObjectRestSpreadIntoTuple": {
+			// When the object rest is aliased via val before being spread,
+			// bind() must propagate IsObjectRest to the new representative
+			// TypeVar so the tuple spread check still catches it.
+			input: `
+				val foo = fn ({x, ...rest}) {
+					val alias = rest
+					return [x, ...alias]
+				}
+				val r = foo({x: 1, y: 2})
+			`,
+			expectedErrs: []string{"Object rest type is not iterable"},
+		},
 	}
 
 	for name, test := range tests {
