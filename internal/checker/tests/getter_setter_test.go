@@ -171,6 +171,24 @@ func TestGetterSetterAccess(t *testing.T) {
 				"Unknown property 'value' in object type {_v: 0, ...Base}",
 			},
 		},
+		// Union rest path - setter-only keys on union members
+		// should not cause nil values in the rest object.
+		"UnionDestructureWithRestSkipsSetterOnlyFields": {
+			input: `
+				class A(x: number) {
+					x,
+					set s(mut self, v: number) {},
+				}
+				class B(x: string) {
+					x,
+					set s(mut self, v: string) {},
+				}
+				fn foo(u: A | B) {
+					val {x, ...rest} = u
+				}
+			`,
+			expectedErrors: nil,
+		},
 	}
 
 	for name, test := range tests {

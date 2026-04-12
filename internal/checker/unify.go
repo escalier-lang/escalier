@@ -901,8 +901,10 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			// downstream inference and error reporting.
 			if obj1.Open && obj2.Open {
 				for _, key := range keys1 {
-					if value2, ok := namedElems2[key]; ok {
-						unifyErrors := c.Unify(ctx, namedElems1[key], value2)
+					value1, has1 := namedElems1[key]
+					value2, has2 := namedElems2[key]
+					if has1 && has2 {
+						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 					if wt1, ok1 := collected1.Write[key]; ok1 {
@@ -914,25 +916,44 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				}
 				// Add elems from obj2 not in obj1 to obj1.
 				// Share the original elem pointers (not copies) so that mutable
-				// fields like Written are visible to both open types — they are
+				// fields like Written are visible to both open types - they are
 				// in the same inference scope and represent the same parameter.
+				//
+				// Read and write presence are checked independently because a
+				// property name can be split across separate GetterElem (read)
+				// and SetterElem (write) elements, tracked in different maps.
+				// For example, given:
+				//   obj1 = { get x(self) -> number }  // Read["x"] exists, Write["x"] absent
+				//   obj2 = { set x(mut self, v: number) }  // Read["x"] absent, Write["x"] exists
+				// A single check against namedElems1 (the read map) would see
+				// "x" already present in obj1 and skip the merge, losing obj2's
+				// setter. By checking read and write separately, the setter is
+				// correctly appended so obj1 ends up with both get x and set x.
 				for _, key := range keys2 {
-					if _, ok := namedElems1[key]; !ok {
-						if re, ok := collected2.OrigRead[key]; ok {
+					re := collected2.OrigRead[key]
+					we := collected2.OrigWrite[key]
+					if re != nil {
+						if _, has := namedElems1[key]; !has {
 							obj1.Elems = append(obj1.Elems, re)
 						}
-						if we, ok := collected2.OrigWrite[key]; ok && we != collected2.OrigRead[key] {
+					}
+					if we != nil && we != re {
+						if _, has := collected1.Write[key]; !has {
 							obj1.Elems = append(obj1.Elems, we)
 						}
 					}
 				}
 				// Add elems from obj1 not in obj2 to obj2.
 				for _, key := range keys1 {
-					if _, ok := namedElems2[key]; !ok {
-						if re, ok := collected1.OrigRead[key]; ok {
+					re := collected1.OrigRead[key]
+					we := collected1.OrigWrite[key]
+					if re != nil {
+						if _, has := namedElems2[key]; !has {
 							obj2.Elems = append(obj2.Elems, re)
 						}
-						if we, ok := collected1.OrigWrite[key]; ok && we != collected1.OrigRead[key] {
+					}
+					if we != nil && we != re {
+						if _, has := collected2.Write[key]; !has {
 							obj2.Elems = append(obj2.Elems, we)
 						}
 					}
@@ -955,13 +976,16 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 					if has1 && has2 {
 						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
-					} else if !has1 {
-						// Elem in closed but not in open: copy and add to open type.
-						// Copy PropertyElems to avoid sharing mutable fields (Written).
-						if re, ok := collected2.OrigRead[key]; ok {
-							obj1.Elems = append(obj1.Elems, copyObjTypeElem(re))
-						}
-						if we, ok := collected2.OrigWrite[key]; ok && we != collected2.OrigRead[key] {
+					}
+					re := collected2.OrigRead[key]
+					we := collected2.OrigWrite[key]
+					// Copy missing read elem from closed to open.
+					if re != nil && !has1 {
+						obj1.Elems = append(obj1.Elems, copyObjTypeElem(re))
+					}
+					// Copy missing write elem from closed to open (skip if same as read elem).
+					if we != nil && we != re {
+						if _, hasW1 := collected1.Write[key]; !hasW1 {
 							obj1.Elems = append(obj1.Elems, copyObjTypeElem(we))
 						}
 					}
@@ -977,13 +1001,16 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 					if has1 && has2 {
 						unifyErrors := c.Unify(ctx, value1, value2)
 						errors = slices.Concat(errors, unifyErrors)
-					} else if !has2 {
-						// Elem in closed but not in open: copy and add to open type.
-						// Copy PropertyElems to avoid sharing mutable fields (Written).
-						if re, ok := collected1.OrigRead[key]; ok {
-							obj2.Elems = append(obj2.Elems, copyObjTypeElem(re))
-						}
-						if we, ok := collected1.OrigWrite[key]; ok && we != collected1.OrigRead[key] {
+					}
+					re := collected1.OrigRead[key]
+					we := collected1.OrigWrite[key]
+					// Copy missing read elem from closed to open.
+					if re != nil && !has2 {
+						obj2.Elems = append(obj2.Elems, copyObjTypeElem(re))
+					}
+					// Copy missing write elem from closed to open (skip if same as read elem).
+					if we != nil && we != re {
+						if _, hasW2 := collected2.Write[key]; !hasW2 {
 							obj2.Elems = append(obj2.Elems, copyObjTypeElem(we))
 						}
 					}
@@ -1031,8 +1058,19 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			} else {
 				for _, key2 := range keys2 {
 					value2, has2 := namedElems2[key2]
+					// Unify write types for setter-only keys.
 					if !has2 {
-						// Setter-only key — no readable type to unify.
+						wt1, hasW1 := collected1.Write[key2]
+						wt2, hasW2 := collected2.Write[key2]
+						if hasW1 && hasW2 {
+							unifyErrors := c.Unify(ctx, wt1, wt2)
+							errors = slices.Concat(errors, unifyErrors)
+						} else if hasW2 && !hasW1 {
+							errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+								Object: obj1,
+								Key:    key2,
+							}})
+						}
 						continue
 					}
 					if value1, ok := namedElems1[key2]; ok {
@@ -1219,11 +1257,16 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 					// If restType is specified, collect remaining fields
 					if restType != nil {
 						for _, key := range collectedUnionObj.Keys {
+							readType := collectedUnionObj.Read[key]
+							if readType == nil {
+								// Setter-only key — not readable, skip.
+								continue
+							}
 							if _, ok := destructuredFields[key]; !ok {
 								if _, exists := remainingFields[key]; !exists {
 									remainingFieldsOrder = append(remainingFieldsOrder, key)
 								}
-								remainingFields[key] = append(remainingFields[key], collectedUnionObj.Read[key])
+								remainingFields[key] = append(remainingFields[key], readType)
 							}
 						}
 					}
@@ -1486,9 +1529,14 @@ func (c *Checker) unifyClosedWithRests(
 	remainingElems := []type_system.ObjTypeElem{}
 	for _, key := range targetKeys {
 		if !usedTargetKeys[key] {
+			value := targetNamed[key]
+			if value == nil {
+				// Setter-only key — not readable, skip.
+				continue
+			}
 			remainingElems = append(remainingElems, &type_system.PropertyElem{
 				Name:  key,
-				Value: targetNamed[key],
+				Value: value,
 			})
 		}
 	}
