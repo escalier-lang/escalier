@@ -128,6 +128,49 @@ func TestGetterSetterAccess(t *testing.T) {
 			`,
 			expectedErrors: nil,
 		},
+		"WriteSetterViaSpreadSource": {
+			input: `
+				class Base(_v: number) {
+					_v,
+					set value(mut self, v: number) {
+						self._v = v
+					},
+				}
+				val b: mut Base = Base(1)
+				fn main() {
+					b.value = 42
+				}
+			`,
+			expectedErrors: nil,
+		},
+		"ReadGetterViaSpreadSource": {
+			input: `
+				class Base(_v: number) {
+					_v,
+					get value(self) -> number {
+						return self._v
+					},
+				}
+				val obj = {_v: 0, ...Base(1)}
+				val v = obj.value
+			`,
+			expectedErrors: nil,
+		},
+		"ReadSetterViaSpreadSourceShouldError": {
+			input: `
+				class Base(_v: number) {
+					_v,
+					set value(mut self, v: number) {
+						self._v = v
+					},
+				}
+				val obj = {_v: 0, ...Base(1)}
+				val v = obj.value
+			`,
+			expectedErrors: []string{
+				"Unknown property 'value' in object type {_v: 0, ...Base}",
+			},
+		},
 	}
 
 	for name, test := range tests {
