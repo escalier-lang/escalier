@@ -360,16 +360,11 @@ pattern matching tests.
 
 ```
 Phase 1 (activate flag)
-  |
-  +---> Phase 2 (relax nominal check)
-  |       |
-  |       +---> Phase 3 (validate pattern fields)
-  |
-  +---> Phase 4 (pattern vs union)
-  |
-  +---> Phase 5 (constructor validation)
-  |
-  +---> Phase 6 (comprehensive testing) — after all above
+  ├──── Phase 2 (relax nominal check)
+  │       └──── Phase 3 (validate pattern fields)
+  ├──── Phase 4 (pattern vs union)
+  ├──── Phase 5 (constructor validation)
+  └──── Phase 6 (comprehensive testing) — after all above
 ```
 
 Phases 2/3, 4, and 5 are independent of each other and can be worked on in parallel
