@@ -265,6 +265,18 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				"foo": "fn <T0>(obj: {bar: T0}) -> [T0, T0]",
 			},
 		},
+		"NumericIndexOnReopenedObject": {
+			input: `
+				fn bar(obj: {x: number}) -> number { return obj.x }
+				fn foo(v) {
+					bar(v)
+					return v[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn <T0>(v: {x: number, 0: T0}) -> T0",
+			},
+		},
 	}
 
 	for name, test := range tests {

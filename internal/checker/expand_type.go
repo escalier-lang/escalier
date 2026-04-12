@@ -1059,14 +1059,26 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					return c.addPropertyToOpenObject(objType, strLit.Value, k), errors
 				}
 			}
-			// Numeric index on an open object inferred from property access — conflict
-			_, isNonNegInt := asNonNegativeIntLiteral(keyType)
-			if isNumericType(keyType) || isNonNegInt {
-				errors = append(errors, &IndexingConflictError{
-					PropertyAccess: firstInferredAccess(objType),
-					span:           k.Span(),
-				})
-				return type_system.NewUndefinedType(nil), errors
+			// Numeric index on an open object: if the object was inferred from
+			// property access, report a conflict; otherwise add a numeric property.
+			if litIndex, isNonNegInt := asNonNegativeIntLiteral(keyType); isNonNegInt {
+				if inferred := firstInferredAccess(objType); inferred != nil {
+					errors = append(errors, &IndexingConflictError{
+						PropertyAccess: inferred,
+						span:           k.Span(),
+					})
+					return type_system.NewUndefinedType(nil), errors
+				}
+				return c.addNumericPropertyToOpenObject(objType, float64(litIndex), k), errors
+			}
+			if isNumericType(keyType) {
+				if inferred := firstInferredAccess(objType); inferred != nil {
+					errors = append(errors, &IndexingConflictError{
+						PropertyAccess: inferred,
+						span:           k.Span(),
+					})
+					return type_system.NewUndefinedType(nil), errors
+				}
 			}
 		}
 
@@ -1108,6 +1120,17 @@ func (c *Checker) addPropertyToOpenObject(objType *type_system.ObjectType, name 
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
 	prop := type_system.NewPropertyElem(type_system.NewStrKey(name), propTV)
+	prop.Provenance = &MemberAccessKeyProvenance{Key: accessKey}
+	objType.Elems = append(objType.Elems, prop)
+	return propTV
+}
+
+// addNumericPropertyToOpenObject appends a new widenable property with a numeric
+// key to an existing open ObjectType and returns the property's type variable.
+func (c *Checker) addNumericPropertyToOpenObject(objType *type_system.ObjectType, index float64, accessKey MemberAccessKey) *type_system.TypeVarType {
+	propTV := c.FreshVar(nil)
+	propTV.Widenable = true
+	prop := type_system.NewPropertyElem(type_system.NewNumKey(index), propTV)
 	prop.Provenance = &MemberAccessKeyProvenance{Key: accessKey}
 	objType.Elems = append(objType.Elems, prop)
 	return propTV
