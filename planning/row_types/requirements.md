@@ -1016,11 +1016,11 @@ These are follow-up/implementation details for user-facing diagnostics.
 
 > **Status (2026-04-11):** Implemented in Phase 11. Key implementation details:
 >
-> - `PropertyElem` gained an `InferredAt provenance.Provenance` field that
+> - `PropertyElem` gained a `Provenance provenance.Provenance` field that
 >   records the span of the property access that first inferred the property.
 >   A new `provenance.SpanProvenance` type (with line/column fields) avoids
 >   circular dependencies between `ast` and `type_system`.
-> - `PropertyElem.Accept()` was updated to preserve `InferredAt` when the
+> - `PropertyElem.Accept()` was updated to preserve `Provenance` when the
 >   type visitor creates a copy during substitution.
 > - `newOpenObjectWithProperty` and `addPropertyToOpenObject` in
 >   `expand_type.go` now accept an `accessSpan` parameter.
@@ -1052,9 +1052,10 @@ annotation suggestion is not needed here.
 
 > **Status (2026-04-11):** Implemented. `KeyNotFoundError` gained an
 > `InferredAt *provenance.SpanProvenance` field. When the missing key's
-> `PropertyElem` has `InferredAt` set, the message includes
+> `PropertyElem` has `Provenance` set, the unification path extracts it
+> and stores it as `KeyNotFoundError.InferredAt`, and the message includes
 > "Property bar is required because it is accessed at <location>". The
-> closed-vs-closed unification path in `unify.go` extracts `InferredAt`
+> closed-vs-closed unification path in `unify.go` extracts `Provenance`
 > from `origElems2`. Tested in `TestRowTypesErrors/MissingInferredProperty`.
 
 #### 9b. Numeric indexing vs. property access conflict
@@ -1107,7 +1108,7 @@ Message elements: (1) identifies parameter `obj` and property `bar`,
 annotation suggestion needed.
 
 > **Status (2026-04-11):** Infrastructure implemented. `PropertyTypeMismatchError`
-> wraps `CannotUnifyTypesError` with property name and `InferredAt` context
+> wraps `CannotUnifyTypesError` with property name and `Provenance`-derived context
 > during closed-vs-closed object unification. However, this error is difficult
 > to trigger in practice: inferred property type variables are `Widenable`,
 > so conflicting types widen to a union (per Section 6d) rather than producing

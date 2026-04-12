@@ -550,11 +550,17 @@ func (e IndexingConflictError) Span() ast.Span {
 	return e.span
 }
 func (e IndexingConflictError) Message() string {
-	msg := "Cannot index parameter '" + e.Param + "' with a numeric index because it was already constrained to an object type by property access"
-	if e.PropertySpan != nil {
-		msg += " at " + e.PropertySpan.String()
+	subject := "the parameter"
+	if e.Param != "" {
+		subject = "parameter '" + e.Param + "'"
 	}
-	msg += ". Consider adding a type annotation to '" + e.Param + "'"
+	msg := "Cannot index " + subject + " with a numeric index because it was already constrained to an object type"
+	if e.PropertySpan != nil {
+		msg += " by property access at " + e.PropertySpan.String()
+	}
+	if e.Param != "" {
+		msg += ". Consider adding a type annotation to '" + e.Param + "'"
+	}
 	return msg
 }
 

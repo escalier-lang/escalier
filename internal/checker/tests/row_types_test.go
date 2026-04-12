@@ -321,7 +321,7 @@ func TestRowTypesErrors(t *testing.T) {
 					return obj[0]
 				}
 			`,
-			expectedErrs: []string{"Cannot index"},
+			expectedErrs: []string{"Cannot index the parameter with a numeric index because it was already constrained to an object type by property access at"},
 		},
 		// Section 9c: property type mismatch at call site between
 		// inferred parameter and argument with wrong property type.
