@@ -415,6 +415,135 @@ func TestExhaustiveMatch(t *testing.T) {
 		},
 
 		// ---------------------------------------------------------------
+		// Tuple exhaustiveness (Phase 5)
+		// ---------------------------------------------------------------
+
+		// Case 14: All boolean-boolean combinations covered.
+		"TupleBoolBoolFullyCovered": {
+			input: `
+				declare val pair: [boolean, boolean]
+				val result = match pair {
+					[true, true] => "both",
+					[true, false] => "first only",
+					[false, true] => "second only",
+					[false, false] => "neither",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"both" | "first only" | "second only" | "neither"`,
+			},
+		},
+		// Case 15: Missing boolean-boolean combinations.
+		"TupleBoolBoolMissingCombinations": {
+			input: `
+				declare val pair: [boolean, boolean]
+				val result = match pair {
+					[true, true] => "both",
+					[false, false] => "neither",
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for [true, false], [false, true]",
+			},
+		},
+		// Tuple with wildcard elements covering multiple combinations.
+		"TupleBoolBoolWithWildcard": {
+			input: `
+				declare val pair: [boolean, boolean]
+				val result = match pair {
+					[true, _] => "first is true",
+					[false, _] => "first is false",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"first is true" | "first is false"`,
+			},
+		},
+		// Tuple with a catch-all pattern at the top level.
+		"TupleCatchAll": {
+			input: `
+				declare val pair: [boolean, boolean]
+				val result = match pair {
+					[true, true] => "both",
+					_ => "other",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"both" | "other"`,
+			},
+		},
+		// Tuple with literal union elements.
+		"TupleLiteralUnionFullyCovered": {
+			input: `
+				type AB = "a" | "b"
+				declare val pair: [AB, boolean]
+				val result = match pair {
+					["a", true] => 1,
+					["a", false] => 2,
+					["b", true] => 3,
+					["b", false] => 4,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | 3 | 4",
+			},
+		},
+		// Tuple containing a non-finite element requires a catch-all.
+		"TupleNonFiniteElementNoCatchAll": {
+			input: `
+				declare val pair: [boolean, number]
+				val result = match pair {
+					[true, 0] => "zero",
+					[false, 1] => "one",
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: type '[boolean, number]' is not fully covered; add a catch-all branch",
+			},
+		},
+		// Tuple with non-finite element covered by a catch-all.
+		"TupleNonFiniteElementWithCatchAll": {
+			input: `
+				declare val pair: [boolean, number]
+				val result = match pair {
+					[true, 0] => "zero",
+					_ => "other",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"zero" | "other"`,
+			},
+		},
+		// Redundant tuple branch.
+		"TupleRedundantBranch": {
+			input: `
+				declare val pair: [boolean, boolean]
+				val result = match pair {
+					[true, true] => "both",
+					[true, false] => "first only",
+					[false, true] => "second only",
+					[false, false] => "neither",
+					[true, true] => "duplicate",
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+		},
+		// TuplePat with all ident elements is a catch-all.
+		"TupleAllIdentIsCatchAll": {
+			input: `
+				declare val pair: [boolean, boolean]
+				val result = match pair {
+					[a, b] => "got it",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"got it"`,
+			},
+		},
+
+		// ---------------------------------------------------------------
 		// Non-exhaustive match gated on prior errors (Phase 4)
 		// ---------------------------------------------------------------
 

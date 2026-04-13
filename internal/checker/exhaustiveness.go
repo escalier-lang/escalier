@@ -112,6 +112,7 @@ func (c *Checker) checkExhaustiveness(
 		IsExhaustive:   len(uncoveredTypes) == 0,
 		UncoveredTypes: uncoveredTypes,
 		RedundantCases: redundantCases,
+		IsNonFinite:    !isFinite,
 	}
 }
 
@@ -125,6 +126,10 @@ func expandCoverageSet(targetType type_system.Type) ([]type_system.Type, bool) {
 		// Each union member is a separate item in the coverage set.
 		// Keep original types (including TypeRefTypes) for error messages.
 		return union.Types, true
+	}
+
+	if tuple, ok := targetType.(*type_system.TupleType); ok {
+		return expandTupleCoverageSet(tuple)
 	}
 
 	// Non-finite types (number, string, object types, etc.) cannot be
@@ -150,6 +155,7 @@ type ExhaustivenessResult struct {
 	IsExhaustive   bool
 	UncoveredTypes []type_system.Type // union members not covered by any branch
 	RedundantCases []RedundantCase    // branches that can never match
+	IsNonFinite    bool               // true when the target type is non-finite
 }
 
 // RedundantCase identifies a match branch that is unreachable because all
@@ -260,12 +266,64 @@ func (c *Checker) computeCaseCoverage(
 		coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 
 	case *ast.TuplePat:
-		// Tuple exhaustiveness is deferred to Phase 5 (not yet implemented).
-		// Currently all TuplePat values are treated as non-covering, meaning
-		// a match on a tuple type will require a wildcard/ident catch-all.
-		// Phase 5 will add combinatorial coverage checking for finite tuples
-		// (e.g., [boolean, boolean]) and treat TuplePat with all wildcard/ident
-		// elements as a catch-all.
+		tupleTarget, ok := targetType.(*type_system.TupleType)
+		if !ok || len(pat.Elems) != len(tupleTarget.Elems) {
+			break
+		}
+
+		// Check if all elements are catch-all patterns (wildcard/ident).
+		allCatchAll := true
+		for _, elem := range pat.Elems {
+			if _, ok := elem.(*ast.WildcardPat); ok {
+				continue
+			}
+			if _, ok := elem.(*ast.IdentPat); ok {
+				continue
+			}
+			allCatchAll = false
+			break
+		}
+		if allCatchAll {
+			coverage.IsCatchAll = true
+			break
+		}
+
+		// Compute per-position coverage for each element pattern.
+		var perPositionSets [][]type_system.Type
+		for i, elemPat := range pat.Elems {
+			elemType := type_system.Prune(tupleTarget.Elems[i])
+			elemType = resolveTypeRef(elemType)
+			if expanded, ok := expandBooleanType(elemType); ok {
+				elemType = expanded
+			}
+
+			switch ep := elemPat.(type) {
+			case *ast.WildcardPat, *ast.IdentPat:
+				// Covers all values at this position. If the element type
+				// is non-finite, we return empty coverage — this is correct
+				// because the tuple's target type is also non-finite (via
+				// expandTupleCoverageSet), so the exhaustiveness checker
+				// already knows a catch-all is required.
+				members, finite := expandCoverageSet(elemType)
+				if !finite {
+					return coverage
+				}
+				perPositionSets = append(perPositionSets, members)
+			case *ast.LitPat:
+				inferredType := type_system.Prune(ep.InferredType())
+				matched := findMatchingMembers(inferredType, elemType)
+				if len(matched) == 0 {
+					return coverage
+				}
+				perPositionSets = append(perPositionSets, matched)
+			default:
+				// Other pattern types at element positions are not yet
+				// supported for tuple exhaustiveness.
+				return coverage
+			}
+		}
+
+		coverage.CoveredTypes = cartesianProductTuples(perPositionSets)
 
 	case *ast.RestPat:
 		// Rest patterns in match expressions are unusual; treat as non-covering.
@@ -376,5 +434,83 @@ func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 		}
 	}
 
+	// TupleType: compare element-wise.
+	if patTuple, ok := patternType.(*type_system.TupleType); ok {
+		if memTuple, ok := memberType.(*type_system.TupleType); ok {
+			if len(patTuple.Elems) != len(memTuple.Elems) {
+				return false
+			}
+			for i := range patTuple.Elems {
+				if !typesMatchForCoverage(patTuple.Elems[i], memTuple.Elems[i]) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+
 	return false
+}
+
+// expandTupleCoverageSet expands a TupleType into the Cartesian product of
+// its element types' coverage sets. Each element position is independently
+// expanded (booleans → {true, false}, unions → members). If any element is
+// non-finite, the tuple is treated as non-finite. A complexity limit of 256
+// combinations is enforced.
+func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, bool) {
+	var elementSets [][]type_system.Type
+	totalSize := 1
+	for _, elem := range tuple.Elems {
+		elem = type_system.Prune(elem)
+		elem = resolveTypeRef(elem)
+		if expanded, ok := expandBooleanType(elem); ok {
+			elem = expanded
+		}
+		members, finite := expandCoverageSet(elem)
+		if !finite {
+			return nil, false
+		}
+		totalSize *= len(members)
+		if totalSize > 256 {
+			return nil, false
+		}
+		elementSets = append(elementSets, members)
+	}
+	return cartesianProductTuples(elementSets), true
+}
+
+// cartesianProductTuples computes the Cartesian product of per-position type
+// sets and returns each combination as a TupleType.
+func cartesianProductTuples(elementSets [][]type_system.Type) []type_system.Type {
+	if len(elementSets) == 0 {
+		return nil
+	}
+
+	// Start with partial combinations containing just the first position.
+	type combo = []type_system.Type
+	current := make([]combo, len(elementSets[0]))
+	for i, t := range elementSets[0] {
+		current[i] = combo{t}
+	}
+
+	// Extend each combination with subsequent positions.
+	for _, set := range elementSets[1:] {
+		var next []combo
+		for _, existing := range current {
+			for _, t := range set {
+				extended := make(combo, len(existing)+1)
+				copy(extended, existing)
+				extended[len(existing)] = t
+				next = append(next, extended)
+			}
+		}
+		current = next
+	}
+
+	// Wrap each combination in a TupleType.
+	result := make([]type_system.Type, len(current))
+	for i, c := range current {
+		result[i] = type_system.NewTupleType(nil, c...)
+	}
+	return result
 }

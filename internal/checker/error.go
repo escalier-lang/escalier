@@ -612,6 +612,7 @@ func (e ConstructorUsedAsMatchTargetError) Message() string {
 // all possible values of the target type.
 type NonExhaustiveMatchError struct {
 	UncoveredTypes []type_system.Type
+	IsNonFinite    bool
 	span           ast.Span
 }
 
@@ -619,10 +620,18 @@ func (e NonExhaustiveMatchError) Span() ast.Span {
 	return e.span
 }
 func (e NonExhaustiveMatchError) Message() string {
-	// Check if any uncovered type is a non-finite primitive
-	for _, t := range e.UncoveredTypes {
-		if prim, ok := t.(*type_system.PrimType); ok {
-			return "Non-exhaustive match: type '" + prim.String() + "' is not fully covered; add a catch-all branch"
+	// Non-finite types (number, string, tuples with non-finite elements)
+	// cannot be fully enumerated — suggest a catch-all branch. Only apply
+	// to PrimType and TupleType; other non-finite types (e.g., nominal
+	// classes) use the "missing cases" format for consistency.
+	//
+	// Note: when IsNonFinite is true, UncoveredTypes always contains exactly
+	// one element — the target type itself (set in checkExhaustiveness). So
+	// checking UncoveredTypes[0] is safe and not order-dependent.
+	if e.IsNonFinite && len(e.UncoveredTypes) > 0 {
+		switch e.UncoveredTypes[0].(type) {
+		case *type_system.PrimType, *type_system.TupleType:
+			return "Non-exhaustive match: type '" + e.UncoveredTypes[0].String() + "' is not fully covered; add a catch-all branch"
 		}
 	}
 

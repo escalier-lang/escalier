@@ -1431,6 +1431,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		if !result.IsExhaustive {
 			errors = append(errors, &NonExhaustiveMatchError{
 				UncoveredTypes: result.UncoveredTypes,
+				IsNonFinite:    result.IsNonFinite,
 				span:           expr.Span(),
 			})
 		}

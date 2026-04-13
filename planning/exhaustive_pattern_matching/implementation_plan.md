@@ -9,7 +9,7 @@
 | Phase 1 (Coverage extraction) | **Done** | `ba06f78` |
 | Phase 2 (Exhaustiveness checking) | **Done** | `262e027` |
 | Phase 4 (Integration) | **Done** | `e12b2a9` |
-| Phase 5 (Tuple exhaustiveness) | Not started | — |
+| Phase 5 (Tuple exhaustiveness) | **Done** | — |
 | Phase 7 (Nested exhaustiveness) | Not started | — |
 
 ## Approach
@@ -253,27 +253,47 @@ fixed:
   direct references to union member objects, and structural `ObjectType` members are not
   comparable by ID or name.
 
-### Phase 5: Tuple exhaustiveness (R9)
+### Phase 5: Tuple exhaustiveness (R9) ✅
+
+**Status:** Implemented.
 
 Tuple exhaustiveness requires combinatorial reasoning. For the initial implementation,
 support only tuples where every element position has a finite type (boolean or literal
 union). For tuples containing non-finite types, require a catch-all.
 
-**Algorithm for finite tuples:**
+**Algorithm for finite tuples (as implemented):**
 
 1. Expand each element position into its set of possible values (e.g., `boolean` →
-   `{true, false}`).
-2. Compute the Cartesian product of all positions — this is the full coverage set.
+   `{true, false}`). This is done by `expandTupleCoverageSet`, which calls
+   `expandCoverageSet` recursively on each element after resolving type refs and
+   expanding booleans.
+2. Compute the Cartesian product of all positions via `cartesianProductTuples` — this
+   is the full coverage set. Each entry is a synthetic `TupleType`.
 3. For each `TuplePat` branch, determine which combination it covers by examining each
    element pattern:
-   - `LitPat` → covers that specific value at that position.
+   - `LitPat` → covers that specific value at that position (via `findMatchingMembers`).
    - `WildcardPat` / `IdentPat` → covers all values at that position.
-4. A `TuplePat` may cover multiple combinations if some positions are wildcards.
-5. Apply the same covered-set tracking as Phase 2.
+   - A `TuplePat` where all elements are `WildcardPat`/`IdentPat` is treated as a
+     catch-all (`IsCatchAll = true`).
+4. A `TuplePat` may cover multiple combinations if some positions are wildcards. The
+   covered combinations are the Cartesian product of per-position coverage sets.
+5. The standard covered-set tracking and redundancy detection from Phase 2 applies.
 
 **Complexity bound:** The Cartesian product can be large (e.g., a 10-element boolean tuple
-has 1024 combinations). Set a reasonable limit (e.g., 256 combinations) and fall back to
-requiring a catch-all if the product exceeds it.
+has 1024 combinations). A limit of 256 combinations is enforced; if the product exceeds
+it, the tuple is treated as non-finite (requiring a catch-all).
+
+**Additional changes:**
+
+- Added `TupleType` element-wise comparison to `typesMatchForCoverage`.
+- Added `IsNonFinite` field to `ExhaustivenessResult` and `NonExhaustiveMatchError` so
+  that the error message correctly distinguishes between finite types with missing
+  members ("missing cases for [true, false]") and non-finite types ("type '[boolean,
+  number]' is not fully covered; add a catch-all branch").
+- Updated `MatchWithPatternBindings` test (removed redundant `_` catch-all after
+  all-ident `TuplePat`, which is now correctly recognized as a catch-all).
+- Updated `pattern_matching` fixture (removed two redundant `_` branches after
+  all-ident `TuplePat` patterns).
 
 ### Phase 6: Boolean expansion (R3) ✅
 
@@ -362,10 +382,10 @@ rarely deeper than 2–3 levels.
 
 | File | Changes | Status |
 |---|---|---|
-| `internal/checker/exhaustiveness.go` | **New.** `ExhaustivenessResult`, `CaseCoverage`, `computeCaseCoverage`, `checkExhaustiveness`, `expandBooleanType`, `resolveTypeRef`, `expandCoverageSet`, `findMatchingMembers`, `typesMatchForCoverage`, `getCustomMatcherParamType`, `indexInCoverageSet` | Done |
+| `internal/checker/exhaustiveness.go` | **New.** `ExhaustivenessResult`, `CaseCoverage`, `computeCaseCoverage`, `checkExhaustiveness`, `expandBooleanType`, `resolveTypeRef`, `expandCoverageSet`, `expandTupleCoverageSet`, `cartesianProductTuples`, `findMatchingMembers`, `typesMatchForCoverage`, `getCustomMatcherParamType`, `indexInCoverageSet` | Done |
 | `internal/checker/error.go` | Add `NonExhaustiveMatchError`, `RedundantMatchCaseWarning`, `IsWarning() bool` to `Error` interface and all existing types | Done |
 | `internal/checker/infer_expr.go` | Add `matchErrors` slice and call `checkExhaustiveness` at the end of `inferMatchExpr` | Done |
-| `internal/checker/tests/exhaustive_match_test.go` | **New.** 29 table-driven tests covering phases 1–4 and 6 | Done |
+| `internal/checker/tests/exhaustive_match_test.go` | **New.** 38 table-driven tests covering phases 1–6 | Done |
 | `internal/checker/tests/pattern_match_test.go` | Updated 5 tests to add catch-all branches for non-finite types | Done |
 | `fixtures/pattern_matching/lib/pattern_matching.esc` | Updated 5 match expressions to add catch-all branches | Done |
 
@@ -373,7 +393,7 @@ rarely deeper than 2–3 levels.
 
 Tests are in `internal/checker/tests/exhaustive_match_test.go` using table-driven format.
 
-**Implemented test cases (29 total):**
+**Implemented test cases (38 total):**
 
 | Category | Test cases | Req |
 |---|---|---|
@@ -396,9 +416,18 @@ Tests are in `internal/checker/tests/exhaustive_match_test.go` using table-drive
 
 **Remaining test cases (to be added with future phases):**
 
+| Category | Test cases | Req |
+|---|---|---|
+| Tuple fully covered | `TupleBoolBoolFullyCovered`, `TupleLiteralUnionFullyCovered` | R9, Case 14 |
+| Tuple with wildcards | `TupleBoolBoolWithWildcard`, `TupleCatchAll`, `TupleAllIdentIsCatchAll` | R9 |
+| Tuple missing combos | `TupleBoolBoolMissingCombinations` | R9, Case 15 |
+| Tuple non-finite | `TupleNonFiniteElementNoCatchAll`, `TupleNonFiniteElementWithCatchAll` | R9 |
+| Tuple redundancy | `TupleRedundantBranch` | R7, R9 |
+
+**Remaining test cases (to be added with future phases):**
+
 | Phase | Test Cases from requirements doc |
 |---|---|
-| Phase 5 (tuples) | Cases 14, 15 |
 | Phase 7 (nested) | Cases 16, 17, 18, 19, 20 |
 
 ## Risks and Mitigations
