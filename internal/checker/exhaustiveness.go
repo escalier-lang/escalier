@@ -5,6 +5,138 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// checkExhaustiveness checks whether a match expression's cases collectively
+// cover all possible values of the target type. It also detects redundant
+// branches that can never match.
+func (c *Checker) checkExhaustiveness(
+	expr *ast.MatchExpr,
+	targetType type_system.Type,
+) *ExhaustivenessResult {
+	targetType = type_system.Prune(targetType)
+
+	// Step 1: Expand the target type into a coverage set.
+	// Boolean primitives are expanded to {true, false}.
+	if expanded, ok := expandBooleanType(targetType); ok {
+		targetType = expanded
+	}
+
+	// Determine whether the target type is finite (can be fully enumerated)
+	// or non-finite (requires a catch-all).
+	coverageSet, isFinite := expandCoverageSet(targetType)
+
+	// Step 2: Compute coverage for each branch.
+	coverages := make([]CaseCoverage, len(expr.Cases))
+	for i, matchCase := range expr.Cases {
+		coverages[i] = c.computeCaseCoverage(matchCase, targetType)
+	}
+
+	// Step 5: Track covered set and detect redundancy.
+	coveredSet := make(map[int]bool) // index into coverageSet -> covered
+	var redundantCases []RedundantCase
+	hasCatchAll := false
+
+	for i, cov := range coverages {
+		// Skip guarded branches for redundancy checking — they cover
+		// nothing but are not redundant (they're runtime filters).
+		if cov.HasGuard {
+			continue
+		}
+
+		if cov.IsCatchAll {
+			// Check redundancy: if all types are already covered, this
+			// catch-all is redundant.
+			if isFinite && len(coveredSet) == len(coverageSet) {
+				redundantCases = append(redundantCases, RedundantCase{
+					CaseIndex: i,
+					Span:      expr.Cases[i].Pattern.Span(),
+				})
+			}
+			// Mark everything as covered.
+			hasCatchAll = true
+			for j := range coverageSet {
+				coveredSet[j] = true
+			}
+			continue
+		}
+
+		if len(cov.CoveredTypes) > 0 {
+			// Check redundancy: if every type this branch covers is
+			// already in the covered set, the branch is redundant.
+			allAlreadyCovered := true
+			for _, covType := range cov.CoveredTypes {
+				idx := indexInCoverageSet(covType, coverageSet)
+				if idx == -1 || !coveredSet[idx] {
+					allAlreadyCovered = false
+					break
+				}
+			}
+			if allAlreadyCovered {
+				redundantCases = append(redundantCases, RedundantCase{
+					CaseIndex: i,
+					Span:      expr.Cases[i].Pattern.Span(),
+				})
+			}
+
+			// Add this branch's covered types to the covered set.
+			for _, covType := range cov.CoveredTypes {
+				idx := indexInCoverageSet(covType, coverageSet)
+				if idx != -1 {
+					coveredSet[idx] = true
+				}
+			}
+		}
+	}
+
+	// Step 6: Compute uncovered types.
+	var uncoveredTypes []type_system.Type
+	if isFinite {
+		// For finite types, report each uncovered member in declaration order.
+		for i, member := range coverageSet {
+			if !coveredSet[i] {
+				uncoveredTypes = append(uncoveredTypes, member)
+			}
+		}
+	} else if !hasCatchAll {
+		// Non-finite types require a catch-all. If none was found, report
+		// the target type itself as uncovered.
+		uncoveredTypes = []type_system.Type{targetType}
+	}
+
+	return &ExhaustivenessResult{
+		IsExhaustive:   len(uncoveredTypes) == 0,
+		UncoveredTypes: uncoveredTypes,
+		RedundantCases: redundantCases,
+	}
+}
+
+// expandCoverageSet expands a target type into the list of types that must be
+// covered for exhaustiveness. Returns the coverage set and whether the type is
+// finite (i.e., can be fully enumerated without a catch-all).
+func expandCoverageSet(targetType type_system.Type) ([]type_system.Type, bool) {
+	targetType = type_system.Prune(targetType)
+
+	if union, ok := targetType.(*type_system.UnionType); ok {
+		// Each union member is a separate item in the coverage set.
+		// Keep original types (including TypeRefTypes) for error messages.
+		return union.Types, true
+	}
+
+	// Non-finite types (number, string, object types, etc.) cannot be
+	// fully enumerated — they require a catch-all.
+	return nil, false
+}
+
+// indexInCoverageSet finds the index of a type in the coverage set using
+// the same matching logic as typesMatchForCoverage.
+func indexInCoverageSet(t type_system.Type, coverageSet []type_system.Type) int {
+	for i, member := range coverageSet {
+		if typesMatchForCoverage(t, member) {
+			return i
+		}
+	}
+	return -1
+}
+
 // ExhaustivenessResult is the structured result returned by the exhaustiveness
 // checker. It provides enough information for error reporting and future LSP
 // integration (e.g., generating missing match arms).
