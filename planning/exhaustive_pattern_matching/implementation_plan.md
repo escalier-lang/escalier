@@ -126,11 +126,15 @@ func (c *Checker) checkExhaustiveness(
 
 5. **Track covered set and detect redundancy (R7)** — initialize an empty covered set,
    then iterate branches in order. For each branch:
-   - **Before adding to the covered set**, check if the branch is redundant: if every type
-     in the branch's `CoveredTypes` is already in the covered set *accumulated so far*
-     (or the branch is a catch-all but all types are already covered), record it as a
-     `RedundantCase`. This catches duplicates like two `false` branches — the second one
-     is redundant because `false` was added to the covered set by the first.
+   - **Skip guarded branches for redundancy checking.** If `HasGuard` is true, the branch
+     covers nothing (`CoveredTypes` is nil) but is not redundant — guards are runtime
+     filters, not dead code. Do not run the redundancy predicate on guarded branches.
+   - **For unguarded branches**, before adding to the covered set, check if the branch is
+     redundant: if `CoveredTypes` is non-empty and every type in it is already in the
+     covered set *accumulated so far* (or the branch is a catch-all but all types are
+     already covered), record it as a `RedundantCase`. This catches duplicates like two
+     `false` branches — the second one is redundant because `false` was added to the
+     covered set by the first.
    - **Then** add the branch's `CoveredTypes` to the covered set.
    - If a catch-all is encountered (unguarded wildcard/identifier), mark all remaining
      types as covered.
@@ -139,7 +143,9 @@ func (c *Checker) checkExhaustiveness(
    members that are partially covered at the nested level, include them in the uncovered
    set with a message indicating the inner type needs coverage.
 
-7. **Return `ExhaustivenessResult`** with `UncoveredTypes` and `RedundantCases`.
+7. **Sort and return.** Sort `UncoveredTypes` deterministically (e.g., by declaration
+   order within the original union, or by canonical type string) before returning
+   `ExhaustivenessResult`. This ensures stable error messages and snapshot tests.
 
 **Type comparison:** Two types "match" for coverage purposes when:
 - Both are `TypeRefType` with the same `TypeAlias` pointer (enum variants).
@@ -197,31 +203,45 @@ are handled consistently and never treated as hard errors.
 **File:** `internal/checker/infer_expr.go`
 
 After the existing case-by-case type inference loop (after line 1415), add the
-exhaustiveness check:
+exhaustiveness check. **Gate on prior errors:** only run the exhaustiveness check when the
+match's type inference and unification succeeded without errors. If prior errors exist
+(e.g., pattern field not found, unification failure), inferred types and
+`MatchedUnionMembers` may be in an inconsistent state, and running exhaustiveness checking
+would produce misleading secondary diagnostics.
 
 ```go
 // After inferring all case types...
 
-result := c.checkExhaustiveness(expr, targetType)
+// Only check exhaustiveness if type inference/unification succeeded.
+// matchErrors tracks errors added during the case-by-case loop above.
+if len(matchErrors) == 0 {
+    result := c.checkExhaustiveness(expr, targetType)
 
-if !result.IsExhaustive {
-    errors = append(errors, &NonExhaustiveMatchError{
-        UncoveredTypes: result.UncoveredTypes,
-        span:           expr.Span(),
-    })
-}
+    if !result.IsExhaustive {
+        errors = append(errors, &NonExhaustiveMatchError{
+            UncoveredTypes: result.UncoveredTypes,
+            span:           expr.Span(),
+        })
+    }
 
-for _, redundant := range result.RedundantCases {
-    errors = append(errors, &RedundantMatchCaseWarning{
-        span: redundant.Span,
-    })
+    for _, redundant := range result.RedundantCases {
+        errors = append(errors, &RedundantMatchCaseWarning{
+            span: redundant.Span,
+        })
+    }
 }
 ```
+
+This requires tracking errors from the match expression separately from the overall error
+list. Introduce a `matchErrors` slice that collects errors from target inference, pattern
+inference, and unification within `inferMatchExpr`. Append `matchErrors` to `errors`
+regardless, but only proceed with exhaustiveness checking if `matchErrors` is empty.
 
 This placement ensures that:
 - All pattern types have been inferred and unified (so `MatchedUnionMembers` is populated).
 - All extractor types have been resolved (so `customMatcher` param types are available).
 - The exhaustiveness check sees the fully-resolved state of all patterns.
+- No misleading secondary diagnostics are emitted when earlier type checking failed.
 
 ### Phase 5: Tuple exhaustiveness (R9)
 
