@@ -59,6 +59,23 @@ The `InnerPatterns` field is used by Phase 7 (nested exhaustiveness). For an
 `ExtractorPat` like `Result.Ok(0)`, `InnerPatterns` would be `[LitPat(0)]`. For a
 top-level `WildcardPat` or `IdentPat`, it is nil.
 
+## Implementation Order
+
+The phases have the following dependency chain and should be implemented in this order:
+
+| Order | Phase | Rationale |
+|---|---|---|
+| 1st | Phase 3 (Error types) + Phase 6 (Boolean expansion) | Leaf dependencies — no prerequisites, needed by later phases |
+| 2nd | Phase 1 (Coverage extraction) | Core building block consumed by Phase 2 |
+| 3rd | Phase 2 (Exhaustiveness checking) | Consumes Phase 1 output, uses Phase 6 for boolean targets |
+| 4th | Phase 4 (Integration) | Wires Phases 1–3 into the checker — first point where end-to-end tests can run |
+| 5th | Phase 5 (Tuple exhaustiveness) | Extends Phase 2 for tuple targets; independent of Phase 7 |
+| 6th | Phase 7 (Nested exhaustiveness) | Extends Phase 2 with recursive checking; independent of Phase 5 |
+
+Phases 5 and 7 are independent of each other and can be done in either order. Tests should
+be added incrementally: basic exhaustiveness tests (Cases 1–13) after Phase 4, tuple tests
+(Cases 14–15) after Phase 5, and nested tests (Cases 16–20) after Phase 7.
+
 ## Implementation Phases
 
 ### Phase 1: Coverage extraction — `computeCaseCoverage`
