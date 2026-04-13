@@ -1,5 +1,23 @@
 # Exhaustive Pattern Matching Requirements
 
+## Implementation Status
+
+| Requirement | Status | Notes |
+|---|---|---|
+| R1: Union exhaustiveness | **Implemented** | Enum, nominal, structural, and literal unions |
+| R2: Enum variant names in errors | **Implemented** | Uses `TypeRefType.String()` → `Color.Hex` |
+| R3: Boolean exhaustiveness | **Implemented** | Expanded to `true \| false` synthetic union |
+| R4: Literal union exhaustiveness | **Implemented** | String/number/boolean literal unions |
+| R5: Wildcard/identifier catch-all | **Implemented** | Both `_` and `x` recognized as catch-all |
+| R6: Guards don't count as coverage | **Implemented** | Guarded branches cover nothing |
+| R7: Redundancy detection | **Implemented** | Warnings for duplicate patterns and redundant catch-alls |
+| R8: Non-finite types require catch-all | **Implemented** | `number`, `string`, object types |
+| R9: Tuple exhaustiveness | **Not started** | Phase 5 |
+| R10: Actionable error messages | **Implemented** | Lists all uncovered cases in one error |
+| R11: Structured results for LSP | **Implemented** | `ExhaustivenessResult` with `UncoveredTypes` and `RedundantCases` |
+| R12: Structural pattern coverage | **Implemented** | Via `MatchedUnionMembers` |
+| R13: Nested pattern exhaustiveness | **Not started** | Phase 7 |
+
 ## Background
 
 Escalier's pattern matching currently type-checks each branch independently but does not

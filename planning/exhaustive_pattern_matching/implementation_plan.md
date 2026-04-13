@@ -1,5 +1,17 @@
 # Exhaustive Pattern Matching — Implementation Plan
 
+## Status
+
+| Phase | Status | Commit |
+|---|---|---|
+| Phase 3 (Error types) | **Done** | `c008d08` |
+| Phase 6 (Boolean expansion) | **Done** | `c008d08` |
+| Phase 1 (Coverage extraction) | **Done** | `ba06f78` |
+| Phase 2 (Exhaustiveness checking) | **Done** | `262e027` |
+| Phase 4 (Integration) | **Done** | `e12b2a9` |
+| Phase 5 (Tuple exhaustiveness) | Not started | — |
+| Phase 7 (Nested exhaustiveness) | Not started | — |
+
 ## Approach
 
 Rather than implementing a full Maranget-style pattern matrix algorithm (as described at
@@ -78,11 +90,11 @@ be added incrementally: basic exhaustiveness tests (Cases 1–13) after Phase 4,
 
 ## Implementation Phases
 
-### Phase 1: Coverage extraction — `computeCaseCoverage`
+### Phase 1: Coverage extraction — `computeCaseCoverage` ✅
 
-**File:** `internal/checker/exhaustiveness.go` (new file)
+**Status:** Implemented in `ba06f78`.
 
-Create a function that examines each `MatchCase` and determines which types it covers:
+**File:** `internal/checker/exhaustiveness.go`
 
 ```go
 func (c *Checker) computeCaseCoverage(
@@ -106,7 +118,19 @@ func (c *Checker) computeCaseCoverage(
 **Guard handling (R6):** If `matchCase.Guard != nil`, the branch covers nothing regardless
 of pattern type. Set `HasGuard = true` and `CoveredTypes = nil`.
 
-### Phase 2: Exhaustiveness checking — `checkExhaustiveness`
+**Helper functions added:**
+
+- `getCustomMatcherParamType(ext)` — walks an `ExtractorType`'s object to find
+  `[Symbol.customMatcher]` and returns its param type.
+- `findMatchingMembers(patternType, targetType)` — finds which union members (or single
+  target) a pattern type covers.
+- `typesMatchForCoverage(a, b)` — compares two types for coverage purposes: pointer
+  identity first, then `TypeRefType` by `TypeAlias` pointer, nominal `ObjectType` by `ID`,
+  `LitType` by `Lit.Equal()`, with recursive resolution through `TypeAlias.Type`.
+
+### Phase 2: Exhaustiveness checking — `checkExhaustiveness` ✅
+
+**Status:** Implemented in `262e027`.
 
 **File:** `internal/checker/exhaustiveness.go`
 
@@ -117,31 +141,19 @@ func (c *Checker) checkExhaustiveness(
 ) *ExhaustivenessResult
 ```
 
-**Algorithm:**
+**Algorithm (as implemented):**
 
-1. **Expand the target type into a coverage set.** This is the set of types that must be
-   covered:
-   - `UnionType`: each member is a separate item in the set. Expand `TypeRefType` members
-     to resolve their underlying types for comparison, but keep the original `TypeRefType`
-     for error messages (R2 — use variant names like `Color.Hex`).
-   - `boolean` primitive (R3): expand to `{true, false}` literal types.
-   - Non-finite types (`number`, `string`, object types): the coverage set is conceptually
-     infinite — can only be covered by a catch-all (R8).
+1. **Expand the target type into a coverage set.**
+   - Resolve `TypeRefType` to its underlying type via `resolveTypeRef` (added during
+     Phase 4 integration — needed because type aliases like `type Color = ...` remain as
+     `TypeRefType` in the target type).
+   - Expand `boolean` primitive to `{true, false}` via `expandBooleanType` (Phase 6).
+   - `UnionType`: each member is a separate item in the coverage set (finite).
+   - Non-union types (`number`, `string`, object types): non-finite, require a catch-all.
 
 2. **Compute coverage for each branch** using `computeCaseCoverage`.
 
-3. **Group branches by covered union member.** Multiple branches may target the same
-   member (e.g., `Result.Ok(0)` and `Result.Ok(1)` both target `Result.Ok`). Group them
-   so that nested exhaustiveness can be checked per-member in Phase 7.
-
-4. **Check nested exhaustiveness (R13).** For each union member, collect all branches
-   that cover it. If any branch covering that member is a catch-all for the inner value
-   (e.g., `Result.Ok(n)` where `n` is an identifier), that member is fully covered.
-   Otherwise, recursively check whether the inner patterns collectively cover the member's
-   inner type (see Phase 7). A member is only marked as covered if its inner patterns are
-   exhaustive.
-
-5. **Track covered set and detect redundancy (R7)** — initialize an empty covered set,
+3. **Track covered set and detect redundancy (R7)** — initialize an empty covered set,
    then iterate branches in order. For each branch:
    - **Skip guarded branches for redundancy checking.** If `HasGuard` is true, the branch
      covers nothing (`CoveredTypes` is nil) but is not redundant — guards are runtime
@@ -156,109 +168,90 @@ func (c *Checker) checkExhaustiveness(
    - If a catch-all is encountered (unguarded wildcard/identifier), mark all remaining
      types as covered.
 
-6. **Compute uncovered types** — subtract the covered set from the coverage set. For
-   members that are partially covered at the nested level, include them in the uncovered
-   set with a message indicating the inner type needs coverage.
+4. **Compute uncovered types** — for finite types, report each uncovered member in
+   declaration order. For non-finite types, report the target type itself if no catch-all
+   was found.
 
-7. **Sort and return.** Sort `UncoveredTypes` deterministically (e.g., by declaration
-   order within the original union, or by canonical type string) before returning
-   `ExhaustivenessResult`. This ensures stable error messages and snapshot tests.
+**Deferred to Phase 7:** Steps 3–4 from the original plan (grouping branches by union
+member and checking nested exhaustiveness) are not yet implemented. The current
+implementation treats any branch covering a union member as fully covering it, regardless
+of inner patterns.
+
+**Helper functions added:**
+
+- `expandCoverageSet(targetType)` — extracts the finite coverage set from union types;
+  returns `(members, true)` for unions and `(nil, false)` for non-finite types.
+- `indexInCoverageSet(t, coverageSet)` — finds a type's position in the coverage set
+  using `typesMatchForCoverage`.
+- `resolveTypeRef(t)` — resolves a `TypeRefType` to its underlying `TypeAlias.Type`.
 
 **Type comparison:** Two types "match" for coverage purposes when:
+- They are the same pointer (identity — needed because `MatchedUnionMembers` stores
+  direct references to union member objects).
 - Both are `TypeRefType` with the same `TypeAlias` pointer (enum variants).
 - Both are nominal `ObjectType` with the same `ID` (class instances).
 - Both are literal types (`LiteralType`) with equal values.
 - One is a `TypeRefType` that resolves to the other (structural type aliases).
 
-### Phase 3: Error reporting
+### Phase 3: Error reporting ✅
+
+**Status:** Implemented in `c008d08`.
 
 **File:** `internal/checker/error.go`
 
-Add two new error/warning types:
+Added two new error/warning types and the `IsWarning()` method to the `Error` interface.
 
-```go
-type NonExhaustiveMatchError struct {
-    UncoveredTypes []type_system.Type
-    span           ast.Span  // span of the match keyword/expression
-}
+**Changes made:**
 
-func (e NonExhaustiveMatchError) Message() string {
-    // For finite unions (R10):
-    //   "Non-exhaustive match: missing cases for Color.Hex, Color.RGB"
-    // For non-finite types (R8):
-    //   "Non-exhaustive match: type 'number' is not fully covered; add a catch-all branch"
-}
+1. Added `IsWarning() bool` to the `Error` interface.
+2. Added `IsWarning()` returning `false` on all 35 pre-existing error types.
+3. Added `NonExhaustiveMatchError` with two message formats:
+   - Finite unions: `"Non-exhaustive match: missing cases for Color.Hex, Color.RGB"`
+   - Non-finite types: `"Non-exhaustive match: type 'number' is not fully covered; add a catch-all branch"`
+4. Added `RedundantMatchCaseWarning` with `IsWarning()` returning `true`.
+5. Added `"strings"` import for `strings.Join` in error formatting.
 
-type RedundantMatchCaseWarning struct {
-    span ast.Span  // span of the redundant pattern
-}
+**Formatting uncovered types (R10, R2):** The `Message()` method on
+`NonExhaustiveMatchError` delegates to each type's `String()` method, which already
+produces human-readable output:
+- `TypeRefType` with a qualified name → `Color.Hex` (via `QualIdentToString`)
+- Literal types → `"east"`, `false` (via `LitType.String()`)
+- Object types → `{kind: "rect", width: number, height: number}`
+- Non-finite base types → detected by checking for `*PrimType` in uncovered types
 
-func (e RedundantMatchCaseWarning) Message() string {
-    return "Redundant match branch: this case is already covered by earlier branches"
-}
+### Phase 4: Integration into `inferMatchExpr` ✅
 
-func (e RedundantMatchCaseWarning) IsWarning() bool { return true }
-```
-
-**Warning vs error distinction (R7):** The existing checker `Error` interface
-(`isError()`, `Span()`, `Message()`) does not distinguish warnings from errors. To support
-this, add `IsWarning() bool` to the `Error` interface. All existing error types already
-implement `isError()` via one-liner methods — add the same pattern for `IsWarning()`,
-returning `false` on every existing type. `RedundantMatchCaseWarning` returns `true`.
-`NonExhaustiveMatchError` returns `false`. All diagnostic sinks (checker, emitter, test
-helpers) should call `Error.IsWarning()` rather than using type assertions, so warnings
-are handled consistently and never treated as hard errors.
-
-**Formatting uncovered types (R10, R2):**
-- `TypeRefType` with a qualified name → use the qualified name (e.g., `Color.Hex`)
-- Literal types → use the literal representation (e.g., `"east"`, `false`)
-- Object types → use the type's string representation
-- Non-finite base types → special message: `type 'number' is not fully covered; add a catch-all branch`
-
-### Phase 4: Integration into `inferMatchExpr`
+**Status:** Implemented in `e12b2a9`.
 
 **File:** `internal/checker/infer_expr.go`
 
-After the existing case-by-case type inference loop (after line 1415), add the
-exhaustiveness check. **Gate on prior errors:** only run the exhaustiveness check when the
-match's type inference and unification succeeded without errors. If prior errors exist
-(e.g., pattern field not found, unification failure), inferred types and
-`MatchedUnionMembers` may be in an inconsistent state, and running exhaustiveness checking
-would produce misleading secondary diagnostics.
+Integrated `checkExhaustiveness` into `inferMatchExpr` with error gating.
 
-```go
-// After inferring all case types...
+**Changes made:**
 
-// Only check exhaustiveness if type inference/unification succeeded.
-// matchErrors tracks errors added during the case-by-case loop above.
-if len(matchErrors) == 0 {
-    result := c.checkExhaustiveness(expr, targetType)
+1. Introduced a `matchErrors` slice that tracks errors from target inference, pattern
+   inference, and unification (separate from case body errors).
+2. After inferring all cases, `matchErrors` is appended to the final error list.
+3. Exhaustiveness checking only runs when `matchErrors` is empty.
+4. Reports `NonExhaustiveMatchError` for uncovered types and `RedundantMatchCaseWarning`
+   for redundant branches.
 
-    if !result.IsExhaustive {
-        errors = append(errors, &NonExhaustiveMatchError{
-            UncoveredTypes: result.UncoveredTypes,
-            span:           expr.Span(),
-        })
-    }
+**Test updates required during integration:**
 
-    for _, redundant := range result.RedundantCases {
-        errors = append(errors, &RedundantMatchCaseWarning{
-            span: redundant.Span,
-        })
-    }
-}
-```
+- Updated `pattern_match_test.go` — added catch-all `_` branches to 5 tests that match
+  non-union/non-finite types (now correctly flagged as non-exhaustive).
+- Updated `fixtures/pattern_matching/lib/pattern_matching.esc` — added catch-all branches
+  to 5 non-exhaustive matches and regenerated fixture expected outputs.
+- Created `exhaustive_match_test.go` with 29 table-driven test cases covering exhaustive
+  matches, non-exhaustive errors, redundancy warnings, guard behavior, and error gating.
 
-This requires tracking errors from the match expression separately from the overall error
-list. Introduce a `matchErrors` slice that collects errors from target inference, pattern
-inference, and unification within `inferMatchExpr`. Append `matchErrors` to `errors`
-regardless, but only proceed with exhaustiveness checking if `matchErrors` is empty.
-
-This placement ensures that:
-- All pattern types have been inferred and unified (so `MatchedUnionMembers` is populated).
-- All extractor types have been resolved (so `customMatcher` param types are available).
-- The exhaustiveness check sees the fully-resolved state of all patterns.
-- No misleading secondary diagnostics are emitted when earlier type checking failed.
+**Implementation note:** During integration, two issues in Phase 2 were discovered and
+fixed:
+- `resolveTypeRef` helper added — `TypeRefType` aliases (like `type Color = Color.RGB |
+  Color.Hex`) need to be resolved to their underlying union before coverage analysis.
+- Pointer identity check added to `typesMatchForCoverage` — `MatchedUnionMembers` stores
+  direct references to union member objects, and structural `ObjectType` members are not
+  comparable by ID or name.
 
 ### Phase 5: Tuple exhaustiveness (R9)
 
@@ -282,17 +275,18 @@ union). For tuples containing non-finite types, require a catch-all.
 has 1024 combinations). Set a reasonable limit (e.g., 256 combinations) and fall back to
 requiring a catch-all if the product exceeds it.
 
-### Phase 6: Boolean expansion (R3)
+### Phase 6: Boolean expansion (R3) ✅
 
-The `boolean` primitive type needs special handling since it's not represented as a union
-internally but is semantically equivalent to `true | false`.
+**Status:** Implemented in `c008d08`.
 
-In `checkExhaustiveness`, when the target type is `boolean`:
-- Expand it to a synthetic union of `LiteralType(true)` and `LiteralType(false)`.
-- Proceed with the standard union coverage algorithm.
+**File:** `internal/checker/exhaustiveness.go`
 
-This ensures `match b { true => ..., false => ... }` is recognized as exhaustive without
-a catch-all.
+Added `expandBooleanType(t)` function that checks if a type is `*PrimType` with
+`BoolPrim`, and if so returns a synthetic union via
+`NewUnionType(nil, NewBoolLitType(nil, true), NewBoolLitType(nil, false))`.
+
+Called at the top of `checkExhaustiveness` before `expandCoverageSet`, so the standard
+union coverage algorithm handles boolean targets transparently.
 
 ### Phase 7: Nested pattern exhaustiveness (R13)
 
@@ -366,28 +360,46 @@ rarely deeper than 2–3 levels.
 
 ## File Summary
 
-| File | Changes |
-|---|---|
-| `internal/checker/exhaustiveness.go` | **New.** `ExhaustivenessResult`, `CaseCoverage`, `computeCaseCoverage`, `checkExhaustiveness` |
-| `internal/checker/error.go` | Add `NonExhaustiveMatchError`, `RedundantMatchCaseWarning` |
-| `internal/checker/infer_expr.go` | Call `checkExhaustiveness` at the end of `inferMatchExpr` |
-| `internal/checker/tests/exhaustive_match_test.go` | **New.** Tests from the requirements doc (Cases 1–20) |
+| File | Changes | Status |
+|---|---|---|
+| `internal/checker/exhaustiveness.go` | **New.** `ExhaustivenessResult`, `CaseCoverage`, `computeCaseCoverage`, `checkExhaustiveness`, `expandBooleanType`, `resolveTypeRef`, `expandCoverageSet`, `findMatchingMembers`, `typesMatchForCoverage`, `getCustomMatcherParamType`, `indexInCoverageSet` | Done |
+| `internal/checker/error.go` | Add `NonExhaustiveMatchError`, `RedundantMatchCaseWarning`, `IsWarning() bool` to `Error` interface and all existing types | Done |
+| `internal/checker/infer_expr.go` | Add `matchErrors` slice and call `checkExhaustiveness` at the end of `inferMatchExpr` | Done |
+| `internal/checker/tests/exhaustive_match_test.go` | **New.** 29 table-driven tests covering phases 1–4 and 6 | Done |
+| `internal/checker/tests/pattern_match_test.go` | Updated 5 tests to add catch-all branches for non-finite types | Done |
+| `fixtures/pattern_matching/lib/pattern_matching.esc` | Updated 5 match expressions to add catch-all branches | Done |
 
 ## Test Plan
 
-Tests should be added incrementally as each phase is completed. The test cases from the
-requirements document map to phases as follows:
+Tests are in `internal/checker/tests/exhaustive_match_test.go` using table-driven format.
 
-| Phase | Test Cases |
+**Implemented test cases (29 total):**
+
+| Category | Test cases | Req |
+|---|---|---|
+| Exhaustive enum matches | `EnumFullyCovered`, `EnumWithCatchAll` | R1, R2 |
+| Boolean exhaustiveness | `BooleanBothBranches`, `BooleanWithCatchAll` | R3 |
+| Literal union coverage | `LiteralUnionFullyCovered` | R4 |
+| Structural union coverage | `StructuralUnionFullyCoveredByObjectPatterns` | R12 |
+| Nominal union coverage | `NominalUnionCoveredByInstancePatterns`, `MixedNominalAndStructuralPatterns` | R1 |
+| Non-finite catch-all | `NonFiniteTypeCoveredByCatchAll`, `StringTypeCoveredByCatchAll`, `GuardedBranchWithCatchAll` | R5, R8 |
+| Missing enum variant | `EnumMissingVariant` | R2, R10 |
+| Missing boolean literal | `BooleanMissingFalse`, `BooleanMissingTrue`, `BooleanOnlyGuardedBranches` | R3, R6 |
+| Missing literal union members | `LiteralUnionMissingMembers` | R4, R10 |
+| Non-finite without catch-all | `NonFiniteTypeNoCatchAll`, `StringTypeNoCatchAll`, `NonFiniteTypeOnlyGuardedBranches` | R6, R8 |
+| Structural partial coverage | `StructuralUnionPartialCoverage` | R12 |
+| Nominal class no catch-all | `NominalClassNoCatchAll` | R8 |
+| Catch-all covers enum | `EmptyMatchOnEnum` | R5 |
+| Redundancy warnings | `RedundantDuplicateLiteralBranch`, `RedundantCatchAllAfterFullCoverage`, `RedundantDuplicateEnumVariant`, `RedundantDuplicateStringLiteral` | R7 |
+| Guard behavior | `GuardedBranchDoesNotCoverType`, `GuardedBranchNotRedundant` | R6 |
+| Error gating | `NoExhaustivenessCheckWhenPatternErrors` | Phase 4 |
+
+**Remaining test cases (to be added with future phases):**
+
+| Phase | Test Cases from requirements doc |
 |---|---|
-| Phase 1–2 (core coverage) | Cases 1, 2, 3, 7, 8, 13 |
-| Phase 3 (error messages) | Cases 2, 4, 6, 8, 10, 11 (verify message format) |
-| Phase 4 (integration) | All cases — verify errors appear in `inferModuleTypesAndErrors` |
 | Phase 5 (tuples) | Cases 14, 15 |
-| Phase 6 (booleans) | Cases 4, 5, 12 |
 | Phase 7 (nested) | Cases 16, 17, 18, 19, 20 |
-| Redundancy (R7) | Cases 9, 12 |
-| Guards (R6) | Case 10 |
 
 ## Risks and Mitigations
 
@@ -400,14 +412,26 @@ non-union targets, determine coverage based on the target's kind:
 - Non-finite types (`number`, `string`, open object types) are not covered by specific
   patterns — they still require an unguarded catch-all per R8.
 Do not assume that a non-union target is "trivially covered" by any pattern.
+**Outcome:** This risk materialized during Phase 4 integration. `ObjectPat` against
+non-union targets falls back to `findMatchingMembers`, which treats non-union, non-finite
+targets as requiring a catch-all. Five existing tests needed catch-all branches added.
 
 **Risk:** Extractor patterns don't currently store which union member they matched in an
 easily accessible way.
 **Mitigation:** After unification, the `customMatcher`'s param type identifies the variant.
 Extract this during `computeCaseCoverage` by walking the extractor's resolved type to find
 the `[Symbol.customMatcher]` method and reading its param type.
+**Outcome:** Implemented as planned via `getCustomMatcherParamType`. Works correctly.
 
 **Risk:** `TypeRefType` comparison may fail if the same type alias is referenced through
 different paths.
 **Mitigation:** Compare by `TypeAlias` pointer identity (same alias declaration) rather
 than by name string.
+**Outcome:** Implemented as planned. Additionally, pointer identity comparison was added
+as a first check in `typesMatchForCoverage` because `MatchedUnionMembers` stores direct
+references to union member objects, and structural `ObjectType` members lack nominal IDs.
+
+**Risk (discovered during implementation):** Target types may be `TypeRefType` aliases
+that need resolution before coverage set expansion.
+**Mitigation:** Added `resolveTypeRef` helper that resolves `TypeRefType` to its underlying
+`TypeAlias.Type`. Called at the top of `checkExhaustiveness` before `expandCoverageSet`.
