@@ -2,6 +2,7 @@ package checker
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
@@ -18,6 +19,7 @@ type Error interface {
 	isError()
 	Span() ast.Span
 	Message() string
+	IsWarning() bool
 }
 
 func (e UnimplementedError) isError()                       {}
@@ -54,6 +56,47 @@ func (e UnexpectedChildrenError) isError()                  {}
 func (e UnresolvedExportAssignmentError) isError()          {}
 func (e PropertyTypeMismatchError) isError()                {}
 func (e PropertyNotFoundError) isError()                    {}
+func (e ConstructorUsedAsMatchTargetError) isError()        {}
+func (e NonExhaustiveMatchError) isError()                  {}
+func (e RedundantMatchCaseWarning) isError()                {}
+
+func (e UnimplementedError) IsWarning() bool                       { return false }
+func (e GenericError) IsWarning() bool                             { return false }
+func (e InvalidObjectKeyError) IsWarning() bool                    { return false }
+func (e KeyNotFoundError) IsWarning() bool                         { return false }
+func (e InterfaceMergeError) IsWarning() bool                      { return false }
+func (e TypeParamMismatchError) IsWarning() bool                   { return false }
+func (e OutOfBoundsError) IsWarning() bool                         { return false }
+func (e RecursiveUnificationError) IsWarning() bool                { return false }
+func (e NotEnoughElementsToUnpackError) IsWarning() bool           { return false }
+func (e CannotUnifyTypesError) IsWarning() bool                    { return false }
+func (e UnknownIdentifierError) IsWarning() bool                   { return false }
+func (e UnknownOperatorError) IsWarning() bool                     { return false }
+func (e UnknownTypeError) IsWarning() bool                         { return false }
+func (e CalleeIsNotCallableError) IsWarning() bool                 { return false }
+func (e InvalidNumberOfArgumentsError) IsWarning() bool            { return false }
+func (e NoMatchingOverloadError) IsWarning() bool                  { return false }
+func (e ExpectedObjectError) IsWarning() bool                      { return false }
+func (e ExpectedArrayError) IsWarning() bool                       { return false }
+func (e CyclicDependencyError) IsWarning() bool                    { return false }
+func (e UnknownPropertyError) IsWarning() bool                     { return false }
+func (e CannotMutateImmutableError) IsWarning() bool               { return false }
+func (e CannotMutateReadonlyPropertyError) IsWarning() bool        { return false }
+func (e IncorrectParamCountForCustomMatcherError) IsWarning() bool { return false }
+func (e ExtractorReturnTypeMismatchError) IsWarning() bool         { return false }
+func (e ExtractorMustReturnTupleError) IsWarning() bool            { return false }
+func (e MissingCustomMatcherError) IsWarning() bool                { return false }
+func (e InvalidExtractorTypeError) IsWarning() bool                { return false }
+func (e MissingRequiredPropError) IsWarning() bool                 { return false }
+func (e UnknownComponentError) IsWarning() bool                    { return false }
+func (e InvalidKeyPropError) IsWarning() bool                      { return false }
+func (e UnexpectedChildrenError) IsWarning() bool                  { return false }
+func (e UnresolvedExportAssignmentError) IsWarning() bool          { return false }
+func (e PropertyTypeMismatchError) IsWarning() bool                { return false }
+func (e PropertyNotFoundError) IsWarning() bool                    { return false }
+func (e ConstructorUsedAsMatchTargetError) IsWarning() bool        { return false }
+func (e NonExhaustiveMatchError) IsWarning() bool                  { return false }
+func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type
@@ -558,12 +601,49 @@ type ConstructorUsedAsMatchTargetError struct {
 	span       ast.Span
 }
 
-func (e ConstructorUsedAsMatchTargetError) isError()        {}
 func (e ConstructorUsedAsMatchTargetError) Span() ast.Span {
 	return e.span
 }
 func (e ConstructorUsedAsMatchTargetError) Message() string {
 	return "Match target has type " + e.TargetType.String() + " which is a constructor, not an instance"
+}
+
+// NonExhaustiveMatchError is reported when a match expression does not cover
+// all possible values of the target type.
+type NonExhaustiveMatchError struct {
+	UncoveredTypes []type_system.Type
+	span           ast.Span
+}
+
+func (e NonExhaustiveMatchError) Span() ast.Span {
+	return e.span
+}
+func (e NonExhaustiveMatchError) Message() string {
+	// Check if any uncovered type is a non-finite primitive
+	for _, t := range e.UncoveredTypes {
+		if prim, ok := t.(*type_system.PrimType); ok {
+			return "Non-exhaustive match: type '" + prim.String() + "' is not fully covered; add a catch-all branch"
+		}
+	}
+
+	names := make([]string, len(e.UncoveredTypes))
+	for i, t := range e.UncoveredTypes {
+		names[i] = t.String()
+	}
+	return "Non-exhaustive match: missing cases for " + strings.Join(names, ", ")
+}
+
+// RedundantMatchCaseWarning is reported when a match branch can never be
+// reached because all types it covers are already handled by earlier branches.
+type RedundantMatchCaseWarning struct {
+	span ast.Span
+}
+
+func (e RedundantMatchCaseWarning) Span() ast.Span {
+	return e.span
+}
+func (e RedundantMatchCaseWarning) Message() string {
+	return "Redundant match branch: this case is already covered by earlier branches"
 }
 
 // TODO: make this a sum type so that different error type can reference other

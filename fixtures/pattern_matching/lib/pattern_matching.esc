@@ -48,7 +48,8 @@ export val nestedMatch = match nestedValue {
 val tuple2: [number, number] = [3, 3]
 export val guardMatch = match tuple2 {
     [a, b] if a == b => "equal",
-    [a, b] => "not equal"
+    [a, b] => "not equal",
+    _ => "fallback"
 }
 
 // Multiple cases
@@ -95,6 +96,7 @@ export val refMatch = match ref {
     {value: a:string} => "string",
     {value: b:number} => "number",
     {value: c:boolean} => "boolean",
+    _ => "unknown",
 }
 
 class Color(r: number, g: number, b: number) {
@@ -144,6 +146,7 @@ class User(name: string, age: number, email: string) { name, age, email }
 declare val user: User
 export val partialMatch = match user {
 	{name} => name,
+	_ => "",
 }
 
 // Case 7: Shared fields across union members produce union bindings
@@ -165,7 +168,7 @@ export val sharedFieldSameType = match shape {
 declare val point: Point
 export val literalPatternMatch = match point {
 	{x: 0, y: 0} => "origin",
-	{x, y} => "other",
+	_ => "other",
 }
 
 // Case 12: Structural pattern matches a getter
@@ -175,4 +178,5 @@ class Circle(radius: number) {
 declare val circle: Circle
 export val getterMatch = match circle {
 	{area} => area,
+	_ => 0,
 }

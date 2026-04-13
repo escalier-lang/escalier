@@ -651,211 +651,13 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			}
 		}
 	}
-	// TODO: dedupe with next case
 	// | _, ExtractorType -> ...
 	if ext, ok := t2.(*type_system.ExtractorType); ok {
-		if extObj, ok := ext.Extractor.(*type_system.ObjectType); ok {
-			for _, elem := range extObj.Elems {
-				if methodElem, ok := elem.(*type_system.MethodElem); ok {
-					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == c.CustomMatcherSymbolID {
-						if len(methodElem.Fn.Params) != 1 {
-							return []Error{&IncorrectParamCountForCustomMatcherError{
-								Method:    methodElem.Fn,
-								NumParams: len(methodElem.Fn.Params),
-							}}
-						}
-
-						paramType := methodElem.Fn.Params[0].Type
-						errors := c.Unify(ctx, t1, paramType)
-
-						if tuple, ok := methodElem.Fn.Return.(*type_system.TupleType); ok {
-							// If the subject is a type reference, then we need
-							// to substitute any type parameters in the tuple for
-							// the type arguments specified in the subject's type
-							// reference.
-							// TODO: We might have to expand `t1` if the type alias
-							// it's using points to another type alias.
-							if typeRef, ok := t1.(*type_system.TypeRefType); ok {
-								substitutions := make(map[string]type_system.Type)
-								for i, typeParam := range typeRef.TypeAlias.TypeParams {
-									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
-								}
-								tuple = SubstituteTypeParams[*type_system.TupleType](tuple, substitutions)
-							}
-
-							// Find if the args have a rest element
-							var restIndex = -1
-							for i, elem := range ext.Args {
-								if _, isRest := elem.(*type_system.RestSpreadType); isRest {
-									restIndex = i
-									break
-								}
-							}
-
-							if restIndex != -1 {
-								// Tuple has rest element
-								// Must have at least as many args as elements before rest
-								if len(ext.Args) < restIndex {
-									return []Error{&ExtractorReturnTypeMismatchError{
-										ExtractorType: ext,
-										ReturnType:    tuple,
-										NumArgs:       len(ext.Args),
-										NumReturns:    len(tuple.Elems),
-									}}
-								}
-
-								// Unify fixed elements (before rest)
-								for i := 0; i < restIndex; i++ {
-									argErrors := c.Unify(ctx, tuple.Elems[i], ext.Args[i])
-									errors = slices.Concat(errors, argErrors)
-								}
-
-								// Unify rest arguments with rest element type
-								if len(ext.Args) > restIndex {
-									restElem := ext.Args[restIndex].(*type_system.RestSpreadType)
-									remainingArgsTupleType := type_system.NewTupleType(nil, tuple.Elems[restIndex:]...)
-
-									restErrors := c.Unify(ctx, restElem.Type, remainingArgsTupleType)
-									errors = slices.Concat(errors, restErrors)
-								}
-							} else {
-								// Tuple has no rest element, use strict equality check
-								if len(tuple.Elems) == len(ext.Args) {
-									for retElem, argType := range Zip(tuple.Elems, ext.Args) {
-										argErrors := c.Unify(ctx, retElem, argType)
-										errors = slices.Concat(errors, argErrors)
-									}
-								} else {
-									return []Error{&ExtractorReturnTypeMismatchError{
-										ExtractorType: ext,
-										ReturnType:    tuple,
-										NumArgs:       len(ext.Args),
-										NumReturns:    len(tuple.Elems),
-									}}
-								}
-							}
-						} else {
-							return []Error{&ExtractorMustReturnTupleError{
-								ExtractorType: ext,
-								ReturnType:    methodElem.Fn.Return,
-							}}
-						}
-
-						return errors
-					}
-				}
-			}
-			return []Error{&MissingCustomMatcherError{
-				ObjectType: extObj,
-			}}
-		}
-		return []Error{&InvalidExtractorTypeError{
-			ExtractorType: ext,
-			ActualType:    ext.Extractor,
-		}}
+		return c.unifyExtractor(ctx, t1, ext, false)
 	}
-	// TODO: dedupe with previous case
 	// | ExtractorType, _ -> ...
 	if ext, ok := t1.(*type_system.ExtractorType); ok {
-		if extObj, ok := ext.Extractor.(*type_system.ObjectType); ok {
-			for _, elem := range extObj.Elems {
-				if methodElem, ok := elem.(*type_system.MethodElem); ok {
-					if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == c.CustomMatcherSymbolID {
-						if len(methodElem.Fn.Params) != 1 {
-							return []Error{&IncorrectParamCountForCustomMatcherError{
-								Method:    methodElem.Fn,
-								NumParams: len(methodElem.Fn.Params),
-							}}
-						}
-
-						paramType := methodElem.Fn.Params[0].Type
-						errors := c.Unify(ctx, paramType, t2)
-
-						if tuple, ok := methodElem.Fn.Return.(*type_system.TupleType); ok {
-							// If the subject is a type reference, then we need
-							// to substitute any type parameters in the tuple for
-							// the type arguments specified in the subject's type
-							// reference.
-							// TODO: We might have to expand `t2` if the type alias
-							// it's using points to another type alias.
-							if typeRef, ok := t2.(*type_system.TypeRefType); ok {
-								substitutions := make(map[string]type_system.Type)
-								for i, typeParam := range typeRef.TypeAlias.TypeParams {
-									substitutions[typeParam.Name] = typeRef.TypeArgs[i]
-								}
-								tuple = SubstituteTypeParams[*type_system.TupleType](tuple, substitutions)
-							}
-
-							// Find if the args have a rest element
-							var restIndex = -1
-							for i, elem := range ext.Args {
-								if _, isRest := elem.(*type_system.RestSpreadType); isRest {
-									restIndex = i
-									break
-								}
-							}
-
-							if restIndex != -1 {
-								// Tuple has rest element
-								// Must have at least as many args as elements before rest
-								if len(ext.Args) < restIndex {
-									return []Error{&ExtractorReturnTypeMismatchError{
-										ExtractorType: ext,
-										ReturnType:    tuple,
-										NumArgs:       len(ext.Args),
-										NumReturns:    len(tuple.Elems),
-									}}
-								}
-
-								// Unify fixed elements (before rest)
-								for i := 0; i < restIndex; i++ {
-									argErrors := c.Unify(ctx, ext.Args[i], tuple.Elems[i])
-									errors = slices.Concat(errors, argErrors)
-								}
-
-								// Unify rest arguments with rest element type
-								if len(ext.Args) > restIndex {
-									restElem := ext.Args[restIndex].(*type_system.RestSpreadType)
-									remainingArgsTupleType := type_system.NewTupleType(nil, tuple.Elems[restIndex:]...)
-
-									restErrors := c.Unify(ctx, remainingArgsTupleType, restElem.Type)
-									errors = slices.Concat(errors, restErrors)
-								}
-							} else {
-								// Tuple has no rest element, use strict equality check
-								if len(tuple.Elems) == len(ext.Args) {
-									for retElem, argType := range Zip(tuple.Elems, ext.Args) {
-										argErrors := c.Unify(ctx, argType, retElem)
-										errors = slices.Concat(errors, argErrors)
-									}
-								} else {
-									return []Error{&ExtractorReturnTypeMismatchError{
-										ExtractorType: ext,
-										ReturnType:    tuple,
-										NumArgs:       len(ext.Args),
-										NumReturns:    len(tuple.Elems),
-									}}
-								}
-							}
-						} else {
-							return []Error{&ExtractorMustReturnTupleError{
-								ExtractorType: ext,
-								ReturnType:    methodElem.Fn.Return,
-							}}
-						}
-
-						return errors
-					}
-				}
-			}
-			return []Error{&MissingCustomMatcherError{
-				ObjectType: extObj,
-			}}
-		}
-		return []Error{&InvalidExtractorTypeError{
-			ExtractorType: ext,
-			ActualType:    ext.Extractor,
-		}}
+		return c.unifyExtractor(ctx, t2, ext, true)
 	}
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*type_system.ObjectType); ok {
@@ -1404,6 +1206,124 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 		T1: t1,
 		T2: t2,
 	}}
+}
+
+// unifyExtractor unifies a subject type against an ExtractorType by finding
+// the [Symbol.customMatcher] method, unifying the subject with the method's
+// param type, and then unifying the extractor's args with the method's return
+// tuple elements. When swapped is true, the Unify argument order is reversed
+// (ext args first, tuple elements second) to preserve the original t1/t2
+// directionality from the caller.
+func (c *Checker) unifyExtractor(
+	ctx Context,
+	subject type_system.Type,
+	ext *type_system.ExtractorType,
+	swapped bool,
+) []Error {
+	// Helper to call Unify in the correct argument order.
+	unify := func(a, b type_system.Type) []Error {
+		if swapped {
+			return c.Unify(ctx, b, a)
+		}
+		return c.Unify(ctx, a, b)
+	}
+
+	methodElem, extObj := c.findCustomMatcherMethod(ext)
+	if extObj == nil {
+		return []Error{&InvalidExtractorTypeError{
+			ExtractorType: ext,
+			ActualType:    ext.Extractor,
+		}}
+	}
+	if methodElem == nil {
+		return []Error{&MissingCustomMatcherError{
+			ObjectType: extObj,
+		}}
+	}
+	if len(methodElem.Fn.Params) != 1 {
+		return []Error{&IncorrectParamCountForCustomMatcherError{
+			Method:    methodElem.Fn,
+			NumParams: len(methodElem.Fn.Params),
+		}}
+	}
+
+	paramType := methodElem.Fn.Params[0].Type
+	errors := unify(subject, paramType)
+
+	tuple, ok := methodElem.Fn.Return.(*type_system.TupleType)
+	if !ok {
+		return []Error{&ExtractorMustReturnTupleError{
+			ExtractorType: ext,
+			ReturnType:    methodElem.Fn.Return,
+		}}
+	}
+
+	// If the subject is a type reference, substitute any type parameters
+	// in the tuple for the type arguments specified in the subject's type
+	// reference.
+	// TODO(#430): We might have to expand the subject if the type alias
+	// it's using points to another type alias.
+	if typeRef, ok := subject.(*type_system.TypeRefType); ok && typeRef.TypeAlias != nil && len(typeRef.TypeArgs) >= len(typeRef.TypeAlias.TypeParams) {
+		substitutions := make(map[string]type_system.Type)
+		for i, typeParam := range typeRef.TypeAlias.TypeParams {
+			substitutions[typeParam.Name] = typeRef.TypeArgs[i]
+		}
+		tuple = SubstituteTypeParams(tuple, substitutions)
+	}
+
+	// Find if the args have a rest element.
+	var restIndex = -1
+	for i, elem := range ext.Args {
+		if _, isRest := elem.(*type_system.RestSpreadType); isRest {
+			restIndex = i
+			break
+		}
+	}
+
+	if restIndex != -1 {
+		// Tuple has rest element.
+		// Must have at least as many tuple elements as fixed args before rest.
+		if len(tuple.Elems) < restIndex {
+			return []Error{&ExtractorReturnTypeMismatchError{
+				ExtractorType: ext,
+				ReturnType:    tuple,
+				NumArgs:       len(ext.Args),
+				NumReturns:    len(tuple.Elems),
+			}}
+		}
+
+		// Unify fixed elements (before rest).
+		for i := 0; i < restIndex; i++ {
+			argErrors := unify(tuple.Elems[i], ext.Args[i])
+			errors = slices.Concat(errors, argErrors)
+		}
+
+		// Unify rest arguments with rest element type.
+		if len(ext.Args) > restIndex {
+			restElem := ext.Args[restIndex].(*type_system.RestSpreadType)
+			remainingArgsTupleType := type_system.NewTupleType(nil, tuple.Elems[restIndex:]...)
+
+			restErrors := unify(restElem.Type, remainingArgsTupleType)
+			errors = slices.Concat(errors, restErrors)
+		}
+	} else {
+		// Tuple has no rest element, use strict equality check.
+		if len(tuple.Elems) == len(ext.Args) {
+			for retElem, argType := range Zip(tuple.Elems, ext.Args) {
+				argErrors := unify(retElem, argType)
+				errors = slices.Concat(errors, argErrors)
+			}
+		} else {
+			return []Error{&ExtractorReturnTypeMismatchError{
+				ExtractorType: ext,
+				ReturnType:    tuple,
+				NumArgs:       len(ext.Args),
+				NumReturns:    len(tuple.Elems),
+			}}
+		}
+	}
+
+	return errors
 }
 
 // unifyClosedWithRests unifies a closed ObjectType that has RestSpreadElems

@@ -59,6 +59,8 @@ temp14 = circle;
 if (temp14 != null && "area" in temp14) {
   const {area} = temp14;
   temp13 = area;
+} else {
+  temp13 = 0;
 }
 export const getterMatch = temp13;
 export const tuple2 = [3, 3];
@@ -72,6 +74,8 @@ if (temp16.length == 2) {
   } else if (temp16.length == 2) {
     const [a, b] = temp16;
     temp15 = "not equal";
+  } else if (true) {
+    temp15 = "fallback";
   }
 }
 export const guardMatch = temp15;
@@ -94,8 +98,7 @@ let temp20;
 temp20 = point;
 if (temp20 != null && "x" in temp20 && temp20.x == 0 && "y" in temp20 && temp20.y == 0) {
   temp19 = "origin";
-} else if (temp20 != null && "x" in temp20 && "y" in temp20) {
-  const {x, y} = temp20;
+} else {
   temp19 = "other";
 }
 export const literalPatternMatch = temp19;
@@ -187,6 +190,8 @@ temp36 = user;
 if (temp36 != null && "name" in temp36) {
   const {name} = temp36;
   temp35 = name;
+} else {
+  temp35 = "";
 }
 export const partialMatch = temp35;
 let temp37;
@@ -201,6 +206,8 @@ if (temp38 != null && "value" in temp38 && typeof temp38.value == "string") {
 } else if (temp38 != null && "value" in temp38 && typeof temp38.value == "boolean") {
   const {value: c} = temp38;
   temp37 = "boolean";
+} else {
+  temp37 = "unknown";
 }
 export const refMatch = temp37;
 let temp39;
