@@ -680,9 +680,9 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			// to substitute any type parameters in the tuple for
 			// the type arguments specified in the subject's type
 			// reference.
-			// TODO: We might have to expand `t1` if the type alias
+			// TODO(#430): We might have to expand `t1` if the type alias
 			// it's using points to another type alias.
-			if typeRef, ok := t1.(*type_system.TypeRefType); ok {
+			if typeRef, ok := t1.(*type_system.TypeRefType); ok && typeRef.TypeAlias != nil && len(typeRef.TypeArgs) >= len(typeRef.TypeAlias.TypeParams) {
 				substitutions := make(map[string]type_system.Type)
 				for i, typeParam := range typeRef.TypeAlias.TypeParams {
 					substitutions[typeParam.Name] = typeRef.TypeArgs[i]
@@ -701,8 +701,8 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 
 			if restIndex != -1 {
 				// Tuple has rest element
-				// Must have at least as many args as elements before rest
-				if len(ext.Args) < restIndex {
+				// Must have at least as many tuple elements as fixed args before rest
+				if len(tuple.Elems) < restIndex {
 					return []Error{&ExtractorReturnTypeMismatchError{
 						ExtractorType: ext,
 						ReturnType:    tuple,
@@ -779,9 +779,9 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			// to substitute any type parameters in the tuple for
 			// the type arguments specified in the subject's type
 			// reference.
-			// TODO: We might have to expand `t2` if the type alias
+			// TODO(#430): We might have to expand `t2` if the type alias
 			// it's using points to another type alias.
-			if typeRef, ok := t2.(*type_system.TypeRefType); ok {
+			if typeRef, ok := t2.(*type_system.TypeRefType); ok && typeRef.TypeAlias != nil && len(typeRef.TypeArgs) >= len(typeRef.TypeAlias.TypeParams) {
 				substitutions := make(map[string]type_system.Type)
 				for i, typeParam := range typeRef.TypeAlias.TypeParams {
 					substitutions[typeParam.Name] = typeRef.TypeArgs[i]
@@ -800,8 +800,8 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 
 			if restIndex != -1 {
 				// Tuple has rest element
-				// Must have at least as many args as elements before rest
-				if len(ext.Args) < restIndex {
+				// Must have at least as many tuple elements as fixed args before rest
+				if len(tuple.Elems) < restIndex {
 					return []Error{&ExtractorReturnTypeMismatchError{
 						ExtractorType: ext,
 						ReturnType:    tuple,

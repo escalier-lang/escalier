@@ -242,6 +242,21 @@ func TestPatternMatchErrors(t *testing.T) {
 				"constructor, not an instance",
 			},
 		},
+		"ExtractorRestArgsMismatch": {
+			input: `
+				enum Foo {
+					Bar(x: number),
+				}
+				declare val foo: Foo
+				val result = match foo {
+					Foo.Bar(a, b, ...rest) => a,
+					_ => 0,
+				}
+			`,
+			expectedErrs: []string{
+				"Extractor return type mismatch",
+			},
+		},
 		"PatternFieldMatchesSetterOnly": {
 			input: `
 				declare val obj: {
