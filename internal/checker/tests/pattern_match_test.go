@@ -20,10 +20,11 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				declare val user: User
 				val result = match user {
 					{name} => name,
+					_ => "",
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "string",
+				"result": `string | ""`,
 			},
 		},
 		"Case12_StructuralPatternMatchesGetter": {
@@ -35,10 +36,11 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				declare val circle: Circle
 				val result = match circle {
 					{area} => area,
+					_ => 0,
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number",
+				"result": "number | 0",
 			},
 		},
 		"PartialMatchMultipleFields": {
@@ -48,10 +50,11 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				declare val p: Point
 				val result = match p {
 					{x, y} => x + y,
+					_ => 0,
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number",
+				"result": "number | 0",
 			},
 		},
 		"Case1_StructuralDestructuringOfNominalUnion": {
@@ -76,14 +79,16 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				declare val fbb: FooBarBaz
 				val result1 = match fbb {
 					{value} => value,
+					_ => "",
 				}
 				val result2 = match fbb {
 					{flag} => flag,
+					_ => false,
 				}
 			`,
 			expectedValues: map[string]string{
-				"result1": "string | number",
-				"result2": "boolean",
+				"result1": `string | number | ""`,
+				"result2": "boolean | false",
 			},
 		},
 		"Case3_CorrectEnumInstanceMatching": {
@@ -124,7 +129,7 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				declare val p: Point
 				val result = match p {
 					{x: 0, y: 0} => "origin",
-					{x, y} => "other",
+					_ => "other",
 				}
 			`,
 			expectedValues: map[string]string{

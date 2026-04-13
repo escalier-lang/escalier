@@ -15,6 +15,10 @@ func (c *Checker) checkExhaustiveness(
 	targetType = type_system.Prune(targetType)
 
 	// Step 1: Expand the target type into a coverage set.
+	// Resolve TypeRefType to its underlying type so that type aliases
+	// for unions (e.g., `type Color = Color.RGB | Color.Hex`) are handled.
+	targetType = resolveTypeRef(targetType)
+
 	// Boolean primitives are expanded to {true, false}.
 	if expanded, ok := expandBooleanType(targetType); ok {
 		targetType = expanded
@@ -307,11 +311,29 @@ func findMatchingMembers(patternType type_system.Type, targetType type_system.Ty
 	return nil
 }
 
+// resolveTypeRef resolves a TypeRefType to its underlying type. If the type
+// is not a TypeRefType or has no TypeAlias, it is returned unchanged. This
+// is used so that type aliases for unions (e.g., `type Color = Color.RGB | Color.Hex`)
+// are expanded before coverage set computation.
+func resolveTypeRef(t type_system.Type) type_system.Type {
+	if ref, ok := t.(*type_system.TypeRefType); ok && ref.TypeAlias != nil {
+		return type_system.Prune(ref.TypeAlias.Type)
+	}
+	return t
+}
+
 // typesMatchForCoverage determines whether two types "match" for coverage
 // purposes. This is used to determine which union members a pattern covers.
 func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 	patternType = type_system.Prune(patternType)
 	memberType = type_system.Prune(memberType)
+
+	// Pointer identity: if both types are the exact same object (e.g.,
+	// MatchedUnionMembers stores direct references to union members),
+	// they match.
+	if patternType == memberType {
+		return true
+	}
 
 	// TypeRefType: compare by TypeAlias pointer identity (same enum variant).
 	if patRef, ok := patternType.(*type_system.TypeRefType); ok {

@@ -1334,9 +1334,14 @@ func (c *Checker) inferDoExpr(ctx Context, expr *ast.DoExpr) (type_system.Type, 
 func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.Type, []Error) {
 	errors := []Error{}
 
+	// matchErrors tracks errors from target inference, pattern inference,
+	// and unification. If any of these fail, exhaustiveness checking is
+	// skipped to avoid misleading secondary diagnostics.
+	matchErrors := []Error{}
+
 	// Infer the type of the target expression
 	targetType, targetErrors := c.inferExpr(ctx, expr.Target)
-	errors = slices.Concat(errors, targetErrors)
+	matchErrors = slices.Concat(matchErrors, targetErrors)
 
 	// Check if target type is a constructor when patterns expect instances
 	targetObjType, isObj := type_system.Prune(targetType).(*type_system.ObjectType)
@@ -1351,7 +1356,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		if hasCallableOrConstructor {
 			for _, matchCase := range expr.Cases {
 				if _, ok := matchCase.Pattern.(*ast.ExtractorPat); ok {
-					errors = append(errors, &ConstructorUsedAsMatchTargetError{
+					matchErrors = append(matchErrors, &ConstructorUsedAsMatchTargetError{
 						TargetType: targetType,
 						span:       matchCase.Pattern.Span(),
 					})
@@ -1370,7 +1375,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 
 		// Infer the pattern type and get bindings
 		patternType, patternBindings, patternErrors := c.inferPattern(caseCtx, matchCase.Pattern)
-		errors = slices.Concat(errors, patternErrors)
+		matchErrors = slices.Concat(matchErrors, patternErrors)
 
 		// Add pattern bindings to the case scope
 		for name, binding := range patternBindings {
@@ -1383,15 +1388,15 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		patMatchCtx := caseCtx
 		patMatchCtx.IsPatMatch = true
 		unifyErrors := c.Unify(patMatchCtx, patternType, targetType)
-		errors = slices.Concat(errors, unifyErrors)
+		matchErrors = slices.Concat(matchErrors, unifyErrors)
 
 		// If there's a guard, check that it's a boolean
 		if matchCase.Guard != nil {
 			guardType, guardErrors := c.inferExpr(caseCtx, matchCase.Guard)
-			errors = slices.Concat(errors, guardErrors)
+			matchErrors = slices.Concat(matchErrors, guardErrors)
 
 			guardUnifyErrors := c.Unify(caseCtx, guardType, type_system.NewBoolPrimType(nil))
-			errors = slices.Concat(errors, guardUnifyErrors)
+			matchErrors = slices.Concat(matchErrors, guardUnifyErrors)
 		}
 
 		// Infer the type of the case body
@@ -1412,6 +1417,29 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		}
 
 		caseTypes = append(caseTypes, caseType)
+	}
+
+	// Always include match errors in the final error list.
+	errors = slices.Concat(errors, matchErrors)
+
+	// Only check exhaustiveness if type inference/unification succeeded.
+	// When prior errors exist, inferred types and MatchedUnionMembers may
+	// be in an inconsistent state and would produce misleading diagnostics.
+	if len(matchErrors) == 0 {
+		result := c.checkExhaustiveness(expr, targetType)
+
+		if !result.IsExhaustive {
+			errors = append(errors, &NonExhaustiveMatchError{
+				UncoveredTypes: result.UncoveredTypes,
+				span:           expr.Span(),
+			})
+		}
+
+		for _, redundant := range result.RedundantCases {
+			errors = append(errors, &RedundantMatchCaseWarning{
+				span: redundant.Span,
+			})
+		}
 	}
 
 	// The type of the match expression is the union of all case types
