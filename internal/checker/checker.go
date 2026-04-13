@@ -35,6 +35,27 @@ func (c *Checker) FreshVar(provenance provenance.Provenance) *type_system.TypeVa
 	return type_system.NewTypeVarType(provenance, c.TypeVarID)
 }
 
+// findCustomMatcherMethod finds the [Symbol.customMatcher] method on an
+// extractor's object type. Returns the MethodElem and the enclosing ObjectType,
+// or (nil, nil) if the extractor is not an ObjectType or has no such method.
+func (c *Checker) findCustomMatcherMethod(ext *type_system.ExtractorType) (*type_system.MethodElem, *type_system.ObjectType) {
+	extractor := type_system.Prune(ext.Extractor)
+	extObj, ok := extractor.(*type_system.ObjectType)
+	if !ok {
+		return nil, nil
+	}
+	for _, elem := range extObj.Elems {
+		methodElem, ok := elem.(*type_system.MethodElem)
+		if !ok {
+			continue
+		}
+		if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == c.CustomMatcherSymbolID {
+			return methodElem, extObj
+		}
+	}
+	return nil, extObj
+}
+
 type Ref[T any] struct {
 	Value T
 }

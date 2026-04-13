@@ -229,7 +229,10 @@ func (c *Checker) computeCaseCoverage(
 				coverage.CoveredTypes = objType.MatchedUnionMembers
 			} else {
 				// Non-union structural match: the pattern matched the target
-				// type directly. Covers the whole target.
+				// type directly, e.g. matching `{x} => ...` against a
+				// `Point` class where the target is a single nominal type,
+				// not a union. In this case findMatchingMembers checks if
+				// the pattern's inferred type matches the target by ID.
 				coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 			}
 		}
@@ -275,21 +278,9 @@ func (c *Checker) computeCaseCoverage(
 // method on an extractor's object type. This param type identifies which
 // variant the extractor matches.
 func (c *Checker) getCustomMatcherParamType(ext *type_system.ExtractorType) type_system.Type {
-	extractor := type_system.Prune(ext.Extractor)
-	extObj, ok := extractor.(*type_system.ObjectType)
-	if !ok {
-		return nil
-	}
-	for _, elem := range extObj.Elems {
-		methodElem, ok := elem.(*type_system.MethodElem)
-		if !ok {
-			continue
-		}
-		if methodElem.Name.Kind == type_system.SymObjTypeKeyKind && methodElem.Name.Sym == c.CustomMatcherSymbolID {
-			if len(methodElem.Fn.Params) == 1 {
-				return type_system.Prune(methodElem.Fn.Params[0].Type)
-			}
-		}
+	methodElem, _ := c.findCustomMatcherMethod(ext)
+	if methodElem != nil && len(methodElem.Fn.Params) == 1 {
+		return type_system.Prune(methodElem.Fn.Params[0].Type)
 	}
 	return nil
 }
