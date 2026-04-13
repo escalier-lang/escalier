@@ -4351,12 +4351,11 @@ func TestMatchExprInference(t *testing.T) {
 				declare val x: number
 				val result = match x {
 					n => n * 2,
-					_ => 0
 				}
 			`,
 			expectedTypes: map[string]string{
 				"x":      "number",
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		"MatchWithWildcardOnly": {

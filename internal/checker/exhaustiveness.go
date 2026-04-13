@@ -47,9 +47,10 @@ func (c *Checker) checkExhaustiveness(
 		}
 
 		if cov.IsCatchAll {
-			// Check redundancy: if all types are already covered, this
-			// catch-all is redundant.
-			if isFinite && len(coveredSet) == len(coverageSet) {
+			// Check redundancy: a catch-all is redundant if all types are
+			// already covered (finite case) or a previous catch-all was
+			// already seen (non-finite case).
+			if hasCatchAll || (isFinite && len(coveredSet) == len(coverageSet)) {
 				redundantCases = append(redundantCases, RedundantCase{
 					CaseIndex: i,
 					Span:      expr.Cases[i].Pattern.Span(),
@@ -255,8 +256,12 @@ func (c *Checker) computeCaseCoverage(
 		coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 
 	case *ast.TuplePat:
-		// Handled specially in Phase 5. For now, treat as non-covering
-		// unless it would be a catch-all (all elements are wildcards/idents).
+		// Tuple exhaustiveness is deferred to Phase 5 (not yet implemented).
+		// Currently all TuplePat values are treated as non-covering, meaning
+		// a match on a tuple type will require a wildcard/ident catch-all.
+		// Phase 5 will add combinatorial coverage checking for finite tuples
+		// (e.g., [boolean, boolean]) and treat TuplePat with all wildcard/ident
+		// elements as a catch-all.
 
 	case *ast.RestPat:
 		// Rest patterns in match expressions are unusual; treat as non-covering.

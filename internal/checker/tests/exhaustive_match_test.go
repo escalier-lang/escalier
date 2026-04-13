@@ -357,6 +357,18 @@ func TestExhaustiveMatch(t *testing.T) {
 				"Redundant match branch: this case is already covered by earlier branches",
 			},
 		},
+		"RedundantDuplicateCatchAllOnNonFiniteType": {
+			input: `
+				declare val n: number
+				val result = match n {
+					x => x,
+					_ => 0,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+		},
 		"RedundantDuplicateStringLiteral": {
 			input: `
 				type Direction = "north" | "south" | "east" | "west"
@@ -426,7 +438,7 @@ func TestExhaustiveMatch(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			_, inferErrors := inferModuleTypesAndErrors(t, test.input)
+			actualTypes, inferErrors := inferModuleTypesAndErrors(t, test.input)
 
 			// Separate errors from warnings.
 			var errors []Error
@@ -466,7 +478,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 				assert.True(t, found,
 					"expected error %q, got errors: %v",
-					expected, errMsgs(errors))
+					expected, errMessages(errors))
 			}
 
 			// Check expected warnings (exact match).
@@ -480,7 +492,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 				assert.True(t, found,
 					"expected warning %q, got warnings: %v",
-					expected, errMsgs(warnings))
+					expected, errMessages(warnings))
 			}
 
 			// Check that NoExhaustivenessCheckWhenPatternErrors does NOT
@@ -493,20 +505,9 @@ func TestExhaustiveMatch(t *testing.T) {
 			}
 
 			// Check expected inferred types.
-			if len(test.expectedValues) > 0 {
-				actualTypes, _ := inferModuleTypesAndErrors(t, test.input)
-				for key, expected := range test.expectedValues {
-					assert.Equal(t, expected, actualTypes[key])
-				}
+			for key, expected := range test.expectedValues {
+				assert.Equal(t, expected, actualTypes[key])
 			}
 		})
 	}
-}
-
-func errMsgs(errors []Error) []string {
-	msgs := make([]string, len(errors))
-	for i, err := range errors {
-		msgs[i] = err.Message()
-	}
-	return msgs
 }
