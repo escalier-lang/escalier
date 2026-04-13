@@ -6,7 +6,6 @@ import (
 
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestExhaustiveMatch(t *testing.T) {
@@ -451,49 +450,13 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			}
 
-			if len(test.expectedErrs) == 0 && len(test.expectedWarns) == 0 {
-				// No errors or warnings expected.
-				if len(errors) > 0 {
-					for i, err := range errors {
-						t.Logf("Unexpected Error[%d]: %s", i, err.Message())
-					}
-				}
-				require.Empty(t, errors, "expected no errors")
-				if len(warnings) > 0 {
-					for i, w := range warnings {
-						t.Logf("Unexpected Warning[%d]: %s", i, w.Message())
-					}
-				}
-				require.Empty(t, warnings, "expected no warnings")
-			}
+			// Check errors: exact set match (no missing, no unexpected).
+			assert.ElementsMatch(t, test.expectedErrs, errMessages(errors),
+				"error messages should match exactly")
 
-			// Check expected errors (exact match).
-			for _, expected := range test.expectedErrs {
-				found := false
-				for _, err := range errors {
-					if err.Message() == expected {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found,
-					"expected error %q, got errors: %v",
-					expected, errMessages(errors))
-			}
-
-			// Check expected warnings (exact match).
-			for _, expected := range test.expectedWarns {
-				found := false
-				for _, w := range warnings {
-					if w.Message() == expected {
-						found = true
-						break
-					}
-				}
-				assert.True(t, found,
-					"expected warning %q, got warnings: %v",
-					expected, errMessages(warnings))
-			}
+			// Check warnings: exact set match (no missing, no unexpected).
+			assert.ElementsMatch(t, test.expectedWarns, errMessages(warnings),
+				"warning messages should match exactly")
 
 			// Check that NoExhaustivenessCheckWhenPatternErrors does NOT
 			// produce exhaustiveness errors.

@@ -2,6 +2,7 @@ package checker
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -35,7 +36,7 @@ func (c *Checker) checkExhaustiveness(
 	}
 
 	// Step 5: Track covered set and detect redundancy.
-	coveredSet := make(map[int]bool) // index into coverageSet -> covered
+	coveredSet := set.NewSet[int]() // indices into coverageSet that are covered
 	var redundantCases []RedundantCase
 	hasCatchAll := false
 
@@ -50,7 +51,7 @@ func (c *Checker) checkExhaustiveness(
 			// Check redundancy: a catch-all is redundant if all types are
 			// already covered (finite case) or a previous catch-all was
 			// already seen (non-finite case).
-			if hasCatchAll || (isFinite && len(coveredSet) == len(coverageSet)) {
+			if hasCatchAll || (isFinite && coveredSet.Len() == len(coverageSet)) {
 				redundantCases = append(redundantCases, RedundantCase{
 					CaseIndex: i,
 					Span:      expr.Cases[i].Pattern.Span(),
@@ -59,7 +60,7 @@ func (c *Checker) checkExhaustiveness(
 			// Mark everything as covered.
 			hasCatchAll = true
 			for j := range coverageSet {
-				coveredSet[j] = true
+				coveredSet.Add(j)
 			}
 			continue
 		}
@@ -70,7 +71,7 @@ func (c *Checker) checkExhaustiveness(
 			allAlreadyCovered := true
 			for _, covType := range cov.CoveredTypes {
 				idx := indexInCoverageSet(covType, coverageSet)
-				if idx == -1 || !coveredSet[idx] {
+				if idx == -1 || !coveredSet.Contains(idx) {
 					allAlreadyCovered = false
 					break
 				}
@@ -86,7 +87,7 @@ func (c *Checker) checkExhaustiveness(
 			for _, covType := range cov.CoveredTypes {
 				idx := indexInCoverageSet(covType, coverageSet)
 				if idx != -1 {
-					coveredSet[idx] = true
+					coveredSet.Add(idx)
 				}
 			}
 		}
@@ -97,7 +98,7 @@ func (c *Checker) checkExhaustiveness(
 	if isFinite {
 		// For finite types, report each uncovered member in declaration order.
 		for i, member := range coverageSet {
-			if !coveredSet[i] {
+			if !coveredSet.Contains(i) {
 				uncoveredTypes = append(uncoveredTypes, member)
 			}
 		}
@@ -329,6 +330,13 @@ func resolveTypeRef(t type_system.Type) type_system.Type {
 
 // typesMatchForCoverage determines whether two types "match" for coverage
 // purposes. This is used to determine which union members a pattern covers.
+//
+// Structural ObjectType comparison is handled via pointer identity (the first
+// check below) rather than field-by-field comparison. This works because
+// ObjectPat coverage comes from MatchedUnionMembers, which stores direct
+// references to the original union member objects populated during
+// unifyPatternWithUnion. Those pointers are the same objects as the ones in
+// the coverage set (from UnionType.Types), so identity comparison suffices.
 func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 	patternType = type_system.Prune(patternType)
 	memberType = type_system.Prune(memberType)
