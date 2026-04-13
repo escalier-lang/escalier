@@ -284,11 +284,9 @@ func (c *Checker) computeCaseCoverage(
 		if union, ok := targetType.(*type_system.UnionType); ok {
 			// Target is a union of types (possibly tuple types among them).
 			// Check which union members this pattern covers by matching
-			// element-wise against each tuple member.
-			if allCatchAll {
-				coverage.IsCatchAll = true
-				break
-			}
+			// element-wise against each tuple member. We must NOT set
+			// IsCatchAll here because the union may contain non-tuple
+			// members (e.g., number) that a TuplePat cannot match.
 			for _, member := range union.Types {
 				memberTuple, ok := type_system.Prune(member).(*type_system.TupleType)
 				if !ok || len(memberTuple.Elems) != len(pat.Elems) {

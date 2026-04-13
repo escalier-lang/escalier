@@ -575,6 +575,21 @@ func TestExhaustiveMatch(t *testing.T) {
 			},
 		},
 
+		// TuplePat with all-ident on a mixed union should only cover
+		// tuple members, not non-tuple members like number.
+		"TupleMixedUnionIdentNotGlobalCatchAll": {
+			input: `
+				type T = ["a", "a"] | ["b", "b"] | number
+				declare val x: T
+				val result = match x {
+					[a, b] => a,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for number",
+			},
+		},
+
 		// ---------------------------------------------------------------
 		// Non-exhaustive match gated on prior errors (Phase 4)
 		// ---------------------------------------------------------------
