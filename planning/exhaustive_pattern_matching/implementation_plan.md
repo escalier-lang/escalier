@@ -177,11 +177,14 @@ func (e RedundantMatchCaseWarning) Message() string {
 func (e RedundantMatchCaseWarning) IsWarning() bool { return true }
 ```
 
-**Warning vs error distinction (R7):** The existing checker `Error` interface does not
-distinguish warnings from errors. Add an `IsWarning() bool` method to `RedundantMatchCaseWarning`
-(returning `true`). The `Error` interface can optionally be extended, or callers can use a
-type assertion to check. `NonExhaustiveMatchError` does not implement `IsWarning` and
-remains a hard error.
+**Warning vs error distinction (R7):** The existing checker `Error` interface
+(`isError()`, `Span()`, `Message()`) does not distinguish warnings from errors. To support
+this, add `IsWarning() bool` to the `Error` interface. All existing error types already
+implement `isError()` via one-liner methods — add the same pattern for `IsWarning()`,
+returning `false` on every existing type. `RedundantMatchCaseWarning` returns `true`.
+`NonExhaustiveMatchError` returns `false`. All diagnostic sinks (checker, emitter, test
+helpers) should call `Error.IsWarning()` rather than using type assertions, so warnings
+are handled consistently and never treated as hard errors.
 
 **Formatting uncovered types (R10, R2):**
 - `TypeRefType` with a qualified name → use the qualified name (e.g., `Color.Hex`)
@@ -353,8 +356,13 @@ requirements document map to phases as follows:
 
 **Risk:** `MatchedUnionMembers` may not be populated for all structural pattern scenarios
 (e.g., when the target is not a union type).
-**Mitigation:** For non-union structural targets, the pattern trivially covers the single
-type. Only rely on `MatchedUnionMembers` when the target is a union.
+**Mitigation:** Only rely on `MatchedUnionMembers` when the target is a union type. For
+non-union targets, determine coverage based on the target's kind:
+- A single nominal class type is fully covered by a pattern that matches it (instance
+  pattern with matching ID, or structural pattern whose fields all unify successfully).
+- Non-finite types (`number`, `string`, open object types) are not covered by specific
+  patterns — they still require an unguarded catch-all per R8.
+Do not assume that a non-union target is "trivially covered" by any pattern.
 
 **Risk:** Extractor patterns don't currently store which union member they matched in an
 easily accessible way.
