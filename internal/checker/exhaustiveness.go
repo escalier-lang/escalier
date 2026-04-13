@@ -266,12 +266,9 @@ func (c *Checker) computeCaseCoverage(
 		coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 
 	case *ast.TuplePat:
-		tupleTarget, ok := targetType.(*type_system.TupleType)
-		if !ok || len(pat.Elems) != len(tupleTarget.Elems) {
-			break
-		}
-
 		// Check if all elements are catch-all patterns (wildcard/ident).
+		// This applies regardless of whether the target is a single tuple
+		// or a union of tuples.
 		allCatchAll := true
 		for _, elem := range pat.Elems {
 			if _, ok := elem.(*ast.WildcardPat); ok {
@@ -283,6 +280,50 @@ func (c *Checker) computeCaseCoverage(
 			allCatchAll = false
 			break
 		}
+
+		if union, ok := targetType.(*type_system.UnionType); ok {
+			// Target is a union of types (possibly tuple types among them).
+			// Check which union members this pattern covers by matching
+			// element-wise against each tuple member.
+			if allCatchAll {
+				coverage.IsCatchAll = true
+				break
+			}
+			for _, member := range union.Types {
+				memberTuple, ok := type_system.Prune(member).(*type_system.TupleType)
+				if !ok || len(memberTuple.Elems) != len(pat.Elems) {
+					continue
+				}
+				matches := true
+				for i, elemPat := range pat.Elems {
+					elemType := type_system.Prune(memberTuple.Elems[i])
+					switch ep := elemPat.(type) {
+					case *ast.WildcardPat, *ast.IdentPat:
+						// Matches anything at this position.
+					case *ast.LitPat:
+						inferredType := type_system.Prune(ep.InferredType())
+						if !typesMatchForCoverage(inferredType, elemType) {
+							matches = false
+						}
+					default:
+						matches = false
+					}
+					if !matches {
+						break
+					}
+				}
+				if matches {
+					coverage.CoveredTypes = append(coverage.CoveredTypes, member)
+				}
+			}
+			break
+		}
+
+		tupleTarget, ok := targetType.(*type_system.TupleType)
+		if !ok || len(pat.Elems) != len(tupleTarget.Elems) {
+			break
+		}
+
 		if allCatchAll {
 			coverage.IsCatchAll = true
 			break
@@ -483,7 +524,9 @@ func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, b
 // sets and returns each combination as a TupleType.
 func cartesianProductTuples(elementSets [][]type_system.Type) []type_system.Type {
 	if len(elementSets) == 0 {
-		return nil
+		// The Cartesian product of zero sets is {()} — a single empty tuple.
+		// This ensures zero-element tuple types are treated as inhabited.
+		return []type_system.Type{type_system.NewTupleType(nil)}
 	}
 
 	// Start with partial combinations containing just the first position.

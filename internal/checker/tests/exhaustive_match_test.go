@@ -544,6 +544,38 @@ func TestExhaustiveMatch(t *testing.T) {
 		},
 
 		// ---------------------------------------------------------------
+		// Union of tuples (Phase 5)
+		// ---------------------------------------------------------------
+
+		// Empty tuple is inhabited and covered by a catch-all.
+		"TupleEmptyFullyCovered": {
+			input: `
+				declare val x: []
+				val result = match x {
+					_ => "empty",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"empty"`,
+			},
+		},
+
+		// TuplePat matching against a union of tuple types.
+		"TupleUnionOfTuplesFullyCovered": {
+			input: `
+				type Pair = ["a", "a"] | ["b", "b"]
+				declare val x: Pair
+				val result = match x {
+					["a", "a"] => 1,
+					["b", "b"] => 2,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2",
+			},
+		},
+
+		// ---------------------------------------------------------------
 		// Non-exhaustive match gated on prior errors (Phase 4)
 		// ---------------------------------------------------------------
 

@@ -393,7 +393,7 @@ rarely deeper than 2–3 levels.
 
 Tests are in `internal/checker/tests/exhaustive_match_test.go` using table-driven format.
 
-**Implemented test cases (38 total):**
+**Implemented test cases (41 total):**
 
 | Category | Test cases | Req |
 |---|---|---|
@@ -413,16 +413,13 @@ Tests are in `internal/checker/tests/exhaustive_match_test.go` using table-drive
 | Redundancy warnings | `RedundantDuplicateLiteralBranch`, `RedundantCatchAllAfterFullCoverage`, `RedundantDuplicateEnumVariant`, `RedundantDuplicateStringLiteral` | R7 |
 | Guard behavior | `GuardedBranchDoesNotCoverType`, `GuardedBranchNotRedundant` | R6 |
 | Error gating | `NoExhaustivenessCheckWhenPatternErrors` | Phase 4 |
-
-**Remaining test cases (to be added with future phases):**
-
-| Category | Test cases | Req |
-|---|---|---|
 | Tuple fully covered | `TupleBoolBoolFullyCovered`, `TupleLiteralUnionFullyCovered` | R9, Case 14 |
 | Tuple with wildcards | `TupleBoolBoolWithWildcard`, `TupleCatchAll`, `TupleAllIdentIsCatchAll` | R9 |
 | Tuple missing combos | `TupleBoolBoolMissingCombinations` | R9, Case 15 |
 | Tuple non-finite | `TupleNonFiniteElementNoCatchAll`, `TupleNonFiniteElementWithCatchAll` | R9 |
 | Tuple redundancy | `TupleRedundantBranch` | R7, R9 |
+| Tuple empty | `TupleEmptyFullyCovered` | R9 |
+| Tuple union of tuples | `TupleUnionOfTuplesFullyCovered` | R9 |
 
 **Remaining test cases (to be added with future phases):**
 
