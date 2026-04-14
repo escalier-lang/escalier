@@ -1429,6 +1429,11 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		result := c.checkExhaustiveness(expr, targetType)
 
 		if !result.IsExhaustive {
+			// UncoveredTypes is non-empty whenever the match is non-exhaustive
+			// at the top level — including non-finite types (number, string,
+			// etc.) where analyzeCoverageExhaustiveness sets UncoveredTypes
+			// to [targetType]. The only way to reach !IsExhaustive with
+			// empty UncoveredTypes is via PartialCoverages (handled below).
 			if len(result.UncoveredTypes) > 0 {
 				errors = append(errors, &NonExhaustiveMatchError{
 					UncoveredTypes: result.UncoveredTypes,
