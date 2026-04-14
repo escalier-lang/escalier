@@ -366,7 +366,7 @@ func (c *Checker) computePatternCoverage(
 		//                     → covers [true,true], [true,false]
 		perPositionSets := make([][]type_system.Type, len(pat.Elems))
 		for i, elemPat := range pat.Elems {
-			matched, ok := computePositionCoverage(elemPat, tupleTarget.Elems[i])
+			matched, ok := c.computePositionCoverage(elemPat, tupleTarget.Elems[i])
 			if !ok {
 				return coverage
 			}
@@ -548,7 +548,7 @@ func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, b
 // expandBooleanType) and then dispatches on the pattern kind. Returns the
 // matched types and true on success, or nil and false if the pattern cannot be
 // analyzed (non-finite wildcard or unsupported pattern type).
-func computePositionCoverage(elemPat ast.Pat, elemType type_system.Type) ([]type_system.Type, bool) {
+func (c *Checker) computePositionCoverage(elemPat ast.Pat, elemType type_system.Type) ([]type_system.Type, bool) {
 	elemType = normalizeTargetType(elemType)
 
 	switch p := elemPat.(type) {
@@ -559,6 +559,35 @@ func computePositionCoverage(elemPat ast.Pat, elemType type_system.Type) ([]type
 		}
 		return members, true
 	case *ast.LitPat:
+		inferredType := type_system.Prune(p.InferredType())
+		matched := findMatchingMembers(inferredType, elemType)
+		if len(matched) == 0 {
+			return nil, false
+		}
+		return matched, true
+	case *ast.ExtractorPat:
+		inferredType := type_system.Prune(p.InferredType())
+		ext, ok := inferredType.(*type_system.ExtractorType)
+		if !ok {
+			return nil, false
+		}
+		paramType := c.getCustomMatcherParamType(ext)
+		if paramType == nil {
+			return nil, false
+		}
+		matched := findMatchingMembers(paramType, elemType)
+		if len(matched) == 0 {
+			return nil, false
+		}
+		return matched, true
+	case *ast.InstancePat:
+		inferredType := type_system.Prune(p.InferredType())
+		matched := findMatchingMembers(inferredType, elemType)
+		if len(matched) == 0 {
+			return nil, false
+		}
+		return matched, true
+	case *ast.ObjectPat:
 		inferredType := type_system.Prune(p.InferredType())
 		matched := findMatchingMembers(inferredType, elemType)
 		if len(matched) == 0 {
@@ -910,7 +939,13 @@ func (c *Checker) checkExtractorInnerExhaustiveness(
 
 // checkObjectInnerExhaustiveness checks whether object patterns covering the
 // same union member collectively exhaust the member's property types.
-// Each property is checked independently.
+//
+// It extracts the string-keyed properties from the member's object type and
+// builds a per-branch tuple of property patterns (using a synthetic wildcard
+// when a property is omitted or bound via shorthand). It then delegates to
+// checkPositionalExhaustiveness which handles both the finite (Cartesian
+// product) and non-finite (per-position) cases — so correlated patterns
+// across properties are checked jointly when the types are finite.
 func (c *Checker) checkObjectInnerExhaustiveness(
 	branchCoverages []CaseCoverage,
 	member type_system.Type,
@@ -920,6 +955,12 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 		return nil
 	}
 
+	// Collect the string-keyed properties and their types.
+	type propInfo struct {
+		name    string
+		propType type_system.Type
+	}
+	var props []propInfo
 	for _, elem := range memberObj.Elems {
 		prop, ok := elem.(*type_system.PropertyElem)
 		if !ok {
@@ -928,56 +969,102 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 		if prop.Name.Kind != type_system.StrObjTypeKeyKind {
 			continue
 		}
-		propName := prop.Name.Str
-		propType := type_system.Prune(prop.Value)
+		props = append(props, propInfo{
+			name:    prop.Name.Str,
+			propType: type_system.Prune(prop.Value),
+		})
+	}
 
-		var propPatterns []ast.Pat
-		propFullyCovered := false
+	if len(props) == 0 {
+		return &ExhaustivenessResult{IsExhaustive: true}
+	}
 
-		for _, cov := range branchCoverages {
-			objPat, ok := cov.Pattern.(*ast.ObjectPat)
-			if !ok {
-				propFullyCovered = true // non-object pattern → treat as catch-all
-				break
-			}
-
-			found := false
-			for _, objElem := range objPat.Elems {
-				switch e := objElem.(type) {
-				case *ast.ObjKeyValuePat:
-					if e.Key.Name == propName {
-						propPatterns = append(propPatterns, e.Value)
-						found = true
-					}
-				case *ast.ObjShorthandPat:
-					if e.Key.Name == propName {
-						propFullyCovered = true // shorthand = catch-all binding
-						found = true
-					}
+	// Build a per-branch tuple of property patterns.
+	wildcard := ast.NewWildcardPat(ast.Span{})
+	branchElemPats := make([][]ast.Pat, 0, len(branchCoverages))
+	for _, cov := range branchCoverages {
+		row := make([]ast.Pat, len(props))
+		// Only ObjectPat has named-property sub-patterns that we can map to
+		// positional slots. Other pattern types with sub-patterns (ExtractorPat,
+		// TuplePat) are handled by their own dedicated inner-exhaustiveness
+		// checks, and InstancePat is unwrapped to its inner ObjectPat by
+		// checkInstanceInnerExhaustiveness before reaching here. Any remaining
+		// pattern type (e.g., IdentPat, WildcardPat) matches all property
+		// values, so we fill the row with wildcards.
+		switch pat := cov.Pattern.(type) {
+		case *ast.ObjectPat:
+			for i, p := range props {
+				if found := c.findPropertyPattern(pat, p.name); found != nil {
+					row[i] = found
+				} else {
+					row[i] = wildcard // property omitted → implicit wildcard
 				}
-				if found {
-					break
-				}
 			}
-			if !found {
-				propFullyCovered = true // property omitted → implicit wildcard
-			}
-			if propFullyCovered {
-				break
+		default:
+			// Non-object pattern covers everything — treat as all-wildcard.
+			for i := range row {
+				row[i] = wildcard
 			}
 		}
+		branchElemPats = append(branchElemPats, row)
+	}
 
-		if propFullyCovered {
+	// Build the element types slice and delegate to positional checking.
+	elemTypes := make([]type_system.Type, len(props))
+	for i, p := range props {
+		elemTypes[i] = p.propType
+	}
+
+	result := c.checkPositionalExhaustiveness(branchElemPats, elemTypes)
+
+	// Simplify uncovered tuple types for clearer error messages:
+	// strip positions where the property has only one possible value
+	// (e.g., the discriminant "todo"), then unwrap single-element tuples.
+	var singularPositions []bool
+	for _, et := range elemTypes {
+		members, finite := expandCoverageSet(normalizeTargetType(et))
+		singularPositions = append(singularPositions, finite && len(members) == 1)
+	}
+	for i, t := range result.UncoveredTypes {
+		tuple, ok := t.(*type_system.TupleType)
+		if !ok {
 			continue
 		}
-
-		result := c.checkInnerPatternsExhaustive(propPatterns, propType)
-		if !result.IsExhaustive {
-			return result
+		var filtered []type_system.Type
+		for j, elem := range tuple.Elems {
+			if j < len(singularPositions) && singularPositions[j] {
+				continue
+			}
+			filtered = append(filtered, elem)
+		}
+		if len(filtered) == 1 {
+			result.UncoveredTypes[i] = filtered[0]
+		} else if len(filtered) < len(tuple.Elems) {
+			result.UncoveredTypes[i] = type_system.NewTupleType(nil, filtered...)
 		}
 	}
 
-	return &ExhaustivenessResult{IsExhaustive: true}
+	return result
+}
+
+// findPropertyPattern extracts the pattern for a named property from an
+// ObjectPat. Returns the value pattern for key-value bindings, a synthetic
+// wildcard for shorthand bindings (which are catch-alls), or nil if the
+// property is not mentioned.
+func (c *Checker) findPropertyPattern(objPat *ast.ObjectPat, propName string) ast.Pat {
+	for _, objElem := range objPat.Elems {
+		switch e := objElem.(type) {
+		case *ast.ObjKeyValuePat:
+			if e.Key.Name == propName {
+				return e.Value
+			}
+		case *ast.ObjShorthandPat:
+			if e.Key.Name == propName {
+				return ast.NewWildcardPat(ast.Span{}) // shorthand = catch-all
+			}
+		}
+	}
+	return nil
 }
 
 // checkInstanceInnerExhaustiveness checks whether instance patterns covering
@@ -1064,7 +1151,7 @@ func (c *Checker) checkPositionalExhaustiveness(
 			perPositionSets := make([][]type_system.Type, len(elemPats))
 			valid := true
 			for i, elemPat := range elemPats {
-				matched, ok := computePositionCoverage(elemPat, elemTypes[i])
+				matched, ok := c.computePositionCoverage(elemPat, elemTypes[i])
 				if !ok {
 					valid = false
 					break

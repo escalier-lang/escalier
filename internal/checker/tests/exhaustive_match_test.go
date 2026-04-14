@@ -1003,6 +1003,25 @@ func TestExhaustiveMatch(t *testing.T) {
 				`Non-exhaustive match: {kind: "todo", status: Status} is missing inner cases for Status.Inactive`,
 			},
 		},
+		// Object with two boolean properties where each property is
+		// individually exhausted but the cross-product is not covered.
+		// Per-property independent checking would falsely report this
+		// as exhaustive.
+		"ObjectCorrelatedBooleanPropertiesNonExhaustive": {
+			input: `
+				type Shape = {kind: "rect", tall: boolean, wide: boolean}
+				           | {kind: "circle"}
+				declare val s: Shape
+				val result = match s {
+					{kind: "rect", tall: true, wide: true} => "big",
+					{kind: "rect", tall: false, wide: false} => "small",
+					{kind: "circle"} => "round",
+				}
+			`,
+			expectedErrs: []string{
+				`Non-exhaustive match: {kind: "rect", tall: boolean, wide: boolean} is missing inner cases for [true, false], [false, true]`,
+			},
+		},
 		// Three-level nesting: enum containing enum containing boolean.
 		"ThreeLevelNestedExhaustive": {
 			input: `
