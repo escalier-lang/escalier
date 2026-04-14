@@ -544,6 +544,52 @@ func TestExhaustiveMatch(t *testing.T) {
 		},
 
 		// ---------------------------------------------------------------
+		// Tuple with rest spread (Phase 5)
+		// ---------------------------------------------------------------
+
+		// A tuple with a rest element is non-finite and requires a catch-all.
+		"TupleRestSpreadNoCatchAll": {
+			input: `
+				declare val x: [boolean, ...Array<number>]
+				val result = match x {
+					[true, ...rest] => rest,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: type '[boolean, ...Array<number>]' is not fully covered; add a catch-all branch",
+			},
+		},
+		// Patterns [x] and [x, ...rest] against a rest-spread tuple.
+		// [x, ...rest] acts as a catch-all since all elements are
+		// wildcard/ident (rest is treated like a catch-all element).
+		"TupleRestPatterns": {
+			input: `
+				declare val x: [number, ...Array<number>]
+				val result = match x {
+					[x] => x,
+					[x, y] => y,
+					[x, y, ...rest] => rest.length,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | number | number",
+			},
+		},
+		// A tuple with a rest element covered by a catch-all.
+		"TupleRestSpreadWithCatchAll": {
+			input: `
+				declare val x: [boolean, ...Array<number>]
+				val result = match x {
+					[true, ...rest] => rest,
+					_ => [],
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "Array<number> | []",
+			},
+		},
+
+		// ---------------------------------------------------------------
 		// Union of tuples (Phase 5)
 		// ---------------------------------------------------------------
 

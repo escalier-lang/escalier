@@ -266,7 +266,7 @@ func (c *Checker) computeCaseCoverage(
 		coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 
 	case *ast.TuplePat:
-		// Check if all elements are catch-all patterns (wildcard/ident).
+		// Check if all elements are catch-all patterns (wildcard/ident/rest).
 		// This applies regardless of whether the target is a single tuple
 		// or a union of tuples.
 		allCatchAll := true
@@ -277,16 +277,23 @@ func (c *Checker) computeCaseCoverage(
 			if _, ok := elem.(*ast.IdentPat); ok {
 				continue
 			}
+			if _, ok := elem.(*ast.RestPat); ok {
+				continue
+			}
 			allCatchAll = false
 			break
 		}
 
 		if union, ok := targetType.(*type_system.UnionType); ok {
-			// Target is a union of types (possibly tuple types among them).
-			// Check which union members this pattern covers by matching
-			// element-wise against each tuple member. We must NOT set
-			// IsCatchAll here because the union may contain non-tuple
-			// members (e.g., number) that a TuplePat cannot match.
+			// Target is a union whose members are already concrete tuples.
+			// The coverage set is the union members themselves, so we check
+			// which members the pattern matches element-wise.
+			//
+			// Example: type T = ["a", "a"] | ["b", "b"]
+			//   pattern ["a", _] → covers ["a", "a"] but not ["b", "b"]
+			//
+			// We must NOT set IsCatchAll here because the union may contain
+			// non-tuple members (e.g., number) that a TuplePat cannot match.
 			for _, member := range union.Types {
 				memberTuple, ok := type_system.Prune(member).(*type_system.TupleType)
 				if !ok || len(memberTuple.Elems) != len(pat.Elems) {
@@ -327,8 +334,15 @@ func (c *Checker) computeCaseCoverage(
 			break
 		}
 
-		// Compute per-position coverage for each element pattern.
-		var perPositionSets [][]type_system.Type
+		// Target is a single tuple type. The coverage set is the Cartesian
+		// product of each element position's expanded types, so we compute
+		// per-position coverage and take the product.
+		//
+		// Example: target [boolean, boolean]
+		//   coverage set = [true,true], [true,false], [false,true], [false,false]
+		//   pattern [true, _] → per-position sets: {true} × {true, false}
+		//                     → covers [true,true], [true,false]
+		perPositionSets := make([][]type_system.Type, len(pat.Elems))
 		for i, elemPat := range pat.Elems {
 			elemType := type_system.Prune(tupleTarget.Elems[i])
 			elemType = resolveTypeRef(elemType)
@@ -347,14 +361,14 @@ func (c *Checker) computeCaseCoverage(
 				if !finite {
 					return coverage
 				}
-				perPositionSets = append(perPositionSets, members)
+				perPositionSets[i] = members
 			case *ast.LitPat:
 				inferredType := type_system.Prune(ep.InferredType())
 				matched := findMatchingMembers(inferredType, elemType)
 				if len(matched) == 0 {
 					return coverage
 				}
-				perPositionSets = append(perPositionSets, matched)
+				perPositionSets[i] = matched
 			default:
 				// Other pattern types at element positions are not yet
 				// supported for tuple exhaustiveness.
@@ -466,14 +480,20 @@ func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 		}
 	}
 
-	// LiteralType: compare by value equality.
+	// LiteralType: compare by value equality. Pointer identity doesn't
+	// work here because the pattern's LitType (from inferLit) and the
+	// coverage set's LitType (from expandBooleanType) are separate
+	// allocations.
 	if patLit, ok := patternType.(*type_system.LitType); ok {
 		if memLit, ok := memberType.(*type_system.LitType); ok {
 			return patLit.Lit.Equal(memLit.Lit)
 		}
 	}
 
-	// TupleType: compare element-wise.
+	// TupleType: compare element-wise. Pointer identity doesn't work
+	// here because both sides are independently constructed by
+	// cartesianProductTuples — the coverage set side via
+	// expandTupleCoverageSet and the pattern side via computeCaseCoverage.
 	if patTuple, ok := patternType.(*type_system.TupleType); ok {
 		if memTuple, ok := memberType.(*type_system.TupleType); ok {
 			if len(patTuple.Elems) != len(memTuple.Elems) {
@@ -497,9 +517,9 @@ func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 // non-finite, the tuple is treated as non-finite. A complexity limit of 256
 // combinations is enforced.
 func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, bool) {
-	var elementSets [][]type_system.Type
+	elementSets := make([][]type_system.Type, len(tuple.Elems))
 	totalSize := 1
-	for _, elem := range tuple.Elems {
+	for i, elem := range tuple.Elems {
 		elem = type_system.Prune(elem)
 		elem = resolveTypeRef(elem)
 		if expanded, ok := expandBooleanType(elem); ok {
@@ -513,7 +533,7 @@ func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, b
 		if totalSize > 256 {
 			return nil, false
 		}
-		elementSets = append(elementSets, members)
+		elementSets[i] = members
 	}
 	return cartesianProductTuples(elementSets), true
 }
