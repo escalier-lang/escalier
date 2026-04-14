@@ -74,8 +74,6 @@ if (temp16.length == 2) {
   } else if (temp16.length == 2) {
     const [a, b] = temp16;
     temp15 = "not equal";
-  } else if (true) {
-    temp15 = "fallback";
   }
 }
 export const guardMatch = temp15;
@@ -272,8 +270,6 @@ temp54 = tupleValue;
 if (temp54.length == 3) {
   const [a, b, c] = temp54;
   temp53 = a + b + c;
-} else {
-  temp53 = 0;
 }
 export const tupleMatch = temp53;
 let temp55;

@@ -21,7 +21,6 @@ export val variableMatch = match num2 {
 export val tupleValue: [number, number, number] = [1, 2, 3]
 export val tupleMatch = match tupleValue {
     [a, b, c] => a + b + c,
-    _ => 0
 }
 
 // Object pattern matching
@@ -49,7 +48,6 @@ val tuple2: [number, number] = [3, 3]
 export val guardMatch = match tuple2 {
     [a, b] if a == b => "equal",
     [a, b] => "not equal",
-    _ => "fallback"
 }
 
 // Multiple cases

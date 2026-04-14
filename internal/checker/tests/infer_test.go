@@ -4338,12 +4338,11 @@ func TestMatchExprInference(t *testing.T) {
 				val x = [1, 2]
 				val result = match x {
 					[a, b] => a + b,
-					_ => 0
 				}
 			`,
 			expectedTypes: map[string]string{
 				"x":      "[1, 2]",
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		"MatchWithIdentifierPattern": {
