@@ -117,6 +117,109 @@ func TestExhaustiveMatch(t *testing.T) {
 				"result": "number | string",
 			},
 		},
+		"InstancePatWithInnerExhaustive": {
+			input: `
+				class Toggle(value: boolean) { value }
+				class Label(text: string) { text }
+				declare val obj: Toggle | Label
+				val result = match obj {
+					Toggle {value: true} => "on",
+					Toggle {value: false} => "off",
+					Label {text} => text,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"on" | "off" | string`,
+			},
+		},
+		"InstancePatWithInnerNonExhaustive": {
+			input: `
+				class Toggle(value: boolean) { value }
+				class Label(text: string) { text }
+				declare val obj: Toggle | Label
+				val result = match obj {
+					Toggle {value: true} => "on",
+					Label {text} => text,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Toggle is missing inner cases for false",
+			},
+		},
+		"InstancePatWithEnumPropertyExhaustive": {
+			input: `
+				enum Status { Active(), Inactive() }
+				class Task(status: Status) { status }
+				class Note(body: string) { body }
+				declare val item: Task | Note
+				val result = match item {
+					Task {status: Status.Active()} => "active",
+					Task {status: Status.Inactive()} => "inactive",
+					Note {body} => body,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"active" | "inactive" | string`,
+			},
+		},
+		"InstancePatWithEnumPropertyNonExhaustive": {
+			input: `
+				enum Status { Active(), Inactive() }
+				class Task(status: Status) { status }
+				class Note(body: string) { body }
+				declare val item: Task | Note
+				val result = match item {
+					Task {status: Status.Active()} => "active",
+					Note {body} => body,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Task is missing inner cases for Status.Inactive",
+			},
+		},
+		"InstancePatWithLiteralPropertyExhaustive": {
+			input: `
+				class Packet(kind: "data" | "ack") { kind }
+				class Error(code: number) { code }
+				declare val msg: Packet | Error
+				val result = match msg {
+					Packet {kind: "data"} => 1,
+					Packet {kind: "ack"} => 2,
+					Error {code} => code,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | number",
+			},
+		},
+		"InstancePatWithLiteralPropertyNonExhaustive": {
+			input: `
+				class Packet(kind: "data" | "ack") { kind }
+				class Error(code: number) { code }
+				declare val msg: Packet | Error
+				val result = match msg {
+					Packet {kind: "data"} => 1,
+					Error {code} => code,
+				}
+			`,
+			expectedErrs: []string{
+				`Non-exhaustive match: Packet is missing inner cases for "ack"`,
+			},
+		},
+		"InstancePatWithNonFinitePropertyNeedsCatchAll": {
+			input: `
+				class Box(value: number) { value }
+				class Empty() {}
+				declare val obj: Box | Empty
+				val result = match obj {
+					Box {value: 0} => "zero",
+					Empty {} => "empty",
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Box is not fully covered; add a catch-all branch",
+			},
+		},
 		"NonFiniteTypeCoveredByCatchAll": {
 			input: `
 				declare val n: number
@@ -350,6 +453,21 @@ func TestExhaustiveMatch(t *testing.T) {
 					Color.RGB(r, g, b) => r + g + b,
 					Color.Hex(code) => code,
 					Color.RGB(r, g, b) => 0,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+		},
+		"RedundantDuplicateInstancePattern": {
+			input: `
+				class Point(x: number, y: number) { x, y }
+				class Event(kind: string) { kind }
+				declare val obj: Point | Event
+				val result = match obj {
+					Point {x, y} => x + y,
+					Event {kind} => kind,
+					Point {x, y} => 0,
 				}
 			`,
 			expectedWarns: []string{

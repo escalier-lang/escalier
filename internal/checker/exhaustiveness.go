@@ -649,10 +649,10 @@ func literalBelongsToType(litType type_system.Type, targetType type_system.Type)
 	return false
 }
 
-// branchFullyCoversMember checks if a single branch's inner patterns are all
+// innerPatternAreAllCatchAlls checks if a single branch's inner patterns are all
 // catch-alls (wildcard/identifier), meaning it fully covers the union member
 // without needing inner exhaustiveness checking.
-func branchFullyCoversMember(cov CaseCoverage) bool {
+func innerPatternAreAllCatchAlls(cov CaseCoverage) bool {
 	switch pat := cov.Pattern.(type) {
 	case *ast.ExtractorPat:
 		for _, arg := range pat.Args {
@@ -685,6 +685,9 @@ func branchFullyCoversMember(cov CaseCoverage) bool {
 			}
 		}
 		return true
+	case *ast.InstancePat:
+		// Delegate to the inner ObjectPat.
+		return innerPatternAreAllCatchAlls(CaseCoverage{Pattern: pat.Object})
 	default:
 		return true // other pattern types don't have inner patterns
 	}
@@ -697,7 +700,7 @@ func branchFullyCoversMember(cov CaseCoverage) bool {
 // fully covers that specific member (not partial). This distinction prevents
 // clearing genuine redundancy warnings for duplicate tuple branches.
 func branchPartiallyCovers(cov CaseCoverage, member type_system.Type) bool {
-	if branchFullyCoversMember(cov) {
+	if innerPatternAreAllCatchAlls(cov) {
 		return false // all catch-alls → not partial
 	}
 
@@ -747,7 +750,7 @@ func (c *Checker) checkNestedExhaustiveness(
 	// Quick check: if any branch fully covers the member
 	// (all inner patterns are catch-alls), it's exhaustive.
 	for _, cov := range branchCoverages {
-		if branchFullyCoversMember(cov) {
+		if innerPatternAreAllCatchAlls(cov) {
 			return &ExhaustivenessResult{IsExhaustive: true}
 		}
 	}
@@ -760,6 +763,8 @@ func (c *Checker) checkNestedExhaustiveness(
 		return c.checkObjectInnerExhaustiveness(branchCoverages, member)
 	case *ast.TuplePat:
 		return c.checkTupleInnerExhaustiveness(branchCoverages, member)
+	case *ast.InstancePat:
+		return c.checkInstanceInnerExhaustiveness(branchCoverages, member)
 	default:
 		return nil
 	}
@@ -890,6 +895,31 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 	return &ExhaustivenessResult{IsExhaustive: true}
 }
 
+// checkInstanceInnerExhaustiveness checks whether instance patterns covering
+// the same union member collectively exhaust the member's property types.
+// It unwraps each InstancePat's inner ObjectPat and delegates to
+// checkObjectInnerExhaustiveness.
+func (c *Checker) checkInstanceInnerExhaustiveness(
+	branchCoverages []CaseCoverage,
+	member type_system.Type,
+) *ExhaustivenessResult {
+	objCoverages := make([]CaseCoverage, 0, len(branchCoverages))
+	for _, cov := range branchCoverages {
+		instPat, ok := cov.Pattern.(*ast.InstancePat)
+		if !ok || instPat.Object == nil {
+			continue
+		}
+		objCoverages = append(objCoverages, CaseCoverage{
+			Pattern:    instPat.Object,
+			IsCatchAll: cov.IsCatchAll,
+		})
+	}
+	if len(objCoverages) == 0 {
+		return nil
+	}
+	return c.checkObjectInnerExhaustiveness(objCoverages, member)
+}
+
 // checkTupleInnerExhaustiveness checks whether tuple patterns covering the
 // same union member collectively exhaust the member's element types. For finite
 // element types, it uses Cartesian product tracking; for non-finite elements,
@@ -903,6 +933,10 @@ func (c *Checker) checkTupleInnerExhaustiveness(
 		return nil
 	}
 
+	// Extract element patterns from each branch. The type and arity checks
+	// are defensive — checkNestedExhaustiveness dispatches here based on the
+	// first branch's pattern type, so all branches should be TuplePats with
+	// matching arity in well-typed code.
 	branchElemPats := make([][]ast.Pat, 0, len(branchCoverages))
 	for _, cov := range branchCoverages {
 		tuplePat, ok := cov.Pattern.(*ast.TuplePat)
