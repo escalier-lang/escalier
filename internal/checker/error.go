@@ -58,6 +58,7 @@ func (e PropertyTypeMismatchError) isError()                {}
 func (e PropertyNotFoundError) isError()                    {}
 func (e ConstructorUsedAsMatchTargetError) isError()        {}
 func (e NonExhaustiveMatchError) isError()                  {}
+func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -96,6 +97,7 @@ func (e PropertyTypeMismatchError) IsWarning() bool                { return fals
 func (e PropertyNotFoundError) IsWarning() bool                    { return false }
 func (e ConstructorUsedAsMatchTargetError) IsWarning() bool        { return false }
 func (e NonExhaustiveMatchError) IsWarning() bool                  { return false }
+func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
 
 type CannotMutateImmutableError struct {
@@ -653,6 +655,29 @@ func (e RedundantMatchCaseWarning) Span() ast.Span {
 }
 func (e RedundantMatchCaseWarning) Message() string {
 	return "Redundant match branch: this case is already covered by earlier branches"
+}
+
+// InnerNonExhaustiveMatchError is reported when a union member is matched by
+// branches whose inner patterns do not collectively exhaust the member's inner
+// type.
+type InnerNonExhaustiveMatchError struct {
+	MemberType     type_system.Type
+	InnerUncovered []type_system.Type
+	IsNonFinite    bool
+	span           ast.Span
+}
+
+func (e InnerNonExhaustiveMatchError) Span() ast.Span { return e.span }
+func (e InnerNonExhaustiveMatchError) Message() string {
+	memberStr := e.MemberType.String()
+	if e.IsNonFinite {
+		return "Non-exhaustive match: " + memberStr + " is not fully covered; add a catch-all branch"
+	}
+	names := make([]string, len(e.InnerUncovered))
+	for i, t := range e.InnerUncovered {
+		names[i] = t.String()
+	}
+	return "Non-exhaustive match: " + memberStr + " is missing inner cases for " + strings.Join(names, ", ")
 }
 
 // TODO: make this a sum type so that different error type can reference other

@@ -1429,11 +1429,34 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		result := c.checkExhaustiveness(expr, targetType)
 
 		if !result.IsExhaustive {
-			errors = append(errors, &NonExhaustiveMatchError{
-				UncoveredTypes: result.UncoveredTypes,
-				IsNonFinite:    result.IsNonFinite,
-				span:           expr.Span(),
-			})
+			if len(result.UncoveredTypes) > 0 {
+				errors = append(errors, &NonExhaustiveMatchError{
+					UncoveredTypes: result.UncoveredTypes,
+					IsNonFinite:    result.IsNonFinite,
+					span:           expr.Span(),
+				})
+			}
+			for _, pc := range result.PartialCoverages {
+				// Collect uncovered items from both fully uncovered types
+				// and nested partial coverages (for multi-level nesting).
+				var innerUncovered []type_system.Type
+				innerUncovered = append(innerUncovered, pc.InnerResult.UncoveredTypes...)
+				for _, innerPC := range pc.InnerResult.PartialCoverages {
+					innerUncovered = append(innerUncovered, innerPC.Member)
+				}
+
+				isNonFinite := pc.InnerResult.IsNonFinite
+				if len(pc.InnerResult.PartialCoverages) > 0 && len(pc.InnerResult.UncoveredTypes) == 0 {
+					isNonFinite = false
+				}
+
+				errors = append(errors, &InnerNonExhaustiveMatchError{
+					MemberType:     pc.Member,
+					InnerUncovered: innerUncovered,
+					IsNonFinite:    isNonFinite,
+					span:           expr.Span(),
+				})
+			}
 		}
 
 		for _, redundant := range result.RedundantCases {

@@ -10,7 +10,7 @@
 | Phase 2 (Exhaustiveness checking) | **Done** | `262e027` |
 | Phase 4 (Integration) | **Done** | `e12b2a9` |
 | Phase 5 (Tuple exhaustiveness) | **Done** | — |
-| Phase 7 (Nested exhaustiveness) | Not started | — |
+| Phase 7 (Nested exhaustiveness) | **Done** | — |
 
 ## Approach
 
