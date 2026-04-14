@@ -13,181 +13,28 @@ func (c *Checker) checkExhaustiveness(
 	expr *ast.MatchExpr,
 	targetType type_system.Type,
 ) *ExhaustivenessResult {
-	targetType = type_system.Prune(targetType)
+	targetType = normalizeTargetType(targetType)
 
-	// Step 1: Expand the target type into a coverage set.
-	// Resolve TypeRefType to its underlying type so that type aliases
-	// for unions (e.g., `type Color = Color.RGB | Color.Hex`) are handled.
-	targetType = resolveTypeRef(targetType)
-
-	// Boolean primitives are expanded to {true, false}.
-	if expanded, ok := expandBooleanType(targetType); ok {
-		targetType = expanded
-	}
-
-	// Determine whether the target type is finite (can be fully enumerated)
-	// or non-finite (requires a catch-all).
-	coverageSet, isFinite := expandCoverageSet(targetType)
-
-	// Step 2: Compute coverage for each branch.
+	// Compute coverage for each branch, inlining guard handling.
 	coverages := make([]CaseCoverage, len(expr.Cases))
+	var nonGuardedCoverages []CaseCoverage
 	for i, matchCase := range expr.Cases {
-		coverages[i] = c.computeCaseCoverage(matchCase, targetType)
-	}
-
-	// Step 3: Group non-guarded, non-catch-all branches by which coverage
-	// set member they cover. Also detect whether a catch-all is present.
-	type memberGroup struct {
-		coverages   []CaseCoverage
-		caseIndices []int
-	}
-	groups := make(map[int]*memberGroup)
-	hasCatchAll := false
-
-	for i, cov := range coverages {
-		if cov.HasGuard {
-			continue
-		}
-		if cov.IsCatchAll {
-			hasCatchAll = true
-			continue
-		}
-		for _, covType := range cov.CoveredTypes {
-			idx := indexInCoverageSet(covType, coverageSet)
-			if idx != -1 {
-				if groups[idx] == nil {
-					groups[idx] = &memberGroup{}
-				}
-				groups[idx].coverages = append(groups[idx].coverages, cov)
-				groups[idx].caseIndices = append(groups[idx].caseIndices, i)
-			}
-		}
-	}
-
-	// Step 4: Determine coverage for each member, including inner
-	// exhaustiveness checking. A member is fully covered if a catch-all
-	// is present or its branches' inner patterns collectively exhaust
-	// the inner type.
-	coveredSet := set.NewSet[int]()
-	var partialCoverages []PartialCoverage
-	partialMembers := set.NewSet[int]()
-	nestedGroupBranches := set.NewSet[int]()
-
-	for idx, member := range coverageSet {
-		if hasCatchAll {
-			coveredSet.Add(idx)
-			continue
-		}
-
-		group := groups[idx]
-		if group == nil {
-			continue // no branches cover this member
-		}
-
-		// Check inner exhaustiveness for this member's branches.
-		innerResult := c.checkNestedExhaustiveness(group.coverages, member)
-		if innerResult == nil || innerResult.IsExhaustive {
-			coveredSet.Add(idx)
+		if matchCase.Guard != nil {
+			coverages[i] = CaseCoverage{Pattern: matchCase.Pattern, HasGuard: true}
 		} else {
-			partialMembers.Add(idx)
-			partialCoverages = append(partialCoverages, PartialCoverage{
-				Member:      member,
-				InnerResult: innerResult,
-			})
-		}
-
-		// When multiple branches cover the same member and at least one
-		// has partial inner patterns, protect all of them from redundancy
-		// detection — they contribute different inner values.
-		if len(group.coverages) > 1 {
-			for _, bc := range group.coverages {
-				if branchPartiallyCovers(bc, member) {
-					for _, ci := range group.caseIndices {
-						nestedGroupBranches.Add(ci)
-					}
-					break
-				}
-			}
+			cov := c.computePatternCoverage(matchCase.Pattern, targetType)
+			coverages[i] = cov
+			nonGuardedCoverages = append(nonGuardedCoverages, cov)
 		}
 	}
 
-	// Step 5: Detect redundancy by processing branches in order.
-	var redundantCases []RedundantCase
-	contributed := set.NewSet[int]() // members contributed by earlier branches
-	seenCatchAll := false
+	// Core coverage analysis (shared with inner pattern checking).
+	result := c.analyzeCoverageExhaustiveness(nonGuardedCoverages, targetType)
 
-	for i, cov := range coverages {
-		if cov.HasGuard {
-			continue
-		}
+	// Add redundancy detection (top-level only).
+	result.RedundantCases = c.detectRedundancy(coverages, expr, targetType)
 
-		if cov.IsCatchAll {
-			isRedundant := seenCatchAll || (isFinite && contributed.Len() == len(coverageSet))
-			if isRedundant {
-				redundantCases = append(redundantCases, RedundantCase{
-					CaseIndex: i,
-					Span:      expr.Cases[i].Pattern.Span(),
-				})
-			}
-			seenCatchAll = true
-			for j := range coverageSet {
-				contributed.Add(j)
-			}
-			continue
-		}
-
-		if len(cov.CoveredTypes) > 0 {
-			// Branches in nested groups skip redundancy detection — they
-			// may cover different inner values than earlier branches.
-			if !nestedGroupBranches.Contains(i) {
-				allContributed := true
-				for _, covType := range cov.CoveredTypes {
-					idx := indexInCoverageSet(covType, coverageSet)
-					if idx == -1 || !contributed.Contains(idx) {
-						allContributed = false
-						break
-					}
-				}
-				if allContributed {
-					redundantCases = append(redundantCases, RedundantCase{
-						CaseIndex: i,
-						Span:      expr.Cases[i].Pattern.Span(),
-					})
-				}
-			}
-
-			for _, covType := range cov.CoveredTypes {
-				idx := indexInCoverageSet(covType, coverageSet)
-				if idx != -1 {
-					contributed.Add(idx)
-				}
-			}
-		}
-	}
-
-	// Step 6: Compute uncovered types.
-	var uncoveredTypes []type_system.Type
-	if isFinite {
-		// For finite types, report each uncovered member in declaration order.
-		// Exclude partially covered members — they are reported separately.
-		for i, member := range coverageSet {
-			if !coveredSet.Contains(i) && !partialMembers.Contains(i) {
-				uncoveredTypes = append(uncoveredTypes, member)
-			}
-		}
-	} else if !hasCatchAll {
-		// Non-finite types require a catch-all. If none was found, report
-		// the target type itself as uncovered.
-		uncoveredTypes = []type_system.Type{targetType}
-	}
-
-	return &ExhaustivenessResult{
-		IsExhaustive:     len(uncoveredTypes) == 0 && len(partialCoverages) == 0,
-		UncoveredTypes:   uncoveredTypes,
-		RedundantCases:   redundantCases,
-		IsNonFinite:      !isFinite,
-		PartialCoverages: partialCoverages,
-	}
+	return result
 }
 
 // expandCoverageSet expands a target type into the list of types that must be
@@ -264,6 +111,18 @@ type CaseCoverage struct {
 	InnerPatterns []ast.Pat          // nested patterns (e.g., args of ExtractorPat)
 }
 
+// normalizeTargetType applies the standard target type normalization used by
+// both top-level and inner exhaustiveness checking: Prune, resolve type aliases,
+// and expand booleans into {true, false}.
+func normalizeTargetType(t type_system.Type) type_system.Type {
+	t = type_system.Prune(t)
+	t = resolveTypeRef(t)
+	if expanded, ok := expandBooleanType(t); ok {
+		t = expanded
+	}
+	return t
+}
+
 // expandBooleanType expands a boolean primitive type into a synthetic union of
 // LiteralType(true) and LiteralType(false). This allows the standard union
 // coverage algorithm to handle boolean exhaustiveness (e.g., matching both
@@ -282,26 +141,6 @@ func expandBooleanType(t type_system.Type) (type_system.Type, bool) {
 		type_system.NewBoolLitType(nil, false),
 	)
 	return expanded, true
-}
-
-// computeCaseCoverage examines a single MatchCase and determines which types
-// from the target type it covers. The targetType should already be expanded
-// (e.g., boolean -> true | false) before calling this function.
-func (c *Checker) computeCaseCoverage(
-	matchCase *ast.MatchCase,
-	targetType type_system.Type,
-) CaseCoverage {
-	// Guarded branches cover nothing for exhaustiveness purposes (R6).
-	// They are runtime filters and should not be treated as covering any type.
-	if matchCase.Guard != nil {
-		return CaseCoverage{
-			Pattern:  matchCase.Pattern,
-			HasGuard: true,
-		}
-	}
-
-	coverage := c.computePatternCoverage(matchCase.Pattern, targetType)
-	return coverage
 }
 
 // computePatternCoverage determines which types from the target type a single
@@ -1109,42 +948,51 @@ func (c *Checker) checkPositionalExhaustiveness(
 }
 
 // checkInnerPatternsExhaustive checks if a list of inner patterns collectively
-// exhaust a target type. This is the core recursive check for nested
-// exhaustiveness. It uses computePatternCoverage to handle all pattern types
-// (ExtractorPat, ObjectPat, LitPat, etc.) and recursively checks inner
-// patterns of covered union members.
+// exhaust a target type. It normalizes the target type, computes per-pattern
+// coverage, and delegates to analyzeCoverageExhaustiveness.
 func (c *Checker) checkInnerPatternsExhaustive(
 	patterns []ast.Pat,
 	targetType type_system.Type,
 ) *ExhaustivenessResult {
-	targetType = type_system.Prune(targetType)
-	targetType = resolveTypeRef(targetType)
-
-	if expanded, ok := expandBooleanType(targetType); ok {
-		targetType = expanded
-	}
-
-	coverageSet, isFinite := expandCoverageSet(targetType)
-	coveredSet := set.NewSet[int]()
-	hasCatchAll := false
-
-	// Compute coverage for each inner pattern.
+	targetType = normalizeTargetType(targetType)
 	coverages := make([]CaseCoverage, len(patterns))
 	for i, pat := range patterns {
 		coverages[i] = c.computePatternCoverage(pat, targetType)
 	}
+	return c.analyzeCoverageExhaustiveness(coverages, targetType)
+}
+
+// analyzeCoverageExhaustiveness is the shared core of exhaustiveness checking.
+// Given pre-computed coverages and an already-normalized target type, it
+// determines which members of the coverage set are covered (including nested
+// exhaustiveness) and returns the result. This is used by both the top-level
+// checkExhaustiveness (which adds redundancy detection) and the recursive
+// checkInnerPatternsExhaustive.
+func (c *Checker) analyzeCoverageExhaustiveness(
+	coverages []CaseCoverage,
+	targetType type_system.Type,
+) *ExhaustivenessResult {
+	coverageSet, isFinite := expandCoverageSet(targetType)
+
+	// Group non-catch-all coverages by which coverage set member they cover.
+	type memberGroup struct {
+		coverages []CaseCoverage
+	}
+	groups := make(map[int]*memberGroup)
+	hasCatchAll := false
 
 	for _, cov := range coverages {
 		if cov.IsCatchAll {
 			hasCatchAll = true
-			for j := range coverageSet {
-				coveredSet.Add(j)
-			}
 			continue
 		}
 		for _, covType := range cov.CoveredTypes {
-			if idx := indexInCoverageSet(covType, coverageSet); idx != -1 {
-				coveredSet.Add(idx)
+			idx := indexInCoverageSet(covType, coverageSet)
+			if idx != -1 {
+				if groups[idx] == nil {
+					groups[idx] = &memberGroup{}
+				}
+				groups[idx].coverages = append(groups[idx].coverages, cov)
 			}
 		}
 	}
@@ -1153,41 +1001,30 @@ func (c *Checker) checkInnerPatternsExhaustive(
 		return &ExhaustivenessResult{IsExhaustive: true}
 	}
 
-	// Recursively check nested exhaustiveness for covered members.
+	// Determine coverage for each member, including inner exhaustiveness.
+	coveredSet := set.NewSet[int]()
 	var partialCoverages []PartialCoverage
 	partialMembers := set.NewSet[int]()
 
-	if isFinite {
-		for idx, member := range coverageSet {
-			if !coveredSet.Contains(idx) {
-				continue
-			}
+	for idx, member := range coverageSet {
+		group := groups[idx]
+		if group == nil {
+			continue
+		}
 
-			var branchCoverages []CaseCoverage
-			for _, cov := range coverages {
-				if cov.IsCatchAll {
-					continue
-				}
-				for _, covType := range cov.CoveredTypes {
-					if typesMatchForCoverage(covType, member) {
-						branchCoverages = append(branchCoverages, cov)
-						break
-					}
-				}
-			}
-
-			innerResult := c.checkNestedExhaustiveness(branchCoverages, member)
-			if innerResult != nil && !innerResult.IsExhaustive {
-				coveredSet.Remove(idx)
-				partialMembers.Add(idx)
-				partialCoverages = append(partialCoverages, PartialCoverage{
-					Member:      member,
-					InnerResult: innerResult,
-				})
-			}
+		innerResult := c.checkNestedExhaustiveness(group.coverages, member)
+		if innerResult == nil || innerResult.IsExhaustive {
+			coveredSet.Add(idx)
+		} else {
+			partialMembers.Add(idx)
+			partialCoverages = append(partialCoverages, PartialCoverage{
+				Member:      member,
+				InnerResult: innerResult,
+			})
 		}
 	}
 
+	// Compute uncovered types.
 	var uncoveredTypes []type_system.Type
 	if isFinite {
 		for i, member := range coverageSet {
@@ -1205,4 +1042,110 @@ func (c *Checker) checkInnerPatternsExhaustive(
 		IsNonFinite:      !isFinite,
 		PartialCoverages: partialCoverages,
 	}
+}
+
+// detectRedundancy identifies match branches that can never match because all
+// types they cover are already handled by earlier branches. This is only used
+// at the top level (not for inner/nested exhaustiveness).
+func (c *Checker) detectRedundancy(
+	coverages []CaseCoverage,
+	expr *ast.MatchExpr,
+	targetType type_system.Type,
+) []RedundantCase {
+	coverageSet, isFinite := expandCoverageSet(targetType)
+
+	// Group non-guarded, non-catch-all branches by which coverage set member
+	// they cover. Track case indices for nestedGroupBranches.
+	type memberGroup struct {
+		coverages   []CaseCoverage
+		caseIndices []int
+	}
+	groups := make(map[int]*memberGroup)
+	for i, cov := range coverages {
+		if cov.HasGuard || cov.IsCatchAll {
+			continue
+		}
+		for _, covType := range cov.CoveredTypes {
+			idx := indexInCoverageSet(covType, coverageSet)
+			if idx != -1 {
+				if groups[idx] == nil {
+					groups[idx] = &memberGroup{}
+				}
+				groups[idx].coverages = append(groups[idx].coverages, cov)
+				groups[idx].caseIndices = append(groups[idx].caseIndices, i)
+			}
+		}
+	}
+
+	// When multiple branches cover the same member and at least one has
+	// partial inner patterns, protect all of them from redundancy detection.
+	nestedGroupBranches := set.NewSet[int]()
+	for idx, member := range coverageSet {
+		group := groups[idx]
+		if group == nil || len(group.coverages) <= 1 {
+			continue
+		}
+		for _, bc := range group.coverages {
+			if branchPartiallyCovers(bc, member) {
+				for _, ci := range group.caseIndices {
+					nestedGroupBranches.Add(ci)
+				}
+				break
+			}
+		}
+	}
+
+	// Detect redundancy by processing branches in order.
+	var redundantCases []RedundantCase
+	contributed := set.NewSet[int]()
+	seenCatchAll := false
+
+	for i, cov := range coverages {
+		if cov.HasGuard {
+			continue
+		}
+
+		if cov.IsCatchAll {
+			isRedundant := seenCatchAll || (isFinite && contributed.Len() == len(coverageSet))
+			if isRedundant {
+				redundantCases = append(redundantCases, RedundantCase{
+					CaseIndex: i,
+					Span:      expr.Cases[i].Pattern.Span(),
+				})
+			}
+			seenCatchAll = true
+			for j := range coverageSet {
+				contributed.Add(j)
+			}
+			continue
+		}
+
+		if len(cov.CoveredTypes) > 0 {
+			if !nestedGroupBranches.Contains(i) {
+				allContributed := true
+				for _, covType := range cov.CoveredTypes {
+					idx := indexInCoverageSet(covType, coverageSet)
+					if idx == -1 || !contributed.Contains(idx) {
+						allContributed = false
+						break
+					}
+				}
+				if allContributed {
+					redundantCases = append(redundantCases, RedundantCase{
+						CaseIndex: i,
+						Span:      expr.Cases[i].Pattern.Span(),
+					})
+				}
+			}
+
+			for _, covType := range cov.CoveredTypes {
+				idx := indexInCoverageSet(covType, coverageSet)
+				if idx != -1 {
+					contributed.Add(idx)
+				}
+			}
+		}
+	}
+
+	return redundantCases
 }
