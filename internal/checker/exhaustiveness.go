@@ -88,11 +88,11 @@ func (c *Checker) checkExhaustiveness(
 	targetType = normalizeTargetType(targetType)
 
 	// Compute coverage for each branch, inlining guard handling.
-	coverages := make([]CaseCoverage, len(expr.Cases))
-	var nonGuardedCoverages []CaseCoverage
+	coverages := make([]CaseCoverage[ast.Pat], len(expr.Cases))
+	var nonGuardedCoverages []CaseCoverage[ast.Pat]
 	for i, matchCase := range expr.Cases {
 		if matchCase.Guard != nil {
-			coverages[i] = CaseCoverage{Pattern: matchCase.Pattern, HasGuard: true}
+			coverages[i] = CaseCoverage[ast.Pat]{Pattern: matchCase.Pattern, HasGuard: true}
 		} else {
 			cov := c.computePatternCoverage(matchCase.Pattern, targetType)
 			coverages[i] = cov
@@ -178,12 +178,33 @@ type RedundantCase struct {
 }
 
 // CaseCoverage holds per-branch intermediate data computed during the
-// exhaustiveness analysis.
-type CaseCoverage struct {
-	Pattern      ast.Pat
+// exhaustiveness analysis. The type parameter P communicates what kind of
+// pattern the coverage carries — general code uses CaseCoverage[ast.Pat],
+// while inner-exhaustiveness helpers use narrower types like
+// CaseCoverage[*ast.ExtractorPat].
+type CaseCoverage[P ast.Pat] struct {
+	Pattern      P
 	HasGuard     bool
 	CoveredTypes []type_system.Type // which union members this branch covers
 	IsCatchAll   bool               // true for unguarded wildcard/identifier
+}
+
+// narrowCoverages converts a slice of general CaseCoverage[ast.Pat] into a
+// slice of CaseCoverage[P] by type-asserting each pattern. Entries whose
+// pattern is not of type P are silently dropped.
+func narrowCoverages[P ast.Pat](coverages []CaseCoverage[ast.Pat]) []CaseCoverage[P] {
+	result := make([]CaseCoverage[P], 0, len(coverages))
+	for _, cov := range coverages {
+		if pat, ok := any(cov.Pattern).(P); ok {
+			result = append(result, CaseCoverage[P]{
+				Pattern:      pat,
+				HasGuard:     cov.HasGuard,
+				CoveredTypes: cov.CoveredTypes,
+				IsCatchAll:   cov.IsCatchAll,
+			})
+		}
+	}
+	return result
 }
 
 // isCatchAllPat returns true if the pattern matches any value at its position
@@ -235,8 +256,8 @@ func expandBooleanType(t type_system.Type) (type_system.Type, bool) {
 func (c *Checker) computePatternCoverage(
 	pat ast.Pat,
 	targetType type_system.Type,
-) CaseCoverage {
-	coverage := CaseCoverage{Pattern: pat}
+) CaseCoverage[ast.Pat] {
+	coverage := CaseCoverage[ast.Pat]{Pattern: pat}
 
 	switch pat := pat.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
@@ -681,7 +702,7 @@ func literalBelongsToType(litType type_system.Type, targetType type_system.Type)
 // innerPatternAreAllCatchAlls checks if a single branch's inner patterns are all
 // catch-alls (wildcard/identifier), meaning it fully covers the union member
 // without needing inner exhaustiveness checking.
-func innerPatternAreAllCatchAlls(cov CaseCoverage) bool {
+func innerPatternAreAllCatchAlls(cov CaseCoverage[ast.Pat]) bool {
 	switch pat := cov.Pattern.(type) {
 	case *ast.ExtractorPat:
 		for _, arg := range pat.Args {
@@ -716,7 +737,7 @@ func innerPatternAreAllCatchAlls(cov CaseCoverage) bool {
 		return true
 	case *ast.InstancePat:
 		// Delegate to the inner ObjectPat.
-		return innerPatternAreAllCatchAlls(CaseCoverage{Pattern: pat.Object})
+		return innerPatternAreAllCatchAlls(CaseCoverage[ast.Pat]{Pattern: pat.Object})
 	default:
 		return true // other pattern types don't have inner patterns
 	}
@@ -813,7 +834,7 @@ func objPatternsEqual(a, b *ast.ObjectPat) bool {
 // exactly matches the corresponding LitType element in the member, the branch
 // fully covers that specific member (not partial). This distinction prevents
 // clearing genuine redundancy warnings for duplicate tuple branches.
-func branchPartiallyCovers(cov CaseCoverage, member type_system.Type) bool {
+func branchPartiallyCovers(cov CaseCoverage[ast.Pat], member type_system.Type) bool {
 	if innerPatternAreAllCatchAlls(cov) {
 		return false // all catch-alls → not partial
 	}
@@ -854,7 +875,7 @@ func branchPartiallyCovers(cov CaseCoverage, member type_system.Type) bool {
 // covering the same union member collectively exhaust the member's inner type.
 // Returns nil if no inner checking is applicable.
 func (c *Checker) checkNestedExhaustiveness(
-	branchCoverages []CaseCoverage,
+	branchCoverages []CaseCoverage[ast.Pat],
 	member type_system.Type,
 ) *ExhaustivenessResult {
 	if len(branchCoverages) == 0 {
@@ -869,16 +890,16 @@ func (c *Checker) checkNestedExhaustiveness(
 		}
 	}
 
-	// Dispatch based on pattern type.
+	// Dispatch based on pattern type, narrowing to the concrete pattern type.
 	switch branchCoverages[0].Pattern.(type) {
 	case *ast.ExtractorPat:
-		return c.checkExtractorInnerExhaustiveness(branchCoverages)
+		return c.checkExtractorInnerExhaustiveness(narrowCoverages[*ast.ExtractorPat](branchCoverages))
 	case *ast.ObjectPat:
-		return c.checkObjectInnerExhaustiveness(branchCoverages, member)
+		return c.checkObjectInnerExhaustiveness(narrowCoverages[*ast.ObjectPat](branchCoverages), member)
 	case *ast.TuplePat:
-		return c.checkTupleInnerExhaustiveness(branchCoverages, member)
+		return c.checkTupleInnerExhaustiveness(narrowCoverages[*ast.TuplePat](branchCoverages), member)
 	case *ast.InstancePat:
-		return c.checkInstanceInnerExhaustiveness(branchCoverages, member)
+		return c.checkInstanceInnerExhaustiveness(narrowCoverages[*ast.InstancePat](branchCoverages), member)
 	default:
 		return nil
 	}
@@ -887,12 +908,9 @@ func (c *Checker) checkNestedExhaustiveness(
 // checkExtractorInnerExhaustiveness checks whether extractor pattern arguments
 // collectively exhaust the extractor's return type.
 func (c *Checker) checkExtractorInnerExhaustiveness(
-	branchCoverages []CaseCoverage,
+	branchCoverages []CaseCoverage[*ast.ExtractorPat],
 ) *ExhaustivenessResult {
-	firstPat, ok := branchCoverages[0].Pattern.(*ast.ExtractorPat)
-	if !ok {
-		return nil
-	}
+	firstPat := branchCoverages[0].Pattern
 
 	inferredType := type_system.Prune(firstPat.InferredType())
 	ext, ok := inferredType.(*type_system.ExtractorType)
@@ -914,11 +932,10 @@ func (c *Checker) checkExtractorInnerExhaustiveness(
 		// Single-argument extractor: collect the first arg from each branch.
 		var innerPatterns []ast.Pat
 		for _, cov := range branchCoverages {
-			extPat, ok := cov.Pattern.(*ast.ExtractorPat)
-			if !ok || len(extPat.Args) == 0 {
+			if len(cov.Pattern.Args) == 0 {
 				continue
 			}
-			innerPatterns = append(innerPatterns, extPat.Args[0])
+			innerPatterns = append(innerPatterns, cov.Pattern.Args[0])
 		}
 		return c.checkInnerPatternsExhaustive(innerPatterns, returnTuple.Elems[0])
 	}
@@ -927,11 +944,10 @@ func (c *Checker) checkExtractorInnerExhaustiveness(
 	// delegate to the shared positional exhaustiveness checker.
 	branchElemPats := make([][]ast.Pat, 0, len(branchCoverages))
 	for _, cov := range branchCoverages {
-		extPat, ok := cov.Pattern.(*ast.ExtractorPat)
-		if !ok || len(extPat.Args) != len(returnTuple.Elems) {
+		if len(cov.Pattern.Args) != len(returnTuple.Elems) {
 			continue
 		}
-		branchElemPats = append(branchElemPats, extPat.Args)
+		branchElemPats = append(branchElemPats, cov.Pattern.Args)
 	}
 
 	return c.checkPositionalExhaustiveness(branchElemPats, returnTuple.Elems)
@@ -947,7 +963,7 @@ func (c *Checker) checkExtractorInnerExhaustiveness(
 // product) and non-finite (per-position) cases — so correlated patterns
 // across properties are checked jointly when the types are finite.
 func (c *Checker) checkObjectInnerExhaustiveness(
-	branchCoverages []CaseCoverage,
+	branchCoverages []CaseCoverage[*ast.ObjectPat],
 	member type_system.Type,
 ) *ExhaustivenessResult {
 	memberObj, ok := type_system.Prune(resolveTypeRef(member)).(*type_system.ObjectType)
@@ -957,7 +973,7 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 
 	// Collect the string-keyed properties and their types.
 	type propInfo struct {
-		name    string
+		name     string
 		propType type_system.Type
 	}
 	var props []propInfo
@@ -970,7 +986,7 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 			continue
 		}
 		props = append(props, propInfo{
-			name:    prop.Name.Str,
+			name:     prop.Name.Str,
 			propType: type_system.Prune(prop.Value),
 		})
 	}
@@ -984,26 +1000,11 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 	branchElemPats := make([][]ast.Pat, 0, len(branchCoverages))
 	for _, cov := range branchCoverages {
 		row := make([]ast.Pat, len(props))
-		// Only ObjectPat has named-property sub-patterns that we can map to
-		// positional slots. Other pattern types with sub-patterns (ExtractorPat,
-		// TuplePat) are handled by their own dedicated inner-exhaustiveness
-		// checks, and InstancePat is unwrapped to its inner ObjectPat by
-		// checkInstanceInnerExhaustiveness before reaching here. Any remaining
-		// pattern type (e.g., IdentPat, WildcardPat) matches all property
-		// values, so we fill the row with wildcards.
-		switch pat := cov.Pattern.(type) {
-		case *ast.ObjectPat:
-			for i, p := range props {
-				if found := c.findPropertyPattern(pat, p.name); found != nil {
-					row[i] = found
-				} else {
-					row[i] = wildcard // property omitted → implicit wildcard
-				}
-			}
-		default:
-			// Non-object pattern covers everything — treat as all-wildcard.
-			for i := range row {
-				row[i] = wildcard
+		for i, p := range props {
+			if found := c.findPropertyPattern(cov.Pattern, p.name); found != nil {
+				row[i] = found
+			} else {
+				row[i] = wildcard // property omitted → implicit wildcard
 			}
 		}
 		branchElemPats = append(branchElemPats, row)
@@ -1072,17 +1073,16 @@ func (c *Checker) findPropertyPattern(objPat *ast.ObjectPat, propName string) as
 // It unwraps each InstancePat's inner ObjectPat and delegates to
 // checkObjectInnerExhaustiveness.
 func (c *Checker) checkInstanceInnerExhaustiveness(
-	branchCoverages []CaseCoverage,
+	branchCoverages []CaseCoverage[*ast.InstancePat],
 	member type_system.Type,
 ) *ExhaustivenessResult {
-	objCoverages := make([]CaseCoverage, 0, len(branchCoverages))
+	objCoverages := make([]CaseCoverage[*ast.ObjectPat], 0, len(branchCoverages))
 	for _, cov := range branchCoverages {
-		instPat, ok := cov.Pattern.(*ast.InstancePat)
-		if !ok || instPat.Object == nil {
+		if cov.Pattern.Object == nil {
 			continue
 		}
-		objCoverages = append(objCoverages, CaseCoverage{
-			Pattern:    instPat.Object,
+		objCoverages = append(objCoverages, CaseCoverage[*ast.ObjectPat]{
+			Pattern:    cov.Pattern.Object,
 			IsCatchAll: cov.IsCatchAll,
 		})
 	}
@@ -1097,7 +1097,7 @@ func (c *Checker) checkInstanceInnerExhaustiveness(
 // element types, it uses Cartesian product tracking; for non-finite elements,
 // it falls back to per-position checking.
 func (c *Checker) checkTupleInnerExhaustiveness(
-	branchCoverages []CaseCoverage,
+	branchCoverages []CaseCoverage[*ast.TuplePat],
 	member type_system.Type,
 ) *ExhaustivenessResult {
 	memberTuple, ok := type_system.Prune(resolveTypeRef(member)).(*type_system.TupleType)
@@ -1105,17 +1105,13 @@ func (c *Checker) checkTupleInnerExhaustiveness(
 		return nil
 	}
 
-	// Extract element patterns from each branch. The type and arity checks
-	// are defensive — checkNestedExhaustiveness dispatches here based on the
-	// first branch's pattern type, so all branches should be TuplePats with
-	// matching arity in well-typed code.
+	// Extract element patterns from each branch.
 	branchElemPats := make([][]ast.Pat, 0, len(branchCoverages))
 	for _, cov := range branchCoverages {
-		tuplePat, ok := cov.Pattern.(*ast.TuplePat)
-		if !ok || len(tuplePat.Elems) != len(memberTuple.Elems) {
+		if len(cov.Pattern.Elems) != len(memberTuple.Elems) {
 			continue
 		}
-		branchElemPats = append(branchElemPats, tuplePat.Elems)
+		branchElemPats = append(branchElemPats, cov.Pattern.Elems)
 	}
 
 	return c.checkPositionalExhaustiveness(branchElemPats, memberTuple.Elems)
@@ -1217,7 +1213,7 @@ func (c *Checker) checkInnerPatternsExhaustive(
 	targetType type_system.Type,
 ) *ExhaustivenessResult {
 	targetType = normalizeTargetType(targetType)
-	coverages := make([]CaseCoverage, len(patterns))
+	coverages := make([]CaseCoverage[ast.Pat], len(patterns))
 	for i, pat := range patterns {
 		coverages[i] = c.computePatternCoverage(pat, targetType)
 	}
@@ -1231,14 +1227,14 @@ func (c *Checker) checkInnerPatternsExhaustive(
 // checkExhaustiveness (which adds redundancy detection) and the recursive
 // checkInnerPatternsExhaustive.
 func (c *Checker) analyzeCoverageExhaustiveness(
-	coverages []CaseCoverage,
+	coverages []CaseCoverage[ast.Pat],
 	targetType type_system.Type,
 ) *ExhaustivenessResult {
 	coverageSet, isFinite := expandCoverageSet(targetType)
 
 	// Group non-catch-all coverages by which coverage set member they cover.
 	type memberGroup struct {
-		coverages []CaseCoverage
+		coverages []CaseCoverage[ast.Pat]
 	}
 	groups := make(map[int]*memberGroup)
 	hasCatchAll := false
@@ -1315,7 +1311,7 @@ func (c *Checker) analyzeCoverageExhaustiveness(
 // inner/nested exhaustiveness checks patterns across different branches to
 // determine collective coverage, where ordering and duplication don't apply.
 func (c *Checker) detectRedundancy(
-	coverages []CaseCoverage,
+	coverages []CaseCoverage[ast.Pat],
 	expr *ast.MatchExpr,
 	targetType type_system.Type,
 ) []RedundantCase {
@@ -1365,7 +1361,7 @@ func (c *Checker) detectRedundancy(
 	// Group non-guarded, non-catch-all branches by which coverage set member
 	// they cover. Track case indices for nestedGroupBranches.
 	type memberGroup struct {
-		coverages   []CaseCoverage
+		coverages   []CaseCoverage[ast.Pat]
 		caseIndices []int
 	}
 	groups := make(map[int]*memberGroup)
