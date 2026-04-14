@@ -117,6 +117,109 @@ func TestExhaustiveMatch(t *testing.T) {
 				"result": "number | string",
 			},
 		},
+		"InstancePatWithInnerExhaustive": {
+			input: `
+				class Toggle(value: boolean) { value }
+				class Label(text: string) { text }
+				declare val obj: Toggle | Label
+				val result = match obj {
+					Toggle {value: true} => "on",
+					Toggle {value: false} => "off",
+					Label {text} => text,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"on" | "off" | string`,
+			},
+		},
+		"InstancePatWithInnerNonExhaustive": {
+			input: `
+				class Toggle(value: boolean) { value }
+				class Label(text: string) { text }
+				declare val obj: Toggle | Label
+				val result = match obj {
+					Toggle {value: true} => "on",
+					Label {text} => text,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Toggle is missing inner cases for false",
+			},
+		},
+		"InstancePatWithEnumPropertyExhaustive": {
+			input: `
+				enum Status { Active(), Inactive() }
+				class Task(status: Status) { status }
+				class Note(body: string) { body }
+				declare val item: Task | Note
+				val result = match item {
+					Task {status: Status.Active()} => "active",
+					Task {status: Status.Inactive()} => "inactive",
+					Note {body} => body,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"active" | "inactive" | string`,
+			},
+		},
+		"InstancePatWithEnumPropertyNonExhaustive": {
+			input: `
+				enum Status { Active(), Inactive() }
+				class Task(status: Status) { status }
+				class Note(body: string) { body }
+				declare val item: Task | Note
+				val result = match item {
+					Task {status: Status.Active()} => "active",
+					Note {body} => body,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Task is missing inner cases for Status.Inactive",
+			},
+		},
+		"InstancePatWithLiteralPropertyExhaustive": {
+			input: `
+				class Packet(kind: "data" | "ack") { kind }
+				class Error(code: number) { code }
+				declare val msg: Packet | Error
+				val result = match msg {
+					Packet {kind: "data"} => 1,
+					Packet {kind: "ack"} => 2,
+					Error {code} => code,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | number",
+			},
+		},
+		"InstancePatWithLiteralPropertyNonExhaustive": {
+			input: `
+				class Packet(kind: "data" | "ack") { kind }
+				class Error(code: number) { code }
+				declare val msg: Packet | Error
+				val result = match msg {
+					Packet {kind: "data"} => 1,
+					Error {code} => code,
+				}
+			`,
+			expectedErrs: []string{
+				`Non-exhaustive match: Packet is missing inner cases for "ack"`,
+			},
+		},
+		"InstancePatWithNonFinitePropertyNeedsCatchAll": {
+			input: `
+				class Box(value: number) { value }
+				class Empty() {}
+				declare val obj: Box | Empty
+				val result = match obj {
+					Box {value: 0} => "zero",
+					Empty {} => "empty",
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Box is not fully covered; add a catch-all branch",
+			},
+		},
 		"NonFiniteTypeCoveredByCatchAll": {
 			input: `
 				declare val n: number
@@ -350,6 +453,39 @@ func TestExhaustiveMatch(t *testing.T) {
 					Color.RGB(r, g, b) => r + g + b,
 					Color.Hex(code) => code,
 					Color.RGB(r, g, b) => 0,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+		},
+		"RedundantDuplicateInstancePattern": {
+			input: `
+				class Point(x: number, y: number) { x, y }
+				class Event(kind: string) { kind }
+				declare val obj: Point | Event
+				val result = match obj {
+					Point {x, y} => x + y,
+					Event {kind} => kind,
+					Point {x, y} => 0,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+		},
+		"RedundantDuplicateExtractorSubPattern": {
+			input: `
+				enum Wrapper {
+					Bool(value: boolean),
+					Num(value: number),
+				}
+				declare val w: Wrapper
+				val result = match w {
+					Wrapper.Bool(true) => "true",
+					Wrapper.Bool(false) => "false",
+					Wrapper.Bool(true) => "redundant",
+					Wrapper.Num(n) => "num",
 				}
 			`,
 			expectedWarns: []string{
@@ -633,6 +769,387 @@ func TestExhaustiveMatch(t *testing.T) {
 			`,
 			expectedErrs: []string{
 				"Non-exhaustive match: missing cases for number",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// Nested exhaustiveness (Phase 7)
+		// ---------------------------------------------------------------
+
+		// Case 16: Nested extractor with catch-all inner pattern.
+		"NestedExtractorWithCatchAll": {
+			input: `
+				enum Result {
+					Ok(value: number),
+					Err(message: string),
+				}
+				declare val r: Result
+				val result = match r {
+					Result.Ok(0) => "zero",
+					Result.Ok(n) => "other",
+					Result.Err(message) => message,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"zero" | "other" | string`,
+			},
+		},
+		// Case 17: Nested extractor without catch-all inner pattern.
+		"NestedExtractorNonExhaustive": {
+			input: `
+				enum Result {
+					Ok(value: number),
+					Err(message: string),
+				}
+				declare val r: Result
+				val result = match r {
+					Result.Ok(0) => "zero",
+					Result.Ok(1) => "one",
+					Result.Err(message) => message,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Result.Ok is not fully covered; add a catch-all branch",
+			},
+		},
+		// Case 18: Nested boolean exhaustiveness inside extractor.
+		"NestedExtractorBooleanExhaustive": {
+			input: `
+				enum Wrapper {
+					Bool(value: boolean),
+					Str(value: string),
+				}
+				declare val w: Wrapper
+				val result = match w {
+					Wrapper.Bool(true) => "yes",
+					Wrapper.Bool(false) => "no",
+					Wrapper.Str(s) => s,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"yes" | "no" | string`,
+			},
+		},
+		// Case 19: Structural object patterns with catch-all bindings.
+		"NestedObjectPatternWithCatchAll": {
+			input: `
+				type Shape = {kind: "circle", radius: number}
+				           | {kind: "square", side: number}
+				declare val shape: Shape
+				val result = match shape {
+					{kind: "circle", radius} => radius,
+					{kind: "square", side} => side,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | number",
+			},
+		},
+		// Case 20: Structural object patterns without inner catch-all.
+		"NestedObjectPatternNonExhaustive": {
+			input: `
+				type Shape = {kind: "circle", radius: number}
+				           | {kind: "square", side: number}
+				declare val shape: Shape
+				val result = match shape {
+					{kind: "circle", radius: 0} => "point",
+					{kind: "circle", radius: 1} => "unit",
+					{kind: "square", side} => side,
+				}
+			`,
+			expectedErrs: []string{
+				`Non-exhaustive match: {kind: "circle", radius: number} is not fully covered; add a catch-all branch`,
+			},
+		},
+		// Nested boolean exhaustiveness missing case.
+		"NestedExtractorBooleanMissingFalse": {
+			input: `
+				enum Wrapper {
+					Bool(value: boolean),
+					Str(value: string),
+				}
+				declare val w: Wrapper
+				val result = match w {
+					Wrapper.Bool(true) => "yes",
+					Wrapper.Str(s) => s,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Wrapper.Bool is missing inner cases for false",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// Deeply nested combinations (Phase 7)
+		// ---------------------------------------------------------------
+
+		// Multi-arg extractor with all boolean combinations covered.
+		"MultiArgExtractorBoolBoolExhaustive": {
+			input: `
+				enum Value {
+					Pair(a: boolean, b: boolean),
+					Single(x: number),
+				}
+				declare val v: Value
+				val result = match v {
+					Value.Pair(true, true) => 1,
+					Value.Pair(true, false) => 2,
+					Value.Pair(false, true) => 3,
+					Value.Pair(false, false) => 4,
+					Value.Single(x) => x,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | 3 | 4 | number",
+			},
+		},
+		// Multi-arg extractor missing a boolean combination.
+		"MultiArgExtractorBoolBoolMissing": {
+			input: `
+				enum Value {
+					Pair(a: boolean, b: boolean),
+					Single(x: number),
+				}
+				declare val v: Value
+				val result = match v {
+					Value.Pair(true, true) => 1,
+					Value.Pair(false, false) => 2,
+					Value.Single(x) => x,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Value.Pair is missing inner cases for [true, false], [false, true]",
+			},
+		},
+		// Nested enum: Option wrapping Result, fully exhaustive.
+		"NestedEnumOptionResultExhaustive": {
+			input: `
+				enum Result {
+					Ok(value: number),
+					Err(message: string),
+				}
+				enum Option {
+					Some(value: Result),
+					None(),
+				}
+				declare val o: Option
+				val result = match o {
+					Option.Some(Result.Ok(x)) => x,
+					Option.Some(Result.Err(msg)) => msg,
+					Option.None() => "nothing",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `number | string | "nothing"`,
+			},
+		},
+		// Nested enum: Option wrapping Result, missing Result.Err.
+		"NestedEnumOptionResultMissing": {
+			input: `
+				enum Result {
+					Ok(value: number),
+					Err(message: string),
+				}
+				enum Option {
+					Some(value: Result),
+					None(),
+				}
+				declare val o: Option
+				val result = match o {
+					Option.Some(Result.Ok(x)) => x,
+					Option.None() => "nothing",
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Option.Some is missing inner cases for Result.Err",
+			},
+		},
+		// Object pattern with enum-valued property, exhaustive.
+		"ObjectWithEnumPropertyExhaustive": {
+			input: `
+				enum Status {
+					Active(),
+					Inactive(),
+				}
+				type Item = {kind: "todo", status: Status}
+				          | {kind: "note", body: string}
+				declare val item: Item
+				val result = match item {
+					{kind: "todo", status: Status.Active()} => "active todo",
+					{kind: "todo", status: Status.Inactive()} => "inactive todo",
+					{kind: "note", body} => body,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"active todo" | "inactive todo" | string`,
+			},
+		},
+		// Object pattern with enum-valued property, missing variant.
+		"ObjectWithEnumPropertyMissing": {
+			input: `
+				enum Status {
+					Active(),
+					Inactive(),
+				}
+				type Item = {kind: "todo", status: Status}
+				          | {kind: "note", body: string}
+				declare val item: Item
+				val result = match item {
+					{kind: "todo", status: Status.Active()} => "active todo",
+					{kind: "note", body} => body,
+				}
+			`,
+			expectedErrs: []string{
+				`Non-exhaustive match: {kind: "todo", status: Status} is missing inner cases for Status.Inactive`,
+			},
+		},
+		// Object with two boolean properties where each property is
+		// individually exhausted but the cross-product is not covered.
+		// Per-property independent checking would falsely report this
+		// as exhaustive.
+		"ObjectCorrelatedBooleanPropertiesNonExhaustive": {
+			input: `
+				type Shape = {kind: "rect", tall: boolean, wide: boolean}
+				           | {kind: "circle"}
+				declare val s: Shape
+				val result = match s {
+					{kind: "rect", tall: true, wide: true} => "big",
+					{kind: "rect", tall: false, wide: false} => "small",
+					{kind: "circle"} => "round",
+				}
+			`,
+			expectedErrs: []string{
+				`Non-exhaustive match: {kind: "rect", tall: boolean, wide: boolean} is missing inner cases for [true, false], [false, true]`,
+			},
+		},
+		// Three-level nesting: enum containing enum containing boolean.
+		"ThreeLevelNestedExhaustive": {
+			input: `
+				enum Inner {
+					Flag(value: boolean),
+					Num(value: number),
+				}
+				enum Outer {
+					Wrap(inner: Inner),
+					Empty(),
+				}
+				declare val o: Outer
+				val result = match o {
+					Outer.Wrap(Inner.Flag(true)) => "yes",
+					Outer.Wrap(Inner.Flag(false)) => "no",
+					Outer.Wrap(Inner.Num(n)) => "num",
+					Outer.Empty() => "empty",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"yes" | "no" | "num" | "empty"`,
+			},
+		},
+		// Three-level nesting: missing innermost case.
+		"ThreeLevelNestedMissing": {
+			input: `
+				enum Inner {
+					Flag(value: boolean),
+					Num(value: number),
+				}
+				enum Outer {
+					Wrap(inner: Inner),
+					Empty(),
+				}
+				declare val o: Outer
+				val result = match o {
+					Outer.Wrap(Inner.Flag(true)) => "yes",
+					Outer.Wrap(Inner.Num(n)) => "num",
+					Outer.Empty() => "empty",
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Outer.Wrap is missing inner cases for Inner.Flag",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// Nested tuple in union (Phase 7)
+		// ---------------------------------------------------------------
+
+		// Union of tuples with boolean element, all cases covered.
+		"UnionTupleBooleanElementExhaustive": {
+			input: `
+				type T = ["tag", boolean] | ["other", number]
+				declare val t: T
+				val result = match t {
+					["tag", true] => "yes",
+					["tag", false] => "no",
+					["other", n] => n,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"yes" | "no" | number`,
+			},
+		},
+		// Union of tuples with boolean element, missing false.
+		"UnionTupleBooleanElementMissing": {
+			input: `
+				type T = ["tag", boolean] | ["other", number]
+				declare val t: T
+				val result = match t {
+					["tag", true] => "yes",
+					["other", n] => n,
+				}
+			`,
+			expectedErrs: []string{
+				`Non-exhaustive match: ["tag", boolean] is missing inner cases for ["tag", false]`,
+			},
+		},
+		// Extractor wrapping a tuple, all combos covered.
+		"ExtractorWrappingTupleExhaustive": {
+			input: `
+				enum Container {
+					Pair(a: boolean, b: boolean),
+					Empty(),
+				}
+				declare val c: Container
+				val result = match c {
+					Container.Pair(true, true) => 1,
+					Container.Pair(true, false) => 2,
+					Container.Pair(false, _) => 3,
+					Container.Empty() => 0,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | 3 | 0",
+			},
+		},
+		// Extractor wrapping a tuple, missing combos.
+		"ExtractorWrappingTupleMissing": {
+			input: `
+				enum Container {
+					Pair(a: boolean, b: boolean),
+					Empty(),
+				}
+				declare val c: Container
+				val result = match c {
+					Container.Pair(true, true) => 1,
+					Container.Pair(false, false) => 2,
+					Container.Empty() => 0,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Container.Pair is missing inner cases for [true, false], [false, true]",
+			},
+		},
+		// Tuple with catch-all wildcard fully covers union member.
+		"UnionTupleWildcardCovers": {
+			input: `
+				type T = ["a", boolean] | ["b", number]
+				declare val t: T
+				val result = match t {
+					["a", _] => "a",
+					["b", n] => n,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"a" | number`,
 			},
 		},
 

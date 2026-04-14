@@ -1429,11 +1429,41 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		result := c.checkExhaustiveness(expr, targetType)
 
 		if !result.IsExhaustive {
-			errors = append(errors, &NonExhaustiveMatchError{
-				UncoveredTypes: result.UncoveredTypes,
-				IsNonFinite:    result.IsNonFinite,
-				span:           expr.Span(),
-			})
+			// UncoveredTypes is non-empty whenever the match is non-exhaustive
+			// at the top level — including non-finite types (number, string,
+			// etc.) where analyzeCoverageExhaustiveness sets UncoveredTypes
+			// to [targetType]. The only way to reach !IsExhaustive with
+			// empty UncoveredTypes is via PartialCoverages (handled below).
+			if len(result.UncoveredTypes) > 0 {
+				errors = append(errors, &NonExhaustiveMatchError{
+					UncoveredTypes: result.UncoveredTypes,
+					IsNonFinite:    result.IsNonFinite,
+					span:           expr.Span(),
+				})
+			}
+			for _, pc := range result.PartialCoverages {
+				// TODO(#433): This flattens nested partial coverages into a
+				// single InnerUncovered list, losing depth information beyond
+				// one level. Update to walk PartialCoverages recursively so
+				// error messages can describe the full nesting path.
+				var innerUncovered []type_system.Type
+				innerUncovered = append(innerUncovered, pc.InnerResult.UncoveredTypes...)
+				for _, innerPC := range pc.InnerResult.PartialCoverages {
+					innerUncovered = append(innerUncovered, innerPC.Member)
+				}
+
+				isNonFinite := pc.InnerResult.IsNonFinite
+				if len(pc.InnerResult.PartialCoverages) > 0 && len(pc.InnerResult.UncoveredTypes) == 0 {
+					isNonFinite = false
+				}
+
+				errors = append(errors, &InnerNonExhaustiveMatchError{
+					MemberType:     pc.Member,
+					InnerUncovered: innerUncovered,
+					IsNonFinite:    isNonFinite,
+					span:           expr.Span(),
+				})
+			}
 		}
 
 		for _, redundant := range result.RedundantCases {
