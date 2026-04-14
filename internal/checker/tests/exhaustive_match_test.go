@@ -1154,6 +1154,134 @@ func TestExhaustiveMatch(t *testing.T) {
 		},
 
 		// ---------------------------------------------------------------
+		// Object types with all-finite properties (#436)
+		// ---------------------------------------------------------------
+
+		"ObjectAllFinitePropsExhaustive": {
+			input: `
+				type Flag = {kind: "flag", value: boolean}
+				declare val f: Flag
+				val result = match f {
+					{kind: "flag", value: true} => "on",
+					{kind: "flag", value: false} => "off",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"on" | "off"`,
+			},
+		},
+		"ObjectAllFinitePropsMissing": {
+			input: `
+				type Flag = {kind: "flag", value: boolean}
+				declare val f: Flag
+				val result = match f {
+					{kind: "flag", value: true} => "on",
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for {kind: \"flag\", value: false}",
+			},
+		},
+		"ObjectAllFinitePropsWithWildcard": {
+			input: `
+				type Flag = {kind: "flag", value: boolean}
+				declare val f: Flag
+				val result = match f {
+					{kind: "flag", value: true} => "on",
+					_ => "off",
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": `"on" | "off"`,
+			},
+		},
+		"ObjectMultipleFiniteProps": {
+			input: `
+				type Cell = {row: boolean, col: boolean}
+				declare val c: Cell
+				val result = match c {
+					{row: true, col: true} => 1,
+					{row: true, col: false} => 2,
+					{row: false, col: true} => 3,
+					{row: false, col: false} => 4,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | 3 | 4",
+			},
+		},
+		"ObjectMultipleFinitePropsMissing": {
+			input: `
+				type Cell = {row: boolean, col: boolean}
+				declare val c: Cell
+				val result = match c {
+					{row: true, col: true} => 1,
+					{row: false, col: false} => 2,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for {row: true, col: false}, {row: false, col: true}",
+			},
+		},
+		"ObjectWithPartialWildcard": {
+			input: `
+				type Cell = {row: boolean, col: boolean}
+				declare val c: Cell
+				val result = match c {
+					{row: true, col} => 1,
+					{row: false, col: true} => 2,
+					{row: false, col: false} => 3,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | 3",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// Extractor wrapping a finite object (#436)
+		// ---------------------------------------------------------------
+
+		"ExtractorWrappingFiniteObjectExhaustive": {
+			input: `
+				type Cell = {row: boolean, col: boolean}
+				enum Container {
+					Wrap(value: Cell),
+					Empty(),
+				}
+				declare val c: Container
+				val result = match c {
+					Container.Wrap({row: true, col: true}) => 1,
+					Container.Wrap({row: true, col: false}) => 2,
+					Container.Wrap({row: false, col: true}) => 3,
+					Container.Wrap({row: false, col: false}) => 4,
+					Container.Empty() => 0,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "1 | 2 | 3 | 4 | 0",
+			},
+		},
+		"ExtractorWrappingFiniteObjectMissing": {
+			input: `
+				type Cell = {row: boolean, col: boolean}
+				enum Container {
+					Wrap(value: Cell),
+					Empty(),
+				}
+				declare val c: Container
+				val result = match c {
+					Container.Wrap({row: true, col: true}) => 1,
+					Container.Wrap({row: false, col: false}) => 2,
+					Container.Empty() => 0,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: Container.Wrap is missing inner cases for {row: true, col: false}, {row: false, col: true}",
+			},
+		},
+
+		// ---------------------------------------------------------------
 		// Non-exhaustive match gated on prior errors (Phase 4)
 		// ---------------------------------------------------------------
 
