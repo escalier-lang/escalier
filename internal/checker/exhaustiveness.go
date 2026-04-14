@@ -448,36 +448,11 @@ func (c *Checker) computePatternCoverage(
 		//                     → covers [true,true], [true,false]
 		perPositionSets := make([][]type_system.Type, len(pat.Elems))
 		for i, elemPat := range pat.Elems {
-			elemType := type_system.Prune(tupleTarget.Elems[i])
-			elemType = resolveTypeRef(elemType)
-			if expanded, ok := expandBooleanType(elemType); ok {
-				elemType = expanded
-			}
-
-			switch ep := elemPat.(type) {
-			case *ast.WildcardPat, *ast.IdentPat:
-				// Covers all values at this position. If the element type
-				// is non-finite, we return empty coverage — this is correct
-				// because the tuple's target type is also non-finite (via
-				// expandTupleCoverageSet), so the exhaustiveness checker
-				// already knows a catch-all is required.
-				members, finite := expandCoverageSet(elemType)
-				if !finite {
-					return coverage
-				}
-				perPositionSets[i] = members
-			case *ast.LitPat:
-				inferredType := type_system.Prune(ep.InferredType())
-				matched := findMatchingMembers(inferredType, elemType)
-				if len(matched) == 0 {
-					return coverage
-				}
-				perPositionSets[i] = matched
-			default:
-				// Other pattern types at element positions are not yet
-				// supported for tuple exhaustiveness.
+			matched, ok := computePositionCoverage(elemPat, tupleTarget.Elems[i])
+			if !ok {
 				return coverage
 			}
+			perPositionSets[i] = matched
 		}
 
 		coverage.CoveredTypes = cartesianProductTuples(perPositionSets)
@@ -652,6 +627,37 @@ func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, b
 		elementSets[i] = members
 	}
 	return cartesianProductTuples(elementSets), true
+}
+
+// computePositionCoverage determines which types a single pattern covers at a
+// given element position. It normalizes the element type (Prune, resolveTypeRef,
+// expandBooleanType) and then dispatches on the pattern kind. Returns the
+// matched types and true on success, or nil and false if the pattern cannot be
+// analyzed (non-finite wildcard or unsupported pattern type).
+func computePositionCoverage(elemPat ast.Pat, elemType type_system.Type) ([]type_system.Type, bool) {
+	elemType = type_system.Prune(elemType)
+	elemType = resolveTypeRef(elemType)
+	if expanded, ok := expandBooleanType(elemType); ok {
+		elemType = expanded
+	}
+
+	switch p := elemPat.(type) {
+	case *ast.WildcardPat, *ast.IdentPat:
+		members, finite := expandCoverageSet(elemType)
+		if !finite {
+			return nil, false
+		}
+		return members, true
+	case *ast.LitPat:
+		inferredType := type_system.Prune(p.InferredType())
+		matched := findMatchingMembers(inferredType, elemType)
+		if len(matched) == 0 {
+			return nil, false
+		}
+		return matched, true
+	default:
+		return nil, false
+	}
 }
 
 // cartesianProductTuples computes the Cartesian product of per-position type
@@ -898,120 +904,18 @@ func (c *Checker) checkExtractorInnerExhaustiveness(
 		return c.checkInnerPatternsExhaustive(innerPatterns, returnTuple.Elems[0])
 	}
 
-	// Multi-argument extractor: use Cartesian product tracking for finite
-	// inner types (like tuple exhaustiveness in Phase 5). For non-finite
-	// inner types, fall back to per-position checking.
-	innerCoverageSet, innerFinite := expandTupleCoverageSet(returnTuple)
-	if innerFinite {
-		// Finite inner type: track exact combinations.
-		innerCoveredSet := set.NewSet[int]()
-
-		for _, cov := range branchCoverages {
-			extPat, ok := cov.Pattern.(*ast.ExtractorPat)
-			if !ok || len(extPat.Args) != len(returnTuple.Elems) {
-				continue
-			}
-
-			// Check if all args are catch-alls → covers everything.
-			allCatchAll := true
-			for _, arg := range extPat.Args {
-				switch arg.(type) {
-				case *ast.WildcardPat, *ast.IdentPat:
-				default:
-					allCatchAll = false
-				}
-				if !allCatchAll {
-					break
-				}
-			}
-			if allCatchAll {
-				return &ExhaustivenessResult{IsExhaustive: true}
-			}
-
-			// Compute per-position coverage sets and take Cartesian product.
-			perPositionSets := make([][]type_system.Type, len(extPat.Args))
-			valid := true
-			for i, argPat := range extPat.Args {
-				elemType := type_system.Prune(returnTuple.Elems[i])
-				elemType = resolveTypeRef(elemType)
-				if expanded, ok := expandBooleanType(elemType); ok {
-					elemType = expanded
-				}
-
-				switch p := argPat.(type) {
-				case *ast.WildcardPat, *ast.IdentPat:
-					members, finite := expandCoverageSet(elemType)
-					if !finite {
-						valid = false
-					} else {
-						perPositionSets[i] = members
-					}
-				case *ast.LitPat:
-					inferredType := type_system.Prune(p.InferredType())
-					matched := findMatchingMembers(inferredType, elemType)
-					if len(matched) == 0 {
-						valid = false
-					} else {
-						perPositionSets[i] = matched
-					}
-				default:
-					valid = false
-				}
-				if !valid {
-					break
-				}
-			}
-			if !valid {
-				continue
-			}
-
-			coveredCombos := cartesianProductTuples(perPositionSets)
-			for _, combo := range coveredCombos {
-				if idx := indexInCoverageSet(combo, innerCoverageSet); idx != -1 {
-					innerCoveredSet.Add(idx)
-				}
-			}
-		}
-
-		var uncoveredTypes []type_system.Type
-		for i, member := range innerCoverageSet {
-			if !innerCoveredSet.Contains(i) {
-				uncoveredTypes = append(uncoveredTypes, member)
-			}
-		}
-
-		return &ExhaustivenessResult{
-			IsExhaustive:   len(uncoveredTypes) == 0,
-			UncoveredTypes: uncoveredTypes,
-		}
-	}
-
-	// Non-finite inner type: check per-position as approximation.
-	for i, elemType := range returnTuple.Elems {
-		var posPatterns []ast.Pat
-		hasCatchAll := false
-		for _, cov := range branchCoverages {
-			extPat, ok := cov.Pattern.(*ast.ExtractorPat)
-			if !ok || i >= len(extPat.Args) {
-				continue
-			}
-			switch extPat.Args[i].(type) {
-			case *ast.WildcardPat, *ast.IdentPat:
-				hasCatchAll = true
-			default:
-				posPatterns = append(posPatterns, extPat.Args[i])
-			}
-		}
-		if hasCatchAll {
+	// Multi-argument extractor: extract per-branch element patterns and
+	// delegate to the shared positional exhaustiveness checker.
+	branchElemPats := make([][]ast.Pat, 0, len(branchCoverages))
+	for _, cov := range branchCoverages {
+		extPat, ok := cov.Pattern.(*ast.ExtractorPat)
+		if !ok || len(extPat.Args) != len(returnTuple.Elems) {
 			continue
 		}
-		result := c.checkInnerPatternsExhaustive(posPatterns, elemType)
-		if !result.IsExhaustive {
-			return result
-		}
+		branchElemPats = append(branchElemPats, extPat.Args)
 	}
 
-	return &ExhaustivenessResult{IsExhaustive: true}
+	return c.checkPositionalExhaustiveness(branchElemPats, returnTuple.Elems)
 }
 
 // checkObjectInnerExhaustiveness checks whether object patterns covering the
@@ -1099,48 +1003,58 @@ func (c *Checker) checkTupleInnerExhaustiveness(
 		return nil
 	}
 
-	// Try Cartesian product approach for finite element types.
-	innerCoverageSet, innerFinite := expandTupleCoverageSet(memberTuple)
+	branchElemPats := make([][]ast.Pat, 0, len(branchCoverages))
+	for _, cov := range branchCoverages {
+		tuplePat, ok := cov.Pattern.(*ast.TuplePat)
+		if !ok || len(tuplePat.Elems) != len(memberTuple.Elems) {
+			continue
+		}
+		branchElemPats = append(branchElemPats, tuplePat.Elems)
+	}
+
+	return c.checkPositionalExhaustiveness(branchElemPats, memberTuple.Elems)
+}
+
+// checkPositionalExhaustiveness checks whether a set of per-branch element
+// patterns collectively exhaust the given element types. For finite element
+// types, it uses Cartesian product tracking; for non-finite elements, it falls
+// back to per-position checking. This is the shared core of both extractor and
+// tuple inner exhaustiveness.
+func (c *Checker) checkPositionalExhaustiveness(
+	branchElemPats [][]ast.Pat,
+	elemTypes []type_system.Type,
+) *ExhaustivenessResult {
+	tuple := type_system.NewTupleType(nil, elemTypes...)
+	innerCoverageSet, innerFinite := expandTupleCoverageSet(tuple)
 	if innerFinite {
 		innerCoveredSet := set.NewSet[int]()
 
-		for _, cov := range branchCoverages {
-			tuplePat, ok := cov.Pattern.(*ast.TuplePat)
-			if !ok || len(tuplePat.Elems) != len(memberTuple.Elems) {
-				continue
-			}
-
-			perPositionSets := make([][]type_system.Type, len(tuplePat.Elems))
-			valid := true
-			for i, elemPat := range tuplePat.Elems {
-				elemType := type_system.Prune(memberTuple.Elems[i])
-				elemType = resolveTypeRef(elemType)
-				if expanded, ok := expandBooleanType(elemType); ok {
-					elemType = expanded
-				}
-
-				switch p := elemPat.(type) {
+		for _, elemPats := range branchElemPats {
+			// Check if all elements are catch-alls → covers everything.
+			allCatchAll := true
+			for _, ep := range elemPats {
+				switch ep.(type) {
 				case *ast.WildcardPat, *ast.IdentPat:
-					members, finite := expandCoverageSet(elemType)
-					if !finite {
-						valid = false
-					} else {
-						perPositionSets[i] = members
-					}
-				case *ast.LitPat:
-					inferredType := type_system.Prune(p.InferredType())
-					matched := findMatchingMembers(inferredType, elemType)
-					if len(matched) == 0 {
-						valid = false
-					} else {
-						perPositionSets[i] = matched
-					}
 				default:
-					valid = false
+					allCatchAll = false
 				}
-				if !valid {
+				if !allCatchAll {
 					break
 				}
+			}
+			if allCatchAll {
+				return &ExhaustivenessResult{IsExhaustive: true}
+			}
+
+			perPositionSets := make([][]type_system.Type, len(elemPats))
+			valid := true
+			for i, elemPat := range elemPats {
+				matched, ok := computePositionCoverage(elemPat, elemTypes[i])
+				if !ok {
+					valid = false
+					break
+				}
+				perPositionSets[i] = matched
 			}
 			if !valid {
 				continue
@@ -1155,9 +1069,9 @@ func (c *Checker) checkTupleInnerExhaustiveness(
 		}
 
 		var uncoveredTypes []type_system.Type
-		for i, m := range innerCoverageSet {
+		for i, member := range innerCoverageSet {
 			if !innerCoveredSet.Contains(i) {
-				uncoveredTypes = append(uncoveredTypes, m)
+				uncoveredTypes = append(uncoveredTypes, member)
 			}
 		}
 
@@ -1168,19 +1082,18 @@ func (c *Checker) checkTupleInnerExhaustiveness(
 	}
 
 	// Non-finite element types: check each position independently.
-	for i, elemType := range memberTuple.Elems {
+	for i, elemType := range elemTypes {
 		var posPatterns []ast.Pat
 		hasCatchAll := false
-		for _, cov := range branchCoverages {
-			tuplePat, ok := cov.Pattern.(*ast.TuplePat)
-			if !ok || i >= len(tuplePat.Elems) {
+		for _, elemPats := range branchElemPats {
+			if i >= len(elemPats) {
 				continue
 			}
-			switch tuplePat.Elems[i].(type) {
+			switch elemPats[i].(type) {
 			case *ast.WildcardPat, *ast.IdentPat:
 				hasCatchAll = true
 			default:
-				posPatterns = append(posPatterns, tuplePat.Elems[i])
+				posPatterns = append(posPatterns, elemPats[i])
 			}
 		}
 		if hasCatchAll {
