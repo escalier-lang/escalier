@@ -1,3 +1,75 @@
+// Exhaustiveness checking for match expressions.
+//
+// This file determines whether a match expression's branches collectively
+// cover every possible value of the target type, and flags branches that are
+// unreachable (redundant). The algorithm uses a "coverage set" approach:
+//
+//  1. Normalize the target type — resolve type aliases, expand boolean into
+//     the union {true, false}, and prune type variables.
+//
+//  2. Expand the coverage set — enumerate the distinct values (or value
+//     classes) that must be covered. For unions this is the list of members;
+//     for tuples it is the Cartesian product of each element position's
+//     expanded types; for non-finite types (number, string, etc.) the set
+//     is empty and a catch-all wildcard is required instead.
+//
+//  3. Compute per-pattern coverage — for each branch's pattern, determine
+//     which members of the coverage set it matches. Literal patterns match
+//     their literal type, extractor patterns match the variant identified by
+//     their [Symbol.customMatcher] parameter type, object patterns use the
+//     MatchedUnionMembers populated during type checking, and so on.
+//
+//  4. Track which members are covered — group branches by member, then for
+//     each member check whether its branches' inner patterns (extractor
+//     arguments, object property patterns, tuple element patterns)
+//     collectively exhaust the member's inner type. This inner check
+//     recurses through the same algorithm (steps 1-4). A member is fully
+//     covered if at least one branch has all-wildcard inner patterns, or if
+//     the recursive check reports exhaustiveness.
+//
+//  5. Detect redundancy (top-level only) — process branches in declaration
+//     order, tracking a "contributed" set of members covered so far. A
+//     branch is redundant if every member it covers was already contributed
+//     by an earlier branch. Branches that participate in a multi-branch
+//     partial coverage group (where different branches cover different inner
+//     values of the same member) are exempt from this check.
+//
+// Key entry points:
+//
+//   - checkExhaustiveness      — top-level, called from the checker on each
+//     match expression. Orchestrates coverage analysis and redundancy detection.
+//   - analyzeCoverageExhaustiveness — shared core for steps 2-4, used by both
+//     the top-level check and recursive inner checks.
+//   - checkPositionalExhaustiveness — shared Cartesian-product tracking for
+//     extractor arguments and tuple elements.
+//   - detectRedundancy         — step 5, separated from coverage analysis.
+//
+// This is a direct coverage-set enumeration approach rather than the
+// matrix-decomposition algorithm described in Maranget 2007 ("Warnings for
+// pattern matching", Journal of Functional Programming 17(3), pp. 387-421,
+// https://doi.org/10.1017/S0956796807006223). Coverage-set enumeration is a
+// good fit for Escalier because:
+//
+//   - Escalier's pattern matching is primarily over finite discriminated
+//     unions, booleans, and tuples of finite types. The type system already
+//     tells us the exact set of members to check, so coverage-set is just
+//     set arithmetic: enumerate members, check them off, report what's left.
+//   - Object patterns with varying/optional properties map naturally to
+//     per-member grouping and per-property recursive checking, whereas
+//     Maranget's algorithm assumes fixed-arity positional constructors.
+//   - Uncovered members are already typed values (e.g., Color.Blue), which
+//     translate directly into actionable error messages and IDE quick-fixes.
+//
+// The main limitation is that coverage-set enumeration does not generalize
+// well to recursive/algebraic data types with constructor patterns of
+// arbitrary depth — it would need to enumerate all shapes up to some depth
+// bound. Maranget's matrix decomposition avoids enumeration entirely by
+// decomposing one constructor layer at a time. This is not a concern for
+// Escalier's current type system.
+//
+// For a similar coverage-set strategy, see the Rust compiler's exhaustiveness
+// checker (rustc_pattern_analysis) which also expands types into a finite
+// set of "constructors" and tracks coverage per constructor.
 package checker
 
 import (
@@ -104,10 +176,10 @@ type RedundantCase struct {
 // CaseCoverage holds per-branch intermediate data computed during the
 // exhaustiveness analysis.
 type CaseCoverage struct {
-	Pattern       ast.Pat
-	HasGuard      bool
-	CoveredTypes  []type_system.Type // which union members this branch covers
-	IsCatchAll    bool               // true for unguarded wildcard/identifier
+	Pattern      ast.Pat
+	HasGuard     bool
+	CoveredTypes []type_system.Type // which union members this branch covers
+	IsCatchAll   bool               // true for unguarded wildcard/identifier
 }
 
 // isCatchAllPat returns true if the pattern matches any value at its position
