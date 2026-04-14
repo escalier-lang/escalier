@@ -108,7 +108,17 @@ type CaseCoverage struct {
 	HasGuard      bool
 	CoveredTypes  []type_system.Type // which union members this branch covers
 	IsCatchAll    bool               // true for unguarded wildcard/identifier
-	InnerPatterns []ast.Pat          // nested patterns (e.g., args of ExtractorPat)
+}
+
+// isCatchAllPat returns true if the pattern matches any value at its position
+// (wildcard, identifier binding, or rest element).
+func isCatchAllPat(pat ast.Pat) bool {
+	switch pat.(type) {
+	case *ast.WildcardPat, *ast.IdentPat, *ast.RestPat:
+		return true
+	default:
+		return false
+	}
 }
 
 // normalizeTargetType applies the standard target type normalization used by
@@ -153,10 +163,7 @@ func (c *Checker) computePatternCoverage(
 	coverage := CaseCoverage{Pattern: pat}
 
 	switch pat := pat.(type) {
-	case *ast.WildcardPat:
-		coverage.IsCatchAll = true
-
-	case *ast.IdentPat:
+	case *ast.WildcardPat, *ast.IdentPat:
 		coverage.IsCatchAll = true
 
 	case *ast.LitPat:
@@ -192,10 +199,6 @@ func (c *Checker) computePatternCoverage(
 			if paramType != nil {
 				coverage.CoveredTypes = findMatchingMembers(paramType, targetType)
 			}
-			// Populate InnerPatterns for nested exhaustiveness (Phase 7).
-			if len(pat.Args) > 0 {
-				coverage.InnerPatterns = pat.Args
-			}
 		}
 
 	case *ast.InstancePat:
@@ -210,17 +213,10 @@ func (c *Checker) computePatternCoverage(
 		// or a union of tuples.
 		allCatchAll := true
 		for _, elem := range pat.Elems {
-			if _, ok := elem.(*ast.WildcardPat); ok {
-				continue
+			if !isCatchAllPat(elem) {
+				allCatchAll = false
+				break
 			}
-			if _, ok := elem.(*ast.IdentPat); ok {
-				continue
-			}
-			if _, ok := elem.(*ast.RestPat); ok {
-				continue
-			}
-			allCatchAll = false
-			break
 		}
 
 		if union, ok := targetType.(*type_system.UnionType); ok {
@@ -450,11 +446,7 @@ func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, b
 	elementSets := make([][]type_system.Type, len(tuple.Elems))
 	totalSize := 1
 	for i, elem := range tuple.Elems {
-		elem = type_system.Prune(elem)
-		elem = resolveTypeRef(elem)
-		if expanded, ok := expandBooleanType(elem); ok {
-			elem = expanded
-		}
+		elem = normalizeTargetType(elem)
 		members, finite := expandCoverageSet(elem)
 		if !finite {
 			return nil, false
@@ -474,11 +466,7 @@ func expandTupleCoverageSet(tuple *type_system.TupleType) ([]type_system.Type, b
 // matched types and true on success, or nil and false if the pattern cannot be
 // analyzed (non-finite wildcard or unsupported pattern type).
 func computePositionCoverage(elemPat ast.Pat, elemType type_system.Type) ([]type_system.Type, bool) {
-	elemType = type_system.Prune(elemType)
-	elemType = resolveTypeRef(elemType)
-	if expanded, ok := expandBooleanType(elemType); ok {
-		elemType = expanded
-	}
+	elemType = normalizeTargetType(elemType)
 
 	switch p := elemPat.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
@@ -584,14 +572,8 @@ func literalBelongsToType(litType type_system.Type, targetType type_system.Type)
 func branchFullyCoversMember(cov CaseCoverage) bool {
 	switch pat := cov.Pattern.(type) {
 	case *ast.ExtractorPat:
-		if len(pat.Args) == 0 {
-			return true
-		}
 		for _, arg := range pat.Args {
-			switch arg.(type) {
-			case *ast.WildcardPat, *ast.IdentPat:
-				continue
-			default:
+			if !isCatchAllPat(arg) {
 				return false
 			}
 		}
@@ -615,10 +597,7 @@ func branchFullyCoversMember(cov CaseCoverage) bool {
 		return true
 	case *ast.TuplePat:
 		for _, elem := range pat.Elems {
-			switch elem.(type) {
-			case *ast.WildcardPat, *ast.IdentPat, *ast.RestPat:
-				continue
-			default:
+			if !isCatchAllPat(elem) {
 				return false
 			}
 		}
@@ -647,11 +626,10 @@ func branchPartiallyCovers(cov CaseCoverage, member type_system.Type) bool {
 			allExactMatch := true
 			for i, elemPat := range tuplePat.Elems {
 				elemType := type_system.Prune(memberTuple.Elems[i])
-				switch elemPat.(type) {
+				switch p := elemPat.(type) {
 				case *ast.WildcardPat, *ast.IdentPat:
 					// catch-all — always matches
 				case *ast.LitPat:
-					p := elemPat.(*ast.LitPat)
 					inferredType := type_system.Prune(p.InferredType())
 					if !typesMatchForCoverage(inferredType, elemType) {
 						allExactMatch = false
@@ -872,12 +850,8 @@ func (c *Checker) checkPositionalExhaustiveness(
 			// Check if all elements are catch-alls → covers everything.
 			allCatchAll := true
 			for _, ep := range elemPats {
-				switch ep.(type) {
-				case *ast.WildcardPat, *ast.IdentPat:
-				default:
+				if !isCatchAllPat(ep) {
 					allCatchAll = false
-				}
-				if !allCatchAll {
 					break
 				}
 			}
@@ -928,10 +902,9 @@ func (c *Checker) checkPositionalExhaustiveness(
 			if i >= len(elemPats) {
 				continue
 			}
-			switch elemPats[i].(type) {
-			case *ast.WildcardPat, *ast.IdentPat:
+			if isCatchAllPat(elemPats[i]) {
 				hasCatchAll = true
-			default:
+			} else {
 				posPatterns = append(posPatterns, elemPats[i])
 			}
 		}
