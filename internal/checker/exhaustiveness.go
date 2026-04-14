@@ -132,8 +132,12 @@ func expandCoverageSet(targetType type_system.Type) ([]type_system.Type, bool) {
 		return []type_system.Type{targetType}, true
 	}
 
-	// Non-finite types (number, string, object types, etc.) cannot be
-	// fully enumerated — they require a catch-all.
+	// TODO(#436): Object types with all-finite properties (e.g.,
+	// {kind: "flag", value: boolean}) are finite and could be expanded
+	// into their Cartesian product, similar to expandTupleCoverageSet.
+
+	// Non-finite types (number, string, etc.) cannot be fully
+	// enumerated — they require a catch-all.
 	return nil, false
 }
 
@@ -280,9 +284,16 @@ func (c *Checker) computePatternCoverage(
 		coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 
 	case *ast.TuplePat:
-		// Check if all elements are catch-all patterns (wildcard/ident/rest).
-		// This applies regardless of whether the target is a single tuple
-		// or a union of tuples.
+		// TuplePat coverage has three paths depending on the target type:
+		//   (a) Union target — check which union members the pattern matches
+		//   (b) Single tuple, all-wildcard — mark as catch-all
+		//   (c) Single tuple, mixed — Cartesian product of per-position coverage
+		// The union path must come first because it uses different coverage
+		// semantics (IsCatchAll must NOT be set for unions, since non-tuple
+		// members may exist). The all-wildcard check is deferred until we've
+		// validated the target is a single tuple of matching arity.
+
+		// (shared) Pre-compute whether all elements are catch-all patterns.
 		allCatchAll := true
 		for _, elem := range pat.Elems {
 			if !isCatchAllPat(elem) {
@@ -291,8 +302,8 @@ func (c *Checker) computePatternCoverage(
 			}
 		}
 
+		// (a) Union target: check each member individually.
 		if union, ok := targetType.(*type_system.UnionType); ok {
-			// Target is a union whose members are already concrete tuples.
 			// The coverage set is the union members themselves, so we check
 			// which members the pattern matches element-wise.
 			//
@@ -335,19 +346,19 @@ func (c *Checker) computePatternCoverage(
 			break
 		}
 
+		// Validate target is a single tuple with matching arity.
 		tupleTarget, ok := targetType.(*type_system.TupleType)
 		if !ok || len(pat.Elems) != len(tupleTarget.Elems) {
 			break
 		}
 
+		// (b) Single tuple, all-wildcard: catch-all.
 		if allCatchAll {
 			coverage.IsCatchAll = true
 			break
 		}
 
-		// Target is a single tuple type. The coverage set is the Cartesian
-		// product of each element position's expanded types, so we compute
-		// per-position coverage and take the product.
+		// (c) Single tuple, mixed: Cartesian product of per-position coverage.
 		//
 		// Example: target [boolean, boolean]
 		//   coverage set = [true,true], [true,false], [false,true], [false,false]

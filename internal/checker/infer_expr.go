@@ -1437,8 +1437,10 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 				})
 			}
 			for _, pc := range result.PartialCoverages {
-				// Collect uncovered items from both fully uncovered types
-				// and nested partial coverages (for multi-level nesting).
+				// TODO(#433): This flattens nested partial coverages into a
+				// single InnerUncovered list, losing depth information beyond
+				// one level. Update to walk PartialCoverages recursively so
+				// error messages can describe the full nesting path.
 				var innerUncovered []type_system.Type
 				innerUncovered = append(innerUncovered, pc.InnerResult.UncoveredTypes...)
 				for _, innerPC := range pc.InnerResult.PartialCoverages {
