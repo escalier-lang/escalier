@@ -474,6 +474,24 @@ func TestExhaustiveMatch(t *testing.T) {
 				"Redundant match branch: this case is already covered by earlier branches",
 			},
 		},
+		"RedundantDuplicateExtractorSubPattern": {
+			input: `
+				enum Wrapper {
+					Bool(value: boolean),
+					Num(value: number),
+				}
+				declare val w: Wrapper
+				val result = match w {
+					Wrapper.Bool(true) => "true",
+					Wrapper.Bool(false) => "false",
+					Wrapper.Bool(true) => "redundant",
+					Wrapper.Num(n) => "num",
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+		},
 		"RedundantDuplicateCatchAllOnNonFiniteType": {
 			input: `
 				declare val n: number

@@ -693,6 +693,91 @@ func innerPatternAreAllCatchAlls(cov CaseCoverage) bool {
 	}
 }
 
+// patternsEqual returns true if two patterns are structurally identical
+// (ignoring spans and inferred types). Used to detect duplicate branches
+// within a nestedGroupBranches group.
+func patternsEqual(a, b ast.Pat) bool {
+	switch a := a.(type) {
+	case *ast.LitPat:
+		b, ok := b.(*ast.LitPat)
+		return ok && a.Lit.Equal(b.Lit)
+	case *ast.WildcardPat:
+		_, ok := b.(*ast.WildcardPat)
+		return ok
+	case *ast.IdentPat:
+		// All ident patterns are catch-alls; treat them as equal.
+		_, ok := b.(*ast.IdentPat)
+		return ok
+	case *ast.ExtractorPat:
+		b, ok := b.(*ast.ExtractorPat)
+		if !ok || ast.QualIdentToString(a.Name) != ast.QualIdentToString(b.Name) || len(a.Args) != len(b.Args) {
+			return false
+		}
+		for i := range a.Args {
+			if !patternsEqual(a.Args[i], b.Args[i]) {
+				return false
+			}
+		}
+		return true
+	case *ast.TuplePat:
+		b, ok := b.(*ast.TuplePat)
+		if !ok || len(a.Elems) != len(b.Elems) {
+			return false
+		}
+		for i := range a.Elems {
+			if !patternsEqual(a.Elems[i], b.Elems[i]) {
+				return false
+			}
+		}
+		return true
+	case *ast.ObjectPat:
+		b, ok := b.(*ast.ObjectPat)
+		return ok && objPatternsEqual(a, b)
+	case *ast.InstancePat:
+		b, ok := b.(*ast.InstancePat)
+		if !ok || ast.QualIdentToString(a.ClassName) != ast.QualIdentToString(b.ClassName) {
+			return false
+		}
+		return objPatternsEqual(a.Object, b.Object)
+	case *ast.RestPat:
+		b, ok := b.(*ast.RestPat)
+		return ok && patternsEqual(a.Pattern, b.Pattern)
+	default:
+		return false
+	}
+}
+
+// objPatternsEqual returns true if two ObjectPat values have the same
+// structure: same number of elements, same keys, and equal value patterns.
+func objPatternsEqual(a, b *ast.ObjectPat) bool {
+	if len(a.Elems) != len(b.Elems) {
+		return false
+	}
+	for i, elemA := range a.Elems {
+		elemB := b.Elems[i]
+		switch ea := elemA.(type) {
+		case *ast.ObjKeyValuePat:
+			eb, ok := elemB.(*ast.ObjKeyValuePat)
+			if !ok || ea.Key.Name != eb.Key.Name || !patternsEqual(ea.Value, eb.Value) {
+				return false
+			}
+		case *ast.ObjShorthandPat:
+			eb, ok := elemB.(*ast.ObjShorthandPat)
+			if !ok || ea.Key.Name != eb.Key.Name {
+				return false
+			}
+		case *ast.ObjRestPat:
+			eb, ok := elemB.(*ast.ObjRestPat)
+			if !ok || !patternsEqual(ea.Pattern, eb.Pattern) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // branchPartiallyCovers checks if a branch has inner patterns that only
 // partially cover the given member. This is like !branchFullyCoversMember but
 // also considers the member's type: for TuplePat, if every LitPat element
@@ -1114,7 +1199,10 @@ func (c *Checker) analyzeCoverageExhaustiveness(
 		}
 	}
 
-	// Compute uncovered types.
+	// Compute uncovered types. Partially covered members are excluded here
+	// because they are reported separately via PartialCoverages with a more
+	// detailed InnerResult (e.g., "Some is missing inner cases for false"
+	// rather than just "missing cases for Some").
 	var uncoveredTypes []type_system.Type
 	if isFinite {
 		for i, member := range coverageSet {
@@ -1136,12 +1224,55 @@ func (c *Checker) analyzeCoverageExhaustiveness(
 
 // detectRedundancy identifies match branches that can never match because all
 // types they cover are already handled by earlier branches. This is only used
-// at the top level (not for inner/nested exhaustiveness).
+// at the top level because redundancy is a property of user-written branches —
+// inner/nested exhaustiveness checks patterns across different branches to
+// determine collective coverage, where ordering and duplication don't apply.
 func (c *Checker) detectRedundancy(
 	coverages []CaseCoverage,
 	expr *ast.MatchExpr,
 	targetType type_system.Type,
 ) []RedundantCase {
+	// The algorithm walks branches in declaration order, maintaining a
+	// contributed set that tracks which coverage set members have already been
+	// "claimed" by earlier branches. A branch is redundant if it can't
+	// contribute anything new.
+	//
+	// --- State initialization ---
+	// - contributed — set of coverage member indices already covered by earlier
+	//   branches
+	// - seenCatchAll — whether a previous catch-all was encountered
+	//
+	// --- Skip guarded branches ---
+	// Guarded branches have runtime conditions, so they might not match even if
+	// their pattern matches. They're ignored for redundancy purposes — they
+	// neither contribute coverage nor can be flagged as redundant.
+	//
+	// --- Catch-all branches ---
+	// A catch-all (_ or bare identifier) is redundant if:
+	// - seenCatchAll — a previous catch-all already exists, or
+	// - isFinite && contributed.Len() == len(coverageSet) — every member of a
+	//   finite type was already covered by earlier specific branches.
+	// Either way, after processing a catch-all, it marks all members as
+	// contributed and sets seenCatchAll = true.
+	//
+	// --- Specific branches---
+	// For branches that cover specific types (e.g., Color.RGB, true):
+	// 1. Check for redundancy: If the branch is NOT in nestedGroupBranches
+	//    (explained below), check whether every member it covers is already in
+	//    contributed. If so, the branch adds nothing new → redundant.
+	// 2. Record contribution: Regardless of whether the branch is redundant,
+	//    add its covered members to contributed.
+	//
+	// **The nestedGroupBranches exemption** When multiple branches cover the
+	// same union member with different inner patterns (e.g., Some(true) and
+	// Some(false)), the first unique occurrence of each pattern is added to
+	// nestedGroupBranches. Without this exemption, the second branch would
+	// appear redundant because Some was already contributed by the first. But
+	// they're actually complementary — each covers different inner values.
+	// Genuine duplicates (same member, same inner pattern) are NOT protected,
+	// so e.g. a second Some(true) after an earlier Some(true) is correctly
+	// flagged as redundant.
+
 	coverageSet, isFinite := expandCoverageSet(targetType)
 
 	// Group non-guarded, non-catch-all branches by which coverage set member
@@ -1168,33 +1299,52 @@ func (c *Checker) detectRedundancy(
 	}
 
 	// When multiple branches cover the same member and at least one has
-	// partial inner patterns, protect all of them from redundancy detection.
+	// partial inner patterns, protect them from redundancy detection —
+	// but only if they have distinct patterns. Genuine duplicates (same
+	// member, same inner pattern) are NOT protected.
 	nestedGroupBranches := set.NewSet[int]()
 	for idx, member := range coverageSet {
 		group := groups[idx]
 		if group == nil || len(group.coverages) <= 1 {
 			continue
 		}
+		hasPartial := false
 		for _, bc := range group.coverages {
 			if branchPartiallyCovers(bc, member) {
-				for _, ci := range group.caseIndices {
-					nestedGroupBranches.Add(ci)
-				}
+				hasPartial = true
 				break
+			}
+		}
+		if !hasPartial {
+			continue
+		}
+		// Protect only the first occurrence of each unique pattern.
+		for i, ci := range group.caseIndices {
+			isDuplicate := false
+			for j := range i {
+				if patternsEqual(group.coverages[i].Pattern, group.coverages[j].Pattern) {
+					isDuplicate = true
+					break
+				}
+			}
+			if !isDuplicate {
+				nestedGroupBranches.Add(ci)
 			}
 		}
 	}
 
-	// Detect redundancy by processing branches in order.
+	// --- State initialization ---
 	var redundantCases []RedundantCase
 	contributed := set.NewSet[int]()
 	seenCatchAll := false
 
 	for i, cov := range coverages {
+		// --- Skip guarded branches ---
 		if cov.HasGuard {
 			continue
 		}
 
+		// --- Catch-all branches ---
 		if cov.IsCatchAll {
 			isRedundant := seenCatchAll || (isFinite && contributed.Len() == len(coverageSet))
 			if isRedundant {
@@ -1210,7 +1360,9 @@ func (c *Checker) detectRedundancy(
 			continue
 		}
 
+		// --- Specific branches ---
 		if len(cov.CoveredTypes) > 0 {
+			// 1. Check for redundancy (the nestedGroupBranches exemption)
 			if !nestedGroupBranches.Contains(i) {
 				allContributed := true
 				for _, covType := range cov.CoveredTypes {
@@ -1228,6 +1380,7 @@ func (c *Checker) detectRedundancy(
 				}
 			}
 
+			// 2. Record contribution
 			for _, covType := range cov.CoveredTypes {
 				idx := indexInCoverageSet(covType, coverageSet)
 				if idx != -1 {
