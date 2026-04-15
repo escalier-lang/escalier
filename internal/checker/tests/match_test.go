@@ -214,6 +214,35 @@ func TestMatchTargetTypeInference(t *testing.T) {
 		},
 
 		// ---------------------------------------------------------------
+		// ExtractorPat: extractors from different enums
+		// ---------------------------------------------------------------
+
+		"ExtractorMixedEnums": {
+			input: `
+				enum Option<T> {
+					Some(value: T),
+					None(),
+				}
+				enum Result<T, E> {
+					Ok(value: T),
+					Err(error: E),
+				}
+				val handle = fn (input) {
+					return match input {
+						Option.Some(value) => value,
+						Result.Ok(value) => value,
+					}
+				}
+			`,
+			expectedValues: map[string]string{
+				"handle": "fn <T0, T1, T2>(input: Option<T0> | Result<T1, T2>) -> T0 | T1",
+			},
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for Option<T0>, Result<T1, T2>",
+			},
+		},
+
+		// ---------------------------------------------------------------
 		// Explicitly typed param: no regression
 		// ---------------------------------------------------------------
 

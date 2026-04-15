@@ -1375,6 +1375,10 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 	// Phase 1: Infer all pattern types and collect bindings up front.
 	// This allows Phase 2 to inspect every pattern before any unification
 	// with the target type has occurred.
+	//
+	// Note: the temporary scopes created here are discarded — Phase 3 creates
+	// fresh scopes and re-adds the bindings. This is safe because inferPattern
+	// has no side effects on the scope beyond the returned bindings map.
 	patternInfos := make([]matchCasePatternInfo, len(expr.Cases))
 	for i, matchCase := range expr.Cases {
 		caseCtx := ctx.WithNewScope()
@@ -1523,17 +1527,21 @@ func (c *Checker) inferTargetTypeFromPatterns(
 	patternInfos []matchCasePatternInfo,
 ) type_system.Type {
 	var targetTypes []type_system.Type
-	seenExtractorEnum := false
+	seenEnums := make(map[string]bool)
 
 	for i, matchCase := range cases {
 		switch p := matchCase.Pattern.(type) {
 		case *ast.ExtractorPat:
-			// All extractors from the same enum produce the same enum type,
-			// so only process the first extractor we encounter.
-			if !seenExtractorEnum {
-				if enumType := c.getEnumTypeFromExtractor(ctx, p); enumType != nil {
-					targetTypes = append(targetTypes, enumType)
-					seenExtractorEnum = true
+			// Multiple extractors from the same enum produce the same enum
+			// type, so we deduplicate by enum name. Extractors from different
+			// enums each contribute their own type.
+			if enumType := c.getEnumTypeFromExtractor(ctx, p); enumType != nil {
+				if ref, ok := enumType.(*type_system.TypeRefType); ok {
+					key := type_system.QualIdentToString(ref.Name)
+					if !seenEnums[key] {
+						seenEnums[key] = true
+						targetTypes = append(targetTypes, enumType)
+					}
 				}
 			}
 		case *ast.InstancePat:
