@@ -565,7 +565,10 @@ func (c *Checker) computeObjectPatCoverage(
 	pat *ast.ObjectPat,
 	targetObj *type_system.ObjectType,
 ) []type_system.Type {
-	// Collect target's string-keyed properties.
+	// Collect target's string-keyed properties. Number and symbol keys are
+	// skipped because object patterns can only destructure string keys today.
+	// See https://github.com/escalier-lang/escalier/issues/441 for future
+	// support of number and symbol keys in object patterns.
 	var props []propCoverage
 	for _, elem := range targetObj.Elems {
 		prop, ok := elem.(*type_system.PropertyElem)
@@ -814,7 +817,9 @@ func expandObjectCoverageSet(obj *type_system.ObjectType) ([]type_system.Type, b
 }
 
 // cartesianProductObjects computes the Cartesian product of per-property type
-// sets and returns each combination as an ObjectType.
+// sets and returns each combination as an ObjectType. Property order in the
+// input does not matter — downstream comparison (objectPropsMatchForCoverage)
+// matches by name, not position.
 func cartesianProductObjects(props []propCoverage) []type_system.Type {
 	if len(props) == 0 {
 		return []type_system.Type{type_system.NewObjectType(nil, nil)}
