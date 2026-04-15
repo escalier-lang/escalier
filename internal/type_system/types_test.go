@@ -293,6 +293,48 @@ func TestRegexType_JavaScriptToGoConversion(t *testing.T) {
 	})
 }
 
+func TestNewUnionTypeSimplifiesLiterals(t *testing.T) {
+	t.Run("number absorbs numeric literals", func(t *testing.T) {
+		result := NewUnionType(nil, NewNumPrimType(nil), NewNumLitType(nil, 0))
+		assert.Equal(t, "number", result.String())
+	})
+
+	t.Run("string absorbs string literals", func(t *testing.T) {
+		result := NewUnionType(nil, NewStrPrimType(nil), NewStrLitType(nil, "hello"))
+		assert.Equal(t, "string", result.String())
+	})
+
+	t.Run("boolean absorbs boolean literals", func(t *testing.T) {
+		result := NewUnionType(nil, NewBoolPrimType(nil), NewBoolLitType(nil, true))
+		assert.Equal(t, "boolean", result.String())
+	})
+
+	t.Run("true | false simplifies to boolean", func(t *testing.T) {
+		result := NewUnionType(nil, NewBoolLitType(nil, true), NewBoolLitType(nil, false))
+		assert.Equal(t, "boolean", result.String())
+	})
+
+	t.Run("false | true simplifies to boolean", func(t *testing.T) {
+		result := NewUnionType(nil, NewBoolLitType(nil, false), NewBoolLitType(nil, true))
+		assert.Equal(t, "boolean", result.String())
+	})
+
+	t.Run("number does not absorb string literals", func(t *testing.T) {
+		result := NewUnionType(nil, NewNumPrimType(nil), NewStrLitType(nil, "hello"))
+		assert.Equal(t, `number | "hello"`, result.String())
+	})
+
+	t.Run("mixed: number absorbs 0 but keeps string literal", func(t *testing.T) {
+		result := NewUnionType(nil, NewNumPrimType(nil), NewNumLitType(nil, 0), NewStrLitType(nil, "x"))
+		assert.Equal(t, `number | "x"`, result.String())
+	})
+
+	t.Run("null and undefined are not absorbed", func(t *testing.T) {
+		result := NewUnionType(nil, NewNumPrimType(nil), NewNullType(nil))
+		assert.Equal(t, "number | null", result.String())
+	})
+}
+
 func TestObjectType_Equal(t *testing.T) {
 	t.Run("empty object types should be equal", func(t *testing.T) {
 		objType1 := NewObjectType(nil, []ObjTypeElem{})

@@ -24,7 +24,7 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `string | ""`,
+				"result": `string`,
 			},
 		},
 		"Case12_StructuralPatternMatchesGetter": {
@@ -40,7 +40,7 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		"PartialMatchMultipleFields": {
@@ -54,7 +54,7 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		"Case1_StructuralDestructuringOfNominalUnion": {
@@ -87,8 +87,8 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result1": `string | number | ""`,
-				"result2": "boolean | false",
+				"result1": `string | number`,
+				"result2": "boolean",
 			},
 		},
 		"Case3_CorrectEnumInstanceMatching": {

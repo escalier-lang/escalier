@@ -71,7 +71,7 @@ func TestMatchTargetTypeInference(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `string | "none"`,
+				"result": `string`,
 			},
 		},
 		"ExtractorGenericEnumConstrained": {
@@ -89,7 +89,7 @@ func TestMatchTargetTypeInference(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"add1": `fn (option: Option<number>) -> number | 0`,
+				"add1": `fn (option: Option<number>) -> number`,
 			},
 		},
 		"ExtractorGenericEnum": {
@@ -174,7 +174,7 @@ func TestMatchTargetTypeInference(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"check": `fn (b: true | false) -> "yes" | "no"`,
+				"check": `fn (b: boolean) -> "yes" | "no"`,
 			},
 		},
 
@@ -260,7 +260,7 @@ func TestMatchTargetTypeInference(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"describe": "fn (option: Option<number>) -> number | 0",
+				"describe": "fn (option: Option<number>) -> number",
 			},
 		},
 	}

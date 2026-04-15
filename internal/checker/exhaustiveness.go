@@ -244,11 +244,14 @@ func expandBooleanType(t type_system.Type) (type_system.Type, bool) {
 	if !ok || prim.Prim != type_system.BoolPrim {
 		return t, false
 	}
-	expanded := type_system.NewUnionType(
-		nil,
-		type_system.NewBoolLitType(nil, true),
-		type_system.NewBoolLitType(nil, false),
-	)
+	// Build the union directly to bypass NewUnionType's simplification
+	// which would collapse true | false back to boolean.
+	expanded := &type_system.UnionType{
+		Types: []type_system.Type{
+			type_system.NewBoolLitType(nil, true),
+			type_system.NewBoolLitType(nil, false),
+		},
+	}
 	return expanded, true
 }
 

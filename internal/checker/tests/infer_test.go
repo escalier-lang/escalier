@@ -401,7 +401,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			expectedTypes: map[string]string{
 				"a": "5",
 				"b": "10",
-				"x": "true | false | \"hello\"",
+				"x": "\"hello\" | boolean",
 			},
 		},
 		"FuncExpr": {
@@ -484,7 +484,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"add": "fn (x: number, y: number) -> true | false",
+				"add": "fn (x: number, y: number) -> boolean",
 			},
 		},
 		// TODO: figure out how to infer throws types in mutually recursive functions
@@ -949,7 +949,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			expectedTypes: map[string]string{
 				"container": "{value: number, getValue<T>(self, default: T) -> number | T}",
 				"a":         "number | string",
-				"b":         "number | 10",
+				"b":         "number",
 			},
 		},
 		"ClassWithGenericMethod": {
@@ -972,7 +972,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"Box": "{new fn (value: number) -> mut? Box}",
 				"box": "Box",
 				"a":   "number | string",
-				"b":   "number | 10",
+				"b":   "number",
 			},
 		},
 		"SimpleGenericClass": {
@@ -1009,7 +1009,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"Box": "{new fn <T>(value: T) -> mut? Box<T>}",
 				"box": "Box<number>",
 				"a":   "number | string",
-				"b":   "number | 10",
+				"b":   "number",
 			},
 		},
 		// "GenericObjectTypeWithGenericMethod": {
@@ -1078,7 +1078,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"a": "number",
-				"b": "string | \"world\"",
+				"b": "string",
 			},
 		},
 		"MultilayerTypeAliases": {
@@ -1195,7 +1195,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"option": "MyOption<number>",
 				"some":   "{new fn <T>(value: T) -> MyOption<T>, symbol12<T>(self, subject: Some<T>) -> [T]}",
 				"none":   "{new fn <T>() -> MyOption<T>, symbol12<T>(self, subject: None<T>) -> []}",
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		"ReadonlyType": {
@@ -1640,7 +1640,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		"IfLetWithAlternativeOnly": {
@@ -1664,7 +1664,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"result": "number | -1",
+				"result": "number",
 			},
 		},
 		"IfLetWithTypeAnnotations": {
@@ -1681,7 +1681,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"result": "number | number | 0",
+				"result": "number | number",
 			},
 		},
 		"IfLetWithObjectPattern": {
@@ -1694,7 +1694,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"result": "number | -1",
+				"result": "number",
 			},
 		},
 		"IfLetWithShorthandObjectPattern": {
@@ -1707,7 +1707,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"result": "number | 0 | -1",
+				"result": "number",
 			},
 		},
 		"IfLetNullable": {
@@ -1720,7 +1720,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"ifLetWithExprAltNum": "number | 0",
+				"ifLetWithExprAltNum": "number",
 			},
 		},
 	}
@@ -4405,7 +4405,7 @@ func TestMatchExprInference(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"obj":    "{a: 1, b: 2}",
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		"MatchWithTuplePattern": {
@@ -4419,7 +4419,7 @@ func TestMatchExprInference(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"tuple":  "Array<number>",
-				"result": "number | number | 0",
+				"result": "number | number",
 			},
 		},
 		"MatchWithNestedPattern": {
