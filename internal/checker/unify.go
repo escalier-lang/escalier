@@ -1247,14 +1247,24 @@ func (c *Checker) unifyExtractor(
 		}}
 	}
 
-	paramType := methodElem.Fn.Params[0].Type
+	// Instantiate the method's type parameters with fresh TypeVars so that
+	// bare type parameter references (e.g. TypeRefType("T")) are replaced
+	// before unification. Without this, ExpandType would resolve "T" to
+	// NeverType when "T" is not in scope (it's only in the enum declaration
+	// scope, not the match expression's scope).
+	fn := methodElem.Fn
+	if len(fn.TypeParams) > 0 {
+		fn = c.instantiateGenericFunc(fn)
+	}
+
+	paramType := fn.Params[0].Type
 	errors := unify(subject, paramType)
 
-	tuple, ok := methodElem.Fn.Return.(*type_system.TupleType)
+	tuple, ok := fn.Return.(*type_system.TupleType)
 	if !ok {
 		return []Error{&ExtractorMustReturnTupleError{
 			ExtractorType: ext,
-			ReturnType:    methodElem.Fn.Return,
+			ReturnType:    fn.Return,
 		}}
 	}
 
@@ -1263,12 +1273,21 @@ func (c *Checker) unifyExtractor(
 	// reference.
 	// TODO(#430): We might have to expand the subject if the type alias
 	// it's using points to another type alias.
-	if typeRef, ok := subject.(*type_system.TypeRefType); ok && typeRef.TypeAlias != nil && len(typeRef.TypeArgs) >= len(typeRef.TypeAlias.TypeParams) {
-		substitutions := make(map[string]type_system.Type)
-		for i, typeParam := range typeRef.TypeAlias.TypeParams {
-			substitutions[typeParam.Name] = typeRef.TypeArgs[i]
+	if typeRef, ok := subject.(*type_system.TypeRefType); ok {
+		typeAlias := typeRef.TypeAlias
+		if typeAlias == nil {
+			// The constructor return type created in inferEnumDecl has
+			// TypeAlias: nil because the enum's type alias is registered
+			// after the constructor. Resolve it from the scope as a fallback.
+			typeAlias = resolveQualifiedTypeAlias(ctx, typeRef.Name)
 		}
-		tuple = SubstituteTypeParams(tuple, substitutions)
+		if typeAlias != nil && len(typeRef.TypeArgs) >= len(typeAlias.TypeParams) {
+			substitutions := make(map[string]type_system.Type)
+			for i, typeParam := range typeAlias.TypeParams {
+				substitutions[typeParam.Name] = typeRef.TypeArgs[i]
+			}
+			tuple = SubstituteTypeParams(tuple, substitutions)
+		}
 	}
 
 	// Find if the args have a rest element.
