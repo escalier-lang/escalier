@@ -2709,39 +2709,8 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 			source: pat,
 		}
 		var cond Expr = NewLitExpr(NewBoolLit(true, pat), pat)
-		if pat.TypeAnn != nil && pat.TypeAnn.InferredType() != nil {
-			inferred := type_system.Prune(pat.TypeAnn.InferredType())
-			// Try to match on the type name for basic types
-			switch t := inferred.(type) {
-			case *type_system.PrimType:
-				var typeOfStr string
-
-				switch t.Prim {
-				case type_system.NumPrim:
-					typeOfStr = "number"
-				case type_system.StrPrim:
-					typeOfStr = "string"
-				case type_system.BoolPrim:
-					typeOfStr = "boolean"
-				case type_system.BigIntPrim:
-					typeOfStr = "bigint"
-				case type_system.SymbolPrim:
-					typeOfStr = "symbol"
-				default:
-					panic(fmt.Sprintf("Unknown primitive type in pattern type check: %v", t.Prim))
-				}
-
-				if typeOfStr != "" {
-					cond = NewBinaryExpr(
-						NewUnaryExpr(TypeOf, targetExpr, nil),
-						EqualEqual,
-						NewLitExpr(NewStrLit(typeOfStr, nil), nil),
-						pat,
-					)
-				}
-			default:
-				panic(fmt.Sprintf("TODO: handle other inferred types in pattern type check: %T", inferred))
-			}
+		if pat.TypeAnn != nil {
+			cond = b.buildTypeGuard(targetExpr, pat.TypeAnn)
 		}
 		return cond, []Stmt{bindingStmt}
 
@@ -2862,6 +2831,13 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 				// Check that the property exists: "propName" in object
 				propExistsCheck := buildPropertyInObjectCheck(objElem.Key.Name, targetExpr, objElem)
 				conditions = append(conditions, propExistsCheck)
+
+				// Generate runtime type check if type annotation is present
+				if objElem.TypeAnn != nil {
+					propAccess := NewMemberExpr(targetExpr, NewIdentifier(objElem.Key.Name, objElem), false, objElem)
+					typeGuard := b.buildTypeGuard(propAccess, objElem.TypeAnn)
+					conditions = append(conditions, typeGuard)
+				}
 
 				// Handle defaults for shorthand patterns
 				var defExpr Expr

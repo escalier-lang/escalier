@@ -41,7 +41,7 @@ export declare const objectRestMatch: {z: number, name: string} | 0;
 declare const user: User;
 export declare const partialMatch: string | "";
 declare const ref: {value: string | number | boolean};
-export declare const refMatch: "string" | "number" | "boolean" | "unknown";
+export declare const refMatch: "string" | "number" | "boolean";
 declare const result1: number | string;
 declare const result2: number | string;
 declare const shape: Shape;

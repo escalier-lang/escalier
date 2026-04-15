@@ -9,7 +9,7 @@ if (tuple != null && tuple.length == 2) {
 export const basicIfLetStr = temp1;
 export const complex = [100, ["test", true]];
 let temp2;
-if (complex != null && complex.length == 2 && typeof complex[0] == "number" && complex[1].length == 2 && typeof complex[1][0] == "string" && typeof complex[1][1] == "boolean") {
+if (complex != null && complex.length == 2 && typeof complex[0] === "number" && complex[1].length == 2 && typeof complex[1][0] === "string" && typeof complex[1][1] === "boolean") {
   const [num, [str, flag]] = complex;
   let temp3;
   if (flag) {

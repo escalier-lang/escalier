@@ -94,7 +94,6 @@ export val refMatch = match ref {
     {value: a:string} => "string",
     {value: b:number} => "number",
     {value: c:boolean} => "boolean",
-    _ => "unknown",
 }
 
 class Color(r: number, g: number, b: number) {

@@ -195,17 +195,15 @@ export const partialMatch = temp35;
 let temp37;
 let temp38;
 temp38 = ref;
-if (temp38 != null && "value" in temp38 && typeof temp38.value == "string") {
+if (temp38 != null && "value" in temp38 && typeof temp38.value === "string") {
   const {value: a} = temp38;
   temp37 = "string";
-} else if (temp38 != null && "value" in temp38 && typeof temp38.value == "number") {
+} else if (temp38 != null && "value" in temp38 && typeof temp38.value === "number") {
   const {value: b} = temp38;
   temp37 = "number";
-} else if (temp38 != null && "value" in temp38 && typeof temp38.value == "boolean") {
+} else if (temp38 != null && "value" in temp38 && typeof temp38.value === "boolean") {
   const {value: c} = temp38;
   temp37 = "boolean";
-} else {
-  temp37 = "unknown";
 }
 export const refMatch = temp37;
 let temp39;

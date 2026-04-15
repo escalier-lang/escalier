@@ -210,9 +210,11 @@ func narrowCoverages[P ast.Pat](coverages []CaseCoverage[ast.Pat]) []CaseCoverag
 // isCatchAllPat returns true if the pattern matches any value at its position
 // (wildcard, identifier binding, or rest element).
 func isCatchAllPat(pat ast.Pat) bool {
-	switch pat.(type) {
-	case *ast.WildcardPat, *ast.IdentPat, *ast.RestPat:
+	switch pat := pat.(type) {
+	case *ast.WildcardPat, *ast.RestPat:
 		return true
+	case *ast.IdentPat:
+		return pat.TypeAnn == nil
 	default:
 		return false
 	}
@@ -260,8 +262,23 @@ func (c *Checker) computePatternCoverage(
 	coverage := CaseCoverage[ast.Pat]{Pattern: pat}
 
 	switch pat := pat.(type) {
-	case *ast.WildcardPat, *ast.IdentPat:
+	case *ast.WildcardPat:
 		coverage.IsCatchAll = true
+
+	case *ast.IdentPat:
+		if pat.TypeAnn != nil && pat.TypeAnn.InferredType() != nil {
+			inferredType := type_system.Prune(pat.TypeAnn.InferredType())
+			// If the annotated type matches the entire target type (e.g.,
+			// n: number against number), treat it as a catch-all for this
+			// position rather than computing partial coverage.
+			if typesMatchForCoverage(inferredType, type_system.Prune(targetType)) {
+				coverage.IsCatchAll = true
+			} else {
+				coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
+			}
+		} else {
+			coverage.IsCatchAll = true
+		}
 
 	case *ast.LitPat:
 		// The pattern's inferred type is a literal type (e.g., true, "foo", 42).
@@ -525,6 +542,30 @@ func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 		}
 	}
 
+	// PrimType: compare by Prim kind. Pointer identity doesn't work here
+	// because the pattern's type annotation and the union member are separate
+	// allocations.
+	if patPrim, ok := patternType.(*type_system.PrimType); ok {
+		if memPrim, ok := memberType.(*type_system.PrimType); ok {
+			return patPrim.Prim == memPrim.Prim
+		}
+		// A PrimType covers its corresponding literal types (e.g.,
+		// boolean covers true and false after expandBooleanType).
+		if memLit, ok := memberType.(*type_system.LitType); ok {
+			switch patPrim.Prim {
+			case type_system.BoolPrim:
+				_, isBool := memLit.Lit.(*type_system.BoolLit)
+				return isBool
+			case type_system.StrPrim:
+				_, isStr := memLit.Lit.(*type_system.StrLit)
+				return isStr
+			case type_system.NumPrim:
+				_, isNum := memLit.Lit.(*type_system.NumLit)
+				return isNum
+			}
+		}
+	}
+
 	// LiteralType: compare by value equality. Pointer identity doesn't
 	// work here because the pattern's LitType (from inferLit) and the
 	// coverage set's LitType (from expandBooleanType) are separate
@@ -681,7 +722,21 @@ func (c *Checker) computePositionCoverage(elemPat ast.Pat, elemType type_system.
 	elemType = normalizeTargetType(elemType)
 
 	switch p := elemPat.(type) {
-	case *ast.WildcardPat, *ast.IdentPat:
+	case *ast.WildcardPat:
+		members, finite := expandCoverageSet(elemType)
+		if !finite {
+			return nil, false
+		}
+		return members, true
+	case *ast.IdentPat:
+		if p.TypeAnn != nil && p.TypeAnn.InferredType() != nil {
+			inferredType := type_system.Prune(p.TypeAnn.InferredType())
+			matched := findMatchingMembers(inferredType, elemType)
+			if len(matched) == 0 {
+				return nil, false
+			}
+			return matched, true
+		}
 		members, finite := expandCoverageSet(elemType)
 		if !finite {
 			return nil, false
@@ -918,14 +973,13 @@ func innerPatternAreAllCatchAlls(cov CaseCoverage[ast.Pat]) bool {
 		for _, elem := range pat.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjKeyValuePat:
-				switch e.Value.(type) {
-				case *ast.WildcardPat, *ast.IdentPat:
-					continue
-				default:
+				if !isCatchAllPat(e.Value) {
 					return false
 				}
 			case *ast.ObjShorthandPat:
-				continue // shorthand is a catch-all binding
+				if e.TypeAnn != nil {
+					return false
+				}
 			case *ast.ObjRestPat:
 				continue
 			}
@@ -1264,6 +1318,9 @@ func (c *Checker) findPropertyPattern(objPat *ast.ObjectPat, propName string) as
 			}
 		case *ast.ObjShorthandPat:
 			if e.Key.Name == propName {
+				if e.TypeAnn != nil {
+					return ast.NewIdentPat(e.Key.Name, e.TypeAnn, nil, ast.Span{})
+				}
 				return ast.NewWildcardPat(ast.Span{}) // shorthand = catch-all
 			}
 		}

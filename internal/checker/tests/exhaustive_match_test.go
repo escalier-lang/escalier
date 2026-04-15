@@ -1299,6 +1299,76 @@ func TestExhaustiveMatch(t *testing.T) {
 			// Should NOT also produce a "Non-exhaustive match" error
 			// because prior errors gate exhaustiveness checking.
 		},
+
+		// ---------------------------------------------------------------
+		// IdentPat with type annotations
+		// ---------------------------------------------------------------
+
+		"IdentPatWithTypeAnnExhaustive": {
+			input: `
+				declare val x: number | string
+				val result = match x {
+					n: number => n,
+					s: string => s,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | string",
+			},
+		},
+		"IdentPatWithTypeAnnNonExhaustive": {
+			input: `
+				declare val x: number | string
+				val result = match x {
+					n: number => n,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for string",
+			},
+		},
+		"IdentPatWithTypeAnnAndCatchAll": {
+			input: `
+				declare val x: number | string | boolean
+				val result = match x {
+					n: number => n,
+					other => other,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | number | string | boolean",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// ObjShorthandPat with type annotations
+		// ---------------------------------------------------------------
+
+		"ObjShorthandWithTypeAnnExhaustive": {
+			input: `
+				type Item = {kind: "a", value: number} | {kind: "b", value: string}
+				declare val item: Item
+				val result = match item {
+					{kind: "a", value::number} => value,
+					{kind: "b", value::string} => value,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | string",
+			},
+		},
+		"ObjShorthandWithTypeAnnNonExhaustive": {
+			input: `
+				type Item = {kind: "a", value: number} | {kind: "b", value: string}
+				declare val item: Item
+				val result = match item {
+					{kind: "a", value::number} => value,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: {kind: \"b\", value: string} is missing inner cases for \"b\"",
+			},
+		},
 	}
 
 	for name, test := range tests {
