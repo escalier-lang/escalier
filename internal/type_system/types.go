@@ -1888,6 +1888,22 @@ func NewUnionType(provenance Provenance, types ...Type) Type {
 		filtered = simplified
 	}
 
+	// Deduplicate structurally equal types.
+	deduped := make([]Type, 0, len(filtered))
+	for _, t := range filtered {
+		isDup := false
+		for _, existing := range deduped {
+			if Equals(t, existing) {
+				isDup = true
+				break
+			}
+		}
+		if !isDup {
+			deduped = append(deduped, t)
+		}
+	}
+	filtered = deduped
+
 	if len(filtered) == 0 {
 		return NewNeverType(nil)
 	}

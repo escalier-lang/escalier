@@ -1547,7 +1547,13 @@ func (c *Checker) inferTargetTypeFromPatterns(
 		case *ast.InstancePat:
 			typeAlias := resolveQualifiedTypeAlias(ctx, convertQualIdent(p.ClassName))
 			if typeAlias != nil {
-				targetTypes = append(targetTypes, type_system.Prune(typeAlias.Type))
+				var typeArgs []type_system.Type
+				for range typeAlias.TypeParams {
+					typeArgs = append(typeArgs, c.FreshVar(nil))
+				}
+				targetTypes = append(targetTypes, type_system.NewTypeRefTypeFromQualIdent(
+					nil, convertQualIdent(p.ClassName), typeAlias, typeArgs...,
+				))
 			}
 		case *ast.LitPat:
 			targetTypes = append(targetTypes, patternInfos[i].patternType)

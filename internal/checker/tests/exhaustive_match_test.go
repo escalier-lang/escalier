@@ -708,7 +708,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | number | number",
+				"result": "number",
 			},
 		},
 		// A tuple with a rest element covered by a catch-all.
@@ -842,7 +842,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | number",
+				"result": "number",
 			},
 		},
 		// Case 20: Structural object patterns without inner catch-all.
@@ -1336,7 +1336,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | number | string | boolean",
+				"result": "number | string | boolean",
 			},
 		},
 
@@ -1375,7 +1375,7 @@ func TestExhaustiveMatch(t *testing.T) {
 			`,
 			// no redundancy warnings expected
 			expectedValues: map[string]string{
-				"result": "string | number | number",
+				"result": "string | number",
 			},
 		},
 
@@ -1412,7 +1412,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				"Redundant match branch: this case is already covered by earlier branches",
 			},
 			expectedValues: map[string]string{
-				"result": "number | number",
+				"result": "number",
 			},
 		},
 
@@ -1493,7 +1493,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				"Redundant match branch: this case is already covered by earlier branches",
 			},
 			expectedValues: map[string]string{
-				"result": "boolean | boolean",
+				"result": "boolean",
 			},
 		},
 	}

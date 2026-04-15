@@ -1681,7 +1681,7 @@ func TestIfLetExprInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"result": "number | number",
+				"result": "number",
 			},
 		},
 		"IfLetWithObjectPattern": {
@@ -4419,7 +4419,7 @@ func TestMatchExprInference(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"tuple":  "Array<number>",
-				"result": "number | number",
+				"result": "number",
 			},
 		},
 		"MatchWithNestedPattern": {

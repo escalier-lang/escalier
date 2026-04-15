@@ -143,7 +143,7 @@ func TestMatchTargetTypeInference(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"handle": "fn (obj: {x: number, y: number} | {kind: string}) -> number | string",
+				"handle": "fn (obj: Point | Event) -> number | string",
 			},
 		},
 

@@ -333,6 +333,26 @@ func TestNewUnionTypeSimplifiesLiterals(t *testing.T) {
 		result := NewUnionType(nil, NewNumPrimType(nil), NewNullType(nil))
 		assert.Equal(t, "number | null", result.String())
 	})
+
+	t.Run("duplicate primitives are deduplicated", func(t *testing.T) {
+		result := NewUnionType(nil, NewNumPrimType(nil), NewNumPrimType(nil))
+		assert.Equal(t, "number", result.String())
+	})
+
+	t.Run("triple duplicate primitives are deduplicated", func(t *testing.T) {
+		result := NewUnionType(nil, NewNumPrimType(nil), NewNumPrimType(nil), NewNumPrimType(nil))
+		assert.Equal(t, "number", result.String())
+	})
+
+	t.Run("duplicate literals are deduplicated", func(t *testing.T) {
+		result := NewUnionType(nil, NewStrLitType(nil, "a"), NewStrLitType(nil, "a"))
+		assert.Equal(t, `"a"`, result.String())
+	})
+
+	t.Run("distinct types are preserved after dedup", func(t *testing.T) {
+		result := NewUnionType(nil, NewNumPrimType(nil), NewStrPrimType(nil), NewNumPrimType(nil))
+		assert.Equal(t, "number | string", result.String())
+	})
 }
 
 func TestObjectType_Equal(t *testing.T) {
