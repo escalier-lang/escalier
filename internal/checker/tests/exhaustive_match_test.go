@@ -1397,6 +1397,40 @@ func TestExhaustiveMatch(t *testing.T) {
 			},
 		},
 
+		// When the shorthand type annotation matches the member's property
+		// type exactly, a duplicate branch should still be flagged redundant.
+		"ObjShorthandTypedDuplicateIsRedundant": {
+			input: `
+				type T = {value: number}
+				declare val t: T
+				val result = match t {
+					{value::number} => value,
+					{value::number} => value,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+			expectedValues: map[string]string{
+				"result": "number | number",
+			},
+		},
+
+		// When the shorthand type annotation matches the member's property
+		// type exactly, a single branch should be recognized as exhaustive.
+		"ObjShorthandTypedMatchesPropertyType": {
+			input: `
+				type T = {value: number}
+				declare val t: T
+				val result = match t {
+					{value::number} => value,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number",
+			},
+		},
+
 		"ObjShorthandWithTypeAnnNonExhaustive": {
 			input: `
 				type Item = {kind: "a", value: number} | {kind: "b", value: string}
@@ -1407,6 +1441,59 @@ func TestExhaustiveMatch(t *testing.T) {
 			`,
 			expectedErrs: []string{
 				"Non-exhaustive match: {kind: \"b\", value: string} is missing inner cases for \"b\"",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// Tuple-union with typed IdentPat
+		// ---------------------------------------------------------------
+
+		// [x: string] should NOT match a [number] union member.
+		"TupleUnionTypedIdentNotCatchAll": {
+			input: `
+				type T = [number] | [string]
+				declare val t: T
+				val result = match t {
+					[x: string] => x,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for [number]",
+			},
+		},
+		"TupleUnionTypedIdentExhaustive": {
+			input: `
+				type T = [number] | [string]
+				declare val t: T
+				val result = match t {
+					[x: string] => x,
+					[n: number] => n,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "string | number",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// typeAnnsMatchForEquality symmetry
+		// ---------------------------------------------------------------
+
+		// Patterns with boolean vs true type annotations should not be
+		// considered equal (boolean covers true, but not vice versa).
+		"TypedIdentBooleanVsTrueNotRedundant": {
+			input: `
+				declare val x: boolean
+				val result = match x {
+					a: boolean => a,
+					b: boolean => b,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+			expectedValues: map[string]string{
+				"result": "boolean | boolean",
 			},
 		},
 	}

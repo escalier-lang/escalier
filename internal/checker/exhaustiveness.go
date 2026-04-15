@@ -299,6 +299,11 @@ func (c *Checker) computePatternCoverage(
 				// tuple pattern coverage.
 				if covered := c.computeObjectPatCoverage(pat, targetObj); covered != nil {
 					coverage.CoveredTypes = covered
+				} else if typesMatchForCoverage(inferredType, type_system.Prune(targetType)) {
+					// The pattern's inferred type structurally matches the
+					// entire target (e.g., {value::number} vs {value: number}).
+					// Treat as catch-all since the coverage set is non-finite.
+					coverage.IsCatchAll = true
 				} else {
 					coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 				}
@@ -368,8 +373,17 @@ func (c *Checker) computePatternCoverage(
 				for i, elemPat := range pat.Elems {
 					elemType := type_system.Prune(memberTuple.Elems[i])
 					switch ep := elemPat.(type) {
-					case *ast.WildcardPat, *ast.IdentPat:
+					case *ast.WildcardPat:
 						// Matches anything at this position.
+					case *ast.IdentPat:
+						// An IdentPat without a type annotation is a catch-all.
+						// With a type annotation, check if it covers the element type.
+						if ep.TypeAnn != nil && ep.TypeAnn.InferredType() != nil {
+							inferredType := type_system.Prune(ep.TypeAnn.InferredType())
+							if !typesMatchForCoverage(inferredType, elemType) {
+								matches = false
+							}
+						}
 					case *ast.LitPat:
 						inferredType := type_system.Prune(ep.InferredType())
 						if !typesMatchForCoverage(inferredType, elemType) {
@@ -1072,7 +1086,9 @@ func typeAnnsMatchForEquality(a, b ast.TypeAnn) bool {
 	if aType == nil || bType == nil {
 		return aType == nil && bType == nil
 	}
-	return typesMatchForCoverage(type_system.Prune(aType), type_system.Prune(bType))
+	aPruned := type_system.Prune(aType)
+	bPruned := type_system.Prune(bType)
+	return typesMatchForCoverage(aPruned, bPruned) && typesMatchForCoverage(bPruned, aPruned)
 }
 
 // objPatternsEqual returns true if two ObjectPat values have the same
@@ -1126,8 +1142,15 @@ func branchPartiallyCovers(cov CaseCoverage[ast.Pat], member type_system.Type) b
 			for i, elemPat := range tuplePat.Elems {
 				elemType := type_system.Prune(memberTuple.Elems[i])
 				switch p := elemPat.(type) {
-				case *ast.WildcardPat, *ast.IdentPat:
+				case *ast.WildcardPat:
 					// catch-all — always matches
+				case *ast.IdentPat:
+					if p.TypeAnn != nil && p.TypeAnn.InferredType() != nil {
+						inferredType := type_system.Prune(p.TypeAnn.InferredType())
+						if !typesMatchForCoverage(inferredType, elemType) {
+							allExactMatch = false
+						}
+					}
 				case *ast.LitPat:
 					inferredType := type_system.Prune(p.InferredType())
 					if !typesMatchForCoverage(inferredType, elemType) {

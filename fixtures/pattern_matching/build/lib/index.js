@@ -146,8 +146,6 @@ temp28 = nestedValue;
 if (temp28 != null && "point" in temp28 && temp28.point.length == 2) {
   const {point: [x, y]} = temp28;
   temp27 = x + y;
-} else {
-  temp27 = 0;
 }
 export const nestedMatch = temp27;
 export let num2 = 42;
@@ -158,8 +156,6 @@ temp30 = objectValue;
 if (temp30 != null && "x" in temp30 && "y" in temp30) {
   const {x, y = 0} = temp30;
   temp29 = x + y;
-} else {
-  temp29 = 0;
 }
 export const objectMatch = temp29;
 let temp31;
@@ -168,8 +164,6 @@ temp32 = objectValue;
 if (temp32 != null && "x" in temp32 && "y" in temp32) {
   const {x: a, y: b = 0} = temp32;
   temp31 = a * b;
-} else {
-  temp31 = 0;
 }
 export const objectRename = temp31;
 let temp33;
