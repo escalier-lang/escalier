@@ -1299,6 +1299,203 @@ func TestExhaustiveMatch(t *testing.T) {
 			// Should NOT also produce a "Non-exhaustive match" error
 			// because prior errors gate exhaustiveness checking.
 		},
+
+		// ---------------------------------------------------------------
+		// IdentPat with type annotations
+		// ---------------------------------------------------------------
+
+		"IdentPatWithTypeAnnExhaustive": {
+			input: `
+				declare val x: number | string
+				val result = match x {
+					n: number => n,
+					s: string => s,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | string",
+			},
+		},
+		"IdentPatWithTypeAnnNonExhaustive": {
+			input: `
+				declare val x: number | string
+				val result = match x {
+					n: number => n,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for string",
+			},
+		},
+		"IdentPatWithTypeAnnAndCatchAll": {
+			input: `
+				declare val x: number | string | boolean
+				val result = match x {
+					n: number => n,
+					other => other,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | number | string | boolean",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// ObjShorthandPat with type annotations
+		// ---------------------------------------------------------------
+
+		"ObjShorthandWithTypeAnnExhaustive": {
+			input: `
+				type Item = {kind: "a", value: number} | {kind: "b", value: string}
+				declare val item: Item
+				val result = match item {
+					{kind: "a", value::number} => value,
+					{kind: "b", value::string} => value,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number | string",
+			},
+		},
+		// patternsEqual must distinguish typed idents so that
+		// Container.Box(a:string) and Container.Box(b:number) are not
+		// treated as duplicate patterns during redundancy detection.
+		"ExtractorTypedIdentArgsNotRedundant": {
+			input: `
+				enum Container {
+					Box(inner: string | number),
+					Pair(a: number, b: number),
+				}
+				declare val c: Container
+				val result = match c {
+					Container.Box(a: string) => a,
+					Container.Box(b: number) => b,
+					Container.Pair(a, b) => a + b,
+				}
+			`,
+			// no redundancy warnings expected
+			expectedValues: map[string]string{
+				"result": "string | number | number",
+			},
+		},
+
+		// objPatternsEqual must compare TypeAnn on ObjShorthandPat
+		// so that {value::string} and {value::number} are not duplicates.
+		"ObjShorthandTypedNotRedundant": {
+			input: `
+				type Item = {kind: "a", value: string | number} | {kind: "b", data: boolean}
+				declare val item: Item
+				val result = match item {
+					{kind: "a", value::string} => value,
+					{kind: "a", value::number} => value,
+					{kind: "b", data} => data,
+				}
+			`,
+			// no redundancy warnings expected
+			expectedValues: map[string]string{
+				"result": "string | number | boolean",
+			},
+		},
+
+		// When the shorthand type annotation matches the member's property
+		// type exactly, a duplicate branch should still be flagged redundant.
+		"ObjShorthandTypedDuplicateIsRedundant": {
+			input: `
+				type T = {value: number}
+				declare val t: T
+				val result = match t {
+					{value::number} => value,
+					{value::number} => value,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+			expectedValues: map[string]string{
+				"result": "number | number",
+			},
+		},
+
+		// When the shorthand type annotation matches the member's property
+		// type exactly, a single branch should be recognized as exhaustive.
+		"ObjShorthandTypedMatchesPropertyType": {
+			input: `
+				type T = {value: number}
+				declare val t: T
+				val result = match t {
+					{value::number} => value,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "number",
+			},
+		},
+
+		"ObjShorthandWithTypeAnnNonExhaustive": {
+			input: `
+				type Item = {kind: "a", value: number} | {kind: "b", value: string}
+				declare val item: Item
+				val result = match item {
+					{kind: "a", value::number} => value,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: {kind: \"b\", value: string} is missing inner cases for \"b\"",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// Tuple-union with typed IdentPat
+		// ---------------------------------------------------------------
+
+		// [x: string] should NOT match a [number] union member.
+		"TupleUnionTypedIdentNotCatchAll": {
+			input: `
+				type T = [number] | [string]
+				declare val t: T
+				val result = match t {
+					[x: string] => x,
+				}
+			`,
+			expectedErrs: []string{
+				"Non-exhaustive match: missing cases for [number]",
+			},
+		},
+		"TupleUnionTypedIdentExhaustive": {
+			input: `
+				type T = [number] | [string]
+				declare val t: T
+				val result = match t {
+					[x: string] => x,
+					[n: number] => n,
+				}
+			`,
+			expectedValues: map[string]string{
+				"result": "string | number",
+			},
+		},
+
+		// ---------------------------------------------------------------
+		// typeAnnsMatchForEquality symmetry
+		// ---------------------------------------------------------------
+
+		// Patterns with boolean vs true type annotations should not be
+		// considered equal (boolean covers true, but not vice versa).
+		"TypedIdentBooleanVsTrueNotRedundant": {
+			input: `
+				declare val x: boolean
+				val result = match x {
+					a: boolean => a,
+					b: boolean => b,
+				}
+			`,
+			expectedWarns: []string{
+				"Redundant match branch: this case is already covered by earlier branches",
+			},
+			expectedValues: map[string]string{
+				"result": "boolean | boolean",
+			},
+		},
 	}
 
 	for name, test := range tests {

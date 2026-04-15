@@ -4427,12 +4427,11 @@ func TestMatchExprInference(t *testing.T) {
 				val nested = {point: [1, 2]}
 				val result = match nested {
 					{point: [x, y]} => x + y,
-					_ => 0
 				}
 			`,
 			expectedTypes: map[string]string{
 				"nested": "{point: [1, 2]}",
-				"result": "number | 0",
+				"result": "number",
 			},
 		},
 		// TODO: Handle rest patterns in tuple pattern matching
