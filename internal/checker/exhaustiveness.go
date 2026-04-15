@@ -132,9 +132,9 @@ func expandCoverageSet(targetType type_system.Type) ([]type_system.Type, bool) {
 		return []type_system.Type{targetType}, true
 	}
 
-	// TODO(#436): Object types with all-finite properties (e.g.,
-	// {kind: "flag", value: boolean}) are finite and could be expanded
-	// into their Cartesian product, similar to expandTupleCoverageSet.
+	if obj, ok := targetType.(*type_system.ObjectType); ok {
+		return expandObjectCoverageSet(obj)
+	}
 
 	// Non-finite types (number, string, etc.) cannot be fully
 	// enumerated — they require a catch-all.
@@ -276,6 +276,15 @@ func (c *Checker) computePatternCoverage(
 		if objType, ok := inferredType.(*type_system.ObjectType); ok {
 			if len(objType.MatchedUnionMembers) > 0 {
 				coverage.CoveredTypes = objType.MatchedUnionMembers
+			} else if targetObj, ok := targetType.(*type_system.ObjectType); ok && !targetObj.Nominal {
+				// Structural object target with finite properties: compute
+				// per-property coverage and Cartesian product, analogous to
+				// tuple pattern coverage.
+				if covered := c.computeObjectPatCoverage(pat, targetObj); covered != nil {
+					coverage.CoveredTypes = covered
+				} else {
+					coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
+				}
 			} else {
 				// Non-union structural match: the pattern matched the target
 				// type directly, e.g. matching `{x} => ...` against a
@@ -501,11 +510,17 @@ func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 		}
 	}
 
-	// Nominal ObjectType: compare by ID.
+	// ObjectType: compare by ID for nominal types, or by property-wise
+	// comparison for structural types (e.g., Cartesian product objects from
+	// expandObjectCoverageSet).
 	if patObj, ok := patternType.(*type_system.ObjectType); ok {
 		if memObj, ok := memberType.(*type_system.ObjectType); ok {
 			if patObj.Nominal && memObj.Nominal && patObj.ID != 0 && memObj.ID != 0 {
 				return patObj.ID == memObj.ID
+			}
+			// Structural comparison: match properties by name and type.
+			if !patObj.Nominal && !memObj.Nominal {
+				return objectPropsMatchForCoverage(patObj, memObj)
 			}
 		}
 	}
@@ -539,6 +554,99 @@ func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
 	}
 
 	return false
+}
+
+// computeObjectPatCoverage computes coverage for an ObjectPat against a
+// structural ObjectType target with finite properties. It extracts per-property
+// coverage from the pattern's elements and produces the Cartesian product of
+// covered types as ObjectTypes. Returns nil if the object is not finite or
+// the pattern cannot be analyzed.
+func (c *Checker) computeObjectPatCoverage(
+	pat *ast.ObjectPat,
+	targetObj *type_system.ObjectType,
+) []type_system.Type {
+	// Collect target's string-keyed properties. Number and symbol keys are
+	// skipped because object patterns can only destructure string keys today.
+	// See https://github.com/escalier-lang/escalier/issues/441 for future
+	// support of number and symbol keys in object patterns.
+	var props []propCoverage
+	for _, elem := range targetObj.Elems {
+		prop, ok := elem.(*type_system.PropertyElem)
+		if !ok {
+			continue
+		}
+		if prop.Name.Kind != type_system.StrObjTypeKeyKind {
+			continue
+		}
+		if prop.Optional {
+			return nil
+		}
+		propType := normalizeTargetType(prop.Value)
+		members, finite := expandCoverageSet(propType)
+		if !finite {
+			return nil
+		}
+		props = append(props, propCoverage{name: prop.Name.Str, members: members})
+	}
+
+	if len(props) == 0 {
+		return nil
+	}
+
+	// For each property, determine which members the pattern covers.
+	coveredProps := make([]propCoverage, len(props))
+	for i, prop := range props {
+		elemPat := c.findPropertyPattern(pat, prop.name)
+		if elemPat == nil {
+			// Property omitted from pattern → wildcard, covers all members.
+			coveredProps[i] = propCoverage{name: prop.name, members: prop.members}
+			continue
+		}
+		propUnion := type_system.NewUnionType(nil, prop.members...)
+		matched, ok := c.computePositionCoverage(elemPat, propUnion)
+		if !ok {
+			// Non-finite or unsupported pattern — fall back.
+			return nil
+		}
+		coveredProps[i] = propCoverage{name: prop.name, members: matched}
+	}
+
+	// Cartesian product of per-property sets, wrapped as ObjectTypes.
+	return cartesianProductObjects(coveredProps)
+}
+
+// objectPropsMatchForCoverage compares two structural ObjectTypes by matching
+// their string-keyed properties pairwise using typesMatchForCoverage.
+func objectPropsMatchForCoverage(a, b *type_system.ObjectType) bool {
+	aProps := collectStrProps(a)
+	bProps := collectStrProps(b)
+	if len(aProps) != len(bProps) {
+		return false
+	}
+	for name, aType := range aProps {
+		bType, ok := bProps[name]
+		if !ok {
+			return false
+		}
+		if !typesMatchForCoverage(aType, bType) {
+			return false
+		}
+	}
+	return true
+}
+
+// collectStrProps extracts string-keyed property names and their value types
+// from an ObjectType.
+func collectStrProps(obj *type_system.ObjectType) map[string]type_system.Type {
+	props := make(map[string]type_system.Type)
+	for _, elem := range obj.Elems {
+		if prop, ok := elem.(*type_system.PropertyElem); ok {
+			if prop.Name.Kind == type_system.StrObjTypeKeyKind {
+				props[prop.Name.Str] = type_system.Prune(prop.Value)
+			}
+		}
+	}
+	return props
 }
 
 // expandTupleCoverageSet expands a TupleType into the Cartesian product of
@@ -654,6 +762,101 @@ func cartesianProductTuples(elementSets [][]type_system.Type) []type_system.Type
 	result := make([]type_system.Type, len(current))
 	for i, c := range current {
 		result[i] = type_system.NewTupleType(nil, c...)
+	}
+	return result
+}
+
+// propCoverage holds a property name and its expanded coverage set members.
+type propCoverage struct {
+	name    string
+	members []type_system.Type
+}
+
+// expandObjectCoverageSet expands an ObjectType into the Cartesian product of
+// its property types' coverage sets. Only applies to objects where every
+// string-keyed property has a finite type. A complexity limit of 256
+// combinations is enforced, matching expandTupleCoverageSet.
+func expandObjectCoverageSet(obj *type_system.ObjectType) ([]type_system.Type, bool) {
+
+	var props []propCoverage
+	totalSize := 1
+	for _, elem := range obj.Elems {
+		prop, ok := elem.(*type_system.PropertyElem)
+		if !ok {
+			continue
+		}
+		if prop.Name.Kind != type_system.StrObjTypeKeyKind {
+			continue
+		}
+		if prop.Optional {
+			// Optional properties add an extra "absent" case that
+			// complicates enumeration — treat as non-finite for now.
+			return nil, false
+		}
+		propType := normalizeTargetType(prop.Value)
+		members, finite := expandCoverageSet(propType)
+		if !finite {
+			return nil, false
+		}
+		totalSize *= len(members)
+		if totalSize > 256 {
+			return nil, false
+		}
+		props = append(props, propCoverage{name: prop.Name.Str, members: members})
+	}
+
+	if len(props) == 0 || totalSize <= 1 {
+		// No string-keyed properties, or every property has exactly one
+		// inhabitant — the object has a single value and doesn't benefit
+		// from Cartesian expansion. Treat as non-finite so that a catch-all
+		// is not flagged as redundant.
+		return nil, false
+	}
+
+	return cartesianProductObjects(props), true
+}
+
+// cartesianProductObjects computes the Cartesian product of per-property type
+// sets and returns each combination as an ObjectType. Property order in the
+// input does not matter — downstream comparison (objectPropsMatchForCoverage)
+// matches by name, not position.
+func cartesianProductObjects(props []propCoverage) []type_system.Type {
+	if len(props) == 0 {
+		return []type_system.Type{type_system.NewObjectType(nil, nil)}
+	}
+
+	// Start with partial combinations containing just the first property.
+	type combo = []type_system.Type
+	current := make([]combo, len(props[0].members))
+	for i, t := range props[0].members {
+		current[i] = combo{t}
+	}
+
+	// Extend each combination with subsequent properties.
+	for _, prop := range props[1:] {
+		var next []combo
+		for _, existing := range current {
+			for _, t := range prop.members {
+				extended := make(combo, len(existing)+1)
+				copy(extended, existing)
+				extended[len(existing)] = t
+				next = append(next, extended)
+			}
+		}
+		current = next
+	}
+
+	// Wrap each combination in an ObjectType.
+	result := make([]type_system.Type, len(current))
+	for i, c := range current {
+		elems := make([]type_system.ObjTypeElem, len(c))
+		for j, t := range c {
+			elems[j] = &type_system.PropertyElem{
+				Name:  type_system.NewStrKey(props[j].name),
+				Value: t,
+			}
+		}
+		result[i] = type_system.NewObjectType(nil, elems)
 	}
 	return result
 }
@@ -972,11 +1175,11 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 	}
 
 	// Collect the string-keyed properties and their types.
-	type propInfo struct {
+	type objPropInfo struct {
 		name     string
 		propType type_system.Type
 	}
-	var props []propInfo
+	var props []objPropInfo
 	for _, elem := range memberObj.Elems {
 		prop, ok := elem.(*type_system.PropertyElem)
 		if !ok {
@@ -985,7 +1188,7 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 		if prop.Name.Kind != type_system.StrObjTypeKeyKind {
 			continue
 		}
-		props = append(props, propInfo{
+		props = append(props, objPropInfo{
 			name:     prop.Name.Str,
 			propType: type_system.Prune(prop.Value),
 		})
