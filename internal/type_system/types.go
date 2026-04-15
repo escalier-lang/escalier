@@ -1828,22 +1828,27 @@ func litPrimKind(lit *LitType) Prim {
 	}
 }
 
-func NewUnionType(provenance Provenance, types ...Type) Type {
-	// Flatten nested unions and remove Never types in a single pass.
-	// Flattening ensures that primitives inside nested unions are visible
-	// for the literal absorption pass below.
-	filtered := []Type{}
+// flattenUnionTypes recursively collects all non-Never leaf types from a
+// slice of types, flattening any nested UnionTypes in order.
+func flattenUnionTypes(dst []Type, types []Type) []Type {
 	for _, t := range types {
-		if union, ok := t.(*UnionType); ok {
-			for _, member := range union.Types {
-				if _, isNever := member.(*NeverType); !isNever {
-					filtered = append(filtered, member)
-				}
-			}
-		} else if _, isNever := t.(*NeverType); !isNever {
-			filtered = append(filtered, t)
+		switch t := t.(type) {
+		case *UnionType:
+			dst = flattenUnionTypes(dst, t.Types)
+		case *NeverType:
+			// skip
+		default:
+			dst = append(dst, t)
 		}
 	}
+	return dst
+}
+
+func NewUnionType(provenance Provenance, types ...Type) Type {
+	// Recursively flatten nested unions and remove Never types.
+	// Flattening ensures that primitives inside nested unions are visible
+	// for the literal absorption pass below.
+	filtered := flattenUnionTypes(nil, types)
 
 	// Simplify literal types: if a primitive is present, remove all literal
 	// types of the same kind (e.g. number absorbs 0). Also, true | false

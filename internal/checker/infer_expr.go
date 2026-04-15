@@ -1600,10 +1600,10 @@ func (c *Checker) getEnumTypeFromExtractor(ctx Context, p *ast.ExtractorPat) typ
 				}
 				returnType = SubstituteTypeParams(returnType, substitutions)
 			}
-			// The constructor return type has TypeAlias: nil because the enum's
-			// type alias is created after the constructor (infer_stmt.go:608).
-			// Resolve and attach it so that unifyExtractor's tuple substitution
-			// (which requires TypeAlias != nil) works correctly.
+			// TODO(#446): The constructor return type has TypeAlias: nil because
+			// the enum's type alias is created after the constructor. This
+			// fallback resolution can be removed once inferEnumDecl forward-
+			// declares the TypeAlias before processing variants.
 			if ref, ok := returnType.(*type_system.TypeRefType); ok && ref.TypeAlias == nil {
 				if typeAlias := resolveQualifiedTypeAlias(ctx, ref.Name); typeAlias != nil {
 					returnType = type_system.NewTypeRefTypeFromQualIdent(ref.Provenance(), ref.Name, typeAlias, ref.TypeArgs...)

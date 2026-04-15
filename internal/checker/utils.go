@@ -197,7 +197,6 @@ func resolveQualifiedTypeAlias(ctx Context, qualIdent type_system.QualIdent) *ty
 	}
 }
 
-
 func resolveQualifiedValue(ctx Context, qualIdent type_system.QualIdent) *type_system.Binding {
 	switch qi := qualIdent.(type) {
 	case *type_system.Ident:

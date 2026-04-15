@@ -353,6 +353,21 @@ func TestNewUnionTypeSimplifiesLiterals(t *testing.T) {
 		result := NewUnionType(nil, NewNumPrimType(nil), NewStrPrimType(nil), NewNumPrimType(nil))
 		assert.Equal(t, "number | string", result.String())
 	})
+
+	t.Run("deeply nested unions are fully flattened", func(t *testing.T) {
+		// Construct a doubly-nested union by bypassing NewUnionType.
+		inner := &UnionType{Types: []Type{NewNumPrimType(nil), NewStrPrimType(nil)}}
+		outer := &UnionType{Types: []Type{inner, NewBoolPrimType(nil)}}
+		result := NewUnionType(nil, outer, NewNullType(nil))
+		union, ok := result.(*UnionType)
+		if assert.True(t, ok, "expected UnionType") {
+			assert.Equal(t, 4, len(union.Types), "should have 4 flat members, not nested")
+			for i, member := range union.Types {
+				_, isNested := member.(*UnionType)
+				assert.False(t, isNested, "member %d should not be a nested UnionType", i)
+			}
+		}
+	})
 }
 
 func TestObjectType_Equal(t *testing.T) {

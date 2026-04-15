@@ -1253,9 +1253,8 @@ func (c *Checker) unifyExtractor(
 	// NeverType when "T" is not in scope (it's only in the enum declaration
 	// scope, not the match expression's scope).
 	//
-	// Note: instantiateGenericFunc only substitutes type variables within
-	// the existing params and return type — it never changes the param count,
-	// so the len(Params) == 1 check above remains valid.
+	// Note: instantiateGenericFunc preserves the param count, so the
+	// single-param validation on line 1243 is still satisfied after this.
 	fn := methodElem.Fn
 	if len(fn.TypeParams) > 0 {
 		fn = c.instantiateGenericFunc(fn)
@@ -1278,9 +1277,10 @@ func (c *Checker) unifyExtractor(
 	// TODO(#430): We might have to expand the subject if the type alias
 	// it's using points to another type alias.
 	if typeRef, ok := subject.(*type_system.TypeRefType); ok {
-		// The constructor return type created in inferEnumDecl has TypeAlias: nil
-		// because the enum's type alias is registered after the constructor.
-		// Resolve it from the scope as a fallback.
+		// TODO(#446): The constructor return type has TypeAlias: nil because
+		// the enum's type alias is created after the constructor. This
+		// fallback resolution can be removed once inferEnumDecl forward-
+		// declares the TypeAlias before processing variants.
 		typeAlias := typeRef.TypeAlias
 		if typeAlias == nil {
 			typeAlias = resolveQualifiedTypeAlias(ctx, typeRef.Name)
