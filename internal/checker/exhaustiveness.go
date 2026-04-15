@@ -1012,9 +1012,11 @@ func patternsEqual(a, b ast.Pat) bool {
 		_, ok := b.(*ast.WildcardPat)
 		return ok
 	case *ast.IdentPat:
-		// All ident patterns are catch-alls; treat them as equal.
-		_, ok := b.(*ast.IdentPat)
-		return ok
+		b, ok := b.(*ast.IdentPat)
+		if !ok {
+			return false
+		}
+		return typeAnnsMatchForEquality(a.TypeAnn, b.TypeAnn)
 	case *ast.ExtractorPat:
 		b, ok := b.(*ast.ExtractorPat)
 		if !ok || ast.QualIdentToString(a.Name) != ast.QualIdentToString(b.Name) || len(a.Args) != len(b.Args) {
@@ -1054,6 +1056,25 @@ func patternsEqual(a, b ast.Pat) bool {
 	}
 }
 
+// typeAnnsMatchForEquality returns true if two optional type annotations are
+// structurally equivalent for pattern equality purposes. Two nil annotations
+// match; a nil and non-nil do not; two non-nil annotations match if their
+// inferred types match via typesMatchForCoverage.
+func typeAnnsMatchForEquality(a, b ast.TypeAnn) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	aType := a.InferredType()
+	bType := b.InferredType()
+	if aType == nil || bType == nil {
+		return aType == nil && bType == nil
+	}
+	return typesMatchForCoverage(type_system.Prune(aType), type_system.Prune(bType))
+}
+
 // objPatternsEqual returns true if two ObjectPat values have the same
 // structure: same number of elements, same keys, and equal value patterns.
 func objPatternsEqual(a, b *ast.ObjectPat) bool {
@@ -1070,7 +1091,7 @@ func objPatternsEqual(a, b *ast.ObjectPat) bool {
 			}
 		case *ast.ObjShorthandPat:
 			eb, ok := elemB.(*ast.ObjShorthandPat)
-			if !ok || ea.Key.Name != eb.Key.Name {
+			if !ok || ea.Key.Name != eb.Key.Name || !typeAnnsMatchForEquality(ea.TypeAnn, eb.TypeAnn) {
 				return false
 			}
 		case *ast.ObjRestPat:

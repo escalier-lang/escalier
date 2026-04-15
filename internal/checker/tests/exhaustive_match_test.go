@@ -1357,6 +1357,46 @@ func TestExhaustiveMatch(t *testing.T) {
 				"result": "number | string",
 			},
 		},
+		// patternsEqual must distinguish typed idents so that
+		// Container.Box(a:string) and Container.Box(b:number) are not
+		// treated as duplicate patterns during redundancy detection.
+		"ExtractorTypedIdentArgsNotRedundant": {
+			input: `
+				enum Container {
+					Box(inner: string | number),
+					Pair(a: number, b: number),
+				}
+				declare val c: Container
+				val result = match c {
+					Container.Box(a: string) => a,
+					Container.Box(b: number) => b,
+					Container.Pair(a, b) => a + b,
+				}
+			`,
+			// no redundancy warnings expected
+			expectedValues: map[string]string{
+				"result": "string | number | number",
+			},
+		},
+
+		// objPatternsEqual must compare TypeAnn on ObjShorthandPat
+		// so that {value::string} and {value::number} are not duplicates.
+		"ObjShorthandTypedNotRedundant": {
+			input: `
+				type Item = {kind: "a", value: string | number} | {kind: "b", data: boolean}
+				declare val item: Item
+				val result = match item {
+					{kind: "a", value::string} => value,
+					{kind: "a", value::number} => value,
+					{kind: "b", data} => data,
+				}
+			`,
+			// no redundancy warnings expected
+			expectedValues: map[string]string{
+				"result": "string | number | boolean",
+			},
+		},
+
 		"ObjShorthandWithTypeAnnNonExhaustive": {
 			input: `
 				type Item = {kind: "a", value: number} | {kind: "b", value: string}
