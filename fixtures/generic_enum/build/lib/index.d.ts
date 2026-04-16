@@ -6,4 +6,4 @@ declare namespace MyOption {
 }
 declare type MyOption<T> = MyOption.Some<T> | MyOption.None<T>;
 declare const option: MyOption<number>;
-declare const result: number | 0;
+declare const result: number;

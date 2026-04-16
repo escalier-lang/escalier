@@ -36,7 +36,7 @@ func TestImportInferenceScript(t *testing.T) {
 			expectedValues: map[string]string{
 				"alignItems": "Globals | DataType.SelfPosition | \"anchor-center\" | \"baseline\" | \"normal\" | \"stretch\" | string & {}",
 				"properties": "{}",
-				"color":      "Globals | DataType.Color | undefined | undefined",
+				"color":      "Globals | DataType.Color | undefined",
 			},
 		},
 		"NamespaceImportReact": {

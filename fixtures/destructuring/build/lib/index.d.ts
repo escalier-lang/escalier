@@ -2,7 +2,7 @@ declare type FooBar = {kind: "foo", id: number, foo: string} | {kind: "bar", id:
 declare type Point = {x: number, y: number};
 declare const fb: FooBar;
 declare const _ignore1: "foo" | "bar";
-declare const _ignore2: number | number;
+declare const _ignore2: number;
 declare const rest2: {foo: string, bar: boolean};
 declare const obj: {a: true, b: false, c: 0, e: "foo", f: "bar", g: "baz", h: 1};
 export declare const a: true;
@@ -13,7 +13,7 @@ export declare const rest1: {f: "bar", g: "baz", h: 1};
 declare const array: [5, 10, "foo", "bar"];
 declare const bar: boolean | undefined;
 declare const foo: string | undefined;
-declare const id: number | number;
+declare const id: number;
 declare const kind: "foo" | "bar";
 export declare const fst: 5;
 export declare const other: ["foo", "bar"];

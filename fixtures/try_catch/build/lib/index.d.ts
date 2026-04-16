@@ -1,5 +1,5 @@
 export declare const basicTryCatch: "success" | "error";
-export declare const blockBody: number | 0;
+export declare const blockBody: number;
 export declare const mixedReturn: 42 | "error";
 export declare const multipleCases: "caught error" | "unknown";
 export declare const nestedTryCatch: 5 | 10 | 0;

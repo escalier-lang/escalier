@@ -415,7 +415,7 @@ func TestGetIteratorReturnType(t *testing.T) {
 		)
 		returnType := c.GetIteratorReturnType(ctx, unionType)
 		require.NotNil(t, returnType, "string | Array<number> should have an iterator return type")
-		assert.Equal(t, "BuiltinIteratorReturn | BuiltinIteratorReturn", returnType.String())
+		assert.Equal(t, "BuiltinIteratorReturn", returnType.String())
 	})
 
 	t.Run("UnionWithNonIterable", func(t *testing.T) {

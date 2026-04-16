@@ -11,6 +11,12 @@ import (
 	"github.com/vektah/gqlparser/v2/validator/rules"
 )
 
+type matchCasePatternInfo struct {
+	patternType type_system.Type
+	bindings    map[string]*type_system.Binding
+	errors      []Error
+}
+
 func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Error) {
 	var exprType type_system.Type
 	var errors []Error
@@ -1366,19 +1372,43 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		}
 	}
 
-	// Collect the types of all case bodies
+	// Phase 1: Infer all pattern types and collect bindings up front.
+	// This allows Phase 2 to inspect every pattern before any unification
+	// with the target type has occurred.
+	//
+	// Note: the temporary scopes created here are discarded — Phase 3 creates
+	// fresh scopes and re-adds the bindings. This is safe because inferPattern
+	// has no side effects on the scope beyond the returned bindings map.
+	patternInfos := make([]matchCasePatternInfo, len(expr.Cases))
+	for i, matchCase := range expr.Cases {
+		caseCtx := ctx.WithNewScope()
+		patType, bindings, patErrors := c.inferPattern(caseCtx, matchCase.Pattern)
+		patternInfos[i] = matchCasePatternInfo{patType, bindings, patErrors}
+	}
+
+	// Phase 2: If the target is an unresolved TypeVar (e.g. an unannotated
+	// function parameter), infer its type from the match patterns before
+	// processing individual cases.
+	if _, isTypeVar := type_system.Prune(targetType).(*type_system.TypeVarType); isTypeVar {
+		if inferredType := c.inferTargetTypeFromPatterns(ctx, expr.Cases, patternInfos); inferredType != nil {
+			unifyErrors := c.Unify(ctx, targetType, inferredType)
+			matchErrors = slices.Concat(matchErrors, unifyErrors)
+		}
+	}
+
+	// Phase 3: Process each case — unify pattern with target, check guards,
+	// and infer body types.
 	caseTypes := make([]type_system.Type, 0, len(expr.Cases))
 
-	for _, matchCase := range expr.Cases {
+	for i, matchCase := range expr.Cases {
 		// Create a new scope for this case to handle pattern bindings
 		caseCtx := ctx.WithNewScope()
 
-		// Infer the pattern type and get bindings
-		patternType, patternBindings, patternErrors := c.inferPattern(caseCtx, matchCase.Pattern)
-		matchErrors = slices.Concat(matchErrors, patternErrors)
+		patternType := patternInfos[i].patternType
+		matchErrors = slices.Concat(matchErrors, patternInfos[i].errors)
 
 		// Add pattern bindings to the case scope
-		for name, binding := range patternBindings {
+		for name, binding := range patternInfos[i].bindings {
 			caseCtx.Scope.setValue(name, binding)
 		}
 
@@ -1478,6 +1508,111 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 
 	expr.SetInferredType(resultType)
 	return resultType, errors
+}
+
+// inferTargetTypeFromPatterns examines the match case patterns to determine what
+// type the match target should have. This is used when the target is an unresolved
+// TypeVar (e.g. an unannotated function parameter). Each pattern type contributes
+// differently:
+//   - ExtractorPat: the parent enum type (from the constructor's return type)
+//   - InstancePat: the class type (from the type alias)
+//   - LitPat, ObjectPat, TuplePat: the pattern's inferred type directly
+//   - IdentPat, WildcardPat: no contribution (IdentPat contributes indirectly
+//     through body usage via the alias chain created during unification)
+//
+// When multiple patterns contribute types, a union is built.
+func (c *Checker) inferTargetTypeFromPatterns(
+	ctx Context,
+	cases []*ast.MatchCase,
+	patternInfos []matchCasePatternInfo,
+) type_system.Type {
+	var targetTypes []type_system.Type
+	seenEnums := make(map[string]bool)
+
+	for i, matchCase := range cases {
+		switch p := matchCase.Pattern.(type) {
+		case *ast.ExtractorPat:
+			// Multiple extractors from the same enum produce the same enum
+			// type, so we deduplicate by enum name. Extractors from different
+			// enums each contribute their own type.
+			if enumType := c.getEnumTypeFromExtractor(ctx, p); enumType != nil {
+				if ref, ok := enumType.(*type_system.TypeRefType); ok {
+					key := type_system.QualIdentToString(ref.Name)
+					if !seenEnums[key] {
+						seenEnums[key] = true
+						targetTypes = append(targetTypes, enumType)
+					}
+				}
+			}
+		case *ast.InstancePat:
+			typeAlias := resolveQualifiedTypeAlias(ctx, convertQualIdent(p.ClassName))
+			if typeAlias != nil {
+				var typeArgs []type_system.Type
+				for range typeAlias.TypeParams {
+					typeArgs = append(typeArgs, c.FreshVar(nil))
+				}
+				targetTypes = append(targetTypes, type_system.NewTypeRefTypeFromQualIdent(
+					nil, convertQualIdent(p.ClassName), typeAlias, typeArgs...,
+				))
+			}
+		case *ast.LitPat:
+			targetTypes = append(targetTypes, patternInfos[i].patternType)
+		case *ast.ObjectPat:
+			targetTypes = append(targetTypes, patternInfos[i].patternType)
+		case *ast.TuplePat:
+			targetTypes = append(targetTypes, patternInfos[i].patternType)
+			// IdentPat and WildcardPat contribute no type info during pre-scan.
+			// IdentPat bindings are aliased with the target TypeVar in Phase 3,
+			// so body expressions can still constrain the target indirectly.
+		}
+	}
+
+	if len(targetTypes) == 0 {
+		return nil
+	}
+	if len(targetTypes) == 1 {
+		return targetTypes[0]
+	}
+	return type_system.NewUnionType(nil, targetTypes...)
+}
+
+// getEnumTypeFromExtractor extracts the parent enum type from an extractor
+// pattern's constructor. For example, given `Option.Some(value)`, it returns
+// the `Option<T>` TypeRefType with type params instantiated as fresh TypeVars.
+func (c *Checker) getEnumTypeFromExtractor(ctx Context, p *ast.ExtractorPat) type_system.Type {
+	binding := resolveQualifiedValue(ctx, convertQualIdent(p.Name))
+	if binding == nil {
+		return nil
+	}
+	objType, ok := type_system.Prune(binding.Type).(*type_system.ObjectType)
+	if !ok {
+		return nil
+	}
+	for _, elem := range objType.Elems {
+		if ctor, ok := elem.(*type_system.ConstructorElem); ok {
+			returnType := ctor.Fn.Return
+			if len(ctor.Fn.TypeParams) > 0 {
+				// Instantiate type params with fresh TypeVars, following the
+				// same pattern as instantiateGenericFunc.
+				substitutions := make(map[string]type_system.Type)
+				for _, tp := range ctor.Fn.TypeParams {
+					substitutions[tp.Name] = c.FreshVar(nil)
+				}
+				returnType = SubstituteTypeParams(returnType, substitutions)
+			}
+			// TODO(#446): The constructor return type has TypeAlias: nil because
+			// the enum's type alias is created after the constructor. This
+			// fallback resolution can be removed once inferEnumDecl forward-
+			// declares the TypeAlias before processing variants.
+			if ref, ok := returnType.(*type_system.TypeRefType); ok && ref.TypeAlias == nil {
+				if typeAlias := resolveQualifiedTypeAlias(ctx, ref.Name); typeAlias != nil {
+					returnType = type_system.NewTypeRefTypeFromQualIdent(ref.Provenance(), ref.Name, typeAlias, ref.TypeArgs...)
+				}
+			}
+			return returnType
+		}
+	}
+	return nil
 }
 
 // inferBlock infers the types of all statements in a block and returns the type

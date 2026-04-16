@@ -1811,17 +1811,104 @@ type UnionType struct {
 	provenance Provenance
 }
 
-func NewUnionType(provenance Provenance, types ...Type) Type {
-	// Remove any Never types from the union – they do not affect the
-	// resulting type and can lead to spurious union members (e.g. `never`
-	// appearing alongside other error types). If all members are filtered out,
-	// we fall back to the never type.
-	filtered := []Type{}
+// litPrimKind returns the Prim that a LitType corresponds to, or "" if the
+// literal has no primitive supertype (e.g. null, undefined).
+func litPrimKind(lit *LitType) Prim {
+	switch lit.Lit.(type) {
+	case *NumLit:
+		return NumPrim
+	case *StrLit:
+		return StrPrim
+	case *BoolLit:
+		return BoolPrim
+	case *BigIntLit:
+		return BigIntPrim
+	default:
+		return ""
+	}
+}
+
+// flattenUnionTypes recursively collects all non-Never leaf types from a
+// slice of types, flattening any nested UnionTypes in order.
+func flattenUnionTypes(dst []Type, types []Type) []Type {
 	for _, t := range types {
-		if _, isNever := t.(*NeverType); !isNever {
-			filtered = append(filtered, t)
+		switch t := t.(type) {
+		case *UnionType:
+			dst = flattenUnionTypes(dst, t.Types)
+		case *NeverType:
+			// skip
+		default:
+			dst = append(dst, t)
 		}
 	}
+	return dst
+}
+
+func NewUnionType(provenance Provenance, types ...Type) Type {
+	// Recursively flatten nested unions and remove Never types.
+	// Flattening ensures that primitives inside nested unions are visible
+	// for the literal absorption pass below.
+	filtered := flattenUnionTypes(nil, types)
+
+	// Simplify literal types: if a primitive is present, remove all literal
+	// types of the same kind (e.g. number absorbs 0). Also, true | false
+	// collapses to boolean.
+	primSet := make(map[Prim]bool)
+	hasBoolTrue := false
+	hasBoolFalse := false
+	for _, t := range filtered {
+		if prim, ok := t.(*PrimType); ok {
+			primSet[prim.Prim] = true
+		}
+		if lit, ok := t.(*LitType); ok {
+			if bl, ok := lit.Lit.(*BoolLit); ok {
+				if bl.Value {
+					hasBoolTrue = true
+				} else {
+					hasBoolFalse = true
+				}
+			}
+		}
+	}
+
+	// If both true and false are present (and boolean isn't already), add boolean.
+	addBoolean := hasBoolTrue && hasBoolFalse && !primSet[BoolPrim]
+	if addBoolean {
+		primSet[BoolPrim] = true
+	}
+
+	if len(primSet) > 0 {
+		simplified := make([]Type, 0, len(filtered))
+		for _, t := range filtered {
+			if lit, ok := t.(*LitType); ok {
+				if kind := litPrimKind(lit); kind != "" && primSet[kind] {
+					continue // absorbed by the primitive
+				}
+			}
+			simplified = append(simplified, t)
+		}
+		if addBoolean {
+			simplified = append(simplified, NewBoolPrimType(provenance))
+		}
+		filtered = simplified
+	}
+
+	// Deduplicate structurally equal types.
+	deduped := make([]Type, 0, len(filtered))
+	for _, t := range filtered {
+		isDup := false
+		for _, existing := range deduped {
+			if Equals(t, existing) {
+				isDup = true
+				break
+			}
+		}
+		if !isDup {
+			deduped = append(deduped, t)
+		}
+	}
+	filtered = deduped
+
 	if len(filtered) == 0 {
 		return NewNeverType(nil)
 	}

@@ -129,7 +129,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `"on" | "off" | string`,
+				"result": `string`,
 			},
 		},
 		"InstancePatWithInnerNonExhaustive": {
@@ -159,7 +159,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `"active" | "inactive" | string`,
+				"result": `string`,
 			},
 		},
 		"InstancePatWithEnumPropertyNonExhaustive": {
@@ -189,7 +189,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "1 | 2 | number",
+				"result": "number",
 			},
 		},
 		"InstancePatWithLiteralPropertyNonExhaustive": {
@@ -708,7 +708,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | number | number",
+				"result": "number",
 			},
 		},
 		// A tuple with a rest element covered by a catch-all.
@@ -791,7 +791,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `"zero" | "other" | string`,
+				"result": `string`,
 			},
 		},
 		// Case 17: Nested extractor without catch-all inner pattern.
@@ -827,7 +827,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `"yes" | "no" | string`,
+				"result": `string`,
 			},
 		},
 		// Case 19: Structural object patterns with catch-all bindings.
@@ -842,7 +842,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | number",
+				"result": "number",
 			},
 		},
 		// Case 20: Structural object patterns without inner catch-all.
@@ -900,7 +900,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "1 | 2 | 3 | 4 | number",
+				"result": "number",
 			},
 		},
 		// Multi-arg extractor missing a boolean combination.
@@ -940,7 +940,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `number | string | "nothing"`,
+				"result": `number | string`,
 			},
 		},
 		// Nested enum: Option wrapping Result, missing Result.Err.
@@ -981,7 +981,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": `"active todo" | "inactive todo" | string`,
+				"result": `string`,
 			},
 		},
 		// Object pattern with enum-valued property, missing variant.
@@ -1336,7 +1336,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				}
 			`,
 			expectedValues: map[string]string{
-				"result": "number | number | string | boolean",
+				"result": "number | string | boolean",
 			},
 		},
 
@@ -1375,7 +1375,7 @@ func TestExhaustiveMatch(t *testing.T) {
 			`,
 			// no redundancy warnings expected
 			expectedValues: map[string]string{
-				"result": "string | number | number",
+				"result": "string | number",
 			},
 		},
 
@@ -1412,7 +1412,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				"Redundant match branch: this case is already covered by earlier branches",
 			},
 			expectedValues: map[string]string{
-				"result": "number | number",
+				"result": "number",
 			},
 		},
 
@@ -1493,7 +1493,7 @@ func TestExhaustiveMatch(t *testing.T) {
 				"Redundant match branch: this case is already covered by earlier branches",
 			},
 			expectedValues: map[string]string{
-				"result": "boolean | boolean",
+				"result": "boolean",
 			},
 		},
 	}
