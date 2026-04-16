@@ -60,12 +60,12 @@ After Plan A removed the retry loop, two `ExpandType` call sites remain in
 
 1. **KeyOfType expansion** (lines 345-346): Expands both `keyof` types to get their
    concrete keys, then unifies the results. This calls
-   `c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth+1)`.
+   `c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth+1, seen)`.
 
    **Risk:** If the expanded keys contain TypeRefTypes, they'll be expanded again on
    re-entry to `unifyPruned` via Plan A's explicit cases. The visited set from
    Plan B handles cycles. **No change needed**, but verify with a test case like:
-   ```
+   ```escalier
    type A = { x: number, y: string }
    type B = { x: number, y: string }
    // keyof A should unify with keyof B
@@ -85,13 +85,13 @@ they terminate promptly (not after hitting a depth limit):
 
 #### Scenario 1: TypeRefType with TypeAlias set
 
-```
+```escalier
 // HTMLAttributeAnchorTarget-like scenario: type alias used in annotation
 type Target = "_self" | "_blank" | "_parent" | "_top"
 val t: Target = "_blank"
 ```
 
-```
+```escalier
 // Array<any> scenario: unifying Array types with different references
 val a: Array<any> = [1, "hello", true]
 val b: Array<any> = a
@@ -99,7 +99,7 @@ val b: Array<any> = a
 
 #### Scenario 2: TupleType with rest spreads
 
-```
+```escalier
 // Rest spreads that expand to Array interface
 val concat = fn <T>(a: Array<T>, b: Array<T>): [...Array<T>, ...Array<T>] => {
     // ...
@@ -107,7 +107,7 @@ val concat = fn <T>(a: Array<T>, b: Array<T>): [...Array<T>, ...Array<T>] => {
 val result: Array<number> = concat([1, 2], [3, 4])
 ```
 
-```
+```escalier
 // Nested rest spreads
 val nested: [...Array<number>, ...Array<string>] = [1, 2, "a", "b"]
 ```

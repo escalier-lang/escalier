@@ -213,9 +213,21 @@ Define an analogous seen set for expansion:
 // Using only the TypeAlias pointer would be wrong: List<number> and List<string>
 // share the same TypeAlias, but they are different instantiations that should
 // both be expandable. We include the stringified type args to distinguish them.
+//
+// We use fmt.Sprint for structural comparison of type args. This is necessary
+// because type args can be structural types (e.g. ObjectType) where two
+// identical {x: number, y: number} literals may have different pointers.
+// Pointer-based identity would miss cycles in cases like List<{x: number}>.
+//
+// The one edge case is TypeVar binding: if a TypeVar in the type args gets
+// bound between expansion calls, fmt.Sprint could produce a different string.
+// In practice this is unlikely to cause problems because the recursive
+// TypeRefType in a type alias (e.g. the `List<T>` in `tail: List<T> | null`)
+// uses the same TypeVar pointer as the outer reference, so fmt.Sprint produces
+// the same output whether or not the TypeVar is bound.
 type expandSeenKey struct {
     alias    unsafe.Pointer // TypeAlias pointer
-    typeArgs string         // fmt.Sprint(typeArgs) — distinguishes instantiations
+    typeArgs string         // fmt.Sprint(typeArgs) — structural comparison
 }
 
 type expandSeen map[expandSeenKey]bool

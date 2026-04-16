@@ -150,7 +150,7 @@ handle cycle detection.
 3. **Test TypeRefType + TypeRefType (different alias)** — Write a test with two
    different type aliases that resolve to the same structural type and verify they
    unify:
-   ```
+   ```escalier
    type Foo = { x: number }
    type Bar = { x: number }
    val a: Foo = ...
@@ -158,7 +158,7 @@ handle cycle detection.
    ```
 4. **Test TypeRefType + concrete type** — Write a test where one side is a type
    alias and the other is an inline type:
-   ```
+   ```escalier
    type Foo = { x: number }
    val a: Foo = { x: 5 }  // TypeRefType vs ObjectType
    ```
