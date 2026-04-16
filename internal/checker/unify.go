@@ -1277,14 +1277,7 @@ func (c *Checker) unifyExtractor(
 	// TODO(#430): We might have to expand the subject if the type alias
 	// it's using points to another type alias.
 	if typeRef, ok := subject.(*type_system.TypeRefType); ok {
-		// TODO(#446): The constructor return type has TypeAlias: nil because
-		// the enum's type alias is created after the constructor. This
-		// fallback resolution can be removed once inferEnumDecl forward-
-		// declares the TypeAlias before processing variants.
 		typeAlias := typeRef.TypeAlias
-		if typeAlias == nil {
-			typeAlias = resolveQualifiedTypeAlias(ctx, typeRef.Name)
-		}
 		if typeAlias != nil && len(typeRef.TypeArgs) >= len(typeAlias.TypeParams) {
 			substitutions := make(map[string]type_system.Type)
 			for i, typeParam := range typeAlias.TypeParams {
