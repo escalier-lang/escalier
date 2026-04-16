@@ -464,6 +464,17 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 		typeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
 	}
 
+	// Forward-declare the enum's TypeAlias with a placeholder before processing
+	// variants. This ensures constructor return types can reference the TypeAlias
+	// directly, eliminating the need for fallback resolution in downstream consumers.
+	enumPlaceholder := c.FreshVar(&ast.NodeProvenance{Node: decl})
+	typeAlias := &type_system.TypeAlias{
+		Type:       enumPlaceholder,
+		TypeParams: typeParams,
+		Exported:   decl.Export(),
+	}
+	ctx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
+
 	variantTypes := make([]type_system.Type, len(decl.Elems))
 
 	for i, elem := range decl.Elems {
@@ -489,7 +500,7 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 				&ast.NodeProvenance{Node: elem},
 				typeParams,
 				params,
-				type_system.NewTypeRefType(nil, decl.Name.Name, nil, typeArgs...),
+				type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
 				type_system.NewNeverType(nil),
 			)
 			constructorElem := &type_system.ConstructorElem{Fn: funcType}
@@ -600,18 +611,13 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 		}
 	}
 
-	// Build the union type for the enum itself. The enum's top-level type
-	// alias is a union of all variant types (e.g. Option<T> = Option.Some<T> | Option.None).
+	// Build the union type for the enum itself and unify it with the
+	// placeholder that was forward-declared before processing variants.
 	enumUnionType := type_system.NewUnionType(
 		&ast.NodeProvenance{Node: decl}, variantTypes...)
 
-	typeAlias := &type_system.TypeAlias{
-		Type:       enumUnionType,
-		TypeParams: typeParams,
-		Exported:   decl.Export(),
-	}
-
-	ctx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
+	unifyErrors := c.Unify(ctx, enumPlaceholder, enumUnionType)
+	errors = slices.Concat(errors, unifyErrors)
 
 	return errors
 }
