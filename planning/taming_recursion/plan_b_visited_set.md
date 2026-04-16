@@ -115,10 +115,14 @@ pass. In practice this is unlikely to cause problems because:
 ```go
 // unifyPairKey identifies a pair of types being unified.
 // For TypeRefType, we use the TypeAlias pointer + stringified type args
-// to capture meaningful identity across allocations.
+// to capture meaningful identity across allocations. Without type args,
+// List<number> and List<string> would produce the same key (both share
+// the same TypeAlias pointer), causing false cycle detection.
 type unifyPairKey struct {
-    t1 unsafe.Pointer
-    t2 unsafe.Pointer
+    t1     unsafe.Pointer
+    t1Args string // fmt.Sprint(typeArgs) for TypeRefType, empty otherwise
+    t2     unsafe.Pointer
+    t2Args string // fmt.Sprint(typeArgs) for TypeRefType, empty otherwise
 }
 
 type unifySeen map[unifyPairKey]bool
@@ -164,10 +168,7 @@ In the TypeRefType expansion cases added by Plan A:
 ```go
 // | TypeRefType, _ -> expand t1
 if ref1, ok := t1.(*type_system.TypeRefType); ok {
-    key := unifyPairKey{
-        t1: typeIdentityPointer(ref1),
-        t2: typeIdentityPointer(t2),
-    }
+    key := makeUnifyPairKey(ref1, t2)
     if seen[key] {
         return nil // co-inductive assumption: assume success
     }
@@ -181,17 +182,25 @@ if ref1, ok := t1.(*type_system.TypeRefType); ok {
 }
 ```
 
-The `typeIdentityPointer` helper extracts a stable pointer for any type:
+The `makeUnifyPairKey` helper builds a key that includes both the stable pointer
+and type args for `TypeRefType`:
 
 ```go
-func typeIdentityPointer(t type_system.Type) unsafe.Pointer {
-    // For TypeRefType, use the TypeAlias pointer if available
-    if ref, ok := t.(*type_system.TypeRefType); ok && ref.TypeAlias != nil {
-        return unsafe.Pointer(ref.TypeAlias)
+func makeUnifyPairKey(t1, t2 type_system.Type) unifyPairKey {
+    key := unifyPairKey{}
+    if ref, ok := t1.(*type_system.TypeRefType); ok && ref.TypeAlias != nil {
+        key.t1 = unsafe.Pointer(ref.TypeAlias)
+        key.t1Args = fmt.Sprint(ref.TypeArgs)
+    } else {
+        key.t1 = pointerOf(t1)
     }
-    // For other types, use the type's own pointer
-    // This requires that the type was not reconstructed between calls
-    return pointerOf(t)
+    if ref, ok := t2.(*type_system.TypeRefType); ok && ref.TypeAlias != nil {
+        key.t2 = unsafe.Pointer(ref.TypeAlias)
+        key.t2Args = fmt.Sprint(ref.TypeArgs)
+    } else {
+        key.t2 = pointerOf(t2)
+    }
+    return key
 }
 ```
 
@@ -306,31 +315,31 @@ With cycle detection in place, evaluate whether these can be simplified or remov
    mechanism, not the unification logic.
 2. **Recursive type alias tests** — After Plan B, recursive type aliases should no
    longer cause stack overflows. Add tests:
-   ```
+   ```escalier
    type List<T> = { head: T, tail: List<T> | null }
    val list: List<number> = { head: 1, tail: { head: 2, tail: null } }
    ```
-   ```
+   ```escalier
    type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
    val j: Json = { name: "test", values: [1, 2, 3] }
    ```
-   ```
+   ```escalier
    type Tree<T> = { value: T, children: Tree<T>[] }
    ```
 3. **Mutual recursion test**:
-   ```
+   ```escalier
    type Expr = Lit | Add
    type Lit = { tag: "lit", value: number }
    type Add = { tag: "add", left: Expr, right: Expr }
    ```
 4. **Cycle detection test** — Verify that unifying a recursive type with itself
    succeeds quickly (not after 50 depth steps):
-   ```
+   ```escalier
    val a: List<number> = ...
    val b: List<number> = a  // should succeed immediately via same-alias check
    ```
 5. **Cross-alias cycle test** — Two different aliases that reference each other:
-   ```
+   ```escalier
    type A = { x: B }
    type B = { y: A }
    val a: A = { x: { y: { x: { y: ... } } } }

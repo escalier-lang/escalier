@@ -50,8 +50,13 @@ by Plan B to propagate the seen set:
 - `RestSpreadType, ArrayType` case (lines 436-441): calls `c.Unify` on rest type
 - `unifyTuples` helper: calls `c.Unify` on each pair of tuple elements
 
-Each of these should be `c.unifyWithDepth(ctx, ..., depth+1, seen)` after Plan B.
-If any were missed, fix them.
+Each of these should be `c.unifyWithDepth(ctx, ..., depth, seen)` after Plan B —
+propagating the seen set but keeping the same depth. The `depth` parameter should
+only increment at the explicit TypeRef expansion sites added by Plan A (where
+`expandTypeRef` is called and the result is re-entered into unification). Forwarding
+calls that unify subcomponents (tuple elements, array element types, rest spread
+types) are not expansions and should not increment depth. If any were missed, fix
+them.
 
 ### Step 2: Audit `ExpandType` calls that remain in unify.go
 
