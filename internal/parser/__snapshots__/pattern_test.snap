@@ -1058,3 +1058,33 @@
     inferredType: nil,
 }
 ---
+
+[TestParsePatternNoErrors/QualifiedExtractPatternNoArgs - 1]
+&ast.ExtractorPat{
+    Name: &ast.Member{
+        Left: &ast.Ident{
+            Name: "Option",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:1},
+                End:      ast.Location{Line:1, Column:7},
+                SourceID: 0,
+            },
+        },
+        Right: &ast.Ident{
+            Name: "None",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+    },
+    Args: nil,
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:12},
+        SourceID: 0,
+    },
+    inferredType: nil,
+}
+---
