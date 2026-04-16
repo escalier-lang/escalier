@@ -19,11 +19,13 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 		p.lexer.consume() // consume first identifier
 
 		// Skip through any dots and identifiers (qualified identifier)
+		isQualified := false
 		for p.lexer.peek().Type == Dot {
 			p.lexer.consume() // consume dot
 			next := p.lexer.peek()
 			if next.Type == Identifier || isTypeKeywordIdentifier(next.Type) {
 				p.lexer.consume() // consume identifier
+				isQualified = true
 			} else {
 				break
 			}
@@ -37,6 +39,12 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 			return p.extractorPat(token)
 		} else if next.Type == OpenBrace {
 			return p.instancePat(token)
+		} else if isQualified {
+			// Qualified name without parens (e.g., Option.None) is an
+			// extractor pattern with zero arguments.
+			qualIdent := p.parseQualifiedIdent(token)
+			span := qualIdent.Span()
+			return ast.NewExtractorPat(qualIdent, nil, span)
 		} else {
 			return p.identPat(token, allowIdentDefault, allowColonTypeAnn)
 		}

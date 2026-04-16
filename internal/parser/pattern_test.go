@@ -77,6 +77,9 @@ func TestParsePatternNoErrors(t *testing.T) {
 		"NamespacedExtractPattern": {
 			input: "MyNamespace.Foo(a, b)",
 		},
+		"QualifiedExtractPatternNoArgs": {
+			input: "Option.None",
+		},
 		"InstancePattern": {
 			input: "Point {x, y}",
 		},

@@ -43,12 +43,12 @@ func TestMatchTargetTypeInference(t *testing.T) {
 			input: `
 				enum Option<T> {
 					Some(value: T),
-					None(),
+					None,
 				}
 				declare val option: Option<number>
 				val result = match option {
 					Option.Some(value) => value,
-					Option.None() => "none",
+					Option.None => "none",
 				}
 			`,
 			expectedValues: map[string]string{
@@ -62,12 +62,12 @@ func TestMatchTargetTypeInference(t *testing.T) {
 			input: `
 				enum Option<T> {
 					Some(value: T),
-					None(),
+					None,
 				}
 				declare val option: Option<string>
 				val result = match option {
 					Option.Some(value) => value,
-					Option.None() => "none",
+					Option.None => "none",
 				}
 			`,
 			expectedValues: map[string]string{
@@ -79,12 +79,12 @@ func TestMatchTargetTypeInference(t *testing.T) {
 			input: `
 				enum Option<T> {
 					Some(value: T),
-					None(),
+					None,
 				}
 				val add1 = fn (option) {
 					return match option {
 						Option.Some(value) => value + 1,
-						Option.None() => 0,
+						Option.None => 0,
 					}
 				}
 			`,
@@ -96,12 +96,12 @@ func TestMatchTargetTypeInference(t *testing.T) {
 			input: `
 				enum Option<T> {
 					Some(value: T),
-					None(),
+					None,
 				}
 				val describe = fn (option) {
 					return match option {
 						Option.Some(value) => value,
-						Option.None() => "none",
+						Option.None => "none",
 					}
 				}
 			`,
@@ -221,7 +221,7 @@ func TestMatchTargetTypeInference(t *testing.T) {
 			input: `
 				enum Option<T> {
 					Some(value: T),
-					None(),
+					None,
 				}
 				enum Result<T, E> {
 					Ok(value: T),
@@ -250,12 +250,12 @@ func TestMatchTargetTypeInference(t *testing.T) {
 			input: `
 				enum Option<T> {
 					Some(value: T),
-					None(),
+					None,
 				}
 				val describe = fn (option: Option<number>) {
 					return match option {
 						Option.Some(value) => value,
-						Option.None() => 0,
+						Option.None => 0,
 					}
 				}
 			`,
