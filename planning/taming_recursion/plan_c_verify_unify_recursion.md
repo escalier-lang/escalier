@@ -168,16 +168,16 @@ and termination (no timeout or stack overflow).
 
 After verifying all tests pass:
 
-1. **Decide whether to keep the `depth` parameter and `maxExpansionRetries`.**
-   Plan B removed the `maxUnifyDepth` hard limit and made `maxExpansionRetries`
-   (from Plan A) redundant. If the validation in Steps 1-4 shows that the visited
-   set reliably handles all recursion cases:
-   - Remove `maxExpansionRetries` from `unifyPruned`'s loop (or replace with a
-     generous safety limit like 100) since the visited set prevents cycles.
-   - Remove the `depth` parameter from `unifyWithDepth` entirely to simplify the
-     interface, or keep it as diagnostic-only with a comment making clear it is
-     not a termination mechanism. If depth is removed, update the guidance in
-     Step 1 accordingly (the "should pass `depth` unchanged" notes become moot).
+1. **Decide whether to keep the `depth` parameter.** Plan B already removed
+   `maxUnifyDepth` and `maxExpansionRetries`. The remaining question is whether
+   `depth` (still threaded through `unifyWithDepth`) has diagnostic value. If the
+   validation in Steps 1-4 shows that the visited set reliably handles all
+   recursion cases, remove the `depth` parameter from `unifyWithDepth` entirely
+   to simplify the interface. If there is value in keeping it (e.g. for logging
+   or as a last-resort safety net during development), add a comment making clear
+   it is diagnostic-only and not a termination mechanism. If depth is removed,
+   update the guidance in Step 1 accordingly (the "should pass `depth` unchanged"
+   notes become moot).
 
 2. **Update the TODO at expand_type.go:343-345** — After Plan B adds visited-set
    cycle detection to `ExpandType`, the TODO about marking type aliases as recursive

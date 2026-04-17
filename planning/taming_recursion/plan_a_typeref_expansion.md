@@ -4,7 +4,8 @@
 
 Replace the catch-all retry loop at the bottom of `unifyPruned` (lines 1189-1203)
 with explicit `TypeRefType` handling. This makes expansion predictable: it only
-happens for the type kind that needs it, and only once per unification call.
+happens for the type kinds that need it, retrying as needed within a bounded
+loop to peel through alias chains.
 
 ## Background
 

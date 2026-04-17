@@ -228,7 +228,7 @@ func makeUnifyPairKey(t1, t2 type_system.Type) unifyPairKey {
         if ref.TypeAlias != nil {
             key.t1 = unsafe.Pointer(ref.TypeAlias)
         } else {
-            key.t1 = pointerOf(ref)
+            key.t1 = interfaceDataPointer(ref)
         }
         key.t1Args = typeArgKey(ref.TypeArgs)
     } else {
