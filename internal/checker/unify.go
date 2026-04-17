@@ -4,10 +4,69 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
+	"unsafe"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
+
+// unifyPairKey identifies a pair of types being unified.
+// For TypeRefType, we use the TypeAlias pointer + typeArgKey(typeArgs)
+// to capture meaningful identity across allocations.
+type unifyPairKey struct {
+	t1     unsafe.Pointer
+	t1Args string // typeArgKey(typeArgs) for TypeRefType, empty otherwise
+	t2     unsafe.Pointer
+	t2Args string // typeArgKey(typeArgs) for TypeRefType, empty otherwise
+}
+
+type unifySeen map[unifyPairKey]bool
+
+// makeUnifyPairKey builds a key that includes both the stable pointer
+// and type args for TypeRefType.
+func makeUnifyPairKey(t1, t2 type_system.Type) unifyPairKey {
+	key := unifyPairKey{}
+	if ref, ok := t1.(*type_system.TypeRefType); ok {
+		if ref.TypeAlias != nil {
+			key.t1 = unsafe.Pointer(ref.TypeAlias)
+		} else {
+			key.t1 = interfaceDataPointer(t1)
+		}
+		key.t1Args = typeArgKey(ref.TypeArgs)
+	} else {
+		key.t1 = interfaceDataPointer(t1)
+	}
+	if ref, ok := t2.(*type_system.TypeRefType); ok {
+		if ref.TypeAlias != nil {
+			key.t2 = unsafe.Pointer(ref.TypeAlias)
+		} else {
+			key.t2 = interfaceDataPointer(ref)
+		}
+		key.t2Args = typeArgKey(ref.TypeArgs)
+	} else {
+		key.t2 = interfaceDataPointer(t2)
+	}
+	return key
+}
+
+// interfaceDataPointer extracts the data pointer from a Go interface value.
+func interfaceDataPointer(t type_system.Type) unsafe.Pointer {
+	return (*[2]unsafe.Pointer)(unsafe.Pointer(&t))[1]
+}
+
+// typeArgKey produces a stable, deterministic string key for type arguments.
+func typeArgKey(args []type_system.Type) string {
+	parts := make([]string, len(args))
+	for i, arg := range args {
+		if tv, ok := arg.(*type_system.TypeVarType); ok {
+			parts[i] = fmt.Sprintf("$%d", tv.ID)
+		} else {
+			parts[i] = fmt.Sprint(arg)
+		}
+	}
+	return strings.Join(parts, ",")
+}
 
 // noMatchError is a sentinel error indicating that no case in unifyMatched
 // handled the type combination. unifyPruned uses this to decide whether
@@ -109,36 +168,12 @@ func (c *Checker) sameTypeRef(ref1, ref2 *type_system.TypeRefType) bool {
 // If `Unify` doesn't return an error it means that `t1` is a subtype of `t2` or
 // they are the same type.
 func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
-	return c.unifyWithDepth(ctx, t1, t2, 0)
+	return c.unifyWithDepth(ctx, t1, t2, 0, make(unifySeen))
 }
 
-const maxUnifyDepth = 50
-
-func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int) []Error {
+func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot unify nil types")
-	}
-
-	// Limit recursion depth to prevent stack overflow from infinite expansion.
-	//
-	// This is necessary because the retry loop at the end of this function calls
-	// ExpandType on both types and retries if either expanded to a different object.
-	// The problem is that each call to Unify passes ExpandType a fresh count of 1,
-	// so types can keep expanding indefinitely when:
-	//
-	// 1. TypeRefType with TypeAlias set (e.g., HTMLAttributeAnchorTarget, Array<any>)
-	//    - ExpandType creates new type objects each time, so expandedT2 != t2 is true
-	//
-	// 2. TupleType with rest spreads (e.g., [...Array<any>, ...Array<any>])
-	//    - Expansion includes the full Array interface with all its methods
-	//
-	// 3. Large ObjectType instances (e.g., React SVG attributes with 200+ properties)
-	//    - Nested type references keep creating new objects during expansion
-	//
-	// The depth limit stops recursion when types can't be unified after reasonable
-	// expansion attempts, returning a unification error instead of stack overflow.
-	if depth > maxUnifyDepth {
-		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
 
 	// Save the TypeVarType (if any) before Prune reassigns t2 to the pruned
@@ -148,7 +183,7 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	t1 = type_system.Prune(t1)
 	t2 = type_system.Prune(t2)
 
-	errors := c.unifyPruned(ctx, t1, t2, depth)
+	errors := c.unifyPruned(ctx, t1, t2, depth, seen)
 	if len(errors) == 0 {
 		return nil
 	}
@@ -193,15 +228,15 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	return errors
 }
 
-// maxExpansionRetries bounds the non-TypeRef expansion loop in unifyPruned.
-// Only the TypeOfType/CondType continue path can iterate; TypeRefType expansion
-// exits via unifyWithDepth (bounded by maxUnifyDepth). This constant is a
-// safety net against unexpected infinite expansion, not a normal retry limit.
-const maxExpansionRetries = 10
+// maxExpansionRetries is a safety net for the non-TypeRef expansion loop in
+// unifyPruned. With the visited-set cycle detection in place, this should
+// never be hit in practice — the loop terminates naturally when no further
+// expansion is possible. Kept as a defensive limit.
+const maxExpansionRetries = 100
 
-func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) []Error {
+func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
 	for attempt := 0; attempt < maxExpansionRetries; attempt++ {
-		errors := c.unifyMatched(ctx, t1, t2, depth)
+		errors := c.unifyMatched(ctx, t1, t2, depth, seen)
 		if len(errors) == 0 {
 			return nil
 		}
@@ -232,9 +267,14 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			refCanExpand = true
 		}
 		if refCanExpand {
+			key := makeUnifyPairKey(t1, t2)
+			if seen[key] {
+				return nil // co-inductive assumption: assume success
+			}
+			seen[key] = true
 			refExpT1, _ := c.ExpandType(ctx, t1, 1)
 			refExpT2, _ := c.ExpandType(ctx, t2, 1)
-			return c.unifyWithDepth(ctx, refExpT1, refExpT2, depth+1)
+			return c.unifyWithDepth(ctx, refExpT1, refExpT2, depth+1, seen)
 		}
 
 		// Try expanding TypeOfType and other non-TypeRef expandable types.
@@ -270,10 +310,15 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 		// concrete types. For structural types, unification proceeds over
 		// finite property sets and bottoms out without re-entering this path.
 		if isRef1 || isRef2 {
+			key := makeUnifyPairKey(t1, t2)
+			if seen[key] {
+				return nil // co-inductive assumption: assume success
+			}
+			seen[key] = true
 			lastResortT1, _ := c.ExpandType(ctx, t1, 1)
 			lastResortT2, _ := c.ExpandType(ctx, t2, 1)
 			if lastResortT1 != t1 || lastResortT2 != t2 {
-				return c.unifyWithDepth(ctx, lastResortT1, lastResortT2, depth+1)
+				return c.unifyWithDepth(ctx, lastResortT1, lastResortT2, depth+1, seen)
 			}
 		}
 
@@ -283,7 +328,7 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 	return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 }
 
-func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) []Error {
+func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
 
 	// | TypeVarType, ErrorType -> bind
 	// | ErrorType, TypeVarType -> bind
@@ -294,7 +339,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 	_, t1IsError := t1.(*type_system.ErrorType)
 	_, t2IsError := t2.(*type_system.ErrorType)
 	if (t1IsTypeVar && t2IsError) || (t1IsError && t2IsTypeVar) {
-		return c.bind(ctx, t1, t2)
+		return c.bind(ctx, t1, t2, depth, seen)
 	}
 	if t1IsError || t2IsError {
 		return nil
@@ -302,11 +347,11 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 
 	// | TypeVarType, _ -> ...
 	if t1IsTypeVar {
-		return c.bind(ctx, t1, t2)
+		return c.bind(ctx, t1, t2, depth, seen)
 	}
 	// | _, TypeVarType -> ...
 	if t2IsTypeVar {
-		return c.bind(ctx, t1, t2)
+		return c.bind(ctx, t1, t2, depth, seen)
 	}
 	// | MutableType, MutableType -> ...
 	if mut1, ok := t1.(*type_system.MutabilityType); ok {
@@ -314,7 +359,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 			if mut1.Mutability == type_system.MutabilityMutable && mut2.Mutability == type_system.MutabilityMutable {
 				return c.unifyMut(ctx, mut1, mut2)
 			} else {
-				return c.Unify(ctx, mut1.Type, mut2.Type)
+				return c.unifyWithDepth(ctx, mut1.Type, mut2.Type, depth, seen)
 			}
 		}
 	}
@@ -327,14 +372,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 			// Fall through to union/intersection handling below
 		default:
 			// It's okay to assign mutable types to immutable types
-			return c.Unify(ctx, mut1.Type, t2)
+			return c.unifyWithDepth(ctx, mut1.Type, t2, depth, seen)
 		}
 	}
 	// | _, MutableType -> ...
 	if mut2, ok := t2.(*type_system.MutabilityType); ok {
 		// When the RHS is a MutabilityType, we need to unwrap it for unification
 		// This allows patterns without mutability markers to match against mutable values
-		return c.Unify(ctx, t1, mut2.Type)
+		return c.unifyWithDepth(ctx, t1, mut2.Type, depth, seen)
 	}
 	// | PrimType, PrimType -> ...
 	if prim1, ok := t1.(*type_system.PrimType); ok {
@@ -462,13 +507,13 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 
 			// If both were successfully expanded to concrete keys, unify the expanded types
 			if !stillKeyOf1 && !stillKeyOf2 {
-				return c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth+1)
+				return c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth+1, seen)
 			}
 
 			// If neither could be expanded (e.g., both are keyof TypeVar), try to unify the underlying types.
 			// During interface merging, keyof constraints on type parameters may have different
 			// internal type variable IDs but represent the same constraint structurally.
-			innerErrors := c.unifyWithDepth(ctx, keyof1.Type, keyof2.Type, depth+1)
+			innerErrors := c.unifyWithDepth(ctx, keyof1.Type, keyof2.Type, depth+1, seen)
 			if len(innerErrors) == 0 {
 				return nil
 			}
@@ -481,7 +526,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 	// | TupleType, TupleType -> ...
 	if tuple1, ok := t1.(*type_system.TupleType); ok {
 		if tuple2, ok := t2.(*type_system.TupleType); ok {
-			return c.unifyTuples(ctx, tuple1, tuple2)
+			return c.unifyTuples(ctx, tuple1, tuple2, depth, seen)
 		}
 	}
 	// | TupleType, ArrayType -> ...
@@ -492,10 +537,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 				for _, elem := range tuple1.Elems {
 					if rest, ok := elem.(*type_system.RestSpreadType); ok {
 						// Unify rest type with Array<T>
-						unifyErrors := c.Unify(ctx, rest.Type, array2)
+						unifyErrors := c.unifyWithDepth(ctx, rest.Type, array2, depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
-						unifyErrors := c.Unify(ctx, elem, array2.TypeArgs[0])
+						unifyErrors := c.unifyWithDepth(ctx, elem, array2.TypeArgs[0], depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
@@ -515,10 +560,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 				for _, elem := range tuple2.Elems {
 					if rest, ok := elem.(*type_system.RestSpreadType); ok {
 						// Unify Array<T> with rest type
-						unifyErrors := c.Unify(ctx, array1, rest.Type)
+						unifyErrors := c.unifyWithDepth(ctx, array1, rest.Type, depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
-						unifyErrors := c.Unify(ctx, array1.TypeArgs[0], elem)
+						unifyErrors := c.unifyWithDepth(ctx, array1.TypeArgs[0], elem, depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
@@ -535,7 +580,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 		if array2, ok := t2.(*type_system.TypeRefType); ok && c.isArrayType(array2) {
 			// Both are Array types, unify their element types
 			if len(array1.TypeArgs) == 1 && len(array2.TypeArgs) == 1 {
-				return c.Unify(ctx, array1.TypeArgs[0], array2.TypeArgs[0])
+				return c.unifyWithDepth(ctx, array1.TypeArgs[0], array2.TypeArgs[0], depth, seen)
 			}
 			// If either array doesn't have exactly one type argument, they can't be unified
 			return []Error{&CannotUnifyTypesError{
@@ -547,13 +592,13 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 	// | RestSpreadType, ArrayType -> ...
 	if rest, ok := t1.(*type_system.RestSpreadType); ok {
 		if array, ok := t2.(*type_system.TypeRefType); ok && c.isArrayType(array) {
-			return c.Unify(ctx, rest.Type, array)
+			return c.unifyWithDepth(ctx, rest.Type, array, depth, seen)
 		}
 	}
 	// | FuncType, FuncType -> ...
 	if func1, ok := t1.(*type_system.FuncType); ok {
 		if func2, ok := t2.(*type_system.FuncType); ok {
-			return c.unifyFuncTypes(ctx, func1, func2)
+			return c.unifyFuncTypes(ctx, func1, func2, depth, seen)
 		}
 	}
 	// | TypeRefType, TypeRefType (same alias) -> ...
@@ -606,7 +651,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 				}
 				errors := []Error{}
 				for i := 0; i < len(ref1.TypeArgs); i++ {
-					argErrors := c.Unify(ctx, ref1.TypeArgs[i], ref2.TypeArgs[i])
+					argErrors := c.unifyWithDepth(ctx, ref1.TypeArgs[i], ref2.TypeArgs[i], depth, seen)
 					errors = slices.Concat(errors, argErrors)
 				}
 				return errors
@@ -711,13 +756,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 
 					for i, name := range groupNames {
 						if name != "" {
-							groupErrors := c.Unify(
+							groupErrors := c.unifyWithDepth(
 								ctx,
 								type_system.NewStrLitType(nil, matches[i]),
 								// By default this will be a `string` type, but
 								// if the RegexType appears in a CondType's
 								// Extend field, it will be a TypeVarType.
 								regexType.Groups[name],
+								depth, seen,
 							)
 							errors = slices.Concat(errors, groupErrors)
 						}
@@ -757,11 +803,11 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 	}
 	// | _, ExtractorType -> ...
 	if ext, ok := t2.(*type_system.ExtractorType); ok {
-		return c.unifyExtractor(ctx, t1, ext, false)
+		return c.unifyExtractor(ctx, t1, ext, false, depth, seen)
 	}
 	// | ExtractorType, _ -> ...
 	if ext, ok := t1.(*type_system.ExtractorType); ok {
-		return c.unifyExtractor(ctx, t2, ext, true)
+		return c.unifyExtractor(ctx, t2, ext, true, depth, seen)
 	}
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*type_system.ObjectType); ok {
@@ -810,12 +856,12 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 					value1, has1 := namedElems1[key]
 					value2, has2 := namedElems2[key]
 					if has1 && has2 {
-						unifyErrors := c.Unify(ctx, value1, value2)
+						unifyErrors := c.unifyWithDepth(ctx, value1, value2, depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 					if wt1, ok1 := collected1.Write[key]; ok1 {
 						if wt2, ok2 := collected2.Write[key]; ok2 {
-							unifyErrors := c.Unify(ctx, wt1, wt2)
+							unifyErrors := c.unifyWithDepth(ctx, wt1, wt2, depth, seen)
 							errors = slices.Concat(errors, unifyErrors)
 						}
 					}
@@ -866,7 +912,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 				}
 				// Unify row variables if both have RestSpreadElems
 				if len(restTypes1) == 1 && len(restTypes2) == 1 {
-					unifyErrors := c.Unify(ctx, restTypes1[0], restTypes2[0])
+					unifyErrors := c.unifyWithDepth(ctx, restTypes1[0], restTypes2[0], depth, seen)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 				return errors
@@ -880,7 +926,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 					value1, has1 := namedElems1[key]
 					value2, has2 := namedElems2[key]
 					if has1 && has2 {
-						unifyErrors := c.Unify(ctx, value1, value2)
+						unifyErrors := c.unifyWithDepth(ctx, value1, value2, depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 					re := collected2.OrigRead[key]
@@ -905,7 +951,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 					value1, has1 := namedElems1[key]
 					value2, has2 := namedElems2[key]
 					if has1 && has2 {
-						unifyErrors := c.Unify(ctx, value1, value2)
+						unifyErrors := c.unifyWithDepth(ctx, value1, value2, depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					}
 					re := collected1.OrigRead[key]
@@ -932,9 +978,9 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 			hasRests2 := len(restTypes2) > 0
 
 			if hasRests1 && !hasRests2 {
-				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj1, obj2, keys2, namedElems2, false))
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj1, obj2, keys2, namedElems2, false, depth, seen))
 			} else if hasRests2 && !hasRests1 {
-				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, true))
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, true, depth, seen))
 			} else if hasRests1 && hasRests2 {
 				// TODO(#410): implement unification when both sides have RestSpreadElems
 				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
@@ -947,7 +993,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 				for _, key1 := range keys1 {
 					value2, found := namedElems2[key1]
 					if found {
-						unifyErrors := c.Unify(ctx, namedElems1[key1], value2)
+						unifyErrors := c.unifyWithDepth(ctx, namedElems1[key1], value2, depth, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
 						errors = append(errors, &PropertyNotFoundError{
@@ -958,7 +1004,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 						// Resolve the pattern field's type to undefined so it doesn't
 						// leak as an unresolved type variable into the match arm result.
 						undefinedType := type_system.NewUndefinedType(nil)
-						c.Unify(ctx, namedElems1[key1], undefinedType)
+						c.unifyWithDepth(ctx, namedElems1[key1], undefinedType, depth, seen)
 					}
 				}
 			} else {
@@ -969,7 +1015,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 						wt1, hasW1 := collected1.Write[key2]
 						wt2, hasW2 := collected2.Write[key2]
 						if hasW1 && hasW2 {
-							unifyErrors := c.Unify(ctx, wt1, wt2)
+							unifyErrors := c.unifyWithDepth(ctx, wt1, wt2, depth, seen)
 							errors = slices.Concat(errors, unifyErrors)
 						} else if hasW2 && !hasW1 {
 							errors = slices.Concat(errors, []Error{&KeyNotFoundError{
@@ -980,7 +1026,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 						continue
 					}
 					if value1, ok := namedElems1[key2]; ok {
-						unifyErrors := c.Unify(ctx, value1, value2)
+						unifyErrors := c.unifyWithDepth(ctx, value1, value2, depth, seen)
 						// Wrap CannotUnifyTypesError with property context when
 						// the property was inferred during row inference.
 						for i, err := range unifyErrors {
@@ -1027,7 +1073,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 						// We intentionally discard the errors since we already
 						// reported the KeyNotFoundError above.
 						undefinedType := type_system.NewUndefinedType(nil)
-						c.Unify(ctx, value2, undefinedType)
+						c.unifyWithDepth(ctx, value2, undefinedType, depth, seen)
 					}
 				}
 			}
@@ -1044,7 +1090,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 		// Check if distribution occurred by seeing if the type changed
 		if _, stillIntersection := distributed1.(*type_system.IntersectionType); !stillIntersection {
 			// Distribution created a different type (likely a union), retry unification
-			return c.Unify(ctx, distributed1, t2)
+			return c.unifyWithDepth(ctx, distributed1, t2, depth, seen)
 		}
 
 		if intersection2, ok := t2.(*type_system.IntersectionType); ok {
@@ -1052,7 +1098,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 			// Check if distribution occurred on t2
 			if _, stillIntersection := distributed2.(*type_system.IntersectionType); !stillIntersection {
 				// Distribution occurred on t2, retry unification
-				return c.Unify(ctx, distributed1, distributed2)
+				return c.unifyWithDepth(ctx, distributed1, distributed2, depth, seen)
 			}
 
 			// Probe-then-commit: trial-unify clones to avoid partially mutating
@@ -1066,10 +1112,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 					varMapping := make(map[int]*type_system.TypeVarType)
 					t1Clone := c.deepCloneType(t1Part, varMapping)
 					t2Clone := c.deepCloneType(t2Part, varMapping)
-					probeErrors := c.Unify(ctx, t1Clone, t2Clone)
+					probeErrors := c.unifyWithDepth(ctx, t1Clone, t2Clone, depth, seen)
 					if len(probeErrors) == 0 {
 						// Probe succeeded — safe to unify originals.
-						c.Unify(ctx, t1Part, t2Part)
+						c.unifyWithDepth(ctx, t1Part, t2Part, depth, seen)
 						found = true
 						break
 					}
@@ -1095,7 +1141,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 		// Check if distribution occurred
 		if _, stillIntersection := distributed.(*type_system.IntersectionType); !stillIntersection {
 			// Distribution created a different type (likely a union), retry unification
-			return c.Unify(ctx, distributed, t2)
+			return c.unifyWithDepth(ctx, distributed, t2, depth, seen)
 		}
 
 		// Probe-then-commit: trial-unify clones to avoid partially mutating
@@ -1105,10 +1151,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 			varMapping := make(map[int]*type_system.TypeVarType)
 			partClone := c.deepCloneType(part, varMapping)
 			t2Clone := c.deepCloneType(t2, varMapping)
-			probeErrors := c.Unify(ctx, partClone, t2Clone)
+			probeErrors := c.unifyWithDepth(ctx, partClone, t2Clone, depth, seen)
 			if len(probeErrors) == 0 {
 				// Probe succeeded — safe to unify originals.
-				c.Unify(ctx, part, t2)
+				c.unifyWithDepth(ctx, part, t2, depth, seen)
 				return nil
 			}
 			allErrors = slices.Concat(allErrors, probeErrors)
@@ -1125,12 +1171,12 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 		// Check if distribution occurred
 		if _, stillIntersection := distributed.(*type_system.IntersectionType); !stillIntersection {
 			// Distribution created a different type (likely a union), retry unification
-			return c.Unify(ctx, t1, distributed)
+			return c.unifyWithDepth(ctx, t1, distributed, depth, seen)
 		}
 
 		errors := []Error{}
 		for _, part := range intersection.Types {
-			unifyErrors := c.Unify(ctx, t1, part)
+			unifyErrors := c.unifyWithDepth(ctx, t1, part, depth, seen)
 			errors = slices.Concat(errors, unifyErrors)
 		}
 		return errors
@@ -1197,19 +1243,19 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 						})
 					}
 					undefined := type_system.NewUndefinedType(nil)
-					unifyErrors := c.Unify(ctx, undefined, t)
+					unifyErrors := c.unifyWithDepth(ctx, undefined, t, depth, seen)
 					errors = slices.Concat(errors, unifyErrors)
 				} else if len(matchingTypes[name]) == len(union.Types) {
 					// Create a union of all matching types and unify with destructured field type
 					unionOfMatchingTypes := type_system.NewUnionType(nil, matchingTypes[name]...)
 					fieldType := destructuredFields[name]
-					unifyErrors := c.Unify(ctx, unionOfMatchingTypes, fieldType)
+					unifyErrors := c.unifyWithDepth(ctx, unionOfMatchingTypes, fieldType, depth, seen)
 					errors = slices.Concat(errors, unifyErrors)
 				} else {
 					// Create a union of all matching types and `undefined`, then unify with destructured field type
 					unionOfMatchingTypes := type_system.NewUnionType(nil, append(matchingTypes[name], type_system.NewUndefinedType(nil))...)
 					fieldType := destructuredFields[name]
-					unifyErrors := c.Unify(ctx, unionOfMatchingTypes, fieldType)
+					unifyErrors := c.unifyWithDepth(ctx, unionOfMatchingTypes, fieldType, depth, seen)
 					errors = slices.Concat(errors, unifyErrors)
 				}
 			}
@@ -1239,7 +1285,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 				}
 
 				objType := type_system.NewObjectType(nil, restElems)
-				unifyErrors := c.Unify(ctx, objType, restType)
+				unifyErrors := c.unifyWithDepth(ctx, objType, restType, depth, seen)
 				errors = slices.Concat(errors, unifyErrors)
 			}
 
@@ -1248,7 +1294,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 
 		// All types in the union must be compatible with t2
 		for _, t := range union.Types {
-			unifyErrors := c.Unify(ctx, t, t2)
+			unifyErrors := c.unifyWithDepth(ctx, t, t2, depth, seen)
 			// TODO: include the individual reasons why unification failed
 			if len(unifyErrors) > 0 {
 				// If any type in the union is not compatible, return error
@@ -1264,7 +1310,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 	if ctx.IsPatMatch {
 		if patObj, ok := t1.(*type_system.ObjectType); ok {
 			if union, ok := t2.(*type_system.UnionType); ok {
-				return c.unifyPatternWithUnion(ctx, patObj, union)
+				return c.unifyPatternWithUnion(ctx, patObj, union, depth, seen)
 			}
 		}
 	}
@@ -1276,10 +1322,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) 
 			varMapping := make(map[int]*type_system.TypeVarType)
 			t1Clone := c.deepCloneType(t1, varMapping)
 			unionTypeClone := c.deepCloneType(unionType, varMapping)
-			probeErrors := c.Unify(ctx, t1Clone, unionTypeClone)
+			probeErrors := c.unifyWithDepth(ctx, t1Clone, unionTypeClone, depth, seen)
 			if len(probeErrors) == 0 {
 				// Probe succeeded — safe to unify originals.
-				c.Unify(ctx, t1, unionType)
+				c.unifyWithDepth(ctx, t1, unionType, depth, seen)
 				return nil
 			}
 		}
@@ -1304,13 +1350,14 @@ func (c *Checker) unifyExtractor(
 	subject type_system.Type,
 	ext *type_system.ExtractorType,
 	swapped bool,
+	depth int, seen unifySeen,
 ) []Error {
 	// Helper to call Unify in the correct argument order.
 	unify := func(a, b type_system.Type) []Error {
 		if swapped {
-			return c.Unify(ctx, b, a)
+			return c.unifyWithDepth(ctx, b, a, depth, seen)
 		}
-		return c.Unify(ctx, a, b)
+		return c.unifyWithDepth(ctx, a, b, depth, seen)
 	}
 
 	methodElem, extObj := c.findCustomMatcherMethod(ext)
@@ -1470,6 +1517,7 @@ func (c *Checker) unifyClosedWithRests(
 	targetKeys []type_system.ObjTypeKey,
 	targetNamed map[type_system.ObjTypeKey]type_system.Type,
 	swapped bool,
+	depth int, seen unifySeen,
 ) []Error {
 	errors := []Error{}
 
@@ -1478,9 +1526,9 @@ func (c *Checker) unifyClosedWithRests(
 	// When swapped is true, restObj=t2 and targetObj=t1.
 	unifyPair := func(restVal, targetVal type_system.Type) []Error {
 		if swapped {
-			return c.Unify(ctx, targetVal, restVal)
+			return c.unifyWithDepth(ctx, targetVal, restVal, depth, seen)
 		}
-		return c.Unify(ctx, restVal, targetVal)
+		return c.unifyWithDepth(ctx, restVal, targetVal, depth, seen)
 	}
 
 	// 1. Expand restObj.Elems into a flat effective property map by walking
@@ -1556,7 +1604,7 @@ func (c *Checker) unifyClosedWithRests(
 				span:   getKeyNotFoundSpan(targetObj, value),
 			}})
 			undefinedType := type_system.NewUndefinedType(nil)
-			c.Unify(ctx, value, undefinedType)
+			c.unifyWithDepth(ctx, value, undefinedType, depth, seen)
 		}
 	}
 
@@ -1607,7 +1655,7 @@ func (c *Checker) unifyClosedWithRests(
 }
 
 // unifyFuncTypes unifies two function types
-func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType) []Error {
+func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType, depth int, seen unifySeen) []Error {
 	errors := []Error{}
 
 	// For function types to be compatible:
@@ -1669,7 +1717,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 			param2 := func2.Params[i]
 
 			// Parameter types are contravariant: unify param2.Type with param1.Type
-			unifyErrors := c.Unify(ctx, param2.Type, param1.Type)
+			unifyErrors := c.unifyWithDepth(ctx, param2.Type, param1.Type, depth, seen)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Optional parameter compatibility
@@ -1687,7 +1735,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 		// Unify the rest parameters directly
 		restParam1 := func1.Params[func1RestIndex]
 		restParam2 := func2.Params[func2RestIndex]
-		unifyErrors := c.Unify(ctx, restParam2.Type, restParam1.Type)
+		unifyErrors := c.unifyWithDepth(ctx, restParam2.Type, restParam1.Type, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 
 		// Check that both functions don't have parameters after rest (which shouldn't happen)
@@ -1714,7 +1762,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 			param2 := func2.Params[i]
 
 			// Parameter types are contravariant: unify param2.Type with param1.Type
-			unifyErrors := c.Unify(ctx, param2.Type, param1.Type)
+			unifyErrors := c.unifyWithDepth(ctx, param2.Type, param1.Type, depth, seen)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Optional parameter compatibility
@@ -1747,7 +1795,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 
 			// Create Array<elementType> and unify with rest parameter type
 			arrayType := type_system.NewTypeRefType(nil, "Array", nil, elementType)
-			unifyErrors := c.Unify(ctx, restParam.Type, arrayType)
+			unifyErrors := c.unifyWithDepth(ctx, restParam.Type, arrayType, depth, seen)
 			errors = slices.Concat(errors, unifyErrors)
 		} else {
 			// No excess parameters, rest parameter should accept empty array
@@ -1780,7 +1828,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 			param2 := func2.Params[i]
 
 			// Parameter types are contravariant: unify param2.Type with param1.Type
-			unifyErrors := c.Unify(ctx, param2.Type, param1.Type)
+			unifyErrors := c.unifyWithDepth(ctx, param2.Type, param1.Type, depth, seen)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Optional parameter compatibility
@@ -1813,7 +1861,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 
 	// Check return types (covariant)
 	if func1.Return != nil && func2.Return != nil {
-		unifyErrors := c.Unify(ctx, func1.Return, func2.Return)
+		unifyErrors := c.unifyWithDepth(ctx, func1.Return, func2.Return, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	} else if func1.Return == nil && func2.Return != nil {
 		// func1 returns void/undefined, func2 expects a return type
@@ -1828,7 +1876,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 
 	// Check throws types (covariant)
 	if func1.Throws != nil && func2.Throws != nil {
-		unifyErrors := c.Unify(ctx, func1.Throws, func2.Throws)
+		unifyErrors := c.unifyWithDepth(ctx, func1.Throws, func2.Throws, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	} else if func1.Throws != nil && func2.Throws == nil {
 		// func1 can throw but func2 doesn't expect throws - this might be an error
@@ -1843,7 +1891,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 // TODO: check if t1 is already bound to an instance
 // NOTE: be sure to call Prune on t1 and t2 before calling bind
 // to ensure we are working with the most up-to-date types.
-func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []Error {
+func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, depth int, seen unifySeen) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot bind nil types") // this should never happen
 	}
@@ -1866,7 +1914,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 			if typeVar1, ok := t1.(*type_system.TypeVarType); ok {
 				if typeVar2, ok := t2.(*type_system.TypeVarType); ok {
 					if typeVar1.Constraint != nil && typeVar2.Constraint != nil {
-						errors = c.Unify(ctx, typeVar1.Constraint, typeVar2.Constraint)
+						errors = c.unifyWithDepth(ctx, typeVar1.Constraint, typeVar2.Constraint, depth, seen)
 					} else if typeVar1.Constraint != nil && typeVar2.Constraint == nil {
 						// Propagate the constraint to typeVar2 since it becomes the
 						// representative of this equivalence class after binding.
@@ -1899,7 +1947,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				}
 
 				if typeVar1.Constraint != nil {
-					errors = c.Unify(ctx, typeVar1.Constraint, t2)
+					errors = c.unifyWithDepth(ctx, typeVar1.Constraint, t2, depth, seen)
 				}
 				// IsParam is only set on fresh vars for unannotated parameters
 				// (infer_func.go), so IsParam and Constraint won't both be set
@@ -1915,7 +1963,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				// Array or tuple type, update the constraint flags so that
 				// resolution at closing time produces the correct type.
 				if typeVar1.ArrayConstraint != nil {
-					if handled, bindErrs := c.handleArrayConstraintBinding(ctx, typeVar1, t2); handled {
+					if handled, bindErrs := c.handleArrayConstraintBinding(ctx, typeVar1, t2, depth, seen); handled {
 						return append(errors, bindErrs...)
 					}
 				}
@@ -1957,7 +2005,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type) []
 				}
 
 				if typeVar2.Constraint != nil {
-					errors = c.Unify(ctx, t1, typeVar2.Constraint)
+					errors = c.unifyWithDepth(ctx, t1, typeVar2.Constraint, depth, seen)
 				}
 				// See comment in typeVar1 branch above re: IsParam and Constraint.
 				if typeVar2.IsParam {
@@ -2038,7 +2086,7 @@ func occursInType(t1, t2 type_system.Type) bool {
 // Array, mut Array, or tuple, the constraint is updated accordingly and the
 // function returns true to indicate that binding was handled. Otherwise it
 // returns false and normal binding proceeds.
-func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system.TypeVarType, boundType type_system.Type) (bool, []Error) {
+func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system.TypeVarType, boundType type_system.Type, depth int, seen unifySeen) (bool, []Error) {
 	constraint := typeVar.ArrayConstraint
 	inner := boundType
 	isMut := false
@@ -2057,11 +2105,11 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 			}
 			// Unify the constraint's element type var with the array's element type
 			var errs []Error
-			if unifyErrs := c.Unify(ctx, constraint.ElemTypeVar, t.TypeArgs[0]); len(unifyErrs) > 0 {
+			if unifyErrs := c.unifyWithDepth(ctx, constraint.ElemTypeVar, t.TypeArgs[0], depth, seen); len(unifyErrs) > 0 {
 				errs = append(errs, unifyErrs...)
 			}
 			for _, elemTV := range constraint.LiteralIndexes {
-				if unifyErrs := c.Unify(ctx, elemTV, t.TypeArgs[0]); len(unifyErrs) > 0 {
+				if unifyErrs := c.unifyWithDepth(ctx, elemTV, t.TypeArgs[0], depth, seen); len(unifyErrs) > 0 {
 					errs = append(errs, unifyErrs...)
 				}
 			}
@@ -2095,7 +2143,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 				targetType = suffix[idx-len(prefix)]
 			}
 			if targetType != nil {
-				if unifyErrs := c.Unify(ctx, tv, targetType); len(unifyErrs) > 0 {
+				if unifyErrs := c.unifyWithDepth(ctx, tv, targetType, depth, seen); len(unifyErrs) > 0 {
 					errs = append(errs, unifyErrs...)
 				}
 			}
@@ -2551,27 +2599,27 @@ func splitTupleAtRest(elems []type_system.Type) (prefix []type_system.Type, rest
 
 // unifyTuples handles all tuple-vs-tuple unification cases including
 // RestSpreadType at any position.
-func (c *Checker) unifyTuples(ctx Context, tuple1, tuple2 *type_system.TupleType) []Error {
+func (c *Checker) unifyTuples(ctx Context, tuple1, tuple2 *type_system.TupleType, depth int, seen unifySeen) []Error {
 	prefix1, rest1, suffix1 := splitTupleAtRest(tuple1.Elems)
 	prefix2, rest2, suffix2 := splitTupleAtRest(tuple2.Elems)
 
 	// Case: neither side has a rest spread — plain tuple unification
 	if rest1 == nil && rest2 == nil {
-		return c.unifyFixedTuples(ctx, tuple1, tuple2)
+		return c.unifyFixedTuples(ctx, tuple1, tuple2, depth, seen)
 	}
 
 	// Case: only tuple2 has a rest spread — fixed-vs-variadic
 	if rest1 == nil && rest2 != nil {
-		return c.unifyFixedVsVariadic(ctx, tuple1.Elems, prefix2, rest2, suffix2)
+		return c.unifyFixedVsVariadic(ctx, tuple1.Elems, prefix2, rest2, suffix2, depth, seen)
 	}
 
 	// Case: only tuple1 has a rest spread — variadic-vs-fixed (mirror)
 	if rest1 != nil && rest2 == nil {
-		return c.unifyVariadicVsFixed(ctx, prefix1, rest1, suffix1, tuple2.Elems)
+		return c.unifyVariadicVsFixed(ctx, prefix1, rest1, suffix1, tuple2.Elems, depth, seen)
 	}
 
 	// Case: both sides have a rest spread — variadic-vs-variadic
-	return c.unifyVariadicVsVariadic(ctx, prefix1, rest1, suffix1, prefix2, rest2, suffix2)
+	return c.unifyVariadicVsVariadic(ctx, prefix1, rest1, suffix1, prefix2, rest2, suffix2, depth, seen)
 }
 
 // unifyFixedTuples handles unification of two tuples with no RestSpreadType
@@ -2582,7 +2630,7 @@ func (c *Checker) unifyTuples(ctx Context, tuple1, tuple2 *type_system.TupleType
 //   - tuple2 has more elements than tuple1: Error — the target expects more
 //     elements than the value provides (NotEnoughElementsToUnpackError).
 //   - Same length: unify pairwise.
-func (c *Checker) unifyFixedTuples(ctx Context, tuple1, tuple2 *type_system.TupleType) []Error {
+func (c *Checker) unifyFixedTuples(ctx Context, tuple1, tuple2 *type_system.TupleType, depth int, seen unifySeen) []Error {
 	errors := []Error{}
 
 	if len(tuple2.Elems) > len(tuple1.Elems) {
@@ -2590,7 +2638,7 @@ func (c *Checker) unifyFixedTuples(ctx Context, tuple1, tuple2 *type_system.Tupl
 		// provides. Unify the elements that are present in both tuples, then
 		// report the extra target bindings as unpack errors.
 		for elem1, elem2 := range Zip(tuple1.Elems, tuple2.Elems) {
-			unifyErrors := c.Unify(ctx, elem1, elem2)
+			unifyErrors := c.unifyWithDepth(ctx, elem1, elem2, depth, seen)
 			errors = slices.Concat(errors, unifyErrors)
 		}
 
@@ -2603,7 +2651,7 @@ func (c *Checker) unifyFixedTuples(ctx Context, tuple1, tuple2 *type_system.Tupl
 		for _, elem2 := range extraElems {
 			node := GetNode(elem2.Provenance())
 			undefined := type_system.NewUndefinedType(&ast.NodeProvenance{Node: node})
-			unifyErrors := c.Unify(ctx, elem2, undefined)
+			unifyErrors := c.unifyWithDepth(ctx, elem2, undefined, depth, seen)
 			errors = slices.Concat(errors, unifyErrors)
 		}
 
@@ -2615,7 +2663,7 @@ func (c *Checker) unifyFixedTuples(ctx Context, tuple1, tuple2 *type_system.Tupl
 	// tuple1 has >= tuple2's length. Unify pairwise up to tuple2's length;
 	// any extra elements in tuple1 (the value) are ignored.
 	for i, elem2 := range tuple2.Elems {
-		unifyErrors := c.Unify(ctx, tuple1.Elems[i], elem2)
+		unifyErrors := c.unifyWithDepth(ctx, tuple1.Elems[i], elem2, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
@@ -2638,6 +2686,7 @@ func (c *Checker) unifyFixedVsVariadic(
 	ctx Context,
 	fixedElems []type_system.Type,
 	prefix2 []type_system.Type, rest2 *type_system.RestSpreadType, suffix2 []type_system.Type,
+	depth int, seen unifySeen,
 ) []Error {
 	requiredCount := len(prefix2) + len(suffix2)
 	if len(fixedElems) < requiredCount {
@@ -2653,21 +2702,21 @@ func (c *Checker) unifyFixedVsVariadic(
 
 	// Unify prefix elements pairwise
 	for i, elem2 := range prefix2 {
-		unifyErrors := c.Unify(ctx, fixedElems[i], elem2)
+		unifyErrors := c.unifyWithDepth(ctx, fixedElems[i], elem2, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
 	// Unify suffix elements pairwise (from the end)
 	for i, elem2 := range suffix2 {
 		fixedIdx := len(fixedElems) - len(suffix2) + i
-		unifyErrors := c.Unify(ctx, fixedElems[fixedIdx], elem2)
+		unifyErrors := c.unifyWithDepth(ctx, fixedElems[fixedIdx], elem2, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
 	// The middle elements are absorbed by the rest spread
 	middleElems := fixedElems[len(prefix2) : len(fixedElems)-len(suffix2)]
 	restTuple := type_system.NewTupleType(nil, middleElems...)
-	unifyErrors := c.Unify(ctx, restTuple, rest2.Type)
+	unifyErrors := c.unifyWithDepth(ctx, restTuple, rest2.Type, depth, seen)
 	errors = slices.Concat(errors, unifyErrors)
 
 	return errors
@@ -2691,6 +2740,7 @@ func (c *Checker) unifyVariadicVsFixed(
 	ctx Context,
 	prefix1 []type_system.Type, rest1 *type_system.RestSpreadType, suffix1 []type_system.Type,
 	fixedElems []type_system.Type,
+	depth int, seen unifySeen,
 ) []Error {
 	errors := []Error{}
 
@@ -2698,7 +2748,7 @@ func (c *Checker) unifyVariadicVsFixed(
 	// If the source prefix is longer, extras are ignored.
 	prefixLen := min(len(prefix1), len(fixedElems))
 	for i := range prefixLen {
-		unifyErrors := c.Unify(ctx, prefix1[i], fixedElems[i])
+		unifyErrors := c.unifyWithDepth(ctx, prefix1[i], fixedElems[i], depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
@@ -2718,14 +2768,14 @@ func (c *Checker) unifyVariadicVsFixed(
 	remaining := fixedElems[prefixLen:]
 	suffixLen := min(len(suffix1), len(remaining))
 	for i := range suffixLen {
-		unifyErrors := c.Unify(ctx, suffix1[len(suffix1)-suffixLen+i], remaining[len(remaining)-suffixLen+i])
+		unifyErrors := c.unifyWithDepth(ctx, suffix1[len(suffix1)-suffixLen+i], remaining[len(remaining)-suffixLen+i], depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
 	// The middle target elements are absorbed by the source's rest spread
 	middleElems := remaining[:len(remaining)-suffixLen]
 	restTuple := type_system.NewTupleType(nil, middleElems...)
-	unifyErrors := c.Unify(ctx, rest1.Type, restTuple)
+	unifyErrors := c.unifyWithDepth(ctx, rest1.Type, restTuple, depth, seen)
 	errors = slices.Concat(errors, unifyErrors)
 
 	return errors
@@ -2741,20 +2791,21 @@ func (c *Checker) unifyVariadicVsVariadic(
 	ctx Context,
 	prefix1 []type_system.Type, rest1 *type_system.RestSpreadType, suffix1 []type_system.Type,
 	prefix2 []type_system.Type, rest2 *type_system.RestSpreadType, suffix2 []type_system.Type,
+	depth int, seen unifySeen,
 ) []Error {
 	errors := []Error{}
 
 	// Unify prefixes pairwise up to the shorter one
 	minPrefix := min(len(prefix1), len(prefix2))
 	for i := 0; i < minPrefix; i++ {
-		unifyErrors := c.Unify(ctx, prefix1[i], prefix2[i])
+		unifyErrors := c.unifyWithDepth(ctx, prefix1[i], prefix2[i], depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
 	// Unify suffixes pairwise up to the shorter one (from the end)
 	minSuffix := min(len(suffix1), len(suffix2))
 	for i := 0; i < minSuffix; i++ {
-		unifyErrors := c.Unify(ctx, suffix1[len(suffix1)-minSuffix+i], suffix2[len(suffix2)-minSuffix+i])
+		unifyErrors := c.unifyWithDepth(ctx, suffix1[len(suffix1)-minSuffix+i], suffix2[len(suffix2)-minSuffix+i], depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	}
 
@@ -2769,7 +2820,7 @@ func (c *Checker) unifyVariadicVsVariadic(
 	// E.g. [A, B, ...R1] vs [A, ...R2] → Unify(R2, [B, ...R1])
 	if len(extraPrefix1) == 0 && len(extraSuffix1) == 0 && len(extraPrefix2) == 0 && len(extraSuffix2) == 0 {
 		// Same number of fixed elements on both sides — unify rests directly
-		unifyErrors := c.Unify(ctx, rest1.Type, rest2.Type)
+		unifyErrors := c.unifyWithDepth(ctx, rest1.Type, rest2.Type, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	} else if len(extraPrefix2) == 0 && len(extraSuffix2) == 0 {
 		// tuple1 has extra fixed elements; rest2 absorbs them
@@ -2779,7 +2830,7 @@ func (c *Checker) unifyVariadicVsVariadic(
 		wrapped = append(wrapped, rest1)
 		wrapped = append(wrapped, extraSuffix1...)
 		wrappedTuple := type_system.NewTupleType(nil, wrapped...)
-		unifyErrors := c.Unify(ctx, wrappedTuple, rest2.Type)
+		unifyErrors := c.unifyWithDepth(ctx, wrappedTuple, rest2.Type, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	} else if len(extraPrefix1) == 0 && len(extraSuffix1) == 0 {
 		// tuple2 has extra fixed elements; rest1 absorbs them
@@ -2788,7 +2839,7 @@ func (c *Checker) unifyVariadicVsVariadic(
 		wrapped = append(wrapped, rest2)
 		wrapped = append(wrapped, extraSuffix2...)
 		wrappedTuple := type_system.NewTupleType(nil, wrapped...)
-		unifyErrors := c.Unify(ctx, rest1.Type, wrappedTuple)
+		unifyErrors := c.unifyWithDepth(ctx, rest1.Type, wrappedTuple, depth, seen)
 		errors = slices.Concat(errors, unifyErrors)
 	} else {
 		// Both sides have extras — cannot unify
@@ -2885,6 +2936,7 @@ func (c *Checker) unifyPatternWithUnion(
 	ctx Context,
 	pat *type_system.ObjectType,
 	union *type_system.UnionType,
+	depth int, seen unifySeen,
 ) []Error {
 	// 1. Collect pattern field names and their type variables
 	patFields := collectObjElemTypes(pat, false).Read
@@ -2930,7 +2982,7 @@ func (c *Checker) unifyPatternWithUnion(
 	errors := []Error{}
 	for key, patType := range patFields {
 		fieldUnion := type_system.NewUnionType(nil, matchingFieldTypes[key]...)
-		unifyErrors := c.Unify(ctx, patType, fieldUnion)
+		unifyErrors := c.unifyWithDepth(ctx, patType, fieldUnion, depth, seen)
 		errors = append(errors, unifyErrors...)
 	}
 	return errors
