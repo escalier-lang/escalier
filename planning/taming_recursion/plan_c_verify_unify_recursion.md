@@ -21,9 +21,11 @@ scenarios:
    excessive recursion during unification with Array types.
 3. **Large ObjectType instances** (e.g. React SVG attributes with 200+ properties)
 
-Plan A replaced the retry loop with an iterative expansion loop in `unifyPruned`
-that calls `unifyMatched` for case-matching and `tryExpandTypeRef` for TypeRef
-expansion, eliminating the pointer-inequality-driven retries that caused
+Plan A replaced the retry loop with an expansion loop in `unifyPruned` that calls
+`unifyMatched` for case-matching and `canExpandTypeRef` (a bool predicate) to
+decide whether TypeRef expansion should be attempted. When expansion is possible,
+`ExpandType(ctx, t, 1)` creates fresh copies and `unifyWithDepth` with `depth+1`
+retries unification, eliminating the pointer-inequality-driven retries that caused
 scenarios 1 and 3. Plan B added visited-set cycle detection, removing the
 `maxUnifyDepth` safety net and the `maxExpansionRetries` loop bound.
 
@@ -67,11 +69,12 @@ by Plan B to propagate the seen set. After Plan A, these cases live in
 - `unifyTuples` helper: calls `c.Unify` on each pair of tuple elements
 
 Each of these should be `c.unifyWithDepth(ctx, ..., depth, seen)` after Plan B —
-propagating the seen set but keeping the same depth. After Plan A, TypeRefType
-expansion is handled iteratively in `unifyPruned`'s loop and does not increment
-`depth`. The `depth` parameter only reflects structural recursion depth from
-subcomponent unification (these forwarding calls), which should pass `depth`
-unchanged. If any `c.Unify` calls were missed during Plan B, fix them.
+propagating the seen set and keeping the same depth. After Plan A, TypeRefType
+expansion delegates to `unifyWithDepth` with `depth+1` (bounded by alias chain
+depth, typically 1-3). The `depth` parameter reflects both TypeRefType expansion
+recursion and structural recursion from subcomponent unification. Structural
+forwarding calls (these tuple/array cases) should pass `depth` unchanged. If any
+`c.Unify` calls were missed during Plan B, fix them.
 
 ### Step 2: Audit `ExpandType` calls that remain in unify.go
 
@@ -79,13 +82,14 @@ After Plan A, two `ExpandType` call sites remain in `unifyMatched` (the
 case-matching function extracted from the original `unifyPruned`):
 
 1. **KeyOfType expansion** (lines 345-346): Expands both `keyof` types to get their
-   concrete keys, then unifies the results. Per Step 1's principle, this is not a
-   TypeRef expansion, so it should forward the same depth:
+   concrete keys, then unifies the results. This is a structural forwarding call
+   (not a TypeRef expansion), so it should forward the same depth:
    `c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth, seen)`.
 
    **Risk:** If the expanded keys contain TypeRefTypes, they'll be expanded again on
-   re-entry to `unifyPruned` via Plan A's explicit cases (which do increment depth).
-   The visited set from Plan B handles cycles. Verify with a test case like:
+   re-entry to `unifyPruned` via Plan A's expansion logic (which delegates to
+   `unifyWithDepth` with `depth+1`). The visited set from Plan B handles cycles.
+   Verify with a test case like:
    ```escalier
    type A = { x: number, y: string }
    type B = { x: number, y: string }

@@ -13,13 +13,16 @@ future support for recursive type aliases.
 
 ## Background
 
-After Plan A, TypeRefType expansion is handled by an iterative loop in
-`unifyPruned` (bounded by `maxExpansionRetries`) rather than recursive
-`unifyWithDepth` calls. The `depth` parameter in `unifyWithDepth` is no longer
-incremented for TypeRef expansion — it only reflects structural recursion depth
-from subcomponent unification. The loop bound is still an arbitrary limit —
-there's no guarantee that `maxExpansionRetries = 10` is sufficient for all
-programs, and reducing it risks rejecting valid programs.
+After Plan A, TypeRefType expansion is handled by a loop in `unifyPruned` (bounded
+by `maxExpansionRetries`). When `canExpandTypeRef` returns true, the loop delegates
+to `ExpandType(ctx, t, 1)` (which creates fresh copies) followed by
+`unifyWithDepth` with `depth+1`. For non-TypeRef expandable types (TypeOfType etc.),
+the loop uses `ExpandType(ctx, t, 0)` and retries via `continue`. The `depth`
+parameter reflects both TypeRefType expansion recursion (bounded by alias chain
+depth, typically 1-3) and structural recursion from subcomponent unification. The
+loop bound is still an arbitrary limit — there's no guarantee that
+`maxExpansionRetries = 10` is sufficient for all programs, and reducing it risks
+rejecting valid programs.
 
 The standard approach in type checkers is co-inductive unification: if you
 encounter a pair `(t1, t2)` that you've already started unifying, assume it will
@@ -125,13 +128,13 @@ type unifySeen map[unifyPairKey]bool
 
 ### Step 2: Thread `unifySeen` through unification
 
-**Depth note:** After Plan A, TypeRefType expansion no longer increments `depth`
-— it is handled by the iterative loop in `unifyPruned` (bounded by
-`maxExpansionRetries`). The `depth` parameter only reflects structural recursion
-from subcomponent unification (tuple elements, array element types, function
-parameters, object properties, rest spread types), and these forwarding calls
-should pass `depth` unchanged. Once the visited set is in place, `depth` becomes
-purely diagnostic.
+**Depth note:** After Plan A, TypeRefType expansion delegates to `unifyWithDepth`
+with `depth+1` (bounded by alias chain depth, typically 1-3). The `depth` parameter
+reflects both TypeRefType expansion recursion and structural recursion from
+subcomponent unification (tuple elements, array element types, function parameters,
+object properties, rest spread types). Structural forwarding calls should pass
+`depth` unchanged. Once the visited set is in place, `depth` becomes purely
+diagnostic.
 
 Change the internal signatures:
 
@@ -166,16 +169,19 @@ throughout `unify.go` that need to be updated. A systematic approach:
 
 ### Step 3: Add cycle detection at the TypeRefType expansion site
 
-After Plan A, TypeRefType expansion lives in `unifyPruned`'s iterative loop,
-which calls `tryExpandTypeRef` and retries `unifyMatched` with the expanded
-types. Cycle detection should be added to this loop: before expanding a
-TypeRefType, check whether the pair `(t1, t2)` has already been seen. If so,
-apply the co-inductive assumption (return success).
+After Plan A, TypeRefType expansion lives in `unifyPruned`'s loop. When
+`canExpandTypeRef` returns true, the loop delegates to `ExpandType(ctx, t, 1)`
+(which creates fresh copies) followed by `unifyWithDepth` with `depth+1`.
+Cycle detection should be added before this delegation: check whether the pair
+`(t1, t2)` has already been seen. If so, apply the co-inductive assumption
+(return success).
 
-Note: `tryExpandTypeRef` (added by Plan A) resolves a `TypeRefType`'s alias and
-substitutes type parameters without recursively expanding nested references.
-It does not call `ExpandType`, so the `expandSeen` set from Step 4 is not
-consulted here — cycles are caught by the `unifySeen` check in the loop.
+Note: `canExpandTypeRef` (added by Plan A) is a bool predicate that checks
+whether a `TypeRefType` can be expanded (resolves alias, checks nominal/
+self-referential guards). It does not perform the actual expansion — that's
+done by `ExpandType`, which uses the visitor pattern. The `expandSeen` set
+from Step 4 applies to `ExpandType` calls; the `unifySeen` check here guards
+the `unifyWithDepth` recursion.
 
 ```go
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
@@ -185,34 +191,32 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, s
             return nil
         }
 
+        // ... Issue 5 (TypeVarType guard) and Issue 6 (same-alias guard) as in Plan A ...
+
         // Try expanding TypeRefTypes with cycle detection
-        expanded := false
-        if ref1, ok := t1.(*type_system.TypeRefType); ok {
+        ref1, isRef1 := t1.(*type_system.TypeRefType)
+        ref2, isRef2 := t2.(*type_system.TypeRefType)
+        refCanExpand := false
+        if isRef1 && c.canExpandTypeRef(ctx, ref1) {
+            refCanExpand = true
+        }
+        if isRef2 && c.canExpandTypeRef(ctx, ref2) {
+            refCanExpand = true
+        }
+        if refCanExpand {
             key := makeUnifyPairKey(t1, t2)
             if seen[key] {
                 return nil // co-inductive assumption: assume success
             }
             seen[key] = true
-            if exp, ok := c.tryExpandTypeRef(ctx, ref1); ok {
-                t1 = exp
-                expanded = true
-            }
+            refExpT1, _ := c.ExpandType(ctx, t1, 1)
+            refExpT2, _ := c.ExpandType(ctx, t2, 1)
+            return c.unifyWithDepth(ctx, refExpT1, refExpT2, depth+1, seen)
         }
-        if ref2, ok := t2.(*type_system.TypeRefType); ok {
-            key := makeUnifyPairKey(t1, t2)
-            if seen[key] {
-                return nil // co-inductive assumption: assume success
-            }
-            seen[key] = true
-            if exp, ok := c.tryExpandTypeRef(ctx, ref2); ok {
-                t2 = exp
-                expanded = true
-            }
-        }
-        if expanded {
-            continue
-        }
-        // ... ExpandType(ctx, t, 0) fallback and error return as in Plan A ...
+
+        // ... ExpandType(ctx, t, 0) fallback for non-TypeRef types,
+        //     Issue 10 last-resort ExpandType(ctx, t, 1), and
+        //     error return as in Plan A ...
     }
     return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 }
