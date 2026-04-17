@@ -958,11 +958,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, 
 				}
 				// Copy index signatures from closed to open
 				for _, sig := range collected2.IndexSignatures {
-					obj1.Elems = append(obj1.Elems, &type_system.IndexSignatureElem{
-						KeyType:  sig.KeyType,
-						Value:    sig.Value,
-						Readonly: sig.Readonly,
-					})
+					obj1.Elems = append(obj1.Elems, copyObjTypeElem(sig))
 				}
 				return errors
 			}
@@ -991,11 +987,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, 
 				}
 				// Copy index signatures from closed to open
 				for _, sig := range collected1.IndexSignatures {
-					obj2.Elems = append(obj2.Elems, &type_system.IndexSignatureElem{
-						KeyType:  sig.KeyType,
-						Value:    sig.Value,
-						Readonly: sig.Readonly,
-					})
+					obj2.Elems = append(obj2.Elems, copyObjTypeElem(sig))
 				}
 				return errors
 			}
@@ -2296,6 +2288,9 @@ func copyObjTypeElem(elem type_system.ObjTypeElem) type_system.ObjTypeElem {
 	case *type_system.SetterElem:
 		cp := *e
 		return &cp
+	case *type_system.IndexSignatureElem:
+		cp := *e
+		return &cp
 	default:
 		return elem
 	}
@@ -3004,7 +2999,9 @@ func findIndexSignatureForKey(key type_system.ObjTypeKey, indexSigs []*type_syst
 		if prim, ok := sig.KeyType.(*type_system.PrimType); ok {
 			switch prim.Prim {
 			case type_system.StrPrim:
-				if key.Kind == type_system.StrObjTypeKeyKind {
+				// String index signatures accept both string and numeric keys
+				// (TypeScript coerces numeric keys to strings).
+				if key.Kind == type_system.StrObjTypeKeyKind || key.Kind == type_system.NumObjTypeKeyKind {
 					return sig.Value
 				}
 			case type_system.NumPrim:

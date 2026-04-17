@@ -285,11 +285,11 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 					Extends:   c.deepCloneType(e.Extends, varMapping),
 				}
 			case *type_system.IndexSignatureElem:
-				elems[i] = &type_system.IndexSignatureElem{
-					KeyType:  c.deepCloneType(e.KeyType, varMapping),
-					Value:    c.deepCloneType(e.Value, varMapping),
-					Readonly: e.Readonly,
-				}
+				elems[i] = type_system.NewIndexSignatureElem(
+					c.deepCloneType(e.KeyType, varMapping),
+					c.deepCloneType(e.Value, varMapping),
+					e.Readonly,
+				)
 			default:
 				elems[i] = elem
 			}

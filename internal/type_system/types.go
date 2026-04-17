@@ -1298,6 +1298,26 @@ type IndexSignatureElem struct {
 	Value    Type
 	Readonly bool
 }
+// NewIndexSignatureElem creates an IndexSignatureElem, panicking if keyType is
+// not a *PrimType with Prim in {StrPrim, NumPrim, SymbolPrim}.
+func NewIndexSignatureElem(keyType Type, value Type, readonly bool) *IndexSignatureElem {
+	prim, ok := keyType.(*PrimType)
+	if !ok {
+		panic(fmt.Sprintf("IndexSignatureElem keyType must be a *PrimType, got %T", keyType))
+	}
+	switch prim.Prim {
+	case StrPrim, NumPrim, SymbolPrim:
+		// valid
+	default:
+		panic(fmt.Sprintf("IndexSignatureElem keyType must be string, number, or symbol, got %v", prim.Prim))
+	}
+	return &IndexSignatureElem{
+		KeyType:  keyType,
+		Value:    value,
+		Readonly: readonly,
+	}
+}
+
 type RestSpreadElem struct{ Value Type }
 
 func NewRestSpreadElem(value Type) *RestSpreadElem {
@@ -1429,11 +1449,7 @@ func (idx *IndexSignatureElem) Accept(v TypeVisitor) ObjTypeElem {
 		changed = true
 	}
 	if changed {
-		return &IndexSignatureElem{
-			KeyType:  newKeyType,
-			Value:    newValue,
-			Readonly: idx.Readonly,
-		}
+		return NewIndexSignatureElem(newKeyType, newValue, idx.Readonly)
 	}
 	return idx
 }
@@ -3125,6 +3141,12 @@ func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
 	case *RestSpreadElem:
 		if e2, ok := e2.(*RestSpreadElem); ok {
 			return equals(e1.Value, e2.Value)
+		}
+	case *IndexSignatureElem:
+		if e2, ok := e2.(*IndexSignatureElem); ok {
+			return e1.Readonly == e2.Readonly &&
+				equals(e1.KeyType, e2.KeyType) &&
+				equals(e1.Value, e2.Value)
 		}
 	}
 	return false

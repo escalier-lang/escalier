@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -913,6 +914,59 @@ company.project.module.submodule.utils.constant = company__project__module__subm
 			}
 
 			assert.Equal(t, test.expected, printer.Output, "Generated module should match expected output")
+		})
+	}
+}
+
+func TestBuildIndexSignatureKeyName(t *testing.T) {
+	tests := map[string]struct {
+		keyType  type_system.Type
+		value    type_system.Type
+		readonly bool
+		expected string
+	}{
+		"StringIndexSignature": {
+			keyType:  type_system.NewStrPrimType(nil),
+			value:    type_system.NewNumPrimType(nil),
+			readonly: false,
+			expected: "[key: string]: number",
+		},
+		"NumberIndexSignature": {
+			keyType:  type_system.NewNumPrimType(nil),
+			value:    type_system.NewStrPrimType(nil),
+			readonly: false,
+			expected: "[index: number]: string",
+		},
+		"SymbolIndexSignature": {
+			keyType:  type_system.NewSymPrimType(nil),
+			value:    type_system.NewNumPrimType(nil),
+			readonly: false,
+			expected: "[sym: symbol]: number",
+		},
+		"ReadonlyStringIndexSignature": {
+			keyType:  type_system.NewStrPrimType(nil),
+			value:    type_system.NewNumPrimType(nil),
+			readonly: true,
+			expected: "readonly [key: string]: number",
+		},
+		"ReadonlyNumberIndexSignature": {
+			keyType:  type_system.NewNumPrimType(nil),
+			value:    type_system.NewStrPrimType(nil),
+			readonly: true,
+			expected: "readonly [index: number]: string",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			builder := &Builder{tempId: 0, depGraph: nil}
+			elem := type_system.NewIndexSignatureElem(test.keyType, test.value, test.readonly)
+			ann := builder.buildObjTypeAnnElem(elem, nil)
+
+			printer := NewPrinter()
+			printer.printObjTypeAnnElem(ann)
+
+			assert.Equal(t, test.expected, printer.Output)
 		})
 	}
 }

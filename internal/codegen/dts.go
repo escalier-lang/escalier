@@ -921,8 +921,17 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			ReadOnly:  mapMappedModifier(elem.Readonly),
 		}
 	case *type_sys.IndexSignatureElem:
+		keyName := "key"
+		if prim, ok := elem.KeyType.(*type_sys.PrimType); ok {
+			switch prim.Prim {
+			case type_sys.NumPrim:
+				keyName = "index"
+			case type_sys.SymbolPrim:
+				keyName = "sym"
+			}
+		}
 		return &IndexSignatureTypeAnn{
-			KeyName:  "key",
+			KeyName:  keyName,
 			KeyType:  b.buildTypeAnn(elem.KeyType),
 			Value:    b.buildTypeAnn(elem.Value),
 			Readonly: elem.Readonly,

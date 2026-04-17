@@ -1107,6 +1107,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// earlier ones. This respects JavaScript spread semantics where
 		// {a: 1, ...{a: 2}} yields a=2 and {...{a: 1}, a: 2} yields a=2.
 		targetKey := type_system.NewStrKey(k.Name)
+		var indexSigFallback type_system.Type
 		for i := len(objType.Elems) - 1; i >= 0; i-- {
 			switch elem := objType.Elems[i].(type) {
 			case *type_system.PropertyElem:
@@ -1138,7 +1139,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			case *type_system.IndexSignatureElem:
 				if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
-					return elem.Value, errors
+					indexSigFallback = elem.Value
 				}
 			case *type_system.MappedElem:
 				panic("MappedElems should have been expanded before property access")
@@ -1148,6 +1149,11 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 			}
+		}
+
+		// If no explicit member matched but an index signature did, return it.
+		if indexSigFallback != nil {
+			return indexSigFallback, errors
 		}
 
 		// Check the Extends field if property not found.
@@ -1203,6 +1209,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 				// Search in reverse order for override semantics (same as PropertyKey).
 				targetKey := type_system.NewStrKey(strLit.Value)
+				var indexSigFallback type_system.Type
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
 					switch elem := objType.Elems[i].(type) {
 					case *type_system.PropertyElem:
@@ -1227,7 +1234,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						}
 					case *type_system.IndexSignatureElem:
 						if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
-							return elem.Value, errors
+							indexSigFallback = elem.Value
 						}
 					case *type_system.RestSpreadElem:
 						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
@@ -1245,6 +1252,77 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 					}
 				}
+				if indexSigFallback != nil {
+					return indexSigFallback, errors
+				}
+			}
+			if numLit, ok := indexLit.Lit.(*type_system.NumLit); ok {
+				// Numeric literal index — check for numeric-keyed properties and
+				// numeric index signatures, falling back to string index signatures
+				// per TypeScript's numeric-to-string coercion rules.
+				targetKey := type_system.NewNumKey(numLit.Value)
+				var numSigFallback type_system.Type
+				var strSigFallback type_system.Type
+				for i := len(objType.Elems) - 1; i >= 0; i-- {
+					switch elem := objType.Elems[i].(type) {
+					case *type_system.PropertyElem:
+						if elem.Name == targetKey {
+							propType := elem.Value
+							if elem.Optional {
+								propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+							}
+							return propType, errors
+						}
+					case *type_system.IndexSignatureElem:
+						if prim, ok := elem.KeyType.(*type_system.PrimType); ok {
+							if prim.Prim == type_system.NumPrim {
+								numSigFallback = elem.Value
+							} else if prim.Prim == type_system.StrPrim {
+								strSigFallback = elem.Value
+							}
+						}
+					case *type_system.RestSpreadElem:
+						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
+							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+							if len(spreadErrors) == 0 {
+								return spreadType, errors
+							}
+						}
+					default:
+						continue
+					}
+				}
+				if numSigFallback != nil {
+					return numSigFallback, errors
+				}
+				if strSigFallback != nil {
+					return strSigFallback, errors
+				}
+			}
+		}
+		// Handle numeric primitive keys (e.g. m[n] where n: number).
+		if primType, ok := keyType.(*type_system.PrimType); ok && primType.Prim == type_system.NumPrim {
+			for _, elem := range objType.Elems {
+				if sig, ok := elem.(*type_system.IndexSignatureElem); ok {
+					if prim, ok := sig.KeyType.(*type_system.PrimType); ok {
+						if prim.Prim == type_system.NumPrim {
+							return sig.Value, errors
+						}
+						if prim.Prim == type_system.StrPrim {
+							return sig.Value, errors
+						}
+					}
+				}
+			}
+		}
+		// Handle string primitive keys (e.g. m[s] where s: string).
+		if primType, ok := keyType.(*type_system.PrimType); ok && primType.Prim == type_system.StrPrim {
+			for _, elem := range objType.Elems {
+				if sig, ok := elem.(*type_system.IndexSignatureElem); ok {
+					if prim, ok := sig.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+						return sig.Value, errors
+					}
+				}
 			}
 		}
 		// Handle unique symbol keys (e.g. Symbol.iterator).
@@ -1254,6 +1332,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// are found.
 		if symType, ok := keyType.(*type_system.UniqueSymbolType); ok {
 			symKey := type_system.NewSymKey(symType.Value)
+			var indexSigFallback type_system.Type
 			for i := len(objType.Elems) - 1; i >= 0; i-- {
 				switch elem := objType.Elems[i].(type) {
 				case *type_system.PropertyElem:
@@ -1278,7 +1357,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					}
 				case *type_system.IndexSignatureElem:
 					if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.SymbolPrim {
-						return elem.Value, errors
+						indexSigFallback = elem.Value
 					}
 				case *type_system.RestSpreadElem:
 					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
@@ -1294,6 +1373,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				default:
 					continue
 				}
+			}
+			if indexSigFallback != nil {
+				return indexSigFallback, errors
 			}
 		}
 
@@ -1818,11 +1900,9 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType
 						if mappedElem.Readonly != nil && *mappedElem.Readonly == type_system.MMAdd {
 							readonly = true
 						}
-						expandedElems = append(expandedElems, &type_system.IndexSignatureElem{
-							KeyType:  keyType,
-							Value:    propValue,
-							Readonly: readonly,
-						})
+						expandedElems = append(expandedElems, type_system.NewIndexSignatureElem(
+							keyType, propValue, readonly,
+						))
 						continue
 					}
 				}

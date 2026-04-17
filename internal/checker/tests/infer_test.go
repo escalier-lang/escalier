@@ -1631,6 +1631,29 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"x": "number",
 			},
 		},
+		"RecordNumberType": {
+			input: `
+				type NumberMap = Record<number, number>
+				declare val m: NumberMap
+				val x = m[1]
+			`,
+			expectedTypes: map[string]string{
+				"m": "NumberMap",
+				"x": "number",
+			},
+		},
+		"RecordSymbolType": {
+			input: `
+				type SymbolMap = Record<symbol, number>
+				declare val m: SymbolMap
+				declare val s: unique symbol
+				val x = m[s]
+			`,
+			expectedTypes: map[string]string{
+				"m": "SymbolMap",
+				"x": "number",
+			},
+		},
 		"CycleDetectionSameTypeAssignment": {
 			input: `
 				type List<T> = { head: T, tail: List<T> | null }
