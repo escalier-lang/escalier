@@ -10,9 +10,9 @@ import (
 // meaning it doesn't transform any types but allows traversal
 type IdentityVisitor struct{}
 
-func (v *IdentityVisitor) EnterType(t Type) Type {
+func (v *IdentityVisitor) EnterType(t Type) EnterResult {
 	// No-op for entry
-	return nil
+	return EnterResult{}
 }
 
 func (v *IdentityVisitor) ExitType(t Type) Type {
@@ -28,9 +28,9 @@ func NewTypeReplacementVisitor(replacements map[Type]Type) *TypeReplacementVisit
 	return &TypeReplacementVisitor{replacements: replacements}
 }
 
-func (v *TypeReplacementVisitor) EnterType(t Type) Type {
+func (v *TypeReplacementVisitor) EnterType(t Type) EnterResult {
 	// No-op for entry
-	return nil
+	return EnterResult{}
 }
 
 func (v *TypeReplacementVisitor) ExitType(t Type) Type {
@@ -53,9 +53,9 @@ func NewTrackingVisitor() *TrackingVisitor {
 	}
 }
 
-func (v *TrackingVisitor) EnterType(t Type) Type {
+func (v *TrackingVisitor) EnterType(t Type) EnterResult {
 	v.enteredTypes = append(v.enteredTypes, t)
-	return nil
+	return EnterResult{}
 }
 
 func (v *TrackingVisitor) ExitType(t Type) Type {
@@ -85,11 +85,11 @@ func NewSameKindReplacementVisitor(replacements map[Type]Type) *SameKindReplacem
 	return &SameKindReplacementVisitor{replacements: replacements}
 }
 
-func (v *SameKindReplacementVisitor) EnterType(t Type) Type {
+func (v *SameKindReplacementVisitor) EnterType(t Type) EnterResult {
 	if replacement, found := v.replacements[t]; found {
-		return replacement
+		return EnterResult{Type: replacement}
 	}
-	return nil
+	return EnterResult{}
 }
 
 func (v *SameKindReplacementVisitor) ExitType(t Type) Type {
@@ -1137,9 +1137,9 @@ type TransformingTrackingVisitor struct {
 	newType      Type
 }
 
-func (v *TransformingTrackingVisitor) EnterType(t Type) Type {
+func (v *TransformingTrackingVisitor) EnterType(t Type) EnterResult {
 	v.enteredTypes = append(v.enteredTypes, t)
-	return nil
+	return EnterResult{}
 }
 
 func (v *TransformingTrackingVisitor) ExitType(t Type) Type {
@@ -1211,9 +1211,9 @@ type OrderTrackingVisitor struct {
 	exitFunc  func(Type) Type
 }
 
-func (v *OrderTrackingVisitor) EnterType(t Type) Type {
+func (v *OrderTrackingVisitor) EnterType(t Type) EnterResult {
 	v.enterFunc(t)
-	return nil
+	return EnterResult{}
 }
 
 func (v *OrderTrackingVisitor) ExitType(t Type) Type {

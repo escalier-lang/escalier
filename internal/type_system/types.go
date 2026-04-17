@@ -212,18 +212,25 @@ func NewTypeVarType(provenance Provenance, id int) *TypeVarType {
 }
 
 func (t *TypeVarType) Accept(v TypeVisitor) Type {
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*TypeVarType)
+	}
+	if enter.SkipChildren {
+		if result := v.ExitType(t); result != nil {
+			return result
+		}
+		return t
+	}
+
 	prunedType := Prune(t)
 	if prunedType != t {
 		return prunedType.Accept(v) // Accept on the pruned type
 	}
 
-	if result := v.EnterType(prunedType); result != nil {
-		t = result.(*TypeVarType)
-	}
-	if result := v.ExitType(prunedType); result != nil {
+	if result := v.ExitType(t); result != nil {
 		return result
 	}
-
 	return t
 }
 func (t *TypeVarType) Equals(other Type) bool {
@@ -291,13 +298,26 @@ func NewTypeRefTypeFromQualIdent(provenance Provenance, name QualIdent, typeAlia
 	}
 }
 func (t *TypeRefType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		switch result := result.(type) {
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		switch r := enter.Type.(type) {
 		case *TypeRefType:
-			t = result
+			t = r
 		default:
-			return result.Accept(v)
+			if enter.SkipChildren {
+				if visitResult := v.ExitType(r); visitResult != nil {
+					return visitResult
+				}
+				return r
+			}
+			return r.Accept(v)
 		}
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false
@@ -422,8 +442,9 @@ func NewBigIntPrimType(provenance Provenance) *PrimType {
 	}
 }
 func (t *PrimType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*PrimType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*PrimType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -489,8 +510,9 @@ func NewRegexTypeWithPatternString(provenance Provenance, pattern string) (Type,
 	return NewRegexType(provenance, regex, groups), nil
 }
 func (t *RegexType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*RegexType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*RegexType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -562,8 +584,9 @@ func NewBigIntLitType(provenance Provenance, value big.Int) *LitType {
 }
 
 func (t *LitType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*LitType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*LitType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -609,8 +632,9 @@ func NewUniqueSymbolType(provenance Provenance, value int) *UniqueSymbolType {
 }
 
 func (t *UniqueSymbolType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*UniqueSymbolType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*UniqueSymbolType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -633,8 +657,9 @@ type UnknownType struct {
 }
 
 func (t *UnknownType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*UnknownType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*UnknownType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -657,8 +682,9 @@ type NeverType struct {
 }
 
 func (t *NeverType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*NeverType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*NeverType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -690,8 +716,9 @@ type ErrorType struct {
 }
 
 func (t *ErrorType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*ErrorType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*ErrorType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -714,8 +741,9 @@ type VoidType struct {
 }
 
 func (t *VoidType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*VoidType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*VoidType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -738,8 +766,9 @@ type AnyType struct {
 }
 
 func (t *AnyType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*AnyType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*AnyType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -762,8 +791,9 @@ type GlobalThisType struct {
 }
 
 func (t *GlobalThisType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*GlobalThisType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*GlobalThisType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -854,8 +884,15 @@ func NewFuncType(provenance Provenance, typeParams []*TypeParam, params []*FuncP
 	}
 }
 func (t *FuncType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*FuncType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*FuncType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false
@@ -1430,8 +1467,15 @@ func NewNominalObjectType(provenance Provenance, elems []ObjTypeElem) *ObjectTyp
 }
 
 func (t *ObjectType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*ObjectType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*ObjectType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false
@@ -1694,8 +1738,15 @@ func NewTupleType(provenance Provenance, elems ...Type) *TupleType {
 	}
 }
 func (t *TupleType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*TupleType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*TupleType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false
@@ -1781,8 +1832,15 @@ func NewRestSpreadType(provenance Provenance, typ Type) *RestSpreadType {
 	}
 }
 func (t *RestSpreadType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*RestSpreadType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*RestSpreadType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	newType := t.Type.Accept(v)
@@ -1922,8 +1980,15 @@ func NewUnionType(provenance Provenance, types ...Type) Type {
 	}
 }
 func (t *UnionType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*UnionType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*UnionType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false
@@ -2129,8 +2194,15 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 }
 
 func (t *IntersectionType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*IntersectionType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*IntersectionType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false
@@ -2195,8 +2267,15 @@ func NewKeyOfType(provenance Provenance, typ Type) *KeyOfType {
 	}
 }
 func (t *KeyOfType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*KeyOfType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*KeyOfType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	newType := t.Type.Accept(v)
@@ -2236,8 +2315,9 @@ func NewTypeOfType(provenance Provenance, ident QualIdent) *TypeOfType {
 }
 
 func (t *TypeOfType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*TypeOfType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*TypeOfType)
 	}
 
 	if visitResult := v.ExitType(t); visitResult != nil {
@@ -2271,8 +2351,15 @@ func NewIndexType(provenance Provenance, target Type, index Type) *IndexType {
 	}
 }
 func (t *IndexType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*IndexType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*IndexType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	newTarget := t.Target.Accept(v)
@@ -2307,8 +2394,15 @@ type CondType struct {
 }
 
 func (t *CondType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*CondType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*CondType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	newCheck := t.Check.Accept(v)
@@ -2360,8 +2454,9 @@ type InferType struct {
 }
 
 func (t *InferType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*InferType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*InferType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -2400,8 +2495,15 @@ type MutabilityType struct {
 }
 
 func (t *MutabilityType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*MutabilityType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*MutabilityType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	newType := t.Type.Accept(v)
@@ -2455,8 +2557,9 @@ func NewWildcardType(provenance Provenance) *WildcardType {
 	}
 }
 func (t *WildcardType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*WildcardType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*WildcardType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -2486,8 +2589,15 @@ func NewExtractorType(provenance Provenance, extractor Type, args ...Type) *Extr
 	}
 }
 func (t *ExtractorType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*ExtractorType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*ExtractorType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	newExtractor := t.Extractor.Accept(v)
@@ -2562,8 +2672,15 @@ func NewTemplateLitType(provenance Provenance, quasis []*Quasi, types []Type) *T
 	}
 }
 func (t *TemplateLitType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*TemplateLitType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*TemplateLitType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false
@@ -2628,8 +2745,9 @@ type IntrinsicType struct {
 }
 
 func (t *IntrinsicType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*IntrinsicType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*IntrinsicType)
 	}
 	if result := v.ExitType(t); result != nil {
 		return result
@@ -2721,8 +2839,15 @@ func NewNamespaceType(provenance Provenance, ns *Namespace) *NamespaceType {
 	}
 }
 func (t *NamespaceType) Accept(v TypeVisitor) Type {
-	if result := v.EnterType(t); result != nil {
-		t = result.(*NamespaceType)
+	enter := v.EnterType(t)
+	if enter.Type != nil {
+		t = enter.Type.(*NamespaceType)
+	}
+	if enter.SkipChildren {
+		if visitResult := v.ExitType(t); visitResult != nil {
+			return visitResult
+		}
+		return t
 	}
 
 	changed := false

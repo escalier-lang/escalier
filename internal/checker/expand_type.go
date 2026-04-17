@@ -40,14 +40,16 @@ type expandSeenKey struct {
 type expandSeen map[expandSeenKey]type_system.Type
 
 // typeVarDetector is a TypeVisitor that detects unresolved type variables.
-// TypeVarType.Accept prunes first, so EnterType only sees unresolved vars.
+// Only unresolved TypeVarTypes (Instance == nil) are flagged; resolved ones
+// are pruned through by Accept and their instances are visited normally.
 type typeVarDetector struct{ found bool }
 
-func (d *typeVarDetector) EnterType(t type_system.Type) type_system.Type {
-	if _, ok := t.(*type_system.TypeVarType); ok {
+func (d *typeVarDetector) EnterType(t type_system.Type) type_system.EnterResult {
+	if tv, ok := t.(*type_system.TypeVarType); ok && tv.Instance == nil {
 		d.found = true
+		return type_system.EnterResult{SkipChildren: true}
 	}
-	return t
+	return type_system.EnterResult{}
 }
 func (d *typeVarDetector) ExitType(t type_system.Type) type_system.Type { return t }
 
@@ -216,7 +218,7 @@ func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident type_system.QualIden
 	}
 }
 
-func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.Type {
+func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.EnterResult {
 	switch t := t.(type) {
 	case *type_system.FuncType:
 		v.skipTypeRefsCount++ // don't expand type refs inside function types
@@ -238,7 +240,7 @@ func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.Type {
 
 		maps.Copy(inferSubs, groupSubs)
 
-		return type_system.NewCondType(
+		return type_system.EnterResult{Type: type_system.NewCondType(
 			t.Provenance(),
 			t.Check,
 			extendsType,
@@ -247,10 +249,10 @@ func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.Type {
 			// type didn't have any InferTypes in it, so we don't need to
 			// replace them with fresh type variables.
 			SubstituteTypeParams(t.Else, inferSubs),
-		)
+		)}
 	}
 
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
@@ -2024,9 +2026,9 @@ type InferTypeFinder struct {
 	inferVars map[string]type_system.Type
 }
 
-func (v *InferTypeFinder) EnterType(t type_system.Type) type_system.Type {
+func (v *InferTypeFinder) EnterType(t type_system.Type) type_system.EnterResult {
 	// No-op - just for traversal
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *InferTypeFinder) ExitType(t type_system.Type) type_system.Type {
@@ -2061,9 +2063,9 @@ type InferTypeReplacer struct {
 	inferMapping map[string]type_system.Type
 }
 
-func (v *InferTypeReplacer) EnterType(t type_system.Type) type_system.Type {
+func (v *InferTypeReplacer) EnterType(t type_system.Type) type_system.EnterResult {
 	// No-op - just for traversal
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *InferTypeReplacer) ExitType(t type_system.Type) type_system.Type {
