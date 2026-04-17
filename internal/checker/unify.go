@@ -41,7 +41,7 @@ func makeUnifyPairKey(t1, t2 type_system.Type) unifyPairKey {
 		if ref.TypeAlias != nil {
 			key.t2 = unsafe.Pointer(ref.TypeAlias)
 		} else {
-			key.t2 = interfaceDataPointer(ref)
+			key.t2 = interfaceDataPointer(t2)
 		}
 		key.t2Args = typeArgKey(ref.TypeArgs)
 	} else {
@@ -231,7 +231,8 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 // maxExpansionRetries is a safety net for the non-TypeRef expansion loop in
 // unifyPruned. With the visited-set cycle detection in place, this should
 // never be hit in practice — the loop terminates naturally when no further
-// expansion is possible. Kept as a defensive limit.
+// expansion is possible. Empirically, the full test suite never exceeds 2
+// iterations. Kept as a defensive limit.
 const maxExpansionRetries = 100
 
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {

@@ -13,10 +13,25 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// expandSeenKey identifies a specific instantiation of a type alias.
+// expandSeenKey identifies a specific instantiation of a type alias in a
+// specific expansion context.
+//
+// TODO(#455): The insideKeyOf field may be unnecessary. The expandSeen
+// visited set already detects cycles through TypeRefType's in-progress
+// marker, which handles the nested-keyof recursion case that
+// insideKeyOfTarget was designed to prevent. If insideKeyOfTarget is
+// removed, this field can be removed too.
+//
+// Note: expandTypeRefsCount is intentionally excluded from the key. The
+// expandTypeRefsCount == 0 check in ExitType returns nil before the cache
+// lookup, so count=0 never consults or populates the cache. Within a single
+// expansion pass the count only decreases (N → N-1 → … → 0), so a cached
+// result can only be hit at the same or lower count — never at a higher count
+// that would expect more expansion than what was cached.
 type expandSeenKey struct {
-	alias    unsafe.Pointer // TypeAlias pointer
-	typeArgs string         // typeArgKey(typeArgs)
+	alias       unsafe.Pointer // TypeAlias pointer
+	typeArgs    string         // typeArgKey(typeArgs)
+	insideKeyOf bool           // TODO(#455): may be unnecessary
 }
 
 // expandSeen tracks type alias expansions in progress and caches completed results.
@@ -287,7 +302,8 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 
 		return distributed
 	case *type_system.KeyOfType:
-		// Prevent infinite recursion when expanding nested keyof types
+		// TODO(#455): This guard may be redundant now that expandSeen detects
+		// cycles via TypeRefType's in-progress marker. Evaluate removing it.
 		if v.insideKeyOfTarget > 0 {
 			return nil
 		}
@@ -457,8 +473,9 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 
 		// Cycle detection: check if we're already expanding this alias+typeArgs.
 		key := expandSeenKey{
-			alias:    unsafe.Pointer(typeAlias),
-			typeArgs: typeArgKey(t.TypeArgs),
+			alias:       unsafe.Pointer(typeAlias),
+			typeArgs:    typeArgKey(t.TypeArgs),
+			insideKeyOf: v.insideKeyOfTarget > 0,
 		}
 		if cached, exists := v.seen[key]; exists {
 			if cached == nil {
