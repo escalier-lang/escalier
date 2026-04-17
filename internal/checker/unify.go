@@ -956,9 +956,15 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, 
 						}
 					}
 				}
-				// Copy index signatures from closed to open
+				// Copy or unify index signatures from closed to open.
 				for _, sig := range collected2.IndexSignatures {
-					obj1.Elems = append(obj1.Elems, copyObjTypeElem(sig))
+					if existing := findMatchingIndexSignature(sig, collected1.IndexSignatures); existing != nil {
+						// Both sides have the same key-kind — unify their value types.
+						unifyErrors := c.unifyWithDepth(ctx, existing.Value, sig.Value, depth, seen)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						obj1.Elems = append(obj1.Elems, copyObjTypeElem(sig))
+					}
 				}
 				return errors
 			}
@@ -985,9 +991,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, 
 						}
 					}
 				}
-				// Copy index signatures from closed to open
+				// Copy or unify index signatures from closed to open.
 				for _, sig := range collected1.IndexSignatures {
-					obj2.Elems = append(obj2.Elems, copyObjTypeElem(sig))
+					if existing := findMatchingIndexSignature(sig, collected2.IndexSignatures); existing != nil {
+						unifyErrors := c.unifyWithDepth(ctx, existing.Value, sig.Value, depth, seen)
+						errors = slices.Concat(errors, unifyErrors)
+					} else {
+						obj2.Elems = append(obj2.Elems, copyObjTypeElem(sig))
+					}
 				}
 				return errors
 			}
@@ -1130,6 +1141,13 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, 
 						}
 					}
 				}
+
+				// Enforce TypeScript numeric/string index signature compatibility:
+				// when an object has both [key: string]: S and [index: number]: N,
+				// N must be compatible with S because JavaScript coerces numeric
+				// keys to strings (obj[1] === obj["1"]).
+				errors = slices.Concat(errors, c.unifyNumericWithStringIndexSigs(ctx, collected1.IndexSignatures, depth, seen))
+				errors = slices.Concat(errors, c.unifyNumericWithStringIndexSigs(ctx, collected2.IndexSignatures, depth, seen))
 			}
 
 			return errors
@@ -2992,20 +3010,35 @@ func collectObjElemTypes(obj *type_system.ObjectType, collectOrigElems bool) col
 	return result
 }
 
-// findIndexSignatureForKey returns the value type of the first index signature
+// findIndexSignatureForKey returns the value type of the index signature
 // whose key type is compatible with the given property key, or nil if none match.
+// For numeric keys, a numeric index signature is preferred over a string one
+// so the result is order-independent.
 func findIndexSignatureForKey(key type_system.ObjTypeKey, indexSigs []*type_system.IndexSignatureElem) type_system.Type {
+	// For numeric keys, prefer the numeric index signature over the string
+	// fallback so that iteration order doesn't affect the result.
+	if key.Kind == type_system.NumObjTypeKeyKind {
+		var strFallback type_system.Type
+		for _, sig := range indexSigs {
+			if prim, ok := sig.KeyType.(*type_system.PrimType); ok {
+				switch prim.Prim {
+				case type_system.NumPrim:
+					return sig.Value
+				case type_system.StrPrim:
+					if strFallback == nil {
+						strFallback = sig.Value
+					}
+				}
+			}
+		}
+		return strFallback
+	}
+
 	for _, sig := range indexSigs {
 		if prim, ok := sig.KeyType.(*type_system.PrimType); ok {
 			switch prim.Prim {
 			case type_system.StrPrim:
-				// String index signatures accept both string and numeric keys
-				// (TypeScript coerces numeric keys to strings).
-				if key.Kind == type_system.StrObjTypeKeyKind || key.Kind == type_system.NumObjTypeKeyKind {
-					return sig.Value
-				}
-			case type_system.NumPrim:
-				if key.Kind == type_system.NumObjTypeKeyKind {
+				if key.Kind == type_system.StrObjTypeKeyKind {
 					return sig.Value
 				}
 			case type_system.SymbolPrim:
@@ -3014,6 +3047,42 @@ func findIndexSignatureForKey(key type_system.ObjTypeKey, indexSigs []*type_syst
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// findMatchingIndexSignature returns the first index signature in existing
+// whose KeyType PrimType matches sig's KeyType PrimType, or nil if none match.
+func findMatchingIndexSignature(sig *type_system.IndexSignatureElem, existing []*type_system.IndexSignatureElem) *type_system.IndexSignatureElem {
+	sigPrim, ok := sig.KeyType.(*type_system.PrimType)
+	if !ok {
+		return nil
+	}
+	for _, e := range existing {
+		if ePrim, ok := e.KeyType.(*type_system.PrimType); ok && ePrim.Prim == sigPrim.Prim {
+			return e
+		}
+	}
+	return nil
+}
+
+// unifyNumericWithStringIndexSigs enforces the TypeScript rule that when an
+// object has both [key: string]: S and [index: number]: N, N must be compatible
+// with S (because JavaScript coerces numeric keys to strings: obj[1] === obj["1"]).
+func (c *Checker) unifyNumericWithStringIndexSigs(ctx Context, sigs []*type_system.IndexSignatureElem, depth int, seen unifySeen) []Error {
+	var numVal, strVal type_system.Type
+	for _, sig := range sigs {
+		if prim, ok := sig.KeyType.(*type_system.PrimType); ok {
+			switch prim.Prim {
+			case type_system.NumPrim:
+				numVal = sig.Value
+			case type_system.StrPrim:
+				strVal = sig.Value
+			}
+		}
+	}
+	if numVal != nil && strVal != nil {
+		return c.unifyWithDepth(ctx, numVal, strVal, depth, seen)
 	}
 	return nil
 }
