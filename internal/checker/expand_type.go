@@ -39,6 +39,17 @@ type expandSeenKey struct {
 // A non-nil value is the cached expansion result (re-encounter = reuse).
 type expandSeen map[expandSeenKey]type_system.Type
 
+// memberCacheKey identifies a specific property on a specific instantiation of
+// a generic type alias. Used by lazyMemberLookup to cache per-property
+// substitution results (#461).
+type memberCacheKey struct {
+	alias    unsafe.Pointer // TypeAlias pointer
+	typeArgs string         // typeArgKey(typeArgs)
+	member   string         // property name
+}
+
+type memberCache map[memberCacheKey]type_system.Type
+
 // typeVarDetector is a TypeVisitor that detects unresolved type variables.
 // Only unresolved TypeVarTypes (Instance == nil) are flagged; resolved ones
 // are pruned through by Accept and their instances are visited normally.
@@ -698,7 +709,18 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			return t.TypeArgs[0], errors
 		}
 
-		// Try to expand the type alias and call getAccessType recursively
+		// Lazy substitution (#461): for generic TypeRefTypes resolving to
+		// ObjectTypes, find the property on the unsubstituted ObjectType and
+		// substitute only that property's type. This turns the cost from
+		// O(all methods) into O(1) for single property lookups.
+		if propKey, ok := key.(PropertyKey); ok {
+			if memberType, found := c.lazyMemberLookup(ctx, t, propKey.Name, mode); found {
+				return memberType, errors
+			}
+		}
+
+		// Fallback: full expansion for index access, extends properties,
+		// symbol keys, or non-ObjectType aliases.
 		expandType, expandErrors := c.expandTypeRef(ctx, t)
 		accessType, accessErrors := c.getMemberType(ctx, expandType, key, mode)
 
@@ -974,6 +996,84 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 		}
 	}
 	return nil
+}
+
+// lazyMemberLookup performs property lookup on a generic TypeRefType without
+// substituting the entire ObjectType. It finds the property on the raw
+// (unsubstituted) ObjectType and substitutes only that property's type.
+// Results are cached per (TypeAlias, typeArgs, memberName) so repeated
+// accesses to the same property are free after the first lookup.
+// Returns (memberType, true) if the property was found, or (nil, false)
+// to signal the caller should fall back to full expansion.
+func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name string, mode AccessMode) (type_system.Type, bool) {
+	typeAlias := t.TypeAlias
+	if typeAlias == nil {
+		typeAlias = resolveQualifiedTypeAlias(ctx, t.Name)
+	}
+	if typeAlias == nil {
+		return nil, false
+	}
+
+	aliasType := type_system.Prune(typeAlias.Type)
+	objType, ok := aliasType.(*type_system.ObjectType)
+	if !ok {
+		return nil, false
+	}
+
+	// Check per-member cache first.
+	cacheKey := memberCacheKey{
+		alias:    unsafe.Pointer(typeAlias),
+		typeArgs: typeArgKey(t.TypeArgs),
+		member:   name,
+	}
+	if cached, exists := c.memberCache[cacheKey]; exists {
+		return cached, true
+	}
+
+	// Search the unsubstituted ObjectType for the property.
+	targetKey := type_system.NewStrKey(name)
+	var memberType type_system.Type
+	for i := len(objType.Elems) - 1; i >= 0; i-- {
+		switch elem := objType.Elems[i].(type) {
+		case *type_system.PropertyElem:
+			if elem.Name == targetKey {
+				memberType = elem.Value
+				if elem.Optional {
+					memberType = type_system.NewUnionType(nil, memberType, type_system.NewUndefinedType(nil))
+				}
+			}
+		case *type_system.MethodElem:
+			if elem.Name == targetKey {
+				memberType = elem.Fn
+			}
+		case *type_system.GetterElem:
+			if elem.Name == targetKey && mode == AccessRead {
+				memberType = elem.Fn.Return
+			}
+		case *type_system.SetterElem:
+			if elem.Name == targetKey && mode == AccessWrite {
+				memberType = elem.Fn.Params[0].Type
+			}
+		}
+		if memberType != nil {
+			break
+		}
+	}
+
+	if memberType == nil {
+		// Not found in direct Elems; fall back so the full expansion can
+		// check Extends, RestSpreadElem, etc.
+		return nil, false
+	}
+
+	// Substitute only this member's type instead of the whole ObjectType.
+	if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
+		substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+		memberType = SubstituteTypeParams(memberType, substitutions)
+	}
+
+	c.memberCache[cacheKey] = memberType
+	return memberType, true
 }
 
 // getObjectAccess handles property and index access on ObjectType.
@@ -1801,8 +1901,19 @@ func (c *Checker) expandTypeRef(ctx Context, t *type_system.TypeRefType) (type_s
 
 	// Handle type parameter substitution if the type is generic
 	if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
+		// Check substitution cache to avoid redundant SubstituteTypeParams calls
+		// for the same type alias + type args combination (#461).
+		key := expandSeenKey{
+			alias:       unsafe.Pointer(typeAlias),
+			typeArgs:    typeArgKey(t.TypeArgs),
+			insideKeyOf: false,
+		}
+		if cached, exists := c.substCache[key]; exists {
+			return cached, []Error{}
+		}
 		substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
 		expandedType = SubstituteTypeParams(typeAlias.Type, substitutions)
+		c.substCache[key] = expandedType
 	}
 
 	return expandedType, []Error{}

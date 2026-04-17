@@ -17,6 +17,8 @@ type Checker struct {
 	GlobalScope           *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
 	FileScopes            map[int]*Scope             // Populated by InferModule: SourceID → file-specific scope
 	expandCache           expandSeen                 // Cross-call cache for getMemberType's expansion loop (#453)
+	substCache            expandSeen                 // Cross-call cache for expandTypeRef's SubstituteTypeParams (#461)
+	memberCache           memberCache                // Per-property cache for lazy member substitution (#461)
 }
 
 func NewChecker() *Checker {
@@ -29,6 +31,8 @@ func NewChecker() *Checker {
 		PackageRegistry:       NewPackageRegistry(),
 		GlobalScope:           nil, // Will be set by initializeGlobalScope() during prelude loading
 		expandCache:           make(expandSeen),
+		substCache:            make(expandSeen),
+		memberCache:           make(memberCache),
 	}
 }
 
