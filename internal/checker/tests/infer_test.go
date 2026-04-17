@@ -1594,19 +1594,22 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"b":  "B",
 			},
 		},
-		// TODO(#456): Record<string, Json> panics in expandMappedElems because
-		// it can't enumerate keys from the `string` primitive type. Once #456
-		// is fixed, add Record<string, Json> back to the Json union and include
-		// object literal values like { name: "test", scores: [1, 2, 3] }.
 		"RecursiveJsonLikeType": {
 			input: `
-				type Json = string | number | boolean | null | Array<Json>
+				type Json = string | number | boolean | null | Array<Json> | Record<string, Json>
 				val j: Json = "hello"
 				val j2: Json = 42
 				val j3: Json = true
 				val j4: Json = null
 				val j5: Json = [1, 2, 3]
 				val j6: Json = ["nested", [1, [true, [null, ["deep"]]]]]
+				// TODO(#463): object literals against recursive unions hang due to
+				// infinite expansion of recursive type args in expandSeen. The
+				// typeArgKey grows unboundedly (Array<R> → Array<string|Array<R>>
+				// → ...) so cycle detection never triggers. This affects any
+				// recursive type alias with generic members (e.g. Array<Json>),
+				// not just Record. See json_unify_debug_test.go for analysis.
+				// val j7: Json = { names: ["alice", "bob"], scores: [1, 2, 3] }
 			`,
 			expectedTypes: map[string]string{
 				"j":  "Json",
@@ -1615,6 +1618,17 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"j4": "Json",
 				"j5": "Json",
 				"j6": "Json",
+			},
+		},
+		"RecordStringType": {
+			input: `
+				type StringMap = Record<string, number>
+				declare val m: StringMap
+				val x = m.foo
+			`,
+			expectedTypes: map[string]string{
+				"m": "StringMap",
+				"x": "number",
 			},
 		},
 		"CycleDetectionSameTypeAssignment": {

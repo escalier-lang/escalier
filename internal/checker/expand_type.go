@@ -396,6 +396,9 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 					// For mapped types, return the constraint type
 					// e.g., keyof {[K]: T[K] for K in Keys} -> Keys
 					return e.TypeParam.Constraint
+				case *type_system.IndexSignatureElem:
+					// keyof {[key: string]: T} -> string
+					keys = append(keys, e.KeyType)
 				case *type_system.RestSpreadElem:
 					// For rest spread, recursively get keyof the spread type
 					spreadKeys, _ := v.checker.ExpandType(v.ctx, type_system.NewKeyOfType(nil, e.Value), -1)
@@ -1067,6 +1070,18 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 		}
 	}
 
+	// If not found by name, check for a matching index signature.
+	if memberType == nil {
+		for _, elem := range objType.Elems {
+			if idxSig, ok := elem.(*type_system.IndexSignatureElem); ok {
+				if prim, ok := idxSig.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+					memberType = idxSig.Value
+					break
+				}
+			}
+		}
+	}
+
 	if memberType == nil {
 		// Not found in direct Elems; fall back so the full expansion can
 		// check Extends, RestSpreadElem, etc.
@@ -1120,6 +1135,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					if len(spreadErrors) == 0 {
 						return spreadType, errors
 					}
+				}
+			case *type_system.IndexSignatureElem:
+				if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+					return elem.Value, errors
 				}
 			case *type_system.MappedElem:
 				panic("MappedElems should have been expanded before property access")
@@ -1206,6 +1225,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						if elem.Name == targetKey && mode == AccessWrite {
 							return elem.Fn.Params[0].Type, errors
 						}
+					case *type_system.IndexSignatureElem:
+						if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+							return elem.Value, errors
+						}
 					case *type_system.RestSpreadElem:
 						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
 							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
@@ -1252,6 +1275,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				case *type_system.SetterElem:
 					if elem.Name == symKey && mode == AccessWrite {
 						return elem.Fn.Params[0].Type, errors
+					}
+				case *type_system.IndexSignatureElem:
+					if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.SymbolPrim {
+						return elem.Value, errors
 					}
 				case *type_system.RestSpreadElem:
 					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
@@ -1739,11 +1766,8 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 // expandMappedElems expands MappedElem elements in an ObjectType into concrete properties.
 // For example, {[P in "foo" | "bar"]: string} becomes {foo: string, bar: string}.
-//
-// TODO(#456): This function only handles finite, enumerable key sets (string/number
-// literals, symbols). It panics when the constraint is a primitive type like `string`
-// or `number` (e.g. Record<string, T> which expands to {[P in string]: T}). Supporting
-// infinite key types requires adding an index signature representation to the type system.
+// When the constraint is a primitive type like `string` or `number` (e.g. Record<string, T>),
+// an IndexSignatureElem is emitted instead of enumerating keys.
 func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType) *type_system.ObjectType {
 	// Check if there are any MappedElem elements to expand
 	hasMappedElems := false
@@ -1774,9 +1798,34 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType
 				keys = []type_system.Type{constraint}
 			}
 
-			// For each key in the constraint, create a property
+			// For each key in the constraint, create a property or index signature
 			for _, keyType := range keys {
 				keyType = type_system.Prune(keyType)
+
+				// If the key type is a primitive (string, number, symbol), emit an
+				// IndexSignatureElem — we cannot enumerate an infinite key space.
+				if primType, ok := keyType.(*type_system.PrimType); ok {
+					switch primType.Prim {
+					case type_system.StrPrim, type_system.NumPrim, type_system.SymbolPrim:
+						propValue := SubstituteTypeParams(mappedElem.Value, map[string]type_system.Type{
+							mappedElem.TypeParam.Name: keyType,
+						})
+						// Note: we intentionally do NOT call ExpandType on propValue here.
+						// For recursive types like Json = ... | Record<string, Json>,
+						// expanding would trigger infinite recursion. The value type
+						// will be expanded lazily when accessed.
+						readonly := false
+						if mappedElem.Readonly != nil && *mappedElem.Readonly == type_system.MMAdd {
+							readonly = true
+						}
+						expandedElems = append(expandedElems, &type_system.IndexSignatureElem{
+							KeyType:  keyType,
+							Value:    propValue,
+							Readonly: readonly,
+						})
+						continue
+					}
+				}
 
 				// Substitute the type parameter with the key type
 				keySubs := map[string]type_system.Type{

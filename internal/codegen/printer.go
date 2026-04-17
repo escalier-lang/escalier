@@ -452,6 +452,16 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 		}
 		p.print(": ")
 		p.PrintTypeAnn(elem.Value)
+	case *IndexSignatureTypeAnn:
+		if elem.Readonly {
+			p.print("readonly ")
+		}
+		p.print("[")
+		p.print(elem.KeyName)
+		p.print(": ")
+		p.PrintTypeAnn(elem.KeyType)
+		p.print("]: ")
+		p.PrintTypeAnn(elem.Value)
 	case *RestSpreadTypeAnn:
 		p.print("...")
 		p.PrintTypeAnn(elem.Value)

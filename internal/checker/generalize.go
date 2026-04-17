@@ -77,6 +77,9 @@ func collectUnresolvedTypeVars(
 				if e.TypeParam != nil {
 					collectUnresolvedTypeVars(e.TypeParam.Constraint, vars, order)
 				}
+			case *type_system.IndexSignatureElem:
+				collectUnresolvedTypeVars(e.KeyType, vars, order)
+				collectUnresolvedTypeVars(e.Value, vars, order)
 			}
 		}
 	case *type_system.TupleType:
@@ -280,6 +283,12 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 					Readonly:  e.Readonly,
 					Check:     c.deepCloneType(e.Check, varMapping),
 					Extends:   c.deepCloneType(e.Extends, varMapping),
+				}
+			case *type_system.IndexSignatureElem:
+				elems[i] = &type_system.IndexSignatureElem{
+					KeyType:  c.deepCloneType(e.KeyType, varMapping),
+					Value:    c.deepCloneType(e.Value, varMapping),
+					Readonly: e.Readonly,
 				}
 			default:
 				elems[i] = elem

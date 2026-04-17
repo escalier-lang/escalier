@@ -920,6 +920,13 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Optional:  mapMappedModifier(elem.Optional),
 			ReadOnly:  mapMappedModifier(elem.Readonly),
 		}
+	case *type_sys.IndexSignatureElem:
+		return &IndexSignatureTypeAnn{
+			KeyName:  "key",
+			KeyType:  b.buildTypeAnn(elem.KeyType),
+			Value:    b.buildTypeAnn(elem.Value),
+			Readonly: elem.Readonly,
+		}
 	case *type_sys.RestSpreadElem:
 		return &RestSpreadTypeAnn{
 			Value: b.buildTypeAnn(elem.Value),
