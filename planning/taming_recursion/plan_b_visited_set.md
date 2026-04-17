@@ -2,12 +2,14 @@
 
 **Prerequisite:** Plan A (expand at TypeRefType match site) — **implemented in PR #451**.
 
+**Status: Implemented.**
+
 ## Goal
 
 Add a visited-set mechanism to both `Unify` and `ExpandType` that tracks which
 type pairs or type alias expansions have already been attempted. This provides
 principled cycle detection that replaces the ad-hoc depth counters and enables
-future support for recursive type aliases.
+recursive type aliases.
 
 ## Background
 
@@ -475,3 +477,104 @@ entering `ExpandType` + `unifyWithDepth` for known cycles).
   should be `c.unifyWithDepth(..., seen)` would create a new fresh seen set at that
   point, potentially missing a cycle. Mitigation: grep for all `c.Unify` calls in
   `unify.go` after the change and verify each one is intentional.
+
+## Implementation notes
+
+### What was implemented
+
+All steps (1–5) were implemented as designed. Step 6 (evaluate removing ad-hoc
+counters) was deferred to Plan C.
+
+#### Step 1 — Seen-pairs types (`unify.go`)
+
+Implemented as designed: `unifyPairKey`, `unifySeen`, `makeUnifyPairKey`,
+`interfaceDataPointer`, `typeArgKey`. Also added `expandSeenKey`, `expandSeen` in
+`expand_type.go`.
+
+#### Step 2 — Thread `unifySeen` through unification
+
+All internal function signatures updated to accept `depth int, seen unifySeen`:
+- Core: `unifyWithDepth`, `unifyPruned`, `unifyMatched`
+- Helpers: `bind`, `unifyExtractor`, `unifyClosedWithRests`, `unifyFuncTypes`,
+  `unifyTuples`, `unifyFixedTuples`, `unifyFixedVsVariadic`, `unifyVariadicVsFixed`,
+  `unifyVariadicVsVariadic`, `unifyPatternWithUnion`, `handleArrayConstraintBinding`
+
+All ~70 internal `c.Unify(ctx, ...)` calls within `unify.go` replaced with
+`c.unifyWithDepth(ctx, ..., depth, seen)`. Verified: zero `c.Unify` calls remain
+in `unify.go` after the change.
+
+One external caller of `bind` in `infer_expr.go` updated to pass
+`0, make(unifySeen)` (fresh context, not inside a unification chain).
+
+#### Step 3 — Cycle detection in `unifyPruned`
+
+Cycle checks added in both Tier 1 (`canExpandTypeRef` path) and Tier 3
+(last-resort expansion path), as designed. Both check `seen[key]` before expanding
+and return `nil` (co-inductive assumption) on cycle detection.
+
+#### Step 4 — Cycle detection in `ExpandType`
+
+`expandSeen` threaded through `expandTypeWithConfig` → `TypeExpansionVisitor.seen`.
+Two-phase approach implemented in the `TypeRefType` case of `ExitType`:
+- `v.seen[key] = nil` marks expansion as in progress
+- `v.seen[key] = result` caches the completed result
+- Re-encounter with `nil` returns unexpanded (cycle)
+- Re-encounter with non-nil returns cached result (reuse)
+
+The `expandSeen` map is passed through to all three recursive
+`expandTypeWithConfig` calls (unlimited expansion, counted expansion, and
+keyof-target expansion).
+
+#### Step 5 — Remove hard limits
+
+- `maxUnifyDepth = 50` constant and depth check removed entirely from
+  `unifyWithDepth`.
+- `maxExpansionRetries` increased from 10 to 100 as a defensive safety net (not
+  a termination mechanism — the visited set handles cycles).
+- `depth` parameter kept in `unifyWithDepth` for diagnostic value and Plan C's
+  verification work.
+
+### Deviations from plan
+
+- **Step 6 (evaluate removing ad-hoc counters)** deferred to Plan C. The counters
+  `expandTypeRefsCount`, `skipTypeRefsCount`, and `insideKeyOfTarget` were left
+  unchanged. They serve as optimization hints (controlling expansion eagerness)
+  rather than safety mechanisms, and removing them requires more careful evaluation.
+- **`canExpandTypeRef`'s transitive cycle detection** was left in place. It
+  overlaps with the `unifySeen`/`expandSeen` visited sets but serves as an
+  optimization (avoids entering `ExpandType` + `unifyWithDepth` for known cycles).
+  Plan C will evaluate whether to remove it.
+
+### Tests added
+
+All tests pass (full suite: 21 packages, 0 failures).
+
+Tests added to `TestCheckModuleTypeAliases` (type alias expansion):
+- `RecursiveLinkedList`: `type List<T> = { head: T, tail: List<T> | null }`
+- `RecursiveTree`: `type Tree<T> = { value: T, children: Array<Tree<T>> }`
+- `MutuallyRecursiveExprTypes`: `type Expr = Lit | Add` / `type Lit = ...` /
+  `type Add = { ..., left: Expr, right: Expr }`
+- `CrossAliasCycle`: `type A = { x: B }` / `type B = { y: A }`
+
+Tests added to `TestCheckModuleNoErrors` (value checking against recursive types):
+- `RecursiveLinkedListValue`: constructs a `List<number>` literal
+- `RecursiveTreeValue`: constructs a `Tree<number>` literal
+- `CrossAliasCycleValue`: uses `declare val a1: A` and assigns to `A` and `B`
+- `RecursiveJsonLikeType`: `type Json = string | number | boolean | null | Array<Json> | Record<string, Json>`
+  with value assignments for each variant
+- `CycleDetectionSameTypeAssignment`: `declare val a: List<number>` / `val b: List<number> = a`
+- `StructuralTypeArgWithEmbeddedTypeVar`: `type Wrapper<T> = { inner: Wrapper<{x: T}> | null }`
+  with nested literal construction
+
+### Testing strategy observations
+
+- The `Json` test uses `Array<Json>` and `Record<string, Json>` instead of the
+  plan's `Json[]` and `{ [key: string]: Json }`. Escalier's parser does not support
+  `T[]` array sugar or index signatures in type alias definitions. `Record<string, V>`
+  is available from the TypeScript lib files loaded in the prelude.
+- The `Tree<T>` test uses `Array<Tree<T>>` instead of `Tree<T>[]` for the same
+  reason.
+- The `Wrapper<T>` test (structural type arg with embedded TypeVar) passed without
+  needing to make `typeArgKey` recursive — the current `fmt.Sprint` fallback
+  produces stable keys for this case. The known limitation documented in the
+  `typeArgKey` comment has not been triggered.

@@ -1562,6 +1562,81 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"x":   "string & {} | 0",
 			},
 		},
+		"RecursiveLinkedListValue": {
+			input: `
+				type List<T> = { head: T, tail: List<T> | null }
+				val list: List<number> = { head: 1, tail: { head: 2, tail: null } }
+			`,
+			expectedTypes: map[string]string{
+				"list": "List<number>",
+			},
+		},
+		"RecursiveTreeValue": {
+			input: `
+				type Tree<T> = { value: T, children: Array<Tree<T>> }
+				val t: Tree<number> = { value: 1, children: [{ value: 2, children: [] }] }
+			`,
+			expectedTypes: map[string]string{
+				"t": "Tree<number>",
+			},
+		},
+		"CrossAliasCycleValue": {
+			input: `
+				type A = { x: B }
+				type B = { y: A }
+				declare val a1: A
+				val a2: A = a1
+				val b: B = a1.x
+			`,
+			expectedTypes: map[string]string{
+				"a1": "A",
+				"a2": "A",
+				"b":  "B",
+			},
+		},
+		// TODO(#456): Record<string, Json> panics in expandMappedElems because
+		// it can't enumerate keys from the `string` primitive type. Once #456
+		// is fixed, add Record<string, Json> back to the Json union and include
+		// object literal values like { name: "test", scores: [1, 2, 3] }.
+		"RecursiveJsonLikeType": {
+			input: `
+				type Json = string | number | boolean | null | Array<Json>
+				val j: Json = "hello"
+				val j2: Json = 42
+				val j3: Json = true
+				val j4: Json = null
+				val j5: Json = [1, 2, 3]
+				val j6: Json = ["nested", [1, [true, [null, ["deep"]]]]]
+			`,
+			expectedTypes: map[string]string{
+				"j":  "Json",
+				"j2": "Json",
+				"j3": "Json",
+				"j4": "Json",
+				"j5": "Json",
+				"j6": "Json",
+			},
+		},
+		"CycleDetectionSameTypeAssignment": {
+			input: `
+				type List<T> = { head: T, tail: List<T> | null }
+				declare val a: List<number>
+				val b: List<number> = a
+			`,
+			expectedTypes: map[string]string{
+				"a": "List<number>",
+				"b": "List<number>",
+			},
+		},
+		"StructuralTypeArgWithEmbeddedTypeVar": {
+			input: `
+				type Wrapper<T> = { inner: Wrapper<{x: T}> | null }
+				val w: Wrapper<number> = { inner: { inner: null } }
+			`,
+			expectedTypes: map[string]string{
+				"w": "Wrapper<number>",
+			},
+		},
 	}
 
 	schema := loadSchema(t)
@@ -2207,6 +2282,45 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"Color": "Color.RGB | Color.Hex",
+			},
+		},
+		"RecursiveLinkedList": {
+			input: `
+				type List<T> = { head: T, tail: List<T> | null }
+			`,
+			expectedTypes: map[string]string{
+				"List": "{head: T, tail: List<T> | null}",
+			},
+		},
+		"RecursiveTree": {
+			input: `
+				type Tree<T> = { value: T, children: Array<Tree<T>> }
+			`,
+			expectedTypes: map[string]string{
+				"Tree": "{value: T, children: Array<Tree<T>>}",
+			},
+		},
+		"MutuallyRecursiveExprTypes": {
+			input: `
+				type Expr = Lit | Add
+				type Lit = { tag: "lit", value: number }
+				type Add = { tag: "add", left: Expr, right: Expr }
+			`,
+			expectedTypes: map[string]string{
+				// Expr expands one level: Lit and Add are non-recursive so they expand
+				"Expr": `{tag: "lit", value: number} | {tag: "add", left: Expr, right: Expr}`,
+				"Lit":  `{tag: "lit", value: number}`,
+				"Add":  `{tag: "add", left: Expr, right: Expr}`,
+			},
+		},
+		"CrossAliasCycle": {
+			input: `
+				type A = { x: B }
+				type B = { y: A }
+			`,
+			expectedTypes: map[string]string{
+				"A": "{x: B}",
+				"B": "{y: A}",
 			},
 		},
 	}
