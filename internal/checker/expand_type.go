@@ -1572,8 +1572,13 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	return type_system.NewNeverType(nil), errors
 }
 
-// expandMappedElems expands MappedElem elements in an ObjectType into concrete properties
-// For example, {[P in "foo" | "bar"]: string} becomes {foo: string, bar: string}
+// expandMappedElems expands MappedElem elements in an ObjectType into concrete properties.
+// For example, {[P in "foo" | "bar"]: string} becomes {foo: string, bar: string}.
+//
+// TODO(#456): This function only handles finite, enumerable key sets (string/number
+// literals, symbols). It panics when the constraint is a primitive type like `string`
+// or `number` (e.g. Record<string, T> which expands to {[P in string]: T}). Supporting
+// infinite key types requires adding an index signature representation to the type system.
 func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType) *type_system.ObjectType {
 	// Check if there are any MappedElem elements to expand
 	hasMappedElems := false
