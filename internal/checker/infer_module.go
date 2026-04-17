@@ -375,8 +375,9 @@ func (c *Checker) InferComponent(
 						t = typeParam.Constraint
 					}
 					declCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
-						Type:       t,
-						TypeParams: []*type_system.TypeParam{},
+						Type:        t,
+						TypeParams:  []*type_system.TypeParam{},
+						IsTypeParam: true,
 					})
 				}
 
@@ -640,8 +641,9 @@ func (c *Checker) InferComponent(
 						t = typeParam.Constraint
 					}
 					declCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
-						Type:       t,
-						TypeParams: []*type_system.TypeParam{},
+						Type:        t,
+						TypeParams:  []*type_system.TypeParam{},
+						IsTypeParam: true,
 					})
 				}
 			case *ast.InterfaceDecl:

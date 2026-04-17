@@ -154,8 +154,9 @@ func (c *Checker) inferTypeAnn(
 			for _, name := range names {
 				inferTypeRef := type_system.NewTypeRefType(nil, name, nil)
 				inferTypeAlias := &type_system.TypeAlias{
-					Type:       inferTypeRef,
-					TypeParams: []*type_system.TypeParam{},
+					Type:        inferTypeRef,
+					TypeParams:  []*type_system.TypeParam{},
+					IsTypeParam: true,
 				}
 				condScope.SetTypeAlias(name, inferTypeAlias)
 			}
@@ -390,8 +391,9 @@ func (c *Checker) inferObjectTypeAnn(
 				// Add the type parameter as a type alias to the scope
 				typeParamTypeRef := type_system.NewTypeRefType(nil, elem.TypeParam.Name, nil)
 				typeParamAlias := &type_system.TypeAlias{
-					Type:       typeParamTypeRef,
-					TypeParams: []*type_system.TypeParam{},
+					Type:        typeParamTypeRef,
+					TypeParams:  []*type_system.TypeParam{},
+					IsTypeParam: true,
 				}
 				mappedScope.SetTypeAlias(elem.TypeParam.Name, typeParamAlias)
 
