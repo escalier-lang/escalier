@@ -253,22 +253,22 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			continue
 		}
 
-		// Last resort for nominal TypeRefTypes (e.g. classes) that
-		// canExpandTypeRef refused. This is needed for pattern matching
-		// against nominal types: `match p { {foo} => foo }` requires
-		// expanding to access properties. ExpandType(t, 1) always expands
-		// TypeRefTypes via the visitor regardless of nominality — the visitor
-		// simply resolves the alias without checking nominal semantics.
-		// Nominal semantics are enforced downstream in the ObjectType vs
-		// ObjectType case in unifyMatched (which allows structural comparison
-		// in pattern-matching mode via ctx.IsPatMatch).
+		// Last resort for TypeRefTypes that canExpandTypeRef refused (e.g.
+		// refs blocked by IsTypeParam, or cycle detection). ExpandType may
+		// still expand these if the alias resolves to a non-nominal type.
+		// For nominal TypeRefTypes (classes), ExpandType returns nil (the
+		// visitor checks Nominal and bails), so lastResortT == t and this
+		// branch is a no-op — execution falls through to CannotUnifyTypesError.
 		//
-		// Termination: after expansion, unifyWithDepth(depth+1) re-enters
-		// unifyMatched with two concrete types (typically ObjectTypes). For
-		// nominal types, obj.ID mismatch produces an immediate error unless
-		// ctx.IsPatMatch allows structural comparison over finite property
-		// sets. In both cases the recursion bottoms out without re-entering
-		// this last-resort path.
+		// For non-nominal refused refs (e.g. cycle-blocked aliases),
+		// ExpandType may return a different type, triggering unifyWithDepth.
+		// This is needed for pattern matching against structural types:
+		// `match p { {foo} => foo }` requires expanding the TypeRefType to
+		// access the ObjectType's properties.
+		//
+		// Termination: unifyWithDepth(depth+1) re-enters unifyMatched with
+		// concrete types. For structural types, unification proceeds over
+		// finite property sets and bottoms out without re-entering this path.
 		if isRef1 || isRef2 {
 			lastResortT1, _ := c.ExpandType(ctx, t1, 1)
 			lastResortT2, _ := c.ExpandType(ctx, t2, 1)

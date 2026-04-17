@@ -653,12 +653,11 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 }
 
 // TestNominalClassUnificationTerminates verifies that unifying two different
-// nominal classes terminates and produces an error. This exercises the
-// last-resort TypeRefType expansion path in unifyPruned, where canExpandTypeRef
-// refuses nominal types but ExpandType(t, 1) expands them as a fallback. After
-// expansion, the ObjectType vs ObjectType case rejects the mismatch via obj.ID.
-// A self-referential class (Node with a "next" field of its own type) is
-// included to verify that the expansion doesn't loop infinitely.
+// nominal classes terminates and produces an error. For nominal TypeRefTypes,
+// ExpandType returns nil (the visitor checks Nominal and bails), so the
+// last-resort branch in unifyPruned is a no-op and execution falls through to
+// CannotUnifyTypesError. A self-referential class (Node with a "next" field of
+// its own type) is included to verify that the expansion loop doesn't hang.
 func TestNominalClassUnificationTerminates(t *testing.T) {
 	source := &ast.Source{
 		ID:   0,
