@@ -82,6 +82,13 @@ CondType, and other non-TypeRef expandable types. For plain ObjectTypes with onl
 TypeRefType properties, `ExpandType(obj, 0)` returns the same pointer since nothing
 inside changes — so the pointer-inequality check is reliable here.
 
+**Why pointer identity is preserved**: The visitor's `Accept` implementations track
+whether any child changed. When the visitor returns nil for a child (as it does for
+TypeRefType when count=0), the Accept method keeps the original pointer. If no
+children changed, the parent returns its own original pointer. This propagates up
+the tree, so `ExpandType(ctx, t, 0) == t` (pointer equality) when `t` contains
+nothing expandable at count=0.
+
 ### Issue 4: Type parameter references expanded to their constraints
 
 **This is the most fundamental issue.** `TypeRefType` is used to represent both
@@ -137,14 +144,61 @@ TypeAlias{Type: unknown, TypeParams: [], Exported: false}
 TypeAlias{Type: unknown, TypeParams: [], Exported: false}
 ```
 
-**Fix:** Position the expansion AFTER the case-matching logic, not before it.
-The case-matching code gets a chance to handle TypeRefTypes via same-alias
-comparison and union member matching first. Only when no case matches do we expand
-and retry. This is the approach used in the plan below.
+**Fix (two parts):**
+
+1. **Add `IsTypeParam` flag to `TypeAlias`:** Add an `IsTypeParam bool` field to the
+   `TypeAlias` struct. Set it to `true` at all type parameter creation sites. The
+   `tryExpandTypeRef` helper checks this flag and returns `(nil, false)` for type
+   parameter aliases, preventing expansion from destroying the parameter's identity.
+
+   ```go
+   type TypeAlias struct {
+       Type        Type
+       TypeParams  []*TypeParam
+       Exported    bool
+       IsTypeParam bool // true for type parameter scope entries, not real aliases
+   }
+   ```
+
+   Creation sites that need `IsTypeParam: true`:
+   - `infer_func.go` — function type params (`inferFuncTypeParams`)
+   - `infer_stmt.go` — type params in `buildTypeParams`
+   - `infer_module.go` — class type params and enum type params
+   - `generalize.go` — generalized type vars bound to TypeRefType
+   - `infer_type_ann.go` — `infer` types in conditional types and mapped type params
+
+   Creation sites that stay `IsTypeParam: false` (default):
+   - `infer_stmt.go` — `Self` alias for interfaces
+   - `infer_expr.go` — `Self` alias for object expressions
+   - `infer_import.go` — re-exported aliases (copies from existing aliases)
+   - All regular type/class/enum/interface declarations in `infer_module.go`
+
+2. **Position expansion AFTER case-matching:** The case-matching code gets a chance to
+   handle TypeRefTypes via same-alias comparison and union member matching first. Only
+   when no case matches do we expand and retry. This provides defense in depth — the
+   ordering prevents the issue in practice, and the flag prevents it explicitly.
+
+Both parts are used in the plan below.
+
+**Future direction:** If `TypeAlias` serving double duty for both real aliases and type
+parameters continues to cause issues, a cleaner separation would be to stop storing
+type parameters as `TypeAlias` entries entirely. Instead, store `*TypeParam` directly
+in a separate `TypeParams` map on `Namespace`/`Scope`, with dedicated
+`GetTypeParam`/`SetTypeParam` methods. This would make the two concepts explicitly
+different in the type system, at the cost of a larger refactor (scope API changes, and
+every type name resolution path would need to check both maps). The `IsTypeParam` flag
+is the pragmatic first step; the full separation can be done later if warranted.
 
 ## Plan (revised)
 
-### Step 1: Add `tryExpandTypeRef` helper
+### Step 1: Add `IsTypeParam` flag to `TypeAlias` and update creation sites
+
+Add `IsTypeParam bool` to the `TypeAlias` struct in `type_system/types.go`. Then set
+`IsTypeParam: true` at all type parameter creation sites listed in the Issue 4 fix
+above. The default `false` is correct for all existing regular aliases, so no other
+sites need changes.
+
+### Step 2: Add `tryExpandTypeRef` helper
 
 Add a new method to `Checker` (in expand_type.go) that attempts to expand a
 TypeRefType without erroring:
@@ -159,9 +213,16 @@ func (c *Checker) tryExpandTypeRef(ctx Context, t *type_system.TypeRefType) (typ
         return nil, false
     }
 
+    // Don't expand type parameter references — preserve their identity
+    if typeAlias.IsTypeParam {
+        return nil, false
+    }
+
     expandedType := typeAlias.Type
 
-    // Don't expand nominal object types
+    // Don't expand nominal object types.
+    // NOTE: Currently only ObjectType can be nominal. If other nominal types
+    // are added in the future, this check should be extended.
     if obj, ok := expandedType.(*type_system.ObjectType); ok && obj.Nominal {
         return nil, false
     }
@@ -176,7 +237,7 @@ func (c *Checker) tryExpandTypeRef(ctx Context, t *type_system.TypeRefType) (typ
 }
 ```
 
-### Step 2: Extract case-matching into `unifyMatched`, add expansion loop in `unifyPruned`
+### Step 3: Extract case-matching into `unifyMatched`, add expansion loop in `unifyPruned`
 
 Rename the current `unifyPruned` to `unifyMatched` (the function that contains all
 the explicit type-matching cases). Then rewrite `unifyPruned` as a small loop that:
@@ -188,7 +249,7 @@ the explicit type-matching cases). Then rewrite `unifyPruned` as a small loop th
 
 ```go
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) []Error {
-    for attempt := 0; attempt < maxUnifyDepth; attempt++ {
+    for attempt := 0; attempt < maxExpansionRetries; attempt++ {
         errors := c.unifyMatched(ctx, t1, t2, depth)
         if len(errors) == 0 {
             return nil
@@ -209,10 +270,18 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
             }
         }
         if expanded {
+            // Note: if only one side expanded, the other stays as-is. On the
+            // retry, the already-expanded side won't be a TypeRefType anymore,
+            // so it won't attempt expansion again. This is correct — if the
+            // retry still fails, we fall through to the ExpandType(t, 0)
+            // fallback which handles non-TypeRef expandable types.
             continue
         }
 
-        // Try expanding TypeOfType and other non-TypeRef expandable types
+        // Try expanding TypeOfType and other non-TypeRef expandable types.
+        // ExpandType errors are treated as "no expansion possible" — the error
+        // from ExpandType is not actionable here since we're speculatively
+        // trying expansion, and the original unifyMatched error is more useful.
         expandedT1, _ := c.ExpandType(ctx, t1, 0)
         expandedT2, _ := c.ExpandType(ctx, t2, 0)
         if expandedT1 != t1 || expandedT2 != t2 {
@@ -234,7 +303,13 @@ old retry loop (lines 1189-1203) are both deleted. The final `CannotUnifyTypesEr
 at the end of `unifyMatched` remains — it signals to `unifyPruned` that no case
 matched, triggering the expansion logic.
 
-### Step 3: Audit other ExpandType calls in unify.go
+Note: The **same-alias** TypeRefType case (lines 448-504, `c.sameTypeRef(ref1, ref2)`)
+is kept in `unifyMatched`. When two TypeRefTypes refer to the same alias, they match
+directly via type argument unification without needing expansion. Only the
+**different-alias** case is removed, since `unifyPruned`'s expansion loop now handles
+it by expanding both sides and retrying.
+
+### Step 4: Audit other ExpandType calls in unify.go
 
 There are two other `ExpandType` calls in the case-matching code that are unrelated
 to the retry loop and should be preserved:
@@ -244,11 +319,20 @@ to the retry loop and should be preserved:
 - **Line 1055**: Union + ObjectType — expands each union member to check if it's an
   `ObjectType`. Keep as-is.
 
-### Step 4: Evaluate whether `maxUnifyDepth` can be reduced or removed
+### Step 5: Set an appropriate loop bound
 
-After this change, the loop counter in `unifyPruned` controls expansion retries.
-`maxUnifyDepth` should be kept as the loop bound until Plan B (visited-set) is
-implemented. After Plan B, `maxUnifyDepth` can be removed entirely.
+After this change, the loop counter in `unifyPruned` controls expansion retries
+rather than recursive call depth. The semantics have changed: each iteration
+expands one layer of type aliases, so the max iterations equals the max alias
+chain depth (e.g. `type A = B`, `type B = C`, `type C = number` → 3 iterations).
+
+Use a dedicated constant (e.g. `maxExpansionRetries = 10`) rather than reusing
+`maxUnifyDepth`. A value of 10 provides generous headroom — typical alias chains
+are 1-3 levels deep, and anything deeper than 10 likely indicates a cycle.
+
+After Plan B (visited-set) is implemented, the loop bound becomes a safety net
+rather than the primary cycle-prevention mechanism, and could potentially be
+removed entirely.
 
 ## Testing strategy
 

@@ -21,26 +21,28 @@ scenarios:
    excessive recursion during unification with Array types.
 3. **Large ObjectType instances** (e.g. React SVG attributes with 200+ properties)
 
-Plan A replaced the retry loop with explicit `TypeRefType` expansion, eliminating
-the pointer-inequality-driven retries that caused scenarios 1 and 3. Plan B added
-visited-set cycle detection, removing the `maxUnifyDepth` safety net.
+Plan A replaced the retry loop with an iterative expansion loop in `unifyPruned`
+that calls `unifyMatched` for case-matching and `tryExpandTypeRef` for TypeRef
+expansion, eliminating the pointer-inequality-driven retries that caused
+scenarios 1 and 3. Plan B added visited-set cycle detection, removing the
+`maxUnifyDepth` safety net and the `maxExpansionRetries` loop bound.
 
 However, several areas need verification:
 
-- The `ExpandType` calls that remain in `unifyPruned` — the KeyOfType expansion
+- The `ExpandType` calls that remain in `unifyMatched` — the KeyOfType expansion
   case (which expands both `keyof` types to get their concrete keys) and the
   Union+ObjectType expansion case (which expands each union member to check if
   it's an `ObjectType`) — were not part of the retry loop but still call
-  `ExpandType` with a fresh context. After Plan B removes `maxUnifyDepth`, these
+  `ExpandType` with a fresh context. After Plan B removes the hard limits, these
   calls rely entirely on the `expandSeen` visited set in `ExpandType` for
   termination.
-- The Tuple+Array and Array+Tuple interaction paths in `unifyPruned` (including
+- The Tuple+Array and Array+Tuple interaction paths in `unifyMatched` (including
   the `TupleType, ArrayType` case, the `ArrayType, TupleType` case, the
   `ArrayType, ArrayType` case, and the `RestSpreadType, ArrayType` case) all
   call `c.Unify` recursively — notably on rest spread types (e.g.
   `c.Unify(ctx, rest.Type, array2)`). If a rest spread contains an `Array<T>`
   where `T` itself references the tuple, this could recurse. After Plan B
-  removes `maxUnifyDepth`, the `unifySeen` set should catch this — but only if
+  removes the hard limits, the `unifySeen` set should catch this — but only if
   each of these `c.Unify` calls was correctly changed to
   `c.unifyWithDepth(..., seen)` so that `unifySeen` is propagated. A missed
   call site would create a fresh `unifySeen` set via the public `c.Unify`
@@ -54,7 +56,8 @@ However, several areas need verification:
 ### Step 1: Audit `c.Unify` propagation in Tuple/Array paths
 
 Verify that all `c.Unify` calls in the Tuple+Array interaction paths were updated
-by Plan B to propagate the seen set:
+by Plan B to propagate the seen set. After Plan A, these cases live in
+`unifyMatched` (the case-matching function called by `unifyPruned`'s loop):
 
 - `TupleType, ArrayType` case (lines 376-397): calls `c.Unify` for each tuple
   element and for rest spread types
@@ -64,17 +67,16 @@ by Plan B to propagate the seen set:
 - `unifyTuples` helper: calls `c.Unify` on each pair of tuple elements
 
 Each of these should be `c.unifyWithDepth(ctx, ..., depth, seen)` after Plan B —
-propagating the seen set but keeping the same depth. The `depth` parameter should
-only increment at the explicit TypeRef expansion sites added by Plan A (where
-`expandTypeRef` is called and the result is re-entered into unification). Forwarding
-calls that unify subcomponents (tuple elements, array element types, rest spread
-types) are not expansions and should not increment depth. If any were missed, fix
-them.
+propagating the seen set but keeping the same depth. After Plan A, TypeRefType
+expansion is handled iteratively in `unifyPruned`'s loop and does not increment
+`depth`. The `depth` parameter only reflects structural recursion depth from
+subcomponent unification (these forwarding calls), which should pass `depth`
+unchanged. If any `c.Unify` calls were missed during Plan B, fix them.
 
 ### Step 2: Audit `ExpandType` calls that remain in unify.go
 
-After Plan A removed the retry loop, two `ExpandType` call sites remain in
-`unifyPruned`:
+After Plan A, two `ExpandType` call sites remain in `unifyMatched` (the
+case-matching function extracted from the original `unifyPruned`):
 
 1. **KeyOfType expansion** (lines 345-346): Expands both `keyof` types to get their
    concrete keys, then unifies the results. Per Step 1's principle, this is not a
@@ -166,15 +168,16 @@ and termination (no timeout or stack overflow).
 
 After verifying all tests pass:
 
-1. **Decide whether to keep the `depth` parameter.** Plan B removed the
-   `maxUnifyDepth` hard limit but kept `depth` for diagnostic use. If the
-   validation in Steps 1-4 shows that the visited set reliably handles all
-   recursion cases, remove the `depth` parameter from `unifyWithDepth` entirely
-   to simplify the interface. If there is value in keeping it (e.g. for logging
-   or as a last-resort safety net during development), add a comment making clear
-   it is diagnostic-only and not a termination mechanism. If depth is removed,
-   update the guidance in Step 1 accordingly (the "should not increment depth"
-   notes become moot).
+1. **Decide whether to keep the `depth` parameter and `maxExpansionRetries`.**
+   Plan B removed the `maxUnifyDepth` hard limit and made `maxExpansionRetries`
+   (from Plan A) redundant. If the validation in Steps 1-4 shows that the visited
+   set reliably handles all recursion cases:
+   - Remove `maxExpansionRetries` from `unifyPruned`'s loop (or replace with a
+     generous safety limit like 100) since the visited set prevents cycles.
+   - Remove the `depth` parameter from `unifyWithDepth` entirely to simplify the
+     interface, or keep it as diagnostic-only with a comment making clear it is
+     not a termination mechanism. If depth is removed, update the guidance in
+     Step 1 accordingly (the "should pass `depth` unchanged" notes become moot).
 
 2. **Update the TODO at expand_type.go:343-345** — After Plan B adds visited-set
    cycle detection to `ExpandType`, the TODO about marking type aliases as recursive
@@ -183,8 +186,8 @@ After verifying all tests pass:
    though it could still be useful as an optimization (skip visited-set tracking
    for non-recursive aliases).
 
-3. **Clean up comments** in `unifyPruned` that reference the old retry loop or
-   explain why certain cases fall through to it.
+3. **Clean up comments** in `unifyPruned` and `unifyMatched` that reference the
+   old retry loop or explain why certain cases fall through to it.
 
 ### Step 6: Performance validation
 

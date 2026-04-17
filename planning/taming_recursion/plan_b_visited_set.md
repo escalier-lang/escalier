@@ -13,10 +13,13 @@ future support for recursive type aliases.
 
 ## Background
 
-After Plan A, the depth counter in `unifyWithDepth` only increments for genuine
-TypeRefType expansions. But it's still an arbitrary limit — there's no guarantee
-that `maxUnifyDepth = 50` is sufficient for all programs, and reducing it risks
-rejecting valid programs.
+After Plan A, TypeRefType expansion is handled by an iterative loop in
+`unifyPruned` (bounded by `maxExpansionRetries`) rather than recursive
+`unifyWithDepth` calls. The `depth` parameter in `unifyWithDepth` is no longer
+incremented for TypeRef expansion — it only reflects structural recursion depth
+from subcomponent unification. The loop bound is still an arbitrary limit —
+there's no guarantee that `maxExpansionRetries = 10` is sufficient for all
+programs, and reducing it risks rejecting valid programs.
 
 The standard approach in type checkers is co-inductive unification: if you
 encounter a pair `(t1, t2)` that you've already started unifying, assume it will
@@ -122,13 +125,13 @@ type unifySeen map[unifyPairKey]bool
 
 ### Step 2: Thread `unifySeen` through unification
 
-**Depth increment rule:** The `depth` parameter should only increment at the
-explicit TypeRefType expansion sites added by Plan A (where `expandTypeRef` is
-called and the result is re-entered into unification). Forwarding calls that
-unify subcomponents (tuple elements, array element types, function parameters,
-object properties, rest spread types) are not expansions and should pass `depth`
-unchanged. This keeps depth proportional to the alias chain length rather than
-the structural size of the types.
+**Depth note:** After Plan A, TypeRefType expansion no longer increments `depth`
+— it is handled by the iterative loop in `unifyPruned` (bounded by
+`maxExpansionRetries`). The `depth` parameter only reflects structural recursion
+from subcomponent unification (tuple elements, array element types, function
+parameters, object properties, rest spread types), and these forwarding calls
+should pass `depth` unchanged. Once the visited set is in place, `depth` becomes
+purely diagnostic.
 
 Change the internal signatures:
 
@@ -163,27 +166,55 @@ throughout `unify.go` that need to be updated. A systematic approach:
 
 ### Step 3: Add cycle detection at the TypeRefType expansion site
 
-In the TypeRefType expansion cases added by Plan A. Note: `expandTypeRef`
-(defined at `expand_type.go:1617`) resolves a `TypeRefType`'s alias and
+After Plan A, TypeRefType expansion lives in `unifyPruned`'s iterative loop,
+which calls `tryExpandTypeRef` and retries `unifyMatched` with the expanded
+types. Cycle detection should be added to this loop: before expanding a
+TypeRefType, check whether the pair `(t1, t2)` has already been seen. If so,
+apply the co-inductive assumption (return success).
+
+Note: `tryExpandTypeRef` (added by Plan A) resolves a `TypeRefType`'s alias and
 substitutes type parameters without recursively expanding nested references.
 It does not call `ExpandType`, so the `expandSeen` set from Step 4 is not
-consulted here — cycles are caught by the `unifySeen` check on re-entry to
-`unifyWithDepth`.
+consulted here — cycles are caught by the `unifySeen` check in the loop.
 
 ```go
-// | TypeRefType, _ -> expand t1
-if ref1, ok := t1.(*type_system.TypeRefType); ok {
-    key := makeUnifyPairKey(ref1, t2)
-    if seen[key] {
-        return nil // co-inductive assumption: assume success
-    }
-    seen[key] = true
+func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
+    for attempt := 0; attempt < maxExpansionRetries; attempt++ {
+        errors := c.unifyMatched(ctx, t1, t2, depth, seen)
+        if len(errors) == 0 {
+            return nil
+        }
 
-    expandedT1, expandErrors := c.expandTypeRef(ctx, ref1)
-    if len(expandErrors) > 0 {
-        return expandErrors
+        // Try expanding TypeRefTypes with cycle detection
+        expanded := false
+        if ref1, ok := t1.(*type_system.TypeRefType); ok {
+            key := makeUnifyPairKey(t1, t2)
+            if seen[key] {
+                return nil // co-inductive assumption: assume success
+            }
+            seen[key] = true
+            if exp, ok := c.tryExpandTypeRef(ctx, ref1); ok {
+                t1 = exp
+                expanded = true
+            }
+        }
+        if ref2, ok := t2.(*type_system.TypeRefType); ok {
+            key := makeUnifyPairKey(t1, t2)
+            if seen[key] {
+                return nil // co-inductive assumption: assume success
+            }
+            seen[key] = true
+            if exp, ok := c.tryExpandTypeRef(ctx, ref2); ok {
+                t2 = exp
+                expanded = true
+            }
+        }
+        if expanded {
+            continue
+        }
+        // ... ExpandType(ctx, t, 0) fallback and error return as in Plan A ...
     }
-    return c.unifyWithDepth(ctx, expandedT1, t2, depth+1, seen)
+    return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 }
 ```
 
@@ -337,13 +368,17 @@ would either expand `List<number>` twice (redundant work) or incorrectly treat t
 second occurrence as a cycle. With caching, the first occurrence is expanded and
 stored, and the second occurrence reuses the cached result.
 
-### Step 5: Remove `maxUnifyDepth` hard limit
+### Step 5: Remove hard limits
 
 Once the visited-set is in place and the test suite passes, remove the hard
-depth limit:
+limits that the visited set supersedes:
 
-- The `maxUnifyDepth` constant (line 94)
-- The depth check at lines 119-121
+- The `maxUnifyDepth` constant (line 94) and the depth check at lines 119-121
+  in `unifyWithDepth`.
+- The `maxExpansionRetries` constant in `unifyPruned` (added by Plan A). With
+  the visited set detecting cycles, the loop will naturally terminate when no
+  further expansion is possible. Replace the loop bound with a generous safety
+  limit (e.g. 100) or remove it entirely if the visited set is proven reliable.
 
 Keep the `depth` parameter in `unifyWithDepth` for now — it is still useful for
 debugging (e.g. logging when depth exceeds some threshold) and for Plan C's
