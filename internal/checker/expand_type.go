@@ -40,6 +40,13 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 		return false
 	}
 
+	// Don't expand type parameter placeholder aliases. These are marker
+	// entries (IsTypeParam=true) created at type parameter creation sites;
+	// expanding them would destroy the parameter's identity.
+	if typeAlias.IsTypeParam {
+		return false
+	}
+
 	expandedType := type_system.Prune(typeAlias.Type)
 
 	// Don't expand nominal object types — nominal semantics are enforced
@@ -50,14 +57,32 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 		return false
 	}
 
-	// Don't expand self-referential aliases (e.g., type param A whose alias
-	// Type is TypeRefType(A)). These occur at type parameter creation sites
-	// where the alias is a forward-reference placeholder. Expanding would
-	// produce a new copy of the same TypeRefType, causing an infinite loop.
-	if ref, ok := expandedType.(*type_system.TypeRefType); ok {
-		if type_system.QualIdentToString(ref.Name) == type_system.QualIdentToString(t.Name) {
-			return false
+	// Don't expand if following the alias chain leads back to the original
+	// TypeRefType (direct or transitive cycle). Walk the chain of
+	// TypeRefType → TypeAlias links with a visited set to detect cycles
+	// like A→B→A.
+	originName := type_system.QualIdentToString(t.Name)
+	visited := map[string]bool{originName: true}
+	cur := expandedType
+	for {
+		ref, ok := cur.(*type_system.TypeRefType)
+		if !ok {
+			break
 		}
+		refName := type_system.QualIdentToString(ref.Name)
+		if visited[refName] {
+			return false // cycle detected
+		}
+		visited[refName] = true
+		// Follow the chain
+		alias := ref.TypeAlias
+		if alias == nil {
+			alias = resolveQualifiedTypeAlias(ctx, ref.Name)
+		}
+		if alias == nil {
+			break
+		}
+		cur = type_system.Prune(alias.Type)
 	}
 
 	return true

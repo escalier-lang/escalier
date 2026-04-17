@@ -2749,6 +2749,7 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 			newTypes[name] = &TypeAlias{
 				Type:        newType,
 				TypeParams:  typeAlias.TypeParams,
+				Exported:    typeAlias.Exported,
 				IsTypeParam: typeAlias.IsTypeParam,
 			}
 		} else {

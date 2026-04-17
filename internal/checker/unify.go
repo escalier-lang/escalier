@@ -14,11 +14,11 @@ import (
 // expansion and retry is appropriate.
 type noMatchError struct{}
 
-func (e *noMatchError) isError()          {}
-func (e *noMatchError) Span() ast.Span   { return DEFAULT_SPAN }
-func (e *noMatchError) Error() string    { return "no match" }
-func (e *noMatchError) Message() string  { return "no match" }
-func (e *noMatchError) IsWarning() bool  { return false }
+func (e *noMatchError) isError()        {}
+func (e *noMatchError) Span() ast.Span  { return DEFAULT_SPAN }
+func (e *noMatchError) Error() string   { return "no match" }
+func (e *noMatchError) Message() string { return "no match" }
+func (e *noMatchError) IsWarning() bool { return false }
 
 // isNoMatch checks whether the error list consists solely of a noMatchError
 // sentinel, indicating that unifyMatched found no applicable case.
@@ -193,6 +193,10 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	return errors
 }
 
+// maxExpansionRetries bounds the non-TypeRef expansion loop in unifyPruned.
+// Only the TypeOfType/CondType continue path can iterate; TypeRefType expansion
+// exits via unifyWithDepth (bounded by maxUnifyDepth). This constant is a
+// safety net against unexpected infinite expansion, not a normal retry limit.
 const maxExpansionRetries = 10
 
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) []Error {
@@ -252,6 +256,13 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 		// Nominal semantics are enforced downstream in the ObjectType vs
 		// ObjectType case in unifyMatched (which allows structural comparison
 		// in pattern-matching mode via ctx.IsPatMatch).
+		//
+		// Termination: after expansion, unifyWithDepth(depth+1) re-enters
+		// unifyMatched with two concrete types (typically ObjectTypes). For
+		// nominal types, obj.ID mismatch produces an immediate error unless
+		// ctx.IsPatMatch allows structural comparison over finite property
+		// sets. In both cases the recursion bottoms out without re-entering
+		// this last-resort path.
 		if isRef1 || isRef2 {
 			lastResortT1, _ := c.ExpandType(ctx, t1, 1)
 			lastResortT2, _ := c.ExpandType(ctx, t2, 1)
