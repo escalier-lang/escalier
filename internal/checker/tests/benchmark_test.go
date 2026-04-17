@@ -681,3 +681,48 @@ func BenchmarkComplexProject(b *testing.B) {
 		_ = c.InferModule(inferCtx, module)
 	}
 }
+
+// TestArrayTypeStructure verifies where Array's properties live (Elems vs Extends)
+// to inform lazy member lookup optimization decisions (#461).
+func TestArrayTypeStructure(t *testing.T) {
+	c := NewChecker()
+	scope := Prelude(c)
+	alias := scope.GetTypeAlias("Array")
+	if alias == nil {
+		t.Fatal("Array type alias not found")
+	}
+	objType, ok := type_system.Prune(alias.Type).(*type_system.ObjectType)
+	if !ok {
+		t.Fatalf("Array type is %T, not ObjectType", type_system.Prune(alias.Type))
+	}
+
+	// Array should be a nominal interface with many elements and no Extends.
+	if !objType.Nominal || !objType.Interface {
+		t.Errorf("expected Nominal=true, Interface=true; got Nominal=%v, Interface=%v",
+			objType.Nominal, objType.Interface)
+	}
+	if len(objType.Elems) == 0 {
+		t.Error("expected Array to have elements")
+	}
+
+	// Verify common properties are findable in direct Elems.
+	for _, name := range []string{"length", "indexOf", "join", "slice"} {
+		key := type_system.NewStrKey(name)
+		found := false
+		for _, elem := range objType.Elems {
+			switch e := elem.(type) {
+			case *type_system.PropertyElem:
+				if e.Name == key {
+					found = true
+				}
+			case *type_system.MethodElem:
+				if e.Name == key {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Errorf("expected %q in Array's direct Elems", name)
+		}
+	}
+}

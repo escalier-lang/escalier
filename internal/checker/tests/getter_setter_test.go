@@ -191,6 +191,49 @@ func TestGetterSetterAccess(t *testing.T) {
 				"Unknown property 's' in object type A | B",
 			},
 		},
+		// Verify that the per-member lazy substitution cache (#461) separates
+		// read (getter) and write (setter) results. Without AccessMode in the
+		// cache key, reading a getter-only property could pollute the cache so
+		// that a subsequent write incorrectly succeeds (or vice versa).
+		"GenericClassGetterThenSetterCacheIsolation": {
+			input: `
+				class Box<T>(value: T) {
+					value,
+					get contents(self) -> T {
+						return self.value
+					},
+					set contents(mut self, v: T) {
+						self.value = v
+					},
+				}
+				val b: mut Box<number> = Box(1)
+				val c = b.contents
+				fn main() {
+					b.contents = 42
+				}
+			`,
+			expectedErrors: nil,
+		},
+		// The reverse order: write first, then read.
+		"GenericClassSetterThenGetterCacheIsolation": {
+			input: `
+				class Box<T>(value: T) {
+					value,
+					get contents(self) -> T {
+						return self.value
+					},
+					set contents(mut self, v: T) {
+						self.value = v
+					},
+				}
+				val b: mut Box<string> = Box("hello")
+				fn main() {
+					b.contents = "world"
+				}
+				val c: string = b.contents
+			`,
+			expectedErrors: nil,
+		},
 	}
 
 	for name, test := range tests {

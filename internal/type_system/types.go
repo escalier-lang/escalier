@@ -321,13 +321,19 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
-	newTypeArgs := make([]Type, len(t.TypeArgs))
+	var newTypeArgs []Type
 	for i, arg := range t.TypeArgs {
 		newArg := arg.Accept(v)
 		if newArg != arg {
+			if newTypeArgs == nil {
+				newTypeArgs = make([]Type, len(t.TypeArgs))
+				copy(newTypeArgs[:i], t.TypeArgs[:i])
+			}
 			changed = true
 		}
-		newTypeArgs[i] = newArg
+		if newTypeArgs != nil {
+			newTypeArgs[i] = newArg
+		}
 	}
 
 	var result Type = t
@@ -896,17 +902,21 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
-	newParams := make([]*FuncParam, len(t.Params))
+	var newParams []*FuncParam
 	for i, param := range t.Params {
 		newType := param.Type.Accept(v)
 		if newType != param.Type {
+			if newParams == nil {
+				newParams = make([]*FuncParam, len(t.Params))
+				copy(newParams[:i], t.Params[:i])
+			}
 			changed = true
 			newParams[i] = &FuncParam{
 				Pattern:  param.Pattern,
 				Type:     newType,
 				Optional: param.Optional,
 			}
-		} else {
+		} else if newParams != nil {
 			newParams[i] = param
 		}
 	}
@@ -929,10 +939,14 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
+		params := t.Params
+		if newParams != nil {
+			params = newParams
+		}
 		result = NewFuncType(
 			t.provenance,
 			t.TypeParams,
-			newParams,
+			params,
 			newReturn,
 			newThrows,
 		)
@@ -1479,52 +1493,86 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
-	newElems := make([]ObjTypeElem, len(t.Elems))
+	var newElems []ObjTypeElem
 	for i, elem := range t.Elems {
 		newElem := elem.Accept(v)
 		if newElem != elem {
+			if newElems == nil {
+				newElems = make([]ObjTypeElem, len(t.Elems))
+				copy(newElems[:i], t.Elems[:i])
+			}
 			changed = true
 		}
-		newElems[i] = newElem
+		if newElems != nil {
+			newElems[i] = newElem
+		}
 	}
 
-	newExtends := make([]*TypeRefType, len(t.Extends))
+	var newExtends []*TypeRefType
 	for i, ext := range t.Extends {
 		if ext == nil {
-			newExtends[i] = nil
+			if newExtends != nil {
+				newExtends[i] = nil
+			}
 			continue
 		}
 		newExt := ext.Accept(v).(*TypeRefType)
 		if newExt != ext {
+			if newExtends == nil {
+				newExtends = make([]*TypeRefType, len(t.Extends))
+				copy(newExtends[:i], t.Extends[:i])
+			}
 			changed = true
 		}
-		newExtends[i] = newExt
+		if newExtends != nil {
+			newExtends[i] = newExt
+		}
 	}
 
-	newImplements := make([]*TypeRefType, len(t.Implements))
+	var newImplements []*TypeRefType
 	for i, impl := range t.Implements {
 		if impl == nil {
-			newImplements[i] = nil
+			if newImplements != nil {
+				newImplements[i] = nil
+			}
 			continue
 		}
 		newImpl := impl.Accept(v).(*TypeRefType)
 		if newImpl != impl {
+			if newImplements == nil {
+				newImplements = make([]*TypeRefType, len(t.Implements))
+				copy(newImplements[:i], t.Implements[:i])
+			}
 			changed = true
 		}
-		newImplements[i] = newImpl
+		if newImplements != nil {
+			newImplements[i] = newImpl
+		}
 	}
 
 	var result *ObjectType = t
 	if changed {
-		result = NewObjectType(t.provenance, newElems)
+		elems := t.Elems
+		if newElems != nil {
+			elems = newElems
+		}
+		extends := t.Extends
+		if newExtends != nil {
+			extends = newExtends
+		}
+		implements := t.Implements
+		if newImplements != nil {
+			implements = newImplements
+		}
+		result = NewObjectType(t.provenance, elems)
 		result.ID = t.ID
 		result.Exact = t.Exact
 		result.Immutable = t.Immutable
 		result.Mutable = t.Mutable
 		result.Nominal = t.Nominal
 		result.Interface = t.Interface
-		result.Extends = newExtends
-		result.Implements = newImplements
+		result.Extends = extends
+		result.Implements = implements
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
 		result.MatchedUnionMembers = t.MatchedUnionMembers
@@ -1750,13 +1798,19 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
-	newElems := make([]Type, len(t.Elems))
+	var newElems []Type
 	for i, elem := range t.Elems {
 		newElem := elem.Accept(v)
 		if newElem != elem {
+			if newElems == nil {
+				newElems = make([]Type, len(t.Elems))
+				copy(newElems[:i], t.Elems[:i])
+			}
 			changed = true
 		}
-		newElems[i] = newElem
+		if newElems != nil {
+			newElems[i] = newElem
+		}
 	}
 
 	var result Type = t
@@ -1992,13 +2046,19 @@ func (t *UnionType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
-	newTypes := make([]Type, len(t.Types))
+	var newTypes []Type
 	for i, typ := range t.Types {
 		newType := typ.Accept(v)
 		if newType != typ {
+			if newTypes == nil {
+				newTypes = make([]Type, len(t.Types))
+				copy(newTypes[:i], t.Types[:i])
+			}
 			changed = true
 		}
-		newTypes[i] = newType
+		if newTypes != nil {
+			newTypes[i] = newType
+		}
 	}
 
 	var result Type = t
@@ -2206,13 +2266,19 @@ func (t *IntersectionType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
-	newTypes := make([]Type, len(t.Types))
+	var newTypes []Type
 	for i, typ := range t.Types {
 		newType := typ.Accept(v)
 		if newType != typ {
+			if newTypes == nil {
+				newTypes = make([]Type, len(t.Types))
+				copy(newTypes[:i], t.Types[:i])
+			}
 			changed = true
 		}
-		newTypes[i] = newType
+		if newTypes != nil {
+			newTypes[i] = newType
+		}
 	}
 
 	var result Type = t
@@ -2602,18 +2668,28 @@ func (t *ExtractorType) Accept(v TypeVisitor) Type {
 
 	newExtractor := t.Extractor.Accept(v)
 	changed := newExtractor != t.Extractor
-	newArgs := make([]Type, len(t.Args))
+	var newArgs []Type
 	for i, arg := range t.Args {
 		newArg := arg.Accept(v)
 		if newArg != arg {
+			if newArgs == nil {
+				newArgs = make([]Type, len(t.Args))
+				copy(newArgs[:i], t.Args[:i])
+			}
 			changed = true
 		}
-		newArgs[i] = newArg
+		if newArgs != nil {
+			newArgs[i] = newArg
+		}
 	}
 
 	var result Type = t
 	if changed {
-		result = NewExtractorType(t.provenance, newExtractor, newArgs...)
+		args := t.Args
+		if newArgs != nil {
+			args = newArgs
+		}
+		result = NewExtractorType(t.provenance, newExtractor, args...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -2684,18 +2760,28 @@ func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
-	newTypes := make([]Type, len(t.Types))
+	var newTypes []Type
 	for i, typ := range t.Types {
 		newType := typ.Accept(v)
 		if newType != typ {
+			if newTypes == nil {
+				newTypes = make([]Type, len(t.Types))
+				copy(newTypes[:i], t.Types[:i])
+			}
 			changed = true
 		}
-		newTypes[i] = newType
+		if newTypes != nil {
+			newTypes[i] = newType
+		}
 	}
 
 	var result Type = t
 	if changed {
-		result = NewTemplateLitType(t.provenance, t.Quasis, newTypes)
+		types := t.Types
+		if newTypes != nil {
+			types = newTypes
+		}
+		result = NewTemplateLitType(t.provenance, t.Quasis, types)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
