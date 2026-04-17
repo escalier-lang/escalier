@@ -361,6 +361,237 @@ func BenchmarkPackageRegistryLookup(b *testing.B) {
 	}
 }
 
+// =============================================================================
+// getMemberType Expand-Cache Benchmarks
+// These benchmarks exercise repeated getMemberType calls on the same concrete
+// generic types to measure the benefit of cross-call expand caching (#453).
+//
+// Each benchmark reuses a single Checker across the b.N loop so the cache
+// can accumulate hits.
+// =============================================================================
+
+// BenchmarkRepeatedGenericPropertyAccess measures the cost of accessing
+// multiple properties on the same concrete generic type (e.g. Array<number>)
+// across many expressions within a single inference pass.
+func BenchmarkRepeatedGenericPropertyAccess(b *testing.B) {
+	// Access .length, then index, then method on the same Array<number> many times.
+	// Each property access triggers getMemberType → ExpandType on Array<number>.
+	input := `
+		declare val a1: Array<number>
+		declare val a2: Array<number>
+		declare val a3: Array<number>
+		declare val a4: Array<number>
+		declare val a5: Array<number>
+
+		val len1 = a1.length
+		val len2 = a2.length
+		val len3 = a3.length
+		val len4 = a4.length
+		val len5 = a5.length
+
+		val inc1 = a1.includes(1)
+		val inc2 = a2.includes(2)
+		val inc3 = a3.includes(3)
+		val inc4 = a4.includes(4)
+		val inc5 = a5.includes(5)
+
+		val idx1 = a1.indexOf(1)
+		val idx2 = a2.indexOf(2)
+		val idx3 = a3.indexOf(3)
+		val idx4 = a4.indexOf(4)
+		val idx5 = a5.indexOf(5)
+	`
+
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
+	script, _ := p.ParseScript()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		c := NewChecker()
+		inferCtx := Context{
+			Scope:   Prelude(c),
+			IsAsync: false,
+		}
+		_, _ = c.InferScript(inferCtx, script)
+	}
+}
+
+// BenchmarkMultipleGenericTypes measures the cost when several different
+// concrete generic types (Array<string>, Map<string, number>, Set<boolean>,
+// Promise<string>) are each accessed multiple times.
+func BenchmarkMultipleGenericTypes(b *testing.B) {
+	input := `
+		declare val arr1: Array<string>
+		declare val arr2: Array<string>
+		declare val arr3: Array<string>
+
+		declare val map1: Map<string, number>
+		declare val map2: Map<string, number>
+		declare val map3: Map<string, number>
+
+		declare val set1: Set<boolean>
+		declare val set2: Set<boolean>
+		declare val set3: Set<boolean>
+
+		declare val p1: Promise<string>
+		declare val p2: Promise<string>
+		declare val p3: Promise<string>
+
+		val al1 = arr1.length
+		val al2 = arr2.length
+		val al3 = arr3.length
+
+		val ms1 = map1.size
+		val ms2 = map2.size
+		val ms3 = map3.size
+
+		val ss1 = set1.size
+		val ss2 = set2.size
+		val ss3 = set3.size
+
+		val pt1 = p1.then(fn (x) => x)
+		val pt2 = p2.then(fn (x) => x)
+		val pt3 = p3.then(fn (x) => x)
+	`
+
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
+	script, _ := p.ParseScript()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		c := NewChecker()
+		inferCtx := Context{
+			Scope:   Prelude(c),
+			IsAsync: false,
+		}
+		_, _ = c.InferScript(inferCtx, script)
+	}
+}
+
+// BenchmarkUnionMemberAccess measures the cost of property access on union
+// types where getMemberType is called recursively for each union member.
+func BenchmarkUnionMemberAccess(b *testing.B) {
+	input := `
+		declare val u1: Array<number> | Array<string>
+		declare val u2: Array<number> | Array<string>
+		declare val u3: Array<number> | Array<string>
+		declare val u4: Array<number> | Array<string>
+		declare val u5: Array<number> | Array<string>
+
+		val l1 = u1.length
+		val l2 = u2.length
+		val l3 = u3.length
+		val l4 = u4.length
+		val l5 = u5.length
+
+		val i1 = u1.indexOf
+		val i2 = u2.indexOf
+		val i3 = u3.indexOf
+		val i4 = u4.indexOf
+		val i5 = u5.indexOf
+	`
+
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
+	script, _ := p.ParseScript()
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		c := NewChecker()
+		inferCtx := Context{
+			Scope:   Prelude(c),
+			IsAsync: false,
+		}
+		_, _ = c.InferScript(inferCtx, script)
+	}
+}
+
+// BenchmarkGenericPropertyAccessModule measures expand cache effectiveness in
+// a multi-file module where the same generic types appear across files.
+func BenchmarkGenericPropertyAccessModule(b *testing.B) {
+	sources := []*ast.Source{
+		{
+			ID:   0,
+			Path: "lib/arrays.esc",
+			Contents: `
+				declare val items: Array<number>
+				declare val names: Array<string>
+				val itemLen = items.length
+				val nameLen = names.length
+				val hasItem = items.includes(1)
+				val hasName = names.includes("a")
+			`,
+		},
+		{
+			ID:   1,
+			Path: "lib/maps.esc",
+			Contents: `
+				declare val config: Map<string, number>
+				declare val cache: Map<string, number>
+				val configSize = config.size
+				val cacheSize = cache.size
+				val hasKey1 = config.has("a")
+				val hasKey2 = cache.has("b")
+			`,
+		},
+		{
+			ID:   2,
+			Path: "lib/promises.esc",
+			Contents: `
+				declare val p1: Promise<string>
+				declare val p2: Promise<string>
+				declare val p3: Promise<number>
+				declare val p4: Promise<number>
+				val t1 = p1.then(fn (x) => x)
+				val t2 = p2.then(fn (x) => x)
+				val t3 = p3.then(fn (x) => x)
+				val t4 = p4.then(fn (x) => x)
+			`,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	module, _ := parser.ParseLibFiles(ctx, sources)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		c := NewChecker()
+		inferCtx := Context{
+			Scope:   Prelude(c),
+			IsAsync: false,
+		}
+		_ = c.InferModule(inferCtx, module)
+	}
+}
+
 // BenchmarkComplexProject simulates inference for a larger project
 func BenchmarkComplexProject(b *testing.B) {
 	sources := []*ast.Source{
