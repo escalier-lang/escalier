@@ -80,7 +80,7 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t type_system.Type) type_system.
 			}
 
 			if newTypeArgs != nil {
-				return type_system.NewTypeRefType(t.Provenance(), typeName, t.TypeAlias, newTypeArgs...)
+				return type_system.NewTypeRefTypeFromQualIdent(t.Provenance(), t.Name, t.TypeAlias, newTypeArgs...)
 			}
 		}
 	}

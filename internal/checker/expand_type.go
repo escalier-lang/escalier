@@ -41,11 +41,13 @@ type expandSeen map[expandSeenKey]type_system.Type
 
 // memberCacheKey identifies a specific property on a specific instantiation of
 // a generic type alias. Used by lazyMemberLookup to cache per-property
-// substitution results (#461).
+// substitution results (#461). The mode field separates getter-read results
+// from setter-write results so they are never confused.
 type memberCacheKey struct {
 	alias    unsafe.Pointer // TypeAlias pointer
 	typeArgs string         // typeArgKey(typeArgs)
 	member   string         // property name
+	mode     AccessMode     // read vs write (getter vs setter)
 }
 
 type memberCache map[memberCacheKey]type_system.Type
@@ -623,6 +625,27 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 
 	objType = type_system.Prune(objType)
 
+	// Fast path for TypeRefTypes: try O(1) per-member lazy lookup before
+	// the expansion loop which would substitute the entire ObjectType (#461).
+	// This handles both nominal types (which the expansion loop can't expand)
+	// and non-nominal generic aliases (avoiding full expansion entirely).
+	if tref, ok := objType.(*type_system.TypeRefType); ok {
+		// Handle Array numeric index access (skip symbol keys like Symbol.iterator)
+		if indexKey, ok := key.(IndexKey); ok && type_system.QualIdentToString(tref.Name) == "Array" && !isSymbolIndexKey(key) {
+			unifyErrors := c.Unify(ctx, indexKey.Type, type_system.NewNumPrimType(nil))
+			errors = slices.Concat(errors, unifyErrors)
+			return tref.TypeArgs[0], errors
+		}
+
+		// Lazy substitution: find the property on the unsubstituted ObjectType
+		// and substitute only that property's type.
+		if propKey, ok := key.(PropertyKey); ok {
+			if memberType, found := c.lazyMemberLookup(ctx, tref, propKey.Name, mode); found {
+				return memberType, errors
+			}
+		}
+	}
+
 	// Check the cross-call expansion cache for TypeRefTypes with fully-concrete
 	// type args. This avoids redundant ExpandType calls when the same concrete
 	// TypeRefType is accessed multiple times (e.g. obj.x, obj.y on the same type). (#453)
@@ -702,25 +725,8 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		// For mutable types, get the access from the inner type
 		return c.getMemberType(ctx, t.Type, key, mode)
 	case *type_system.TypeRefType:
-		// Handle Array numeric index access (skip symbol keys like Symbol.iterator)
-		if indexKey, ok := key.(IndexKey); ok && type_system.QualIdentToString(t.Name) == "Array" && !isSymbolIndexKey(key) {
-			unifyErrors := c.Unify(ctx, indexKey.Type, type_system.NewNumPrimType(nil))
-			errors = slices.Concat(errors, unifyErrors)
-			return t.TypeArgs[0], errors
-		}
-
-		// Lazy substitution (#461): for generic TypeRefTypes resolving to
-		// ObjectTypes, find the property on the unsubstituted ObjectType and
-		// substitute only that property's type. This turns the cost from
-		// O(all methods) into O(1) for single property lookups.
-		if propKey, ok := key.(PropertyKey); ok {
-			if memberType, found := c.lazyMemberLookup(ctx, t, propKey.Name, mode); found {
-				return memberType, errors
-			}
-		}
-
-		// Fallback: full expansion for index access, extends properties,
-		// symbol keys, or non-ObjectType aliases.
+		// Fallback for TypeRefTypes that the lazy path couldn't handle
+		// (index access, extends properties, symbol keys, non-ObjectType aliases).
 		expandType, expandErrors := c.expandTypeRef(ctx, t)
 		accessType, accessErrors := c.getMemberType(ctx, expandType, key, mode)
 
@@ -1025,6 +1031,7 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 		alias:    unsafe.Pointer(typeAlias),
 		typeArgs: typeArgKey(t.TypeArgs),
 		member:   name,
+		mode:     mode,
 	}
 	if cached, exists := c.memberCache[cacheKey]; exists {
 		return cached, true
