@@ -625,9 +625,15 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			}
 		}
 		if concrete {
+			// insideKeyOf is explicitly false: getMemberType never operates inside
+			// a keyof context, so this cache only stores non-keyof expansions.
+			// This avoids collisions with the per-pass expandSeen cache used by
+			// expandTypeWithConfig, which keys on insideKeyOfTarget > 0.
+			// See TODO(#455) on expandSeenKey for potential removal of insideKeyOf.
 			k := expandSeenKey{
-				alias:    unsafe.Pointer(tref.TypeAlias),
-				typeArgs: typeArgKey(tref.TypeArgs),
+				alias:       unsafe.Pointer(tref.TypeAlias),
+				typeArgs:    typeArgKey(tref.TypeArgs),
+				insideKeyOf: false,
 			}
 			if cached, exists := c.expandCache[k]; exists {
 				objType = cached
