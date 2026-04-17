@@ -894,9 +894,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(ctx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		resolved := type_system.Prune(tv)
-		assert.IsType(t, &type_system.PrimType{}, resolved)
-		assert.Equal(t, type_system.NumPrim, resolved.(*type_system.PrimType).Prim,
+		assert.Equal(t, "number", type_system.Prune(tv).String(),
 			"numeric key should resolve to number via numeric index signature")
 	})
 
@@ -917,9 +915,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(ctx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		resolved := type_system.Prune(tv)
-		assert.IsType(t, &type_system.PrimType{}, resolved)
-		assert.Equal(t, type_system.NumPrim, resolved.(*type_system.PrimType).Prim,
+		assert.Equal(t, "number", type_system.Prune(tv).String(),
 			"numeric key should resolve to number regardless of signature declaration order")
 	})
 
@@ -939,9 +935,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(ctx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		resolved := type_system.Prune(tv)
-		assert.IsType(t, &type_system.PrimType{}, resolved)
-		assert.Equal(t, type_system.NumPrim, resolved.(*type_system.PrimType).Prim,
+		assert.Equal(t, "number", type_system.Prune(tv).String(),
 			"string key should match string index signature")
 	})
 
@@ -960,9 +954,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(ctx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		resolved := type_system.Prune(tv)
-		assert.IsType(t, &type_system.PrimType{}, resolved)
-		assert.Equal(t, type_system.StrPrim, resolved.(*type_system.PrimType).Prim,
+		assert.Equal(t, "string", type_system.Prune(tv).String(),
 			"numeric key should fall back to string index signature when no numeric sig exists")
 	})
 

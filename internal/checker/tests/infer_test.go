@@ -1642,6 +1642,30 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"x": "number",
 			},
 		},
+		"RecordNumberTypeWithNumericPrimKey": {
+			input: `
+				type NumberMap = Record<number, number>
+				declare val m: NumberMap
+				declare val n: number
+				val x = m[n]
+			`,
+			expectedTypes: map[string]string{
+				"m": "NumberMap",
+				"x": "number",
+			},
+		},
+		"RecordStringTypeWithNumericPrimKey": {
+			input: `
+				type StringMap = Record<string, number>
+				declare val m: StringMap
+				declare val n: number
+				val x = m[n]
+			`,
+			expectedTypes: map[string]string{
+				"m": "StringMap",
+				"x": "number",
+			},
+		},
 		"RecordSymbolType": {
 			input: `
 				type SymbolMap = Record<symbol, number>

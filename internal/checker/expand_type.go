@@ -1256,6 +1256,8 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					return indexSigFallback, errors
 				}
 			}
+
+			// Handle numeric literal keys (e.g. m[n] where n: 5).
 			if numLit, ok := indexLit.Lit.(*type_system.NumLit); ok {
 				// Numeric literal index — check for numeric-keyed properties and
 				// numeric index signatures, falling back to string index signatures
@@ -1300,8 +1302,12 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			}
 		}
+
 		// Handle numeric primitive keys (e.g. m[n] where n: number).
+		// Prefer the numeric index signature; fall back to string (TypeScript
+		// coerces numeric keys to strings, so a string sig also applies).
 		if primType, ok := keyType.(*type_system.PrimType); ok && primType.Prim == type_system.NumPrim {
+			var strSigFallback type_system.Type
 			for _, elem := range objType.Elems {
 				if sig, ok := elem.(*type_system.IndexSignatureElem); ok {
 					if prim, ok := sig.KeyType.(*type_system.PrimType); ok {
@@ -1309,12 +1315,16 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 							return sig.Value, errors
 						}
 						if prim.Prim == type_system.StrPrim {
-							return sig.Value, errors
+							strSigFallback = sig.Value
 						}
 					}
 				}
 			}
+			if strSigFallback != nil {
+				return strSigFallback, errors
+			}
 		}
+
 		// Handle string primitive keys (e.g. m[s] where s: string).
 		if primType, ok := keyType.(*type_system.PrimType); ok && primType.Prim == type_system.StrPrim {
 			for _, elem := range objType.Elems {
@@ -1325,6 +1335,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			}
 		}
+
 		// Handle unique symbol keys (e.g. Symbol.iterator).
 		// Search in reverse order for override semantics, and check
 		// RestSpreadElems so that symbol-keyed properties from spread
