@@ -2057,9 +2057,9 @@ type OccursInVisitor struct {
 	t1     type_system.Type
 }
 
-func (v *OccursInVisitor) EnterType(t type_system.Type) type_system.Type {
+func (v *OccursInVisitor) EnterType(t type_system.Type) type_system.EnterResult {
 	// No-op for entry
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *OccursInVisitor) ExitType(t type_system.Type) type_system.Type {
@@ -2265,9 +2265,9 @@ func copyObjTypeElems(elems []type_system.ObjTypeElem) []type_system.ObjTypeElem
 
 type RemoveUncertainMutabilityVisitor struct{}
 
-func (v *RemoveUncertainMutabilityVisitor) EnterType(t type_system.Type) type_system.Type {
+func (v *RemoveUncertainMutabilityVisitor) EnterType(t type_system.Type) type_system.EnterResult {
 	// No-op for entry
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *RemoveUncertainMutabilityVisitor) ExitType(t type_system.Type) type_system.Type {

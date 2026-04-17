@@ -20,13 +20,14 @@ type selfTypeRefVisitor struct {
 	found bool
 }
 
-func (v *selfTypeRefVisitor) EnterType(t type_system.Type) type_system.Type {
+func (v *selfTypeRefVisitor) EnterType(t type_system.Type) type_system.EnterResult {
 	if tref, ok := type_system.Prune(t).(*type_system.TypeRefType); ok {
 		if type_system.QualIdentToString(tref.Name) == "Self" {
 			v.found = true
+			return type_system.EnterResult{SkipChildren: true}
 		}
 	}
-	return nil // continue traversal
+	return type_system.EnterResult{}
 }
 
 // replaceSelfWithThis returns a copy of the type with all TypeRefType 'Self' replaced by a TypeScript 'this' type using TypeVisitor.
@@ -37,8 +38,8 @@ func replaceSelfWithThis(t type_system.Type) type_system.Type {
 
 type selfReplaceVisitor struct{}
 
-func (v *selfReplaceVisitor) EnterType(t type_system.Type) type_system.Type {
-	return nil // continue traversal
+func (v *selfReplaceVisitor) EnterType(t type_system.Type) type_system.EnterResult {
+	return type_system.EnterResult{}
 }
 
 func (v *selfReplaceVisitor) ExitType(t type_system.Type) type_system.Type {

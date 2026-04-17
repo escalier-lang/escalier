@@ -1352,6 +1352,7 @@ const DEBUG = false
 // order.
 // TODO: all interface declarations in a namespace to shadow previous ones.
 func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
+	clear(c.expandCache) // Reset cross-call expansion cache for this inference pass
 	errors := []Error{}
 
 	// Phase 1: Create file scopes and process imports for each file.

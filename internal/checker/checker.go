@@ -16,6 +16,7 @@ type Checker struct {
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
 	GlobalScope           *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
 	FileScopes            map[int]*Scope             // Populated by InferModule: SourceID → file-specific scope
+	expandCache           expandSeen                 // Cross-call cache for getMemberType's expansion loop (#453)
 }
 
 func NewChecker() *Checker {
@@ -27,6 +28,7 @@ func NewChecker() *Checker {
 		OverloadDecls:         make(map[string][]*ast.FuncDecl),
 		PackageRegistry:       NewPackageRegistry(),
 		GlobalScope:           nil, // Will be set by initializeGlobalScope() during prelude loading
+		expandCache:           make(expandSeen),
 	}
 }
 

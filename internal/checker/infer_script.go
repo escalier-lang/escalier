@@ -7,6 +7,7 @@ import (
 )
 
 func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
+	clear(c.expandCache) // Reset cross-call expansion cache for this inference pass
 	errors := []Error{}
 	ctx = ctx.WithNewScope()
 

@@ -39,6 +39,28 @@ type expandSeenKey struct {
 // A non-nil value is the cached expansion result (re-encounter = reuse).
 type expandSeen map[expandSeenKey]type_system.Type
 
+// typeVarDetector is a TypeVisitor that detects unresolved type variables.
+// Only unresolved TypeVarTypes (Instance == nil) are flagged; resolved ones
+// are pruned through by Accept and their instances are visited normally.
+type typeVarDetector struct{ found bool }
+
+func (d *typeVarDetector) EnterType(t type_system.Type) type_system.EnterResult {
+	if tv, ok := t.(*type_system.TypeVarType); ok && tv.Instance == nil {
+		d.found = true
+		return type_system.EnterResult{SkipChildren: true}
+	}
+	return type_system.EnterResult{}
+}
+func (d *typeVarDetector) ExitType(t type_system.Type) type_system.Type { return t }
+
+// containsTypeVar returns true if the type contains any unresolved type variables.
+// Uses the Accept visitor to walk all nested types exhaustively.
+func containsTypeVar(t type_system.Type) bool {
+	d := &typeVarDetector{}
+	t.Accept(d)
+	return d.found
+}
+
 // isSymbolIndexKey returns true if the given MemberAccessKey is an IndexKey
 // whose underlying type is a UniqueSymbolType (e.g. Symbol.iterator).
 func isSymbolIndexKey(key MemberAccessKey) bool {
@@ -196,7 +218,7 @@ func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident type_system.QualIden
 	}
 }
 
-func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.Type {
+func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.EnterResult {
 	switch t := t.(type) {
 	case *type_system.FuncType:
 		v.skipTypeRefsCount++ // don't expand type refs inside function types
@@ -218,7 +240,7 @@ func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.Type {
 
 		maps.Copy(inferSubs, groupSubs)
 
-		return type_system.NewCondType(
+		return type_system.EnterResult{Type: type_system.NewCondType(
 			t.Provenance(),
 			t.Check,
 			extendsType,
@@ -227,10 +249,10 @@ func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.Type {
 			// type didn't have any InferTypes in it, so we don't need to
 			// replace them with fresh type variables.
 			SubstituteTypeParams(t.Else, inferSubs),
-		)
+		)}
 	}
 
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
@@ -590,6 +612,37 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 
 	objType = type_system.Prune(objType)
 
+	// Check the cross-call expansion cache for TypeRefTypes with fully-concrete
+	// type args. This avoids redundant ExpandType calls when the same concrete
+	// TypeRefType is accessed multiple times (e.g. obj.x, obj.y on the same type). (#453)
+	var cacheKey *expandSeenKey
+	if tref, ok := objType.(*type_system.TypeRefType); ok && tref.TypeAlias != nil {
+		concrete := true
+		for _, arg := range tref.TypeArgs {
+			if containsTypeVar(arg) {
+				concrete = false
+				break
+			}
+		}
+		if concrete {
+			// insideKeyOf is explicitly false: getMemberType never operates inside
+			// a keyof context, so this cache only stores non-keyof expansions.
+			// This avoids collisions with the per-pass expandSeen cache used by
+			// expandTypeWithConfig, which keys on insideKeyOfTarget > 0.
+			// See TODO(#455) on expandSeenKey for potential removal of insideKeyOf.
+			k := expandSeenKey{
+				alias:       unsafe.Pointer(tref.TypeAlias),
+				typeArgs:    typeArgKey(tref.TypeArgs),
+				insideKeyOf: false,
+			}
+			if cached, exists := c.expandCache[k]; exists {
+				objType = cached
+			} else {
+				cacheKey = &k
+			}
+		}
+	}
+
 	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
 	// IntersectionType, or can't be expanded any further
 	for {
@@ -626,6 +679,11 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		}
 
 		objType = expandedType
+	}
+
+	// Store the expanded result in the cross-call cache
+	if cacheKey != nil {
+		c.expandCache[*cacheKey] = objType
 	}
 
 	switch t := objType.(type) {
@@ -1974,9 +2032,9 @@ type InferTypeFinder struct {
 	inferVars map[string]type_system.Type
 }
 
-func (v *InferTypeFinder) EnterType(t type_system.Type) type_system.Type {
+func (v *InferTypeFinder) EnterType(t type_system.Type) type_system.EnterResult {
 	// No-op - just for traversal
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *InferTypeFinder) ExitType(t type_system.Type) type_system.Type {
@@ -2011,9 +2069,9 @@ type InferTypeReplacer struct {
 	inferMapping map[string]type_system.Type
 }
 
-func (v *InferTypeReplacer) EnterType(t type_system.Type) type_system.Type {
+func (v *InferTypeReplacer) EnterType(t type_system.Type) type_system.EnterResult {
 	// No-op - just for traversal
-	return nil
+	return type_system.EnterResult{}
 }
 
 func (v *InferTypeReplacer) ExitType(t type_system.Type) type_system.Type {
