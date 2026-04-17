@@ -27,18 +27,27 @@ visited-set cycle detection, removing the `maxUnifyDepth` safety net.
 
 However, several areas need verification:
 
-- The `ExpandType` calls that remain in `unifyPruned` (KeyOfType at lines 345-346,
-  Union+ObjectType at line 1055) were not part of the retry loop but still call
+- The `ExpandType` calls that remain in `unifyPruned` — the KeyOfType expansion
+  case (which expands both `keyof` types to get their concrete keys) and the
+  Union+ObjectType expansion case (which expands each union member to check if
+  it's an `ObjectType`) — were not part of the retry loop but still call
   `ExpandType` with a fresh context. After Plan B removes `maxUnifyDepth`, these
-  calls rely entirely on the visited set in `ExpandType` for termination.
-- The Tuple+Array and Array+Tuple cases (lines 376-441) call `c.Unify` recursively
-  on rest spread types. If a rest spread contains an `Array<T>` where `T` itself
-  references the tuple, this could recurse. After Plan B, the `unifySeen` set
-  should catch this — but only if `c.Unify` was correctly changed to
-  `c.unifyWithDepth(..., seen)` at those call sites.
-- The `c.Unify` calls inside `unifyTuples`, `unifyFuncTypes`, and `bind` must all
-  propagate the seen set. A missed call site would create a fresh seen set that
-  can't detect cycles.
+  calls rely entirely on the `expandSeen` visited set in `ExpandType` for
+  termination.
+- The Tuple+Array and Array+Tuple interaction paths in `unifyPruned` (including
+  the `TupleType, ArrayType` case, the `ArrayType, TupleType` case, the
+  `ArrayType, ArrayType` case, and the `RestSpreadType, ArrayType` case) all
+  call `c.Unify` recursively — notably on rest spread types (e.g.
+  `c.Unify(ctx, rest.Type, array2)`). If a rest spread contains an `Array<T>`
+  where `T` itself references the tuple, this could recurse. After Plan B
+  removes `maxUnifyDepth`, the `unifySeen` set should catch this — but only if
+  each of these `c.Unify` calls was correctly changed to
+  `c.unifyWithDepth(..., seen)` so that `unifySeen` is propagated. A missed
+  call site would create a fresh `unifySeen` set via the public `c.Unify`
+  entry point, which cannot detect cycles that started in the parent call.
+- The `c.Unify` calls inside `unifyTuples`, `unifyFuncTypes`, and `bind` must
+  similarly propagate `unifySeen` via `c.unifyWithDepth(..., seen)`. A missed
+  call site has the same risk: a fresh seen set that can't detect cycles.
 
 ## Plan
 
