@@ -1,8 +1,6 @@
 # Plan B: Visited-set / seen-pairs memoization
 
-**Prerequisite:** Plan A (expand at TypeRefType match site) should be implemented
-first. The catch-all retry loop would interfere with visited-set tracking because
-it creates new type objects on every iteration, defeating pointer-based identity.
+**Prerequisite:** Plan A (expand at TypeRefType match site) — **implemented in PR #451**.
 
 ## Goal
 
@@ -13,22 +11,26 @@ future support for recursive type aliases.
 
 ## Background
 
-After Plan A, TypeRefType expansion is handled by a loop in `unifyPruned` (bounded
-by `maxExpansionRetries`). When `canExpandTypeRef` returns true, the loop delegates
-to `ExpandType(ctx, t, 1)` (which creates fresh copies) followed by
-`unifyWithDepth` with `depth+1`. For non-TypeRef expandable types (TypeOfType etc.),
-the loop uses `ExpandType(ctx, t, 0)` and retries via `continue`. The `depth`
-parameter reflects both TypeRefType expansion recursion (bounded by alias chain
-depth, typically 1-3) and structural recursion from subcomponent unification. The
-loop bound is still an arbitrary limit — there's no guarantee that
-`maxExpansionRetries = 10` is sufficient for all programs, and reducing it risks
-rejecting valid programs.
+After Plan A, TypeRefType expansion is handled by a three-tier expansion loop in
+`unifyPruned`:
 
-The standard approach in type checkers is co-inductive unification: if you
-encounter a pair `(t1, t2)` that you've already started unifying, assume it will
-succeed. This is sound for recursive types because the only way to encounter the
-same pair twice is through a cycle in the type structure, and the non-cyclic parts
-of the type have already been checked.
+- **Tier 1**: When `canExpandTypeRef` returns true, delegates to
+  `ExpandType(ctx, t, 1)` (which creates fresh copies) followed by
+  `unifyWithDepth` with `depth+1`.
+- **Tier 2**: For non-TypeRef expandable types (TypeOfType etc.), uses
+  `ExpandType(ctx, t, 0)` with Prune and retries via `continue`.
+- **Tier 3**: Last resort for nominal/refused TypeRefTypes — `ExpandType(ctx, t, 1)`
+  with pointer-equality check, then `unifyWithDepth(depth+1)`.
+
+The `noMatchError` sentinel in `unifyMatched` distinguishes "no case matched"
+(safe to try expansion) from "a case matched but failed" (authoritative error),
+which eliminated the need for explicit TypeVarType and same-alias guards.
+
+`canExpandTypeRef` blocks expansion for `IsTypeParam` aliases, nominal types, and
+transitive self-referential cycles (A→B→A via visited set). However, the loop bound
+`maxExpansionRetries = 10` and `maxUnifyDepth = 50` remain as safety nets. These
+are arbitrary limits — a program that needs more expansion steps will get a spurious
+type error. Plan B removes both limits by adding proper cycle detection.
 
 ## Design decisions
 
@@ -136,6 +138,12 @@ object properties, rest spread types). Structural forwarding calls should pass
 `depth` unchanged. Once the visited set is in place, `depth` becomes purely
 diagnostic.
 
+**Note on `noMatchError` interaction:** Plan A's `noMatchError` sentinel means
+`unifyPruned` only attempts expansion when `isNoMatch(errors)` is true. The visited
+set check should be added inside the expansion paths (Tiers 1 and 3), not before
+calling `unifyMatched`. This preserves the sentinel's role in distinguishing
+"no case matched" from "authoritative error".
+
 Change the internal signatures:
 
 ```go
@@ -169,19 +177,10 @@ throughout `unify.go` that need to be updated. A systematic approach:
 
 ### Step 3: Add cycle detection at the TypeRefType expansion site
 
-After Plan A, TypeRefType expansion lives in `unifyPruned`'s loop. When
-`canExpandTypeRef` returns true, the loop delegates to `ExpandType(ctx, t, 1)`
-(which creates fresh copies) followed by `unifyWithDepth` with `depth+1`.
-Cycle detection should be added before this delegation: check whether the pair
-`(t1, t2)` has already been seen. If so, apply the co-inductive assumption
-(return success).
-
-Note: `canExpandTypeRef` (added by Plan A) is a bool predicate that checks
-whether a `TypeRefType` can be expanded (resolves alias, checks nominal/
-self-referential guards). It does not perform the actual expansion — that's
-done by `ExpandType`, which uses the visitor pattern. The `expandSeen` set
-from Step 4 applies to `ExpandType` calls; the `unifySeen` check here guards
-the `unifyWithDepth` recursion.
+After Plan A, TypeRefType expansion lives in `unifyPruned`'s three-tier loop. Cycle
+detection should be added in Tier 1 (before `canExpandTypeRef` delegation) and
+Tier 3 (last-resort expansion): check whether the pair `(t1, t2)` has already been
+seen. If so, apply the co-inductive assumption (return success).
 
 ```go
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
@@ -191,7 +190,9 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, s
             return nil
         }
 
-        // ... Issue 5 (TypeVarType guard) and Issue 6 (same-alias guard) as in Plan A ...
+        if !isNoMatch(errors) {
+            return errors
+        }
 
         // Try expanding TypeRefTypes with cycle detection
         ref1, isRef1 := t1.(*type_system.TypeRefType)
@@ -214,9 +215,8 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, s
             return c.unifyWithDepth(ctx, refExpT1, refExpT2, depth+1, seen)
         }
 
-        // ... ExpandType(ctx, t, 0) fallback for non-TypeRef types,
-        //     Issue 10 last-resort ExpandType(ctx, t, 1), and
-        //     error return as in Plan A ...
+        // Tier 2: ExpandType(ctx, t, 0) for non-TypeRef types...
+        // Tier 3: last-resort ExpandType(ctx, t, 1) with cycle check...
     }
     return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 }
@@ -337,13 +337,10 @@ type TypeExpansionVisitor struct {
 ```
 
 **Important:** `ExpandType` calls itself recursively in several places
-(intersection distribution at line 186, keyof distribution at lines 288-301,
-mapped element expansion at line 1484). These recursive calls currently create
-a fresh visitor with its own counter values. After this change, the `expandSeen`
-map must be passed through to these recursive calls so that cycles spanning
-multiple levels of expansion are detected. Concretely, add an `expandSeen`
-parameter to `expandTypeWithConfig` and pass `v.seen` from the visitor at each
-internal `ExpandType` call site.
+(intersection distribution, keyof distribution, mapped element expansion). These
+recursive calls currently create a fresh visitor with its own counter values.
+After this change, the `expandSeen` map must be passed through to these recursive
+calls so that cycles spanning multiple levels of expansion are detected.
 
 In the `TypeRefType` case of `ExitType`:
 
@@ -377,12 +374,11 @@ stored, and the second occurrence reuses the cached result.
 Once the visited-set is in place and the test suite passes, remove the hard
 limits that the visited set supersedes:
 
-- The `maxUnifyDepth` constant (line 94) and the depth check at lines 119-121
-  in `unifyWithDepth`.
-- The `maxExpansionRetries` constant in `unifyPruned` (added by Plan A). With
-  the visited set detecting cycles, the loop will naturally terminate when no
-  further expansion is possible. Replace the loop bound with a generous safety
-  limit (e.g. 100) or remove it entirely if the visited set is proven reliable.
+- The `maxUnifyDepth` constant and the depth check in `unifyWithDepth`.
+- The `maxExpansionRetries` constant in `unifyPruned`. With the visited set
+  detecting cycles, the loop will naturally terminate when no further expansion is
+  possible. Replace the loop bound with a generous safety limit (e.g. 100) or
+  remove it entirely if the visited set is proven reliable.
 
 Keep the `depth` parameter in `unifyWithDepth` for now — it is still useful for
 debugging (e.g. logging when depth exceeds some threshold) and for Plan C's
@@ -404,6 +400,12 @@ With cycle detection in place, evaluate whether these can be simplified or remov
 - **`insideKeyOfTarget`**: The seen set in `ExpandType` would catch `keyof` cycles
   if the expansion of `keyof T` triggers re-expansion of the same alias. Test
   whether removing this counter causes any test failures. If not, remove it.
+
+**Note:** After Plan A, `canExpandTypeRef`'s transitive cycle detection (A→B→A
+via visited set) partially overlaps with the `expandSeen` visited set. Once Plan B
+is implemented, the transitive cycle check in `canExpandTypeRef` becomes redundant
+for cycle prevention (though it may still be useful as an optimization to avoid
+entering `ExpandType` + `unifyWithDepth` for known cycles).
 
 ## Testing strategy
 

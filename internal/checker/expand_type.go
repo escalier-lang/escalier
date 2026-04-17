@@ -88,6 +88,8 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 	return true
 }
 
+// TODO(#452): Extract a separate ExpandNonRefTypes helper for the count=0 case
+// to make call sites self-documenting.
 func (c *Checker) ExpandType(ctx Context, t type_system.Type, expandTypeRefsCount int) (type_system.Type, []Error) {
 	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, 0)
 }

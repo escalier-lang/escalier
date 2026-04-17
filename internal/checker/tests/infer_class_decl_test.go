@@ -688,5 +688,6 @@ func TestNominalClassUnificationTerminates(t *testing.T) {
 		IsPatMatch: false,
 	}
 	inferErrors := c.InferModule(inferCtx, module)
-	assert.NotEmpty(t, inferErrors, "Expected a type error when assigning Node to Leaf")
+	assert.Len(t, inferErrors, 1)
+	assert.Equal(t, "Node cannot be assigned to Leaf", inferErrors[0].Message())
 }

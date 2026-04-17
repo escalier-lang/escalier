@@ -1,17 +1,17 @@
-# Plan C: Verify and harden unification recursion (issue #1)
+# Plan C: Verify and harden unification recursion
 
-**Prerequisites:** Plans A and B are implemented.
+**Prerequisites:** Plans A and B are implemented. Plan A is done (PR #451).
 
 ## Goal
 
-Confirm that the three pathological scenarios described in issue #1 are fully
-resolved after Plans A and B, address any remaining edge cases where unification
-can still recurse excessively, and clean up residual workaround code.
+Confirm that the three pathological scenarios described in research.md issue #1 are
+fully resolved after Plans A and B, address any remaining edge cases where
+unification can still recurse excessively, and clean up residual workaround code.
 
 ## Background
 
-Issue #1 described unbounded recursion in `unifyPruned`'s retry loop for three
-scenarios:
+Research.md issue #1 described unbounded recursion in the old `unifyPruned` retry
+loop for three scenarios:
 
 1. **TypeRefType with TypeAlias set** (e.g. `HTMLAttributeAnchorTarget`, `Array<any>`)
 2. **TupleType with rest spreads** — the original issue referenced multi-spread
@@ -21,37 +21,33 @@ scenarios:
    excessive recursion during unification with Array types.
 3. **Large ObjectType instances** (e.g. React SVG attributes with 200+ properties)
 
-Plan A replaced the retry loop with an expansion loop in `unifyPruned` that calls
-`unifyMatched` for case-matching and `canExpandTypeRef` (a bool predicate) to
-decide whether TypeRef expansion should be attempted. When expansion is possible,
-`ExpandType(ctx, t, 1)` creates fresh copies and `unifyWithDepth` with `depth+1`
-retries unification, eliminating the pointer-inequality-driven retries that caused
-scenarios 1 and 3. Plan B added visited-set cycle detection, removing the
-`maxUnifyDepth` safety net and the `maxExpansionRetries` loop bound.
+Plan A (PR #451) replaced the retry loop with a `noMatchError` sentinel in
+`unifyMatched` and a three-tier expansion loop in `unifyPruned`:
+- Tier 1: `canExpandTypeRef` → `ExpandType(t, 1)` → `unifyWithDepth(depth+1)`
+- Tier 2: `ExpandType(t, 0)` + Prune → `continue` for non-TypeRef types
+- Tier 3: Last-resort `ExpandType(t, 1)` for nominal/refused TypeRefTypes
+
+The `noMatchError` sentinel ensures expansion is only attempted when no case in
+`unifyMatched` handled the types — authoritative errors from `bind`, same-alias
+comparison, etc. are returned immediately. `canExpandTypeRef` blocks `IsTypeParam`
+aliases, nominal types, and transitive self-referential cycles (A→B→A).
+
+Plan B adds visited-set cycle detection, removing `maxUnifyDepth` and
+`maxExpansionRetries`.
 
 However, several areas need verification:
 
 - The `ExpandType` calls that remain in `unifyMatched` — the KeyOfType expansion
-  case (which expands both `keyof` types to get their concrete keys) and the
-  Union+ObjectType expansion case (which expands each union member to check if
-  it's an `ObjectType`) — were not part of the retry loop but still call
-  `ExpandType` with a fresh context. After Plan B removes the hard limits, these
-  calls rely entirely on the `expandSeen` visited set in `ExpandType` for
-  termination.
-- The Tuple+Array and Array+Tuple interaction paths in `unifyMatched` (including
-  the `TupleType, ArrayType` case, the `ArrayType, TupleType` case, the
-  `ArrayType, ArrayType` case, and the `RestSpreadType, ArrayType` case) all
-  call `c.Unify` recursively — notably on rest spread types (e.g.
-  `c.Unify(ctx, rest.Type, array2)`). If a rest spread contains an `Array<T>`
-  where `T` itself references the tuple, this could recurse. After Plan B
-  removes the hard limits, the `unifySeen` set should catch this — but only if
-  each of these `c.Unify` calls was correctly changed to
-  `c.unifyWithDepth(..., seen)` so that `unifySeen` is propagated. A missed
-  call site would create a fresh `unifySeen` set via the public `c.Unify`
-  entry point, which cannot detect cycles that started in the parent call.
+  case and the Union+ObjectType expansion case — were not part of the retry loop
+  but still call `ExpandType` with a fresh context. After Plan B removes the hard
+  limits, these calls rely entirely on the `expandSeen` visited set in `ExpandType`
+  for termination.
+- The Tuple+Array and Array+Tuple interaction paths in `unifyMatched` all call
+  `c.Unify` recursively — notably on rest spread types. After Plan B removes the
+  hard limits, the `unifySeen` set should catch this — but only if each of these
+  `c.Unify` calls was correctly changed to `c.unifyWithDepth(..., seen)`.
 - The `c.Unify` calls inside `unifyTuples`, `unifyFuncTypes`, and `bind` must
-  similarly propagate `unifySeen` via `c.unifyWithDepth(..., seen)`. A missed
-  call site has the same risk: a fresh seen set that can't detect cycles.
+  similarly propagate `unifySeen`.
 
 ## Plan
 
@@ -59,77 +55,63 @@ However, several areas need verification:
 
 Verify that all `c.Unify` calls in the Tuple+Array interaction paths were updated
 by Plan B to propagate the seen set. After Plan A, these cases live in
-`unifyMatched` (the case-matching function called by `unifyPruned`'s loop):
+`unifyMatched`:
 
-- `TupleType, ArrayType` case (lines 376-397): calls `c.Unify` for each tuple
-  element and for rest spread types
-- `ArrayType, TupleType` case (lines 399-421): mirror of above
-- `ArrayType, ArrayType` case (lines 422-435): calls `c.Unify` on element types
-- `RestSpreadType, ArrayType` case (lines 436-441): calls `c.Unify` on rest type
+- `TupleType, ArrayType` case: calls `c.Unify` for each tuple element and rest
+  spread types
+- `ArrayType, TupleType` case: mirror of above
+- `ArrayType, ArrayType` case: calls `c.Unify` on element types
+- `RestSpreadType, ArrayType` case: calls `c.Unify` on rest type
 - `unifyTuples` helper: calls `c.Unify` on each pair of tuple elements
 
-Each of these should be `c.unifyWithDepth(ctx, ..., depth, seen)` after Plan B —
-propagating the seen set and keeping the same depth. After Plan A, TypeRefType
-expansion delegates to `unifyWithDepth` with `depth+1` (bounded by alias chain
-depth, typically 1-3). The `depth` parameter reflects both TypeRefType expansion
-recursion and structural recursion from subcomponent unification. Structural
-forwarding calls (these tuple/array cases) should pass `depth` unchanged. If any
-`c.Unify` calls were missed during Plan B, fix them.
+Each should be `c.unifyWithDepth(ctx, ..., depth, seen)` after Plan B —
+propagating the seen set and keeping the same depth (structural forwarding, not
+alias expansion). If any calls were missed, fix them.
 
 ### Step 2: Audit `ExpandType` calls that remain in unify.go
 
-After Plan A, two `ExpandType` call sites remain in `unifyMatched` (the
-case-matching function extracted from the original `unifyPruned`):
+After Plan A, two `ExpandType` call sites remain in `unifyMatched`:
 
-1. **KeyOfType expansion** (lines 345-346): Expands both `keyof` types to get their
-   concrete keys, then unifies the results. This is a structural forwarding call
-   (not a TypeRef expansion), so it should forward the same depth:
+1. **KeyOfType expansion**: Expands both `keyof` types to get concrete keys, then
+   unifies the results. This is structural forwarding (not TypeRef expansion), so
+   it should forward the same depth:
    `c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth, seen)`.
 
-   **Risk:** If the expanded keys contain TypeRefTypes, they'll be expanded again on
-   re-entry to `unifyPruned` via Plan A's expansion logic (which delegates to
-   `unifyWithDepth` with `depth+1`). The visited set from Plan B handles cycles.
-   Verify with a test case like:
+   **Risk:** If the expanded keys contain TypeRefTypes, they'll be expanded again
+   on re-entry to `unifyPruned` via Plan A's expansion logic (Tier 1 with
+   `depth+1`). Plan B's visited set handles cycles. Verify with a test case like:
    ```escalier
    type A = { x: number, y: string }
    type B = { x: number, y: string }
    // keyof A should unify with keyof B
    ```
 
-2. **Union+ObjectType expansion** (line 1055): Expands each union member one level
-   to check if it's an `ObjectType`. This is a one-shot expansion (not recursive)
-   and doesn't call `unifyWithDepth` directly on the result.
+2. **Union+ObjectType expansion**: Expands each union member one level to check if
+   it's an `ObjectType`. This is one-shot (not recursive) and doesn't call
+   `unifyWithDepth` directly on the result.
 
-   **Risk:** Low. The expansion is bounded by the number of union members, and each
-   member is expanded only once. **No change needed.**
+   **Risk:** Low. Bounded by union member count. **No change needed.**
 
 ### Step 3: Validate the three original scenarios
 
-Write targeted tests that reproduce the three scenarios from issue #1 and verify
-they terminate promptly (not after hitting a depth limit):
+Write targeted tests that reproduce the three scenarios from research.md issue #1
+and verify they terminate promptly (not after hitting a depth limit):
 
 #### Scenario 1: TypeRefType with TypeAlias set
 
 ```escalier
-// HTMLAttributeAnchorTarget-like scenario: type alias used in annotation
+// HTMLAttributeAnchorTarget-like scenario
 type Target = "_self" | "_blank" | "_parent" | "_top"
 val t: Target = "_blank"
 ```
 
 ```escalier
-// Array<any> scenario: unifying Array types with different references
+// Array<any> scenario
 val a: Array<any> = [1, "hello", true]
 val b: Array<any> = a
 ```
 
 #### Scenario 2: TupleType with rest spreads
-
-> **Note:** Escalier (like TypeScript) does not allow tuple types to contain
-> multiple rest/spread elements. The examples below from the original issue
-> inventory are invalid syntax. This scenario may not be reproducible as
-> described. If single-spread tuples can still trigger excessive recursion
-> (e.g. `[number, ...Array<number>]` vs `Array<number>`), add a test for that
-> instead.
 
 ```escalier
 // Single rest spread — valid
@@ -168,6 +150,9 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 Each test should verify both correctness (unification succeeds or fails as expected)
 and termination (no timeout or stack overflow).
 
+**Note:** Plan A already added `TestNominalClassUnificationTerminates` which tests
+self-referential nominal class unification through the last-resort expansion path.
+
 ### Step 5: Remove residual workaround code and comments
 
 After verifying all tests pass:
@@ -179,18 +164,22 @@ After verifying all tests pass:
    recursion cases, remove the `depth` parameter from `unifyWithDepth` entirely
    to simplify the interface. If there is value in keeping it (e.g. for logging
    or as a last-resort safety net during development), add a comment making clear
-   it is diagnostic-only and not a termination mechanism. If depth is removed,
-   update the guidance in Step 1 accordingly (the "should pass `depth` unchanged"
-   notes become moot).
+   it is diagnostic-only and not a termination mechanism.
 
-2. **Update the TODO at expand_type.go:343-345** — After Plan B adds visited-set
-   cycle detection to `ExpandType`, the TODO about marking type aliases as recursive
+2. **Evaluate `canExpandTypeRef`'s transitive cycle detection.** After Plan B adds
+   the `unifySeen` and `expandSeen` visited sets, the transitive cycle check
+   (A→B→A) in `canExpandTypeRef` becomes redundant for cycle prevention. Consider
+   keeping it as an optimization (avoids entering `ExpandType` + `unifyWithDepth`
+   for known cycles) or removing it to simplify `canExpandTypeRef`.
+
+3. **Update the TODO at expand_type.go** — After Plan B adds visited-set cycle
+   detection to `ExpandType`, the TODO about marking type aliases as recursive
    can be updated to reflect that cycle detection is now handled dynamically. The
    `Recursive` flag on `TypeAlias` is no longer a prerequisite for correctness,
    though it could still be useful as an optimization (skip visited-set tracking
    for non-recursive aliases).
 
-3. **Clean up comments** in `unifyPruned` and `unifyMatched` that reference the
+4. **Clean up comments** in `unifyPruned` and `unifyMatched` that reference the
    old retry loop or explain why certain cases fall through to it.
 
 ### Step 6: Performance validation
@@ -223,16 +212,15 @@ above are additive.
   Tuple/Array paths that should propagate `seen`, cycles involving tuples with
   recursive rest spreads could still diverge. Step 1 of this plan specifically
   audits these sites.
-- **ExpandType calls without visited set**: The `ExpandType` calls at lines 345
-  and 1055 create their own expansion context. If the types being expanded contain
-  recursive aliases, the expansion-side visited set (from Plan B) should catch
-  them, but this depends on `ExpandType` correctly threading its own seen set
-  through recursive calls. Step 2 verifies this.
+- **ExpandType calls without visited set**: The `ExpandType` calls in `unifyMatched`
+  (KeyOfType and Union+ObjectType cases) create their own expansion context. If the
+  types being expanded contain recursive aliases, the expansion-side visited set
+  (from Plan B) should catch them, but this depends on `ExpandType` correctly
+  threading its own seen set through recursive calls. Step 2 verifies this.
 - **Performance regression**: Unlikely but possible if the visited-set map becomes
   a bottleneck for very hot unification paths. Step 6 checks for this.
 - **Thread safety**: The `unifySeen` and `expandSeen` maps are created per top-level
   call and threaded through parameters, so they are not shared across goroutines.
   If the checker ever runs concurrently (e.g. checking multiple files in parallel),
   this design is safe because each `Unify`/`ExpandType` entry point creates its own
-  seen set. However, if internal helper functions are ever changed to spawn
-  goroutines that share a seen map, the maps would need synchronization.
+  seen set.

@@ -220,7 +220,9 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 		// Try expanding TypeRefTypes. Use canExpandTypeRef as a "should we
 		// expand?" predicate, then delegate to ExpandType + unifyWithDepth
 		// for the actual retry. ExpandType creates fresh copies via the
-		// visitor (preventing mutation of shared TypeAlias types — Issue 9),
+		// visitor (preventing mutation of shared TypeAlias types, e.g.
+		// `type Point = {x: number, y: number}; val p: Point = {x: 1, y: 2}`
+		// would corrupt Point's alias if unification mutated the shared pointer),
 		// and unifyWithDepth provides Prune + widening on the expanded result.
 		refCanExpand := false
 		if isRef1 && c.canExpandTypeRef(ctx, ref1) {
@@ -237,7 +239,9 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 
 		// Try expanding TypeOfType and other non-TypeRef expandable types.
 		// ExpandType with count=0 skips TypeRef expansion (already handled).
-		// Pointer-equality check is reliable here (see Issue 3 notes).
+		// Pointer-equality check is reliable here: ExpandType(t, 0) returns
+		// the same pointer when t contains nothing expandable at count=0
+		// (e.g. an ObjectType with only TypeRefType properties).
 		nonRefExpT1, _ := c.ExpandType(ctx, t1, 0)
 		nonRefExpT2, _ := c.ExpandType(ctx, t2, 0)
 		if nonRefExpT1 != t1 || nonRefExpT2 != t2 {
@@ -249,8 +253,10 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 			continue
 		}
 
-		// Issue 10: Last resort for TypeRefTypes that canExpandTypeRef
-		// refused (e.g. nominal types). ExpandType(t, 1) always expands
+		// Last resort for nominal TypeRefTypes (e.g. classes) that
+		// canExpandTypeRef refused. This is needed for pattern matching
+		// against nominal types: `match p { {foo} => foo }` requires
+		// expanding to access properties. ExpandType(t, 1) always expands
 		// TypeRefTypes via the visitor regardless of nominality — the visitor
 		// simply resolves the alias without checking nominal semantics.
 		// Nominal semantics are enforced downstream in the ObjectType vs
