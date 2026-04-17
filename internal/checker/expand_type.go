@@ -39,6 +39,26 @@ type expandSeenKey struct {
 // A non-nil value is the cached expansion result (re-encounter = reuse).
 type expandSeen map[expandSeenKey]type_system.Type
 
+// typeVarDetector is a TypeVisitor that detects unresolved type variables.
+// TypeVarType.Accept prunes first, so EnterType only sees unresolved vars.
+type typeVarDetector struct{ found bool }
+
+func (d *typeVarDetector) EnterType(t type_system.Type) type_system.Type {
+	if _, ok := t.(*type_system.TypeVarType); ok {
+		d.found = true
+	}
+	return t
+}
+func (d *typeVarDetector) ExitType(t type_system.Type) type_system.Type { return t }
+
+// containsTypeVar returns true if the type contains any unresolved type variables.
+// Uses the Accept visitor to walk all nested types exhaustively.
+func containsTypeVar(t type_system.Type) bool {
+	d := &typeVarDetector{}
+	t.Accept(d)
+	return d.found
+}
+
 // isSymbolIndexKey returns true if the given MemberAccessKey is an IndexKey
 // whose underlying type is a UniqueSymbolType (e.g. Symbol.iterator).
 func isSymbolIndexKey(key MemberAccessKey) bool {
@@ -590,6 +610,31 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 
 	objType = type_system.Prune(objType)
 
+	// Check the cross-call expansion cache for TypeRefTypes with fully-concrete
+	// type args. This avoids redundant ExpandType calls when the same concrete
+	// TypeRefType is accessed multiple times (e.g. obj.x, obj.y on the same type). (#453)
+	var cacheKey *expandSeenKey
+	if tref, ok := objType.(*type_system.TypeRefType); ok && tref.TypeAlias != nil {
+		concrete := true
+		for _, arg := range tref.TypeArgs {
+			if containsTypeVar(arg) {
+				concrete = false
+				break
+			}
+		}
+		if concrete {
+			k := expandSeenKey{
+				alias:    unsafe.Pointer(tref.TypeAlias),
+				typeArgs: typeArgKey(tref.TypeArgs),
+			}
+			if cached, exists := c.expandCache[k]; exists {
+				objType = cached
+			} else {
+				cacheKey = &k
+			}
+		}
+	}
+
 	// Repeatedly expand objType until it's either an ObjectType, NamespaceType,
 	// IntersectionType, or can't be expanded any further
 	for {
@@ -626,6 +671,11 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		}
 
 		objType = expandedType
+	}
+
+	// Store the expanded result in the cross-call cache
+	if cacheKey != nil {
+		c.expandCache[*cacheKey] = objType
 	}
 
 	switch t := objType.(type) {
