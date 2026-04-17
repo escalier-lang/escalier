@@ -27,6 +27,69 @@ func isSymbolIndexKey(key MemberAccessKey) bool {
 	return isSymbol
 }
 
+// canExpandTypeRef checks whether a TypeRefType can be expanded (i.e., it
+// resolves to a non-nominal, non-self-referential type alias). Used as a
+// predicate only — the actual expansion is done by ExpandType which creates
+// fresh copies to prevent mutation of shared TypeAlias types.
+func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool {
+	typeAlias := t.TypeAlias
+	if typeAlias == nil {
+		typeAlias = resolveQualifiedTypeAlias(ctx, t.Name)
+	}
+	if typeAlias == nil {
+		return false
+	}
+
+	// Don't expand type parameter placeholder aliases. These are marker
+	// entries (IsTypeParam=true) created at type parameter creation sites;
+	// expanding them would destroy the parameter's identity.
+	if typeAlias.IsTypeParam {
+		return false
+	}
+
+	expandedType := type_system.Prune(typeAlias.Type)
+
+	// Don't expand nominal object types — nominal semantics are enforced
+	// in the ObjectType vs ObjectType case in unifyMatched. Expanding here
+	// would bypass nominal identity checks and can cause infinite loops
+	// for self-referential class types.
+	if obj, ok := expandedType.(*type_system.ObjectType); ok && obj.Nominal {
+		return false
+	}
+
+	// Don't expand if following the alias chain leads back to the original
+	// TypeRefType (direct or transitive cycle). Walk the chain of
+	// TypeRefType → TypeAlias links with a visited set to detect cycles
+	// like A→B→A.
+	originName := type_system.QualIdentToString(t.Name)
+	visited := map[string]bool{originName: true}
+	cur := expandedType
+	for {
+		ref, ok := cur.(*type_system.TypeRefType)
+		if !ok {
+			break
+		}
+		refName := type_system.QualIdentToString(ref.Name)
+		if visited[refName] {
+			return false // cycle detected
+		}
+		visited[refName] = true
+		// Follow the chain
+		alias := ref.TypeAlias
+		if alias == nil {
+			alias = resolveQualifiedTypeAlias(ctx, ref.Name)
+		}
+		if alias == nil {
+			break
+		}
+		cur = type_system.Prune(alias.Type)
+	}
+
+	return true
+}
+
+// TODO(#452): Extract a separate ExpandNonRefTypes helper for the count=0 case
+// to make call sites self-documenting.
 func (c *Checker) ExpandType(ctx Context, t type_system.Type, expandTypeRefsCount int) (type_system.Type, []Error) {
 	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, 0)
 }

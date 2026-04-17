@@ -651,3 +651,42 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestNominalClassUnificationTerminates verifies that unifying two different
+// nominal classes terminates and produces an error. For nominal TypeRefTypes,
+// ExpandType returns nil (the visitor checks Nominal and bails), so the
+// last-resort branch in unifyPruned is a no-op and execution falls through to
+// CannotUnifyTypesError. A self-referential class (Node with a "next" field of
+// its own type) is included to verify that the expansion loop doesn't hang.
+func TestNominalClassUnificationTerminates(t *testing.T) {
+	source := &ast.Source{
+		ID:   0,
+		Path: "input.esc",
+		Contents: `
+			class Node(value: number, next: Node | null) {
+				value,
+				next,
+			}
+			class Leaf(value: number) {
+				value,
+			}
+			val n = Node(1, null)
+			val l: Leaf = n
+		`,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	assert.Len(t, parseErrors, 0)
+
+	c := NewChecker()
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	inferErrors := c.InferModule(inferCtx, module)
+	assert.Len(t, inferErrors, 1)
+	assert.Equal(t, "Node cannot be assigned to Leaf", inferErrors[0].Message())
+}

@@ -8,24 +8,32 @@ problems before designing solutions.
 
 ## 1. Unification retry loop creates unbounded recursion
 
-**Location:** `unify.go:1189-1203`
+**Location:** `unify.go` (previously lines 1189-1203, now replaced)
 
-When `unifyPruned` fails to unify two types, it calls `ExpandType(ctx, t, 1)` on
-both sides and retries if either expansion produced a different object. The problem
-is that `ExpandType` allocates new type objects on every call, so the pointer
-comparison `expandedT1 != t1` is always true for any expandable type — even when
-the expansion is structurally identical.
+**Status: Addressed by Plan A (PR #451).**
 
-This causes unbounded recursion for:
+When `unifyPruned` failed to unify two types, it called `ExpandType(ctx, t, 1)` on
+both sides and retried if either expansion produced a different object. The problem
+was that `ExpandType` allocates new type objects on every call, so the pointer
+comparison `expandedT1 != t1` was always true for any expandable type — even when
+the expansion was structurally identical.
+
+This caused unbounded recursion for:
 - `TypeRefType` with `TypeAlias` set (e.g. `HTMLAttributeAnchorTarget`, `Array<any>`)
 - `TupleType` with rest spreads that expand to include the full `Array` interface
 - Large `ObjectType` instances (e.g. React SVG attributes with 200+ properties)
   where nested type references keep producing new objects
 
-**Current workaround:** A hard depth limit (`maxUnifyDepth = 50` at `unify.go:94`)
-that returns `CannotUnifyTypesError` when exceeded (`unify.go:119-121`). This is a
-blunt instrument — it can reject valid programs if they happen to need more than 50
-expansion steps, and it wastes work on the 49 expansions that precede the cutoff.
+**Previous workaround:** A hard depth limit (`maxUnifyDepth = 50`) that returned
+`CannotUnifyTypesError` when exceeded. This was a blunt instrument — it could reject
+valid programs if they happened to need more than 50 expansion steps.
+
+**Current state:** Plan A replaced the retry loop with a `noMatchError` sentinel in
+`unifyMatched` and a three-tier expansion loop in `unifyPruned`. Expansion only
+happens when no case matched (not on every failed match), and recursion depth is
+proportional to alias chain depth (typically 1-3), not property count.
+`maxUnifyDepth` and `maxExpansionRetries` remain as safety nets until Plan B adds
+visited-set cycle detection.
 
 ---
 
@@ -43,6 +51,9 @@ no way to detect the cycle and stop.
 
 This blocks support for linked lists, trees, JSON values, and other recursive data
 structures that are common in real programs.
+
+**Plan B** will add a visited set to `ExpandType` that detects cycles dynamically,
+making the `Recursive` flag unnecessary for correctness.
 
 ---
 
@@ -100,17 +111,21 @@ infinite loop. This is a fragile ordering dependency.
 
 ## 6. `ExpandType` and `unifyPruned` use different recursion strategies that don't compose
 
+**Status: Partially addressed by Plan A (PR #451).**
+
 `ExpandType` uses three independent counters (`expandTypeRefsCount`,
 `skipTypeRefsCount`, `insideKeyOfTarget`) while `unifyPruned` uses a depth counter
-(`depth`). These mechanisms were designed independently and interact in subtle ways:
+(`depth`). These mechanisms were designed independently and interact in subtle ways.
 
-- `unifyPruned` calls `ExpandType` with a fresh count of `1` on each retry, so the
-  expansion counters reset every time — the depth limit in `Unify` is the only thing
-  preventing infinite retries.
-- `ExpandType` calls itself recursively (e.g. for intersection distribution at
-  line 186, keyof distribution at lines 288-301, mapped element expansion at
-  line 1484), each time with its own counter values. There is no shared state
-  between these recursive calls to detect that the overall expansion is cycling.
+**Previous state:** `unifyPruned` called `ExpandType` with a fresh count of `1` on
+each retry, so the expansion counters reset every time — the depth limit in `Unify`
+was the only thing preventing infinite retries.
+
+**Current state:** After Plan A, `unifyPruned` calls `ExpandType` only when the
+`noMatchError` sentinel indicates no case matched, and only for specific type kinds
+(TypeRefTypes via `canExpandTypeRef`, non-TypeRef types via count=0, nominal
+last-resort via count=1). The depth limit is still the safety net, but expansion is
+much more targeted. Plan B will add a shared visited-set primitive.
 
 ---
 
@@ -128,6 +143,11 @@ TypeScript, OCaml, and other production type checkers) for handling recursive ty
 Without this, every recursion-prevention mechanism must be an ad-hoc counter or
 depth limit, and adding support for recursive type aliases will require a
 fundamental change to the expansion strategy.
+
+**Note:** Plan A added a small visited set inside `canExpandTypeRef` for detecting
+transitive alias cycles (A→B→A), but this is scoped to the predicate only — it
+does not provide general cycle detection for unification or expansion. Plan B
+addresses this fully.
 
 ---
 
@@ -164,8 +184,8 @@ Issues 8 and 9 are working correctly and are excluded from these rankings.
 |------|-------|-----|
 | 1 | #2 — Recursive type aliases cannot be expanded | **Blocks entire feature.** Users cannot define linked lists, trees, JSON types, or any recursive data structure. This is a missing capability, not just a bug. |
 | 2 | #7 — No visited-set / seen-pairs mechanism | **Root cause of most other issues.** The absence of this primitive forces every recursion site to invent its own ad-hoc guard. It also makes #2 unsolvable without an architectural change. |
-| 3 | #1 — Unify retry loop / depth limit | **Can reject valid programs.** The depth limit is arbitrary — a program that needs 51 expansion steps to unify will get a spurious type error. It also wastes significant work on the preceding 50 attempts. |
-| 4 | #6 — Non-composing recursion strategies | **Makes the system unpredictable.** Because `Unify` resets `ExpandType`'s counters on every retry, the depth limit in `Unify` is the only real safety net. If it's ever removed or raised, expansion can diverge. |
+| 3 | #1 — ~~Unify retry loop / depth limit~~ | **Addressed by Plan A.** The retry loop has been replaced with targeted expansion. `maxUnifyDepth` remains as a safety net until Plan B. |
+| 4 | #6 — ~~Non-composing recursion strategies~~ | **Partially addressed by Plan A.** Expansion is now targeted by type kind. Plan B will add a shared cycle-detection primitive. |
 | 5 | #5 — `getMemberType` expansion loop | **Fragile but currently working.** Adding a new type kind without updating the terminal-type checks would silently introduce an infinite loop. The `globalThis` ordering dependency is a maintenance hazard. |
 | 6 | #3 — `skipTypeRefsCount` suppression | **Over-suppresses expansion.** Can prevent needed expansion inside structural types, potentially causing unification to fail when it shouldn't. The effect is hard to observe because it manifests as "unification didn't try hard enough" rather than an explicit error. |
 | 7 | #4 — `insideKeyOfTarget` guard | **Narrow scope, works for its case.** Only affects `keyof keyof T` patterns. Low impact because these patterns are uncommon and the guard correctly handles the ones that do occur. |
@@ -176,8 +196,8 @@ Issues 8 and 9 are working correctly and are excluded from these rankings.
 |------|-------|-----|
 | 1 | #7 — No visited-set / seen-pairs mechanism | **Architectural change.** Requires threading shared state through both `ExpandType` and `Unify`, which currently have no shared context beyond the `Checker` receiver. Every call site that creates a new visitor or calls `ExpandType` independently would need to participate. Design decisions include: what constitutes identity for a type pair, whether to use co-inductive assumption (assume success on re-encounter) or just stop expansion, and how to handle type arguments in cycle detection. |
 | 2 | #2 — Recursive type aliases cannot be expanded | **Depends on #7.** Even after adding a visited set, there are design questions: should recursive aliases be detected statically (mark `TypeAlias.Recursive` during definition) or dynamically (detect during expansion)? Static detection requires analyzing the alias graph, which is its own problem for mutually recursive types. Dynamic detection is simpler but means every expansion pays the cost of cycle tracking. |
-| 3 | #6 — Non-composing recursion strategies | **Requires redesigning the expand/unify interface.** The core question is whether expansion should happen lazily (on demand during unification) or eagerly (fully expand before unifying). Either choice has ripple effects across both systems. A unified recursion-tracking context shared between `ExpandType` and `Unify` would address this but is effectively the same work as #7. |
-| 4 | #1 — Unify retry loop / depth limit | **Multiple possible fixes, ranging from simple to thorough.** The simplest fix (structural equality instead of pointer identity) is localized to a few lines but doesn't address the underlying issue. A more thorough fix (expand `TypeRefType` explicitly in `unifyPruned` rather than in a catch-all retry) requires restructuring the bottom of `unifyPruned` and understanding all the cases the retry currently handles. |
+| 3 | #6 — Non-composing recursion strategies | **Partially addressed by Plan A.** The remaining work is adding a shared cycle-detection primitive (Plan B), which is effectively the same work as #7. |
+| 4 | #1 — Unify retry loop / depth limit | **Addressed by Plan A.** The remaining safety-net removal (dropping `maxUnifyDepth`) depends on Plan B. |
 | 5 | #3 — `skipTypeRefsCount` suppression | **Requires understanding when expansion is actually needed.** The counter exists because expanding type refs inside object/function types was causing problems, but the exact failure modes aren't documented. Removing or refining it requires identifying those failure modes and ensuring the replacement handles them. |
 | 6 | #5 — `getMemberType` expansion loop | **Incremental fix.** Could be hardened by adding a small iteration limit or a seen-set of types already attempted. The terminal-type list could be made exhaustive by switching to a default-break pattern instead of listing specific types. |
 | 7 | #4 — `insideKeyOfTarget` guard | **Already works.** If a visited-set mechanism (#7) is added, this counter becomes redundant and can be removed. Until then, it's fine as-is. |
@@ -189,8 +209,9 @@ Issues 8 and 9 are working correctly and are excluded from these rankings.
   non-composing strategies (#6) are the ongoing maintenance cost. Addressing #7
   would make #2 tractable and #6 largely moot.
 
-- Issue #1 (unify retry loop) could be improved independently with a localized fix
-  (structural equality check), but a full solution also benefits from #7.
+- Issue #1 has been addressed by Plan A. The remaining work is removing the safety
+  nets (`maxUnifyDepth`, `maxExpansionRetries`) once Plan B provides proper cycle
+  detection.
 
 - Issues #3, #4, and #5 are lower priority and could be cleaned up incrementally,
   especially after #7 provides a principled cycle-detection mechanism that subsumes

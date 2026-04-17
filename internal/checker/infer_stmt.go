@@ -246,8 +246,9 @@ func (c *Checker) buildTypeParams(
 		// Add this type parameter to the scope for subsequent parameters
 		typeParamTypeRef := type_system.NewTypeRefType(nil, typeParam.Name, nil)
 		typeParamAlias := &type_system.TypeAlias{
-			Type:       typeParamTypeRef,
-			TypeParams: []*type_system.TypeParam{},
+			Type:        typeParamTypeRef,
+			TypeParams:  []*type_system.TypeParam{},
+			IsTypeParam: true,
 		}
 		typeCtx.Scope.SetTypeAlias(typeParam.Name, typeParamAlias)
 	}

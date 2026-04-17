@@ -9,6 +9,27 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// noMatchError is a sentinel error indicating that no case in unifyMatched
+// handled the type combination. unifyPruned uses this to decide whether
+// expansion and retry is appropriate.
+type noMatchError struct{}
+
+func (e *noMatchError) isError()        {}
+func (e *noMatchError) Span() ast.Span  { return DEFAULT_SPAN }
+func (e *noMatchError) Error() string   { return "no match" }
+func (e *noMatchError) Message() string { return "no match" }
+func (e *noMatchError) IsWarning() bool { return false }
+
+// isNoMatch checks whether the error list consists solely of a noMatchError
+// sentinel, indicating that unifyMatched found no applicable case.
+func isNoMatch(errors []Error) bool {
+	if len(errors) == 1 {
+		_, ok := errors[0].(*noMatchError)
+		return ok
+	}
+	return false
+}
+
 // getSpanFromType extracts the span from a type's provenance if available
 func getSpanFromType(t type_system.Type) ast.Span {
 	if t == nil {
@@ -172,7 +193,97 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 	return errors
 }
 
+// maxExpansionRetries bounds the non-TypeRef expansion loop in unifyPruned.
+// Only the TypeOfType/CondType continue path can iterate; TypeRefType expansion
+// exits via unifyWithDepth (bounded by maxUnifyDepth). This constant is a
+// safety net against unexpected infinite expansion, not a normal retry limit.
+const maxExpansionRetries = 10
+
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) []Error {
+	for attempt := 0; attempt < maxExpansionRetries; attempt++ {
+		errors := c.unifyMatched(ctx, t1, t2, depth)
+		if len(errors) == 0 {
+			return nil
+		}
+
+		// If a case in unifyMatched handled the types and returned errors,
+		// those errors are authoritative — don't try expansion.
+		if !isNoMatch(errors) {
+			return errors
+		}
+
+		// From here, no case in unifyMatched matched. Try expansion.
+
+		ref1, isRef1 := t1.(*type_system.TypeRefType)
+		ref2, isRef2 := t2.(*type_system.TypeRefType)
+
+		// Try expanding TypeRefTypes. Use canExpandTypeRef as a "should we
+		// expand?" predicate, then delegate to ExpandType + unifyWithDepth
+		// for the actual retry. ExpandType creates fresh copies via the
+		// visitor (preventing mutation of shared TypeAlias types, e.g.
+		// `type Point = {x: number, y: number}; val p: Point = {x: 1, y: 2}`
+		// would corrupt Point's alias if unification mutated the shared pointer),
+		// and unifyWithDepth provides Prune + widening on the expanded result.
+		refCanExpand := false
+		if isRef1 && c.canExpandTypeRef(ctx, ref1) {
+			refCanExpand = true
+		}
+		if isRef2 && c.canExpandTypeRef(ctx, ref2) {
+			refCanExpand = true
+		}
+		if refCanExpand {
+			refExpT1, _ := c.ExpandType(ctx, t1, 1)
+			refExpT2, _ := c.ExpandType(ctx, t2, 1)
+			return c.unifyWithDepth(ctx, refExpT1, refExpT2, depth+1)
+		}
+
+		// Try expanding TypeOfType and other non-TypeRef expandable types.
+		// ExpandType with count=0 skips TypeRef expansion (already handled).
+		// Pointer-equality check is reliable here: ExpandType(t, 0) returns
+		// the same pointer when t contains nothing expandable at count=0
+		// (e.g. an ObjectType with only TypeRefType properties).
+		nonRefExpT1, _ := c.ExpandType(ctx, t1, 0)
+		nonRefExpT2, _ := c.ExpandType(ctx, t2, 0)
+		if nonRefExpT1 != t1 || nonRefExpT2 != t2 {
+			// Prune after expansion to resolve any TypeVarTypes returned by
+			// expansion (e.g. TypeOfType resolves to a scope binding's
+			// TypeVarType, which must be pruned before re-entering unifyMatched).
+			t1 = type_system.Prune(nonRefExpT1)
+			t2 = type_system.Prune(nonRefExpT2)
+			continue
+		}
+
+		// Last resort for TypeRefTypes that canExpandTypeRef refused (e.g.
+		// refs blocked by IsTypeParam, or cycle detection). ExpandType may
+		// still expand these if the alias resolves to a non-nominal type.
+		// For nominal TypeRefTypes (classes), ExpandType returns nil (the
+		// visitor checks Nominal and bails), so lastResortT == t and this
+		// branch is a no-op — execution falls through to CannotUnifyTypesError.
+		//
+		// For non-nominal refused refs (e.g. cycle-blocked aliases),
+		// ExpandType may return a different type, triggering unifyWithDepth.
+		// This is needed for pattern matching against structural types:
+		// `match p { {foo} => foo }` requires expanding the TypeRefType to
+		// access the ObjectType's properties.
+		//
+		// Termination: unifyWithDepth(depth+1) re-enters unifyMatched with
+		// concrete types. For structural types, unification proceeds over
+		// finite property sets and bottoms out without re-entering this path.
+		if isRef1 || isRef2 {
+			lastResortT1, _ := c.ExpandType(ctx, t1, 1)
+			lastResortT2, _ := c.ExpandType(ctx, t2, 1)
+			if lastResortT1 != t1 || lastResortT2 != t2 {
+				return c.unifyWithDepth(ctx, lastResortT1, lastResortT2, depth+1)
+			}
+		}
+
+		// Nothing could be expanded, return a real error
+		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
+	}
+	return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
+}
+
+func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int) []Error {
 
 	// | TypeVarType, ErrorType -> bind
 	// | ErrorType, TypeVarType -> bind
@@ -500,13 +611,6 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 				}
 				return errors
 			}
-		}
-	}
-	// | TypeRefType, TypeRefType (different alias name) -> ...
-	if ref1, ok := t1.(*type_system.TypeRefType); ok {
-		if ref2, ok := t2.(*type_system.TypeRefType); ok && ref1.Name != ref2.Name {
-			// panic(fmt.Sprintf("TODO: unify types %#v and %#v", ref1, ref2))
-			// TODO
 		}
 	}
 	// | LitType, PrimType -> ...
@@ -1186,26 +1290,7 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int) [
 		}}
 	}
 
-	retry := false
-	expandedT1, _ := c.ExpandType(ctx, t1, 1)
-	if expandedT1 != t1 {
-		t1 = expandedT1
-		retry = true
-	}
-	expandedT2, _ := c.ExpandType(ctx, t2, 1)
-	if expandedT2 != t2 {
-		t2 = expandedT2
-		retry = true
-	}
-
-	if retry {
-		return c.unifyWithDepth(ctx, t1, t2, depth+1)
-	}
-
-	return []Error{&CannotUnifyTypesError{
-		T1: t1,
-		T2: t2,
-	}}
+	return []Error{&noMatchError{}}
 }
 
 // unifyExtractor unifies a subject type against an ExtractorType by finding

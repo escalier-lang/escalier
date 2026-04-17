@@ -260,9 +260,10 @@ func (t *TypeVarType) String() string {
 }
 
 type TypeAlias struct {
-	Type       Type
-	TypeParams []*TypeParam
-	Exported   bool
+	Type        Type
+	TypeParams  []*TypeParam
+	Exported    bool
+	IsTypeParam bool // true for type parameter scope entries, not real aliases
 }
 
 type TypeRefType struct {
@@ -2746,8 +2747,10 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != typeAlias.Type {
 			changed = true
 			newTypes[name] = &TypeAlias{
-				Type:       newType,
-				TypeParams: typeAlias.TypeParams,
+				Type:        newType,
+				TypeParams:  typeAlias.TypeParams,
+				Exported:    typeAlias.Exported,
+				IsTypeParam: typeAlias.IsTypeParam,
 			}
 		} else {
 			newTypes[name] = typeAlias

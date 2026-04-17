@@ -600,8 +600,9 @@ func GeneralizeFuncType(funcType *type_system.FuncType) {
 		// Bind the type var to a TypeRefType referencing the new type param.
 		// All existing references to this type var will resolve via Prune.
 		tv.Instance = type_system.NewTypeRefType(nil, name, &type_system.TypeAlias{
-			Type:       type_system.NewUnknownType(nil),
-			TypeParams: []*type_system.TypeParam{},
+			Type:        type_system.NewUnknownType(nil),
+			TypeParams:  []*type_system.TypeParam{},
+			IsTypeParam: true,
 		})
 	}
 

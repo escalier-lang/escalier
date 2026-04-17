@@ -98,8 +98,9 @@ func (c *Checker) inferFuncTypeParams(
 			t = typeParam.Constraint
 		}
 		funcCtx.Scope.SetTypeAlias(typeParam.Name, &type_system.TypeAlias{
-			Type:       t,
-			TypeParams: []*type_system.TypeParam{},
+			Type:        t,
+			TypeParams:  []*type_system.TypeParam{},
+			IsTypeParam: true,
 		})
 	}
 
