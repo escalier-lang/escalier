@@ -65,21 +65,7 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t type_system.Type) type_system.
 
 		// Handle type arguments if they exist
 		if len(t.TypeArgs) > 0 {
-			var newTypeArgs []type_system.Type
-			for i, arg := range t.TypeArgs {
-				newArg := arg.Accept(v)
-				if newArg != arg {
-					if newTypeArgs == nil {
-						newTypeArgs = make([]type_system.Type, len(t.TypeArgs))
-						copy(newTypeArgs[:i], t.TypeArgs[:i])
-					}
-				}
-				if newTypeArgs != nil {
-					newTypeArgs[i] = newArg
-				}
-			}
-
-			if newTypeArgs != nil {
+			if newTypeArgs, changed := type_system.CowAcceptTypes(t.TypeArgs, v); changed {
 				return type_system.NewTypeRefTypeFromQualIdent(t.Provenance(), t.Name, t.TypeAlias, newTypeArgs...)
 			}
 		}

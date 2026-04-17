@@ -320,21 +320,7 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 		return t
 	}
 
-	changed := false
-	var newTypeArgs []Type
-	for i, arg := range t.TypeArgs {
-		newArg := arg.Accept(v)
-		if newArg != arg {
-			if newTypeArgs == nil {
-				newTypeArgs = make([]Type, len(t.TypeArgs))
-				copy(newTypeArgs[:i], t.TypeArgs[:i])
-			}
-			changed = true
-		}
-		if newTypeArgs != nil {
-			newTypeArgs[i] = newArg
-		}
-	}
+	newTypeArgs, changed := CowAcceptTypes(t.TypeArgs, v)
 
 	var result Type = t
 	if changed {
@@ -1533,87 +1519,22 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		return t
 	}
 
-	changed := false
-	var newElems []ObjTypeElem
-	for i, elem := range t.Elems {
-		newElem := elem.Accept(v)
-		if newElem != elem {
-			if newElems == nil {
-				newElems = make([]ObjTypeElem, len(t.Elems))
-				copy(newElems[:i], t.Elems[:i])
-			}
-			changed = true
-		}
-		if newElems != nil {
-			newElems[i] = newElem
-		}
-	}
-
-	var newExtends []*TypeRefType
-	for i, ext := range t.Extends {
-		if ext == nil {
-			if newExtends != nil {
-				newExtends[i] = nil
-			}
-			continue
-		}
-		newExt := ext.Accept(v).(*TypeRefType)
-		if newExt != ext {
-			if newExtends == nil {
-				newExtends = make([]*TypeRefType, len(t.Extends))
-				copy(newExtends[:i], t.Extends[:i])
-			}
-			changed = true
-		}
-		if newExtends != nil {
-			newExtends[i] = newExt
-		}
-	}
-
-	var newImplements []*TypeRefType
-	for i, impl := range t.Implements {
-		if impl == nil {
-			if newImplements != nil {
-				newImplements[i] = nil
-			}
-			continue
-		}
-		newImpl := impl.Accept(v).(*TypeRefType)
-		if newImpl != impl {
-			if newImplements == nil {
-				newImplements = make([]*TypeRefType, len(t.Implements))
-				copy(newImplements[:i], t.Implements[:i])
-			}
-			changed = true
-		}
-		if newImplements != nil {
-			newImplements[i] = newImpl
-		}
-	}
+	newElems, elemsChanged := CowAcceptElems(t.Elems, v)
+	newExtends, extendsChanged := CowAcceptTypeRefs(t.Extends, v)
+	newImplements, implementsChanged := CowAcceptTypeRefs(t.Implements, v)
+	changed := elemsChanged || extendsChanged || implementsChanged
 
 	var result *ObjectType = t
 	if changed {
-		elems := t.Elems
-		if newElems != nil {
-			elems = newElems
-		}
-		extends := t.Extends
-		if newExtends != nil {
-			extends = newExtends
-		}
-		implements := t.Implements
-		if newImplements != nil {
-			implements = newImplements
-		}
-		result = NewObjectType(t.provenance, elems)
+		result = NewObjectType(t.provenance, newElems)
 		result.ID = t.ID
 		result.Exact = t.Exact
 		result.Immutable = t.Immutable
 		result.Mutable = t.Mutable
 		result.Nominal = t.Nominal
 		result.Interface = t.Interface
-		result.Extends = extends
-		result.Implements = implements
+		result.Extends = newExtends
+		result.Implements = newImplements
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
 		result.MatchedUnionMembers = t.MatchedUnionMembers
@@ -1843,21 +1764,7 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 		return t
 	}
 
-	changed := false
-	var newElems []Type
-	for i, elem := range t.Elems {
-		newElem := elem.Accept(v)
-		if newElem != elem {
-			if newElems == nil {
-				newElems = make([]Type, len(t.Elems))
-				copy(newElems[:i], t.Elems[:i])
-			}
-			changed = true
-		}
-		if newElems != nil {
-			newElems[i] = newElem
-		}
-	}
+	newElems, changed := CowAcceptTypes(t.Elems, v)
 
 	var result Type = t
 	if changed {
@@ -2091,21 +1998,7 @@ func (t *UnionType) Accept(v TypeVisitor) Type {
 		return t
 	}
 
-	changed := false
-	var newTypes []Type
-	for i, typ := range t.Types {
-		newType := typ.Accept(v)
-		if newType != typ {
-			if newTypes == nil {
-				newTypes = make([]Type, len(t.Types))
-				copy(newTypes[:i], t.Types[:i])
-			}
-			changed = true
-		}
-		if newTypes != nil {
-			newTypes[i] = newType
-		}
-	}
+	newTypes, changed := CowAcceptTypes(t.Types, v)
 
 	var result Type = t
 	if changed {
@@ -2311,21 +2204,7 @@ func (t *IntersectionType) Accept(v TypeVisitor) Type {
 		return t
 	}
 
-	changed := false
-	var newTypes []Type
-	for i, typ := range t.Types {
-		newType := typ.Accept(v)
-		if newType != typ {
-			if newTypes == nil {
-				newTypes = make([]Type, len(t.Types))
-				copy(newTypes[:i], t.Types[:i])
-			}
-			changed = true
-		}
-		if newTypes != nil {
-			newTypes[i] = newType
-		}
-	}
+	newTypes, changed := CowAcceptTypes(t.Types, v)
 
 	var result Type = t
 	if changed {
@@ -2713,29 +2592,12 @@ func (t *ExtractorType) Accept(v TypeVisitor) Type {
 	}
 
 	newExtractor := t.Extractor.Accept(v)
-	changed := newExtractor != t.Extractor
-	var newArgs []Type
-	for i, arg := range t.Args {
-		newArg := arg.Accept(v)
-		if newArg != arg {
-			if newArgs == nil {
-				newArgs = make([]Type, len(t.Args))
-				copy(newArgs[:i], t.Args[:i])
-			}
-			changed = true
-		}
-		if newArgs != nil {
-			newArgs[i] = newArg
-		}
-	}
+	newArgs, argsChanged := CowAcceptTypes(t.Args, v)
+	changed := newExtractor != t.Extractor || argsChanged
 
 	var result Type = t
 	if changed {
-		args := t.Args
-		if newArgs != nil {
-			args = newArgs
-		}
-		result = NewExtractorType(t.provenance, newExtractor, args...)
+		result = NewExtractorType(t.provenance, newExtractor, newArgs...)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -2805,29 +2667,11 @@ func (t *TemplateLitType) Accept(v TypeVisitor) Type {
 		return t
 	}
 
-	changed := false
-	var newTypes []Type
-	for i, typ := range t.Types {
-		newType := typ.Accept(v)
-		if newType != typ {
-			if newTypes == nil {
-				newTypes = make([]Type, len(t.Types))
-				copy(newTypes[:i], t.Types[:i])
-			}
-			changed = true
-		}
-		if newTypes != nil {
-			newTypes[i] = newType
-		}
-	}
+	newTypes, changed := CowAcceptTypes(t.Types, v)
 
 	var result Type = t
 	if changed {
-		types := t.Types
-		if newTypes != nil {
-			types = newTypes
-		}
-		result = NewTemplateLitType(t.provenance, t.Quasis, types)
+		result = NewTemplateLitType(t.provenance, t.Quasis, newTypes)
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -3220,4 +3064,85 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 // Equals is a convenience function that delegates to the Equals method
 func Equals(t1 Type, t2 Type) bool {
 	return equals(t1, t2)
+}
+
+// CowAcceptTypes applies a TypeVisitor to each element of a []Type slice.
+// It is used inside Accept methods on composite types (UnionType, TupleType, etc.)
+// to visit child type slices. It uses copy-on-write semantics so that no slice
+// allocation occurs when the visitor leaves all elements unchanged — which is the
+// common case during type walks. This matters because Accept is called recursively
+// on every node in every type tree during inference, and most visits are no-op
+// traversals. Returns the (possibly new) slice and whether any element changed.
+func CowAcceptTypes(items []Type, v TypeVisitor) ([]Type, bool) {
+	var result []Type
+	for i, item := range items {
+		newItem := item.Accept(v)
+		if newItem != item {
+			if result == nil {
+				result = make([]Type, len(items))
+				copy(result[:i], items[:i])
+			}
+		}
+		if result != nil {
+			result[i] = newItem
+		}
+	}
+	if result != nil {
+		return result, true
+	}
+	return items, false
+}
+
+// CowAcceptElems applies a TypeVisitor to each element of a []ObjTypeElem slice.
+// It is used inside ObjectType.Accept to visit the Elems slice. Like CowAcceptTypes,
+// it uses copy-on-write semantics to avoid allocating a new slice when no elements
+// change.
+func CowAcceptElems(items []ObjTypeElem, v TypeVisitor) ([]ObjTypeElem, bool) {
+	var result []ObjTypeElem
+	for i, item := range items {
+		newItem := item.Accept(v)
+		if newItem != item {
+			if result == nil {
+				result = make([]ObjTypeElem, len(items))
+				copy(result[:i], items[:i])
+			}
+		}
+		if result != nil {
+			result[i] = newItem
+		}
+	}
+	if result != nil {
+		return result, true
+	}
+	return items, false
+}
+
+// CowAcceptTypeRefs applies a TypeVisitor to each element of a []*TypeRefType slice.
+// It is used inside ObjectType.Accept to visit the Extends and Implements slices.
+// Like CowAcceptTypes, it uses copy-on-write semantics to avoid allocating a new
+// slice when no elements change. Nil elements are preserved as-is.
+func CowAcceptTypeRefs(items []*TypeRefType, v TypeVisitor) ([]*TypeRefType, bool) {
+	var result []*TypeRefType
+	for i, item := range items {
+		if item == nil {
+			if result != nil {
+				result[i] = nil
+			}
+			continue
+		}
+		newItem := item.Accept(v).(*TypeRefType)
+		if newItem != item {
+			if result == nil {
+				result = make([]*TypeRefType, len(items))
+				copy(result[:i], items[:i])
+			}
+		}
+		if result != nil {
+			result[i] = newItem
+		}
+	}
+	if result != nil {
+		return result, true
+	}
+	return items, false
 }
