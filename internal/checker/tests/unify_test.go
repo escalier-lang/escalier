@@ -741,3 +741,296 @@ func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
 		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
 	})
 }
+
+func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
+	checker := NewChecker()
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+
+	t.Run("duplicate string index signatures are unified not duplicated", func(t *testing.T) {
+		// openObj:   {[key: string]: T}       (open, T is a type variable)
+		// closedObj: {[key: string]: number}
+		tv := type_system.NewTypeVarType(nil, 0)
+		openObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(
+				type_system.NewStrPrimType(nil),
+				tv,
+				false,
+			),
+		})
+		openObj.Open = true
+
+		closedObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(
+				type_system.NewStrPrimType(nil),
+				type_system.NewNumPrimType(nil),
+				false,
+			),
+		})
+
+		errors := checker.Unify(ctx, openObj, closedObj)
+		assert.Empty(t, errors, "unifying matching index signatures should not produce errors")
+
+		// The type variable should be bound to number
+		resolved := type_system.Prune(tv)
+		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to number")
+		prim := resolved.(*type_system.PrimType)
+		assert.Equal(t, type_system.NumPrim, prim.Prim)
+
+		// The open object should NOT have a duplicate index signature appended
+		indexSigCount := 0
+		for _, elem := range openObj.Elems {
+			if _, ok := elem.(*type_system.IndexSignatureElem); ok {
+				indexSigCount++
+			}
+		}
+		assert.Equal(t, 1, indexSigCount, "open object should have exactly one index signature, not a duplicate")
+	})
+
+	t.Run("compatible numeric and string index sigs are copied", func(t *testing.T) {
+		// openObj:   {[key: string]: number}   (open)
+		// closedObj: {[index: number]: number}
+		//
+		// TypeScript requires that when both [key: string] and [index: number]
+		// exist, the numeric value type must be a subtype of the string value
+		// type (since obj[1] === obj["1"]). Here we use number for both which
+		// is valid.
+		openObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(
+				type_system.NewStrPrimType(nil),
+				type_system.NewNumPrimType(nil),
+				false,
+			),
+		})
+		openObj.Open = true
+
+		closedObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(
+				type_system.NewNumPrimType(nil),
+				type_system.NewNumPrimType(nil),
+				false,
+			),
+		})
+
+		errors := checker.Unify(ctx, openObj, closedObj)
+		assert.Empty(t, errors, "compatible index signature key kinds should not conflict")
+
+		// The open object should now have both index signatures
+		indexSigCount := 0
+		for _, elem := range openObj.Elems {
+			if _, ok := elem.(*type_system.IndexSignatureElem); ok {
+				indexSigCount++
+			}
+		}
+		assert.Equal(t, 2, indexSigCount, "open object should have both string and number index signatures")
+	})
+
+	t.Run("closed-vs-open direction also deduplicates", func(t *testing.T) {
+		// closedObj: {[key: string]: number}
+		// openObj:   {[key: string]: T}       (open, T is a type variable)
+		closedObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(
+				type_system.NewStrPrimType(nil),
+				type_system.NewNumPrimType(nil),
+				false,
+			),
+		})
+
+		tv := type_system.NewTypeVarType(nil, 0)
+		openObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(
+				type_system.NewStrPrimType(nil),
+				tv,
+				false,
+			),
+		})
+		openObj.Open = true
+
+		errors := checker.Unify(ctx, closedObj, openObj)
+		assert.Empty(t, errors, "unifying matching index signatures should not produce errors")
+
+		// The type variable should be bound to number
+		resolved := type_system.Prune(tv)
+		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to number")
+		prim := resolved.(*type_system.PrimType)
+		assert.Equal(t, type_system.NumPrim, prim.Prim)
+
+		// The open object should NOT have a duplicate index signature
+		indexSigCount := 0
+		for _, elem := range openObj.Elems {
+			if _, ok := elem.(*type_system.IndexSignatureElem); ok {
+				indexSigCount++
+			}
+		}
+		assert.Equal(t, 1, indexSigCount, "open object should have exactly one index signature")
+	})
+}
+
+func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
+	// These tests exercise findIndexSignatureForKey indirectly through Unify.
+	//
+	// TypeScript requires that when both [key: string]: S and [index: number]: N
+	// exist, N must be a subtype of S (since obj[1] === obj["1"]). We use
+	// number for both value types here so the combination is valid, and
+	// distinguish them by binding a type variable against each signature
+	// independently to confirm which one was matched.
+
+	checker := NewChecker()
+	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+
+	t.Run("numeric key matches when num sig declared first", func(t *testing.T) {
+		// obj1: {0: T}
+		// obj2: {[index: number]: number, [key: string]: number}
+		//   (num sig declared first in the elems list)
+		tv := type_system.NewTypeVarType(nil, 0)
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewNumKey(0), tv),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewNumPrimType(nil), false),
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewNumPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.Empty(t, errors)
+
+		assert.Equal(t, "number", type_system.Prune(tv).String(),
+			"numeric key should resolve to number via numeric index signature")
+	})
+
+	t.Run("numeric key matches when str sig declared first", func(t *testing.T) {
+		// obj1: {0: T}
+		// obj2: {[key: string]: number, [index: number]: number}
+		//   (str sig declared first in the elems list)
+		tv := type_system.NewTypeVarType(nil, 0)
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewNumKey(0), tv),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewNumPrimType(nil), false),
+			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewNumPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.Empty(t, errors)
+
+		assert.Equal(t, "number", type_system.Prune(tv).String(),
+			"numeric key should resolve to number regardless of signature declaration order")
+	})
+
+	t.Run("string key matches string sig", func(t *testing.T) {
+		// obj1: {foo: T}
+		// obj2: {[index: number]: number, [key: string]: number}
+		tv := type_system.NewTypeVarType(nil, 0)
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewStrKey("foo"), tv),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewNumPrimType(nil), false),
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewNumPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.Empty(t, errors)
+
+		assert.Equal(t, "number", type_system.Prune(tv).String(),
+			"string key should match string index signature")
+	})
+
+	t.Run("numeric key falls back to string sig when no numeric sig", func(t *testing.T) {
+		// obj1: {0: T}
+		// obj2: {[key: string]: string}
+		tv := type_system.NewTypeVarType(nil, 0)
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewNumKey(0), tv),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewStrPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.Empty(t, errors)
+
+		assert.Equal(t, "string", type_system.Prune(tv).String(),
+			"numeric key should fall back to string index signature when no numeric sig exists")
+	})
+
+	t.Run("incompatible dual index signatures produce error", func(t *testing.T) {
+		// obj1: {0: T}
+		// obj2: {[index: number]: boolean, [key: string]: string}
+		//
+		// TypeScript forbids this combination because boolean is not a subtype
+		// of string. Since obj[1] === obj["1"] in JavaScript, both signatures
+		// apply to numeric keys and their value types must be compatible.
+		tv := type_system.NewTypeVarType(nil, 0)
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewPropertyElem(type_system.NewNumKey(0), tv),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewBoolPrimType(nil), false),
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewStrPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.NotEmpty(t, errors, "incompatible dual index signatures should produce an error for numeric keys")
+	})
+
+	t.Run("cross-object incompatible numeric and string sigs produce error", func(t *testing.T) {
+		// obj1: {[index: number]: boolean}
+		// obj2: {[key: string]: string}
+		//
+		// The numeric sig is on obj1 and the string sig is on obj2.
+		// Even though neither object individually has both, the cross-object
+		// check should still enforce that the numeric value (boolean) is
+		// compatible with the string value (string).
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewBoolPrimType(nil), false),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewStrPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.NotEmpty(t, errors, "cross-object incompatible numeric/string index signatures should produce an error")
+	})
+
+	t.Run("cross-object compatible numeric and string sigs succeed", func(t *testing.T) {
+		// obj1: {[index: number]: number}
+		// obj2: {[key: string]: number}
+		//
+		// The numeric sig is on obj1 and the string sig is on obj2, but
+		// their value types are compatible (both number).
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewNumPrimType(nil), false),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewNumPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.Empty(t, errors, "cross-object compatible numeric/string index signatures should succeed")
+	})
+
+	t.Run("cross-object reversed direction also checked", func(t *testing.T) {
+		// obj1: {[key: string]: string}
+		// obj2: {[index: number]: boolean}
+		//
+		// String sig on obj1, numeric sig on obj2, incompatible values.
+		obj1 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewStrPrimType(nil), false),
+		})
+
+		obj2 := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewBoolPrimType(nil), false),
+		})
+
+		errors := checker.Unify(ctx, obj1, obj2)
+		assert.NotEmpty(t, errors, "cross-object check should work regardless of which side has the numeric sig")
+	})
+}

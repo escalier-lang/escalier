@@ -191,7 +191,8 @@ func (*GetterTypeAnn) isObjTypeAnnElem()      {}
 func (*SetterTypeAnn) isObjTypeAnnElem()      {}
 func (*PropertyTypeAnn) isObjTypeAnnElem()    {}
 func (*MappedTypeAnn) isObjTypeAnnElem()      {}
-func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
+func (*IndexSignatureTypeAnn) isObjTypeAnnElem() {}
+func (*RestSpreadTypeAnn) isObjTypeAnnElem()     {}
 
 type CallableTypeAnn struct{ Fn FuncTypeAnn }
 type ConstructorTypeAnn struct{ Fn FuncTypeAnn }
@@ -235,6 +236,13 @@ type MappedTypeAnn struct {
 type IndexParamTypeAnn struct {
 	Name       string
 	Constraint TypeAnn
+}
+
+type IndexSignatureTypeAnn struct {
+	KeyName  string  // e.g. "key"
+	KeyType  TypeAnn // e.g. string, number
+	Value    TypeAnn
+	Readonly bool
 }
 
 type RestSpreadTypeAnn struct {

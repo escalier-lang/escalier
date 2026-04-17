@@ -1293,6 +1293,31 @@ type IndexParam struct {
 	Name       string
 	Constraint Type
 }
+type IndexSignatureElem struct {
+	KeyType  Type // must be a PrimType (string, number, symbol)
+	Value    Type
+	Readonly bool
+}
+// NewIndexSignatureElem creates an IndexSignatureElem, panicking if keyType is
+// not a *PrimType with Prim in {StrPrim, NumPrim, SymbolPrim}.
+func NewIndexSignatureElem(keyType Type, value Type, readonly bool) *IndexSignatureElem {
+	prim, ok := keyType.(*PrimType)
+	if !ok {
+		panic(fmt.Sprintf("IndexSignatureElem keyType must be a *PrimType, got %T", keyType))
+	}
+	switch prim.Prim {
+	case StrPrim, NumPrim, SymbolPrim:
+		// valid
+	default:
+		panic(fmt.Sprintf("IndexSignatureElem keyType must be string, number, or symbol, got %v", prim.Prim))
+	}
+	return &IndexSignatureElem{
+		KeyType:  keyType,
+		Value:    value,
+		Readonly: readonly,
+	}
+}
+
 type RestSpreadElem struct{ Value Type }
 
 func NewRestSpreadElem(value Type) *RestSpreadElem {
@@ -1307,8 +1332,9 @@ func (*MethodElem) isObjTypeElem()      {}
 func (*GetterElem) isObjTypeElem()      {}
 func (*SetterElem) isObjTypeElem()      {}
 func (*PropertyElem) isObjTypeElem()    {}
-func (*MappedElem) isObjTypeElem()      {}
-func (*RestSpreadElem) isObjTypeElem()  {}
+func (*MappedElem) isObjTypeElem()          {}
+func (*IndexSignatureElem) isObjTypeElem()  {}
+func (*RestSpreadElem) isObjTypeElem()      {}
 
 func (c *CallableElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := c.Fn.Accept(v).(*FuncType)
@@ -1411,6 +1437,21 @@ func (m *MappedElem) Accept(v TypeVisitor) ObjTypeElem {
 		}
 	}
 	return m
+}
+func (idx *IndexSignatureElem) Accept(v TypeVisitor) ObjTypeElem {
+	changed := false
+	newKeyType := idx.KeyType.Accept(v)
+	if newKeyType != idx.KeyType {
+		changed = true
+	}
+	newValue := idx.Value.Accept(v)
+	if newValue != idx.Value {
+		changed = true
+	}
+	if changed {
+		return NewIndexSignatureElem(newKeyType, newValue, idx.Readonly)
+	}
+	return idx
 }
 func (r *RestSpreadElem) Accept(v TypeVisitor) ObjTypeElem {
 	newValue := r.Value.Accept(v)
@@ -1763,6 +1804,11 @@ func (t *ObjectType) String() string {
 				// TODO: handle optional and readonly
 				result += "[" + elem.TypeParam.Name + " in " + elem.TypeParam.Constraint.String() + "]"
 				result += ": " + elem.Value.String()
+			case *IndexSignatureElem:
+				if elem.Readonly {
+					result += "readonly "
+				}
+				result += "[key: " + elem.KeyType.String() + "]: " + elem.Value.String()
 			case *RestSpreadElem:
 				result += "..." + elem.Value.String()
 			default:
@@ -3095,6 +3141,12 @@ func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
 	case *RestSpreadElem:
 		if e2, ok := e2.(*RestSpreadElem); ok {
 			return equals(e1.Value, e2.Value)
+		}
+	case *IndexSignatureElem:
+		if e2, ok := e2.(*IndexSignatureElem); ok {
+			return e1.Readonly == e2.Readonly &&
+				equals(e1.KeyType, e2.KeyType) &&
+				equals(e1.Value, e2.Value)
 		}
 	}
 	return false

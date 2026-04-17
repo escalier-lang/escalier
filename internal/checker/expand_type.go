@@ -396,6 +396,9 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 					// For mapped types, return the constraint type
 					// e.g., keyof {[K]: T[K] for K in Keys} -> Keys
 					return e.TypeParam.Constraint
+				case *type_system.IndexSignatureElem:
+					// keyof {[key: string]: T} -> string
+					keys = append(keys, e.KeyType)
 				case *type_system.RestSpreadElem:
 					// For rest spread, recursively get keyof the spread type
 					spreadKeys, _ := v.checker.ExpandType(v.ctx, type_system.NewKeyOfType(nil, e.Value), -1)
@@ -1067,6 +1070,18 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 		}
 	}
 
+	// If not found by name, check for a matching index signature.
+	if memberType == nil {
+		for _, elem := range objType.Elems {
+			if idxSig, ok := elem.(*type_system.IndexSignatureElem); ok {
+				if prim, ok := idxSig.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+					memberType = idxSig.Value
+					break
+				}
+			}
+		}
+	}
+
 	if memberType == nil {
 		// Not found in direct Elems; fall back so the full expansion can
 		// check Extends, RestSpreadElem, etc.
@@ -1092,6 +1107,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// earlier ones. This respects JavaScript spread semantics where
 		// {a: 1, ...{a: 2}} yields a=2 and {...{a: 1}, a: 2} yields a=2.
 		targetKey := type_system.NewStrKey(k.Name)
+		var indexSigFallback type_system.Type
 		for i := len(objType.Elems) - 1; i >= 0; i-- {
 			switch elem := objType.Elems[i].(type) {
 			case *type_system.PropertyElem:
@@ -1121,6 +1137,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						return spreadType, errors
 					}
 				}
+			case *type_system.IndexSignatureElem:
+				if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+					indexSigFallback = elem.Value
+				}
 			case *type_system.MappedElem:
 				panic("MappedElems should have been expanded before property access")
 			case *type_system.ConstructorElem:
@@ -1129,6 +1149,11 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			default:
 				panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 			}
+		}
+
+		// If no explicit member matched but an index signature did, return it.
+		if indexSigFallback != nil {
+			return indexSigFallback, errors
 		}
 
 		// Check the Extends field if property not found.
@@ -1184,6 +1209,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 				// Search in reverse order for override semantics (same as PropertyKey).
 				targetKey := type_system.NewStrKey(strLit.Value)
+				var indexSigFallback type_system.Type
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
 					switch elem := objType.Elems[i].(type) {
 					case *type_system.PropertyElem:
@@ -1206,6 +1232,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						if elem.Name == targetKey && mode == AccessWrite {
 							return elem.Fn.Params[0].Type, errors
 						}
+					case *type_system.IndexSignatureElem:
+						if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+							indexSigFallback = elem.Value
+						}
 					case *type_system.RestSpreadElem:
 						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
 							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
@@ -1222,8 +1252,90 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						panic(fmt.Sprintf("Unknown object type element: %#v", elem))
 					}
 				}
+				if indexSigFallback != nil {
+					return indexSigFallback, errors
+				}
+			}
+
+			// Handle numeric literal keys (e.g. m[n] where n: 5).
+			if numLit, ok := indexLit.Lit.(*type_system.NumLit); ok {
+				// Numeric literal index — check for numeric-keyed properties and
+				// numeric index signatures, falling back to string index signatures
+				// per TypeScript's numeric-to-string coercion rules.
+				targetKey := type_system.NewNumKey(numLit.Value)
+				var numSigFallback type_system.Type
+				var strSigFallback type_system.Type
+				for i := len(objType.Elems) - 1; i >= 0; i-- {
+					switch elem := objType.Elems[i].(type) {
+					case *type_system.PropertyElem:
+						if elem.Name == targetKey {
+							propType := elem.Value
+							if elem.Optional {
+								propType = type_system.NewUnionType(nil, propType, type_system.NewUndefinedType(nil))
+							}
+							return propType, errors
+						}
+					case *type_system.IndexSignatureElem:
+						if prim, ok := elem.KeyType.(*type_system.PrimType); ok {
+							if prim.Prim == type_system.NumPrim {
+								numSigFallback = elem.Value
+							} else if prim.Prim == type_system.StrPrim {
+								strSigFallback = elem.Value
+							}
+						}
+					case *type_system.RestSpreadElem:
+						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
+							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+							if len(spreadErrors) == 0 {
+								return spreadType, errors
+							}
+						}
+					default:
+						continue
+					}
+				}
+				if numSigFallback != nil {
+					return numSigFallback, errors
+				}
+				if strSigFallback != nil {
+					return strSigFallback, errors
+				}
 			}
 		}
+
+		// Handle numeric primitive keys (e.g. m[n] where n: number).
+		// Prefer the numeric index signature; fall back to string (TypeScript
+		// coerces numeric keys to strings, so a string sig also applies).
+		if primType, ok := keyType.(*type_system.PrimType); ok && primType.Prim == type_system.NumPrim {
+			var strSigFallback type_system.Type
+			for _, elem := range objType.Elems {
+				if sig, ok := elem.(*type_system.IndexSignatureElem); ok {
+					if prim, ok := sig.KeyType.(*type_system.PrimType); ok {
+						if prim.Prim == type_system.NumPrim {
+							return sig.Value, errors
+						}
+						if prim.Prim == type_system.StrPrim {
+							strSigFallback = sig.Value
+						}
+					}
+				}
+			}
+			if strSigFallback != nil {
+				return strSigFallback, errors
+			}
+		}
+
+		// Handle string primitive keys (e.g. m[s] where s: string).
+		if primType, ok := keyType.(*type_system.PrimType); ok && primType.Prim == type_system.StrPrim {
+			for _, elem := range objType.Elems {
+				if sig, ok := elem.(*type_system.IndexSignatureElem); ok {
+					if prim, ok := sig.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.StrPrim {
+						return sig.Value, errors
+					}
+				}
+			}
+		}
+
 		// Handle unique symbol keys (e.g. Symbol.iterator).
 		// Search in reverse order for override semantics, and check
 		// RestSpreadElems so that symbol-keyed properties from spread
@@ -1231,6 +1343,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// are found.
 		if symType, ok := keyType.(*type_system.UniqueSymbolType); ok {
 			symKey := type_system.NewSymKey(symType.Value)
+			var indexSigFallback type_system.Type
 			for i := len(objType.Elems) - 1; i >= 0; i-- {
 				switch elem := objType.Elems[i].(type) {
 				case *type_system.PropertyElem:
@@ -1253,6 +1366,10 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					if elem.Name == symKey && mode == AccessWrite {
 						return elem.Fn.Params[0].Type, errors
 					}
+				case *type_system.IndexSignatureElem:
+					if prim, ok := elem.KeyType.(*type_system.PrimType); ok && prim.Prim == type_system.SymbolPrim {
+						indexSigFallback = elem.Value
+					}
 				case *type_system.RestSpreadElem:
 					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
 						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
@@ -1267,6 +1384,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				default:
 					continue
 				}
+			}
+			if indexSigFallback != nil {
+				return indexSigFallback, errors
 			}
 		}
 
@@ -1739,11 +1859,8 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 // expandMappedElems expands MappedElem elements in an ObjectType into concrete properties.
 // For example, {[P in "foo" | "bar"]: string} becomes {foo: string, bar: string}.
-//
-// TODO(#456): This function only handles finite, enumerable key sets (string/number
-// literals, symbols). It panics when the constraint is a primitive type like `string`
-// or `number` (e.g. Record<string, T> which expands to {[P in string]: T}). Supporting
-// infinite key types requires adding an index signature representation to the type system.
+// When the constraint is a primitive type like `string` or `number` (e.g. Record<string, T>),
+// an IndexSignatureElem is emitted instead of enumerating keys.
 func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType) *type_system.ObjectType {
 	// Check if there are any MappedElem elements to expand
 	hasMappedElems := false
@@ -1774,9 +1891,32 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType
 				keys = []type_system.Type{constraint}
 			}
 
-			// For each key in the constraint, create a property
+			// For each key in the constraint, create a property or index signature
 			for _, keyType := range keys {
 				keyType = type_system.Prune(keyType)
+
+				// If the key type is a primitive (string, number, symbol), emit an
+				// IndexSignatureElem — we cannot enumerate an infinite key space.
+				if primType, ok := keyType.(*type_system.PrimType); ok {
+					switch primType.Prim {
+					case type_system.StrPrim, type_system.NumPrim, type_system.SymbolPrim:
+						propValue := SubstituteTypeParams(mappedElem.Value, map[string]type_system.Type{
+							mappedElem.TypeParam.Name: keyType,
+						})
+						// Note: we intentionally do NOT call ExpandType on propValue here.
+						// For recursive types like Json = ... | Record<string, Json>,
+						// expanding would trigger infinite recursion. The value type
+						// will be expanded lazily when accessed.
+						readonly := false
+						if mappedElem.Readonly != nil && *mappedElem.Readonly == type_system.MMAdd {
+							readonly = true
+						}
+						expandedElems = append(expandedElems, type_system.NewIndexSignatureElem(
+							keyType, propValue, readonly,
+						))
+						continue
+					}
+				}
 
 				// Substitute the type parameter with the key type
 				keySubs := map[string]type_system.Type{
