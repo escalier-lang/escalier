@@ -67,10 +67,12 @@ if ref2, ok := t2.(*type_system.TypeRefType); ok {
 }
 ```
 
-Note: `expandTypeRef` is used instead of `ExpandType` because we only want to
-resolve the type alias and substitute type parameters — not recursively expand the
-entire result. The recursive expansion happens naturally through re-entering
-`unifyWithDepth`. This also means `expandTypeRef` bypasses the
+Note: `expandTypeRef` (defined at `expand_type.go:1617`) is an existing helper
+that resolves a `TypeRefType`'s alias, substitutes type parameters, and returns
+the result without recursively expanding nested type references. It is used here
+instead of `ExpandType` because we only want to resolve one level — the recursive
+expansion happens naturally through re-entering `unifyWithDepth`. This also means
+`expandTypeRef` bypasses the
 `expandTypeRefsCount`, `skipTypeRefsCount`, and `insideKeyOfTarget` counters in
 `ExpandType`'s visitor — this is intentional, since the expansion depth is
 controlled by re-entering `unifyWithDepth` rather than by the visitor's counters.

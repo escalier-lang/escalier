@@ -28,7 +28,7 @@ Which [research.md](research.md) issues each plan addresses:
 | #2 | Recursive type aliases cannot be expanded | B (visited set in ExpandType enables cycle detection) |
 | #3 | `skipTypeRefsCount` suppresses expansion inside structural types | B (visited set makes this less critical; evaluated for removal in step 6) |
 | #4 | `insideKeyOfTarget` prevents nested keyof expansion | B (visited set may subsume this; evaluated for removal in step 6) |
-| #5 | `getMemberType` expansion loop relies on pointer identity | — (deferred; low complexity to fix after Plan B provides a visited-set primitive) |
+| #5 | `getMemberType` expansion loop relies on pointer identity | — (deferred; low complexity to fix after Plan B provides a visited-set primitive — add an iteration limit or use the `expandSeen` set) |
 | #6 | `ExpandType` and `unifyPruned` use different recursion strategies | A (unify no longer calls ExpandType in retry loop), B (shared cycle detection primitive) |
 | #7 | No visited-set or seen-pairs mechanism | B (adds visited sets to both Unify and ExpandType) |
 | #8 | Package loading cycle prevention | — (working correctly, no changes needed) |

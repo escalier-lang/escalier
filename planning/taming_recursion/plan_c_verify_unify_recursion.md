@@ -14,7 +14,11 @@ Issue #1 described unbounded recursion in `unifyPruned`'s retry loop for three
 scenarios:
 
 1. **TypeRefType with TypeAlias set** (e.g. `HTMLAttributeAnchorTarget`, `Array<any>`)
-2. **TupleType with rest spreads** (e.g. `[...Array<any>, ...Array<any>]`)
+2. **TupleType with rest spreads** — the original issue referenced multi-spread
+   tuples like `[...Array<any>, ...Array<any>]`, but Escalier (like TypeScript)
+   does not allow multiple spreads in a tuple type. Single-spread tuples
+   (e.g. `[number, ...Array<number>]`) may still be relevant if they trigger
+   excessive recursion during unification with Array types.
 3. **Large ObjectType instances** (e.g. React SVG attributes with 200+ properties)
 
 Plan A replaced the retry loop with explicit `TypeRefType` expansion, eliminating
@@ -64,12 +68,13 @@ After Plan A removed the retry loop, two `ExpandType` call sites remain in
 `unifyPruned`:
 
 1. **KeyOfType expansion** (lines 345-346): Expands both `keyof` types to get their
-   concrete keys, then unifies the results. This calls
-   `c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth+1, seen)`.
+   concrete keys, then unifies the results. Per Step 1's principle, this is not a
+   TypeRef expansion, so it should forward the same depth:
+   `c.unifyWithDepth(ctx, expandedKeys1, expandedKeys2, depth, seen)`.
 
    **Risk:** If the expanded keys contain TypeRefTypes, they'll be expanded again on
-   re-entry to `unifyPruned` via Plan A's explicit cases. The visited set from
-   Plan B handles cycles. **No change needed**, but verify with a test case like:
+   re-entry to `unifyPruned` via Plan A's explicit cases (which do increment depth).
+   The visited set from Plan B handles cycles. Verify with a test case like:
    ```escalier
    type A = { x: number, y: string }
    type B = { x: number, y: string }
@@ -104,17 +109,16 @@ val b: Array<any> = a
 
 #### Scenario 2: TupleType with rest spreads
 
-```escalier
-// Rest spreads that expand to Array interface
-val concat = fn <T>(a: Array<T>, b: Array<T>): [...Array<T>, ...Array<T>] => {
-    // ...
-}
-val result: Array<number> = concat([1, 2], [3, 4])
-```
+> **Note:** Escalier (like TypeScript) does not allow tuple types to contain
+> multiple rest/spread elements. The examples below from the original issue
+> inventory are invalid syntax. This scenario may not be reproducible as
+> described. If single-spread tuples can still trigger excessive recursion
+> (e.g. `[number, ...Array<number>]` vs `Array<number>`), add a test for that
+> instead.
 
 ```escalier
-// Nested rest spreads
-val nested: [...Array<number>, ...Array<string>] = [1, 2, "a", "b"]
+// Single rest spread — valid
+val items: [number, ...Array<number>] = [1, 2, 3]
 ```
 
 #### Scenario 3: Large ObjectType instances
@@ -153,24 +157,24 @@ and termination (no timeout or stack overflow).
 
 After verifying all tests pass:
 
-1. **Remove the `maxUnifyDepth` constant and depth check** (constant at line 94,
-   check at lines 119-121) — Plan B already removes these, but any surrounding
-   explanatory comments may linger. Remove them since they describe a problem that
-   no longer exists.
+1. **Decide whether to keep the `depth` parameter.** Plan B removed the
+   `maxUnifyDepth` hard limit but kept `depth` for diagnostic use. If the
+   validation in Steps 1-4 shows that the visited set reliably handles all
+   recursion cases, remove the `depth` parameter from `unifyWithDepth` entirely
+   to simplify the interface. If there is value in keeping it (e.g. for logging
+   or as a last-resort safety net during development), add a comment making clear
+   it is diagnostic-only and not a termination mechanism. If depth is removed,
+   update the guidance in Step 1 accordingly (the "should not increment depth"
+   notes become moot).
 
-2. **Remove the `depth` parameter** from `unifyWithDepth` if Plan B kept it for
-   debugging. If it's being kept, rename it to make clear it's diagnostic-only
-   (e.g. add a comment: "depth is for debugging/logging only, not a termination
-   mechanism").
-
-3. **Update the TODO at expand_type.go:343-345** — After Plan B adds visited-set
+2. **Update the TODO at expand_type.go:343-345** — After Plan B adds visited-set
    cycle detection to `ExpandType`, the TODO about marking type aliases as recursive
    can be updated to reflect that cycle detection is now handled dynamically. The
    `Recursive` flag on `TypeAlias` is no longer a prerequisite for correctness,
    though it could still be useful as an optimization (skip visited-set tracking
    for non-recursive aliases).
 
-4. **Clean up comments** in `unifyPruned` that reference the old retry loop or
+3. **Clean up comments** in `unifyPruned` that reference the old retry loop or
    explain why certain cases fall through to it.
 
 ### Step 6: Performance validation

@@ -93,20 +93,12 @@ to group mutually recursive declarations and processes them together: all signat
 are created as monomorphic types, all bodies are checked, then all are generalized.
 Calls between functions in the same SCC use monomorphic types during body checking.
 
-**One subtlety remains:** TypeVar binding during unification can change the output
-of `fmt.Sprint(typeArgs)` used in `expandSeenKey`. If TypeVar#42 starts unbound and
-gets bound to `number` while unifying one field, then a later encounter with the
-same `TypeRefType` would produce a different key. This is not caused by
-generalization — it's inherent to how unification mutates TypeVars during a single
-pass. In practice this is unlikely to cause problems because:
-
-- The recursive `TypeRefType` in a type alias (e.g. `List<T>`) uses the *same*
-  TypeVar pointer as the outer reference, so `fmt.Sprint` produces the same string
-  whether or not the TypeVar is bound (both occurrences are the same object).
-- The risk would arise only if a TypeRefType's type args contained a *different*
-  TypeVar that happened to get bound between encounters — an unusual structural
-  pattern. If this proves to be a problem during testing, the key can be changed
-  to use TypeVar pointer identity instead of resolved values.
+**TypeVar binding stability:** The `typeArgKey` helper (see Step 4) addresses a
+subtlety where TypeVar binding during unification could change the key for a type
+arg. It uses `TypeVar.ID` for TypeVars (stable regardless of binding state) and
+`fmt.Sprint` for concrete types (structural comparison that handles identical types
+at different pointers). This ensures seen-set keys are stable throughout a single
+unification or expansion pass.
 
 ## Plan
 
@@ -114,21 +106,29 @@ pass. In practice this is unlikely to cause problems because:
 
 ```go
 // unifyPairKey identifies a pair of types being unified.
-// For TypeRefType, we use the TypeAlias pointer + stringified type args
+// For TypeRefType, we use the TypeAlias pointer + typeArgKey(typeArgs)
 // to capture meaningful identity across allocations. Without type args,
 // List<number> and List<string> would produce the same key (both share
 // the same TypeAlias pointer), causing false cycle detection.
 type unifyPairKey struct {
     t1     unsafe.Pointer
-    t1Args string // fmt.Sprint(typeArgs) for TypeRefType, empty otherwise
+    t1Args string // typeArgKey(typeArgs) for TypeRefType, empty otherwise
     t2     unsafe.Pointer
-    t2Args string // fmt.Sprint(typeArgs) for TypeRefType, empty otherwise
+    t2Args string // typeArgKey(typeArgs) for TypeRefType, empty otherwise
 }
 
 type unifySeen map[unifyPairKey]bool
 ```
 
 ### Step 2: Thread `unifySeen` through unification
+
+**Depth increment rule:** The `depth` parameter should only increment at the
+explicit TypeRefType expansion sites added by Plan A (where `expandTypeRef` is
+called and the result is re-entered into unification). Forwarding calls that
+unify subcomponents (tuple elements, array element types, function parameters,
+object properties, rest spread types) are not expansions and should pass `depth`
+unchanged. This keeps depth proportional to the alias chain length rather than
+the structural size of the types.
 
 Change the internal signatures:
 
@@ -163,7 +163,12 @@ throughout `unify.go` that need to be updated. A systematic approach:
 
 ### Step 3: Add cycle detection at the TypeRefType expansion site
 
-In the TypeRefType expansion cases added by Plan A:
+In the TypeRefType expansion cases added by Plan A. Note: `expandTypeRef`
+(defined at `expand_type.go:1617`) resolves a `TypeRefType`'s alias and
+substitutes type parameters without recursively expanding nested references.
+It does not call `ExpandType`, so the `expandSeen` set from Step 4 is not
+consulted here — cycles are caught by the `unifySeen` check on re-entry to
+`unifyWithDepth`.
 
 ```go
 // | TypeRefType, _ -> expand t1
@@ -188,19 +193,35 @@ and type args for `TypeRefType`:
 ```go
 func makeUnifyPairKey(t1, t2 type_system.Type) unifyPairKey {
     key := unifyPairKey{}
-    if ref, ok := t1.(*type_system.TypeRefType); ok && ref.TypeAlias != nil {
-        key.t1 = unsafe.Pointer(ref.TypeAlias)
-        key.t1Args = fmt.Sprint(ref.TypeArgs)
+    if ref, ok := t1.(*type_system.TypeRefType); ok {
+        if ref.TypeAlias != nil {
+            key.t1 = unsafe.Pointer(ref.TypeAlias)
+        } else {
+            key.t1 = pointerOf(ref)
+        }
+        key.t1Args = typeArgKey(ref.TypeArgs)
     } else {
-        key.t1 = pointerOf(t1)
+        key.t1 = interfaceDataPointer(t1)
     }
-    if ref, ok := t2.(*type_system.TypeRefType); ok && ref.TypeAlias != nil {
-        key.t2 = unsafe.Pointer(ref.TypeAlias)
-        key.t2Args = fmt.Sprint(ref.TypeArgs)
+    if ref, ok := t2.(*type_system.TypeRefType); ok {
+        if ref.TypeAlias != nil {
+            key.t2 = unsafe.Pointer(ref.TypeAlias)
+        } else {
+            key.t2 = interfaceDataPointer(ref)
+        }
+        key.t2Args = typeArgKey(ref.TypeArgs)
     } else {
-        key.t2 = pointerOf(t2)
+        key.t2 = interfaceDataPointer(t2)
     }
     return key
+}
+
+// interfaceDataPointer extracts the data pointer from a Go interface value.
+// In Go, an interface is a (type, data) pair; we want the data pointer so that
+// two interface values holding the same concrete pointer produce the same key.
+func interfaceDataPointer(t type_system.Type) unsafe.Pointer {
+    // (*[2]unsafe.Pointer) reinterprets the interface as its underlying pair.
+    return (*[2]unsafe.Pointer)(unsafe.Pointer(&t))[1]
 }
 ```
 
@@ -221,25 +242,50 @@ Define an analogous seen set for expansion:
 // expandSeenKey identifies a specific instantiation of a type alias.
 // Using only the TypeAlias pointer would be wrong: List<number> and List<string>
 // share the same TypeAlias, but they are different instantiations that should
-// both be expandable. We include the stringified type args to distinguish them.
-//
-// We use fmt.Sprint for structural comparison of type args. This is necessary
-// because type args can be structural types (e.g. ObjectType) where two
-// identical {x: number, y: number} literals may have different pointers.
-// Pointer-based identity would miss cycles in cases like List<{x: number}>.
-//
-// The one edge case is TypeVar binding: if a TypeVar in the type args gets
-// bound between expansion calls, fmt.Sprint could produce a different string.
-// In practice this is unlikely to cause problems because the recursive
-// TypeRefType in a type alias (e.g. the `List<T>` in `tail: List<T> | null`)
-// uses the same TypeVar pointer as the outer reference, so fmt.Sprint produces
-// the same output whether or not the TypeVar is bound.
+// both be expandable. We include type arg identity to distinguish them.
 type expandSeenKey struct {
     alias    unsafe.Pointer // TypeAlias pointer
-    typeArgs string         // fmt.Sprint(typeArgs) — structural comparison
+    typeArgs string         // typeArgKey(typeArgs) — see below
 }
 
-type expandSeen map[expandSeenKey]bool
+// expandSeen tracks type alias expansions in progress and caches completed results.
+// A nil value means the expansion is in progress (re-encounter = cycle).
+// A non-nil value is the cached expansion result (re-encounter = reuse).
+type expandSeen map[expandSeenKey]type_system.Type
+
+// typeArgKey produces a stable, deterministic string key for type arguments.
+// For TypeVarType, it uses the TypeVar's unique ID rather than its printed
+// representation. This ensures the key is stable regardless of whether the
+// TypeVar has been bound: TypeVar#42 always produces "$42" whether it's
+// unbound or bound to `number`. For all other types, fmt.Sprint provides
+// structural comparison, which correctly handles cases like two identical
+// ObjectType literals at different pointers (e.g. List<{x: number}>).
+//
+// KNOWN LIMITATION: This only handles TypeVarType at the top level of a type
+// arg. If a type arg is a structural type containing an embedded TypeVar
+// (e.g. {x: TypeVar#42, y: string}), the fmt.Sprint fallback will print the
+// TypeVar's bound value, which could change mid-pass during unification. This
+// would require a type arg like List<{x: T}> where T gets bound between two
+// encounters of the same TypeRefType — unusual but theoretically possible.
+// During testing, try to trigger this with a test case like:
+//
+//   type Wrapper<T> = { inner: Wrapper<{x: T}> | null }
+//   val w: Wrapper<number> = { inner: { inner: null } }
+//
+// If the key proves unstable, make typeArgKey recursive: walk the full type
+// structure using the visitor pattern, emitting TypeVar.ID for any TypeVarType
+// at any depth and structural representation for everything else.
+func typeArgKey(args []type_system.Type) string {
+    parts := make([]string, len(args))
+    for i, arg := range args {
+        if tv, ok := arg.(*type_system.TypeVarType); ok {
+            parts[i] = fmt.Sprintf("$%d", tv.ID)
+        } else {
+            parts[i] = fmt.Sprint(arg)
+        }
+    }
+    return strings.Join(parts, ",")
+}
 ```
 
 Thread it through `expandTypeWithConfig` and the `TypeExpansionVisitor`:
@@ -255,43 +301,54 @@ type TypeExpansionVisitor struct {
 }
 ```
 
+**Important:** `ExpandType` calls itself recursively in several places
+(intersection distribution at line 186, keyof distribution at lines 288-301,
+mapped element expansion at line 1484). These recursive calls currently create
+a fresh visitor with its own counter values. After this change, the `expandSeen`
+map must be passed through to these recursive calls so that cycles spanning
+multiple levels of expansion are detected. Concretely, add an `expandSeen`
+parameter to `expandTypeWithConfig` and pass `v.seen` from the visitor at each
+internal `ExpandType` call site.
+
 In the `TypeRefType` case of `ExitType`:
 
 ```go
 case *type_system.TypeRefType:
     key := expandSeenKey{
         alias:    unsafe.Pointer(typeAlias),
-        typeArgs: fmt.Sprint(ref.TypeArgs),
+        typeArgs: typeArgKey(ref.TypeArgs),
     }
-    if v.seen[key] {
-        // Cycle detected — return the TypeRefType unexpanded
-        return nil
+    if cached, exists := v.seen[key]; exists {
+        if cached == nil {
+            // In progress — this is a cycle. Return unexpanded.
+            return nil
+        }
+        // Completed — reuse the cached expansion.
+        return cached
     }
-    v.seen[key] = true
-    defer delete(v.seen, key) // clean up after leaving this expansion
+    v.seen[key] = nil // mark as in progress
     // ... proceed with expansion ...
+    v.seen[key] = expandedType // cache the result
 ```
 
-Note the `defer delete` — unlike unification, expansion uses a stack-like seen set.
-A type alias should only be marked as "in progress" while it's actively being
-expanded. Once expansion of that alias is complete, it should be removed so that
-the same alias can be expanded again in a different context (e.g. `List<number>`
-and `List<string>` both reference `List` but should both be expandable). Including
-the type args in the key is critical here: without it, expanding `List<number>`
-would mark `List` as seen, and a subsequent encounter with `List<string>` during
-the same expansion would incorrectly be treated as a cycle.
+The two-phase approach (nil = in progress, non-nil = completed) distinguishes
+cycles from reuse. Without caching, a type like `{a: List<number>, b: List<number>}`
+would either expand `List<number>` twice (redundant work) or incorrectly treat the
+second occurrence as a cycle. With caching, the first occurrence is expanded and
+stored, and the second occurrence reuses the cached result.
 
-### Step 5: Remove `maxUnifyDepth`
+### Step 5: Remove `maxUnifyDepth` hard limit
 
-Once the visited-set is in place and the test suite passes, remove:
+Once the visited-set is in place and the test suite passes, remove the hard
+depth limit:
 
 - The `maxUnifyDepth` constant (line 94)
 - The depth check at lines 119-121
-- The `depth` parameter from `unifyWithDepth` (or keep it for debugging but remove
-  the hard limit)
 
-The `depth` parameter might still be useful for debugging (e.g. logging when depth
-exceeds some threshold), but it should no longer be a termination mechanism.
+Keep the `depth` parameter in `unifyWithDepth` for now — it is still useful for
+debugging (e.g. logging when depth exceeds some threshold) and for Plan C's
+verification work. Plan C will decide whether to keep it permanently or remove it
+based on whether it provides diagnostic value after all changes are validated.
 
 ### Step 6: Evaluate removing ad-hoc counters
 
@@ -325,6 +382,7 @@ With cycle detection in place, evaluate whether these can be simplified or remov
    ```
    ```escalier
    type Tree<T> = { value: T, children: Tree<T>[] }
+   val t: Tree<number> = { value: 1, children: [{ value: 2, children: [] }] }
    ```
 3. **Mutual recursion test**:
    ```escalier
@@ -338,11 +396,23 @@ With cycle detection in place, evaluate whether these can be simplified or remov
    val a: List<number> = ...
    val b: List<number> = a  // should succeed immediately via same-alias check
    ```
-5. **Cross-alias cycle test** — Two different aliases that reference each other:
+5. **Structural type arg with embedded TypeVar** — Test whether `typeArgKey`
+   produces stable keys when a type arg is a structural type containing a TypeVar.
+   If this test causes instability (infinite expansion or missed cycle), make
+   `typeArgKey` recursive:
+   ```escalier
+   type Wrapper<T> = { inner: Wrapper<{x: T}> | null }
+   val w: Wrapper<number> = { inner: { inner: null } }
+   ```
+6. **Cross-alias cycle test** — Two different aliases that reference each other.
+   Use `declare val` to obtain a value of the recursive type without needing to
+   construct a finite literal (no finite object satisfies `A` or `B`):
    ```escalier
    type A = { x: B }
    type B = { y: A }
-   val a: A = { x: { y: { x: { y: ... } } } }
+   declare val a1: A
+   val a2: A = a1  // should succeed: same type
+   val b: B = a1.x // should succeed: a1.x is B
    ```
 
 ## Risks
