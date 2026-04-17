@@ -63,12 +63,8 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t type_system.Type) type_system.
 			return substitute
 		}
 
-		// Handle type arguments if they exist
-		if len(t.TypeArgs) > 0 {
-			if newTypeArgs, changed := type_system.CowAcceptTypes(t.TypeArgs, v); changed {
-				return type_system.NewTypeRefTypeFromQualIdent(t.Provenance(), t.Name, t.TypeAlias, newTypeArgs...)
-			}
-		}
+		// TypeArgs are already visited by TypeRefType.Accept via CowAcceptTypes
+		// before ExitType is called, so no need to re-traverse them here.
 	}
 	// For all other types, return nil to let Accept handle the traversal
 	return nil

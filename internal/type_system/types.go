@@ -3073,6 +3073,12 @@ func Equals(t1 Type, t2 Type) bool {
 // common case during type walks. This matters because Accept is called recursively
 // on every node in every type tree during inference, and most visits are no-op
 // traversals. Returns the (possibly new) slice and whether any element changed.
+//
+// Note: unlike CowAcceptTypeRefs, this function does not check for nil elements.
+// All []Type slices in the type system (TypeArgs, Elems, Types, Args) are
+// constructed with non-nil entries, and the rest of the codebase (String, Equals,
+// Accept methods) calls methods on elements without nil guards. If a nil element
+// were present, it would panic here and in many other places.
 func CowAcceptTypes(items []Type, v TypeVisitor) ([]Type, bool) {
 	var result []Type
 	for i, item := range items {
