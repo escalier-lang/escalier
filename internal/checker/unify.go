@@ -1130,15 +1130,9 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, 
 
 				// Unify matching index signatures from both sides
 				for _, sig1 := range collected1.IndexSignatures {
-					for _, sig2 := range collected2.IndexSignatures {
-						if prim1, ok1 := sig1.KeyType.(*type_system.PrimType); ok1 {
-							if prim2, ok2 := sig2.KeyType.(*type_system.PrimType); ok2 {
-								if prim1.Prim == prim2.Prim {
-									unifyErrors := c.unifyWithDepth(ctx, sig1.Value, sig2.Value, depth, seen)
-									errors = slices.Concat(errors, unifyErrors)
-								}
-							}
-						}
+					if match := findMatchingIndexSignature(sig1, collected2.IndexSignatures); match != nil {
+						unifyErrors := c.unifyWithDepth(ctx, sig1.Value, match.Value, depth, seen)
+						errors = slices.Concat(errors, unifyErrors)
 					}
 				}
 
@@ -1146,8 +1140,32 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, depth int, 
 				// when an object has both [key: string]: S and [index: number]: N,
 				// N must be compatible with S because JavaScript coerces numeric
 				// keys to strings (obj[1] === obj["1"]).
+				// Check within each object and across objects.
 				errors = slices.Concat(errors, c.unifyNumericWithStringIndexSigs(ctx, collected1.IndexSignatures, depth, seen))
 				errors = slices.Concat(errors, c.unifyNumericWithStringIndexSigs(ctx, collected2.IndexSignatures, depth, seen))
+
+				// Cross-object check: if one side has a numeric sig and the other
+				// has a string sig, their value types must also be compatible.
+				for _, s1 := range collected1.IndexSignatures {
+					p1, ok := s1.KeyType.(*type_system.PrimType)
+					if !ok {
+						continue
+					}
+					for _, s2 := range collected2.IndexSignatures {
+						p2, ok := s2.KeyType.(*type_system.PrimType)
+						if !ok {
+							continue
+						}
+						if p1.Prim == type_system.NumPrim && p2.Prim == type_system.StrPrim {
+							errors = slices.Concat(errors, c.unifyWithDepth(ctx, s1.Value, s2.Value, depth, seen))
+						} else if p1.Prim == type_system.StrPrim && p2.Prim == type_system.NumPrim {
+							// Args are swapped so the numeric value is always t1 and the
+							// string value is always t2, matching the within-object check
+							// in unifyNumericWithStringIndexSigs(numVal, strVal).
+							errors = slices.Concat(errors, c.unifyWithDepth(ctx, s2.Value, s1.Value, depth, seen))
+						}
+					}
+				}
 			}
 
 			return errors
