@@ -56,6 +56,19 @@ func interfaceDataPointer(t type_system.Type) unsafe.Pointer {
 }
 
 // typeArgKey produces a stable, deterministic string key for type arguments.
+// For TypeVarType, it uses TypeVar.ID (stable regardless of binding state).
+// For all other types, it uses fmt.Sprint (structural comparison).
+//
+// Known limitation: this only handles TypeVarType at the top level of a type
+// arg. If a type arg is a structural type containing an embedded TypeVar
+// (e.g. {x: TypeVar#42, y: string}), fmt.Sprint will print the TypeVar's
+// bound value, which could change mid-pass during unification. This would
+// require a type arg like List<{x: T}> where T gets bound between two
+// encounters of the same TypeRefType. If the key proves unstable, this
+// function should be made recursive: walk the full type structure using the
+// visitor pattern, emitting TypeVar.ID for any TypeVarType at any depth and
+// structural representation for everything else. See the "KNOWN LIMITATION"
+// section in planning/taming_recursion/plan_b_visited_set.md Step 4.
 func typeArgKey(args []type_system.Type) string {
 	parts := make([]string, len(args))
 	for i, arg := range args {
