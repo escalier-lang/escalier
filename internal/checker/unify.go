@@ -56,30 +56,6 @@ func interfaceDataPointer(t type_system.Type) unsafe.Pointer {
 }
 
 // typeArgKey produces a stable, deterministic string key for type arguments.
-// For TypeVarType, it uses TypeVar.ID (stable regardless of binding state).
-// For TypeRefType with a resolved TypeAlias, it uses the alias pointer address
-// plus the recursive typeArgKey of its own type args. This prevents unbounded
-// key growth for recursive type aliases (e.g. Array<Json> where
-// Json = string | ... | Array<Json>) — see #463.
-// For all other types, it uses fmt.Sprint (structural comparison).
-// stableKeyConfig is the PrintConfig used by typeKey to produce stable
-// string keys for cycle detection. TypeVarType emits "$<ID>" and
-// TypeRefType with a resolved alias emits "@<pointer>" instead of
-// the structural expansion, preventing unbounded key growth for
-// recursive type aliases.
-var stableKeyConfig = type_system.PrintConfig{
-	TypeVarStyle: func(tv *type_system.TypeVarType) string {
-		return fmt.Sprintf("$%d", tv.ID)
-	},
-	TypeRefStyle: func(tr *type_system.TypeRefType) string {
-		if tr.TypeAlias != nil {
-			return fmt.Sprintf("@%p", tr.TypeAlias)
-		}
-		return type_system.QualIdentToString(tr.Name)
-	},
-}
-
-// typeArgKey produces a stable, deterministic string key for type arguments.
 func typeArgKey(args []type_system.Type) string {
 	parts := make([]string, len(args))
 	for i, arg := range args {
@@ -88,12 +64,109 @@ func typeArgKey(args []type_system.Type) string {
 	return strings.Join(parts, ",")
 }
 
-// typeKey produces a stable string key for a single type using PrintType
-// with stableKeyConfig. This recurses into all compound types so that
-// any embedded TypeVarType or TypeRefType is serialized using pointer-
-// based identity rather than structural expansion.
+// typeKey produces an injective, stable string key for a single type.
+// It uses kind markers and explicit parentheses to ensure structurally
+// different types never produce the same key. TypeVarType emits "$<ID>"
+// (stable regardless of binding state), and TypeRefType with a resolved
+// alias emits "@<pointer>" (preventing unbounded key growth for
+// recursive type aliases — see #463). All compound types are recursed
+// into so embedded TypeVarType/TypeRefType are always serialized using
+// identity-based keys rather than structural expansion.
 func typeKey(t type_system.Type) string {
-	return type_system.PrintType(t, stableKeyConfig)
+	switch v := t.(type) {
+	case *type_system.TypeVarType:
+		return fmt.Sprintf("$%d", v.ID)
+	case *type_system.TypeRefType:
+		var head string
+		if v.TypeAlias != nil {
+			head = fmt.Sprintf("@%p", v.TypeAlias)
+		} else {
+			head = type_system.QualIdentToString(v.Name)
+		}
+		if len(v.TypeArgs) > 0 {
+			head += "<" + typeArgKey(v.TypeArgs) + ">"
+		}
+		return head
+	case *type_system.UnionType:
+		parts := make([]string, len(v.Types))
+		for i, u := range v.Types {
+			parts[i] = typeKey(u)
+		}
+		return "U(" + strings.Join(parts, "|") + ")"
+	case *type_system.IntersectionType:
+		parts := make([]string, len(v.Types))
+		for i, u := range v.Types {
+			parts[i] = typeKey(u)
+		}
+		return "I(" + strings.Join(parts, "&") + ")"
+	case *type_system.TupleType:
+		parts := make([]string, len(v.Elems))
+		for i, u := range v.Elems {
+			parts[i] = typeKey(u)
+		}
+		return "T(" + strings.Join(parts, ",") + ")"
+	case *type_system.FuncType:
+		params := make([]string, len(v.Params))
+		for i, p := range v.Params {
+			params[i] = typeKey(p.Type)
+		}
+		ret := ""
+		if v.Return != nil {
+			ret = typeKey(v.Return)
+		}
+		return "F(" + strings.Join(params, ",") + ")->" + ret
+	case *type_system.ObjectType:
+		parts := make([]string, 0, len(v.Elems))
+		for _, elem := range v.Elems {
+			switch e := elem.(type) {
+			case *type_system.PropertyElem:
+				parts = append(parts, e.Name.String()+":"+typeKey(e.Value))
+			case *type_system.MethodElem:
+				parts = append(parts, e.Name.String()+":"+typeKey(e.Fn))
+			case *type_system.CallableElem:
+				parts = append(parts, "()"+typeKey(e.Fn))
+			case *type_system.ConstructorElem:
+				parts = append(parts, "new()"+typeKey(e.Fn))
+			case *type_system.GetterElem:
+				parts = append(parts, "get:"+e.Name.String()+":"+typeKey(e.Fn.Return))
+			case *type_system.SetterElem:
+				if len(e.Fn.Params) > 0 {
+					parts = append(parts, "set:"+e.Name.String()+":"+typeKey(e.Fn.Params[0].Type))
+				}
+			case *type_system.RestSpreadElem:
+				parts = append(parts, "..."+typeKey(e.Value))
+			case *type_system.IndexSignatureElem:
+				parts = append(parts, "["+typeKey(e.KeyType)+"]:"+typeKey(e.Value))
+			case *type_system.MappedElem:
+				parts = append(parts, "["+e.TypeParam.Name+"]:"+typeKey(e.Value))
+			}
+		}
+		return "O{" + strings.Join(parts, ",") + "}"
+	case *type_system.CondType:
+		return "C(" + typeKey(v.Check) + ":" + typeKey(v.Extends) + "?" + typeKey(v.Then) + ":" + typeKey(v.Else) + ")"
+	case *type_system.MutabilityType:
+		return "M(" + string(v.Mutability) + typeKey(v.Type) + ")"
+	case *type_system.RestSpreadType:
+		return "..." + typeKey(v.Type)
+	case *type_system.KeyOfType:
+		return "K(" + typeKey(v.Type) + ")"
+	case *type_system.IndexType:
+		return typeKey(v.Target) + "[" + typeKey(v.Index) + "]"
+	case *type_system.TemplateLitType:
+		parts := make([]string, len(v.Types))
+		for i, typ := range v.Types {
+			parts[i] = typeKey(typ)
+		}
+		return "TL(" + strings.Join(parts, ",") + ")"
+	case *type_system.ExtractorType:
+		args := make([]string, len(v.Args))
+		for i, a := range v.Args {
+			args[i] = typeKey(a)
+		}
+		return "E(" + typeKey(v.Extractor) + "," + strings.Join(args, ",") + ")"
+	default:
+		return fmt.Sprint(t)
+	}
 }
 
 // noMatchError is a sentinel error indicating that no case in unifyMatched

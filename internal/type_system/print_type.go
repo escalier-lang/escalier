@@ -2,6 +2,7 @@ package type_system
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -35,7 +36,7 @@ func PrintType(t Type, config PrintConfig) string {
 			return config.TypeVarStyle(v)
 		}
 		if v.Instance != nil {
-			return PrintType(Prune(v), config)
+			return PrintType(resolveTypeVar(v), config)
 		}
 		result := "t" + fmt.Sprint(v.ID)
 		if v.Constraint != nil {
@@ -214,7 +215,7 @@ func printPatternWithInlineTypes(pattern Pat, paramType Type, pt func(Type) stri
 }
 
 func printPatternWithInlineTypesContext(pattern Pat, paramType Type, pt func(Type) string, context string) string {
-	paramType = Prune(paramType)
+	paramType = resolveTypeVar(paramType)
 
 	switch p := pattern.(type) {
 	case *ObjectPat:
@@ -537,18 +538,28 @@ func printNamespaceType(t *NamespaceType, pt func(Type) string) string {
 	var builder strings.Builder
 	builder.WriteString("namespace {")
 	if len(t.Namespace.Values) > 0 {
-		for name, binding := range t.Namespace.Values {
+		valueNames := make([]string, 0, len(t.Namespace.Values))
+		for name := range t.Namespace.Values {
+			valueNames = append(valueNames, name)
+		}
+		sort.Strings(valueNames)
+		for _, name := range valueNames {
 			builder.WriteString(name)
 			builder.WriteString(": ")
-			builder.WriteString(pt(binding.Type))
+			builder.WriteString(pt(t.Namespace.Values[name].Type))
 			builder.WriteString(", ")
 		}
 	}
 	if len(t.Namespace.Types) > 0 {
-		for name, typeAlias := range t.Namespace.Types {
+		typeNames := make([]string, 0, len(t.Namespace.Types))
+		for name := range t.Namespace.Types {
+			typeNames = append(typeNames, name)
+		}
+		sort.Strings(typeNames)
+		for _, name := range typeNames {
 			builder.WriteString(name)
 			builder.WriteString(": ")
-			builder.WriteString(pt(typeAlias.Type))
+			builder.WriteString(pt(t.Namespace.Types[name].Type))
 			builder.WriteString(", ")
 		}
 	}
