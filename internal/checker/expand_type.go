@@ -17,11 +17,17 @@ import (
 // specific expansion context.
 //
 // TODO(#455): The insideKeyOf field may be unnecessary. The expandSeen
-// visited set already detects cycles through TypeRefType's in-progress
-// marker, which handles the nested-keyof recursion case that
-// insideKeyOfTarget was designed to prevent. Plan C (verify unification
-// recursion) confirmed this overlap but deferred removal to avoid risk.
+// map already detects cycles via its nil-value sentinel
+// (expandSeen[key] == nil means "expansion in progress"), which handles
+// the nested-keyof recursion case that insideKeyOfTarget was designed to
+// prevent. The overlap is that insideKeyOfTarget short-circuits KeyOfType
+// expansion before expandSeen gets a chance to detect the cycle itself.
+// Plan C confirmed this duplicate cycle-detection behavior but deferred
+// removal to avoid risk — removing insideKeyOfTarget requires updating
+// this field, the expandSeenKey struct, expandTypeWithConfig, and every
+// call site that propagates insideKeyOfTarget.
 // If insideKeyOfTarget is removed, this field can be removed too.
+// See: expandSeen, insideKeyOfTarget, insideKeyOf, TypeRefType.
 //
 // Note: expandTypeRefsCount is intentionally excluded from the key. The
 // expandTypeRefsCount == 0 check in ExitType returns nil before the cache
@@ -351,8 +357,12 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		return distributed
 	case *type_system.KeyOfType:
 		// TODO(#455): This guard may be redundant now that expandSeen detects
-		// cycles via TypeRefType's in-progress marker. Plan C confirmed the
-		// overlap but deferred removal to avoid risk. Evaluate removing it.
+		// cycles via its nil-value sentinel (expandSeen[key] == nil means
+		// "expansion in progress"). The insideKeyOfTarget counter
+		// short-circuits here before expandSeen gets a chance to detect the
+		// cycle itself, creating duplicate cycle-detection behavior. Plan C
+		// confirmed the overlap but deferred removal to avoid risk.
+		// See: expandSeen, expandSeenKey.insideKeyOf, insideKeyOfTarget.
 		if v.insideKeyOfTarget > 0 {
 			return nil
 		}

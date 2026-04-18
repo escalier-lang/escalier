@@ -307,14 +307,23 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 		assert.Empty(t, errors)
 	})
 
-	t.Run("mutually referencing type aliases", func(t *testing.T) {
-		// A and B reference each other — cycle detection must handle this
+	t.Run("self-recursive type alias", func(t *testing.T) {
 		errors := inferWithTimeout(t, `
 			type Tree = {
 				value: number,
 				children: Array<Tree>,
 			}
 			val t: Tree = {value: 1, children: [{value: 2, children: []}]}
+		`, 2*time.Second)
+		assert.Empty(t, errors)
+	})
+
+	t.Run("mutually referencing type aliases", func(t *testing.T) {
+		// A and B reference each other — cycle detection must handle this
+		errors := inferWithTimeout(t, `
+			type A = {value: number, next: B | null}
+			type B = {value: string, prev: A | null}
+			val a: A = {value: 1, next: {value: "hello", prev: null}}
 		`, 2*time.Second)
 		assert.Empty(t, errors)
 	})

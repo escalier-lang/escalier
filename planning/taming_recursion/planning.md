@@ -19,9 +19,9 @@ for the full issue inventory.
   (visited set for type expansion) with co-inductive cycle detection. Threaded seen
   sets through all internal unification and expansion functions. Removed
   `maxUnifyDepth = 50`; increased `maxExpansionRetries` from 10 to 100 as a
-  defensive safety net. Recursive type aliases (`List<T>`, `Tree<T>`, `Json`,
-  mutually recursive types, cross-alias cycles) now work correctly. Step 6
-  (evaluate removing ad-hoc counters) deferred to Plan C.
+  defensive safety net (later reduced to 10 by Plan C). Recursive type aliases
+  (`List<T>`, `Tree<T>`, `Json`, mutually recursive types, cross-alias cycles) now
+  work correctly. Step 6 (evaluate removing ad-hoc counters) deferred to Plan C.
 
 - **[Plan C: Verify and harden unification recursion](plan_c_verify_unify_recursion.md)** —
   **Implemented.** Audited depth propagation in all Tuple/Array/KeyOf paths (all

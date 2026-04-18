@@ -74,16 +74,17 @@ convention is:
 
 All call sites follow the convention correctly:
 
-- `TupleType, ArrayType` (lines 589-593): `depth` ✓
-- `ArrayType, TupleType` (lines 612-616): `depth` ✓
-- `ArrayType, ArrayType` (line 632): `depth` ✓
-- `RestSpreadType, ArrayType` (line 644): `depth` ✓
+- `TupleType, ArrayType` case in `unifyMatched`: each element → `depth` ✓
+- `ArrayType, TupleType` case in `unifyMatched`: mirror of above → `depth` ✓
+- `ArrayType, ArrayType` case in `unifyMatched`: element types → `depth` ✓
+- `RestSpreadType, ArrayType` case in `unifyMatched`: rest type → `depth` ✓
 - `unifyTuples` and all variants (`unifyFixedTuples`, `unifyFixedVsVariadic`,
-  `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`): `depth` ✓
-- `KeyOfType, KeyOfType` (lines 559, 565): `depth+1` ✓
-- `unifyExtractor` (lines 1483-1485): `depth` ✓
-- `unifyClosedWithRests` (lines 1654-1656): `depth` ✓
-- `unifyPatternWithUnion` (line 3193): `depth` ✓
+  `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`): each pair → `depth` ✓
+- `KeyOfType, KeyOfType` case in `unifyMatched`: expanded keys and inner
+  types → `depth+1` (expansion occurred) ✓
+- `unifyExtractor` (helper for custom matcher patterns): `depth` ✓
+- `unifyClosedWithRests` (helper for rest-spread object unification): `depth` ✓
+- `unifyPatternWithUnion` (helper for pattern-vs-union matching): `depth` ✓
 
 ### Step 2: Audit `ExpandType` calls that remain in unify.go
 
@@ -92,16 +93,17 @@ All call sites follow the convention correctly:
 Three `ExpandType` call sites remain in `unifyMatched`, all using the public API
 (which creates a fresh `expandSeen` each time):
 
-1. **KeyOfType expansion** (lines 550-551): `c.ExpandType(ctx, keyof, 1)` —
-   bounded by the number of properties in the target object. Results unified via
-   `unifyWithDepth(depth+1, seen)`, so `unifySeen` catches cycles on the
-   unification side. **Safe.**
+1. **KeyOfType, KeyOfType case in `unifyMatched`**: `c.ExpandType(ctx, keyof, 1)`
+   on both sides — bounded by the number of properties in the target object.
+   Results unified via `unifyWithDepth(depth+1, seen)`, so `unifySeen` catches
+   cycles on the unification side. **Safe.**
 
-2. **Union+ObjectType expansion** (line 1330): One-shot expansion of each union
-   member to check if it's an `ObjectType`. Bounded by union member count. No
-   `unifyWithDepth` call on the expanded result. **Safe.**
+2. **ObjectType-vs-UnionType case in `unifyMatched`** (within the destructured-
+   object-vs-union handling): one-shot expansion of each union member to check
+   if it's an `ObjectType`. Bounded by union member count. No `unifyWithDepth`
+   call on the expanded result. **Safe.**
 
-3. **unifyPatternWithUnion** (line 3157): Same pattern as #2. **Safe.**
+3. **`unifyPatternWithUnion`**: Same one-shot expansion pattern as #2. **Safe.**
 
 ### Step 3: Validate the three original scenarios
 
