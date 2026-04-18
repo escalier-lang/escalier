@@ -17,10 +17,17 @@ import (
 // specific expansion context.
 //
 // TODO(#455): The insideKeyOf field may be unnecessary. The expandSeen
-// visited set already detects cycles through TypeRefType's in-progress
-// marker, which handles the nested-keyof recursion case that
-// insideKeyOfTarget was designed to prevent. If insideKeyOfTarget is
-// removed, this field can be removed too.
+// map already detects cycles via its nil-value sentinel
+// (expandSeen[key] == nil means "expansion in progress"), which handles
+// the nested-keyof recursion case that insideKeyOfTarget was designed to
+// prevent. The overlap is that insideKeyOfTarget short-circuits KeyOfType
+// expansion before expandSeen gets a chance to detect the cycle itself.
+// Plan C confirmed this duplicate cycle-detection behavior but deferred
+// removal to avoid risk — removing insideKeyOfTarget requires updating
+// this field, the expandSeenKey struct, expandTypeWithConfig, and every
+// call site that propagates insideKeyOfTarget.
+// If insideKeyOfTarget is removed, this field can be removed too.
+// See: expandSeen, insideKeyOfTarget, insideKeyOf, TypeRefType.
 //
 // Note: expandTypeRefsCount is intentionally excluded from the key. The
 // expandTypeRefsCount == 0 check in ExitType returns nil before the cache
@@ -122,7 +129,9 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 	// Don't expand if following the alias chain leads back to the original
 	// TypeRefType (direct or transitive cycle). Walk the chain of
 	// TypeRefType → TypeAlias links with a visited set to detect cycles
-	// like A→B→A.
+	// like A→B→A. This overlaps with unifySeen/expandSeen cycle detection
+	// but is kept as an optimization to avoid entering ExpandType +
+	// unifyInner for known simple alias cycles.
 	originName := type_system.QualIdentToString(t.Name)
 	visited := map[string]bool{originName: true}
 	cur := expandedType
@@ -348,7 +357,12 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		return distributed
 	case *type_system.KeyOfType:
 		// TODO(#455): This guard may be redundant now that expandSeen detects
-		// cycles via TypeRefType's in-progress marker. Evaluate removing it.
+		// cycles via its nil-value sentinel (expandSeen[key] == nil means
+		// "expansion in progress"). The insideKeyOfTarget counter
+		// short-circuits here before expandSeen gets a chance to detect the
+		// cycle itself, creating duplicate cycle-detection behavior. Plan C
+		// confirmed the overlap but deferred removal to avoid risk.
+		// See: expandSeen, expandSeenKey.insideKeyOf, insideKeyOfTarget.
 		if v.insideKeyOfTarget > 0 {
 			return nil
 		}

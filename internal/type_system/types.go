@@ -97,7 +97,7 @@ func Prune(t Type) Type {
 
 	// Record the alias chain for Widenable TypeVars before path compression
 	// destroys the links. The chain is used by the widening fallback in
-	// unifyWithDepth to update all aliased property TypeVars atomically.
+	// unifyInner to update all aliased property TypeVars atomically.
 	if _, isTV := tv.Instance.(*TypeVarType); isTV && tv.Widenable {
 		recordInstanceChain(tv)
 	}
