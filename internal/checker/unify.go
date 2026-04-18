@@ -76,6 +76,11 @@ func typeArgKey(args []type_system.Type) string {
 // its structural expansion. This prevents unbounded key growth when
 // recursive type aliases are expanded (e.g. Json → string|Array<Json>
 // produces the same key regardless of how deeply Json has been unfolded).
+//
+// TODO(#467): Replace with PrintType(t, StableKeyConfig) once the
+// configurable printType function is available. This will extend stable-key
+// handling to all compound types (CondType, MutabilityType, FuncType, etc.)
+// without duplicating the String() logic.
 func typeKey(t type_system.Type) string {
 	switch v := t.(type) {
 	case *type_system.TypeVarType:
