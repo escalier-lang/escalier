@@ -74,8 +74,8 @@ func TestGlobalScopeContainsBuiltins(t *testing.T) {
 	}
 }
 
-// TestGlobalScopeReuse verifies that calling Prelude multiple times reuses
-// the cached global scope.
+// TestGlobalScopeReuse verifies that calling Prelude multiple times creates
+// isolated global scopes with equivalent content (shallow-copied from cache).
 func TestGlobalScopeReuse(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -87,15 +87,22 @@ func TestGlobalScopeReuse(t *testing.T) {
 	userScope2 := Prelude(c2)
 	globalScope2 := c2.GlobalScope
 
-	// Both checkers should share the same global scope (cached)
-	assert.Same(t, globalScope1, globalScope2, "Cached global scope should be the same pointer")
+	// Global scopes should be distinct pointers (shallow-copied from cache)
+	// so that mutations in one checker don't pollute others.
+	assert.NotSame(t, globalScope1, globalScope2, "Global scopes should be distinct pointers")
+
+	// But they should have equivalent content (same prelude types/values)
+	assert.Equal(t, len(globalScope1.Namespace.Values), len(globalScope2.Namespace.Values),
+		"Global scopes should have the same number of values")
+	assert.Equal(t, len(globalScope1.Namespace.Types), len(globalScope2.Namespace.Types),
+		"Global scopes should have the same number of types")
 
 	// User scopes should be different pointers (fresh child scopes)
 	assert.NotSame(t, userScope1, userScope2, "User scopes should be distinct pointers")
 
-	// Both user scopes should have the same parent (the cached global scope)
-	assert.Same(t, globalScope1, userScope1.Parent, "User scope 1 parent should be global scope")
-	assert.Same(t, globalScope2, userScope2.Parent, "User scope 2 parent should be global scope")
+	// Each user scope's parent should be its own checker's global scope
+	assert.Same(t, globalScope1, userScope1.Parent, "User scope 1 parent should be global scope 1")
+	assert.Same(t, globalScope2, userScope2.Parent, "User scope 2 parent should be global scope 2")
 }
 
 // TestGlobalScopeLookupChain verifies that lookups traverse the scope chain

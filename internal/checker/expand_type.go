@@ -510,10 +510,6 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			return nil
 		}
 	case *type_system.TypeRefType:
-		// TODO: implement once TypeAliases have been marked as recursive.
-		// `expandType` is eager so we can't expand recursive type aliases as it
-		// would lead to infinite recursion.
-
 		// Check if we've reached the maximum expansion depth
 		if v.skipTypeRefsCount > 0 {
 			// Return the type reference without expanding
