@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/test_util"
@@ -10,15 +12,17 @@ import (
 )
 
 func TestUnifyStrLitWithRegexLit(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("string matches regex pattern", func(t *testing.T) {
 		strType := test_util.ParseTypeAnn(`"hello"`)
 		result, _ := type_system.NewRegexTypeWithPatternString(nil, "/^hello$/")
 		regexType := result.(*type_system.RegexType)
 
-		errors := checker.Unify(ctx, strType, regexType)
+		errors := checker.Unify(inferCtx, strType, regexType)
 		assert.Empty(t, errors, "Expected no errors when string matches regex pattern")
 	})
 
@@ -27,7 +31,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		result, _ := type_system.NewRegexTypeWithPatternString(nil, "/^hello$/")
 		regexType := result.(*type_system.RegexType)
 
-		errors := checker.Unify(ctx, strType, regexType)
+		errors := checker.Unify(inferCtx, strType, regexType)
 		assert.NotEmpty(t, errors, "Expected error when string does not match regex pattern")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -37,7 +41,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		result, _ := type_system.NewRegexTypeWithPatternString(nil, `/^\d{3}-\d{3}-\d{4}$/`)
 		regexType := result.(*type_system.RegexType)
 
-		errors := checker.Unify(ctx, strType, regexType)
+		errors := checker.Unify(inferCtx, strType, regexType)
 		assert.Empty(t, errors, "Expected no errors when string matches phone number pattern")
 	})
 
@@ -46,7 +50,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		result, _ := type_system.NewRegexTypeWithPatternString(nil, "/^hello$/i")
 		regexType := result.(*type_system.RegexType)
 
-		errors := checker.Unify(ctx, strType, regexType)
+		errors := checker.Unify(inferCtx, strType, regexType)
 		assert.Empty(t, errors, "Expected no errors when string matches regex with case insensitive flag")
 	})
 
@@ -62,7 +66,7 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		result, _ := type_system.NewRegexTypeWithPatternString(nil, "/hello/g")
 		regexType := result.(*type_system.RegexType)
 
-		errors := checker.Unify(ctx, strType, regexType)
+		errors := checker.Unify(inferCtx, strType, regexType)
 		assert.Empty(t, errors, "Expected no errors when string matches regex with global flag")
 	})
 
@@ -70,20 +74,22 @@ func TestUnifyStrLitWithRegexLit(t *testing.T) {
 		strType1 := test_util.ParseTypeAnn(`"hello"`)
 		strType2 := test_util.ParseTypeAnn(`"hello"`)
 
-		errors := checker.Unify(ctx, strType1, strType2)
+		errors := checker.Unify(inferCtx, strType1, strType2)
 		assert.Empty(t, errors, "Expected no errors when unifying identical string literals")
 	})
 }
 
 func TestUnifyWithUnionTypes(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("literal type unifies with union containing compatible type", func(t *testing.T) {
 		numType := test_util.ParseTypeAnn("5")
 		unionType := test_util.ParseTypeAnn("string | number")
 
-		errors := checker.Unify(ctx, numType, unionType)
+		errors := checker.Unify(inferCtx, numType, unionType)
 		assert.Empty(t, errors, "Expected no errors when literal unifies with union containing compatible type")
 	})
 
@@ -91,7 +97,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		boolType := test_util.ParseTypeAnn("true")
 		unionType := test_util.ParseTypeAnn("string | number")
 
-		errors := checker.Unify(ctx, boolType, unionType)
+		errors := checker.Unify(inferCtx, boolType, unionType)
 		assert.NotEmpty(t, errors, "Expected error when literal does not unify with any type in union")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -100,7 +106,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		stringType := test_util.ParseTypeAnn("string")
 		unionType := test_util.ParseTypeAnn("string | number | boolean")
 
-		errors := checker.Unify(ctx, stringType, unionType)
+		errors := checker.Unify(inferCtx, stringType, unionType)
 		assert.Empty(t, errors, "Expected no errors when primitive type unifies with union containing same type")
 	})
 
@@ -112,7 +118,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		unionType := test_util.ParseTypeAnn("string | number | boolean")
 
 		// Test unification - should fail because bigint is not in the union
-		errors := checker.Unify(ctx, bigintType, unionType)
+		errors := checker.Unify(inferCtx, bigintType, unionType)
 		assert.NotEmpty(t, errors, "Expected error when primitive type is not in union")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -125,7 +131,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		largeUnion := test_util.ParseTypeAnn("string | number | boolean")
 
 		// Test unification - should succeed because all types in smallUnion are in largeUnion
-		errors := checker.Unify(ctx, smallUnion, largeUnion)
+		errors := checker.Unify(inferCtx, smallUnion, largeUnion)
 		assert.Empty(t, errors, "Expected no errors when smaller union unifies with larger union")
 	})
 
@@ -139,7 +145,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		union2 := type_system.NewUnionType(nil, booleanType, bigintType)
 
 		// Test unification - should fail because no types overlap
-		errors := checker.Unify(ctx, union1, union2)
+		errors := checker.Unify(inferCtx, union1, union2)
 		assert.NotEmpty(t, errors, "Expected error when union types have no overlapping types")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -152,7 +158,7 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 		unionType := test_util.ParseTypeAnn("string | number")
 
 		// Test unification - should succeed because "hello" is compatible with string
-		errors := checker.Unify(ctx, strType, unionType)
+		errors := checker.Unify(inferCtx, strType, unionType)
 		assert.Empty(t, errors, "Expected no errors when string literal unifies with union containing string")
 	})
 
@@ -162,12 +168,12 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 
 		// Test with matching literal
 		testStr := test_util.ParseTypeAnn(`"red"`)
-		errors := checker.Unify(ctx, testStr, colorUnion)
+		errors := checker.Unify(inferCtx, testStr, colorUnion)
 		assert.Empty(t, errors, "Expected no errors when literal matches one of the union literals")
 
 		// Test with non-matching literal
 		wrongStr := test_util.ParseTypeAnn(`"yellow"`)
-		errors = checker.Unify(ctx, wrongStr, colorUnion)
+		errors = checker.Unify(inferCtx, wrongStr, colorUnion)
 		assert.NotEmpty(t, errors, "Expected error when literal does not match any union literals")
 	})
 
@@ -181,14 +187,16 @@ func TestUnifyWithUnionTypes(t *testing.T) {
 
 		// Test with number literal - should work with nested union
 		numLit := test_util.ParseTypeAnn("42")
-		errors := checker.Unify(ctx, numLit, outerUnion)
+		errors := checker.Unify(inferCtx, numLit, outerUnion)
 		assert.Empty(t, errors, "Expected no errors when literal unifies with nested union")
 	})
 }
 
 func TestUnifyFuncTypes(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{
 		Scope:      Prelude(checker),
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -198,7 +206,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number) -> string")
 		func2 := test_util.ParseTypeAnn("fn(x: number) -> string")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors when unifying identical function types")
 	})
 
@@ -208,7 +216,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number) -> string")
 		func2 := test_util.ParseTypeAnn("fn(x: any) -> string")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors for contravariant parameter types")
 	})
 
@@ -218,7 +226,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number) -> number")
 		func2 := test_util.ParseTypeAnn("fn(x: number) -> any")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors for covariant return types")
 	})
 
@@ -227,7 +235,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: string) -> number")
 		func2 := test_util.ParseTypeAnn("fn(x: number) -> number")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.NotEmpty(t, errors, "Expected errors for incompatible parameter types")
 	})
 
@@ -238,7 +246,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number, y: string) -> boolean")
 		func2 := test_util.ParseTypeAnn("fn(x: number) -> boolean")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.NotEmpty(t, errors, "Expected errors when source function has more required parameters")
 	})
 
@@ -251,7 +259,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number) -> boolean")
 		func2 := test_util.ParseTypeAnn("fn(x: number, y: string) -> boolean")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors when source function has fewer parameters")
 	})
 
@@ -262,7 +270,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number, y?: string) -> boolean")
 		func2 := test_util.ParseTypeAnn("fn(x: number) -> boolean")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors with optional parameters")
 	})
 
@@ -272,7 +280,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number, y: string, z: boolean) -> undefined")
 		func2 := test_util.ParseTypeAnn("fn(x: number, ...rest: Array<string | boolean>) -> undefined")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors when unifying with rest parameter")
 	})
 
@@ -282,7 +290,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number, y: string, z: boolean) -> undefined")
 		func2 := test_util.ParseTypeAnn("fn(x: number, ...rest: Array<number>) -> undefined")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.NotEmpty(t, errors, "Expected errors when rest parameter types don't match")
 	})
 
@@ -292,7 +300,7 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number, y: string, z: string) -> undefined")
 		func2 := test_util.ParseTypeAnn("fn(x: number, ...rest: Array<string>) -> undefined")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors when excess params match rest array element type")
 	})
 
@@ -302,14 +310,16 @@ func TestUnifyFuncTypes(t *testing.T) {
 		func1 := test_util.ParseTypeAnn("fn(x: number, ...rest1: Array<string>) -> undefined")
 		func2 := test_util.ParseTypeAnn("fn(x: number, ...rest2: Array<string>) -> undefined")
 
-		errors := checker.Unify(ctx, func1, func2)
+		errors := checker.Unify(inferCtx, func1, func2)
 		assert.Empty(t, errors, "Expected no errors when both functions have compatible rest parameters")
 	})
 }
 
 func TestUnifyUnknownType(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	unknownType := test_util.ParseTypeAnn("unknown")
 	anyType := test_util.ParseTypeAnn("any")
@@ -322,7 +332,7 @@ func TestUnifyUnknownType(t *testing.T) {
 	boolLitType := test_util.ParseTypeAnn("true")
 
 	t.Run("UnknownType can only unify with itself", func(t *testing.T) {
-		errors := checker.Unify(ctx, unknownType, unknownType)
+		errors := checker.Unify(inferCtx, unknownType, unknownType)
 		assert.Empty(t, errors, "unknown should unify with unknown")
 	})
 
@@ -343,14 +353,14 @@ func TestUnifyUnknownType(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				errors := checker.Unify(ctx, unknownType, tc.targetType)
+				errors := checker.Unify(inferCtx, unknownType, tc.targetType)
 				assert.NotEmpty(t, errors, "UnknownType should not be assignable to %s", tc.name)
 			})
 		}
 	})
 
 	t.Run("UnknownType can be assigned to any (top type)", func(t *testing.T) {
-		errors := checker.Unify(ctx, unknownType, anyType)
+		errors := checker.Unify(inferCtx, unknownType, anyType)
 		assert.Empty(t, errors, "UnknownType should be assignable to any (top type)")
 	})
 
@@ -371,7 +381,7 @@ func TestUnifyUnknownType(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				errors := checker.Unify(ctx, tc.sourceType, unknownType)
+				errors := checker.Unify(inferCtx, tc.sourceType, unknownType)
 				assert.Empty(t, errors, "%s should be assignable to UnknownType", tc.name)
 			})
 		}
@@ -379,32 +389,34 @@ func TestUnifyUnknownType(t *testing.T) {
 
 	t.Run("Complex types can be assigned to UnknownType", func(t *testing.T) {
 		funcType := test_util.ParseTypeAnn("fn(x: number) -> string")
-		errors := checker.Unify(ctx, funcType, unknownType)
+		errors := checker.Unify(inferCtx, funcType, unknownType)
 		assert.Empty(t, errors, "function type should be assignable to UnknownType")
 
 		objType := test_util.ParseTypeAnn("{x: number, y: string}")
-		errors = checker.Unify(ctx, objType, unknownType)
+		errors = checker.Unify(inferCtx, objType, unknownType)
 		assert.Empty(t, errors, "object type should be assignable to UnknownType")
 
 		tupleType := test_util.ParseTypeAnn("[number, string]")
-		errors = checker.Unify(ctx, tupleType, unknownType)
+		errors = checker.Unify(inferCtx, tupleType, unknownType)
 		assert.Empty(t, errors, "tuple type should be assignable to UnknownType")
 
 		unionType := type_system.NewUnionType(nil, numberType, stringType)
-		errors = checker.Unify(ctx, unionType, unknownType)
+		errors = checker.Unify(inferCtx, unionType, unknownType)
 		assert.Empty(t, errors, "union type should be assignable to UnknownType")
 	})
 }
 
 func TestUnifyMutableTypes(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("identical mutable types should unify", func(t *testing.T) {
 		mutType1 := test_util.ParseTypeAnn("mut number")
 		mutType2 := test_util.ParseTypeAnn("mut number")
 
-		errors := checker.Unify(ctx, mutType1, mutType2)
+		errors := checker.Unify(inferCtx, mutType1, mutType2)
 		assert.Empty(t, errors, "identical mutable types should unify")
 	})
 
@@ -413,7 +425,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutNumber := test_util.ParseTypeAnn("mut number")
 		mutString := test_util.ParseTypeAnn("mut string")
 
-		errors := checker.Unify(ctx, mutNumber, mutString)
+		errors := checker.Unify(inferCtx, mutNumber, mutString)
 		assert.NotEmpty(t, errors, "different mutable types should not unify")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -424,7 +436,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutNumber := test_util.ParseTypeAnn("mut number")
 		mutAny := test_util.ParseTypeAnn("mut any")
 
-		errors := checker.Unify(ctx, mutNumber, mutAny)
+		errors := checker.Unify(inferCtx, mutNumber, mutAny)
 		assert.NotEmpty(t, errors, "mutable types require exact equality, not covariance")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -433,7 +445,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutObj1 := test_util.ParseTypeAnn("mut {x: number, y: string}")
 		mutObj2 := test_util.ParseTypeAnn("mut {x: number, y: string}")
 
-		errors := checker.Unify(ctx, mutObj1, mutObj2)
+		errors := checker.Unify(inferCtx, mutObj1, mutObj2)
 		for _, err := range errors {
 			t.Logf("Error: %v", err)
 		}
@@ -444,7 +456,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutObj1 := test_util.ParseTypeAnn("mut {x: number}")
 		mutObj2 := test_util.ParseTypeAnn("mut {x: string}")
 
-		errors := checker.Unify(ctx, mutObj1, mutObj2)
+		errors := checker.Unify(inferCtx, mutObj1, mutObj2)
 		assert.NotEmpty(t, errors, "mutable object types with different property types should not unify")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -454,7 +466,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutArray1 := test_util.ParseTypeAnn("mut Array<number>")
 		mutArray2 := test_util.ParseTypeAnn("mut Array<number>")
 
-		errors := checker.Unify(ctx, mutArray1, mutArray2)
+		errors := checker.Unify(inferCtx, mutArray1, mutArray2)
 		assert.Empty(t, errors, "mutable array types with same element type should unify")
 	})
 
@@ -463,7 +475,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutArray1 := test_util.ParseTypeAnn("mut Array<number>")
 		mutArray2 := test_util.ParseTypeAnn("mut Array<string>")
 
-		errors := checker.Unify(ctx, mutArray1, mutArray2)
+		errors := checker.Unify(inferCtx, mutArray1, mutArray2)
 		assert.NotEmpty(t, errors, "mutable array types with different element types should not unify")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -473,7 +485,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutTuple1 := test_util.ParseTypeAnn("mut [number, string]")
 		mutTuple2 := test_util.ParseTypeAnn("mut [number, string]")
 
-		errors := checker.Unify(ctx, mutTuple1, mutTuple2)
+		errors := checker.Unify(inferCtx, mutTuple1, mutTuple2)
 		assert.Empty(t, errors, "mutable tuple types with same elements should unify")
 	})
 
@@ -482,7 +494,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutTuple1 := test_util.ParseTypeAnn("mut [number, string]")
 		mutTuple2 := test_util.ParseTypeAnn("mut [number, boolean]")
 
-		errors := checker.Unify(ctx, mutTuple1, mutTuple2)
+		errors := checker.Unify(inferCtx, mutTuple1, mutTuple2)
 		assert.NotEmpty(t, errors, "mutable tuple types with different elements should not unify")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -493,11 +505,11 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutLit43 := test_util.ParseTypeAnn("mut 43")
 
 		// Same literal values should unify
-		errors := checker.Unify(ctx, mutLit42_1, mutLit42_2)
+		errors := checker.Unify(inferCtx, mutLit42_1, mutLit42_2)
 		assert.Empty(t, errors, "mutable literal types with same value should unify")
 
 		// Different literal values should not unify
-		errors = checker.Unify(ctx, mutLit42_1, mutLit43)
+		errors = checker.Unify(inferCtx, mutLit42_1, mutLit43)
 		assert.NotEmpty(t, errors, "mutable literal types with different values should not unify")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -506,7 +518,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutFunc1 := test_util.ParseTypeAnn("mut fn(x: number) -> string")
 		mutFunc2 := test_util.ParseTypeAnn("mut fn(x: number) -> string")
 
-		errors := checker.Unify(ctx, mutFunc1, mutFunc2)
+		errors := checker.Unify(inferCtx, mutFunc1, mutFunc2)
 		assert.Empty(t, errors, "mutable function types with identical signatures should unify")
 	})
 
@@ -516,7 +528,7 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutMutNumber1 := type_system.NewMutableType(nil, mutNumber)
 		mutMutNumber2 := type_system.NewMutableType(nil, type_system.NewMutableType(nil, numberType))
 
-		errors := checker.Unify(ctx, mutMutNumber1, mutMutNumber2)
+		errors := checker.Unify(inferCtx, mutMutNumber1, mutMutNumber2)
 		assert.Empty(t, errors, "nested mutable types should unify with exact same nesting")
 	})
 
@@ -530,11 +542,11 @@ func TestUnifyMutableTypes(t *testing.T) {
 		mutUnion3 := test_util.ParseTypeAnn("mut number | boolean")
 
 		// Same union should unify
-		errors := checker.Unify(ctx, mutUnion1, mutUnion2)
+		errors := checker.Unify(inferCtx, mutUnion1, mutUnion2)
 		assert.Empty(t, errors, "mutable union types with same members should unify")
 
 		// Different unions should not unify
-		errors = checker.Unify(ctx, mutUnion1, mutUnion3)
+		errors = checker.Unify(inferCtx, mutUnion1, mutUnion3)
 		assert.NotEmpty(t, errors, "mutable union types with different members should not unify")
 		assert.IsType(t, &CannotUnifyTypesError{}, errors[0])
 	})
@@ -543,8 +555,10 @@ func TestUnifyMutableTypes(t *testing.T) {
 // Tests for issue #381: Trial unification in union/intersection handling
 // can leave TypeVars partially mutated when a trial fails.
 func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("TypeVar matches second union member after first trial fails", func(t *testing.T) {
 		// t1 = {x: TypeVar}
@@ -582,7 +596,7 @@ func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
 			}),
 		)
 
-		errors := checker.Unify(ctx, t1, t2)
+		errors := checker.Unify(inferCtx, t1, t2)
 		assert.Empty(t, errors, "TypeVar should unify with second union member {x: string}")
 
 		// After successful unification, TypeVar should be bound to string
@@ -608,7 +622,7 @@ func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
 			type_system.NewTupleType(nil, type_system.NewStrPrimType(nil), type_system.NewBoolPrimType(nil)),
 		)
 
-		errors := checker.Unify(ctx, t1, t2)
+		errors := checker.Unify(inferCtx, t1, t2)
 		assert.Empty(t, errors, "TypeVar in tuple should unify with second union member")
 
 		resolved := type_system.Prune(tv)
@@ -619,8 +633,10 @@ func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
 }
 
 func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("IntersectionType, _ - TypeVar in t2 corrupted by failed first part", func(t *testing.T) {
 		// t1 = {x: number, a: boolean} & {x: string, a: string}
@@ -667,7 +683,7 @@ func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
 			),
 		})
 
-		errors := checker.Unify(ctx, t1, t2)
+		errors := checker.Unify(inferCtx, t1, t2)
 		assert.Empty(t, errors, "second intersection part {x: string, a: string} should unify with {x: TypeVar, a: string}")
 
 		resolved := type_system.Prune(tv)
@@ -732,7 +748,7 @@ func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
 			}),
 		)
 
-		errors := checker.Unify(ctx, t1, t2)
+		errors := checker.Unify(inferCtx, t1, t2)
 		assert.Empty(t, errors, "intersection types should unify successfully")
 
 		resolved := type_system.Prune(tv)
@@ -743,8 +759,10 @@ func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
 }
 
 func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("duplicate string index signatures are unified not duplicated", func(t *testing.T) {
 		// openObj:   {[key: string]: T}       (open, T is a type variable)
@@ -767,7 +785,7 @@ func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
 			),
 		})
 
-		errors := checker.Unify(ctx, openObj, closedObj)
+		errors := checker.Unify(inferCtx, openObj, closedObj)
 		assert.Empty(t, errors, "unifying matching index signatures should not produce errors")
 
 		// The type variable should be bound to number
@@ -811,7 +829,7 @@ func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
 			),
 		})
 
-		errors := checker.Unify(ctx, openObj, closedObj)
+		errors := checker.Unify(inferCtx, openObj, closedObj)
 		assert.Empty(t, errors, "compatible index signature key kinds should not conflict")
 
 		// The open object should now have both index signatures
@@ -845,7 +863,7 @@ func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
 		})
 		openObj.Open = true
 
-		errors := checker.Unify(ctx, closedObj, openObj)
+		errors := checker.Unify(inferCtx, closedObj, openObj)
 		assert.Empty(t, errors, "unifying matching index signatures should not produce errors")
 
 		// The type variable should be bound to number
@@ -874,8 +892,10 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 	// distinguish them by binding a type variable against each signature
 	// independently to confirm which one was matched.
 
-	checker := NewChecker()
-	ctx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}
 
 	t.Run("numeric key matches when num sig declared first", func(t *testing.T) {
 		// obj1: {0: T}
@@ -891,7 +911,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewNumPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
 		assert.Equal(t, "number", type_system.Prune(tv).String(),
@@ -912,7 +932,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewNumPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
 		assert.Equal(t, "number", type_system.Prune(tv).String(),
@@ -932,7 +952,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewNumPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
 		assert.Equal(t, "number", type_system.Prune(tv).String(),
@@ -951,7 +971,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewStrPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
 		assert.Equal(t, "string", type_system.Prune(tv).String(),
@@ -975,7 +995,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewStrPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.NotEmpty(t, errors, "incompatible dual index signatures should produce an error for numeric keys")
 	})
 
@@ -995,7 +1015,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewStrPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.NotEmpty(t, errors, "cross-object incompatible numeric/string index signatures should produce an error")
 	})
 
@@ -1013,7 +1033,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewStrPrimType(nil), type_system.NewNumPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors, "cross-object compatible numeric/string index signatures should succeed")
 	})
 
@@ -1030,7 +1050,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 			type_system.NewIndexSignatureElem(type_system.NewNumPrimType(nil), type_system.NewBoolPrimType(nil), false),
 		})
 
-		errors := checker.Unify(ctx, obj1, obj2)
+		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.NotEmpty(t, errors, "cross-object check should work regardless of which side has the numeric sig")
 	})
 }

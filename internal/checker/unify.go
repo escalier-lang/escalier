@@ -279,16 +279,11 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 	return errors
 }
 
-// maxExpansionRetries is a safety net for the non-TypeRef expansion loop in
-// unifyPruned. With the visited-set cycle detection (unifySeen/expandSeen)
-// in place, this should never be hit in practice — the loop terminates
-// naturally when no further expansion is possible. Empirically, the full
-// test suite never exceeds 2 iterations. Reduced from 100 to 10 after
-// Plan C verified that cycle detection reliably handles all recursion cases.
-const maxExpansionRetries = 10
-
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, seen unifySeen) []Error {
-	for attempt := 0; attempt < maxExpansionRetries; attempt++ {
+	for {
+		if timeoutErrors := c.checkTimeout(); timeoutErrors != nil {
+			return timeoutErrors
+		}
 		errors := c.unifyMatched(ctx, t1, t2, seen)
 		if len(errors) == 0 {
 			return nil
@@ -378,7 +373,6 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, seen unifySe
 		// Nothing could be expanded, return a real error
 		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
-	return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 }
 
 func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifySeen) []Error {

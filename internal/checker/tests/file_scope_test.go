@@ -123,7 +123,7 @@ func TestCrossFileDeclarationVisibility(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -228,7 +228,7 @@ func TestFileScopedImportsBasic(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-populate PackageRegistry with mock package
 	mockPkg := createMockPackage(
@@ -301,7 +301,7 @@ func TestFileScopedImportsIsolation(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-populate PackageRegistry with mock package
 	mockPkg := createMockPackage(
@@ -363,7 +363,7 @@ func TestFileScopedImportsSamePackageDifferentFiles(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-populate PackageRegistry with mock package
 	mockPkg := createMockPackage(
@@ -424,7 +424,7 @@ func TestFileScopedImportsDifferentAliases(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-populate PackageRegistry with mock package
 	mockPkg := createMockPackage(
@@ -484,7 +484,7 @@ func TestNamedImportsFromPackage(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-populate PackageRegistry with mock package that has both values and types
 	mockPkg := createMockPackage(
@@ -558,7 +558,7 @@ func TestScopeChainTraversal(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c), // Prelude sets up global scope with Array, etc.
 		IsAsync:    false,
@@ -610,7 +610,7 @@ func TestGlobalNamespaceIsolation(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -675,7 +675,7 @@ func TestCrossFileCyclicDependencies(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -734,7 +734,7 @@ func TestCrossFileCyclesWithImports(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-populate PackageRegistry with mock package
 	mockPkg := createMockPackage(
@@ -807,7 +807,7 @@ func TestCrossFileCyclesImportIsolation(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	assert.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-populate PackageRegistry with mock package
 	mockPkg := createMockPackage(

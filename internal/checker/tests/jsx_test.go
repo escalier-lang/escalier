@@ -60,9 +60,11 @@ var (
 func loadReactTypesOnce() {
 	reactTypesLoadOnce.Do(func() {
 		// Create a temporary checker just for loading types
-		c := NewChecker()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
-		ctx := Context{
+		inferCtx := Context{
 			Scope:      scope,
 			IsAsync:    false,
 			IsPatMatch: false,
@@ -74,7 +76,7 @@ func loadReactTypesOnce() {
 			return
 		}
 
-		errors := c.LoadReactTypes(ctx, projectRoot)
+		errors := c.LoadReactTypes(inferCtx, projectRoot)
 		// Log errors but don't fail - some TypeScript features aren't supported yet
 		if len(errors) > 0 {
 			// These are expected errors from unsupported features, not fatal
@@ -207,7 +209,7 @@ func TestJSXElementBasic(t *testing.T) {
 			}
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 			inferCtx := Context{
 				Scope:      scope,
@@ -264,7 +266,7 @@ func TestJSXFragmentBasic(t *testing.T) {
 			}
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -328,7 +330,7 @@ func TestJSXInferredTypes(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -415,7 +417,7 @@ func TestJSXComponent(t *testing.T) {
 			}
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -484,7 +486,7 @@ func TestIntrinsicElementValidProps(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -546,7 +548,7 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -642,7 +644,7 @@ func TestIntrinsicElementMissingRequiredProp(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
 			scope := Prelude(c)
@@ -700,7 +702,7 @@ func TestIntrinsicElementWithAllRequiredProps(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -749,7 +751,7 @@ func TestIntrinsicElementUnknownElement(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -795,7 +797,7 @@ func TestIntrinsicElementWithoutJSXNamespace(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			// Use prelude WITHOUT adding JSX namespace
 			inferCtx := Context{
 				Scope:      Prelude(c),
@@ -850,7 +852,7 @@ func TestIntrinsicElementEventHandlers(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -917,7 +919,7 @@ func TestSpreadPropsValidTypes(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -980,7 +982,7 @@ func TestSpreadPropsInvalidTypes(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -1053,7 +1055,7 @@ func TestSpreadPropsSatisfyRequired(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
 			scope := Prelude(c)
@@ -1122,7 +1124,7 @@ func TestSpreadPropsMissingRequired(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			// Use custom namespace with required props instead of @types/react
 			jsxNs := createJSXNamespaceWithRequiredProps()
 			scope := Prelude(c)
@@ -1208,7 +1210,7 @@ func TestComponentValidProps(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1275,7 +1277,7 @@ func TestComponentMissingRequiredProp(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1348,7 +1350,7 @@ func TestComponentWrongPropType(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1402,7 +1404,7 @@ func TestUnknownComponent(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1475,7 +1477,7 @@ func TestMemberExpressionComponent(t *testing.T) {
 			}
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1541,7 +1543,7 @@ func TestMemberExpressionComponentErrors(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1622,7 +1624,7 @@ func TestComponentWithValidChildren(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1711,7 +1713,7 @@ func TestComponentWithInvalidChildrenType(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1781,7 +1783,7 @@ func TestMultipleChildren(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1845,7 +1847,7 @@ func TestNestedComponentChildren(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      setupReactTypesScope(t, c),
 				IsAsync:    false,
@@ -1921,7 +1923,7 @@ func TestKeyPropValid(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -1976,7 +1978,7 @@ func TestKeyPropInvalid(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2039,7 +2041,7 @@ func TestKeyNotPassedToProps(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2105,7 +2107,7 @@ func TestRefPropOnIntrinsicElement(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2161,7 +2163,7 @@ func TestRefNotPassedToProps(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2256,7 +2258,7 @@ func TestKeyPropOnComponent(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2326,7 +2328,7 @@ func TestKeyPropInvalidOnComponent(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2410,7 +2412,7 @@ func TestRefPropOnComponent(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2486,7 +2488,7 @@ func TestKeyAndRefTogetherOnComponent(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2540,7 +2542,7 @@ func TestKeyAndRefTogether(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			scope := setupReactTypesScope(t, c)
 
 			inferCtx := Context{
@@ -2675,17 +2677,19 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 	// more work to fully support. The basic infrastructure for loading is in place.
 	// See Phase 4.3 and beyond in the implementation plan for the remaining work.
 	t.Run("LoadReactTypesSuccessfully", func(t *testing.T) {
-		c := NewChecker()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
-		ctx := Context{
+		inferCtx := Context{
 			Scope:      scope,
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
 
 		// Load React types
-		errors := c.LoadReactTypes(ctx, projectRoot)
+		errors := c.LoadReactTypes(inferCtx, projectRoot)
 
 		// Log any errors
 		for _, err := range errors {
@@ -2698,18 +2702,20 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 	})
 
 	t.Run("LoadReactTypesCaching", func(t *testing.T) {
-		c := NewChecker()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
-		ctx := Context{
+		inferCtx := Context{
 			Scope:      scope,
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
 
 		// Load React types twice
-		_ = c.LoadReactTypes(ctx, projectRoot)
-		_ = c.LoadReactTypes(ctx, projectRoot)
+		_ = c.LoadReactTypes(inferCtx, projectRoot)
+		_ = c.LoadReactTypes(inferCtx, projectRoot)
 
 		// Second call should use cached namespace from PackageRegistry
 		// We can verify this by checking that the React namespace is available
@@ -2721,10 +2727,12 @@ func TestLoadReactTypesIntegration(t *testing.T) {
 // TestLoadReactTypesWithoutPackage tests LoadReactTypes when @types/react is not available.
 func TestLoadReactTypesWithoutPackage(t *testing.T) {
 	t.Run("ReturnsErrorWhenNotInstalled", func(t *testing.T) {
-		c := NewChecker()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
-		ctx := Context{
+		inferCtx := Context{
 			Scope:      scope,
 			IsAsync:    false,
 			IsPatMatch: false,
@@ -2734,7 +2742,7 @@ func TestLoadReactTypesWithoutPackage(t *testing.T) {
 		tempDir := t.TempDir()
 
 		// Load React types from temp directory
-		errors := c.LoadReactTypes(ctx, tempDir)
+		errors := c.LoadReactTypes(inferCtx, tempDir)
 
 		// Should return an error about @types/react not being found
 		assert.NotEmpty(t, errors, "Expected an error about missing @types/react")
@@ -2822,7 +2830,7 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
 		assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 		// Create checker and scope
-		c := NewChecker()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
 		checkerCtx := Context{
@@ -2863,7 +2871,7 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
 		assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 		// Create checker and scope
-		c := NewChecker()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
 		checkerCtx := Context{
@@ -2910,7 +2918,7 @@ func TestJSXElementTypeResolution(t *testing.T) {
 		assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 		// Create checker and scope with JSX namespace
-		c := NewChecker()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
 		// Create a JSX namespace with an Element type
@@ -2995,7 +3003,7 @@ func TestJSXElementTypeResolution(t *testing.T) {
 		assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 		// Create checker and scope WITHOUT JSX namespace
-		c := NewChecker()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
 		checkerCtx := Context{
@@ -3042,7 +3050,7 @@ func TestJSXFragmentTypeResolution(t *testing.T) {
 		assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
 		// Create a fresh checker and scope with JSX namespace
-		c := NewChecker()
+		c := NewChecker(ctx)
 		scope := Prelude(c)
 
 		// Create a JSX namespace with an Element type

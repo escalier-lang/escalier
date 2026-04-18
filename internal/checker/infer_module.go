@@ -20,6 +20,9 @@ import (
 func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) []Error {
 	var errors []Error
 	for _, component := range depGraph.Components {
+		if timeoutErrors := c.checkTimeout(); timeoutErrors != nil {
+			return slices.Concat(errors, timeoutErrors)
+		}
 		declsErrors := c.InferComponent(ctx, depGraph, component)
 		errors = slices.Concat(errors, declsErrors)
 	}

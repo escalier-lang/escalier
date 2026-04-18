@@ -93,7 +93,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	// Prelude caches the global scope and package registry, and calling it
@@ -215,7 +215,7 @@ func TestE2E_FileImportIsolation(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	inferCtx := Context{
@@ -273,7 +273,7 @@ func TestE2E_MultiplePackagesWithSameSymbols(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	// Prelude caches the global scope and package registry, and calling it
@@ -375,7 +375,7 @@ func TestE2E_GlobalThisBypassesShadowing(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -471,7 +471,7 @@ func TestE2E_CrossFileCyclicTypesWithImports(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	inferCtx := Context{
@@ -543,7 +543,7 @@ func TestE2E_NamedImportsWithAliases(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	inferCtx := Context{
@@ -620,7 +620,7 @@ func TestE2E_SubpathImportsIsolation(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	inferCtx := Context{
@@ -837,7 +837,7 @@ func TestE2E_ComplexProjectSimulation(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	inferCtx := Context{
@@ -978,7 +978,7 @@ func TestE2E_RealisticMonorepoStructure(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// IMPORTANT: Call Prelude FIRST, then register packages.
 	inferCtx := Context{
@@ -1056,7 +1056,7 @@ func TestE2E_GlobalAugmentation(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,

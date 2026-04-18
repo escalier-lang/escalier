@@ -1,7 +1,9 @@
 package checker
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	ts "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
@@ -94,8 +96,10 @@ func TestUnwrapMutabilityOnlyStripsUncertain(t *testing.T) {
 // have the same property, bind aliases their property TypeVars, and a subsequent
 // conflicting write widens one of them.
 func TestWideningWithAliasedTypeVars(t *testing.T) {
-	c := NewChecker()
-	ctx := Context{} // minimal context, enough for Unify
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
+	inferCtx := Context{} // minimal context, enough for Unify
 
 	numType := ts.NewNumPrimType(nil)
 
@@ -122,7 +126,7 @@ func TestWideningWithAliasedTypeVars(t *testing.T) {
 	// Conflicting write through tvA: Unify("hello", tvA).
 	// This should trigger widening to number | string.
 	strLit := ts.NewStrLitType(nil, "hello")
-	errors := c.Unify(ctx, strLit, tvA)
+	errors := c.Unify(inferCtx, strLit, tvA)
 	assert.Empty(t, errors, "widening should suppress the error")
 
 	// Both tvA and tvB should resolve to number | string.

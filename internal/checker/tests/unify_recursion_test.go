@@ -28,7 +28,7 @@ func inferWithTimeout(t *testing.T, source string, timeout time.Duration) []Erro
 		return nil
 	}
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,

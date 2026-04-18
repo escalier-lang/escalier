@@ -23,8 +23,10 @@ import (
 // BenchmarkPreludeLoading measures the time to initialize the global scope
 // with all built-in types from lib.es5.d.ts and lib.dom.d.ts
 func BenchmarkPreludeLoading(b *testing.B) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		_ = Prelude(c)
 	}
 }
@@ -53,7 +55,7 @@ func BenchmarkSimpleScript(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -86,7 +88,7 @@ func BenchmarkScriptWithGlobalTypes(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -124,7 +126,7 @@ func BenchmarkScriptWithShadowing(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -163,7 +165,7 @@ func BenchmarkModuleWithImports(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		_ = c.PackageRegistry.Register("package-1", pkg1Ns)
 		_ = c.PackageRegistry.Register("package-2", pkg2Ns)
 		_ = c.PackageRegistry.Register("package-3", pkg3Ns)
@@ -218,7 +220,7 @@ func BenchmarkMultiFileModule(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -253,7 +255,7 @@ func BenchmarkCrossFileCyclicTypes(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -300,7 +302,7 @@ func BenchmarkFileScopedImports(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		_ = c.PackageRegistry.Register("shared-utils", utilsNs)
 
 		inferCtx := Context{
@@ -313,7 +315,9 @@ func BenchmarkFileScopedImports(b *testing.B) {
 
 // BenchmarkScopeChainLookup measures the cost of scope chain traversal
 func BenchmarkScopeChainLookup(b *testing.B) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
 	// Add local bindings to simulate a realistic scope
@@ -337,7 +341,9 @@ func BenchmarkScopeChainLookup(b *testing.B) {
 
 // BenchmarkPackageRegistryLookup measures the cost of package registry lookups
 func BenchmarkPackageRegistryLookup(b *testing.B) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 
 	// Register several packages
 	for i := 0; i < 20; i++ {
@@ -416,7 +422,7 @@ func BenchmarkRepeatedGenericPropertyAccess(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -477,7 +483,7 @@ func BenchmarkMultipleGenericTypes(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -523,7 +529,7 @@ func BenchmarkUnionMemberAccess(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -583,7 +589,7 @@ func BenchmarkGenericPropertyAccessModule(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		inferCtx := Context{
 			Scope:   Prelude(c),
 			IsAsync: false,
@@ -669,7 +675,7 @@ func BenchmarkComplexProject(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		c := NewChecker()
+		c := NewChecker(ctx)
 		_ = c.PackageRegistry.Register("validator", validatorNs)
 		_ = c.PackageRegistry.Register("database", dbNs)
 		_ = c.PackageRegistry.Register("config", configNs)
@@ -685,7 +691,9 @@ func BenchmarkComplexProject(b *testing.B) {
 // TestArrayTypeStructure verifies where Array's properties live (Elems vs Extends)
 // to inform lazy member lookup optimization decisions (#461).
 func TestArrayTypeStructure(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	scope := Prelude(c)
 	alias := scope.GetTypeAlias("Array")
 	if alias == nil {

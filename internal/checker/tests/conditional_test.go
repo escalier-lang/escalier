@@ -177,7 +177,7 @@ func TestConditionalTypeAliasBasic(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -370,7 +370,7 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -591,7 +591,7 @@ func TestConditionalTypeAliasEdgeCases(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,

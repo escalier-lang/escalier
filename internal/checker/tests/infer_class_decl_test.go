@@ -605,7 +605,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -680,7 +680,7 @@ func TestNominalClassUnificationTerminates(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	assert.Len(t, parseErrors, 0)
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,

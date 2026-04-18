@@ -14,6 +14,9 @@ func (c *Checker) InferScript(ctx Context, m *ast.Script) (*Scope, []Error) {
 	ctx = ctx.WithNewScope()
 
 	for _, stmt := range m.Stmts {
+		if timeoutErrors := c.checkTimeout(); timeoutErrors != nil {
+			return ctx.Scope, slices.Concat(errors, timeoutErrors)
+		}
 		stmtErrors := c.inferStmt(ctx, stmt)
 		errors = slices.Concat(errors, stmtErrors)
 	}

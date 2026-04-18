@@ -40,7 +40,7 @@ func inferModuleTypesAndErrors(t *testing.T, input string) (map[string]string, [
 	}
 	require.Empty(t, errors)
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -389,7 +389,7 @@ func TestRowTypesErrors(t *testing.T) {
 			}
 			require.Empty(t, errors)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -411,8 +411,10 @@ func TestRowTypesErrors(t *testing.T) {
 // (which are wrapped in MutabilityType).
 func TestRowTypesKeyOf(t *testing.T) {
 	t.Run("KeyOfType unwraps MutabilityType", func(t *testing.T) {
-		checker := NewChecker()
-		ctx := Context{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		checker := NewChecker(ctx)
+		inferCtx := Context{
 			Scope:      NewScope(),
 			IsAsync:    false,
 			IsPatMatch: false,
@@ -431,15 +433,17 @@ func TestRowTypesKeyOf(t *testing.T) {
 		}
 
 		keyofType := type_system.NewKeyOfType(nil, mutType)
-		result, errors := checker.ExpandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(inferCtx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"x" | "y"`, result.String())
 	})
 
 	t.Run("KeyOfType on bare ObjectType still works", func(t *testing.T) {
-		checker := NewChecker()
-		ctx := Context{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		checker := NewChecker(ctx)
+		inferCtx := Context{
 			Scope:      NewScope(),
 			IsAsync:    false,
 			IsPatMatch: false,
@@ -450,7 +454,7 @@ func TestRowTypesKeyOf(t *testing.T) {
 		})
 
 		keyofType := type_system.NewKeyOfType(nil, objType)
-		result, errors := checker.ExpandType(ctx, keyofType, 1)
+		result, errors := checker.ExpandType(inferCtx, keyofType, 1)
 
 		assert.Empty(t, errors)
 		assert.Equal(t, `"a"`, result.String())
@@ -1044,7 +1048,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 				require.Empty(t, errors)
 
-				c := NewChecker()
+				c := NewChecker(ctx)
 				inferCtx := Context{
 					Scope:      Prelude(c),
 					IsAsync:    false,

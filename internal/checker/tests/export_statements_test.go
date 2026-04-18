@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -13,7 +15,9 @@ import (
 // TestProcessLocalNamedExport_Values verifies that local named exports correctly
 // mark values as exported and handle aliasing.
 func TestProcessLocalNamedExport_Values(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Create package namespace with internal values
 	pkgNs := type_system.NewNamespace()
@@ -69,7 +73,9 @@ func TestProcessLocalNamedExport_Values(t *testing.T) {
 
 // TestProcessLocalNamedExport_Types verifies that local named exports handle type aliases.
 func TestProcessLocalNamedExport_Types(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Create package namespace with internal types
 	pkgNs := type_system.NewNamespace()
@@ -110,7 +116,9 @@ func TestProcessLocalNamedExport_Types(t *testing.T) {
 
 // TestProcessLocalNamedExport_Namespaces verifies that local named exports handle nested namespaces.
 func TestProcessLocalNamedExport_Namespaces(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Create package namespace with nested namespace
 	pkgNs := type_system.NewNamespace()
@@ -156,7 +164,9 @@ func TestProcessLocalNamedExport_Namespaces(t *testing.T) {
 
 // TestProcessLocalNamedExport_NotFound verifies error reporting for missing exports.
 func TestProcessLocalNamedExport_NotFound(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	pkgNs := type_system.NewNamespace()
 
@@ -190,7 +200,9 @@ func TestProcessLocalNamedExport_NotFound(t *testing.T) {
 // TestProcessLocalNamedExport_TypeOnlyIgnoresMissingValues verifies that type-only exports
 // don't report errors for missing value bindings.
 func TestProcessLocalNamedExport_TypeOnlyIgnoresMissingValues(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Namespace with a type but no value of same name
 	pkgNs := type_system.NewNamespace()
@@ -231,7 +243,9 @@ func TestProcessLocalNamedExport_TypeOnlyIgnoresMissingValues(t *testing.T) {
 // TestProcessReExport_Values verifies re-exporting values from another module.
 // This test uses a relative path pattern that can be resolved.
 func TestProcessReExport_Values(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Pre-register a dependency package at the resolved path
 	// When "./dep" is resolved from "/test/index.d.ts", it becomes "/test/dep.d.ts"
@@ -278,7 +292,9 @@ func TestProcessReExport_Values(t *testing.T) {
 
 // TestProcessReExport_Types verifies re-exporting types from another module.
 func TestProcessReExport_Types(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Pre-register a dependency package at the resolved path
 	depNs := type_system.NewNamespace()
@@ -322,7 +338,9 @@ func TestProcessReExport_Types(t *testing.T) {
 
 // TestProcessReExport_MissingExport verifies error when re-exporting non-existent item.
 func TestProcessReExport_MissingExport(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Pre-register an empty dependency package
 	depNs := type_system.NewNamespace()
@@ -360,7 +378,9 @@ func TestProcessReExport_MissingExport(t *testing.T) {
 
 // TestProcessExportAll_Merge verifies that export * merges all exports from source module.
 func TestProcessExportAll_Merge(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Pre-register source package with various exports
 	srcNs := type_system.NewNamespace()
@@ -420,7 +440,9 @@ func TestProcessExportAll_Merge(t *testing.T) {
 
 // TestProcessExportAll_NoOverwrite verifies that export * doesn't overwrite existing exports.
 func TestProcessExportAll_NoOverwrite(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Source package has a conflicting name
 	srcNs := type_system.NewNamespace()
@@ -467,7 +489,9 @@ func TestProcessExportAll_NoOverwrite(t *testing.T) {
 
 // TestProcessExportAll_AsNamespace verifies export * as ns creates a namespace binding.
 func TestProcessExportAll_AsNamespace(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Source package
 	srcNs := type_system.NewNamespace()
@@ -516,7 +540,9 @@ func TestProcessExportAll_AsNamespace(t *testing.T) {
 
 // TestProcessExportAsNamespace_UMD verifies the UMD pattern adds to global scope.
 func TestProcessExportAsNamespace_UMD(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Setup global scope
 	preludeScope := Prelude(c)
@@ -551,7 +577,9 @@ func TestProcessExportAsNamespace_UMD(t *testing.T) {
 
 // TestProcessExportStatements_Combined verifies multiple export types work together.
 func TestProcessExportStatements_Combined(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Pre-register dependency
 	depNs := type_system.NewNamespace()
@@ -626,7 +654,9 @@ func TestProcessExportStatements_Combined(t *testing.T) {
 // TestProcessExportStatements_NonExportedFiltered verifies that non-exported items
 // from source modules are not accessible via re-exports.
 func TestProcessExportStatements_NonExportedFiltered(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Source with mixed exports
 	srcNs := type_system.NewNamespace()
@@ -674,7 +704,9 @@ func TestProcessExportStatements_NonExportedFiltered(t *testing.T) {
 // TestProcessLocalNamedExport_NamespaceExportSetsFlag verifies that exporting a namespace
 // via local named export sets the Exported flag on the namespace.
 func TestProcessLocalNamedExport_NamespaceExportSetsFlag(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Create package namespace with a nested namespace that is NOT exported
 	pkgNs := type_system.NewNamespace()
@@ -718,7 +750,9 @@ func TestProcessLocalNamedExport_NamespaceExportSetsFlag(t *testing.T) {
 // TestProcessExportAll_NamespaceExportSetsFlag verifies that namespaces merged via
 // export * get their Exported flag set.
 func TestProcessExportAll_NamespaceExportSetsFlag(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Create a source namespace with a nested namespace
 	srcNs := type_system.NewNamespace()
@@ -760,7 +794,9 @@ func TestProcessExportAll_NamespaceExportSetsFlag(t *testing.T) {
 // TestFilterExportedNamespace_OnlyExportedNamespacesIncluded verifies that
 // filterExportedNamespace only includes namespaces with Exported = true.
 func TestFilterExportedNamespace_OnlyExportedNamespacesIncluded(t *testing.T) {
-	c := NewChecker()
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(bgCtx)
 
 	// Create a namespace with both exported and non-exported nested namespaces
 	pkgNs := type_system.NewNamespace()

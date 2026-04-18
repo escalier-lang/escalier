@@ -34,7 +34,9 @@ func assertHasError(t *testing.T, errors []Error, substring string) {
 // =============================================================================
 
 func TestStdLibIteratorTypesLoaded(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	scope := Prelude(c)
 
 	t.Run("Iterator", func(t *testing.T) {
@@ -116,7 +118,7 @@ func inferModule(t *testing.T, input string) (map[string]string, []Error) {
 	}
 	require.Len(t, parseErrors, 0, "expected no parse errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -152,7 +154,7 @@ func inferScript(t *testing.T, input string) (map[string]string, []Error) {
 	}
 	require.Len(t, parseErrors, 0, "expected no parse errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -195,9 +197,11 @@ func TestSymbolIteratorLookup(t *testing.T) {
 // =============================================================================
 
 func TestGetIterableElementType(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	scope := Prelude(c)
-	ctx := Context{
+	inferCtx := Context{
 		Scope:      scope,
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -212,7 +216,7 @@ func TestGetIterableElementType(t *testing.T) {
 		require.NotNil(t, arrayAlias, "Array type alias should exist")
 		arrayType.TypeAlias = arrayAlias
 
-		elemType := c.GetIterableElementType(ctx, arrayType)
+		elemType := c.GetIterableElementType(inferCtx, arrayType)
 		require.NotNil(t, elemType, "Array<number> should be iterable")
 		assert.Equal(t, "number", elemType.String())
 	})
@@ -226,27 +230,27 @@ func TestGetIterableElementType(t *testing.T) {
 		require.NotNil(t, arrayAlias)
 		arrayType.TypeAlias = arrayAlias
 
-		elemType := c.GetIterableElementType(ctx, arrayType)
+		elemType := c.GetIterableElementType(inferCtx, arrayType)
 		require.NotNil(t, elemType, "Array<string> should be iterable")
 		assert.Equal(t, "string", elemType.String())
 	})
 
 	t.Run("StringIsIterable", func(t *testing.T) {
 		strType := type_system.NewStrPrimType(nil)
-		elemType := c.GetIterableElementType(ctx, strType)
+		elemType := c.GetIterableElementType(inferCtx, strType)
 		require.NotNil(t, elemType, "string should be iterable")
 		assert.Equal(t, "string", elemType.String())
 	})
 
 	t.Run("NumberIsNotIterable", func(t *testing.T) {
 		numType := type_system.NewNumPrimType(nil)
-		elemType := c.GetIterableElementType(ctx, numType)
+		elemType := c.GetIterableElementType(inferCtx, numType)
 		assert.Nil(t, elemType, "number should not be iterable")
 	})
 
 	t.Run("BooleanIsNotIterable", func(t *testing.T) {
 		boolType := type_system.NewBoolPrimType(nil)
-		elemType := c.GetIterableElementType(ctx, boolType)
+		elemType := c.GetIterableElementType(inferCtx, boolType)
 		assert.Nil(t, elemType, "boolean should not be iterable")
 	})
 
@@ -259,21 +263,21 @@ func TestGetIterableElementType(t *testing.T) {
 			type_system.NewNumPrimType(nil),
 			type_system.NewRestSpreadType(nil, arrayOfString),
 		)
-		elemType := c.GetIterableElementType(ctx, tupleType)
+		elemType := c.GetIterableElementType(inferCtx, tupleType)
 		require.NotNil(t, elemType, "[number, ...string[]] should be iterable")
 		assert.Equal(t, "number | string", elemType.String())
 	})
 
 	t.Run("EmptyTuple", func(t *testing.T) {
 		tupleType := type_system.NewTupleType(nil)
-		elemType := c.GetIterableElementType(ctx, tupleType)
+		elemType := c.GetIterableElementType(inferCtx, tupleType)
 		require.NotNil(t, elemType)
 		assert.Equal(t, "never", elemType.String())
 	})
 
 	t.Run("SingleElementTuple", func(t *testing.T) {
 		tupleType := type_system.NewTupleType(nil, type_system.NewNumPrimType(nil))
-		elemType := c.GetIterableElementType(ctx, tupleType)
+		elemType := c.GetIterableElementType(inferCtx, tupleType)
 		require.NotNil(t, elemType)
 		assert.Equal(t, "number", elemType.String())
 	})
@@ -288,7 +292,7 @@ func TestGetIterableElementType(t *testing.T) {
 			type_system.NewNumPrimType(nil),
 			type_system.NewRestSpreadType(nil, innerTuple),
 		)
-		elemType := c.GetIterableElementType(ctx, tupleType)
+		elemType := c.GetIterableElementType(inferCtx, tupleType)
 		require.NotNil(t, elemType, "[number, ...[string, boolean]] should be iterable")
 		assert.Equal(t, "number | string | boolean", elemType.String())
 	})
@@ -301,7 +305,7 @@ func TestGetIterableElementType(t *testing.T) {
 			type_system.NewStrPrimType(nil),
 			type_system.NewTypeRefType(nil, "Array", arrayAlias, type_system.NewNumPrimType(nil)),
 		)
-		elemType := c.GetIterableElementType(ctx, unionType)
+		elemType := c.GetIterableElementType(inferCtx, unionType)
 		require.NotNil(t, elemType, "string | Array<number> should be iterable")
 		assert.Equal(t, "string | number", elemType.String())
 	})
@@ -312,7 +316,7 @@ func TestGetIterableElementType(t *testing.T) {
 			type_system.NewStrPrimType(nil),
 			type_system.NewNumPrimType(nil),
 		)
-		elemType := c.GetIterableElementType(ctx, unionType)
+		elemType := c.GetIterableElementType(inferCtx, unionType)
 		assert.Nil(t, elemType, "string | number should not be iterable")
 	})
 }
@@ -322,7 +326,9 @@ func TestGetIterableElementType(t *testing.T) {
 // =============================================================================
 
 func TestMakeGeneratorType(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	scope := Prelude(c)
 
 	t.Run("Generator<number, string, boolean>", func(t *testing.T) {
@@ -360,9 +366,11 @@ func TestMakeGeneratorType(t *testing.T) {
 // =============================================================================
 
 func TestGetIteratorReturnType(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	scope := Prelude(c)
-	ctx := Context{
+	inferCtx := Context{
 		Scope:      scope,
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -377,21 +385,21 @@ func TestGetIteratorReturnType(t *testing.T) {
 			TypeAlias: arrayAlias,
 		}
 
-		returnType := c.GetIteratorReturnType(ctx, arrayType)
+		returnType := c.GetIteratorReturnType(inferCtx, arrayType)
 		require.NotNil(t, returnType, "Array<number> should have an iterator return type")
 		assert.Equal(t, "BuiltinIteratorReturn", returnType.String())
 	})
 
 	t.Run("StringIteratorReturnType", func(t *testing.T) {
 		strType := type_system.NewStrPrimType(nil)
-		returnType := c.GetIteratorReturnType(ctx, strType)
+		returnType := c.GetIteratorReturnType(inferCtx, strType)
 		require.NotNil(t, returnType, "string should have an iterator return type")
 		assert.Equal(t, "BuiltinIteratorReturn", returnType.String())
 	})
 
 	t.Run("NumberHasNoIteratorReturnType", func(t *testing.T) {
 		numType := type_system.NewNumPrimType(nil)
-		returnType := c.GetIteratorReturnType(ctx, numType)
+		returnType := c.GetIteratorReturnType(inferCtx, numType)
 		assert.Nil(t, returnType, "number should not have an iterator return type")
 	})
 
@@ -400,7 +408,7 @@ func TestGetIteratorReturnType(t *testing.T) {
 			type_system.NewNumPrimType(nil),
 			type_system.NewStrPrimType(nil),
 		)
-		returnType := c.GetIteratorReturnType(ctx, tupleType)
+		returnType := c.GetIteratorReturnType(inferCtx, tupleType)
 		require.NotNil(t, returnType, "tuple should have an iterator return type")
 		assert.Equal(t, "void", returnType.String())
 	})
@@ -413,7 +421,7 @@ func TestGetIteratorReturnType(t *testing.T) {
 			type_system.NewStrPrimType(nil),
 			type_system.NewTypeRefType(nil, "Array", arrayAlias, type_system.NewNumPrimType(nil)),
 		)
-		returnType := c.GetIteratorReturnType(ctx, unionType)
+		returnType := c.GetIteratorReturnType(inferCtx, unionType)
 		require.NotNil(t, returnType, "string | Array<number> should have an iterator return type")
 		assert.Equal(t, "BuiltinIteratorReturn", returnType.String())
 	})
@@ -424,7 +432,7 @@ func TestGetIteratorReturnType(t *testing.T) {
 			type_system.NewStrPrimType(nil),
 			type_system.NewNumPrimType(nil),
 		)
-		returnType := c.GetIteratorReturnType(ctx, unionType)
+		returnType := c.GetIteratorReturnType(inferCtx, unionType)
 		assert.Nil(t, returnType, "string | number should not have an iterator return type")
 	})
 }
@@ -434,9 +442,11 @@ func TestGetIteratorReturnType(t *testing.T) {
 // =============================================================================
 
 func TestGetAsyncIterableElementType(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	scope := Prelude(c)
-	ctx := Context{
+	inferCtx := Context{
 		Scope:      scope,
 		IsAsync:    false,
 		IsPatMatch: false,
@@ -444,14 +454,14 @@ func TestGetAsyncIterableElementType(t *testing.T) {
 
 	t.Run("NumberIsNotAsyncIterable", func(t *testing.T) {
 		numType := type_system.NewNumPrimType(nil)
-		elemType := c.GetAsyncIterableElementType(ctx, numType)
+		elemType := c.GetAsyncIterableElementType(inferCtx, numType)
 		assert.Nil(t, elemType, "number should not be async iterable")
 	})
 
 	t.Run("StringIsNotAsyncIterable", func(t *testing.T) {
 		// string has [Symbol.iterator] but not [Symbol.asyncIterator]
 		strType := type_system.NewStrPrimType(nil)
-		elemType := c.GetAsyncIterableElementType(ctx, strType)
+		elemType := c.GetAsyncIterableElementType(inferCtx, strType)
 		assert.Nil(t, elemType, "string should not be async iterable (no ES2018+ support)")
 	})
 
@@ -464,7 +474,7 @@ func TestGetAsyncIterableElementType(t *testing.T) {
 			TypeArgs:  []type_system.Type{type_system.NewNumPrimType(nil)},
 			TypeAlias: arrayAlias,
 		}
-		elemType := c.GetAsyncIterableElementType(ctx, arrayType)
+		elemType := c.GetAsyncIterableElementType(inferCtx, arrayType)
 		assert.Nil(t, elemType, "Array should not be async iterable (no ES2018+ support)")
 	})
 }

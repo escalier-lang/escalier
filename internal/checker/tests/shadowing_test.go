@@ -16,7 +16,9 @@ import (
 // TestGlobalThisBinding verifies that globalThis is available in the global scope
 // and provides access to the global namespace.
 func TestGlobalThisBinding(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
 	require.NotNil(t, c.GlobalScope, "GlobalScope should be set")
@@ -58,7 +60,7 @@ func TestLocalShadowingOfGlobals(t *testing.T) {
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -119,7 +121,7 @@ func TestGlobalThisAccessToGlobals(t *testing.T) {
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -175,7 +177,7 @@ func TestGlobalThisAccessWhenShadowed(t *testing.T) {
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -240,7 +242,9 @@ func TestGlobalThisAccessWhenShadowed(t *testing.T) {
 // TestShadowedGlobalNotAccessibleUnqualified verifies that when a global is
 // shadowed, unqualified access resolves to the local definition.
 func TestShadowedGlobalNotAccessibleUnqualified(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
 	// Add a local "Array" type that shadows the global
@@ -279,7 +283,7 @@ func TestGlobalThisValueAccess(t *testing.T) {
 	script, parseErrors := p.ParseScript()
 	require.Len(t, parseErrors, 0, "Should have no parse errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,

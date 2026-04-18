@@ -32,7 +32,7 @@ func TestPackageLoadAndRegister(t *testing.T) {
 	script, parseErrors := p.ParseScript()
 	require.Empty(t, parseErrors, "Should parse without errors")
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:   Prelude(c),
 		IsAsync: false,
@@ -54,7 +54,7 @@ func TestPackageReloadFromRegistry(t *testing.T) {
 	defer cancel()
 
 	// Pre-register a mock package
-	c := NewChecker()
+	c := NewChecker(ctx)
 	mockNs := type_system.NewNamespace()
 	mockNs.Values["helper"] = &type_system.Binding{
 		Type:     type_system.NewNumPrimType(nil),
@@ -100,7 +100,7 @@ func TestNamedImportFromRegisteredPackage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-register a mock package with both values and types
 	mockNs := type_system.NewNamespace()
@@ -155,7 +155,7 @@ func TestNamedImportWithAlias(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-register a mock package
 	mockNs := type_system.NewNamespace()
@@ -200,7 +200,7 @@ func TestNamedImportNotFound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-register a mock package with limited exports
 	mockNs := type_system.NewNamespace()
@@ -244,7 +244,7 @@ func TestSubpathImportSeparateEntries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Pre-register mock packages for main and subpath with different types
 	mainNs := type_system.NewNamespace()
@@ -302,7 +302,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Create a package with both exported and non-exported items
 	mockNs := type_system.NewNamespace()
@@ -359,7 +359,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 	assert.Empty(t, inferErrors, "Exported items should be accessible via namespace import")
 
 	// Test that non-exported items cause errors when accessed
-	c2 := NewChecker()
+	c2 := NewChecker(ctx)
 	err = c2.PackageRegistry.Register("mixed-exports-pkg", mockNs)
 	require.NoError(t, err)
 
@@ -388,7 +388,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 		"Error should mention the non-exported value")
 
 	// Test that non-exported types cause errors when accessed
-	c3 := NewChecker()
+	c3 := NewChecker(ctx)
 	err = c3.PackageRegistry.Register("mixed-exports-pkg", mockNs)
 	require.NoError(t, err)
 
@@ -422,7 +422,7 @@ func TestNamespaceImportFromSubNamespace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 
 	// Create a package with a nested namespace
 	mockNs := type_system.NewNamespace()

@@ -103,7 +103,7 @@ func TestNormalizeIntersectionType(t *testing.T) {
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -284,7 +284,7 @@ func TestDistributiveLawsUsingExpandType(t *testing.T) {
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -552,7 +552,7 @@ func TestUnifyWithIntersections(t *testing.T) {
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -750,7 +750,7 @@ func TestIntersectionMemberAccess(t *testing.T) {
 				t.Fatalf("Parse errors: %v", errors)
 			}
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -981,7 +981,7 @@ func TestFunctionOverloads(t *testing.T) {
 				t.Fatalf("Parse errors: %v", errors)
 			}
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,

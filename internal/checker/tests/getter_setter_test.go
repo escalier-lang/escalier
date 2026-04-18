@@ -251,7 +251,7 @@ func TestGetterSetterAccess(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,

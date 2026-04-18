@@ -1,6 +1,8 @@
 package checker
 
 import (
+	"context"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -8,9 +10,10 @@ import (
 )
 
 type Checker struct {
+	ctx                   context.Context            // Context for timeout/cancellation support (#457)
 	TypeVarID             int
 	SymbolID              int
-	CustomMatcherSymbolID int // Symbol ID for Symbol.customMatcher (used for enum destructuring)
+	CustomMatcherSymbolID int                        // Symbol ID for Symbol.customMatcher (used for enum destructuring)
 	Schema                *gqlast.Schema
 	OverloadDecls         map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
@@ -21,8 +24,9 @@ type Checker struct {
 	memberCache           memberCache                // Per-property cache for lazy member substitution (#461)
 }
 
-func NewChecker() *Checker {
+func NewChecker(ctx context.Context) *Checker {
 	return &Checker{
+		ctx:                   ctx,
 		TypeVarID:             0,
 		SymbolID:              0,
 		CustomMatcherSymbolID: -1,
@@ -33,6 +37,17 @@ func NewChecker() *Checker {
 		expandCache:           make(expandSeen),
 		substCache:            make(expandSeen),
 		memberCache:           make(memberCache),
+	}
+}
+
+// checkTimeout returns a TypeCheckTimeoutError if the checker's context has
+// been cancelled (e.g. deadline exceeded). Returns nil otherwise.
+func (c *Checker) checkTimeout() []Error {
+	select {
+	case <-c.ctx.Done():
+		return []Error{TypeCheckTimeoutError{}}
+	default:
+		return nil
 	}
 }
 
