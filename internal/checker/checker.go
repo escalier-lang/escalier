@@ -40,14 +40,29 @@ func NewChecker(ctx context.Context) *Checker {
 	}
 }
 
-// checkTimeout returns a TypeCheckTimeoutError if the checker's context has
-// been cancelled (e.g. deadline exceeded). Returns nil otherwise.
-func (c *Checker) checkTimeout() []Error {
+// checkTimeout panics with a TypeCheckTimeoutError if the checker's context
+// has been cancelled (e.g. deadline exceeded). The panic is recovered at the
+// top-level entry points (InferScript, InferModule, InferDepGraph) and
+// converted into a regular error. Using panic ensures timeout errors bubble
+// through all call sites, including trial unification and ExpandType calls
+// that intentionally discard errors.
+func (c *Checker) checkTimeout() {
 	select {
 	case <-c.ctx.Done():
-		return []Error{TypeCheckTimeoutError{}}
+		panic(TypeCheckTimeoutError{})
 	default:
-		return nil
+	}
+}
+
+// recoverTimeout catches a TypeCheckTimeoutError panic and appends it to the
+// provided error slice. Must be called via defer at top-level entry points.
+func recoverTimeout(errors *[]Error) {
+	if r := recover(); r != nil {
+		if _, ok := r.(TypeCheckTimeoutError); ok {
+			*errors = append(*errors, TypeCheckTimeoutError{})
+		} else {
+			panic(r) // re-panic for non-timeout panics
+		}
 	}
 }
 

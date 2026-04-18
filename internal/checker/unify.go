@@ -281,9 +281,7 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, seen unifySeen) []Error {
 	for {
-		if timeoutErrors := c.checkTimeout(); timeoutErrors != nil {
-			return timeoutErrors
-		}
+		c.checkTimeout()
 		errors := c.unifyMatched(ctx, t1, t2, seen)
 		if len(errors) == 0 {
 			return nil
