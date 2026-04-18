@@ -2273,9 +2273,8 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				type ContainerOfContainers = Container<NumberContainer>
 			`,
 			expectedTypes: map[string]string{
-				"NumberContainer": "{items: number}",
-				// NOTE: we also expand type arguments when expanding type aliases
-				"ContainerOfContainers": "{items: Container<number>}",
+				"NumberContainer":      "{items: number}",
+				"ContainerOfContainers": "{items: NumberContainer}",
 			},
 		},
 		"GenericTupleTypes": {
@@ -2314,8 +2313,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				type OptionalStringList = List<Optional<string>>
 			`,
 			expectedTypes: map[string]string{
-				// NOTE: we also expand type arguments when expanding type aliases
-				"OptionalStringList": "{items: Array<string | null>, length: number}",
+				"OptionalStringList": "{items: Array<Optional<string>>, length: number}",
 			},
 		},
 		"GenericTypeWithMultipleInstantiations": {

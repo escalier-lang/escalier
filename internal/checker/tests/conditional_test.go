@@ -348,6 +348,42 @@ func TestConditionalTypeAliasAdvanced(t *testing.T) {
 				"MixedResult": "Array<string> | Array<number>",
 			},
 		},
+		"ConditionalInsideUnion_LitString": {
+			input: `
+				type Foo<T> = boolean | if T : string { T } else { number }
+				type Result = Foo<"hello">
+			`,
+			expectedTypes: map[string]string{
+				"Result": "boolean | \"hello\"",
+			},
+		},
+		"ConditionalInsideUnion_LitNumber": {
+			input: `
+				type Foo<T> = boolean | if T : string { T } else { number }
+				type Result = Foo<5>
+			`,
+			expectedTypes: map[string]string{
+				"Result": "boolean | number",
+			},
+		},
+		"ConditionalInsideIntersection_LitString": {
+			input: `
+				type Bar<T> = string & if T : string { T } else { number }
+				type Result = Bar<"hello">
+			`,
+			expectedTypes: map[string]string{
+				"Result": "string & \"hello\"",
+			},
+		},
+		"ConditionalInsideIntersection_LitNumber": {
+			input: `
+				type Bar<T> = string & if T : string { T } else { number }
+				type Result = Bar<5>
+			`,
+			expectedTypes: map[string]string{
+				"Result": "never",
+			},
+		},
 	}
 
 	for name, test := range tests {
