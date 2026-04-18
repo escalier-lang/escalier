@@ -16,19 +16,6 @@ import (
 // expandSeenKey identifies a specific instantiation of a type alias in a
 // specific expansion context.
 //
-// TODO(#455): The insideKeyOf field may be unnecessary. The expandSeen
-// map already detects cycles via its nil-value sentinel
-// (expandSeen[key] == nil means "expansion in progress"), which handles
-// the nested-keyof recursion case that insideKeyOfTarget was designed to
-// prevent. The overlap is that insideKeyOfTarget short-circuits KeyOfType
-// expansion before expandSeen gets a chance to detect the cycle itself.
-// Plan C confirmed this duplicate cycle-detection behavior but deferred
-// removal to avoid risk — removing insideKeyOfTarget requires updating
-// this field, the expandSeenKey struct, expandTypeWithConfig, and every
-// call site that propagates insideKeyOfTarget.
-// If insideKeyOfTarget is removed, this field can be removed too.
-// See: expandSeen, insideKeyOfTarget, insideKeyOf, TypeRefType.
-//
 // Note: expandTypeRefsCount is intentionally excluded from the key. The
 // expandTypeRefsCount == 0 check in ExitType returns nil before the cache
 // lookup, so count=0 never consults or populates the cache. Within a single
@@ -36,9 +23,8 @@ import (
 // result can only be hit at the same or lower count — never at a higher count
 // that would expect more expansion than what was cached.
 type expandSeenKey struct {
-	alias       unsafe.Pointer // TypeAlias pointer
-	typeArgs    string         // typeArgKey(typeArgs)
-	insideKeyOf bool           // TODO(#455): may be unnecessary
+	alias    unsafe.Pointer // TypeAlias pointer
+	typeArgs string         // typeArgKey(typeArgs)
 }
 
 // expandSeen tracks type alias expansions in progress and caches completed results.
@@ -162,13 +148,12 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 // TODO(#452): Extract a separate ExpandNonRefTypes helper for the count=0 case
 // to make call sites self-documenting.
 func (c *Checker) ExpandType(ctx Context, t type_system.Type, expandTypeRefsCount int) (type_system.Type, []Error) {
-	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, 0, make(expandSeen))
+	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, make(expandSeen))
 }
 
-func (c *Checker) expandTypeWithConfig(ctx Context, t type_system.Type, expandTypeRefsCount int, insideKeyOfTarget int, seen expandSeen) (type_system.Type, []Error) {
+func (c *Checker) expandTypeWithConfig(ctx Context, t type_system.Type, expandTypeRefsCount int, seen expandSeen) (type_system.Type, []Error) {
 	t = type_system.Prune(t)
 	visitor := NewTypeExpansionVisitor(c, ctx, expandTypeRefsCount)
-	visitor.insideKeyOfTarget = insideKeyOfTarget
 	visitor.seen = seen
 
 	result := t.Accept(visitor)
@@ -182,7 +167,6 @@ type TypeExpansionVisitor struct {
 	errors              []Error
 	skipTypeRefsCount   int // if > 0, skip expanding TypeRefTypes
 	expandTypeRefsCount int // if > 0, number of TypeRefTypes expanded, if -1 then unlimited
-	insideKeyOfTarget   int // if > 0, we're expanding a keyof target, don't expand nested keyof
 	seen                expandSeen
 }
 
@@ -371,23 +355,11 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 
 		return distributed
 	case *type_system.KeyOfType:
-		// TODO(#455): This guard may be redundant now that expandSeen detects
-		// cycles via its nil-value sentinel (expandSeen[key] == nil means
-		// "expansion in progress"). The insideKeyOfTarget counter
-		// short-circuits here before expandSeen gets a chance to detect the
-		// cycle itself, creating duplicate cycle-detection behavior. Plan C
-		// confirmed the overlap but deferred removal to avoid risk.
-		// See: expandSeen, expandSeenKey.insideKeyOf, insideKeyOfTarget.
-		if v.insideKeyOfTarget > 0 {
-			return nil
-		}
-
 		// Expand keyof T by extracting the keys from the type T
 		targetType := type_system.Prune(t.Type)
 
 		// First, try to expand the target type
-		// Pass insideKeyOfTarget+1 to prevent recursive keyof expansion during target expansion
-		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.insideKeyOfTarget+1, v.seen)
+		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.seen)
 		expandedTarget = type_system.Prune(expandedTarget)
 
 		// Unwrap MutabilityType so keyof sees the actual object type
@@ -546,9 +518,8 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 
 		// Cycle detection: check if we're already expanding this alias+typeArgs.
 		key := expandSeenKey{
-			alias:       unsafe.Pointer(typeAlias),
-			typeArgs:    typeArgKey(t.TypeArgs),
-			insideKeyOf: v.insideKeyOfTarget > 0,
+			alias:    unsafe.Pointer(typeAlias),
+			typeArgs: typeArgKey(t.TypeArgs),
 		}
 		if cached, exists := v.seen[key]; exists {
 			if cached == nil {
@@ -613,12 +584,11 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		}
 
 		// Recursively expand the resolved type using the same visitor to maintain state
-		// Propagate insideKeyOfTarget to prevent infinite recursion
 		var result type_system.Type
 		if v.expandTypeRefsCount == -1 {
-			result, _ = v.checker.expandTypeWithConfig(v.ctx, expandedType, -1, v.insideKeyOfTarget, v.seen)
+			result, _ = v.checker.expandTypeWithConfig(v.ctx, expandedType, -1, v.seen)
 		} else {
-			result, _ = v.checker.expandTypeWithConfig(v.ctx, expandedType, v.expandTypeRefsCount-1, v.insideKeyOfTarget, v.seen)
+			result, _ = v.checker.expandTypeWithConfig(v.ctx, expandedType, v.expandTypeRefsCount-1, v.seen)
 		}
 
 		// Cache the expanded result for reuse
@@ -700,15 +670,9 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			}
 		}
 		if concrete {
-			// insideKeyOf is explicitly false: getMemberType never operates inside
-			// a keyof context, so this cache only stores non-keyof expansions.
-			// This avoids collisions with the per-pass expandSeen cache used by
-			// expandTypeWithConfig, which keys on insideKeyOfTarget > 0.
-			// See TODO(#455) on expandSeenKey for potential removal of insideKeyOf.
 			k := expandSeenKey{
-				alias:       unsafe.Pointer(tref.TypeAlias),
-				typeArgs:    typeArgKey(tref.TypeArgs),
-				insideKeyOf: false,
+				alias:    unsafe.Pointer(tref.TypeAlias),
+				typeArgs: typeArgKey(tref.TypeArgs),
 			}
 			if cached, exists := c.expandCache[k]; exists {
 				objType = cached
@@ -2090,9 +2054,8 @@ func (c *Checker) expandTypeRef(ctx Context, t *type_system.TypeRefType) (type_s
 		// Check substitution cache to avoid redundant SubstituteTypeParams calls
 		// for the same type alias + type args combination (#461).
 		key := expandSeenKey{
-			alias:       unsafe.Pointer(typeAlias),
-			typeArgs:    typeArgKey(t.TypeArgs),
-			insideKeyOf: false,
+			alias:    unsafe.Pointer(typeAlias),
+			typeArgs: typeArgKey(t.TypeArgs),
 		}
 		if cached, exists := c.substCache[key]; exists {
 			return cached, []Error{}
