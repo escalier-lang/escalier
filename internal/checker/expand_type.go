@@ -243,8 +243,19 @@ func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident type_system.QualIden
 func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.EnterResult {
 	switch t := t.(type) {
 	case *type_system.FuncType:
+		if v.expandTypeRefsCount == 0 {
+			// When not expanding TypeRefs, skip FuncType children entirely.
+			// FuncType's ExitType only decrements skipTypeRefsCount (no expansion),
+			// so traversing children is pointless overhead that creates fresh
+			// wrapper pointers, breaking pointer-equality checks (#472).
+			return type_system.EnterResult{SkipChildren: true}
+		}
 		v.skipTypeRefsCount++ // don't expand type refs inside function types
 	case *type_system.ObjectType:
+		if v.expandTypeRefsCount == 0 {
+			// Same as FuncType above (#472).
+			return type_system.EnterResult{SkipChildren: true}
+		}
 		v.skipTypeRefsCount++ // don't expand type refs inside object types
 	case *type_system.TypeRefType:
 		// Skip child traversal for TypeRefTypes that will be expanded.
