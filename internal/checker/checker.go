@@ -25,6 +25,9 @@ type Checker struct {
 }
 
 func NewChecker(ctx context.Context) *Checker {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &Checker{
 		ctx:                   ctx,
 		TypeVarID:             0,
@@ -58,8 +61,8 @@ func (c *Checker) checkTimeout() {
 // provided error slice. Must be called via defer at top-level entry points.
 func recoverTimeout(errors *[]Error) {
 	if r := recover(); r != nil {
-		if _, ok := r.(TypeCheckTimeoutError); ok {
-			*errors = append(*errors, TypeCheckTimeoutError{})
+		if v, ok := r.(TypeCheckTimeoutError); ok {
+			*errors = append(*errors, v)
 		} else {
 			panic(r) // re-panic for non-timeout panics
 		}

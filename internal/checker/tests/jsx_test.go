@@ -530,6 +530,7 @@ func TestIntrinsicElementInvalidPropType(t *testing.T) {
 		// TODO(#472): This case triggers an infinite loop in unifyPruned's non-TypeRef
 		// expansion path when checking boolean against the onChange EventHandler type.
 		// The timeout catches it, but ideally this should produce a proper type error.
+		// Once #472 is fixed, tighten errorSubstr to just "EventHandler".
 		"InputOnChangeWithBoolean": {
 			input:       `val elem = <input onChange={true} />`,
 			errorSubstr: "EventHandler|Type checking timed out", // May timeout due to expansion loop bug
