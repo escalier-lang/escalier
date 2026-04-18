@@ -57,28 +57,63 @@ func interfaceDataPointer(t type_system.Type) unsafe.Pointer {
 
 // typeArgKey produces a stable, deterministic string key for type arguments.
 // For TypeVarType, it uses TypeVar.ID (stable regardless of binding state).
+// For TypeRefType with a resolved TypeAlias, it uses the alias pointer address
+// plus the recursive typeArgKey of its own type args. This prevents unbounded
+// key growth for recursive type aliases (e.g. Array<Json> where
+// Json = string | ... | Array<Json>) — see #463.
 // For all other types, it uses fmt.Sprint (structural comparison).
-//
-// Known limitation: this only handles TypeVarType at the top level of a type
-// arg. If a type arg is a structural type containing an embedded TypeVar
-// (e.g. {x: TypeVar#42, y: string}), fmt.Sprint will print the TypeVar's
-// bound value, which could change mid-pass during unification. This would
-// require a type arg like List<{x: T}> where T gets bound between two
-// encounters of the same TypeRefType. If the key proves unstable, this
-// function should be made recursive: walk the full type structure using the
-// visitor pattern, emitting TypeVar.ID for any TypeVarType at any depth and
-// structural representation for everything else. See the "KNOWN LIMITATION"
-// section in planning/taming_recursion/plan_b_visited_set.md Step 4.
 func typeArgKey(args []type_system.Type) string {
 	parts := make([]string, len(args))
 	for i, arg := range args {
-		if tv, ok := arg.(*type_system.TypeVarType); ok {
-			parts[i] = fmt.Sprintf("$%d", tv.ID)
-		} else {
-			parts[i] = fmt.Sprint(arg)
-		}
+		parts[i] = typeKey(arg)
 	}
 	return strings.Join(parts, ",")
+}
+
+// typeKey produces a stable string key for a single type.
+// It recurses into container types (unions, intersections, tuples) so that
+// any embedded TypeRefType is represented by its TypeAlias pointer, not by
+// its structural expansion. This prevents unbounded key growth when
+// recursive type aliases are expanded (e.g. Json → string|Array<Json>
+// produces the same key regardless of how deeply Json has been unfolded).
+//
+// TODO(#467): Replace with PrintType(t, StableKeyConfig) once the
+// configurable printType function is available. This will extend stable-key
+// handling to all compound types (CondType, MutabilityType, FuncType, etc.)
+// without duplicating the String() logic.
+func typeKey(t type_system.Type) string {
+	switch v := t.(type) {
+	case *type_system.TypeVarType:
+		return fmt.Sprintf("$%d", v.ID)
+	case *type_system.TypeRefType:
+		if v.TypeAlias != nil {
+			if len(v.TypeArgs) == 0 {
+				return fmt.Sprintf("@%p", v.TypeAlias)
+			}
+			return fmt.Sprintf("@%p<%s>", v.TypeAlias, typeArgKey(v.TypeArgs))
+		}
+		return fmt.Sprint(v)
+	case *type_system.UnionType:
+		parts := make([]string, len(v.Types))
+		for i, u := range v.Types {
+			parts[i] = typeKey(u)
+		}
+		return "(" + strings.Join(parts, " | ") + ")"
+	case *type_system.IntersectionType:
+		parts := make([]string, len(v.Types))
+		for i, u := range v.Types {
+			parts[i] = typeKey(u)
+		}
+		return "(" + strings.Join(parts, " & ") + ")"
+	case *type_system.TupleType:
+		parts := make([]string, len(v.Elems))
+		for i, u := range v.Elems {
+			parts[i] = typeKey(u)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return fmt.Sprint(t)
+	}
 }
 
 // noMatchError is a sentinel error indicating that no case in unifyMatched

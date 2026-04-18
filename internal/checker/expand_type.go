@@ -237,6 +237,16 @@ func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.EnterRe
 		v.skipTypeRefsCount++ // don't expand type refs inside function types
 	case *type_system.ObjectType:
 		v.skipTypeRefsCount++ // don't expand type refs inside object types
+	case *type_system.TypeRefType:
+		// Skip child traversal for TypeRefTypes that will be expanded.
+		// TypeRefType.Accept normally visits TypeArgs before ExitType, but
+		// this expands recursive type args (e.g. Json → string|...|Array<Json>),
+		// creating ever-growing TypeArgs that defeat cycle detection (#463).
+		// ExitType handles TypeArgs expansion explicitly with cycle detection.
+		_ = t
+		if v.skipTypeRefsCount == 0 && v.expandTypeRefsCount != 0 {
+			return type_system.EnterResult{SkipChildren: true}
+		}
 	case *type_system.CondType:
 		// We need to expand the CondType's extends type on entering so that
 		// we can replace InferTypes in the extends type with fresh type variables
@@ -529,6 +539,22 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		// - ensure that the number of type args matches the number of type params
 		// - handle type params with defaults
 		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
+			// Expand TypeArgs before substitution. EnterType sets SkipChildren
+			// for expandable TypeRefTypes to prevent the visitor from expanding
+			// TypeArgs (which defeats cycle detection for recursive types, #463).
+			// We expand them here explicitly using the same `seen` map so that
+			// recursive args (e.g. Json in Array<Json>) are detected as cycles
+			// and left unexpanded, while non-recursive args (e.g. NumberContainer
+			// in Container<NumberContainer>) are expanded normally.
+			expandedArgs := make([]type_system.Type, len(t.TypeArgs))
+			for i, arg := range t.TypeArgs {
+				exp, _ := v.checker.expandTypeWithConfig(v.ctx, arg, v.expandTypeRefsCount, v.insideKeyOfTarget, v.seen)
+				if exp != nil {
+					expandedArgs[i] = exp
+				} else {
+					expandedArgs[i] = arg
+				}
+			}
 
 			// TODO:
 			// Handle case such as:
@@ -538,7 +564,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			// of any other type.
 			switch prunedType := type_system.Prune(expandedType).(type) {
 			case *type_system.CondType:
-				substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, t.TypeArgs)
+				substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, expandedArgs)
 				if len(subSetErrors) > 0 {
 					v.errors = slices.Concat(v.errors, subSetErrors)
 				}
@@ -553,16 +579,16 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 					// Create a union type of all expanded types
 					expandedType = type_system.NewUnionType(nil, expandedTypes...)
 				} else {
-					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+					substitutions := createTypeParamSubstitutions(expandedArgs, typeAlias.TypeParams)
 					expandedType = SubstituteTypeParams(prunedType, substitutions)
 				}
 			case *type_system.ObjectType:
 				// Expand any MappedElem elements in the object type
-				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+				substitutions := createTypeParamSubstitutions(expandedArgs, typeAlias.TypeParams)
 				objType := SubstituteTypeParams(prunedType, substitutions)
 				expandedType = v.expandMappedElems(objType)
 			default:
-				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+				substitutions := createTypeParamSubstitutions(expandedArgs, typeAlias.TypeParams)
 				expandedType = SubstituteTypeParams(prunedType, substitutions)
 			}
 		} else if len(typeAlias.TypeParams) == 0 && len(t.TypeArgs) == 0 {
