@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -685,9 +686,19 @@ func Prelude(c *Checker) *Scope {
 	if cachedGlobalScope != nil {
 		c.SymbolID = cachedSymbolIDCounter
 		c.CustomMatcherSymbolID = cachedCustomMatcherSymbolID
-		c.GlobalScope = cachedGlobalScope
+		// Shallow-copy the cached global scope's namespace so that mutations
+		// (e.g. processExportAsNamespace adding to Namespaces) don't pollute
+		// the cache across test runs with -count>1.
+		cachedNs := cachedGlobalScope.Namespace
+		c.GlobalScope = &Scope{
+			Namespace: &type_system.Namespace{
+				Values:     maps.Clone(cachedNs.Values),
+				Types:      maps.Clone(cachedNs.Types),
+				Namespaces: maps.Clone(cachedNs.Namespaces),
+			},
+		}
 		c.PackageRegistry.CopyFrom(cachedPackageRegistry)
-		return cachedGlobalScope.WithNewScope()
+		return c.GlobalScope.WithNewScope()
 	}
 
 	// Initialize the global scope for the first time

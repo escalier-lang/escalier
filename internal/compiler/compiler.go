@@ -165,7 +165,7 @@ func CheckBinScript(ctx context.Context, libNS *type_system.Namespace, src *ast.
 }
 
 func Compile(source *ast.Source) CompilerOutput {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
@@ -228,7 +228,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	output := CompilerOutput{
@@ -350,7 +350,7 @@ func collectUsedLibSymbols(script *ast.Script, libNS *type_system.Namespace) []s
 // TODO: Update this so that we inject an `import` statement at the start of
 // each script source to import the `lib` namespace.
 func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOutput {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
