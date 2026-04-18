@@ -148,7 +148,8 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 			return true
 		}
 		if !providedProps.Contains(propName) {
-			errors = append(errors, &MissingRequiredPropError{stackTraceBase: newStackTraceBase(), 
+			errors = append(errors, &MissingRequiredPropError{
+				stackTraceBase: newStackTraceBase(),
 				PropName:   propName,
 				ObjectType: propsType,
 				span:       getSpanFromType(attrType),
@@ -341,7 +342,8 @@ func (c *Checker) validateChildrenType(
 		if childrenPropExists && !childrenPropOptional {
 			// Children prop is required but not provided
 			return []Error{
-				&MissingRequiredPropError{stackTraceBase: newStackTraceBase(), 
+				&MissingRequiredPropError{
+					stackTraceBase: newStackTraceBase(),
 					PropName:   "children",
 					ObjectType: propsType,
 					span:       expr.Span(),
@@ -359,7 +361,8 @@ func (c *Checker) validateChildrenType(
 		}
 		// Custom component doesn't have a children prop - report error
 		return []Error{
-			&UnexpectedChildrenError{stackTraceBase: newStackTraceBase(), 
+			&UnexpectedChildrenError{
+				stackTraceBase: newStackTraceBase(),
 				ComponentName: ast.QualIdentToString(expr.Opening.Name),
 				span:          expr.Span(),
 			},
@@ -385,7 +388,8 @@ func (c *Checker) validateKeyProp(ctx Context, keyType type_system.Type, span as
 	unifyErrors := c.Unify(ctx, keyType, expectedKeyType)
 	if len(unifyErrors) > 0 {
 		// Replace with a more specific error message
-		return []Error{&InvalidKeyPropError{stackTraceBase: newStackTraceBase(), 
+		return []Error{&InvalidKeyPropError{
+			stackTraceBase: newStackTraceBase(),
 			ActualType: keyType,
 			span:       span,
 		}}
@@ -519,7 +523,8 @@ func (c *Checker) resolveJSXComponentType(ctx Context, tagName ast.QualIdent) (t
 				return type_system.NewNamespaceType(nil, namespace), nil
 			}
 			// Unknown component
-			return nil, []Error{&UnknownComponentError{stackTraceBase: newStackTraceBase(), 
+			return nil, []Error{&UnknownComponentError{
+				stackTraceBase: newStackTraceBase(),
 				Name: name.Name,
 				span: name.Span(),
 			}}
@@ -602,7 +607,8 @@ func (c *Checker) getJSXElementType(ctx Context, span ast.Span) (type_system.Typ
 	jsxNamespace := ctx.Scope.getNamespace("JSX")
 
 	if jsxNamespace == nil {
-		return nil, []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
+		return nil, []Error{&GenericError{
+			stackTraceBase: newStackTraceBase(),
 			message: "JSX namespace not found. Make sure @types/react is installed.",
 			span:    span,
 		}}
@@ -614,7 +620,8 @@ func (c *Checker) getJSXElementType(ctx Context, span ast.Span) (type_system.Typ
 		return elementAlias.Type, nil
 	}
 
-	return nil, []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
+	return nil, []Error{&GenericError{
+		stackTraceBase: newStackTraceBase(),
 		message: "JSX.Element type not found in JSX namespace.",
 		span:    span,
 	}}

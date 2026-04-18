@@ -284,7 +284,8 @@ func (c *Checker) validateTypeParams(
 
 	// Check if the number of type parameters match
 	if len(existingParams) != len(newParams) {
-		errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &TypeParamMismatchError{
+			stackTraceBase: newStackTraceBase(),
 			InterfaceName: interfaceName,
 			ExistingCount: len(existingParams),
 			NewCount:      len(newParams),
@@ -301,7 +302,8 @@ func (c *Checker) validateTypeParams(
 
 		// Check if names match
 		if existing.Name != new.Name {
-			errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
+			errors = append(errors, &TypeParamMismatchError{
+				stackTraceBase: newStackTraceBase(),
 				InterfaceName: interfaceName,
 				message:       fmt.Sprintf("Type parameter at position %d has name '%s' but was previously declared with name '%s'", i, new.Name, existing.Name),
 				span:          span,
@@ -310,7 +312,8 @@ func (c *Checker) validateTypeParams(
 
 		// Check if constraints match
 		if (existing.Constraint == nil) != (new.Constraint == nil) {
-			errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
+			errors = append(errors, &TypeParamMismatchError{
+				stackTraceBase: newStackTraceBase(),
 				InterfaceName: interfaceName,
 				message:       fmt.Sprintf("Type parameter '%s' constraint mismatch in interface '%s'", new.Name, interfaceName),
 				span:          span,
@@ -319,7 +322,8 @@ func (c *Checker) validateTypeParams(
 			// Both have constraints, check if they're compatible
 			unifyErrors := c.Unify(ctx, existing.Constraint, new.Constraint)
 			if len(unifyErrors) > 0 {
-				errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
+				errors = append(errors, &TypeParamMismatchError{
+					stackTraceBase: newStackTraceBase(),
 					InterfaceName: interfaceName,
 					message:       fmt.Sprintf("Type parameter '%s' has incompatible constraint in interface '%s'", new.Name, interfaceName),
 					span:          span,
@@ -334,7 +338,8 @@ func (c *Checker) validateTypeParams(
 			// Both have defaults, check if they're compatible
 			unifyErrors := c.Unify(ctx, existing.Default, new.Default)
 			if len(unifyErrors) > 0 {
-				errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
+				errors = append(errors, &TypeParamMismatchError{
+					stackTraceBase: newStackTraceBase(),
 					InterfaceName: interfaceName,
 					message:       fmt.Sprintf("Type parameter '%s' has incompatible default in interface '%s'", new.Name, interfaceName),
 					span:          span,

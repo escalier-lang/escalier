@@ -20,7 +20,8 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// 1. Resolve @types/react location
 	reactTypesDir, err := resolver.ResolveTypesPackage("react", sourceDir)
 	if err != nil {
-		return []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
+		return []Error{&GenericError{
+			stackTraceBase: newStackTraceBase(),
 			message: "Could not find @types/react: " + err.Error(),
 			span:    DEFAULT_SPAN,
 		}}
@@ -29,7 +30,8 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// 2. Find entry point
 	entryPoint, err := resolver.GetTypesEntryPoint(reactTypesDir)
 	if err != nil {
-		return []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
+		return []Error{&GenericError{
+			stackTraceBase: newStackTraceBase(),
 			message: "Could not find entry point for @types/react: " + err.Error(),
 			span:    DEFAULT_SPAN,
 		}}
@@ -46,7 +48,8 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 		}
 		fmt.Fprintf(os.Stderr, "@types/react already loaded, injecting into scope\n")
 		if err := c.injectReactTypes(ctx, pkgNs); err != nil {
-			return []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
+			return []Error{&GenericError{
+				stackTraceBase: newStackTraceBase(),
 				message: "Failed to inject cached React types: " + err.Error(),
 				span:    DEFAULT_SPAN,
 			}}
@@ -57,7 +60,8 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// 4. Load and classify the main entry point using existing infrastructure
 	parsedTypeDef, loadErr := parseTypeDef(entryPoint)
 	if loadErr != nil {
-		return []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
+		return []Error{&GenericError{
+			stackTraceBase: newStackTraceBase(),
 			message: "Could not load @types/react: " + loadErr.Error(),
 			span:    DEFAULT_SPAN,
 		}}
@@ -72,7 +76,8 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// 6. Verify JSX namespace exists (report error if not found)
 	// The actual injection is done by injectReactTypes below.
 	if _, ok := pkgNs.GetNamespace("JSX"); !ok {
-		errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &GenericError{
+			stackTraceBase: newStackTraceBase(),
 			message: "JSX namespace not found in React package namespace",
 			span:    DEFAULT_SPAN,
 		})
@@ -81,7 +86,8 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	// 7. Always register in PackageRegistry for caching (even if partially populated)
 	// This prevents re-parsing on subsequent calls
 	if regErr := c.PackageRegistry.Register(entryPoint, pkgNs); regErr != nil {
-		errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &GenericError{
+			stackTraceBase: newStackTraceBase(),
 			message: "Failed to register @types/react: " + regErr.Error(),
 			span:    DEFAULT_SPAN,
 		})
@@ -89,7 +95,8 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 
 	// 8. Inject types into current scope (React namespace and JSX namespace)
 	if err := c.injectReactTypes(ctx, pkgNs); err != nil {
-		errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &GenericError{
+			stackTraceBase: newStackTraceBase(),
 			message: "Failed to inject React types: " + err.Error(),
 			span:    DEFAULT_SPAN,
 		})

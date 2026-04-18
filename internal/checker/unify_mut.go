@@ -45,7 +45,8 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *type_system.MutabilityType) 
 	}
 
 	// Types are not equal, return unification error
-	return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
+	return []Error{&CannotUnifyTypesError{
+		stackTraceBase: newStackTraceBase(),
 		T1: mut1,
 		T2: mut2,
 	}}

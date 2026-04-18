@@ -216,7 +216,8 @@ func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident type_system.QualIden
 		} else if namespace := v.ctx.Scope.getNamespace(id.Name); namespace != nil {
 			return type_system.NewNamespaceType(prov, namespace)
 		} else {
-			v.errors = append(v.errors, &UnknownIdentifierError{stackTraceBase: newStackTraceBase(), 
+			v.errors = append(v.errors, &UnknownIdentifierError{
+				stackTraceBase: newStackTraceBase(),
 				Ident: ast.NewIdent(id.Name, span),
 				span:  span,
 			})
@@ -814,7 +815,8 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 							return restElemType(rest, restIndex), errors
 						}
 					}
-					errors = append(errors, &OutOfBoundsError{stackTraceBase: newStackTraceBase(), 
+					errors = append(errors, &OutOfBoundsError{
+						stackTraceBase: newStackTraceBase(),
 						Index:  index,
 						Length: fixedCount,
 						span:   indexKey.Span(),
@@ -822,7 +824,8 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 					return type_system.NewNeverType(nil), errors
 				}
 			}
-			errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
+			errors = append(errors, &InvalidObjectKeyError{
+				stackTraceBase: newStackTraceBase(),
 				Key:  indexKey.Type,
 				span: indexKey.Span(),
 			})
@@ -916,7 +919,8 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			} else if namespace, ok := t.Namespace.GetNamespace(propKey.Name); ok {
 				return type_system.NewNamespaceType(nil, namespace), errors
 			} else {
-				errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
+				errors = append(errors, &UnknownPropertyError{
+					stackTraceBase: newStackTraceBase(),
 					ObjectType: objType,
 					Property:   propKey.Name,
 					span:       propKey.Span(),
@@ -1235,7 +1239,8 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			return c.addPropertyToOpenObject(objType, k.Name, k), errors
 		}
 
-		errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &UnknownPropertyError{
+			stackTraceBase: newStackTraceBase(),
 			ObjectType: objType,
 			Property:   k.Name,
 			span:       k.Span(),
@@ -1466,7 +1471,8 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 
-		errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &InvalidObjectKeyError{
+			stackTraceBase: newStackTraceBase(),
 			Key:  keyType,
 			span: k.Span(),
 		})
@@ -1821,14 +1827,16 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 		if !foundAny {
 			// Property doesn't exist in any part of the intersection
 			if propKey, ok := key.(PropertyKey); ok {
-				errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
+				errors = append(errors, &UnknownPropertyError{
+					stackTraceBase: newStackTraceBase(),
 					ObjectType: intersectionType,
 					Property:   propKey.Name,
 					span:       propKey.Span(),
 				})
 			} else {
 				indexKey := key.(IndexKey)
-				errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
+				errors = append(errors, &InvalidObjectKeyError{
+					stackTraceBase: newStackTraceBase(),
 					Key:  indexKey.Type,
 					span: indexKey.Span(),
 				})
@@ -1883,14 +1891,16 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	// If no part has this property, report error
 	if propKey, ok := key.(PropertyKey); ok {
-		errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &UnknownPropertyError{
+			stackTraceBase: newStackTraceBase(),
 			ObjectType: intersectionType,
 			Property:   propKey.Name,
 			span:       propKey.Span(),
 		})
 	} else {
 		indexKey := key.(IndexKey)
-		errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
+		errors = append(errors, &InvalidObjectKeyError{
+			stackTraceBase: newStackTraceBase(),
 			Key:  indexKey.Type,
 			span: indexKey.Span(),
 		})
