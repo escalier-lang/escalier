@@ -179,6 +179,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"TupleWithRestSpreadArray": {
 			input: "[number, ...Array<string>]",
 		},
+		"UnionOfFunctions": {
+			input: "(fn (x: number) -> string) | (fn (x: string) -> number)",
+		},
+		"IntersectionOfFunctions": {
+			input: "(fn (x: number) -> string) & (fn (x: string) -> number)",
+		},
 	}
 
 	for name, test := range tests {

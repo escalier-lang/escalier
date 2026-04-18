@@ -797,7 +797,7 @@ func TestFunctionOverloads(t *testing.T) {
 				val result = format(42)
 			`,
 			expectedVars: map[string]string{
-				"format": "fn (value: number) -> string & fn (value: string) -> string",
+				"format": "(fn (value: number) -> string) & (fn (value: string) -> string)",
 				"result": "string",
 			},
 			wantErr: false,
@@ -809,7 +809,7 @@ func TestFunctionOverloads(t *testing.T) {
 				val result = format("hello")
 			`,
 			expectedVars: map[string]string{
-				"format": "fn (value: number) -> string & fn (value: string) -> string",
+				"format": "(fn (value: number) -> string) & (fn (value: string) -> string)",
 				"result": "string",
 			},
 			wantErr: false,
@@ -908,7 +908,7 @@ func TestFunctionOverloads(t *testing.T) {
 				declare fn format(value: string) -> string
 			`,
 			expectedVars: map[string]string{
-				"format": "fn (value: number) -> string & fn (value: string) -> string",
+				"format": "(fn (value: number) -> string) & (fn (value: string) -> string)",
 			},
 			wantErr: false,
 		},

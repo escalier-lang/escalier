@@ -617,7 +617,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val str2 = format("hello")
 			`,
 			expectedTypes: map[string]string{
-				"format": "fn (value: number) -> string & fn (value: string) -> string",
+				"format": "(fn (value: number) -> string) & (fn (value: string) -> string)",
 				"str1":   "string",
 				"str2":   "string",
 			},
@@ -846,7 +846,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 & fn (arg0: \"hello\") -> T1) -> [T0, T1]",
+				"foo": "fn <T0, T1>(f: (fn (arg0: 5) -> T0) & (fn (arg0: \"hello\") -> T1)) -> [T0, T1]",
 			},
 		},
 		"InferredFuncCalledWithSameKindLiterals": {
@@ -856,7 +856,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 & fn (arg0: 10) -> T1) -> [T0, T1]",
+				"foo": "fn <T0, T1>(f: (fn (arg0: 5) -> T0) & (fn (arg0: 10) -> T1)) -> [T0, T1]",
 			},
 		},
 		"InferredFuncCalledWithDifferentArgCounts": {
@@ -896,7 +896,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 & fn (arg0: \"hello\") -> T1) -> [T0, T1]",
+				"foo": "fn <T0, T1>(f: (fn (arg0: 5) -> T0) & (fn (arg0: \"hello\") -> T1)) -> [T0, T1]",
 			},
 		},
 		"InferredFuncCalledWithSameKindLiterals_fn": {
@@ -906,7 +906,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(f: fn (arg0: 5) -> T0 & fn (arg0: 10) -> T1) -> [T0, T1]",
+				"foo": "fn <T0, T1>(f: (fn (arg0: 5) -> T0) & (fn (arg0: 10) -> T1)) -> [T0, T1]",
 			},
 		},
 		"UncalledCallbackParam_fn": {

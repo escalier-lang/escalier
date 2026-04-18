@@ -21,13 +21,60 @@ type PrintConfig struct {
 	TypeRefStyle func(tr *TypeRefType) string
 }
 
+// Precedence levels for type operators, matching the Escalier parser.
+// Higher values bind more tightly.
+const (
+	precFunc         = 2 // fn (...) -> T  — return type is greedy, needs parens in union/intersection
+	precUnion        = 3 // A | B
+	precIntersection = 4 // A & B
+	precPrefix       = 5 // keyof T, mut T, ...T
+	precAtom         = 6 // primary types, never need parens
+)
+
+// typePrec returns the precedence of a type for printing purposes.
+// Types that resolve to a bound TypeVar use the precedence of the resolved type.
+func typePrec(t Type) int {
+	switch v := t.(type) {
+	case *TypeVarType:
+		if v.Instance != nil {
+			return typePrec(resolveTypeVar(v))
+		}
+		return precAtom
+	case *UnionType:
+		return precUnion
+	case *IntersectionType:
+		return precIntersection
+	case *FuncType:
+		return precFunc
+	case *KeyOfType, *MutabilityType, *RestSpreadType:
+		return precPrefix
+	default:
+		return precAtom
+	}
+}
+
 // PrintType converts a Type to its string representation using the given config.
 // All recursive child-type printing uses the same config, so custom styles
 // for TypeVarType and TypeRefType are applied consistently throughout.
+// Parentheses are inserted where needed based on operator precedence.
 func PrintType(t Type, config PrintConfig) string {
-	// pt is the recursive printer closure used throughout.
+	return printTypeInner(t, config)
+}
+
+// printTypeMinPrec prints a child type, wrapping it in parentheses if its
+// precedence is lower than the required minimum.
+func printTypeMinPrec(t Type, config PrintConfig, minPrec int) string {
+	result := printTypeInner(t, config)
+	if typePrec(t) < minPrec {
+		return "(" + result + ")"
+	}
+	return result
+}
+
+func printTypeInner(t Type, config PrintConfig) string {
+	// pt prints a child with no precedence constraint (e.g. inside delimiters).
 	pt := func(child Type) string {
-		return PrintType(child, config)
+		return printTypeInner(child, config)
 	}
 
 	switch v := t.(type) {
@@ -36,7 +83,7 @@ func PrintType(t Type, config PrintConfig) string {
 			return config.TypeVarStyle(v)
 		}
 		if v.Instance != nil {
-			return PrintType(resolveTypeVar(v), config)
+			return printTypeInner(resolveTypeVar(v), config)
 		}
 		result := "t" + fmt.Sprint(v.ID)
 		if v.Constraint != nil {
@@ -103,22 +150,22 @@ func PrintType(t Type, config PrintConfig) string {
 		return printTupleType(v, pt)
 
 	case *RestSpreadType:
-		return "..." + pt(v.Type)
+		return "..." + printTypeMinPrec(v.Type, config, precPrefix)
 
 	case *UnionType:
-		return printUnionType(v, pt)
+		return printUnionType(v, config)
 
 	case *IntersectionType:
-		return printIntersectionType(v, pt)
+		return printIntersectionType(v, config)
 
 	case *KeyOfType:
-		return "keyof " + pt(v.Type)
+		return "keyof " + printTypeMinPrec(v.Type, config, precPrefix)
 
 	case *TypeOfType:
 		return "typeof " + QualIdentToString(v.Ident)
 
 	case *IndexType:
-		return pt(v.Target) + "[" + pt(v.Index) + "]"
+		return printTypeMinPrec(v.Target, config, precAtom) + "[" + pt(v.Index) + "]"
 
 	case *CondType:
 		return "if " + pt(v.Check) + " : " + pt(v.Extends) + " { " + pt(v.Then) + " } else { " + pt(v.Else) + " }"
@@ -127,7 +174,7 @@ func PrintType(t Type, config PrintConfig) string {
 		return "infer " + v.Name
 
 	case *MutabilityType:
-		return printMutabilityType(v, pt)
+		return printMutabilityType(v, config)
 
 	case *WildcardType:
 		return "_"
@@ -470,38 +517,43 @@ func printTupleType(t *TupleType, pt func(Type) string) string {
 	return result
 }
 
-func printUnionType(t *UnionType, pt func(Type) string) string {
+func printUnionType(t *UnionType, config PrintConfig) string {
 	result := ""
 	if len(t.Types) > 0 {
 		for i, typ := range t.Types {
 			if i > 0 {
 				result += " | "
 			}
-			result += pt(typ)
+			// Union children must have at least union precedence;
+			// intersections and atoms print bare, but a nested union
+			// (which can't occur after normalization) would need parens.
+			result += printTypeMinPrec(typ, config, precUnion)
 		}
 	}
 	return result
 }
 
-func printIntersectionType(t *IntersectionType, pt func(Type) string) string {
+func printIntersectionType(t *IntersectionType, config PrintConfig) string {
 	result := ""
 	if len(t.Types) > 0 {
 		for i, typ := range t.Types {
 			if i > 0 {
 				result += " & "
 			}
-			result += pt(typ)
+			// Intersection children must have at least intersection
+			// precedence; a union child gets wrapped in parens.
+			result += printTypeMinPrec(typ, config, precIntersection)
 		}
 	}
 	return result
 }
 
-func printMutabilityType(t *MutabilityType, pt func(Type) string) string {
+func printMutabilityType(t *MutabilityType, config PrintConfig) string {
 	switch t.Mutability {
 	case MutabilityUncertain:
-		return "mut? " + pt(t.Type)
+		return "mut? " + printTypeMinPrec(t.Type, config, precPrefix)
 	case MutabilityMutable:
-		return "mut " + pt(t.Type)
+		return "mut " + printTypeMinPrec(t.Type, config, precPrefix)
 	default:
 		panic(fmt.Sprintf("unexpected mutability value: %q", t.Mutability))
 	}

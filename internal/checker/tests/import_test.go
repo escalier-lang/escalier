@@ -45,7 +45,7 @@ func TestImportInferenceScript(t *testing.T) {
 				val useState = React.useState
 			`,
 			expectedValues: map[string]string{
-				"useState": "fn <S>(initialState: S | fn () -> S) -> [S, Dispatch<SetStateAction<S>>] & fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>]",
+				"useState": "(fn <S>(initialState: S | (fn () -> S)) -> [S, Dispatch<SetStateAction<S>>]) & (fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>])",
 			},
 		},
 	}
