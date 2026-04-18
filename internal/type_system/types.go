@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/escalier-lang/escalier/internal/provenance"
 	. "github.com/escalier-lang/escalier/internal/provenance"
@@ -256,14 +255,7 @@ func (t *TypeVarType) Equals(other Type) bool {
 }
 
 func (t *TypeVarType) String() string {
-	if t.Instance != nil {
-		return Prune(t).String()
-	}
-	result := "t" + fmt.Sprint(t.ID)
-	if t.Constraint != nil {
-		result += fmt.Sprintf(":%s", t.Constraint.String())
-	}
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type TypeAlias struct {
@@ -374,18 +366,7 @@ func (t *TypeRefType) Equals(other Type) bool {
 }
 
 func (t *TypeRefType) String() string {
-	result := QualIdentToString(t.Name)
-	if len(t.TypeArgs) > 0 {
-		result += "<"
-		for i, arg := range t.TypeArgs {
-			if i > 0 {
-				result += ", "
-			}
-			result += arg.String()
-		}
-		result += ">"
-	}
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type Prim string
@@ -451,21 +432,10 @@ func (t *PrimType) Equals(other Type) bool {
 }
 
 func (t *PrimType) String() string {
-	switch t.Prim {
-	case BoolPrim:
-		return "boolean"
-	case NumPrim:
-		return "number"
-	case StrPrim:
-		return "string"
-	case BigIntPrim:
-		return "bigint"
-	case SymbolPrim:
-		return "symbol"
-	default:
-		panic("unknown primitive type")
-	}
+	return PrintType(t, PrintConfig{})
 }
+
+
 
 type RegexType struct {
 	Regex      *regexp.Regexp
@@ -530,7 +500,7 @@ func (t *RegexType) Equals(other Type) bool {
 }
 
 func (t *RegexType) String() string {
-	return t.Regex.String()
+	return PrintType(t, PrintConfig{})
 }
 
 type LitType struct {
@@ -593,22 +563,7 @@ func (t *LitType) Equals(other Type) bool {
 }
 
 func (t *LitType) String() string {
-	switch lit := t.Lit.(type) {
-	case *StrLit:
-		return strconv.Quote(lit.Value)
-	case *NumLit:
-		return strconv.FormatFloat(lit.Value, 'f', -1, 32)
-	case *BoolLit:
-		return strconv.FormatBool(lit.Value)
-	case *BigIntLit:
-		return lit.Value.String()
-	case *NullLit:
-		return "null"
-	case *UndefinedLit:
-		return "undefined"
-	default:
-		panic("unknown literal type")
-	}
+	return PrintType(t, PrintConfig{})
 }
 
 type UniqueSymbolType struct {
@@ -641,7 +596,7 @@ func (t *UniqueSymbolType) Equals(other Type) bool {
 }
 
 func (t *UniqueSymbolType) String() string {
-	return "symbol" + fmt.Sprint(t.Value)
+	return PrintType(t, PrintConfig{})
 }
 
 type UnknownType struct {
@@ -666,7 +621,7 @@ func (t *UnknownType) Equals(other Type) bool {
 }
 
 func (t *UnknownType) String() string {
-	return "unknown"
+	return PrintType(t, PrintConfig{})
 }
 
 type NeverType struct {
@@ -691,7 +646,7 @@ func (t *NeverType) Equals(other Type) bool {
 }
 
 func (t *NeverType) String() string {
-	return "never"
+	return PrintType(t, PrintConfig{})
 }
 
 // IsNeverType reports whether t is nil or a *NeverType.
@@ -725,7 +680,7 @@ func (t *ErrorType) Equals(other Type) bool {
 }
 
 func (t *ErrorType) String() string {
-	return "<error>"
+	return PrintType(t, PrintConfig{})
 }
 
 type VoidType struct {
@@ -750,7 +705,7 @@ func (t *VoidType) Equals(other Type) bool {
 }
 
 func (t *VoidType) String() string {
-	return "void"
+	return PrintType(t, PrintConfig{})
 }
 
 type AnyType struct {
@@ -775,7 +730,7 @@ func (t *AnyType) Equals(other Type) bool {
 }
 
 func (t *AnyType) String() string {
-	return "any"
+	return PrintType(t, PrintConfig{})
 }
 
 type GlobalThisType struct {
@@ -798,7 +753,7 @@ func (t *GlobalThisType) Equals(other Type) bool {
 }
 
 func (t *GlobalThisType) String() string {
-	return "this"
+	return PrintType(t, PrintConfig{})
 }
 
 type TypeParam struct {
@@ -830,24 +785,7 @@ type FuncParam struct {
 }
 
 func (p *FuncParam) String() string {
-	if p.Pattern == nil {
-		result := p.Type.String()
-		if p.Optional {
-			result += "?"
-		}
-		return result
-	}
-	switch p.Pattern.(type) {
-	case *TuplePat, *ObjectPat:
-		return patternStringWithInlineTypes(p.Pattern, p.Type)
-	default:
-		result := p.Pattern.String()
-		if p.Optional {
-			result += "?"
-		}
-		result += ": " + p.Type.String()
-		return result
-	}
+	return printFuncParam(p, func(t Type) string { return t.String() })
 }
 
 func NewFuncParam(pattern Pat, t Type) *FuncParam {
@@ -944,131 +882,6 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	return result
 }
 
-// patternStringWithInlineTypes prints a pattern with inline type annotations for object and tuple patterns
-func patternStringWithInlineTypes(pattern Pat, paramType Type) string {
-	return patternStringWithInlineTypesContext(pattern, paramType, "")
-}
-
-// patternStringWithInlineTypesContext prints a pattern with inline type annotations
-// context can be "tuple" or "object" to control the separator used for IdentPat
-func patternStringWithInlineTypesContext(pattern Pat, paramType Type, context string) string {
-	// Prune the type to resolve any type variables
-	paramType = Prune(paramType)
-
-	switch p := pattern.(type) {
-	case *ObjectPat:
-		if objType, ok := paramType.(*ObjectType); ok {
-			// Create a map of property names to their types for quick lookup
-			propTypes := make(map[string]Type)
-			propOptionals := make(map[string]bool)
-			for _, elem := range objType.Elems {
-				if propElem, ok := elem.(*PropertyElem); ok {
-					propTypes[propElem.Name.String()] = propElem.Value
-					propOptionals[propElem.Name.String()] = propElem.Optional
-				}
-			}
-
-			var elems []string
-			for _, elem := range p.Elems {
-				switch e := elem.(type) {
-				case *ObjKeyValuePat:
-					isOpt := propOptionals[e.Key]
-					colon := ": "
-					if isOpt {
-						colon = "?: "
-					}
-					if propType, exists := propTypes[e.Key]; exists {
-						if _, ok := e.Value.(*IdentPat); ok {
-							elems = append(elems, e.Key+colon+propType.String())
-						} else {
-							valueStr := patternStringWithInlineTypesContext(e.Value, propType, "object")
-							elems = append(elems, e.Key+": "+valueStr)
-						}
-					} else {
-						if _, ok := e.Value.(*IdentPat); ok {
-							elems = append(elems, e.Key+colon+paramType.String())
-						} else {
-							elems = append(elems, e.Key+": "+e.Value.String())
-						}
-					}
-				case *ObjShorthandPat:
-					isOpt := propOptionals[e.Key]
-					colon := ": "
-					if isOpt {
-						colon = "?: "
-					}
-					if propType, exists := propTypes[e.Key]; exists {
-						elems = append(elems, e.Key+colon+propType.String())
-					} else {
-						elems = append(elems, e.Key+colon)
-					}
-				case *ObjRestPat:
-					// Find the RestSpreadElem in the ObjectType and use its type
-					// for the inline display of the rest pattern binding.
-					var restType Type
-					for _, objElem := range objType.Elems {
-						if rest, ok := objElem.(*RestSpreadElem); ok {
-							restType = rest.Value
-							break
-						}
-					}
-					if restType != nil {
-						innerStr := patternStringWithInlineTypesContext(e.Pattern, restType, "object")
-						elems = append(elems, "..."+innerStr)
-					} else {
-						elems = append(elems, e.String())
-					}
-				}
-			}
-
-			result := "{"
-			for i, elem := range elems {
-				if i > 0 {
-					result += ", "
-				}
-				result += elem
-			}
-			result += "}"
-			return result
-		}
-	case *TuplePat:
-		if tupleType, ok := paramType.(*TupleType); ok {
-			var elems []string
-			for i, elem := range p.Elems {
-				if i < len(tupleType.Elems) {
-					// Recursively apply inline types to tuple elements
-					elemStr := patternStringWithInlineTypesContext(elem, tupleType.Elems[i], "tuple")
-					elems = append(elems, elemStr)
-				} else {
-					elems = append(elems, elem.String())
-				}
-			}
-
-			result := "["
-			for i, elem := range elems {
-				if i > 0 {
-					result += ", "
-				}
-				result += elem
-			}
-			result += "]"
-			return result
-		}
-	case *RestPat:
-		// For rest patterns in tuples like [first, ...rest], the paramType is
-		// a RestSpreadType wrapping the rest binding's type.
-		if rest, ok := paramType.(*RestSpreadType); ok {
-			innerStr := patternStringWithInlineTypesContext(p.Pattern, rest.Type, context)
-			return "..." + innerStr
-		}
-		return pattern.String()
-	case *IdentPat:
-		return p.Name + ": " + paramType.String()
-	}
-
-	// For other pattern types or when types don't match, fall back to default
-	return pattern.String()
-}
 
 func (t *FuncType) Equals(other Type) bool {
 	if other, ok := other.(*FuncType); ok {
@@ -1114,40 +927,7 @@ func (t *FuncType) Equals(other Type) bool {
 }
 
 func (t *FuncType) String() string {
-	result := "fn "
-	if len(t.TypeParams) > 0 {
-		result += "<"
-		for i, param := range t.TypeParams {
-			if i > 0 {
-				result += ", "
-			}
-			result += param.Name
-			if param.Constraint != nil {
-				result += ": " + param.Constraint.String()
-			}
-			if param.Default != nil {
-				result += " = " + param.Default.String()
-			}
-		}
-		result += ">"
-	}
-	result += "("
-	if len(t.Params) > 0 {
-		for i, param := range t.Params {
-			if i > 0 {
-				result += ", "
-			}
-			result += param.String()
-		}
-	}
-	result += ")"
-	if t.Return != nil {
-		result += " -> " + t.Return.String()
-	}
-	if !IsNeverType(t.Throws) {
-		result += " throws " + t.Throws.String()
-	}
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type ObjTypeKeyKind int
@@ -1644,101 +1424,7 @@ func collectFlatElems(elems []ObjTypeElem) []ObjTypeElem {
 }
 
 func (t *ObjectType) String() string {
-	result := "{"
-	flatElems := collectFlatElems(t.Elems)
-	if len(flatElems) > 0 {
-		for i, elem := range flatElems {
-			if i > 0 {
-				result += ", "
-			}
-			switch elem := elem.(type) {
-			case *CallableElem:
-				result += elem.Fn.String()
-			case *ConstructorElem:
-				result += "new " + elem.Fn.String()
-			case *MethodElem:
-				// TODO: update this to include `self` parameter
-				result += elem.Name.String()
-				if len(elem.Fn.TypeParams) > 0 {
-					result += "<"
-					for i, param := range elem.Fn.TypeParams {
-						if i > 0 {
-							result += ", "
-						}
-						result += param.Name
-						if param.Constraint != nil {
-							result += ": " + param.Constraint.String()
-						}
-						if param.Default != nil {
-							result += " = " + param.Default.String()
-						}
-					}
-					result += ">"
-				}
-				result += "("
-				if elem.MutSelf != nil {
-					if *elem.MutSelf {
-						result += "mut "
-					}
-					result += "self"
-				}
-				if len(elem.Fn.Params) > 0 {
-					for i, param := range elem.Fn.Params {
-						if i > 0 || elem.MutSelf != nil {
-							result += ", "
-						}
-						result += param.String()
-					}
-				}
-				result += ")"
-				if elem.Fn.Return != nil {
-					result += " -> " + elem.Fn.Return.String()
-				}
-				if !IsNeverType(elem.Fn.Throws) {
-					result += " throws " + elem.Fn.Throws.String()
-				}
-			case *GetterElem:
-				result += "get " + elem.Name.String() + "(self) -> " + elem.Fn.Return.String()
-				if !IsNeverType(elem.Fn.Throws) {
-					result += " throws " + elem.Fn.Throws.String()
-				}
-			case *SetterElem:
-				result += "set " + elem.Name.String() + "(mut self, "
-				if len(elem.Fn.Params) > 0 {
-					result += elem.Fn.Params[0].String()
-				}
-				result += ") -> undefined"
-				if !IsNeverType(elem.Fn.Throws) {
-					result += " throws " + elem.Fn.Throws.String()
-				}
-			case *PropertyElem:
-				if elem.Readonly {
-					result += "readonly "
-				}
-				result += elem.Name.String()
-				if elem.Optional {
-					result += "?"
-				}
-				result += ": " + elem.Value.String()
-			case *MappedElem:
-				// TODO: handle renaming
-				// TODO: handle optional and readonly
-				result += "[" + elem.TypeParam.Name + " in " + elem.TypeParam.Constraint.String() + "]"
-				result += ": " + elem.Value.String()
-			case *IndexSignatureElem:
-				if elem.Readonly {
-					result += "readonly "
-				}
-				result += "[key: " + elem.KeyType.String() + "]: " + elem.Value.String()
-			case *RestSpreadElem:
-				result += "..." + elem.Value.String()
-			default:
-				panic(fmt.Sprintf("unknown object type element: %#v\n", elem))
-			}
-		}
-	}
-	result += "}"
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type TupleType struct {
@@ -1792,16 +1478,7 @@ func (t *TupleType) Equals(other Type) bool {
 }
 
 func (t *TupleType) String() string {
-	result := "["
-	flatElems := collectFlatTupleElems(t.Elems)
-	for i, elem := range flatElems {
-		if i > 0 {
-			result += ", "
-		}
-		result += elem.String()
-	}
-	result += "]"
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 // collectFlatTupleElems collects all displayable elements from a TupleType,
@@ -1869,7 +1546,7 @@ func (t *RestSpreadType) Equals(other Type) bool {
 }
 
 func (t *RestSpreadType) String() string {
-	return "..." + t.Type.String()
+	return PrintType(t, PrintConfig{})
 }
 
 type UnionType struct {
@@ -2028,16 +1705,7 @@ func (t *UnionType) Equals(other Type) bool {
 }
 
 func (t *UnionType) String() string {
-	result := ""
-	if len(t.Types) > 0 {
-		for i, typ := range t.Types {
-			if i > 0 {
-				result += " | "
-			}
-			result += typ.String()
-		}
-	}
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type IntersectionType struct {
@@ -2234,16 +1902,7 @@ func (t *IntersectionType) Equals(other Type) bool {
 }
 
 func (t *IntersectionType) String() string {
-	result := ""
-	if len(t.Types) > 0 {
-		for i, typ := range t.Types {
-			if i > 0 {
-				result += " & "
-			}
-			result += typ.String()
-		}
-	}
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type KeyOfType struct {
@@ -2290,7 +1949,7 @@ func (t *KeyOfType) Equals(other Type) bool {
 }
 
 func (t *KeyOfType) String() string {
-	return "keyof " + t.Type.String()
+	return PrintType(t, PrintConfig{})
 }
 
 type TypeOfType struct {
@@ -2325,7 +1984,7 @@ func (t *TypeOfType) Equals(other Type) bool {
 }
 
 func (t *TypeOfType) String() string {
-	return "typeof " + QualIdentToString(t.Ident)
+	return PrintType(t, PrintConfig{})
 }
 
 type IndexType struct {
@@ -2373,7 +2032,7 @@ func (t *IndexType) Equals(other Type) bool {
 }
 
 func (t *IndexType) String() string {
-	return t.Target.String() + "[" + t.Index.String() + "]"
+	return PrintType(t, PrintConfig{})
 }
 
 type CondType struct {
@@ -2436,7 +2095,7 @@ func (t *CondType) Equals(other Type) bool {
 }
 
 func (t *CondType) String() string {
-	return "if " + t.Check.String() + " : " + t.Extends.String() + " { " + t.Then.String() + " } else { " + t.Else.String() + " }"
+	return PrintType(t, PrintConfig{})
 }
 
 type InferType struct {
@@ -2462,7 +2121,7 @@ func (t *InferType) Equals(other Type) bool {
 }
 
 func (t *InferType) String() string {
-	return "infer " + t.Name
+	return PrintType(t, PrintConfig{})
 }
 
 func NewInferType(provenance Provenance, name string) *InferType {
@@ -2520,14 +2179,7 @@ func (t *MutabilityType) Equals(other Type) bool {
 }
 
 func (t *MutabilityType) String() string {
-	switch t.Mutability {
-	case MutabilityUncertain:
-		return "mut? " + t.Type.String()
-	case MutabilityMutable:
-		return "mut " + t.Type.String()
-	default:
-		panic(fmt.Sprintf("unexpected mutability value: %q", t.Mutability))
-	}
+	return PrintType(t, PrintConfig{})
 }
 
 func NewMutableType(provenance Provenance, t Type) *MutabilityType {
@@ -2563,7 +2215,7 @@ func (t *WildcardType) Equals(other Type) bool {
 }
 
 func (t *WildcardType) String() string {
-	return "_"
+	return PrintType(t, PrintConfig{})
 }
 
 type ExtractorType struct {
@@ -2624,18 +2276,7 @@ func (t *ExtractorType) Equals(other Type) bool {
 }
 
 func (t *ExtractorType) String() string {
-	result := t.Extractor.String()
-	if len(t.Args) > 0 {
-		result += "("
-		for i, arg := range t.Args {
-			if i > 0 {
-				result += ", "
-			}
-			result += arg.String()
-		}
-		result += ")"
-	}
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type Quasi struct {
@@ -2703,16 +2344,7 @@ func (t *TemplateLitType) Equals(other Type) bool {
 }
 
 func (t *TemplateLitType) String() string {
-	result := "`"
-	for i, quasi := range t.Quasis {
-		result += quasi.Value
-		// Add the interpolated type if there is one at this position
-		if i < len(t.Types) {
-			result += "${" + t.Types[i].String() + "}"
-		}
-	}
-	result += "`"
-	return result
+	return PrintType(t, PrintConfig{})
 }
 
 type IntrinsicType struct {
@@ -2738,7 +2370,7 @@ func (t *IntrinsicType) Equals(other Type) bool {
 }
 
 func (t *IntrinsicType) String() string {
-	return t.Name
+	return PrintType(t, PrintConfig{})
 }
 
 // We want to model both `let x = 5` as well as `fn (x: number) => x`
@@ -2881,26 +2513,7 @@ func (t *NamespaceType) Equals(other Type) bool {
 }
 
 func (t *NamespaceType) String() string {
-	var builder strings.Builder
-	builder.WriteString("namespace {")
-	if len(t.Namespace.Values) > 0 {
-		for name, binding := range t.Namespace.Values {
-			builder.WriteString(name)
-			builder.WriteString(": ")
-			builder.WriteString(binding.Type.String())
-			builder.WriteString(", ")
-		}
-	}
-	if len(t.Namespace.Types) > 0 {
-		for name, typeAlias := range t.Namespace.Types {
-			builder.WriteString(name)
-			builder.WriteString(": ")
-			builder.WriteString(typeAlias.Type.String())
-			builder.WriteString(", ")
-		}
-	}
-	builder.WriteString("}")
-	return builder.String()
+	return PrintType(t, PrintConfig{})
 }
 
 // Helper functions for equality comparisons

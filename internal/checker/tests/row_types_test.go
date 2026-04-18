@@ -810,7 +810,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {process: fn (arg0: 42) -> T0 & fn (arg0: \"hello\") -> T1}) -> void",
+				"foo": "fn <T0, T1>(obj: {process: (fn (arg0: 42) -> T0) & (fn (arg0: \"hello\") -> T1)}) -> void",
 			},
 		},
 		"MethodReturnTypeIntersection": {
@@ -821,7 +821,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: {getValue: fn () -> number & fn () -> string}) -> void",
+				"foo": "fn (obj: {getValue: (fn () -> number) & (fn () -> string)}) -> void",
 			},
 		},
 		"MethodAndPropertyOnSameObject": {
