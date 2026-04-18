@@ -219,6 +219,10 @@ func (c *Checker) Unify(ctx Context, t1, t2 type_system.Type) []Error {
 	return c.unifyWithDepth(ctx, t1, t2, 0, make(unifySeen))
 }
 
+// unifyWithDepth is the internal entry point for unification. The depth parameter
+// is diagnostic-only (for logging/debugging) — it is NOT a termination mechanism.
+// Recursion termination is handled by the unifySeen visited set, which uses
+// co-inductive reasoning to assume success for re-encountered type pairs.
 func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot unify nil types")
@@ -277,11 +281,12 @@ func (c *Checker) unifyWithDepth(ctx Context, t1, t2 type_system.Type, depth int
 }
 
 // maxExpansionRetries is a safety net for the non-TypeRef expansion loop in
-// unifyPruned. With the visited-set cycle detection in place, this should
-// never be hit in practice — the loop terminates naturally when no further
-// expansion is possible. Empirically, the full test suite never exceeds 2
-// iterations. Kept as a defensive limit.
-const maxExpansionRetries = 100
+// unifyPruned. With the visited-set cycle detection (unifySeen/expandSeen)
+// in place, this should never be hit in practice — the loop terminates
+// naturally when no further expansion is possible. Empirically, the full
+// test suite never exceeds 2 iterations. Reduced from 100 to 10 after
+// Plan C verified that cycle detection reliably handles all recursion cases.
+const maxExpansionRetries = 10
 
 func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, depth int, seen unifySeen) []Error {
 	for attempt := 0; attempt < maxExpansionRetries; attempt++ {

@@ -19,8 +19,9 @@ import (
 // TODO(#455): The insideKeyOf field may be unnecessary. The expandSeen
 // visited set already detects cycles through TypeRefType's in-progress
 // marker, which handles the nested-keyof recursion case that
-// insideKeyOfTarget was designed to prevent. If insideKeyOfTarget is
-// removed, this field can be removed too.
+// insideKeyOfTarget was designed to prevent. Plan C (verify unification
+// recursion) confirmed this overlap but deferred removal to avoid risk.
+// If insideKeyOfTarget is removed, this field can be removed too.
 //
 // Note: expandTypeRefsCount is intentionally excluded from the key. The
 // expandTypeRefsCount == 0 check in ExitType returns nil before the cache
@@ -122,7 +123,9 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 	// Don't expand if following the alias chain leads back to the original
 	// TypeRefType (direct or transitive cycle). Walk the chain of
 	// TypeRefType → TypeAlias links with a visited set to detect cycles
-	// like A→B→A.
+	// like A→B→A. This overlaps with unifySeen/expandSeen cycle detection
+	// but is kept as an optimization to avoid entering ExpandType +
+	// unifyWithDepth for known simple alias cycles.
 	originName := type_system.QualIdentToString(t.Name)
 	visited := map[string]bool{originName: true}
 	cur := expandedType
@@ -348,7 +351,8 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		return distributed
 	case *type_system.KeyOfType:
 		// TODO(#455): This guard may be redundant now that expandSeen detects
-		// cycles via TypeRefType's in-progress marker. Evaluate removing it.
+		// cycles via TypeRefType's in-progress marker. Plan C confirmed the
+		// overlap but deferred removal to avoid risk. Evaluate removing it.
 		if v.insideKeyOfTarget > 0 {
 			return nil
 		}
