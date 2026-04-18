@@ -17,9 +17,10 @@ import (
 // Callers of this function should create a new scope when inferring a module.
 // If it's inferring global declarations then it's okay to omit that step.
 // TODO: Create separate InferModuleDepGraph and InferGlobalDepGraph functions?
-func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) []Error {
-	var errors []Error
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (errors []Error) {
+	defer recoverTimeout(&errors)
 	for _, component := range depGraph.Components {
+		c.checkTimeout()
 		declsErrors := c.InferComponent(ctx, depGraph, component)
 		errors = slices.Concat(errors, declsErrors)
 	}
@@ -1351,11 +1352,11 @@ const DEBUG = false
 // graph and codegen will ensure that the declarations are emitted in the correct
 // order.
 // TODO: all interface declarations in a namespace to shadow previous ones.
-func (c *Checker) InferModule(ctx Context, m *ast.Module) []Error {
+func (c *Checker) InferModule(ctx Context, m *ast.Module) (errors []Error) {
+	defer recoverTimeout(&errors)
 	clear(c.expandCache) // Reset cross-call expansion cache for this inference pass
 	clear(c.substCache)  // Reset substitution cache for this inference pass
 	clear(c.memberCache) // Reset per-member substitution cache for this inference pass
-	errors := []Error{}
 
 	// Phase 1: Create file scopes and process imports for each file.
 	// Import bindings are file-scoped (not visible to other files).

@@ -22,6 +22,7 @@ type Error interface {
 	IsWarning() bool
 }
 
+func (e TypeCheckTimeoutError) isError()                    {}
 func (e UnimplementedError) isError()                       {}
 func (e GenericError) isError()                             {}
 func (e InvalidObjectKeyError) isError()                    {}
@@ -61,6 +62,7 @@ func (e NonExhaustiveMatchError) isError()                  {}
 func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 
+func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
 func (e GenericError) IsWarning() bool                             { return false }
 func (e InvalidObjectKeyError) IsWarning() bool                    { return false }
@@ -99,6 +101,17 @@ func (e ConstructorUsedAsMatchTargetError) IsWarning() bool        { return fals
 func (e NonExhaustiveMatchError) IsWarning() bool                  { return false }
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
+
+// TypeCheckTimeoutError is returned when the type checker's context deadline
+// is exceeded, preventing infinite loops during unification or type expansion.
+type TypeCheckTimeoutError struct{}
+
+func (e TypeCheckTimeoutError) Span() ast.Span {
+	return DEFAULT_SPAN
+}
+func (e TypeCheckTimeoutError) Message() string {
+	return "Type checking timed out"
+}
 
 type CannotMutateImmutableError struct {
 	Type type_system.Type

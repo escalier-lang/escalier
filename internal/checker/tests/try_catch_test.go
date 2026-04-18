@@ -188,7 +188,7 @@ func TestTryCatchInferenceScript(t *testing.T) {
 			script, parseErrors := p.ParseScript()
 			assert.Empty(t, parseErrors, "Should parse without errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -399,7 +399,7 @@ func TestTryCatchInferenceModule(t *testing.T) {
 			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 			assert.Empty(t, parseErrors, "Should parse without errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,

@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/stretchr/testify/assert"
@@ -11,7 +13,9 @@ import (
 // TestGlobalScopeInitialization verifies that the global scope is properly
 // initialized when Prelude() is called.
 func TestGlobalScopeInitialization(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 
 	// Before calling Prelude, GlobalScope should be nil
 	assert.Nil(t, c.GlobalScope, "GlobalScope should be nil before Prelude is called")
@@ -32,7 +36,9 @@ func TestGlobalScopeInitialization(t *testing.T) {
 // TestGlobalScopeContainsBuiltins verifies that the global scope contains
 // TypeScript built-in types like Array, String, Number, etc.
 func TestGlobalScopeContainsBuiltins(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	_ = Prelude(c)
 
 	require.NotNil(t, c.GlobalScope, "GlobalScope should be set")
@@ -71,11 +77,13 @@ func TestGlobalScopeContainsBuiltins(t *testing.T) {
 // TestGlobalScopeReuse verifies that calling Prelude multiple times reuses
 // the cached global scope.
 func TestGlobalScopeReuse(t *testing.T) {
-	c1 := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c1 := NewChecker(ctx)
 	userScope1 := Prelude(c1)
 	globalScope1 := c1.GlobalScope
 
-	c2 := NewChecker()
+	c2 := NewChecker(ctx)
 	userScope2 := Prelude(c2)
 	globalScope2 := c2.GlobalScope
 
@@ -93,7 +101,9 @@ func TestGlobalScopeReuse(t *testing.T) {
 // TestGlobalScopeLookupChain verifies that lookups traverse the scope chain
 // correctly from user scope to global scope.
 func TestGlobalScopeLookupChain(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
 	require.NotNil(t, c.GlobalScope, "GlobalScope should be set")
@@ -116,7 +126,9 @@ func TestGlobalScopeLookupChain(t *testing.T) {
 // TestUserScopeIsolatedFromGlobalScope verifies that adding bindings to the
 // user scope doesn't affect the global scope.
 func TestUserScopeIsolatedFromGlobalScope(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 	userScope := Prelude(c)
 
 	// Count bindings in global scope before adding to user scope
@@ -149,7 +161,9 @@ func TestUserScopeIsolatedFromGlobalScope(t *testing.T) {
 // TestPackageRegistryInitialized verifies that the PackageRegistry is available
 // and can store named modules.
 func TestPackageRegistryInitialized(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 
 	// PackageRegistry should be initialized by NewChecker
 	require.NotNil(t, c.PackageRegistry, "PackageRegistry should be initialized")

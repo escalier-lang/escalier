@@ -81,7 +81,7 @@ func TestThrowExpressionInference(t *testing.T) {
 			assert.Empty(t, parseErrors, "Expected no parse errors")
 			assert.NotNil(t, script, "Expected script to be parsed successfully")
 
-			checker := NewChecker()
+			checker := NewChecker(ctx)
 			scope, errors := checker.InferScript(
 				Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false},
 				script,
@@ -157,7 +157,7 @@ func TestThrowExpressionUnification(t *testing.T) {
 			assert.Empty(t, parseErrors, "Expected no parse errors")
 			assert.NotNil(t, script, "Expected script to be parsed successfully")
 
-			checker := NewChecker()
+			checker := NewChecker(ctx)
 			_, errors := checker.InferScript(
 				Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false}, script)
 

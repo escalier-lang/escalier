@@ -64,7 +64,7 @@ func TestImportInferenceScript(t *testing.T) {
 			script, parseErrors := p.ParseScript()
 			assert.Empty(t, parseErrors, "Should parse without errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:                  Prelude(c),
 				IsAsync:                false,

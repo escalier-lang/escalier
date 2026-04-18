@@ -167,7 +167,7 @@ func TestCheckScriptNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -1717,7 +1717,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -1874,7 +1874,7 @@ func TestIfLetExprInference(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -2020,7 +2020,7 @@ func TestCheckModuleWithErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -2080,7 +2080,7 @@ func TestIssue371(t *testing.T) {
 	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 	assert.Len(t, parseErrors, 0)
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -2150,7 +2150,7 @@ func TestCheckScriptWithErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -2401,7 +2401,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -2454,7 +2454,7 @@ func TestExpandingTypeAliasMultipleTimes(t *testing.T) {
 	}
 	assert.Len(t, errors, 0)
 
-	c := NewChecker()
+	c := NewChecker(ctx)
 	inferCtx := Context{
 		Scope:      Prelude(c),
 		IsAsync:    false,
@@ -2531,7 +2531,7 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -3461,14 +3461,16 @@ func TestInferDepGraphWithNamespaceDependencies(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			depGraph, ctx := test.setup()
+			depGraph, inferCtx := test.setup()
 
 			// Run InferDepGraph
-			c := NewChecker()
-			errors := c.InferDepGraph(ctx, depGraph)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			c := NewChecker(ctx)
+			errors := c.InferDepGraph(inferCtx, depGraph)
 
 			// Verify results
-			test.expected(t, ctx.Scope.Namespace, errors)
+			test.expected(t, inferCtx.Scope.Namespace, errors)
 		})
 	}
 }
@@ -3485,7 +3487,9 @@ func newTestDepGraph() *dep_graph.DepGraph {
 }
 
 func TestExpandType(t *testing.T) {
-	checker := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	checker := NewChecker(ctx)
 
 	t.Run("Base types - return unchanged", func(t *testing.T) {
 		// Create a test context with an empty scope
@@ -4239,7 +4243,9 @@ func TestExpandType(t *testing.T) {
 }
 
 func TestExtractNamedCaptureGroups(t *testing.T) {
-	c := NewChecker()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
 
 	tests := []struct {
 		name     string
@@ -4450,7 +4456,7 @@ func TestMutableTypes(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -4706,7 +4712,7 @@ func TestMatchExprInference(t *testing.T) {
 			}
 			assert.Len(t, errors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -4894,7 +4900,7 @@ func TestInterfaceMerging(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -5071,7 +5077,7 @@ func TestInterfaceMergingErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -5212,7 +5218,7 @@ func TestInterfaceMergingModule(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -5435,7 +5441,7 @@ func TestInterfaceMergingModuleErrors(t *testing.T) {
 			}
 			assert.Len(t, errors, 0)
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,

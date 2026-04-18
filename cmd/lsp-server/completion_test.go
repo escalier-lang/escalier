@@ -31,7 +31,7 @@ func parseAndInferAllowErrors(t *testing.T, source string) (*ast.Script, *checke
 	})
 	script, _ := p.ParseScript()
 
-	c := checker.NewChecker()
+	c := checker.NewChecker(ctx)
 	inferCtx := checker.Context{
 		Scope:      checker.Prelude(c),
 		IsAsync:    false,
@@ -751,7 +751,7 @@ func parseModuleAndInferWithPackages(
 		t.Logf("parse error: %s", err.Message)
 	}
 
-	c := checker.NewChecker()
+	c := checker.NewChecker(ctx)
 	for name, ns := range packages {
 		err := c.PackageRegistry.Register(name, ns)
 		require.NoError(t, err, "registering mock package %q", name)

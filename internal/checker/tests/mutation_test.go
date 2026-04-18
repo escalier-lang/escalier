@@ -141,7 +141,7 @@ func TestMutation(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,
@@ -284,7 +284,7 @@ func TestClassMutation(t *testing.T) {
 
 			assert.Len(t, parseErrors, 0, "Expected no parse errors")
 
-			c := NewChecker()
+			c := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(c),
 				IsAsync:    false,

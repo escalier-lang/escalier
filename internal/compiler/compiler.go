@@ -68,7 +68,7 @@ func CheckLib(ctx context.Context, libSources []*ast.Source) CheckLibOutput {
 
 	module, parseErrors := parser.ParseLibFiles(ctx, libSources)
 
-	c := checker.NewChecker()
+	c := checker.NewChecker(ctx)
 	inferCtx := checker.Context{
 		// Create a child scope to avoid polluting the prelude with lib bindings.
 		Scope:      checker.Prelude(c).WithNewScope(),
@@ -142,7 +142,7 @@ func CheckBinScript(ctx context.Context, libNS *type_system.Namespace, src *ast.
 	p := parser.NewParser(ctx, src)
 	script, parseErrors := p.ParseScript()
 
-	c := checker.NewChecker()
+	c := checker.NewChecker(ctx)
 	scope := checker.Prelude(c)
 	if libNS != nil {
 		// Insert the lib namespace between the prelude and the script scope
@@ -170,7 +170,7 @@ func Compile(source *ast.Source) CompilerOutput {
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	c := checker.NewChecker()
+	c := checker.NewChecker(ctx)
 	inferCtx := checker.Context{
 		Scope:      checker.Prelude(c),
 		IsAsync:    false,
@@ -243,7 +243,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
 		depGraph := dep_graph.BuildDepGraph(inMod)
 
-		c := checker.NewChecker()
+		c := checker.NewChecker(ctx)
 		inferCtx := checker.Context{
 			// We add a new scope here to avoid polluting the prelude scope.
 			Scope:      checker.Prelude(c).WithNewScope(),
@@ -355,7 +355,7 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
-	c := checker.NewChecker()
+	c := checker.NewChecker(ctx)
 	scope := checker.Prelude(c)
 	if libNS != nil {
 		// Insert the lib namespace between the prelude and the script scope

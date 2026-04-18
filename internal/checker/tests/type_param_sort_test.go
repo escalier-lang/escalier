@@ -158,7 +158,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 			assert.NotNil(t, module, "Module should not be nil")
 
 			// Run type checker
-			checker := NewChecker()
+			checker := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(checker),
 				IsAsync:    false,
@@ -247,7 +247,7 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 			assert.NotNil(t, module, "Module should not be nil")
 
 			// Run type checker
-			checker := NewChecker()
+			checker := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(checker),
 				IsAsync:    false,
@@ -330,7 +330,7 @@ func TestTypeParamSortingWithUsage(t *testing.T) {
 			assert.NotNil(t, module, "Module should not be nil")
 
 			// Run type checker
-			checker := NewChecker()
+			checker := NewChecker(ctx)
 			inferCtx := Context{
 				Scope:      Prelude(checker),
 				IsAsync:    false,

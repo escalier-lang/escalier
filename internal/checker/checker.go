@@ -1,6 +1,8 @@
 package checker
 
 import (
+	"context"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -8,9 +10,10 @@ import (
 )
 
 type Checker struct {
+	ctx                   context.Context            // Context for timeout/cancellation support (#457)
 	TypeVarID             int
 	SymbolID              int
-	CustomMatcherSymbolID int // Symbol ID for Symbol.customMatcher (used for enum destructuring)
+	CustomMatcherSymbolID int                        // Symbol ID for Symbol.customMatcher (used for enum destructuring)
 	Schema                *gqlast.Schema
 	OverloadDecls         map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
@@ -21,8 +24,12 @@ type Checker struct {
 	memberCache           memberCache                // Per-property cache for lazy member substitution (#461)
 }
 
-func NewChecker() *Checker {
+func NewChecker(ctx context.Context) *Checker {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &Checker{
+		ctx:                   ctx,
 		TypeVarID:             0,
 		SymbolID:              0,
 		CustomMatcherSymbolID: -1,
@@ -33,6 +40,32 @@ func NewChecker() *Checker {
 		expandCache:           make(expandSeen),
 		substCache:            make(expandSeen),
 		memberCache:           make(memberCache),
+	}
+}
+
+// checkTimeout panics with a TypeCheckTimeoutError if the checker's context
+// has been cancelled (e.g. deadline exceeded). The panic is recovered at the
+// top-level entry points (InferScript, InferModule, InferDepGraph) and
+// converted into a regular error. Using panic ensures timeout errors bubble
+// through all call sites, including trial unification and ExpandType calls
+// that intentionally discard errors.
+func (c *Checker) checkTimeout() {
+	select {
+	case <-c.ctx.Done():
+		panic(TypeCheckTimeoutError{})
+	default:
+	}
+}
+
+// recoverTimeout catches a TypeCheckTimeoutError panic and appends it to the
+// provided error slice. Must be called via defer at top-level entry points.
+func recoverTimeout(errors *[]Error) {
+	if r := recover(); r != nil {
+		if v, ok := r.(TypeCheckTimeoutError); ok {
+			*errors = append(*errors, v)
+		} else {
+			panic(r) // re-panic for non-timeout panics
+		}
 	}
 }
 
