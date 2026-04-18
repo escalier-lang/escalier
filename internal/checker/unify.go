@@ -62,6 +62,24 @@ func interfaceDataPointer(t type_system.Type) unsafe.Pointer {
 // key growth for recursive type aliases (e.g. Array<Json> where
 // Json = string | ... | Array<Json>) — see #463.
 // For all other types, it uses fmt.Sprint (structural comparison).
+// stableKeyConfig is the PrintConfig used by typeKey to produce stable
+// string keys for cycle detection. TypeVarType emits "$<ID>" and
+// TypeRefType with a resolved alias emits "@<pointer>" instead of
+// the structural expansion, preventing unbounded key growth for
+// recursive type aliases.
+var stableKeyConfig = type_system.PrintConfig{
+	TypeVarStyle: func(tv *type_system.TypeVarType) string {
+		return fmt.Sprintf("$%d", tv.ID)
+	},
+	TypeRefStyle: func(tr *type_system.TypeRefType) string {
+		if tr.TypeAlias != nil {
+			return fmt.Sprintf("@%p", tr.TypeAlias)
+		}
+		return type_system.QualIdentToString(tr.Name)
+	},
+}
+
+// typeArgKey produces a stable, deterministic string key for type arguments.
 func typeArgKey(args []type_system.Type) string {
 	parts := make([]string, len(args))
 	for i, arg := range args {
@@ -70,50 +88,12 @@ func typeArgKey(args []type_system.Type) string {
 	return strings.Join(parts, ",")
 }
 
-// typeKey produces a stable string key for a single type.
-// It recurses into container types (unions, intersections, tuples) so that
-// any embedded TypeRefType is represented by its TypeAlias pointer, not by
-// its structural expansion. This prevents unbounded key growth when
-// recursive type aliases are expanded (e.g. Json → string|Array<Json>
-// produces the same key regardless of how deeply Json has been unfolded).
-//
-// TODO(#467): Replace with PrintType(t, StableKeyConfig) once the
-// configurable printType function is available. This will extend stable-key
-// handling to all compound types (CondType, MutabilityType, FuncType, etc.)
-// without duplicating the String() logic.
+// typeKey produces a stable string key for a single type using PrintType
+// with stableKeyConfig. This recurses into all compound types so that
+// any embedded TypeVarType or TypeRefType is serialized using pointer-
+// based identity rather than structural expansion.
 func typeKey(t type_system.Type) string {
-	switch v := t.(type) {
-	case *type_system.TypeVarType:
-		return fmt.Sprintf("$%d", v.ID)
-	case *type_system.TypeRefType:
-		if v.TypeAlias != nil {
-			if len(v.TypeArgs) == 0 {
-				return fmt.Sprintf("@%p", v.TypeAlias)
-			}
-			return fmt.Sprintf("@%p<%s>", v.TypeAlias, typeArgKey(v.TypeArgs))
-		}
-		return fmt.Sprint(v)
-	case *type_system.UnionType:
-		parts := make([]string, len(v.Types))
-		for i, u := range v.Types {
-			parts[i] = typeKey(u)
-		}
-		return "(" + strings.Join(parts, " | ") + ")"
-	case *type_system.IntersectionType:
-		parts := make([]string, len(v.Types))
-		for i, u := range v.Types {
-			parts[i] = typeKey(u)
-		}
-		return "(" + strings.Join(parts, " & ") + ")"
-	case *type_system.TupleType:
-		parts := make([]string, len(v.Elems))
-		for i, u := range v.Elems {
-			parts[i] = typeKey(u)
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	default:
-		return fmt.Sprint(t)
-	}
+	return type_system.PrintType(t, stableKeyConfig)
 }
 
 // noMatchError is a sentinel error indicating that no case in unifyMatched
