@@ -3060,66 +3060,31 @@ nil
 
 [TestParseTypeAnnErrorHandling/KeyofMissingType - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "expected type annotation after 'keyof'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:1}, End:ast.Location{Line:1, Column:6}, SourceID:0}, Message: "expected type annotation after 'keyof'"},
 }
 ---
 
 [TestParseTypeAnnErrorHandling/IncompleteIntersection - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:9},
-            End:      ast.Location{Line:1, Column:9},
-            SourceID: 0,
-        },
-        Message: "expected a type annotation",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:9}, End:ast.Location{Line:1, Column:9}, SourceID:0}, Message: "expected a type annotation"},
 }
 ---
 
 [TestParseTypeAnnErrorHandling/IncompleteUnion - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:9},
-            End:      ast.Location{Line:1, Column:9},
-            SourceID: 0,
-        },
-        Message: "expected a type annotation",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:9}, End:ast.Location{Line:1, Column:9}, SourceID:0}, Message: "expected a type annotation"},
 }
 ---
 
 [TestParseTypeAnnErrorHandling/PropertyMissingType - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "expected a type annotation",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:5}, End:ast.Location{Line:1, Column:6}, SourceID:0}, Message: "expected a type annotation"},
 }
 ---
 
 [TestParseTypeAnnErrorHandling/FuncTypeMissingReturnType - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:8},
-            End:      ast.Location{Line:1, Column:8},
-            SourceID: 0,
-        },
-        Message: "expected a type annotation",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:8}, End:ast.Location{Line:1, Column:8}, SourceID:0}, Message: "expected a type annotation"},
 }
 ---
 
@@ -3271,35 +3236,14 @@ nil
 
 [TestParseTypeAnnErrorHandling/ConditionalTypeMissingThen - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:12},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "expected a type annotation",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:12}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "expected a type annotation"},
 }
 ---
 
 [TestParseTypeAnnErrorHandling/ConditionalTypeMissingElse - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:22},
-            End:      ast.Location{Line:1, Column:22},
-            SourceID: 0,
-        },
-        Message: "expected a type annotation",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:22},
-            End:      ast.Location{Line:1, Column:22},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:22}, End:ast.Location{Line:1, Column:22}, SourceID:0}, Message: "expected a type annotation"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:22}, End:ast.Location{Line:1, Column:22}, SourceID:0}, Message: "Expected } but got "},
 }
 ---
 
@@ -3653,13 +3597,6 @@ nil
 
 [TestParseTypeAnnErrorHandling/RestSpreadMissingType - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:10},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "expected type annotation after '...'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:10}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "expected type annotation after '...'"},
 }
 ---

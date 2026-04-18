@@ -47,7 +47,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// Check if the property is readonly (this check takes precedence)
 				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
 					// Even if the type is mutable, readonly properties cannot be mutated
-					errors = append(errors, &CannotMutateReadonlyPropertyError{
+					errors = append(errors, &CannotMutateReadonlyPropertyError{stackTraceBase: newStackTraceBase(), 
 						Type:     objType,
 						Property: memberExpr.Prop.Name,
 						span:     expr.Left.Span(),
@@ -59,7 +59,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					if !markPropertyWritten(pruned, memberExpr.Prop.Name) {
 						// Not an open object — check if the object type allows mutation
 						if _, ok := pruned.(*type_system.MutabilityType); !ok {
-							errors = append(errors, &CannotMutateImmutableError{
+							errors = append(errors, &CannotMutateImmutableError{stackTraceBase: newStackTraceBase(), 
 								Type: objType,
 								span: expr.Left.Span(),
 							})
@@ -94,7 +94,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// Check if property is readonly (this check takes precedence)
 				if isReadonly {
 					// Even if the type is mutable, readonly properties cannot be mutated
-					errors = append(errors, &CannotMutateReadonlyPropertyError{
+					errors = append(errors, &CannotMutateReadonlyPropertyError{stackTraceBase: newStackTraceBase(), 
 						Type:     objType,
 						Property: unwrappedIndexType.String(),
 						span:     expr.Left.Span(),
@@ -116,7 +116,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						if !marked {
 							// Not an open object — check if the object type allows mutation
 							if _, ok := pruned.(*type_system.MutabilityType); !ok {
-								errors = append(errors, &CannotMutateImmutableError{
+								errors = append(errors, &CannotMutateImmutableError{stackTraceBase: newStackTraceBase(), 
 									Type: objType,
 									span: expr.Left.Span(),
 								})
@@ -140,7 +140,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			opBinding := ctx.Scope.GetValue(string(expr.Op))
 			if opBinding == nil {
 				exprType = neverType
-				errors = []Error{&UnknownOperatorError{
+				errors = []Error{&UnknownOperatorError{stackTraceBase: newStackTraceBase(), 
 					Operator: string(expr.Op),
 				}}
 			} else {
@@ -149,7 +149,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				if fnType, ok := opBinding.Type.(*type_system.FuncType); ok {
 					if len(fnType.Params) != 2 {
 						exprType = neverType
-						errors = []Error{&InvalidNumberOfArgumentsError{
+						errors = []Error{&InvalidNumberOfArgumentsError{stackTraceBase: newStackTraceBase(), 
 							CallExpr: expr,
 							Callee:   fnType,
 							Args:     []ast.Expr{expr.Left, expr.Right},
@@ -171,7 +171,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					}
 				} else {
 					exprType = neverType
-					errors = []Error{&UnknownOperatorError{Operator: string(expr.Op)}}
+					errors = []Error{&UnknownOperatorError{stackTraceBase: newStackTraceBase(), Operator: string(expr.Op)}}
 				}
 			}
 		}
@@ -183,21 +183,21 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					errors = []Error{}
 				} else {
 					exprType = type_system.NewNeverType(nil)
-					errors = []Error{&UnimplementedError{
+					errors = []Error{&UnimplementedError{stackTraceBase: newStackTraceBase(), 
 						message: "Handle unary operators",
 						span:    expr.Span(),
 					}}
 				}
 			} else {
 				exprType = type_system.NewNeverType(nil)
-				errors = []Error{&UnimplementedError{
+				errors = []Error{&UnimplementedError{stackTraceBase: newStackTraceBase(), 
 					message: "Handle unary operators",
 					span:    expr.Span(),
 				}}
 			}
 		} else {
 			exprType = type_system.NewNeverType(nil)
-			errors = []Error{&UnimplementedError{
+			errors = []Error{&UnimplementedError{stackTraceBase: newStackTraceBase(), 
 				message: "Handle unary operators",
 				span:    expr.Span(),
 			}}
@@ -274,7 +274,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			errors = nil
 		} else {
 			exprType = type_system.NewNeverType(nil)
-			errors = []Error{&UnknownIdentifierError{Ident: expr, span: expr.Span()}}
+			errors = []Error{&UnknownIdentifierError{stackTraceBase: newStackTraceBase(), Ident: expr, span: expr.Span()}}
 		}
 	case *ast.LiteralExpr:
 		exprType, errors = c.inferLit(expr.Lit)
@@ -449,7 +449,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 							errors = append(
 								errors,
-								&UnknownIdentifierError{Ident: key, span: key.Span()},
+								&UnknownIdentifierError{stackTraceBase: newStackTraceBase(), Ident: key, span: key.Span()},
 							)
 						}
 					}
@@ -555,7 +555,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// Await can only be used inside async functions
 		if !ctx.IsAsync {
 			errors = []Error{
-				&UnimplementedError{
+				&UnimplementedError{stackTraceBase: newStackTraceBase(), 
 					message: "await can only be used inside async functions",
 					span:    expr.Span(),
 				},
@@ -592,7 +592,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				}
 			} else {
 				// If not a Promise type, this is an error
-				errors = append(errors, &UnimplementedError{
+				errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 					message: "await expression expects a Promise type",
 					span:    expr.Span(),
 				})
@@ -606,7 +606,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			if expr.IsDelegate {
 				keyword = "yield from"
 			}
-			errors = []Error{&UnimplementedError{
+			errors = []Error{&UnimplementedError{stackTraceBase: newStackTraceBase(), 
 				message: fmt.Sprintf("'%s' can only be used inside a function", keyword),
 				span:    expr.Span(),
 			}}
@@ -618,7 +618,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			if expr.IsDelegate {
 				// yield from: the value must be iterable
 				if expr.Value == nil {
-					errors = []Error{&UnimplementedError{
+					errors = []Error{&UnimplementedError{stackTraceBase: newStackTraceBase(), 
 						message: "'yield from' requires an iterable expression",
 						span:    expr.Span(),
 					}}
@@ -639,7 +639,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					}
 
 					if elementType == nil {
-						errors = append(errors, &UnimplementedError{
+						errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 							message: fmt.Sprintf("Type '%s' is not iterable", valueType),
 							span:    expr.Value.Span(),
 						})
@@ -911,7 +911,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 	default:
 		exprType = type_system.NewNeverType(nil)
 		errors = []Error{
-			&UnimplementedError{
+			&UnimplementedError{stackTraceBase: newStackTraceBase(), 
 				message: "Infer expression type: " + fmt.Sprintf("%T", expr),
 				span:    expr.Span(),
 			},
@@ -1026,7 +1026,7 @@ func (c *Checker) inferCallExpr(
 		typeAlias := ctx.Scope.GetTypeAlias(name)
 		if typeAlias == nil {
 			return type_system.NewNeverType(provneance), []Error{
-				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+				&CalleeIsNotCallableError{stackTraceBase: newStackTraceBase(), Type: calleeType, span: expr.Callee.Span()}}
 		}
 
 		if objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType); ok {
@@ -1045,7 +1045,7 @@ func (c *Checker) inferCallExpr(
 
 			if fnType == nil {
 				return type_system.NewNeverType(provneance), []Error{
-					&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+					&CalleeIsNotCallableError{stackTraceBase: newStackTraceBase(), Type: calleeType, span: expr.Callee.Span()}}
 			}
 
 			return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
@@ -1069,7 +1069,7 @@ func (c *Checker) inferCallExpr(
 
 		if fnType == nil {
 			return type_system.NewNeverType(provneance), []Error{
-				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+				&CalleeIsNotCallableError{stackTraceBase: newStackTraceBase(), Type: calleeType, span: expr.Callee.Span()}}
 		}
 
 		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
@@ -1094,7 +1094,7 @@ func (c *Checker) inferCallExpr(
 		}
 
 		// No overload matched - create a comprehensive error
-		overloadErr := &NoMatchingOverloadError{
+		overloadErr := &NoMatchingOverloadError{stackTraceBase: newStackTraceBase(), 
 			CallExpr:         expr,
 			IntersectionType: t,
 			AttemptedErrors:  attemptedErrors,
@@ -1141,7 +1141,7 @@ func (c *Checker) inferCallExpr(
 
 	default:
 		return type_system.NewNeverType(provneance), []Error{
-			&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
+			&CalleeIsNotCallableError{stackTraceBase: newStackTraceBase(), Type: calleeType, span: expr.Callee.Span()}}
 	}
 }
 
@@ -1208,7 +1208,7 @@ func (c *Checker) handleFuncCall(
 	if restIndex != -1 {
 		// Function has rest parameters
 		if len(expr.Args) < restIndex {
-			return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+			return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{stackTraceBase: newStackTraceBase(), 
 				CallExpr: expr,
 				Callee:   fnType,
 				Args:     expr.Args,
@@ -1241,7 +1241,7 @@ func (c *Checker) handleFuncCall(
 					errors = slices.Concat(errors, paramErrors)
 				}
 			} else {
-				return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+				return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{stackTraceBase: newStackTraceBase(), 
 					CallExpr: expr,
 					Callee:   fnType,
 					Args:     expr.Args,
@@ -1268,7 +1268,7 @@ func (c *Checker) handleFuncCall(
 		}
 		// Ensure the argument count respects optional parameters.
 		if len(expr.Args) < requiredCount || len(expr.Args) > len(fnType.Params) {
-			return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{
+			return type_system.NewNeverType(provneance), []Error{&InvalidNumberOfArgumentsError{stackTraceBase: newStackTraceBase(), 
 				CallExpr: expr,
 				Callee:   fnType,
 				Args:     expr.Args,
@@ -1362,7 +1362,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		if hasCallableOrConstructor {
 			for _, matchCase := range expr.Cases {
 				if _, ok := matchCase.Pattern.(*ast.ExtractorPat); ok {
-					matchErrors = append(matchErrors, &ConstructorUsedAsMatchTargetError{
+					matchErrors = append(matchErrors, &ConstructorUsedAsMatchTargetError{stackTraceBase: newStackTraceBase(), 
 						TargetType: targetType,
 						span:       matchCase.Pattern.Span(),
 					})
@@ -1465,7 +1465,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 			// to [targetType]. The only way to reach !IsExhaustive with
 			// empty UncoveredTypes is via PartialCoverages (handled below).
 			if len(result.UncoveredTypes) > 0 {
-				errors = append(errors, &NonExhaustiveMatchError{
+				errors = append(errors, &NonExhaustiveMatchError{stackTraceBase: newStackTraceBase(), 
 					UncoveredTypes: result.UncoveredTypes,
 					IsNonFinite:    result.IsNonFinite,
 					span:           expr.Span(),
@@ -1487,7 +1487,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 					isNonFinite = false
 				}
 
-				errors = append(errors, &InnerNonExhaustiveMatchError{
+				errors = append(errors, &InnerNonExhaustiveMatchError{stackTraceBase: newStackTraceBase(), 
 					MemberType:     pc.Member,
 					InnerUncovered: innerUncovered,
 					IsNonFinite:    isNonFinite,
@@ -1497,7 +1497,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 		}
 
 		for _, redundant := range result.RedundantCases {
-			errors = append(errors, &RedundantMatchCaseWarning{
+			errors = append(errors, &RedundantMatchCaseWarning{stackTraceBase: newStackTraceBase(), 
 				span: redundant.Span,
 			})
 		}

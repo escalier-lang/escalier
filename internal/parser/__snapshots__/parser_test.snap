@@ -4012,14 +4012,7 @@
 
 [TestParseEnumErrorHandling/EnumMissingName - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:6},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
-        Message: "Expected identifier after 'enum'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:6}, End:ast.Location{Line:1, Column:7}, SourceID:0}, Message: "Expected identifier after 'enum'"},
 }
 ---
 
@@ -4030,14 +4023,7 @@
 
 [TestParseEnumErrorHandling/EnumMissingClosingBrace - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:24},
-            End:      ast.Location{Line:1, Column:24},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:24}, End:ast.Location{Line:1, Column:24}, SourceID:0}, Message: "Expected } but got "},
 }
 ---
 
@@ -4226,22 +4212,8 @@
 
 [TestParseEnumErrorHandling/EnumVariantMissingClosingParen - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:39},
-            End:      ast.Location{Line:1, Column:40},
-            SourceID: 0,
-        },
-        Message: "Expected ) but got }",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:40},
-            End:      ast.Location{Line:1, Column:40},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:39}, End:ast.Location{Line:1, Column:40}, SourceID:0}, Message: "Expected ) but got }"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:40}, End:ast.Location{Line:1, Column:40}, SourceID:0}, Message: "Expected } but got "},
 }
 ---
 
@@ -4607,22 +4579,8 @@
 
 [TestParseEnumErrorHandling/EnumSpreadWithParens - 3]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:25},
-            End:      ast.Location{Line:1, Column:26},
-            SourceID: 0,
-        },
-        Message: "Expected } but got (",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:26},
-            End:      ast.Location{Line:1, Column:27},
-            SourceID: 0,
-        },
-        Message: "Unexpected token",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:25}, End:ast.Location{Line:1, Column:26}, SourceID:0}, Message: "Expected } but got ("},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:26}, End:ast.Location{Line:1, Column:27}, SourceID:0}, Message: "Unexpected token"},
 }
 ---
 
@@ -5858,30 +5816,9 @@
 
 [TestParseEnumErrorHandling/EnumVariantMissingOpeningParen - 4]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:20},
-            End:      ast.Location{Line:1, Column:25},
-            SourceID: 0,
-        },
-        Message: "Expected } but got identifier",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:25},
-            End:      ast.Location{Line:1, Column:26},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ':'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:33},
-            End:      ast.Location{Line:1, Column:34},
-            SourceID: 0,
-        },
-        Message: "Unexpected token",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:20}, End:ast.Location{Line:1, Column:25}, SourceID:0}, Message: "Expected } but got identifier"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:25}, End:ast.Location{Line:1, Column:26}, SourceID:0}, Message: "Unexpected token, ':'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:33}, End:ast.Location{Line:1, Column:34}, SourceID:0}, Message: "Unexpected token"},
 }
 ---
 
@@ -8097,59 +8034,17 @@
 
 [TestStatementRecovery/ErrorAtStart - 3]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:2},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:2},
-            End:      ast.Location{Line:1, Column:3},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:3},
-            End:      ast.Location{Line:1, Column:4},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:1}, End:ast.Location{Line:1, Column:2}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:2}, End:ast.Location{Line:1, Column:3}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:3}, End:ast.Location{Line:1, Column:4}, SourceID:0}, Message: "Unexpected token, ''"},
 }
 ---
 
 [TestStatementRecovery/ErrorBetweenValidStatements - 4]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:1},
-            End:      ast.Location{Line:2, Column:2},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:2},
-            End:      ast.Location{Line:2, Column:3},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:3},
-            End:      ast.Location{Line:2, Column:4},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:1}, End:ast.Location{Line:2, Column:2}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:2}, End:ast.Location{Line:2, Column:3}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:3}, End:ast.Location{Line:2, Column:4}, SourceID:0}, Message: "Unexpected token, ''"},
 }
 ---
 
@@ -8205,154 +8100,42 @@
 
 [TestStatementRecovery/MultipleErrorsBetweenStatements - 6]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:1},
-            End:      ast.Location{Line:2, Column:2},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:2},
-            End:      ast.Location{Line:2, Column:3},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:3},
-            End:      ast.Location{Line:2, Column:4},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:4, Column:1},
-            End:      ast.Location{Line:4, Column:2},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:4, Column:2},
-            End:      ast.Location{Line:4, Column:3},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:4, Column:3},
-            End:      ast.Location{Line:4, Column:4},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ''",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:1}, End:ast.Location{Line:2, Column:2}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:2}, End:ast.Location{Line:2, Column:3}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:3}, End:ast.Location{Line:2, Column:4}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:4, Column:1}, End:ast.Location{Line:4, Column:2}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:4, Column:2}, End:ast.Location{Line:4, Column:3}, SourceID:0}, Message: "Unexpected token, ''"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:4, Column:3}, End:ast.Location{Line:4, Column:4}, SourceID:0}, Message: "Unexpected token, ''"},
 }
 ---
 
 [TestParseEnumErrorHandling/EnumVariantMissingCommaAfter - 3]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:23},
-            End:      ast.Location{Line:1, Column:27},
-            SourceID: 0,
-        },
-        Message: "Expected } but got identifier",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:28},
-            End:      ast.Location{Line:1, Column:29},
-            SourceID: 0,
-        },
-        Message: "Unexpected token",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:23}, End:ast.Location{Line:1, Column:27}, SourceID:0}, Message: "Expected } but got identifier"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:28}, End:ast.Location{Line:1, Column:29}, SourceID:0}, Message: "Unexpected token"},
 }
 ---
 
 [TestParseEnumErrorHandling/EnumMissingName - 3]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:6},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
-        Message: "Expected identifier after 'enum'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:6}, End:ast.Location{Line:1, Column:7}, SourceID:0}, Message: "Expected identifier after 'enum'"},
 }
 ---
 
 [TestParseEnumErrorHandling/EnumInvalidVariantName - 4]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:12},
-            End:      ast.Location{Line:1, Column:15},
-            SourceID: 0,
-        },
-        Message: "Expected variant name or '...' for extension",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:12},
-            End:      ast.Location{Line:1, Column:15},
-            SourceID: 0,
-        },
-        Message: "Expected } but got number",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:15},
-            End:      ast.Location{Line:1, Column:16},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ','",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:22},
-            End:      ast.Location{Line:1, Column:23},
-            SourceID: 0,
-        },
-        Message: "Unexpected token",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:12}, End:ast.Location{Line:1, Column:15}, SourceID:0}, Message: "Expected variant name or '...' for extension"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:12}, End:ast.Location{Line:1, Column:15}, SourceID:0}, Message: "Expected } but got number"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:15}, End:ast.Location{Line:1, Column:16}, SourceID:0}, Message: "Unexpected token, ','"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:22}, End:ast.Location{Line:1, Column:23}, SourceID:0}, Message: "Unexpected token"},
 }
 ---
 
 [TestParseEnumErrorHandling/EnumSpreadMissingIdent - 4]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:20},
-            End:      ast.Location{Line:1, Column:21},
-            SourceID: 0,
-        },
-        Message: "Expected identifier after '...'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:20},
-            End:      ast.Location{Line:1, Column:21},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ,",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:28},
-            End:      ast.Location{Line:1, Column:29},
-            SourceID: 0,
-        },
-        Message: "Unexpected token",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:20}, End:ast.Location{Line:1, Column:21}, SourceID:0}, Message: "Expected identifier after '...'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:20}, End:ast.Location{Line:1, Column:21}, SourceID:0}, Message: "Expected } but got ,"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:28}, End:ast.Location{Line:1, Column:29}, SourceID:0}, Message: "Unexpected token"},
 }
 ---
 
@@ -8368,51 +8151,16 @@
 
 [TestParseEnumErrorHandling/EnumMissingOpeningBrace - 5]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:13},
-            End:      ast.Location{Line:1, Column:17},
-            SourceID: 0,
-        },
-        Message: "Expected '{' to start enum body",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:17},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, ','",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:23},
-            End:      ast.Location{Line:1, Column:24},
-            SourceID: 0,
-        },
-        Message: "Unexpected token",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:13}, End:ast.Location{Line:1, Column:17}, SourceID:0}, Message: "Expected '{' to start enum body"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:17}, End:ast.Location{Line:1, Column:18}, SourceID:0}, Message: "Unexpected token, ','"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:23}, End:ast.Location{Line:1, Column:24}, SourceID:0}, Message: "Unexpected token"},
 }
 ---
 
 [TestParseEnumErrorHandling/EnumMissingCommaBeforeVariant - 4]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:18},
-            End:      ast.Location{Line:1, Column:23},
-            SourceID: 0,
-        },
-        Message: "Expected } but got identifier",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:29},
-            End:      ast.Location{Line:1, Column:30},
-            SourceID: 0,
-        },
-        Message: "Unexpected token",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:18}, End:ast.Location{Line:1, Column:23}, SourceID:0}, Message: "Expected } but got identifier"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:29}, End:ast.Location{Line:1, Column:30}, SourceID:0}, Message: "Unexpected token"},
 }
 ---
 
@@ -8510,14 +8258,7 @@
 
 [TestStatementRecovery/MissingEqualsOnNewLine - 3]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:1},
-            End:      ast.Location{Line:2, Column:4},
-            SourceID: 0,
-        },
-        Message: "Expected equals sign",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:1}, End:ast.Location{Line:2, Column:4}, SourceID:0}, Message: "Expected equals sign"},
 }
 ---
 
@@ -8626,14 +8367,7 @@
 
 [TestStatementRecovery/ClassExtendsMissingType - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
-        Message: "Expected type annotation after 'extends'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:18}, SourceID:0}, Message: "Expected type annotation after 'extends'"},
 }
 ---
 
@@ -8719,22 +8453,8 @@
 
 [TestStatementRecovery/IncompleteFnDecl - 3]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:1},
-            End:      ast.Location{Line:2, Column:4},
-            SourceID: 0,
-        },
-        Message: "Expected identifier",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:1},
-            End:      ast.Location{Line:2, Column:4},
-            SourceID: 0,
-        },
-        Message: "Expected an opening paren",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:1}, End:ast.Location{Line:2, Column:4}, SourceID:0}, Message: "Expected identifier"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:1}, End:ast.Location{Line:2, Column:4}, SourceID:0}, Message: "Expected an opening paren"},
 }
 ---
 
@@ -8820,13 +8540,6 @@
 
 [TestStatementRecovery/IncompleteFnDeclWithName - 3]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:2, Column:1},
-            End:      ast.Location{Line:2, Column:4},
-            SourceID: 0,
-        },
-        Message: "Expected an opening paren",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:2, Column:1}, End:ast.Location{Line:2, Column:4}, SourceID:0}, Message: "Expected an opening paren"},
 }
 ---

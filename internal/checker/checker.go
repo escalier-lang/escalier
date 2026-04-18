@@ -52,7 +52,7 @@ func NewChecker(ctx context.Context) *Checker {
 func (c *Checker) checkTimeout() {
 	select {
 	case <-c.ctx.Done():
-		panic(TypeCheckTimeoutError{})
+		panic(TypeCheckTimeoutError{stackTraceBase: newStackTraceBase()})
 	default:
 	}
 }

@@ -216,7 +216,7 @@ func (v *TypeExpansionVisitor) resolveTypeOfQualIdent(ident type_system.QualIden
 		} else if namespace := v.ctx.Scope.getNamespace(id.Name); namespace != nil {
 			return type_system.NewNamespaceType(prov, namespace)
 		} else {
-			v.errors = append(v.errors, &UnknownIdentifierError{
+			v.errors = append(v.errors, &UnknownIdentifierError{stackTraceBase: newStackTraceBase(), 
 				Ident: ast.NewIdent(id.Name, span),
 				span:  span,
 			})
@@ -518,7 +518,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		// TODO: Check if the qualifier is a type.  If it is, we can treat this
 		// as a member access type.
 		if typeAlias == nil {
-			v.errors = append(v.errors, &UnknownTypeError{TypeName: type_system.QualIdentToString(t.Name), TypeRef: t})
+			v.errors = append(v.errors, &UnknownTypeError{stackTraceBase: newStackTraceBase(), TypeName: type_system.QualIdentToString(t.Name), TypeRef: t})
 			neverType := type_system.NewNeverType(nil)
 			neverType.SetProvenance(&type_system.TypeProvenance{Type: t})
 			return neverType
@@ -814,7 +814,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 							return restElemType(rest, restIndex), errors
 						}
 					}
-					errors = append(errors, &OutOfBoundsError{
+					errors = append(errors, &OutOfBoundsError{stackTraceBase: newStackTraceBase(), 
 						Index:  index,
 						Length: fixedCount,
 						span:   indexKey.Span(),
@@ -822,7 +822,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 					return type_system.NewNeverType(nil), errors
 				}
 			}
-			errors = append(errors, &InvalidObjectKeyError{
+			errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
 				Key:  indexKey.Type,
 				span: indexKey.Span(),
 			})
@@ -838,7 +838,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			return c.getMemberType(ctx, arrayRef, key, mode)
 		}
 		// TupleType doesn't support other property access
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	case *type_system.PrimType:
 		// Delegate method calls on primitive types to their built‑in wrapper types
@@ -863,7 +863,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			}
 		}
 		// Not a supported primitive method call
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 
 	case *type_system.LitType:
@@ -889,7 +889,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			}
 		}
 		// Fallback handling for other literals
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 
 	case *type_system.FuncType:
@@ -902,7 +902,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			return c.getMemberType(ctx, functionRef, key, mode)
 		}
 		// FuncType doesn't support index access
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 
 	case *type_system.ObjectType:
@@ -916,7 +916,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			} else if namespace, ok := t.Namespace.GetNamespace(propKey.Name); ok {
 				return type_system.NewNamespaceType(nil, namespace), errors
 			} else {
-				errors = append(errors, &UnknownPropertyError{
+				errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
 					ObjectType: objType,
 					Property:   propKey.Name,
 					span:       propKey.Span(),
@@ -925,7 +925,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			}
 		}
 		// NamespaceType doesn't support index access
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	case *type_system.IntersectionType:
 		return c.getIntersectionAccess(ctx, t, key, mode, errors)
@@ -955,7 +955,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				}
 				return c.getArrayConstraintIndexAccess(ctx, t, k, errors)
 			default:
-				errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+				errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 				return type_system.NewNeverType(nil), errors
 			}
 		}
@@ -1013,14 +1013,14 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				return constraint.ElemTypeVar, errors
 			}
 			// Non-literal string index — error
-			errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+			errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 			return type_system.NewNeverType(nil), errors
 		default:
-			errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+			errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 			return type_system.NewNeverType(nil), errors
 		}
 	default:
-		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	}
 }
@@ -1227,7 +1227,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 			// If the extended type cannot be resolved to an ObjectType,
 			// report this instead of silently skipping it.
-			errors = append(errors, &ExpectedObjectError{Type: extendsType})
+			errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: extendsType})
 		}
 
 		// If the object is open, add the new property instead of reporting an error
@@ -1235,7 +1235,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			return c.addPropertyToOpenObject(objType, k.Name, k), errors
 		}
 
-		errors = append(errors, &UnknownPropertyError{
+		errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
 			ObjectType: objType,
 			Property:   k.Name,
 			span:       k.Span(),
@@ -1466,13 +1466,13 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 		}
 
-		errors = append(errors, &InvalidObjectKeyError{
+		errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
 			Key:  keyType,
 			span: k.Span(),
 		})
 		return type_system.NewUndefinedType(nil), errors
 	default:
-		errors = append(errors, &ExpectedObjectError{Type: objType})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: objType})
 		return type_system.NewUndefinedType(nil), errors
 	}
 }
@@ -1621,7 +1621,7 @@ func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.T
 	// union during resolveArrayConstraint.
 	arrayAlias := c.GlobalScope.Namespace.Types["Array"]
 	if arrayAlias == nil {
-		errors = append(errors, &ExpectedObjectError{Type: t, span: ast.Span{}})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: t, span: ast.Span{}})
 		return type_system.NewNeverType(nil), errors
 	}
 
@@ -1664,7 +1664,7 @@ func (c *Checker) getArrayConstraintIndexAccess(_ Context, t *type_system.TypeVa
 		constraint.HasNonLiteralIndex = true
 		return constraint.ElemTypeVar, errors
 	}
-	errors = append(errors, &ExpectedObjectError{Type: t, span: k.Span()})
+	errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: t, span: k.Span()})
 	return type_system.NewNeverType(nil), errors
 }
 
@@ -1726,7 +1726,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 
 	// If there are no defined elements (only null/undefined), we can't access properties
 	if len(definedElems) == 0 {
-		errors = append(errors, &ExpectedObjectError{Type: unionType, span: key.Span()})
+		errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: unionType, span: key.Span()})
 		return type_system.NewUndefinedType(nil), errors
 	}
 
@@ -1736,7 +1736,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		}
 
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
-			errors = append(errors, &ExpectedObjectError{Type: unionType, span: key.Span()})
+			errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: unionType, span: key.Span()})
 			return type_system.NewUndefinedType(nil), errors
 		}
 
@@ -1762,7 +1762,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		// If there are undefined elements and we're accessing without optional chaining,
 		// we need to report an error
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
-			errors = append(errors, &ExpectedObjectError{Type: unionType, span: key.Span()})
+			errors = append(errors, &ExpectedObjectError{stackTraceBase: newStackTraceBase(), Type: unionType, span: key.Span()})
 		}
 
 		// Create a union of all member types
@@ -1821,14 +1821,14 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 		if !foundAny {
 			// Property doesn't exist in any part of the intersection
 			if propKey, ok := key.(PropertyKey); ok {
-				errors = append(errors, &UnknownPropertyError{
+				errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
 					ObjectType: intersectionType,
 					Property:   propKey.Name,
 					span:       propKey.Span(),
 				})
 			} else {
 				indexKey := key.(IndexKey)
-				errors = append(errors, &InvalidObjectKeyError{
+				errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
 					Key:  indexKey.Type,
 					span: indexKey.Span(),
 				})
@@ -1883,14 +1883,14 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	// If no part has this property, report error
 	if propKey, ok := key.(PropertyKey); ok {
-		errors = append(errors, &UnknownPropertyError{
+		errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
 			ObjectType: intersectionType,
 			Property:   propKey.Name,
 			span:       propKey.Span(),
 		})
 	} else {
 		indexKey := key.(IndexKey)
-		errors = append(errors, &InvalidObjectKeyError{
+		errors = append(errors, &InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), 
 			Key:  indexKey.Type,
 			span: indexKey.Span(),
 		})
@@ -2081,7 +2081,7 @@ func (c *Checker) expandTypeRef(ctx Context, t *type_system.TypeRefType) (type_s
 	// Resolve the type alias
 	typeAlias := resolveQualifiedTypeAlias(ctx, t.Name)
 	if typeAlias == nil {
-		return type_system.NewNeverType(nil), []Error{&UnknownTypeError{TypeName: type_system.QualIdentToString(t.Name), TypeRef: t}}
+		return type_system.NewNeverType(nil), []Error{&UnknownTypeError{stackTraceBase: newStackTraceBase(), TypeName: type_system.QualIdentToString(t.Name), TypeRef: t}}
 	}
 
 	// Expand the type alias

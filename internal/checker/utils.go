@@ -93,13 +93,13 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*type_system.Obj
 				newKey := type_system.NewNumKey(lit.Value)
 				return &newKey, nil
 			default:
-				return nil, []Error{&InvalidObjectKeyError{Key: t, span: key.Span()}}
+				return nil, []Error{&InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), Key: t, span: key.Span()}}
 			}
 		case *type_system.UniqueSymbolType:
 			newKey := type_system.NewSymKey(t.Value)
 			return &newKey, nil
 		default:
-			return nil, []Error{&InvalidObjectKeyError{Key: keyType, span: key.Span()}}
+			return nil, []Error{&InvalidObjectKeyError{stackTraceBase: newStackTraceBase(), Key: keyType, span: key.Span()}}
 		}
 	default:
 		panic(fmt.Sprintf("Unknown object key type: %T", key))
@@ -284,7 +284,7 @@ func (c *Checker) validateTypeParams(
 
 	// Check if the number of type parameters match
 	if len(existingParams) != len(newParams) {
-		errors = append(errors, &TypeParamMismatchError{
+		errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
 			InterfaceName: interfaceName,
 			ExistingCount: len(existingParams),
 			NewCount:      len(newParams),
@@ -301,7 +301,7 @@ func (c *Checker) validateTypeParams(
 
 		// Check if names match
 		if existing.Name != new.Name {
-			errors = append(errors, &TypeParamMismatchError{
+			errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
 				InterfaceName: interfaceName,
 				message:       fmt.Sprintf("Type parameter at position %d has name '%s' but was previously declared with name '%s'", i, new.Name, existing.Name),
 				span:          span,
@@ -310,7 +310,7 @@ func (c *Checker) validateTypeParams(
 
 		// Check if constraints match
 		if (existing.Constraint == nil) != (new.Constraint == nil) {
-			errors = append(errors, &TypeParamMismatchError{
+			errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
 				InterfaceName: interfaceName,
 				message:       fmt.Sprintf("Type parameter '%s' constraint mismatch in interface '%s'", new.Name, interfaceName),
 				span:          span,
@@ -319,7 +319,7 @@ func (c *Checker) validateTypeParams(
 			// Both have constraints, check if they're compatible
 			unifyErrors := c.Unify(ctx, existing.Constraint, new.Constraint)
 			if len(unifyErrors) > 0 {
-				errors = append(errors, &TypeParamMismatchError{
+				errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
 					InterfaceName: interfaceName,
 					message:       fmt.Sprintf("Type parameter '%s' has incompatible constraint in interface '%s'", new.Name, interfaceName),
 					span:          span,
@@ -334,7 +334,7 @@ func (c *Checker) validateTypeParams(
 			// Both have defaults, check if they're compatible
 			unifyErrors := c.Unify(ctx, existing.Default, new.Default)
 			if len(unifyErrors) > 0 {
-				errors = append(errors, &TypeParamMismatchError{
+				errors = append(errors, &TypeParamMismatchError{stackTraceBase: newStackTraceBase(), 
 					InterfaceName: interfaceName,
 					message:       fmt.Sprintf("Type parameter '%s' has incompatible default in interface '%s'", new.Name, interfaceName),
 					span:          span,

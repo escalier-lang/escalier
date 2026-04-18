@@ -70,14 +70,7 @@
 
 [TestParseExprErrorHandling/IfElseMissingCondition - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected a condition",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected a condition"},
 }
 ---
 
@@ -254,35 +247,14 @@
 
 [TestParseExprErrorHandling/IncompleteCall - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:7},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected a closing paren",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:7}, End:ast.Location{Line:1, Column:7}, SourceID:0}, Message: "Expected an expression"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected a closing paren"},
 }
 ---
 
 [TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:9},
-            End:      ast.Location{Line:1, Column:10},
-            SourceID: 0,
-        },
-        Message: "Expected ] but got )",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:9}, End:ast.Location{Line:1, Column:10}, SourceID:0}, Message: "Expected ] but got )"},
 }
 ---
 
@@ -342,14 +314,7 @@
 
 [TestParseExprErrorHandling/IfElseMissingOpeningBraces - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:9},
-            End:      ast.Location{Line:1, Column:10},
-            SourceID: 0,
-        },
-        Message: "Expected an opening brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:9}, End:ast.Location{Line:1, Column:10}, SourceID:0}, Message: "Expected an opening brace"},
 }
 ---
 
@@ -389,14 +354,7 @@
 
 [TestParseExprErrorHandling/MismatchedParens - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:12},
-            SourceID: 0,
-        },
-        Message: "Expected ) but got ]",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:12}, SourceID:0}, Message: "Expected ) but got ]"},
 }
 ---
 
@@ -476,14 +434,7 @@
 
 [TestParseExprErrorHandling/IncompleteTaggedTemplateLiteral - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:8},
-            SourceID: 0,
-        },
-        Message: "Expected a closing backtick",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:8}, SourceID:0}, Message: "Expected a closing backtick"},
 }
 ---
 
@@ -665,95 +616,39 @@
 
 [TestParseExprErrorHandling/IncompleteBinaryExpr - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:8},
-            End:      ast.Location{Line:1, Column:8},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:8}, End:ast.Location{Line:1, Column:8}, SourceID:0}, Message: "Expected an expression"},
 }
 ---
 
 [TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, '*'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:5}, End:ast.Location{Line:1, Column:6}, SourceID:0}, Message: "Unexpected token, '*'"},
 }
 ---
 
 [TestParseExprErrorHandling/MismatchedBracketsIndex - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected a closing bracket",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected a closing bracket"},
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteMember - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:6},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
-        Message: "expected an identifier after .",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:6}, End:ast.Location{Line:1, Column:7}, SourceID:0}, Message: "expected an identifier after ."},
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteTemplateLiteral - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected a closing backtick",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:1}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected a closing backtick"},
 }
 ---
 
 [TestParseExprErrorHandling/ParamsMissingClosingParen - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:14},
-            End:      ast.Location{Line:1, Column:15},
-            SourceID: 0,
-        },
-        Message: "Expected } but got +",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
-            End:      ast.Location{Line:1, Column:17},
-            SourceID: 0,
-        },
-        Message: "Expected ) but got identifier",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
-            End:      ast.Location{Line:1, Column:17},
-            SourceID: 0,
-        },
-        Message: "Expected an opening brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:14}, End:ast.Location{Line:1, Column:15}, SourceID:0}, Message: "Expected } but got +"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:16}, End:ast.Location{Line:1, Column:17}, SourceID:0}, Message: "Expected ) but got identifier"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:16}, End:ast.Location{Line:1, Column:17}, SourceID:0}, Message: "Expected an opening brace"},
 }
 ---
 
@@ -907,27 +802,13 @@
 
 [TestParseExprErrorHandling/ParamsMissingOpeningParen - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected ( but got identifier",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected ( but got identifier"},
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteMemberOptChain - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:6},
-            End:      ast.Location{Line:1, Column:8},
-            SourceID: 0,
-        },
-        Message: "expected an identifier after ?.",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:6}, End:ast.Location{Line:1, Column:8}, SourceID:0}, Message: "expected an identifier after ?."},
 }
 ---
 
@@ -973,22 +854,8 @@
 
 [TestParseExprErrorHandling/IncompleteElse - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected a condition",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:14},
-            End:      ast.Location{Line:1, Column:14},
-            SourceID: 0,
-        },
-        Message: "Expected an if or an opening brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected a condition"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:14}, End:ast.Location{Line:1, Column:14}, SourceID:0}, Message: "Expected an if or an opening brace"},
 }
 ---
 
@@ -3113,14 +2980,7 @@
 
 [TestParseExprErrorHandling/ObjectMissingComma - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:10},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected } but got identifier",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:10}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected } but got identifier"},
 }
 ---
 
@@ -3211,14 +3071,7 @@
 
 [TestParseExprErrorHandling/ObjectMissingColon - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:7},
-            End:      ast.Location{Line:1, Column:8},
-            SourceID: 0,
-        },
-        Message: "Expected a comma or closing brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:7}, End:ast.Location{Line:1, Column:8}, SourceID:0}, Message: "Expected a comma or closing brace"},
 }
 ---
 
@@ -4455,38 +4308,10 @@
 
 [TestParseExprErrorHandling/MatchMissingOpeningBrace - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:9},
-            End:      ast.Location{Line:1, Column:10},
-            SourceID: 0,
-        },
-        Message: "Expected { but got number",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected a pattern",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected pattern in match case",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected } but got =>",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:9}, End:ast.Location{Line:1, Column:10}, SourceID:0}, Message: "Expected { but got number"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected a pattern"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected pattern in match case"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected } but got =>"},
 }
 ---
 
@@ -4515,30 +4340,9 @@
 
 [TestParseExprErrorHandling/MatchMissingPattern - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected a pattern",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected pattern in match case",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected } but got =>",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected a pattern"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected pattern in match case"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected } but got =>"},
 }
 ---
 
@@ -4607,43 +4411,15 @@
 
 [TestParseExprErrorHandling/MatchMissingTarget - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected a comma or closing brace",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:13},
-            SourceID: 0,
-        },
-        Message: "Expected } but got =>",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:14},
-            End:      ast.Location{Line:1, Column:19},
-            SourceID: 0,
-        },
-        Message: "Expected { but got string",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected a comma or closing brace"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:13}, SourceID:0}, Message: "Expected } but got =>"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:14}, End:ast.Location{Line:1, Column:19}, SourceID:0}, Message: "Expected { but got string"},
 }
 ---
 
 [TestParseExprErrorHandling/MatchMissingClosingBrace - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:21},
-            End:      ast.Location{Line:1, Column:21},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:21}, End:ast.Location{Line:1, Column:21}, SourceID:0}, Message: "Expected } but got "},
 }
 ---
 
@@ -4829,72 +4605,23 @@
 
 [TestParseExprErrorHandling/MatchMissingBody - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
-            End:      ast.Location{Line:1, Column:17},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:16}, End:ast.Location{Line:1, Column:17}, SourceID:0}, Message: "Expected an expression"},
 }
 ---
 
 [TestParseExprErrorHandling/MatchMissingArrow - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:13},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
-        Message: "Expected => but got string",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:19},
-            End:      ast.Location{Line:1, Column:20},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:13}, End:ast.Location{Line:1, Column:18}, SourceID:0}, Message: "Expected => but got string"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:19}, End:ast.Location{Line:1, Column:20}, SourceID:0}, Message: "Expected an expression"},
 }
 ---
 
 [TestParseExprErrorHandling/MatchIncompleteGuard - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:16},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, '=>'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:25},
-            End:      ast.Location{Line:1, Column:26},
-            SourceID: 0,
-        },
-        Message: "Expected => but got }",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:26},
-            End:      ast.Location{Line:1, Column:26},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:26},
-            End:      ast.Location{Line:1, Column:26},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:16}, End:ast.Location{Line:1, Column:18}, SourceID:0}, Message: "Unexpected token, '=>'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:25}, End:ast.Location{Line:1, Column:26}, SourceID:0}, Message: "Expected => but got }"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:26}, End:ast.Location{Line:1, Column:26}, SourceID:0}, Message: "Expected an expression"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:26}, End:ast.Location{Line:1, Column:26}, SourceID:0}, Message: "Expected } but got "},
 }
 ---
 
@@ -5861,14 +5588,7 @@
 
 [TestParseExprErrorHandling/TryMissingOpeningBrace - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:12},
-            SourceID: 0,
-        },
-        Message: "Expected an opening brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:5}, End:ast.Location{Line:1, Column:12}, SourceID:0}, Message: "Expected an opening brace"},
 }
 ---
 
@@ -5955,38 +5675,10 @@
 
 [TestParseExprErrorHandling/TryCatchMissingOpeningBrace - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:27},
-            End:      ast.Location{Line:1, Column:32},
-            SourceID: 0,
-        },
-        Message: "Expected { but got identifier",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:33},
-            End:      ast.Location{Line:1, Column:35},
-            SourceID: 0,
-        },
-        Message: "Expected a pattern",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:33},
-            End:      ast.Location{Line:1, Column:35},
-            SourceID: 0,
-        },
-        Message: "Expected pattern in match case",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:33},
-            End:      ast.Location{Line:1, Column:35},
-            SourceID: 0,
-        },
-        Message: "Expected } but got =>",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:27}, End:ast.Location{Line:1, Column:32}, SourceID:0}, Message: "Expected { but got identifier"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:33}, End:ast.Location{Line:1, Column:35}, SourceID:0}, Message: "Expected a pattern"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:33}, End:ast.Location{Line:1, Column:35}, SourceID:0}, Message: "Expected pattern in match case"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:33}, End:ast.Location{Line:1, Column:35}, SourceID:0}, Message: "Expected } but got =>"},
 }
 ---
 
@@ -6088,14 +5780,7 @@
 
 [TestParseExprErrorHandling/TryCatchMissingBody - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:38},
-            End:      ast.Location{Line:1, Column:39},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:38}, End:ast.Location{Line:1, Column:39}, SourceID:0}, Message: "Expected an expression"},
 }
 ---
 
@@ -6269,14 +5954,7 @@
 
 [TestParseExprErrorHandling/TryFinallyMissingOpeningBrace - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:29},
-            End:      ast.Location{Line:1, Column:36},
-            SourceID: 0,
-        },
-        Message: "Expected an opening brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:29}, End:ast.Location{Line:1, Column:36}, SourceID:0}, Message: "Expected an opening brace"},
 }
 ---
 
@@ -6366,93 +6044,30 @@
 
 [TestParseExprErrorHandling/TryFinallyMissingBlock - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:28},
-            End:      ast.Location{Line:1, Column:28},
-            SourceID: 0,
-        },
-        Message: "Expected an opening brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:28}, End:ast.Location{Line:1, Column:28}, SourceID:0}, Message: "Expected an opening brace"},
 }
 ---
 
 [TestParseExprErrorHandling/TryMissingBlock - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:4},
-            SourceID: 0,
-        },
-        Message: "Expected an opening brace",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:4}, SourceID:0}, Message: "Expected an opening brace"},
 }
 ---
 
 [TestParseExprErrorHandling/TryCatchIncompleteGuard - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:38},
-            End:      ast.Location{Line:1, Column:40},
-            SourceID: 0,
-        },
-        Message: "Unexpected token, '=>'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:50},
-            End:      ast.Location{Line:1, Column:51},
-            SourceID: 0,
-        },
-        Message: "Expected => but got }",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:51},
-            End:      ast.Location{Line:1, Column:51},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:51},
-            End:      ast.Location{Line:1, Column:51},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:38}, End:ast.Location{Line:1, Column:40}, SourceID:0}, Message: "Unexpected token, '=>'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:50}, End:ast.Location{Line:1, Column:51}, SourceID:0}, Message: "Expected => but got }"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:51}, End:ast.Location{Line:1, Column:51}, SourceID:0}, Message: "Expected an expression"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:51}, End:ast.Location{Line:1, Column:51}, SourceID:0}, Message: "Expected } but got "},
 }
 ---
 
 [TestParseExprErrorHandling/TryCatchMissingPattern - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:29},
-            End:      ast.Location{Line:1, Column:31},
-            SourceID: 0,
-        },
-        Message: "Expected a pattern",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:29},
-            End:      ast.Location{Line:1, Column:31},
-            SourceID: 0,
-        },
-        Message: "Expected pattern in match case",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:29},
-            End:      ast.Location{Line:1, Column:31},
-            SourceID: 0,
-        },
-        Message: "Expected } but got =>",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:29}, End:ast.Location{Line:1, Column:31}, SourceID:0}, Message: "Expected a pattern"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:29}, End:ast.Location{Line:1, Column:31}, SourceID:0}, Message: "Expected pattern in match case"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:29}, End:ast.Location{Line:1, Column:31}, SourceID:0}, Message: "Expected } but got =>"},
 }
 ---
 
@@ -6539,35 +6154,14 @@
 
 [TestParseExprErrorHandling/TryCatchMissingClosingBrace - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:43},
-            End:      ast.Location{Line:1, Column:43},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:43}, End:ast.Location{Line:1, Column:43}, SourceID:0}, Message: "Expected } but got "},
 }
 ---
 
 [TestParseExprErrorHandling/TryCatchMissingArrow - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:35},
-            End:      ast.Location{Line:1, Column:43},
-            SourceID: 0,
-        },
-        Message: "Expected => but got string",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:44},
-            End:      ast.Location{Line:1, Column:45},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:35}, End:ast.Location{Line:1, Column:43}, SourceID:0}, Message: "Expected => but got string"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:44}, End:ast.Location{Line:1, Column:45}, SourceID:0}, Message: "Expected an expression"},
 }
 ---
 
@@ -6971,14 +6565,7 @@
 
 [TestParseExprErrorHandling/ThrowMissingExpression - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:6},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:6}, End:ast.Location{Line:1, Column:6}, SourceID:0}, Message: "Expected an expression"},
 }
 ---
 
@@ -8356,27 +7943,13 @@
 
 [TestParseExprErrorHandling/ArraySpreadMissingOperand - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:2},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected an expression after '...'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:2}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected an expression after '...'"},
 }
 ---
 
 [TestParseExprErrorHandling/ObjectSpreadMissingOperand - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:2},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected an expression after '...'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:2}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected an expression after '...'"},
 }
 ---
 
@@ -8408,43 +7981,15 @@
 
 [TestParseExprErrorHandling/ObjectSpreadMissingOperandBeforeComma - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:2},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected an expression after '...'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "Expected } but got ,",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:2}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected an expression after '...'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:5}, End:ast.Location{Line:1, Column:6}, SourceID:0}, Message: "Expected } but got ,"},
 }
 ---
 
 [TestParseExprErrorHandling/ArraySpreadMissingOperandBeforeComma - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:2},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected an expression after '...'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:6},
-            SourceID: 0,
-        },
-        Message: "Expected ] but got ,",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:2}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected an expression after '...'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:5}, End:ast.Location{Line:1, Column:6}, SourceID:0}, Message: "Expected ] but got ,"},
 }
 ---
 
@@ -8652,14 +8197,7 @@
 
 [TestParseExprErrorHandling/IncompleteCallMissingCloseParen - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected a closing paren",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected a closing paren"},
 }
 ---
 
@@ -8696,21 +8234,7 @@
 
 [TestParseExprErrorHandling/IncompleteIndex - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:5},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected an expression",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:4},
-            End:      ast.Location{Line:1, Column:5},
-            SourceID: 0,
-        },
-        Message: "Expected a closing bracket",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:5}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected an expression"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:4}, End:ast.Location{Line:1, Column:5}, SourceID:0}, Message: "Expected a closing bracket"},
 }
 ---

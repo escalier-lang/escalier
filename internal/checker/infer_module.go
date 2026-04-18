@@ -529,7 +529,7 @@ func (c *Checker) InferComponent(
 							)
 						}
 					default:
-						errors = append(errors, &UnimplementedError{
+						errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 							message: fmt.Sprintf("Unsupported class element type: %T", elem),
 							span:    elem.Span(),
 						})
@@ -1267,7 +1267,7 @@ func (c *Checker) InferComponent(
 			// Generate an error if the type reference couldn't be resolved
 			if ref.TypeAlias == nil {
 				typeName := type_system.QualIdentToString(ref.Name)
-				errors = append(errors, &UnknownTypeError{
+				errors = append(errors, &UnknownTypeError{stackTraceBase: newStackTraceBase(), 
 					TypeName: typeName,
 					TypeRef:  ref,
 				})
@@ -1590,7 +1590,7 @@ func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Co
 	// For everything else, look up the value binding and create default export
 	binding := ctx.Scope.GetValue(name)
 	if binding == nil {
-		return UnresolvedExportAssignmentError{
+		return UnresolvedExportAssignmentError{stackTraceBase: newStackTraceBase(), 
 			Name: name,
 			span: stmt.Name.Span(),
 		}
@@ -1672,7 +1672,7 @@ func (c *Checker) validateInterfaceMerge(
 			unifyErrors := c.Unify(ctx, newType, existingType)
 			if len(unifyErrors) > 0 {
 				// Add a more specific error for interface merging
-				errors = append(errors, &InterfaceMergeError{
+				errors = append(errors, &InterfaceMergeError{stackTraceBase: newStackTraceBase(), 
 					InterfaceName: decl.Name.Name,
 					PropertyName:  name.String(),
 					ExistingType:  existingType,

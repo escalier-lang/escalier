@@ -119,7 +119,9 @@ func typeKey(t type_system.Type) string {
 // noMatchError is a sentinel error indicating that no case in unifyMatched
 // handled the type combination. unifyPruned uses this to decide whether
 // expansion and retry is appropriate.
-type noMatchError struct{}
+type noMatchError struct {
+	stackTraceBase
+}
 
 func (e *noMatchError) isError()        {}
 func (e *noMatchError) Span() ast.Span  { return DEFAULT_SPAN }
@@ -369,7 +371,7 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, seen unifySe
 		}
 
 		// Nothing could be expanded, return a real error
-		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), T1: t1, T2: t2}}
 	}
 }
 
@@ -433,7 +435,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				return nil
 			}
 			// Different primitive types cannot be unified
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: prim1,
 				T2: prim2,
 			}}
@@ -489,7 +491,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			return nil
 		}
 		// UnknownType cannot be assigned to other types
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: t1,
 			T2: t2,
 		}}
@@ -505,7 +507,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	}
 	// | _, NeverType -> ...
 	if _, ok := t2.(*type_system.NeverType); ok {
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: t1,
 			T2: t2,
 		}}
@@ -521,7 +523,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				return nil
 			}
 		}
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: t1,
 			T2: t2,
 		}}
@@ -534,7 +536,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				return nil
 			}
 		}
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: t1,
 			T2: t2,
 		}}
@@ -591,7 +593,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				}
 				return errors
 			}
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: tuple1,
 				T2: array2,
 			}}
@@ -614,7 +616,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				}
 				return errors
 			}
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: array1,
 				T2: tuple2,
 			}}
@@ -628,7 +630,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				return c.unifyInner(ctx, array1.TypeArgs[0], array2.TypeArgs[0], seen)
 			}
 			// If either array doesn't have exactly one type argument, they can't be unified
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: array1,
 				T2: array2,
 			}}
@@ -664,7 +666,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				if typeAlias1 == nil {
 					typeAlias1 = resolveQualifiedTypeAlias(ctx, ref1.Name)
 					if typeAlias1 == nil {
-						return []Error{&UnknownTypeError{
+						return []Error{&UnknownTypeError{stackTraceBase: newStackTraceBase(), 
 							TypeName: type_system.QualIdentToString(ref1.Name),
 							TypeRef:  ref1,
 						}}
@@ -674,7 +676,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				if typeAlias2 == nil {
 					typeAlias2 = resolveQualifiedTypeAlias(ctx, ref2.Name)
 					if typeAlias2 == nil {
-						return []Error{&UnknownTypeError{
+						return []Error{&UnknownTypeError{stackTraceBase: newStackTraceBase(), 
 							TypeName: type_system.QualIdentToString(ref2.Name),
 							TypeRef:  ref2,
 						}}
@@ -689,7 +691,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				// Both references have the same alias name and may have type arguments.
 				// Unify each corresponding type argument pairwise.
 				if len(ref1.TypeArgs) != len(ref2.TypeArgs) {
-					return []Error{&CannotUnifyTypesError{
+					return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 						T1: ref1,
 						T2: ref2,
 					}}
@@ -715,7 +717,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			} else if _, ok := lit.Lit.(*type_system.BigIntLit); ok && prim.Prim == "bigint" {
 				return nil
 			} else {
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: lit,
 					T2: prim,
 				}}
@@ -730,7 +732,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if l1.Equal(l2) {
 						return nil
 					} else {
-						return []Error{&CannotUnifyTypesError{
+						return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 							T1: lit1,
 							T2: lit2,
 						}}
@@ -742,7 +744,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if l1.Equal(l2) {
 						return nil
 					} else {
-						return []Error{&CannotUnifyTypesError{
+						return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 							T1: lit1,
 							T2: lit2,
 						}}
@@ -754,7 +756,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if l1.Equal(l2) {
 						return nil
 					} else {
-						return []Error{&CannotUnifyTypesError{
+						return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 							T1: lit1,
 							T2: lit2,
 						}}
@@ -771,7 +773,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					return nil
 				}
 			}
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: lit1,
 				T2: lit2,
 			}}
@@ -783,7 +785,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			if type_system.Equals(regex1, regex2) {
 				return nil
 			} else {
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: regex1,
 					T2: regex2,
 				}}
@@ -816,7 +818,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 
 					return errors
 				} else {
-					return []Error{&CannotUnifyTypesError{
+					return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 						T1: lit,
 						T2: regexType,
 					}}
@@ -839,7 +841,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			if type_system.Equals(unique1, unique2) {
 				return nil
 			} else {
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: unique1,
 					T2: unique2,
 				}}
@@ -862,7 +864,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			if obj2.Nominal && !ctx.IsPatMatch {
 				if obj1.ID != obj2.ID {
 					// TODO(#424): check what classes the objects extend
-					return []Error{&CannotUnifyTypesError{
+					return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 						T1: obj1,
 						T2: obj2,
 					}}
@@ -1047,7 +1049,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, true, seen))
 			} else if hasRests1 && hasRests2 {
 				// TODO(#410): implement unification when both sides have RestSpreadElems
-				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
+				return []Error{&UnimplementedError{stackTraceBase: newStackTraceBase(), message: "unify types with rest elems on both sides"}}
 			} else if ctx.IsPatMatch {
 				// In pattern-matching mode: unify shared properties, and verify
 				// all pattern fields (keys1) exist on the target (keys2).
@@ -1060,7 +1062,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						unifyErrors := c.unifyInner(ctx, namedElems1[key1], value2, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
-						errors = append(errors, &PropertyNotFoundError{
+						errors = append(errors, &PropertyNotFoundError{stackTraceBase: newStackTraceBase(), 
 							Property: key1,
 							Object:   obj2,
 							span:     getKeyNotFoundSpan(obj1, namedElems1[key1]),
@@ -1082,7 +1084,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 							unifyErrors := c.unifyInner(ctx, wt1, wt2, seen)
 							errors = slices.Concat(errors, unifyErrors)
 						} else if hasW2 && !hasW1 {
-							errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+							errors = slices.Concat(errors, []Error{&KeyNotFoundError{stackTraceBase: newStackTraceBase(), 
 								Object: obj1,
 								Key:    key2,
 							}})
@@ -1109,7 +1111,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 									}
 								}
 								if inferredAt != nil {
-									unifyErrors[i] = &PropertyTypeMismatchError{
+									unifyErrors[i] = &PropertyTypeMismatchError{stackTraceBase: newStackTraceBase(), 
 										Property:   key2,
 										T1:         cue.T1,
 										T2:         cue.T2,
@@ -1125,7 +1127,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						unifyErrors := c.unifyInner(ctx, idxValType, value2, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					} else {
-						knfErr := &KeyNotFoundError{
+						knfErr := &KeyNotFoundError{stackTraceBase: newStackTraceBase(), 
 							Object: obj1,
 							Key:    key2,
 							span:   getKeyNotFoundSpan(obj1, value2),
@@ -1243,7 +1245,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				}
 				if !found {
 					// Could not find a matching type in intersection1 for this t2Part
-					errors = append(errors, &CannotUnifyTypesError{
+					errors = append(errors, &CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 						T1: intersection1,
 						T2: intersection2,
 					})
@@ -1358,7 +1360,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if writeOnlyFields[name] {
 						// Field exists as a setter on at least one union
 						// member but is not readable — report an error.
-						errors = append(errors, &UnknownPropertyError{
+						errors = append(errors, &UnknownPropertyError{stackTraceBase: newStackTraceBase(), 
 							ObjectType: union,
 							Property:   name.String(),
 						})
@@ -1419,7 +1421,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			// TODO: include the individual reasons why unification failed
 			if len(unifyErrors) > 0 {
 				// If any type in the union is not compatible, return error
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: union,
 					T2: t2,
 				}}
@@ -1451,13 +1453,13 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			}
 		}
 		// If we couldn't unify with any union member, return a unification error
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: t1,
 			T2: union,
 		}}
 	}
 
-	return []Error{&noMatchError{}}
+	return []Error{&noMatchError{stackTraceBase: newStackTraceBase()}}
 }
 
 // unifyExtractor unifies a subject type against an ExtractorType by finding
@@ -1483,18 +1485,18 @@ func (c *Checker) unifyExtractor(
 
 	methodElem, extObj := c.findCustomMatcherMethod(ext)
 	if extObj == nil {
-		return []Error{&InvalidExtractorTypeError{
+		return []Error{&InvalidExtractorTypeError{stackTraceBase: newStackTraceBase(), 
 			ExtractorType: ext,
 			ActualType:    ext.Extractor,
 		}}
 	}
 	if methodElem == nil {
-		return []Error{&MissingCustomMatcherError{
+		return []Error{&MissingCustomMatcherError{stackTraceBase: newStackTraceBase(), 
 			ObjectType: extObj,
 		}}
 	}
 	if len(methodElem.Fn.Params) != 1 {
-		return []Error{&IncorrectParamCountForCustomMatcherError{
+		return []Error{&IncorrectParamCountForCustomMatcherError{stackTraceBase: newStackTraceBase(), 
 			Method:    methodElem.Fn,
 			NumParams: len(methodElem.Fn.Params),
 		}}
@@ -1518,7 +1520,7 @@ func (c *Checker) unifyExtractor(
 
 	tuple, ok := fn.Return.(*type_system.TupleType)
 	if !ok {
-		return []Error{&ExtractorMustReturnTupleError{
+		return []Error{&ExtractorMustReturnTupleError{stackTraceBase: newStackTraceBase(), 
 			ExtractorType: ext,
 			ReturnType:    fn.Return,
 		}}
@@ -1553,7 +1555,7 @@ func (c *Checker) unifyExtractor(
 		// Tuple has rest element.
 		// Must have at least as many tuple elements as fixed args before rest.
 		if len(tuple.Elems) < restIndex {
-			return []Error{&ExtractorReturnTypeMismatchError{
+			return []Error{&ExtractorReturnTypeMismatchError{stackTraceBase: newStackTraceBase(), 
 				ExtractorType: ext,
 				ReturnType:    tuple,
 				NumArgs:       len(ext.Args),
@@ -1583,7 +1585,7 @@ func (c *Checker) unifyExtractor(
 				errors = slices.Concat(errors, argErrors)
 			}
 		} else {
-			return []Error{&ExtractorReturnTypeMismatchError{
+			return []Error{&ExtractorReturnTypeMismatchError{stackTraceBase: newStackTraceBase(), 
 				ExtractorType: ext,
 				ReturnType:    tuple,
 				NumArgs:       len(ext.Args),
@@ -1719,7 +1721,7 @@ func (c *Checker) unifyClosedWithRests(
 			errors = slices.Concat(errors, unifyErrors)
 			usedTargetKeys[key] = true
 		} else {
-			errors = slices.Concat(errors, []Error{&KeyNotFoundError{
+			errors = slices.Concat(errors, []Error{&KeyNotFoundError{stackTraceBase: newStackTraceBase(), 
 				Object: targetObj,
 				Key:    key,
 				span:   getKeyNotFoundSpan(targetObj, value),
@@ -1751,7 +1753,7 @@ func (c *Checker) unifyClosedWithRests(
 		unifyErrors := unifyPair(unboundRests[0], objType)
 		errors = slices.Concat(errors, unifyErrors)
 	} else if len(unboundRests) > 1 && len(remainingElems) > 0 {
-		errors = append(errors, &UnimplementedError{
+		errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 			message: fmt.Sprintf(
 				"cannot distribute %d properties across %d unbound rest spread elements; consider using a single spread or explicit property definitions",
 				len(remainingElems),
@@ -1762,7 +1764,7 @@ func (c *Checker) unifyClosedWithRests(
 		// All rests are bound but there are leftover properties — error.
 		for _, elem := range remainingElems {
 			if prop, ok := elem.(*type_system.PropertyElem); ok {
-				errors = append(errors, &KeyNotFoundError{
+				errors = append(errors, &KeyNotFoundError{stackTraceBase: newStackTraceBase(), 
 					Object: restObj,
 					Key:    prop.Name,
 					span:   getKeyNotFoundSpan(restObj, prop.Value),
@@ -1787,7 +1789,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 
 	// Check type parameters compatibility
 	if len(func1.TypeParams) != len(func2.TypeParams) {
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: func1,
 			T2: func2,
 		}}
@@ -1826,7 +1828,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 		// Both functions have rest parameters
 		// They must have the same number of fixed parameters and compatible rest types
 		if func1RestIndex != func2RestIndex {
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: func1,
 				T2: func2,
 			}}
@@ -1846,7 +1848,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 				// This is fine - param2 is more restrictive
 			} else if !param1.Optional && param2.Optional {
 				// param1 requires the parameter but param2 makes it optional
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: func1,
 					T2: func2,
 				}}
@@ -1861,7 +1863,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 
 		// Check that both functions don't have parameters after rest (which shouldn't happen)
 		if len(func1.Params) > func1RestIndex+1 || len(func2.Params) > func2RestIndex+1 {
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: func1,
 				T2: func2,
 			}}
@@ -1871,7 +1873,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 		// Only func2 has a rest parameter at func2RestIndex
 		// func1 must have at least as many fixed parameters as func2's fixed parameters
 		if len(func1.Params) < func2RestIndex {
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: func1,
 				T2: func2,
 			}}
@@ -1891,7 +1893,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 				// This is fine - param2 is more restrictive
 			} else if !param1.Optional && param2.Optional {
 				// param1 requires the parameter but param2 makes it optional
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: func1,
 					T2: func2,
 				}}
@@ -1926,7 +1928,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 		// Check if there are any remaining parameters in func2 after the rest parameter
 		// (This shouldn't happen if rest parameter is last, but handle it gracefully)
 		if func2RestIndex+1 < len(func2.Params) {
-			return []Error{&CannotUnifyTypesError{
+			return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 				T1: func1,
 				T2: func2,
 			}}
@@ -1959,7 +1961,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 				// This is fine - param2 is more restrictive
 			} else if !param1.Optional && param2.Optional {
 				// param1 requires the parameter but param2 makes it optional
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: func1,
 					T2: func2,
 				}}
@@ -1970,7 +1972,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 		// Otherwise func1 would require arguments that func2 callers won't provide
 		for i := len(func2.Params); i < len(func1.Params); i++ {
 			if !func1.Params[i].Optional {
-				return []Error{&CannotUnifyTypesError{
+				return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 					T1: func1,
 					T2: func2,
 				}}
@@ -1986,7 +1988,7 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 		errors = slices.Concat(errors, unifyErrors)
 	} else if func1.Return == nil && func2.Return != nil {
 		// func1 returns void/undefined, func2 expects a return type
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: func1,
 			T2: func2,
 		}}
@@ -2022,7 +2024,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 	if !type_system.Equals(t1, t2) {
 		if occursInType(t1, t2) {
 			fmt.Fprintf(os.Stderr, "Recursive unification: cannot bind %s to %s\n", t1.String(), t2.String())
-			return []Error{&RecursiveUnificationError{
+			return []Error{&RecursiveUnificationError{stackTraceBase: newStackTraceBase(), 
 				Left:  t1,
 				Right: t2,
 			}}
@@ -2779,7 +2781,7 @@ func (c *Checker) unifyFixedTuples(ctx Context, tuple1, tuple2 *type_system.Tupl
 			errors = slices.Concat(errors, unifyErrors)
 		}
 
-		return slices.Concat(errors, []Error{&NotEnoughElementsToUnpackError{
+		return slices.Concat(errors, []Error{&NotEnoughElementsToUnpackError{stackTraceBase: newStackTraceBase(), 
 			span: ast.MergeSpans(first.Span(), last.Span()),
 		}})
 	}
@@ -2816,7 +2818,7 @@ func (c *Checker) unifyFixedVsVariadic(
 	if len(fixedElems) < requiredCount {
 		// The source doesn't have enough elements to fill the target's
 		// mandatory prefix and suffix positions.
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: type_system.NewTupleType(nil, fixedElems...),
 			T2: type_system.NewTupleType(nil, append(append(prefix2, rest2), suffix2...)...),
 		}}
@@ -2967,7 +2969,7 @@ func (c *Checker) unifyVariadicVsVariadic(
 		errors = slices.Concat(errors, unifyErrors)
 	} else {
 		// Both sides have extras — cannot unify
-		return []Error{&CannotUnifyTypesError{
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), 
 			T1: type_system.NewTupleType(nil, append(append(prefix1, rest1), suffix1...)...),
 			T2: type_system.NewTupleType(nil, append(append(prefix2, rest2), suffix2...)...),
 		}}
@@ -3176,7 +3178,7 @@ func (c *Checker) unifyPatternWithUnion(
 
 	// 3. If no members matched, error
 	if len(matchedMembers) == 0 {
-		return []Error{&CannotUnifyTypesError{T1: pat, T2: union}}
+		return []Error{&CannotUnifyTypesError{stackTraceBase: newStackTraceBase(), T1: pat, T2: union}}
 	}
 
 	// 4. Store matched members for future exhaustiveness checking.

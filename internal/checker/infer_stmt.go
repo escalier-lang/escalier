@@ -145,14 +145,14 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 					// Promise<T, E> is already correct
 				} else {
 					// Promise with no args, this shouldn't happen but let's handle it
-					errors = append(errors, &UnimplementedError{
+					errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 						message: "Promise type must have at least one type argument",
 						span:    decl.Span(),
 					})
 				}
 			} else {
 				// Declared async function must return a Promise type
-				errors = append(errors, &UnimplementedError{
+				errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 					message: "Declared async functions must return a Promise type",
 					span:    decl.Span(),
 				})
@@ -388,7 +388,7 @@ func (c *Checker) inferForInStmt(ctx Context, stmt *ast.ForInStmt) []Error {
 
 	// Validate async context for 'for await'
 	if stmt.IsAwait && !ctx.IsAsync {
-		errors = append(errors, &UnimplementedError{
+		errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 			message: "'for await' is only allowed in async functions",
 			span:    stmt.Span(),
 		})
@@ -412,7 +412,7 @@ func (c *Checker) inferForInStmt(ctx Context, stmt *ast.ForInStmt) []Error {
 	}
 
 	if elementType == nil {
-		errors = append(errors, &UnimplementedError{
+		errors = append(errors, &UnimplementedError{stackTraceBase: newStackTraceBase(), 
 			message: fmt.Sprintf("Type '%s' is not iterable", iterableType),
 			span:    stmt.Iterable.Span(),
 		})

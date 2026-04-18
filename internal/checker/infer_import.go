@@ -73,14 +73,14 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 	if startDir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return "", &GenericError{message: "Could not get current working directory for import", span: importStmt.Span()}
+			return "", &GenericError{stackTraceBase: newStackTraceBase(), message: "Could not get current working directory for import", span: importStmt.Span()}
 		}
 		startDir = cwd
 	}
 
 	packageJsonDir, found := findPackageJsonFile(startDir)
 	if !found {
-		return "", &GenericError{message: "Could not find package.json for import", span: importStmt.Span()}
+		return "", &GenericError{stackTraceBase: newStackTraceBase(), message: "Could not find package.json for import", span: importStmt.Span()}
 	}
 
 	// First, try to find types in the main package (node_modules/<pkg_name>)
@@ -100,7 +100,7 @@ func resolveImport(ctx Context, importStmt *ast.ImportStmt) (string, Error) {
 		}
 	}
 
-	return "", &GenericError{
+	return "", &GenericError{stackTraceBase: newStackTraceBase(), 
 		message: "Could not find types for module import: " + importStmt.PackageName +
 			" (checked node_modules/" + importStmt.PackageName + " and node_modules/@types/" + importStmt.PackageName + ")",
 		span: importStmt.Span(),
@@ -327,7 +327,7 @@ func (c *Checker) inferParsedTypeDef(
 	for _, dtsImport := range parsedTypeDef.Imports {
 		depTypesPath, resolveErr := resolveDtsImport(dtsFilePath, dtsImport)
 		if resolveErr != nil {
-			errors = append(errors, &GenericError{
+			errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 				message: fmt.Sprintf("Could not resolve import %s in %s: %s",
 					dtsImport.From, dtsFilePath, resolveErr.Error()),
 				span: DEFAULT_SPAN,
@@ -363,7 +363,7 @@ func (c *Checker) inferParsedTypeDef(
 	pkgNs := type_system.NewNamespace()
 	for alias, ns := range importedNamespaces {
 		if err := pkgNs.SetNamespace(alias, ns); err != nil {
-			errors = append(errors, &GenericError{
+			errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 				message: fmt.Sprintf("Failed to add imported namespace %s: %s", alias, err.Error()),
 				span:    DEFAULT_SPAN,
 			})
@@ -463,7 +463,7 @@ func (c *Checker) processNamedExport(
 		// Re-export: resolve and load the source module
 		resolvedPath, resolveErr := c.resolveExportModulePath(sourceFilePath, stmt.From)
 		if resolveErr != nil {
-			errors = append(errors, &GenericError{
+			errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 				message: fmt.Sprintf("Cannot resolve re-export from '%s': %s",
 					stmt.From, resolveErr.Error()),
 				span: stmt.Span(),
@@ -535,7 +535,7 @@ func (c *Checker) processNamedExport(
 			} else {
 				message = fmt.Sprintf("Module '%s' has no export named '%s'", stmt.From, localName)
 			}
-			errors = append(errors, &GenericError{
+			errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 				message: message,
 				span:    spec.Span(),
 			})
@@ -559,7 +559,7 @@ func (c *Checker) processExportAll(
 	// Resolve the module path
 	resolvedPath, resolveErr := c.resolveExportModulePath(sourceFilePath, stmt.From)
 	if resolveErr != nil {
-		errors = append(errors, &GenericError{
+		errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 			message: fmt.Sprintf("Cannot resolve export * from '%s': %s",
 				stmt.From, resolveErr.Error()),
 			span: stmt.Span(),
@@ -582,7 +582,7 @@ func (c *Checker) processExportAll(
 		// Skip for type-only exports (namespaces are runtime constructs)
 		if !stmt.TypeOnly {
 			if err := pkgNs.SetNamespace(stmt.AsName.Name, depNs); err != nil {
-				errors = append(errors, &GenericError{
+				errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 					message: fmt.Sprintf("Cannot create namespace '%s': %s",
 						stmt.AsName.Name, err.Error()),
 					span: stmt.Span(),
@@ -657,7 +657,7 @@ func (c *Checker) processExportAsNamespace(
 	if c.GlobalScope != nil && c.GlobalScope.Namespace != nil {
 		exportedNs := filterExportedNamespace(pkgNs)
 		if err := c.GlobalScope.Namespace.SetNamespace(stmt.Name.Name, exportedNs); err != nil {
-			errors = append(errors, &GenericError{
+			errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 				message: fmt.Sprintf("Cannot create global namespace '%s': %s",
 					stmt.Name.Name, err.Error()),
 				span: stmt.Span(),
@@ -729,7 +729,7 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 	if loadErr != nil {
 		// Remove the in-progress entry so later loads can retry and report the real failure.
 		delete(c.PackageRegistry.packages, filePath)
-		return []Error{&GenericError{
+		return []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
 			message: "Could not load referenced file " + filePath + ": " + loadErr.Error(),
 			span:    DEFAULT_SPAN,
 		}}
@@ -765,7 +765,7 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 
 	// Update the registry with the file's namespace (replacing the in-progress sentinel)
 	if updateErr := c.PackageRegistry.Update(filePath, processed.PkgNs); updateErr != nil {
-		errors = append(errors, &GenericError{
+		errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 			message: fmt.Sprintf("Failed to update package registry for %s: %s", filePath, updateErr.Error()),
 			span:    DEFAULT_SPAN,
 		})
@@ -820,7 +820,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	if loadErr != nil {
 		// Clean up sentinel so the package can be retried
 		delete(c.PackageRegistry.packages, dtsFilePath) // Need to expose a Remove method
-		return nil, []Error{&GenericError{
+		return nil, []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
 			message: "Could not load type definitions for module import: " + packageName,
 			span:    span,
 		}}
@@ -859,7 +859,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		// Register named module with a composite key: filePath + "#" + moduleName
 		namedModuleKey := dtsFilePath + "#" + moduleName
 		if regErr := c.PackageRegistry.Register(namedModuleKey, moduleNs); regErr != nil {
-			errors = append(errors, &GenericError{
+			errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 				message: fmt.Sprintf("Failed to register named module %s: %s", moduleName, regErr.Error()),
 				span:    DEFAULT_SPAN,
 			})
@@ -889,7 +889,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 		pkgNs = type_system.NewNamespace()
 	} else {
 		delete(c.PackageRegistry.packages, dtsFilePath)
-		return nil, []Error{&GenericError{
+		return nil, []Error{&GenericError{stackTraceBase: newStackTraceBase(), 
 			message: "Type definitions for module import do not contain expected module: " + packageName,
 			span:    span,
 		}}
@@ -898,7 +898,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	// Step 7: Update the registry with the real namespace (replacing the sentinel)
 	// Note: We marked as in-progress earlier to prevent cycles, now we update it
 	if updateErr := c.PackageRegistry.Update(dtsFilePath, pkgNs); updateErr != nil {
-		errors = append(errors, &GenericError{
+		errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 			message: fmt.Sprintf("Failed to update package registry for %s: %s", packageName, updateErr.Error()),
 			span:    span,
 		})
@@ -941,7 +941,7 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 	errors = append(errors, loadErrors...)
 	if loadedPkg == nil || loadedPkg.Namespace == nil {
 		if len(errors) == 0 {
-			errors = append(errors, &GenericError{
+			errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 				message: "Failed to load package: " + importStmt.PackageName,
 				span:    importStmt.Span(),
 			})
@@ -966,7 +966,7 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 			// Filter to only include exported items
 			filteredNs := filterExportedNamespace(pkgNs)
 			if err := ctx.Scope.Namespace.SetNamespace(specifier.Alias, filteredNs); err != nil {
-				errors = append(errors, &GenericError{
+				errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 					message: fmt.Sprintf("Cannot bind namespace %q: %s", specifier.Alias, err.Error()),
 					span:    importStmt.Span(),
 				})
@@ -994,7 +994,7 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 			// Check for namespace binding
 			if ns, ok := pkgNs.GetNamespace(specifier.Name); ok {
 				if err := ctx.Scope.Namespace.SetNamespace(localName, ns); err != nil {
-					errors = append(errors, &GenericError{
+					errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 						message: fmt.Sprintf("Cannot bind namespace %q: %s", localName, err.Error()),
 						span:    importStmt.Span(),
 					})
@@ -1003,7 +1003,7 @@ func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, 
 			}
 
 			if !found {
-				errors = append(errors, &GenericError{
+				errors = append(errors, &GenericError{stackTraceBase: newStackTraceBase(), 
 					message: fmt.Sprintf("Package %q has no export named %q",
 						importStmt.PackageName, specifier.Name),
 					span: importStmt.Span(),

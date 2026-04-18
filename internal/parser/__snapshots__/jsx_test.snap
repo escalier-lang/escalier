@@ -729,51 +729,16 @@
 
 [TestParseJSXErrors/MissingEqualsInStringAttr - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:10},
-            End:      ast.Location{Line:1, Column:17},
-            SourceID: 0,
-        },
-        Message: "Expected '>' or '/>'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:20},
-            End:      ast.Location{Line:1, Column:20},
-            SourceID: 0,
-        },
-        Message: "Expected '</'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:20},
-            End:      ast.Location{Line:1, Column:20},
-            SourceID: 0,
-        },
-        Message: "Expected an identifier or '>'",
-    },
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:20},
-            End:      ast.Location{Line:1, Column:20},
-            SourceID: 0,
-        },
-        Message: "Expected '>'",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:10}, End:ast.Location{Line:1, Column:17}, SourceID:0}, Message: "Expected '>' or '/>'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:20}, End:ast.Location{Line:1, Column:20}, SourceID:0}, Message: "Expected '</'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:20}, End:ast.Location{Line:1, Column:20}, SourceID:0}, Message: "Expected an identifier or '>'"},
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:20}, End:ast.Location{Line:1, Column:20}, SourceID:0}, Message: "Expected '>'"},
 }
 ---
 
 [TestParseJSXErrors/MissingEqualsInExprAttr - 2]
 []*parser.Error{
-    &parser.Error{
-        Span: ast.Span{
-            Start:    ast.Location{Line:1, Column:11},
-            End:      ast.Location{Line:1, Column:12},
-            SourceID: 0,
-        },
-        Message: "Expected '...' for spread attribute",
-    },
+    &parser.Error{Span: ast.Span{Start:ast.Location{Line:1, Column:11}, End:ast.Location{Line:1, Column:12}, SourceID:0}, Message: "Expected '...' for spread attribute"},
 }
 ---
 

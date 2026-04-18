@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -15,11 +16,31 @@ var DEFAULT_SPAN = ast.Span{
 	SourceID: -1,
 }
 
+// stackTraceBase holds a Go stack trace captured at error creation time.
+// Embed this in each checker error struct to provide stack trace support.
+type stackTraceBase struct {
+	stackTrace []byte
+}
+
+// newStackTraceBase captures the current goroutine stack trace.
+// Call this when constructing a checker error to record the creation site.
+func newStackTraceBase() stackTraceBase {
+	return stackTraceBase{stackTrace: debug.Stack()}
+}
+
+// StackTrace returns the Go stack trace captured when this error was created.
+func (s stackTraceBase) StackTrace() []byte {
+	return s.stackTrace
+}
+
 type Error interface {
 	isError()
 	Span() ast.Span
 	Message() string
 	IsWarning() bool
+	// StackTrace returns the Go stack trace captured at error creation, or nil
+	// if the error was created without stack trace capture.
+	StackTrace() []byte
 }
 
 func (e TypeCheckTimeoutError) isError()                    {}
@@ -104,7 +125,9 @@ func (e RedundantMatchCaseWarning) IsWarning() bool                { return true
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.
-type TypeCheckTimeoutError struct{}
+type TypeCheckTimeoutError struct {
+	stackTraceBase
+}
 
 func (e TypeCheckTimeoutError) Span() ast.Span {
 	return DEFAULT_SPAN
@@ -114,6 +137,7 @@ func (e TypeCheckTimeoutError) Message() string {
 }
 
 type CannotMutateImmutableError struct {
+	stackTraceBase
 	Type type_system.Type
 	span ast.Span
 }
@@ -126,6 +150,7 @@ func (e CannotMutateImmutableError) Message() string {
 }
 
 type CannotMutateReadonlyPropertyError struct {
+	stackTraceBase
 	Type     type_system.Type
 	Property string
 	span     ast.Span
@@ -139,6 +164,7 @@ func (e CannotMutateReadonlyPropertyError) Message() string {
 }
 
 type UnimplementedError struct {
+	stackTraceBase
 	message string
 	span    ast.Span
 }
@@ -151,6 +177,7 @@ func (e UnimplementedError) Message() string {
 }
 
 type GenericError struct {
+	stackTraceBase
 	message string
 	span    ast.Span
 }
@@ -165,12 +192,14 @@ func (e GenericError) Message() string {
 // NewGenericError creates a new generic error with the given message and span
 func NewGenericError(message string, span ast.Span) GenericError {
 	return GenericError{
-		message: message,
-		span:    span,
+		stackTraceBase: newStackTraceBase(),
+		message:        message,
+		span:           span,
 	}
 }
 
 type InvalidObjectKeyError struct {
+	stackTraceBase
 	Key  type_system.Type
 	span ast.Span
 }
@@ -183,6 +212,7 @@ func (e InvalidObjectKeyError) Message() string {
 }
 
 type KeyNotFoundError struct {
+	stackTraceBase
 	Object     *type_system.ObjectType
 	Key        type_system.ObjTypeKey
 	InferredAt *MemberAccessKeyProvenance // non-nil when the missing key was inferred by row inference
@@ -201,6 +231,7 @@ func (e KeyNotFoundError) Message() string {
 }
 
 type InterfaceMergeError struct {
+	stackTraceBase
 	InterfaceName string
 	PropertyName  string
 	ExistingType  type_system.Type
@@ -218,6 +249,7 @@ func (e InterfaceMergeError) Message() string {
 }
 
 type TypeParamMismatchError struct {
+	stackTraceBase
 	InterfaceName string
 	ExistingCount int
 	NewCount      int
@@ -233,6 +265,7 @@ func (e TypeParamMismatchError) Message() string {
 }
 
 type OutOfBoundsError struct {
+	stackTraceBase
 	Index  int
 	Length int
 	span   ast.Span
@@ -246,6 +279,7 @@ func (e OutOfBoundsError) Message() string {
 }
 
 type RecursiveUnificationError struct {
+	stackTraceBase
 	Left  type_system.Type
 	Right type_system.Type
 }
@@ -258,6 +292,7 @@ func (e RecursiveUnificationError) Message() string {
 }
 
 type NotEnoughElementsToUnpackError struct {
+	stackTraceBase
 	span ast.Span
 }
 
@@ -269,6 +304,7 @@ func (e NotEnoughElementsToUnpackError) Message() string {
 }
 
 type CannotUnifyTypesError struct {
+	stackTraceBase
 	T1 type_system.Type
 	T2 type_system.Type
 }
@@ -316,6 +352,7 @@ func (e CannotUnifyTypesError) Message() string {
 }
 
 type UnknownIdentifierError struct {
+	stackTraceBase
 	Ident *ast.IdentExpr
 	span  ast.Span
 }
@@ -328,6 +365,7 @@ func (e UnknownIdentifierError) Message() string {
 }
 
 type UnknownOperatorError struct {
+	stackTraceBase
 	Operator string
 }
 
@@ -339,6 +377,7 @@ func (e UnknownOperatorError) Message() string {
 }
 
 type UnknownTypeError struct {
+	stackTraceBase
 	TypeName string
 	TypeRef  *type_system.TypeRefType
 }
@@ -355,6 +394,7 @@ func (e UnknownTypeError) Message() string {
 }
 
 type CalleeIsNotCallableError struct {
+	stackTraceBase
 	Type type_system.Type
 	span ast.Span
 }
@@ -367,6 +407,7 @@ func (e CalleeIsNotCallableError) Message() string {
 }
 
 type InvalidNumberOfArgumentsError struct {
+	stackTraceBase
 	CallExpr ast.Expr
 	Callee   *type_system.FuncType
 	Args     []ast.Expr
@@ -381,6 +422,7 @@ func (e InvalidNumberOfArgumentsError) Message() string {
 }
 
 type NoMatchingOverloadError struct {
+	stackTraceBase
 	CallExpr         *ast.CallExpr
 	IntersectionType *type_system.IntersectionType
 	AttemptedErrors  [][]Error
@@ -413,6 +455,7 @@ func (e NoMatchingOverloadError) Message() string {
 }
 
 type ExpectedObjectError struct {
+	stackTraceBase
 	Type type_system.Type
 	span ast.Span
 }
@@ -425,6 +468,7 @@ func (e ExpectedObjectError) Message() string {
 }
 
 type ExpectedArrayError struct {
+	stackTraceBase
 	Type type_system.Type
 }
 
@@ -435,7 +479,9 @@ func (e ExpectedArrayError) Message() string {
 	return "Expected an array type, but got: " + e.Type.String()
 }
 
-type CyclicDependencyError struct{}
+type CyclicDependencyError struct {
+	stackTraceBase
+}
 
 func (e CyclicDependencyError) Span() ast.Span {
 	return DEFAULT_SPAN
@@ -445,6 +491,7 @@ func (e CyclicDependencyError) Message() string {
 }
 
 type UnknownPropertyError struct {
+	stackTraceBase
 	ObjectType type_system.Type
 	Property   string
 	span       ast.Span
@@ -458,6 +505,7 @@ func (e UnknownPropertyError) Message() string {
 }
 
 type IncorrectParamCountForCustomMatcherError struct {
+	stackTraceBase
 	Method    *type_system.FuncType
 	NumParams int
 }
@@ -470,6 +518,7 @@ func (e IncorrectParamCountForCustomMatcherError) Message() string {
 }
 
 type ExtractorReturnTypeMismatchError struct {
+	stackTraceBase
 	ExtractorType *type_system.ExtractorType
 	ReturnType    type_system.Type
 	NumArgs       int
@@ -484,6 +533,7 @@ func (e ExtractorReturnTypeMismatchError) Message() string {
 }
 
 type ExtractorMustReturnTupleError struct {
+	stackTraceBase
 	ExtractorType *type_system.ExtractorType
 	ReturnType    type_system.Type
 }
@@ -496,6 +546,7 @@ func (e ExtractorMustReturnTupleError) Message() string {
 }
 
 type MissingCustomMatcherError struct {
+	stackTraceBase
 	ObjectType *type_system.ObjectType
 }
 
@@ -507,6 +558,7 @@ func (e MissingCustomMatcherError) Message() string {
 }
 
 type InvalidExtractorTypeError struct {
+	stackTraceBase
 	ExtractorType *type_system.ExtractorType
 	ActualType    type_system.Type
 }
@@ -519,6 +571,7 @@ func (e InvalidExtractorTypeError) Message() string {
 }
 
 type MissingRequiredPropError struct {
+	stackTraceBase
 	PropName   string
 	ObjectType type_system.Type
 	span       ast.Span
@@ -532,6 +585,7 @@ func (e MissingRequiredPropError) Message() string {
 }
 
 type UnknownComponentError struct {
+	stackTraceBase
 	Name string
 	span ast.Span
 }
@@ -544,6 +598,7 @@ func (e UnknownComponentError) Message() string {
 }
 
 type InvalidKeyPropError struct {
+	stackTraceBase
 	ActualType type_system.Type
 	span       ast.Span
 }
@@ -556,6 +611,7 @@ func (e InvalidKeyPropError) Message() string {
 }
 
 type UnexpectedChildrenError struct {
+	stackTraceBase
 	ComponentName string
 	span          ast.Span
 }
@@ -568,6 +624,7 @@ func (e UnexpectedChildrenError) Message() string {
 }
 
 type UnresolvedExportAssignmentError struct {
+	stackTraceBase
 	Name string
 	span ast.Span
 }
@@ -580,6 +637,7 @@ func (e UnresolvedExportAssignmentError) Message() string {
 }
 
 type PropertyTypeMismatchError struct {
+	stackTraceBase
 	Property   type_system.ObjTypeKey
 	T1         type_system.Type
 	T2         type_system.Type
@@ -599,6 +657,7 @@ func (e PropertyTypeMismatchError) Message() string {
 }
 
 type PropertyNotFoundError struct {
+	stackTraceBase
 	Property type_system.ObjTypeKey
 	Object   *type_system.ObjectType
 	span     ast.Span
@@ -612,6 +671,7 @@ func (e PropertyNotFoundError) Message() string {
 }
 
 type ConstructorUsedAsMatchTargetError struct {
+	stackTraceBase
 	TargetType type_system.Type
 	span       ast.Span
 }
@@ -626,6 +686,7 @@ func (e ConstructorUsedAsMatchTargetError) Message() string {
 // NonExhaustiveMatchError is reported when a match expression does not cover
 // all possible values of the target type.
 type NonExhaustiveMatchError struct {
+	stackTraceBase
 	UncoveredTypes []type_system.Type
 	IsNonFinite    bool
 	span           ast.Span
@@ -660,6 +721,7 @@ func (e NonExhaustiveMatchError) Message() string {
 // RedundantMatchCaseWarning is reported when a match branch can never be
 // reached because all types it covers are already handled by earlier branches.
 type RedundantMatchCaseWarning struct {
+	stackTraceBase
 	span ast.Span
 }
 
@@ -674,6 +736,7 @@ func (e RedundantMatchCaseWarning) Message() string {
 // branches whose inner patterns do not collectively exhaust the member's inner
 // type.
 type InnerNonExhaustiveMatchError struct {
+	stackTraceBase
 	MemberType     type_system.Type
 	InnerUncovered []type_system.Type
 	IsNonFinite    bool
