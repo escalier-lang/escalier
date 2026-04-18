@@ -424,7 +424,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 
 		objType := type_system.NewObjectType(provenance, typeElems)
-		bindErrors := c.bind(objCtx, selfType, objType, 0, make(unifySeen))
+		bindErrors := c.bind(objCtx, selfType, objType, make(unifySeen))
 		errors = slices.Concat(errors, bindErrors)
 
 		i := 0 // indexes into paramBindingsSlice

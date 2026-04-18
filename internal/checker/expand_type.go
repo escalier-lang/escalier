@@ -131,7 +131,7 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 	// TypeRefType → TypeAlias links with a visited set to detect cycles
 	// like A→B→A. This overlaps with unifySeen/expandSeen cycle detection
 	// but is kept as an optimization to avoid entering ExpandType +
-	// unifyWithDepth for known simple alias cycles.
+	// unifyInner for known simple alias cycles.
 	originName := type_system.QualIdentToString(t.Name)
 	visited := map[string]bool{originName: true}
 	cur := expandedType

@@ -26,7 +26,7 @@ loop for three scenarios:
 
 Plan A (PR #451) replaced the retry loop with a `noMatchError` sentinel in
 `unifyMatched` and a three-tier expansion loop in `unifyPruned`:
-- Tier 1: `canExpandTypeRef` → `ExpandType(t, 1)` → `unifyWithDepth(depth+1)`
+- Tier 1: `canExpandTypeRef` → `ExpandType(t, 1)` → `unifyInner(seen)`
 - Tier 2: `ExpandType(t, 0)` + Prune → `continue` for non-TypeRef types
 - Tier 3: Last-resort `ExpandType(t, 1)` for nominal/refused TypeRefTypes
 
@@ -38,10 +38,10 @@ aliases, nominal types, and transitive self-referential cycles (A→B→A).
 Plan B added `unifySeen` and `expandSeen` visited-set cycle detection, removed
 `maxUnifyDepth`, and increased `maxExpansionRetries` from 10 to 100 as a safety
 net. All ~70 internal `c.Unify` calls in `unify.go` were replaced with
-`c.unifyWithDepth(..., depth, seen)`. All helper functions (`bind`,
+`c.unifyInner(..., seen)`. All helper functions (`bind`,
 `unifyFuncTypes`, `unifyTuples`, `unifyExtractor`, `unifyClosedWithRests`,
 `unifyPatternWithUnion`, `handleArrayConstraintBinding`, and all tuple unification
-variants) were updated to accept and propagate `depth int, seen unifySeen`.
+variants) were updated to accept and propagate `seen unifySeen`.
 
 However, several areas need verification:
 
@@ -52,9 +52,7 @@ However, several areas need verification:
   `ExpandType`'s own `expandSeen` visited set for termination within each call,
   but cycles that span across unification and expansion may not be caught.
 - Plan B's bulk replacement of `c.Unify` calls was verified by grepping for
-  residual `c.Unify` calls in `unify.go` (zero found). However, the correctness
-  of `depth` propagation (forwarding `depth` vs `depth+1`) was not individually
-  audited for each call site.
+  residual `c.Unify` calls in `unify.go` (zero found).
 - Plan B deferred Step 6 (evaluate removing ad-hoc counters:
   `expandTypeRefsCount`, `skipTypeRefsCount`, `insideKeyOfTarget`) and the
   evaluation of `canExpandTypeRef`'s transitive cycle detection overlap with
@@ -62,29 +60,26 @@ However, several areas need verification:
 
 ## Plan
 
-### Step 1: Audit `c.Unify` propagation in Tuple/Array paths
+### Step 1: Audit `seen` propagation in Tuple/Array paths
 
 **Result: All correct. No fixes needed.**
 
-Audited every `c.unifyWithDepth` call in the Tuple/Array/KeyOf paths. The
-convention is:
-- **Structural forwarding** (tuple elements, array elements, object properties,
-  function params/return): pass `depth` unchanged
-- **Alias expansion** (TypeRefType expansion via ExpandType): pass `depth+1`
+Audited every `c.unifyInner` call in the Tuple/Array/KeyOf paths. All call sites
+correctly propagate the `seen` set. (The `depth` parameter that existed during the
+original audit was subsequently removed — see Step 5.1.)
 
-All call sites follow the convention correctly:
+Verified call sites:
 
-- `TupleType, ArrayType` case in `unifyMatched`: each element → `depth` ✓
-- `ArrayType, TupleType` case in `unifyMatched`: mirror of above → `depth` ✓
-- `ArrayType, ArrayType` case in `unifyMatched`: element types → `depth` ✓
-- `RestSpreadType, ArrayType` case in `unifyMatched`: rest type → `depth` ✓
+- `TupleType, ArrayType` case in `unifyMatched` ✓
+- `ArrayType, TupleType` case in `unifyMatched` ✓
+- `ArrayType, ArrayType` case in `unifyMatched` ✓
+- `RestSpreadType, ArrayType` case in `unifyMatched` ✓
 - `unifyTuples` and all variants (`unifyFixedTuples`, `unifyFixedVsVariadic`,
-  `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`): each pair → `depth` ✓
-- `KeyOfType, KeyOfType` case in `unifyMatched`: expanded keys and inner
-  types → `depth+1` (expansion occurred) ✓
-- `unifyExtractor` (helper for custom matcher patterns): `depth` ✓
-- `unifyClosedWithRests` (helper for rest-spread object unification): `depth` ✓
-- `unifyPatternWithUnion` (helper for pattern-vs-union matching): `depth` ✓
+  `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`) ✓
+- `KeyOfType, KeyOfType` case in `unifyMatched` ✓
+- `unifyExtractor` (helper for custom matcher patterns) ✓
+- `unifyClosedWithRests` (helper for rest-spread object unification) ✓
+- `unifyPatternWithUnion` (helper for pattern-vs-union matching) ✓
 
 ### Step 2: Audit `ExpandType` calls that remain in unify.go
 
@@ -95,12 +90,12 @@ Three `ExpandType` call sites remain in `unifyMatched`, all using the public API
 
 1. **KeyOfType, KeyOfType case in `unifyMatched`**: `c.ExpandType(ctx, keyof, 1)`
    on both sides — bounded by the number of properties in the target object.
-   Results unified via `unifyWithDepth(depth+1, seen)`, so `unifySeen` catches
-   cycles on the unification side. **Safe.**
+   Results unified via `unifyInner(seen)`, so `unifySeen` catches cycles on
+   the unification side. **Safe.**
 
 2. **ObjectType-vs-UnionType case in `unifyMatched`** (within the destructured-
    object-vs-union handling): one-shot expansion of each union member to check
-   if it's an `ObjectType`. Bounded by union member count. No `unifyWithDepth`
+   if it's an `ObjectType`. Bounded by union member count. No `unifyInner`
    call on the expanded result. **Safe.**
 
 3. **`unifyPatternWithUnion`**: Same one-shot expansion pattern as #2. **Safe.**
@@ -143,15 +138,20 @@ All tests use a 2-second timeout to catch infinite recursion. Test cases:
 
 **Result: Cleanup applied; some items deferred.**
 
-1. **`depth` parameter: Kept as diagnostic-only.** Added a doc comment on
-   `unifyWithDepth` clarifying that `depth` is diagnostic-only and NOT a
-   termination mechanism. Kept the parameter for logging/debugging value rather
-   than removing it (removing would touch ~70 call sites for minimal benefit).
+1. **`depth` parameter: Removed.** Renamed `unifyWithDepth` to `unifyInner` and
+   removed the `depth int` parameter from all internal unification functions
+   (`unifyInner`, `unifyPruned`, `unifyMatched`, `bind`, `unifyFuncTypes`,
+   `unifyTuples`, `unifyFixedTuples`, `unifyFixedVsVariadic`,
+   `unifyVariadicVsFixed`, `unifyVariadicVsVariadic`, `unifyExtractor`,
+   `unifyClosedWithRests`, `unifyPatternWithUnion`,
+   `unifyNumericWithStringIndexSigs`, `handleArrayConstraintBinding`).
+   The `depth` parameter was diagnostic-only and never used for termination —
+   the `unifySeen` visited set handles all cycle detection.
 
 2. **`canExpandTypeRef`'s transitive cycle detection: Kept as optimization.**
    Added a comment in `expand_type.go` explaining the overlap with
    `unifySeen`/`expandSeen` and the rationale for keeping it (avoids entering
-   `ExpandType` + `unifyWithDepth` for known simple alias cycles).
+   `ExpandType` + `unifyInner` for known simple alias cycles).
 
 3. **Ad-hoc counters:**
    - **`expandTypeRefsCount`**: Kept. Still useful for controlling expansion
