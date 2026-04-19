@@ -264,8 +264,10 @@ func (a *AliasTracker) AddAlias(target VarID, source VarID, mut Mutability) { ..
 // a fresh set (if assigned a fresh value).
 func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut Mutability) { ... }
 
-// GetAliases returns all variables in the same alias set as v.
-func (a *AliasTracker) GetAliases(v VarID) map[VarID]Mutability { ... }
+// GetAliasSets returns all alias sets that v belongs to. A variable may
+// belong to multiple sets due to conditional aliasing (Phase 7.4).
+// Callers must iterate all returned sets to avoid missing conflicts.
+func (a *AliasTracker) GetAliasSets(v VarID) []*AliasSet { ... }
 ```
 
 ### 1.5 Lifetime Counter on Checker
@@ -1993,11 +1995,10 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
             ├── 6. Transition checking
             │   └── 7. Advanced alias tracking (properties, closures, destructuring)
             │       └── 8. Lifetime annotations, inference, & constructors
-            │           ├── 9. Lifetime unification ('static, conflict detection,
-            │           │      higher-order function threading)
-            │           │   └── 10. Elision rules & interface lifetime verification
-            │           │       └── 11. TypeScript interop
-            │           └────────── 11. TypeScript interop
+            │           └── 9. Lifetime unification ('static, conflict detection,
+            │               │  higher-order function threading)
+            │               └── 10. Elision rules & interface lifetime verification
+            │                   └── 11. TypeScript interop
             └── 7. Advanced alias tracking
 12. Error messages ←── (depends on 6–11)
 └── 13. Remove mut?
