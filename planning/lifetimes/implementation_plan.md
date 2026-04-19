@@ -164,6 +164,30 @@ type FuncParam struct {
 }
 ```
 
+To avoid ad-hoc traversals of `FuncParam.Type` throughout the codebase,
+provide a canonical accessor:
+
+```go
+// GetLifetime extracts the lifetime from a type, walking through wrapper
+// types as needed. Returns nil if the type carries no lifetime.
+func GetLifetime(t Type) *Lifetime
+```
+
+**Behavior:**
+- `TypeRefType` — returns `t.Lifetime` directly.
+- `MutabilityType` — unwraps and recurses into the inner type.
+- `UnionType` / `IntersectionType` — returns the common lifetime if all
+  member types share the same lifetime; returns `nil` (no single lifetime)
+  if they differ. Callers that need stricter handling (e.g. reporting a
+  conflict) should inspect member lifetimes directly.
+- Primitive, literal, void, null, undefined types — returns `nil`.
+- All other compound types — recurses into the relevant inner type.
+
+All call sites that currently read `FuncParam.Type` to obtain a lifetime
+(e.g. during alias analysis, transition checking, and return-type
+validation) should use `GetLifetime` instead of accessing type fields
+directly.
+
 Add `LifetimeParams` to `FuncType` (alongside existing `TypeParams`):
 
 ```go
@@ -970,12 +994,23 @@ When a value is destructured, each extracted binding aliases the corresponding
 part of the original value:
 
 ```esc
-val {point} = obj  // point aliases obj.point
+val {a} = obj  // a aliases obj and obj.a
 ```
 
 **Implementation:** In `inferPattern` for `ObjectPat` and `ArrayPat`, when
-the initializer is a variable reference, add each destructured binding to the
-alias set of the source variable (or the specific property path).
+the initializer is a `VarRef`, add each destructured binding to the
+`AliasSet` for the **source variable** — i.e. `AliasSet.Members`
+(`map[VarID]Mutability`) gains an entry for the new binding. No separate
+property-keyed structure is required: the destructured binding is treated
+as an alias of the whole object, not as a distinct property-level entry.
+
+This means `val {a} = obj` causes `a` to be an alias of both `obj` and
+`obj.a` via the same `AliasSet`. If `obj.a` is later assigned a new value
+(e.g. `obj.a = other`), the Section 7.1 merge semantics handle connecting
+the object-level and property-level alias sets — the same merge that fires
+for any `obj.prop = value` assignment ensures transitive connections are
+maintained without requiring destructuring to create separate per-property
+alias sets.
 
 ### 7.4 Conditional Aliasing
 
