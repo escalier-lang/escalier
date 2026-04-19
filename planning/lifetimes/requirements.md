@@ -35,7 +35,7 @@ live mutable references** to that value exist after the assignment point. This
 includes aliases created through other variables, object properties, or function
 return values.
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
 items.push(4)
 // `items` is not used after this point
@@ -49,7 +49,7 @@ immutable reference assumes is stable.
 
 **Error case:**
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
 val snapshot: Array<number> = items  // ERROR: `items` is used mutably below
 items.push(4)                        // this mutation would violate `snapshot`'s
@@ -62,7 +62,7 @@ print(snapshot.length)
 An immutable value can be assigned to a variable with a mutable type when **no
 live immutable references** to that value exist after the assignment point.
 
-```
+```esc
 val config: {host: string} = {host: "localhost"}
 print(config.host)
 // `config` is not used after this point
@@ -75,7 +75,7 @@ This prevents mutation of data that other variables expect to be immutable.
 
 **Error case:**
 
-```
+```esc
 val config: {host: string} = {host: "localhost"}
 val mutableConfig: mut {host: string} = config  // ERROR: `config` used below
 print(config.host)  // would see mutated value if mutableConfig.host was changed
@@ -86,7 +86,7 @@ print(config.host)  // would see mutated value if mutableConfig.host was changed
 Unlike Rust, multiple variables may reference the same mutable value
 simultaneously.
 
-```
+```esc
 val a: mut {x: number} = {x: 1}
 val b: mut {x: number} = a  // OK: both are mutable
 b.x = 2
@@ -106,7 +106,7 @@ When a value is assigned from one variable to another, both variables are added
 to the same **alias set**. The liveness rules (Rules 1 and 2) check all members
 of an alias set, not just the variable being assigned.
 
-```
+```esc
 val p: mut Point = {x: 0, y: 0}
 val r: mut Point = p        // r and p are in the same alias set
 val q: Point = p             // ERROR: r is a live mutable alias of p
@@ -120,7 +120,7 @@ When a mutable value is stored into an object property, the containing object
 becomes an alias. The value is considered to have a live mutable reference for
 as long as the containing object is live.
 
-```
+```esc
 val p: mut Point = {x: 0, y: 0}
 val obj: mut {point: mut Point} = {point: p}  // obj is an alias of p
 val q: Point = p             // ERROR: obj is live and provides mutable access
@@ -134,7 +134,7 @@ When a closure captures a variable from the enclosing scope, it creates an
 implicit alias. The closure is treated as holding a reference to the captured
 variable for as long as the closure itself is live.
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
 val f = fn() { items.push(4) }  // f captures `items` mutably
 val snapshot: Array<number> = items  // ERROR: f is live and holds a mutable
@@ -142,14 +142,22 @@ val snapshot: Array<number> = items  // ERROR: f is live and holds a mutable
 f()
 ```
 
-If the closure only reads the captured variable, it holds an immutable reference:
+If the closure only reads the captured variable, it holds a read-only capture:
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
-val f = fn() { print(items.length) }  // f captures `items` immutably
-items.push(4)                          // OK: f holds an immutable ref, no conflict
-f()
+val f = fn() { print(items.length) }  // f captures `items` as read-only
+items.push(4)                          // OK: f has read-only access, no conflict
+f()                                    // f observes the mutated state (length 4)
 ```
+
+Note: "read-only capture" means the closure cannot mutate the captured variable
+— this is the aliasing guarantee enforced by Rule 1 (mutable-to-immutable
+transition). It does **not** mean the captured value is frozen: external mutations
+through the original mutable reference (like `items.push(4)` above) are still
+permitted and will be observed by the closure at runtime. This is safe in the
+single-threaded model because no conflicting mutability transition has occurred
+— `items` remains `mut` throughout.
 
 A closure that captures a mutable reference and is stored into a variable, passed
 to a function, or returned from a function extends the liveness of the captured
@@ -161,7 +169,7 @@ closure (and any variable holding the closure).
 When a value is destructured, each extracted binding becomes an alias of the
 corresponding part of the original value:
 
-```
+```esc
 val obj: mut {point: mut Point} = {point: {x: 0, y: 0}}
 val {point} = obj       // `point` aliases `obj.point`
 point.x = 5             // mutates through the alias
@@ -176,7 +184,7 @@ from. Liveness rules apply to all members of the alias set as usual.
 When a variable is reassigned, it leaves its previous alias set and (if assigned
 from another variable) joins the new one:
 
-```
+```esc
 val a: mut Point = {x: 0, y: 0}
 var b: mut Point = a       // b aliases a
 b = {x: 1, y: 1}           // b leaves a's alias set (now points to a fresh value)
@@ -192,7 +200,7 @@ updated based on its new value.
 When a variable is assigned from different values depending on control flow,
 it is added to the alias sets of **all** possible source values:
 
-```
+```esc
 val a: mut Point = {x: 0, y: 0}
 val b: mut Point = {x: 1, y: 1}
 val c: mut Point = if cond { a } else { b }
@@ -208,7 +216,7 @@ taken, so it must assume the worst case.
 When a method stores a parameter into `self`, the receiver becomes an alias
 of that parameter. This is tracked the same way as object property assignments:
 
-```
+```esc
 type Container {
     val item: mut Point
 
@@ -229,7 +237,7 @@ The lifetime annotation on the method signature captures this relationship.
 If `setItem` stores its parameter into `self`, the inferred signature links
 the parameter's lifetime to the receiver, so callers can track the alias:
 
-```
+```esc
 fn setItem<'a>(mut 'a self, p: mut 'a Point) -> void
 ```
 
@@ -254,7 +262,7 @@ aliasing is handled by lifetime annotations on function signatures.
 
 Liveness must account for branching:
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
 if condition {
     items.push(4)  // `items` is live here
@@ -270,7 +278,7 @@ point forward.
 
 Variables used inside a loop body are live for the entire duration of the loop:
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
 val snapshot: Array<number> = items  // snapshot aliases items
 for val item in snapshot {
@@ -284,7 +292,7 @@ An early `return` terminates the current path, which affects liveness. A variabl
 that is only used after an early return on one branch may be dead on the branch
 that returns:
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
 if condition {
     return items  // early return — `items` is dead on this path after this point
@@ -313,7 +321,7 @@ without needing to inspect the function body.
 Lifetime parameters are introduced on functions and applied to reference-typed
 parameters and return types:
 
-```
+```esc
 fn identity<'a>(p: mut 'a Point) -> mut 'a Point { return p }
 fn first<'a, 'b>(a: mut 'a Point, b: mut 'b Point) -> mut 'a Point { return a }
 fn sum(items: Array<number>) -> number { ... }  // no lifetimes needed
@@ -348,7 +356,7 @@ cannot determine the aliasing relationship:
 
 For higher-order functions, the lifetime annotation goes on the callback's type:
 
-```
+```esc
 fn apply<'a>(f: fn(mut 'a Point) -> mut 'a Point, p: mut 'a Point) -> mut 'a Point {
     return f(p)
 }
@@ -357,7 +365,7 @@ fn apply<'a>(f: fn(mut 'a Point) -> mut 'a Point, p: mut 'a Point) -> mut 'a Poi
 Here `'a` threads through the entire chain: `p` flows into `f`, and `f`'s return
 value flows out of `apply`. The caller knows the result aliases `p`:
 
-```
+```esc
 val p: mut Point = {x: 0, y: 0}
 val r: mut Point = apply(identity, p)  // r aliases p (lifetime 'a)
 val q: Point = p                       // ERROR: r is a live mutable alias of p
@@ -368,7 +376,7 @@ print(q.x)
 If the callback does **not** return an alias of its argument, different lifetimes
 express that the result is independent:
 
-```
+```esc
 fn transform<'a>(f: fn(mut Point) -> mut Point, p: mut 'a Point) -> mut Point {
     return f(p)
 }
@@ -379,7 +387,7 @@ does not assume the callback's return value aliases its input. The return type
 of `transform` also has no lifetime linking it to `p`, so callers know the
 result is independent:
 
-```
+```esc
 val p: mut Point = {x: 0, y: 0}
 val r: mut Point = transform(clone, p)  // r does NOT alias p
 val q: Point = p                        // OK: r is independent
@@ -391,7 +399,7 @@ If the callback should **not mutate** the value passed to it, its parameter is
 declared immutable. This lets callers continue using mutable references freely
 after the call, since the callback only had read access:
 
-```
+```esc
 fn inspect<'a>(f: fn(Point) -> void, p: mut 'a Point) -> void {
     f(p)
 }
@@ -401,7 +409,7 @@ Here `f` takes an immutable `Point`, so even though `p` is mutable, the callback
 cannot modify it. Since `f` returns `void` and doesn't alias `p`, the caller
 retains full mutable access afterward:
 
-```
+```esc
 val p: mut Point = {x: 0, y: 0}
 inspect(fn(pt) { print(pt.x) }, p)  // OK: callback only reads p
 p.x = 5                              // OK: no aliases created
@@ -412,7 +420,7 @@ print(q.x)                           // prints 5
 This is useful for iteration patterns like `forEach` where the callback should
 observe but not modify elements:
 
-```
+```esc
 fn forEach<T>(items: Array<T>, f: fn(T) -> void) -> void {
     // ...
 }
@@ -434,7 +442,7 @@ explicitly.
 Lifetime parameters appear on the method declaration, just like on standalone
 functions:
 
-```
+```esc
 interface Transform {
     fn apply<'a>(self, p: mut 'a Point) -> mut 'a Point
 }
@@ -446,7 +454,7 @@ When a type implements an interface, its method signatures must be compatible
 with the declared lifetimes. The compiler verifies that the implementation does
 not violate the aliasing contract:
 
-```
+```esc
 type Mirror: Transform {
     fn apply<'a>(self, p: mut 'a Point) -> mut 'a Point {
         return p  // OK: returns the parameter, consistent with 'a
@@ -470,7 +478,7 @@ interface declares the worst case; implementations may be stricter.
 When calling a method through an interface type, the caller uses the interface's
 declared lifetimes for alias tracking — not any specific implementation's:
 
-```
+```esc
 fn process<'a>(t: Transform, p: mut 'a Point) -> mut 'a Point {
     return t.apply(p)  // result aliases p, per Transform's declaration
 }
@@ -501,7 +509,7 @@ annotations describe the aliasing relationship between parameters and the return
 value — this relationship is determined by the function's structure, not by
 whether it calls itself.
 
-```
+```esc
 fn last<'a, T>(items: 'a Array<T>) -> 'a T | undefined {
     if items.length == 0 {
         return undefined
@@ -523,7 +531,7 @@ propagates the same one.
 Many recursive functions return primitives or fresh values, so no lifetime
 annotation is needed:
 
-```
+```esc
 fn length<T>(items: Array<T>) -> number {
     if items.length == 0 {
         return 0
@@ -539,7 +547,7 @@ fn length<T>(items: Array<T>) -> number {
 For mutually recursive functions, the compiler must infer lifetimes for all
 functions in the cycle simultaneously using fixed-point computation:
 
-```
+```esc
 fn processNode<'a>(node: 'a Node) -> 'a Value {
     if node.isLeaf {
         return node.value          // aliases input
@@ -595,7 +603,7 @@ disambiguate.
 When a function with lifetime annotations is called, the caller's alias tracking
 is updated based on the signature:
 
-```
+```esc
 fn identity<'a>(p: mut 'a Point) -> mut 'a Point { return p }
 
 val p: mut Point = {x: 0, y: 0}
@@ -607,7 +615,7 @@ print(q.x)
 
 When a function has no lifetime connecting a parameter to its return:
 
-```
+```esc
 fn clone(p: Point) -> mut Point { return {x: p.x, y: p.y} }
 
 val p: mut Point = {x: 0, y: 0}
@@ -624,7 +632,7 @@ appear on the type parameter rather than (or in addition to) the container
 itself. This distinguishes "the container aliases the source" from "the
 elements within the container alias the source."
 
-```
+```esc
 // The returned array is fresh, but its elements alias the input array's elements.
 fn filter<'a, T>(self: 'a Array<T>, f: fn(T) -> boolean) -> Array<'a T>
 ```
@@ -637,7 +645,7 @@ the original, while still tracking that the elements themselves are shared.
 When `'a` appears on the container itself, the entire container aliases the
 source:
 
-```
+```esc
 fn identity<'a>(items: mut 'a Array<number>) -> mut 'a Array<number> {
     return items
 }
@@ -685,7 +693,7 @@ the relevant lifetime information and suggests a fix.
 Common situations that trigger lifetime errors:
 
 - **Using a mutable reference after handing it to an immutable binding**:
-  ```
+  ```esc
   val items: mut Array<number> = [1, 2, 3]
   val snapshot: Array<number> = items
   items.push(4)  // ERROR: items is still used after the immutable binding
@@ -693,7 +701,7 @@ Common situations that trigger lifetime errors:
   **Fix**: Move the immutable binding after the last mutable use.
 
 - **Aliasing through a function call without realizing it**:
-  ```
+  ```esc
   val p: mut Point = {x: 0, y: 0}
   val r: mut Point = getRef(p)  // r aliases p
   val q: Point = p              // ERROR: r is a live mutable alias
@@ -753,7 +761,7 @@ In normal type display (hover info, type signatures, documentation), lifetimes
 are **hidden** to avoid visual noise. Most developers do not need to think about
 lifetimes for everyday code:
 
-```
+```esc
 fn identity(p: mut Point) -> mut Point
 fn map<T, U>(items: Array<T>, f: fn(T) -> U) -> Array<U>
 ```
@@ -764,7 +772,7 @@ When a lifetime violation occurs, the error message shows the relevant lifetime
 annotations so the developer can understand why the compiler believes an alias
 exists:
 
-```
+```text
 error: cannot assign mutable value to immutable variable
   --> src/main.esc:4:20
    |
@@ -793,7 +801,7 @@ When enabled, all inferred lifetimes are printed in type signatures.
 
 Function parameters declare whether they need mutable or immutable access:
 
-```
+```esc
 fn sort<T>(items: mut Array<T>) -> void { ... }
 fn sum(items: Array<number>) -> number { ... }
 ```
@@ -813,14 +821,39 @@ function body (see Lifetime Annotations above).
 ### Calling Convention
 
 When passing a mutable value to a function expecting an immutable parameter,
-the liveness rules apply. Since functions taking immutable parameters cannot
-mutate or store the reference (enforced by the type system), the call is safe
-for its duration:
+the immutable parameter type prevents the function from mutating the value.
+If the function also does not store the reference (i.e. no escaping reference
+is detected), the call is safe for its duration:
 
-```
+```esc
 val items: mut Array<number> = [1, 2, 3]
-val total = sum(items)  // OK: sum takes immutable ref, call is synchronous
+val total = sum(items)  // OK: sum takes immutable ref and doesn't store it
 items.push(4)           // OK: sum has returned, no conflicting refs
+```
+
+However, an immutable parameter type alone does not prevent the function from
+**storing** the reference into an external location. If the function body stores
+the parameter (e.g. into a module-level variable), the escaping-reference
+detection assigns a `'static` lifetime to that parameter:
+
+```esc
+var globalCache: Array<number> = []
+
+fn cacheItems(items: Array<number>) -> number {
+    globalCache = items  // stores parameter — escaping reference detected
+    return items.length
+}
+// Inferred signature: fn cacheItems(items: 'static Array<number>) -> number
+```
+
+The `'static` lifetime means callers holding a `mut Array` cannot resume
+mutable use after the call, because the value is now permanently aliased
+through `globalCache`:
+
+```esc
+val items: mut Array<number> = [1, 2, 3]
+val n = cacheItems(items)  // ERROR: cacheItems captures the reference ('static)
+items.push(4)              // would violate globalCache's immutability guarantee
 ```
 
 When passing a mutable value to a function that returns an aliased reference,
@@ -852,7 +885,7 @@ declare function sort<T>(items: T[]): T[];
 declare function sum(items: readonly number[]): number;
 ```
 
-```
+```esc
 // Escalier sees these as:
 fn sort<'a, T>(items: mut 'a Array<T>) -> mut 'a Array<T>
 fn sum(items: Array<number>) -> number
@@ -909,7 +942,7 @@ declare function reverse<T>(this: T[]): T[];
 declare function fill<T>(this: T[], value: T): T[];
 ```
 
-```
+```esc
 // Escalier sees these as methods aliasing the receiver:
 fn sort<'self, T>(self: mut 'self Array<T>) -> mut 'self Array<T>
 fn reverse<'self, T>(self: mut 'self Array<T>) -> mut 'self Array<T>
@@ -930,7 +963,7 @@ declare function filter<T>(this: T[], f: (item: T) => boolean): T[];
 declare function slice<T>(this: T[], start?: number, end?: number): T[];
 ```
 
-```
+```esc
 // Escalier sees these as returning fresh arrays:
 fn map<T, U>(self: Array<T>, f: fn(T) -> U) -> mut Array<U>
 fn filter<'a, T>(self: 'a Array<T>, f: fn(T) -> boolean) -> Array<'a T>
@@ -969,7 +1002,7 @@ developers can provide explicit lifetime annotations for specific imports.
 **Buffer.slice** — returns a view into the same memory, not a copy (unlike
 `Array.slice`):
 
-```
+```esc
 declare fn Buffer.slice<'a>(self: mut 'a Buffer, start?: number, end?: number) -> mut 'a Buffer
 ```
 
@@ -977,7 +1010,7 @@ declare fn Buffer.slice<'a>(self: mut 'a Buffer, start?: number, end?: number) -
 that callbacks receive references to elements within the array. These overrides
 make the aliasing relationships explicit:
 
-```
+```esc
 // Callback receives immutable references to elements. Returns void, so no
 // aliasing through the return value. A mut Array can be passed here safely
 // since the parameter is immutable — the array cannot be mutated during
@@ -1077,7 +1110,7 @@ information only when it helps the developer understand the problem.
 
 **Simple case (no cross-function aliasing):**
 
-```
+```text
 error: cannot assign mutable value to immutable variable
   --> src/main.esc:5:20
    |
@@ -1093,7 +1126,7 @@ error: cannot assign mutable value to immutable variable
 
 **Cross-function aliasing case:**
 
-```
+```text
 error: cannot assign mutable value to immutable variable
   --> src/main.esc:4:16
    |
