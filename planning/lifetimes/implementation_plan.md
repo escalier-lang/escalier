@@ -148,15 +148,18 @@ instantiation.
 
 #### Lifetime on Function Signatures
 
-Add a `Lifetime` field to `FuncParam` to annotate parameter-level lifetimes:
+No additional `Lifetime` field is needed on `FuncParam`. The parameter's
+lifetime is carried by `FuncParam.Type`'s own `Lifetime` field (e.g.
+`TypeRefType.Lifetime`). All reads and writes of a parameter's lifetime go
+through `FuncParam.Type`, avoiding duplication and drift.
 
 ```go
 type FuncParam struct {
     Pattern  Pat
-    Type     Type
+    Type     Type       // Type carries its own Lifetime field
     Optional bool
-    Lifetime Lifetime  // nil if no lifetime annotation; redundant with
-                       // Type's own Lifetime field but useful for fast lookup
+    // No standalone Lifetime field; lifetime is read from Type.
+    // If caching is needed, derive it during checking and keep Type canonical.
 }
 ```
 
@@ -401,7 +404,7 @@ The CFG builder handles:
 
 Standard dataflow analysis using the CFG:
 
-```
+```text
 for each block b:
     LiveOut[b] = ∪ { LiveIn[s] | s ∈ successors(b) }
     LiveIn[b]  = (LiveOut[b] - Defs[b]) ∪ Uses[b]
@@ -1742,7 +1745,7 @@ implementation is stable. These are explicitly **not part of Phases 1–13**:
 
 ## Implementation Order and Dependencies
 
-```
+```text
 1. Data structures
 └── 2. Liveness (linear)
     ├── 3. Liveness (control flow)
