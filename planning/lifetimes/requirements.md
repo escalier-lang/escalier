@@ -78,7 +78,8 @@ This prevents mutation of data that other variables expect to be immutable.
 ```esc
 val config: {host: string} = {host: "localhost"}
 val mutableConfig: mut {host: string} = config  // ERROR: `config` used below
-print(config.host)  // would see mutated value if mutableConfig.host was changed
+mutableConfig.host = "example.com"
+print(config.host)  // would see mutated value since mutableConfig.host was changed
 ```
 
 ### Rule 3: Multiple Mutable References to the Same Value Are Allowed
@@ -206,6 +207,8 @@ val b: mut Point = {x: 1, y: 1}
 val c: mut Point = if cond { a } else { b }
 // c is in the alias set of both a AND b
 val q: Point = a  // ERROR: c is a live mutable alias of a
+c.x = 5
+c.y = 10
 ```
 
 This is the conservative choice — the compiler cannot know which branch was
@@ -240,6 +243,83 @@ the parameter's lifetime to the receiver, so callers can track the alias:
 ```esc
 fn setItem<'a>(mut 'a self, p: mut 'a Point) -> void
 ```
+
+### Constructors
+
+In Escalier, constructor parameters are part of the class signature — there is
+no separate constructor function. When a constructor parameter is stored as a
+field, the constructed object aliases that parameter. This is the constructor
+counterpart to the method receiver case above — the difference is that the
+object does not exist before the call, so the lifetime appears on the
+constructed type rather than on `self`:
+
+```esc
+class Container(item: mut Point) {
+    item,
+}
+
+val p: mut Point = {x: 0, y: 0}
+val c = Container(p)     // c.item aliases p
+val q: Point = p          // ERROR: c is live and provides mutable access to p
+c.item.x = 5
+print(q.x)
+```
+
+The inferred lifetime for the constructor links the parameter to the
+constructed type:
+
+```esc
+// Inferred: Container<'a>(item: mut 'a Point)
+// Callers see: Container(p) produces a 'a Container
+```
+
+Here `'a` on `Container` means the constructed value holds a reference with
+lifetime `'a` — callers know that `c` aliases `p` and must treat them as part
+of the same alias set.
+
+#### Primitive and Fresh-Value Parameters
+
+When a constructor parameter is a primitive or a value type that cannot alias
+(e.g. `number`, `string`, `boolean`), no lifetime is needed:
+
+```esc
+class Point(x: number, y: number) {
+    x,
+    y,
+}
+
+val p = Point(10, 20)  // no aliasing — x and y are primitives
+```
+
+#### Multiple Reference Parameters
+
+When a constructor stores multiple reference-typed parameters, each gets its
+own lifetime linking it to the constructed type:
+
+```esc
+class Pair(first: mut Point, second: mut Point) {
+    first,
+    second,
+}
+// Inferred: Pair<'a, 'b>(first: mut 'a Point, second: mut 'b Point)
+
+val a: mut Point = {x: 0, y: 0}
+val b: mut Point = {x: 1, y: 1}
+val pair = Pair(a, b)    // pair aliases both a and b
+val q: Point = a          // ERROR: pair is a live mutable alias of a
+```
+
+Both `'a` and `'b` appear on the constructed type, so callers know the
+`Pair` aliases both parameters.
+
+#### Elision
+
+Constructors do not have a receiver (`self`), so elision rule 3 (method
+receiver) does not apply. If a constructor has a single reference parameter,
+elision rule 1 applies — the constructed type's lifetime is assumed to match
+the input. For constructors with multiple reference parameters, explicit
+annotation is required to disambiguate (or inference determines the lifetimes
+from the class definition).
 
 ### Function Calls
 
@@ -284,13 +364,14 @@ val snapshot: Array<number> = items  // snapshot aliases items
 for val item in snapshot {
     items.push(item)  // ERROR: `items` is a live mutable alias of `snapshot`
 }
+console.log(snapshot.length)
 ```
 
-### Early Returns
+### Early Returns and Throws
 
-An early `return` terminates the current path, which affects liveness. A variable
-that is only used after an early return on one branch may be dead on the branch
-that returns:
+An early `return` or `throw` terminates the current path, which affects liveness.
+A variable that is only used after a terminating statement on one branch may be
+dead on the branch that returns or throws:
 
 ```esc
 val items: mut Array<number> = [1, 2, 3]
@@ -302,10 +383,22 @@ val snapshot: Array<number> = items  // OK: on the non-returning path, no confli
 print(snapshot.length)
 ```
 
+The same applies to `throw` expressions, since they also terminate the current
+path:
+
+```esc
+val items: mut Array<number> = [1, 2, 3]
+if items.length == 0 {
+    throw Error("empty")  // `items` is dead on this path
+}
+val snapshot: Array<number> = items  // OK: only reachable when items is non-empty
+print(snapshot.length)
+```
+
 Liveness is computed per-path. A variable is live at a point if it is used on
 **any** path from that point forward (consistent with the Control Flow rule).
-Early returns reduce the set of paths on which a variable may be live, which
-can enable transitions that would otherwise be rejected.
+Early returns and throws reduce the set of paths on which a variable may be
+live, which can enable transitions that would otherwise be rejected.
 
 ## Lifetime Annotations
 
@@ -584,19 +677,34 @@ annotations.
 
 ### Elision Rules
 
-To reduce annotation burden, common patterns do not require explicit lifetimes:
+Elision rules apply only to **body-less declarations** — interface method
+signatures, external function declarations, and imported TypeScript types —
+where the compiler has no function body to inspect. For functions **with**
+bodies, lifetime inference analyzes the body directly to determine which
+parameters are aliased by the return value (see the Inference section above).
+Body-based inference is strictly more precise than elision because it can
+examine the actual data flow rather than relying on heuristic rules.
 
-1. **Single reference parameter**: If a function has exactly one reference-typed
-   parameter and returns a reference type, the output lifetime is assumed to
-   match the input
-2. **No reference return**: If a function returns a non-reference type (number,
-   string, boolean, void), no lifetimes are needed regardless of parameters
+For body-less declarations without explicit lifetime annotations, the following
+rules determine the default lifetimes:
+
+1. **Single reference parameter**: If the declaration has exactly one
+   reference-typed parameter and returns a reference type, the output lifetime
+   is assumed to match the input
+2. **No reference return**: If the declaration returns a non-reference type
+   (number, string, boolean, void), no lifetimes are needed regardless of
+   parameters
 3. **Method receiver**: For methods, if the return type needs a lifetime, it
    defaults to the receiver's lifetime
 
-These rules match the common cases. When a function has multiple reference
-parameters and returns a reference, explicit annotation is required to
-disambiguate.
+Note that rule 3 applies to methods (which have a receiver) but not to
+constructors. Constructors fall back to rule 1 if they have a single reference
+parameter, or require explicit annotation if they have multiple reference
+parameters.
+
+These rules match the common cases. When a body-less declaration has multiple
+reference parameters and returns a reference, explicit annotation is required
+to disambiguate.
 
 ### Effect on Callers
 
@@ -668,13 +776,12 @@ common case. This section summarizes what developers will actually experience.
 The following patterns — which cover the majority of application code — require
 **no lifetime annotations** and produce **no lifetime-related errors**:
 
+- **Any function with a body**: The compiler infers lifetimes directly from the
+  function body by analyzing which parameters are returned or stored. This
+  covers all functions, methods, and constructors defined in Escalier source
+  code — no annotations needed regardless of the number of parameters.
 - **Returning primitives or void**: Functions that return `number`, `string`,
   `boolean`, or `void` never need lifetimes, regardless of their parameters.
-- **Single reference parameter**: If a function takes one reference-typed
-  parameter and returns a reference, the lifetime is inferred automatically
-  (elision rule 1).
-- **Methods returning derived values**: A method that returns data derived from
-  `self` gets the receiver's lifetime automatically (elision rule 3).
 - **Creating fresh values**: Functions that construct and return new objects or
   arrays have no aliasing relationship — no lifetimes needed.
 - **Linear data flow**: Code that creates a value, uses it, and then passes it
@@ -720,10 +827,15 @@ primarily relevant to library authors and developers defining interfaces.
 
 | Situation | Who encounters it | Frequency |
 |-----------|-------------------|-----------|
-| Interface/trait method declarations | Library/API authors | Occasional |
-| Functions without available source (external packages without overrides) | Library consumers using FFI | Rare |
-| Higher-order functions where aliasing depends on a callback | Library authors writing generic combinators | Rare |
+| Interface/trait method declarations (no body to infer from) | Library/API authors | Occasional |
+| External function declarations without available source | Library consumers using FFI | Rare |
 | Mutual recursion where fixed-point inference doesn't converge | Any developer | Very rare |
+
+Note that higher-order functions, methods, and constructors with bodies do
+**not** require explicit annotations — the compiler infers lifetimes from the
+body even when multiple reference parameters are involved. Explicit annotations
+are only needed for body-less declarations where the compiler has no code to
+analyze.
 
 In all of these cases, the compiler reports an error explaining that it cannot
 infer the lifetime relationship and asks for an explicit annotation. The
@@ -734,10 +846,10 @@ developer does not need to proactively decide when annotations are needed.
 | Aspect | Current (`mut?`) | Proposed (lifetimes) |
 |--------|------------------|----------------------|
 | What developers see in types | `mut?` appears in inferred types, hover info, error messages | `mut` or immutable — never `mut?`, lifetimes hidden by default |
-| What developers write | Nothing (but must understand `mut?` to read types) | Nothing in most code; rare explicit `'a` annotations for library authors |
+| What developers write | Nothing (but must understand `mut?` to read types) | Nothing for functions with bodies (always inferred); rare explicit `'a` annotations for body-less declarations (interfaces, external packages) |
 | Mental model required | Three-way distinction: `mut`, `mut?`, immutable | Two-way distinction: `mut` or immutable |
 | New errors developers may encounter | None | Liveness errors when aliasing conflicts with mutability transitions |
-| New syntax developers may write | None | `'a` lifetime parameters (rare, library-author scenarios only) |
+| New syntax developers may write | None | `'a` lifetime parameters (only on body-less declarations like interface methods) |
 
 ### Summary
 
@@ -794,6 +906,236 @@ error: cannot assign mutable value to immutable variable
 
 `PrintType` supports a `showLifetimes` option for diagnostic/debugging purposes.
 When enabled, all inferred lifetimes are printed in type signatures.
+
+## Lifetimes and Unification
+
+Escalier's type checker uses subtyping-based unification: `Unify(t1, t2)`
+succeeds when `t1` is a subtype of `t2` (or they are the same type).
+Lifetimes introduce a new dimension to this process. This section specifies
+how lifetime-annotated types interact with the existing unification rules.
+
+### Lifetime Variables
+
+Lifetime variables (e.g. `'a`, `'b`) behave similarly to type variables during
+unification. They are introduced by generic function signatures and resolved
+at call sites.
+
+- A **free lifetime variable** can be bound to a concrete lifetime during
+  unification, just as a free type variable can be bound to a concrete type.
+- Once bound, a lifetime variable must be used consistently — all occurrences
+  of `'a` within a single call must resolve to the same lifetime.
+- Two distinct lifetime variables (`'a` and `'b`) may independently bind to
+  the same or different lifetimes.
+
+```esc
+fn identity<'a>(p: mut 'a Point) -> mut 'a Point { return p }
+
+val p: mut Point = {x: 0, y: 0}
+val r = identity(p)
+// At the call site, 'a is bound to the lifetime of p.
+// The return type mut 'a Point unifies with mut Point, linking r to p's alias set.
+```
+
+### Unifying Types With and Without Lifetimes
+
+A lifetime annotation on a type (e.g. `'a Point`) represents an aliasing
+relationship — it does not change the shape of the type. Unification treats
+the lifetime as metadata that is propagated but does not affect structural
+compatibility:
+
+- **`'a T` vs `T`**: Unification succeeds. The lifetime is propagated to the
+  result so that alias tracking is preserved. This is the common case when a
+  lifetime-annotated return value is assigned to a variable with no explicit
+  lifetime — the variable inherits the lifetime.
+- **`T` vs `'a T`**: Unification succeeds. A type without a lifetime is
+  compatible with one that has a lifetime. This occurs when a fresh value is
+  passed where a lifetime-annotated type is expected — the fresh value
+  trivially satisfies the aliasing constraint.
+- **`'a T` vs `'b T`**: Unification succeeds if `'a` and `'b` can be unified
+  (see Lifetime Constraint Propagation below). This occurs when two
+  lifetime-annotated values flow into the same type variable or are compared
+  for compatibility.
+
+### Mutability and Lifetimes
+
+The existing rule that `mut T1` vs `mut T2` requires **invariant** unification
+(exact type match) extends to lifetimes:
+
+- **`mut 'a T` vs `mut 'a T`**: Unification succeeds — same mutability, same
+  lifetime, same underlying type.
+- **`mut 'a T` vs `mut 'b T`**: Unification succeeds only if `'a` and `'b`
+  unify. Two mutable references to the same type but with different lifetimes
+  can only be unified if their lifetimes are compatible. This ensures that
+  alias sets are not incorrectly merged.
+- **`mut 'a T` vs `T`** (mutable to immutable): Unification succeeds — this
+  is the existing covariant rule for dropping mutability. The lifetime `'a` is
+  propagated to the result for alias tracking. However, the **liveness check**
+  (not unification) is responsible for verifying that the transition is safe.
+- **`T` vs `mut 'a T`** (immutable to mutable): Unification succeeds
+  structurally, but the liveness check must verify the transition is safe.
+
+The key principle: **unification determines structural compatibility; liveness
+analysis determines whether a mutability transition is safe at a given program
+point.** Lifetimes flow through unification so that liveness analysis has the
+information it needs.
+
+### Lifetime Constraint Propagation
+
+When two lifetime variables are unified, this creates a **lifetime constraint**
+rather than immediately resolving to a single lifetime. Lifetime constraints
+track which lifetimes must be related:
+
+- **Binding**: When `'a` is free and unified with a concrete lifetime (e.g.
+  the lifetime of a specific variable), `'a` is bound to that lifetime.
+- **Equating**: When `'a` is unified with `'b` (both free), they are linked
+  so that binding one also binds the other — the same mechanism used for type
+  variable unification.
+- **Conflict**: If `'a` is already bound to one lifetime and is then unified
+  with a different, incompatible lifetime, unification reports an error. This
+  catches cases where a function signature claims two parameters share a
+  lifetime but the caller passes values with incompatible lifetimes.
+
+```esc
+fn swap<'a>(a: mut 'a Point, b: mut 'a Point) -> void { ... }
+
+val p: mut Point = {x: 0, y: 0}
+val q: mut Point = {x: 1, y: 1}
+swap(p, q)  // ERROR: 'a cannot bind to both p's and q's lifetime
+            // p and q are independent values with distinct lifetimes
+```
+
+The shared `'a` in `swap`'s signature claims both parameters alias the same
+underlying value. Since `p` and `q` are independent, unification detects a
+conflict — `'a` is bound to `p`'s lifetime from the first parameter, then
+the second parameter tries to bind `'a` to `q`'s (different) lifetime.
+
+A correct `swap` uses separate lifetimes for each parameter:
+
+```esc
+fn swap<'a, 'b>(a: mut 'a Point, b: mut 'b Point) -> void { ... }
+
+val p: mut Point = {x: 0, y: 0}
+val q: mut Point = {x: 1, y: 1}
+swap(p, q)  // OK: 'a binds to p's lifetime, 'b binds to q's lifetime
+```
+
+If the caller *does* pass two aliases of the same value, the shared-lifetime
+version is valid:
+
+```esc
+fn swap<'a>(a: mut 'a Point, b: mut 'a Point) -> void { ... }
+
+val p: mut Point = {x: 0, y: 0}
+val r: mut Point = p          // r aliases p — same lifetime
+swap(p, r)                     // OK: 'a binds to p's lifetime for both
+```
+
+### Function Types
+
+When unifying function types, lifetime parameters follow the same variance
+rules as type parameters:
+
+- **Parameter types** are contravariant: if `fn('a T) -> U` is unified with
+  `fn('b T) -> U`, the lifetime on the parameter follows contravariant rules.
+  In practice, a function that accepts a longer-lived reference can be used
+  where a shorter-lived one is expected.
+- **Return types** are covariant: if `fn(T) -> 'a U` is unified with
+  `fn(T) -> 'b U`, the lifetime on the return type follows covariant rules.
+  A function returning a shorter-lived reference is a subtype of one returning
+  a longer-lived reference.
+
+When unifying a function type that has lifetime parameters with one that does
+not, the lifetimes are inferred at the call site:
+
+```esc
+fn apply(f: fn(mut Point) -> mut Point, p: mut Point) -> mut Point {
+    return f(p)
+}
+
+// Calling with identity, which has lifetime 'a:
+// fn identity<'a>(p: mut 'a Point) -> mut 'a Point
+val result = apply(identity, myPoint)
+// The unifier binds identity's signature to the expected fn type,
+// threading 'a through so result is linked to myPoint's alias set.
+```
+
+### Constructed Types With Lifetimes
+
+When a class constructor produces a type with a lifetime (e.g. `'a Container`),
+unification handles the lifetime on the constructed type:
+
+- **`'a Container` vs `Container`**: Unification succeeds. The lifetime is
+  propagated — the variable receiving the value inherits the alias
+  relationship.
+- **`'a Container` vs `'b Container`**: Unification succeeds if `'a` and `'b`
+  can be unified. This occurs when two containers holding references with
+  different lifetimes are passed where the same type is expected.
+- **`mut 'a Container` vs `mut 'b Container`**: Invariant in both the type
+  and the lifetime — both must unify.
+
+```esc
+class Container(item: mut Point) { item, }
+
+val p: mut Point = {x: 0, y: 0}
+val c: Container = Container(p)  // c has type 'a Container where 'a = lifetime of p
+// Unification of 'a Container with Container succeeds; 'a is propagated.
+```
+
+### Lifetime-Annotated Type Parameters
+
+When lifetimes appear on type parameters within generic types (e.g.
+`Array<'a T>`), unification recurses into the type arguments:
+
+- **`Array<'a T>` vs `Array<T>`**: Unification succeeds. The lifetime on the
+  element type is propagated to the result.
+- **`Array<'a T>` vs `Array<'b T>`**: Succeeds if `'a` and `'b` unify.
+- **`mut Array<'a T>` vs `mut Array<'b T>`**: Since mutable types are
+  invariant, the inner types must match exactly — including lifetimes. `'a`
+  and `'b` must unify.
+
+This is how element-level aliasing is tracked through generic containers:
+
+```esc
+fn filter<'a, T>(self: 'a Array<T>, f: fn(T) -> boolean) -> Array<'a T>
+
+val items: mut Array<mut Point> = [Point(0, 0), Point(1, 1)]
+val filtered = filter(items, fn(p) { p.x > 0 })
+// filtered has type Array<'a mut Point> where 'a = lifetime of items.
+// The elements in filtered alias elements in items.
+```
+
+### Interaction With Type Variable Binding
+
+When a type variable is bound during unification and the target type carries
+a lifetime, the lifetime is preserved in the binding:
+
+```esc
+fn first<'a, T>(items: 'a Array<T>) -> 'a T | undefined { ... }
+
+val items: Array<mut Point> = [Point(0, 0)]
+val p = first(items)
+// T is bound to mut Point, 'a is bound to the lifetime of items.
+// p has type 'a mut Point | undefined — it may alias an element of items.
+```
+
+If the type variable is bound from a context without a lifetime (e.g. a fresh
+value), no lifetime is attached, and no alias tracking is needed.
+
+### What Unification Does Not Check
+
+Unification is responsible for **structural compatibility** and **lifetime
+propagation**. It does **not** check:
+
+- Whether a mutability transition is safe at a given program point (this is
+  the liveness analysis pass)
+- Whether a variable is dead before an alias is created (this is alias
+  tracking)
+- Whether an escaping reference makes a value permanently aliased (this is
+  escaping reference detection)
+
+These checks run after or alongside unification. Unification's role is to
+ensure lifetimes flow correctly through the type system so that these
+downstream analyses have accurate information.
 
 ## Function Signatures
 
@@ -975,21 +1317,50 @@ alias elements in the original array. The lifetime on `T` (not the array)
 captures this: the array container is fresh, but the items within it may
 reference the original data.
 
-#### Rule F: Callback parameters → assume immutable access unless the callback type indicates mutation
+#### Rule F: Callback parameters → determine mutability from the callback's parameter type
 
-If a callback parameter receives a value derived from another parameter:
+If a callback parameter receives a value derived from another parameter, the
+mutability of the callback's parameter determines how the value is accessed:
 
 - If the callback's parameter is `readonly` or a primitive → immutable
 - Otherwise → assume mutable (conservative)
 
-```typescript
-declare function forEach<T>(items: T[], f: (item: T) => void): void;
-// → fn forEach<T>(items: Array<T>, f: fn(T) -> void) -> void
-//   (T could be a reference type, but callback returns void — no aliasing)
+**Readonly callback parameter → immutable:**
 
+```typescript
+declare function forEach<T>(items: readonly T[], f: (item: Readonly<T>) => void): void;
+// → fn forEach<T>(items: Array<T>, f: fn(T) -> void) -> void
+//   (callback receives readonly T — immutable access to elements)
+```
+
+**Primitive callback parameter → immutable:**
+
+```typescript
+declare function indexBy(items: string[], f: (item: string) => number): Map<number, string>;
+// → fn indexBy(items: Array<string>, f: fn(string) -> number) -> mut Map<number, string>
+//   (callback receives string, which is a primitive — immutable access)
+```
+
+**Non-readonly, non-primitive callback parameter → assume mutable (conservative):**
+
+```typescript
+declare function transform<T>(items: T[], f: (item: T) => T): T[];
+// → fn transform<'a, T>(items: 'a Array<T>, f: fn(mut 'a T) -> mut 'a T) -> mut Array<'a T>
+//   (callback parameter T is not readonly — assume mutable access;
+//    callback may mutate the item and return it, so the return aliases the input)
+```
+
+This is conservative: the callback might not actually mutate its argument, but
+since the TypeScript declaration does not use `readonly`, Escalier assumes the
+worst case. An override can relax this if the callback is known to be read-only.
+
+**Accumulator pattern:**
+
+```typescript
 declare function reduce<T, U>(items: T[], f: (acc: U, item: T) => U, init: U): U;
 // → fn reduce<'a, T, U>(items: Array<T>, f: fn('a U, T) -> 'a U, init: 'a U) -> 'a U
-//   (accumulator flows through and is returned)
+//   (accumulator flows through and is returned — lifetime tracks that the
+//    return value may alias init)
 ```
 
 ### Override Mechanism
@@ -1090,6 +1461,8 @@ modifying the upstream TypeScript declarations.
 - Lifetimes on generic type parameters (element-level vs container-level)
 - Lifetime elision rules for common patterns
 - Escaping reference detection (storing parameters into external locations)
+- Lifetime variable unification and constraint propagation
+- Lifetime propagation through type variable binding
 - Mutable-to-immutable and immutable-to-mutable transitions
 - Integration with existing `mut` type annotations
 - Configurable lifetime display (hidden by default, shown in errors)
@@ -1172,6 +1545,7 @@ computed in a preceding pass and consulted during assignment checking.
 9. Add lifetime elision rules
 10. Add explicit lifetime annotation syntax for cases where inference fails
 11. Implement escaping reference detection
-12. Remove `mut?` from the type system
+12. Integrate lifetime variables into unification (binding, equating, propagation)
+13. Remove `mut?` from the type system
 13. Update `PrintType` with `showLifetimes` option
 14. Update error messages to show lifetimes when relevant
