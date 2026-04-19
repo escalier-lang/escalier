@@ -219,14 +219,21 @@ import "github.com/escalier-lang/escalier/internal/ast"
 
 // VarID uniquely identifies a variable within a function body.
 // Sequential integer IDs are assigned during name resolution (Phase 2)
-// from the binding-site span via a global span→VarID map. The rename
-// pass, liveness analysis, and alias analysis all share this map.
+// and stored directly on AST nodes (IdentExpr.VarID, IdentPat.VarID,
+// etc.). The rename pass sets these; liveness and alias analysis read
+// them from the AST nodes.
 //
-// Span-based assignment is required for correctness with variable
-// shadowing. When the same name is bound multiple times (across scopes,
-// or within the same scope if same-scope shadowing is added), each
-// binding gets a unique span and thus a unique VarID. Name-based
-// identity would conflate distinct variables that happen to share a name.
+// Each binding gets a unique VarID regardless of name. When the same
+// name is bound multiple times (across scopes, or within the same scope
+// if same-scope shadowing is added), each binding gets its own VarID.
+// Name-based identity would conflate distinct variables that happen to
+// share a name.
+//
+// A VarID of 0 indicates an unresolved or unset ID. Local variable IDs
+// start at 1. Non-local variables (module-level, prelude) are assigned
+// IDs starting at -1 and counting down, so downstream phases can
+// distinguish them: any VarID < 0 is non-local and should be ignored
+// by liveness and alias analysis.
 type VarID int
 
 // LivenessInfo stores the results of liveness analysis for a function body.
@@ -254,6 +261,13 @@ package liveness
 // AliasSet tracks a group of variables that reference the same underlying
 // value. Each value created at runtime gets its own AliasSet. Variables
 // join an alias set when assigned from another variable in the set.
+//
+// Note: AliasSet intentionally carries only a VarID for Origin, not rich
+// diagnostic info (spans, creation context, etc.). Detailed diagnostic
+// context is assembled at error-construction time by the error types in
+// Phase 12 (e.g. AliasOrigin on LiveMutableAliasError). Keeping AliasSet
+// lightweight avoids coupling the analysis data structure to the error
+// reporting format.
 type AliasSet struct {
     ID        SetID
     Members   map[VarID]Mutability  // variable → whether it holds a mut ref
@@ -455,11 +469,13 @@ func Rename(body ast.Block, outerBindings map[string]VarID) *RenameResult { ... 
 ```
 
 The `outerBindings` parameter supplies module-level and prelude bindings.
-These are given VarIDs for the purpose of resolution but are not tracked by
-liveness or alias analysis — they serve only to distinguish "known
-module-level name" from "truly unresolved name." A use site that resolves
-to an outer binding has its `VarID` set so downstream phases can recognize
-it as a reference to a non-local variable.
+These are assigned negative VarIDs (starting at -1, counting down) so they
+occupy a distinct range from local variables (which start at 1). This
+allows downstream phases to distinguish non-local references by checking
+`VarID < 0`. A use site that resolves to an outer binding has its `VarID`
+set to the corresponding negative ID. Liveness and alias analysis skip
+any VarID < 0, since non-local variables don't participate in those
+analyses. `NextID` counts only local variables.
 
 ### 2.4 Integration
 
@@ -554,9 +570,8 @@ is computed by walking backward from the last statement:
 ```go
 // AnalyzeBlock computes liveness for a linear block of statements.
 // This is the foundation — Phase 4 extends it to handle control flow.
-//
-// The renamed parameter provides the VarID for each use and binding site
-// (computed by the rename pass in Phase 2).
+// VarIDs are read directly from AST nodes (set by the rename pass in
+// Phase 2).
 func AnalyzeBlock(stmts []ast.Stmt) *LivenessInfo { ... }
 ```
 
