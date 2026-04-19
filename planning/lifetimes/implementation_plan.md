@@ -170,7 +170,7 @@ provide a canonical accessor:
 ```go
 // GetLifetime extracts the lifetime from a type, walking through wrapper
 // types as needed. Returns nil if the type carries no lifetime.
-func GetLifetime(t Type) *Lifetime
+func GetLifetime(t Type) Lifetime
 ```
 
 **Behavior:**
@@ -227,7 +227,7 @@ import "github.com/escalier-lang/escalier/internal/ast"
 // or within the same scope if same-scope shadowing is added), each
 // binding gets a unique span and thus a unique VarID. Name-based
 // identity would conflate distinct variables that happen to share a name.
-type VarID = int
+type VarID int
 
 // LivenessInfo stores the results of liveness analysis for a function body.
 type LivenessInfo struct {
@@ -255,9 +255,10 @@ package liveness
 // value. Each value created at runtime gets its own AliasSet. Variables
 // join an alias set when assigned from another variable in the set.
 type AliasSet struct {
-    ID        int
+    ID        SetID
     Members   map[VarID]Mutability  // variable → whether it holds a mut ref
     Origin    VarID                 // the variable that created the value
+    IsStatic  bool                  // true if this value has 'static lifetime
 }
 
 type Mutability int
@@ -267,13 +268,16 @@ const (
     Mutable
 )
 
+// SetID uniquely identifies an alias set within an AliasTracker.
+type SetID int
+
 // AliasTracker manages alias sets for a function body.
 // A variable may belong to multiple alias sets when assigned from different
 // values depending on control flow (conditional aliasing, Phase 7.4).
 type AliasTracker struct {
-    NextID    int
-    Sets      map[int]*AliasSet       // SetID → AliasSet
-    VarToSets map[VarID][]int         // variable → which alias sets it belongs to
+    NextID    SetID
+    Sets      map[SetID]*AliasSet     // SetID → AliasSet
+    VarToSets map[VarID][]SetID       // variable → which alias sets it belongs to
 }
 
 func NewAliasTracker() *AliasTracker { ... }
@@ -397,20 +401,31 @@ When the walk enters a nested block (e.g. `do { ... }`, `for ... { ... }`),
 a new `scope` is pushed. When the block ends, the scope is popped, restoring
 visibility of any outer bindings that were shadowed.
 
-### 2.3 Rename Result
+### 2.3 VarID on AST Nodes
+
+Rather than maintaining span-keyed side-table maps, the rename pass sets
+`VarID` directly on AST nodes. This is consistent with the existing pattern
+of storing `InferredType` on nodes.
+
+**Binding sites:** Add a `VarID` field to each pattern node that introduces
+a binding — `IdentPat`, destructuring patterns, and `FuncParam`. The rename
+pass sets this field when it processes the binding.
+
+**Use sites:** Add a `VarID` field to `IdentExpr`. The rename pass sets
+this field when it resolves a use to its binding.
+
+Downstream phases read `VarID` directly from the AST node (e.g.
+`expr.VarID`) instead of performing a map lookup.
+
+### 2.4 Rename Result
 
 **File:** `internal/liveness/rename.go`
 
 ```go
 // RenameResult holds the output of the rename pass for a function body.
+// VarIDs are stored directly on AST nodes (IdentExpr, IdentPat, etc.)
+// rather than in side-table maps.
 type RenameResult struct {
-    // BindingVarIDs maps each binding AST node (by span) to its VarID.
-    BindingVarIDs map[ast.Span]VarID
-
-    // UseVarIDs maps each use-site AST node (by span) to the VarID it
-    // resolved to.
-    UseVarIDs map[ast.Span]VarID
-
     // NextID is the number of distinct local variables found (for sizing
     // data structures in later phases).
     NextID int
@@ -429,12 +444,13 @@ type RenameError struct {
 
 // Rename walks a function body, assigns VarIDs to all local binding and
 // use sites, and validates that all variable uses resolve to in-scope
-// bindings. Module-level and prelude bindings are supplied via
-// outerBindings so that free variables can be distinguished from truly
-// unresolved names.
+// bindings. VarIDs are set directly on AST nodes (IdentExpr.VarID,
+// IdentPat.VarID, etc.). Module-level and prelude bindings are supplied
+// via outerBindings so that free variables can be distinguished from
+// truly unresolved names.
 //
 // After this function returns, the internal scope stack is discarded.
-// All downstream phases use only the BindingVarIDs and UseVarIDs maps.
+// All downstream phases read VarIDs directly from AST nodes.
 func Rename(body ast.Block, outerBindings map[string]VarID) *RenameResult { ... }
 ```
 
@@ -442,8 +458,8 @@ The `outerBindings` parameter supplies module-level and prelude bindings.
 These are given VarIDs for the purpose of resolution but are not tracked by
 liveness or alias analysis — they serve only to distinguish "known
 module-level name" from "truly unresolved name." A use site that resolves
-to an outer binding is recorded in `UseVarIDs` so downstream phases can
-recognize it as a reference to a non-local variable.
+to an outer binding has its `VarID` set so downstream phases can recognize
+it as a reference to a non-local variable.
 
 ### 2.4 Integration
 
@@ -460,8 +476,8 @@ func (c *Checker) inferFuncBody(ctx Context, body ast.Block, ...) {
         errors = append(errors, ...)
     }
 
-    // 2. Liveness analysis (Phase 3) uses renamed.UseVarIDs
-    // 3. Alias tracking (Phase 5) uses renamed.BindingVarIDs
+    // 2. Liveness analysis (Phase 3) reads VarIDs from AST nodes
+    // 3. Alias tracking (Phase 5) reads VarIDs from AST nodes
     // No scope stack is passed to any downstream phase.
     ...
 }
@@ -469,7 +485,7 @@ func (c *Checker) inferFuncBody(ctx Context, body ast.Block, ...) {
 
 After this point, the checker's existing `ctx.Scope` is still used for
 type name resolution and module-level lookups, but local variable resolution
-is handled entirely through VarID maps.
+is handled entirely through VarIDs on AST nodes.
 
 ### 2.5 Tests
 
@@ -488,7 +504,7 @@ is handled entirely through VarID maps.
 - Unresolved local name: `print(unknown)` where `unknown` is not in
   `outerBindings` → reported as a `RenameError`
 - Module-level name: `print(globalVar)` where `globalVar` is in
-  `outerBindings` → resolved successfully, recorded in `UseVarIDs`
+  `outerBindings` → resolved successfully, `VarID` set on the `IdentExpr`
 - Scope restoration after block: `val x = 1; do { val x = 2 }; print(x)`
   → `print(x)` resolves to the outer `x`, not the inner one
 
@@ -502,15 +518,15 @@ with sequential code (no branching).
 ### 3.1 Variable Use Collection
 
 Walk the AST to collect all variable uses, classifying each as a use or
-definition. This phase consumes the `RenameResult` from Phase 2 — each
-`IdentExpr` is looked up in `UseVarIDs` to get its `VarID`, so name
+definition. This phase consumes the output of Phase 2 — each
+`IdentExpr` already has its `VarID` set by the rename pass, so name
 resolution and shadowing are already handled.
 
 **File:** `internal/liveness/collect_uses.go`
 
 Implement an AST visitor that:
 1. Visits each expression in a block of statements
-2. For each `IdentExpr`, looks up its `VarID` in the `RenameResult` and
+2. For each `IdentExpr`, reads its `VarID` (set by the rename pass) and
    records the `VarID` and span as a use
 3. For each `MemberExpr` with an `IdentExpr` base, records the base variable
 4. For each assignment target:
@@ -541,7 +557,7 @@ is computed by walking backward from the last statement:
 //
 // The renamed parameter provides the VarID for each use and binding site
 // (computed by the rename pass in Phase 2).
-func AnalyzeBlock(stmts []ast.Stmt, renamed *RenameResult) *LivenessInfo { ... }
+func AnalyzeBlock(stmts []ast.Stmt) *LivenessInfo { ... }
 ```
 
 ### 3.3 Integration Point
@@ -636,7 +652,7 @@ more for nested loops).
 ```go
 // AnalyzeFunction computes liveness for a full function body with
 // control flow. Replaces AnalyzeBlock for bodies with branches/loops.
-func AnalyzeFunction(cfg *CFG, renamed *RenameResult) *LivenessInfo { ... }
+func AnalyzeFunction(cfg *CFG) *LivenessInfo { ... }
 ```
 
 ### 4.3 Statement-Level Granularity
@@ -712,9 +728,9 @@ const (
 )
 
 // DetermineAliasSource examines an expression and returns its alias source.
-// When the expression is an IdentExpr, the VarID is looked up in the
-// RenameResult from Phase 2.
-func DetermineAliasSource(expr ast.Expr, renamed *RenameResult) AliasSource { ... }
+// When the expression is an IdentExpr, the VarID is read directly from
+// the node (set by the rename pass in Phase 2).
+func DetermineAliasSource(expr ast.Expr) AliasSource { ... }
 ```
 
 ### 5.3 Tests
