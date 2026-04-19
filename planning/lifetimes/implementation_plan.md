@@ -194,13 +194,15 @@ package liveness
 import "github.com/escalier-lang/escalier/internal/ast"
 
 // VarID uniquely identifies a variable within a function body.
-// Uses the span of the binding site as the identity.
+// Sequential integer IDs are assigned during name resolution (Phase 2)
+// from the binding-site span via a global span→VarID map. The rename
+// pass, liveness analysis, and alias analysis all share this map.
 //
-// Span-based identity is required for correctness with variable shadowing.
-// When the same name is bound multiple times (across scopes, or within the
-// same scope if same-scope shadowing is added), each binding gets a unique
-// span and thus a unique VarID. Name-based identity would conflate
-// distinct variables that happen to share a name.
+// Span-based assignment is required for correctness with variable
+// shadowing. When the same name is bound multiple times (across scopes,
+// or within the same scope if same-scope shadowing is added), each
+// binding gets a unique span and thus a unique VarID. Name-based
+// identity would conflate distinct variables that happen to share a name.
 type VarID = int
 
 // LivenessInfo stores the results of liveness analysis for a function body.
@@ -735,7 +737,7 @@ func (c *Checker) CheckMutabilityTransition(
 
 The algorithm:
 1. If `sourceMut == targetMut`, no transition — always OK (Rule 3 for mut→mut)
-2. Get **all** alias sets of `sourceVar` via `VarToSets[sourceVar]` (a
+2. Get **all** alias sets of `sourceVar` via `GetAliasSets(sourceVar)` (a
    variable may belong to multiple sets due to conditional aliasing)
 3. For each alias set that `sourceVar` belongs to:
    - For each variable `v` in that alias set (including `sourceVar`):
@@ -1821,17 +1823,17 @@ starting this phase:
 
 | File | Current Use | Replacement |
 |------|-------------|-------------|
-| `type_system/types.go` | `MutabilityUncertain` constant | Remove |
-| `type_system/print_type.go` | Printing `mut?` | Remove case |
-| `checker/unify.go` | Special handling during unification | Remove |
-| `checker/unify_mut.go` | Invariant checking with `mut?` | Simplify |
-| `checker/infer_expr.go` | Creating `mut?` types | Use `mut` or immutable directly |
-| `checker/infer_func.go` | `mut?` in parameter inference | Binary inference (mut/immutable) |
-| `checker/infer_module.go` | `mut?` propagation | Remove |
-| `checker/generalize.go` | Stripping `mut?` during generalization | Remove stripping |
-| `checker/expand_type.go` | `mut?` in type expansion | Remove case |
-| `checker/iterable.go` | `mut?` on iterable types | Remove |
-| `codegen/dts.go` | `mut?` in .d.ts output | Remove |
+| `internal/type_system/types.go` | `MutabilityUncertain` constant | Remove |
+| `internal/type_system/print_type.go` | Printing `mut?` | Remove case |
+| `internal/checker/unify.go` | Special handling during unification | Remove |
+| `internal/checker/unify_mut.go` | Invariant checking with `mut?` | Simplify |
+| `internal/checker/infer_expr.go` | Creating `mut?` types | Use `mut` or immutable directly |
+| `internal/checker/infer_func.go` | `mut?` in parameter inference | Binary inference (mut/immutable) |
+| `internal/checker/infer_module.go` | `mut?` propagation | Remove |
+| `internal/checker/generalize.go` | Stripping `mut?` during generalization | Remove stripping |
+| `internal/checker/expand_type.go` | `mut?` in type expansion | Remove case |
+| `internal/checker/iterable.go` | `mut?` on iterable types | Remove |
+| `internal/codegen/dts.go` | `mut?` in .d.ts output | Remove |
 | *(remaining files)* | Grep for complete list at implementation time | Case-by-case |
 
 ### 13.2 Simplify `MutabilityType`
