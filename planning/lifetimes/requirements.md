@@ -117,17 +117,24 @@ print(q.x)
 
 ### Object Properties
 
-When a mutable value is stored into an object property, the containing object
-becomes an alias. The value is considered to have a live mutable reference for
-as long as the containing object is live.
+When a value is stored into an object property, the alias sets of the
+containing object and the stored value are **merged**. All variables that
+alias the container also become aliases of the stored value. The value is
+considered to have a live mutable reference for as long as any variable in
+the merged alias set is live.
 
 ```esc
 val p: mut Point = {x: 0, y: 0}
-val obj: mut {point: mut Point} = {point: p}  // obj is an alias of p
+val obj: mut {point: mut Point} = {point: p}  // obj's and p's alias sets merge
 val q: Point = p             // ERROR: obj is live and provides mutable access
 obj.point.x = 5
 print(q.x)
 ```
+
+Merging (rather than simply adding the container to the value's alias set)
+ensures that transitive connections through property chains are preserved
+even when intermediate variables are reassigned. See the Recursive and Cyclic
+Data Structures section below for details.
 
 ### Closures
 
@@ -325,6 +332,143 @@ from the class definition).
 
 Aliasing through function calls is tracked via **lifetime annotations** on
 function signatures. See the Lifetime Annotations section below.
+
+### Recursive and Cyclic Data Structures
+
+Recursive data types (linked lists, trees, graphs) interact with alias
+tracking through property assignments. When a value is stored into an object
+property, the alias sets of the containing object and the stored value are
+**merged** — all variables that alias the container also become aliases of
+the stored value.
+
+#### Why Merge on Property Assignment
+
+Simple alias tracking (adding the container to the value's alias set) loses
+transitive connections when intermediate variables are reassigned during
+iterative construction:
+
+```esc
+var current: mut Node = Node(1, undefined)
+val head: mut Node = current
+for val i in [2, 3, 4] {
+    val next: mut Node = Node(i, undefined)
+    current.next = next     // merge head's alias set with next's
+    next.prev = current     // already in same set
+    current = next          // current leaves and re-joins same set
+}
+```
+
+Without merging, when `current` is reassigned each iteration, `head` would
+lose its connection to the new nodes. With merging, `current.next = next`
+merges the alias sets of `{head, current}` and `{next}` into
+`{head, current, next}`. When `current` is reassigned, `head` remains
+connected to `next` — the transitive property chain is preserved.
+
+After the loop, all construction variables are in one alias set. This is
+the correct behavior: the entire linked list is one interconnected value,
+and transitioning any part requires all mutable handles to be dead.
+
+#### Building and Freezing Cyclic Structures
+
+A mutable cyclic structure can be transitioned to immutable by assigning it
+to an immutable variable, as long as all mutable aliases are dead (not used
+afterward):
+
+```esc
+val n1: mut Node = Node(1, undefined)
+val n2: mut Node = Node(2, n1)
+n1.next = n2                    // creates cycle
+val frozen: Node = n1           // OK: n1 and n2 are not used after this point
+print(frozen.value)
+```
+
+Liveness analysis sees that `n1` and `n2` are both dead after the
+`val frozen` assignment — neither is referenced below — so the
+mut-to-immutable transition succeeds.
+
+For multiple entry points into the same structure, assign each separately.
+All mutable aliases must be dead after the last assignment:
+
+```esc
+val n1: mut Node = Node(1, undefined)
+val n2: mut Node = Node(2, n1)
+n1.next = n2
+val first: Node = n1            // OK: n1 and n2 are not used after this
+val second: Node = n2           //     (both assignments happen before any use)
+print(first.value)
+print(second.next.value)
+```
+
+**Error case — construction variable used after transition:**
+
+```esc
+val n1: mut Node = Node(1, undefined)
+val n2: mut Node = Node(2, n1)
+n1.next = n2
+val frozen: Node = n1
+print(n2.value)     // ERROR: n2 is a live mutable alias of n1
+```
+
+The fix is to either access through the immutable reference, or assign `n2`
+to an immutable variable before using it:
+
+```esc
+print(frozen.next.value)  // OK: frozen is immutable
+```
+
+A `do` block or function can also be used as an ergonomic convenience to
+guarantee that construction variables go out of scope:
+
+```esc
+val frozen: Node = do {
+    val n1: mut Node = Node(1, undefined)
+    val n2: mut Node = Node(2, n1)
+    n1.next = n2
+    n1              // n1 and n2 go out of scope → dead
+}
+```
+
+This is equivalent to the flat version but makes it impossible to
+accidentally reference the construction variables afterward.
+
+#### Acyclic Recursive Structures
+
+For acyclic recursive structures (trees, singly-linked lists without back
+pointers), the same merge rule applies but is less restrictive in practice.
+Since there are no cycles, it is possible to freeze subtrees independently
+as long as the mutable handles to those subtrees are dead:
+
+```esc
+val left: mut Tree = Tree(1, undefined, undefined)
+val right: mut Tree = Tree(2, undefined, undefined)
+val root: mut Tree = Tree(0, left, right)
+// left, right, and root are all in the same alias set (merged via property assignment)
+
+// To freeze, ensure all construction vars are dead:
+val frozen: Tree = root         // OK: left, right, root not used after this
+print(frozen.left.value)
+```
+
+#### Traversal Functions
+
+Functions that traverse recursive structures work naturally with lifetime
+inference. The lifetime tracks the aliasing between input and output without
+requiring recursive lifetime parameters on the type itself:
+
+```esc
+fn last(node: Node) -> Node {
+    if node.next == undefined { return node }
+    return last(node.next)
+}
+// Inferred: fn last<'a>(node: 'a Node) -> 'a Node
+// Return value aliases the input — no recursive lifetime on Node needed
+```
+
+The type `Node` does not need lifetime parameters in its definition. Aliasing
+relationships are tracked at the variable level through alias sets, not
+encoded into the type structure. The lifetime `'a` on the function signature
+tracks the relationship between the function's input and output, which is
+sufficient for callers to maintain correct alias sets.
 
 ## Liveness Analysis
 
@@ -1455,6 +1599,8 @@ modifying the upstream TypeScript declarations.
 - Intraprocedural liveness analysis for local variables
 - Alias tracking through variables, object properties, closures, destructuring,
   method receivers, and function return values
+- Alias set merging on property assignment (preserves transitive connections)
+- Recursive and cyclic data structure support (build-and-freeze pattern)
 - Conditional aliasing (variables assigned from multiple branches)
 - Reassignment semantics (leaving old alias sets)
 - Lifetime annotations on function signatures (inferred when possible)
@@ -1527,25 +1673,33 @@ computed in a preceding pass and consulted during assignment checking.
 
 - **Liveness sets**: For each program point, track which variables are live
 - **Alias sets**: Track which variables reference the same underlying value,
-  including aliases created through property assignments and function calls
-- **Mutability map**: For each variable, whether its type is `mut` or immutable
+  including aliases created through property assignments and function calls.
+  Each alias set tracks mutability per member (`map[VarID]Mutability`), so
+  no separate mutability map is needed.
 - **Lifetime map**: For each function, the inferred or declared lifetime
   relationships between parameters and return type
 
 ### Incremental Approach
 
-1. Implement liveness analysis for straight-line code (no branching)
-2. Extend to if/else, match expressions, and early returns
-3. Extend to loops
-4. Implement alias tracking for local variables and object properties
-5. Extend alias tracking for closures, destructuring, and method receivers
-6. Implement reassignment (leaving old alias sets) and conditional aliasing
-7. Implement lifetime inference for function signatures
-8. Add lifetimes on generic type parameters (element-level vs container-level)
-9. Add lifetime elision rules
-10. Add explicit lifetime annotation syntax for cases where inference fails
-11. Implement escaping reference detection
-12. Integrate lifetime variables into unification (binding, equating, propagation)
+1. Define data structures for lifetimes, liveness, and alias tracking
+2. Name resolution pre-pass: assign unique VarIDs to all local variable
+   bindings and use sites via alpha-conversion (renaming), validating that
+   all uses refer to in-scope bindings
+3. Liveness analysis for straight-line code (no branching)
+4. Extend liveness to control flow (if/else, match, loops, early returns,
+   throws)
+5. Alias tracking for local variables (direct assignment, reassignment)
+6. Mutability transition checking (enforce Rules 1, 2, 3 using liveness
+   and alias sets)
+7. Extend alias tracking to object properties, closures, destructuring,
+   conditional aliasing, and method receivers
+8. Lifetime annotations: parser support, inference from function bodies,
+   escaping reference detection, constructor lifetimes
+9. Lifetime unification (binding, equating, conflict detection, `'static`
+   propagation, higher-order function lifetime threading)
+10. Lifetime elision rules for body-less declarations
+11. TypeScript interop: automatic lifetime assignment for imported
+    declarations
+12. Error messages for lifetime violations
 13. Remove `mut?` from the type system
-13. Update `PrintType` with `showLifetimes` option
-14. Update error messages to show lifetimes when relevant
+14. Update `PrintType` with `showLifetimes` option

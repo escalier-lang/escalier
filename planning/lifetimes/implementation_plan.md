@@ -9,18 +9,19 @@ into phases that build incrementally, each producing a testable milestone.
 | Phase | Description                                          | Depends On |
 |------:|------------------------------------------------------|------------|
 |     1 | Data structures and representations                  | —          |
-|     2 | Liveness analysis (straight-line code)               | 1          |
-|     3 | Liveness analysis (control flow)                     | 2          |
-|     4 | Alias tracking (local variables)                     | 2          |
-|     5 | Mutability transition checking                       | 3, 4       |
-|     6 | Alias tracking (properties, closures, destructuring) | 4, 5       |
-|     7 | Lifetime annotations and inference                   | 5, 6       |
-|     8 | Lifetime unification                                 | 7          |
-|     9 | Lifetime elision rules                               | 7, 8       |
-|    10 | TypeScript interop                                   | 9          |
-|    11 | Error messages                                       | 5–10       |
-|    12 | Remove `mut?`                                        | 5–11       |
-|    13 | PrintType and display                                | 12         |
+|     2 | Name resolution and VarID assignment                 | 1          |
+|     3 | Liveness analysis (straight-line code)               | 2          |
+|     4 | Liveness analysis (control flow)                     | 3          |
+|     5 | Alias tracking (local variables)                     | 3          |
+|     6 | Mutability transition checking                       | 4, 5       |
+|     7 | Alias tracking (properties, closures, destructuring) | 5, 6       |
+|     8 | Lifetime annotations and inference                   | 6, 7       |
+|     9 | Lifetime unification                                 | 8          |
+|    10 | Lifetime elision rules                               | 8, 9       |
+|    11 | TypeScript interop                                   | 10         |
+|    12 | Error messages                                       | 6–11       |
+|    13 | Remove `mut?`                                        | 6–12       |
+|    14 | PrintType and display                                | 13         |
 
 ---
 
@@ -194,6 +195,12 @@ import "github.com/escalier-lang/escalier/internal/ast"
 
 // VarID uniquely identifies a variable within a function body.
 // Uses the span of the binding site as the identity.
+//
+// Span-based identity is required for correctness with variable shadowing.
+// When the same name is bound multiple times (across scopes, or within the
+// same scope if same-scope shadowing is added), each binding gets a unique
+// span and thus a unique VarID. Name-based identity would conflate
+// distinct variables that happen to share a name.
 type VarID = int
 
 // LivenessInfo stores the results of liveness analysis for a function body.
@@ -236,7 +243,7 @@ const (
 
 // AliasTracker manages alias sets for a function body.
 // A variable may belong to multiple alias sets when assigned from different
-// values depending on control flow (conditional aliasing, Phase 6.4).
+// values depending on control flow (conditional aliasing, Phase 7.4).
 type AliasTracker struct {
     NextID    int
     Sets      map[int]*AliasSet       // SetID → AliasSet
@@ -291,29 +298,203 @@ func (c *Checker) FreshLifetimeVar(name string) *type_system.LifetimeVar {
 
 ---
 
-## Phase 2: Liveness Analysis — Straight-Line Code
+## Phase 2: Name Resolution and VarID Assignment
+
+**Goal:** Build a pre-pass that walks the AST, assigns a unique `VarID` to
+every local variable binding and use site, validates that all variable uses
+refer to in-scope bindings, and produces a mapping that downstream phases
+(liveness, alias tracking) can consume without any scope lookup.
+
+### 2.1 Why a Separate Phase
+
+Currently, name resolution happens inline during type checking via
+`ctx.Scope.GetValue(expr.Name)`. The liveness and alias analyses run as a
+pre-pass *before* type checking (see Phase 6.4), so they cannot rely on the
+checker's scope.
+
+This phase performs **alpha-conversion** (renaming): every local variable
+binding gets a unique `VarID`, and every use site is resolved to its
+binding's `VarID`. After this pass completes, all downstream phases work
+exclusively with VarIDs — no name-based lookup is needed for local
+variables, and the scope stack used during renaming is discarded.
+
+The rename pass also **validates** that every variable use refers to an
+in-scope binding. Unresolved local names are reported as errors during this
+pass, so the checker does not need to re-check local variable scoping.
+
+**Scope of this pass:** This phase covers local variable bindings only —
+`VarDecl`, function parameters, destructuring bindings, `for..in` loop
+variables, etc. Module-level bindings (imports, top-level declarations) and
+type names are *not* handled here; they continue to use the checker's
+existing lookup mechanisms (a flat map or the existing scope), since they
+don't participate in liveness or alias analysis.
+
+### 2.2 Rename Pass
+
+**File:** `internal/liveness/rename.go`
+
+The rename pass uses a temporary scope stack internally to resolve names to
+VarIDs. The scope stack is local to the pass and is discarded after it
+completes — no downstream phase ever sees it.
+
+```go
+package liveness
+
+import "github.com/escalier-lang/escalier/internal/ast"
+
+// scope is internal to the rename pass. It tracks name-to-VarID mappings
+// during the top-to-bottom walk. It is discarded after Rename() returns.
+type scope struct {
+    parent   *scope
+    bindings map[string]VarID
+}
+
+func (s *scope) lookup(name string) (VarID, bool) {
+    if id, ok := s.bindings[name]; ok {
+        return id, true
+    }
+    if s.parent != nil {
+        return s.parent.lookup(name)
+    }
+    return 0, false
+}
+```
+
+For same-scope shadowing, a new `VarDecl` for an existing name overwrites
+the entry in `bindings`. Uses before the shadow were already resolved to the
+old `VarID`; uses after resolve to the new one, because the walk processes
+statements top-to-bottom.
+
+When the walk enters a nested block (e.g. `do { ... }`, `for ... { ... }`),
+a new `scope` is pushed. When the block ends, the scope is popped, restoring
+visibility of any outer bindings that were shadowed.
+
+### 2.3 Rename Result
+
+**File:** `internal/liveness/rename.go`
+
+```go
+// RenameResult holds the output of the rename pass for a function body.
+type RenameResult struct {
+    // BindingVarIDs maps each binding AST node (by span) to its VarID.
+    BindingVarIDs map[ast.Span]VarID
+
+    // UseVarIDs maps each use-site AST node (by span) to the VarID it
+    // resolved to.
+    UseVarIDs map[ast.Span]VarID
+
+    // NextID is the number of distinct local variables found (for sizing
+    // data structures in later phases).
+    NextID int
+
+    // Errors contains any unresolved variable references found during
+    // the rename pass.
+    Errors []RenameError
+}
+
+// RenameError represents a variable use that could not be resolved to
+// any in-scope binding.
+type RenameError struct {
+    Name string
+    Span ast.Span
+}
+
+// Rename walks a function body, assigns VarIDs to all local binding and
+// use sites, and validates that all variable uses resolve to in-scope
+// bindings. Module-level and prelude bindings are supplied via
+// outerBindings so that free variables can be distinguished from truly
+// unresolved names.
+//
+// After this function returns, the internal scope stack is discarded.
+// All downstream phases use only the BindingVarIDs and UseVarIDs maps.
+func Rename(body ast.Block, outerBindings map[string]VarID) *RenameResult { ... }
+```
+
+The `outerBindings` parameter supplies module-level and prelude bindings.
+These are given VarIDs for the purpose of resolution but are not tracked by
+liveness or alias analysis — they serve only to distinguish "known
+module-level name" from "truly unresolved name." A use site that resolves
+to an outer binding is recorded in `UseVarIDs` so downstream phases can
+recognize it as a reference to a non-local variable.
+
+### 2.4 Integration
+
+The rename pass runs once per function body at the start of
+`inferFuncBody`, before liveness analysis:
+
+```go
+func (c *Checker) inferFuncBody(ctx Context, body ast.Block, ...) {
+    // 1. Rename: assign VarIDs, validate scoping
+    renamed := liveness.Rename(body, ctx.outerBindings())
+
+    // Report any unresolved variable errors
+    for _, err := range renamed.Errors {
+        errors = append(errors, ...)
+    }
+
+    // 2. Liveness analysis (Phase 3) uses renamed.UseVarIDs
+    // 3. Alias tracking (Phase 5) uses renamed.BindingVarIDs
+    // No scope stack is passed to any downstream phase.
+    ...
+}
+```
+
+After this point, the checker's existing `ctx.Scope` is still used for
+type name resolution and module-level lookups, but local variable resolution
+is handled entirely through VarID maps.
+
+### 2.5 Tests
+
+- Simple binding and use: `val x = 1; print(x)` → `x` gets one VarID,
+  the use resolves to it
+- Cross-scope shadowing: `val x = 1; do { val x = 2; print(x) }; print(x)`
+  → two distinct VarIDs, inner `print(x)` resolves to the inner one, outer
+  `print(x)` resolves to the outer one; after the block ends, the outer `x`
+  is visible again
+- Same-scope shadowing: `val x = 1; val y = x; val x = 2; print(x)` → two
+  distinct VarIDs for `x`, `y = x` resolves to the first, `print(x)`
+  resolves to the second
+- Function parameters: `fn f(a, b) { print(a) }` → `a` and `b` get
+  distinct VarIDs
+- Destructuring: `val {a, b} = obj` → `a` and `b` each get a VarID
+- Unresolved local name: `print(unknown)` where `unknown` is not in
+  `outerBindings` → reported as a `RenameError`
+- Module-level name: `print(globalVar)` where `globalVar` is in
+  `outerBindings` → resolved successfully, recorded in `UseVarIDs`
+- Scope restoration after block: `val x = 1; do { val x = 2 }; print(x)`
+  → `print(x)` resolves to the outer `x`, not the inner one
+
+---
+
+## Phase 3: Liveness Analysis — Straight-Line Code
 
 **Goal:** Compute which variables are live at each program point, starting
 with sequential code (no branching).
 
-### 2.1 Variable Use Collection
+### 3.1 Variable Use Collection
 
-Walk the AST to collect all uses of each variable. A "use" is any `IdentExpr`
-that reads a variable, or any `MemberExpr` / `IndexExpr` that reads through
-a variable.
+Walk the AST to collect all variable uses, classifying each as a use or
+definition. This phase consumes the `RenameResult` from Phase 2 — each
+`IdentExpr` is looked up in `UseVarIDs` to get its `VarID`, so name
+resolution and shadowing are already handled.
 
 **File:** `internal/liveness/collect_uses.go`
 
 Implement an AST visitor that:
 1. Visits each expression in a block of statements
-2. For each `IdentExpr`, records the variable name and span as a use
+2. For each `IdentExpr`, looks up its `VarID` in the `RenameResult` and
+   records the `VarID` and span as a use
 3. For each `MemberExpr` with an `IdentExpr` base, records the base variable
-4. For each assignment target, records as both a use (read-before-write for
-   compound assignments) and a definition
+4. For each assignment target:
+   - **Plain assignment** (e.g. `b = expr`): records the LHS as a
+     **definition only** (no read of the old value)
+   - **Compound assignment** (e.g. `b += expr`, `b -= expr`): records the
+     LHS as both a **use** (reads the old value) and a **definition**
+     (writes the new value)
 
 The visitor produces a `map[VarID][]ast.Span` of use sites per variable.
 
-### 2.2 Backward Liveness Analysis (Linear)
+### 3.2 Backward Liveness Analysis (Linear)
 
 For straight-line code (a flat list of statements with no branches), liveness
 is computed by walking backward from the last statement:
@@ -328,14 +509,17 @@ is computed by walking backward from the last statement:
 
 ```go
 // AnalyzeBlock computes liveness for a linear block of statements.
-// This is the foundation — Phase 3 extends it to handle control flow.
-func AnalyzeBlock(stmts []ast.Stmt, bindings map[string]VarID) *LivenessInfo { ... }
+// This is the foundation — Phase 4 extends it to handle control flow.
+//
+// The renamed parameter provides the VarID for each use and binding site
+// (computed by the rename pass in Phase 2).
+func AnalyzeBlock(stmts []ast.Stmt, renamed *RenameResult) *LivenessInfo { ... }
 ```
 
-### 2.3 Integration Point
+### 3.3 Integration Point
 
 The liveness analysis runs per function body. Store the result on the checker
-`Context` so the mutability transition checker (Phase 5) can query it.
+`Context` so the mutability transition checker (Phase 6) can query it.
 
 **File:** `internal/checker/checker.go`
 
@@ -347,21 +531,24 @@ type Context struct {
 }
 ```
 
-### 2.4 Tests
+### 3.4 Tests
 
 - Test liveness for simple sequential variable declarations and uses
 - Test that a variable becomes dead after its last use
 - Test that variable definitions kill liveness
 - Test that unused variables are never live
+- Test that shadowing resolves correctly: `val x = 1; val y = x; val x = 2;
+  print(x)` — the first `x` is dead after `val y = x`, the second `x` is
+  live until `print(x)`, and they have distinct VarIDs
 
 ---
 
-## Phase 3: Liveness Analysis — Control Flow
+## Phase 4: Liveness Analysis — Control Flow
 
 **Goal:** Extend liveness analysis to handle branching, loops, early returns,
 and throws.
 
-### 3.1 Control Flow Graph (CFG) Construction
+### 4.1 Control Flow Graph (CFG) Construction
 
 Build a CFG from the AST for each function body. Each node in the CFG is a
 basic block (a sequence of statements with no internal branches).
@@ -396,11 +583,14 @@ The CFG builder handles:
 - **`ForInStmt`:** Back edge from the end of the loop body to the loop header;
   exit edge from the header to the post-loop block
 - **`MatchExpr`:** One successor edge per case arm from the match entry
-- **`ReturnStmt`:** Edge to the exit block (terminates the path)
-- **`ThrowExpr`:** Edge to the exit block (terminates the path)
+- **`ReturnStmt`:** Edge to the exit block (terminates the path). This
+  reduces the set of paths on which subsequent variables are live, which
+  can enable mutability transitions that would otherwise be rejected.
+- **`ThrowExpr`:** Edge to the exit block (terminates the path). Same
+  path-reduction effect as `ReturnStmt`.
 - **`BlockExpr`:** Nested block — inline into the CFG with its own basic blocks
 
-### 3.2 Backward Liveness on CFG
+### 4.2 Backward Liveness on CFG
 
 Standard dataflow analysis using the CFG:
 
@@ -418,17 +608,17 @@ more for nested loops).
 ```go
 // AnalyzeFunction computes liveness for a full function body with
 // control flow. Replaces AnalyzeBlock for bodies with branches/loops.
-func AnalyzeFunction(cfg *CFG, bindings map[string]VarID) *LivenessInfo { ... }
+func AnalyzeFunction(cfg *CFG, renamed *RenameResult) *LivenessInfo { ... }
 ```
 
-### 3.3 Statement-Level Granularity
+### 4.3 Statement-Level Granularity
 
 The CFG produces per-block liveness, but mutability checking needs per-statement
-granularity. Within each basic block, use the linear analysis from Phase 2 to
+granularity. Within each basic block, use the linear analysis from Phase 3 to
 compute per-statement liveness, using the block's `LiveOut` as the initial
 `LiveAfter` for the last statement.
 
-### 3.4 Tests
+### 4.4 Tests
 
 - `if/else`: Variable used only in one branch is dead on the other
 - `if` without else: Variable used after the if is live through both branches
@@ -440,11 +630,11 @@ compute per-statement liveness, using the block's `LiveOut` as the initial
 
 ---
 
-## Phase 4: Alias Tracking — Local Variables
+## Phase 5: Alias Tracking — Local Variables
 
 **Goal:** Track which variables alias the same value through direct assignment.
 
-### 4.1 Integrate AliasTracker with Statement Processing
+### 5.1 Integrate AliasTracker with Statement Processing
 
 As the checker processes each statement in a function body, update the
 `AliasTracker`:
@@ -461,19 +651,19 @@ Walk statements in order:
 4. **Assignment with fresh value** (e.g. `b = {x: 1}`): Call
    `Reassign(b, nil, mut)` to create a new alias set
 
-### 4.2 Determine Alias Source from Expressions
+### 5.2 Determine Alias Source from Expressions
 
 Not all initializers are simple identifiers. Need a function that examines an
 expression and determines whether it's:
 - A **fresh value** (literal, object construction, array literal, `new` call) →
   no aliasing
 - A **variable reference** (identifier) → aliases that variable
-- A **function call** → depends on lifetime annotations (Phase 7); for now,
+- A **function call** → depends on lifetime annotations (Phase 8); for now,
   treat as fresh
 - A **property access** (e.g. `obj.field`) → aliases the property's source
-  (Phase 6)
+  (Phase 7)
 - A **conditional** (e.g. `if cond { a } else { b }`) → aliases all branches
-  (Phase 6)
+  (Phase 7)
 
 **File:** `internal/liveness/alias_analysis.go`
 
@@ -494,10 +684,12 @@ const (
 )
 
 // DetermineAliasSource examines an expression and returns its alias source.
-func DetermineAliasSource(expr ast.Expr) AliasSource { ... }
+// When the expression is an IdentExpr, the VarID is looked up in the
+// RenameResult from Phase 2.
+func DetermineAliasSource(expr ast.Expr, renamed *RenameResult) AliasSource { ... }
 ```
 
-### 4.3 Tests
+### 5.3 Tests
 
 - `val b = a` → b and a are in the same alias set
 - `val b = {x: 1}` → b gets a fresh alias set
@@ -505,15 +697,17 @@ func DetermineAliasSource(expr ast.Expr) AliasSource { ... }
 - `var b = a; b = c` → b leaves a's set and joins c's set
 - Multiple aliases: `val b = a; val c = a` → a, b, c all in same set
 - Chain: `val b = a; val c = b` → a, b, c all in same set
+- Shadowing: `val x = a; val x = {y: 1}` → second x gets a fresh alias set,
+  first x remains in a's alias set (distinct VarIDs despite same name)
 
 ---
 
-## Phase 5: Mutability Transition Checking
+## Phase 6: Mutability Transition Checking
 
 **Goal:** Enforce Rules 1 and 2 from the requirements — reject mutability
 transitions when conflicting live aliases exist.
 
-### 5.1 Transition Check Logic
+### 6.1 Transition Check Logic
 
 When a value is assigned from one variable to another with a different
 mutability, check the alias set and liveness:
@@ -539,15 +733,18 @@ func (c *Checker) CheckMutabilityTransition(
 
 The algorithm:
 1. If `sourceMut == targetMut`, no transition — always OK (Rule 3 for mut→mut)
-2. Get the alias set of `sourceVar`
-3. For each variable `v` in the alias set (including `sourceVar`):
-   - Check if `v` is live after `assignSpan` (using `LivenessInfo`)
-   - If `sourceMut && !targetMut` (Rule 1): error if `v` has mutable access
-     and is live
-   - If `!sourceMut && targetMut` (Rule 2): error if `v` has immutable access
-     and is live
+2. Get **all** alias sets of `sourceVar` via `VarToSets[sourceVar]` (a
+   variable may belong to multiple sets due to conditional aliasing)
+3. For each alias set that `sourceVar` belongs to:
+   - For each variable `v` in that alias set (including `sourceVar`):
+     - Check if `v` is live after `assignSpan` (using `LivenessInfo`)
+     - If `sourceMut && !targetMut` (Rule 1): error if `v` has mutable
+       access and is live
+     - If `!sourceMut && targetMut` (Rule 2): error if `v` has immutable
+       access and is live
+4. Union all conflicting live aliases across all sets into the error report
 
-### 5.2 Integration with `inferVarDecl`
+### 6.2 Integration with `inferVarDecl`
 
 Hook the transition check into variable declaration processing in
 `infer_stmt.go`. After unification succeeds, check whether the assignment
@@ -567,7 +764,7 @@ func (c *Checker) inferVarDecl(ctx Context, decl *ast.VarDecl) (...) {
 }
 ```
 
-### 5.3 Integration with Assignment Expressions
+### 6.3 Integration with Assignment Expressions
 
 For `var` reassignment (`b = expr`), also check transitions:
 
@@ -576,7 +773,7 @@ For `var` reassignment (`b = expr`), also check transitions:
 After type-checking the assignment, invoke `CheckMutabilityTransition` with
 the target variable and the source expression's alias information.
 
-### 5.4 Running the Analysis
+### 6.4 Running the Analysis
 
 The liveness and alias analyses must run before or during type checking of a
 function body. Two options:
@@ -589,20 +786,22 @@ the function body. This requires the AST to already have binding information
 checker walks statements. This is simpler to implement since the checker already
 walks statements in order, but requires backward liveness to be precomputed.
 
-**Recommended approach:** Use a **pre-pass** for liveness (backward analysis
-needs full knowledge of uses) and build alias sets **incrementally** during
-type checking (alias relationships are discovered as statements are processed).
+**Recommended approach:** Use a **pre-pass** for name resolution and liveness
+(backward analysis needs full knowledge of uses) and build alias sets
+**incrementally** during type checking (alias relationships are discovered as
+statements are processed).
 
 The pre-pass runs at the start of `inferFuncBody` or equivalent:
-1. Collect variable uses from the function body AST
-2. Build CFG
-3. Run backward liveness analysis
-4. Store `LivenessInfo` on the `Context`
-5. Initialize `AliasTracker` on the `Context`
-6. During statement-by-statement type checking, update `AliasTracker` and
+1. Resolve names → VarIDs (Phase 2)
+2. Collect variable uses from the function body AST
+3. Build CFG
+4. Run backward liveness analysis
+5. Store `LivenessInfo` on the `Context`
+6. Initialize `AliasTracker` on the `Context`
+7. During statement-by-statement type checking, update `AliasTracker` and
    invoke `CheckMutabilityTransition` at each assignment
 
-### 5.5 Tests
+### 6.5 Tests
 
 Test cases from the requirements:
 
@@ -655,27 +854,57 @@ r.x = 5
 
 ---
 
-## Phase 6: Alias Tracking — Advanced Cases
+## Phase 7: Alias Tracking — Advanced Cases
 
 **Goal:** Extend alias tracking to cover object properties, closures,
 destructuring, conditional aliasing, and method receivers.
 
-### 6.1 Object Property Aliasing
+### 7.1 Object Property Aliasing
 
-When a mutable value is stored into an object property, the containing object
-becomes an alias:
+When a value is stored into an object property (`obj.prop = value`), the
+alias sets of the containing object and the value are **merged**. All
+variables in `obj`'s alias set(s) become aliases of `value`, and vice versa.
+
+**File:** `internal/liveness/alias_analysis.go`
 
 ```go
-// In alias_analysis.go:
-// When processing: obj.prop = expr
-// If expr aliases variable v, add obj to v's alias set
+// When processing: obj.prop = value
+// 1. Determine the alias source of value (using DetermineAliasSource)
+// 2. If value aliases a variable v:
+//    - For each alias set S that obj belongs to (via VarToSets):
+//      merge S with v's alias set(s)
+// 3. If value is a fresh value: obj gains no new aliases
 ```
+
+**Why merge, not just add?** Simple addition (`add obj to value's set`)
+loses transitive connections when intermediate variables are reassigned.
+This matters for iterative construction of recursive/cyclic structures:
+
+```esc
+var current: mut Node = Node(1, undefined)
+val head: mut Node = current              // {head, current}
+val next: mut Node = Node(2, undefined)   // {next}
+current.next = next                       // merge → {head, current, next}
+current = next                            // current leaves and re-joins
+// head is still connected to next — connection preserved
+```
+
+With simple addition, `current.next = next` would only add `current` to
+`next`'s set. When `current` is later reassigned, `head`'s connection to
+`next` is severed. Merging ensures all variables that alias the containing
+object also alias the stored value, maintaining transitive connections
+through property chains.
+
+**Conservatism:** Merging is conservative — the entire reachable object
+graph may end up in one alias set. This is correct for cyclic structures
+(you cannot freeze part of a cycle) and sound for acyclic structures
+(a container that stores a reference truly does alias it).
 
 This requires extending `DetermineAliasSource` to handle `MemberExpr` on the
 left side of assignments, and to recognize when a property assignment creates
 an alias relationship.
 
-### 6.2 Closure Capture Aliasing
+### 7.2 Closure Capture Aliasing
 
 When a closure (function expression) captures a variable from the enclosing
 scope, the closure variable is an alias of the captured variable.
@@ -731,7 +960,7 @@ This distinction is important: a read-only capture is not simply "no alias" —
 it is an immutable alias that blocks immutable-to-mutable transitions on the
 captured variable while the closure is live.
 
-### 6.3 Destructuring Aliasing
+### 7.3 Destructuring Aliasing
 
 When a value is destructured, each extracted binding aliases the corresponding
 part of the original value:
@@ -744,7 +973,7 @@ val {point} = obj  // point aliases obj.point
 the initializer is a variable reference, add each destructured binding to the
 alias set of the source variable (or the specific property path).
 
-### 6.4 Conditional Aliasing
+### 7.4 Conditional Aliasing
 
 When a variable is assigned from different values depending on control flow,
 it joins the alias sets of all possible sources:
@@ -757,9 +986,9 @@ val c = if cond { a } else { b }
 **Implementation:** Extend `DetermineAliasSource` to handle `IfElseExpr` and
 `MatchExpr` by collecting alias sources from all branches and returning
 `AliasSourceMultiple`. The `AliasTracker` already supports membership in
-multiple alias sets via `VarToSets` (defined in Phase 1.4).
+multiple alias sets via `VarToSets` (defined in Phase 1.4, now used from Phase 5).
 
-### 6.5 Reassignment
+### 7.5 Reassignment
 
 When a `var` variable is reassigned, it leaves its previous alias set(s):
 
@@ -769,16 +998,25 @@ b = {x: 1, y: 1}  // b leaves a's alias set
 val q: Point = a   // OK: b no longer aliases a
 ```
 
-This is already handled by `AliasTracker.Reassign` from Phase 4.
+This is already handled by `AliasTracker.Reassign` from Phase 5.
 
-### 6.6 Method Receiver Aliasing
+### 7.6 Method Receiver Aliasing
 
 When a method stores a parameter into `self`, the receiver becomes an alias
-of that parameter. This is handled through lifetime annotations (Phase 7) —
+of that parameter. This is handled through lifetime annotations (Phase 8) —
 the method's lifetime signature captures the relationship, and the caller
 updates alias sets based on the signature.
 
-### 6.7 Tests
+The inferred lifetime links the parameter to the receiver:
+
+```esc
+fn setItem<'a>(mut 'a self, p: mut 'a Point) -> void
+```
+
+The shared `'a` on `self` and `p` tells callers that after `c.setItem(p)`,
+`c` aliases `p`. The caller's alias tracker merges their alias sets.
+
+### 7.7 Tests
 
 - Object property: `obj.prop = p` makes obj alias p
 - Closure capture (mutable): closure writing to captured var blocks Rule 1
@@ -792,12 +1030,12 @@ updates alias sets based on the signature.
 
 ---
 
-## Phase 7: Lifetime Annotations and Inference
+## Phase 8: Lifetime Annotations and Inference
 
 **Goal:** Add lifetime annotations to function signatures and infer them from
 function bodies.
 
-### 7.1 Parser Changes — Lifetime Syntax
+### 8.1 Parser Changes — Lifetime Syntax
 
 Extend the parser to recognize lifetime parameters in function declarations
 and type annotations.
@@ -855,7 +1093,7 @@ type MutTypeAnn struct {
 }
 ```
 
-### 7.2 Lexer Changes
+### 8.2 Lexer Changes
 
 Add a new token type for lifetime identifiers:
 
@@ -868,7 +1106,7 @@ This must be context-aware to avoid conflicts with character literals (if any)
 or other uses of `'`. Since Escalier uses double quotes for strings and doesn't
 have character literals, `'` followed by an identifier should be unambiguous.
 
-### 7.3 Lifetime Inference from Function Bodies
+### 8.3 Lifetime Inference from Function Bodies
 
 When a function body is available, infer lifetime relationships by analyzing
 which parameters are returned or stored:
@@ -895,7 +1133,7 @@ func (c *Checker) InferLifetimes(
 **Algorithm:**
 1. Walk the function body to find all `return` statements
 2. For each return expression, determine its alias source (using
-   `DetermineAliasSource` from Phase 4)
+   `DetermineAliasSource` from Phase 5)
 3. If the return expression aliases a parameter, create a lifetime variable
    linking that parameter to the return type
 4. If the return expression calls another function with lifetime annotations,
@@ -934,7 +1172,7 @@ In practice, the inference examines the return expression's structure:
 after the body has been type-checked. Attach the inferred lifetimes to the
 `FuncType`.
 
-### 7.4 Escaping Reference Detection
+### 8.4 Escaping Reference Detection
 
 When a function stores a parameter into a location that outlives the function
 (e.g. a module-level variable, an object property that escapes), the parameter
@@ -957,7 +1195,7 @@ Escaping locations include:
 - Properties of objects that are themselves module-level
 - Return values (handled by lifetime inference, not escaping detection)
 
-### 7.5 Effect on Callers — Alias Set Updates
+### 8.5 Effect on Callers — Alias Set Updates
 
 When a function with lifetime annotations is called, the caller's alias
 tracker must be updated:
@@ -982,7 +1220,7 @@ func (c *Checker) updateAliasesFromCall(
 ) { ... }
 ```
 
-### 7.6 Constructor Lifetime Inference
+### 8.6 Constructor Lifetime Inference
 
 Constructors require special handling because unlike functions, they do not
 have explicit `return` statements — they produce objects from parameters. The
@@ -1040,7 +1278,7 @@ class Point(x: number, y: number) { x, y, }
 
 **Effect on callers:** When a constructor with lifetime annotations is called,
 the caller's alias tracker is updated the same way as for function calls
-(Phase 7.5). The constructed object is added to the alias set of each
+(Phase 8.5). The constructed object is added to the alias set of each
 reference-typed argument whose corresponding parameter has a lifetime.
 
 **Elision for constructors:** If a constructor has a single reference
@@ -1050,7 +1288,7 @@ parameters, explicit annotation is required (or inference determines the
 lifetimes from the class definition, which is the common case since
 constructors always have bodies).
 
-### 7.7 Recursive and Mutually Recursive Functions
+### 8.7 Recursive and Mutually Recursive Functions
 
 For recursive functions, lifetime inference works the same as for non-recursive
 functions — the relationship between parameters and return values is determined
@@ -1066,7 +1304,7 @@ For mutually recursive functions, use fixed-point iteration:
 identifies mutual recursion groups. Extend it to iterate lifetime inference
 within each group.
 
-### 7.8 Tests
+### 8.8 Tests
 
 **Inference from body:**
 ```esc
@@ -1128,12 +1366,12 @@ fn filter(items: Array<Point>, f: fn(Point) -> boolean) -> Array<Point> {
 
 ---
 
-## Phase 8: Lifetime Unification
+## Phase 9: Lifetime Unification
 
 **Goal:** Integrate lifetime variables into the type unification engine so
 that lifetimes are propagated through type inference.
 
-### 8.1 Lifetime Variable Binding
+### 9.1 Lifetime Variable Binding
 
 During unification, when a type with a lifetime annotation is unified with
 a type without one (or with a different lifetime), the lifetimes must be
@@ -1153,7 +1391,7 @@ Add cases to the unification engine:
 3. **Lifetime on `MutabilityType`:** When unifying `mut 'a T` with `mut 'b T`,
    both the types and the lifetimes must match (invariant for mutable types).
 
-### 8.2 Lifetime Instantiation at Call Sites
+### 9.2 Lifetime Instantiation at Call Sites
 
 When a generic function with lifetime parameters is called, the lifetimes are
 instantiated similarly to type parameters:
@@ -1166,7 +1404,7 @@ In `instantiateGenericFunc`, also instantiate lifetime parameters:
 3. After argument unification, the lifetime values are bound to the alias sets
    of the actual arguments
 
-### 8.3 Lifetime Constraint Propagation
+### 9.3 Lifetime Constraint Propagation
 
 When two lifetime variables are unified:
 - **Binding:** Free lifetime variable is bound to a concrete `LifetimeValue`
@@ -1208,7 +1446,7 @@ alias set), and unification succeeds.
 
 #### `'static` Lifetime in Unification
 
-The `'static` lifetime (assigned to parameters that escape via Phase 7.4)
+The `'static` lifetime (assigned to parameters that escape via Phase 8.4)
 interacts with unification as follows:
 
 - **`'static` vs free `LifetimeVar`:** The variable is bound to `'static`.
@@ -1226,7 +1464,7 @@ In the alias tracker, a value with `'static` lifetime is marked as
 permanently aliased — it can never undergo a mutability transition. The
 `AliasSet` can track this via an `IsStatic bool` field.
 
-### 8.4 Lifetime on Generic Type Parameters
+### 9.4 Lifetime on Generic Type Parameters
 
 When lifetimes appear on type parameters (e.g. `Array<'a T>`), unification
 recurses into the type arguments and propagates lifetimes:
@@ -1235,7 +1473,7 @@ recurses into the type arguments and propagates lifetimes:
 - `Array<'a T>` vs `Array<'b T>`: Succeeds if `'a` and `'b` unify
 - `mut Array<'a T>` vs `mut Array<'b T>`: Invariant — `'a` and `'b` must unify
 
-### 8.5 Function Type Unification with Lifetimes
+### 9.5 Function Type Unification with Lifetimes
 
 When unifying function types:
 - Parameter types are contravariant in lifetimes
@@ -1283,7 +1521,7 @@ lifetime linking it to `p`, so the result is independent.
 4. These constraints propagate through to the enclosing function's lifetime
    variables via the standard binding/equating mechanism
 
-### 8.6 Tests
+### 9.6 Tests
 
 - Lifetime binding at call site
 - Two calls with same lifetime parameter resolve consistently
@@ -1300,12 +1538,12 @@ lifetime linking it to `p`, so the result is independent.
 
 ---
 
-## Phase 9: Lifetime Elision Rules
+## Phase 10: Lifetime Elision Rules
 
 **Goal:** Apply default lifetime rules to body-less declarations so that
 common cases don't require explicit annotations.
 
-### 9.1 Elision Rule Implementation
+### 10.1 Elision Rule Implementation
 
 Elision rules apply only to body-less declarations (interface methods, external
 functions, imported TypeScript types):
@@ -1330,7 +1568,7 @@ func (c *Checker) ApplyLifetimeElision(funcType *type_system.FuncType) { ... }
 When elision is ambiguous (multiple reference parameters, reference return type),
 the compiler requires explicit annotation and reports an error.
 
-### 9.2 Determining "Reference Type"
+### 10.2 Determining "Reference Type"
 
 A type is a "reference type" for elision purposes if it can alias:
 - Object types
@@ -1346,7 +1584,7 @@ A type is a "reference type" for elision purposes if it can alias:
 func IsReferenceType(t type_system.Type) bool { ... }
 ```
 
-### 9.3 Interface Method Lifetime Verification
+### 10.3 Interface Method Lifetime Verification
 
 When a type implements an interface, its method's inferred lifetimes must be
 **compatible** with the interface's declared lifetimes. The requirements
@@ -1397,18 +1635,18 @@ type Storer: Transform {
 }
 ```
 
-### 9.4 Integration
+### 10.4 Integration
 
 Apply elision during:
 - Interface method declaration processing (`inferInterface`)
 - External function declaration processing
-- TypeScript type import processing (Phase 10)
+- TypeScript type import processing (Phase 11)
 
 Apply lifetime verification during:
 - Interface implementation checking (when a type declares it implements an
   interface)
 
-### 9.5 Tests
+### 10.5 Tests
 
 - Single ref param + ref return → lifetime inferred
 - Multiple ref params + ref return → error requiring annotation
@@ -1422,12 +1660,12 @@ Apply lifetime verification during:
 
 ---
 
-## Phase 10: TypeScript Interop
+## Phase 11: TypeScript Interop
 
 **Goal:** Automatically assign lifetime annotations to TypeScript type
 declarations imported into Escalier.
 
-### 10.1 Automatic Lifetime Assignment
+### 11.1 Automatic Lifetime Assignment
 
 When importing TypeScript declarations, apply the heuristic rules from the
 requirements (Rules A–F):
@@ -1450,7 +1688,7 @@ func AssignLifetimes(funcType *type_system.FuncType) { ... }
 - **Rule F:** Callback parameters → determine mutability from callback's
   parameter type
 
-### 10.2 Override Mechanism
+### 11.2 Override Mechanism
 
 Support manual override files for correcting heuristic lifetime assignments:
 
@@ -1464,7 +1702,7 @@ rules.
 **Format:** TBD — could be a subset of Escalier syntax with explicit lifetime
 annotations, or a JSON/TOML configuration file.
 
-### 10.3 Built-in Overrides
+### 11.3 Built-in Overrides
 
 Ship overrides for common TypeScript APIs (Array methods, Promise, etc.)
 as part of the standard library. These are the overrides listed in the
@@ -1472,7 +1710,7 @@ requirements document (Array.forEach, Array.map, Array.filter, etc.).
 
 **File:** `internal/checker/prelude_lifetimes.go`
 
-### 10.4 Tests
+### 11.4 Tests
 
 - `Array.prototype.sort` → aliases receiver
 - `Array.prototype.map` → fresh array, no container alias
@@ -1484,12 +1722,12 @@ requirements document (Array.forEach, Array.map, Array.filter, etc.).
 
 ---
 
-## Phase 11: Error Messages
+## Phase 12: Error Messages
 
 **Goal:** Produce clear, actionable error messages that show lifetime
 information only when it helps the developer.
 
-### 11.1 Error Types
+### 12.1 Error Types
 
 Define error types for lifetime violations:
 
@@ -1534,7 +1772,7 @@ type AliasOrigin struct {
 }
 ```
 
-### 11.2 Error Formatting
+### 12.2 Error Formatting
 
 Error messages follow the format shown in the requirements:
 
@@ -1557,7 +1795,7 @@ error: cannot assign mutable value to immutable variable
 For simple cases (no cross-function aliasing), omit lifetime details. For
 cross-function cases, show the function signature with lifetimes highlighted.
 
-### 11.3 Tests
+### 12.3 Tests
 
 - Simple local alias error message
 - Cross-function alias error message with lifetime shown
@@ -1567,12 +1805,12 @@ cross-function cases, show the function signature with lifetimes highlighted.
 
 ---
 
-## Phase 12: Remove `mut?`
+## Phase 13: Remove `mut?`
 
 **Goal:** Remove `MutabilityUncertain` from the type system, completing the
 transition to liveness-based mutability.
 
-### 12.1 Audit All Uses of `MutabilityUncertain`
+### 13.1 Audit All Uses of `MutabilityUncertain`
 
 The `MutabilityUncertain` variant is used across the codebase. Each use must
 be replaced. The table below lists known files — run
@@ -1594,7 +1832,7 @@ starting this phase:
 | `codegen/dts.go` | `mut?` in .d.ts output | Remove |
 | *(remaining files)* | Grep for complete list at implementation time | Case-by-case |
 
-### 12.2 Simplify `MutabilityType`
+### 13.2 Simplify `MutabilityType`
 
 Change `Mutability` from a three-state enum to a boolean or remove the
 uncertainty variant:
@@ -1613,7 +1851,7 @@ const MutabilityMutable Mutability = "!"
 Or simplify `MutabilityType` to always represent `mut` (the wrapper's presence
 means mutable, absence means immutable).
 
-### 12.3 Replace `mut?` Inference with Direct Tracking
+### 13.3 Replace `mut?` Inference with Direct Tracking
 
 Where the checker currently creates `MutabilityUncertain` types, replace with
 direct write-tracking:
@@ -1621,13 +1859,13 @@ direct write-tracking:
 - If a parameter is only read → immutable
 - No intermediate `mut?` state
 
-### 12.4 Update Snapshot Tests
+### 13.4 Update Snapshot Tests
 
 Many snapshot tests will change since `mut?` will no longer appear in type
 output. Run all tests with `UPDATE_SNAPS=true` to update snapshots, then
 review the diffs to ensure correctness.
 
-### 12.5 Tests
+### 13.5 Tests
 
 - All existing mutation tests should still pass (behavior preserved)
 - Types no longer show `mut?` in any output
@@ -1635,12 +1873,12 @@ review the diffs to ensure correctness.
 
 ---
 
-## Phase 13: PrintType and Display
+## Phase 14: PrintType and Display
 
 **Goal:** Update type printing to support lifetime display with configurable
 visibility.
 
-### 13.1 Default: Hidden Lifetimes
+### 14.1 Default: Hidden Lifetimes
 
 By default, `PrintType` does not show lifetime annotations:
 
@@ -1648,7 +1886,7 @@ By default, `PrintType` does not show lifetime annotations:
 // fn identity(p: mut Point) -> mut Point
 ```
 
-### 13.2 Verbose Mode: Show Lifetimes
+### 14.2 Verbose Mode: Show Lifetimes
 
 Add a `ShowLifetimes` option to `PrintConfig`:
 
@@ -1667,13 +1905,13 @@ When `ShowLifetimes` is true:
 // fn identity<'a>(p: mut 'a Point) -> mut 'a Point
 ```
 
-### 13.3 Error Context: Show Relevant Lifetimes
+### 14.3 Error Context: Show Relevant Lifetimes
 
-In error messages (Phase 11), show lifetimes only when they are relevant to
+In error messages (Phase 12), show lifetimes only when they are relevant to
 understanding the error. This uses a targeted print mode that shows lifetimes
 for specific functions referenced in the error, not globally.
 
-### 13.4 Tests
+### 14.4 Tests
 
 - Default printing omits lifetimes
 - Verbose mode includes lifetimes
@@ -1726,7 +1964,7 @@ typical code. No exponential blowup is expected.
 ### LSP Integration (Out of Scope — Follow-On Work)
 
 The language server (`cmd/lsp-server/`) will need updates after the core
-implementation is stable. These are explicitly **not part of Phases 1–13**:
+implementation is stable. These are explicitly **not part of Phases 1–14**:
 
 - Show lifetime information in hover tooltips (when verbose mode is enabled)
 - Report lifetime errors as diagnostics (will work automatically once the
@@ -1739,7 +1977,7 @@ implementation is stable. These are explicitly **not part of Phases 1–13**:
   - "Remove the use of `x` after the transition" (for simple reordering)
 
   These require integrating with the LSP's code action system and are
-  deferred until the error types (Phase 11) are finalized.
+  deferred until the error types (Phase 12) are finalized.
 
 ---
 
@@ -1747,31 +1985,32 @@ implementation is stable. These are explicitly **not part of Phases 1–13**:
 
 ```text
 1. Data structures
-└── 2. Liveness (linear)
-    ├── 3. Liveness (control flow)
-    │   └── 5. Transition checking ←── (also depends on 4)
-    └── 4. Alias tracking (local)
-        ├── 5. Transition checking
-        │   └── 6. Advanced alias tracking (properties, closures, destructuring)
-        │       └── 7. Lifetime annotations, inference, & constructors
-        │           ├── 8. Lifetime unification ('static, conflict detection,
-        │           │      higher-order function threading)
-        │           │   └── 9. Elision rules & interface lifetime verification
-        │           │       └── 10. TypeScript interop
-        │           └────────── 10. TypeScript interop
-        └── 6. Advanced alias tracking
-11. Error messages ←── (depends on 5–10)
-└── 12. Remove mut?
-    └── 13. PrintType & display
+└── 2. Name resolution & VarID assignment
+    └── 3. Liveness (linear)
+        ├── 4. Liveness (control flow)
+        │   └── 6. Transition checking ←── (also depends on 5)
+        └── 5. Alias tracking (local)
+            ├── 6. Transition checking
+            │   └── 7. Advanced alias tracking (properties, closures, destructuring)
+            │       └── 8. Lifetime annotations, inference, & constructors
+            │           ├── 9. Lifetime unification ('static, conflict detection,
+            │           │      higher-order function threading)
+            │           │   └── 10. Elision rules & interface lifetime verification
+            │           │       └── 11. TypeScript interop
+            │           └────────── 11. TypeScript interop
+            └── 7. Advanced alias tracking
+12. Error messages ←── (depends on 6–11)
+└── 13. Remove mut?
+    └── 14. PrintType & display
 ```
 
-Phases 2–4 can be developed in parallel. Phases 7–10 can also be partially
-parallelized (elision and TS interop depend on the annotation infrastructure
-but not on each other).
+Phases 3–5 can be developed in parallel (once Phase 2 is complete).
+Phases 8–11 can also be partially parallelized (elision and TS interop
+depend on the annotation infrastructure but not on each other).
 
 **Key sub-phase dependencies within phases:**
-- Phase 7.6 (constructors) depends on 7.3 (lifetime inference from bodies)
-- Phase 8.3 (`'static` and conflict detection) depends on 8.1 (lifetime
-  binding) and 8.2 (instantiation)
-- Phase 9.3 (interface lifetime verification) depends on 7.3 (inference)
-  and 8.1 (binding)
+- Phase 8.6 (constructors) depends on 8.3 (lifetime inference from bodies)
+- Phase 9.3 (`'static` and conflict detection) depends on 9.1 (lifetime
+  binding) and 9.2 (instantiation)
+- Phase 10.3 (interface lifetime verification) depends on 8.3 (inference)
+  and 9.1 (binding)
