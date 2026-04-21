@@ -97,10 +97,14 @@ type ObjectType struct {
     Lifetime Lifetime  // nil if no lifetime annotation
 }
 
-// TypeRefType — for 'a Point or mut 'a Point
+// TypeRefType — for 'a Point, mut 'a Point, Container<'a, T>, etc.
 type TypeRefType struct {
-    // ... existing fields ...
-    Lifetime Lifetime  // nil if no lifetime annotation
+    // ... existing fields (Name, TypeAlias, TypeArgs, etc.) ...
+    Lifetime     Lifetime    // nil if no lifetime annotation (e.g. 'a Point)
+    LifetimeArgs []Lifetime  // lifetime arguments for constructed types
+                             // (e.g. Container<'a> has LifetimeArgs: ['a],
+                             //  Pair<'a, 'b> has LifetimeArgs: ['a, 'b])
+                             // nil/empty for types with no lifetime parameters
 }
 
 // ArrayType — for 'a Array<T> or Array<'a T>
@@ -120,10 +124,12 @@ type TupleType struct {
     Lifetime Lifetime
 }
 
-// MutabilityType — the existing mut wrapper.
-// When both mut and a lifetime are present (mut 'a Point), the lifetime
-// is stored on the inner type (e.g. TypeRefType.Lifetime), not on
-// MutabilityType itself. MutabilityType only carries the mutability flag.
+// Note: MutabilityType (the existing mut wrapper) is removed in Phase 13.2.
+// After that phase, mutability is tracked via a `Mutable bool` field on
+// each type struct — co-located with the `Lifetime` field added here.
+// Until Phase 13, MutabilityType continues to wrap the inner type, and
+// the lifetime is stored on the inner type (e.g. TypeRefType.Lifetime),
+// not on MutabilityType itself.
 ```
 
 Types that do NOT need a `Lifetime` field:
@@ -206,6 +212,30 @@ type's lifetime is carried by the `Return` type's own `Lifetime` field (e.g.
 `TypeRefType.Lifetime`). This keeps lifetime representation uniform throughout
 the type tree.
 
+Add `LifetimeParams` to `TypeAlias` (alongside existing `TypeParams`).
+This is needed for classes whose constructors store reference-typed
+parameters as fields — the inferred lifetimes become parameters of the
+class type itself (e.g. `Container<'a>`, `Pair<'a, 'b>`):
+
+```go
+type TypeAlias struct {
+    Type            Type
+    TypeParams      []*TypeParam
+    LifetimeParams  []*LifetimeVar  // e.g. ['a, 'b] for Pair<'a, 'b>
+    DefaultMutable  bool            // true if instances default to mut
+                                    // (class has mut self methods and no
+                                    // immutable modifier)
+    Exported        bool
+    IsTypeParam     bool
+}
+```
+
+When a class has both type parameters and lifetime parameters, they
+coexist: `Container<'a, T>` has `LifetimeParams: ['a]` and
+`TypeParams: [T]`. At construction sites, lifetime arguments are
+instantiated alongside type arguments and stored in
+`TypeRefType.LifetimeArgs`.
+
 ### 1.3 Liveness Data Structures
 
 Create a new package `internal/liveness/` for the analysis pass.
@@ -214,8 +244,6 @@ Create a new package `internal/liveness/` for the analysis pass.
 
 ```go
 package liveness
-
-import "github.com/escalier-lang/escalier/internal/ast"
 
 // VarID uniquely identifies a variable within a function body.
 // Sequential integer IDs are assigned during name resolution (Phase 2)
@@ -234,20 +262,45 @@ import "github.com/escalier-lang/escalier/internal/ast"
 // IDs starting at -1 and counting down, so downstream phases can
 // distinguish them: any VarID < 0 is non-local and should be ignored
 // by liveness and alias analysis.
+//
+// Why non-local variables are excluded: liveness and alias analysis are
+// intraprocedural — they operate within a single function body. A
+// module-level variable has an unbounded lifetime: it is accessible from
+// any function, at any time, for the entire program's execution. There
+// is no "last use" to compute and no point where it becomes dead, so
+// intraprocedural liveness analysis cannot meaningfully track it. Aliasing
+// through module-level variables is handled separately via escaping
+// reference detection ('static lifetime, Phase 8.4).
 type VarID int
 
+// StmtRef identifies a statement by its position in the CFG: the basic
+// block it belongs to and its index within that block. This is the key
+// used by LivenessInfo to look up per-statement liveness sets.
+type StmtRef struct {
+    BlockID  int  // index into CFG.Blocks
+    StmtIdx  int  // index within BasicBlock.Stmts
+}
+
 // LivenessInfo stores the results of liveness analysis for a function body.
+// Liveness sets are indexed by basic block ID and statement index within
+// the block, avoiding the need to use AST spans as map keys.
 type LivenessInfo struct {
-    // LiveBefore maps each statement/expression span to the set of variables
-    // that are live just before that point.
-    LiveBefore map[ast.Span]map[VarID]bool
+    // LiveBefore[blockID][stmtIdx] is the set of variables that are live
+    // just before the statement at that position.
+    LiveBefore [][]map[VarID]bool
 
-    // LiveAfter maps each statement/expression span to the set of variables
-    // that are live just after that point.
-    LiveAfter map[ast.Span]map[VarID]bool
+    // LiveAfter[blockID][stmtIdx] is the set of variables that are live
+    // just after the statement at that position.
+    LiveAfter [][]map[VarID]bool
 
-    // LastUse maps each variable to the span of its last use.
-    LastUse map[VarID]ast.Span
+    // LastUse maps each variable to the location of its last use.
+    LastUse map[VarID]StmtRef
+}
+
+// IsLiveAfter returns whether the given variable is live after the
+// statement at the given position.
+func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
+    return l.LiveAfter[ref.BlockID][ref.StmtIdx][v]
 }
 ```
 
@@ -308,6 +361,18 @@ func (a *AliasTracker) AddAlias(target VarID, source VarID, mut Mutability) { ..
 // a fresh set (if assigned a fresh value).
 func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut Mutability) { ... }
 
+// MergeAliasSets merges the alias sets of two variables into a single
+// set. All members of both sets become members of the merged set, and
+// VarToSets is updated so every affected variable points to the merged
+// set. The second set is removed from Sets.
+//
+// This is used when a value is stored into an object property
+// (e.g. obj.next = node) — the container's and the value's alias sets
+// must be merged so that transitive connections through property chains
+// are preserved even when intermediate variables are reassigned.
+// See Phase 7.1 for details.
+func (a *AliasTracker) MergeAliasSets(v1 VarID, v2 VarID) { ... }
+
 // GetAliasSets returns all alias sets that v belongs to. A variable may
 // belong to multiple sets due to conditional aliasing (Phase 7.4).
 // Callers must iterate all returned sets to avoid missing conflicts.
@@ -339,7 +404,7 @@ func (c *Checker) FreshLifetimeVar(name string) *type_system.LifetimeVar {
 ### 1.6 Tests
 
 - Unit tests for `AliasTracker` operations (new value, add alias, reassign,
-  get aliases)
+  merge, get aliases)
 - Unit tests for `LifetimeVar` and `LifetimeValue` construction
 
 ---
@@ -468,14 +533,17 @@ type RenameError struct {
 func Rename(body ast.Block, outerBindings map[string]VarID) *RenameResult { ... }
 ```
 
-The `outerBindings` parameter supplies module-level and prelude bindings.
+The `outerBindings` parameter supplies module-level and prelude bindings
+(e.g. top-level `val`/`var` declarations, `fn` declarations, imports).
 These are assigned negative VarIDs (starting at -1, counting down) so they
 occupy a distinct range from local variables (which start at 1). This
 allows downstream phases to distinguish non-local references by checking
 `VarID < 0`. A use site that resolves to an outer binding has its `VarID`
 set to the corresponding negative ID. Liveness and alias analysis skip
-any VarID < 0, since non-local variables don't participate in those
-analyses. `NextID` counts only local variables.
+any VarID < 0, since module-level variables have unbounded lifetimes —
+they are accessible from any function at any time and cannot be tracked
+by intraprocedural analysis (see the VarID comment above for the full
+rationale). `NextID` counts only local variables.
 
 ### 2.4 Integration
 
@@ -552,7 +620,7 @@ Implement an AST visitor that:
      LHS as both a **use** (reads the old value) and a **definition**
      (writes the new value)
 
-The visitor produces a `map[VarID][]ast.Span` of use sites per variable.
+The visitor produces a `map[VarID][]StmtRef` of use sites per variable.
 
 ### 3.2 Backward Liveness Analysis (Linear)
 
@@ -585,8 +653,9 @@ The liveness analysis runs per function body. Store the result on the checker
 ```go
 type Context struct {
     // ... existing fields ...
-    Liveness *liveness.LivenessInfo
-    Aliases  *liveness.AliasTracker
+    Liveness  *liveness.LivenessInfo
+    Aliases   *liveness.AliasTracker
+    StmtToRef map[ast.Stmt]liveness.StmtRef  // built from CFG after liveness analysis
 }
 ```
 
@@ -675,7 +744,9 @@ func AnalyzeFunction(cfg *CFG) *LivenessInfo { ... }
 The CFG produces per-block liveness, but mutability checking needs per-statement
 granularity. Within each basic block, use the linear analysis from Phase 3 to
 compute per-statement liveness, using the block's `LiveOut` as the initial
-`LiveAfter` for the last statement.
+`LiveAfter` for the last statement. The results are stored in `LivenessInfo`
+indexed by `(blockID, stmtIdx)`, so callers can look up liveness at any
+statement using a `StmtRef`.
 
 ### 4.4 Tests
 
@@ -700,15 +771,33 @@ As the checker processes each statement in a function body, update the
 
 **File:** `internal/liveness/alias_analysis.go`
 
-Walk statements in order:
+Walk statements in order. The `mut` argument to each call is determined by
+the **declared or inferred type of the variable being bound** — specifically,
+whether the binding's type is `mut` or immutable. Since alias tracking runs
+incrementally during type checking (Phase 6.4), the variable's type is
+already known by the time the `AliasTracker` is updated.
+
 1. **`VarDecl` with literal/constructor init:** Call `NewValue(varID, mut)` to
    create a fresh alias set
+   ```esc
+   val a: mut Point = {x: 0, y: 0}   // NewValue(a, Mutable)
+   val b: Point = {x: 0, y: 0}       // NewValue(b, Immutable)
+   ```
 2. **`VarDecl` with identifier init** (e.g. `val b = a`): Call
    `AddAlias(b, a, mut)` to add `b` to `a`'s alias set
+   ```esc
+   val c: mut Point = a               // AddAlias(c, a, Mutable)
+   val d: Point = a                   // AddAlias(d, a, Immutable)
+   ```
 3. **Assignment** (e.g. `b = a` where `b` is `var`): Call
    `Reassign(b, &a, mut)` to leave old set and join `a`'s set
 4. **Assignment with fresh value** (e.g. `b = {x: 1}`): Call
    `Reassign(b, nil, mut)` to create a new alias set
+
+The mutability stored in the alias set's `Members` map records how each
+variable accesses the shared value. This is what `CheckMutabilityTransition`
+(Phase 6) inspects: it iterates the alias set's members and checks whether
+any live member has a conflicting mutability.
 
 ### 5.2 Determine Alias Source from Expressions
 
@@ -786,7 +875,7 @@ func (c *Checker) CheckMutabilityTransition(
     sourceVar VarID,
     sourceMut bool,     // mutability of the source
     targetMut bool,     // mutability of the target
-    assignSpan ast.Span,
+    assignRef liveness.StmtRef,
 ) []Error { ... }
 ```
 
@@ -796,7 +885,7 @@ The algorithm:
    variable may belong to multiple sets due to conditional aliasing)
 3. For each alias set that `sourceVar` belongs to:
    - For each variable `v` in that alias set (including `sourceVar`):
-     - Check if `v` is live after `assignSpan` (using `LivenessInfo`)
+     - Check if `v` is live after `assignRef` (using `LivenessInfo.IsLiveAfter`)
      - If `sourceMut && !targetMut` (Rule 1): error if `v` has mutable
        access and is live
      - If `!sourceMut && targetMut` (Rule 2): error if `v` has immutable
@@ -855,10 +944,13 @@ The pre-pass runs at the start of `inferFuncBody` or equivalent:
 2. Collect variable uses from the function body AST
 3. Build CFG
 4. Run backward liveness analysis
-5. Store `LivenessInfo` on the `Context`
-6. Initialize `AliasTracker` on the `Context`
-7. During statement-by-statement type checking, update `AliasTracker` and
-   invoke `CheckMutabilityTransition` at each assignment
+5. Store `LivenessInfo` and `CFG` on the `Context`
+6. Build a `StmtToRef map[ast.Stmt]StmtRef` lookup (by walking CFG blocks
+   and recording each statement's position) and store it on the `Context`
+7. Initialize `AliasTracker` on the `Context`
+8. During statement-by-statement type checking, use `StmtToRef` to look up
+   the current statement's `StmtRef`, update `AliasTracker`, and invoke
+   `CheckMutabilityTransition` at each assignment
 
 ### 6.5 Tests
 
@@ -890,6 +982,7 @@ mutableConfig.host = "0.0.0.0"
 // ERROR: config is used after the assignment
 val config: {host: string} = {host: "localhost"}
 val mutableConfig: mut {host: string} = config  // ERROR
+mutableConfig.host = "0.0.0.0"
 print(config.host)
 ```
 
@@ -930,8 +1023,7 @@ variables in `obj`'s alias set(s) become aliases of `value`, and vice versa.
 // When processing: obj.prop = value
 // 1. Determine the alias source of value (using DetermineAliasSource)
 // 2. If value aliases a variable v:
-//    - For each alias set S that obj belongs to (via VarToSets):
-//      merge S with v's alias set(s)
+//    - Call AliasTracker.MergeAliasSets(obj, v) to merge their alias sets
 // 3. If value is a fresh value: obj gains no new aliases
 ```
 
@@ -1025,23 +1117,27 @@ When a value is destructured, each extracted binding aliases the corresponding
 part of the original value:
 
 ```esc
-val {a} = obj  // a aliases obj and obj.a
+val {a} = obj  // a aliases obj.a
 ```
 
 **Implementation:** In `inferPattern` for `ObjectPat` and `ArrayPat`, when
 the initializer is a `VarRef`, add each destructured binding to the
 `AliasSet` for the **source variable** — i.e. `AliasSet.Members`
-(`map[VarID]Mutability`) gains an entry for the new binding. No separate
-property-keyed structure is required: the destructured binding is treated
-as an alias of the whole object, not as a distinct property-level entry.
+(`map[VarID]Mutability`) gains an entry for the new binding.
 
-This means `val {a} = obj` causes `a` to be an alias of both `obj` and
-`obj.a` via the same `AliasSet`. If `obj.a` is later assigned a new value
-(e.g. `obj.a = other`), the Section 7.1 merge semantics handle connecting
-the object-level and property-level alias sets — the same merge that fires
-for any `obj.prop = value` assignment ensures transitive connections are
-maintained without requiring destructuring to create separate per-property
-alias sets.
+Alias sets do not track property-level granularity — they track variables,
+not sub-paths. Putting `a` in `obj`'s alias set is a conservative
+approximation: it means "if you freeze `obj`, `a` is a conflicting alias,"
+which is correct because `a` points into `obj`'s data. This may produce
+false positives (e.g. freezing an unrelated property of `obj` would flag
+`a` as conflicting) but never misses a real conflict. Property-level alias
+sets would be more precise but add significant complexity for little
+practical benefit.
+
+If `obj.a` is later assigned a new value (e.g. `obj.a = other`), the
+Phase 7.1 merge semantics handle connecting the object-level and
+property-level alias sets — the same merge that fires for any
+`obj.prop = value` assignment ensures transitive connections are maintained.
 
 ### 7.4 Conditional Aliasing
 
@@ -1077,7 +1173,16 @@ of that parameter. This is handled through lifetime annotations (Phase 8) —
 the method's lifetime signature captures the relationship, and the caller
 updates alias sets based on the signature.
 
-The inferred lifetime links the parameter to the receiver:
+Given a method body like:
+
+```esc
+fn setItem(mut self, p: mut Point) -> void {
+    self.item = p  // stores p into self
+}
+```
+
+Phase 8.3's inference detects that `p` is stored into `self` and creates
+a shared lifetime linking them. The inferred signature is:
 
 ```esc
 fn setItem<'a>(mut 'a self, p: mut 'a Point) -> void
@@ -1130,15 +1235,11 @@ fn first<'a, 'b>(a: mut 'a Point, b: mut 'b Point) -> mut 'a Point { return a }
 **File:** `internal/ast/type_ann.go`
 
 ```go
-// LifetimeAnn represents a lifetime annotation in source code (e.g. 'a).
+// LifetimeAnn represents a lifetime in source code (e.g. 'a). Used for
+// both declaration sites (in <'a, T>) and use sites (in mut 'a Point).
+// The checker resolves which is which during Phase 8.3.
 type LifetimeAnn struct {
     Name string  // e.g. "a" (without the tick)
-    span Span
-}
-
-// LifetimeParamAnn represents a lifetime parameter declaration (e.g. 'a in <'a, T>).
-type LifetimeParamAnn struct {
-    Name string
     span Span
 }
 ```
@@ -1147,7 +1248,7 @@ Add `LifetimeParams` to `FuncTypeAnn`:
 
 ```go
 type FuncTypeAnn struct {
-    LifetimeParams []*LifetimeParamAnn  // e.g. ['a, 'b]
+    LifetimeParams []*LifetimeAnn  // e.g. ['a, 'b]
     TypeParams     []*TypeParam
     // ... existing fields ...
 }
@@ -1162,6 +1263,55 @@ type MutTypeAnn struct {
     // ...
 }
 ```
+
+#### Multiple Lifetimes on a Type (`('a | 'b) Point`)
+
+When a return type may alias one of several parameters, the lifetime
+annotation uses `|` syntax inside parentheses — consistent with Escalier's
+union type syntax. This is the cross-function equivalent of conditional
+aliasing.
+
+**Parsing:** When the parser encounters `(` followed by lifetime tokens
+separated by `|` and then `)` before a type, it parses a multi-lifetime
+annotation:
+
+```esc
+fn pick<'a, 'b>(a: 'a Point, b: 'b Point, cond: boolean) -> ('a | 'b) Point
+```
+
+**AST representation:** The `Lifetime` field on `MutTypeAnn` (and on
+immutable type annotations) accepts either a single `LifetimeAnn` or a
+list:
+
+```go
+// LifetimeUnionAnn represents multiple lifetimes on a single type
+// (e.g. ('a | 'b) in `('a | 'b) Point`).
+type LifetimeUnionAnn struct {
+    Lifetimes []*LifetimeAnn  // e.g. ['a, 'b]
+    span      Span
+}
+```
+
+Both `LifetimeAnn` and `LifetimeUnionAnn` satisfy the same interface so
+they can be used interchangeably wherever a lifetime annotation appears.
+
+**Type system representation:** In `type_system/types.go`, the `Lifetime`
+field on `TypeRefType`, `ObjectType`, etc. already accepts the `Lifetime`
+interface. Add a `LifetimeUnion` type:
+
+```go
+// LifetimeUnion represents a value that may carry one of several lifetimes.
+// Used when a function returns one of multiple parameters depending on
+// control flow.
+type LifetimeUnion struct {
+    Lifetimes []Lifetime  // e.g. [LifetimeVar('a), LifetimeVar('b)]
+}
+
+func (*LifetimeUnion) isLifetime() {}
+```
+
+At call sites, when a return type has a `LifetimeUnion`, the result is
+added to the alias sets of **all** corresponding arguments.
 
 ### 8.2 Lexer Changes
 
@@ -1185,9 +1335,9 @@ which parameters are returned or stored:
 
 ```go
 // InferLifetimes analyzes a function body to determine which parameters
-// are aliased by the return value. Returns the inferred lifetime parameters
-// and a map from parameter index to the lifetime variable linking that
-// parameter to the return type.
+// are aliased by the return value (or yielded value, for generators).
+// Returns the inferred lifetime parameters and a map from parameter index
+// to the lifetime variable linking that parameter to the return/yield type.
 func (c *Checker) InferLifetimes(
     ctx Context,
     params []*type_system.FuncParam,
@@ -1201,15 +1351,31 @@ func (c *Checker) InferLifetimes(
 ```
 
 **Algorithm:**
-1. Walk the function body to find all `return` statements
-2. For each return expression, determine its alias source (using
+1. Walk the function body to find all `return` statements and `yield`
+   expressions (including `yield from`)
+2. For each return/yield expression, determine its alias source (using
    `DetermineAliasSource` from Phase 5)
-3. If the return expression aliases a parameter, create a lifetime variable
-   linking that parameter to the return type
-4. If the return expression calls another function with lifetime annotations,
+3. If the expression aliases a parameter, create a lifetime variable
+   linking that parameter to the return type (for `return`) or the
+   generator's yield type `T` in `Generator<T, TReturn, TNext>` (for
+   `yield`)
+4. If different return/yield expressions alias **different** parameters,
+   create a `LifetimeUnion` on the return type combining all relevant
+   lifetimes. For example, `if cond { a } else { b }` where `a` has
+   lifetime `'a` and `b` has lifetime `'b` produces `('a | 'b)` on the
+   return type
+5. If the expression calls another function with lifetime annotations,
    propagate those lifetimes
-5. If the function stores a parameter into a module-level variable, assign
+6. If the function stores a parameter into a module-level variable, assign
    `'static` to that parameter
+
+**Note on generators:** `yield` expressions are alias sources just like
+`return` statements. A `yield expr` makes the yielded value available to
+the caller via `Iterator.next()`, so if `expr` aliases a parameter, the
+lifetime must link that parameter to the generator's `T` type parameter.
+For `yield from`, the delegated iterator's element type is propagated.
+See the requirements document's "Async/Await and Generators" section for
+the full rationale.
 
 #### Determining Container-Level vs Element-Level Lifetimes
 
@@ -1276,7 +1442,10 @@ After type-checking a call expression:
 1. Look up the callee's `FuncType` and its `LifetimeParams`
 2. For each lifetime parameter that links a parameter to the return type,
    add the call result variable to the alias set of the argument variable
-3. For `'static` parameters, mark the argument as permanently aliased
+3. If the return type has a `LifetimeUnion` (e.g. `('a | 'b)`), add the
+   call result variable to the alias sets of **all** corresponding
+   arguments — the cross-function equivalent of conditional aliasing
+4. For `'static` parameters, mark the argument as permanently aliased
 
 ```go
 // updateAliasesFromCall updates the caller's alias tracker based on the
@@ -1297,9 +1466,22 @@ have explicit `return` statements — they produce objects from parameters. The
 requirements specify that when a constructor parameter is stored as a field,
 the constructed object aliases that parameter.
 
+A constructor always produces a **fresh value** — the constructed object
+itself is never an alias of an existing value. The only aliasing
+relationships come from reference-typed parameters that are stored as
+fields. These are represented as lifetime parameters on the class type
+(e.g. `Container<'a>`), not as a prefix lifetime on the instance (e.g.
+NOT `'a Container`). The prefix form would mean "this value is an alias
+of something," which does not apply to constructor results.
+
 **Differences from function lifetime inference:**
-- The lifetime appears on the **constructed type** (e.g. `'a Container`),
-  not on a return type in the traditional sense
+- The lifetimes become **generic parameters of the class itself** (e.g.
+  `Container<'a>`, `Pair<'a, 'b>`), similar to how Rust handles struct
+  lifetimes. The constructed value's type carries these lifetime parameters
+  so they can propagate through function signatures. For a single reference
+  parameter the constructed type is `Container<'a>`; for multiple reference
+  parameters it is `Pair<'a, 'b>` where each lifetime tracks a different
+  parameter's alias relationship.
 - Constructors do not have a receiver (`self`), so elision rule 3 (method
   receiver) does not apply
 - Primitive or value-type parameters do not need lifetimes
@@ -1326,18 +1508,39 @@ func (c *Checker) InferConstructorLifetimes(
 3. If the parameter is a primitive (`number`, `string`, `boolean`) or a
    fresh value, no lifetime is needed
 4. Multiple reference parameters each get their own lifetime variable
+5. Determine the **default mutability** of the constructed instance (see
+   the Default Mutability section in the requirements):
+   - If the class has the `immutable` modifier → immutable
+   - Else if the class has any `mut self` methods → mutable
+   - Else → immutable
+   Store this on the class's `TypeAlias` so that call sites can apply the
+   correct default when no explicit `mut` annotation is present
 
 **Example — single reference parameter:**
 ```esc
 class Container(item: mut Point) { item, }
-// Inferred: Container<'a>(item: mut 'a Point) → 'a Container
+// Inferred: Container<'a>(item: mut 'a Point) → Container<'a>
 ```
 
 **Example — multiple reference parameters:**
 ```esc
 class Pair(first: mut Point, second: mut Point) { first, second, }
 // Inferred: Pair<'a, 'b>(first: mut 'a Point, second: mut 'b Point)
-// Both 'a and 'b appear on the constructed type
+// The constructed type is Pair<'a, 'b> — callers know which parameters
+// are aliased:
+//   val pair: Pair<'a, 'b> = Pair(a, b)
+//   // 'a bound to a's lifetime, 'b bound to b's lifetime
+//   // pair is in the alias sets of both a and b
+```
+
+**Example — type parameter and lifetime parameter together:**
+```esc
+class Container<T>(item: mut T) { item, }
+// Inferred: Container<'a, T>(item: mut 'a T) → Container<'a, T>
+// LifetimeParams: ['a], TypeParams: [T]
+
+val p: mut Point = {x: 0, y: 0}
+val c = Container(p)   // c has type Container<'a, Point> where 'a = lifetime of p
 ```
 
 **Example — primitive parameters (no lifetime):**
@@ -1403,6 +1606,8 @@ fn cacheItems(items: Array<number>) -> number {
 val p: mut Point = {x: 0, y: 0}
 val r: mut Point = identity(p)  // r aliases p
 val q: Point = p                // ERROR: r is a live mutable alias
+r.x = 5
+print(q)
 ```
 
 **Explicit annotation parsing:**
@@ -1413,11 +1618,13 @@ fn first<'a, 'b>(a: mut 'a Point, b: mut 'b Point) -> mut 'a Point { return a }
 **Constructor lifetime inference:**
 ```esc
 class Container(item: mut Point) { item, }
-// Inferred: Container<'a>(item: mut 'a Point) → 'a Container
+// Inferred: Container<'a>(item: mut 'a Point) → Container<'a>
 
 val p: mut Point = {x: 0, y: 0}
 val c = Container(p)   // c aliases p
 val q: Point = p        // ERROR: c is live and provides mutable access to p
+c.item.x = 5
+print(q)
 
 class Point(x: number, y: number) { x, y, }
 // No lifetimes — primitives
@@ -1432,6 +1639,58 @@ fn filter(items: Array<Point>, f: fn(Point) -> boolean) -> Array<Point> {
     // ... returns new array with elements from items ...
 }
 // Inferred: 'a on the element type — element-level: Array<'a Point>
+```
+
+**Multiple lifetimes on return type (conditional return):**
+```esc
+fn pick(a: Point, b: Point, cond: boolean) -> Point {
+    if cond { a } else { b }
+}
+// Inferred: fn pick<'a, 'b>(a: 'a Point, b: 'b Point, cond: boolean) -> ('a | 'b) Point
+
+val x: mut Point = {x: 0, y: 0}
+val y: mut Point = {x: 1, y: 1}
+val result = pick(x, y, true)  // result aliases both x and y
+val frozen: Point = x           // ERROR: result is a live mutable alias of x
+```
+
+**Explicit multiple-lifetime annotation:**
+```esc
+// For body-less declarations (interfaces, external functions):
+interface Selector {
+    fn select<'a, 'b>(self, a: 'a Point, b: 'b Point) -> ('a | 'b) Point
+}
+```
+
+**Generator lifetime inference:**
+```esc
+fn items(arr: Array<number>) -> Generator<number, void, never> {
+    for val item in arr {
+        yield item    // yielded value aliases arr's elements
+    }
+}
+// Inferred: fn items<'a>(arr: 'a Array<number>) -> Generator<'a number, void, never>
+```
+
+**Default mutability:**
+```esc
+// Class with no mut self methods → immutable by default
+class Point(x: number, y: number) { x, y, }
+val p = Point(1, 2)              // type: Point (immutable)
+
+// Class with mut self methods → mutable by default
+class Counter(var count: number) {
+    count,
+    fn increment(mut self) -> void { self.count = self.count + 1 }
+}
+val c = Counter(0)               // type: mut Counter (mutable)
+
+// immutable modifier overrides default
+immutable class Config(host: string) {
+    host,
+    fn setHost(mut self, h: string) -> void { self.host = h }
+}
+val cfg = Config("localhost")    // type: Config (immutable despite setHost)
 ```
 
 ---
@@ -1497,13 +1756,11 @@ func (c *Checker) unifyLifetimes(
 
 Each fresh value created at a program point gets a unique `LifetimeValue`
 (from Phase 1.1). When a function signature uses a shared lifetime variable
-for multiple parameters (e.g. `fn swap<'a>(a: mut 'a Point, b: mut 'a Point)`),
+for multiple parameters (e.g. `fn swap<'a>(p: mut 'a Point, q: mut 'a Point)`),
 the unification process detects conflicts:
 
-1. The first argument binds `'a` to the `LifetimeValue` of the first actual
-   argument (e.g. `p`'s lifetime)
-2. The second argument tries to bind `'a` to the `LifetimeValue` of the
-   second actual argument (e.g. `q`'s lifetime)
+1. The first argument binds `'a` to the `LifetimeValue` of `p`
+2. The second argument tries to bind `'a` to the `LifetimeValue` of `q`
 3. If `p` and `q` have different `LifetimeValue`s (they are independent
    values), unification detects a **conflict** — `'a` is already bound to
    `p`'s lifetime and cannot also be `q`'s lifetime
@@ -1539,9 +1796,13 @@ permanently aliased — it can never undergo a mutability transition. The
 When lifetimes appear on type parameters (e.g. `Array<'a T>`), unification
 recurses into the type arguments and propagates lifetimes:
 
-- `Array<'a T>` vs `Array<T>`: Succeeds; lifetime propagated
+- `Array<'a T>` vs `Array<T>`: Succeeds; lifetime propagated to the result
 - `Array<'a T>` vs `Array<'b T>`: Succeeds if `'a` and `'b` unify
-- `mut Array<'a T>` vs `mut Array<'b T>`: Invariant — `'a` and `'b` must unify
+- `mut Array<'a T>` vs `mut Array<'b T>`: Same check — `'a` and `'b` must
+  unify. (Noted as "invariant" because mutable types require exact match.
+  In practice this is the same as the immutable case since Escalier does
+  not have lifetime subtyping. The distinction would matter if an
+  "outlives" relationship like Rust's `'a: 'b` were added in the future.)
 
 ### 9.5 Function Type Unification with Lifetimes
 
@@ -1558,17 +1819,29 @@ function type arguments.
 
 **Example — callback that aliases its argument:**
 ```esc
+fn identity(p: mut Point) -> mut Point { return p }
+// Inferred: fn identity<'b>(p: mut 'b Point) -> mut 'b Point
+
 fn apply<'a>(f: fn(mut 'a Point) -> mut 'a Point, p: mut 'a Point) -> mut 'a Point {
     return f(p)
 }
 ```
 
+```esc
+val myPoint: mut Point = {x: 0, y: 0}
+val result = apply(identity, myPoint)
+```
+
 When `apply(identity, myPoint)` is called:
-1. Unify `identity`'s type with the expected `fn(mut 'a Point) -> mut 'a Point`
-2. `identity`'s own lifetime `'b` is unified with `'a` through the parameter
-   and return types
-3. `'a` is bound to `myPoint`'s lifetime from the second argument
-4. The return type `mut 'a Point` inherits `myPoint`'s lifetime, so the
+1. Unify `identity`'s type `fn(mut 'b Point) -> mut 'b Point` with the
+   expected callback type `fn(mut 'a Point) -> mut 'a Point`. This recurses
+   into the parameter types (`mut 'b Point` vs `mut 'a Point`) and return
+   types (`mut 'b Point` vs `mut 'a Point`), which equates `'b` with `'a`
+   — binding one now binds the other
+2. Unify `myPoint` with the second parameter `p: mut 'a Point`. This binds
+   `'a` to `myPoint`'s concrete `LifetimeValue`. Since `'b` is equated
+   with `'a`, `'b` is also bound to `myPoint`'s lifetime
+3. The return type `mut 'a Point` inherits `myPoint`'s lifetime, so the
    result aliases `myPoint`
 
 **Example — callback that does NOT alias its argument:**
@@ -1645,6 +1918,12 @@ A type is a "reference type" for elision purposes if it can alias:
 - Array types
 - Function types
 - Type references that resolve to object/array/function types
+- **Unresolved type parameters** (e.g. `T` in `declare fn wrap<T>(value: T) -> {inner: T}`)
+  — conservatively treated as reference types, since `T` could be instantiated
+  with a reference type at the call site. If the caller instantiates `T` with
+  a primitive, the lifetime is harmless (primitives can't alias). A type
+  parameter with a primitive constraint (e.g. `T extends number`) can be
+  treated as non-reference.
 - NOT: primitives (`number`, `string`, `boolean`), `void`, `null`, `undefined`
 
 **File:** `internal/checker/elision.go`
@@ -1691,13 +1970,15 @@ interface Transform {
     fn apply<'a>(self, p: mut 'a Point) -> mut 'a Point
 }
 
-type Cloner: Transform {
+// Future syntax (once `implements` is supported):
+class Cloner() implements Transform {
     fn apply(self, p: mut Point) -> mut Point {
         return {x: p.x, y: p.y}  // OK: more conservative (fresh value)
     }
 }
 
-type Storer: Transform {
+class Storer(var stored: mut Point) implements Transform {
+    stored,
     fn apply(self, p: mut Point) -> mut Point {
         self.stored = p
         return self.stored  // ERROR: returns alias of self, not p — violates 'a
@@ -1758,6 +2039,22 @@ func AssignLifetimes(funcType *type_system.FuncType) { ... }
 - **Rule F:** Callback parameters → determine mutability from callback's
   parameter type
 
+#### Default Mutability for Imported Classes
+
+When importing a TypeScript class, determine `DefaultMutable` for its
+`TypeAlias` by inspecting the class declaration for mutating methods:
+
+- If any method has a non-`readonly` `this` parameter, or modifies
+  properties on `this` → `DefaultMutable = true`
+- If all methods are read-only → `DefaultMutable = false`
+- Built-in types (`Map`, `Set`, `Array`, `WeakMap`, `WeakSet`) are
+  hardcoded as `DefaultMutable = true` in the built-in overrides
+  (Phase 11.3)
+
+Since TypeScript declarations don't have an `immutable` modifier,
+overrides (Phase 11.2) can set `DefaultMutable = false` for imported
+classes that should default to immutable despite having mutating methods.
+
 ### 11.2 Override Mechanism
 
 Support manual override files for correcting heuristic lifetime assignments:
@@ -1780,6 +2077,35 @@ requirements document (Array.forEach, Array.map, Array.filter, etc.).
 
 **File:** `internal/checker/prelude_lifetimes.go`
 
+In addition to the Array overrides listed in the requirements, provide
+overrides for Map, WeakMap, Set, and WeakSet:
+
+```esc
+// Map — get returns an element alias, set returns the map (receiver alias)
+declare fn Map.get<'a, K, V>(self: 'a Map<K, V>, key: K) -> 'a V | undefined
+declare fn Map.set<'self, K, V>(self: mut 'self Map<K, V>, key: K, value: V) -> mut 'self Map<K, V>
+declare fn Map.has<K, V>(self: Map<K, V>, key: K) -> boolean
+declare fn Map.delete<K, V>(self: mut Map<K, V>, key: K) -> boolean
+declare fn Map.forEach<'a, K, V>(self: 'a Map<K, V>, f: fn('a V, K) -> void) -> void
+
+// WeakMap — keys must be objects, get returns an element alias
+declare fn WeakMap.get<'a, K, V>(self: 'a WeakMap<K, V>, key: K) -> 'a V | undefined
+declare fn WeakMap.set<'self, K, V>(self: mut 'self WeakMap<K, V>, key: K, value: V) -> mut 'self WeakMap<K, V>
+declare fn WeakMap.has<K, V>(self: WeakMap<K, V>, key: K) -> boolean
+declare fn WeakMap.delete<K, V>(self: mut WeakMap<K, V>, key: K) -> boolean
+
+// Set — values returns an iterator with element aliases
+declare fn Set.has<T>(self: Set<T>, value: T) -> boolean
+declare fn Set.add<'self, T>(self: mut 'self Set<T>, value: T) -> mut 'self Set<T>
+declare fn Set.delete<T>(self: mut Set<T>, value: T) -> boolean
+declare fn Set.forEach<'a, T>(self: 'a Set<T>, f: fn('a T) -> void) -> void
+
+// WeakSet — keys must be objects
+declare fn WeakSet.has<T>(self: WeakSet<T>, value: T) -> boolean
+declare fn WeakSet.add<'self, T>(self: mut 'self WeakSet<T>, value: T) -> mut 'self WeakSet<T>
+declare fn WeakSet.delete<T>(self: mut WeakSet<T>, value: T) -> boolean
+```
+
 ### 11.4 Tests
 
 - `Array.prototype.sort` → aliases receiver
@@ -1787,6 +2113,10 @@ requirements document (Array.forEach, Array.map, Array.filter, etc.).
 - `Array.prototype.filter` → fresh array, element alias
 - `Array.prototype.find` → element alias
 - `Object.keys` → no alias
+- `Map.get` → element alias
+- `Map.set` → aliases receiver
+- `Set.add` → aliases receiver
+- `Set.forEach` → callback receives element alias
 - Callback with readonly parameter → immutable
 - Override file correctly replaces heuristic assignment
 
@@ -1902,32 +2232,107 @@ starting this phase:
 | `internal/codegen/dts.go` | `mut?` in .d.ts output | Remove |
 | *(remaining files)* | Grep for complete list at implementation time | Case-by-case |
 
-### 13.2 Simplify `MutabilityType`
+### 13.2 Remove `MutabilityType` Wrapper
 
-Change `Mutability` from a three-state enum to a boolean or remove the
-uncertainty variant:
+Rather than keeping `MutabilityType` as a wrapper type (even a simplified
+one), move mutability tracking into the type structs directly — the same
+approach used for lifetimes (Phase 1.2). This eliminates the constant
+wrapping/unwrapping of `MutabilityType` throughout the codebase (~110
+occurrences across 14 files).
+
+Add a `Mutable bool` field to each type struct that can be mutable:
 
 ```go
-// Before:
-const (
-    MutabilityMutable   Mutability = "!"
-    MutabilityUncertain Mutability = "?"
-)
+// Before: mut is a wrapper
+//   &MutabilityType{Type: &TypeRefType{...}, Mutability: MutabilityMutable}
 
-// After: Only MutabilityMutable remains. Immutable types have no wrapper.
-const MutabilityMutable Mutability = "!"
+// After: mut is a field on the type itself
+type TypeRefType struct {
+    // ... existing fields ...
+    Mutable  bool      // true = mut, false = immutable
+    Lifetime Lifetime  // from Phase 1.2
+}
+
+type ObjectType struct {
+    // ... existing fields ...
+    Mutable  bool
+    Lifetime Lifetime
+}
+
+type ArrayType struct {
+    // ... existing fields ...
+    Mutable  bool
+    Lifetime Lifetime
+}
+
+type TupleType struct {
+    // ... existing fields ...
+    Mutable  bool
+    Lifetime Lifetime
+}
+
+type FuncType struct {
+    // ... existing fields ...
+    Mutable  bool  // for mutable function references
+}
 ```
 
-Or simplify `MutabilityType` to always represent `mut` (the wrapper's presence
-means mutable, absence means immutable).
+Types that do NOT need a `Mutable` field:
+- `PrimitiveType` — primitives are always immutable values
+- `LiteralType` — literals are always immutable
+- `VoidType`, `NullType`, `UndefinedType` — cannot be mutable
+- `UnionType`, `IntersectionType` — mutability is on the member types
+
+**Benefits:**
+- No more wrapping/unwrapping — code that checks mutability reads
+  `t.Mutable` directly instead of type-asserting to `*MutabilityType`
+  and then unwrapping `.Type`
+- Mutability and lifetime are co-located on the same struct, which
+  reflects that they are both properties of a value, not separate layers
+- The `Mutability` enum, `MutabilityType` struct, and all associated
+  visitor methods (`EnterType`/`ExitType` for `MutabilityType`) can be
+  removed
+- `GetLifetime` (Phase 1.2) no longer needs to unwrap through
+  `MutabilityType` to find the inner type's lifetime
+
+**Migration:** This is a large mechanical refactor touching ~110 call
+sites. The changes are straightforward but numerous:
+- Every `&MutabilityType{Type: t, Mutability: MutabilityMutable}` becomes
+  setting `t.Mutable = true`
+- Every `case *MutabilityType:` pattern match becomes checking `t.Mutable`
+  on the underlying type
+- Every `unwrapMutability(t)` or similar helper is removed
+- The `TypeVisitor` interface loses the `MutabilityType` enter/exit methods
+- `PrintType` checks `t.Mutable` instead of matching `*MutabilityType`
+
+Remove the `Mutability` type and `MutabilityType` struct entirely:
+
+```go
+// Remove:
+// type Mutability string
+// const MutabilityMutable Mutability = "!"
+// const MutabilityUncertain Mutability = "?"
+// type MutabilityType struct { ... }
+```
 
 ### 13.3 Replace `mut?` Inference with Direct Tracking
 
 Where the checker currently creates `MutabilityUncertain` types, replace with
-direct write-tracking:
+direct write-tracking and default mutability rules:
+
+**Function parameters:**
 - If a parameter is written to in the function body → `mut`
 - If a parameter is only read → immutable
 - No intermediate `mut?` state
+
+**Variable declarations without explicit type annotations:**
+- Literal initializer (`{x: 1}`, `[1, 2]`, `(1, "a")`) → immutable,
+  unless the object literal has `mut self` methods → mutable
+- Constructor call → apply the class's `DefaultMutable` (from Phase 8.6):
+  immutable unless the class has `mut self` methods and no `immutable`
+  modifier
+- Function call → determined by the function's return type
+- Variable reference → inherits the source's mutability
 
 ### 13.4 Update Snapshot Tests
 
@@ -1939,6 +2344,11 @@ review the diffs to ensure correctness.
 
 - All existing mutation tests should still pass (behavior preserved)
 - Types no longer show `mut?` in any output
+- Object/array/tuple literals default to immutable when unannotated
+- Class instances default to immutable when class has no `mut self` methods
+- Class instances default to mutable when class has `mut self` methods
+- `immutable` modifier on a class overrides default to immutable
+- Explicit `mut` annotation overrides any default
 - `MutabilityUncertain` constant is removed (compile error if referenced)
 
 ---
@@ -2020,16 +2430,6 @@ behavior:
 
 The overall cost is proportional to function body size, which is bounded by
 typical code. No exponential blowup is expected.
-
-### Backwards Compatibility
-
-- **Source compatibility:** Existing code that doesn't use `mut?` explicitly
-  (which is all user code, since `mut?` is internal) is unaffected
-- **New errors:** Some programs that were previously accepted may now produce
-  liveness errors. These represent real bugs (aliasing violations) that the
-  old system silently permitted
-- **Migration path:** Enable lifetime checking with a flag initially, allowing
-  gradual adoption. Once stable, enable by default and remove the flag
 
 ### LSP Integration (Out of Scope — Follow-On Work)
 

@@ -26,6 +26,147 @@ return value may alias one of its parameters. These annotations are inferred fro
 function bodies when possible and hidden from users by default, only surfacing in
 error messages when a lifetime violation occurs.
 
+## Default Mutability
+
+Escalier is biased towards immutability. Values are immutable by default
+unless explicitly annotated with `mut` or inferred as mutable from context.
+This section describes how default mutability is determined for different
+kinds of values.
+
+### Literals
+
+Object literals and tuple literals are inferred as **immutable** by default:
+
+```esc
+val point = {x: 0, y: 0}       // type: {x: number, y: number} (immutable)
+val pair = (1, "hello")         // type: (number, string) (immutable)
+val items = [1, 2, 3]           // type: Array<number> (immutable)
+```
+
+To create a mutable value, annotate the binding with `mut`:
+
+```esc
+val point: mut {x: number, y: number} = {x: 0, y: 0}
+val items: mut Array<number> = [1, 2, 3]
+```
+
+**Exception:** Object literals with mutating methods default to mutable,
+following the same logic as classes. If an object literal defines a method
+that takes `mut self`, the literal is inferred as mutable:
+
+```esc
+val counter = {
+    count: 0,
+    fn increment(mut self) -> void {
+        self.count = self.count + 1
+    },
+}
+// type: mut {count: number, fn increment(mut self) -> void} (mutable)
+counter.increment()  // OK
+
+val point = {
+    x: 0,
+    y: 0,
+    fn distanceTo(self, other: {x: number, y: number}) -> number {
+        Math.sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
+    },
+}
+// type: {x: number, y: number, ...} (immutable — no mut self methods)
+```
+
+### Classes
+
+The default mutability of a class instance depends on whether the class
+has methods that mutate `self`. The compiler inspects the class body to
+determine this:
+
+**No mutating methods → immutable by default:**
+
+```esc
+class Point(x: number, y: number) {
+    x,
+    y,
+    fn distanceTo(self, other: Point) -> number {
+        // only reads self and other — no mutation
+        Math.sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
+    }
+}
+
+val p = Point(1, 2)       // type: Point (immutable)
+val q: mut Point = Point(3, 4)  // explicit mut required
+```
+
+**Has mutating methods → mutable by default:**
+
+```esc
+class Counter(var count: number) {
+    count,
+    fn increment(mut self) -> void {
+        self.count = self.count + 1
+    }
+}
+
+val c = Counter(0)         // type: mut Counter (mutable by default)
+c.increment()              // OK
+val frozen: Counter = c    // freeze — c must be dead after this
+```
+
+Built-in collection types like `Map`, `Set`, and `Array` follow this rule
+naturally — they have mutating methods (`set`, `add`, `push`), so their
+constructors return mutable instances by default.
+
+### Overriding the Default with `immutable` Modifier
+
+Some classes have mutating methods but should still default to immutable.
+For example, a data class might have a `withX` method that returns a new
+instance rather than mutating in place, plus a rarely-used `setX` method
+for performance-critical code. The class author can override the default
+with the `immutable` modifier:
+
+```esc
+immutable class Config(host: string, port: number) {
+    host,
+    port,
+    fn withHost(self, host: string) -> Config {
+        Config(host, self.port)  // returns new instance
+    }
+    fn setHost(mut self, host: string) -> void {
+        self.host = host  // mutates in place
+    }
+}
+
+val c = Config("localhost", 8080)  // type: Config (immutable despite setHost)
+// c.setHost("0.0.0.0")           // ERROR: c is immutable
+val m: mut Config = Config("localhost", 8080)  // explicit mut required
+m.setHost("0.0.0.0")              // OK
+```
+
+The `immutable` modifier on the class declaration means:
+- The constructor returns an immutable instance by default
+- Callers must explicitly write `mut` to get a mutable binding
+- The class may still have `mut self` methods — they just aren't
+  accessible through an immutable reference
+
+This is useful for:
+- **Data classes** that are primarily immutable but offer mutating methods
+  as an optimization escape hatch
+- **Builder-like types** that are constructed immutably and only mutated
+  in specific contexts
+- **Wrapper types** around mutable internals where the wrapper itself
+  should be treated as a value
+
+### Summary
+
+| Value Kind | Default Mutability |
+|------------|-------------------|
+| Object literal (no `mut self` methods) | Immutable |
+| Object literal (has `mut self` methods) | Mutable |
+| Tuple literal | Immutable |
+| Array literal | Immutable |
+| Class instance (no `mut self` methods) | Immutable |
+| Class instance (has `mut self` methods) | Mutable |
+| `immutable class` instance | Immutable (regardless of methods) |
+
 ## Rules
 
 ### Rule 1: Mutable-to-Immutable Transition
@@ -227,8 +368,8 @@ When a method stores a parameter into `self`, the receiver becomes an alias
 of that parameter. This is tracked the same way as object property assignments:
 
 ```esc
-type Container {
-    val item: mut Point
+class Container(item: mut Point) {
+    item,
 
     fn setItem(mut self, p: mut Point) -> void {
         self.item = p  // self is now an alias of p
@@ -236,7 +377,7 @@ type Container {
 }
 
 val p: mut Point = {x: 0, y: 0}
-val c: mut Container = Container { item: {x: 1, y: 1} }
+val c: mut Container = Container({x: 1, y: 1})
 c.setItem(p)                 // c now aliases p (through c.item)
 val q: Point = p             // ERROR: c is live and provides mutable access to p
 c.item.x = 5
@@ -277,12 +418,12 @@ constructed type:
 
 ```esc
 // Inferred: Container<'a>(item: mut 'a Point)
-// Callers see: Container(p) produces a 'a Container
+// Callers see: Container(p) produces a Container<'a>
 ```
 
-Here `'a` on `Container` means the constructed value holds a reference with
-lifetime `'a` — callers know that `c` aliases `p` and must treat them as part
-of the same alias set.
+Here `'a` on `Container<'a>` means the constructed value holds a reference
+with lifetime `'a` — callers know that `c` aliases `p` and must treat them
+as part of the same alias set.
 
 #### Primitive and Fresh-Value Parameters
 
@@ -508,7 +649,7 @@ val snapshot: Array<number> = items  // snapshot aliases items
 for val item in snapshot {
     items.push(item)  // ERROR: `items` is a live mutable alias of `snapshot`
 }
-console.log(snapshot.length)
+print(snapshot.length)
 ```
 
 ### Early Returns and Throws
@@ -567,6 +708,44 @@ fn sum(items: Array<number>) -> number { ... }  // no lifetimes needed
 A lifetime `'a` on both a parameter and the return type means the return value
 may alias that parameter. If a parameter has no lifetime that appears in the
 return type, the function does not let that reference escape via the return value.
+
+#### Multiple Lifetimes on a Return Type
+
+When a function may return one of several parameters depending on control
+flow, the return type carries multiple lifetimes using `|` syntax — consistent
+with Escalier's union type syntax (`A | B`):
+
+```esc
+fn pick<'a, 'b>(a: 'a Point, b: 'b Point, cond: boolean) -> ('a | 'b) Point {
+    if cond { a } else { b }
+}
+```
+
+The `('a | 'b) Point` return type means the return value may alias `a` (lifetime
+`'a`) or `b` (lifetime `'b`), but the compiler doesn't know which at compile
+time. At the call site, the result is added to the alias sets of **both**
+arguments — the cross-function equivalent of conditional aliasing (see
+Conditional Aliasing above).
+
+```esc
+val x: mut Point = {x: 0, y: 0}
+val y: mut Point = {x: 1, y: 1}
+val result = pick(x, y, true)
+val frozen: Point = x  // ERROR: result is a live mutable alias of x
+                        // (result may alias x through lifetime 'a)
+```
+
+Parentheses are required to disambiguate: `('a | 'b) Point` vs
+`'a | 'b Point` (which would parse as `'a | ('b Point)`).
+
+For functions where the return value aliases only a single parameter, the
+single-lifetime form is used as usual: `'a Point`. The `|` form is only
+needed when multiple lifetimes apply to the same return type.
+
+This syntax can be inferred from function bodies — the inference (Phase 8.3
+in the implementation plan) detects that multiple branches return different
+parameters and creates the combined lifetime. Explicit annotation is needed
+only for body-less declarations (interface methods, external functions).
 
 ### Inference
 
@@ -687,21 +866,40 @@ interface Transform {
 
 #### Implementations Must Match
 
-When a type implements an interface, its method signatures must be compatible
+When a class implements an interface, its method signatures must be compatible
 with the declared lifetimes. The compiler verifies that the implementation does
-not violate the aliasing contract:
+not violate the aliasing contract.
+
+**Note:** Escalier does not currently support an `implements` clause on class
+declarations. Support for `implements` will be added in the future. Once
+available, the compiler will verify lifetime compatibility between the class's
+methods and the interface's declared lifetimes. Until then, lifetime
+verification occurs at use sites — when a class instance is passed where an
+interface type is expected, the compiler checks that the class's method
+signatures are compatible.
 
 ```esc
-type Mirror: Transform {
+// Future syntax (once `implements` is supported):
+class Mirror() implements Transform {
     fn apply<'a>(self, p: mut 'a Point) -> mut 'a Point {
         return p  // OK: returns the parameter, consistent with 'a
     }
 }
 
-type Cloner: Transform {
+class Cloner() implements Transform {
     fn apply<'a>(self, p: mut 'a Point) -> mut 'a Point {
         return {x: p.x, y: p.y}  // OK: returns a fresh value — this is more
                                   // conservative than needed, but safe
+    }
+}
+
+class Translator(dx: number, dy: number) implements Transform {
+    dx,
+    dy,
+    fn apply<'a>(self, p: mut 'a Point) -> mut 'a Point {
+        p.x = p.x + self.dx
+        p.y = p.y + self.dy
+        return p  // OK: returns the parameter, consistent with 'a
     }
 }
 ```
@@ -1205,24 +1403,25 @@ val result = apply(identity, myPoint)
 
 ### Constructed Types With Lifetimes
 
-When a class constructor produces a type with a lifetime (e.g. `'a Container`),
-unification handles the lifetime on the constructed type:
+When a class constructor produces a type with lifetime parameters (e.g.
+`Container<'a>`), unification handles the lifetime arguments on the
+constructed type:
 
-- **`'a Container` vs `Container`**: Unification succeeds. The lifetime is
-  propagated — the variable receiving the value inherits the alias
+- **`Container<'a>` vs `Container`**: Unification succeeds. The lifetime
+  is propagated — the variable receiving the value inherits the alias
   relationship.
-- **`'a Container` vs `'b Container`**: Unification succeeds if `'a` and `'b`
-  can be unified. This occurs when two containers holding references with
-  different lifetimes are passed where the same type is expected.
-- **`mut 'a Container` vs `mut 'b Container`**: Invariant in both the type
-  and the lifetime — both must unify.
+- **`Container<'a>` vs `Container<'b>`**: Unification succeeds if `'a` and
+  `'b` can be unified. This occurs when two containers holding references
+  with different lifetimes are passed where the same type is expected.
+- **`mut Container<'a>` vs `mut Container<'b>`**: Invariant in both the
+  type and the lifetime — both must unify.
 
 ```esc
 class Container(item: mut Point) { item, }
 
 val p: mut Point = {x: 0, y: 0}
-val c: Container = Container(p)  // c has type 'a Container where 'a = lifetime of p
-// Unification of 'a Container with Container succeeds; 'a is propagated.
+val c: Container = Container(p)  // c has type Container<'a> where 'a = lifetime of p
+// Unification of Container<'a> with Container succeeds; 'a is propagated.
 ```
 
 ### Lifetime-Annotated Type Parameters
@@ -1581,6 +1780,41 @@ These overrides ensure that:
 This allows correcting cases where the heuristic rules are wrong without
 modifying the upstream TypeScript declarations.
 
+#### Map, WeakMap, Set, and WeakSet Overrides
+
+```esc
+// Map — get returns an element alias, set returns the map (receiver alias)
+declare fn Map.get<'a, K, V>(self: 'a Map<K, V>, key: K) -> 'a V | undefined
+declare fn Map.set<'self, K, V>(self: mut 'self Map<K, V>, key: K, value: V) -> mut 'self Map<K, V>
+declare fn Map.has<K, V>(self: Map<K, V>, key: K) -> boolean
+declare fn Map.delete<K, V>(self: mut Map<K, V>, key: K) -> boolean
+declare fn Map.forEach<'a, K, V>(self: 'a Map<K, V>, f: fn('a V, K) -> void) -> void
+
+// WeakMap — keys must be objects, get returns an element alias
+declare fn WeakMap.get<'a, K, V>(self: 'a WeakMap<K, V>, key: K) -> 'a V | undefined
+declare fn WeakMap.set<'self, K, V>(self: mut 'self WeakMap<K, V>, key: K, value: V) -> mut 'self WeakMap<K, V>
+declare fn WeakMap.has<K, V>(self: WeakMap<K, V>, key: K) -> boolean
+declare fn WeakMap.delete<K, V>(self: mut WeakMap<K, V>, key: K) -> boolean
+
+// Set — add returns the set (receiver alias)
+declare fn Set.has<T>(self: Set<T>, value: T) -> boolean
+declare fn Set.add<'self, T>(self: mut 'self Set<T>, value: T) -> mut 'self Set<T>
+declare fn Set.delete<T>(self: mut Set<T>, value: T) -> boolean
+declare fn Set.forEach<'a, T>(self: 'a Set<T>, f: fn('a T) -> void) -> void
+
+// WeakSet — keys must be objects
+declare fn WeakSet.has<T>(self: WeakSet<T>, value: T) -> boolean
+declare fn WeakSet.add<'self, T>(self: mut 'self WeakSet<T>, value: T) -> mut 'self WeakSet<T>
+declare fn WeakSet.delete<T>(self: mut WeakSet<T>, value: T) -> boolean
+```
+
+These overrides ensure that:
+- `get` on Map/WeakMap returns element aliases so callers track the
+  aliasing relationship with the container
+- `set`/`add` methods return `this` (receiver alias) for chaining
+- `has`, `delete` return primitives — no aliasing
+- `forEach` callbacks receive immutable element references
+
 ## What This Replaces
 
 | Current (`mut?`)                        | Proposed (lifetimes)                     |
@@ -1591,6 +1825,157 @@ modifying the upstream TypeScript declarations.
 | Three mutability states in types        | Two states: `mut` or immutable           |
 | `mut?` in printed types                 | Never appears                            |
 | No cross-function alias tracking        | Lifetime annotations (mostly inferred)   |
+
+## Async/Await and Generators
+
+Escalier supports `async` functions, `await` expressions, generator functions
+(via `yield`), and `for await...in` loops. These features introduce
+**suspension points** — places where a function pauses and resumes later.
+This section describes how lifetimes interact with these features.
+
+### Why No Special Rules Are Needed for Local Variables
+
+Suspension points (`await`, `yield`) do not require special lifetime rules
+for local variables because:
+
+1. **Local variables are not accessible during suspension.** When an async
+   function awaits or a generator yields, the function's local variables
+   are captured in the continuation/generator state. No outside code can
+   access them — the caller only receives the yielded/resolved value, not
+   a handle to the function's locals.
+
+2. **Single-threaded execution model.** Escalier targets JavaScript's
+   event loop, where only one task runs at a time. Even if a local mutable
+   reference is live across an `await`, no concurrent code can observe or
+   mutate it during the suspension.
+
+3. **Intraprocedural analysis is sufficient.** Liveness analysis already
+   tracks variables across `await` and `yield` — a variable used after a
+   suspension point is live before it. No additional suspension-aware
+   analysis is required.
+
+The dangerous case — where a mutable reference **escapes** to code that
+runs during suspension — is already handled by the existing lifetime
+machinery:
+
+- **Escaping to module-level state:** If a local mutable value is stored
+  into a module-level variable, escaping reference detection assigns a
+  `'static` lifetime, blocking subsequent mutability transitions.
+- **Escaping through a nested function:** If a nested function captures a
+  mutable variable and returns it, the return type gets a regular lifetime
+  linking it to the captured variable. The enclosing function's alias
+  tracker treats the returned value as an alias of the captured variable,
+  and standard liveness rules apply. No `'static` is needed — the
+  relationship is tracked through the function's lifetime annotation.
+- **Closure passed to another function:** If a closure capturing a mutable
+  variable is passed to a function that stores it (escaping reference),
+  `'static` propagates through the closure capture to the original
+  variable. If the function only calls the closure synchronously and does
+  not store it, no escape occurs.
+
+### Generators and `yield` as an Alias Source
+
+`yield` expressions are alias sources, analogous to `return` statements.
+When a generator yields a value, that value flows to the caller via
+`Iterator.next()`. If the yielded expression aliases a parameter, the
+lifetime must link that parameter to the generator's yield type `T` in
+`Generator<T, TReturn, TNext>`.
+
+```esc
+fn items<'a>(arr: 'a Array<number>) -> Generator<'a number, void, never> {
+    for val item in arr {
+        yield item    // yielded value aliases arr's elements
+    }
+}
+```
+
+The inferred lifetime `'a` links `arr` to `T` (`number` in this case),
+telling callers that values produced by the generator may alias the input
+array's elements.
+
+For `yield from`, the delegated iterator's element type is propagated:
+
+```esc
+fn allItems<'a>(arrs: 'a Array<Array<number>>) -> Generator<'a number, void, never> {
+    for val arr in arrs {
+        yield from items(arr)  // delegates to items(), propagates lifetime
+    }
+}
+```
+
+### Mutable Values Across Suspension Points
+
+A mutable value that is live across a suspension point follows the same
+rules as any other mutable value. No additional restrictions are needed
+because local variables are inaccessible during suspension:
+
+```esc
+async fn example() {
+    val items: mut Array<number> = [1, 2, 3]
+    items.push(4)
+    await someAsync()    // items is still mut, no one else can touch it
+    items.push(5)        // OK: items is local, no aliasing conflict
+    val snapshot: Array<number> = items  // OK: items is dead after this
+    print(snapshot.length)
+}
+```
+
+### Yielding Mutable References
+
+When a generator yields a mutable reference, the caller and generator may
+both hold mutable references to the same value. This is allowed by Rule 3
+(multiple mutable references). However, a mutability transition by either
+side requires the other's alias to be dead:
+
+```esc
+fn makePairs() -> Generator<mut Point, void, never> {
+    val p: mut Point = {x: 0, y: 0}
+    yield p          // caller receives a mutable ref
+    // p is still live and mutable here — OK (Rule 3)
+    p.x = 5          // OK: both sides have mutable access
+    val frozen: Point = p  // OK only if the yielded ref is dead
+                           // (i.e. the caller has consumed and dropped it)
+}
+```
+
+In practice, the compiler must conservatively assume that a yielded
+reference may be held by the caller until the generator is dropped or
+completes. This means a mutability transition on a yielded value is only
+safe after the generator's last `yield` of that value and when no other
+aliases are live.
+
+### Escaping References Through Module-Level State
+
+The one case where suspension creates a real aliasing hazard is when a
+mutable reference is accessible through module-level (or otherwise shared)
+state:
+
+```esc
+var shared: mut Array<number> = [1, 2, 3]
+
+async fn example() {
+    val snapshot: Array<number> = shared  // freeze
+    await someAsync()  // other code could mutate `shared` during suspension
+    print(snapshot.length)  // could see stale data
+}
+```
+
+This case is already handled: `shared` is a module-level variable, not a
+local. It would be assigned a negative VarID and excluded from
+intraprocedural liveness analysis. The assignment `val snapshot = shared`
+involves a non-local variable, so the checker treats `shared` as having
+an unbounded lifetime — effectively `'static`. The freeze is rejected
+because `shared` is permanently live and mutable.
+
+### Summary
+
+| Feature | Lifetime Impact |
+|---------|----------------|
+| `await` in async functions | None for locals — single-threaded, locals inaccessible during suspension |
+| `yield` in generators | Treated as alias source (like `return`) — links parameter lifetimes to generator's `T` type |
+| `yield from` | Propagates delegated iterator's element lifetime |
+| `for await...in` | No special handling — element binding follows standard alias rules |
+| Module-level state across suspension | Already handled by `'static` / non-local exclusion |
 
 ## Scope and Limitations
 
@@ -1615,12 +2000,24 @@ modifying the upstream TypeScript declarations.
 - Automatic lifetime assignment for imported TypeScript declarations
 - Override mechanism for correcting heuristic lifetime assignments
 - Clear error messages for lifetime violations
+- Generator `yield` treated as alias source for lifetime inference
+- Async/await and generators require no special lifetime rules for locals
 
 ### Out of Scope (Future Work)
 
 - Concurrency / data race prevention (would require Rust-style exclusive
   borrowing)
 - Heap escape analysis beyond function return values
+- **Property-level alias sets:** The initial implementation uses
+  variable-level alias sets — all destructured bindings from the same
+  object share one alias set, which can produce false positives when
+  freezing one property while mutating another through a different binding.
+  Property-level tracking (keying alias set members by `(VarID, path)`
+  instead of just `VarID`) would eliminate these false positives by
+  recognizing that disjoint property paths don't conflict. This is
+  analogous to Rust's MIR "place" system. The workaround for the
+  variable-level model is to extract properties into separate variables
+  before freezing, which gives each its own alias set.
 
 ## Error Messages
 
