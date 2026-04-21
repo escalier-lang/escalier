@@ -12,6 +12,7 @@ import (
 type Checker struct {
 	ctx                   context.Context            // Context for timeout/cancellation support (#457)
 	TypeVarID             int
+	LifetimeVarID         int
 	SymbolID              int
 	CustomMatcherSymbolID int                        // Symbol ID for Symbol.customMatcher (used for enum destructuring)
 	Schema                *gqlast.Schema
@@ -72,6 +73,14 @@ func recoverTimeout(errors *[]Error) {
 func (c *Checker) FreshVar(provenance provenance.Provenance) *type_system.TypeVarType {
 	c.TypeVarID++
 	return type_system.NewTypeVarType(provenance, c.TypeVarID)
+}
+
+func (c *Checker) FreshLifetimeVar(name string) *type_system.LifetimeVar {
+	c.LifetimeVarID++
+	return &type_system.LifetimeVar{
+		ID:   c.LifetimeVarID,
+		Name: name,
+	}
 }
 
 // findCustomMatcherMethod finds the [Symbol.customMatcher] method on an

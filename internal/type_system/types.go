@@ -259,17 +259,20 @@ func (t *TypeVarType) String() string {
 }
 
 type TypeAlias struct {
-	Type        Type
-	TypeParams  []*TypeParam
-	Exported    bool
-	IsTypeParam bool // true for type parameter scope entries, not real aliases
+	Type           Type
+	TypeParams     []*TypeParam
+	LifetimeParams []*LifetimeVar // e.g. ['a, 'b] for Pair<'a, 'b>
+	Exported       bool
+	IsTypeParam    bool // true for type parameter scope entries, not real aliases
 }
 
 type TypeRefType struct {
-	Name       QualIdent
-	TypeArgs   []Type
-	TypeAlias  *TypeAlias // optional, resolved type alias (definition)
-	provenance Provenance
+	Name         QualIdent
+	TypeArgs     []Type
+	TypeAlias    *TypeAlias // optional, resolved type alias (definition)
+	Lifetime     Lifetime   // nil if no lifetime annotation (e.g. 'a Point)
+	LifetimeArgs []Lifetime // lifetime arguments for constructed types (e.g. Container<'a>)
+	provenance   Provenance
 }
 
 func NewTypeRefType(provenance Provenance, name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
@@ -434,8 +437,6 @@ func (t *PrimType) Equals(other Type) bool {
 func (t *PrimType) String() string {
 	return PrintType(t, PrintConfig{})
 }
-
-
 
 type RegexType struct {
 	Regex      *regexp.Regexp
@@ -797,11 +798,12 @@ func NewFuncParam(pattern Pat, t Type) *FuncParam {
 }
 
 type FuncType struct {
-	TypeParams []*TypeParam
-	Params     []*FuncParam
-	Return     Type
-	Throws     Type
-	provenance Provenance
+	LifetimeParams []*LifetimeVar // e.g. ['a, 'b]
+	TypeParams     []*TypeParam
+	Params         []*FuncParam
+	Return         Type
+	Throws         Type
+	provenance     Provenance
 }
 
 func NewFuncType(provenance Provenance, typeParams []*TypeParam, params []*FuncParam, returnType Type, throws Type) *FuncType {
@@ -881,7 +883,6 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-
 
 func (t *FuncType) Equals(other Type) bool {
 	if other, ok := other.(*FuncType); ok {
@@ -1064,6 +1065,7 @@ type IndexSignatureElem struct {
 	Value    Type
 	Readonly bool
 }
+
 // NewIndexSignatureElem creates an IndexSignatureElem, panicking if keyType is
 // not a *PrimType with Prim in {StrPrim, NumPrim, SymbolPrim}.
 func NewIndexSignatureElem(keyType Type, value Type, readonly bool) *IndexSignatureElem {
@@ -1092,15 +1094,15 @@ func NewRestSpreadElem(value Type) *RestSpreadElem {
 	}
 }
 
-func (*CallableElem) isObjTypeElem()    {}
-func (*ConstructorElem) isObjTypeElem() {}
-func (*MethodElem) isObjTypeElem()      {}
-func (*GetterElem) isObjTypeElem()      {}
-func (*SetterElem) isObjTypeElem()      {}
-func (*PropertyElem) isObjTypeElem()    {}
-func (*MappedElem) isObjTypeElem()          {}
-func (*IndexSignatureElem) isObjTypeElem()  {}
-func (*RestSpreadElem) isObjTypeElem()      {}
+func (*CallableElem) isObjTypeElem()       {}
+func (*ConstructorElem) isObjTypeElem()    {}
+func (*MethodElem) isObjTypeElem()         {}
+func (*GetterElem) isObjTypeElem()         {}
+func (*SetterElem) isObjTypeElem()         {}
+func (*PropertyElem) isObjTypeElem()       {}
+func (*MappedElem) isObjTypeElem()         {}
+func (*IndexSignatureElem) isObjTypeElem() {}
+func (*RestSpreadElem) isObjTypeElem()     {}
 
 func (c *CallableElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := c.Fn.Accept(v).(*FuncType)
@@ -1247,6 +1249,7 @@ type ObjectType struct {
 	// during pattern-matching unification. Nil outside of pattern matching. Used by
 	// downstream passes (e.g. exhaustiveness checking).
 	MatchedUnionMembers []Type
+	Lifetime            Lifetime // nil if no lifetime annotation
 	// TODO: support multiple provenance entries for different elements so that
 	// we can work back from an element to the interface decl that defined it.
 	provenance Provenance
@@ -1429,6 +1432,7 @@ func (t *ObjectType) String() string {
 
 type TupleType struct {
 	Elems      []Type
+	Lifetime   Lifetime // nil if no lifetime annotation
 	provenance Provenance
 }
 
