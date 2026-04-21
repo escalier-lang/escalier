@@ -545,7 +545,7 @@ they are accessible from any function at any time and cannot be tracked
 by intraprocedural analysis (see the VarID comment above for the full
 rationale). `NextID` counts only local variables.
 
-### 2.4 Integration
+### 2.5 Integration
 
 The rename pass runs once per function body at the start of
 `inferFuncBody`, before liveness analysis:
@@ -571,7 +571,7 @@ After this point, the checker's existing `ctx.Scope` is still used for
 type name resolution and module-level lookups, but local variable resolution
 is handled entirely through VarIDs on AST nodes.
 
-### 2.5 Tests
+### 2.6 Tests
 
 - Simple binding and use: `val x = 1; print(x)` → `x` gets one VarID,
   the use resolves to it
@@ -1263,6 +1263,51 @@ type MutTypeAnn struct {
     // ...
 }
 ```
+
+#### `immutable` Class Modifier
+
+**File:** `internal/parser/decl.go`
+
+Extend `classDecl` (or the declaration dispatcher that calls it) to accept
+an optional `immutable` token before `class`:
+
+```esc
+immutable class Config(host: string) {
+    fn setHost(mut self, h: string) { self.host = h }
+}
+```
+
+**Parsing changes:**
+1. Before matching `Class`, check if the current token is `Immutable`
+   (a new keyword token). If so, consume it and set a local flag
+   `isImmutable = true`, then expect `Class` as the next token.
+2. Pass `isImmutable` through to `classDecl`.
+
+**File:** `internal/ast/class.go`
+
+Add an `Immutable` field to `ClassDecl`:
+
+```go
+type ClassDecl struct {
+    Name       *Ident
+    TypeParams []*TypeParam
+    Extends    *TypeRefTypeAnn
+    Params     []*Param
+    Body       []ClassElem
+    Immutable  bool            // true when declared with `immutable class`
+    export     bool
+    declare    bool
+    span       Span
+    provenance provenance.Provenance
+}
+```
+
+**Integration with constructor lifetime inference:**
+
+In `InferConstructorLifetimes` (Section 8.6), when determining default
+mutability (step 5), consult `classDecl.Immutable`. If `true`, set
+`TypeAlias.DefaultMutable = false` regardless of whether the class has
+`mut self` methods.
 
 #### Multiple Lifetimes on a Type (`('a | 'b) Point`)
 
