@@ -83,15 +83,13 @@ func TestReassignToNewSource(t *testing.T) {
 	// y should no longer be in x's alias set
 	xSets := tracker.GetAliasSets(x)
 	require.Len(t, xSets, 1)
-	_, inXSet := xSets[0].Members[y]
-	require.False(t, inXSet, "y should not be in x's alias set after reassignment")
+	require.NotContains(t, xSets[0].Members, y, "y should not be in x's alias set after reassignment")
 
 	// y should be in z's alias set
 	ySets := tracker.GetAliasSets(y)
 	require.Len(t, ySets, 1)
 	require.Equal(t, AliasMutable, ySets[0].Members[y])
-	_, inYSet := ySets[0].Members[z]
-	require.True(t, inYSet, "z should be in y's alias set")
+	require.Contains(t, ySets[0].Members, z, "z should be in y's alias set")
 }
 
 func TestReassignToFreshValue(t *testing.T) {
@@ -113,8 +111,7 @@ func TestReassignToFreshValue(t *testing.T) {
 	// x's alias set should not contain y
 	xSets := tracker.GetAliasSets(x)
 	require.Len(t, xSets, 1)
-	_, inXSet := xSets[0].Members[y]
-	require.False(t, inXSet, "y should not be in x's alias set")
+	require.NotContains(t, xSets[0].Members, y, "y should not be in x's alias set")
 }
 
 func TestMergeAliasSets(t *testing.T) {
