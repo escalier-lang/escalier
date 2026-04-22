@@ -259,17 +259,20 @@ func (t *TypeVarType) String() string {
 }
 
 type TypeAlias struct {
-	Type        Type
-	TypeParams  []*TypeParam
-	Exported    bool
-	IsTypeParam bool // true for type parameter scope entries, not real aliases
+	Type           Type
+	TypeParams     []*TypeParam
+	LifetimeParams []*LifetimeVar // e.g. ['a, 'b] for Pair<'a, 'b>
+	Exported       bool
+	IsTypeParam    bool // true for type parameter scope entries, not real aliases
 }
 
 type TypeRefType struct {
-	Name       QualIdent
-	TypeArgs   []Type
-	TypeAlias  *TypeAlias // optional, resolved type alias (definition)
-	provenance Provenance
+	Name         QualIdent
+	TypeArgs     []Type
+	TypeAlias    *TypeAlias // optional, resolved type alias (definition)
+	Lifetime     Lifetime   // nil if no lifetime annotation (e.g. 'a Point)
+	LifetimeArgs []Lifetime // lifetime arguments for constructed types (e.g. Container<'a>)
+	provenance   Provenance
 }
 
 func NewTypeRefType(provenance Provenance, name string, typeAlias *TypeAlias, typeArgs ...Type) *TypeRefType {
@@ -316,7 +319,10 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = NewTypeRefTypeFromQualIdent(t.provenance, t.Name, t.TypeAlias, newTypeArgs...)
+		r := NewTypeRefTypeFromQualIdent(t.provenance, t.Name, t.TypeAlias, newTypeArgs...)
+		r.Lifetime = t.Lifetime
+		r.LifetimeArgs = t.LifetimeArgs
+		result = r
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -358,6 +364,20 @@ func (t *TypeRefType) Equals(other Type) bool {
 				if !equals(t.TypeAlias.TypeParams[i].Default, other.TypeAlias.TypeParams[i].Default) {
 					return false
 				}
+			}
+			if len(t.TypeAlias.LifetimeParams) != len(other.TypeAlias.LifetimeParams) {
+				return false
+			}
+		}
+		if t.Lifetime != other.Lifetime {
+			return false
+		}
+		if len(t.LifetimeArgs) != len(other.LifetimeArgs) {
+			return false
+		}
+		for i := range t.LifetimeArgs {
+			if t.LifetimeArgs[i] != other.LifetimeArgs[i] {
+				return false
 			}
 		}
 		return true
@@ -434,8 +454,6 @@ func (t *PrimType) Equals(other Type) bool {
 func (t *PrimType) String() string {
 	return PrintType(t, PrintConfig{})
 }
-
-
 
 type RegexType struct {
 	Regex      *regexp.Regexp
@@ -797,11 +815,12 @@ func NewFuncParam(pattern Pat, t Type) *FuncParam {
 }
 
 type FuncType struct {
-	TypeParams []*TypeParam
-	Params     []*FuncParam
-	Return     Type
-	Throws     Type
-	provenance Provenance
+	LifetimeParams []*LifetimeVar // e.g. ['a, 'b]
+	TypeParams     []*TypeParam
+	Params         []*FuncParam
+	Return         Type
+	Throws         Type
+	provenance     Provenance
 }
 
 func NewFuncType(provenance Provenance, typeParams []*TypeParam, params []*FuncParam, returnType Type, throws Type) *FuncType {
@@ -867,13 +886,15 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 		if newParams != nil {
 			params = newParams
 		}
-		result = NewFuncType(
+		r := NewFuncType(
 			t.provenance,
 			t.TypeParams,
 			params,
 			newReturn,
 			newThrows,
 		)
+		r.LifetimeParams = t.LifetimeParams
+		result = r
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -881,7 +902,6 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-
 
 func (t *FuncType) Equals(other Type) bool {
 	if other, ok := other.(*FuncType); ok {
@@ -899,6 +919,10 @@ func (t *FuncType) Equals(other Type) bool {
 			if !equals(t.TypeParams[i].Default, other.TypeParams[i].Default) {
 				return false
 			}
+		}
+		// Compare LifetimeParams
+		if len(t.LifetimeParams) != len(other.LifetimeParams) {
+			return false
 		}
 		// Compare Params
 		if len(t.Params) != len(other.Params) {
@@ -1064,6 +1088,7 @@ type IndexSignatureElem struct {
 	Value    Type
 	Readonly bool
 }
+
 // NewIndexSignatureElem creates an IndexSignatureElem, panicking if keyType is
 // not a *PrimType with Prim in {StrPrim, NumPrim, SymbolPrim}.
 func NewIndexSignatureElem(keyType Type, value Type, readonly bool) *IndexSignatureElem {
@@ -1092,15 +1117,15 @@ func NewRestSpreadElem(value Type) *RestSpreadElem {
 	}
 }
 
-func (*CallableElem) isObjTypeElem()    {}
-func (*ConstructorElem) isObjTypeElem() {}
-func (*MethodElem) isObjTypeElem()      {}
-func (*GetterElem) isObjTypeElem()      {}
-func (*SetterElem) isObjTypeElem()      {}
-func (*PropertyElem) isObjTypeElem()    {}
-func (*MappedElem) isObjTypeElem()          {}
-func (*IndexSignatureElem) isObjTypeElem()  {}
-func (*RestSpreadElem) isObjTypeElem()      {}
+func (*CallableElem) isObjTypeElem()       {}
+func (*ConstructorElem) isObjTypeElem()    {}
+func (*MethodElem) isObjTypeElem()         {}
+func (*GetterElem) isObjTypeElem()         {}
+func (*SetterElem) isObjTypeElem()         {}
+func (*PropertyElem) isObjTypeElem()       {}
+func (*MappedElem) isObjTypeElem()         {}
+func (*IndexSignatureElem) isObjTypeElem() {}
+func (*RestSpreadElem) isObjTypeElem()     {}
 
 func (c *CallableElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := c.Fn.Accept(v).(*FuncType)
@@ -1247,6 +1272,7 @@ type ObjectType struct {
 	// during pattern-matching unification. Nil outside of pattern matching. Used by
 	// downstream passes (e.g. exhaustiveness checking).
 	MatchedUnionMembers []Type
+	Lifetime            Lifetime // nil if no lifetime annotation
 	// TODO: support multiple provenance entries for different elements so that
 	// we can work back from an element to the interface decl that defined it.
 	provenance Provenance
@@ -1318,6 +1344,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
 		result.MatchedUnionMembers = t.MatchedUnionMembers
+		result.Lifetime = t.Lifetime
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1343,6 +1370,9 @@ func (t *ObjectType) Equals(other Type) bool {
 			return false
 		}
 		if t.Interface != other.Interface {
+			return false
+		}
+		if t.Lifetime != other.Lifetime {
 			return false
 		}
 		// Compare Extends
@@ -1429,6 +1459,7 @@ func (t *ObjectType) String() string {
 
 type TupleType struct {
 	Elems      []Type
+	Lifetime   Lifetime // nil if no lifetime annotation
 	provenance Provenance
 }
 
@@ -1454,7 +1485,9 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = NewTupleType(t.provenance, newElems...)
+		r := NewTupleType(t.provenance, newElems...)
+		r.Lifetime = t.Lifetime
+		result = r
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1464,6 +1497,9 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 }
 func (t *TupleType) Equals(other Type) bool {
 	if other, ok := other.(*TupleType); ok {
+		if t.Lifetime != other.Lifetime {
+			return false
+		}
 		if len(t.Elems) != len(other.Elems) {
 			return false
 		}
@@ -2480,10 +2516,11 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != typeAlias.Type {
 			changed = true
 			newTypes[name] = &TypeAlias{
-				Type:        newType,
-				TypeParams:  typeAlias.TypeParams,
-				Exported:    typeAlias.Exported,
-				IsTypeParam: typeAlias.IsTypeParam,
+				Type:           newType,
+				TypeParams:     typeAlias.TypeParams,
+				LifetimeParams: typeAlias.LifetimeParams,
+				Exported:       typeAlias.Exported,
+				IsTypeParam:    typeAlias.IsTypeParam,
 			}
 		} else {
 			newTypes[name] = typeAlias
@@ -2658,6 +2695,9 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 					if !equals(v1.TypeParams[i].Default, v2.TypeParams[i].Default) {
 						return false
 					}
+				}
+				if len(v1.LifetimeParams) != len(v2.LifetimeParams) {
+					return false
 				}
 			}
 		}

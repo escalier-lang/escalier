@@ -141,8 +141,10 @@ compiler.CompilerOutput{
                 TypeArgs: {
                     nil,
                 },
-                TypeAlias:  (*type_system.TypeAlias)(nil),
-                provenance: &ast.NodeProvenance{
+                TypeAlias:    (*type_system.TypeAlias)(nil),
+                Lifetime:     nil,
+                LifetimeArgs: nil,
+                provenance:   &ast.NodeProvenance{
                     Node: &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "AsyncIterator",
