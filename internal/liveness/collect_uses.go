@@ -10,18 +10,22 @@ type StmtUses struct {
 	Defs []VarID // Variables defined (written) in this statement
 }
 
-// CollectUses walks a linear block of statements and returns per-statement
+// CollectUses walks a sequence of statements and returns per-statement
 // use/def information. Only local variables (VarID > 0) are tracked;
 // non-local variables (VarID < 0) and unresolved references (VarID == 0)
 // are ignored.
 //
-// Phase 3 limitation: nested control-flow expressions (if/else, match,
-// do, try/catch) are not recursed into. Variables used only inside these
-// nested blocks will not appear in the enclosing statement's use set,
-// causing them to appear dead at the enclosing statement. This is an
-// under-approximation — Phase 4 replaces this with CFG-based analysis
-// that handles all control flow correctly. Phase 6 (transition checking)
-// must not be enabled until Phase 4 is complete.
+// Top-level control-flow expressions (if/else, match, do, try/catch) are
+// not recursed into because BuildCFG decomposes them into separate basic
+// blocks. CollectUses only needs to collect uses from the non-branching
+// parts of each statement (e.g., the condition of an if/else), since
+// branch bodies are handled by the CFG structure.
+//
+// Limitation: branching expressions nested inside other expressions
+// (e.g., foo(if cond { a } else { b })) are not decomposed by BuildCFG.
+// Variables used only inside such nested branches will not appear in the
+// enclosing statement's use set. This is a safe over-approximation of
+// the dead set (variables may appear dead when they are actually live).
 //
 // VarIDs are read directly from AST nodes (set by the rename pass in Phase 2).
 func CollectUses(stmts []ast.Stmt) []StmtUses {
@@ -64,8 +68,7 @@ func (c *collector) collectStmt(stmt ast.Stmt) {
 		}
 	case *ast.ForInStmt:
 		// Collect uses from the iterable expression only. The loop body
-		// and pattern are not processed here — Phase 4 handles them via
-		// the CFG with proper scope isolation.
+		// and pattern are in separate basic blocks created by BuildCFG.
 		c.collectExpr(s.Iterable)
 	case *ast.ImportStmt:
 		// No variable uses.
@@ -164,22 +167,24 @@ func (c *collector) collectExpr(expr ast.Expr) {
 	case *ast.ObjectExpr:
 		c.collectObjExprElems(e.Elems)
 	case *ast.IfElseExpr:
-		// Condition only — branch bodies are deferred to Phase 4 (CFG).
-		// Variables used only inside branches will appear dead here (see
-		// package doc on under-approximation).
+		// Condition only — branch bodies are in separate basic blocks
+		// created by BuildCFG. When this expression appears nested inside
+		// another expression (not decomposed by the CFG), only condition
+		// uses are captured; branch uses are an under-approximation.
 		c.collectExpr(e.Cond)
 	case *ast.IfLetExpr:
-		// Target expression only — pattern and branch bodies are deferred
-		// to Phase 4 (CFG).
+		// Target expression only — pattern and branch bodies are in
+		// separate basic blocks created by BuildCFG.
 		c.collectExpr(e.Target)
 	case *ast.MatchExpr:
-		// Target expression only — case arms are deferred to Phase 4.
+		// Target expression only — case arms are in separate basic
+		// blocks created by BuildCFG.
 		c.collectExpr(e.Target)
 	case *ast.TryCatchExpr:
-		// All nested blocks deferred to Phase 4 (CFG).
+		// All nested blocks are in separate basic blocks created by
+		// BuildCFG.
 	case *ast.DoExpr:
-		// Body deferred to Phase 4 (CFG). Variables used only inside the
-		// do block will appear dead at the enclosing statement.
+		// Body is in a separate basic block created by BuildCFG.
 	case *ast.ThrowExpr:
 		c.collectExpr(e.Arg)
 	case *ast.AwaitExpr:

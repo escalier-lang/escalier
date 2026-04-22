@@ -162,8 +162,8 @@ func TestCollectUsesFuncDecl(t *testing.T) {
 
 func TestCollectUsesDoExprNotRecursed(t *testing.T) {
 	// val x = 1; val y = do { x + 1 }
-	// Phase 3 does not recurse into do blocks, so x is NOT collected
-	// as a use of stmt 1. Phase 4 fixes this.
+	// CollectUses does not recurse into do blocks — their bodies are in
+	// separate basic blocks created by BuildCFG.
 	x := identPat("x")
 	xRef := ident("x") // inside do block
 	y := identPat("y")
@@ -178,13 +178,15 @@ func TestCollectUsesDoExprNotRecursed(t *testing.T) {
 	uses := CollectUses(stmts)
 
 	require.Len(t, uses, 2)
-	// The use of x inside the do block is NOT visible in Phase 3.
-	require.Empty(t, uses[1].Uses, "do block body should not be recursed into in Phase 3")
+	// The use of x inside the do block is not visible to CollectUses;
+	// it is handled by the CFG and AnalyzeFunction instead.
+	require.Empty(t, uses[1].Uses, "do block body should not be recursed into by CollectUses")
 }
 
 func TestCollectUsesIfElseNotRecursed(t *testing.T) {
 	// val x = 1; val y = if true { x } else { 0 }
-	// Phase 3 collects the condition but not the branch bodies.
+	// CollectUses collects the condition but not the branch bodies —
+	// branches are in separate basic blocks created by BuildCFG.
 	x := identPat("x")
 	xRef := ident("x") // inside then branch
 	y := identPat("y")
@@ -206,8 +208,9 @@ func TestCollectUsesIfElseNotRecursed(t *testing.T) {
 	uses := CollectUses(stmts)
 
 	require.Len(t, uses, 2)
-	// The use of x inside the then branch is NOT visible in Phase 3.
-	require.Empty(t, uses[1].Uses, "if/else branch bodies should not be recursed into in Phase 3")
+	// The use of x inside the then branch is not visible to CollectUses;
+	// it is handled by the CFG and AnalyzeFunction instead.
+	require.Empty(t, uses[1].Uses, "if/else branch bodies should not be recursed into by CollectUses")
 }
 
 // --- AnalyzeBlock tests ---

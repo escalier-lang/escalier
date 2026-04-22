@@ -11,7 +11,7 @@ into phases that build incrementally, each producing a testable milestone.
 |     1 | Data structures and representations                  | —          | Done   |
 |     2 | Name resolution and VarID assignment                 | 1          | Done   |
 |     3 | Liveness analysis (straight-line code)               | 2          | Done   |
-|     4 | Liveness analysis (control flow)                     | 3          |        |
+|     4 | Liveness analysis (control flow)                     | 3          | Done   |
 |     5 | Alias tracking (local variables)                     | 3          |        |
 |     6 | Mutability transition checking                       | 4, 5       |        |
 |     7 | Alias tracking (properties, closures, destructuring) | 5, 6       |        |
@@ -2522,7 +2522,7 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
 1. Data structures ✅
 └── 2. Name resolution & VarID assignment ✅
     └── 3. Liveness (linear) ✅
-        ├── 4. Liveness (control flow)
+        ├── 4. Liveness (control flow) ✅
         │   └── 6. Transition checking ←── (also depends on 5)
         └── 5. Alias tracking (local)
             ├── 6. Transition checking
