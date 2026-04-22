@@ -113,6 +113,9 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID)
 	r := newRenamer(outerBindings)
 
 	// Process function parameters — they are in scope for the entire body.
+	// Parameters share the root scope with outerBindings. This is fine because
+	// the VarID sign convention already distinguishes them: parameters get
+	// positive IDs (assigned by define()), outer bindings have negative IDs.
 	for _, param := range params {
 		r.renamePat(param.Pattern)
 	}
@@ -360,15 +363,15 @@ func (r *renamer) renameObjExprElems(elems []ast.ObjExprElem) {
 		case *ast.PropertyExpr:
 			if e.Value != nil {
 				r.renameExpr(e.Value)
+				// For computed keys, resolve the key expression.
+				if ck, ok := e.Name.(*ast.ComputedKey); ok {
+					r.renameExpr(ck.Expr)
+				}
 			} else {
 				// Shorthand property {x} — the name is also a variable reference.
 				if ident, ok := e.Name.(*ast.IdentExpr); ok {
 					ident.VarID = int(r.resolve(ident.Name, ident.Span()))
 				}
-			}
-			// For computed keys, resolve the key expression.
-			if ck, ok := e.Name.(*ast.ComputedKey); ok {
-				r.renameExpr(ck.Expr)
 			}
 		case *ast.MethodExpr:
 			// Method key: only resolve computed keys.

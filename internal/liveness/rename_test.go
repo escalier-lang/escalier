@@ -189,7 +189,7 @@ func TestModuleLevelName(t *testing.T) {
 	result := Rename(nil, body, map[string]VarID{"print": -1, "globalVar": -2})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, int(VarID(-2)), gRef.VarID) // resolved to outer binding
+	require.Equal(t, -2, gRef.VarID) // resolved to outer binding
 }
 
 func TestScopeRestorationAfterBlock(t *testing.T) {
