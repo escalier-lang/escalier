@@ -61,6 +61,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -227,6 +228,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -317,6 +319,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -507,6 +510,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -637,6 +641,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -1020,6 +1025,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -1089,6 +1095,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -1251,6 +1258,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -1368,6 +1376,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -1485,6 +1494,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -1812,6 +1822,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -1929,6 +1940,7 @@
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -7854,6 +7866,7 @@ nil
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {
@@ -8001,6 +8014,7 @@ nil
                 SourceID: 0,
             },
         },
+        VarID:   0,
         FuncSig: ast.FuncSig{
             TypeParams: nil,
             Params:     {

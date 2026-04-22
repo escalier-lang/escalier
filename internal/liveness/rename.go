@@ -172,7 +172,7 @@ func (r *renamer) renameDecl(decl ast.Decl) {
 	case *ast.FuncDecl:
 		// The function name is a binding in the current scope.
 		if d.Name != nil {
-			r.define(d.Name.Name)
+			d.VarID = int(r.define(d.Name.Name))
 		}
 		// Don't recurse into the function body — it gets its own rename
 		// pass when inferFuncBody is called for it.

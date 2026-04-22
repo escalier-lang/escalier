@@ -52,6 +52,7 @@
                                         SourceID: 0,
                                     },
                                 },
+                                VarID:   0,
                                 FuncSig: ast.FuncSig{
                                     TypeParams: {
                                     },
@@ -188,6 +189,7 @@
                                         SourceID: 0,
                                     },
                                 },
+                                VarID:   0,
                                 FuncSig: ast.FuncSig{
                                     TypeParams: {
                                     },
@@ -403,6 +405,7 @@
                                         SourceID: 0,
                                     },
                                 },
+                                VarID:   0,
                                 FuncSig: ast.FuncSig{
                                     TypeParams: {
                                     },
@@ -758,6 +761,7 @@
                                         SourceID: 0,
                                     },
                                 },
+                                VarID:   0,
                                 FuncSig: ast.FuncSig{
                                     TypeParams: {
                                     },
@@ -1126,6 +1130,7 @@
                                         SourceID: 0,
                                     },
                                 },
+                                VarID:   0,
                                 FuncSig: ast.FuncSig{
                                     TypeParams: {
                                     },
@@ -1356,6 +1361,7 @@
                                         SourceID: 0,
                                     },
                                 },
+                                VarID:   0,
                                 FuncSig: ast.FuncSig{
                                     TypeParams: {
                                     },
@@ -1464,6 +1470,7 @@
                                         SourceID: 0,
                                     },
                                 },
+                                VarID:   0,
                                 FuncSig: ast.FuncSig{
                                     TypeParams: {
                                     },
