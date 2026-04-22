@@ -160,10 +160,10 @@ func TestCollectUsesFuncDecl(t *testing.T) {
 	require.Equal(t, []VarID{VarID(addRef.VarID)}, uses[1].Uses)
 }
 
-func TestCollectUsesDoExprNotRecursed(t *testing.T) {
+func TestCollectUsesDoExprRecursed(t *testing.T) {
 	// val x = 1; val y = do { x + 1 }
-	// CollectUses does not recurse into do blocks — their bodies are in
-	// separate basic blocks created by BuildCFG.
+	// When nested inside another expression (not decomposed by the CFG),
+	// CollectUses recurses into do block bodies to capture all uses.
 	x := identPat("x")
 	xRef := ident("x") // inside do block
 	y := identPat("y")
@@ -178,15 +178,14 @@ func TestCollectUsesDoExprNotRecursed(t *testing.T) {
 	uses := CollectUses(stmts)
 
 	require.Len(t, uses, 2)
-	// The use of x inside the do block is not visible to CollectUses;
-	// it is handled by the CFG and AnalyzeFunction instead.
-	require.Empty(t, uses[1].Uses, "do block body should not be recursed into by CollectUses")
+	// The use of x inside the do block is captured by CollectUses.
+	require.Equal(t, []VarID{VarID(xRef.VarID)}, uses[1].Uses, "do block body should be recursed into by CollectUses")
 }
 
-func TestCollectUsesIfElseNotRecursed(t *testing.T) {
-	// val x = 1; val y = if true { x } else { 0 }
-	// CollectUses collects the condition but not the branch bodies —
-	// branches are in separate basic blocks created by BuildCFG.
+func TestCollectUsesIfElseRecursed(t *testing.T) {
+	// val x = 1; val y = if cond { x } else { 0 }
+	// When nested inside another expression (not decomposed by the CFG),
+	// CollectUses recurses into branch bodies to capture all uses.
 	x := identPat("x")
 	xRef := ident("x") // inside then branch
 	y := identPat("y")
@@ -208,9 +207,8 @@ func TestCollectUsesIfElseNotRecursed(t *testing.T) {
 	uses := CollectUses(stmts)
 
 	require.Len(t, uses, 2)
-	// The use of x inside the then branch is not visible to CollectUses;
-	// it is handled by the CFG and AnalyzeFunction instead.
-	require.Empty(t, uses[1].Uses, "if/else branch bodies should not be recursed into by CollectUses")
+	// The use of x inside the then branch is captured by CollectUses.
+	require.Equal(t, []VarID{VarID(xRef.VarID)}, uses[1].Uses, "if/else branch bodies should be recursed into by CollectUses")
 }
 
 // --- AnalyzeBlock tests ---

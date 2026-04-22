@@ -137,6 +137,15 @@ func (b *cfgBuilder) processExprStmt(s *ast.ExprStmt, current *BasicBlock) *Basi
 // processAssignBranch handles assignments where the RHS is a branching
 // expression. Returns the join block, or nil if the RHS is not branching.
 func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock) *BasicBlock {
+	// Early return if RHS is not a branching expression, before any side
+	// effects on current.Stmts.
+	switch be.Right.(type) {
+	case *ast.IfElseExpr, *ast.IfLetExpr, *ast.MatchExpr, *ast.DoExpr, *ast.TryCatchExpr:
+		// RHS is branching, continue processing below.
+	default:
+		return nil
+	}
+
 	// Determine join defs from the assignment target.
 	// Only track local variables (VarID > 0). Non-local idents (VarID < 0)
 	// are ignored by liveness analysis, so they don't need joinDefs.
@@ -314,21 +323,30 @@ func (b *cfgBuilder) processTryCatch(e *ast.TryCatchExpr, joinDefs []VarID, curr
 
 	tryBlock := b.newBlock()
 	b.addEdge(current, tryBlock)
+	tryBodyStart := len(b.blocks)
 	tryEnd := b.processStmts(e.Try.Stmts, tryBlock)
 	if tryEnd != nil {
 		b.addEdge(tryEnd, join)
 	}
+	// Capture all blocks created during try body processing. These blocks
+	// (from nested if/else, match, etc.) can also throw, so they need
+	// edges to catch handlers.
+	tryBodyBlocks := b.blocks[tryBodyStart:]
 
-	// Each catch case is a separate block. The try block edges to each
-	// catch block (any statement in try can throw). This is a conservative
-	// approximation: variables defined partway through the try block will
-	// appear live in catch blocks even if the throw occurs before the def.
-	// This over-approximation is safe for liveness (keeps variables live
-	// longer than necessary rather than dropping them too early).
+	// Each catch case is a separate block. The try block and all blocks
+	// created during try body processing edge to each catch block (any
+	// statement in try can throw). This is a conservative approximation:
+	// variables defined partway through the try block will appear live in
+	// catch blocks even if the throw occurs before the def. This
+	// over-approximation is safe for liveness (keeps variables live longer
+	// than necessary rather than dropping them too early).
 	for _, mc := range e.Catch {
 		catchBlock := b.newBlock()
 		catchBlock.ExtraDefs = collectPatVarDefs(mc.Pattern)
 		b.addEdge(tryBlock, catchBlock)
+		for _, tb := range tryBodyBlocks {
+			b.addEdge(tb, catchBlock)
+		}
 
 		catchStmts := blockOrExprToStmts(&mc.Body)
 		if mc.Guard != nil {

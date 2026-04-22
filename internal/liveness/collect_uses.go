@@ -21,11 +21,12 @@ type StmtUses struct {
 // parts of each statement (e.g., the condition of an if/else), since
 // branch bodies are handled by the CFG structure.
 //
-// Limitation: branching expressions nested inside other expressions
-// (e.g., foo(if cond { a } else { b })) are not decomposed by BuildCFG.
-// Variables used only inside such nested branches will not appear in the
-// enclosing statement's use set. This is a safe over-approximation of
-// the dead set (variables may appear dead when they are actually live).
+// Branching expressions nested inside other expressions (e.g.,
+// foo(if cond { a } else { b })) are not decomposed by BuildCFG.
+// For these, collectExpr recurses into all branch bodies, collecting
+// every use as if it belongs to the enclosing statement. This is
+// conservative (variables may appear live longer than necessary) but
+// safe. See #485 for decomposing nested branching in the CFG.
 //
 // VarIDs are read directly from AST nodes (set by the rename pass in Phase 2).
 func CollectUses(stmts []ast.Stmt) []StmtUses {
@@ -129,6 +130,24 @@ func (c *collector) collectPatDefs(pat ast.Pat) {
 	}
 }
 
+func (c *collector) collectBlock(block ast.Block) {
+	for _, stmt := range block.Stmts {
+		c.collectStmt(stmt)
+	}
+}
+
+func (c *collector) collectBlockOrExpr(boe *ast.BlockOrExpr) {
+	if boe == nil {
+		return
+	}
+	if boe.Block != nil {
+		c.collectBlock(*boe.Block)
+	}
+	if boe.Expr != nil {
+		c.collectExpr(boe.Expr)
+	}
+}
+
 func (c *collector) collectExpr(expr ast.Expr) {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
@@ -167,24 +186,45 @@ func (c *collector) collectExpr(expr ast.Expr) {
 	case *ast.ObjectExpr:
 		c.collectObjExprElems(e.Elems)
 	case *ast.IfElseExpr:
-		// Condition only — branch bodies are in separate basic blocks
-		// created by BuildCFG. When this expression appears nested inside
-		// another expression (not decomposed by the CFG), only condition
-		// uses are captured; branch uses are an under-approximation.
+		// When decomposed by BuildCFG (top-level), the condition is in a
+		// synthetic ExprStmt and branches are separate blocks, so
+		// collectExpr never sees the IfElseExpr itself. When nested
+		// inside another expression (e.g., foo(if c { x } else { y })),
+		// we must recurse into the bodies to capture all uses.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
 		c.collectExpr(e.Cond)
+		c.collectBlock(e.Cons)
+		c.collectBlockOrExpr(e.Alt)
 	case *ast.IfLetExpr:
-		// Target expression only — pattern and branch bodies are in
-		// separate basic blocks created by BuildCFG.
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
 		c.collectExpr(e.Target)
+		c.collectBlock(e.Cons)
+		c.collectBlockOrExpr(e.Alt)
 	case *ast.MatchExpr:
-		// Target expression only — case arms are in separate basic
-		// blocks created by BuildCFG.
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
 		c.collectExpr(e.Target)
+		for _, mc := range e.Cases {
+			if mc.Guard != nil {
+				c.collectExpr(mc.Guard)
+			}
+			c.collectBlockOrExpr(&mc.Body)
+		}
 	case *ast.TryCatchExpr:
-		// All nested blocks are in separate basic blocks created by
-		// BuildCFG.
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
+		c.collectBlock(e.Try)
+		for _, mc := range e.Catch {
+			if mc.Guard != nil {
+				c.collectExpr(mc.Guard)
+			}
+			c.collectBlockOrExpr(&mc.Body)
+		}
 	case *ast.DoExpr:
-		// Body is in a separate basic block created by BuildCFG.
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
+		c.collectBlock(e.Body)
 	case *ast.ThrowExpr:
 		c.collectExpr(e.Arg)
 	case *ast.AwaitExpr:
