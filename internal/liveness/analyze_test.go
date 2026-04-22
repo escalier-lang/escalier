@@ -115,6 +115,101 @@ func TestCollectUsesIgnoresNonLocal(t *testing.T) {
 	require.Empty(t, uses[0].Defs)
 }
 
+func TestCollectUsesReturnStmt(t *testing.T) {
+	// val x = 1; return x
+	x := identPat("x")
+	xRef := ident("x")
+	stmts := []ast.Stmt{
+		valDecl(x, numLit(1)),
+		ast.NewReturnStmt(xRef, span()),
+	}
+	Rename(nil, block(stmts...), nil)
+
+	uses := CollectUses(stmts)
+
+	require.Len(t, uses, 2)
+	require.Equal(t, []VarID{VarID(xRef.VarID)}, uses[1].Uses)
+	require.Empty(t, uses[1].Defs)
+}
+
+func TestCollectUsesFuncDecl(t *testing.T) {
+	// fn add() {}; print(add)
+	addRef := ident("add")
+	funcDecl := ast.NewFuncDecl(
+		ast.NewIdentifier("add", span()),
+		nil, // type params
+		nil, // params
+		nil, // return type
+		nil, // throws type
+		&ast.Block{Stmts: nil, Span: span()},
+		false, false, false, span(),
+	)
+	stmts := []ast.Stmt{
+		ast.NewDeclStmt(funcDecl, span()),
+		exprStmt(call(addRef)),
+	}
+	Rename(nil, block(stmts...), nil)
+
+	uses := CollectUses(stmts)
+
+	require.Len(t, uses, 2)
+	// fn add: def add
+	require.Empty(t, uses[0].Uses)
+	require.Equal(t, []VarID{VarID(funcDecl.VarID)}, uses[0].Defs)
+	// add(): use add
+	require.Equal(t, []VarID{VarID(addRef.VarID)}, uses[1].Uses)
+}
+
+func TestCollectUsesDoExprNotRecursed(t *testing.T) {
+	// val x = 1; val y = do { x + 1 }
+	// Phase 3 does not recurse into do blocks, so x is NOT collected
+	// as a use of stmt 1. Phase 4 fixes this.
+	x := identPat("x")
+	xRef := ident("x") // inside do block
+	y := identPat("y")
+	stmts := []ast.Stmt{
+		valDecl(x, numLit(1)),
+		valDecl(y, &ast.DoExpr{Body: block(
+			exprStmt(ast.NewBinary(xRef, numLit(1), ast.Plus, span())),
+		)}),
+	}
+	Rename(nil, block(stmts...), nil)
+
+	uses := CollectUses(stmts)
+
+	require.Len(t, uses, 2)
+	// The use of x inside the do block is NOT visible in Phase 3.
+	require.Empty(t, uses[1].Uses, "do block body should not be recursed into in Phase 3")
+}
+
+func TestCollectUsesIfElseNotRecursed(t *testing.T) {
+	// val x = 1; val y = if true { x } else { 0 }
+	// Phase 3 collects the condition but not the branch bodies.
+	x := identPat("x")
+	xRef := ident("x") // inside then branch
+	y := identPat("y")
+	altBlock := ast.Block{
+		Stmts: []ast.Stmt{exprStmt(numLit(0))},
+		Span:  span(),
+	}
+	stmts := []ast.Stmt{
+		valDecl(x, numLit(1)),
+		valDecl(y, ast.NewIfElse(
+			ident("cond"),
+			block(exprStmt(xRef)),
+			&ast.BlockOrExpr{Block: &altBlock},
+			span(),
+		)),
+	}
+	Rename(nil, block(stmts...), map[string]VarID{"cond": -1})
+
+	uses := CollectUses(stmts)
+
+	require.Len(t, uses, 2)
+	// The use of x inside the then branch is NOT visible in Phase 3.
+	require.Empty(t, uses[1].Uses, "if/else branch bodies should not be recursed into in Phase 3")
+}
+
 // --- AnalyzeBlock tests ---
 
 func TestLivenessEmptyBlock(t *testing.T) {

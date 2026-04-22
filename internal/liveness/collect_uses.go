@@ -15,6 +15,14 @@ type StmtUses struct {
 // non-local variables (VarID < 0) and unresolved references (VarID == 0)
 // are ignored.
 //
+// Phase 3 limitation: nested control-flow expressions (if/else, match,
+// do, try/catch) are not recursed into. Variables used only inside these
+// nested blocks will not appear in the enclosing statement's use set,
+// causing them to appear dead at the enclosing statement. This is an
+// under-approximation — Phase 4 replaces this with CFG-based analysis
+// that handles all control flow correctly. Phase 6 (transition checking)
+// must not be enabled until Phase 4 is complete.
+//
 // VarIDs are read directly from AST nodes (set by the rename pass in Phase 2).
 func CollectUses(stmts []ast.Stmt) []StmtUses {
 	result := make([]StmtUses, len(stmts))
@@ -156,19 +164,22 @@ func (c *collector) collectExpr(expr ast.Expr) {
 	case *ast.ObjectExpr:
 		c.collectObjExprElems(e.Elems)
 	case *ast.IfElseExpr:
-		// Collect the condition; nested blocks are deferred to Phase 4 (CFG).
+		// Condition only — branch bodies are deferred to Phase 4 (CFG).
+		// Variables used only inside branches will appear dead here (see
+		// package doc on under-approximation).
 		c.collectExpr(e.Cond)
 	case *ast.IfLetExpr:
-		// Collect the target expression; pattern and nested blocks are
-		// deferred to Phase 4 (CFG).
+		// Target expression only — pattern and branch bodies are deferred
+		// to Phase 4 (CFG).
 		c.collectExpr(e.Target)
 	case *ast.MatchExpr:
-		// Collect the target expression; case arms are deferred to Phase 4.
+		// Target expression only — case arms are deferred to Phase 4.
 		c.collectExpr(e.Target)
 	case *ast.TryCatchExpr:
-		// Nested blocks are deferred to Phase 4 (CFG).
+		// All nested blocks deferred to Phase 4 (CFG).
 	case *ast.DoExpr:
-		// Nested block is deferred to Phase 4 (CFG).
+		// Body deferred to Phase 4 (CFG). Variables used only inside the
+		// do block will appear dead at the enclosing statement.
 	case *ast.ThrowExpr:
 		c.collectExpr(e.Arg)
 	case *ast.AwaitExpr:
