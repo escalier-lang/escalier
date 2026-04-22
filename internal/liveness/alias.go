@@ -42,6 +42,11 @@ func NewAliasTracker() *AliasTracker {
 
 // NewValue creates a fresh alias set for a newly created value (e.g. a
 // literal, constructor call, or function returning a fresh value).
+//
+// Example:
+//
+//	val items: mut Array<number> = [1, 2, 3]  // NewValue(items, AliasMutable)
+//	                                          // → creates set {items(mut)}, origin=items
 func (a *AliasTracker) NewValue(v VarID, mut AliasMutability) {
 	a.nextID++
 	id := a.nextID
@@ -55,6 +60,12 @@ func (a *AliasTracker) NewValue(v VarID, mut AliasMutability) {
 }
 
 // AddAlias adds a variable to the alias set of another variable.
+//
+// Example:
+//
+//	val items: mut Array<number> = [1, 2, 3]      // set: {items(mut)}
+//	val alias: Array<number> = items              // AddAlias(alias, items, AliasImmutable)
+//	                                              // → set: {items(mut), alias(imm)}
 func (a *AliasTracker) AddAlias(target VarID, source VarID, mut AliasMutability) {
 	for _, setID := range a.VarToSets[source] {
 		set := a.Sets[setID]
@@ -66,6 +77,20 @@ func (a *AliasTracker) AddAlias(target VarID, source VarID, mut AliasMutability)
 // Reassign removes a variable from its current alias sets and either
 // adds it to the alias sets of newSource (if non-nil) or creates a
 // fresh alias set (if newSource is nil, meaning assigned a fresh value).
+//
+// Example (reassign to existing source):
+//
+//	val a: mut Array<number> = [1, 2]      // set1: {a(mut)}
+//	val b: mut Array<number> = [3, 4]      // set2: {b(mut)}
+//	var x: Array<number> = a               // set1: {a(mut), x(imm)}
+//	x = b                                  // Reassign(x, &b, AliasImmutable)
+//	                                       // → set1: {a(mut)}, set2: {b(mut), x(imm)}
+//
+// Example (reassign to fresh value):
+//
+//	var x: Array<number> = a               // set1: {a(mut), x(imm)}
+//	x = [5, 6]                             // Reassign(x, nil, AliasImmutable)
+//	                                       // → set1: {a(mut)}, set3: {x(imm)}
 func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut AliasMutability) {
 	// Remove from current alias sets
 	for _, setID := range a.VarToSets[v] {
@@ -88,6 +113,16 @@ func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut AliasMutability) 
 // set. All members of both sets become members of the merged set, and
 // VarToSets is updated so every affected variable points to the merged
 // set. The second set is removed from Sets.
+//
+// Example (linked list construction):
+//
+//	val head: mut Node = Node {}     // set1: {head(mut)}
+//	var current: mut Node = head     // set1: {head(mut), current(mut)}
+//	val next: mut Node = Node {}     // set2: {next(mut)}
+//	current.next = next              // MergeAliasSets(current, next)
+//	                                 // → set1: {head(mut), current(mut), next(mut)}
+//	current = next                   // Reassign(current, &next, AliasMutable)
+//	                                 // → set1: {head(mut), next(mut), current(mut)}
 func (a *AliasTracker) MergeAliasSets(v1 VarID, v2 VarID) {
 	sets1 := a.VarToSets[v1]
 	sets2 := a.VarToSets[v2]
@@ -95,7 +130,12 @@ func (a *AliasTracker) MergeAliasSets(v1 VarID, v2 VarID) {
 		return
 	}
 
-	// Use the first set of v1 as the target
+	// Use the first set of v1 as the target. When v1 belongs to multiple
+	// sets (e.g. from conditional aliasing: `let x = if cond { a } else { b }`
+	// followed by `obj.prop = x`), we pick an arbitrary set as the merge
+	// target. This is sufficient because callers like the transition checker
+	// iterate all alias sets of a variable via GetAliasSets — the merged
+	// set will be discovered regardless of which one we chose as the target.
 	targetID := sets1[0]
 	target := a.Sets[targetID]
 
@@ -133,6 +173,13 @@ func (a *AliasTracker) MergeAliasSets(v1 VarID, v2 VarID) {
 
 // GetAliasSets returns all alias sets that v belongs to. A variable may
 // belong to multiple sets due to conditional aliasing (Phase 7.4).
+//
+// Example (conditional aliasing):
+//
+//	val a: mut Array<number> = [1, 2]              // set1: {a(mut)}
+//	val b: mut Array<number> = [3, 4]              // set2: {b(mut)}
+//	val x: Array<number> = if cond { a } else { b }  // set1: {a(mut), x(imm)}, set2: {b(mut), x(imm)}
+//	GetAliasSets(x)                                   // → [set1, set2]
 func (a *AliasTracker) GetAliasSets(v VarID) []*AliasSet {
 	setIDs := a.VarToSets[v]
 	result := make([]*AliasSet, 0, len(setIDs))

@@ -53,7 +53,7 @@ type LifetimeVar struct {
 // 'static (permanently aliased, e.g. stored into a global).
 type LifetimeValue struct {
     ID       int
-    Name     string  // variable name for diagnostics (e.g. "items")
+    Name     string  // lvalue path for diagnostics (e.g. "items", "obj.values", "obj[key]")
     IsStatic bool    // true for 'static
 }
 ```

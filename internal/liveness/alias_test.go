@@ -2,19 +2,15 @@ package liveness
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewAliasTracker(t *testing.T) {
 	tracker := NewAliasTracker()
-	if tracker == nil {
-		t.Fatal("NewAliasTracker returned nil")
-	}
-	if len(tracker.Sets) != 0 {
-		t.Errorf("expected 0 sets, got %d", len(tracker.Sets))
-	}
-	if len(tracker.VarToSets) != 0 {
-		t.Errorf("expected 0 var-to-sets, got %d", len(tracker.VarToSets))
-	}
+	require.NotNil(t, tracker)
+	require.Empty(t, tracker.Sets)
+	require.Empty(t, tracker.VarToSets)
 }
 
 func TestNewValue(t *testing.T) {
@@ -24,15 +20,9 @@ func TestNewValue(t *testing.T) {
 	tracker.NewValue(x, AliasImmutable)
 
 	sets := tracker.GetAliasSets(x)
-	if len(sets) != 1 {
-		t.Fatalf("expected 1 alias set, got %d", len(sets))
-	}
-	if sets[0].Origin != x {
-		t.Errorf("expected origin %d, got %d", x, sets[0].Origin)
-	}
-	if sets[0].Members[x] != AliasImmutable {
-		t.Errorf("expected immutable, got %d", sets[0].Members[x])
-	}
+	require.Len(t, sets, 1)
+	require.Equal(t, x, sets[0].Origin)
+	require.Equal(t, AliasImmutable, sets[0].Members[x])
 }
 
 func TestNewValueMutable(t *testing.T) {
@@ -42,12 +32,8 @@ func TestNewValueMutable(t *testing.T) {
 	tracker.NewValue(x, AliasMutable)
 
 	sets := tracker.GetAliasSets(x)
-	if len(sets) != 1 {
-		t.Fatalf("expected 1 alias set, got %d", len(sets))
-	}
-	if sets[0].Members[x] != AliasMutable {
-		t.Errorf("expected mutable, got %d", sets[0].Members[x])
-	}
+	require.Len(t, sets, 1)
+	require.Equal(t, AliasMutable, sets[0].Members[x])
 }
 
 func TestAddAlias(t *testing.T) {
@@ -61,15 +47,10 @@ func TestAddAlias(t *testing.T) {
 	// Both x and y should be in the same alias set
 	xSets := tracker.GetAliasSets(x)
 	ySets := tracker.GetAliasSets(y)
-	if len(xSets) != 1 || len(ySets) != 1 {
-		t.Fatalf("expected 1 set each, got x=%d y=%d", len(xSets), len(ySets))
-	}
-	if xSets[0].ID != ySets[0].ID {
-		t.Errorf("expected same set ID, got x=%d y=%d", xSets[0].ID, ySets[0].ID)
-	}
-	if len(xSets[0].Members) != 2 {
-		t.Errorf("expected 2 members, got %d", len(xSets[0].Members))
-	}
+	require.Len(t, xSets, 1)
+	require.Len(t, ySets, 1)
+	require.Equal(t, xSets[0].ID, ySets[0].ID)
+	require.Len(t, xSets[0].Members, 2)
 }
 
 func TestAddAliasMutableToImmutable(t *testing.T) {
@@ -81,12 +62,9 @@ func TestAddAliasMutableToImmutable(t *testing.T) {
 	tracker.AddAlias(y, x, AliasMutable)
 
 	sets := tracker.GetAliasSets(y)
-	if sets[0].Members[x] != AliasImmutable {
-		t.Errorf("x should remain immutable")
-	}
-	if sets[0].Members[y] != AliasMutable {
-		t.Errorf("y should be mutable")
-	}
+	require.Len(t, sets, 1)
+	require.Equal(t, AliasImmutable, sets[0].Members[x], "x should remain immutable")
+	require.Equal(t, AliasMutable, sets[0].Members[y], "y should be mutable")
 }
 
 func TestReassignToNewSource(t *testing.T) {
@@ -104,24 +82,16 @@ func TestReassignToNewSource(t *testing.T) {
 
 	// y should no longer be in x's alias set
 	xSets := tracker.GetAliasSets(x)
-	if len(xSets) != 1 {
-		t.Fatalf("expected 1 set for x, got %d", len(xSets))
-	}
-	if _, ok := xSets[0].Members[y]; ok {
-		t.Error("y should not be in x's alias set after reassignment")
-	}
+	require.Len(t, xSets, 1)
+	_, inXSet := xSets[0].Members[y]
+	require.False(t, inXSet, "y should not be in x's alias set after reassignment")
 
 	// y should be in z's alias set
 	ySets := tracker.GetAliasSets(y)
-	if len(ySets) != 1 {
-		t.Fatalf("expected 1 set for y, got %d", len(ySets))
-	}
-	if ySets[0].Members[y] != AliasMutable {
-		t.Errorf("expected mutable, got %d", ySets[0].Members[y])
-	}
-	if _, ok := ySets[0].Members[z]; !ok {
-		t.Error("z should be in y's alias set")
-	}
+	require.Len(t, ySets, 1)
+	require.Equal(t, AliasMutable, ySets[0].Members[y])
+	_, inYSet := ySets[0].Members[z]
+	require.True(t, inYSet, "z should be in y's alias set")
 }
 
 func TestReassignToFreshValue(t *testing.T) {
@@ -137,18 +107,14 @@ func TestReassignToFreshValue(t *testing.T) {
 
 	// y should have its own fresh alias set
 	ySets := tracker.GetAliasSets(y)
-	if len(ySets) != 1 {
-		t.Fatalf("expected 1 set for y, got %d", len(ySets))
-	}
-	if ySets[0].Origin != y {
-		t.Errorf("expected origin y, got %d", ySets[0].Origin)
-	}
+	require.Len(t, ySets, 1)
+	require.Equal(t, y, ySets[0].Origin)
 
 	// x's alias set should not contain y
 	xSets := tracker.GetAliasSets(x)
-	if _, ok := xSets[0].Members[y]; ok {
-		t.Error("y should not be in x's alias set")
-	}
+	require.Len(t, xSets, 1)
+	_, inXSet := xSets[0].Members[y]
+	require.False(t, inXSet, "y should not be in x's alias set")
 }
 
 func TestMergeAliasSets(t *testing.T) {
@@ -164,15 +130,10 @@ func TestMergeAliasSets(t *testing.T) {
 	// After merge, x and y should share an alias set
 	xSets := tracker.GetAliasSets(x)
 	ySets := tracker.GetAliasSets(y)
-	if len(xSets) != 1 || len(ySets) != 1 {
-		t.Fatalf("expected 1 set each, got x=%d y=%d", len(xSets), len(ySets))
-	}
-	if xSets[0].ID != ySets[0].ID {
-		t.Errorf("expected same set, got x=%d y=%d", xSets[0].ID, ySets[0].ID)
-	}
-	if len(xSets[0].Members) != 2 {
-		t.Errorf("expected 2 members in merged set, got %d", len(xSets[0].Members))
-	}
+	require.Len(t, xSets, 1)
+	require.Len(t, ySets, 1)
+	require.Equal(t, xSets[0].ID, ySets[0].ID)
+	require.Len(t, xSets[0].Members, 2)
 }
 
 func TestGetAliasSetsEmpty(t *testing.T) {
@@ -180,9 +141,7 @@ func TestGetAliasSetsEmpty(t *testing.T) {
 	var x VarID = 1
 
 	sets := tracker.GetAliasSets(x)
-	if len(sets) != 0 {
-		t.Errorf("expected 0 sets for untracked var, got %d", len(sets))
-	}
+	require.Empty(t, sets)
 }
 
 func TestMergeAliasSetsNoDuplicateSetIDs(t *testing.T) {
@@ -204,9 +163,7 @@ func TestMergeAliasSetsNoDuplicateSetIDs(t *testing.T) {
 	for v, setIDs := range tracker.VarToSets {
 		seen := make(map[SetID]bool)
 		for _, id := range setIDs {
-			if seen[id] {
-				t.Errorf("VarToSets[%d] contains duplicate SetID %d", v, id)
-			}
+			require.False(t, seen[id], "VarToSets[%d] contains duplicate SetID %d", v, id)
 			seen[id] = true
 		}
 	}
@@ -222,10 +179,6 @@ func TestMergeAliasSetsNoOp(t *testing.T) {
 	tracker.MergeAliasSets(x, y)
 
 	xSets := tracker.GetAliasSets(x)
-	if len(xSets) != 1 {
-		t.Fatalf("expected 1 set for x, got %d", len(xSets))
-	}
-	if len(xSets[0].Members) != 1 {
-		t.Errorf("expected 1 member, got %d", len(xSets[0].Members))
-	}
+	require.Len(t, xSets, 1)
+	require.Len(t, xSets[0].Members, 1)
 }
