@@ -285,6 +285,7 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 type IdentExpr struct {
 	Name         string
 	Namespace    NamespaceID
+	VarID        int // set by the rename pass (liveness.VarID); 0 = unset
 	Source       provenance.Provenance
 	span         Span
 	inferredType Type
