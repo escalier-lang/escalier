@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	gqlast "github.com/vektah/gqlparser/v2/ast"
@@ -151,6 +152,18 @@ type Context struct {
 	// CallSiteTypeVars maps TypeVar ID → the TypeVarType pointer, so we can
 	// bind it when resolving call sites. Pointer for the same reason as CallSites.
 	CallSiteTypeVars *map[int]*type_system.TypeVarType
+
+	// Liveness stores the results of liveness analysis for the current function body.
+	// Set after running AnalyzeBlock (Phase 3) or AnalyzeFunction (Phase 4).
+	Liveness *liveness.LivenessInfo
+
+	// Aliases tracks which variables share the same underlying value.
+	// Updated incrementally as the checker processes each statement.
+	Aliases *liveness.AliasTracker
+
+	// StmtToRef maps AST statement nodes to their position in the CFG,
+	// enabling lookup of liveness information for a given statement.
+	StmtToRef map[ast.Stmt]liveness.StmtRef
 }
 
 func (ctx *Context) AddYieldedType(t type_system.Type) {

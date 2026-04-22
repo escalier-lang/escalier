@@ -10,7 +10,7 @@ into phases that build incrementally, each producing a testable milestone.
 |------:|------------------------------------------------------|------------|--------|
 |     1 | Data structures and representations                  | —          | Done   |
 |     2 | Name resolution and VarID assignment                 | 1          | Done   |
-|     3 | Liveness analysis (straight-line code)               | 2          |        |
+|     3 | Liveness analysis (straight-line code)               | 2          | Done   |
 |     4 | Liveness analysis (control flow)                     | 3          |        |
 |     5 | Alias tracking (local variables)                     | 3          |        |
 |     6 | Mutability transition checking                       | 4, 5       |        |
@@ -609,31 +609,38 @@ with sequential code (no branching).
 
 ### 3.1 Variable Use Collection
 
-Walk the AST to collect all variable uses, classifying each as a use or
-definition. This phase consumes the output of Phase 2 — each
-`IdentExpr` already has its `VarID` set by the rename pass, so name
-resolution and shadowing are already handled.
-
 **File:** `internal/liveness/collect_uses.go`
 
-Implement an AST visitor that:
-1. Visits each expression in a block of statements
-2. For each `IdentExpr`, reads its `VarID` (set by the rename pass) and
-   records the `VarID` and span as a use
-3. For each `MemberExpr` with an `IdentExpr` base, records the base variable
-4. For each assignment target:
-   - **Plain assignment** (e.g. `b = expr`): records the LHS as a
-     **definition only** (no read of the old value)
-   - **Compound assignment** (e.g. `b += expr`, `b -= expr`): records the
-     LHS as both a **use** (reads the old value) and a **definition**
-     (writes the new value)
+`CollectUses(stmts []ast.Stmt) []StmtUses` walks a block of statements and
+returns per-statement use/def information. Each `StmtUses` contains separate
+`Uses` and `Defs` slices of `VarID`. Only local variables (VarID > 0) are
+tracked; non-local variables (VarID < 0) and unresolved references (VarID == 0)
+are filtered out.
 
-The visitor produces a `map[VarID][]StmtRef` of use sites per variable.
+The collector mirrors the rename pass's AST traversal and handles:
+1. `IdentExpr` — reads `VarID` and records as a use
+2. `MemberExpr` — records a use of the base object
+3. Plain assignment (`b = expr`) — records the LHS as a **definition only**
+   (no read of the old value); for member/index assignment targets, the base
+   object is recorded as a use
+4. `VarDecl` — collects uses from the initializer, then records all binding
+   sites in the pattern as definitions
+5. Nested expressions (if/else, match, try/catch, do, etc.) — uses within
+   nested blocks are collected into the enclosing statement's uses
+
+Escalier has no compound assignment operators (`+=`, `-=`, etc.), so there is
+no use+def case for assignment targets.
+
+**Note:** `FuncDecl.Name` is `*ast.Ident` which has no `VarID` field, so
+function name definitions are not yet tracked by liveness. A `VarID` field
+should be added to `FuncDecl` in a future change.
 
 ### 3.2 Backward Liveness Analysis (Linear)
 
-For straight-line code (a flat list of statements with no branches), liveness
-is computed by walking backward from the last statement:
+**File:** `internal/liveness/analyze.go`
+
+`AnalyzeBlock(stmts []ast.Stmt) *LivenessInfo` computes liveness for a linear
+block of statements by walking backward:
 
 1. Start with `LiveAfter = {}` for the last statement
 2. For each statement, working backward:
@@ -641,41 +648,46 @@ is computed by walking backward from the last statement:
    - `LiveBefore[stmt] = (LiveAfter[stmt] - Defs[stmt]) ∪ Uses[stmt]`
 3. A variable is "dead" at a point if it is not in `LiveBefore` or `LiveAfter`
 
-**File:** `internal/liveness/analyze.go`
-
-```go
-// AnalyzeBlock computes liveness for a linear block of statements.
-// This is the foundation — Phase 4 extends it to handle control flow.
-// VarIDs are read directly from AST nodes (set by the rename pass in
-// Phase 2).
-func AnalyzeBlock(stmts []ast.Stmt) *LivenessInfo { ... }
-```
+Results are stored in `LivenessInfo` indexed by `(blockID=0, stmtIdx)` for the
+single-block model. Phase 4 extends this to multiple blocks via a CFG.
+`LastUse` is populated by scanning forward to find the last statement where
+each variable appears in the use set.
 
 ### 3.3 Integration Point
 
-The liveness analysis runs per function body. Store the result on the checker
-`Context` so the mutability transition checker (Phase 6) can query it.
-
 **File:** `internal/checker/checker.go`
 
+Added fields to `Context`:
+
 ```go
-type Context struct {
-    // ... existing fields ...
-    Liveness  *liveness.LivenessInfo
-    Aliases   *liveness.AliasTracker
-    StmtToRef map[ast.Stmt]liveness.StmtRef  // built from CFG after liveness analysis
-}
+Liveness  *liveness.LivenessInfo
+Aliases   *liveness.AliasTracker
+StmtToRef map[ast.Stmt]liveness.StmtRef
 ```
 
 ### 3.4 Tests
 
-- Test liveness for simple sequential variable declarations and uses
-- Test that a variable becomes dead after its last use
-- Test that variable definitions kill liveness
-- Test that unused variables are never live
-- Test that shadowing resolves correctly: `val x = 1; val y = x; val x = 2;
-  print(x)` — the first `x` is dead after `val y = x`, the second `x` is
-  live until `print(x)`, and they have distinct VarIDs
+**File:** `internal/liveness/analyze_test.go`
+
+6 `CollectUses` tests:
+- Simple declaration (def only)
+- Declaration with identifier initializer (use + def)
+- Assignment (def only, no use of old value)
+- Expression statement with function call (use)
+- Member expression (use of base object)
+- Non-local variables are filtered out
+
+10 `AnalyzeBlock` tests:
+- Empty block
+- Simple sequential declarations and uses
+- Variable becomes dead after its last use
+- Variable definitions kill liveness
+- Unused variables are never live
+- Shadowing with distinct VarIDs: `val x = 1; val y = x; val x = 2; print(x)`
+- LastUse tracking with multiple uses of the same variable
+- IsLiveAfter helper method
+- Multiple variables with overlapping lifetimes
+- Assignment from one variable to another
 
 ---
 
@@ -2509,7 +2521,7 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
 ```text
 1. Data structures ✅
 └── 2. Name resolution & VarID assignment ✅
-    └── 3. Liveness (linear)
+    └── 3. Liveness (linear) ✅
         ├── 4. Liveness (control flow)
         │   └── 6. Transition checking ←── (also depends on 5)
         └── 5. Alias tracking (local)
