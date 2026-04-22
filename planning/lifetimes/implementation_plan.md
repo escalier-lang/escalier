@@ -6,22 +6,22 @@ into phases that build incrementally, each producing a testable milestone.
 
 ## Phase Overview
 
-| Phase | Description                                          | Depends On |
-|------:|------------------------------------------------------|------------|
-|     1 | Data structures and representations                  | —          |
-|     2 | Name resolution and VarID assignment                 | 1          |
-|     3 | Liveness analysis (straight-line code)               | 2          |
-|     4 | Liveness analysis (control flow)                     | 3          |
-|     5 | Alias tracking (local variables)                     | 3          |
-|     6 | Mutability transition checking                       | 4, 5       |
-|     7 | Alias tracking (properties, closures, destructuring) | 5, 6       |
-|     8 | Lifetime annotations and inference                   | 6, 7       |
-|     9 | Lifetime unification                                 | 8          |
-|    10 | Lifetime elision rules                               | 8, 9       |
-|    11 | TypeScript interop                                   | 10         |
-|    12 | Error messages                                       | 6–11       |
-|    13 | Remove `mut?`                                        | 6–12       |
-|    14 | PrintType and display                                | 13         |
+| Phase | Description                                          | Depends On | Status |
+|------:|------------------------------------------------------|------------|--------|
+|     1 | Data structures and representations                  | —          | Done   |
+|     2 | Name resolution and VarID assignment                 | 1          | Done   |
+|     3 | Liveness analysis (straight-line code)               | 2          |        |
+|     4 | Liveness analysis (control flow)                     | 3          |        |
+|     5 | Alias tracking (local variables)                     | 3          |        |
+|     6 | Mutability transition checking                       | 4, 5       |        |
+|     7 | Alias tracking (properties, closures, destructuring) | 5, 6       |        |
+|     8 | Lifetime annotations and inference                   | 6, 7       |        |
+|     9 | Lifetime unification                                 | 8          |        |
+|    10 | Lifetime elision rules                               | 8, 9       |        |
+|    11 | TypeScript interop                                   | 10         |        |
+|    12 | Error messages                                       | 6–11       |        |
+|    13 | Remove `mut?`                                        | 6–12       |        |
+|    14 | PrintType and display                                | 13         |        |
 
 ---
 
@@ -570,6 +570,14 @@ func (c *Checker) inferFuncBody(ctx Context, body ast.Block, ...) {
 After this point, the checker's existing `ctx.Scope` is still used for
 type name resolution and module-level lookups, but local variable resolution
 is handled entirely through VarIDs on AST nodes.
+
+**Note:** `ctx.outerBindings()` must include *all* names that are valid
+in the function's outer scope — not just module-level value bindings, but
+also namespace names from directory-based modules (i.e. `lib/`
+subdirectories) and enum namespaces. These are assigned negative VarIDs
+like any other outer binding so that the rename pass does not report them
+as unresolved. Liveness and alias analysis ignore negative VarIDs, so
+namespace names are effectively invisible to those phases.
 
 ### 2.6 Tests
 
@@ -2499,8 +2507,8 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
 ## Implementation Order and Dependencies
 
 ```text
-1. Data structures
-└── 2. Name resolution & VarID assignment
+1. Data structures ✅
+└── 2. Name resolution & VarID assignment ✅
     └── 3. Liveness (linear)
         ├── 4. Liveness (control flow)
         │   └── 6. Transition checking ←── (also depends on 5)

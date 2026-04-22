@@ -89,6 +89,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "x",
+                VarID:   0,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -111,6 +112,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "y",
+                VarID:   0,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -181,6 +183,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "x",
+                VarID:   0,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -213,6 +216,7 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name:    "y",
+                VarID:   0,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -697,6 +701,7 @@
             Name: &ast.IdentExpr{
                 Name:      "a",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
@@ -730,6 +735,7 @@
             Name: &ast.IdentExpr{
                 Name:      "b",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:8},
@@ -764,6 +770,7 @@
                 Expr: &ast.IdentExpr{
                     Name:      "c",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:16},
@@ -799,6 +806,7 @@
                 Expr: &ast.IdentExpr{
                     Name:      "d",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:24},
@@ -1127,6 +1135,7 @@
                 Pattern: &ast.RestPat{
                     Pattern: &ast.IdentPat{
                         Name:    "args",
+                        VarID:   0,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -1419,6 +1428,7 @@
             Name: &ast.IdentExpr{
                 Name:      "x",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
@@ -1520,6 +1530,7 @@
             Name: &ast.IdentExpr{
                 Name:      "x",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
@@ -1569,6 +1580,7 @@
             Name: &ast.IdentExpr{
                 Name:      "y",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:19},
@@ -1856,6 +1868,7 @@
                 Name: &ast.IdentExpr{
                     Name:      "x",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:8},
@@ -1879,6 +1892,7 @@
                 Name: &ast.IdentExpr{
                     Name:      "y",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:19},
@@ -2580,6 +2594,7 @@ nil
             Name: &ast.IdentExpr{
                 Name:      "id",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
@@ -2603,6 +2618,7 @@ nil
             Name: &ast.IdentExpr{
                 Name:      "name",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:23},
@@ -3029,6 +3045,7 @@ nil
             Name: &ast.IdentExpr{
                 Name:      "x",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:2},
@@ -3673,6 +3690,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "x",
+                        VarID:   0,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -3715,6 +3733,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "x",
+                        VarID:   0,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -3770,6 +3789,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "x",
+                        VarID:   0,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -3812,6 +3832,7 @@ nil
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name:    "x",
+                        VarID:   0,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{

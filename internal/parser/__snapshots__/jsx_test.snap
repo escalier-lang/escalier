@@ -402,6 +402,7 @@
             Expr: &ast.IdentExpr{
                 Name:      "msg",
                 Namespace: 0,
+                VarID:     0,
                 Source:    nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
@@ -502,6 +503,7 @@
                         Expr: &ast.IdentExpr{
                             Name:      "foo",
                             Namespace: 0,
+                            VarID:     0,
                             Source:    nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:14},
@@ -938,6 +940,7 @@
                 Expr: &ast.IdentExpr{
                     Name:      "props1",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
@@ -956,6 +959,7 @@
                 Expr: &ast.IdentExpr{
                     Name:      "props2",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:22},
@@ -1047,6 +1051,7 @@
                 Expr: &ast.IdentExpr{
                     Name:      "props",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
@@ -1097,6 +1102,7 @@
                 Expr: &ast.IdentExpr{
                     Name:      "props",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
@@ -1209,6 +1215,7 @@
                 Expr: &ast.IdentExpr{
                     Name:      "props",
                     Namespace: 0,
+                    VarID:     0,
                     Source:    nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:18},

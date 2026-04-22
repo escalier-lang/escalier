@@ -21,6 +21,7 @@ func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
 	Name         string
+	VarID        int // set by the rename pass (liveness.VarID); 0 = unset
 	TypeAnn      TypeAnn // optional
 	Default      Expr    // optional
 	span         Span
@@ -67,6 +68,7 @@ func (p *ObjKeyValuePat) Accept(v Visitor) {
 
 type ObjShorthandPat struct {
 	Key     *Ident
+	VarID   int // set by the rename pass (liveness.VarID); 0 = unset
 	TypeAnn TypeAnn // optional
 	Default Expr    // optional
 	span    Span
