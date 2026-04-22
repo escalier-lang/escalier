@@ -73,6 +73,25 @@ func TestGetLifetimeUnionDifferent(t *testing.T) {
 	require.Nil(t, GetLifetime(ty))
 }
 
+func TestGetLifetimeIntersectionSame(t *testing.T) {
+	lt := &LifetimeVar{ID: 1, Name: "a"}
+	ty := NewIntersectionType(nil,
+		&TypeRefType{Name: NewIdent("A"), Lifetime: lt},
+		&TypeRefType{Name: NewIdent("B"), Lifetime: lt},
+	)
+	require.Equal(t, lt, GetLifetime(ty))
+}
+
+func TestGetLifetimeIntersectionDifferent(t *testing.T) {
+	lt1 := &LifetimeVar{ID: 1, Name: "a"}
+	lt2 := &LifetimeVar{ID: 2, Name: "b"}
+	ty := NewIntersectionType(nil,
+		&TypeRefType{Name: NewIdent("A"), Lifetime: lt1},
+		&TypeRefType{Name: NewIdent("B"), Lifetime: lt2},
+	)
+	require.Nil(t, GetLifetime(ty))
+}
+
 func TestLifetimeVarConstruction(t *testing.T) {
 	lv := &LifetimeVar{ID: 1, Name: "a"}
 	require.Equal(t, 1, lv.ID)

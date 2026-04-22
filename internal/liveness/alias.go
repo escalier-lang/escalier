@@ -1,5 +1,7 @@
 package liveness
 
+import "slices"
+
 // AliasMutability tracks whether a variable holds a mutable or immutable
 // reference within an alias set.
 type AliasMutability int
@@ -70,7 +72,11 @@ func (a *AliasTracker) AddAlias(target VarID, source VarID, mut AliasMutability)
 	for _, setID := range a.VarToSets[source] {
 		set := a.Sets[setID]
 		set.Members[target] = mut
-		a.VarToSets[target] = append(a.VarToSets[target], setID)
+		// Only append if target doesn't already belong to this set,
+		// avoiding duplicate entries from overlapping alias sources.
+		if !slices.Contains(a.VarToSets[target], setID) {
+			a.VarToSets[target] = append(a.VarToSets[target], setID)
+		}
 	}
 }
 

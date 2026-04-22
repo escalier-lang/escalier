@@ -319,7 +319,10 @@ func (t *TypeRefType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = NewTypeRefTypeFromQualIdent(t.provenance, t.Name, t.TypeAlias, newTypeArgs...)
+		r := NewTypeRefTypeFromQualIdent(t.provenance, t.Name, t.TypeAlias, newTypeArgs...)
+		r.Lifetime = t.Lifetime
+		r.LifetimeArgs = t.LifetimeArgs
+		result = r
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -361,6 +364,20 @@ func (t *TypeRefType) Equals(other Type) bool {
 				if !equals(t.TypeAlias.TypeParams[i].Default, other.TypeAlias.TypeParams[i].Default) {
 					return false
 				}
+			}
+			if len(t.TypeAlias.LifetimeParams) != len(other.TypeAlias.LifetimeParams) {
+				return false
+			}
+		}
+		if t.Lifetime != other.Lifetime {
+			return false
+		}
+		if len(t.LifetimeArgs) != len(other.LifetimeArgs) {
+			return false
+		}
+		for i := range t.LifetimeArgs {
+			if t.LifetimeArgs[i] != other.LifetimeArgs[i] {
+				return false
 			}
 		}
 		return true
@@ -869,13 +886,15 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 		if newParams != nil {
 			params = newParams
 		}
-		result = NewFuncType(
+		r := NewFuncType(
 			t.provenance,
 			t.TypeParams,
 			params,
 			newReturn,
 			newThrows,
 		)
+		r.LifetimeParams = t.LifetimeParams
+		result = r
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -900,6 +919,10 @@ func (t *FuncType) Equals(other Type) bool {
 			if !equals(t.TypeParams[i].Default, other.TypeParams[i].Default) {
 				return false
 			}
+		}
+		// Compare LifetimeParams
+		if len(t.LifetimeParams) != len(other.LifetimeParams) {
+			return false
 		}
 		// Compare Params
 		if len(t.Params) != len(other.Params) {
@@ -1321,6 +1344,7 @@ func (t *ObjectType) Accept(v TypeVisitor) Type {
 		result.SymbolKeyMap = t.SymbolKeyMap
 		result.Open = t.Open
 		result.MatchedUnionMembers = t.MatchedUnionMembers
+		result.Lifetime = t.Lifetime
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1346,6 +1370,9 @@ func (t *ObjectType) Equals(other Type) bool {
 			return false
 		}
 		if t.Interface != other.Interface {
+			return false
+		}
+		if t.Lifetime != other.Lifetime {
 			return false
 		}
 		// Compare Extends
@@ -1458,7 +1485,9 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 
 	var result Type = t
 	if changed {
-		result = NewTupleType(t.provenance, newElems...)
+		r := NewTupleType(t.provenance, newElems...)
+		r.Lifetime = t.Lifetime
+		result = r
 	}
 
 	if visitResult := v.ExitType(result); visitResult != nil {
@@ -1468,6 +1497,9 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 }
 func (t *TupleType) Equals(other Type) bool {
 	if other, ok := other.(*TupleType); ok {
+		if t.Lifetime != other.Lifetime {
+			return false
+		}
 		if len(t.Elems) != len(other.Elems) {
 			return false
 		}
@@ -2484,10 +2516,11 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != typeAlias.Type {
 			changed = true
 			newTypes[name] = &TypeAlias{
-				Type:        newType,
-				TypeParams:  typeAlias.TypeParams,
-				Exported:    typeAlias.Exported,
-				IsTypeParam: typeAlias.IsTypeParam,
+				Type:           newType,
+				TypeParams:     typeAlias.TypeParams,
+				LifetimeParams: typeAlias.LifetimeParams,
+				Exported:       typeAlias.Exported,
+				IsTypeParam:    typeAlias.IsTypeParam,
 			}
 		} else {
 			newTypes[name] = typeAlias
@@ -2662,6 +2695,9 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 					if !equals(v1.TypeParams[i].Default, v2.TypeParams[i].Default) {
 						return false
 					}
+				}
+				if len(v1.LifetimeParams) != len(v2.LifetimeParams) {
+					return false
 				}
 			}
 		}
