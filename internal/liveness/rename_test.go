@@ -329,7 +329,8 @@ func TestFuncDeclBindsName(t *testing.T) {
 	result := Rename(nil, body, map[string]VarID{})
 
 	require.Empty(t, result.Errors)
-	require.NotEqual(t, 0, addRef.VarID) // add is resolved
+	require.NotEqual(t, 0, addRef.VarID)           // add is resolved
+	require.Equal(t, funcDecl.VarID, addRef.VarID) // use resolves to FuncDecl binding
 }
 
 func TestIfLetPattern(t *testing.T) {

@@ -99,7 +99,8 @@ func (p *Param) Span() Span {
 }
 
 type FuncDecl struct {
-	Name *Ident
+	Name  *Ident
+	VarID int // Set by the rename pass (liveness Phase 2)
 	FuncSig
 	Body       *Block // optional
 	export     bool

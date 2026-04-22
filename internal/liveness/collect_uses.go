@@ -55,12 +55,10 @@ func (c *collector) collectStmt(stmt ast.Stmt) {
 			c.collectExpr(s.Expr)
 		}
 	case *ast.ForInStmt:
-		// For Phase 3 (straight-line), we collect uses from the iterable
-		// and treat the loop body as opaque. Phase 4 will handle this
-		// properly with CFG.
+		// Collect uses from the iterable expression only. The loop body
+		// and pattern are not processed here — Phase 4 handles them via
+		// the CFG with proper scope isolation.
 		c.collectExpr(s.Iterable)
-		c.collectBlock(s.Body)
-		c.collectPatDefs(s.Pattern)
 	case *ast.ImportStmt:
 		// No variable uses.
 	case *ast.ErrorStmt:
@@ -79,9 +77,9 @@ func (c *collector) collectDecl(decl ast.Decl) {
 		c.collectPatDefs(d.Pattern)
 	case *ast.FuncDecl:
 		// The function name is a definition. Don't recurse into the body.
-		// TODO: FuncDecl.Name is *ast.Ident which has no VarID field.
-		// Add a VarID field to FuncDecl so the rename pass can store it
-		// and liveness can track function name definitions.
+		if d.Name != nil {
+			c.addDef(d.VarID)
+		}
 	case *ast.TypeDecl, *ast.InterfaceDecl, *ast.EnumDecl, *ast.ExportAssignmentStmt:
 		// No variable bindings relevant to liveness.
 	}
@@ -158,38 +156,19 @@ func (c *collector) collectExpr(expr ast.Expr) {
 	case *ast.ObjectExpr:
 		c.collectObjExprElems(e.Elems)
 	case *ast.IfElseExpr:
+		// Collect the condition; nested blocks are deferred to Phase 4 (CFG).
 		c.collectExpr(e.Cond)
-		c.collectBlock(e.Cons)
-		if e.Alt != nil {
-			c.collectBlockOrExpr(e.Alt)
-		}
 	case *ast.IfLetExpr:
+		// Collect the target expression; pattern and nested blocks are
+		// deferred to Phase 4 (CFG).
 		c.collectExpr(e.Target)
-		c.collectPatDefs(e.Pattern)
-		c.collectBlock(e.Cons)
-		if e.Alt != nil {
-			c.collectBlockOrExpr(e.Alt)
-		}
 	case *ast.MatchExpr:
+		// Collect the target expression; case arms are deferred to Phase 4.
 		c.collectExpr(e.Target)
-		for _, mc := range e.Cases {
-			c.collectPatDefs(mc.Pattern)
-			if mc.Guard != nil {
-				c.collectExpr(mc.Guard)
-			}
-			c.collectBlockOrExpr(&mc.Body)
-		}
 	case *ast.TryCatchExpr:
-		c.collectBlock(e.Try)
-		for _, mc := range e.Catch {
-			c.collectPatDefs(mc.Pattern)
-			if mc.Guard != nil {
-				c.collectExpr(mc.Guard)
-			}
-			c.collectBlockOrExpr(&mc.Body)
-		}
+		// Nested blocks are deferred to Phase 4 (CFG).
 	case *ast.DoExpr:
-		c.collectBlock(e.Body)
+		// Nested block is deferred to Phase 4 (CFG).
 	case *ast.ThrowExpr:
 		c.collectExpr(e.Arg)
 	case *ast.AwaitExpr:
@@ -239,21 +218,6 @@ func (c *collector) collectAssignTarget(expr ast.Expr) {
 	default:
 		// Fallback: treat as a regular expression.
 		c.collectExpr(expr)
-	}
-}
-
-func (c *collector) collectBlock(block ast.Block) {
-	for _, stmt := range block.Stmts {
-		c.collectStmt(stmt)
-	}
-}
-
-func (c *collector) collectBlockOrExpr(boe *ast.BlockOrExpr) {
-	if boe.Block != nil {
-		c.collectBlock(*boe.Block)
-	}
-	if boe.Expr != nil {
-		c.collectExpr(boe.Expr)
 	}
 }
 

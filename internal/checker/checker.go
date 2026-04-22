@@ -188,6 +188,9 @@ func (ctx *Context) WithNewScope() Context {
 		InFuncBody:             ctx.InFuncBody,
 		CallSites:              ctx.CallSites,
 		CallSiteTypeVars:       ctx.CallSiteTypeVars,
+		Liveness:               ctx.Liveness,
+		Aliases:                ctx.Aliases,
+		StmtToRef:              ctx.StmtToRef,
 	}
 }
 
@@ -208,6 +211,9 @@ func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context 
 		InFuncBody:        ctx.InFuncBody,
 		CallSites:         ctx.CallSites,
 		CallSiteTypeVars:  ctx.CallSiteTypeVars,
+		Liveness:          ctx.Liveness,
+		Aliases:           ctx.Aliases,
+		StmtToRef:         ctx.StmtToRef,
 	}
 }
 
@@ -228,6 +234,9 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		InFuncBody:             ctx.InFuncBody,
 		CallSites:              ctx.CallSites,
 		CallSiteTypeVars:       ctx.CallSiteTypeVars,
+		Liveness:               ctx.Liveness,
+		Aliases:                ctx.Aliases,
+		StmtToRef:              ctx.StmtToRef,
 	}
 }
 
