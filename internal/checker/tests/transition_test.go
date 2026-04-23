@@ -9,12 +9,20 @@ import (
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type expectedTransitionError struct {
+	SourceVar       string
+	TargetVar       string
+	ConflictingVars []string
+	MutToImmutable  bool
+}
 
 func TestMutabilityTransitions(t *testing.T) {
 	tests := map[string]struct {
-		input        string
-		expectErrors bool
+		input          string
+		expectedErrors []expectedTransitionError
 	}{
 		// Rule 1: mut → immutable — OK when source is dead
 		"MutToImmutable_SourceDead_OK": {
@@ -26,7 +34,6 @@ func TestMutabilityTransitions(t *testing.T) {
 					snapshot
 				}
 			`,
-			expectErrors: false,
 		},
 		// Rule 1: mut → immutable — ERROR when source is live
 		"MutToImmutable_SourceLive_Error": {
@@ -38,7 +45,12 @@ func TestMutabilityTransitions(t *testing.T) {
 					snapshot
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []expectedTransitionError{{
+				SourceVar:       "items",
+				TargetVar:       "snapshot",
+				ConflictingVars: []string{"items"},
+				MutToImmutable:  true,
+			}},
 		},
 		// Rule 2: immutable → mut — OK when source is dead
 		"ImmutableToMut_SourceDead_OK": {
@@ -50,7 +62,6 @@ func TestMutabilityTransitions(t *testing.T) {
 					mutableConfig.host = "0.0.0.0"
 				}
 			`,
-			expectErrors: false,
 		},
 		// Rule 2: immutable → mut — ERROR when source is live
 		"ImmutableToMut_SourceLive_Error": {
@@ -62,7 +73,12 @@ func TestMutabilityTransitions(t *testing.T) {
 					config
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []expectedTransitionError{{
+				SourceVar:       "config",
+				TargetVar:       "mutableConfig",
+				ConflictingVars: []string{"config"},
+				MutToImmutable:  false,
+			}},
 		},
 		// Rule 3: multiple mutable aliases — always OK
 		"MultipleMutableAliases_OK": {
@@ -74,10 +90,9 @@ func TestMutabilityTransitions(t *testing.T) {
 					a.x
 				}
 			`,
-			expectErrors: false,
 		},
-		// Alias tracking: transitive alias conflict
-		"TransitiveAlias_MutToImmutable_Error": {
+		// Alias tracking: transitive alias — OK when immutable target is dead
+		"TransitiveAlias_MutToImmutable_TargetDead_OK": {
 			input: `
 				fn test() {
 					val p: mut {x: number} = {x: 0}
@@ -86,7 +101,24 @@ func TestMutabilityTransitions(t *testing.T) {
 					r.x = 5
 				}
 			`,
-			expectErrors: true,
+		},
+		// Alias tracking: transitive alias — ERROR when immutable target is live
+		"TransitiveAlias_MutToImmutable_TargetLive_Error": {
+			input: `
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					val r: mut {x: number} = p
+					val q: {x: number} = p
+					r.x = 5
+					q
+				}
+			`,
+			expectedErrors: []expectedTransitionError{{
+				SourceVar:       "p",
+				TargetVar:       "q",
+				ConflictingVars: []string{"r"},
+				MutToImmutable:  true,
+			}},
 		},
 		// Fresh value — no alias, no transition check
 		"FreshValue_NoTransition": {
@@ -98,10 +130,20 @@ func TestMutabilityTransitions(t *testing.T) {
 					b
 				}
 			`,
-			expectErrors: false,
 		},
-		// Chain aliasing: val b = a; val c = b — a is still live and mutable
-		"ChainAlias_MutToImmutable_Error": {
+		// Chain aliasing: val b = a; val c = b — OK when immutable target c is dead
+		"ChainAlias_MutToImmutable_TargetDead_OK": {
+			input: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val b: mut {x: number} = a
+					val c: {x: number} = b
+					a.x = 2
+				}
+			`,
+		},
+		// Chain aliasing: val b = a; val c = b — ERROR when immutable target c is live
+		"ChainAlias_MutToImmutable_TargetLive_Error": {
 			input: `
 				fn test() {
 					val a: mut {x: number} = {x: 1}
@@ -111,7 +153,12 @@ func TestMutabilityTransitions(t *testing.T) {
 					c
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []expectedTransitionError{{
+				SourceVar:       "b",
+				TargetVar:       "c",
+				ConflictingVars: []string{"a"},
+				MutToImmutable:  true,
+			}},
 		},
 		// Parameter alias: mut param → immutable — ERROR when param is still live
 		"ParamAlias_MutToImmutable_SourceLive_Error": {
@@ -122,7 +169,12 @@ func TestMutabilityTransitions(t *testing.T) {
 					snapshot
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []expectedTransitionError{{
+				SourceVar:       "items",
+				TargetVar:       "snapshot",
+				ConflictingVars: []string{"items"},
+				MutToImmutable:  true,
+			}},
 		},
 		// Parameter alias: mut param → immutable — OK when param is dead
 		"ParamAlias_MutToImmutable_SourceDead_OK": {
@@ -133,7 +185,6 @@ func TestMutabilityTransitions(t *testing.T) {
 					snapshot
 				}
 			`,
-			expectErrors: false,
 		},
 		// Chain aliasing: val b = a; val c = b — a is dead after transition
 		"ChainAlias_MutToImmutable_OK_WhenDead": {
@@ -146,14 +197,13 @@ func TestMutabilityTransitions(t *testing.T) {
 					c
 				}
 			`,
-			expectErrors: false,
 		},
 	}
 
 	// Top-level script code (no wrapping function) — same rules apply.
 	tests["TopLevel_MutToImmutable_Error"] = struct {
-		input        string
-		expectErrors bool
+		input          string
+		expectedErrors []expectedTransitionError
 	}{
 		input: `
 			val items: mut {x: number} = {x: 1}
@@ -161,11 +211,16 @@ func TestMutabilityTransitions(t *testing.T) {
 			items.x = 2
 			snapshot
 		`,
-		expectErrors: true,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "items",
+			TargetVar:       "snapshot",
+			ConflictingVars: []string{"items"},
+			MutToImmutable:  true,
+		}},
 	}
 	tests["TopLevel_MutToImmutable_OK"] = struct {
-		input        string
-		expectErrors bool
+		input          string
+		expectedErrors []expectedTransitionError
 	}{
 		input: `
 			val items: mut {x: number} = {x: 1}
@@ -173,7 +228,6 @@ func TestMutabilityTransitions(t *testing.T) {
 			val snapshot: {x: number} = items
 			snapshot
 		`,
-		expectErrors: false,
 	}
 
 	for name, test := range tests {
@@ -190,7 +244,7 @@ func TestMutabilityTransitions(t *testing.T) {
 			p := parser.NewParser(ctx, source)
 			script, parseErrors := p.ParseScript()
 
-			assert.Len(t, parseErrors, 0, "Expected no parse errors")
+			require.Empty(t, parseErrors, "Expected no parse errors")
 
 			c := NewChecker(ctx)
 			inferCtx := Context{
@@ -200,26 +254,23 @@ func TestMutabilityTransitions(t *testing.T) {
 			}
 			_, inferErrors := c.InferScript(inferCtx, script)
 
-			hasMutErr := false
+			var mutErrors []*MutabilityTransitionError
 			for _, err := range inferErrors {
-				if _, ok := err.(*MutabilityTransitionError); ok {
-					hasMutErr = true
-					break
+				if mutErr, ok := err.(*MutabilityTransitionError); ok {
+					mutErrors = append(mutErrors, mutErr)
 				}
 			}
 
-			if test.expectErrors {
-				assert.True(t, hasMutErr, "Expected MutabilityTransitionError for %s, got: %v", name, inferErrors)
-				// Print the errors to help debugging
-				for i, err := range inferErrors {
-					t.Logf("Error[%d]: %s", i, err.Message())
-				}
+			if len(test.expectedErrors) == 0 {
+				assert.Empty(t, mutErrors, "Expected no MutabilityTransitionError")
 			} else {
-				assert.False(t, hasMutErr, "Unexpected MutabilityTransitionError for %s", name)
-				if len(inferErrors) > 0 {
-					for i, err := range inferErrors {
-						t.Logf("Unexpected Error[%d]: %s", i, err.Message())
-					}
+				require.Len(t, mutErrors, len(test.expectedErrors), "Wrong number of MutabilityTransitionErrors")
+				for i, expected := range test.expectedErrors {
+					actual := mutErrors[i]
+					assert.Equal(t, expected.SourceVar, actual.SourceVar, "SourceVar mismatch")
+					assert.Equal(t, expected.TargetVar, actual.TargetVar, "TargetVar mismatch")
+					assert.Equal(t, expected.ConflictingVars, actual.ConflictingVars, "ConflictingVars mismatch")
+					assert.Equal(t, expected.MutToImmutable, actual.MutToImmutable, "MutToImmutable mismatch")
 				}
 			}
 		})

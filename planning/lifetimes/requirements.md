@@ -172,9 +172,11 @@ This is useful for:
 ### Rule 1: Mutable-to-Immutable Transition
 
 A mutable value can be assigned to a variable with an immutable type when **no
-live mutable references** to that value exist after the assignment point. This
-includes aliases created through other variables, object properties, or function
-return values.
+live mutable references** to that value exist after the assignment point, **or**
+when the immutable target itself is dead (never used after the assignment). The
+transition is only dangerous when both a mutable alias and the immutable alias
+are live simultaneously — only then can a mutation through the mutable alias
+violate the immutable alias's stability guarantee.
 
 ```esc
 val items: mut Array<number> = [1, 2, 3]
@@ -198,10 +200,22 @@ items.push(4)                        // this mutation would violate `snapshot`'s
 print(snapshot.length)
 ```
 
+**OK — target is dead:**
+
+```esc
+val items: mut Array<number> = [1, 2, 3]
+val snapshot: Array<number> = items  // OK: `snapshot` is never used
+items.push(4)                        // no immutable alias observes this
+```
+
 ### Rule 2: Immutable-to-Mutable Transition
 
 An immutable value can be assigned to a variable with a mutable type when **no
-live immutable references** to that value exist after the assignment point.
+live immutable references** to that value exist after the assignment point, **or**
+when the mutable target itself is dead (never used after the assignment). The
+transition is only dangerous when both an immutable alias and the mutable alias
+are live simultaneously — only then can a mutation through the mutable alias
+violate the immutable alias's stability guarantee.
 
 ```esc
 val config: {host: string} = {host: "localhost"}
@@ -221,6 +235,14 @@ val config: {host: string} = {host: "localhost"}
 val mutableConfig: mut {host: string} = config  // ERROR: `config` used below
 mutableConfig.host = "example.com"
 print(config.host)  // would see mutated value since mutableConfig.host was changed
+```
+
+**OK — target is dead:**
+
+```esc
+val config: {host: string} = {host: "localhost"}
+val mutableConfig: mut {host: string} = config  // OK: `mutableConfig` is never used
+print(config.host)                               // no mutable alias exists to cause mutation
 ```
 
 ### Rule 3: Multiple Mutable References to the Same Value Are Allowed
@@ -251,10 +273,15 @@ of an alias set, not just the variable being assigned.
 ```esc
 val p: mut Point = {x: 0, y: 0}
 val r: mut Point = p        // r and p are in the same alias set
-val q: Point = p             // ERROR: r is a live mutable alias of p
+val q: Point = p             // ERROR: r is a live mutable alias of p,
+                             //        and q is live (used below)
 r.x = 5
 print(q.x)
 ```
+
+If the immutable alias `q` were never used after the assignment, no error
+would occur — both sides must be live simultaneously for the transition to
+be dangerous.
 
 ### Object Properties
 

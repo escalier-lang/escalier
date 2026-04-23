@@ -885,14 +885,18 @@ mutability, check the alias set and liveness:
 ```go
 // CheckMutabilityTransition verifies that a mutability transition is safe
 // at the given program point. Returns an error if conflicting live aliases
-// exist.
+// exist AND the target alias is itself live (a dead target cannot observe
+// violations, so the transition is safe).
 //
-// Rule 1 (mut → immutable): No live mutable aliases may exist after this point.
-// Rule 2 (immutable → mut): No live immutable aliases may exist after this point.
+// Rule 1 (mut → immutable): No live mutable aliases may exist after this point,
+//     provided the target (immutable) alias is also live.
+// Rule 2 (immutable → mut): No live immutable aliases may exist after this point,
+//     provided the target (mutable) alias is also live.
 // Rule 3: Multiple mutable aliases are always allowed.
 func (c *Checker) CheckMutabilityTransition(
     ctx Context,
     sourceVar VarID,
+    targetVar VarID,
     sourceMut bool,     // mutability of the source
     targetMut bool,     // mutability of the target
     assignRef liveness.StmtRef,
@@ -901,16 +905,18 @@ func (c *Checker) CheckMutabilityTransition(
 
 The algorithm:
 1. If `sourceMut == targetMut`, no transition — always OK (Rule 3 for mut→mut)
-2. Get **all** alias sets of `sourceVar` via `GetAliasSets(sourceVar)` (a
+2. If `targetVar` is **not live** after `assignRef`, the transition is safe —
+   a dead target alias can never observe a conflicting mutation. Return early.
+3. Get **all** alias sets of `sourceVar` via `GetAliasSets(sourceVar)` (a
    variable may belong to multiple sets due to conditional aliasing)
-3. For each alias set that `sourceVar` belongs to:
+4. For each alias set that `sourceVar` belongs to:
    - For each variable `v` in that alias set (including `sourceVar`):
      - Check if `v` is live after `assignRef` (using `LivenessInfo.IsLiveAfter`)
      - If `sourceMut && !targetMut` (Rule 1): error if `v` has mutable
        access and is live
      - If `!sourceMut && targetMut` (Rule 2): error if `v` has immutable
        access and is live
-4. Union all conflicting live aliases across all sets into the error report
+5. Union all conflicting live aliases across all sets into the error report
 
 ### 6.2 Integration with `inferVarDecl`
 
@@ -1017,10 +1023,17 @@ print(a.x)
 
 **Alias tracking:**
 ```esc
-// ERROR: r is a live mutable alias of p
+// ERROR: r is a live mutable alias of p, and q is live (used below)
 val p: mut Point = {x: 0, y: 0}
 val r: mut Point = p
-val q: Point = p  // ERROR: r is live and mutable
+val q: Point = p  // ERROR: r is live and mutable, q is live
+r.x = 5
+print(q.x)
+
+// OK: q is dead (never used after assignment), so no conflict
+val p: mut Point = {x: 0, y: 0}
+val r: mut Point = p
+val q: Point = p  // OK: q is never used
 r.x = 5
 ```
 

@@ -47,12 +47,23 @@ func (e MutabilityTransitionError) Message() string {
 // at the given program point. Returns an error if conflicting live aliases
 // exist.
 //
-// Rule 1 (mut → immutable): No live mutable aliases may exist after this point.
-// Rule 2 (immutable → mut): No live immutable aliases may exist after this point.
+// A transition is only dangerous when both sides are live simultaneously
+// after the transition point — i.e. a mutable alias could mutate the value
+// while an immutable alias assumes it is unchanged.
+//
+// Rule 1 (mut → immutable): No live mutable aliases may exist after this point,
+//
+//	provided the target (immutable) alias is also live.
+//
+// Rule 2 (immutable → mut): No live immutable aliases may exist after this point,
+//
+//	provided the target (mutable) alias is also live.
+//
 // Rule 3: Multiple mutable aliases are always allowed (mut → mut is not a transition).
 func (c *Checker) checkMutabilityTransition(
 	ctx Context,
 	sourceVarID liveness.VarID,
+	targetVarID liveness.VarID,
 	sourceVarName string,
 	targetVarName string,
 	sourceMut bool,
@@ -66,6 +77,12 @@ func (c *Checker) checkMutabilityTransition(
 	}
 
 	if ctx.Liveness == nil || ctx.Aliases == nil {
+		return nil
+	}
+
+	// If the target alias is dead immediately after the transition, there is
+	// no window where both sides are live simultaneously, so it's safe.
+	if !ctx.Liveness.IsLiveAfter(assignRef, targetVarID) {
 		return nil
 	}
 
@@ -165,6 +182,7 @@ func (c *Checker) trackAliasesForVarDecl(
 			return c.checkMutabilityTransition(
 				ctx,
 				sourceVarID,
+				targetVarID,
 				c.varIDToName(ctx, sourceVarID),
 				identPat.Name,
 				sourceMut,
@@ -217,6 +235,7 @@ func (c *Checker) trackAliasesForAssignment(
 			transErrors := c.checkMutabilityTransition(
 				ctx,
 				sourceVarID,
+				targetVarID,
 				c.varIDToName(ctx, sourceVarID),
 				target.Name,
 				sourceMut,
