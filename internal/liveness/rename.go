@@ -38,6 +38,11 @@ type RenameResult struct {
 	// Used for error messages in later phases (e.g. mutability transition errors).
 	VarIDNames map[VarID]string
 
+	// ExtraParamVarIDs maps each extra parameter name (e.g. implicit 'self')
+	// to the VarID assigned by the rename pass. Only populated when extra
+	// parameter names are passed to Rename().
+	ExtraParamVarIDs map[string]VarID
+
 	// Errors contains any unresolved variable references found during
 	// the rename pass.
 	Errors []RenameError
@@ -129,17 +134,22 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID,
 
 	// Define extra parameter names (e.g. implicit 'self' in methods) that are
 	// not present in the AST params but should be treated as local bindings.
-	for _, name := range extraParamNames {
-		r.define(name)
+	var extraParamVarIDs map[string]VarID
+	if len(extraParamNames) > 0 {
+		extraParamVarIDs = make(map[string]VarID, len(extraParamNames))
+		for _, name := range extraParamNames {
+			extraParamVarIDs[name] = r.define(name)
+		}
 	}
 
 	// Process the function body.
 	r.renameBlock(body)
 
 	return &RenameResult{
-		UniqueVarCount: int(r.nextID) - 1, // count of local variables assigned
-		VarIDNames:     r.varIDNames,
-		Errors:         r.errors,
+		UniqueVarCount:   int(r.nextID) - 1, // count of local variables assigned
+		VarIDNames:       r.varIDNames,
+		ExtraParamVarIDs: extraParamVarIDs,
+		Errors:           r.errors,
 	}
 }
 

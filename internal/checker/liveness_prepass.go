@@ -64,20 +64,14 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 		}
 	}
 	// Seed extra params (e.g. 'self') into the alias tracker.
-	for _, name := range extraParamNames {
-		// Reverse-lookup: find the VarID assigned to this name.
-		for varID, varName := range renameResult.VarIDNames {
-			if varName == name {
-				mut := liveness.AliasImmutable
-				if binding := paramBindings[name]; binding != nil {
-					if isMutableType(binding.Type) {
-						mut = liveness.AliasMutable
-					}
-				}
-				aliases.NewValue(varID, mut)
-				break
+	for name, varID := range renameResult.ExtraParamVarIDs {
+		mut := liveness.AliasImmutable
+		if binding := paramBindings[name]; binding != nil {
+			if isMutableType(binding.Type) {
+				mut = liveness.AliasMutable
 			}
 		}
+		aliases.NewValue(varID, mut)
 	}
 
 	// Set context fields

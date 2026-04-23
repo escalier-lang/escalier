@@ -137,8 +137,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Alias tracking for variable reassignment (Phase 6.3)
-			// Only run when typing succeeded — incorrect types could cause
-			// false positive transition errors.
+			// Only run when unification succeeded — incorrect types could cause
+			// false positive transition errors. We intentionally check only for
+			// new errors from unification (not len(errors) == 0) because prior
+			// errors from LHS/RHS inference (e.g. readonly checks, member access
+			// errors) don't invalidate the types used for alias tracking.
 			if ctx.Aliases != nil && len(errors) == errorsBefore {
 				if identExpr, ok := expr.Left.(*ast.IdentExpr); ok && identExpr.VarID > 0 {
 					transErrors := c.trackAliasesForAssignment(ctx, identExpr, expr.Right, leftType)
