@@ -2656,12 +2656,53 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 	}
 
 	if currentStmt != nil {
+		// Check if the last case (outermost if) has a catch-all pattern.
+		// If not, add a trailing else that throws for runtime safety.
+		// This handles exhaustive matches verified at compile time where
+		// the runtime value might not match any branch (e.g. due to
+		// unsound type casts or FFI boundaries).
+		lastCase := expr.Cases[len(expr.Cases)-1]
+		if !isCatchAllPattern(lastCase.Pattern) {
+			throwMsg := NewLitExpr(NewStrLit("non-exhaustive match", nil), expr)
+			throwExpr := NewNewExpr(
+				NewIdentExpr("Error", "", expr),
+				[]Expr{throwMsg},
+				expr,
+			)
+			throwStmt := NewThrowStmt(throwExpr, expr)
+			throwBlock := NewBlockStmt([]Stmt{throwStmt}, expr)
+			currentStmt = addElseBranch(currentStmt, throwBlock)
+		}
+
 		// Post-process to convert "else if (true)" to "else"
 		currentStmt = simplifyTrueLiterals(currentStmt)
 		stmts = append(stmts, currentStmt)
 	}
 
 	return tempVar, stmts
+}
+
+// isCatchAllPattern returns true if the pattern matches everything (wildcard or bare identifier without type annotation)
+func isCatchAllPattern(pattern ast.Pat) bool {
+	switch p := pattern.(type) {
+	case *ast.WildcardPat:
+		return true
+	case *ast.IdentPat:
+		return p.TypeAnn == nil
+	default:
+		return false
+	}
+}
+
+// addElseBranch adds an else branch to the deepest nested if statement in the chain
+func addElseBranch(stmt Stmt, elseBlock *BlockStmt) Stmt {
+	if ifStmt, ok := stmt.(*IfStmt); ok {
+		if ifStmt.Alt == nil {
+			return NewIfStmt(ifStmt.Test, ifStmt.Cons, elseBlock, ifStmt.Source())
+		}
+		return NewIfStmt(ifStmt.Test, ifStmt.Cons, addElseBranch(ifStmt.Alt, elseBlock), ifStmt.Source())
+	}
+	return stmt
 }
 
 // simplifyTrueLiterals recursively converts "else if (true)" to "else" in if-else chains
