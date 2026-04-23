@@ -71,6 +71,12 @@ func (c *Checker) checkMutabilityTransition(
 
 	var conflicting []string
 
+	// Note: the loop intentionally does NOT skip sourceVarID. The source
+	// variable is itself a member of the alias set, and if it is still live
+	// after the transition point, it IS a conflicting alias. For example,
+	// when creating an immutable alias `snapshot` from a mutable `items`,
+	// `items` being live means mutations can still occur through it — that
+	// is the conflict we want to report.
 	aliasSets := ctx.Aliases.GetAliasSets(sourceVarID)
 	for _, aliasSet := range aliasSets {
 		for varID, aliasMut := range aliasSet.Members {
@@ -154,14 +160,7 @@ func (c *Checker) trackAliasesForVarDecl(
 		// Check mutability transition
 		stmtRef, hasRef := ctx.StmtToRef[enclosingStmt]
 		if hasRef {
-			// Determine the source's mutability from its alias set
-			sourceMut := false
-			for _, set := range ctx.Aliases.GetAliasSets(sourceVarID) {
-				if m, exists := set.Members[sourceVarID]; exists {
-					sourceMut = m == liveness.AliasMutable
-					break
-				}
-			}
+			sourceMut := isSourceMutable(ctx, sourceVarID)
 
 			return c.checkMutabilityTransition(
 				ctx,
@@ -210,13 +209,7 @@ func (c *Checker) trackAliasesForAssignment(
 		// Check mutability transition before reassigning
 		stmtRef, hasRef := ctx.StmtToRef[ctx.CurrentStmt]
 		if hasRef {
-			sourceMut := false
-			for _, set := range ctx.Aliases.GetAliasSets(sourceVarID) {
-				if m, exists := set.Members[sourceVarID]; exists {
-					sourceMut = m == liveness.AliasMutable
-					break
-				}
-			}
+			sourceMut := isSourceMutable(ctx, sourceVarID)
 
 			transErrors := c.checkMutabilityTransition(
 				ctx,
@@ -243,6 +236,17 @@ func (c *Checker) trackAliasesForAssignment(
 	}
 
 	return nil
+}
+
+// isSourceMutable checks whether a source variable is registered as mutable
+// in its alias sets. Returns true if the source holds a mutable reference.
+func isSourceMutable(ctx Context, sourceVarID liveness.VarID) bool {
+	for _, set := range ctx.Aliases.GetAliasSets(sourceVarID) {
+		if m, exists := set.Members[sourceVarID]; exists {
+			return m == liveness.AliasMutable
+		}
+	}
+	return false
 }
 
 // varIDToName resolves a VarID back to a variable name for error messages.

@@ -46,6 +46,10 @@ func collectOuterBindings(scope *Scope) map[string]liveness.VarID {
 	bindings := make(map[string]liveness.VarID)
 	nextID := liveness.VarID(-1)
 
+	// Note: the loop starts from the current scope, which includes parameter
+	// bindings that were already added. This is intentional — the rename pass's
+	// define() overwrites the negative VarID with a positive one when it
+	// processes the parameter, so the shadowing is handled correctly.
 	for s := scope; s != nil; s = s.Parent {
 		for name := range s.Namespace.Values {
 			if _, exists := bindings[name]; !exists {

@@ -200,6 +200,7 @@ func (ctx *Context) WithNewScope() Context {
 		Aliases:                ctx.Aliases,
 		StmtToRef:              ctx.StmtToRef,
 		VarIDNames:             ctx.VarIDNames,
+		CurrentStmt:            ctx.CurrentStmt,
 	}
 }
 
@@ -224,6 +225,7 @@ func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context 
 		Aliases:           ctx.Aliases,
 		StmtToRef:         ctx.StmtToRef,
 		VarIDNames:        ctx.VarIDNames,
+		CurrentStmt:       ctx.CurrentStmt,
 	}
 }
 
@@ -248,6 +250,7 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		Aliases:                ctx.Aliases,
 		StmtToRef:              ctx.StmtToRef,
 		VarIDNames:             ctx.VarIDNames,
+		CurrentStmt:            ctx.CurrentStmt,
 	}
 }
 
