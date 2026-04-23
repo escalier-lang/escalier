@@ -736,7 +736,7 @@ func (c *Checker) InferComponent(
 					declCtx.CallSiteTypeVars = &callSiteTypeVars
 
 					inferErrors := c.inferFuncBodyWithFuncSigType(
-						declCtx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+						declCtx, funcType, paramBindings, decl.FuncSig.Params, decl.Body, decl.FuncSig.Async)
 					errors = slices.Concat(errors, inferErrors)
 				}
 
@@ -1106,7 +1106,7 @@ func (c *Checker) InferComponent(
 							}
 
 							methodCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
-							bodyErrors := c.inferFuncBodyWithFuncSigType(methodCtx, methodType.Fn, paramBindings, bodyElem.Fn.Body, false)
+							bodyErrors := c.inferFuncBodyWithFuncSigType(methodCtx, methodType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false)
 							errors = slices.Concat(errors, bodyErrors)
 						}
 
@@ -1166,7 +1166,7 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
-								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, getterType.Fn, paramBindings, bodyElem.Fn.Body, false)
+								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, getterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false)
 								errors = slices.Concat(errors, bodyErrors)
 							}
 						}
@@ -1229,7 +1229,7 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
-								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, setterType.Fn, paramBindings, bodyElem.Fn.Body, false)
+								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, setterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false)
 								errors = slices.Concat(errors, bodyErrors)
 							}
 						}

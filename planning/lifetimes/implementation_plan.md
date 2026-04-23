@@ -12,8 +12,8 @@ into phases that build incrementally, each producing a testable milestone.
 |     2 | Name resolution and VarID assignment                 | 1          | Done   |
 |     3 | Liveness analysis (straight-line code)               | 2          | Done   |
 |     4 | Liveness analysis (control flow)                     | 3          | Done   |
-|     5 | Alias tracking (local variables)                     | 3          |        |
-|     6 | Mutability transition checking                       | 4, 5       |        |
+|     5 | Alias tracking (local variables)                     | 3          | Done   |
+|     6 | Mutability transition checking                       | 4, 5       | Done   |
 |     7 | Alias tracking (properties, closures, destructuring) | 5, 6       |        |
 |     8 | Lifetime annotations and inference                   | 6, 7       |        |
 |     9 | Lifetime unification                                 | 8          |        |
@@ -22,6 +22,7 @@ into phases that build incrementally, each producing a testable milestone.
 |    12 | Error messages                                       | 6–11       |        |
 |    13 | Remove `mut?`                                        | 6–12       |        |
 |    14 | PrintType and display                                | 13         |        |
+|    15 | Performance optimizations                            | 6          |        |
 
 ---
 
@@ -885,14 +886,18 @@ mutability, check the alias set and liveness:
 ```go
 // CheckMutabilityTransition verifies that a mutability transition is safe
 // at the given program point. Returns an error if conflicting live aliases
-// exist.
+// exist AND the target alias is itself live (a dead target cannot observe
+// violations, so the transition is safe).
 //
-// Rule 1 (mut → immutable): No live mutable aliases may exist after this point.
-// Rule 2 (immutable → mut): No live immutable aliases may exist after this point.
+// Rule 1 (mut → immutable): No live mutable aliases may exist after this point,
+//     provided the target (immutable) alias is also live.
+// Rule 2 (immutable → mut): No live immutable aliases may exist after this point,
+//     provided the target (mutable) alias is also live.
 // Rule 3: Multiple mutable aliases are always allowed.
 func (c *Checker) CheckMutabilityTransition(
     ctx Context,
     sourceVar VarID,
+    targetVar VarID,
     sourceMut bool,     // mutability of the source
     targetMut bool,     // mutability of the target
     assignRef liveness.StmtRef,
@@ -901,16 +906,18 @@ func (c *Checker) CheckMutabilityTransition(
 
 The algorithm:
 1. If `sourceMut == targetMut`, no transition — always OK (Rule 3 for mut→mut)
-2. Get **all** alias sets of `sourceVar` via `GetAliasSets(sourceVar)` (a
+2. If `targetVar` is **not live** after `assignRef`, the transition is safe —
+   a dead target alias can never observe a conflicting mutation. Return early.
+3. Get **all** alias sets of `sourceVar` via `GetAliasSets(sourceVar)` (a
    variable may belong to multiple sets due to conditional aliasing)
-3. For each alias set that `sourceVar` belongs to:
+4. For each alias set that `sourceVar` belongs to:
    - For each variable `v` in that alias set (including `sourceVar`):
      - Check if `v` is live after `assignRef` (using `LivenessInfo.IsLiveAfter`)
      - If `sourceMut && !targetMut` (Rule 1): error if `v` has mutable
        access and is live
      - If `!sourceMut && targetMut` (Rule 2): error if `v` has immutable
        access and is live
-4. Union all conflicting live aliases across all sets into the error report
+5. Union all conflicting live aliases across all sets into the error report
 
 ### 6.2 Integration with `inferVarDecl`
 
@@ -1017,10 +1024,17 @@ print(a.x)
 
 **Alias tracking:**
 ```esc
-// ERROR: r is a live mutable alias of p
+// ERROR: r is a live mutable alias of p, and q is live (used below)
 val p: mut Point = {x: 0, y: 0}
 val r: mut Point = p
-val q: Point = p  // ERROR: r is live and mutable
+val q: Point = p  // ERROR: r is live and mutable, q is live
+r.x = 5
+print(q.x)
+
+// OK: q is dead (never used after assignment), so no conflict
+val p: mut Point = {x: 0, y: 0}
+val r: mut Point = p
+val q: Point = p  // OK: q is never used
 r.x = 5
 ```
 
@@ -2468,6 +2482,35 @@ for specific functions referenced in the error, not globally.
 
 ---
 
+## Phase 15: Performance Optimizations
+
+**Goal:** Reduce redundant work in the liveness pre-pass and related analyses
+without changing observable behavior.
+
+### 15.1 Cache `collectOuterBindings` Results
+
+`collectOuterBindings` walks the entire scope chain — including the prelude —
+on every call to `runLivenessPrePass`. For a module with many functions, this
+re-traverses the same parent scopes repeatedly.
+
+**File:** `internal/checker/liveness_prepass.go`
+
+Cache the flattened outer-bindings map at the parent scope level. When
+computing outer bindings for a function, check if the parent scope already
+has a cached result. If so, copy it and add only the current scope's
+bindings. The parent scope is stable by the time we enter a function body,
+so the cache is valid.
+
+Considerations:
+- The current scope itself cannot be cached because parameter bindings are
+  copied into it (`maps.Copy`) before `runLivenessPrePass` runs.
+- The module scope grows as declarations are processed, so its cache must
+  be invalidated or built lazily.
+- The prelude scope never changes and is the largest — caching it alone
+  may capture most of the benefit.
+
+---
+
 ## Cross-Cutting Concerns
 
 ### Testing Strategy
@@ -2523,9 +2566,9 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
 └── 2. Name resolution & VarID assignment ✅
     └── 3. Liveness (linear) ✅
         ├── 4. Liveness (control flow) ✅
-        │   └── 6. Transition checking ←── (also depends on 5)
-        └── 5. Alias tracking (local)
-            ├── 6. Transition checking
+        │   └── 6. Transition checking ←── (also depends on 5) ✅
+        └── 5. Alias tracking (local) ✅
+            ├── 6. Transition checking ✅
             │   └── 7. Advanced alias tracking (properties, closures, destructuring)
             │       └── 8. Lifetime annotations, inference, & constructors
             │           └── 9. Lifetime unification ('static, conflict detection,

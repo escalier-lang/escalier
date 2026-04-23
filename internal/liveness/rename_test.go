@@ -552,6 +552,54 @@ func TestIfElseShadowing(t *testing.T) {
 	require.Equal(t, outerX.VarID, outerXRef.VarID)
 }
 
+func TestExtraParamNames(t *testing.T) {
+	// Simulates a method body with an implicit 'self' parameter:
+	// fn method(a) { print(self); print(a) }
+	// where 'self' is passed as an extra param name, not an AST param.
+	a := identPat("a")
+	aRef := ident("a")
+	selfRef := ident("self")
+
+	params := []*ast.Param{
+		{Pattern: a, Optional: false},
+	}
+	body := block(
+		exprStmt(call(ident("print"), selfRef)),
+		exprStmt(call(ident("print"), aRef)),
+	)
+
+	result := Rename(params, body, map[string]VarID{"print": -1}, "self")
+
+	require.Empty(t, result.Errors)
+	require.Equal(t, 2, result.UniqueVarCount) // a, self
+
+	// ExtraParamVarIDs should contain 'self' with a positive VarID.
+	require.Len(t, result.ExtraParamVarIDs, 1)
+	selfVarID, ok := result.ExtraParamVarIDs["self"]
+	require.True(t, ok, "ExtraParamVarIDs should contain 'self'")
+	require.Greater(t, int(selfVarID), 0, "extra param should get a positive VarID")
+
+	// The reference to 'self' in the body should resolve to the extra param's VarID.
+	require.Equal(t, int(selfVarID), selfRef.VarID)
+
+	// Regular param still works.
+	require.Equal(t, a.VarID, aRef.VarID)
+
+	// Extra param VarID should also appear in VarIDNames.
+	require.Equal(t, "self", result.VarIDNames[selfVarID])
+}
+
+func TestExtraParamNamesEmpty(t *testing.T) {
+	// When no extra param names are passed, ExtraParamVarIDs should be nil.
+	body := block(
+		exprStmt(numLit(1)),
+	)
+
+	result := Rename(nil, body, map[string]VarID{})
+
+	require.Nil(t, result.ExtraParamVarIDs)
+}
+
 func TestJSXExpressions(t *testing.T) {
 	// val name = "world"
 	// val el = <div class={name}>{name}</div>

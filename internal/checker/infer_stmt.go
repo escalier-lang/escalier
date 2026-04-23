@@ -11,12 +11,13 @@ import (
 )
 
 func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
+	ctx.CurrentStmt = stmt
 	switch stmt := stmt.(type) {
 	case *ast.ExprStmt:
 		_, errors := c.inferExpr(ctx, stmt.Expr)
 		return errors
 	case *ast.DeclStmt:
-		return c.inferDecl(ctx, stmt.Decl)
+		return c.inferDecl(ctx, stmt.Decl, stmt)
 	case *ast.ReturnStmt:
 		errors := []Error{}
 		if stmt.Expr != nil {
@@ -39,7 +40,7 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 	}
 }
 
-func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
+func (c *Checker) inferDecl(ctx Context, decl ast.Decl, enclosingStmt ast.Stmt) []Error {
 	switch decl := decl.(type) {
 	case *ast.FuncDecl:
 		// Handle incomplete function declarations
@@ -48,7 +49,7 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 		}
 		return c.inferFuncDecl(ctx, decl)
 	case *ast.VarDecl:
-		bindings, errors := c.inferVarDecl(ctx, decl)
+		bindings, errors := c.inferVarDecl(ctx, decl, enclosingStmt)
 		maps.Copy(ctx.Scope.Namespace.Values, bindings)
 		return errors
 	case *ast.TypeDecl:
@@ -75,6 +76,7 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl) []Error {
 func (c *Checker) inferVarDecl(
 	ctx Context,
 	decl *ast.VarDecl,
+	enclosingStmt ast.Stmt,
 ) (map[string]*type_system.Binding, []Error) {
 	errors := []Error{}
 
@@ -114,6 +116,12 @@ func (c *Checker) inferVarDecl(
 
 		unifyErrors := c.Unify(ctx, initType, patType)
 		errors = slices.Concat(errors, unifyErrors)
+	}
+
+	// Alias tracking and mutability transition checking (Phase 5-6)
+	if ctx.Aliases != nil && decl.Init != nil {
+		transErrors := c.trackAliasesForVarDecl(ctx, decl, bindings, enclosingStmt)
+		errors = slices.Concat(errors, transErrors)
 	}
 
 	return bindings, errors
@@ -166,7 +174,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 		ctx.CallSiteTypeVars = &callSiteTypeVars
 
 		inferErrors := c.inferFuncBodyWithFuncSigType(
-			ctx, funcType, paramBindings, decl.Body, decl.FuncSig.Async)
+			ctx, funcType, paramBindings, decl.FuncSig.Params, decl.Body, decl.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 	}
 

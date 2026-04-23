@@ -171,6 +171,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	ctx Context,
 	funcSigType *type_system.FuncType,
 	paramBindings map[string]*type_system.Binding,
+	astParams []*ast.Param,
 	body *ast.Block,
 	isAsync bool,
 ) []Error {
@@ -194,7 +195,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		bodyCtx.AwaitThrowTypes = &awaitThrowTypes
 	}
 
-	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, body)
+	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, astParams, body)
 	errors = slices.Concat(errors, bodyErrors)
 
 	// Check if this function is a generator (contains yield)
@@ -261,11 +262,16 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]*type_system.Binding,
+	astParams []*ast.Param,
 	body *ast.Block,
 ) (type_system.Type, type_system.Type, []Error) {
 
 	ctx = ctx.WithNewScope()
 	maps.Copy(ctx.Scope.Namespace.Values, bindings)
+
+	// Liveness pre-pass: resolve names, build CFG, compute liveness,
+	// and initialize alias tracker for mutability transition checking.
+	c.runLivenessPrePass(&ctx, astParams, bindings, body)
 
 	errors := []Error{}
 	for _, stmt := range body.Stmts {

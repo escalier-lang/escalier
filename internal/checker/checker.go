@@ -164,6 +164,14 @@ type Context struct {
 	// StmtToRef maps AST statement nodes to their position in the CFG,
 	// enabling lookup of liveness information for a given statement.
 	StmtToRef map[ast.Stmt]liveness.StmtRef
+
+	// VarIDNames maps each local VarID to the variable name, for error messages.
+	VarIDNames map[liveness.VarID]string
+
+	// CurrentStmt is the enclosing statement currently being type-checked.
+	// Set by inferStmt so that nested expression inference can look up the
+	// StmtRef for alias tracking and mutability transition checking.
+	CurrentStmt ast.Stmt
 }
 
 func (ctx *Context) AddYieldedType(t type_system.Type) {
@@ -191,6 +199,8 @@ func (ctx *Context) WithNewScope() Context {
 		Liveness:               ctx.Liveness,
 		Aliases:                ctx.Aliases,
 		StmtToRef:              ctx.StmtToRef,
+		VarIDNames:             ctx.VarIDNames,
+		CurrentStmt:            ctx.CurrentStmt,
 	}
 }
 
@@ -214,6 +224,8 @@ func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context 
 		Liveness:          ctx.Liveness,
 		Aliases:           ctx.Aliases,
 		StmtToRef:         ctx.StmtToRef,
+		VarIDNames:        ctx.VarIDNames,
+		CurrentStmt:       ctx.CurrentStmt,
 	}
 }
 
@@ -237,6 +249,8 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		Liveness:               ctx.Liveness,
 		Aliases:                ctx.Aliases,
 		StmtToRef:              ctx.StmtToRef,
+		VarIDNames:             ctx.VarIDNames,
+		CurrentStmt:            ctx.CurrentStmt,
 	}
 }
 

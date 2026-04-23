@@ -132,8 +132,22 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}
 
 			// RHS must be a subtype of LHS because we're assigning RHS to LHS
+			errorsBefore := len(errors)
 			unifyErrors := c.Unify(ctx, rightType, leftType)
 			errors = slices.Concat(errors, unifyErrors)
+
+			// Alias tracking for variable reassignment (Phase 6.3)
+			// Only run when unification succeeded — incorrect types could cause
+			// false positive transition errors. We intentionally check only for
+			// new errors from unification (not len(errors) == 0) because prior
+			// errors from LHS/RHS inference (e.g. readonly checks, member access
+			// errors) don't invalidate the types used for alias tracking.
+			if ctx.Aliases != nil && len(errors) == errorsBefore {
+				if identExpr, ok := expr.Left.(*ast.IdentExpr); ok && identExpr.VarID > 0 {
+					transErrors := c.trackAliasesForAssignment(ctx, identExpr, expr.Right, leftType)
+					errors = slices.Concat(errors, transErrors)
+				}
+			}
 
 			exprType = neverType
 		} else {
@@ -473,7 +487,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				}
 
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					methodCtx, methodType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
+					methodCtx, methodType, paramBindings, methodExpr.Fn.Params, methodExpr.Fn.Body, methodExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.GetterExpr:
@@ -487,7 +501,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				getterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, getterExpr.Fn.Body, getterExpr.Fn.Async)
+					objCtx, funcType, paramBindings, getterExpr.Fn.Params, getterExpr.Fn.Body, getterExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.SetterExpr:
@@ -501,7 +515,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				setterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, setterExpr.Fn.Body, setterExpr.Fn.Async)
+					objCtx, funcType, paramBindings, setterExpr.Fn.Params, setterExpr.Fn.Body, setterExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 			case *ast.ObjSpreadExpr:
 				// Already handled in the first loop — nothing to do here.
@@ -527,7 +541,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			funcCtx.CallSiteTypeVars = &callSiteTypeVars
 		}
 
-		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
+		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.FuncSig.Params, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 
 		// Only generalize top-level FuncExprs. Nested FuncExprs (inside function
@@ -787,13 +801,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			newNamespace.Values[name] = binding
 		}
 		newScope := ctx.Scope.WithNewScopeAndNamespace(newNamespace)
-		newCtx := Context{
-			Scope:                  newScope,
-			IsAsync:                ctx.IsAsync,
-			IsPatMatch:             ctx.IsPatMatch,
-			AllowUndefinedTypeRefs: ctx.AllowUndefinedTypeRefs,
-			TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
-		}
+		newCtx := ctx.WithScope(newScope)
 
 		// Infer the type of the consequent block with the new context
 		consType, consErrors := c.inferBlock(newCtx, &expr.Cons, type_system.NewNeverType(nil))

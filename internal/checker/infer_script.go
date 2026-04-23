@@ -14,6 +14,12 @@ func (c *Checker) InferScript(ctx Context, m *ast.Script) (scope *Scope, errors 
 	ctx = ctx.WithNewScope()
 	scope = ctx.Scope
 
+	// Run the liveness pre-pass on top-level script code so that alias
+	// tracking and mutability transition checking work the same as inside
+	// function bodies.
+	scriptBody := &ast.Block{Stmts: m.Stmts, Span: m.Span()}
+	c.runLivenessPrePass(&ctx, nil, nil, scriptBody)
+
 	for _, stmt := range m.Stmts {
 		c.checkTimeout()
 		stmtErrors := c.inferStmt(ctx, stmt)

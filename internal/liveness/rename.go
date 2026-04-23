@@ -34,6 +34,15 @@ type RenameResult struct {
 	// data structures in later phases).
 	UniqueVarCount int
 
+	// VarIDNames maps each local VarID to the variable name it was assigned from.
+	// Used for error messages in later phases (e.g. mutability transition errors).
+	VarIDNames map[VarID]string
+
+	// ExtraParamVarIDs maps each extra parameter name (e.g. implicit 'self')
+	// to the VarID assigned by the rename pass. Only populated when extra
+	// parameter names are passed to Rename().
+	ExtraParamVarIDs map[string]VarID
+
 	// Errors contains any unresolved variable references found during
 	// the rename pass.
 	Errors []RenameError
@@ -48,17 +57,19 @@ type RenameError struct {
 
 // renamer holds the mutable state of the rename pass.
 type renamer struct {
-	nextID VarID
-	scope  *scope
-	errors []RenameError
+	nextID     VarID
+	scope      *scope
+	errors     []RenameError
+	varIDNames map[VarID]string
 }
 
 func newRenamer(outerBindings map[string]VarID) *renamer {
 	s := newScope(nil)
 	maps.Copy(s.bindings, outerBindings)
 	return &renamer{
-		nextID: 1, // local VarIDs start at 1
-		scope:  s,
+		nextID:     1, // local VarIDs start at 1
+		scope:      s,
+		varIDNames: make(map[VarID]string),
 	}
 }
 
@@ -80,6 +91,7 @@ func (r *renamer) popScope() {
 func (r *renamer) define(name string) VarID {
 	id := r.freshID()
 	r.scope.bindings[name] = id
+	r.varIDNames[id] = name
 	return id
 }
 
@@ -109,7 +121,7 @@ func (r *renamer) resolve(name string, span ast.Span) VarID {
 //
 // After this function returns, the internal scope stack is discarded.
 // All downstream phases read VarIDs directly from AST nodes.
-func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID) *RenameResult {
+func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID, extraParamNames ...string) *RenameResult {
 	r := newRenamer(outerBindings)
 
 	// Process function parameters — they are in scope for the entire body.
@@ -120,12 +132,24 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID)
 		r.renamePat(param.Pattern)
 	}
 
+	// Define extra parameter names (e.g. implicit 'self' in methods) that are
+	// not present in the AST params but should be treated as local bindings.
+	var extraParamVarIDs map[string]VarID
+	if len(extraParamNames) > 0 {
+		extraParamVarIDs = make(map[string]VarID, len(extraParamNames))
+		for _, name := range extraParamNames {
+			extraParamVarIDs[name] = r.define(name)
+		}
+	}
+
 	// Process the function body.
 	r.renameBlock(body)
 
 	return &RenameResult{
-		UniqueVarCount: int(r.nextID) - 1, // count of local variables assigned
-		Errors:         r.errors,
+		UniqueVarCount:   int(r.nextID) - 1, // count of local variables assigned
+		VarIDNames:       r.varIDNames,
+		ExtraParamVarIDs: extraParamVarIDs,
+		Errors:           r.errors,
 	}
 }
 
