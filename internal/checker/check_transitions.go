@@ -52,12 +52,10 @@ func (e MutabilityTransitionError) Message() string {
 // while an immutable alias assumes it is unchanged.
 //
 // Rule 1 (mut → immutable): No live mutable aliases may exist after this point,
-//
-//	provided the target (immutable) alias is also live.
+// provided the target (immutable) alias is also live.
 //
 // Rule 2 (immutable → mut): No live immutable aliases may exist after this point,
-//
-//	provided the target (mutable) alias is also live.
+// provided the target (mutable) alias is also live.
 //
 // Rule 3: Multiple mutable aliases are always allowed (mut → mut is not a transition).
 func (c *Checker) checkMutabilityTransition(
@@ -147,7 +145,10 @@ func (c *Checker) trackAliasesForVarDecl(
 	bindings map[string]*type_system.Binding,
 	enclosingStmt ast.Stmt,
 ) []Error {
-	// Only handle simple identifier patterns for now
+	// Only handle simple identifier patterns for now.
+	// VarID 0 means unset (rename pass didn't run), and negative VarIDs are
+	// outer/non-local bindings — only positive VarIDs are local variables
+	// with liveness info.
 	identPat, ok := decl.Pattern.(*ast.IdentPat)
 	if !ok || identPat.VarID <= 0 {
 		return nil

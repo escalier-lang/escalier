@@ -22,6 +22,7 @@ into phases that build incrementally, each producing a testable milestone.
 |    12 | Error messages                                       | 6–11       |        |
 |    13 | Remove `mut?`                                        | 6–12       |        |
 |    14 | PrintType and display                                | 13         |        |
+|    15 | Performance optimizations                            | 6          |        |
 
 ---
 
@@ -2478,6 +2479,35 @@ for specific functions referenced in the error, not globally.
   - `'a Array<T>`
   - `Array<'a T>`
   - `fn<'a>(p: mut 'a Point) -> mut 'a Point`
+
+---
+
+## Phase 15: Performance Optimizations
+
+**Goal:** Reduce redundant work in the liveness pre-pass and related analyses
+without changing observable behavior.
+
+### 15.1 Cache `collectOuterBindings` Results
+
+`collectOuterBindings` walks the entire scope chain — including the prelude —
+on every call to `runLivenessPrePass`. For a module with many functions, this
+re-traverses the same parent scopes repeatedly.
+
+**File:** `internal/checker/liveness_prepass.go`
+
+Cache the flattened outer-bindings map at the parent scope level. When
+computing outer bindings for a function, check if the parent scope already
+has a cached result. If so, copy it and add only the current scope's
+bindings. The parent scope is stable by the time we enter a function body,
+so the cache is valid.
+
+Considerations:
+- The current scope itself cannot be cached because parameter bindings are
+  copied into it (`maps.Copy`) before `runLivenessPrePass` runs.
+- The module scope grows as declarations are processed, so its cache must
+  be invalidated or built lazily.
+- The prelude scope never changes and is the largest — caching it alone
+  may capture most of the benefit.
 
 ---
 

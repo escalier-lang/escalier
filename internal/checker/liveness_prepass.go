@@ -3,6 +3,7 @@ package checker
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -23,23 +24,23 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 	// Compute extra param names: bindings in paramBindings that are not in
 	// astParams (e.g. implicit 'self' in methods). These need positive VarIDs
 	// so their uses in the body are tracked as local variables.
-	astParamNames := make(map[string]bool, len(astParams))
+	astParamNames := set.NewSet[string]()
 	for _, p := range astParams {
 		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
-			astParamNames[identPat.Name] = true
+			astParamNames.Add(identPat.Name)
 		}
 	}
 	var extraParamNames []string
 	for name := range paramBindings {
-		if !astParamNames[name] {
+		if !astParamNames.Contains(name) {
 			extraParamNames = append(extraParamNames, name)
 		}
 	}
 
-	// Phase 2: Resolve names → VarIDs
+	// Resolve names → VarIDs
 	renameResult := liveness.Rename(astParams, *body, outerBindings, extraParamNames...)
 
-	// Phase 3-4: Build CFG and run backward liveness analysis
+	// Build CFG and run backward liveness analysis
 	cfg := liveness.BuildCFG(*body)
 	livenessInfo := liveness.AnalyzeFunction(cfg)
 
@@ -89,6 +90,10 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 // collectOuterBindings walks the scope chain and collects all value binding
 // names, assigning each a unique negative VarID. These are used by the
 // rename pass to distinguish non-local references from unresolved names.
+//
+// TODO(Phase 15.1): This re-walks the entire scope chain (including the
+// prelude) on every call. Cache the flattened bindings at the parent scope
+// level so that only the current scope's bindings need to be added each time.
 func collectOuterBindings(scope *Scope) map[string]liveness.VarID {
 	bindings := make(map[string]liveness.VarID)
 	nextID := liveness.VarID(-1)
