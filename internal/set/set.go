@@ -46,6 +46,15 @@ func (s Set[T]) ToSlice() []T {
 	return result
 }
 
+// Clone returns a shallow copy of the set.
+func (s Set[T]) Clone() Set[T] {
+	result := make(Set[T], len(s))
+	for item := range s {
+		result[item] = struct{}{}
+	}
+	return result
+}
+
 // Clear removes all elements from the set.
 func (s Set[T]) Clear() {
 	for item := range s {

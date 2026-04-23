@@ -195,6 +195,56 @@ func TestClear(t *testing.T) {
 	}
 }
 
+func TestClone(t *testing.T) {
+	t.Run("empty set", func(t *testing.T) {
+		s := NewSet[int]()
+		c := s.Clone()
+		if c.Len() != 0 {
+			t.Errorf("Expected empty clone, got length %d", c.Len())
+		}
+	})
+
+	t.Run("non-empty set", func(t *testing.T) {
+		s := FromSlice([]int{1, 2, 3})
+		c := s.Clone()
+		if !c.Equals(s) {
+			t.Error("Clone should equal original")
+		}
+	})
+
+	t.Run("modifying clone does not affect original", func(t *testing.T) {
+		s := FromSlice([]int{1, 2, 3})
+		c := s.Clone()
+		c.Add(4)
+		c.Remove(1)
+		if s.Contains(4) {
+			t.Error("Original should not contain element added to clone")
+		}
+		if !s.Contains(1) {
+			t.Error("Original should still contain element removed from clone")
+		}
+		if s.Len() != 3 {
+			t.Errorf("Original length should be 3, got %d", s.Len())
+		}
+	})
+
+	t.Run("modifying original does not affect clone", func(t *testing.T) {
+		s := FromSlice([]int{1, 2, 3})
+		c := s.Clone()
+		s.Add(4)
+		s.Remove(1)
+		if c.Contains(4) {
+			t.Error("Clone should not contain element added to original")
+		}
+		if !c.Contains(1) {
+			t.Error("Clone should still contain element removed from original")
+		}
+		if c.Len() != 3 {
+			t.Errorf("Clone length should be 3, got %d", c.Len())
+		}
+	})
+}
+
 func TestUnion(t *testing.T) {
 	tests := []struct {
 		name     string

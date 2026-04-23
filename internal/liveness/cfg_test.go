@@ -174,12 +174,12 @@ func TestLivenessIfElseOneBranchUse(t *testing.T) {
 	altBlockID := findBlockContaining(cfg, yRef)
 
 	// In the cons block: x is live (used), y is dead
-	require.True(t, info.LiveBefore[consBlockID][0][xID], "x should be live in cons block")
-	require.False(t, info.LiveBefore[consBlockID][0][yID], "y should be dead in cons block")
+	require.True(t, info.LiveBefore[consBlockID][0].Contains(xID), "x should be live in cons block")
+	require.False(t, info.LiveBefore[consBlockID][0].Contains(yID), "y should be dead in cons block")
 
 	// In the alt block: y is live (used), x is dead
-	require.True(t, info.LiveBefore[altBlockID][0][yID], "y should be live in alt block")
-	require.False(t, info.LiveBefore[altBlockID][0][xID], "x should be dead in alt block")
+	require.True(t, info.LiveBefore[altBlockID][0].Contains(yID), "y should be live in alt block")
+	require.False(t, info.LiveBefore[altBlockID][0].Contains(xID), "x should be dead in alt block")
 }
 
 func TestLivenessIfWithoutElse(t *testing.T) {
@@ -209,12 +209,12 @@ func TestLivenessIfWithoutElse(t *testing.T) {
 	xID := VarID(x.VarID)
 
 	// x should be live in the entry block after its definition
-	require.True(t, info.LiveAfter[cfg.Entry.ID][0][xID],
+	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
 		"x should be live after its definition")
 
 	// x should be live in the cons block (used in print(x))
 	consBlockID := findBlockContaining(cfg, xRef1)
-	require.True(t, info.LiveBefore[consBlockID][0][xID],
+	require.True(t, info.LiveBefore[consBlockID][0].Contains(xID),
 		"x should be live in the then branch")
 }
 
@@ -243,12 +243,12 @@ func TestLivenessForLoop(t *testing.T) {
 	xID := VarID(x.VarID)
 
 	// x is live after its definition (used in loop body)
-	require.True(t, info.LiveAfter[cfg.Entry.ID][0][xID],
+	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
 		"x should be live after definition (used in loop)")
 
 	// Find the loop body block
 	bodyBlockID := findBlockContaining(cfg, xRef)
-	require.True(t, info.LiveBefore[bodyBlockID][0][xID],
+	require.True(t, info.LiveBefore[bodyBlockID][0].Contains(xID),
 		"x should be live in loop body")
 }
 
@@ -285,14 +285,16 @@ func TestLivenessEarlyReturn(t *testing.T) {
 	joinBlockID := findBlockContaining(cfg, yRef)
 
 	// In the returning branch: x is live (returned), y is dead
-	require.True(t, info.LiveBefore[consBlockID][0][xID],
+	require.True(t, info.LiveBefore[consBlockID][0].Contains(xID),
 		"x should be live in the returning branch")
-	require.False(t, info.LiveBefore[consBlockID][0][yID],
+	require.False(t, info.LiveBefore[consBlockID][0].Contains(yID),
 		"y should be dead in the returning branch")
 
 	// In the fall-through path: y is live (used in print)
-	require.True(t, info.LiveBefore[joinBlockID][0][yID],
+	require.True(t, info.LiveBefore[joinBlockID][0].Contains(yID),
 		"y should be live in the fall-through path")
+	require.False(t, info.LiveBefore[joinBlockID][0].Contains(xID),
+		"x should be dead in the fall-through path")
 }
 
 func TestLivenessThrow(t *testing.T) {
@@ -326,7 +328,7 @@ func TestLivenessThrow(t *testing.T) {
 	consBlockID := findBlockContaining(cfg, xRef)
 
 	// y should be dead on the throwing path
-	require.False(t, info.LiveBefore[consBlockID][0][yID],
+	require.False(t, info.LiveBefore[consBlockID][0].Contains(yID),
 		"y should be dead on the throwing path")
 }
 
@@ -384,14 +386,14 @@ func TestLivenessMatchExpr(t *testing.T) {
 	arm1ID := findBlockContaining(cfg, yRef)
 
 	// Arm 0: x is live, y is dead, z is dead
-	require.True(t, info.LiveBefore[arm0ID][0][xID], "x should be live in arm 0")
-	require.False(t, info.LiveBefore[arm0ID][0][yID], "y should be dead in arm 0")
-	require.False(t, info.LiveBefore[arm0ID][0][zID], "z should be dead in arm 0")
+	require.True(t, info.LiveBefore[arm0ID][0].Contains(xID), "x should be live in arm 0")
+	require.False(t, info.LiveBefore[arm0ID][0].Contains(yID), "y should be dead in arm 0")
+	require.False(t, info.LiveBefore[arm0ID][0].Contains(zID), "z should be dead in arm 0")
 
-	// Arm 1: y is live, x is dead, z is dead
-	require.True(t, info.LiveBefore[arm1ID][0][yID], "y should be live in arm 1")
-	require.False(t, info.LiveBefore[arm1ID][0][xID], "x should be dead in arm 1")
-	require.False(t, info.LiveBefore[arm1ID][0][zID], "z should be dead in arm 1")
+	// Arm 1: x is dead, y is live, z is dead
+	require.True(t, info.LiveBefore[arm1ID][0].Contains(yID), "y should be live in arm 1")
+	require.False(t, info.LiveBefore[arm1ID][0].Contains(xID), "x should be dead in arm 1")
+	require.False(t, info.LiveBefore[arm1ID][0].Contains(zID), "z should be dead in arm 1")
 }
 
 func TestLivenessNestedControlFlow(t *testing.T) {
@@ -426,10 +428,36 @@ func TestLivenessNestedControlFlow(t *testing.T) {
 	info := AnalyzeFunction(cfg)
 
 	xID := VarID(x.VarID)
+	iID := VarID(i.VarID)
 
-	// x should be live after its definition
-	require.True(t, info.LiveAfter[cfg.Entry.ID][0][xID],
-		"x should be live after definition (used in nested if inside loop)")
+	// CFG structure: entry → header → [bodyBlock, post]
+	// bodyBlock contains ExprStmt(cond) and branches to [consBlock, join]
+	// consBlock contains print(x), join has back edge to header
+	header := cfg.Entry.Successors[0]
+	bodyBlock := header.Successors[0]
+	consBlock := bodyBlock.Successors[0]
+
+	// x should be live after its definition (used in nested if inside loop)
+	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
+		"x should be live after definition")
+
+	// x should be live entering the loop body (propagated from cons block)
+	require.True(t, info.LiveBefore[bodyBlock.ID][0].Contains(xID),
+		"x should be live entering loop body")
+
+	// x should be live before print(x) in the cons block
+	require.True(t, info.LiveBefore[consBlock.ID][0].Contains(xID),
+		"x should be live before print(x)")
+
+	// x is still live after print(x) because the loop may iterate again
+	// (back edge from join → header keeps x alive for the next iteration)
+	require.True(t, info.LiveAfter[consBlock.ID][0].Contains(xID),
+		"x should be live after print(x) (loop may iterate again)")
+
+	// i is defined but never used, so it should not be live after the
+	// cond statement in the body block
+	require.False(t, info.LiveAfter[bodyBlock.ID][0].Contains(iID),
+		"i should not be live (defined but never used)")
 }
 
 func TestLivenessDoExpr(t *testing.T) {
@@ -461,38 +489,20 @@ func TestLivenessDoExpr(t *testing.T) {
 	info := AnalyzeFunction(cfg)
 
 	xID := VarID(x.VarID)
+	aID := VarID(a.VarID)
 
 	// x should be live after its definition (used in the do block)
-	require.True(t, info.LiveAfter[cfg.Entry.ID][0][xID],
+	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
 		"x should be live after definition (used in do block)")
-}
 
-func TestLivenessVarUsedInBranch(t *testing.T) {
-	// Phase 3 limitation: variables used only inside branches appeared
-	// dead. Phase 4 correctly tracks them.
-	// val x = 1; val y = do { x + 1 }
-	// x should be live before the do expression.
-	x := identPat("x")
-	y := identPat("y")
-	xRef := ident("x")
+	// x should be dead in the join block (not used after the do expression)
+	joinBlock := cfg.Entry.Successors[0].Successors[0] // entry -> do body -> join
+	require.False(t, info.LiveBefore[joinBlock.ID][0].Contains(xID),
+		"x should be dead in join block (not used after do)")
 
-	body := block(
-		valDecl(x, numLit(1)),
-		valDecl(y, ast.NewDo(
-			block(exprStmt(ast.NewBinary(xRef, numLit(1), ast.Plus, span()))),
-			span(),
-		)),
-	)
-	Rename(nil, body, nil)
-
-	cfg := BuildCFG(body)
-	info := AnalyzeFunction(cfg)
-
-	xID := VarID(x.VarID)
-
-	// x should be live after its definition
-	require.True(t, info.LiveAfter[cfg.Entry.ID][0][xID],
-		"x should be live (Phase 4 correctly tracks uses in nested blocks)")
+	// a should be dead in the join block (scoped to the do body)
+	require.False(t, info.LiveBefore[joinBlock.ID][0].Contains(aID),
+		"a should be dead in join block (scoped to do body)")
 }
 
 func TestLivenessIfElseVarUsedInBranch(t *testing.T) {
@@ -523,7 +533,7 @@ func TestLivenessIfElseVarUsedInBranch(t *testing.T) {
 	xID := VarID(x.VarID)
 
 	// x should be live after its definition (used in then branch)
-	require.True(t, info.LiveAfter[cfg.Entry.ID][0][xID],
+	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
 		"x should be live (Phase 4 correctly tracks uses in if-else branches)")
 }
 
@@ -559,7 +569,7 @@ func TestLivenessForLoopVarDef(t *testing.T) {
 	require.NotNil(t, bodyBlock, "should find body block with loop var ExtraDefs")
 
 	// i should be live before the print(i) call in the body block
-	require.True(t, info.LiveBefore[bodyBlock.ID][0][iID],
+	require.True(t, info.LiveBefore[bodyBlock.ID][0].Contains(iID),
 		"loop variable i should be live in the body block")
 }
 
@@ -596,9 +606,9 @@ func TestLivenessAllBranchesReturn(t *testing.T) {
 	// y should never be live anywhere in the CFG
 	for _, blk := range cfg.Blocks {
 		for i := range blk.Stmts {
-			require.False(t, info.LiveBefore[blk.ID][i][yID],
+			require.False(t, info.LiveBefore[blk.ID][i].Contains(yID),
 				"y should never be live (unreachable)")
-			require.False(t, info.LiveAfter[blk.ID][i][yID],
+			require.False(t, info.LiveAfter[blk.ID][i].Contains(yID),
 				"y should never be live (unreachable)")
 		}
 	}
@@ -649,8 +659,74 @@ func TestLivenessMatchWithGuard(t *testing.T) {
 	arm0ID := findBlockContaining(cfg, xRef)
 
 	// In arm 0: both g (guard) and x (body) should be live
-	require.True(t, info.LiveBefore[arm0ID][0][gID],
+	require.True(t, info.LiveBefore[arm0ID][0].Contains(gID),
 		"guard variable g should be live in arm 0")
-	require.True(t, info.LiveBefore[arm0ID][1][xID],
+	require.True(t, info.LiveBefore[arm0ID][1].Contains(xID),
 		"x should be live before its use in arm 0")
+}
+
+func TestLivenessTryCatch(t *testing.T) {
+	// val x = 1; val y = 2
+	// val r = try {
+	//   print(x)
+	//   throw x
+	// } catch {
+	//   case e => y
+	// }
+	// x is used in the try block; y is used in the catch block.
+	// Both should be live after their definitions.
+	x := identPat("x")
+	y := identPat("y")
+	r := identPat("r")
+	xRef1 := ident("x") // in print(x)
+	xRef2 := ident("x") // in throw x
+	yRef := ident("y")  // in catch body
+	e := identPat("e")
+	rRef := ident("r")
+
+	body := block(
+		valDecl(x, numLit(1)),
+		valDecl(y, numLit(2)),
+		valDecl(r, ast.NewTryCatch(
+			block(
+				exprStmt(call(ident("print"), xRef1)),
+				exprStmt(ast.NewThrow(xRef2, span())),
+			),
+			[]*ast.MatchCase{
+				ast.NewMatchCase(
+					e,
+					nil,
+					ast.BlockOrExpr{Expr: yRef},
+					span(),
+				),
+			},
+			span(),
+		)),
+		exprStmt(call(ident("print"), rRef)),
+	)
+	Rename(nil, body, map[string]VarID{"print": -1})
+
+	cfg := BuildCFG(body)
+	info := AnalyzeFunction(cfg)
+
+	xID := VarID(x.VarID)
+	yID := VarID(y.VarID)
+
+	// x should be live after its definition (used in try block)
+	require.True(t, info.LiveAfter[cfg.Entry.ID][0].Contains(xID),
+		"x should be live after definition (used in try block)")
+
+	// y should be live after its definition (used in catch block)
+	require.True(t, info.LiveAfter[cfg.Entry.ID][1].Contains(yID),
+		"y should be live after definition (used in catch block)")
+
+	// In the catch block: y is live, x is dead
+	catchBlockID := findBlockContaining(cfg, yRef)
+	require.True(t, info.LiveBefore[catchBlockID][0].Contains(yID),
+		"y should be live in catch block")
+
+	// In the try block: x is live
+	tryBlockID := findBlockContaining(cfg, xRef1)
+	require.True(t, info.LiveBefore[tryBlockID][0].Contains(xID),
+		"x should be live in try block")
 }

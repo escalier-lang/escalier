@@ -65,7 +65,7 @@ func (b *cfgBuilder) addEdge(from, to *BasicBlock) {
 func (b *cfgBuilder) processStmts(stmts []ast.Stmt, current *BasicBlock) *BasicBlock {
 	for _, stmt := range stmts {
 		if current == nil {
-			break // unreachable code after return/throw
+			break // unreachable code after return/throw — TODO: #486 emit dead code warnings
 		}
 		current = b.processStmt(stmt, current)
 	}
@@ -107,20 +107,8 @@ func (b *cfgBuilder) processStmt(stmt ast.Stmt, current *BasicBlock) *BasicBlock
 // contains a branching expression (if/else, match, do, try/catch).
 func (b *cfgBuilder) processExprStmt(s *ast.ExprStmt, current *BasicBlock) *BasicBlock {
 	// Direct branching expression.
-	switch e := s.Expr.(type) {
-	case *ast.IfElseExpr:
-		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Cond, e.Cond.Span()))
-		return b.processIfElse(e, nil, current)
-	case *ast.IfLetExpr:
-		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
-		return b.processIfLet(e, nil, current)
-	case *ast.MatchExpr:
-		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
-		return b.processMatch(e, nil, current)
-	case *ast.DoExpr:
-		return b.processDo(e, nil, current)
-	case *ast.TryCatchExpr:
-		return b.processTryCatch(e, nil, current)
+	if join := b.decomposeBranch(s.Expr, nil, current); join != nil {
+		return join
 	}
 
 	// Assignment with branching RHS: x = if cond { ... } else { ... }
@@ -153,8 +141,9 @@ func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock
 	if ident, ok := be.Left.(*ast.IdentExpr); ok && ident.VarID > 0 {
 		joinDefs = []VarID{VarID(ident.VarID)}
 	} else {
-		// For member/index access, the base object is a use (evaluated
-		// before branching). Add it as a synthetic ExprStmt.
+		// For member/index access, the LHS is evaluated before branching
+		// (e.g., obj and idx in obj[idx] = if ...). Add it as a synthetic
+		// ExprStmt so CollectUses captures all uses within the LHS.
 		switch be.Left.(type) {
 		case *ast.MemberExpr, *ast.IndexExpr:
 			current.Stmts = append(current.Stmts,
@@ -162,7 +151,43 @@ func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock
 		}
 	}
 
-	switch e := be.Right.(type) {
+	return b.decomposeBranch(be.Right, joinDefs, current)
+}
+
+// processDeclStmt handles a declaration statement, decomposing it if the
+// initializer is a branching expression.
+func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *BasicBlock {
+	vd, ok := s.Decl.(*ast.VarDecl)
+	if !ok || vd.Init == nil {
+		current.Stmts = append(current.Stmts, s)
+		return current
+	}
+
+	joinDefs := collectPatVarDefs(vd.Pattern)
+	if join := b.decomposeBranch(vd.Init, joinDefs, current); join != nil {
+		return join
+	}
+
+	current.Stmts = append(current.Stmts, s)
+	return current
+}
+
+// decomposeBranch decomposes a branching expression into separate basic
+// blocks. The sub-expression evaluated before branching (e.g., the condition
+// of an if/else or the target of a match) is wrapped in a synthetic ExprStmt
+// and added to the current block so that CollectUses can find variable uses
+// in it. Returns the join block, or nil if the expression is not branching.
+//
+// joinDefs lists variables defined at the join point after the branches
+// converge. For example, in:
+//
+//	val x = if cond { a } else { b }
+//
+// joinDefs would be [x], because x is defined once the if/else completes.
+// The join block records these as ExtraDefs so liveness knows x is defined
+// there, even though no statement in the join block explicitly assigns it.
+func (b *cfgBuilder) decomposeBranch(expr ast.Expr, joinDefs []VarID, current *BasicBlock) *BasicBlock {
+	switch e := expr.(type) {
 	case *ast.IfElseExpr:
 		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Cond, e.Cond.Span()))
 		return b.processIfElse(e, joinDefs, current)
@@ -178,37 +203,6 @@ func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock
 		return b.processTryCatch(e, joinDefs, current)
 	default:
 		return nil
-	}
-}
-
-// processDeclStmt handles a declaration statement, decomposing it if the
-// initializer is a branching expression.
-func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *BasicBlock {
-	vd, ok := s.Decl.(*ast.VarDecl)
-	if !ok || vd.Init == nil {
-		current.Stmts = append(current.Stmts, s)
-		return current
-	}
-
-	joinDefs := collectPatVarDefs(vd.Pattern)
-
-	switch e := vd.Init.(type) {
-	case *ast.IfElseExpr:
-		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Cond, e.Cond.Span()))
-		return b.processIfElse(e, joinDefs, current)
-	case *ast.IfLetExpr:
-		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
-		return b.processIfLet(e, joinDefs, current)
-	case *ast.MatchExpr:
-		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
-		return b.processMatch(e, joinDefs, current)
-	case *ast.DoExpr:
-		return b.processDo(e, joinDefs, current)
-	case *ast.TryCatchExpr:
-		return b.processTryCatch(e, joinDefs, current)
-	default:
-		current.Stmts = append(current.Stmts, s)
-		return current
 	}
 }
 

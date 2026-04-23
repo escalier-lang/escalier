@@ -2005,6 +2005,11 @@ because `shared` is permanently live and mutable.
 
 ### Out of Scope (Future Work)
 
+- **`break` and `continue` in loops:** The CFG builder does not currently
+  model `break` or `continue` statements. Adding them requires tracking
+  the enclosing loop's header and post-loop blocks on the builder so that
+  `break` edges to the post-loop block and `continue` edges to the header.
+  See #487.
 - Concurrency / data race prevention (would require Rust-style exclusive
   borrowing)
 - Heap escape analysis beyond function return values

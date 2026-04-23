@@ -1,5 +1,7 @@
 package liveness
 
+import "github.com/escalier-lang/escalier/internal/set"
+
 // VarID uniquely identifies a variable within a function body.
 // Sequential integer IDs are assigned during name resolution (Phase 2)
 // and stored directly on AST nodes (IdentExpr.VarID, IdentPat.VarID,
@@ -26,11 +28,11 @@ type StmtRef struct {
 type LivenessInfo struct {
 	// LiveBefore[blockID][stmtIdx] is the set of variables that are live
 	// just before the statement at that position.
-	LiveBefore [][]map[VarID]bool
+	LiveBefore [][]set.Set[VarID]
 
 	// LiveAfter[blockID][stmtIdx] is the set of variables that are live
 	// just after the statement at that position.
-	LiveAfter [][]map[VarID]bool
+	LiveAfter [][]set.Set[VarID]
 
 	// LastUse maps each variable to the location of its last use.
 	LastUse map[VarID]StmtRef
@@ -39,5 +41,5 @@ type LivenessInfo struct {
 // IsLiveAfter returns whether the given variable is live after the
 // statement at the given position.
 func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
-	return l.LiveAfter[ref.BlockID][ref.StmtIdx][v]
+	return l.LiveAfter[ref.BlockID][ref.StmtIdx].Contains(v)
 }
