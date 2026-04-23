@@ -111,6 +111,30 @@ func TestAnalyzeCaptures_EmptyBody(t *testing.T) {
 	assert.Empty(t, captures)
 }
 
+func TestAnalyzeCaptures_ReadInAssignmentLHS(t *testing.T) {
+	// When a captured variable is read on the LHS of an assignment (e.g. as
+	// a callee: `getObj().field = value`), it should be detected as a capture.
+	// We construct the AST manually because parseFuncExpr picks the first
+	// FuncExpr, which would be getObj's function, not f's.
+
+	// Build: fn() { getObj().field = 1 }
+	// where getObj is an outer reference (VarID = -1)
+	getObjIdent := ast.NewIdent("getObj", ast.Span{})
+	getObjIdent.VarID = -1
+
+	callExpr := ast.NewCall(getObjIdent, nil, false, ast.Span{})
+	memberExpr := ast.NewMember(callExpr, ast.NewIdentifier("field", ast.Span{}), false, ast.Span{})
+	assignExpr := ast.NewBinary(memberExpr, ast.NewLitExpr(ast.NewNumber(1, ast.Span{})), ast.Assign, ast.Span{})
+
+	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(assignExpr, ast.Span{})}}
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+
+	captures := AnalyzeCaptures(funcExpr)
+	require.Len(t, captures, 1)
+	assert.Equal(t, "getObj", captures[0].Name)
+	assert.False(t, captures[0].IsMutable) // read as callee, not mutated
+}
+
 func TestAnalyzeCaptures_MultipleCaptures_SortedByName(t *testing.T) {
 	funcExpr := parseFuncExpr(t, `
 		val zebra = 1

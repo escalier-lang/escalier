@@ -95,7 +95,10 @@ func walkExpr(expr ast.Expr, captures map[string]bool) {
 		}
 	case *ast.BinaryExpr:
 		if e.Op == ast.Assign {
-			// Check if LHS is a captured variable (mutable capture).
+			// Walk the LHS to detect reads (e.g. captured variable used as
+			// a callee or index: getObj(captured).field = value).
+			walkExpr(e.Left, captures)
+			// Then mark the assignment root as a mutable capture.
 			markMutableCapture(e.Left, captures)
 			walkExpr(e.Right, captures)
 		} else {

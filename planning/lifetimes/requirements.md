@@ -2050,6 +2050,17 @@ because `shared` is permanently live and mutable.
   analogous to Rust's MIR "place" system. The workaround for the
   variable-level model is to extract properties into separate variables
   before freezing, which gives each its own alias set.
+- **Scope-aware capture-to-VarID resolution:** `trackCapturedAliases`
+  builds a reverse lookup from variable name to VarID in the enclosing
+  function. When nested scopes (for-in loops, match arms) shadow a
+  variable name, multiple positive VarIDs map to the same name, making
+  the reverse lookup nondeterministic. The fix requires propagating scope
+  information — for example, having `AnalyzeCaptures` return the negative
+  (outer) VarID from each `IdentExpr` node alongside the name, and
+  building a mapping from negative VarIDs to positive VarIDs during the
+  rename pass — so that shadowed bindings resolve to the correct
+  enclosing VarID. Same-scope re-binding is not affected (the checker
+  panics on it), so this only impacts nested-scope shadowing.
 
 ## Error Messages
 

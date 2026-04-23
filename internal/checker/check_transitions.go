@@ -156,7 +156,8 @@ func (c *Checker) trackAliasesForVarDecl(
 		// alias set in the enclosing function.
 		if funcExpr, ok := decl.Init.(*ast.FuncExpr); ok && pat.VarID > 0 {
 			closureVarID := liveness.VarID(pat.VarID)
-			c.trackCapturedAliases(ctx, funcExpr, closureVarID)
+			captureErrors := c.trackCapturedAliases(ctx, funcExpr, closureVarID, enclosingStmt, decl.Span())
+			errors = append(errors, captureErrors...)
 		}
 
 	case *ast.ObjectPat:
@@ -260,26 +261,41 @@ func (c *Checker) trackAliasesForIdentPat(
 // trackCapturedAliases adds the closure variable to the alias sets of each
 // captured variable from the enclosing scope (Phase 7.2). A read-only capture
 // creates an immutable alias; a mutable capture creates a mutable alias.
+// It also checks mutability transitions for each capture — for example, a
+// read-only capture of a mutable variable is a mut→immut transition that
+// must be checked against live mutable aliases.
 func (c *Checker) trackCapturedAliases(
 	ctx Context,
 	funcExpr *ast.FuncExpr,
 	closureVarID liveness.VarID,
-) {
+	enclosingStmt ast.Stmt,
+	span ast.Span,
+) []Error {
 	if ctx.VarIDNames == nil || ctx.Aliases == nil {
-		return
+		return nil
 	}
 
 	captures := liveness.AnalyzeCaptures(funcExpr)
 	if len(captures) == 0 {
-		return
+		return nil
 	}
 
 	// Build reverse lookup: name → VarID for the enclosing function.
+	//
+	// KNOWN LIMITATION: when nested scopes (for-in loops, match arms)
+	// shadow a variable name, multiple positive VarIDs in ctx.VarIDNames
+	// map to the same name. The last one encountered during Go map
+	// iteration wins, which is nondeterministic. This can cause the
+	// closure alias to be added to the wrong variable's alias set.
+	// Same-scope re-binding is not affected (the checker panics on it).
+	// See the "Scope-aware capture-to-VarID resolution" entry in
+	// planning/lifetimes/requirements.md for the fix direction.
 	nameToVarID := make(map[string]liveness.VarID, len(ctx.VarIDNames))
 	for varID, name := range ctx.VarIDNames {
 		nameToVarID[name] = varID
 	}
 
+	var allErrors []Error
 	for _, capture := range captures {
 		enclosingVarID, ok := nameToVarID[capture.Name]
 		if !ok || enclosingVarID <= 0 {
@@ -290,7 +306,27 @@ func (c *Checker) trackCapturedAliases(
 			mut = liveness.AliasMutable
 		}
 		ctx.Aliases.AddAlias(closureVarID, enclosingVarID, mut)
+
+		// Check mutability transition for this capture.
+		stmtRef, hasRef := ctx.StmtToRef[enclosingStmt]
+		if hasRef {
+			sourceMut := isSourceMutable(ctx, enclosingVarID)
+			targetMut := capture.IsMutable
+			transErrors := c.checkMutabilityTransition(
+				ctx,
+				enclosingVarID,
+				closureVarID,
+				capture.Name,
+				c.varIDToName(ctx, closureVarID),
+				sourceMut,
+				targetMut,
+				stmtRef,
+				span,
+			)
+			allErrors = append(allErrors, transErrors...)
+		}
 	}
+	return allErrors
 }
 
 // trackAliasesForDestructuringPat handles alias tracking for destructuring

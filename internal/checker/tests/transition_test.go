@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -374,6 +375,32 @@ func TestMutabilityTransitions(t *testing.T) {
 	}
 
 	// Phase 7.2: Closure capture aliasing
+	//
+	// When a closure creates an immutable capture of a mutable variable
+	// that has live mutable aliases, the mut→immut transition should be
+	// checked at the closure definition point — otherwise a mutable alias
+	// can mutate the value while the closure's immutable view is live.
+	tests["ClosureCapture_ReadOnly_MutSourceWithLiveMutAlias_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val items: mut {x: number} = {x: 0}
+				val mutRef: mut {x: number} = items
+				val f = fn() -> {x: number} { items }
+				mutRef.x = 5
+				f
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "items",
+			TargetVar:       "f",
+			ConflictingVars: []string{"mutRef"},
+			MutToImmutable:  true,
+		}},
+	}
+
 	tests["ClosureCapture_ReadOnly_BlocksImmutableToMut"] = struct {
 		input          string
 		expectedErrors []expectedTransitionError
@@ -524,8 +551,34 @@ func TestMutabilityTransitions(t *testing.T) {
 				assert.Empty(t, mutErrors, "Expected no MutabilityTransitionError")
 			} else {
 				require.Len(t, mutErrors, len(test.expectedErrors), "Wrong number of MutabilityTransitionErrors")
-				for i, expected := range test.expectedErrors {
-					actual := mutErrors[i]
+
+				// Sort both slices by SourceVar so the comparison is
+				// order-independent.
+				sortedActual := make([]*MutabilityTransitionError, len(mutErrors))
+				copy(sortedActual, mutErrors)
+				slices.SortFunc(sortedActual, func(a, b *MutabilityTransitionError) int {
+					if a.SourceVar < b.SourceVar {
+						return -1
+					}
+					if a.SourceVar > b.SourceVar {
+						return 1
+					}
+					return 0
+				})
+				sortedExpected := make([]expectedTransitionError, len(test.expectedErrors))
+				copy(sortedExpected, test.expectedErrors)
+				slices.SortFunc(sortedExpected, func(a, b expectedTransitionError) int {
+					if a.SourceVar < b.SourceVar {
+						return -1
+					}
+					if a.SourceVar > b.SourceVar {
+						return 1
+					}
+					return 0
+				})
+
+				for i, expected := range sortedExpected {
+					actual := sortedActual[i]
 					assert.Equal(t, expected.SourceVar, actual.SourceVar, "SourceVar mismatch")
 					assert.Equal(t, expected.TargetVar, actual.TargetVar, "TargetVar mismatch")
 					assert.Equal(t, expected.ConflictingVars, actual.ConflictingVars, "ConflictingVars mismatch")
