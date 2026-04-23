@@ -271,7 +271,7 @@ func (c *Checker) inferFuncBody(
 
 	// Liveness pre-pass: resolve names, build CFG, compute liveness,
 	// and initialize alias tracker for mutability transition checking.
-	c.runLivenessPrePass(&ctx, astParams, body)
+	c.runLivenessPrePass(&ctx, astParams, bindings, body)
 
 	errors := []Error{}
 	for _, stmt := range body.Stmts {

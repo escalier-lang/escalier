@@ -191,6 +191,9 @@ func (c *Checker) trackAliasesForAssignment(
 	rhs ast.Expr,
 	targetType type_system.Type,
 ) []Error {
+	if target.VarID <= 0 {
+		return nil
+	}
 	targetVarID := liveness.VarID(target.VarID)
 	targetMut := isMutableType(targetType)
 	var aliasMut liveness.AliasMutability

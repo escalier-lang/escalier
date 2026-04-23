@@ -161,11 +161,7 @@ func (c *Checker) inferTypeAnn(
 				condScope.SetTypeAlias(name, inferTypeAlias)
 			}
 
-			condCtx = Context{
-				Scope:      condScope,
-				IsAsync:    ctx.IsAsync,
-				IsPatMatch: ctx.IsPatMatch,
-			}
+			condCtx = ctx.WithScope(condScope)
 		}
 
 		thenType, thenErrors := c.inferTypeAnn(condCtx, typeAnn.Then)
@@ -397,11 +393,7 @@ func (c *Checker) inferObjectTypeAnn(
 				}
 				mappedScope.SetTypeAlias(elem.TypeParam.Name, typeParamAlias)
 
-				mappedCtx = Context{
-					Scope:      mappedScope,
-					IsAsync:    ctx.IsAsync,
-					IsPatMatch: ctx.IsPatMatch,
-				}
+				mappedCtx = ctx.WithScope(mappedScope)
 			}
 
 			// Infer the value type with the type parameter in scope

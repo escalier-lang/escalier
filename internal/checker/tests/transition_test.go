@@ -113,6 +113,28 @@ func TestMutabilityTransitions(t *testing.T) {
 			`,
 			expectErrors: true,
 		},
+		// Parameter alias: mut param → immutable — ERROR when param is still live
+		"ParamAlias_MutToImmutable_SourceLive_Error": {
+			input: `
+				fn test(items: mut {x: number}) {
+					val snapshot: {x: number} = items
+					items.x = 2
+					snapshot
+				}
+			`,
+			expectErrors: true,
+		},
+		// Parameter alias: mut param → immutable — OK when param is dead
+		"ParamAlias_MutToImmutable_SourceDead_OK": {
+			input: `
+				fn test(items: mut {x: number}) {
+					items.x = 2
+					val snapshot: {x: number} = items
+					snapshot
+				}
+			`,
+			expectErrors: false,
+		},
 		// Chain aliasing: val b = a; val c = b — a is dead after transition
 		"ChainAlias_MutToImmutable_OK_WhenDead": {
 			input: `
@@ -152,19 +174,27 @@ func TestMutabilityTransitions(t *testing.T) {
 			}
 			_, inferErrors := c.InferScript(inferCtx, script)
 
+			hasMutErr := false
+			for _, err := range inferErrors {
+				if _, ok := err.(*MutabilityTransitionError); ok {
+					hasMutErr = true
+					break
+				}
+			}
+
 			if test.expectErrors {
-				assert.NotEmpty(t, inferErrors, "Expected inference errors for %s", name)
+				assert.True(t, hasMutErr, "Expected MutabilityTransitionError for %s, got: %v", name, inferErrors)
 				// Print the errors to help debugging
 				for i, err := range inferErrors {
 					t.Logf("Error[%d]: %s", i, err.Message())
 				}
 			} else {
+				assert.False(t, hasMutErr, "Unexpected MutabilityTransitionError for %s", name)
 				if len(inferErrors) > 0 {
 					for i, err := range inferErrors {
 						t.Logf("Unexpected Error[%d]: %s", i, err.Message())
 					}
 				}
-				assert.Empty(t, inferErrors, "Expected no inference errors for %s", name)
 			}
 		})
 	}

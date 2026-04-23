@@ -116,7 +116,7 @@ func (r *renamer) resolve(name string, span ast.Span) VarID {
 //
 // After this function returns, the internal scope stack is discarded.
 // All downstream phases read VarIDs directly from AST nodes.
-func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID) *RenameResult {
+func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID, extraParamNames ...string) *RenameResult {
 	r := newRenamer(outerBindings)
 
 	// Process function parameters — they are in scope for the entire body.
@@ -125,6 +125,12 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID)
 	// positive IDs (assigned by define()), outer bindings have negative IDs.
 	for _, param := range params {
 		r.renamePat(param.Pattern)
+	}
+
+	// Define extra parameter names (e.g. implicit 'self' in methods) that are
+	// not present in the AST params but should be treated as local bindings.
+	for _, name := range extraParamNames {
+		r.define(name)
 	}
 
 	// Process the function body.

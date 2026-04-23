@@ -3,6 +3,7 @@ package checker
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // runLivenessPrePass runs name resolution, CFG construction, and liveness
@@ -12,15 +13,31 @@ import (
 // This must be called after bindings have been added to the scope (so that
 // outer-scope names can be resolved) but before statements are walked for
 // type checking.
-func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, body *ast.Block) {
+func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, paramBindings map[string]*type_system.Binding, body *ast.Block) {
 	// Build outer bindings from the scope chain. Every value binding
 	// accessible from the current scope (excluding local params, which the
 	// rename pass handles separately) gets a negative VarID so the rename
 	// pass can distinguish local from non-local variables.
 	outerBindings := collectOuterBindings(ctx.Scope)
 
+	// Compute extra param names: bindings in paramBindings that are not in
+	// astParams (e.g. implicit 'self' in methods). These need positive VarIDs
+	// so their uses in the body are tracked as local variables.
+	astParamNames := make(map[string]bool, len(astParams))
+	for _, p := range astParams {
+		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
+			astParamNames[identPat.Name] = true
+		}
+	}
+	var extraParamNames []string
+	for name := range paramBindings {
+		if !astParamNames[name] {
+			extraParamNames = append(extraParamNames, name)
+		}
+	}
+
 	// Phase 2: Resolve names → VarIDs
-	renameResult := liveness.Rename(astParams, *body, outerBindings)
+	renameResult := liveness.Rename(astParams, *body, outerBindings, extraParamNames...)
 
 	// Phase 3-4: Build CFG and run backward liveness analysis
 	cfg := liveness.BuildCFG(*body)
@@ -29,8 +46,38 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, body 
 	// Build StmtToRef lookup
 	stmtToRef := liveness.BuildStmtToRef(cfg)
 
-	// Initialize alias tracker
+	// Initialize alias tracker and seed parameters so that aliases from
+	// parameters are tracked and mutability transitions are detected.
 	aliases := liveness.NewAliasTracker()
+	for _, param := range astParams {
+		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.VarID > 0 {
+			varID := liveness.VarID(identPat.VarID)
+			// Determine mutability from the parameter's type binding in scope.
+			mut := liveness.AliasImmutable
+			if binding := ctx.Scope.Namespace.Values[identPat.Name]; binding != nil {
+				if isMutableType(binding.Type) {
+					mut = liveness.AliasMutable
+				}
+			}
+			aliases.NewValue(varID, mut)
+		}
+	}
+	// Seed extra params (e.g. 'self') into the alias tracker.
+	for _, name := range extraParamNames {
+		// Reverse-lookup: find the VarID assigned to this name.
+		for varID, varName := range renameResult.VarIDNames {
+			if varName == name {
+				mut := liveness.AliasImmutable
+				if binding := paramBindings[name]; binding != nil {
+					if isMutableType(binding.Type) {
+						mut = liveness.AliasMutable
+					}
+				}
+				aliases.NewValue(varID, mut)
+				break
+			}
+		}
+	}
 
 	// Set context fields
 	ctx.Liveness = livenessInfo

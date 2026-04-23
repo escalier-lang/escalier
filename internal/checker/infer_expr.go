@@ -132,11 +132,14 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}
 
 			// RHS must be a subtype of LHS because we're assigning RHS to LHS
+			errorsBefore := len(errors)
 			unifyErrors := c.Unify(ctx, rightType, leftType)
 			errors = slices.Concat(errors, unifyErrors)
 
 			// Alias tracking for variable reassignment (Phase 6.3)
-			if ctx.Aliases != nil {
+			// Only run when typing succeeded — incorrect types could cause
+			// false positive transition errors.
+			if ctx.Aliases != nil && len(errors) == errorsBefore {
 				if identExpr, ok := expr.Left.(*ast.IdentExpr); ok && identExpr.VarID > 0 {
 					transErrors := c.trackAliasesForAssignment(ctx, identExpr, expr.Right, leftType)
 					errors = slices.Concat(errors, transErrors)
@@ -795,13 +798,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			newNamespace.Values[name] = binding
 		}
 		newScope := ctx.Scope.WithNewScopeAndNamespace(newNamespace)
-		newCtx := Context{
-			Scope:                  newScope,
-			IsAsync:                ctx.IsAsync,
-			IsPatMatch:             ctx.IsPatMatch,
-			AllowUndefinedTypeRefs: ctx.AllowUndefinedTypeRefs,
-			TypeRefsToUpdate:       ctx.TypeRefsToUpdate,
-		}
+		newCtx := ctx.WithScope(newScope)
 
 		// Infer the type of the consequent block with the new context
 		consType, consErrors := c.inferBlock(newCtx, &expr.Cons, type_system.NewNeverType(nil))
