@@ -150,6 +150,32 @@ func TestMutabilityTransitions(t *testing.T) {
 		},
 	}
 
+	// Top-level script code (no wrapping function) — same rules apply.
+	tests["TopLevel_MutToImmutable_Error"] = struct {
+		input        string
+		expectErrors bool
+	}{
+		input: `
+			val items: mut {x: number} = {x: 1}
+			val snapshot: {x: number} = items
+			items.x = 2
+			snapshot
+		`,
+		expectErrors: true,
+	}
+	tests["TopLevel_MutToImmutable_OK"] = struct {
+		input        string
+		expectErrors bool
+	}{
+		input: `
+			val items: mut {x: number} = {x: 1}
+			items.x = 2
+			val snapshot: {x: number} = items
+			snapshot
+		`,
+		expectErrors: false,
+	}
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
