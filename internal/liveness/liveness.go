@@ -40,6 +40,20 @@ type LivenessInfo struct {
 
 // IsLiveAfter returns whether the given variable is live after the
 // statement at the given position.
+//
+// A StmtIdx of -1 represents a synthetic position before the first
+// statement in a block (used for decomposed DeclStmts whose init was
+// a branching expression). "Live after" this position means "live
+// before the first statement in the block".
 func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
+	if ref.StmtIdx < 0 {
+		// Synthetic position before the block's first statement.
+		if len(l.LiveBefore[ref.BlockID]) > 0 {
+			return l.LiveBefore[ref.BlockID][0].Contains(v)
+		}
+		// Empty block: use LiveAfter of the last statement's block entry.
+		// An empty block has no liveness data; fall back to false.
+		return false
+	}
 	return l.LiveAfter[ref.BlockID][ref.StmtIdx].Contains(v)
 }

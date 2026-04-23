@@ -230,6 +230,265 @@ func TestMutabilityTransitions(t *testing.T) {
 		`,
 	}
 
+	// Phase 7.1: Object property aliasing — obj.prop = value merges alias sets
+	tests["PropertyAssignment_MergesAliasSets_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val obj: mut {prop: mut {x: number}} = {prop: {x: 0}}
+				val p: mut {x: number} = {x: 1}
+				obj.prop = p
+				val q: {x: number} = p
+				obj.prop.x = 5
+				q
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "p",
+			TargetVar:       "q",
+			ConflictingVars: []string{"obj"},
+			MutToImmutable:  true,
+		}},
+	}
+	tests["PropertyAssignment_FreshValue_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val obj: mut {prop: mut {x: number}} = {prop: {x: 0}}
+				obj.prop = {x: 1}
+				val q: {x: number} = obj
+				q
+			}
+		`,
+	}
+
+	// Phase 7.3: Destructuring aliasing
+	tests["Destructuring_ObjectPat_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val obj: mut {a: mut {x: number}} = {a: {x: 0}}
+				val {a}: {a: mut {x: number}} = obj
+				val frozen: {a: mut {x: number}} = obj
+				a.x = 5
+				frozen
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "obj",
+			TargetVar:       "frozen",
+			ConflictingVars: []string{"a"},
+			MutToImmutable:  true,
+		}},
+	}
+	tests["Destructuring_FreshSource_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val {a}: {a: mut {x: number}} = {a: {x: 0}}
+				a.x = 5
+			}
+		`,
+	}
+
+	// Phase 7.4: Conditional aliasing
+	tests["Conditional_IfElse_AliasesBothBranches_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test(cond: boolean) {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				val c: {x: number} = if cond { a } else { b }
+				a.x = 5
+				c
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "a",
+			TargetVar:       "c",
+			ConflictingVars: []string{"a"},
+			MutToImmutable:  true,
+		}},
+	}
+	tests["Conditional_IfElse_AliasesBothBranches_OtherBranch_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test(cond: boolean) {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				val c: {x: number} = if cond { a } else { b }
+				b.x = 5
+				c
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "b",
+			TargetVar:       "c",
+			ConflictingVars: []string{"b"},
+			MutToImmutable:  true,
+		}},
+	}
+
+	// Conditional aliasing: both branches violate the transition, so both
+	// errors should be reported (not just the first).
+	tests["Conditional_IfElse_BothBranchesViolate_MultipleErrors"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test(cond: boolean) {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				val c: {x: number} = if cond { a } else { b }
+				a.x = 5
+				b.x = 5
+				c
+			}
+		`,
+		expectedErrors: []expectedTransitionError{
+			{
+				SourceVar:       "a",
+				TargetVar:       "c",
+				ConflictingVars: []string{"a"},
+				MutToImmutable:  true,
+			},
+			{
+				SourceVar:       "b",
+				TargetVar:       "c",
+				ConflictingVars: []string{"b"},
+				MutToImmutable:  true,
+			},
+		},
+	}
+
+	// Phase 7.2: Closure capture aliasing
+	tests["ClosureCapture_ReadOnly_BlocksImmutableToMut"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val items: {x: number} = {x: 0}
+				val f = fn() -> {x: number} { items }
+				val mutItems: mut {x: number} = items
+				mutItems.x = 5
+				f
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "items",
+			TargetVar:       "mutItems",
+			ConflictingVars: []string{"f"},
+			MutToImmutable:  false,
+		}},
+	}
+	tests["ClosureCapture_MutableCapture_BlocksMutToImmutable"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val items: mut {x: number} = {x: 0}
+				val f = fn() { items.x = 1 }
+				val snapshot: {x: number} = items
+				f
+				snapshot
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "items",
+			TargetVar:       "snapshot",
+			ConflictingVars: []string{"f"},
+			MutToImmutable:  true,
+		}},
+	}
+	tests["ClosureCapture_ReadOnly_DoesNotBlockMutToImmutable"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val items: mut {x: number} = {x: 0}
+				val f = fn() -> {x: number} { items }
+				items.x = 1
+				val snapshot: {x: number} = items
+				snapshot
+			}
+		`,
+		// Read-only capture f is an immutable alias of items.
+		// Rule 1 (mut→immutable) only blocks on live MUTABLE aliases.
+		// f is immutable, so it does NOT block the transition.
+	}
+	tests["ClosureCapture_DeadClosure_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val items: {x: number} = {x: 0}
+				val f = fn() -> {x: number} { items }
+				f
+				val mutItems: mut {x: number} = items
+				mutItems.x = 5
+			}
+		`,
+		// f is dead after its last use, so the transition is safe.
+	}
+
+	// Reassignment with conditional RHS should not merge unrelated alias sets.
+	// When `d = if cond { a } else { b }`, d aliases both a and b, but a and
+	// b should NOT become aliases of each other.
+	tests["Conditional_Reassignment_DoesNotMergeUnrelatedSets_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test(cond: boolean) {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				var d: mut {x: number} = {x: 2}
+				d = if cond { a } else { b }
+				d
+				val frozen: {x: number} = a
+				b.x = 5
+				frozen
+			}
+		`,
+		// d is dead after its last use. b is not an alias of a, so the
+		// mut→immutable transition on a should succeed. If alias sets
+		// were incorrectly merged, b would appear as a conflicting alias.
+	}
+
+	// Phase 7.5: Reassignment leaves alias set (already tested in Phase 5,
+	// included here for completeness)
+	tests["Reassignment_LeavesAliasSet_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val a: mut {x: number} = {x: 0}
+				var b: mut {x: number} = a
+				b = {x: 1}
+				val q: {x: number} = a
+				q
+			}
+		`,
+		// b was reassigned to a fresh value, so it left a's alias set.
+	}
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

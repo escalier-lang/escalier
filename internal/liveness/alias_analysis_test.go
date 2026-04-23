@@ -82,8 +82,28 @@ func TestDetermineAliasSource_BinaryExpr(t *testing.T) {
 }
 
 func TestDetermineAliasSource_MemberExpr(t *testing.T) {
+	// Phase 7: MemberExpr recurses into the object — obj.field aliases obj.
+	obj := ast.NewIdent("obj", ast.Span{})
+	obj.VarID = 5
 	member := ast.NewMember(
-		ast.NewIdent("obj", ast.Span{}),
+		obj,
+		ast.NewIdentifier("field", ast.Span{}),
+		false,
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(member)
+
+	require.Equal(t, AliasSourceVariable, source.Kind)
+	require.Equal(t, []VarID{5}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_MemberExpr_NonLocal(t *testing.T) {
+	// MemberExpr on a non-local variable still returns Unknown.
+	obj := ast.NewIdent("obj", ast.Span{})
+	obj.VarID = -1
+	member := ast.NewMember(
+		obj,
 		ast.NewIdentifier("field", ast.Span{}),
 		false,
 		ast.Span{},
@@ -103,6 +123,143 @@ func TestDetermineAliasSource_TypeCast(t *testing.T) {
 
 	require.Equal(t, AliasSourceVariable, source.Kind)
 	require.Equal(t, []VarID{3}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_IfElseExpr_BothVariables(t *testing.T) {
+	a := ast.NewIdent("a", ast.Span{})
+	a.VarID = 1
+	b := ast.NewIdent("b", ast.Span{})
+	b.VarID = 2
+
+	consBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(a, ast.Span{})}}
+	altBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(b, ast.Span{})}}
+	ifElse := ast.NewIfElse(
+		ast.NewLitExpr(ast.NewBoolean(true, ast.Span{})),
+		consBlock,
+		&ast.BlockOrExpr{Block: &altBlock},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(ifElse)
+
+	require.Equal(t, AliasSourceMultiple, source.Kind)
+	require.ElementsMatch(t, []VarID{1, 2}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_IfElseExpr_OneVariableOneFresh(t *testing.T) {
+	a := ast.NewIdent("a", ast.Span{})
+	a.VarID = 1
+	freshObj := ast.NewObject(nil, ast.Span{})
+
+	consBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(a, ast.Span{})}}
+	altBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(freshObj, ast.Span{})}}
+	ifElse := ast.NewIfElse(
+		ast.NewLitExpr(ast.NewBoolean(true, ast.Span{})),
+		consBlock,
+		&ast.BlockOrExpr{Block: &altBlock},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(ifElse)
+
+	require.Equal(t, AliasSourceVariable, source.Kind)
+	require.Equal(t, []VarID{1}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_IfElseExpr_BothFresh(t *testing.T) {
+	fresh1 := ast.NewObject(nil, ast.Span{})
+	fresh2 := ast.NewObject(nil, ast.Span{})
+
+	consBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(fresh1, ast.Span{})}}
+	altBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(fresh2, ast.Span{})}}
+	ifElse := ast.NewIfElse(
+		ast.NewLitExpr(ast.NewBoolean(true, ast.Span{})),
+		consBlock,
+		&ast.BlockOrExpr{Block: &altBlock},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(ifElse)
+
+	require.Equal(t, AliasSourceFresh, source.Kind)
+}
+
+func TestDetermineAliasSource_IfElseExpr_NoAlt(t *testing.T) {
+	a := ast.NewIdent("a", ast.Span{})
+	a.VarID = 1
+
+	consBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(a, ast.Span{})}}
+	ifElse := ast.NewIfElse(
+		ast.NewLitExpr(ast.NewBoolean(true, ast.Span{})),
+		consBlock,
+		nil,
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(ifElse)
+
+	require.Equal(t, AliasSourceUnknown, source.Kind)
+}
+
+func TestDetermineAliasSource_IfElseExpr_SameVariable(t *testing.T) {
+	a1 := ast.NewIdent("a", ast.Span{})
+	a1.VarID = 1
+	a2 := ast.NewIdent("a", ast.Span{})
+	a2.VarID = 1
+
+	consBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(a1, ast.Span{})}}
+	altBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(a2, ast.Span{})}}
+	ifElse := ast.NewIfElse(
+		ast.NewLitExpr(ast.NewBoolean(true, ast.Span{})),
+		consBlock,
+		&ast.BlockOrExpr{Block: &altBlock},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(ifElse)
+
+	// Same variable in both branches → deduplicated to a single variable
+	require.Equal(t, AliasSourceVariable, source.Kind)
+	require.Equal(t, []VarID{1}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_MatchExpr_MultipleVariables(t *testing.T) {
+	a := ast.NewIdent("a", ast.Span{})
+	a.VarID = 1
+	b := ast.NewIdent("b", ast.Span{})
+	b.VarID = 2
+	c := ast.NewIdent("c", ast.Span{})
+	c.VarID = 3
+
+	matchExpr := ast.NewMatch(
+		ast.NewLitExpr(ast.NewNumber(1, ast.Span{})),
+		[]*ast.MatchCase{
+			ast.NewMatchCase(
+				ast.NewWildcardPat(ast.Span{}),
+				nil,
+				ast.BlockOrExpr{Expr: a},
+				ast.Span{},
+			),
+			ast.NewMatchCase(
+				ast.NewWildcardPat(ast.Span{}),
+				nil,
+				ast.BlockOrExpr{Expr: b},
+				ast.Span{},
+			),
+			ast.NewMatchCase(
+				ast.NewWildcardPat(ast.Span{}),
+				nil,
+				ast.BlockOrExpr{Expr: c},
+				ast.Span{},
+			),
+		},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(matchExpr)
+
+	require.Equal(t, AliasSourceMultiple, source.Kind)
+	require.ElementsMatch(t, []VarID{1, 2, 3}, source.VarIDs)
 }
 
 // Integration tests: alias tracking with DetermineAliasSource

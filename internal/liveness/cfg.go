@@ -17,11 +17,21 @@ type BasicBlock struct {
 	ExtraDefs []VarID
 }
 
+// decomposedStmt records that a statement (typically a DeclStmt whose init
+// was a branching expression) was decomposed by the CFG builder. The stmt
+// itself doesn't appear in any block's Stmts, but it needs a StmtRef so
+// that alias tracking can look up liveness at the join point.
+type decomposedStmt struct {
+	Stmt  ast.Stmt
+	Block *BasicBlock
+}
+
 // CFG represents the control flow graph for a function body.
 type CFG struct {
-	Entry  *BasicBlock
-	Exit   *BasicBlock
-	Blocks []*BasicBlock
+	Entry          *BasicBlock
+	Exit           *BasicBlock
+	Blocks         []*BasicBlock
+	DecomposedStmts []decomposedStmt
 }
 
 // BuildCFG constructs a control flow graph from a function body.
@@ -39,7 +49,7 @@ func BuildCFG(body ast.Block) *CFG {
 		b.addEdge(final, exit)
 	}
 
-	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks}
+	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, DecomposedStmts: b.decomposedStmts}
 }
 
 // BuildStmtToRef constructs a mapping from AST statement nodes to their
@@ -52,13 +62,20 @@ func BuildStmtToRef(cfg *CFG) map[ast.Stmt]StmtRef {
 			result[stmt] = StmtRef{BlockID: block.ID, StmtIdx: i}
 		}
 	}
+	// Map decomposed statements (e.g. DeclStmts whose init was a branching
+	// expression) to the first position in their join block. This uses
+	// StmtIdx -1 as a synthetic index before any real statements.
+	for _, ds := range cfg.DecomposedStmts {
+		result[ds.Stmt] = StmtRef{BlockID: ds.Block.ID, StmtIdx: -1}
+	}
 	return result
 }
 
 // cfgBuilder accumulates basic blocks while walking the AST.
 type cfgBuilder struct {
-	blocks []*BasicBlock
-	exit   *BasicBlock
+	blocks          []*BasicBlock
+	exit            *BasicBlock
+	decomposedStmts []decomposedStmt
 }
 
 func (b *cfgBuilder) newBlock() *BasicBlock {
@@ -178,6 +195,14 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 
 	joinDefs := collectPatVarDefs(vd.Pattern)
 	if join := b.decomposeBranch(vd.Init, joinDefs, current); join != nil {
+		// Track the decomposed statement → join block mapping so that
+		// BuildStmtToRef can create a StmtRef for the DeclStmt. This
+		// enables alias tracking and transition checking to look up
+		// liveness at the join point.
+		b.decomposedStmts = append(b.decomposedStmts, decomposedStmt{
+			Stmt:  s,
+			Block: join,
+		})
 		return join
 	}
 

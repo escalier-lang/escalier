@@ -146,6 +146,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				if identExpr, ok := expr.Left.(*ast.IdentExpr); ok && identExpr.VarID > 0 {
 					transErrors := c.trackAliasesForAssignment(ctx, identExpr, expr.Right, leftType)
 					errors = slices.Concat(errors, transErrors)
+				} else {
+					// Phase 7.1: Object property aliasing — when obj.prop = value
+					// and value aliases a variable, merge alias sets of obj and value.
+					c.trackAliasesForPropAssignment(ctx, expr.Left, expr.Right)
 				}
 			}
 
