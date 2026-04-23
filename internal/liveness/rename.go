@@ -34,6 +34,10 @@ type RenameResult struct {
 	// data structures in later phases).
 	UniqueVarCount int
 
+	// VarIDNames maps each local VarID to the variable name it was assigned from.
+	// Used for error messages in later phases (e.g. mutability transition errors).
+	VarIDNames map[VarID]string
+
 	// Errors contains any unresolved variable references found during
 	// the rename pass.
 	Errors []RenameError
@@ -48,17 +52,19 @@ type RenameError struct {
 
 // renamer holds the mutable state of the rename pass.
 type renamer struct {
-	nextID VarID
-	scope  *scope
-	errors []RenameError
+	nextID     VarID
+	scope      *scope
+	errors     []RenameError
+	varIDNames map[VarID]string
 }
 
 func newRenamer(outerBindings map[string]VarID) *renamer {
 	s := newScope(nil)
 	maps.Copy(s.bindings, outerBindings)
 	return &renamer{
-		nextID: 1, // local VarIDs start at 1
-		scope:  s,
+		nextID:     1, // local VarIDs start at 1
+		scope:      s,
+		varIDNames: make(map[VarID]string),
 	}
 }
 
@@ -80,6 +86,7 @@ func (r *renamer) popScope() {
 func (r *renamer) define(name string) VarID {
 	id := r.freshID()
 	r.scope.bindings[name] = id
+	r.varIDNames[id] = name
 	return id
 }
 
@@ -125,6 +132,7 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID)
 
 	return &RenameResult{
 		UniqueVarCount: int(r.nextID) - 1, // count of local variables assigned
+		VarIDNames:     r.varIDNames,
 		Errors:         r.errors,
 	}
 }

@@ -135,6 +135,14 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			unifyErrors := c.Unify(ctx, rightType, leftType)
 			errors = slices.Concat(errors, unifyErrors)
 
+			// Alias tracking for variable reassignment (Phase 6.3)
+			if ctx.Aliases != nil {
+				if identExpr, ok := expr.Left.(*ast.IdentExpr); ok && identExpr.VarID > 0 {
+					transErrors := c.trackAliasesForAssignment(ctx, identExpr, expr.Right, leftType)
+					errors = slices.Concat(errors, transErrors)
+				}
+			}
+
 			exprType = neverType
 		} else {
 			opBinding := ctx.Scope.GetValue(string(expr.Op))
@@ -473,7 +481,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				}
 
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					methodCtx, methodType, paramBindings, methodExpr.Fn.Body, methodExpr.Fn.Async)
+					methodCtx, methodType, paramBindings, methodExpr.Fn.Params, methodExpr.Fn.Body, methodExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.GetterExpr:
@@ -487,7 +495,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				getterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, getterExpr.Fn.Body, getterExpr.Fn.Async)
+					objCtx, funcType, paramBindings, getterExpr.Fn.Params, getterExpr.Fn.Body, getterExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.SetterExpr:
@@ -501,7 +509,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				setterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, setterExpr.Fn.Body, setterExpr.Fn.Async)
+					objCtx, funcType, paramBindings, setterExpr.Fn.Params, setterExpr.Fn.Body, setterExpr.Fn.Async)
 				errors = slices.Concat(errors, inferErrors)
 			case *ast.ObjSpreadExpr:
 				// Already handled in the first loop — nothing to do here.
@@ -527,7 +535,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			funcCtx.CallSiteTypeVars = &callSiteTypeVars
 		}
 
-		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.Body, expr.FuncSig.Async)
+		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.FuncSig.Params, expr.Body, expr.FuncSig.Async)
 		errors = slices.Concat(errors, inferErrors)
 
 		// Only generalize top-level FuncExprs. Nested FuncExprs (inside function

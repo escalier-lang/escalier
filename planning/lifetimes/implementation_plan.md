@@ -13,7 +13,7 @@ into phases that build incrementally, each producing a testable milestone.
 |     3 | Liveness analysis (straight-line code)               | 2          | Done   |
 |     4 | Liveness analysis (control flow)                     | 3          | Done   |
 |     5 | Alias tracking (local variables)                     | 3          | Done   |
-|     6 | Mutability transition checking                       | 4, 5       |        |
+|     6 | Mutability transition checking                       | 4, 5       | Done   |
 |     7 | Alias tracking (properties, closures, destructuring) | 5, 6       |        |
 |     8 | Lifetime annotations and inference                   | 6, 7       |        |
 |     9 | Lifetime unification                                 | 8          |        |
@@ -2523,9 +2523,9 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
 └── 2. Name resolution & VarID assignment ✅
     └── 3. Liveness (linear) ✅
         ├── 4. Liveness (control flow) ✅
-        │   └── 6. Transition checking ←── (also depends on 5)
+        │   └── 6. Transition checking ←── (also depends on 5) ✅
         └── 5. Alias tracking (local) ✅
-            ├── 6. Transition checking
+            ├── 6. Transition checking ✅
             │   └── 7. Advanced alias tracking (properties, closures, destructuring)
             │       └── 8. Lifetime annotations, inference, & constructors
             │           └── 9. Lifetime unification ('static, conflict detection,

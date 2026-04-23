@@ -42,6 +42,19 @@ func BuildCFG(body ast.Block) *CFG {
 	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks}
 }
 
+// BuildStmtToRef constructs a mapping from AST statement nodes to their
+// position in the CFG. This enables O(1) lookup of liveness information
+// for a given statement during type checking.
+func BuildStmtToRef(cfg *CFG) map[ast.Stmt]StmtRef {
+	result := make(map[ast.Stmt]StmtRef)
+	for _, block := range cfg.Blocks {
+		for i, stmt := range block.Stmts {
+			result[stmt] = StmtRef{BlockID: block.ID, StmtIdx: i}
+		}
+	}
+	return result
+}
+
 // cfgBuilder accumulates basic blocks while walking the AST.
 type cfgBuilder struct {
 	blocks []*BasicBlock
