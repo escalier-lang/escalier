@@ -160,10 +160,10 @@ func TestCollectUsesFuncDecl(t *testing.T) {
 	require.Equal(t, []VarID{VarID(addRef.VarID)}, uses[1].Uses)
 }
 
-func TestCollectUsesDoExprNotRecursed(t *testing.T) {
+func TestCollectUsesDoExprRecursed(t *testing.T) {
 	// val x = 1; val y = do { x + 1 }
-	// Phase 3 does not recurse into do blocks, so x is NOT collected
-	// as a use of stmt 1. Phase 4 fixes this.
+	// When nested inside another expression (not decomposed by the CFG),
+	// CollectUses recurses into do block bodies to capture all uses.
 	x := identPat("x")
 	xRef := ident("x") // inside do block
 	y := identPat("y")
@@ -178,13 +178,14 @@ func TestCollectUsesDoExprNotRecursed(t *testing.T) {
 	uses := CollectUses(stmts)
 
 	require.Len(t, uses, 2)
-	// The use of x inside the do block is NOT visible in Phase 3.
-	require.Empty(t, uses[1].Uses, "do block body should not be recursed into in Phase 3")
+	// The use of x inside the do block is captured by CollectUses.
+	require.Equal(t, []VarID{VarID(xRef.VarID)}, uses[1].Uses, "do block body should be recursed into by CollectUses")
 }
 
-func TestCollectUsesIfElseNotRecursed(t *testing.T) {
-	// val x = 1; val y = if true { x } else { 0 }
-	// Phase 3 collects the condition but not the branch bodies.
+func TestCollectUsesIfElseRecursed(t *testing.T) {
+	// val x = 1; val y = if cond { x } else { 0 }
+	// When nested inside another expression (not decomposed by the CFG),
+	// CollectUses recurses into branch bodies to capture all uses.
 	x := identPat("x")
 	xRef := ident("x") // inside then branch
 	y := identPat("y")
@@ -206,8 +207,134 @@ func TestCollectUsesIfElseNotRecursed(t *testing.T) {
 	uses := CollectUses(stmts)
 
 	require.Len(t, uses, 2)
-	// The use of x inside the then branch is NOT visible in Phase 3.
-	require.Empty(t, uses[1].Uses, "if/else branch bodies should not be recursed into in Phase 3")
+	// The use of x inside the then branch is captured by CollectUses.
+	require.Equal(t, []VarID{VarID(xRef.VarID)}, uses[1].Uses, "if/else branch bodies should be recursed into by CollectUses")
+}
+
+func TestCollectUsesMatchRecursed(t *testing.T) {
+	// val x = 1; val y = 2
+	// val r = match target {
+	//   case _ => x
+	//   case _ => y
+	// }
+	// When nested inside another expression (not decomposed by the CFG),
+	// CollectUses recurses into match arms to capture all uses.
+	x := identPat("x")
+	y := identPat("y")
+	r := identPat("r")
+	xRef := ident("x")
+	yRef := ident("y")
+	stmts := []ast.Stmt{
+		valDecl(x, numLit(1)),
+		valDecl(y, numLit(2)),
+		valDecl(r, ast.NewMatch(
+			ident("target"),
+			[]*ast.MatchCase{
+				ast.NewMatchCase(
+					ast.NewWildcardPat(span()),
+					nil,
+					ast.BlockOrExpr{Expr: xRef},
+					span(),
+				),
+				ast.NewMatchCase(
+					ast.NewWildcardPat(span()),
+					nil,
+					ast.BlockOrExpr{Expr: yRef},
+					span(),
+				),
+			},
+			span(),
+		)),
+	}
+	Rename(nil, block(stmts...), map[string]VarID{"target": -1})
+
+	uses := CollectUses(stmts)
+
+	require.Len(t, uses, 3)
+	// Both x and y inside the match arms are captured by CollectUses.
+	require.Equal(t, []VarID{VarID(xRef.VarID), VarID(yRef.VarID)}, uses[2].Uses,
+		"match arm bodies should be recursed into by CollectUses")
+}
+
+func TestCollectUsesMatchWithGuardRecursed(t *testing.T) {
+	// val x = 1; val g = true
+	// val r = match target {
+	//   case _ if g => x
+	//   case _ => 0
+	// }
+	// Guard expression uses should also be captured.
+	x := identPat("x")
+	g := identPat("g")
+	r := identPat("r")
+	xRef := ident("x")
+	gRef := ident("g")
+	stmts := []ast.Stmt{
+		valDecl(x, numLit(1)),
+		valDecl(g, ident("true")),
+		valDecl(r, ast.NewMatch(
+			ident("target"),
+			[]*ast.MatchCase{
+				ast.NewMatchCase(
+					ast.NewWildcardPat(span()),
+					gRef,
+					ast.BlockOrExpr{Expr: xRef},
+					span(),
+				),
+				ast.NewMatchCase(
+					ast.NewWildcardPat(span()),
+					nil,
+					ast.BlockOrExpr{Expr: numLit(0)},
+					span(),
+				),
+			},
+			span(),
+		)),
+	}
+	Rename(nil, block(stmts...), map[string]VarID{"target": -1, "true": -2})
+
+	uses := CollectUses(stmts)
+
+	require.Len(t, uses, 3)
+	// Both the guard (g) and arm body (x) are captured.
+	require.Equal(t, []VarID{VarID(gRef.VarID), VarID(xRef.VarID)}, uses[2].Uses,
+		"match guard and arm body should be recursed into by CollectUses")
+}
+
+func TestCollectUsesTryCatchRecursed(t *testing.T) {
+	// val x = 1; val y = 2
+	// val r = try { x } catch { case e => y }
+	// When nested inside another expression (not decomposed by the CFG),
+	// CollectUses recurses into try and catch bodies to capture all uses.
+	x := identPat("x")
+	y := identPat("y")
+	r := identPat("r")
+	xRef := ident("x")
+	yRef := ident("y")
+	e := identPat("e")
+	stmts := []ast.Stmt{
+		valDecl(x, numLit(1)),
+		valDecl(y, numLit(2)),
+		valDecl(r, ast.NewTryCatch(
+			block(exprStmt(xRef)),
+			[]*ast.MatchCase{
+				ast.NewMatchCase(
+					e,
+					nil,
+					ast.BlockOrExpr{Expr: yRef},
+					span(),
+				),
+			},
+			span(),
+		)),
+	}
+	Rename(nil, block(stmts...), nil)
+
+	uses := CollectUses(stmts)
+
+	require.Len(t, uses, 3)
+	// Both x (try body) and y (catch body) are captured by CollectUses.
+	require.Equal(t, []VarID{VarID(xRef.VarID), VarID(yRef.VarID)}, uses[2].Uses,
+		"try and catch bodies should be recursed into by CollectUses")
 }
 
 // --- AnalyzeBlock tests ---
@@ -240,21 +367,21 @@ func TestLivenessSimpleSequential(t *testing.T) {
 	// Statement 0: val x = 1
 	// LiveBefore: {} (x not yet used, will be defined here)
 	// LiveAfter: {x} (x is used in statement 1)
-	require.False(t, info.LiveBefore[0][0][xID])
-	require.True(t, info.LiveAfter[0][0][xID])
+	require.False(t, info.LiveBefore[0][0].Contains(xID))
+	require.True(t, info.LiveAfter[0][0].Contains(xID))
 
 	// Statement 1: val y = x
 	// LiveBefore: {x} (x is used here)
 	// LiveAfter: {y} (y is used in statement 2, x is dead)
-	require.True(t, info.LiveBefore[0][1][xID])
-	require.False(t, info.LiveAfter[0][1][xID])
-	require.True(t, info.LiveAfter[0][1][yID])
+	require.True(t, info.LiveBefore[0][1].Contains(xID))
+	require.False(t, info.LiveAfter[0][1].Contains(xID))
+	require.True(t, info.LiveAfter[0][1].Contains(yID))
 
 	// Statement 2: print(y)
 	// LiveBefore: {y} (y is used here)
 	// LiveAfter: {} (nothing needed after)
-	require.True(t, info.LiveBefore[0][2][yID])
-	require.False(t, info.LiveAfter[0][2][yID])
+	require.True(t, info.LiveBefore[0][2].Contains(yID))
+	require.False(t, info.LiveAfter[0][2].Contains(yID))
 }
 
 func TestLivenessVariableDeadAfterLastUse(t *testing.T) {
@@ -276,10 +403,10 @@ func TestLivenessVariableDeadAfterLastUse(t *testing.T) {
 	xID := VarID(x.VarID)
 
 	// x is dead after statement 1 (its last use)
-	require.True(t, info.LiveBefore[0][1][xID])
-	require.False(t, info.LiveAfter[0][1][xID])
-	require.False(t, info.LiveBefore[0][2][xID])
-	require.False(t, info.LiveAfter[0][2][xID])
+	require.True(t, info.LiveBefore[0][1].Contains(xID))
+	require.False(t, info.LiveAfter[0][1].Contains(xID))
+	require.False(t, info.LiveBefore[0][2].Contains(xID))
+	require.False(t, info.LiveAfter[0][2].Contains(xID))
 }
 
 func TestLivenessDefinitionKillsVariable(t *testing.T) {
@@ -302,17 +429,17 @@ func TestLivenessDefinitionKillsVariable(t *testing.T) {
 
 	// After stmt 1 (print(x)): x is dead because stmt 2 redefines it
 	// before stmt 3 uses it.
-	require.True(t, info.LiveBefore[0][1][xID])
-	require.False(t, info.LiveAfter[0][1][xID])
+	require.True(t, info.LiveBefore[0][1].Contains(xID))
+	require.False(t, info.LiveAfter[0][1].Contains(xID))
 
 	// Stmt 2 (x = 2): x is defined here, so LiveBefore doesn't include x
 	// (the old value is killed). But LiveAfter does (x is used in stmt 3).
-	require.False(t, info.LiveBefore[0][2][xID])
-	require.True(t, info.LiveAfter[0][2][xID])
+	require.False(t, info.LiveBefore[0][2].Contains(xID))
+	require.True(t, info.LiveAfter[0][2].Contains(xID))
 
 	// Stmt 3 (print(x)): x is live before (used here), dead after.
-	require.True(t, info.LiveBefore[0][3][xID])
-	require.False(t, info.LiveAfter[0][3][xID])
+	require.True(t, info.LiveBefore[0][3].Contains(xID))
+	require.False(t, info.LiveAfter[0][3].Contains(xID))
 }
 
 func TestLivenessUnusedVariableNeverLive(t *testing.T) {
@@ -333,8 +460,8 @@ func TestLivenessUnusedVariableNeverLive(t *testing.T) {
 
 	// x is never used, so it should never be live.
 	for i := range 3 {
-		require.False(t, info.LiveBefore[0][i][xID], "x should not be live before stmt %d", i)
-		require.False(t, info.LiveAfter[0][i][xID], "x should not be live after stmt %d", i)
+		require.False(t, info.LiveBefore[0][i].Contains(xID), "x should not be live before stmt %d", i)
+		require.False(t, info.LiveAfter[0][i].Contains(xID), "x should not be live after stmt %d", i)
 	}
 }
 
@@ -363,13 +490,13 @@ func TestLivenessShadowingDistinctVarIDs(t *testing.T) {
 	require.NotEqual(t, x1ID, x2ID)
 
 	// First x: live before stmt 1 (used there), dead after.
-	require.True(t, info.LiveBefore[0][1][x1ID])
-	require.False(t, info.LiveAfter[0][1][x1ID])
+	require.True(t, info.LiveBefore[0][1].Contains(x1ID))
+	require.False(t, info.LiveAfter[0][1].Contains(x1ID))
 
 	// Second x: live after stmt 2 (defined there), live before stmt 3.
-	require.True(t, info.LiveAfter[0][2][x2ID])
-	require.True(t, info.LiveBefore[0][3][x2ID])
-	require.False(t, info.LiveAfter[0][3][x2ID])
+	require.True(t, info.LiveAfter[0][2].Contains(x2ID))
+	require.True(t, info.LiveBefore[0][3].Contains(x2ID))
+	require.False(t, info.LiveAfter[0][3].Contains(x2ID))
 }
 
 func TestLivenessLastUse(t *testing.T) {
@@ -433,19 +560,19 @@ func TestLivenessMultipleVariables(t *testing.T) {
 	cID := VarID(c.VarID)
 
 	// After stmt 0 (val a = 1): a is live (used in stmt 2)
-	require.True(t, info.LiveAfter[0][0][aID])
+	require.True(t, info.LiveAfter[0][0].Contains(aID))
 
 	// After stmt 1 (val b = 2): a and b are both live
-	require.True(t, info.LiveAfter[0][1][aID])
-	require.True(t, info.LiveAfter[0][1][bID])
+	require.True(t, info.LiveAfter[0][1].Contains(aID))
+	require.True(t, info.LiveAfter[0][1].Contains(bID))
 
 	// After stmt 2 (val c = a + b): a and b are dead, c is live
-	require.False(t, info.LiveAfter[0][2][aID])
-	require.False(t, info.LiveAfter[0][2][bID])
-	require.True(t, info.LiveAfter[0][2][cID])
+	require.False(t, info.LiveAfter[0][2].Contains(aID))
+	require.False(t, info.LiveAfter[0][2].Contains(bID))
+	require.True(t, info.LiveAfter[0][2].Contains(cID))
 
 	// After stmt 3 (print(c)): c is dead
-	require.False(t, info.LiveAfter[0][3][cID])
+	require.False(t, info.LiveAfter[0][3].Contains(cID))
 }
 
 func TestLivenessAssignmentFromVariable(t *testing.T) {
@@ -470,9 +597,9 @@ func TestLivenessAssignmentFromVariable(t *testing.T) {
 
 	// Stmt 2 (b = a): a is used, b is defined.
 	// LiveBefore should include a (used here) but not b (killed here).
-	require.True(t, info.LiveBefore[0][2][aID])
-	require.False(t, info.LiveBefore[0][2][bID])
+	require.True(t, info.LiveBefore[0][2].Contains(aID))
+	require.False(t, info.LiveBefore[0][2].Contains(bID))
 	// LiveAfter: b is live (used in stmt 3), a is dead.
-	require.True(t, info.LiveAfter[0][2][bID])
-	require.False(t, info.LiveAfter[0][2][aID])
+	require.True(t, info.LiveAfter[0][2].Contains(bID))
+	require.False(t, info.LiveAfter[0][2].Contains(aID))
 }

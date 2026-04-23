@@ -10,18 +10,23 @@ type StmtUses struct {
 	Defs []VarID // Variables defined (written) in this statement
 }
 
-// CollectUses walks a linear block of statements and returns per-statement
+// CollectUses walks a sequence of statements and returns per-statement
 // use/def information. Only local variables (VarID > 0) are tracked;
 // non-local variables (VarID < 0) and unresolved references (VarID == 0)
 // are ignored.
 //
-// Phase 3 limitation: nested control-flow expressions (if/else, match,
-// do, try/catch) are not recursed into. Variables used only inside these
-// nested blocks will not appear in the enclosing statement's use set,
-// causing them to appear dead at the enclosing statement. This is an
-// under-approximation — Phase 4 replaces this with CFG-based analysis
-// that handles all control flow correctly. Phase 6 (transition checking)
-// must not be enabled until Phase 4 is complete.
+// Top-level control-flow expressions (if/else, match, do, try/catch) are
+// not recursed into because BuildCFG decomposes them into separate basic
+// blocks. CollectUses only needs to collect uses from the non-branching
+// parts of each statement (e.g., the condition of an if/else), since
+// branch bodies are handled by the CFG structure.
+//
+// Branching expressions nested inside other expressions (e.g.,
+// foo(if cond { a } else { b })) are not decomposed by BuildCFG.
+// For these, collectExpr recurses into all branch bodies, collecting
+// every use as if it belongs to the enclosing statement. This is
+// conservative (variables may appear live longer than necessary) but
+// safe. See #485 for decomposing nested branching in the CFG.
 //
 // VarIDs are read directly from AST nodes (set by the rename pass in Phase 2).
 func CollectUses(stmts []ast.Stmt) []StmtUses {
@@ -64,8 +69,7 @@ func (c *collector) collectStmt(stmt ast.Stmt) {
 		}
 	case *ast.ForInStmt:
 		// Collect uses from the iterable expression only. The loop body
-		// and pattern are not processed here — Phase 4 handles them via
-		// the CFG with proper scope isolation.
+		// and pattern are in separate basic blocks created by BuildCFG.
 		c.collectExpr(s.Iterable)
 	case *ast.ImportStmt:
 		// No variable uses.
@@ -126,6 +130,24 @@ func (c *collector) collectPatDefs(pat ast.Pat) {
 	}
 }
 
+func (c *collector) collectBlock(block ast.Block) {
+	for _, stmt := range block.Stmts {
+		c.collectStmt(stmt)
+	}
+}
+
+func (c *collector) collectBlockOrExpr(boe *ast.BlockOrExpr) {
+	if boe == nil {
+		return
+	}
+	if boe.Block != nil {
+		c.collectBlock(*boe.Block)
+	}
+	if boe.Expr != nil {
+		c.collectExpr(boe.Expr)
+	}
+}
+
 func (c *collector) collectExpr(expr ast.Expr) {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
@@ -164,22 +186,45 @@ func (c *collector) collectExpr(expr ast.Expr) {
 	case *ast.ObjectExpr:
 		c.collectObjExprElems(e.Elems)
 	case *ast.IfElseExpr:
-		// Condition only — branch bodies are deferred to Phase 4 (CFG).
-		// Variables used only inside branches will appear dead here (see
-		// package doc on under-approximation).
+		// When decomposed by BuildCFG (top-level), the condition is in a
+		// synthetic ExprStmt and branches are separate blocks, so
+		// collectExpr never sees the IfElseExpr itself. When nested
+		// inside another expression (e.g., foo(if c { x } else { y })),
+		// we must recurse into the bodies to capture all uses.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
 		c.collectExpr(e.Cond)
+		c.collectBlock(e.Cons)
+		c.collectBlockOrExpr(e.Alt)
 	case *ast.IfLetExpr:
-		// Target expression only — pattern and branch bodies are deferred
-		// to Phase 4 (CFG).
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
 		c.collectExpr(e.Target)
+		c.collectBlock(e.Cons)
+		c.collectBlockOrExpr(e.Alt)
 	case *ast.MatchExpr:
-		// Target expression only — case arms are deferred to Phase 4.
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
 		c.collectExpr(e.Target)
+		for _, mc := range e.Cases {
+			if mc.Guard != nil {
+				c.collectExpr(mc.Guard)
+			}
+			c.collectBlockOrExpr(&mc.Body)
+		}
 	case *ast.TryCatchExpr:
-		// All nested blocks deferred to Phase 4 (CFG).
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
+		c.collectBlock(e.Try)
+		for _, mc := range e.Catch {
+			if mc.Guard != nil {
+				c.collectExpr(mc.Guard)
+			}
+			c.collectBlockOrExpr(&mc.Body)
+		}
 	case *ast.DoExpr:
-		// Body deferred to Phase 4 (CFG). Variables used only inside the
-		// do block will appear dead at the enclosing statement.
+		// Same as IfElseExpr — only reached when nested.
+		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
+		c.collectBlock(e.Body)
 	case *ast.ThrowExpr:
 		c.collectExpr(e.Arg)
 	case *ast.AwaitExpr:
