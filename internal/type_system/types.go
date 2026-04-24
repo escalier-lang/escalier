@@ -2415,6 +2415,7 @@ type Binding struct {
 	Type     Type
 	Mutable  bool
 	Exported bool
+	VarID    int // liveness VarID assigned by the rename pass; 0 if unset
 }
 
 // This is similar to Scope, but instead of inheriting from a parent scope,

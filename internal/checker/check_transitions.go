@@ -271,7 +271,7 @@ func (c *Checker) trackCapturedAliases(
 	enclosingStmt ast.Stmt,
 	span ast.Span,
 ) []Error {
-	if ctx.VarIDNames == nil || ctx.Aliases == nil {
+	if ctx.Aliases == nil {
 		return nil
 	}
 
@@ -280,27 +280,16 @@ func (c *Checker) trackCapturedAliases(
 		return nil
 	}
 
-	// Build reverse lookup: name → VarID for the enclosing function.
-	//
-	// KNOWN LIMITATION: when nested scopes (for-in loops, match arms)
-	// shadow a variable name, multiple positive VarIDs in ctx.VarIDNames
-	// map to the same name. The last one encountered during Go map
-	// iteration wins, which is nondeterministic. This can cause the
-	// closure alias to be added to the wrong variable's alias set.
-	// Same-scope re-binding is not affected (the checker panics on it).
-	// See the "Scope-aware capture-to-VarID resolution" entry in
-	// planning/lifetimes/requirements.md for the fix direction.
-	nameToVarID := make(map[string]liveness.VarID, len(ctx.VarIDNames))
-	for varID, name := range ctx.VarIDNames {
-		nameToVarID[name] = varID
-	}
-
 	var allErrors []Error
 	for _, capture := range captures {
-		enclosingVarID, ok := nameToVarID[capture.Name]
-		if !ok || enclosingVarID <= 0 {
+		// Look up the captured variable's binding in the enclosing scope.
+		// The scope chain handles shadowing correctly — GetValue returns
+		// the innermost binding, which is the one in scope at this point.
+		binding := ctx.Scope.GetValue(capture.Name)
+		if binding == nil || binding.VarID <= 0 {
 			continue
 		}
+		enclosingVarID := liveness.VarID(binding.VarID)
 		mut := liveness.AliasImmutable
 		if capture.IsMutable {
 			mut = liveness.AliasMutable

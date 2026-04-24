@@ -474,6 +474,55 @@ func TestMutabilityTransitions(t *testing.T) {
 		// f is dead after its last use, so the transition is safe.
 	}
 
+	// Closure capture with shadowed variable names: the closure should
+	// capture the outer variable (the one in scope at the closure definition),
+	// not a same-named variable from a nested scope.
+	tests["ClosureCapture_ShadowedByForIn_CapturesOuterVar_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val items: mut {x: number} = {x: 0}
+				for item in [1, 2, 3] {
+					val items: {x: number} = {x: item}
+					items
+				}
+				val mutRef: mut {x: number} = items
+				val f = fn() -> {x: number} { items }
+				mutRef.x = 5
+				f
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "items",
+			TargetVar:       "f",
+			ConflictingVars: []string{"mutRef"},
+			MutToImmutable:  true,
+		}},
+	}
+	tests["ClosureCapture_ShadowedByForIn_CapturesOuterVar_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val items: {x: number} = {x: 0}
+				for item in [1, 2, 3] {
+					val items: mut {x: number} = {x: item}
+					items.x = 5
+				}
+				val f = fn() -> {x: number} { items }
+				val snapshot: {x: number} = items
+				f
+				snapshot
+			}
+		`,
+		// The loop-scoped mutable `items` is a different variable from the
+		// outer immutable `items`. The closure captures the outer one, so
+		// no mut→immut conflict exists.
+	}
+
 	// Reassignment with conditional RHS should not merge unrelated alias sets.
 	// When `d = if cond { a } else { b }`, d aliases both a and b, but a and
 	// b should NOT become aliases of each other.

@@ -42,6 +42,7 @@ func (c *Checker) inferPattern(
 				Source:  provenance,
 				Type:    t,
 				Mutable: false, // TODO
+				VarID:   p.VarID,
 			}
 		case *ast.LitPat:
 			t, errors = c.inferLit(p.Lit)
@@ -90,6 +91,7 @@ func (c *Checker) inferPattern(
 						Source:  &ast.NodeProvenance{Node: elem.Key},
 						Type:    t,
 						Mutable: false, // TODO
+						VarID:   elem.VarID,
 					}
 					prop := type_system.NewPropertyElem(name, t)
 					elems = append(elems, prop)
