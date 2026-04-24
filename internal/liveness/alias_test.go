@@ -176,6 +176,9 @@ func TestReassignMulti(t *testing.T) {
 	tracker.NewValue(b, AliasMutable)
 	tracker.NewValue(x, AliasImmutable)
 
+	// Capture x's original set ID before reassignment.
+	originalSetID := tracker.GetAliasSets(x)[0].ID
+
 	// Reassign x to alias both a and b (conditional aliasing)
 	tracker.ReassignMulti(x, []VarID{a, b}, AliasImmutable)
 
@@ -191,8 +194,8 @@ func TestReassignMulti(t *testing.T) {
 	require.Len(t, bSets, 1)
 	require.Contains(t, bSets[0].Members, x)
 
-	// x's original fresh set (SetID 3) should no longer contain x.
-	originalSet := tracker.Sets[3]
+	// x's original fresh set should no longer contain x.
+	originalSet := tracker.Sets[originalSetID]
 	require.NotNil(t, originalSet)
 	require.NotContains(t, originalSet.Members, x)
 }
@@ -251,6 +254,24 @@ func TestReassignMultiEmptySources(t *testing.T) {
 	// x should have its own fresh set
 	xSets := tracker.GetAliasSets(x)
 	require.Len(t, xSets, 1)
+	require.Contains(t, xSets[0].Members, x)
+}
+
+func TestReassignMultiUntrackedSources(t *testing.T) {
+	// When all source VarIDs have no entries in VarToSets (i.e., they were
+	// never tracked), ReassignMulti should fall back to creating a fresh set
+	// so that v doesn't end up untracked.
+	tracker := NewAliasTracker()
+	var x VarID = 1
+
+	tracker.NewValue(x, AliasImmutable)
+
+	// Sources 10 and 20 were never added to the tracker.
+	tracker.ReassignMulti(x, []VarID{10, 20}, AliasImmutable)
+
+	// x should still be tracked — it should have a fresh alias set.
+	xSets := tracker.GetAliasSets(x)
+	require.Len(t, xSets, 1, "x should have a fresh alias set when all sources are untracked")
 	require.Contains(t, xSets[0].Members, x)
 }
 

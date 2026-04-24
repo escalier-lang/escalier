@@ -114,6 +114,37 @@ func TestDetermineAliasSource_MemberExpr_NonLocal(t *testing.T) {
 	require.Equal(t, AliasSourceUnknown, source.Kind)
 }
 
+func TestDetermineAliasSource_IndexExpr(t *testing.T) {
+	obj := ast.NewIdent("obj", ast.Span{})
+	obj.VarID = 5
+	index := ast.NewIndex(
+		obj,
+		ast.NewLitExpr(ast.NewNumber(0, ast.Span{})),
+		false,
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(index)
+
+	require.Equal(t, AliasSourceVariable, source.Kind)
+	require.Equal(t, []VarID{5}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_IndexExpr_NonLocal(t *testing.T) {
+	obj := ast.NewIdent("obj", ast.Span{})
+	obj.VarID = -1
+	index := ast.NewIndex(
+		obj,
+		ast.NewLitExpr(ast.NewNumber(0, ast.Span{})),
+		false,
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(index)
+
+	require.Equal(t, AliasSourceUnknown, source.Kind)
+}
+
 func TestDetermineAliasSource_TypeCast(t *testing.T) {
 	ident := ast.NewIdent("x", ast.Span{})
 	ident.VarID = 3
@@ -222,6 +253,27 @@ func TestDetermineAliasSource_IfElseExpr_NoAlt_Fresh(t *testing.T) {
 	require.Equal(t, AliasSourceFresh, source.Kind)
 }
 
+func TestDetermineAliasSource_IfElseExpr_UnknownAndVariable(t *testing.T) {
+	// One branch yields an unknown source (non-local ident), the other a local variable.
+	unknown := ast.NewIdent("ext", ast.Span{})
+	unknown.VarID = -1
+	a := ast.NewIdent("a", ast.Span{})
+	a.VarID = 1
+
+	consBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(unknown, ast.Span{})}}
+	altBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(a, ast.Span{})}}
+	ifElse := ast.NewIfElse(
+		ast.NewLitExpr(ast.NewBoolean(true, ast.Span{})),
+		consBlock,
+		&ast.BlockOrExpr{Block: &altBlock},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(ifElse)
+
+	require.Equal(t, AliasSourceUnknown, source.Kind)
+}
+
 func TestDetermineAliasSource_IfElseExpr_SameVariable(t *testing.T) {
 	a1 := ast.NewIdent("a", ast.Span{})
 	a1.VarID = 1
@@ -281,6 +333,68 @@ func TestDetermineAliasSource_MatchExpr_MultipleVariables(t *testing.T) {
 
 	require.Equal(t, AliasSourceMultiple, source.Kind)
 	require.ElementsMatch(t, []VarID{1, 2, 3}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_MatchExpr_SameVariable(t *testing.T) {
+	a1 := ast.NewIdent("a", ast.Span{})
+	a1.VarID = 1
+	a2 := ast.NewIdent("a", ast.Span{})
+	a2.VarID = 1
+
+	matchExpr := ast.NewMatch(
+		ast.NewLitExpr(ast.NewNumber(1, ast.Span{})),
+		[]*ast.MatchCase{
+			ast.NewMatchCase(
+				ast.NewWildcardPat(ast.Span{}),
+				nil,
+				ast.BlockOrExpr{Expr: a1},
+				ast.Span{},
+			),
+			ast.NewMatchCase(
+				ast.NewWildcardPat(ast.Span{}),
+				nil,
+				ast.BlockOrExpr{Expr: a2},
+				ast.Span{},
+			),
+		},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(matchExpr)
+
+	// Same variable in all arms → deduplicated to a single variable
+	require.Equal(t, AliasSourceVariable, source.Kind)
+	require.Equal(t, []VarID{1}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_MatchExpr_VariableAndFresh(t *testing.T) {
+	a := ast.NewIdent("a", ast.Span{})
+	a.VarID = 1
+	fresh := ast.NewObject(nil, ast.Span{})
+
+	matchExpr := ast.NewMatch(
+		ast.NewLitExpr(ast.NewNumber(1, ast.Span{})),
+		[]*ast.MatchCase{
+			ast.NewMatchCase(
+				ast.NewWildcardPat(ast.Span{}),
+				nil,
+				ast.BlockOrExpr{Expr: a},
+				ast.Span{},
+			),
+			ast.NewMatchCase(
+				ast.NewWildcardPat(ast.Span{}),
+				nil,
+				ast.BlockOrExpr{Expr: fresh},
+				ast.Span{},
+			),
+		},
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(matchExpr)
+
+	require.Equal(t, AliasSourceVariable, source.Kind)
+	require.Equal(t, []VarID{1}, source.VarIDs)
 }
 
 // Integration tests: alias tracking with DetermineAliasSource

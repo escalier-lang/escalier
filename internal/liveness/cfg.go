@@ -147,20 +147,23 @@ func (b *cfgBuilder) processExprStmt(s *ast.ExprStmt, current *BasicBlock) *Basi
 	// Assignment with branching RHS: x = if cond { ... } else { ... }
 	if be, ok := s.Expr.(*ast.BinaryExpr); ok && be.Op == ast.Assign {
 		if join := b.processAssignBranch(be, current); join != nil {
-			// Track the decomposed statement → join block mapping so that
-			// BuildStmtToRef can create a StmtRef for the ExprStmt. This
-			// enables alias tracking and transition checking to look up
-			// liveness at the join point.
-			b.decomposedStmts = append(b.decomposedStmts, decomposedStmt{
-				Stmt:  s,
-				Block: join,
-			})
+			b.recordDecomposed(s, join)
 			return join
 		}
 	}
 
 	current.Stmts = append(current.Stmts, s)
 	return current
+}
+
+// recordDecomposed tracks a decomposed statement → join block mapping so that
+// BuildStmtToRef can create a StmtRef for the statement. This enables alias
+// tracking and transition checking to look up liveness at the join point.
+func (b *cfgBuilder) recordDecomposed(s ast.Stmt, join *BasicBlock) {
+	b.decomposedStmts = append(b.decomposedStmts, decomposedStmt{
+		Stmt:  s,
+		Block: join,
+	})
 }
 
 // processAssignBranch handles assignments where the RHS is a branching
@@ -206,14 +209,7 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 
 	joinDefs := collectPatVarDefs(vd.Pattern)
 	if join := b.decomposeBranch(vd.Init, joinDefs, current); join != nil {
-		// Track the decomposed statement → join block mapping so that
-		// BuildStmtToRef can create a StmtRef for the DeclStmt. This
-		// enables alias tracking and transition checking to look up
-		// liveness at the join point.
-		b.decomposedStmts = append(b.decomposedStmts, decomposedStmt{
-			Stmt:  s,
-			Block: join,
-		})
+		b.recordDecomposed(s, join)
 		return join
 	}
 

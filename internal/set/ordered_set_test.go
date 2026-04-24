@@ -85,6 +85,8 @@ func TestOrderedSet_PreservesInsertionOrder(t *testing.T) {
 }
 
 func TestOrderedSet_ToSliceReturnsSameBackingSlice(t *testing.T) {
+	// Verifies the documented aliasing guarantee: ToSlice returns internal
+	// storage, so consecutive calls return the same backing array.
 	s := NewOrderedSet[int]()
 	s.Add(1)
 	s.Add(2)

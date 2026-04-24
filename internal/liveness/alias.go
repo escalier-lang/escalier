@@ -139,6 +139,12 @@ func (a *AliasTracker) ReassignMulti(v VarID, sources []VarID, mut AliasMutabili
 	for _, source := range sources {
 		a.AddAlias(v, source, mut)
 	}
+
+	// If none of the sources had entries in VarToSets, AddAlias was a
+	// no-op for each and v is left untracked. Fall back to a fresh set.
+	if len(a.VarToSets[v]) == 0 {
+		a.NewValue(v, mut)
+	}
 }
 
 // MergeAliasSets merges the alias sets of two variables into a single

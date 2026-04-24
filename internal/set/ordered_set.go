@@ -30,7 +30,8 @@ func (s *OrderedSet[T]) Len() int {
 	return len(s.items)
 }
 
-// ToSlice returns the elements in insertion order.
+// ToSlice returns the elements in insertion order. The returned slice aliases
+// internal storage and must not be modified.
 func (s *OrderedSet[T]) ToSlice() []T {
 	return s.items
 }
