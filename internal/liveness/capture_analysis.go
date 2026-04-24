@@ -11,7 +11,8 @@ import (
 // CaptureInfo describes how a closure captures a variable from the
 // enclosing scope.
 type CaptureInfo struct {
-	Name      string // variable name as it appears in the source
+	ID        VarID  // unique binding identity (negative for outer references)
+	Name      string // variable name as it appears in the source (diagnostics only)
 	IsMutable bool   // true if the closure writes to the captured variable
 }
 
@@ -30,30 +31,34 @@ func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
 		return nil
 	}
 
-	// Track which outer names are referenced and whether they're mutated.
-	captures := make(map[string]bool) // name → isMutable
+	// Track which outer bindings are referenced and whether they're mutated.
+	// Keyed by VarID so shadowed bindings remain distinct.
+	captures := make(map[VarID]CaptureInfo)
 
 	walkBody(funcExpr.Body.Stmts, captures)
 
 	// Convert map to sorted slice for deterministic output.
 	result := make([]CaptureInfo, 0, len(captures))
-	for name, isMutable := range captures {
-		result = append(result, CaptureInfo{Name: name, IsMutable: isMutable})
+	for _, info := range captures {
+		result = append(result, info)
 	}
 	slices.SortFunc(result, func(a, b CaptureInfo) int {
+		if a.ID != b.ID {
+			return cmp.Compare(a.ID, b.ID)
+		}
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return result
 }
 
 // walkBody walks a list of statements looking for captured variable uses.
-func walkBody(stmts []ast.Stmt, captures map[string]bool) {
+func walkBody(stmts []ast.Stmt, captures map[VarID]CaptureInfo) {
 	for _, stmt := range stmts {
 		walkStmt(stmt, captures)
 	}
 }
 
-func walkStmt(stmt ast.Stmt, captures map[string]bool) {
+func walkStmt(stmt ast.Stmt, captures map[VarID]CaptureInfo) {
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
 		walkExpr(s.Expr, captures)
@@ -71,7 +76,7 @@ func walkStmt(stmt ast.Stmt, captures map[string]bool) {
 	}
 }
 
-func walkDecl(decl ast.Decl, captures map[string]bool) {
+func walkDecl(decl ast.Decl, captures map[VarID]CaptureInfo) {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		if d.Init != nil {
@@ -85,13 +90,14 @@ func walkDecl(decl ast.Decl, captures map[string]bool) {
 	}
 }
 
-func walkExpr(expr ast.Expr, captures map[string]bool) {
+func walkExpr(expr ast.Expr, captures map[VarID]CaptureInfo) {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		if e.VarID < 0 {
 			// Outer reference — captured variable (read).
-			if _, exists := captures[e.Name]; !exists {
-				captures[e.Name] = false
+			id := VarID(e.VarID)
+			if _, exists := captures[id]; !exists {
+				captures[id] = CaptureInfo{ID: id, Name: e.Name, IsMutable: false}
 			}
 		}
 	case *ast.BinaryExpr:
@@ -228,7 +234,7 @@ func walkExpr(expr ast.Expr, captures map[string]bool) {
 	}
 }
 
-func walkBlockOrExpr(boe *ast.BlockOrExpr, captures map[string]bool) {
+func walkBlockOrExpr(boe *ast.BlockOrExpr, captures map[VarID]CaptureInfo) {
 	if boe.Block != nil {
 		walkBody(boe.Block.Stmts, captures)
 	}
@@ -237,7 +243,7 @@ func walkBlockOrExpr(boe *ast.BlockOrExpr, captures map[string]bool) {
 	}
 }
 
-func walkObjExprElem(elem ast.ObjExprElem, captures map[string]bool) {
+func walkObjExprElem(elem ast.ObjExprElem, captures map[VarID]CaptureInfo) {
 	switch e := elem.(type) {
 	case *ast.PropertyExpr:
 		if e.Value != nil {
@@ -245,8 +251,9 @@ func walkObjExprElem(elem ast.ObjExprElem, captures map[string]bool) {
 		} else {
 			// Shorthand property {x} — the name is also a variable reference.
 			if ident, ok := e.Name.(*ast.IdentExpr); ok && ident.VarID < 0 {
-				if _, exists := captures[ident.Name]; !exists {
-					captures[ident.Name] = false
+				id := VarID(ident.VarID)
+				if _, exists := captures[id]; !exists {
+					captures[id] = CaptureInfo{ID: id, Name: ident.Name, IsMutable: false}
 				}
 			}
 		}
@@ -269,11 +276,16 @@ func walkObjExprElem(elem ast.ObjExprElem, captures map[string]bool) {
 
 // markMutableCapture marks a captured variable as mutably captured when it
 // appears on the left side of an assignment.
-func markMutableCapture(lhs ast.Expr, captures map[string]bool) {
+func markMutableCapture(lhs ast.Expr, captures map[VarID]CaptureInfo) {
 	switch e := lhs.(type) {
 	case *ast.IdentExpr:
 		if e.VarID < 0 {
-			captures[e.Name] = true
+			id := VarID(e.VarID)
+			info := captures[id]
+			info.ID = id
+			info.Name = e.Name
+			info.IsMutable = true
+			captures[id] = info
 		}
 	case *ast.MemberExpr:
 		// obj.prop = value — obj is mutably captured

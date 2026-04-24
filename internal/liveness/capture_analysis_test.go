@@ -241,8 +241,9 @@ func TestAnalyzeCaptures_MultipleCaptures_SortedByName(t *testing.T) {
 
 	captures := AnalyzeCaptures(funcExpr)
 	require.Len(t, captures, 3)
-	// Output should be sorted by name for deterministic results.
-	assert.Equal(t, "alpha", captures[0].Name)
-	assert.Equal(t, "middle", captures[1].Name)
+	// Output should be sorted by VarID for deterministic results.
+	// VarIDs are assigned in declaration order: zebra=-1, alpha=-2, middle=-3.
+	assert.Equal(t, "middle", captures[0].Name)
+	assert.Equal(t, "alpha", captures[1].Name)
 	assert.Equal(t, "zebra", captures[2].Name)
 }
