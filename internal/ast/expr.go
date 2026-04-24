@@ -922,7 +922,7 @@ func NewJSXElement(opening *JSXOpening, closing *JSXClosing, children []JSXChild
 	return &JSXElementExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
 func (e *JSXElementExpr) Accept(v Visitor) {
-	v.EnterExpr(e) // TODO: expand visitor to handle JSX
+	v.EnterExpr(e) // TODO(#490): expand visitor to handle JSX
 	v.ExitExpr(e)
 }
 
@@ -938,7 +938,7 @@ func NewJSXFragment(opening *JSXOpening, closing *JSXClosing, children []JSXChil
 	return &JSXFragmentExpr{Opening: opening, Closing: closing, Children: children, span: span, inferredType: nil}
 }
 func (e *JSXFragmentExpr) Accept(v Visitor) {
-	v.EnterExpr(e) // TODO: expand visitor to handle JSX
+	v.EnterExpr(e) // TODO(#490): expand visitor to handle JSX
 	v.ExitExpr(e)
 }
 
