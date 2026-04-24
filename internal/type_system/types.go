@@ -2502,9 +2502,11 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != binding.Type {
 			changed = true
 			newValues[name] = &Binding{
-				Source:  binding.Source,
-				Type:    newType,
-				Mutable: binding.Mutable,
+				Source:   binding.Source,
+				Type:     newType,
+				Mutable:  binding.Mutable,
+				Exported: binding.Exported,
+				VarID:    binding.VarID,
 			}
 		} else {
 			newValues[name] = binding

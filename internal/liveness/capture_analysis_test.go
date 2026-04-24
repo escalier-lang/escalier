@@ -135,6 +135,102 @@ func TestAnalyzeCaptures_ReadInAssignmentLHS(t *testing.T) {
 	assert.False(t, captures[0].IsMutable) // read as callee, not mutated
 }
 
+func TestAnalyzeCaptures_JSXElement_ExprInChild(t *testing.T) {
+	// Build: fn() { <div>{captured}</div> }
+	// where captured is an outer reference (VarID = -1)
+	capturedIdent := ast.NewIdent("captured", ast.Span{})
+	capturedIdent.VarID = -1
+
+	exprContainer := ast.NewJSXExprContainer(capturedIdent, ast.Span{})
+	opening := ast.NewJSXOpening(nil, nil, false, ast.Span{})
+	closing := ast.NewJSXClosing(nil, ast.Span{})
+	jsxElem := ast.NewJSXElement(opening, closing, []ast.JSXChild{exprContainer}, ast.Span{})
+
+	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(jsxElem, ast.Span{})}}
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+
+	captures := AnalyzeCaptures(funcExpr)
+	require.Len(t, captures, 1)
+	assert.Equal(t, "captured", captures[0].Name)
+	assert.False(t, captures[0].IsMutable)
+}
+
+func TestAnalyzeCaptures_JSXElement_ExprInAttr(t *testing.T) {
+	// Build: fn() { <div prop={captured} /> }
+	capturedIdent := ast.NewIdent("captured", ast.Span{})
+	capturedIdent.VarID = -1
+
+	exprContainer := ast.NewJSXExprContainer(capturedIdent, ast.Span{})
+	var attrValue ast.JSXAttrValue = exprContainer
+	attr := ast.NewJSXAttr("prop", &attrValue, ast.Span{})
+	opening := ast.NewJSXOpening(nil, []ast.JSXAttrElem{attr}, true, ast.Span{})
+	jsxElem := ast.NewJSXElement(opening, nil, nil, ast.Span{})
+
+	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(jsxElem, ast.Span{})}}
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+
+	captures := AnalyzeCaptures(funcExpr)
+	require.Len(t, captures, 1)
+	assert.Equal(t, "captured", captures[0].Name)
+	assert.False(t, captures[0].IsMutable)
+}
+
+func TestAnalyzeCaptures_JSXElement_SpreadAttr(t *testing.T) {
+	// Build: fn() { <div {...captured} /> }
+	capturedIdent := ast.NewIdent("captured", ast.Span{})
+	capturedIdent.VarID = -1
+
+	spreadAttr := ast.NewJSXSpreadAttr(capturedIdent, ast.Span{})
+	opening := ast.NewJSXOpening(nil, []ast.JSXAttrElem{spreadAttr}, true, ast.Span{})
+	jsxElem := ast.NewJSXElement(opening, nil, nil, ast.Span{})
+
+	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(jsxElem, ast.Span{})}}
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+
+	captures := AnalyzeCaptures(funcExpr)
+	require.Len(t, captures, 1)
+	assert.Equal(t, "captured", captures[0].Name)
+	assert.False(t, captures[0].IsMutable)
+}
+
+func TestAnalyzeCaptures_JSXFragment_ExprInChild(t *testing.T) {
+	// Build: fn() { <>{captured}</> }
+	capturedIdent := ast.NewIdent("captured", ast.Span{})
+	capturedIdent.VarID = -1
+
+	exprContainer := ast.NewJSXExprContainer(capturedIdent, ast.Span{})
+	opening := ast.NewJSXOpening(nil, nil, false, ast.Span{})
+	closing := ast.NewJSXClosing(nil, ast.Span{})
+	jsxFrag := ast.NewJSXFragment(opening, closing, []ast.JSXChild{exprContainer}, ast.Span{})
+
+	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(jsxFrag, ast.Span{})}}
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+
+	captures := AnalyzeCaptures(funcExpr)
+	require.Len(t, captures, 1)
+	assert.Equal(t, "captured", captures[0].Name)
+	assert.False(t, captures[0].IsMutable)
+}
+
+func TestAnalyzeCaptures_ObjectWithMethod_NoCaptureInBody(t *testing.T) {
+	// Build: fn() { {method() { innerVar }} }
+	// where innerVar is local to the method, so no captures from the outer fn.
+	// The method body should NOT be recursed into.
+	innerIdent := ast.NewIdent("innerVar", ast.Span{})
+	innerIdent.VarID = -1 // would be captured if we recurse
+
+	methodBody := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(innerIdent, ast.Span{})}}
+	methodFn := ast.NewFuncExpr(nil, nil, nil, nil, false, methodBody, ast.Span{})
+	method := ast.NewMethod(ast.NewIdent("method", ast.Span{}), methodFn, nil, ast.Span{})
+
+	objExpr := ast.NewObject([]ast.ObjExprElem{method}, ast.Span{})
+	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(objExpr, ast.Span{})}}
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+
+	captures := AnalyzeCaptures(funcExpr)
+	assert.Empty(t, captures, "Method bodies should not be recursed into")
+}
+
 func TestAnalyzeCaptures_MultipleCaptures_SortedByName(t *testing.T) {
 	funcExpr := parseFuncExpr(t, `
 		val zebra = 1

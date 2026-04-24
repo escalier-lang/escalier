@@ -166,6 +166,70 @@ func TestMergeAliasSetsNoDuplicateSetIDs(t *testing.T) {
 	}
 }
 
+func TestReassignMulti(t *testing.T) {
+	tracker := NewAliasTracker()
+	var a VarID = 1
+	var b VarID = 2
+	var x VarID = 3
+
+	tracker.NewValue(a, AliasMutable)
+	tracker.NewValue(b, AliasMutable)
+	tracker.NewValue(x, AliasImmutable)
+
+	// Reassign x to alias both a and b (conditional aliasing)
+	tracker.ReassignMulti(x, []VarID{a, b}, AliasImmutable)
+
+	// x should be in both a's and b's alias sets
+	xSets := tracker.GetAliasSets(x)
+	require.Len(t, xSets, 2)
+
+	aSets := tracker.GetAliasSets(a)
+	require.Len(t, aSets, 1)
+	require.Contains(t, aSets[0].Members, x)
+
+	bSets := tracker.GetAliasSets(b)
+	require.Len(t, bSets, 1)
+	require.Contains(t, bSets[0].Members, x)
+
+	// x's original fresh set should no longer contain x
+	// (it was removed during reassign)
+}
+
+func TestReassignMultiRemovesFromPreviousSets(t *testing.T) {
+	tracker := NewAliasTracker()
+	var a VarID = 1
+	var b VarID = 2
+	var c VarID = 3
+	var x VarID = 4
+
+	tracker.NewValue(a, AliasMutable)
+	tracker.NewValue(b, AliasMutable)
+	tracker.NewValue(c, AliasMutable)
+
+	// First alias x with a
+	tracker.AddAlias(x, a, AliasImmutable)
+	aSets := tracker.GetAliasSets(a)
+	require.Len(t, aSets, 1)
+	require.Contains(t, aSets[0].Members, x)
+
+	// Now reassign x to alias b and c
+	tracker.ReassignMulti(x, []VarID{b, c}, AliasImmutable)
+
+	// x should no longer be in a's set
+	aSets = tracker.GetAliasSets(a)
+	require.Len(t, aSets, 1)
+	require.NotContains(t, aSets[0].Members, x)
+
+	// x should be in both b's and c's sets
+	bSets := tracker.GetAliasSets(b)
+	require.Len(t, bSets, 1)
+	require.Contains(t, bSets[0].Members, x)
+
+	cSets := tracker.GetAliasSets(c)
+	require.Len(t, cSets, 1)
+	require.Contains(t, cSets[0].Members, x)
+}
+
 func TestMergeAliasSetsNoOp(t *testing.T) {
 	tracker := NewAliasTracker()
 	var x VarID = 1

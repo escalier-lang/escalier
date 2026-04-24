@@ -1,6 +1,7 @@
 package liveness
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -176,11 +177,54 @@ func walkExpr(expr ast.Expr, captures map[string]bool) {
 		walkExpr(e.Expr, captures)
 	case *ast.ArraySpreadExpr:
 		walkExpr(e.Value, captures)
+	case *ast.JSXElementExpr:
+		for _, attr := range e.Opening.Attrs {
+			switch a := attr.(type) {
+			case *ast.JSXAttr:
+				if a.Value != nil {
+					switch av := (*a.Value).(type) {
+					case *ast.JSXExprContainer:
+						walkExpr(av.Expr, captures)
+					case *ast.JSXElementExpr:
+						walkExpr(av, captures)
+					case *ast.JSXFragmentExpr:
+						walkExpr(av, captures)
+					}
+				}
+			case *ast.JSXSpreadAttr:
+				walkExpr(a.Expr, captures)
+			}
+		}
+		for _, child := range e.Children {
+			switch ch := child.(type) {
+			case *ast.JSXExprContainer:
+				walkExpr(ch.Expr, captures)
+			case *ast.JSXElementExpr:
+				walkExpr(ch, captures)
+			case *ast.JSXFragmentExpr:
+				walkExpr(ch, captures)
+			}
+		}
+	case *ast.JSXFragmentExpr:
+		for _, child := range e.Children {
+			switch ch := child.(type) {
+			case *ast.JSXExprContainer:
+				walkExpr(ch.Expr, captures)
+			case *ast.JSXElementExpr:
+				walkExpr(ch, captures)
+			case *ast.JSXFragmentExpr:
+				walkExpr(ch, captures)
+			}
+		}
 	case *ast.FuncExpr:
 		// Don't recurse into nested function bodies — they get their
 		// own capture analysis when inferred.
 	case *ast.LiteralExpr:
 		// No variables.
+	case *ast.ErrorExpr:
+		// No variables.
+	default:
+		panic(fmt.Sprintf("walkExpr: unhandled expression type %T", expr))
 	}
 }
 
@@ -208,6 +252,18 @@ func walkObjExprElem(elem ast.ObjExprElem, captures map[string]bool) {
 		}
 	case *ast.ObjSpreadExpr:
 		walkExpr(e.Value, captures)
+	case *ast.CallableExpr:
+		// Don't recurse into nested function bodies.
+	case *ast.ConstructorExpr:
+		// Don't recurse into nested function bodies.
+	case *ast.MethodExpr:
+		// Don't recurse into nested function bodies.
+	case *ast.GetterExpr:
+		// Don't recurse into nested function bodies.
+	case *ast.SetterExpr:
+		// Don't recurse into nested function bodies.
+	default:
+		panic(fmt.Sprintf("walkObjExprElem: unhandled element type %T", elem))
 	}
 }
 

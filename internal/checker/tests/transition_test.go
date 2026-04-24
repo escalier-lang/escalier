@@ -565,6 +565,108 @@ func TestMutabilityTransitions(t *testing.T) {
 		// b was reassigned to a fresh value, so it left a's alias set.
 	}
 
+	// Reassignment: `var x: immut = a; x = b` where b is mut, checks the
+	// transition at the reassignment point.
+	tests["Reassignment_ImmutableToMut_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val a: mut {x: number} = {x: 0}
+				var b: {x: number} = {x: 1}
+				b = a
+				a.x = 5
+				b
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "a",
+			TargetVar:       "b",
+			ConflictingVars: []string{"a"},
+			MutToImmutable:  true,
+		}},
+	}
+	tests["Reassignment_MutToMut_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val a: mut {x: number} = {x: 0}
+				var b: mut {x: number} = {x: 1}
+				b = a
+				a.x = 5
+				b
+			}
+		`,
+	}
+
+	// Conditional reassignment: `var c = if cond { a } else { b }` where
+	// the transition is violated for one branch.
+	tests["Conditional_Reassignment_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test(cond: boolean) {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				var c: {x: number} = {x: 2}
+				c = if cond { a } else { b }
+				a.x = 5
+				c
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "a",
+			TargetVar:       "c",
+			ConflictingVars: []string{"a"},
+			MutToImmutable:  true,
+		}},
+	}
+
+	// Conditional reassignment: `var c = if cond { a } else { b }` where
+	// the transition is violated for one branch.
+	tests["Conditional_Reassignment_Error"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test(cond: boolean) {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				var c: {x: number} = {x: 2}
+				c = if cond { a } else { b }
+				a.x = 5
+				c
+			}
+		`,
+		expectedErrors: []expectedTransitionError{{
+			SourceVar:       "a",
+			TargetVar:       "c",
+			ConflictingVars: []string{"a"},
+			MutToImmutable:  true,
+		}},
+	}
+
+	// Reassignment with a fresh value after aliasing should clear the alias
+	// and allow transitions that were previously blocked.
+	tests["Reassignment_FreshAfterAlias_ClearsConflict_OK"] = struct {
+		input          string
+		expectedErrors []expectedTransitionError
+	}{
+		input: `
+			fn test() {
+				val a: mut {x: number} = {x: 0}
+				var b: {x: number} = a
+				b = {x: 1}
+				a.x = 5
+				b
+			}
+		`,
+	}
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -605,22 +707,34 @@ func TestMutabilityTransitions(t *testing.T) {
 				// order-independent.
 				sortedActual := make([]*MutabilityTransitionError, len(mutErrors))
 				copy(sortedActual, mutErrors)
-				slices.SortFunc(sortedActual, func(a, b *MutabilityTransitionError) int {
+				slices.SortStableFunc(sortedActual, func(a, b *MutabilityTransitionError) int {
 					if a.SourceVar < b.SourceVar {
 						return -1
 					}
 					if a.SourceVar > b.SourceVar {
 						return 1
 					}
+					if a.TargetVar < b.TargetVar {
+						return -1
+					}
+					if a.TargetVar > b.TargetVar {
+						return 1
+					}
 					return 0
 				})
 				sortedExpected := make([]expectedTransitionError, len(test.expectedErrors))
 				copy(sortedExpected, test.expectedErrors)
-				slices.SortFunc(sortedExpected, func(a, b expectedTransitionError) int {
+				slices.SortStableFunc(sortedExpected, func(a, b expectedTransitionError) int {
 					if a.SourceVar < b.SourceVar {
 						return -1
 					}
 					if a.SourceVar > b.SourceVar {
+						return 1
+					}
+					if a.TargetVar < b.TargetVar {
+						return -1
+					}
+					if a.TargetVar > b.TargetVar {
 						return 1
 					}
 					return 0

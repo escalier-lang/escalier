@@ -144,6 +144,14 @@ func (b *cfgBuilder) processExprStmt(s *ast.ExprStmt, current *BasicBlock) *Basi
 	// Assignment with branching RHS: x = if cond { ... } else { ... }
 	if be, ok := s.Expr.(*ast.BinaryExpr); ok && be.Op == ast.Assign {
 		if join := b.processAssignBranch(be, current); join != nil {
+			// Track the decomposed statement → join block mapping so that
+			// BuildStmtToRef can create a StmtRef for the ExprStmt. This
+			// enables alias tracking and transition checking to look up
+			// liveness at the join point.
+			b.decomposedStmts = append(b.decomposedStmts, decomposedStmt{
+				Stmt:  s,
+				Block: join,
+			})
 			return join
 		}
 	}

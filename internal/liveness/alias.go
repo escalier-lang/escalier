@@ -115,6 +115,23 @@ func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut AliasMutability) 
 	}
 }
 
+// ReassignMulti removes a variable from its current alias sets and adds
+// it to the alias sets of all provided sources. This is used for conditional
+// aliasing where a variable may alias one of several sources.
+func (a *AliasTracker) ReassignMulti(v VarID, sources []VarID, mut AliasMutability) {
+	// Remove from current alias sets
+	for _, setID := range a.VarToSets[v] {
+		if set, ok := a.Sets[setID]; ok {
+			delete(set.Members, v)
+		}
+	}
+	a.VarToSets[v] = nil
+
+	for _, source := range sources {
+		a.AddAlias(v, source, mut)
+	}
+}
+
 // MergeAliasSets merges the alias sets of two variables into a single
 // set. All members of both sets become members of the merged set, and
 // VarToSets is updated so every affected variable points to the merged

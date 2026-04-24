@@ -376,21 +376,9 @@ func (c *Checker) trackAliasesForDestructuringPat(
 		}
 		return allErrors
 	case liveness.AliasSourceFresh:
-		// Fresh value: each destructured binding gets its own fresh set.
-		for _, targetVarID := range varIDs {
-			targetName := c.varIDToName(ctx, targetVarID)
-			binding := bindings[targetName]
-			targetMut := binding != nil && isMutableType(binding.Type)
-			var aliasMut liveness.AliasMutability
-			if targetMut {
-				aliasMut = liveness.AliasMutable
-			} else {
-				aliasMut = liveness.AliasImmutable
-			}
-			ctx.Aliases.NewValue(targetVarID, aliasMut)
-		}
+		// Fresh value (or unknown): each destructured binding gets its own fresh set.
+		fallthrough
 	default:
-		// Unknown: create fresh values conservatively.
 		for _, targetVarID := range varIDs {
 			targetName := c.varIDToName(ctx, targetVarID)
 			binding := bindings[targetName]
@@ -489,16 +477,8 @@ func (c *Checker) trackAliasesForAssignment(
 
 		ctx.Aliases.Reassign(targetVarID, &sourceVarID, aliasMut)
 	case liveness.AliasSourceMultiple:
-		// Conditional aliasing: remove from current sets, then add to all sources
-		for _, setID := range ctx.Aliases.VarToSets[targetVarID] {
-			if set, ok := ctx.Aliases.Sets[setID]; ok {
-				delete(set.Members, targetVarID)
-			}
-		}
-		ctx.Aliases.VarToSets[targetVarID] = nil
-		for _, sourceVarID := range source.VarIDs {
-			ctx.Aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
-		}
+		// Conditional aliasing: reassign to all sources
+		ctx.Aliases.ReassignMulti(targetVarID, source.VarIDs, aliasMut)
 
 		// Check mutability transition against each source
 		var allErrors []Error
