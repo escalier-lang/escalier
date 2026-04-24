@@ -14,7 +14,7 @@ into phases that build incrementally, each producing a testable milestone.
 |     4 | Liveness analysis (control flow)                     | 3          | Done   |
 |     5 | Alias tracking (local variables)                     | 3          | Done   |
 |     6 | Mutability transition checking                       | 4, 5       | Done   |
-|     7 | Alias tracking (properties, closures, destructuring) | 5, 6       |        |
+|     7 | Alias tracking (properties, closures, destructuring) | 5, 6       | Done   |
 |     8 | Lifetime annotations and inference                   | 6, 7       |        |
 |     9 | Lifetime unification                                 | 8          |        |
 |    10 | Lifetime elision rules                               | 8, 9       |        |
@@ -288,11 +288,11 @@ type StmtRef struct {
 type LivenessInfo struct {
     // LiveBefore[blockID][stmtIdx] is the set of variables that are live
     // just before the statement at that position.
-    LiveBefore [][]map[VarID]bool
+    LiveBefore [][]set.Set[VarID]
 
     // LiveAfter[blockID][stmtIdx] is the set of variables that are live
     // just after the statement at that position.
-    LiveAfter [][]map[VarID]bool
+    LiveAfter [][]set.Set[VarID]
 
     // LastUse maps each variable to the location of its last use.
     LastUse map[VarID]StmtRef
@@ -300,8 +300,20 @@ type LivenessInfo struct {
 
 // IsLiveAfter returns whether the given variable is live after the
 // statement at the given position.
+//
+// A StmtIdx of -1 represents a synthetic position before the first
+// statement in a block (used for decomposed DeclStmts whose init was
+// a branching expression). "Live after" this position means "live
+// before the first statement in the block".
 func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
-    return l.LiveAfter[ref.BlockID][ref.StmtIdx][v]
+    if ref.StmtIdx < 0 {
+        // Synthetic position before the block's first statement.
+        if len(l.LiveBefore[ref.BlockID]) > 0 {
+            return l.LiveBefore[ref.BlockID][0].Contains(v)
+        }
+        return false
+    }
+    return l.LiveAfter[ref.BlockID][ref.StmtIdx].Contains(v)
 }
 ```
 
@@ -311,6 +323,18 @@ func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
 
 ```go
 package liveness
+
+// AliasMutability tracks whether a variable holds a mutable or immutable
+// reference within an alias set.
+type AliasMutability int
+
+const (
+    AliasImmutable AliasMutability = iota
+    AliasMutable
+)
+
+// SetID uniquely identifies an alias set within an AliasTracker.
+type SetID int
 
 // AliasSet tracks a group of variables that reference the same underlying
 // value. Each value created at runtime gets its own AliasSet. Variables
@@ -324,26 +348,16 @@ package liveness
 // reporting format.
 type AliasSet struct {
     ID        SetID
-    Members   map[VarID]Mutability  // variable → whether it holds a mut ref
-    Origin    VarID                 // the variable that created the value
-    IsStatic  bool                  // true if this value has 'static lifetime
+    Members   map[VarID]AliasMutability  // variable → whether it holds a mut ref
+    Origin    VarID                      // the variable that created the value
+    IsStatic  bool                       // true if this value has 'static lifetime
 }
-
-type Mutability int
-
-const (
-    Immutable Mutability = iota
-    Mutable
-)
-
-// SetID uniquely identifies an alias set within an AliasTracker.
-type SetID int
 
 // AliasTracker manages alias sets for a function body.
 // A variable may belong to multiple alias sets when assigned from different
 // values depending on control flow (conditional aliasing, Phase 7.4).
 type AliasTracker struct {
-    NextID    SetID
+    nextID    SetID
     Sets      map[SetID]*AliasSet     // SetID → AliasSet
     VarToSets map[VarID][]SetID       // variable → which alias sets it belongs to
 }
@@ -352,15 +366,22 @@ func NewAliasTracker() *AliasTracker { ... }
 
 // NewValue creates a fresh alias set for a newly created value (e.g. a
 // literal, constructor call, or function returning a fresh value).
-func (a *AliasTracker) NewValue(v VarID, mut Mutability) { ... }
+func (a *AliasTracker) NewValue(v VarID, mut AliasMutability) { ... }
 
 // AddAlias adds a variable to the alias set of another variable.
-func (a *AliasTracker) AddAlias(target VarID, source VarID, mut Mutability) { ... }
+func (a *AliasTracker) AddAlias(target VarID, source VarID, mut AliasMutability) { ... }
 
 // Reassign removes a variable from its current alias set and optionally
 // adds it to a new one (if assigned from another variable) or creates
 // a fresh set (if assigned a fresh value).
-func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut Mutability) { ... }
+func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut AliasMutability) { ... }
+
+// ReassignMulti removes a variable from its current alias sets and adds
+// it to the alias sets of all provided sources. This is used for conditional
+// aliasing where a variable may alias one of several sources.
+// If no sources have entries in VarToSets (all untracked), falls back to
+// creating a fresh alias set via NewValue.
+func (a *AliasTracker) ReassignMulti(v VarID, sources []VarID, mut AliasMutability) { ... }
 
 // MergeAliasSets merges the alias sets of two variables into a single
 // set. All members of both sets become members of the merged set, and
@@ -1040,26 +1061,28 @@ r.x = 5
 
 ---
 
-## Phase 7: Alias Tracking — Advanced Cases
+## Phase 7: Alias Tracking — Advanced Cases (Done)
 
 **Goal:** Extend alias tracking to cover object properties, closures,
 destructuring, conditional aliasing, and method receivers.
 
-### 7.1 Object Property Aliasing
+### 7.1 Object Property Aliasing (Done)
 
 When a value is stored into an object property (`obj.prop = value`), the
 alias sets of the containing object and the value are **merged**. All
 variables in `obj`'s alias set(s) become aliases of `value`, and vice versa.
 
-**File:** `internal/liveness/alias_analysis.go`
+**Files:**
+- `internal/liveness/alias.go` — `MergeAliasSets(v1, v2)`
+- `internal/checker/check_transitions.go` — `trackAliasesForPropAssignment()`
+- `internal/checker/infer_expr.go` — calls `trackAliasesForPropAssignment()`
+  when LHS of an assignment is a `MemberExpr` or `IndexExpr`
 
-```go
-// When processing: obj.prop = value
-// 1. Determine the alias source of value (using DetermineAliasSource)
-// 2. If value aliases a variable v:
-//    - Call AliasTracker.MergeAliasSets(obj, v) to merge their alias sets
-// 3. If value is a fresh value: obj gains no new aliases
-```
+When processing `obj.prop = value`:
+1. Determine the alias source of `value` (using `DetermineAliasSource`)
+2. If value aliases a variable `v`:
+   - Call `AliasTracker.MergeAliasSets(obj, v)` to merge their alias sets
+3. If value is a fresh value: obj gains no new aliases
 
 **Why merge, not just add?** Simple addition (`add obj to value's set`)
 loses transitive connections when intermediate variables are reassigned.
@@ -1085,36 +1108,59 @@ graph may end up in one alias set. This is correct for cyclic structures
 (you cannot freeze part of a cycle) and sound for acyclic structures
 (a container that stores a reference truly does alias it).
 
-This requires extending `DetermineAliasSource` to handle `MemberExpr` on the
-left side of assignments, and to recognize when a property assignment creates
-an alias relationship.
+`DetermineAliasSource` handles `MemberExpr` and `IndexExpr` by recursing
+into the object expression — `obj.field` and `obj[index]` are treated as
+aliasing `obj`.
 
-### 7.2 Closure Capture Aliasing
+### 7.2 Closure Capture Aliasing (Done)
 
 When a closure (function expression) captures a variable from the enclosing
 scope, the closure variable is an alias of the captured variable.
 
 **Implementation:**
-1. During function expression inference (`inferFuncExpr`), identify captured
-   variables by comparing the function body's free variables against the
-   enclosing scope
-2. For each captured variable, determine if the capture is mutable (the closure
-   writes to the captured variable) or read-only (the closure only reads it)
-3. Add the closure variable to the alias set of each captured variable with
-   the appropriate mutability
+1. When processing a `VarDecl` whose initializer is a `FuncExpr`, call
+   `trackCapturedAliases()` in `check_transitions.go`
+2. `trackCapturedAliases()` calls `AnalyzeCaptures()` to identify captured
+   variables and whether each capture is mutable or read-only
+3. For each captured variable, the closure is added to the alias set of
+   the captured variable with the appropriate mutability
 
 **File:** `internal/liveness/capture_analysis.go`
 
 ```go
-// CaptureInfo describes how a closure captures a variable.
+// CaptureInfo describes how a closure captures a variable from the
+// enclosing scope.
 type CaptureInfo struct {
-    VarID     VarID
-    IsMutable bool  // true if the closure writes to the captured variable
+    ID        VarID  // unique binding identity (negative for outer references)
+    Name      string // variable name as it appears in the source (diagnostics only)
+    IsMutable bool   // true if the closure writes to the captured variable
 }
 
-// AnalyzeCaptures determines which variables a closure captures and how.
-func AnalyzeCaptures(funcBody ast.Block, enclosingScope map[string]VarID) []CaptureInfo { ... }
+// AnalyzeCaptures walks a function expression's body and determines which
+// variables are captured from the enclosing scope and whether each capture
+// is mutable (the closure writes to the captured variable) or read-only.
+//
+// A variable is considered captured if its IdentExpr has a negative VarID
+// (assigned by the rename pass to indicate outer/non-local bindings).
+//
+// A capture is mutable if the captured variable appears on the left side
+// of an assignment or as the root of a member/index expression that is
+// assigned to (e.g. `captured.prop = value`).
+func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo { ... }
 ```
+
+**Implementation note:** The original plan proposed comparing free variables
+against an explicit enclosing scope map. The actual implementation takes
+advantage of the rename pass's convention: within a nested function body,
+variables from the enclosing scope are assigned negative VarIDs. This means
+`AnalyzeCaptures` only needs to walk the function body and look for
+`IdentExpr` nodes with negative VarIDs — no explicit scope map is needed.
+
+The implementation uses an AST visitor (`captureVisitor`) with a two-pass
+approach for assignments: first identifying read uses, then marking
+mutations. This correctly handles cases like shorthand object properties
+(`{x}` where `x` is captured), assignment LHS with sub-expressions, and
+nested functions (which are skipped since they get their own analysis).
 
 #### Read-Only Captures and Transition Rules
 
@@ -1145,7 +1191,13 @@ This distinction is important: a read-only capture is not simply "no alias" —
 it is an immutable alias that blocks immutable-to-mutable transitions on the
 captured variable while the closure is live.
 
-### 7.3 Destructuring Aliasing
+**Limitation:** Capture analysis only runs for named closures (`val f =
+fn() { ... }`) because the closure needs a VarID to participate in alias
+sets. Anonymous closures passed as call arguments (e.g.
+`items.map(fn(x) { captured })`) are not yet tracked. See the Out of Scope
+section in requirements.md for the implementation approach.
+
+### 7.3 Destructuring Aliasing (Done)
 
 When a value is destructured, each extracted binding aliases the corresponding
 part of the original value:
@@ -1154,10 +1206,11 @@ part of the original value:
 val {a} = obj  // a aliases obj.a
 ```
 
-**Implementation:** In `inferPattern` for `ObjectPat` and `ArrayPat`, when
-the initializer is a `VarRef`, add each destructured binding to the
-`AliasSet` for the **source variable** — i.e. `AliasSet.Members`
-(`map[VarID]Mutability`) gains an entry for the new binding.
+**Implementation:** `trackAliasesForDestructuringPat()` in
+`check_transitions.go` recursively walks object and tuple patterns. When
+the initializer aliases a variable, each destructured binding is added to
+the source variable's alias set(s). The function handles `ObjectPat` and
+`TuplePat` patterns, recursing into nested patterns.
 
 Alias sets do not track property-level granularity — they track variables,
 not sub-paths. Putting `a` in `obj`'s alias set is a conservative
@@ -1173,7 +1226,7 @@ Phase 7.1 merge semantics handle connecting the object-level and
 property-level alias sets — the same merge that fires for any
 `obj.prop = value` assignment ensures transitive connections are maintained.
 
-### 7.4 Conditional Aliasing
+### 7.4 Conditional Aliasing (Done)
 
 When a variable is assigned from different values depending on control flow,
 it joins the alias sets of all possible sources:
@@ -1183,12 +1236,20 @@ val c = if cond { a } else { b }
 // c is in both a's and b's alias sets
 ```
 
-**Implementation:** Extend `DetermineAliasSource` to handle `IfElseExpr` and
-`MatchExpr` by collecting alias sources from all branches and returning
-`AliasSourceMultiple`. The `AliasTracker` already supports membership in
-multiple alias sets via `VarToSets` (defined in Phase 1.4, now used from Phase 5).
+**Implementation:**
+- `DetermineAliasSource` handles `IfElseExpr` and `MatchExpr` by collecting
+  alias sources from all branches via `collectBranchSources()` and returning
+  `AliasSourceMultiple` when branches reference different variables.
+- Branch results are deduplicated using `OrderedSet[VarID]` (a new utility
+  in `internal/set/ordered_set.go`) to ensure deterministic output.
+- `trackAliasesForIdentPat()` handles `AliasSourceMultiple` by calling
+  `AddAlias` for each source VarID.
+- `AliasTracker.ReassignMulti(v, sources, mut)` was added to handle
+  conditional reassignment — it removes `v` from its current sets and adds
+  it to all source sets. If no sources have entries in VarToSets (all
+  untracked), it falls back to creating a fresh alias set via `NewValue`.
 
-### 7.5 Reassignment
+### 7.5 Reassignment (Done)
 
 When a `var` variable is reassigned, it leaves its previous alias set(s):
 
@@ -1198,9 +1259,21 @@ b = {x: 1, y: 1}  // b leaves a's alias set
 val q: Point = a   // OK: b no longer aliases a
 ```
 
-This is already handled by `AliasTracker.Reassign` from Phase 5.
+**Implementation:** `trackAliasesForAssignment()` in `check_transitions.go`
+handles reassignment by calling `Reassign()` for single-source reassignment
+and `ReassignMulti()` for conditional reassignment (when the RHS is an
+if/else or match expression that may alias different variables on different
+branches).
 
-### 7.6 Method Receiver Aliasing
+**CFG changes:** The CFG builder was extended to decompose branching RHS
+expressions in both `DeclStmt` and `ExprStmt` (assignments). When the
+initializer/RHS is a branching expression (if/else, match, do, try/catch),
+the CFG creates separate basic blocks for each branch and a join block.
+A `recordDecomposed()` helper tracks the mapping from the original statement
+to the join block so that `BuildStmtToRef` can create a `StmtRef` for
+liveness lookup.
+
+### 7.6 Method Receiver Aliasing (Deferred to Phase 8)
 
 When a method stores a parameter into `self`, the receiver becomes an alias
 of that parameter. This is handled through lifetime annotations (Phase 8) —
@@ -1225,7 +1298,29 @@ fn setItem<'a>(mut 'a self, p: mut 'a Point) -> void
 The shared `'a` on `self` and `p` tells callers that after `c.setItem(p)`,
 `c` aliases `p`. The caller's alias tracker merges their alias sets.
 
-### 7.7 Tests
+### 7.7 Additional Infrastructure
+
+#### OrderedSet Utility
+
+**File:** `internal/set/ordered_set.go`
+
+A generic `OrderedSet[T comparable]` was added to support deterministic
+deduplication of VarIDs when collecting alias sources from conditional
+branches. It preserves insertion order and provides `Add`, `Contains`,
+`Len`, and `ToSlice` methods. `ToSlice` returns the internal backing
+slice (documented aliasing guarantee — must not be modified by callers).
+
+#### Binding.VarID
+
+**File:** `internal/type_system/types.go`
+
+A `VarID` field was added to the `Binding` struct so that liveness metadata
+can be linked to type-system bindings. This field is excluded from structural
+equality checks (`namespaceEquals`).
+
+### 7.8 Tests (Done)
+
+All planned tests are implemented:
 
 - Object property: `obj.prop = p` makes obj alias p
 - Closure capture (mutable): closure writing to captured var blocks Rule 1
@@ -1236,6 +1331,21 @@ The shared `'a` on `self` and `p` tells callers that after `c.setItem(p)`,
 - Conditional: `val c = if cond { a } else { b }` aliases both
 - Reassignment: var leaving alias set on reassignment
 - Combined: closure capturing variable that is later aliased through property
+
+Additional tests beyond the original plan:
+- `DetermineAliasSource` unit tests for all expression types including
+  `IndexExpr`, `MemberExpr` (local and non-local), `TypeCast`, `AwaitExpr`,
+  `MatchExpr` (multiple variables, same variable, variable+fresh)
+- `IfElseExpr` alias source tests (both variables, one variable + fresh,
+  both fresh, no alt, same variable, unknown + variable)
+- `AliasTracker.ReassignMulti` unit tests (basic, removes from previous
+  sets, empty sources, untracked sources)
+- `AliasTracker.MergeAliasSets` unit tests (basic merge, no-op merge)
+- `AnalyzeCaptures` unit tests (mutable/immutable captures, nested
+  functions, shorthand properties, empty bodies)
+- CFG decomposition tests for branching RHS in declarations and assignments
+- Transition checker integration tests covering chains, transitive aliases,
+  conditional sources, closures with captures, and destructuring
 
 ---
 
@@ -2569,13 +2679,13 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
         │   └── 6. Transition checking ←── (also depends on 5) ✅
         └── 5. Alias tracking (local) ✅
             ├── 6. Transition checking ✅
-            │   └── 7. Advanced alias tracking (properties, closures, destructuring)
+            │   └── 7. Advanced alias tracking (properties, closures, destructuring) ✅
             │       └── 8. Lifetime annotations, inference, & constructors
             │           └── 9. Lifetime unification ('static, conflict detection,
             │               │  higher-order function threading)
             │               └── 10. Elision rules & interface lifetime verification
             │                   └── 11. TypeScript interop
-            └── 7. Advanced alias tracking
+            └── 7. Advanced alias tracking ✅
 12. Error messages ←── (depends on 6–11)
 └── 13. Remove mut?
     └── 14. PrintType & display
