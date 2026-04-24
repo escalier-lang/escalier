@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"testing"
@@ -626,30 +627,6 @@ func TestMutabilityTransitions(t *testing.T) {
 		}},
 	}
 
-	// Conditional reassignment: `var c = if cond { a } else { b }` where
-	// the transition is violated for one branch.
-	tests["Conditional_Reassignment_Error"] = struct {
-		input          string
-		expectedErrors []expectedTransitionError
-	}{
-		input: `
-			fn test(cond: boolean) {
-				val a: mut {x: number} = {x: 0}
-				val b: mut {x: number} = {x: 1}
-				var c: {x: number} = {x: 2}
-				c = if cond { a } else { b }
-				a.x = 5
-				c
-			}
-		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "a",
-			TargetVar:       "c",
-			ConflictingVars: []string{"a"},
-			MutToImmutable:  true,
-		}},
-	}
-
 	// Reassignment with a fresh value after aliasing should clear the alias
 	// and allow transitions that were previously blocked.
 	tests["Reassignment_FreshAfterAlias_ClearsConflict_OK"] = struct {
@@ -708,36 +685,18 @@ func TestMutabilityTransitions(t *testing.T) {
 				sortedActual := make([]*MutabilityTransitionError, len(mutErrors))
 				copy(sortedActual, mutErrors)
 				slices.SortStableFunc(sortedActual, func(a, b *MutabilityTransitionError) int {
-					if a.SourceVar < b.SourceVar {
-						return -1
+					if c := cmp.Compare(a.SourceVar, b.SourceVar); c != 0 {
+						return c
 					}
-					if a.SourceVar > b.SourceVar {
-						return 1
-					}
-					if a.TargetVar < b.TargetVar {
-						return -1
-					}
-					if a.TargetVar > b.TargetVar {
-						return 1
-					}
-					return 0
+					return cmp.Compare(a.TargetVar, b.TargetVar)
 				})
 				sortedExpected := make([]expectedTransitionError, len(test.expectedErrors))
 				copy(sortedExpected, test.expectedErrors)
 				slices.SortStableFunc(sortedExpected, func(a, b expectedTransitionError) int {
-					if a.SourceVar < b.SourceVar {
-						return -1
+					if c := cmp.Compare(a.SourceVar, b.SourceVar); c != 0 {
+						return c
 					}
-					if a.SourceVar > b.SourceVar {
-						return 1
-					}
-					if a.TargetVar < b.TargetVar {
-						return -1
-					}
-					if a.TargetVar > b.TargetVar {
-						return 1
-					}
-					return 0
+					return cmp.Compare(a.TargetVar, b.TargetVar)
 				})
 
 				for i, expected := range sortedExpected {

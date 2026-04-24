@@ -422,6 +422,8 @@ func collectPatternVarIDs(pat ast.Pat) []liveness.VarID {
 		for _, elem := range p.Elems {
 			varIDs = append(varIDs, collectPatternVarIDs(elem)...)
 		}
+	default:
+		panic(fmt.Sprintf("collectPatternVarIDs: unhandled pattern type %T", pat))
 	}
 	return varIDs
 }
@@ -477,7 +479,10 @@ func (c *Checker) trackAliasesForAssignment(
 
 		ctx.Aliases.Reassign(targetVarID, &sourceVarID, aliasMut)
 	case liveness.AliasSourceMultiple:
-		// Conditional aliasing: reassign to all sources
+		// Conditional aliasing: reassign to all sources.
+		// ReassignMulti is called before checking transitions (unlike the
+		// single-source case) because we want alias state to be consistent
+		// regardless of whether errors are reported.
 		ctx.Aliases.ReassignMulti(targetVarID, source.VarIDs, aliasMut)
 
 		// Check mutability transition against each source

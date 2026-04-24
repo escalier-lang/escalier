@@ -1,6 +1,7 @@
 package liveness
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 
@@ -40,13 +41,7 @@ func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
 		result = append(result, CaptureInfo{Name: name, IsMutable: isMutable})
 	}
 	slices.SortFunc(result, func(a, b CaptureInfo) int {
-		if a.Name < b.Name {
-			return -1
-		}
-		if a.Name > b.Name {
-			return 1
-		}
-		return 0
+		return cmp.Compare(a.Name, b.Name)
 	})
 	return result
 }
@@ -71,6 +66,8 @@ func walkStmt(stmt ast.Stmt, captures map[string]bool) {
 	case *ast.ForInStmt:
 		walkExpr(s.Iterable, captures)
 		walkBody(s.Body.Stmts, captures)
+	default:
+		panic(fmt.Sprintf("walkStmt: unhandled statement type %T", stmt))
 	}
 }
 
@@ -80,8 +77,11 @@ func walkDecl(decl ast.Decl, captures map[string]bool) {
 		if d.Init != nil {
 			walkExpr(d.Init, captures)
 		}
-	// FuncDecl: don't recurse into nested function bodies — they get
-	// their own capture analysis.
+	case *ast.FuncDecl:
+		// Don't recurse into nested function bodies — they get
+		// their own capture analysis.
+	default:
+		panic(fmt.Sprintf("walkDecl: unhandled declaration type %T", decl))
 	}
 }
 
