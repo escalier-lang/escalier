@@ -184,7 +184,9 @@ func TestDetermineAliasSource_IfElseExpr_BothFresh(t *testing.T) {
 	require.Equal(t, AliasSourceFresh, source.Kind)
 }
 
-func TestDetermineAliasSource_IfElseExpr_NoAlt(t *testing.T) {
+func TestDetermineAliasSource_IfElseExpr_NoAlt_Variable(t *testing.T) {
+	// if cond { a } — else branch is implicitly undefined (fresh),
+	// so the result aliases a.
 	a := ast.NewIdent("a", ast.Span{})
 	a.VarID = 1
 
@@ -198,7 +200,26 @@ func TestDetermineAliasSource_IfElseExpr_NoAlt(t *testing.T) {
 
 	source := DetermineAliasSource(ifElse)
 
-	require.Equal(t, AliasSourceUnknown, source.Kind)
+	require.Equal(t, AliasSourceVariable, source.Kind)
+	require.Equal(t, []VarID{1}, source.VarIDs)
+}
+
+func TestDetermineAliasSource_IfElseExpr_NoAlt_Fresh(t *testing.T) {
+	// if cond { {x: 1} } — both branches are fresh (cons is a literal,
+	// else is implicitly undefined), so the result is fresh.
+	freshObj := ast.NewObject(nil, ast.Span{})
+
+	consBlock := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(freshObj, ast.Span{})}}
+	ifElse := ast.NewIfElse(
+		ast.NewLitExpr(ast.NewBoolean(true, ast.Span{})),
+		consBlock,
+		nil,
+		ast.Span{},
+	)
+
+	source := DetermineAliasSource(ifElse)
+
+	require.Equal(t, AliasSourceFresh, source.Kind)
 }
 
 func TestDetermineAliasSource_IfElseExpr_SameVariable(t *testing.T) {

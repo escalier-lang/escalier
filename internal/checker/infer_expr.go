@@ -147,8 +147,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					transErrors := c.trackAliasesForAssignment(ctx, identExpr, expr.Right, leftType)
 					errors = slices.Concat(errors, transErrors)
 				} else {
-					// Phase 7.1: Object property aliasing — when obj.prop = value
-					// and value aliases a variable, merge alias sets of obj and value.
+					// Object property aliasing — when obj.prop = value and value
+					// aliases a variable, merge alias sets of obj and value.
 					c.trackAliasesForPropAssignment(ctx, expr.Left, expr.Right)
 				}
 			}
@@ -1647,4 +1647,3 @@ func (c *Checker) inferBlock(
 
 	return resultType, errors
 }
-

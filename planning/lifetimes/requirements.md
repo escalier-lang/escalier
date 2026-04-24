@@ -2037,6 +2037,18 @@ because `shared` is permanently live and mutable.
   the enclosing loop's header and post-loop blocks on the builder so that
   `break` edges to the post-loop block and `continue` edges to the header.
   See #487.
+- **Anonymous closure capture tracking:** Capture analysis only runs for
+  named closures (`val f = fn() { ... }`) because the closure needs a
+  VarID to participate in alias sets. Anonymous closures passed as call
+  arguments (e.g. `items.map(fn(x) { captured })`) are not tracked,
+  which means mutable captures in anonymous callbacks can go undetected.
+  Implementation approach: (1) pre-allocate VarIDs for anonymous
+  FuncExpr args during the rename pass, (2) detect FuncExpr arguments
+  in `inferCallExpr` and call `trackCapturedAliases` with the synthetic
+  VarID, (3) treat anonymous closure captures as live for the remainder
+  of the enclosing function (conservative but correct — the callee may
+  store the closure). `AnalyzeCaptures` already works on any FuncExpr.
+  Estimated scope: ~50-100 lines of production code.
 - Concurrency / data race prevention (would require Rust-style exclusive
   borrowing)
 - Heap escape analysis beyond function return values

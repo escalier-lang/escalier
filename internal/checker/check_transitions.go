@@ -151,9 +151,12 @@ func (c *Checker) trackAliasesForVarDecl(
 	case *ast.IdentPat:
 		errors = c.trackAliasesForIdentPat(ctx, pat, bindings, source, enclosingStmt, decl.Span())
 
-		// Phase 7.2: Closure capture aliasing — when the initializer is a
-		// FuncExpr, add the closure variable to each captured variable's
-		// alias set in the enclosing function.
+		// Closure capture aliasing — when the initializer is a FuncExpr, add
+		// the closure variable to each captured variable's alias set in the
+		// enclosing function.
+		// TODO: This only handles named closures (val f = fn() { ... }).
+		// Anonymous closures passed as call arguments (e.g. items.map(fn(x) { captured }))
+		// are not tracked because they have no VarID to add to alias sets.
 		if funcExpr, ok := decl.Init.(*ast.FuncExpr); ok && pat.VarID > 0 {
 			closureVarID := liveness.VarID(pat.VarID)
 			captureErrors := c.trackCapturedAliases(ctx, funcExpr, closureVarID, enclosingStmt, decl.Span())
@@ -221,7 +224,7 @@ func (c *Checker) trackAliasesForIdentPat(
 			)
 		}
 	case liveness.AliasSourceMultiple:
-		// Conditional aliasing (Phase 7.4): the target aliases all possible
+		// Conditional aliasing: the target aliases all possible
 		// source variables. Add it to each source's alias sets.
 		for _, sourceVarID := range source.VarIDs {
 			ctx.Aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
@@ -250,20 +253,22 @@ func (c *Checker) trackAliasesForIdentPat(
 		return allErrors
 	case liveness.AliasSourceFresh:
 		ctx.Aliases.NewValue(targetVarID, aliasMut)
-	default:
+	case liveness.AliasSourceUnknown:
 		// Unknown — create a fresh value conservatively
 		ctx.Aliases.NewValue(targetVarID, aliasMut)
+	default:
+		panic(fmt.Sprintf("trackAliasesForIdentPat: unhandled alias source kind %d", source.Kind))
 	}
 
 	return nil
 }
 
 // trackCapturedAliases adds the closure variable to the alias sets of each
-// captured variable from the enclosing scope (Phase 7.2). A read-only capture
-// creates an immutable alias; a mutable capture creates a mutable alias.
-// It also checks mutability transitions for each capture — for example, a
-// read-only capture of a mutable variable is a mut→immut transition that
-// must be checked against live mutable aliases.
+// captured variable from the enclosing scope. A read-only capture creates an
+// immutable alias; a mutable capture creates a mutable alias. It also checks
+// mutability transitions for each capture — for example, a read-only capture
+// of a mutable variable is a mut→immut transition that must be checked against
+// live mutable aliases.
 func (c *Checker) trackCapturedAliases(
 	ctx Context,
 	funcExpr *ast.FuncExpr,
@@ -375,10 +380,8 @@ func (c *Checker) trackAliasesForDestructuringPat(
 			}
 		}
 		return allErrors
-	case liveness.AliasSourceFresh:
+	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
 		// Fresh value (or unknown): each destructured binding gets its own fresh set.
-		fallthrough
-	default:
 		for _, targetVarID := range varIDs {
 			targetName := c.varIDToName(ctx, targetVarID)
 			binding := bindings[targetName]
@@ -391,13 +394,15 @@ func (c *Checker) trackAliasesForDestructuringPat(
 			}
 			ctx.Aliases.NewValue(targetVarID, aliasMut)
 		}
+	default:
+		panic(fmt.Sprintf("trackAliasesForDestructuringPat: unhandled alias source kind %d", source.Kind))
 	}
 
 	return nil
 }
 
 // collectPatternVarIDs collects all positive VarIDs from a pattern, recursively
-// handling nested patterns (ObjectPat, TuplePat, IdentPat).
+// handling nested patterns (ObjectPat, TuplePat, ExtractorPat, IdentPat).
 func collectPatternVarIDs(pat ast.Pat) []liveness.VarID {
 	var varIDs []liveness.VarID
 	switch p := pat.(type) {
@@ -421,6 +426,10 @@ func collectPatternVarIDs(pat ast.Pat) []liveness.VarID {
 	case *ast.TuplePat:
 		for _, elem := range p.Elems {
 			varIDs = append(varIDs, collectPatternVarIDs(elem)...)
+		}
+	case *ast.ExtractorPat:
+		for _, arg := range p.Args {
+			varIDs = append(varIDs, collectPatternVarIDs(arg)...)
 		}
 	default:
 		panic(fmt.Sprintf("collectPatternVarIDs: unhandled pattern type %T", pat))
@@ -510,8 +519,10 @@ func (c *Checker) trackAliasesForAssignment(
 		}
 	case liveness.AliasSourceFresh:
 		ctx.Aliases.Reassign(targetVarID, nil, aliasMut)
-	default:
+	case liveness.AliasSourceUnknown:
 		ctx.Aliases.Reassign(targetVarID, nil, aliasMut)
+	default:
+		panic(fmt.Sprintf("trackAliasesForAssignment: unhandled alias source kind %d", source.Kind))
 	}
 
 	return nil
@@ -529,8 +540,8 @@ func isSourceMutable(ctx Context, sourceVarID liveness.VarID) bool {
 }
 
 // trackAliasesForPropAssignment handles alias tracking for property
-// assignments like `obj.prop = value` (Phase 7.1). When the RHS aliases
-// a variable, the alias sets of the object and the RHS source are merged.
+// assignments like `obj.prop = value`. When the RHS aliases a variable, the
+// alias sets of the object and the RHS source are merged.
 func (c *Checker) trackAliasesForPropAssignment(
 	ctx Context,
 	lhs ast.Expr,
@@ -550,12 +561,16 @@ func (c *Checker) trackAliasesForPropAssignment(
 		for _, srcID := range source.VarIDs {
 			ctx.Aliases.MergeAliasSets(objVarID, srcID)
 		}
+	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
+		// No alias relationship to track.
+	default:
+		panic(fmt.Sprintf("trackAliasesForPropAssignment: unhandled alias source kind %d", source.Kind))
 	}
-	// Fresh and Unknown: no alias relationship to track.
 }
 
-// rootObjectVarID walks a member/index expression chain to find the root
-// object's VarID. Returns 0 if the root is not a local variable.
+// rootObjectVarID iteratively walks a member/index expression chain
+// (e.g. a.b.c, a[b][c]) to find the root object's VarID.
+// Returns 0 if the root is not a local variable.
 func rootObjectVarID(expr ast.Expr) liveness.VarID {
 	for {
 		switch e := expr.(type) {

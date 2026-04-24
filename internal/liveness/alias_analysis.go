@@ -1,6 +1,9 @@
 package liveness
 
-import "github.com/escalier-lang/escalier/internal/ast"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
+)
 
 // AliasSourceKind describes the kind of alias source an expression represents.
 type AliasSourceKind int
@@ -137,8 +140,7 @@ func blockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
 // collectBranchSources collects alias sources from a list of expressions,
 // deduplicating VarIDs across branches. Returns a merged AliasSource.
 func collectBranchSources(exprs []ast.Expr) AliasSource {
-	var allVarIDs []VarID
-	seen := make(map[VarID]bool)
+	varIDs := set.NewOrderedSet[VarID]()
 	allFresh := true
 
 	for _, expr := range exprs {
@@ -148,21 +150,10 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 		}
 		source := DetermineAliasSource(expr)
 		switch source.Kind {
-		case AliasSourceVariable:
+		case AliasSourceVariable, AliasSourceMultiple:
 			allFresh = false
 			for _, id := range source.VarIDs {
-				if !seen[id] {
-					seen[id] = true
-					allVarIDs = append(allVarIDs, id)
-				}
-			}
-		case AliasSourceMultiple:
-			allFresh = false
-			for _, id := range source.VarIDs {
-				if !seen[id] {
-					seen[id] = true
-					allVarIDs = append(allVarIDs, id)
-				}
+				varIDs.Add(id)
 			}
 		case AliasSourceFresh:
 			// Fresh branch — doesn't contribute alias IDs
@@ -172,16 +163,17 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 		}
 	}
 
-	if len(allVarIDs) == 0 {
+	switch varIDs.Len() {
+	case 0:
 		if allFresh {
 			return AliasSource{Kind: AliasSourceFresh}
 		}
 		return AliasSource{Kind: AliasSourceUnknown}
+	case 1:
+		return AliasSource{Kind: AliasSourceVariable, VarIDs: varIDs.ToSlice()}
+	default:
+		return AliasSource{Kind: AliasSourceMultiple, VarIDs: varIDs.ToSlice()}
 	}
-	if len(allVarIDs) == 1 {
-		return AliasSource{Kind: AliasSourceVariable, VarIDs: allVarIDs}
-	}
-	return AliasSource{Kind: AliasSourceMultiple, VarIDs: allVarIDs}
 }
 
 // determineConditionalAliasSource determines alias sources for an if-else
@@ -190,10 +182,10 @@ func determineConditionalAliasSource(expr *ast.IfElseExpr) AliasSource {
 	consExpr := blockResultExpr(expr.Cons)
 	altExpr := blockOrExprResultExpr(expr.Alt)
 
-	// If there's no alt branch, this is a statement-like if, not an
-	// expression that produces a value to alias.
+	// If there's no alt branch, the else produces undefined (a fresh
+	// value). Only the consequent may contribute alias sources.
 	if expr.Alt == nil {
-		return AliasSource{Kind: AliasSourceUnknown}
+		return collectBranchSources([]ast.Expr{consExpr})
 	}
 
 	return collectBranchSources([]ast.Expr{consExpr, altExpr})

@@ -104,6 +104,8 @@ func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut AliasMutability) 
 			delete(set.Members, v)
 		}
 	}
+	// Use nil instead of delete to signal "belongs to no sets" rather than
+	// "never tracked." AddAlias/NewValue below will append to the nil slice.
 	a.VarToSets[v] = nil
 
 	if newSource != nil {
@@ -125,6 +127,8 @@ func (a *AliasTracker) ReassignMulti(v VarID, sources []VarID, mut AliasMutabili
 			delete(set.Members, v)
 		}
 	}
+	// Use nil instead of delete to signal "belongs to no sets" rather than
+	// "never tracked." AddAlias/NewValue below will append to the nil slice.
 	a.VarToSets[v] = nil
 
 	if len(sources) == 0 {

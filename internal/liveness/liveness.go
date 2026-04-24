@@ -44,7 +44,15 @@ type LivenessInfo struct {
 // A StmtIdx of -1 represents a synthetic position before the first
 // statement in a block (used for decomposed DeclStmts whose init was
 // a branching expression). "Live after" this position means "live
-// before the first statement in the block".
+// before the first statement in the block". For example:
+//
+//	val c: {x: number} = if cond { a } else { b }
+//	a.x = 5  // ← first statement in the join block
+//	c
+//
+// The DeclStmt for c is decomposed by the CFG builder into separate
+// branches. Its StmtRef points to the join block with StmtIdx -1,
+// so alias tracking checks liveness just before `a.x = 5`.
 func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
 	if ref.StmtIdx < 0 {
 		// Synthetic position before the block's first statement.
