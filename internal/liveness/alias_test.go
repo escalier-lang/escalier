@@ -191,8 +191,10 @@ func TestReassignMulti(t *testing.T) {
 	require.Len(t, bSets, 1)
 	require.Contains(t, bSets[0].Members, x)
 
-	// x's original fresh set should no longer contain x
-	// (it was removed during reassign)
+	// x's original fresh set (SetID 3) should no longer contain x.
+	originalSet := tracker.Sets[3]
+	require.NotNil(t, originalSet)
+	require.NotContains(t, originalSet.Members, x)
 }
 
 func TestReassignMultiRemovesFromPreviousSets(t *testing.T) {
@@ -228,6 +230,28 @@ func TestReassignMultiRemovesFromPreviousSets(t *testing.T) {
 	cSets := tracker.GetAliasSets(c)
 	require.Len(t, cSets, 1)
 	require.Contains(t, cSets[0].Members, x)
+}
+
+func TestReassignMultiEmptySources(t *testing.T) {
+	tracker := NewAliasTracker()
+	var a VarID = 1
+	var x VarID = 2
+
+	tracker.NewValue(a, AliasMutable)
+	tracker.AddAlias(x, a, AliasImmutable)
+
+	// Reassigning with empty sources should create a fresh set (like Reassign with nil source).
+	tracker.ReassignMulti(x, []VarID{}, AliasImmutable)
+
+	// x should have been removed from a's set
+	aSets := tracker.GetAliasSets(a)
+	require.Len(t, aSets, 1)
+	require.NotContains(t, aSets[0].Members, x)
+
+	// x should have its own fresh set
+	xSets := tracker.GetAliasSets(x)
+	require.Len(t, xSets, 1)
+	require.Contains(t, xSets[0].Members, x)
 }
 
 func TestMergeAliasSetsNoOp(t *testing.T) {

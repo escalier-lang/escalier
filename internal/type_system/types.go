@@ -2660,6 +2660,9 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 	if len(n1.Values) != len(n2.Values) {
 		return false
 	}
+	// Only Mutable and Type participate in structural equality. VarID is
+	// liveness metadata and Exported is a module-level concern — neither
+	// affects the identity of the namespace's type structure.
 	for k, v1 := range n1.Values {
 		if v2, ok := n2.Values[k]; !ok {
 			return false

@@ -127,6 +127,11 @@ func (a *AliasTracker) ReassignMulti(v VarID, sources []VarID, mut AliasMutabili
 	}
 	a.VarToSets[v] = nil
 
+	if len(sources) == 0 {
+		// No sources — create a fresh alias set, mirroring Reassign(v, nil, mut).
+		a.NewValue(v, mut)
+		return
+	}
 	for _, source := range sources {
 		a.AddAlias(v, source, mut)
 	}

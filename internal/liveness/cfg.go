@@ -28,10 +28,10 @@ type decomposedStmt struct {
 
 // CFG represents the control flow graph for a function body.
 type CFG struct {
-	Entry          *BasicBlock
-	Exit           *BasicBlock
-	Blocks         []*BasicBlock
-	DecomposedStmts []decomposedStmt
+	Entry           *BasicBlock
+	Exit            *BasicBlock
+	Blocks          []*BasicBlock
+	decomposedStmts []decomposedStmt
 }
 
 // BuildCFG constructs a control flow graph from a function body.
@@ -49,7 +49,7 @@ func BuildCFG(body ast.Block) *CFG {
 		b.addEdge(final, exit)
 	}
 
-	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, DecomposedStmts: b.decomposedStmts}
+	return &CFG{Entry: entry, Exit: exit, Blocks: b.blocks, decomposedStmts: b.decomposedStmts}
 }
 
 // BuildStmtToRef constructs a mapping from AST statement nodes to their
@@ -65,7 +65,10 @@ func BuildStmtToRef(cfg *CFG) map[ast.Stmt]StmtRef {
 	// Map decomposed statements (e.g. DeclStmts whose init was a branching
 	// expression) to the first position in their join block. This uses
 	// StmtIdx -1 as a synthetic index before any real statements.
-	for _, ds := range cfg.DecomposedStmts {
+	for _, ds := range cfg.decomposedStmts {
+		if _, exists := result[ds.Stmt]; exists {
+			panic("BuildStmtToRef: decomposed stmt already mapped — processExprStmt/processDeclStmt must not also append it to block.Stmts")
+		}
 		result[ds.Stmt] = StmtRef{BlockID: ds.Block.ID, StmtIdx: -1}
 	}
 	return result
