@@ -356,3 +356,48 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+// TestParseDataClass snapshots class declarations with the
+// `data` modifier and a regular class declaration for contrast.
+func TestParseDataClass(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"DataClass": {
+			input: `data class Config(host: string) { host, }`,
+		},
+		"DataClassWithMutSelfMethod": {
+			input: `
+				data class Config(host: string) {
+					host,
+					setHost(mut self, h: string) -> void {}
+				}
+			`,
+		},
+		"RegularClass": {
+			input: `class Point(x: number, y: number) { x, y, }`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
+			if len(errors) > 0 {
+				for i, err := range errors {
+					fmt.Printf("Error[%d]: %#v\n", i, err)
+				}
+			}
+			assert.Len(t, errors, 0)
+		})
+	}
+}
