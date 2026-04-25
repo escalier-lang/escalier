@@ -6,6 +6,24 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// lifetimeParamName returns the inferred lifetime parameter name for the
+// i-th allocated lifetime in a signature: 'a, 'b, ..., 'z, 'aa, 'ab, etc.
+// Using letters (rather than the underlying param name) makes printed
+// signatures easier to read since lifetimes are visually distinct from
+// the params they constrain.
+func lifetimeParamName(i int) string {
+	const base = 26
+	name := ""
+	for {
+		name = string(rune('a'+(i%base))) + name
+		i = i/base - 1
+		if i < 0 {
+			break
+		}
+	}
+	return name
+}
+
 // InferLifetimes analyzes a function body to determine which parameters
 // are aliased by the return value, attaches a fresh LifetimeVar to each
 // such parameter and to the return type, and records the lifetime
@@ -112,8 +130,8 @@ func (c *Checker) InferLifetimes(
 		}
 		// paramIndex (above) was populated only from IdentPat params, so
 		// astParams[idx].Pattern is guaranteed to be *ast.IdentPat.
-		identPat := astParams[idx].Pattern.(*ast.IdentPat)
-		lv := c.FreshLifetimeVar(identPat.Name)
+		_ = astParams[idx].Pattern.(*ast.IdentPat)
+		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
 		lifetimeParams = append(lifetimeParams, lv)
 
 		// Attach the lifetime to the parameter's type.
@@ -268,8 +286,8 @@ func (c *Checker) InferConstructorLifetimes(
 		// storedParams (above) was populated only from params whose name
 		// is in paramNameToIndex, which only contains IdentPat params, so
 		// p.Pattern is guaranteed to be *ast.IdentPat.
-		identPat := p.Pattern.(*ast.IdentPat)
-		lv := c.FreshLifetimeVar(identPat.Name)
+		_ = p.Pattern.(*ast.IdentPat)
+		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
 		lifetimeParams = append(lifetimeParams, lv)
 		setLifetimeOnType(paramType, lv)
 	}

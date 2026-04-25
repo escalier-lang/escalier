@@ -27,7 +27,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				fn identity(p: mut {x: number}) -> mut {x: number} { return p }
 			`,
 			expectedTypes: map[string]string{
-				"identity": "fn <'p>(p: mut 'p {x: number}) -> mut 'p {x: number}",
+				"identity": "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}",
 			},
 		},
 		"FreshObjectReturn": {
@@ -96,7 +96,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				class Container(item: mut {x: number}) { item, }
 			`,
 			expectedTypes: map[string]string{
-				"Container": "{new fn <'item>(item: mut 'item {x: number}) -> mut? Container<'item>}",
+				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> mut? Container<'a>}",
 			},
 		},
 		"PointPrimitivesNoLifetime": {
@@ -114,7 +114,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Pair": "{new fn <'first, 'second>(first: mut 'first {x: number}, second: mut 'second {x: number}) -> mut? Pair<'first, 'second>}",
+				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> mut? Pair<'a, 'b>}",
 			},
 		},
 	}

@@ -2517,11 +2517,13 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != typeAlias.Type {
 			changed = true
 			newTypes[name] = &TypeAlias{
-				Type:           newType,
-				TypeParams:     typeAlias.TypeParams,
-				LifetimeParams: typeAlias.LifetimeParams,
-				Exported:       typeAlias.Exported,
-				IsTypeParam:    typeAlias.IsTypeParam,
+				Type:              newType,
+				TypeParams:        typeAlias.TypeParams,
+				LifetimeParams:    typeAlias.LifetimeParams,
+				Exported:          typeAlias.Exported,
+				IsTypeParam:       typeAlias.IsTypeParam,
+				DefaultMutableSet: typeAlias.DefaultMutableSet,
+				DefaultMutable:    typeAlias.DefaultMutable,
 			}
 		} else {
 			newTypes[name] = typeAlias

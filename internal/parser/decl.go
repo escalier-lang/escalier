@@ -7,11 +7,18 @@ import (
 // maybeTypeParams parses optional type parameters if present.
 // Returns the parsed type parameters and updates the current token position.
 //
-// Lifetime parameters (e.g. 'a) are also accepted in the same angle-bracket
-// list but are dropped here for backward compatibility — callers that care
-// about lifetimes use maybeLifetimeAndTypeParams instead.
+// Lifetime parameters (e.g. 'a) are syntactically accepted in the same
+// angle-bracket list but are not yet supported on the declaration kinds
+// that call this helper (class, interface, type alias, enum, methods),
+// so we surface a parse error instead of silently dropping them. Callers
+// that do support lifetimes (function decl/expr, `fn` type annotations)
+// use maybeLifetimeAndTypeParams directly.
 func (p *Parser) maybeTypeParams() []*ast.TypeParam {
-	_, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	for _, lp := range lifetimeParams {
+		p.reportError(lp.Span(),
+			"lifetime parameters are not supported in this context")
+	}
 	return typeParams
 }
 

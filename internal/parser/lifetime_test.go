@@ -84,6 +84,37 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 	}
 }
 
+// TestParseLifetimeInUnsupportedContextErrors verifies that lifetime
+// parameters appearing on declaration kinds that don't yet support them
+// (class/type/interface/enum/methods) produce a parse-time diagnostic
+// rather than being silently dropped. Functions and `fn`-type
+// annotations remain the only supported sites in Phase 8.1.
+func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"ClassWithLifetimeParam":     {input: `class Container<'a>(p: 'a Point) { p, }`},
+		"TypeAliasWithLifetimeParam": {input: `type Box<'a> = 'a Point`},
+		"InterfaceWithLifetimeParam": {input: `interface Holder<'a> { p: 'a Point }`},
+		"EnumWithLifetimeParam":      {input: `enum Maybe<'a> { Some('a Point), None }`},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			_, errors := parser.ParseScript()
+
+			assert.NotEmpty(t, errors,
+				"expected a parse error for lifetime in unsupported context")
+		})
+	}
+}
+
 // TestParseImmutableClass snapshots class declarations with the
 // `immutable` modifier and a regular class declaration for contrast.
 func TestParseImmutableClass(t *testing.T) {
