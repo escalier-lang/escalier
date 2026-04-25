@@ -485,6 +485,71 @@ func TestMutabilityTransitions(t *testing.T) {
 		`,
 	}
 
+	// Match expression with enum destructuring: each case destructures the
+	// variant's params and uses the extracted value, but returns a tracked
+	// variable. The result conditionally aliases the returned variables.
+	// (Match pattern bindings are not yet alias-tracked, so the alias chain
+	// goes through the returned variable, not the destructured binding.)
+	tests["Match_EnumDestructuring_ConditionalAlias_Error"] = struct {
+		input          string
+		expectedErrors []string
+	}{
+		input: `
+			enum Maybe {
+				Left(value: number),
+				Right(value: number),
+			}
+			fn test() {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				declare val maybe: Maybe
+				val c: {x: number} = match maybe {
+					Maybe.Left(v) => {
+						a.x = v
+						a
+					},
+					Maybe.Right(v) => {
+						b.x = v
+						b
+					},
+				}
+				a.x = 5
+				c
+			}
+		`,
+		expectedErrors: []string{
+			"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
+		},
+	}
+	tests["Match_EnumDestructuring_ConditionalAlias_OK"] = struct {
+		input          string
+		expectedErrors []string
+	}{
+		input: `
+			enum Maybe {
+				Left(value: number),
+				Right(value: number),
+			}
+			fn test() {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				declare val maybe: Maybe
+				a.x = 5
+				val c: {x: number} = match maybe {
+					Maybe.Left(v) => {
+						a.x = v
+						a
+					},
+					Maybe.Right(v) => {
+						b.x = v
+						b
+					},
+				}
+				c
+			}
+		`,
+	}
+
 	// Conditional aliasing where source (c) is in two alias sets.
 	// c is mut and live after the transition, so it appears in conflicting —
 	// but it must appear only once, not once per alias set.
@@ -510,54 +575,79 @@ func TestMutabilityTransitions(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			source := &ast.Source{
-				ID:       0,
-				Path:     "input.esc",
-				Contents: test.input,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-			p := parser.NewParser(ctx, source)
-			script, parseErrors := p.ParseScript()
-
-			require.Empty(t, parseErrors, "Expected no parse errors")
-
-			c := NewChecker(ctx)
-			inferCtx := Context{
-				Scope:      Prelude(c),
-				IsAsync:    false,
-				IsPatMatch: false,
-			}
-			_, inferErrors := c.InferScript(inferCtx, script)
-
-			var mutErrors []*MutabilityTransitionError
-			for _, err := range inferErrors {
-				if mutErr, ok := err.(*MutabilityTransitionError); ok {
-					mutErrors = append(mutErrors, mutErr)
-				}
-			}
-
-			if len(test.expectedErrors) == 0 {
-				assert.Empty(t, mutErrors, "Expected no MutabilityTransitionError")
-			} else {
-				require.Len(t, mutErrors, len(test.expectedErrors), "Wrong number of MutabilityTransitionErrors")
-
-				// Sort both slices for order-independent comparison.
-				actual := make([]string, len(mutErrors))
-				for i, e := range mutErrors {
-					actual[i] = formatTransitionError(e)
-				}
-				slices.SortFunc(actual, cmp.Compare)
-
-				expected := make([]string, len(test.expectedErrors))
-				copy(expected, test.expectedErrors)
-				slices.SortFunc(expected, cmp.Compare)
-
-				for i := range expected {
-					assert.Equal(t, expected[i], actual[i])
-				}
-			}
+			runTransitionTest(t, test.input, test.expectedErrors)
 		})
 	}
+}
+
+func runTransitionTest(t *testing.T, input string, expectedErrors []string) {
+	t.Helper()
+	source := &ast.Source{
+		ID:       0,
+		Path:     "input.esc",
+		Contents: input,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
+	script, parseErrors := p.ParseScript()
+
+	require.Empty(t, parseErrors, "Expected no parse errors")
+
+	c := NewChecker(ctx)
+	inferCtx := Context{
+		Scope:      Prelude(c),
+		IsAsync:    false,
+		IsPatMatch: false,
+	}
+	_, inferErrors := c.InferScript(inferCtx, script)
+
+	var mutErrors []*MutabilityTransitionError
+	for _, err := range inferErrors {
+		if mutErr, ok := err.(*MutabilityTransitionError); ok {
+			mutErrors = append(mutErrors, mutErr)
+		}
+	}
+
+	if len(expectedErrors) == 0 {
+		assert.Empty(t, mutErrors, "Expected no MutabilityTransitionError")
+	} else {
+		require.Len(t, mutErrors, len(expectedErrors), "Wrong number of MutabilityTransitionErrors")
+
+		// Sort both slices for order-independent comparison.
+		actual := make([]string, len(mutErrors))
+		for i, e := range mutErrors {
+			actual[i] = formatTransitionError(e)
+		}
+		slices.SortFunc(actual, cmp.Compare)
+
+		expected := make([]string, len(expectedErrors))
+		copy(expected, expectedErrors)
+		slices.SortFunc(expected, cmp.Compare)
+
+		for i := range expected {
+			assert.Equal(t, expected[i], actual[i])
+		}
+	}
+}
+
+func TestExtractorPatAliasTracking(t *testing.T) {
+	t.Run("ExtractorPat_MutToImmutable_Error", func(t *testing.T) {
+		t.Parallel()
+		runTransitionTest(t, `
+			enum Wrapper<T> {
+				Wrap(value: T),
+			}
+			fn test() {
+				val w: mut Wrapper<mut {x: number}> = Wrapper.Wrap({x: 0})
+				val Wrapper.Wrap(item) = w
+				val frozen: Wrapper<{x: number}> = w
+				item.x = 5
+				frozen
+			}
+		`, []string{
+			"cannot assign 'w' to immutable 'frozen': 'item' still has mutable access to 'w' after this point",
+		})
+	})
 }
