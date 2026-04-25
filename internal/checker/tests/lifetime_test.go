@@ -126,6 +126,43 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"pickFirst": "fn <'a>([a: mut 'a {x: number}, b: mut {x: number}]) -> mut 'a {x: number}",
 			},
 		},
+		"MutuallyRecursiveBaseAndRecursive": {
+			// Phase 8.7 (best-effort fixed-point): two mutually-recursive
+			// functions where one has a base-case `return p` and the
+			// other only forwards via the recursive call. After the
+			// re-run pass, the forwarding function picks up the lifetime
+			// from its peer.
+			//
+			// (The processing order within an SCC is not guaranteed, so
+			// this test is robust against either order.)
+			input: `
+				fn even(p: mut {x: number}, n: number) -> mut {x: number} {
+					if n == 0 { return p }
+					return odd(p, n - 1)
+				}
+				fn odd(p: mut {x: number}, n: number) -> mut {x: number} {
+					return even(p, n)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"even": "fn <'a>(p: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
+				"odd":  "fn <'a>(p: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
+			},
+		},
+		"GeneratorYieldsAliasParam": {
+			// Phase 8.3: a generator that yields a parameter should
+			// propagate the parameter's lifetime to the yield type T
+			// inside Generator<T, _, _> (rather than to the Generator
+			// container itself). Each yielded value carries the lifetime.
+			input: `
+				fn iter(p: mut {x: number}) -> Generator<mut {x: number}, void, never> {
+					yield p
+				}
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, void, never>",
+			},
+		},
 		"RestParamReturnsElement": {
 			// Phase 8.3: rest param `...args: Array<T>` — the lifetime-
 			// bearing position is the *element* type T, not the array
@@ -288,6 +325,30 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCallSiteAliasFromLifetimeUnion exercises the LifetimeUnion call-site
+// path: a function whose return aliases either of two parameters
+// (`('a | 'b)`) is called, the result variable joins the alias sets of
+// BOTH arguments, and a later immutable read of either arg while the
+// mutable result is live produces a transition error.
+func TestCallSiteAliasFromLifetimeUnion(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn pick(a: mut {x: number}, b: mut {x: number}, cond: boolean) -> mut {x: number} {
+			if cond { return a } else { return b }
+		}
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			val q: mut {x: number} = {x: 1}
+			val r: mut {x: number} = pick(p, q, true)
+			val frozenP: {x: number} = p
+			r.x = 5
+			frozenP
+		}
+	`)
+	require.Len(t, mutErrors, 1)
+	assert.Contains(t, mutErrors[0], "cannot assign 'p' to immutable 'frozenP'")
 }
 
 // TestCallSiteAliasFromInferredLifetime exercises the end-to-end path:

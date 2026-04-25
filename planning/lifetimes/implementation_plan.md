@@ -1396,8 +1396,19 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
     lifetime annotations. Closing this requires extending
     `DetermineAliasSource` with an "element-of" variant and annotating
     the prelude.
-- **8.3 generator yield lifetimes.** `yield` is treated as a fresh value;
-  `Generator<'a T, _, _>` propagation from yields is not yet implemented.
+- **8.3 generator yield lifetimes.** `InferLifetimes` now collects every
+  non-delegate `yield expr` value alongside `return` expressions. When
+  the function's return type is `Generator<T, TReturn, TNext>` (or
+  `AsyncGenerator<...>`), the lifetime is attached to T (the yield
+  type) rather than to the Generator container itself, so each yielded
+  value carries the lifetime. Concretely,
+  `fn iter(p: mut Point) -> Generator<mut Point, void, never> { yield p }`
+  infers `<'a>(p: mut 'a Point) -> Generator<mut 'a Point, void, never>`.
+  `inferFuncBodyWithFuncSigType` was extended to call `InferLifetimes`
+  in the generator branch (which previously short-circuited).
+  Still deferred: `yield from` (delegate yield) propagation from the
+  inner iterator's element type, and lifetime inference for the
+  generator's `TReturn` slot from explicit `return value` paths.
 - **8.4 escaping reference detection.** `DetectEscapingRefs` walks a
   function body for assignment expressions whose lvalue root is a
   non-local identifier (VarID ≤ 0, set by the rename pass for
@@ -1450,15 +1461,35 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
   Intermediate-let bindings inside a class-body initializer are still
   not tracked (none of the field initializers in scope today are
   multi-statement blocks).
-- **8.7 mutually recursive fixed-point iteration.** Lifetime inference runs
-  once per function during the existing dep-graph traversal. Self-recursive
-  functions work as long as their lifetime is determined by a non-recursive
-  return; mutual recursion that requires fixed-point iteration is deferred.
-- **`LifetimeUnion` inference at call sites.** The `LifetimeUnion` type
-  exists and parses, and `InferLifetimes` records multi-source returns, but
-  the call-site path that adds the result to *all* corresponding arguments'
-  alias sets is best-effort — it works for the simple two-branch case and
-  may be tightened later.
+- **8.7 mutually recursive fixed-point iteration.** `InferComponent` now
+  does a single re-run pass over the FuncDecls in any SCC of size > 1
+  after their initial inference. The re-run picks up lifetimes for any
+  function that didn't infer them on its first pass — its peers may now
+  have lifetime info that wasn't available the first time. Functions
+  that DID infer lifetimes on the first pass are skipped by
+  `InferLifetimes`' early-return guard.
+  This required two supporting fixes: (1) `InferLifetimes` now uses
+  `determineCheckerAliasSource` (the call-aware variant) when collecting
+  return-source aliases, so peer-function lifetimes propagate through
+  call expressions; (2) `determineCheckerAliasSource` no longer gates
+  on `fnType.LifetimeParams` being non-empty — by the time a call is
+  type-checked, callee-side instantiation may have cleared
+  `LifetimeParams` while leaving the lifetime vars themselves attached
+  to the param/return types. Presence of a lifetime on the return type
+  is now the authoritative signal.
+  Still deferred: a true fixed-point loop that iterates until no
+  changes (the current implementation does exactly one re-run, which
+  is enough for most 2-cycle mutual recursion cases but not for chains
+  requiring 3+ iterations).
+- **`LifetimeUnion` inference at call sites.** Verified end-to-end via
+  `TestCallSiteAliasFromLifetimeUnion`: when a function returning
+  `('a | 'b) Point` is called, the result variable joins the alias
+  sets of *both* arguments via `lifetimeVarIDs` walking the union
+  members and matching against each parameter's lifetime. The behavior
+  was already correct for two-branch unions; the `determineCheckerAliasSource`
+  change for Phase 8.7 (no longer gating on `LifetimeParams`) made this
+  work robustly even after callee instantiation clears the
+  `LifetimeParams` list.
 
 The deferred items do not block the rest of Phase 8 from being usable: callers
 of annotated or inferred functions get correct alias-set updates for

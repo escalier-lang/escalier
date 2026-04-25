@@ -26,9 +26,10 @@ func lifetimeParamName(i int) string {
 }
 
 // InferLifetimes analyzes a function body to determine which parameters
-// are aliased by the return value (or escape into module-level state),
-// attaches the appropriate lifetime to each such parameter and to the
-// return type, and records the lifetime parameters on the FuncType.
+// are aliased by the return value (or yielded value, for generators), or
+// escape into module-level state, and attaches the appropriate lifetime
+// to each such parameter and to the return / yield type, recording
+// lifetime parameters on the FuncType.
 //
 // This is the foundational case of Phase 8.3 + 8.4. The algorithm
 // handles:
@@ -38,11 +39,16 @@ func lifetimeParamName(i int) string {
 //     LifetimeUnion on the return type.
 //   - Parameters stored into module-level (non-local) state: assigned
 //     'static directly. See DetectEscapingRefs.
+//   - Yields aliasing parameters (generators): the lifetime is attached
+//     to the yield type T inside Generator<T, TReturn, TNext> rather than
+//     to the Generator container itself, so each yielded value carries
+//     the lifetime.
 //
 // Deferred (see implementation_plan.md Phase 8 status):
 //   - Element-level lifetimes (Array<'a T>) for fresh containers whose
 //     elements alias a parameter.
-//   - Generator yields (yield treated as fresh).
+//   - `yield from` (delegate yield) propagation from the inner iterator's
+//     element type.
 //   - Propagating lifetimes through nested calls into other functions.
 //
 // astParams is the list of parameter ASTs (used to map their VarIDs to
@@ -98,22 +104,51 @@ func (c *Checker) InferLifetimes(
 		})
 	}
 
-	// Walk the body to collect every return statement's expression.
+	// Determine the *result type* — the position to which the
+	// per-source lifetime is attached. For generators, the result is
+	// the yield type T inside Generator<T, TReturn, TNext>; for plain
+	// functions, it's the return type itself.
+	resultType := funcType.Return
+	yieldTargetType := generatorYieldType(funcType.Return)
+	if yieldTargetType != nil {
+		resultType = yieldTargetType
+	}
+
+	// Walk the body to collect alias-source expressions: every return
+	// statement's expression for plain functions, plus every yield
+	// expression's value for generators (the yielded value is what
+	// callers see via Iterator.next()).
 	v := &returnExprVisitor{}
 	for _, stmt := range body.Stmts {
 		stmt.Accept(v)
 	}
-	if len(v.exprs) == 0 {
+	yields := collectYieldExprs(body)
+	if len(v.exprs) == 0 && len(yields) == 0 {
 		return
 	}
 
-	// Determine which leaves are aliased across all return expressions.
-	// Use insertion order so the resulting LifetimeParams list is
-	// deterministic.
+	// Determine which leaves are aliased across all alias-source
+	// expressions. Use insertion order so the resulting LifetimeParams
+	// list is deterministic.
+	sourceExprs := make([]ast.Expr, 0, len(v.exprs)+len(yields))
+	if yieldTargetType != nil {
+		// Generator: yields are the lifetime-bearing source.
+		// The function's `return` (if any) sets TReturn — that lifetime
+		// position is not yet inferred (deferred).
+		sourceExprs = append(sourceExprs, yields...)
+	} else {
+		sourceExprs = append(sourceExprs, v.exprs...)
+	}
 	seen := set.NewSet[int]()
 	var orderedLeaves []int
-	for _, re := range v.exprs {
-		src := liveness.DetermineAliasSource(re)
+	for _, re := range sourceExprs {
+		// Use the checker-aware variant so call expressions whose callee
+		// has inferred lifetime parameters propagate the relevant
+		// argument's alias source through to the result. This is what
+		// makes Phase 8.7's mutual-recursion fixed-point pass actually
+		// converge: on the second pass, peers' lifetimes are visible
+		// here.
+		src := determineCheckerAliasSource(re)
 		switch src.Kind {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, vid := range src.VarIDs {
@@ -133,12 +168,12 @@ func (c *Checker) InferLifetimes(
 		return
 	}
 
-	// Skip lifetime inference entirely when the return type cannot carry
+	// Skip lifetime inference entirely when the result type cannot carry
 	// a lifetime (e.g. it's a TypeVar, primitive, or union/intersection
 	// without a common lifetime-bearing structure). Without a place to
-	// attach the lifetime on the return side, the lifetime parameter
+	// attach the lifetime on the result side, the lifetime parameter
 	// would be unused noise in the signature.
-	if !typeCarriesLifetime(funcType.Return) {
+	if !typeCarriesLifetime(resultType) {
 		return
 	}
 
@@ -193,7 +228,7 @@ func (c *Checker) InferLifetimes(
 	} else {
 		returnLifetime = &type_system.LifetimeUnion{Lifetimes: returnLifetimeMembers}
 	}
-	setLifetimeOnType(funcType.Return, returnLifetime)
+	setLifetimeOnType(resultType, returnLifetime)
 
 	if len(lifetimeParams) > 0 {
 		funcType.LifetimeParams = lifetimeParams
@@ -870,9 +905,15 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 
 	calleeType := callExpr.Callee.InferredType()
 	fnType := extractFuncType(calleeType)
-	if fnType == nil || len(fnType.LifetimeParams) == 0 {
+	if fnType == nil {
 		return liveness.DetermineAliasSource(expr)
 	}
+	// Don't gate on fnType.LifetimeParams here: by the time the call is
+	// type-checked, callee-side instantiation may have cleared
+	// LifetimeParams while leaving the LifetimeVars themselves attached
+	// to the param/return type positions. The presence of a lifetime on
+	// the return type is the authoritative signal that this call carries
+	// alias information.
 
 	retLifetime := type_system.PruneLifetime(type_system.GetLifetime(fnType.Return))
 	if retLifetime == nil {
@@ -1018,6 +1059,66 @@ func (v *returnExprVisitor) EnterExpr(expr ast.Expr) bool {
 }
 
 func (v *returnExprVisitor) EnterDecl(decl ast.Decl) bool {
+	if _, ok := decl.(*ast.FuncDecl); ok {
+		return false
+	}
+	return true
+}
+
+// generatorYieldType returns the yield type T of a Generator<T, TReturn,
+// TNext> or AsyncGenerator<T, TReturn, TNext> reference, walking past
+// mutability wrappers. Returns nil if t is not a generator reference or
+// has no type args.
+func generatorYieldType(t type_system.Type) type_system.Type {
+	pt := stripMutabilityWrapper(type_system.Prune(t))
+	tref, ok := pt.(*type_system.TypeRefType)
+	if !ok {
+		return nil
+	}
+	name := type_system.QualIdentToString(tref.Name)
+	if name != "Generator" && name != "AsyncGenerator" {
+		return nil
+	}
+	if len(tref.TypeArgs) == 0 {
+		return nil
+	}
+	return tref.TypeArgs[0]
+}
+
+// collectYieldExprs walks a function body collecting the value
+// expressions of every (non-delegate) yield expression. Delegate yields
+// (`yield from iter`) are skipped — propagating lifetimes from the
+// inner iterator's element type is deferred. Bare `yield` (with no
+// value) is also skipped because there is no value to alias.
+func collectYieldExprs(body *ast.Block) []ast.Expr {
+	v := &yieldExprVisitor{}
+	for _, stmt := range body.Stmts {
+		stmt.Accept(v)
+	}
+	return v.exprs
+}
+
+type yieldExprVisitor struct {
+	ast.DefaultVisitor
+	exprs []ast.Expr
+}
+
+func (v *yieldExprVisitor) EnterExpr(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.YieldExpr:
+		if e.Value != nil && !e.IsDelegate {
+			v.exprs = append(v.exprs, e.Value)
+		}
+		return true
+	case *ast.FuncExpr:
+		// Skip nested function bodies — their yields belong to the
+		// inner generator (if any), not ours.
+		return false
+	}
+	return true
+}
+
+func (v *yieldExprVisitor) EnterDecl(decl ast.Decl) bool {
 	if _, ok := decl.(*ast.FuncDecl); ok {
 		return false
 	}

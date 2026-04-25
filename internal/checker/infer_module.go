@@ -1244,6 +1244,35 @@ func (c *Checker) InferComponent(
 		}
 	}
 
+	// Phase 8.7 (best-effort): for SCCs of size > 1 (mutually recursive
+	// function groups), do a single re-run pass over the component's
+	// FuncDecls. The re-run picks up lifetimes for any function that
+	// didn't infer them on its first pass — its peers may now have
+	// lifetime info via determineCheckerAliasSource that wasn't
+	// available the first time. Functions that DID infer lifetimes on
+	// the first pass are skipped by InferLifetimes' early-return guard.
+	//
+	// This is a one-pass re-run, not a true fixed-point — chains
+	// requiring 3+ iterations still won't converge fully. In practice
+	// most mutual-recursion cases need at most one re-run because at
+	// least one function in the cycle has a base case that determines
+	// its lifetime independent of the recursive calls.
+	if len(component) > 1 {
+		for _, key := range sortedForDefs {
+			for _, decl := range depGraph.GetDecls(key) {
+				fd, ok := decl.(*ast.FuncDecl)
+				if !ok || fd.Body == nil {
+					continue
+				}
+				ft, ok := funcTypeForDecl[fd]
+				if !ok || ft == nil {
+					continue
+				}
+				c.InferLifetimes(fd.FuncSig.Params, fd.Body, ft)
+			}
+		}
+	}
+
 	// Resolve any type references that were deferred during type annotation inference
 	// to allow for recursive definitions between type and variable declarations.
 	for _, refs := range typeRefsToUpdate {
