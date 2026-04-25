@@ -91,7 +91,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"Point": "{new fn (x: number, y: number) -> mut? Point}",
-				"p":     "Point",
+				"p":     "mut Point",
 				"q":     "mut Point",
 			},
 			expectedTypeAliases: map[string]string{
@@ -517,7 +517,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			expectedTypes: map[string]string{
 				"Counter":         "{new fn (value: number) -> mut? Counter}",
 				"ExtendedCounter": "{new fn (value: number, step: number) -> mut? ExtendedCounter}",
-				"counter":         "ExtendedCounter",
+				"counter":         "mut ExtendedCounter",
 				"incremented":     "mut ExtendedCounter",
 			},
 			expectedTypeAliases: map[string]string{

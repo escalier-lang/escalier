@@ -117,6 +117,16 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> mut? Pair<'a, 'b>}",
 			},
 		},
+		"ShorthandWithDefaultStoresParam": {
+			input: `
+				class Container(item: mut {x: number}) {
+					item = {x: 0},
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> mut? Container<'a>}",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -130,56 +140,6 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				assert.Equalf(t, want, got,
 					"unexpected type for %q", varName)
 			}
-		})
-	}
-}
-
-// TestDefaultMutabilityFromClass asserts the DefaultMutable bit on the
-// class TypeAlias for the three branches of the algorithm: no mut self
-// methods → immutable; at least one mut self method → mutable;
-// `data class` modifier → immutable regardless.
-func TestDefaultMutabilityFromClass(t *testing.T) {
-	mutableTrue, mutableFalse := true, false
-	tests := map[string]struct {
-		input           string
-		className       string
-		expectedMutable *bool
-	}{
-		"NoMutSelf_DefaultsImmutable": {
-			input:           `class Point(x: number, y: number) { x, y, }`,
-			className:       "Point",
-			expectedMutable: &mutableFalse,
-		},
-		"HasMutSelf_DefaultsMutable": {
-			input: `
-				class Counter(count: number) {
-					count,
-					increment(mut self) -> number { return self.count }
-				}
-			`,
-			className:       "Counter",
-			expectedMutable: &mutableTrue,
-		},
-		"DataModifier_OverridesMutSelf": {
-			input: `
-				data class Config(host: string) {
-					host,
-					setHost(mut self, h: string) -> void {}
-				}
-			`,
-			className:       "Config",
-			expectedMutable: &mutableFalse,
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			ns := mustInferAsModule(t, test.input)
-			alias := ns.Types[test.className]
-			require.NotNil(t, alias, "class %q not found", test.className)
-			assert.Equal(t, test.expectedMutable, alias.DefaultMutable,
-				"DefaultMutable for %q", test.className)
 		})
 	}
 }

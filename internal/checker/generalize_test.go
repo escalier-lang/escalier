@@ -3,6 +3,8 @@ package checker
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
 	ts "github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 )
@@ -118,6 +120,75 @@ func TestGeneralizeFuncType_AppendsAfterExistingTypeParams(t *testing.T) {
 	assert.Equal(t, "A", funcType.TypeParams[0].Name)
 	assert.Equal(t, "B", funcType.TypeParams[1].Name)
 	assert.Equal(t, "T0", funcType.TypeParams[2].Name)
+}
+
+// TestDetermineCheckerAliasSource_UnionLifetimeParam exercises the case
+// where a callee's parameter has a LifetimeUnion that overlaps the
+// return's lifetime. Constructed directly because user-annotated lifetime
+// unions don't yet flow through the type-annotation pipeline (inferTypeAnn
+// doesn't populate Type.Lifetime), and InferLifetimes only assigns single
+// LifetimeVars per param — so this code path has no script-level surface
+// today. The fix in determineCheckerAliasSource should still recognize
+// the overlap and propagate the matching argument's alias source.
+func TestDetermineCheckerAliasSource_UnionLifetimeParam(t *testing.T) {
+	// Lifetime variables: 'a, 'b.
+	lifetimeA := &ts.LifetimeVar{ID: 1, Name: "a"}
+	lifetimeB := &ts.LifetimeVar{ID: 2, Name: "b"}
+
+	// A trivial type alias for `Point` so TypeRefType has somewhere to point.
+	pointAlias := &ts.TypeAlias{Type: ts.NewUnknownType(nil)}
+
+	makePointWithLifetime := func(lt ts.Lifetime) *ts.TypeRefType {
+		t := ts.NewTypeRefType(nil, "Point", pointAlias)
+		t.Lifetime = lt
+		return t
+	}
+
+	// pick<'a, 'b>(
+	//     unioned: ('a | 'b) Point,   // overlap on 'a → propagate
+	//     returned: 'a Point,         // overlap on 'a → propagate
+	//     other:    'b Point,         // no overlap with return → skip
+	// ) -> 'a Point
+	funcType := ts.NewFuncType(
+		nil,
+		nil,
+		[]*ts.FuncParam{
+			ts.NewFuncParam(
+				ts.NewIdentPat("unioned"),
+				makePointWithLifetime(&ts.LifetimeUnion{Lifetimes: []ts.Lifetime{lifetimeA, lifetimeB}}),
+			),
+			ts.NewFuncParam(ts.NewIdentPat("returned"), makePointWithLifetime(lifetimeA)),
+			ts.NewFuncParam(ts.NewIdentPat("other"), makePointWithLifetime(lifetimeB)),
+		},
+		makePointWithLifetime(lifetimeA),
+		ts.NewNeverType(nil),
+	)
+	funcType.LifetimeParams = []*ts.LifetimeVar{lifetimeA, lifetimeB}
+
+	// Callee: an IdentExpr "pick" whose inferred type is the FuncType above.
+	callee := ast.NewIdent("pick", ast.Span{})
+	callee.SetInferredType(funcType)
+
+	// Args: three IdentExprs with distinct VarIDs. liveness.DetermineAliasSource
+	// reads VarID directly from the node.
+	argUnioned := ast.NewIdent("u", ast.Span{})
+	argUnioned.VarID = 101
+	argReturned := ast.NewIdent("r", ast.Span{})
+	argReturned.VarID = 102
+	argOther := ast.NewIdent("o", ast.Span{})
+	argOther.VarID = 103
+
+	call := ast.NewCall(callee, []ast.Expr{argUnioned, argReturned, argOther}, false, ast.Span{})
+
+	src := determineCheckerAliasSource(call)
+
+	// Expect aliasing of args 1 and 2 (overlap on 'a), but not arg 3 ('b only).
+	assert.Equal(t, liveness.AliasSourceMultiple, src.Kind,
+		"two distinct sources should produce AliasSourceMultiple")
+	assert.ElementsMatch(t,
+		[]liveness.VarID{liveness.VarID(101), liveness.VarID(102)},
+		src.VarIDs,
+		"unioned arg (overlap on 'a) and returned arg (exact 'a) should propagate; other arg ('b only) should not")
 }
 
 func TestGeneralizeFuncType_ThrowsOnlyTypeVarBecomesNever(t *testing.T) {

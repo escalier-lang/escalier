@@ -16,7 +16,7 @@ into phases that build incrementally, each producing a testable milestone.
 |     6 | Mutability transition checking                       | 4, 5       | Done   |
 |     7 | Alias tracking (properties, closures, destructuring) | 5, 6       | Done   |
 |     8 | Lifetime annotations and inference                   | 6, 7       |        |
-|     9 | Lifetime unification                                 | 8          |        |
+|     9 | Lifetime unification (incl. 9.7 constrained type params) | 8      |        |
 |    10 | Lifetime elision rules                               | 8, 9       |        |
 |    11 | TypeScript interop                                   | 10         |        |
 |    12 | Error messages                                       | 6–11       |        |
@@ -1364,11 +1364,118 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
   parameter. Element-level inference (`Array<'a T>` for fresh-container,
   aliased-elements returns from `.filter`/`.slice`/array-literal-of-aliases)
   is not yet implemented.
+  - **Rest parameters (`...args: T[]`).** `InferLifetimes` skips rest
+    params entirely (see explicit `case *ast.RestPat` in
+    [infer_lifetime.go:65-79](../../internal/checker/infer_lifetime.go#L65-L79)).
+    A function like `fn first(...args: mut {x: number}[]) -> mut {x: number}`
+    that returns `args[0]` should infer `<'a>` on the element type and
+    on the return; today it produces no lifetime, the same wrong shape
+    as for a non-rest array param. Treatment falls out of element-level
+    lifetimes: descend into the rest pattern, attach the lifetime to the
+    *element* type (not the container, which is freshly assembled per
+    call), and unify against caller-arg lifetimes at call sites (each
+    caller arg must outlive the element lifetime). Aliasing analysis on
+    the body side will also need to recognize that `args[i]` is an
+    element-of source, not a container source — the existing
+    `DetermineAliasSource` will need an "element-of" alias variant for
+    this to work cleanly.
+  - **Destructured parameters (`fn f([a, b]: [mut P, mut P])`,
+    `fn g({x, y}: mut P)`).** `InferLifetimes` skips any param whose
+    pattern is not a bare `IdentPat`, including all tuple/object
+    destructuring patterns (see the `switch` in
+    [infer_lifetime.go:65-79](../../internal/checker/infer_lifetime.go#L65-L79)
+    and the comment on [line 64](../../internal/checker/infer_lifetime.go#L64)).
+    Body-side liveness/alias analysis already tracks the leaf bindings
+    correctly via Phase 7's destructuring-alias work; the gap is on the
+    *param-side wiring*. The current `VarID → param index` map assumes
+    one VarID per parameter, but a destructured param produces N leaf
+    VarIDs and no top-level "whole-param" VarID. Two reasonable
+    implementation shapes:
+    - *Synthesize a top-level param VarID* and treat each leaf binding
+      as if it were `let a = paramSlot.x` introduced at body entry.
+      The existing property/element-projection alias machinery (Phase 7)
+      takes over from there, and `InferLifetimes` just maps the
+      synthetic VarID to its param index. Most uniform with Phase 7;
+      requires a small AST/IR addition for the synthetic slot.
+    - *Track projection paths per leaf VarID* by extending `paramIndex`
+      to `VarID → (paramIndex, projection path)` and generalizing
+      `setLifetimeOnType` to attach a lifetime at a sub-position rather
+      than only at the top. No AST changes; more bookkeeping in this
+      file. Recommended starting shape — keeps the change localized.
+
+    Either way, the inferred signature should be able to express
+    per-field lifetimes for destructured composite params, e.g.:
+
+    ```esc
+    fn pickFirst<'a, 'b>(
+        {head, tail}: {head: mut 'a Point, tail: mut 'b Point}
+    ) -> mut 'a Point { return head }
+    ```
+
+    This is the same per-position lifetime story as `Pair<'a, 'b>` from
+    Phase 8.6, just expressed through destructuring rather than class
+    fields. The semantics piggyback on Phase 7's existing
+    destructuring-alias work; this deferral is purely about the
+    param-side bookkeeping in `InferLifetimes`.
 - **8.3 generator yield lifetimes.** `yield` is treated as a fresh value;
   `Generator<'a T, _, _>` propagation from yields is not yet implemented.
 - **8.4 escaping reference detection.** `DetectEscapingRefs` and the
   `'static` lifetime assignment for parameters stored into module-level state
   are not yet implemented.
+- **8.6 implicit captures from method bodies.** `InferConstructorLifetimes`
+  detects "param is stored on the instance" purely from `*ast.FieldElem`
+  syntax in the class body — shorthand fields (`{ p, }`) and explicit
+  identifier-valued fields (`{ p: p, }`). `*ast.MethodElem` nodes are
+  skipped entirely (see the `if !ok { continue }` at
+  [infer_lifetime.go:256-259](../../internal/checker/infer_lifetime.go#L256-L259)).
+  But Escalier lets a method body reference constructor parameters by
+  name without going through `self`, so:
+
+  ```esc
+  class C(p: mut Point) { foo(self) { return p } }
+  ```
+
+  is operationally equivalent to:
+
+  ```esc
+  class C(p: mut Point) { p, foo(self) { return self.p } }
+  ```
+
+  yet only the second form gets a lifetime parameter today. The first
+  form silently falls out of the analysis: `storedParams` is empty, no
+  `<'a>` is inferred, and the borrow checker cannot enforce that
+  `C` instances must outlive their captured `p`. This is a **soundness
+  gap** — a caller who constructs `C` from a short-lived borrow can
+  call `c.foo()` after that borrow is gone with no diagnostic.
+
+  Treatment: extend the body walk in `InferConstructorLifetimes` to
+  inspect `*ast.MethodElem` nodes. For each method, walk the method
+  body and collect `IdentExpr` references whose VarID resolves to a
+  constructor parameter; treat any such reference as an implicit
+  capture and add the param's index to `storedParams`. The same VarID
+  set should also feed `InferLifetimes` when it analyzes the method
+  body, so that method return types correctly inherit the captured
+  param's lifetime (e.g. `foo<'a>('a self) -> mut 'a Point` for the
+  example above).
+
+  Static methods (if/when added) should be exempt from capture
+  detection since they don't have access to instance state.
+
+- **8.6 storage through nested expressions and literals.** Field-init
+  expressions whose value is anything other than a bare identifier are
+  not analyzed today. Concretely, `class C(p: mut P) { x: f(p) }`,
+  `class C(p: mut P) { x: {inner: p} }`, and similar shapes leave the
+  param unstored from the analysis's perspective. Treatment: walk the
+  initializer expression looking for any path that retains a borrow of
+  the parameter — same kind of structural traversal the body-side
+  alias analysis already does for property/element projections.
+- **8.6 non-identity field-initializer expressions.** Even when an
+  expression *does* reference a constructor parameter, the current
+  analysis only treats `field: param` (an exact identity initializer)
+  as a store. `field: param.x`, `field: borrow(param)`, and
+  intermediate-let binding (`let q = p; field: q`) are all skipped.
+  Treatment overlaps with the previous bullet: use the existing alias
+  machinery to resolve the initializer's actual borrow source.
 - **8.7 mutually recursive fixed-point iteration.** Lifetime inference runs
   once per function during the existing dep-graph traversal. Self-recursive
   functions work as long as their lifetime is determined by a non-recursive
@@ -2100,6 +2207,178 @@ lifetime linking it to `p`, so the result is independent.
 - Function type unification with lifetime variance
 - Higher-order function: callback with shared lifetime threads through
 - Higher-order function: callback without lifetime produces independent result
+
+### 9.7 Constrained Type Parameters That Carry a Lifetime
+
+**Goal:** Allow lifetime inference and annotations on type parameters whose
+constraint is itself a lifetime-bearing shape, so generic functions over
+references aren't forced to abandon polymorphism to track borrows.
+
+#### Motivation
+
+Today, `typeCarriesLifetime` ([infer_lifetime.go:315-329](../../internal/checker/infer_lifetime.go#L315-L329))
+returns `false` for any `TypeRefType` whose `TypeAlias.IsTypeParam` is true.
+The justification — "the parameter might be instantiated to a primitive
+at the call site" — is correct for *unconstrained* type parameters but
+overly conservative for *constrained* ones. A function written like:
+
+```esc
+fn first<T extends {x: number}>(p: mut T, other: mut T) -> mut T { return p }
+```
+
+has a type parameter whose constraint is `{x: number}` (an `ObjectType`,
+which carries a lifetime). Every legal instantiation of `T` is a shape
+that can hold a `Lifetime`, so the inferred signature should be:
+
+```esc
+fn first<'a, T extends {x: number}>(p: mut 'a T, other: mut T) -> mut 'a T
+```
+
+Concretely, this matters when the caller wants to use a generic function
+to project or thread a borrow without losing the borrow's lifetime in the
+result type — the same precision argument as `IdentityRefReturn` but
+applied to bounded polymorphism.
+
+#### 9.7.1 Detect Lifetime-Bearing Constraints
+
+Extend `typeCarriesLifetime` to walk into the bound when the type is a
+type-parameter `TypeRefType`:
+
+- For a `TypeRefType` with `TypeAlias != nil && TypeAlias.IsTypeParam`,
+  look up the corresponding `TypeParam` (via the surrounding scope or by
+  threading it through the `TypeAlias`) and recursively call
+  `typeCarriesLifetime` on the constraint.
+- Return `true` iff the constraint is itself lifetime-bearing.
+- Treat an absent constraint (unbounded `T`) as it is treated today —
+  return `false`.
+
+Restrict positive results to constraints whose **outer** shape is a single
+lifetime-bearing constructor (`ObjectType`, `TupleType`, or a non-type-param
+`TypeRefType`). Refuse unions/intersections in the constraint for the same
+reason they're refused at the top level: there is no single `Lifetime`
+field that is consistent across branches. This conservative line keeps
+the change soundness-preserving and matches existing behavior elsewhere.
+
+#### 9.7.2 Storage for the Lifetime on a Type-Parameter Use
+
+Add a place to attach the lifetime when the type at a use site is a
+type-parameter `TypeRefType`. Two viable shapes:
+
+- **Option A — Lifetime field on TypeRefType (preferred).** `TypeRefType`
+  already has a `Lifetime` field for nominal references; reuse it for
+  type-parameter references. Update `setLifetimeOnType`
+  ([infer_lifetime.go:167-178](../../internal/checker/infer_lifetime.go#L167-L178))
+  to handle the type-parameter case alongside the existing
+  `TypeRefType` case (no new `case` needed if it already falls through;
+  add one if the current code special-cases `IsTypeParam`).
+- **Option B — Wrapper type.** Introduce a `LifetimeAnnotatedTypeParamType`
+  wrapper analogous to `MutabilityType`. Heavier; only worth it if Option A
+  produces awkward printing or unification cases.
+
+Recommend Option A. The printer ([Phase 14](#phase-14-printtype-and-display))
+should render `mut 'a T` when both a mutability wrapper and a lifetime
+attach to the same type-parameter use.
+
+#### 9.7.3 Inference Wiring
+
+With the storage decided, the existing `InferLifetimeParams` flow in
+[infer_lifetime.go:115-160](../../internal/checker/infer_lifetime.go#L115-L160)
+works almost unchanged:
+
+1. `typeCarriesLifetime(funcType.Return)` now returns `true` for a
+   constrained type-parameter return.
+2. The per-param loop allocates a fresh `LifetimeVar` and calls
+   `setLifetimeOnType` on the param's type, which attaches the lifetime
+   to the type-parameter `TypeRefType`'s `Lifetime` field.
+3. The same lifetime is attached to the return type.
+
+No change to lifetime *parameter* allocation policy — one fresh `LifetimeVar`
+per aliased parameter, same as today.
+
+#### 9.7.4 Substitution at Call Sites
+
+When `T` is instantiated to a concrete shape `S` at a call site, the
+lifetime annotation flows from the type-parameter use onto `S`. Mechanically:
+
+- During instantiation, when substituting a `TypeRefType` for the
+  type-parameter use, transfer the use site's `Lifetime` onto the resolved
+  shape's `Lifetime` field (via `setLifetimeOnType`).
+- If the resolved shape already has a `Lifetime` (e.g. caller passed
+  `mut 'b SomePoint` to a parameter typed `mut 'a T`), unify the two
+  lifetimes via the standard binding/equating mechanism from
+  [Phase 9.1](#91-lifetime-variable-binding).
+- If the resolved shape doesn't carry a lifetime field (shouldn't happen
+  given the constraint guarantees one, but defensively): treat as a type
+  error — the constraint was supposed to rule this out.
+
+This is the same machinery as nominal types' `LifetimeArgs` substitution,
+generalized to type-parameter substitution. No new unification rules; just
+an extra case in the substitution pass.
+
+#### 9.7.5 Interaction with Mutability
+
+`mut 'a T` where `T extends {x: number}` should behave like `mut 'a {x: number}`
+once `T` is resolved. The `MutabilityType` wrapper already recurses through
+`setLifetimeOnType`; the type-parameter case slots in below it without
+special handling.
+
+If the constraint *itself* carries a `MutabilityType` (e.g.
+`T extends mut {x: number}`), preserve the constraint's mutability through
+substitution — the use site's `mut` and the constraint's `mut` should
+unify, not double-wrap.
+
+#### 9.7.6 Printing
+
+The printer should produce signatures of the shape:
+
+```
+fn <'a, T extends {x: number}>(p: mut 'a T, other: mut T) -> mut 'a T
+```
+
+Notably:
+- `'a` appears on the *use* `mut 'a T`, not in the bound.
+- The bound prints as the user wrote it (`{x: number}`), without
+  the inferred `'a` smeared into it — the inferred lifetime is per-use,
+  not part of `T`'s definition.
+
+#### 9.7.7 Limits and Non-Goals
+
+- **Unbounded type parameters** continue to be skipped. No change there.
+- **Union/intersection constraints** are skipped. A future refinement
+  could lift this if a coherent "lifetime of a sum type" abstraction
+  emerges, but it's not in scope for 9.7.
+- **Higher-kinded constraints** (e.g. `T extends Container<U>` where
+  `Container` is itself generic) follow the same rule: walk the bound,
+  return `true` iff the bound is lifetime-bearing. Multi-parameter
+  containers in the bound are handled by Phase 8.6's per-field lifetime
+  parameters at the *bound's* class level; the type parameter's
+  attached lifetime composes on top.
+- **Lifetime parameters appearing inside the bound** (e.g.
+  `T extends 'b {x: number}`) are out of scope for 9.7 — they require a
+  notion of "the type parameter is also lifetime-quantified," which is
+  a strictly bigger language change.
+
+#### 9.7.8 Tests
+
+- Generic identity over a constrained ref:
+  `fn id<T extends {x: number}>(p: mut T) -> mut T { return p }` infers
+  `<'a, T extends {x: number}>(p: mut 'a T) -> mut 'a T`.
+- Two-param "first" generic infers exactly one lifetime parameter on the
+  aliased argument and the return.
+- Call site with a concrete object type: lifetime substitutes onto the
+  resolved `ObjectType`.
+- Call site with a nominal class satisfying the constraint: lifetime
+  substitutes onto the `TypeRefType` and composes with any class-level
+  `LifetimeArgs`.
+- Call site that violates the constraint produces a type error from the
+  existing constraint check, *before* lifetime substitution runs.
+- Unbounded type parameter: continues to skip lifetime inference (regression
+  guard for the existing behavior).
+- Union-bound type parameter (`T extends A | B`): skipped, with an
+  accompanying note in the printed signature so users can tell why no
+  lifetime was inferred.
+- Mutability-in-bound (`T extends mut {x: number}`): mutability and
+  lifetime compose correctly at substitution.
 
 ---
 

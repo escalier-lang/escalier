@@ -3,6 +3,7 @@ package checker
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -64,8 +65,18 @@ func (c *Checker) InferLifetimes(
 	// Destructuring-pattern params don't get lifetimes in this pass.
 	paramIndex := make(map[liveness.VarID]int)
 	for i, p := range astParams {
-		if identPat, ok := p.Pattern.(*ast.IdentPat); ok && identPat.VarID > 0 {
-			paramIndex[liveness.VarID(identPat.VarID)] = i
+		switch pat := p.Pattern.(type) {
+		case *ast.IdentPat:
+			if pat.VarID > 0 {
+				paramIndex[liveness.VarID(pat.VarID)] = i
+			}
+		case *ast.RestPat:
+			// Rest params are skipped here: the lifetime-bearing position
+			// for `...args: T[]` is the *element* type, not the container
+			// variable. Attaching a container-level lifetime to `args`
+			// would be incorrect (the array is freshly assembled per
+			// call), and element-level lifetimes are deferred — see the
+			// file-level docstring's "Element-level lifetimes" bullet.
 		}
 	}
 	if len(paramIndex) == 0 {
@@ -84,10 +95,10 @@ func (c *Checker) InferLifetimes(
 	// Determine which parameters are aliased across all return expressions.
 	// Use insertion order of parameter indices so that the resulting
 	// LifetimeParams list is deterministic.
-	seen := make(map[int]bool)
+	seen := set.NewSet[int]()
 	var orderedParams []int
-	for _, expr := range v.exprs {
-		src := liveness.DetermineAliasSource(expr)
+	for _, re := range v.exprs {
+		src := liveness.DetermineAliasSource(re)
 		switch src.Kind {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, vid := range src.VarIDs {
@@ -95,8 +106,8 @@ func (c *Checker) InferLifetimes(
 				if !ok {
 					continue
 				}
-				if !seen[idx] {
-					seen[idx] = true
+				if !seen.Contains(idx) {
+					seen.Add(idx)
 					orderedParams = append(orderedParams, idx)
 				}
 			}
@@ -144,7 +155,14 @@ func (c *Checker) InferLifetimes(
 
 	// Construct the lifetime to attach to the return type. Only include
 	// parameters that actually got lifetime variables (i.e. param types
-	// that could carry one).
+	// that could carry one). By construction of orderedParams above,
+	// every entry in lifetimeParams is guaranteed to be a possible source
+	// for the return value on at least one code path — DetermineAliasSource
+	// in the body walk only added a param to orderedParams if some return
+	// expression aliased it. The union therefore expresses "the result
+	// could have come from any of these params, depending on which branch
+	// ran"; the caller treats the result as bounded by the shortest of
+	// the listed lifetimes.
 	var returnLifetime type_system.Lifetime
 	if len(lifetimeParams) == 1 {
 		returnLifetime = lifetimeParams[0]
@@ -184,8 +202,10 @@ func setLifetimeOnType(t type_system.Type, lt type_system.Lifetime) {
 // the class TypeAlias.
 //
 // Detected storage patterns (Phase 8.6 foundational subset):
-//   - Shorthand field referring to a constructor parameter by name:
+//   - Shorthand field referring to a constructor parameter by name,
+//     with or without a default:
 //     `class C(p: mut Point) { p, }`
+//     `class C(p: mut Point) { p = fallback, }`
 //   - Explicit field whose value is an IdentExpr to a constructor
 //     parameter: `class C(p: mut Point) { p: p, }`
 //
@@ -234,7 +254,7 @@ func (c *Checker) InferConstructorLifetimes(
 		}
 	}
 
-	storedParams := make(map[int]bool)
+	storedParams := set.NewSet[int]()
 	for _, elem := range classDecl.Body {
 		fieldElem, ok := elem.(*ast.FieldElem)
 		if !ok {
@@ -246,10 +266,13 @@ func (c *Checker) InferConstructorLifetimes(
 			continue
 		}
 
-		// Shorthand: name only, no value, no default.
-		if fieldElem.Value == nil && fieldElem.Default == nil {
+		// Shorthand: name only, no value. A default may still be present
+		// (`p = somePoint`) — when the caller passes `p`, the field stores
+		// the param, so the param's lifetime matters regardless of whether
+		// a default is provided.
+		if fieldElem.Value == nil {
 			if idx, ok := paramNameToIndex[fieldNameIdent.Name]; ok {
-				storedParams[idx] = true
+				storedParams.Add(idx)
 			}
 			continue
 		}
@@ -257,19 +280,19 @@ func (c *Checker) InferConstructorLifetimes(
 		// Explicit: `name: <ident>` where ident is a constructor param.
 		if valIdent, ok := fieldElem.Value.(*ast.IdentExpr); ok {
 			if idx, ok := paramNameToIndex[valIdent.Name]; ok {
-				storedParams[idx] = true
+				storedParams.Add(idx)
 			}
 		}
 	}
 
-	if len(storedParams) == 0 {
+	if storedParams.Len() == 0 {
 		return
 	}
 
 	// Allocate lifetimes in parameter order for determinism.
 	var lifetimeParams []*type_system.LifetimeVar
 	for i, p := range classDecl.Params {
-		if !storedParams[i] {
+		if !storedParams.Contains(i) {
 			continue
 		}
 		// Skip params whose declared type is not a reference type — the
@@ -377,25 +400,42 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 	// For each parameter whose lifetime is in retVarIDs, propagate the
 	// argument's alias source into the result's alias source.
 	var aggregated []liveness.VarID
-	seen := make(map[liveness.VarID]bool)
+	seen := set.NewSet[liveness.VarID]()
 	for i, p := range fnType.Params {
 		if i >= len(callExpr.Args) {
 			break
 		}
 		paramLifetime := type_system.PruneLifetime(type_system.GetLifetime(p.Type))
-		paramVar, ok := paramLifetime.(*type_system.LifetimeVar)
-		if !ok {
-			continue
+		// Symmetric with the return-side handling above: use lifetimeVarIDs
+		// so we correctly recognize a param whose lifetime is a
+		// LifetimeUnion containing one or more vars also referenced by the
+		// return. Today inferred params only ever get a single LifetimeVar
+		// (see setLifetimeOnType call sites in InferLifetimes /
+		// InferConstructorLifetimes), and user-annotated lifetimes aren't
+		// yet propagated into Type.Lifetime by inferTypeAnn — so this
+		// branch is currently only hit when the helper happens to see a
+		// single var. The overlap check is defensive: once Phase 9
+		// unification produces union bindings on params, or the type-ann
+		// pipeline starts honoring user-written ('a | 'b) annotations,
+		// this code path becomes reachable and the symmetric treatment
+		// avoids silently dropping union-param aliasing.
+		paramVarIDs := lifetimeVarIDs(paramLifetime)
+		overlap := false
+		for id := range paramVarIDs {
+			if retVarIDs.Contains(id) {
+				overlap = true
+				break
+			}
 		}
-		if !retVarIDs[paramVar.ID] {
+		if !overlap {
 			continue
 		}
 		argSource := determineCheckerAliasSource(callExpr.Args[i])
 		switch argSource.Kind {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, id := range argSource.VarIDs {
-				if !seen[id] {
-					seen[id] = true
+				if !seen.Contains(id) {
+					seen.Add(id)
 					aggregated = append(aggregated, id)
 				}
 			}
@@ -445,17 +485,17 @@ func funcFromObjectType(obj *type_system.ObjectType) *type_system.FuncType {
 }
 
 // lifetimeVarIDs returns the set of LifetimeVar IDs referenced by the
-// given (pruned) lifetime. Returns a non-nil empty map when the lifetime
+// given (pruned) lifetime. Returns a non-nil empty set when the lifetime
 // is a resolved LifetimeValue with no associated variables.
-func lifetimeVarIDs(lt type_system.Lifetime) map[int]bool {
-	ids := make(map[int]bool)
+func lifetimeVarIDs(lt type_system.Lifetime) set.Set[int] {
+	ids := set.NewSet[int]()
 	switch v := lt.(type) {
 	case *type_system.LifetimeVar:
-		ids[v.ID] = true
+		ids.Add(v.ID)
 	case *type_system.LifetimeUnion:
 		for _, m := range v.Lifetimes {
 			for id := range lifetimeVarIDs(type_system.PruneLifetime(m)) {
-				ids[id] = true
+				ids.Add(id)
 			}
 		}
 	}
