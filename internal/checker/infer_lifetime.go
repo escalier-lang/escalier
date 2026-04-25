@@ -52,13 +52,18 @@ func lifetimeParamName(i int) string {
 //   - Propagating lifetimes through nested calls into other functions.
 //
 // astParams is the list of parameter ASTs (used to map their VarIDs to
-// parameter indices). funcType is mutated in place.
+// parameter indices). funcType is mutated in place. isAsync reports
+// whether the function was declared `async` — together with the
+// presence of `yield` in the body it determines whether the return
+// type should be unwrapped to its inner T (Promise<T,_>'s value or
+// Generator<T,_,_>'s yield) or treated as the direct result.
 func (c *Checker) InferLifetimes(
 	astParams []*ast.Param,
 	body *ast.Block,
 	funcType *type_system.FuncType,
+	isAsync bool,
 ) {
-	c.inferLifetimesCore(astParams, body, funcType, false)
+	c.inferLifetimesCore(astParams, body, funcType, isAsync, false)
 }
 
 // ReinferLifetimes re-runs lifetime inference on a function whose first
@@ -74,8 +79,9 @@ func (c *Checker) ReinferLifetimes(
 	astParams []*ast.Param,
 	body *ast.Block,
 	funcType *type_system.FuncType,
+	isAsync bool,
 ) {
-	c.inferLifetimesCore(astParams, body, funcType, true)
+	c.inferLifetimesCore(astParams, body, funcType, isAsync, true)
 }
 
 // inferLifetimesCore is the shared body of InferLifetimes and
@@ -89,6 +95,7 @@ func (c *Checker) inferLifetimesCore(
 	astParams []*ast.Param,
 	body *ast.Block,
 	funcType *type_system.FuncType,
+	isAsync bool,
 	reinfer bool,
 ) {
 	if body == nil || funcType == nil {
@@ -142,21 +149,6 @@ func (c *Checker) inferLifetimesCore(
 		})
 	}
 
-	// Determine the *result type* — the position to which the
-	// per-source lifetime is attached. For generators, the result is
-	// the yield type T inside Generator<T, TReturn, TNext>; for async
-	// functions, the result is the resolved type T inside
-	// Promise<T, E>; for plain functions, it's the return type itself.
-	// In each wrapper case the container is freshly assembled per call
-	// and has no caller-provided lifetime — only its inner T does.
-	resultType := funcType.Return
-	yieldTargetType := generatorYieldType(funcType.Return)
-	if yieldTargetType != nil {
-		resultType = yieldTargetType
-	} else if pvt := promiseValueType(funcType.Return); pvt != nil {
-		resultType = pvt
-	}
-
 	// Walk the body to collect alias-source expressions: every return
 	// statement's expression for plain functions, plus every yield
 	// expression's value for generators (the yielded value is what
@@ -170,11 +162,39 @@ func (c *Checker) inferLifetimesCore(
 		return
 	}
 
+	// A function is a generator when its body actually contains `yield`,
+	// not merely when its return type happens to be Generator<...>. A
+	// plain function that forwards a Generator<T> parameter (e.g.
+	// `return g`) is NOT a generator and the return type carries the
+	// lifetime as a whole, not just its inner yield T.
+	isGenerator := len(yields) > 0
+
+	// Determine the *result type* — the position to which the
+	// per-source lifetime is attached. For generators, the result is
+	// the yield type T inside Generator<T, TReturn, TNext>; for async
+	// functions, the result is the resolved type T inside
+	// Promise<T, E>; for plain functions, it's the return type itself.
+	// In the generator/async cases the container is freshly assembled
+	// per call and has no caller-provided lifetime — only its inner T
+	// does. When the function is neither (so the Promise<T>/Generator<T>
+	// in its signature is the user's actual result, not a wrapper the
+	// compiler synthesized), the lifetime must attach to that container.
+	resultType := funcType.Return
+	if isGenerator {
+		if t := generatorYieldType(funcType.Return); t != nil {
+			resultType = t
+		}
+	} else if isAsync {
+		if t := promiseValueType(funcType.Return); t != nil {
+			resultType = t
+		}
+	}
+
 	// Determine which leaves are aliased across all alias-source
 	// expressions. Use insertion order so the resulting LifetimeParams
 	// list is deterministic.
 	sourceExprs := make([]ast.Expr, 0, len(v.exprs)+len(yields))
-	if yieldTargetType != nil {
+	if isGenerator {
 		// Generator: yields are the lifetime-bearing source.
 		// The function's `return` (if any) sets TReturn — that lifetime
 		// position is not yet inferred (deferred).
@@ -345,7 +365,16 @@ func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
 			if i >= len(tt.Elems) {
 				break
 			}
-			walkPatternForLeaves(elem, tt.Elems[i], into)
+			elemType := tt.Elems[i]
+			// Tuple rest spreads (`[T, ...Array<U>]`) carry a
+			// RestSpreadType in the tuple's Elems slot. The pattern's
+			// matching RestPat expects to receive the *array* type so
+			// its inner pattern can be walked against the element type.
+			// Unwrap the spread here so RestPat sees Array<U> directly.
+			if rest, ok := elemType.(*type_system.RestSpreadType); ok {
+				elemType = rest.Type
+			}
+			walkPatternForLeaves(elem, elemType, into)
 		}
 	case *ast.ObjectPat:
 		ot, ok := pt.(*type_system.ObjectType)

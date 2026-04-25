@@ -1276,7 +1276,7 @@ func (c *Checker) InferComponent(
 				if len(fd.FuncSig.LifetimeParams) > 0 {
 					continue
 				}
-				c.ReinferLifetimes(fd.FuncSig.Params, fd.Body, ft)
+				c.ReinferLifetimes(fd.FuncSig.Params, fd.Body, ft, fd.FuncSig.Async)
 			}
 		}
 	}

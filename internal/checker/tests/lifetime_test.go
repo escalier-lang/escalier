@@ -257,6 +257,55 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"passthrough": "fn <'a>(p: mut 'a {x: number}) -> Promise<mut 'a {x: number}, never>",
 			},
 		},
+		"NonAsyncReturnsParamPromise": {
+			// A non-async function whose parameter and return type are
+			// both Promise<T> — the function passes the param through
+			// without unwrapping. The Promise container itself IS the
+			// parameter (not freshly assembled), so the lifetime should
+			// attach to the Promise<T> reference at both the param and
+			// return positions, NOT to the inner T (which would be the
+			// case for an async function whose Promise is built from
+			// the resolved T).
+			input: `
+				fn forward(p: Promise<mut {x: number}, never>) -> Promise<mut {x: number}, never> {
+					return p
+				}
+			`,
+			expectedTypes: map[string]string{
+				"forward": "fn <'a>(p: 'a Promise<mut {x: number}, never>) -> 'a Promise<mut {x: number}, never>",
+			},
+		},
+		"NonGeneratorReturnsParamGenerator": {
+			// A plain function (no `yield`) whose parameter and return
+			// type are both Generator<T,_,_> — the param is forwarded
+			// directly. The Generator container IS the parameter, not
+			// freshly assembled, so the lifetime should attach to the
+			// Generator<T,_,_> reference at both positions, NOT to the
+			// inner yield type T.
+			input: `
+				fn forwardIter(g: Generator<mut {x: number}, void, never>) -> Generator<mut {x: number}, void, never> {
+					return g
+				}
+			`,
+			expectedTypes: map[string]string{
+				"forwardIter": "fn <'a>(g: 'a Generator<mut {x: number}, void, never>) -> 'a Generator<mut {x: number}, void, never>",
+			},
+		},
+		"TupleRestParamReturnsRestElement": {
+			// Tuple-destructured rest pattern: `[head, ...tail]` paired
+			// with a tuple type that has a rest spread `[T, ...Array<T>]`.
+			// Returning `tail[0]` must give the rest binding `tail` a
+			// lifetime — the destructured tuple-rest's element is a
+			// caller-provided position, not freshly assembled.
+			input: `
+				fn pickRest([head, ...tail]: [mut {x: number}, ...Array<mut {x: number}>]) -> mut {x: number} {
+					return tail[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pickRest": "fn <'a>([head: mut {x: number}, ...tail: Array<mut 'a {x: number}>]) -> mut 'a {x: number}",
+			},
+		},
 		"MutuallyRecursivePartialFirstPass": {
 			// Bug B4: in a true mutual-recursion cycle, the function with
 			// the base case (`even` here, via `return p`) infers a non-
@@ -488,6 +537,30 @@ func TestCallSiteAliasFromInferredLifetime(t *testing.T) {
 	`)
 	require.Len(t, mutErrors, 1)
 	assert.Contains(t, mutErrors[0], "cannot assign 'p' to immutable 'q'")
+}
+
+// TestDestructuredParamLeafSeededInAliasTracker verifies that when a
+// function parameter is a destructured pattern (object or tuple), each
+// leaf binding is seeded into the alias tracker so that subsequent
+// aliases of the leaf participate in mutability transition checks.
+//
+// Previously the prepass only seeded top-level IdentPat params, leaving
+// destructured leaves (e.g. `head` in `{head, tail}: ...`) without an
+// alias set. AddAlias against a leaf without a set is a silent no-op, so
+// transitions involving the leaf were not detected.
+func TestDestructuredParamLeafSeededInAliasTracker(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn identity(p: mut {x: number}) -> mut {x: number} { return p }
+		fn test({head, tail}: {head: mut {x: number}, tail: mut {x: number}}) {
+			val r: mut {x: number} = identity(head)
+			val q: {x: number} = head
+			r.x = 5
+			q
+		}
+	`)
+	require.Len(t, mutErrors, 1)
+	assert.Contains(t, mutErrors[0], "cannot assign 'head' to immutable 'q'")
 }
 
 // TestCallSiteNoAliasForFreshReturn verifies that a function returning a

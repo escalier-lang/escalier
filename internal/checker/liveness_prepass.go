@@ -53,20 +53,18 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 
 	// Initialize alias tracker and seed parameters so that aliases from
 	// parameters are tracked and mutability transitions are detected.
+	//
+	// Walk every parameter pattern recursively so destructured leaves
+	// (e.g. `head` in `{head, tail}: ...` or `tail` in `[head, ...tail]`)
+	// each get their own alias set. Seeding only top-level IdentPats
+	// would leave destructured leaves untracked, and AddAlias against
+	// an unseeded VarID is a silent no-op — masking transition errors
+	// against the leaves. Read VarIDs directly from the AST nodes
+	// (the rename pass above wrote them there) and look up the leaf's
+	// type by name in paramBindings, which inferPattern populated with
+	// one entry per leaf.
 	aliases := liveness.NewAliasTracker()
-	for _, param := range astParams {
-		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.VarID > 0 {
-			varID := liveness.VarID(identPat.VarID)
-			// Determine mutability from the parameter's type binding in scope.
-			mut := liveness.AliasImmutable
-			if binding := ctx.Scope.Namespace.Values[identPat.Name]; binding != nil {
-				if isMutableType(binding.Type) {
-					mut = liveness.AliasMutable
-				}
-			}
-			aliases.NewValue(varID, mut)
-		}
-	}
+	seedParamLeafAliases(astParams, paramBindings, aliases)
 	// Seed extra params (e.g. 'self') into the alias tracker.
 	for name, varID := range renameResult.ExtraParamVarIDs {
 		mut := liveness.AliasImmutable
@@ -83,6 +81,56 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 	ctx.Aliases = aliases
 	ctx.StmtToRef = stmtToRef
 	ctx.VarIDNames = renameResult.VarIDNames
+}
+
+// seedParamLeafAliases walks each parameter pattern recursively and seeds
+// the alias tracker with one alias set per leaf binding. The mutability of
+// each leaf is read from its corresponding paramBindings entry so that
+// transitions involving the leaf are checked correctly.
+func seedParamLeafAliases(
+	astParams []*ast.Param,
+	paramBindings map[string]*type_system.Binding,
+	aliases *liveness.AliasTracker,
+) {
+	var walk func(pat ast.Pat)
+	seed := func(name string, varID int) {
+		if varID <= 0 {
+			return
+		}
+		mut := liveness.AliasImmutable
+		if binding := paramBindings[name]; binding != nil && isMutableType(binding.Type) {
+			mut = liveness.AliasMutable
+		}
+		aliases.NewValue(liveness.VarID(varID), mut)
+	}
+	walk = func(pat ast.Pat) {
+		switch p := pat.(type) {
+		case *ast.IdentPat:
+			seed(p.Name, p.VarID)
+		case *ast.TuplePat:
+			for _, elem := range p.Elems {
+				walk(elem)
+			}
+		case *ast.ObjectPat:
+			for _, elem := range p.Elems {
+				switch e := elem.(type) {
+				case *ast.ObjKeyValuePat:
+					walk(e.Value)
+				case *ast.ObjShorthandPat:
+					if e.Key != nil {
+						seed(e.Key.Name, e.VarID)
+					}
+				case *ast.ObjRestPat:
+					walk(e.Pattern)
+				}
+			}
+		case *ast.RestPat:
+			walk(p.Pattern)
+		}
+	}
+	for _, param := range astParams {
+		walk(param.Pattern)
+	}
 }
 
 // collectOuterBindings walks the scope chain and collects all value binding
