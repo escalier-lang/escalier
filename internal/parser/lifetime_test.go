@@ -2,7 +2,6 @@ package parser
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -74,12 +73,7 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 			for _, stmt := range module.Stmts {
 				snaps.MatchSnapshot(t, stmt)
 			}
-			if len(errors) > 0 {
-				for i, err := range errors {
-					fmt.Printf("Error[%d]: %#v\n", i, err)
-				}
-			}
-			assert.Len(t, errors, 0)
+			assert.Empty(t, errors, "unexpected errors: %#v", errors)
 		})
 	}
 }
@@ -90,13 +84,16 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 // rather than being silently dropped. Functions and `fn`-type
 // annotations remain the only supported sites in Phase 8.1.
 func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
+	const expected = "lifetime parameters are not supported in this context"
+
 	tests := map[string]struct {
 		input string
 	}{
-		"ClassWithLifetimeParam":     {input: `class Container<'a>(p: 'a Point) { p, }`},
-		"TypeAliasWithLifetimeParam": {input: `type Box<'a> = 'a Point`},
-		"InterfaceWithLifetimeParam": {input: `interface Holder<'a> { p: 'a Point }`},
-		"EnumWithLifetimeParam":      {input: `enum Maybe<'a> { Some('a Point), None }`},
+		"ClassWithLifetimeParam":      {input: `class Container<'a>(p: 'a Point) { p, }`},
+		"TypeAliasWithLifetimeParam":  {input: `type Box<'a> = 'a Point`},
+		"InterfaceWithLifetimeParam":  {input: `interface Holder<'a> { p: 'a Point }`},
+		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},
+		"ObjectMethodWithLifetimeParam": {input: `{ foo<'a>(x: T) {} }`},
 	}
 
 	for name, test := range tests {
@@ -109,8 +106,10 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 			parser := NewParser(ctx, source)
 			_, errors := parser.ParseScript()
 
-			assert.NotEmpty(t, errors,
-				"expected a parse error for lifetime in unsupported context")
+			if assert.Len(t, errors, 1,
+				"expected exactly one parse error for lifetime in unsupported context: %#v", errors) {
+				assert.Equal(t, expected, errors[0].Message)
+			}
 		})
 	}
 }

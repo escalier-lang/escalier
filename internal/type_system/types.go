@@ -2703,6 +2703,16 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 				if len(v1.LifetimeParams) != len(v2.LifetimeParams) {
 					return false
 				}
+				// DefaultMutable participates in identity: two class aliases
+				// that differ only in their default mutability instantiate
+				// differently when the user omits an explicit `mut`.
+				if (v1.DefaultMutable == nil) != (v2.DefaultMutable == nil) {
+					return false
+				}
+				if v1.DefaultMutable != nil && v2.DefaultMutable != nil &&
+					*v1.DefaultMutable != *v2.DefaultMutable {
+					return false
+				}
 			}
 		}
 	}

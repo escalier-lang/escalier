@@ -772,10 +772,10 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		}
 		return nil
 	case LessThan:
-		// Parse type parameters for generic methods
-		p.lexer.consume() // consume '<'
-		typeParams := parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, ConsumeOnMatch)
+		// Parse type parameters for generic methods. Object methods do not
+		// yet support lifetime parameters; maybeTypeParams reports them as
+		// errors with a consistent message.
+		typeParams := p.maybeTypeParams()
 
 		// After type parameters, we should have '('
 		token = p.lexer.peek()

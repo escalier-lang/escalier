@@ -215,7 +215,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 		nil, // extends - TODO: parse extends clause from .d.ts files
 		constructorParams,
 		bodyElems,
-		false, // immutable - .d.ts classes are not immutable
+		false, // data - .d.ts classes are not data classes
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files
 		convertSpan(dc.Span()),

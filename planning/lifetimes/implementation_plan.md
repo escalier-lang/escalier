@@ -2331,7 +2331,7 @@ unify, not double-wrap.
 
 The printer should produce signatures of the shape:
 
-```
+```esc
 fn <'a, T extends {x: number}>(p: mut 'a T, other: mut T) -> mut 'a T
 ```
 

@@ -115,7 +115,7 @@ Built-in collection types like `Map`, `Set`, and `Array` follow this rule
 naturally — they have mutating methods (`set`, `add`, `push`), so their
 constructors return mutable instances by default.
 
-### Overriding the Default with `immutable` Modifier
+### Overriding the Default with `data` Modifier
 
 Some classes have mutating methods but should still default to immutable.
 For example, a data class might have a `withX` method that returns a new

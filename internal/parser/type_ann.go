@@ -460,6 +460,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			span := ast.MergeSpans(token.Span, value.Span())
 			typeAnn = ast.NewRestSpreadTypeAnn(value, span)
 		default:
+			// If we already consumed a lifetime prefix, we can't return nil —
+			// that would violate the "nil means no consumption" contract.
+			// Report the missing type and return an ErrorTypeAnn whose span
+			// covers the lifetime we consumed.
+			if lifetime != nil {
+				p.reportError(lifetime.Span(),
+					"expected a type annotation after lifetime")
+				return ast.NewErrorTypeAnn(lifetime.Span())
+			}
 			// Return nil without consuming — signals "no type annotation found."
 			// Callers provide their own contextual error messages.
 			return nil
