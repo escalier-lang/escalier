@@ -58,14 +58,48 @@ func (c *Checker) InferLifetimes(
 	body *ast.Block,
 	funcType *type_system.FuncType,
 ) {
+	c.inferLifetimesCore(astParams, body, funcType, false)
+}
+
+// ReinferLifetimes re-runs lifetime inference on a function whose first
+// pass has already completed. Intended for the SCC re-run in
+// InferComponent: peers in the same SCC may have gained inferred
+// lifetimes after this function's first pass, in which case
+// `determineCheckerAliasSource` can now reach through their call
+// expressions and reveal additional aliased leaves. Unlike
+// InferLifetimes, this entry point bypasses the user-explicit guard,
+// so callers must ensure they don't invoke it on a function whose
+// LifetimeParams were declared explicitly by the user.
+func (c *Checker) ReinferLifetimes(
+	astParams []*ast.Param,
+	body *ast.Block,
+	funcType *type_system.FuncType,
+) {
+	c.inferLifetimesCore(astParams, body, funcType, true)
+}
+
+// inferLifetimesCore is the shared body of InferLifetimes and
+// ReinferLifetimes. The reinfer flag controls whether the function may
+// extend an already-inferred set of lifetime params: when false, the
+// function bails out as soon as it sees existing LifetimeParams (the
+// historical behavior protecting user-explicit lifetimes); when true,
+// it walks the leaves and *appends* new lifetime params for any leaves
+// that became visible via newly-resolved peer signatures.
+func (c *Checker) inferLifetimesCore(
+	astParams []*ast.Param,
+	body *ast.Block,
+	funcType *type_system.FuncType,
+	reinfer bool,
+) {
 	if body == nil || funcType == nil {
 		return
 	}
 	// If the user already declared explicit lifetime parameters on the
 	// signature, don't second-guess them. (Resolution of those annotated
 	// lifetimes during type-checking is a separate concern handled by
-	// the type-annotation inference path.)
-	if len(funcType.LifetimeParams) > 0 {
+	// the type-annotation inference path.) The reinfer path skips this
+	// guard so the SCC re-run can extend a previously-inferred result.
+	if !reinfer && len(funcType.LifetimeParams) > 0 {
 		return
 	}
 
@@ -91,11 +125,15 @@ func (c *Checker) InferLifetimes(
 	// Phase 8.4: detect parameters that escape into module-level state and
 	// assign them 'static directly. This must run before the return-alias
 	// pass so that an escaping param gets 'static rather than a fresh 'a
-	// even when it is also returned by some path.
+	// even when it is also returned by some path. Already-set 'static
+	// (from a prior pass) is a no-op.
 	escapingLeaves := detectEscapingLeafIndices(body, leafIndex)
 	for idx := range escapingLeaves {
 		leaf := leaves[idx]
 		if !typeCarriesLifetime(leaf.leafType) {
+			continue
+		}
+		if existing, ok := type_system.PruneLifetime(type_system.GetLifetime(leaf.leafType)).(*type_system.LifetimeValue); ok && existing.IsStatic {
 			continue
 		}
 		setLifetimeOnType(leaf.leafType, &type_system.LifetimeValue{
@@ -106,12 +144,17 @@ func (c *Checker) InferLifetimes(
 
 	// Determine the *result type* — the position to which the
 	// per-source lifetime is attached. For generators, the result is
-	// the yield type T inside Generator<T, TReturn, TNext>; for plain
-	// functions, it's the return type itself.
+	// the yield type T inside Generator<T, TReturn, TNext>; for async
+	// functions, the result is the resolved type T inside
+	// Promise<T, E>; for plain functions, it's the return type itself.
+	// In each wrapper case the container is freshly assembled per call
+	// and has no caller-provided lifetime — only its inner T does.
 	resultType := funcType.Return
 	yieldTargetType := generatorYieldType(funcType.Return)
 	if yieldTargetType != nil {
 		resultType = yieldTargetType
+	} else if pvt := promiseValueType(funcType.Return); pvt != nil {
+		resultType = pvt
 	}
 
 	// Walk the body to collect alias-source expressions: every return
@@ -177,12 +220,16 @@ func (c *Checker) InferLifetimes(
 		return
 	}
 
-	// Allocate one fresh LifetimeVar per aliased leaf whose leaf type
-	// can also carry a lifetime — same reasoning as above for the param
-	// side. Escaping leaves are handled separately: their leaf type
-	// already carries 'static, and the return type (if it aliases them)
-	// inherits 'static too.
-	lifetimeParams := make([]*type_system.LifetimeVar, 0, len(orderedLeaves))
+	// Walk the aliased leaves. For each, either:
+	//   (a) Reuse the leaf's existing lifetime (set by a prior pass —
+	//       the LifetimeVar is pointer-shared, already in
+	//       funcType.LifetimeParams).
+	//   (b) Treat as escaping — contribute 'static to the return.
+	//   (c) Allocate a fresh LifetimeVar — append it to LifetimeParams.
+	// returnLifetimeMembers accumulates ALL lifetimes contributed to
+	// the return, so that on a re-run we can rebuild the union over
+	// both pre-existing and newly-discovered leaves.
+	var newLifetimeParams []*type_system.LifetimeVar
 	returnHasStatic := false
 	var returnLifetimeMembers []type_system.Lifetime
 	for _, idx := range orderedLeaves {
@@ -198,8 +245,16 @@ func (c *Checker) InferLifetimes(
 			returnHasStatic = true
 			continue
 		}
-		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
-		lifetimeParams = append(lifetimeParams, lv)
+		// Reuse an already-inferred LifetimeVar on the leaf so the
+		// signature stays stable across re-runs and pointer identity
+		// is preserved with anything that already references it.
+		if existing, ok := type_system.PruneLifetime(type_system.GetLifetime(leaf.leafType)).(*type_system.LifetimeVar); ok && existing != nil {
+			returnLifetimeMembers = append(returnLifetimeMembers, existing)
+			continue
+		}
+		nameIdx := len(funcType.LifetimeParams) + len(newLifetimeParams)
+		lv := c.FreshLifetimeVar(lifetimeParamName(nameIdx))
+		newLifetimeParams = append(newLifetimeParams, lv)
 		returnLifetimeMembers = append(returnLifetimeMembers, lv)
 
 		// Attach the lifetime to the leaf's type position.
@@ -230,8 +285,8 @@ func (c *Checker) InferLifetimes(
 	}
 	setLifetimeOnType(resultType, returnLifetime)
 
-	if len(lifetimeParams) > 0 {
-		funcType.LifetimeParams = lifetimeParams
+	if len(newLifetimeParams) > 0 {
+		funcType.LifetimeParams = append(funcType.LifetimeParams, newLifetimeParams...)
 	}
 }
 
@@ -436,7 +491,10 @@ type escapingRefsVisitor struct {
 func (v *escapingRefsVisitor) EnterExpr(e ast.Expr) bool {
 	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == ast.Assign {
 		if isNonLocalLValue(be.Left) {
-			src := liveness.DetermineAliasSource(be.Right)
+			// Use the checker-aware variant so a parameter that flows
+			// through a call whose callee returns its argument
+			// (`cache = wrap(p)`) is still detected as escaping.
+			src := determineCheckerAliasSource(be.Right)
 			switch src.Kind {
 			case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 				for _, vid := range src.VarIDs {
@@ -579,6 +637,20 @@ func (c *Checker) InferConstructorLifetimes(
 			collectFieldStorageParams(elem, paramNameToIndex, storedParams)
 		case *ast.MethodElem:
 			// Static methods can't access instance state implicitly.
+			if elem.Static || elem.Fn == nil || elem.Fn.Body == nil {
+				continue
+			}
+			collectMethodBodyCaptures(elem.Fn, paramNameToIndex, storedParams)
+		case *ast.GetterElem:
+			// Getters are instance accessors that can implicitly
+			// reference constructor params, just like methods.
+			if elem.Static || elem.Fn == nil || elem.Fn.Body == nil {
+				continue
+			}
+			collectMethodBodyCaptures(elem.Fn, paramNameToIndex, storedParams)
+		case *ast.SetterElem:
+			// Setters likewise — the body may both read and assign
+			// constructor params.
 			if elem.Static || elem.Fn == nil || elem.Fn.Body == nil {
 				continue
 			}
@@ -772,8 +844,8 @@ func blockResultExpr(b ast.Block) ast.Expr {
 // collectMethodBodyCaptures walks a method body looking for IdentExpr
 // references whose name matches a constructor parameter, and adds the
 // matching parameter indices to storedParams. Tracks shadowing introduced
-// by inner FuncExpr params so that names rebound by nested functions are
-// not counted as captures.
+// by inner function params and by `var`/`val`/`let` bindings within
+// blocks so that names rebound locally are not counted as captures.
 //
 // This closes the soundness gap where a method body references a
 // constructor param by name (Escalier allows this) without any
@@ -784,38 +856,43 @@ func collectMethodBodyCaptures(
 	paramNameToIndex map[string]int,
 	storedParams set.Set[int],
 ) {
-	// Names shadowed in the current scope (and all enclosing scopes within
-	// the method) are tracked as a stack: each entry is the set of names
-	// bound by a single FuncExpr's parameters.
 	v := &methodCaptureVisitor{
 		paramNameToIndex: paramNameToIndex,
 		storedParams:     storedParams,
 	}
 	// The method's own params shadow constructor params with the same name.
-	v.pushScope(fn.Params)
+	v.pushScope()
+	for _, p := range fn.Params {
+		v.addBindings(p.Pattern)
+	}
 	if fn.Body != nil {
-		fn.Body.Accept(v)
+		v.walkBlock(fn.Body)
 	}
 	v.popScope()
 }
 
 type methodCaptureVisitor struct {
-	ast.DefaultVisitor
 	paramNameToIndex map[string]int
 	storedParams     set.Set[int]
-	shadowed         []set.Set[string]
+	// shadowed is a stack of block/function scopes. Each entry is the set
+	// of names bound in that scope. A name is considered shadowed if it
+	// appears in any active scope.
+	shadowed []set.Set[string]
 }
 
-func (v *methodCaptureVisitor) pushScope(params []*ast.Param) {
-	scope := set.NewSet[string]()
-	for _, p := range params {
-		collectPatternBindingNames(p.Pattern, scope)
-	}
-	v.shadowed = append(v.shadowed, scope)
+func (v *methodCaptureVisitor) pushScope() {
+	v.shadowed = append(v.shadowed, set.NewSet[string]())
 }
 
 func (v *methodCaptureVisitor) popScope() {
 	v.shadowed = v.shadowed[:len(v.shadowed)-1]
+}
+
+func (v *methodCaptureVisitor) addBindings(pat ast.Pat) {
+	if len(v.shadowed) == 0 {
+		return
+	}
+	collectPatternBindingNames(pat, v.shadowed[len(v.shadowed)-1])
 }
 
 func (v *methodCaptureVisitor) isShadowed(name string) bool {
@@ -827,50 +904,131 @@ func (v *methodCaptureVisitor) isShadowed(name string) bool {
 	return false
 }
 
-func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
+func (v *methodCaptureVisitor) walkBlock(b *ast.Block) {
+	if b == nil {
+		return
+	}
+	v.pushScope()
+	for _, stmt := range b.Stmts {
+		v.walkStmt(stmt)
+	}
+	v.popScope()
+}
+
+func (v *methodCaptureVisitor) walkStmt(s ast.Stmt) {
+	if s == nil {
+		return
+	}
+	switch ss := s.(type) {
+	case *ast.ExprStmt:
+		v.walkExpr(ss.Expr)
+	case *ast.ReturnStmt:
+		v.walkExpr(ss.Expr)
+	case *ast.DeclStmt:
+		v.walkDecl(ss.Decl)
+	}
+}
+
+func (v *methodCaptureVisitor) walkDecl(d ast.Decl) {
+	if d == nil {
+		return
+	}
+	switch dd := d.(type) {
+	case *ast.VarDecl:
+		// Visit the initializer BEFORE adding the new binding to the
+		// current scope. This prevents `var p = p` from incorrectly
+		// treating the RHS `p` as the freshly-shadowed inner binding —
+		// it should resolve against the enclosing scope (potentially
+		// the constructor's param).
+		if dd.Init != nil {
+			v.walkExpr(dd.Init)
+		}
+		v.addBindings(dd.Pattern)
+	case *ast.FuncDecl:
+		// Nested function declaration: similar to FuncExpr, its params
+		// shadow outer names within its body.
+		if dd.Body == nil {
+			return
+		}
+		v.pushScope()
+		for _, p := range dd.Params {
+			v.addBindings(p.Pattern)
+		}
+		v.walkBlock(dd.Body)
+		v.popScope()
+	case *ast.ClassDecl:
+		// Skip nested classes — their constructor param names introduce
+		// a fresh shadow scope that's outside the analysis we care about.
+	}
+}
+
+func (v *methodCaptureVisitor) walkExpr(e ast.Expr) {
+	if e == nil {
+		return
+	}
 	switch ex := e.(type) {
 	case *ast.IdentExpr:
 		if v.isShadowed(ex.Name) {
-			return true
+			return
 		}
 		if idx, ok := v.paramNameToIndex[ex.Name]; ok {
 			v.storedParams.Add(idx)
 		}
 	case *ast.FuncExpr:
 		// Nested function: its params introduce new shadows for the
-		// duration of its body. Manually descend so we control scope.
-		v.pushScope(ex.Params)
-		if ex.Body != nil {
-			ex.Body.Accept(v)
+		// duration of its body.
+		v.pushScope()
+		for _, p := range ex.Params {
+			v.addBindings(p.Pattern)
 		}
+		v.walkBlock(ex.Body)
 		v.popScope()
+	default:
+		// Walk through other expression shapes by visiting their child
+		// expressions / blocks directly. We use an inner ast Visitor that
+		// re-enters our walk for IdentExpr, FuncExpr, blocks, and decls
+		// so scope tracking stays consistent.
+		ex.Accept(&methodCaptureSubVisitor{outer: v})
+	}
+}
+
+// methodCaptureSubVisitor handles traversal of expression subtrees that
+// don't introduce a new scope themselves. It delegates back to the outer
+// methodCaptureVisitor for IdentExpr lookups and for nodes that DO start
+// a new scope (FuncExpr, FuncDecl, blocks, var decls), so that scope
+// push/pop remains in lockstep with the source structure.
+type methodCaptureSubVisitor struct {
+	ast.DefaultVisitor
+	outer *methodCaptureVisitor
+}
+
+func (v *methodCaptureSubVisitor) EnterExpr(e ast.Expr) bool {
+	switch e.(type) {
+	case *ast.IdentExpr, *ast.FuncExpr:
+		v.outer.walkExpr(e)
 		return false
 	}
 	return true
 }
 
-func (v *methodCaptureVisitor) EnterDecl(d ast.Decl) bool {
-	switch dd := d.(type) {
-	case *ast.VarDecl:
-		// `let p = ...` (or `var p = ...`) shadows the constructor's `p`
-		// from this point onward in the enclosing block. Record the
-		// pattern's bound names in the current scope.
-		if len(v.shadowed) > 0 {
-			collectPatternBindingNames(dd.Pattern, v.shadowed[len(v.shadowed)-1])
-		}
-	case *ast.FuncDecl:
-		// Nested function declaration: similar to FuncExpr, its params
-		// shadow outer names within its body.
-		if dd.Body == nil {
-			return false
-		}
-		v.pushScope(dd.Params)
-		dd.Body.Accept(v)
-		v.popScope()
+func (v *methodCaptureSubVisitor) EnterStmt(s ast.Stmt) bool {
+	switch s.(type) {
+	case *ast.DeclStmt:
+		v.outer.walkStmt(s)
 		return false
-	case *ast.ClassDecl:
-		// Skip nested classes — their constructor param names introduce
-		// a fresh shadow scope that's outside the analysis we care about.
+	}
+	return true
+}
+
+func (v *methodCaptureSubVisitor) EnterBlock(b ast.Block) bool {
+	v.outer.walkBlock(&b)
+	return false
+}
+
+func (v *methodCaptureSubVisitor) EnterDecl(d ast.Decl) bool {
+	switch d.(type) {
+	case *ast.VarDecl, *ast.FuncDecl, *ast.ClassDecl:
+		v.outer.walkDecl(d)
 		return false
 	}
 	return true
@@ -1127,6 +1285,24 @@ func generatorYieldType(t type_system.Type) type_system.Type {
 	}
 	name := type_system.QualIdentToString(tref.Name)
 	if name != "Generator" && name != "AsyncGenerator" {
+		return nil
+	}
+	if len(tref.TypeArgs) == 0 {
+		return nil
+	}
+	return tref.TypeArgs[0]
+}
+
+// promiseValueType returns the resolved value type T of a
+// Promise<T, E> reference, walking past mutability wrappers. Returns
+// nil if t is not a Promise reference or has no type args.
+func promiseValueType(t type_system.Type) type_system.Type {
+	pt := stripMutabilityWrapper(type_system.Prune(t))
+	tref, ok := pt.(*type_system.TypeRefType)
+	if !ok {
+		return nil
+	}
+	if type_system.QualIdentToString(tref.Name) != "Promise" {
 		return nil
 	}
 	if len(tref.TypeArgs) == 0 {

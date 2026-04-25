@@ -224,6 +224,63 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"pickEither": "fn <'a, 'b>([a: mut 'a {x: number}, b: mut 'b {x: number}], cond: boolean) -> mut ('a | 'b) {x: number}",
 			},
 		},
+		"EscapingRefViaCallResult": {
+			// Bug B3: when a parameter flows through a function call into
+			// module-level state (`cache = wrap(p)`), the escape-detection
+			// pass must use the checker-aware alias source so the call's
+			// return-aliases-its-arg lifetime info propagates. Without
+			// this, `p` would not be marked as escaping and would not get
+			// 'static, leaving the program unsound.
+			input: `
+				fn wrap(q: mut {x: number}) -> mut {x: number} { return q }
+				var cache: mut {x: number} = {x: 0}
+				fn store(p: mut {x: number}) -> number {
+					cache = wrap(p)
+					return p.x
+				}
+			`,
+			expectedTypes: map[string]string{
+				"store": "fn (p: mut 'static {x: number}) -> number",
+			},
+		},
+		"AsyncReturnsParam": {
+			// Design D6: by analogy with Generator handling, an async
+			// function whose return aliases a parameter should attach
+			// the lifetime to the inner T (the resolved value type)
+			// rather than to the Promise container, which is freshly
+			// allocated per call. The Promise container itself has no
+			// caller-provided lifetime.
+			input: `
+				async fn passthrough(p: mut {x: number}) -> mut {x: number} { return p }
+			`,
+			expectedTypes: map[string]string{
+				"passthrough": "fn <'a>(p: mut 'a {x: number}) -> Promise<mut 'a {x: number}, never>",
+			},
+		},
+		"MutuallyRecursivePartialFirstPass": {
+			// Bug B4: in a true mutual-recursion cycle, the function with
+			// the base case (`even` here, via `return p`) infers a non-
+			// empty LifetimeParams on its first pass — but only for the
+			// directly-returned param. The forwarding return path
+			// (`return odd(q, n - 1)`) cannot detect that `q` is also
+			// aliased through the call until `odd`'s signature has a
+			// lifetime, which only happens AFTER even is first processed.
+			// The re-run must re-examine `even` and add `q`'s lifetime;
+			// the existing early-return guard incorrectly skips it.
+			input: `
+				fn even(p: mut {x: number}, q: mut {x: number}, n: number) -> mut {x: number} {
+					if n == 0 { return p }
+					return odd(q, n - 1)
+				}
+				fn odd(q: mut {x: number}, n: number) -> mut {x: number} {
+					return even(q, q, n - 1)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"even": "fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}, n: number) -> mut ('a | 'b) {x: number}",
+				"odd":  "fn <'a>(q: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -330,6 +387,32 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"C": "{new fn (p: mut {x: number}) -> mut? C}",
+			},
+		},
+		"GetterCapturesConstructorParam": {
+			// Bug B5: getters and setters were not scanned for
+			// constructor-param captures (only FieldElem / MethodElem
+			// were). A getter whose body references a constructor
+			// param by name should force a lifetime onto the
+			// constructor param, just like a method body.
+			input: `
+				class C(p: mut {x: number}) {
+					get q -> mut {x: number} { return p }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
+			},
+		},
+		"SetterCapturesConstructorParam": {
+			// Bug B5: same as the getter case but for setters.
+			input: `
+				class C(p: mut {x: number}) {
+					set q(mut self, v: number) { p.x = v }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
 			},
 		},
 		"StaticMethodDoesNotCapture": {
