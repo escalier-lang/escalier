@@ -485,6 +485,28 @@ func TestMutabilityTransitions(t *testing.T) {
 		`,
 	}
 
+	// Conditional aliasing where source (c) is in two alias sets.
+	// c is mut and live after the transition, so it appears in conflicting —
+	// but it must appear only once, not once per alias set.
+	tests["Conditional_SourceInMultipleSets_NoDuplicateConflicting"] = struct {
+		input          string
+		expectedErrors []string
+	}{
+		input: `
+			fn test(cond: boolean) {
+				val a: mut {x: number} = {x: 0}
+				val b: mut {x: number} = {x: 1}
+				val c: mut {x: number} = if cond { a } else { b }
+				val frozen: {x: number} = c
+				c.x = 5
+				frozen
+			}
+		`,
+		expectedErrors: []string{
+			"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
+		},
+	}
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

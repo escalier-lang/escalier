@@ -59,8 +59,14 @@ func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
 		if len(l.LiveBefore[ref.BlockID]) > 0 {
 			return l.LiveBefore[ref.BlockID][0].Contains(v)
 		}
-		// Empty block: use LiveAfter of the last statement's block entry.
-		// An empty block has no liveness data; fall back to false.
+		// An empty block has no per-statement liveness data; fall back to false.
+		// NOTE: this is technically incomplete — the block may have a non-empty
+		// blockLiveOut (from successor blocks) that isn't captured in the
+		// per-statement arrays. In practice this is safe because an empty join
+		// block only occurs when a decomposed val has no subsequent statements,
+		// so nothing uses the declared variable and it can't be live anyway.
+		// If this assumption changes, consider storing blockLiveOut in
+		// LivenessInfo and consulting it here.
 		return false
 	}
 	return l.LiveAfter[ref.BlockID][ref.StmtIdx].Contains(v)

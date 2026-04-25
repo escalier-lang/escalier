@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -102,14 +103,16 @@ func (c *Checker) checkMutabilityTransition(
 		return nil
 	}
 
-	var conflicting []string
-
 	// Note: the loop intentionally does NOT skip sourceVarID. The source
 	// variable is itself a member of the alias set, and if it is still live
 	// after the transition point, it IS a conflicting alias. For example,
 	// when creating an immutable alias `snapshot` from a mutable `items`,
 	// `items` being live means mutations can still occur through it — that
 	// is the conflict we want to report.
+	//
+	// A variable may belong to multiple alias sets (conditional aliasing),
+	// so we deduplicate by collecting names into a set.
+	conflictingSet := make(map[string]struct{})
 	aliasSets := ctx.Aliases.GetAliasSets(sourceVarID)
 	for _, aliasSet := range aliasSets {
 		for varID, aliasMut := range aliasSet.Members {
@@ -119,20 +122,26 @@ func (c *Checker) checkMutabilityTransition(
 			if sourceMut && !targetMut {
 				// Rule 1: mut → immutable — error if any live mutable alias exists
 				if aliasMut == liveness.AliasMutable {
-					conflicting = append(conflicting, c.varIDToName(ctx, varID))
+					conflictingSet[c.varIDToName(ctx, varID)] = struct{}{}
 				}
 			} else {
 				// Rule 2: immutable → mut — error if any live immutable alias exists
 				if aliasMut == liveness.AliasImmutable {
-					conflicting = append(conflicting, c.varIDToName(ctx, varID))
+					conflictingSet[c.varIDToName(ctx, varID)] = struct{}{}
 				}
 			}
 		}
 	}
 
-	if len(conflicting) == 0 {
+	if len(conflictingSet) == 0 {
 		return nil
 	}
+
+	conflicting := make([]string, 0, len(conflictingSet))
+	for name := range conflictingSet {
+		conflicting = append(conflicting, name)
+	}
+	sort.Strings(conflicting)
 
 	return []Error{&MutabilityTransitionError{
 		SourceVar:       sourceVarName,
@@ -185,6 +194,9 @@ func (c *Checker) trackAliasesForVarDecl(
 		errors = c.trackAliasesForDestructuringPat(ctx, pat, bindings, source, enclosingStmt, decl.Span())
 
 	case *ast.TuplePat:
+		errors = c.trackAliasesForDestructuringPat(ctx, pat, bindings, source, enclosingStmt, decl.Span())
+
+	case *ast.ExtractorPat:
 		errors = c.trackAliasesForDestructuringPat(ctx, pat, bindings, source, enclosingStmt, decl.Span())
 	}
 
