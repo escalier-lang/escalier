@@ -24,11 +24,15 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 	// Compute extra param names: bindings in paramBindings that are not in
 	// astParams (e.g. implicit 'self' in methods). These need positive VarIDs
 	// so their uses in the body are tracked as local variables.
+	//
+	// Walk destructuring patterns recursively so that every leaf name bound
+	// by an explicit pattern is recognized — otherwise the rename pass would
+	// also re-define those names from paramBindings, leaving the
+	// pattern-leaf's IdentPat.VarID stale relative to what the body's
+	// IdentExpr.VarID resolves to.
 	astParamNames := set.NewSet[string]()
 	for _, p := range astParams {
-		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
-			astParamNames.Add(identPat.Name)
-		}
+		collectPatternBindingNames(p.Pattern, astParamNames)
 	}
 	var extraParamNames []string
 	for name := range paramBindings {

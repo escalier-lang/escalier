@@ -111,6 +111,47 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"copyItem": "fn (item: mut {x: number}) -> number",
 			},
 		},
+		"TupleDestructuredParamFirstReturned": {
+			// Phase 8.3: tuple-destructured param. Only the leaf actually
+			// returned (`a`) gets a lifetime; `b` is unconstrained, just
+			// like a non-destructured param that isn't returned. The
+			// printer renders the leaf's lifetime inline at the
+			// destructured position.
+			input: `
+				fn pickFirst([a, b]: [mut {x: number}, mut {x: number}]) -> mut {x: number} {
+					return a
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pickFirst": "fn <'a>([a: mut 'a {x: number}, b: mut {x: number}]) -> mut 'a {x: number}",
+			},
+		},
+		"RestParamReturnsElement": {
+			// Phase 8.3: rest param `...args: Array<T>` — the lifetime-
+			// bearing position is the *element* type T, not the array
+			// container (the container is freshly assembled per call).
+			// Returning args[0] must inherit that element-level lifetime.
+			input: `
+				fn first(...args: Array<mut {x: number}>) -> mut {x: number} {
+					return args[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"first": "fn <'a>(...args: Array<mut 'a {x: number}>) -> mut 'a {x: number}",
+			},
+		},
+		"TupleDestructuredParamConditional": {
+			// Phase 8.3: conditional return from a tuple-destructured
+			// param produces a LifetimeUnion combining both leaves.
+			input: `
+				fn pickEither([a, b]: [mut {x: number}, mut {x: number}], cond: boolean) -> mut {x: number} {
+					if cond { return a } else { return b }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pickEither": "fn <'a, 'b>([a: mut 'a {x: number}, b: mut 'b {x: number}], cond: boolean) -> mut ('a | 'b) {x: number}",
+			},
+		},
 	}
 
 	for name, test := range tests {

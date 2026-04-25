@@ -1359,64 +1359,43 @@ function bodies.
 The initial Phase 8 PR delivers a foundational subset; the following items are
 **deferred to a follow-up PR** so they can be reviewed and tested in isolation:
 
-- **8.3 element-level vs. container-level lifetimes.** Inference produces
-  container-level lifetimes (`'a Array<T>`) for any return that aliases a
-  parameter. Element-level inference (`Array<'a T>` for fresh-container,
-  aliased-elements returns from `.filter`/`.slice`/array-literal-of-aliases)
-  is not yet implemented.
-  - **Rest parameters (`...args: T[]`).** `InferLifetimes` skips rest
-    params entirely (see explicit `case *ast.RestPat` in
-    [infer_lifetime.go:65-79](../../internal/checker/infer_lifetime.go#L65-L79)).
-    A function like `fn first(...args: mut {x: number}[]) -> mut {x: number}`
-    that returns `args[0]` should infer `<'a>` on the element type and
-    on the return; today it produces no lifetime, the same wrong shape
-    as for a non-rest array param. Treatment falls out of element-level
-    lifetimes: descend into the rest pattern, attach the lifetime to the
-    *element* type (not the container, which is freshly assembled per
-    call), and unify against caller-arg lifetimes at call sites (each
-    caller arg must outlive the element lifetime). Aliasing analysis on
-    the body side will also need to recognize that `args[i]` is an
-    element-of source, not a container source — the existing
-    `DetermineAliasSource` will need an "element-of" alias variant for
-    this to work cleanly.
-  - **Destructured parameters (`fn f([a, b]: [mut P, mut P])`,
-    `fn g({x, y}: mut P)`).** `InferLifetimes` skips any param whose
-    pattern is not a bare `IdentPat`, including all tuple/object
-    destructuring patterns (see the `switch` in
-    [infer_lifetime.go:65-79](../../internal/checker/infer_lifetime.go#L65-L79)
-    and the comment on [line 64](../../internal/checker/infer_lifetime.go#L64)).
-    Body-side liveness/alias analysis already tracks the leaf bindings
-    correctly via Phase 7's destructuring-alias work; the gap is on the
-    *param-side wiring*. The current `VarID → param index` map assumes
-    one VarID per parameter, but a destructured param produces N leaf
-    VarIDs and no top-level "whole-param" VarID. Two reasonable
-    implementation shapes:
-    - *Synthesize a top-level param VarID* and treat each leaf binding
-      as if it were `let a = paramSlot.x` introduced at body entry.
-      The existing property/element-projection alias machinery (Phase 7)
-      takes over from there, and `InferLifetimes` just maps the
-      synthetic VarID to its param index. Most uniform with Phase 7;
-      requires a small AST/IR addition for the synthetic slot.
-    - *Track projection paths per leaf VarID* by extending `paramIndex`
-      to `VarID → (paramIndex, projection path)` and generalizing
-      `setLifetimeOnType` to attach a lifetime at a sub-position rather
-      than only at the top. No AST changes; more bookkeeping in this
-      file. Recommended starting shape — keeps the change localized.
+- **8.3 element-level vs. container-level lifetimes.** `InferLifetimes`
+  now walks each parameter's pattern in lockstep with the parameter's
+  inferred type via `collectParamLeaves`, producing a list of
+  `(VarID, leafType)` pairs for every leaf binding. Lifetime allocation
+  and attachment use these leaves rather than the top-level param,
+  which generalizes the analysis to:
+  - **Tuple-destructured parameters** (`fn f([a, b]: [mut P, mut P])`):
+    each leaf gets its own lifetime when aliased by a return; only
+    leaves actually returned receive a lifetime, matching the behavior
+    of non-destructured params. The leaf's lifetime is attached to the
+    corresponding sub-position of the param's tuple type and shows up
+    inline in the printed destructured form.
+  - **Rest parameters** (`...args: Array<T>`): the leaf's `leafType`
+    points at the array's *element* type `T` rather than the container,
+    since the array is freshly assembled per call. Returns of `args[i]`
+    inherit the element-level lifetime, producing
+    `<'a>(...args: Array<mut 'a T>) -> mut 'a T`.
+  - As part of this change, `runLivenessPrePass` was fixed to walk
+    destructuring-pattern leaves when computing `astParamNames`,
+    preventing the rename pass from double-defining destructured leaf
+    bindings (once via `renamePat` walking the pattern, once via the
+    `extraParamNames` path). Without that fix the leaf's `IdentPat.VarID`
+    was stale relative to the body's `IdentExpr.VarID`.
 
-    Either way, the inferred signature should be able to express
-    per-field lifetimes for destructured composite params, e.g.:
-
-    ```esc
-    fn pickFirst<'a, 'b>(
-        {head, tail}: {head: mut 'a Point, tail: mut 'b Point}
-    ) -> mut 'a Point { return head }
-    ```
-
-    This is the same per-position lifetime story as `Pair<'a, 'b>` from
-    Phase 8.6, just expressed through destructuring rather than class
-    fields. The semantics piggyback on Phase 7's existing
-    destructuring-alias work; this deferral is purely about the
-    param-side bookkeeping in `InferLifetimes`.
+  Still deferred:
+  - **Object-destructured parameters** (`fn g({x, y}: mut P)`) — the
+    walker currently descends into `*ast.TuplePat` and `*ast.RestPat`
+    only; `*ast.ObjectPat` would need `key → ObjectType.Elems` lookup
+    to find the matching property's type position. Same approach as
+    tuple, but with key-based traversal rather than positional.
+  - **Element-level lifetimes from fresh-container returns**
+    (`return [a, b]` producing `Array<'a T>`, `.filter()` /
+    `.slice()` propagation): the alias-source machinery still treats
+    array literals as fresh and built-in array methods don't carry
+    lifetime annotations. Closing this requires extending
+    `DetermineAliasSource` with an "element-of" variant and annotating
+    the prelude.
 - **8.3 generator yield lifetimes.** `yield` is treated as a fresh value;
   `Generator<'a T, _, _>` propagation from yields is not yet implemented.
 - **8.4 escaping reference detection.** `DetectEscapingRefs` walks a

@@ -63,42 +63,36 @@ func (c *Checker) InferLifetimes(
 		return
 	}
 
-	// Build VarID → param index map for the simple identifier-pattern case.
-	// Destructuring-pattern params don't get lifetimes in this pass.
-	paramIndex := make(map[liveness.VarID]int)
-	for i, p := range astParams {
-		switch pat := p.Pattern.(type) {
-		case *ast.IdentPat:
-			if pat.VarID > 0 {
-				paramIndex[liveness.VarID(pat.VarID)] = i
-			}
-		case *ast.RestPat:
-			// Rest params are skipped here: the lifetime-bearing position
-			// for `...args: T[]` is the *element* type, not the container
-			// variable. Attaching a container-level lifetime to `args`
-			// would be incorrect (the array is freshly assembled per
-			// call), and element-level lifetimes are deferred — see the
-			// file-level docstring's "Element-level lifetimes" bullet.
-		}
-	}
-	if len(paramIndex) == 0 {
+	// Build an ordered list of param "leaves": for IdentPat params, the
+	// leaf is the param itself; for tuple-destructured params (TuplePat),
+	// each leaf IdentPat becomes its own leaf with a Type position
+	// pointing at the corresponding sub-position of the param's type;
+	// for RestPat (`...args: T[]`), the inner pattern's leaf points at
+	// the *element* type Array<T>'s TypeArgs[0], not the array container
+	// — the container is freshly assembled per call and has no
+	// caller-provided lifetime.
+	//
+	// Object-destructured params are not yet walked (Phase 8.6 deferred).
+	leaves := collectParamLeaves(astParams, funcType.Params)
+	if len(leaves) == 0 {
 		return
+	}
+	leafIndex := make(map[liveness.VarID]int)
+	for i, l := range leaves {
+		leafIndex[l.varID] = i
 	}
 
 	// Phase 8.4: detect parameters that escape into module-level state and
 	// assign them 'static directly. This must run before the return-alias
 	// pass so that an escaping param gets 'static rather than a fresh 'a
 	// even when it is also returned by some path.
-	escapingParams := DetectEscapingRefs(body, paramIndex)
-	for idx := range escapingParams {
-		if idx >= len(funcType.Params) {
+	escapingLeaves := detectEscapingLeafIndices(body, leafIndex)
+	for idx := range escapingLeaves {
+		leaf := leaves[idx]
+		if !typeCarriesLifetime(leaf.leafType) {
 			continue
 		}
-		paramType := funcType.Params[idx].Type
-		if !typeCarriesLifetime(paramType) {
-			continue
-		}
-		setLifetimeOnType(paramType, &type_system.LifetimeValue{
+		setLifetimeOnType(leaf.leafType, &type_system.LifetimeValue{
 			Name:     "static",
 			IsStatic: true,
 		})
@@ -113,29 +107,29 @@ func (c *Checker) InferLifetimes(
 		return
 	}
 
-	// Determine which parameters are aliased across all return expressions.
-	// Use insertion order of parameter indices so that the resulting
-	// LifetimeParams list is deterministic.
+	// Determine which leaves are aliased across all return expressions.
+	// Use insertion order so the resulting LifetimeParams list is
+	// deterministic.
 	seen := set.NewSet[int]()
-	var orderedParams []int
+	var orderedLeaves []int
 	for _, re := range v.exprs {
 		src := liveness.DetermineAliasSource(re)
 		switch src.Kind {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, vid := range src.VarIDs {
-				idx, ok := paramIndex[vid]
+				idx, ok := leafIndex[vid]
 				if !ok {
 					continue
 				}
 				if !seen.Contains(idx) {
 					seen.Add(idx)
-					orderedParams = append(orderedParams, idx)
+					orderedLeaves = append(orderedLeaves, idx)
 				}
 			}
 		}
 	}
 
-	if len(orderedParams) == 0 {
+	if len(orderedLeaves) == 0 {
 		return
 	}
 
@@ -148,39 +142,33 @@ func (c *Checker) InferLifetimes(
 		return
 	}
 
-	// Allocate one fresh LifetimeVar per aliased parameter whose param
-	// type can also carry a lifetime — same reasoning as above for the
-	// param side. Escaping params are handled separately: their param
-	// type already carries 'static, and the return type (if it aliases
-	// them) inherits 'static too.
-	lifetimeParams := make([]*type_system.LifetimeVar, 0, len(orderedParams))
+	// Allocate one fresh LifetimeVar per aliased leaf whose leaf type
+	// can also carry a lifetime — same reasoning as above for the param
+	// side. Escaping leaves are handled separately: their leaf type
+	// already carries 'static, and the return type (if it aliases them)
+	// inherits 'static too.
+	lifetimeParams := make([]*type_system.LifetimeVar, 0, len(orderedLeaves))
 	returnHasStatic := false
 	var returnLifetimeMembers []type_system.Lifetime
-	for _, idx := range orderedParams {
-		if idx >= len(funcType.Params) {
+	for _, idx := range orderedLeaves {
+		leaf := leaves[idx]
+		if !typeCarriesLifetime(leaf.leafType) {
 			continue
 		}
-		paramType := funcType.Params[idx].Type
-		if !typeCarriesLifetime(paramType) {
-			continue
-		}
-		if escapingParams.Contains(idx) {
-			// Param already carries 'static. Record that the return
+		if escapingLeaves.Contains(idx) {
+			// Leaf already carries 'static. Record that the return
 			// shares this 'static lifetime, but don't allocate a 'a for
-			// it (since the param's lifetime is a concrete value, not a
+			// it (since the leaf's lifetime is a concrete value, not a
 			// variable).
 			returnHasStatic = true
 			continue
 		}
-		// paramIndex (above) was populated only from IdentPat params, so
-		// astParams[idx].Pattern is guaranteed to be *ast.IdentPat.
-		_ = astParams[idx].Pattern.(*ast.IdentPat)
 		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
 		lifetimeParams = append(lifetimeParams, lv)
 		returnLifetimeMembers = append(returnLifetimeMembers, lv)
 
-		// Attach the lifetime to the parameter's type.
-		setLifetimeOnType(paramType, lv)
+		// Attach the lifetime to the leaf's type position.
+		setLifetimeOnType(leaf.leafType, lv)
 	}
 
 	if len(returnLifetimeMembers) == 0 && !returnHasStatic {
@@ -212,6 +200,102 @@ func (c *Checker) InferLifetimes(
 	}
 }
 
+// paramLeaf represents a leaf binding within a function-parameter pattern,
+// paired with the Type position to which a lifetime should be attached.
+// For a simple identifier param `p: T`, leafType is the param's full type;
+// for a tuple-destructured param `[a, b]: [T, U]`, each leaf points at the
+// corresponding tuple element type; for a rest param `...args: T[]`, the
+// leaf points at the *element* type T (the array container is freshly
+// assembled per call and has no caller-provided lifetime).
+type paramLeaf struct {
+	varID    liveness.VarID
+	leafType type_system.Type
+}
+
+// collectParamLeaves walks each function parameter's pattern in lockstep
+// with the parameter's inferred type, producing an ordered list of
+// (VarID, leafType) pairs for every leaf binding that has a positive
+// VarID set by the rename pass.
+//
+// Object-destructured params are not yet walked — see Phase 8.6 deferred
+// items in implementation_plan.md.
+func collectParamLeaves(
+	astParams []*ast.Param,
+	funcParams []*type_system.FuncParam,
+) []paramLeaf {
+	var leaves []paramLeaf
+	for i, p := range astParams {
+		if i >= len(funcParams) {
+			continue
+		}
+		walkPatternForLeaves(p.Pattern, funcParams[i].Type, &leaves)
+	}
+	return leaves
+}
+
+func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
+	if pat == nil || t == nil {
+		return
+	}
+	pt := stripMutabilityWrapper(type_system.Prune(t))
+	switch p := pat.(type) {
+	case *ast.IdentPat:
+		if p.VarID > 0 {
+			*into = append(*into, paramLeaf{
+				varID:    liveness.VarID(p.VarID),
+				leafType: t,
+			})
+		}
+	case *ast.TuplePat:
+		tt, ok := pt.(*type_system.TupleType)
+		if !ok {
+			return
+		}
+		for i, elem := range p.Elems {
+			if i >= len(tt.Elems) {
+				break
+			}
+			walkPatternForLeaves(elem, tt.Elems[i], into)
+		}
+	case *ast.RestPat:
+		// `...args: T[]` — the lifetime-bearing position is the
+		// *element* type, not the array container. Descend into the
+		// inner pattern with the element type.
+		elem := arrayElemType(t)
+		if elem == nil {
+			return
+		}
+		walkPatternForLeaves(p.Pattern, elem, into)
+	}
+}
+
+// stripMutabilityWrapper strips a MutabilityType wrapper (any kind:
+// explicit `mut`, immutable, or uncertain `mut?`) so callers can match
+// the underlying structural type. Returns the input unchanged if not
+// wrapped. Distinct from the more selective `unwrapMutability` in
+// unify.go which only strips uncertain wrappers — here we want the
+// underlying structural type regardless of mutability annotation.
+func stripMutabilityWrapper(t type_system.Type) type_system.Type {
+	if mt, ok := t.(*type_system.MutabilityType); ok {
+		return type_system.Prune(mt.Type)
+	}
+	return t
+}
+
+// arrayElemType returns the element type T of an Array<T> reference,
+// walking past mutability wrappers. Returns nil if t is not an Array.
+func arrayElemType(t type_system.Type) type_system.Type {
+	pt := stripMutabilityWrapper(type_system.Prune(t))
+	tref, ok := pt.(*type_system.TypeRefType)
+	if !ok {
+		return nil
+	}
+	if type_system.QualIdentToString(tref.Name) != "Array" || len(tref.TypeArgs) != 1 {
+		return nil
+	}
+	return tref.TypeArgs[0]
+}
+
 // DetectEscapingRefs walks a function body looking for assignments that
 // store one of the function's parameters into a non-local location
 // (module-level variable, prelude binding, or any other binding looked
@@ -235,13 +319,24 @@ func DetectEscapingRefs(
 	body *ast.Block,
 	paramIndex map[liveness.VarID]int,
 ) set.Set[int] {
+	return detectEscapingLeafIndices(body, paramIndex)
+}
+
+// detectEscapingLeafIndices is the leaf-aware version of
+// DetectEscapingRefs: leafIndex maps a leaf binding's VarID to its
+// position in the leaves list, and the returned set contains the
+// indices of leaves whose value escapes.
+func detectEscapingLeafIndices(
+	body *ast.Block,
+	leafIndex map[liveness.VarID]int,
+) set.Set[int] {
 	escaped := set.NewSet[int]()
-	if body == nil || len(paramIndex) == 0 {
+	if body == nil || len(leafIndex) == 0 {
 		return escaped
 	}
 	v := &escapingRefsVisitor{
-		paramIndex: paramIndex,
-		escaped:    escaped,
+		leafIndex: leafIndex,
+		escaped:   escaped,
 	}
 	body.Accept(v)
 	return escaped
@@ -249,8 +344,8 @@ func DetectEscapingRefs(
 
 type escapingRefsVisitor struct {
 	ast.DefaultVisitor
-	paramIndex map[liveness.VarID]int
-	escaped    set.Set[int]
+	leafIndex map[liveness.VarID]int
+	escaped   set.Set[int]
 }
 
 func (v *escapingRefsVisitor) EnterExpr(e ast.Expr) bool {
@@ -260,7 +355,7 @@ func (v *escapingRefsVisitor) EnterExpr(e ast.Expr) bool {
 			switch src.Kind {
 			case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 				for _, vid := range src.VarIDs {
-					if idx, ok := v.paramIndex[vid]; ok {
+					if idx, ok := v.leafIndex[vid]; ok {
 						v.escaped.Add(idx)
 					}
 				}
