@@ -196,24 +196,33 @@ func setLifetimeOnType(t type_system.Type, lt type_system.Lifetime) {
 }
 
 // InferConstructorLifetimes analyzes a class declaration to determine
-// which constructor parameters are stored as fields, attaches a fresh
-// LifetimeVar to each such parameter and to the constructor's return
-// type, and records the lifetime parameters and default mutability on
-// the class TypeAlias.
+// which constructor parameters are stored as fields (or implicitly
+// captured by method bodies), attaches a fresh LifetimeVar to each such
+// parameter and to the constructor's return type, and records the
+// lifetime parameters and default mutability on the class TypeAlias.
 //
-// Detected storage patterns (Phase 8.6 foundational subset):
+// Detected storage / capture patterns (Phase 8.6):
 //   - Shorthand field referring to a constructor parameter by name,
 //     with or without a default:
 //     `class C(p: mut Point) { p, }`
 //     `class C(p: mut Point) { p = fallback, }`
-//   - Explicit field whose value is an IdentExpr to a constructor
-//     parameter: `class C(p: mut Point) { p: p, }`
+//   - Explicit field whose value references a constructor parameter,
+//     directly or through composite/projection expressions:
+//     `class C(p: mut Point) { x: p, }`
+//     `class C(p: mut Point) { x: p.inner, }`
+//     `class C(p: mut Point) { x: {inner: p}, }`
+//     `class C(p: mut Point) { x: [p, p], }`
+//   - Implicit capture: a method body references a constructor parameter
+//     by name (Escalier allows methods to see constructor params without
+//     going through `self`):
+//     `class C(p: mut Point) { foo(self) { return p } }`
 //
 // Deferred (see implementation_plan.md Phase 8 status):
-//   - Storage through nested expressions (`x: f(p)`).
-//   - Storage into nested object/array literals.
-//   - Lifetime inference for explicit field-initializer expressions
-//     that depend on parameters in non-identity ways.
+//   - Inference of method-side return-type lifetimes when a method
+//     captures a constructor param (the constructor gets the lifetime,
+//     but the method's return type does not yet inherit it).
+//   - Storage through function-call results (`x: f(p)`) — calls are
+//     conservatively treated as fresh by the field walker.
 func (c *Checker) InferConstructorLifetimes(
 	classDecl *ast.ClassDecl,
 	typeAlias *type_system.TypeAlias,
@@ -246,7 +255,12 @@ func (c *Checker) InferConstructorLifetimes(
 	}
 
 	// For each constructor param that is a reference type AND is stored
-	// as a field, allocate a fresh LifetimeVar.
+	// as a field (or captured by a method), allocate a fresh LifetimeVar.
+	//
+	// Note: matching is by *name* rather than VarID because
+	// InferConstructorLifetimes runs during the namespace placeholder phase,
+	// before the rename pass has populated VarIDs on identifiers in field
+	// initializers or method bodies.
 	paramNameToIndex := make(map[string]int)
 	for i, p := range classDecl.Params {
 		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
@@ -255,33 +269,17 @@ func (c *Checker) InferConstructorLifetimes(
 	}
 
 	storedParams := set.NewSet[int]()
+
 	for _, elem := range classDecl.Body {
-		fieldElem, ok := elem.(*ast.FieldElem)
-		if !ok {
-			continue
-		}
-		// Field name must be a plain identifier for our patterns.
-		fieldNameIdent, ok := fieldElem.Name.(*ast.IdentExpr)
-		if !ok {
-			continue
-		}
-
-		// Shorthand: name only, no value. A default may still be present
-		// (`p = somePoint`) — when the caller passes `p`, the field stores
-		// the param, so the param's lifetime matters regardless of whether
-		// a default is provided.
-		if fieldElem.Value == nil {
-			if idx, ok := paramNameToIndex[fieldNameIdent.Name]; ok {
-				storedParams.Add(idx)
+		switch elem := elem.(type) {
+		case *ast.FieldElem:
+			collectFieldStorageParams(elem, paramNameToIndex, storedParams)
+		case *ast.MethodElem:
+			// Static methods can't access instance state implicitly.
+			if elem.Static || elem.Fn == nil || elem.Fn.Body == nil {
+				continue
 			}
-			continue
-		}
-
-		// Explicit: `name: <ident>` where ident is a constructor param.
-		if valIdent, ok := fieldElem.Value.(*ast.IdentExpr); ok {
-			if idx, ok := paramNameToIndex[valIdent.Name]; ok {
-				storedParams.Add(idx)
-			}
+			collectMethodBodyCaptures(elem.Fn, paramNameToIndex, storedParams)
 		}
 	}
 
@@ -328,6 +326,282 @@ func (c *Checker) InferConstructorLifetimes(
 		lifetimeArgs[i] = lv
 	}
 	setLifetimeArgsOnType(ctorFn.Return, lifetimeArgs)
+}
+
+// collectFieldStorageParams inspects a single class field-element and adds
+// the indices of any constructor parameters whose value is captured by the
+// field's initializer to storedParams.
+//
+// The cases handled here mirror the storage shapes documented on
+// InferConstructorLifetimes: shorthand fields, identity initializers, and
+// composite or projection initializers (object/tuple literals, member or
+// index access into a param). Function-call initializers are not analyzed —
+// liveness.DetermineAliasSource treats calls as fresh, and a checker-aware
+// alternative would need lifetime info from callees that may not yet be
+// resolved at this point in inference.
+func collectFieldStorageParams(
+	fieldElem *ast.FieldElem,
+	paramNameToIndex map[string]int,
+	storedParams set.Set[int],
+) {
+	// Field name must be a plain identifier for the shorthand pattern.
+	fieldNameIdent, ok := fieldElem.Name.(*ast.IdentExpr)
+
+	// Shorthand: `{ p, }` or `{ p = fallback, }`. A default does not change
+	// the conclusion: when the caller passes `p`, the field stores the
+	// param, so the param's lifetime matters.
+	if ok && fieldElem.Value == nil {
+		if idx, ok := paramNameToIndex[fieldNameIdent.Name]; ok {
+			storedParams.Add(idx)
+		}
+		return
+	}
+
+	if fieldElem.Value == nil {
+		return
+	}
+
+	// Explicit `name: <expr>` — walk the initializer for any captured params.
+	for _, idx := range findCapturedParamsInExpr(fieldElem.Value, paramNameToIndex) {
+		storedParams.Add(idx)
+	}
+}
+
+// findCapturedParamsInExpr walks a field-initializer expression looking
+// for references to constructor parameters by name. Returns the parameter
+// indices in first-seen order. Recurses into composite literals
+// (object/tuple) and into spread elements; projection expressions
+// (member/index access, type cast, await) fall through to
+// liveness.DetermineAliasSource which already walks past those.
+//
+// Function calls and other complex expressions whose result might capture
+// arguments are NOT analyzed — they are treated as fresh.
+func findCapturedParamsInExpr(
+	expr ast.Expr,
+	paramNameToIndex map[string]int,
+) []int {
+	seen := set.NewSet[int]()
+	var result []int
+
+	addByName := func(name string) {
+		if idx, ok := paramNameToIndex[name]; ok && !seen.Contains(idx) {
+			seen.Add(idx)
+			result = append(result, idx)
+		}
+	}
+
+	var visit func(e ast.Expr)
+	visit = func(e ast.Expr) {
+		if e == nil {
+			return
+		}
+		switch ex := e.(type) {
+		case *ast.ObjectExpr:
+			for _, elem := range ex.Elems {
+				switch el := elem.(type) {
+				case *ast.PropertyExpr:
+					if el.Value != nil {
+						visit(el.Value)
+						continue
+					}
+					// Object shorthand: `{ p }` — the property name doubles
+					// as a value reference.
+					if name, ok := el.Name.(*ast.IdentExpr); ok {
+						addByName(name.Name)
+					}
+				case *ast.ObjSpreadExpr:
+					visit(el.Value)
+				}
+			}
+		case *ast.TupleExpr:
+			for _, sub := range ex.Elems {
+				visit(sub)
+			}
+		case *ast.ArraySpreadExpr:
+			visit(ex.Value)
+		case *ast.IdentExpr:
+			addByName(ex.Name)
+		case *ast.MemberExpr:
+			visit(ex.Object)
+		case *ast.IndexExpr:
+			visit(ex.Object)
+		case *ast.TypeCastExpr:
+			visit(ex.Expr)
+		case *ast.AwaitExpr:
+			visit(ex.Arg)
+		case *ast.IfElseExpr:
+			// Conditional that yields a value: both branches may
+			// contribute captures. Use the existing helper to find each
+			// branch's result expression.
+			cons := blockResultExpr(ex.Cons)
+			if cons != nil {
+				visit(cons)
+			}
+			if ex.Alt != nil {
+				if ex.Alt.Expr != nil {
+					visit(ex.Alt.Expr)
+				} else if ex.Alt.Block != nil {
+					if alt := blockResultExpr(*ex.Alt.Block); alt != nil {
+						visit(alt)
+					}
+				}
+			}
+		}
+	}
+	visit(expr)
+	return result
+}
+
+// blockResultExpr returns the result expression of a block (the last
+// statement if it's an ExprStmt), or nil if the block is empty or ends
+// with a non-expression statement. Mirrors the helper of the same name in
+// the liveness package, duplicated here to avoid an import cycle.
+func blockResultExpr(b ast.Block) ast.Expr {
+	if len(b.Stmts) == 0 {
+		return nil
+	}
+	if exprStmt, ok := b.Stmts[len(b.Stmts)-1].(*ast.ExprStmt); ok {
+		return exprStmt.Expr
+	}
+	return nil
+}
+
+// collectMethodBodyCaptures walks a method body looking for IdentExpr
+// references whose name matches a constructor parameter, and adds the
+// matching parameter indices to storedParams. Tracks shadowing introduced
+// by inner FuncExpr params so that names rebound by nested functions are
+// not counted as captures.
+//
+// This closes the soundness gap where a method body references a
+// constructor param by name (Escalier allows this) without any
+// corresponding `self.field` projection — see the example in
+// implementation_plan.md Phase 8.6 implicit-captures discussion.
+func collectMethodBodyCaptures(
+	fn *ast.FuncExpr,
+	paramNameToIndex map[string]int,
+	storedParams set.Set[int],
+) {
+	// Names shadowed in the current scope (and all enclosing scopes within
+	// the method) are tracked as a stack: each entry is the set of names
+	// bound by a single FuncExpr's parameters.
+	v := &methodCaptureVisitor{
+		paramNameToIndex: paramNameToIndex,
+		storedParams:     storedParams,
+	}
+	// The method's own params shadow constructor params with the same name.
+	v.pushScope(fn.Params)
+	if fn.Body != nil {
+		fn.Body.Accept(v)
+	}
+	v.popScope()
+}
+
+type methodCaptureVisitor struct {
+	ast.DefaultVisitor
+	paramNameToIndex map[string]int
+	storedParams     set.Set[int]
+	shadowed         []set.Set[string]
+}
+
+func (v *methodCaptureVisitor) pushScope(params []*ast.Param) {
+	scope := set.NewSet[string]()
+	for _, p := range params {
+		collectPatternBindingNames(p.Pattern, scope)
+	}
+	v.shadowed = append(v.shadowed, scope)
+}
+
+func (v *methodCaptureVisitor) popScope() {
+	v.shadowed = v.shadowed[:len(v.shadowed)-1]
+}
+
+func (v *methodCaptureVisitor) isShadowed(name string) bool {
+	for _, s := range v.shadowed {
+		if s.Contains(name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
+	switch ex := e.(type) {
+	case *ast.IdentExpr:
+		if v.isShadowed(ex.Name) {
+			return true
+		}
+		if idx, ok := v.paramNameToIndex[ex.Name]; ok {
+			v.storedParams.Add(idx)
+		}
+	case *ast.FuncExpr:
+		// Nested function: its params introduce new shadows for the
+		// duration of its body. Manually descend so we control scope.
+		v.pushScope(ex.Params)
+		if ex.Body != nil {
+			ex.Body.Accept(v)
+		}
+		v.popScope()
+		return false
+	}
+	return true
+}
+
+func (v *methodCaptureVisitor) EnterDecl(d ast.Decl) bool {
+	switch dd := d.(type) {
+	case *ast.VarDecl:
+		// `let p = ...` (or `var p = ...`) shadows the constructor's `p`
+		// from this point onward in the enclosing block. Record the
+		// pattern's bound names in the current scope.
+		if len(v.shadowed) > 0 {
+			collectPatternBindingNames(dd.Pattern, v.shadowed[len(v.shadowed)-1])
+		}
+	case *ast.FuncDecl:
+		// Nested function declaration: similar to FuncExpr, its params
+		// shadow outer names within its body.
+		if dd.Body == nil {
+			return false
+		}
+		v.pushScope(dd.Params)
+		dd.Body.Accept(v)
+		v.popScope()
+		return false
+	case *ast.ClassDecl:
+		// Skip nested classes — their constructor param names introduce
+		// a fresh shadow scope that's outside the analysis we care about.
+		return false
+	}
+	return true
+}
+
+// collectPatternBindingNames adds every identifier name introduced by a
+// pattern (recursively) to the provided set.
+func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
+	if p == nil {
+		return
+	}
+	switch pp := p.(type) {
+	case *ast.IdentPat:
+		into.Add(pp.Name)
+	case *ast.TuplePat:
+		for _, sub := range pp.Elems {
+			collectPatternBindingNames(sub, into)
+		}
+	case *ast.ObjectPat:
+		for _, elem := range pp.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				collectPatternBindingNames(e.Value, into)
+			case *ast.ObjShorthandPat:
+				if e.Key != nil {
+					into.Add(e.Key.Name)
+				}
+			case *ast.ObjRestPat:
+				collectPatternBindingNames(e.Pattern, into)
+			}
+		}
+	case *ast.RestPat:
+		collectPatternBindingNames(pp.Pattern, into)
+	}
 }
 
 // typeCarriesLifetime reports whether the given type can carry a lifetime.

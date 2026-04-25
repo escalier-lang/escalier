@@ -127,6 +127,66 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> mut? Container<'a>}",
 			},
 		},
+		"FieldWithMemberAccessOfParam": {
+			// Phase 8.6 (#6): non-identity initializer that reaches into a
+			// param via a property access still captures the param.
+			input: `
+				class Wrap(p: mut {x: {y: number}}) {
+					inner: p.x,
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Wrap": "{new fn <'a>(p: mut 'a {x: {y: number}}) -> mut? Wrap<'a>}",
+			},
+		},
+		"FieldWithObjectLiteralCapturingParam": {
+			// Phase 8.6 (#5): nested object literal in a field initializer.
+			input: `
+				class Wrap(p: mut {x: number}) {
+					inner: {nested: p},
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Wrap": "{new fn <'a>(p: mut 'a {x: number}) -> mut? Wrap<'a>}",
+			},
+		},
+		"FieldWithTupleLiteralCapturingParam": {
+			// Phase 8.6 (#5): tuple/array literal in a field initializer.
+			input: `
+				class Wrap(p: mut {x: number}, q: mut {x: number}) {
+					pair: [p, q],
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Wrap": "{new fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> mut? Wrap<'a, 'b>}",
+			},
+		},
+		"MethodBodyShadowedParamNotCaptured": {
+			// Phase 8.6 (#4): a method with its own param named `p` must
+			// not be treated as capturing the constructor's `p` — the
+			// inner param shadows the outer name within the method body.
+			input: `
+				class C(p: mut {x: number}) {
+					foo(self, p: mut {x: number}) -> mut {x: number} { return p }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn (p: mut {x: number}) -> mut? C}",
+			},
+		},
+		"StaticMethodDoesNotCapture": {
+			// Phase 8.6 (#4): static methods can't access instance state,
+			// so they should never trigger constructor-param capture even
+			// if their bodies happen to mention the param name.
+			input: `
+				class C(p: mut {x: number}) {
+					static make() -> number { return 0 }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn (p: mut {x: number}) -> mut? C, make() -> number}",
+			},
+		},
 	}
 
 	for name, test := range tests {

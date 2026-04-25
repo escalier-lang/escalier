@@ -1423,59 +1423,43 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
   `'static` lifetime assignment for parameters stored into module-level state
   are not yet implemented.
 - **8.6 implicit captures from method bodies.** `InferConstructorLifetimes`
-  detects "param is stored on the instance" purely from `*ast.FieldElem`
-  syntax in the class body — shorthand fields (`{ p, }`) and explicit
-  identifier-valued fields (`{ p: p, }`). `*ast.MethodElem` nodes are
-  skipped entirely (see the `if !ok { continue }` at
-  [infer_lifetime.go:256-259](../../internal/checker/infer_lifetime.go#L256-L259)).
-  But Escalier lets a method body reference constructor parameters by
-  name without going through `self`, so:
+  now walks instance method bodies looking for `IdentExpr` references
+  whose name matches a constructor parameter, and adds matching indices
+  to `storedParams` so the constructor gets a lifetime on those params.
+  The walk respects shadowing introduced by inner function params and
+  by `let`/`var` declarations within the method body, and skips static
+  methods, nested classes, and nested function declarations. The
+  matching is by name (not VarID) because `InferConstructorLifetimes`
+  runs during the namespace placeholder phase, before the rename pass
+  populates VarIDs on identifiers in method bodies.
 
-  ```esc
-  class C(p: mut Point) { foo(self) { return p } }
-  ```
+  **Status note:** the analysis is in place but currently dormant
+  end-to-end, because Escalier's method-body scope does not (yet) bring
+  constructor parameters into scope by name — `class C(p) { foo(self) { return p } }`
+  produces an "Unknown identifier: p" type error today. Once the
+  language wires constructor params into method-body scope, the
+  capture detection will activate without further changes.
 
-  is operationally equivalent to:
-
-  ```esc
-  class C(p: mut Point) { p, foo(self) { return self.p } }
-  ```
-
-  yet only the second form gets a lifetime parameter today. The first
-  form silently falls out of the analysis: `storedParams` is empty, no
-  `<'a>` is inferred, and the borrow checker cannot enforce that
-  `C` instances must outlive their captured `p`. This is a **soundness
-  gap** — a caller who constructs `C` from a short-lived borrow can
-  call `c.foo()` after that borrow is gone with no diagnostic.
-
-  Treatment: extend the body walk in `InferConstructorLifetimes` to
-  inspect `*ast.MethodElem` nodes. For each method, walk the method
-  body and collect `IdentExpr` references whose VarID resolves to a
-  constructor parameter; treat any such reference as an implicit
-  capture and add the param's index to `storedParams`. The same VarID
-  set should also feed `InferLifetimes` when it analyzes the method
-  body, so that method return types correctly inherit the captured
-  param's lifetime (e.g. `foo<'a>('a self) -> mut 'a Point` for the
-  example above).
-
-  Static methods (if/when added) should be exempt from capture
-  detection since they don't have access to instance state.
-
+  Still deferred: feeding the captured-param VarID set into
+  `InferLifetimes` so that the *method's* return type inherits the
+  captured param's lifetime (e.g. `foo<'a>('a self) -> mut 'a Point`).
+  The constructor-side lifetime — which is the soundness-critical part
+  — is now handled.
 - **8.6 storage through nested expressions and literals.** Field-init
-  expressions whose value is anything other than a bare identifier are
-  not analyzed today. Concretely, `class C(p: mut P) { x: f(p) }`,
-  `class C(p: mut P) { x: {inner: p} }`, and similar shapes leave the
-  param unstored from the analysis's perspective. Treatment: walk the
-  initializer expression looking for any path that retains a borrow of
-  the parameter — same kind of structural traversal the body-side
-  alias analysis already does for property/element projections.
-- **8.6 non-identity field-initializer expressions.** Even when an
-  expression *does* reference a constructor parameter, the current
-  analysis only treats `field: param` (an exact identity initializer)
-  as a store. `field: param.x`, `field: borrow(param)`, and
-  intermediate-let binding (`let q = p; field: q`) are all skipped.
-  Treatment overlaps with the previous bullet: use the existing alias
-  machinery to resolve the initializer's actual borrow source.
+  expressions are now walked structurally by `findCapturedParamsInExpr`,
+  which descends into object literals (including shorthand props),
+  tuple literals, member/index access, type casts, await, and
+  conditional branches. Function-call initializers (`x: f(p)`) are
+  still not analyzed — calls are treated as fresh; tightening this
+  would require lifetime info from callees that may not yet be
+  resolved at the point where `InferConstructorLifetimes` runs.
+- **8.6 non-identity field-initializer expressions.** `field: p.x`,
+  `field: {inner: p}`, `field: [p, q]`, and analogous projection /
+  composite expressions are now recognized via the
+  `findCapturedParamsInExpr` walker described above.
+  Intermediate-let bindings inside a class-body initializer are still
+  not tracked (none of the field initializers in scope today are
+  multi-statement blocks).
 - **8.7 mutually recursive fixed-point iteration.** Lifetime inference runs
   once per function during the existing dep-graph traversal. Self-recursive
   functions work as long as their lifetime is determined by a non-recursive
