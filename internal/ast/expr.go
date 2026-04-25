@@ -330,6 +330,7 @@ type FuncExpr struct {
 }
 
 func NewFuncExpr(
+	lifetimeParams []*LifetimeAnn,
 	typeParams []*TypeParam,
 	params []*Param,
 	ret TypeAnn, // optional
@@ -340,11 +341,12 @@ func NewFuncExpr(
 ) *FuncExpr {
 	return &FuncExpr{
 		FuncSig: FuncSig{
-			TypeParams: typeParams,
-			Params:     params,
-			Return:     ret,
-			Throws:     throws,
-			Async:      async,
+			LifetimeParams: lifetimeParams,
+			TypeParams:     typeParams,
+			Params:         params,
+			Return:         ret,
+			Throws:         throws,
+			Async:          async,
 		},
 		Body:         body,
 		span:         span,

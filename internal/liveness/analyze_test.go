@@ -137,6 +137,7 @@ func TestCollectUsesFuncDecl(t *testing.T) {
 	addRef := ident("add")
 	funcDecl := ast.NewFuncDecl(
 		ast.NewIdentifier("add", span()),
+		nil, // lifetime params
 		nil, // type params
 		nil, // params
 		nil, // return type

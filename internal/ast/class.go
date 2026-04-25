@@ -22,13 +22,14 @@ type ClassElem interface {
 }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, params []*Param, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, params []*Param, body []ClassElem, immutable, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		Extends:    extends,
 		Params:     params,
 		Body:       body,
+		Immutable:  immutable,
 		export:     export,
 		declare:    declare,
 		span:       span,

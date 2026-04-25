@@ -648,7 +648,7 @@ func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
 	}
 
 	// Create a function expression for the method
-	funcExpr := ast.NewFuncExpr(typeParams, params, returnType, ast.NewNeverTypeAnn(md.Span()), md.Modifiers.Async, nil, md.Span())
+	funcExpr := ast.NewFuncExpr(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(md.Span()), md.Modifiers.Async, nil, md.Span())
 
 	return &ast.MethodElem{
 		Name:    name,
@@ -707,7 +707,7 @@ func convertGetterDecl(gd *dts_parser.GetterDecl) (*ast.GetterElem, error) {
 	}
 
 	// Create a function expression for the getter (no params, returns the type)
-	funcExpr := ast.NewFuncExpr(nil, []*ast.Param{}, returnType, ast.NewNeverTypeAnn(gd.Span()), false, nil, gd.Span())
+	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{}, returnType, ast.NewNeverTypeAnn(gd.Span()), false, nil, gd.Span())
 
 	return &ast.GetterElem{
 		Name:    name,
@@ -734,7 +734,7 @@ func convertSetterDecl(sd *dts_parser.SetterDecl) (*ast.SetterElem, error) {
 
 	// Create a function expression for the setter (one param, returns undefined)
 	returnType := ast.NewLitTypeAnn(ast.NewUndefined(sd.Span()), sd.Span())
-	funcExpr := ast.NewFuncExpr(nil, []*ast.Param{param}, returnType, ast.NewNeverTypeAnn(sd.Span()), false, nil, sd.Span())
+	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{param}, returnType, ast.NewNeverTypeAnn(sd.Span()), false, nil, sd.Span())
 
 	return &ast.SetterElem{
 		Name:    name,

@@ -547,6 +547,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	end := body.Span.End
 
 	fn := ast.NewFuncExpr(
+		lifetimeParams,
 		typeParams, // Use parsed type params instead of empty slice
 		params,
 		returnType,
@@ -555,7 +556,6 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 		&body,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
-	fn.LifetimeParams = lifetimeParams
 	return fn
 }
 
@@ -628,6 +628,7 @@ func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam,
 	span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
 
 	fn := ast.NewFuncExpr(
+		nil, // methods don't yet support lifetime params
 		typeParams,
 		params,
 		returnType,

@@ -93,6 +93,7 @@ func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 
 	return ast.NewFuncDecl(
 		ast.NewIdentifier(df.Name.Name, convertSpan(df.Name.Span())),
+		nil, // .d.ts functions don't have lifetime params
 		typeParams,
 		params,
 		returnType,
@@ -214,6 +215,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 		nil, // extends - TODO: parse extends clause from .d.ts files
 		constructorParams,
 		bodyElems,
+		false, // immutable - .d.ts classes are not immutable
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files
 		convertSpan(dc.Span()),

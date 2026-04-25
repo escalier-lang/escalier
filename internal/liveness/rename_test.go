@@ -307,6 +307,7 @@ func TestFuncDeclBindsName(t *testing.T) {
 
 	funcDecl := ast.NewFuncDecl(
 		ast.NewIdentifier("add", span()),
+		nil, // lifetime params
 		nil, // type params
 		[]*ast.Param{
 			{Pattern: identPat("a")},
@@ -411,6 +412,7 @@ func TestNestedFuncExprNotWalked(t *testing.T) {
 		exprStmt(ast.NewBinary(innerXRef, yRef, ast.Plus, span())),
 	)
 	funcExpr := ast.NewFuncExpr(
+		nil, // lifetime params
 		nil, // type params
 		[]*ast.Param{{Pattern: yParam}},
 		nil,   // return
@@ -463,6 +465,7 @@ func TestNestedFuncDeclNotWalked(t *testing.T) {
 	}
 	innerFuncDecl := ast.NewFuncDecl(
 		ast.NewIdentifier("inner", span()),
+		nil, // lifetime params
 		nil, // type params
 		[]*ast.Param{{Pattern: yParam}},
 		nil,   // return

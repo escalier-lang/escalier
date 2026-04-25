@@ -111,6 +111,7 @@ type FuncDecl struct {
 
 func NewFuncDecl(
 	name *Ident,
+	lifetimeParams []*LifetimeAnn,
 	typeParams []*TypeParam,
 	params []*Param,
 	returnType TypeAnn, // optional
@@ -124,11 +125,12 @@ func NewFuncDecl(
 	return &FuncDecl{
 		Name: name,
 		FuncSig: FuncSig{
-			TypeParams: typeParams,
-			Params:     params,
-			Return:     returnType,
-			Throws:     throwsType,
-			Async:      async,
+			LifetimeParams: lifetimeParams,
+			TypeParams:     typeParams,
+			Params:         params,
+			Return:         returnType,
+			Throws:         throwsType,
+			Async:          async,
 		},
 		Body:       body,
 		export:     export,

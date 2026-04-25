@@ -189,8 +189,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, immutable bool) 
 		p.reportError(token.Span, "Expected '{' to start class body")
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-		decl := ast.NewClassDecl(name, typeParams, extends, params, nil, export, declare, span)
-		decl.Immutable = immutable
+		decl := ast.NewClassDecl(name, typeParams, extends, params, nil, immutable, export, declare, span)
 		return decl
 	}
 	p.lexer.consume()
@@ -200,8 +199,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, immutable bool) 
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	decl := ast.NewClassDecl(name, typeParams, extends, params, body, export, declare, span)
-	decl.Immutable = immutable
+	decl := ast.NewClassDecl(name, typeParams, extends, params, body, immutable, export, declare, span)
 	return decl
 }
 
@@ -303,7 +301,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.GetterElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+			Fn:      ast.NewFuncExpr(nil, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
 			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,
@@ -344,7 +342,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(typeParams, params, nil, nil, false, body, span),
+			Fn:      ast.NewFuncExpr(nil, typeParams, params, nil, nil, false, body, span),
 			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,
@@ -396,7 +394,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.MethodElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(typeParams, params, returnType, throwsType, isAsync, body, span),
+			Fn:      ast.NewFuncExpr(nil, typeParams, params, returnType, throwsType, isAsync, body, span),
 			MutSelf: mutSelf,
 			Static:  isStatic,
 			Private: isPrivate,
@@ -545,10 +543,9 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 			// statements.
 			end := ident.Span().End
 			fd := ast.NewFuncDecl(
-				ident, typeParams, nil, nil, nil, nil, export, declare, async,
+				ident, lifetimeParams, typeParams, nil, nil, nil, nil, export, declare, async,
 				ast.NewSpan(start, end, p.lexer.source.ID),
 			)
-			fd.LifetimeParams = lifetimeParams
 			return fd
 		}
 	} else {
@@ -601,10 +598,9 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 	}
 
 	fd := ast.NewFuncDecl(
-		ident, typeParams, params, returnType, throwsType, &body, export, declare, async,
+		ident, lifetimeParams, typeParams, params, returnType, throwsType, &body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
-	fd.LifetimeParams = lifetimeParams
 	return fd
 }
 
