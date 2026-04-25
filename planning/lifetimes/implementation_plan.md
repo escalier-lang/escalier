@@ -1419,9 +1419,20 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
     param-side bookkeeping in `InferLifetimes`.
 - **8.3 generator yield lifetimes.** `yield` is treated as a fresh value;
   `Generator<'a T, _, _>` propagation from yields is not yet implemented.
-- **8.4 escaping reference detection.** `DetectEscapingRefs` and the
-  `'static` lifetime assignment for parameters stored into module-level state
-  are not yet implemented.
+- **8.4 escaping reference detection.** `DetectEscapingRefs` walks a
+  function body for assignment expressions whose lvalue root is a
+  non-local identifier (VarID ≤ 0, set by the rename pass for
+  outer-scope references) and whose RHS aliases one of the function's
+  parameters. Such parameters are assigned `'static` directly via a
+  `LifetimeValue{IsStatic: true}` on their type, bypassing the regular
+  fresh-`'a` allocation path. When the function also returns an
+  escaping param, the return type inherits `'static` (combined with any
+  non-escaping return-aliased lifetimes via `LifetimeUnion`).
+  Limitations: closures over a *nested* function's local will still
+  mark a param as `'static` (over-conservative but sound — the
+  borrow-checker accepts a stricter signature); stores via property
+  assignment whose root is a local but is itself stored elsewhere are
+  not chained-tracked.
 - **8.6 implicit captures from method bodies.** `InferConstructorLifetimes`
   now walks instance method bodies looking for `IdentExpr` references
   whose name matches a constructor parameter, and adds matching indices

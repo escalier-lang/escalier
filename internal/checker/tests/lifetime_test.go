@@ -66,6 +66,51 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"pick": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}, cond: boolean) -> mut ('a | 'b) {x: number}",
 			},
 		},
+		"EscapingRefIntoModuleLevelVar": {
+			// Phase 8.4: storing a parameter into a module-level mutable
+			// variable forces the parameter to outlive the program — its
+			// lifetime is 'static. The return is a primitive so no return
+			// lifetime is involved.
+			input: `
+				var cache: mut {x: number} = {x: 0}
+				fn cacheItem(item: mut {x: number}) -> number {
+					cache = item
+					return item.x
+				}
+			`,
+			expectedTypes: map[string]string{
+				"cacheItem": "fn (item: mut 'static {x: number}) -> number",
+			},
+		},
+		"EscapingRefViaPropertyAssignment": {
+			// Phase 8.4: assigning into a property of a module-level
+			// object also escapes — the root of the lvalue chain is a
+			// non-local binding.
+			input: `
+				var cache: mut {item: mut {x: number}} = {item: {x: 0}}
+				fn cacheItem(item: mut {x: number}) -> number {
+					cache.item = item
+					return item.x
+				}
+			`,
+			expectedTypes: map[string]string{
+				"cacheItem": "fn (item: mut 'static {x: number}) -> number",
+			},
+		},
+		"NoEscapeWhenAssigningToLocal": {
+			// Sanity check: assigning a param into a local variable does
+			// NOT trigger 'static. The return is a primitive, so no
+			// lifetime is inferred at all.
+			input: `
+				fn copyItem(item: mut {x: number}) -> number {
+					var local: mut {x: number} = item
+					return local.x
+				}
+			`,
+			expectedTypes: map[string]string{
+				"copyItem": "fn (item: mut {x: number}) -> number",
+			},
+		},
 	}
 
 	for name, test := range tests {

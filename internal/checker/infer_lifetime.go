@@ -26,21 +26,23 @@ func lifetimeParamName(i int) string {
 }
 
 // InferLifetimes analyzes a function body to determine which parameters
-// are aliased by the return value, attaches a fresh LifetimeVar to each
-// such parameter and to the return type, and records the lifetime
-// parameters on the FuncType.
+// are aliased by the return value (or escape into module-level state),
+// attaches the appropriate lifetime to each such parameter and to the
+// return type, and records the lifetime parameters on the FuncType.
 //
-// This is the foundational case of Phase 8.3. The algorithm only handles:
+// This is the foundational case of Phase 8.3 + 8.4. The algorithm
+// handles:
 //   - Returns of a parameter (or property/index access of a parameter):
 //     produces a container-level lifetime on the parameter and return type.
 //   - Multiple returns aliasing different parameters: emits a
 //     LifetimeUnion on the return type.
+//   - Parameters stored into module-level (non-local) state: assigned
+//     'static directly. See DetectEscapingRefs.
 //
 // Deferred (see implementation_plan.md Phase 8 status):
 //   - Element-level lifetimes (Array<'a T>) for fresh containers whose
 //     elements alias a parameter.
 //   - Generator yields (yield treated as fresh).
-//   - Escaping references to module-level state ('static).
 //   - Propagating lifetimes through nested calls into other functions.
 //
 // astParams is the list of parameter ASTs (used to map their VarIDs to
@@ -81,6 +83,25 @@ func (c *Checker) InferLifetimes(
 	}
 	if len(paramIndex) == 0 {
 		return
+	}
+
+	// Phase 8.4: detect parameters that escape into module-level state and
+	// assign them 'static directly. This must run before the return-alias
+	// pass so that an escaping param gets 'static rather than a fresh 'a
+	// even when it is also returned by some path.
+	escapingParams := DetectEscapingRefs(body, paramIndex)
+	for idx := range escapingParams {
+		if idx >= len(funcType.Params) {
+			continue
+		}
+		paramType := funcType.Params[idx].Type
+		if !typeCarriesLifetime(paramType) {
+			continue
+		}
+		setLifetimeOnType(paramType, &type_system.LifetimeValue{
+			Name:     "static",
+			IsStatic: true,
+		})
 	}
 
 	// Walk the body to collect every return statement's expression.
@@ -129,8 +150,12 @@ func (c *Checker) InferLifetimes(
 
 	// Allocate one fresh LifetimeVar per aliased parameter whose param
 	// type can also carry a lifetime — same reasoning as above for the
-	// param side.
+	// param side. Escaping params are handled separately: their param
+	// type already carries 'static, and the return type (if it aliases
+	// them) inherits 'static too.
 	lifetimeParams := make([]*type_system.LifetimeVar, 0, len(orderedParams))
+	returnHasStatic := false
+	var returnLifetimeMembers []type_system.Lifetime
 	for _, idx := range orderedParams {
 		if idx >= len(funcType.Params) {
 			continue
@@ -139,43 +164,141 @@ func (c *Checker) InferLifetimes(
 		if !typeCarriesLifetime(paramType) {
 			continue
 		}
+		if escapingParams.Contains(idx) {
+			// Param already carries 'static. Record that the return
+			// shares this 'static lifetime, but don't allocate a 'a for
+			// it (since the param's lifetime is a concrete value, not a
+			// variable).
+			returnHasStatic = true
+			continue
+		}
 		// paramIndex (above) was populated only from IdentPat params, so
 		// astParams[idx].Pattern is guaranteed to be *ast.IdentPat.
 		_ = astParams[idx].Pattern.(*ast.IdentPat)
 		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
 		lifetimeParams = append(lifetimeParams, lv)
+		returnLifetimeMembers = append(returnLifetimeMembers, lv)
 
 		// Attach the lifetime to the parameter's type.
 		setLifetimeOnType(paramType, lv)
 	}
 
-	if len(lifetimeParams) == 0 {
+	if len(returnLifetimeMembers) == 0 && !returnHasStatic {
 		return
 	}
 
-	// Construct the lifetime to attach to the return type. Only include
-	// parameters that actually got lifetime variables (i.e. param types
-	// that could carry one). By construction of orderedParams above,
-	// every entry in lifetimeParams is guaranteed to be a possible source
-	// for the return value on at least one code path — DetermineAliasSource
-	// in the body walk only added a param to orderedParams if some return
-	// expression aliased it. The union therefore expresses "the result
-	// could have come from any of these params, depending on which branch
-	// ran"; the caller treats the result as bounded by the shortest of
-	// the listed lifetimes.
+	// Construct the lifetime to attach to the return type. The members
+	// include any fresh LifetimeVars allocated above plus a 'static value
+	// when the return aliases an escaping param. The union expresses
+	// "the result could have come from any of these sources, depending on
+	// which branch ran"; the caller treats the result as bounded by the
+	// shortest of the listed lifetimes (and 'static is unbounded).
+	if returnHasStatic {
+		returnLifetimeMembers = append(returnLifetimeMembers, &type_system.LifetimeValue{
+			Name:     "static",
+			IsStatic: true,
+		})
+	}
 	var returnLifetime type_system.Lifetime
-	if len(lifetimeParams) == 1 {
-		returnLifetime = lifetimeParams[0]
+	if len(returnLifetimeMembers) == 1 {
+		returnLifetime = returnLifetimeMembers[0]
 	} else {
-		members := make([]type_system.Lifetime, len(lifetimeParams))
-		for i, lv := range lifetimeParams {
-			members[i] = lv
-		}
-		returnLifetime = &type_system.LifetimeUnion{Lifetimes: members}
+		returnLifetime = &type_system.LifetimeUnion{Lifetimes: returnLifetimeMembers}
 	}
 	setLifetimeOnType(funcType.Return, returnLifetime)
 
-	funcType.LifetimeParams = lifetimeParams
+	if len(lifetimeParams) > 0 {
+		funcType.LifetimeParams = lifetimeParams
+	}
+}
+
+// DetectEscapingRefs walks a function body looking for assignments that
+// store one of the function's parameters into a non-local location
+// (module-level variable, prelude binding, or any other binding looked
+// up through the function's enclosing scope chain). Returns the set of
+// parameter indices whose value escapes.
+//
+// Detection is by VarID: the rename pass assigns positive VarIDs to
+// locals and negative VarIDs to outer-scope references. An assignment
+// whose lvalue root is a non-local identifier (VarID <= 0) is treated
+// as a store into outer-lived state. Stores into locals don't escape
+// because the local's lifetime is bounded by the function body.
+//
+// Limitations:
+//   - Closures over a *nested* function's local: inner functions whose
+//     body assigns to an outer function's local will mark that param as
+//     'static, which is more conservative than necessary. The
+//     borrow-checker tolerates this (it's sound, just imprecise).
+//   - Stores via property assignment whose root is a local but is
+//     itself stored elsewhere: not tracked here.
+func DetectEscapingRefs(
+	body *ast.Block,
+	paramIndex map[liveness.VarID]int,
+) set.Set[int] {
+	escaped := set.NewSet[int]()
+	if body == nil || len(paramIndex) == 0 {
+		return escaped
+	}
+	v := &escapingRefsVisitor{
+		paramIndex: paramIndex,
+		escaped:    escaped,
+	}
+	body.Accept(v)
+	return escaped
+}
+
+type escapingRefsVisitor struct {
+	ast.DefaultVisitor
+	paramIndex map[liveness.VarID]int
+	escaped    set.Set[int]
+}
+
+func (v *escapingRefsVisitor) EnterExpr(e ast.Expr) bool {
+	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == ast.Assign {
+		if isNonLocalLValue(be.Left) {
+			src := liveness.DetermineAliasSource(be.Right)
+			switch src.Kind {
+			case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
+				for _, vid := range src.VarIDs {
+					if idx, ok := v.paramIndex[vid]; ok {
+						v.escaped.Add(idx)
+					}
+				}
+			}
+		}
+	}
+	// Don't descend into nested function bodies — their assignments
+	// concern their own params, not ours.
+	if _, ok := e.(*ast.FuncExpr); ok {
+		return false
+	}
+	return true
+}
+
+func (v *escapingRefsVisitor) EnterDecl(d ast.Decl) bool {
+	switch d.(type) {
+	case *ast.FuncDecl, *ast.ClassDecl:
+		return false
+	}
+	return true
+}
+
+// isNonLocalLValue returns true if the given assignment-target expression's
+// root identifier resolves to a non-local binding (VarID <= 0). Walks
+// through MemberExpr/IndexExpr chains to find the root identifier.
+func isNonLocalLValue(expr ast.Expr) bool {
+	for {
+		switch e := expr.(type) {
+		case *ast.IdentExpr:
+			return e.VarID <= 0
+		case *ast.MemberExpr:
+			expr = e.Object
+		case *ast.IndexExpr:
+			expr = e.Object
+		default:
+			return false
+		}
+	}
 }
 
 // setLifetimeOnType attaches a lifetime to a type's Lifetime field, walking
