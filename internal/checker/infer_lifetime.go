@@ -250,10 +250,10 @@ type paramLeaf struct {
 // collectParamLeaves walks each function parameter's pattern in lockstep
 // with the parameter's inferred type, producing an ordered list of
 // (VarID, leafType) pairs for every leaf binding that has a positive
-// VarID set by the rename pass.
-//
-// Object-destructured params are not yet walked — see Phase 8.6 deferred
-// items in implementation_plan.md.
+// VarID set by the rename pass. Tuple-, object-, and rest-destructuring
+// patterns are supported; for object patterns, leaf positions are
+// resolved by string-key lookup against the corresponding ObjectType's
+// PropertyElems.
 func collectParamLeaves(
 	astParams []*ast.Param,
 	funcParams []*type_system.FuncParam,
@@ -291,6 +291,56 @@ func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
 				break
 			}
 			walkPatternForLeaves(elem, tt.Elems[i], into)
+		}
+	case *ast.ObjectPat:
+		ot, ok := pt.(*type_system.ObjectType)
+		if !ok {
+			return
+		}
+		// Build a key→Type map for the object type's properties so each
+		// pattern element can resolve its corresponding sub-position.
+		propTypes := make(map[string]type_system.Type)
+		for _, elem := range ot.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok &&
+				prop.Name.Kind == type_system.StrObjTypeKeyKind {
+				propTypes[prop.Name.Str] = prop.Value
+			}
+		}
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				// `{ key: value-pat }` — recurse into value-pat with
+				// the property's type. The property name is the lookup
+				// key.
+				if e.Key == nil {
+					continue
+				}
+				if propType, exists := propTypes[e.Key.Name]; exists {
+					walkPatternForLeaves(e.Value, propType, into)
+				}
+			case *ast.ObjShorthandPat:
+				// `{ key }` (or `{ key: TypeAnn }`, `{ key = default }`)
+				// — the leaf binding has the same name as the property.
+				if e.Key == nil || e.VarID <= 0 {
+					continue
+				}
+				propType, exists := propTypes[e.Key.Name]
+				if !exists {
+					continue
+				}
+				*into = append(*into, paramLeaf{
+					varID:    liveness.VarID(e.VarID),
+					leafType: propType,
+				})
+			case *ast.ObjRestPat:
+				// `{ ...rest }` — the rest pattern collects remaining
+				// properties into a fresh object. Like a function rest
+				// param's container, this is freshly assembled per
+				// call, so attaching a container-level lifetime would
+				// be wrong. Per-property element lifetimes for object
+				// rest are deferred (would require synthesizing a
+				// per-call object type).
+			}
 		}
 	case *ast.RestPat:
 		// `...args: T[]` — the lifetime-bearing position is the

@@ -1383,12 +1383,18 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
     `extraParamNames` path). Without that fix the leaf's `IdentPat.VarID`
     was stale relative to the body's `IdentExpr.VarID`.
 
+  - **Object-destructured parameters** (`fn g({head, tail}: {head: mut P, tail: mut P})`):
+    the walker now handles `*ast.ObjectPat` by building a key→Type
+    lookup against the corresponding ObjectType's PropertyElems and
+    descending per leaf. Both shorthand (`{ head, tail }`) and
+    key-value (`{ head: first, tail: second }`) patterns are
+    supported. ObjRestPat (`{ ...rest }`) is intentionally skipped —
+    like a function rest param's container, the rest object is
+    freshly assembled per call, and per-property element lifetimes
+    for it are deferred (would require synthesizing a per-call
+    object type).
+
   Still deferred:
-  - **Object-destructured parameters** (`fn g({x, y}: mut P)`) — the
-    walker currently descends into `*ast.TuplePat` and `*ast.RestPat`
-    only; `*ast.ObjectPat` would need `key → ObjectType.Elems` lookup
-    to find the matching property's type position. Same approach as
-    tuple, but with key-based traversal rather than positional.
   - **Element-level lifetimes from fresh-container returns**
     (`return [a, b]` producing `Array<'a T>`, `.filter()` /
     `.slice()` propagation): the alias-source machinery still treats

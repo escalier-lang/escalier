@@ -177,6 +177,41 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"first": "fn <'a>(...args: Array<mut 'a {x: number}>) -> mut 'a {x: number}",
 			},
 		},
+		"ObjectDestructuredParamFirstReturned": {
+			// Phase 8.6: object-destructured param using shorthand
+			// patterns. Each leaf's lifetime is resolved against the
+			// corresponding property's type position; only the leaf
+			// actually returned (`head`) gets a lifetime. Destructured
+			// shorthand prints as `{key: <type>}` rather than carrying
+			// the binding name through.
+			input: `
+				fn pickHead(
+					{head, tail}: {head: mut {x: number}, tail: mut {x: number}},
+				) -> mut {x: number} {
+					return head
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pickHead": "fn <'a>({head: mut 'a {x: number}, tail: mut {x: number}}) -> mut 'a {x: number}",
+			},
+		},
+		"ObjectDestructuredParamConditional": {
+			// Phase 8.6: conditional return from an object-destructured
+			// param produces a LifetimeUnion combining both leaves —
+			// matching the per-position lifetime story of `Pair<'a, 'b>`
+			// from Phase 8.6 but expressed through destructuring.
+			input: `
+				fn pickEither(
+					{head, tail}: {head: mut {x: number}, tail: mut {x: number}},
+					cond: boolean,
+				) -> mut {x: number} {
+					if cond { return head } else { return tail }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pickEither": "fn <'a, 'b>({head: mut 'a {x: number}, tail: mut 'b {x: number}}, cond: boolean) -> mut ('a | 'b) {x: number}",
+			},
+		},
 		"TupleDestructuredParamConditional": {
 			// Phase 8.3: conditional return from a tuple-destructured
 			// param produces a LifetimeUnion combining both leaves.
