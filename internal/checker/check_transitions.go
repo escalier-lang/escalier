@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
@@ -31,15 +32,32 @@ func (e MutabilityTransitionError) IsWarning() bool {
 	return false
 }
 func (e MutabilityTransitionError) Message() string {
+	vars := "'" + strings.Join(e.ConflictingVars, "', '") + "'"
+	// When the conflicting variable is the source itself, the message is
+	// straightforward. When it's a different variable (an alias), we
+	// clarify the relationship so the user understands the connection.
+	sameAsSource := len(e.ConflictingVars) == 1 && e.ConflictingVars[0] == e.SourceVar
 	if e.MutToImmutable {
+		if sameAsSource {
+			return fmt.Sprintf(
+				"cannot assign '%s' to immutable '%s': '%s' is still used mutably after this point",
+				e.SourceVar, e.TargetVar, e.SourceVar,
+			)
+		}
 		return fmt.Sprintf(
-			"cannot transition '%s' from mutable to immutable: conflicting live mutable alias(es): %v",
-			e.SourceVar, e.ConflictingVars,
+			"cannot assign '%s' to immutable '%s': %s still has mutable access to '%s' after this point",
+			e.SourceVar, e.TargetVar, vars, e.SourceVar,
+		)
+	}
+	if sameAsSource {
+		return fmt.Sprintf(
+			"cannot assign '%s' to mutable '%s': '%s' is still used immutably after this point",
+			e.SourceVar, e.TargetVar, e.SourceVar,
 		)
 	}
 	return fmt.Sprintf(
-		"cannot transition '%s' from immutable to mutable: conflicting live immutable alias(es): %v",
-		e.SourceVar, e.ConflictingVars,
+		"cannot assign '%s' to mutable '%s': %s still has immutable access to '%s' after this point",
+		e.SourceVar, e.TargetVar, vars, e.SourceVar,
 	)
 }
 

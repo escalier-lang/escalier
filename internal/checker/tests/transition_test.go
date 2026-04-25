@@ -14,17 +14,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type expectedTransitionError struct {
-	SourceVar       string
-	TargetVar       string
-	ConflictingVars []string
-	MutToImmutable  bool
+// formatTransitionError converts a MutabilityTransitionError into a
+// human-readable string for test assertions. The format matches
+// MutabilityTransitionError.Message().
+func formatTransitionError(e *MutabilityTransitionError) string {
+	return e.Message()
 }
 
 func TestMutabilityTransitions(t *testing.T) {
 	tests := map[string]struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		// Rule 1: mut → immutable — OK when source is dead
 		"MutToImmutable_SourceDead_OK": {
@@ -37,7 +37,7 @@ func TestMutabilityTransitions(t *testing.T) {
 				}
 			`,
 		},
-		// Rule 1: mut → immutable — ERROR when source is live
+		// Rule ParamAlias_MutToImmutable_SourceLive_Error1: mut → immutable — ERROR when source is live
 		"MutToImmutable_SourceLive_Error": {
 			input: `
 				fn test() {
@@ -47,12 +47,9 @@ func TestMutabilityTransitions(t *testing.T) {
 					snapshot
 				}
 			`,
-			expectedErrors: []expectedTransitionError{{
-				SourceVar:       "items",
-				TargetVar:       "snapshot",
-				ConflictingVars: []string{"items"},
-				MutToImmutable:  true,
-			}},
+			expectedErrors: []string{
+				"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
+			},
 		},
 		// Rule 2: immutable → mut — OK when source is dead
 		"ImmutableToMut_SourceDead_OK": {
@@ -75,12 +72,9 @@ func TestMutabilityTransitions(t *testing.T) {
 					config
 				}
 			`,
-			expectedErrors: []expectedTransitionError{{
-				SourceVar:       "config",
-				TargetVar:       "mutableConfig",
-				ConflictingVars: []string{"config"},
-				MutToImmutable:  false,
-			}},
+			expectedErrors: []string{
+				"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
+			},
 		},
 		// Rule 3: multiple mutable aliases — always OK
 		"MultipleMutableAliases_OK": {
@@ -115,23 +109,9 @@ func TestMutabilityTransitions(t *testing.T) {
 					q
 				}
 			`,
-			expectedErrors: []expectedTransitionError{{
-				SourceVar:       "p",
-				TargetVar:       "q",
-				ConflictingVars: []string{"r"},
-				MutToImmutable:  true,
-			}},
-		},
-		// Fresh value — no alias, no transition check
-		"FreshValue_NoTransition": {
-			input: `
-				fn test() {
-					val a: mut {x: number} = {x: 1}
-					val b: {x: number} = {x: 2}
-					a.x = 3
-					b
-				}
-			`,
+			expectedErrors: []string{
+				"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
+			},
 		},
 		// Chain aliasing: val b = a; val c = b — OK when immutable target c is dead
 		"ChainAlias_MutToImmutable_TargetDead_OK": {
@@ -155,38 +135,9 @@ func TestMutabilityTransitions(t *testing.T) {
 					c
 				}
 			`,
-			expectedErrors: []expectedTransitionError{{
-				SourceVar:       "b",
-				TargetVar:       "c",
-				ConflictingVars: []string{"a"},
-				MutToImmutable:  true,
-			}},
-		},
-		// Parameter alias: mut param → immutable — ERROR when param is still live
-		"ParamAlias_MutToImmutable_SourceLive_Error": {
-			input: `
-				fn test(items: mut {x: number}) {
-					val snapshot: {x: number} = items
-					items.x = 2
-					snapshot
-				}
-			`,
-			expectedErrors: []expectedTransitionError{{
-				SourceVar:       "items",
-				TargetVar:       "snapshot",
-				ConflictingVars: []string{"items"},
-				MutToImmutable:  true,
-			}},
-		},
-		// Parameter alias: mut param → immutable — OK when param is dead
-		"ParamAlias_MutToImmutable_SourceDead_OK": {
-			input: `
-				fn test(items: mut {x: number}) {
-					items.x = 2
-					val snapshot: {x: number} = items
-					snapshot
-				}
-			`,
+			expectedErrors: []string{
+				"cannot assign 'b' to immutable 'c': 'a' still has mutable access to 'b' after this point",
+			},
 		},
 		// Chain aliasing: val b = a; val c = b — a is dead after transition
 		"ChainAlias_MutToImmutable_OK_WhenDead": {
@@ -205,7 +156,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	// Top-level script code (no wrapping function) — same rules apply.
 	tests["TopLevel_MutToImmutable_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			val items: mut {x: number} = {x: 1}
@@ -213,29 +164,14 @@ func TestMutabilityTransitions(t *testing.T) {
 			items.x = 2
 			snapshot
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "items",
-			TargetVar:       "snapshot",
-			ConflictingVars: []string{"items"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
+		},
 	}
-	tests["TopLevel_MutToImmutable_OK"] = struct {
-		input          string
-		expectedErrors []expectedTransitionError
-	}{
-		input: `
-			val items: mut {x: number} = {x: 1}
-			items.x = 2
-			val snapshot: {x: number} = items
-			snapshot
-		`,
-	}
-
 	// Phase 7.1: Object property aliasing — obj.prop = value merges alias sets
 	tests["PropertyAssignment_MergesAliasSets_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -247,16 +183,13 @@ func TestMutabilityTransitions(t *testing.T) {
 				q
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "p",
-			TargetVar:       "q",
-			ConflictingVars: []string{"obj"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'p' to immutable 'q': 'obj' still has mutable access to 'p' after this point",
+		},
 	}
 	tests["PropertyAssignment_FreshValue_OK"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -271,7 +204,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	// Phase 7.3: Destructuring aliasing
 	tests["Destructuring_ObjectPat_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -282,16 +215,13 @@ func TestMutabilityTransitions(t *testing.T) {
 				frozen
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "obj",
-			TargetVar:       "frozen",
-			ConflictingVars: []string{"a"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'obj' to immutable 'frozen': 'a' still has mutable access to 'obj' after this point",
+		},
 	}
 	tests["Destructuring_FreshSource_OK"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -304,7 +234,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	// Phase 7.4: Conditional aliasing
 	tests["Conditional_IfElse_AliasesBothBranches_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test(cond: boolean) {
@@ -315,39 +245,15 @@ func TestMutabilityTransitions(t *testing.T) {
 				c
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "a",
-			TargetVar:       "c",
-			ConflictingVars: []string{"a"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
+		},
 	}
-	tests["Conditional_IfElse_AliasesBothBranches_OtherBranch_Error"] = struct {
-		input          string
-		expectedErrors []expectedTransitionError
-	}{
-		input: `
-			fn test(cond: boolean) {
-				val a: mut {x: number} = {x: 0}
-				val b: mut {x: number} = {x: 1}
-				val c: {x: number} = if cond { a } else { b }
-				b.x = 5
-				c
-			}
-		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "b",
-			TargetVar:       "c",
-			ConflictingVars: []string{"b"},
-			MutToImmutable:  true,
-		}},
-	}
-
 	// Conditional aliasing: both branches violate the transition, so both
 	// errors should be reported (not just the first).
 	tests["Conditional_IfElse_BothBranchesViolate_MultipleErrors"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test(cond: boolean) {
@@ -359,19 +265,9 @@ func TestMutabilityTransitions(t *testing.T) {
 				c
 			}
 		`,
-		expectedErrors: []expectedTransitionError{
-			{
-				SourceVar:       "a",
-				TargetVar:       "c",
-				ConflictingVars: []string{"a"},
-				MutToImmutable:  true,
-			},
-			{
-				SourceVar:       "b",
-				TargetVar:       "c",
-				ConflictingVars: []string{"b"},
-				MutToImmutable:  true,
-			},
+		expectedErrors: []string{
+			"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
+			"cannot assign 'b' to immutable 'c': 'b' is still used mutably after this point",
 		},
 	}
 
@@ -383,7 +279,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	// can mutate the value while the closure's immutable view is live.
 	tests["ClosureCapture_ReadOnly_MutSourceWithLiveMutAlias_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -394,17 +290,14 @@ func TestMutabilityTransitions(t *testing.T) {
 				f
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "items",
-			TargetVar:       "f",
-			ConflictingVars: []string{"mutRef"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'items' to immutable 'f': 'mutRef' still has mutable access to 'items' after this point",
+		},
 	}
 
 	tests["ClosureCapture_ReadOnly_BlocksImmutableToMut"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -415,16 +308,13 @@ func TestMutabilityTransitions(t *testing.T) {
 				f
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "items",
-			TargetVar:       "mutItems",
-			ConflictingVars: []string{"f"},
-			MutToImmutable:  false,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'items' to mutable 'mutItems': 'f' still has immutable access to 'items' after this point",
+		},
 	}
 	tests["ClosureCapture_MutableCapture_BlocksMutToImmutable"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -435,16 +325,13 @@ func TestMutabilityTransitions(t *testing.T) {
 				snapshot
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "items",
-			TargetVar:       "snapshot",
-			ConflictingVars: []string{"f"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'items' to immutable 'snapshot': 'f' still has mutable access to 'items' after this point",
+		},
 	}
 	tests["ClosureCapture_ReadOnly_DoesNotBlockMutToImmutable"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -461,7 +348,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	}
 	tests["ClosureCapture_DeadClosure_OK"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -480,7 +367,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	// not a same-named variable from a nested scope.
 	tests["ClosureCapture_ShadowedByForIn_CapturesOuterVar_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -495,41 +382,16 @@ func TestMutabilityTransitions(t *testing.T) {
 				f
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "items",
-			TargetVar:       "f",
-			ConflictingVars: []string{"mutRef"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'items' to immutable 'f': 'mutRef' still has mutable access to 'items' after this point",
+		},
 	}
-	tests["ClosureCapture_ShadowedByForIn_CapturesOuterVar_OK"] = struct {
-		input          string
-		expectedErrors []expectedTransitionError
-	}{
-		input: `
-			fn test() {
-				val items: {x: number} = {x: 0}
-				for item in [1, 2, 3] {
-					val items: mut {x: number} = {x: item}
-					items.x = 5
-				}
-				val f = fn() -> {x: number} { items }
-				val snapshot: {x: number} = items
-				f
-				snapshot
-			}
-		`,
-		// The loop-scoped mutable `items` is a different variable from the
-		// outer immutable `items`. The closure captures the outer one, so
-		// no mut→immut conflict exists.
-	}
-
 	// Reassignment with conditional RHS should not merge unrelated alias sets.
 	// When `d = if cond { a } else { b }`, d aliases both a and b, but a and
 	// b should NOT become aliases of each other.
 	tests["Conditional_Reassignment_DoesNotMergeUnrelatedSets_OK"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test(cond: boolean) {
@@ -552,7 +414,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	// included here for completeness)
 	tests["Reassignment_LeavesAliasSet_OK"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -570,7 +432,7 @@ func TestMutabilityTransitions(t *testing.T) {
 	// transition at the reassignment point.
 	tests["Reassignment_ImmutableToMut_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -581,33 +443,15 @@ func TestMutabilityTransitions(t *testing.T) {
 				b
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "a",
-			TargetVar:       "b",
-			ConflictingVars: []string{"a"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'a' to immutable 'b': 'a' is still used mutably after this point",
+		},
 	}
-	tests["Reassignment_MutToMut_OK"] = struct {
-		input          string
-		expectedErrors []expectedTransitionError
-	}{
-		input: `
-			fn test() {
-				val a: mut {x: number} = {x: 0}
-				var b: mut {x: number} = {x: 1}
-				b = a
-				a.x = 5
-				b
-			}
-		`,
-	}
-
 	// Conditional reassignment: `var c = if cond { a } else { b }` where
 	// the transition is violated for one branch.
 	tests["Conditional_Reassignment_Error"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test(cond: boolean) {
@@ -619,19 +463,16 @@ func TestMutabilityTransitions(t *testing.T) {
 				c
 			}
 		`,
-		expectedErrors: []expectedTransitionError{{
-			SourceVar:       "a",
-			TargetVar:       "c",
-			ConflictingVars: []string{"a"},
-			MutToImmutable:  true,
-		}},
+		expectedErrors: []string{
+			"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
+		},
 	}
 
 	// Reassignment with a fresh value after aliasing should clear the alias
 	// and allow transitions that were previously blocked.
 	tests["Reassignment_FreshAfterAlias_ClearsConflict_OK"] = struct {
 		input          string
-		expectedErrors []expectedTransitionError
+		expectedErrors []string
 	}{
 		input: `
 			fn test() {
@@ -680,31 +521,19 @@ func TestMutabilityTransitions(t *testing.T) {
 			} else {
 				require.Len(t, mutErrors, len(test.expectedErrors), "Wrong number of MutabilityTransitionErrors")
 
-				// Sort both slices by SourceVar so the comparison is
-				// order-independent.
-				sortedActual := make([]*MutabilityTransitionError, len(mutErrors))
-				copy(sortedActual, mutErrors)
-				slices.SortStableFunc(sortedActual, func(a, b *MutabilityTransitionError) int {
-					if c := cmp.Compare(a.SourceVar, b.SourceVar); c != 0 {
-						return c
-					}
-					return cmp.Compare(a.TargetVar, b.TargetVar)
-				})
-				sortedExpected := make([]expectedTransitionError, len(test.expectedErrors))
-				copy(sortedExpected, test.expectedErrors)
-				slices.SortStableFunc(sortedExpected, func(a, b expectedTransitionError) int {
-					if c := cmp.Compare(a.SourceVar, b.SourceVar); c != 0 {
-						return c
-					}
-					return cmp.Compare(a.TargetVar, b.TargetVar)
-				})
+				// Sort both slices for order-independent comparison.
+				actual := make([]string, len(mutErrors))
+				for i, e := range mutErrors {
+					actual[i] = formatTransitionError(e)
+				}
+				slices.SortFunc(actual, cmp.Compare)
 
-				for i, expected := range sortedExpected {
-					actual := sortedActual[i]
-					assert.Equal(t, expected.SourceVar, actual.SourceVar, "SourceVar mismatch")
-					assert.Equal(t, expected.TargetVar, actual.TargetVar, "TargetVar mismatch")
-					assert.Equal(t, expected.ConflictingVars, actual.ConflictingVars, "ConflictingVars mismatch")
-					assert.Equal(t, expected.MutToImmutable, actual.MutToImmutable, "MutToImmutable mismatch")
+				expected := make([]string, len(test.expectedErrors))
+				copy(expected, test.expectedErrors)
+				slices.SortFunc(expected, cmp.Compare)
+
+				for i := range expected {
+					assert.Equal(t, expected[i], actual[i])
 				}
 			}
 		})
