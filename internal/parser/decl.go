@@ -22,6 +22,18 @@ func (p *Parser) maybeTypeParams() []*ast.TypeParam {
 	return typeParams
 }
 
+// lifetimeAnn parses a single lifetime annotation token (e.g. 'a) and
+// returns the corresponding AST node. Returns nil when the next token is
+// not a Lifetime — suitable for use as a parseDelimSeq combinator.
+func (p *Parser) lifetimeAnn() *ast.LifetimeAnn {
+	tok := p.lexer.peek()
+	if tok.Type != Lifetime {
+		return nil
+	}
+	p.lexer.consume()
+	return ast.NewLifetimeAnn(tok.Value, tok.Span)
+}
+
 // maybeLifetimeAndTypeParams parses optional generic parameters that may
 // include both lifetime parameters ('a) and type parameters (T). Lifetime
 // parameters must precede type parameters by convention, but this parser

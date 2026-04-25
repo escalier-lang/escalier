@@ -149,7 +149,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting call signature return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
 		return &ast.CallableTypeAnn{Fn: fn}, nil
 	case *dts_parser.ConstructSignature:
 		typeParams := make([]*ast.TypeParam, len(m.TypeParams))
@@ -172,7 +172,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting construct signature return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
 		return &ast.ConstructorTypeAnn{Fn: fn}, nil
 	case *dts_parser.MethodSignature:
 		typeParams := make([]*ast.TypeParam, len(m.TypeParams))
@@ -195,7 +195,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting method signature return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, fmt.Errorf("converting method name: %w", err)
@@ -225,7 +225,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting getter return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(nil, []*ast.Param{}, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, nil, []*ast.Param{}, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, fmt.Errorf("converting getter name: %w", err)
@@ -241,7 +241,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 			return nil, fmt.Errorf("converting setter parameter: %w", err)
 		}
 		returnType := ast.NewLitTypeAnn(ast.NewUndefined(m.Span()), m.Span())
-		fn := ast.NewFuncTypeAnn(nil, []*ast.Param{param}, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, nil, []*ast.Param{param}, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, fmt.Errorf("converting setter name: %w", err)
@@ -386,7 +386,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		if err != nil {
 			return nil, fmt.Errorf("converting function return type: %w", err)
 		}
-		return ast.NewFuncTypeAnn(typeParams, params, returnType, ast.NewNeverTypeAnn(t.Span()), t.Span()), nil
+		return ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(t.Span()), t.Span()), nil
 	case *dts_parser.ConstructorType:
 		// Constructor types don't have a direct equivalent in Escalier
 		// Convert to a function type for now
@@ -410,7 +410,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		if err != nil {
 			return nil, fmt.Errorf("converting constructor return type: %w", err)
 		}
-		return ast.NewFuncTypeAnn(typeParams, params, returnType, ast.NewNeverTypeAnn(t.Span()), t.Span()), nil
+		return ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(t.Span()), t.Span()), nil
 	case *dts_parser.ObjectType:
 		elems := make([]ast.ObjTypeAnnElem, 0, len(t.Members))
 		for _, member := range t.Members {

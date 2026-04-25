@@ -1175,7 +1175,7 @@
                         },
                     },
                     span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:62},
+                        Start:    ast.Location{Line:1, Column:61},
                         End:      ast.Location{Line:1, Column:70},
                         SourceID: 0,
                     },

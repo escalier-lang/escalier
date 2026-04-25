@@ -193,53 +193,39 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	// We attach the lifetime to the resulting TypeRefTypeAnn after parsing
 	// the inner type.
 	var lifetime ast.LifetimeAnnNode
-	if token.Type == Lifetime {
+	// nolint: exhaustive
+	switch token.Type {
+	case Lifetime:
 		p.lexer.consume()
 		lifetime = ast.NewLifetimeAnn(token.Value, token.Span)
 		token = p.lexer.peek()
-	} else if token.Type == OpenParen {
+	case OpenParen:
 		// Try to parse a lifetime union: ( 'a | 'b | ... ) followed by a type.
 		// If the parens don't enclose a lifetime list, restore and fall through
 		// to the regular parenthesized-type-annotation path below.
 		saved := p.saveState()
-		p.lexer.consume() // consume '('
-		first := p.lexer.peek()
-		if first.Type == Lifetime {
-			p.lexer.consume()
-			lifetimes := []*ast.LifetimeAnn{ast.NewLifetimeAnn(first.Value, first.Span)}
-			startSpan := first.Span
-			endSpan := first.Span
-			ok := true
-			for {
-				next := p.lexer.peek()
-				if next.Type == CloseParen {
-					p.lexer.consume()
-					endSpan = next.Span
-					break
-				}
-				if next.Type != Pipe {
-					ok = false
-					break
-				}
-				p.lexer.consume() // '|'
-				lt := p.lexer.peek()
-				if lt.Type != Lifetime {
-					ok = false
-					break
-				}
-				p.lexer.consume()
-				lifetimes = append(lifetimes, ast.NewLifetimeAnn(lt.Value, lt.Span))
-			}
-			if !ok {
-				p.restoreState(saved)
-			} else {
-				lifetime = ast.NewLifetimeUnionAnn(lifetimes,
-					ast.MergeSpans(startSpan, endSpan))
-				token = p.lexer.peek()
-			}
-		} else {
+		open := p.lexer.next() // consume '('
+		if p.lexer.peek().Type != Lifetime {
 			p.restoreState(saved)
+			break
 		}
+		lifetimes := parseDelimSeq(p, CloseParen, Pipe, func() *ast.LifetimeAnn {
+			lt := p.lexer.peek()
+			if lt.Type != Lifetime {
+				return nil
+			}
+			p.lexer.consume()
+			return ast.NewLifetimeAnn(lt.Value, lt.Span)
+		})
+		closeTok := p.lexer.peek()
+		if closeTok.Type != CloseParen {
+			p.restoreState(saved)
+			break
+		}
+		p.lexer.consume()
+		lifetime = ast.NewLifetimeUnionAnn(lifetimes,
+			ast.MergeSpans(open.Span, closeTok.Span))
+		token = p.lexer.peek()
 	}
 
 	var typeAnn ast.TypeAnn
@@ -353,13 +339,13 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			}
 
 			fnAnn := ast.NewFuncTypeAnn(
+				lifetimeParams,
 				typeParams,
 				funcParams,
 				retType,
 				throwsType,
 				ast.NewSpan(token.Span.Start, endSpan.End, p.lexer.source.ID),
 			)
-			fnAnn.LifetimeParams = lifetimeParams
 			typeAnn = fnAnn
 		case If: // conditional type
 			p.lexer.consume() // consume 'if'
@@ -857,6 +843,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		retType := p.typeAnnRequired()
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
+			nil, // object-method type annotations don't yet support lifetime params
 			typeParams,
 			params,
 			retType,

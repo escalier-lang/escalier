@@ -392,6 +392,7 @@ type FuncTypeAnn struct {
 }
 
 func NewFuncTypeAnn(
+	lifetimeParams []*LifetimeAnn,
 	typeParams []*TypeParam,
 	params []*Param,
 	ret TypeAnn,
@@ -399,12 +400,13 @@ func NewFuncTypeAnn(
 	span Span,
 ) *FuncTypeAnn {
 	return &FuncTypeAnn{
-		TypeParams:   typeParams,
-		Params:       params,
-		Return:       ret,
-		Throws:       throws,
-		span:         span,
-		inferredType: nil,
+		LifetimeParams: lifetimeParams,
+		TypeParams:     typeParams,
+		Params:         params,
+		Return:         ret,
+		Throws:         throws,
+		span:           span,
+		inferredType:   nil,
 	}
 }
 func (t *FuncTypeAnn) Accept(v Visitor) {
