@@ -40,6 +40,34 @@ type LivenessInfo struct {
 
 // IsLiveAfter returns whether the given variable is live after the
 // statement at the given position.
+//
+// A StmtIdx of -1 represents a synthetic position before the first
+// statement in a block (used for decomposed DeclStmts whose init was
+// a branching expression). "Live after" this position means "live
+// before the first statement in the block". For example:
+//
+//	val c: {x: number} = if cond { a } else { b }
+//	a.x = 5  // ← first statement in the join block
+//	c
+//
+// The DeclStmt for c is decomposed by the CFG builder into separate
+// branches. Its StmtRef points to the join block with StmtIdx -1,
+// so alias tracking checks liveness just before `a.x = 5`.
 func (l *LivenessInfo) IsLiveAfter(ref StmtRef, v VarID) bool {
+	if ref.StmtIdx < 0 {
+		// Synthetic position before the block's first statement.
+		if len(l.LiveBefore[ref.BlockID]) > 0 {
+			return l.LiveBefore[ref.BlockID][0].Contains(v)
+		}
+		// An empty block has no per-statement liveness data; fall back to false.
+		// NOTE: this is technically incomplete — the block may have a non-empty
+		// blockLiveOut (from successor blocks) that isn't captured in the
+		// per-statement arrays. In practice this is safe because an empty join
+		// block only occurs when a decomposed val has no subsequent statements,
+		// so nothing uses the declared variable and it can't be live anyway.
+		// If this assumption changes, consider storing blockLiveOut in
+		// LivenessInfo and consulting it here.
+		return false
+	}
 	return l.LiveAfter[ref.BlockID][ref.StmtIdx].Contains(v)
 }

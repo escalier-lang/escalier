@@ -104,6 +104,8 @@ func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut AliasMutability) 
 			delete(set.Members, v)
 		}
 	}
+	// Use nil instead of delete to signal "belongs to no sets" rather than
+	// "never tracked." AddAlias/NewValue below will append to the nil slice.
 	a.VarToSets[v] = nil
 
 	if newSource != nil {
@@ -111,6 +113,36 @@ func (a *AliasTracker) Reassign(v VarID, newSource *VarID, mut AliasMutability) 
 		a.AddAlias(v, *newSource, mut)
 	} else {
 		// Create a fresh alias set
+		a.NewValue(v, mut)
+	}
+}
+
+// ReassignMulti removes a variable from its current alias sets and adds
+// it to the alias sets of all provided sources. This is used for conditional
+// aliasing where a variable may alias one of several sources.
+func (a *AliasTracker) ReassignMulti(v VarID, sources []VarID, mut AliasMutability) {
+	// Remove from current alias sets
+	for _, setID := range a.VarToSets[v] {
+		if set, ok := a.Sets[setID]; ok {
+			delete(set.Members, v)
+		}
+	}
+	// Use nil instead of delete to signal "belongs to no sets" rather than
+	// "never tracked." AddAlias/NewValue below will append to the nil slice.
+	a.VarToSets[v] = nil
+
+	if len(sources) == 0 {
+		// No sources — create a fresh alias set, mirroring Reassign(v, nil, mut).
+		a.NewValue(v, mut)
+		return
+	}
+	for _, source := range sources {
+		a.AddAlias(v, source, mut)
+	}
+
+	// If none of the sources had entries in VarToSets, AddAlias was a
+	// no-op for each and v is left untracked. Fall back to a fresh set.
+	if len(a.VarToSets[v]) == 0 {
 		a.NewValue(v, mut)
 	}
 }

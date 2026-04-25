@@ -257,9 +257,12 @@ test('textDocument/didChange', async () => {
         contentChanges: [{ text: 'console.log("Hello, world!")\nval x =\n' }],
     });
 
+    // Wait for the diagnostics from didChange (not didOpen).
+    // didOpen with valid code may publish diagnostics as [] first,
+    // so we wait until we see the actual error diagnostic.
     await vi.waitFor(
         () => {
-            expect(diagnostics).not.toBeNull();
+            expect(diagnostics?.length).toBeGreaterThan(0);
         },
         {
             timeout: 10000,

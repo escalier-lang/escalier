@@ -2415,6 +2415,7 @@ type Binding struct {
 	Type     Type
 	Mutable  bool
 	Exported bool
+	VarID    int // liveness VarID assigned by the rename pass; 0 if unset
 }
 
 // This is similar to Scope, but instead of inheriting from a parent scope,
@@ -2501,9 +2502,11 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != binding.Type {
 			changed = true
 			newValues[name] = &Binding{
-				Source:  binding.Source,
-				Type:    newType,
-				Mutable: binding.Mutable,
+				Source:   binding.Source,
+				Type:     newType,
+				Mutable:  binding.Mutable,
+				Exported: binding.Exported,
+				VarID:    binding.VarID,
 			}
 		} else {
 			newValues[name] = binding
@@ -2657,6 +2660,9 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 	if len(n1.Values) != len(n2.Values) {
 		return false
 	}
+	// Only Mutable and Type participate in structural equality. VarID is
+	// liveness metadata and Exported is a module-level concern — neither
+	// affects the identity of the namespace's type structure.
 	for k, v1 := range n1.Values {
 		if v2, ok := n2.Values[k]; !ok {
 			return false

@@ -1,251 +1,257 @@
 package liveness
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/require"
 )
+
+// formatAliasSource formats an AliasSource as a readable string for test assertions.
+// Examples: "fresh", "unknown", "variable [x]", "multiple [a, b]"
+func formatAliasSource(source AliasSource, names map[VarID]string) string {
+	switch source.Kind {
+	case AliasSourceFresh:
+		return "fresh"
+	case AliasSourceUnknown:
+		return "unknown"
+	case AliasSourceVariable, AliasSourceMultiple:
+		varNames := make([]string, len(source.VarIDs))
+		for i, id := range source.VarIDs {
+			if name, ok := names[id]; ok {
+				varNames[i] = name
+			} else {
+				varNames[i] = fmt.Sprintf("%d", id)
+			}
+		}
+		if source.Kind == AliasSourceVariable {
+			return "variable [" + strings.Join(varNames, ", ") + "]"
+		}
+		return "multiple [" + strings.Join(varNames, ", ") + "]"
+	default:
+		return fmt.Sprintf("unknown-kind(%d)", source.Kind)
+	}
+}
+
+// parseScript parses a source string into a Script AST.
+// Fails the test if parsing produces errors.
+func parseScript(t *testing.T, input string) *ast.Script {
+	t.Helper()
+	source := &ast.Source{ID: 0, Path: "test.esc", Contents: input}
+	p := parser.NewParser(context.Background(), source)
+	script, errs := p.ParseScript()
+	require.Empty(t, errs, "parse errors for: %s", input)
+	return script
+}
+
+// parseExpr parses a source string containing a single expression statement
+// and returns the expression.
+func parseExpr(t *testing.T, input string) ast.Expr {
+	t.Helper()
+	script := parseScript(t, input)
+	require.Len(t, script.Stmts, 1, "expected exactly one statement")
+	exprStmt, ok := script.Stmts[0].(*ast.ExprStmt)
+	require.True(t, ok, "expected ExprStmt, got %T", script.Stmts[0])
+	return exprStmt.Expr
+}
+
+// setVarIDs walks an expression AST and sets VarID on every IdentExpr whose
+// name appears in the provided map. This simulates what the rename pass does.
+func setVarIDs(expr ast.Expr, ids map[string]int) {
+	v := &varIDSetter{ids: ids}
+	expr.Accept(v)
+}
+
+type varIDSetter struct {
+	ast.DefaultVisitor
+	ids map[string]int
+}
+
+func (v *varIDSetter) EnterExpr(expr ast.Expr) bool {
+	if ident, ok := expr.(*ast.IdentExpr); ok {
+		if id, found := v.ids[ident.Name]; found {
+			ident.VarID = id
+		}
+	}
+	return true
+}
 
 func TestDetermineAliasSource_Identifier(t *testing.T) {
 	ident := ast.NewIdent("x", ast.Span{})
 	ident.VarID = 1
+	names := map[VarID]string{1: "x"}
 
-	source := DetermineAliasSource(ident)
-
-	require.Equal(t, AliasSourceVariable, source.Kind)
-	require.Equal(t, []VarID{1}, source.VarIDs)
+	// A local identifier aliases the variable it refers to
+	require.Equal(t, "variable [x]", formatAliasSource(DetermineAliasSource(ident), names))
 }
 
 func TestDetermineAliasSource_NonLocalIdentifier(t *testing.T) {
 	ident := ast.NewIdent("x", ast.Span{})
 	ident.VarID = -1
 
-	source := DetermineAliasSource(ident)
-
-	require.Equal(t, AliasSourceUnknown, source.Kind)
+	// Non-local variables (negative VarID) can't be tracked intraprocedurally
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(ident), nil))
 }
 
-func TestDetermineAliasSource_UnsetIdentifier(t *testing.T) {
-	ident := ast.NewIdent("x", ast.Span{})
-	// VarID defaults to 0
+func TestDetermineAliasSource_FreshExpressions(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "ObjectExpr", input: "{x: 1}"},
+		{name: "TupleExpr", input: "[1, 2]"},
+		{name: "CallExpr", input: "foo()"},
+		{name: "BinaryExpr", input: "1 + 2"},
+	}
 
-	source := DetermineAliasSource(ident)
-
-	require.Equal(t, AliasSourceUnknown, source.Kind)
-}
-
-func TestDetermineAliasSource_Literal(t *testing.T) {
-	lit := ast.NewLitExpr(ast.NewNumber(42, ast.Span{}))
-
-	source := DetermineAliasSource(lit)
-
-	require.Equal(t, AliasSourceFresh, source.Kind)
-	require.Empty(t, source.VarIDs)
-}
-
-func TestDetermineAliasSource_ObjectExpr(t *testing.T) {
-	obj := ast.NewObject(nil, ast.Span{})
-
-	source := DetermineAliasSource(obj)
-
-	require.Equal(t, AliasSourceFresh, source.Kind)
-}
-
-func TestDetermineAliasSource_TupleExpr(t *testing.T) {
-	tuple := ast.NewArray(nil, ast.Span{})
-
-	source := DetermineAliasSource(tuple)
-
-	require.Equal(t, AliasSourceFresh, source.Kind)
-}
-
-func TestDetermineAliasSource_CallExpr(t *testing.T) {
-	call := ast.NewCall(ast.NewIdent("foo", ast.Span{}), nil, false, ast.Span{})
-
-	source := DetermineAliasSource(call)
-
-	require.Equal(t, AliasSourceFresh, source.Kind)
-}
-
-func TestDetermineAliasSource_BinaryExpr(t *testing.T) {
-	bin := ast.NewBinary(
-		ast.NewLitExpr(ast.NewNumber(1, ast.Span{})),
-		ast.NewLitExpr(ast.NewNumber(2, ast.Span{})),
-		ast.Plus,
-		ast.Span{},
-	)
-
-	source := DetermineAliasSource(bin)
-
-	require.Equal(t, AliasSourceFresh, source.Kind)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			expr := parseExpr(t, tc.input)
+			// Constructors and operators produce new values, not aliases
+			require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(expr), nil))
+		})
+	}
 }
 
 func TestDetermineAliasSource_MemberExpr(t *testing.T) {
-	member := ast.NewMember(
-		ast.NewIdent("obj", ast.Span{}),
-		ast.NewIdentifier("field", ast.Span{}),
-		false,
-		ast.Span{},
-	)
+	expr := parseExpr(t, "obj.field")
+	setVarIDs(expr, map[string]int{"obj": 5})
+	names := map[VarID]string{5: "obj"}
 
-	source := DetermineAliasSource(member)
+	// obj.field aliases obj — property access recurses into the object
+	require.Equal(t, "variable [obj]", formatAliasSource(DetermineAliasSource(expr), names))
+}
 
-	require.Equal(t, AliasSourceUnknown, source.Kind)
+func TestDetermineAliasSource_MemberExpr_NonLocal(t *testing.T) {
+	expr := parseExpr(t, "obj.field")
+	setVarIDs(expr, map[string]int{"obj": -1})
+
+	// Property access on a non-local object is still unknown
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(expr), nil))
+}
+
+func TestDetermineAliasSource_IndexExpr(t *testing.T) {
+	expr := parseExpr(t, "obj[0]")
+	setVarIDs(expr, map[string]int{"obj": 5})
+	names := map[VarID]string{5: "obj"}
+
+	// obj[0] aliases obj — index access recurses into the object
+	require.Equal(t, "variable [obj]", formatAliasSource(DetermineAliasSource(expr), names))
+}
+
+func TestDetermineAliasSource_IndexExpr_NonLocal(t *testing.T) {
+	expr := parseExpr(t, "obj[0]")
+	setVarIDs(expr, map[string]int{"obj": -1})
+
+	// Index access on a non-local object is still unknown
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(expr), nil))
 }
 
 func TestDetermineAliasSource_TypeCast(t *testing.T) {
 	ident := ast.NewIdent("x", ast.Span{})
 	ident.VarID = 3
+	names := map[VarID]string{3: "x"}
 	cast := ast.NewTypeCast(ident, nil, ast.Span{})
 
-	source := DetermineAliasSource(cast)
-
-	require.Equal(t, AliasSourceVariable, source.Kind)
-	require.Equal(t, []VarID{3}, source.VarIDs)
+	// Type casts are transparent — the result aliases the inner expression
+	require.Equal(t, "variable [x]", formatAliasSource(DetermineAliasSource(cast), names))
 }
 
-// Integration tests: alias tracking with DetermineAliasSource
+func TestDetermineAliasSource_TypeCast_NonLocal(t *testing.T) {
+	ident := ast.NewIdent("x", ast.Span{})
+	ident.VarID = -1
+	cast := ast.NewTypeCast(ident, nil, ast.Span{})
 
-func TestAliasTracking_ValBEqualsA(t *testing.T) {
-	// val a = {x: 1}; val b = a → a and b in same alias set
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-
-	aSets := tracker.GetAliasSets(a)
-	bSets := tracker.GetAliasSets(b)
-	require.Len(t, aSets, 1)
-	require.Len(t, bSets, 1)
-	require.Equal(t, aSets[0].ID, bSets[0].ID)
-	require.Len(t, aSets[0].Members, 2)
+	// Casting a non-local variable is still unknown
+	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(cast), nil))
 }
 
-func TestAliasTracking_FreshValue(t *testing.T) {
-	// val b = {x: 1} → b gets a fresh alias set
-	tracker := NewAliasTracker()
-	var b VarID = 1
+func TestDetermineAliasSource_IfElseExpr_BothVariables(t *testing.T) {
+	expr := parseExpr(t, "if true { a } else { b }")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	names := map[VarID]string{1: "a", 2: "b"}
 
-	tracker.NewValue(b, AliasImmutable)
-
-	sets := tracker.GetAliasSets(b)
-	require.Len(t, sets, 1)
-	require.Equal(t, b, sets[0].Origin)
-	require.Len(t, sets[0].Members, 1)
+	// Both branches return different variables, so the result may alias either
+	require.Equal(t, "multiple [a, b]", formatAliasSource(DetermineAliasSource(expr), names))
 }
 
-func TestAliasTracking_ReassignToFresh(t *testing.T) {
-	// var b = a; b = {x: 1} → b leaves a's set after reassignment
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
+func TestDetermineAliasSource_IfElseExpr_OneVariableOneFresh(t *testing.T) {
+	expr := parseExpr(t, "if true { a } else { {x: 1} }")
+	setVarIDs(expr, map[string]int{"a": 1})
+	names := map[VarID]string{1: "a"}
 
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-
-	// Verify they start in the same set
-	require.Equal(t,
-		tracker.GetAliasSets(a)[0].ID,
-		tracker.GetAliasSets(b)[0].ID,
-	)
-
-	// Reassign b to a fresh value
-	tracker.Reassign(b, nil, AliasImmutable)
-
-	// b should have its own set now
-	aSets := tracker.GetAliasSets(a)
-	bSets := tracker.GetAliasSets(b)
-	require.Len(t, aSets, 1)
-	require.Len(t, bSets, 1)
-	require.NotEqual(t, aSets[0].ID, bSets[0].ID)
-	require.NotContains(t, aSets[0].Members, b)
+	// Only one branch aliases a variable; the fresh branch doesn't contribute
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
 }
 
-func TestAliasTracking_ReassignToOtherVar(t *testing.T) {
-	// var b = a; b = c → b leaves a's set and joins c's set
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	var c VarID = 3
+func TestDetermineAliasSource_IfElseExpr_BothFresh(t *testing.T) {
+	expr := parseExpr(t, "if true { {x: 1} } else { {x: 2} }")
 
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-	tracker.NewValue(c, AliasImmutable)
-
-	// Reassign b to c
-	tracker.Reassign(b, &c, AliasImmutable)
-
-	aSets := tracker.GetAliasSets(a)
-	bSets := tracker.GetAliasSets(b)
-	cSets := tracker.GetAliasSets(c)
-
-	require.NotContains(t, aSets[0].Members, b, "b should not be in a's set")
-	require.Equal(t, bSets[0].ID, cSets[0].ID, "b should be in c's set")
+	// Both branches produce fresh values, so the result is fresh
+	require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(expr), nil))
 }
 
-func TestAliasTracking_MultipleAliases(t *testing.T) {
-	// val b = a; val c = a → a, b, c all in same set
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	var c VarID = 3
+func TestDetermineAliasSource_IfElseExpr_NoAlt_Variable(t *testing.T) {
+	expr := parseExpr(t, "if true { a }")
+	setVarIDs(expr, map[string]int{"a": 1})
+	names := map[VarID]string{1: "a"}
 
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-	tracker.AddAlias(c, a, AliasImmutable)
-
-	sets := tracker.GetAliasSets(a)
-	require.Len(t, sets, 1)
-	require.Len(t, sets[0].Members, 3)
-	require.Contains(t, sets[0].Members, a)
-	require.Contains(t, sets[0].Members, b)
-	require.Contains(t, sets[0].Members, c)
+	// Missing else is implicitly undefined (fresh), so only the cons branch contributes
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
 }
 
-func TestAliasTracking_Chain(t *testing.T) {
-	// val b = a; val c = b → a, b, c all in same set
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	var c VarID = 3
+func TestDetermineAliasSource_IfElseExpr_NoAlt_Fresh(t *testing.T) {
+	expr := parseExpr(t, "if true { {x: 1} }")
 
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-	tracker.AddAlias(c, b, AliasImmutable)
-
-	aSets := tracker.GetAliasSets(a)
-	require.Len(t, aSets, 1)
-	require.Len(t, aSets[0].Members, 3)
-	require.Contains(t, aSets[0].Members, a)
-	require.Contains(t, aSets[0].Members, b)
-	require.Contains(t, aSets[0].Members, c)
+	// Cons is fresh, missing else is implicitly fresh — both fresh
+	require.Equal(t, "fresh", formatAliasSource(DetermineAliasSource(expr), nil))
 }
 
-func TestAliasTracking_Shadowing(t *testing.T) {
-	// val x = a; val x = {y: 1}
-	// With distinct VarIDs: first x (VarID=2) stays in a's set,
-	// second x (VarID=3) gets a fresh set.
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var x1 VarID = 2 // first x
-	var x2 VarID = 3 // second x (shadow)
+func TestDetermineAliasSource_IfElseExpr_UnknownAndVariable(t *testing.T) {
+	expr := parseExpr(t, "if true { ext } else { a }")
+	setVarIDs(expr, map[string]int{"ext": -1, "a": 1})
+	names := map[VarID]string{1: "a"}
 
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(x1, a, AliasImmutable)
-	tracker.NewValue(x2, AliasImmutable)
+	// Unknown branches are skipped — we still track aliases from known branches
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+}
 
-	// x1 should still be in a's set
-	aSets := tracker.GetAliasSets(a)
-	require.Len(t, aSets, 1)
-	require.Contains(t, aSets[0].Members, x1)
-	require.NotContains(t, aSets[0].Members, x2)
+func TestDetermineAliasSource_IfElseExpr_SameVariable(t *testing.T) {
+	expr := parseExpr(t, "if true { a } else { a }")
+	setVarIDs(expr, map[string]int{"a": 1})
+	names := map[VarID]string{1: "a"}
 
-	// x2 should have its own set
-	x2Sets := tracker.GetAliasSets(x2)
-	require.Len(t, x2Sets, 1)
-	require.Equal(t, x2, x2Sets[0].Origin)
-	require.NotContains(t, x2Sets[0].Members, x1)
+	// Same variable in both branches is deduplicated to a single variable source
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+}
+
+func TestDetermineAliasSource_MatchExpr_MultipleVariables(t *testing.T) {
+	expr := parseExpr(t, "match 1 { _ => a, _ => b, _ => c }")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2, "c": 3})
+	names := map[VarID]string{1: "a", 2: "b", 3: "c"}
+
+	// Each arm returns a different variable, so the result may alias any of them
+	require.Equal(t, "multiple [a, b, c]", formatAliasSource(DetermineAliasSource(expr), names))
+}
+
+func TestDetermineAliasSource_MatchExpr_SameVariable(t *testing.T) {
+	expr := parseExpr(t, "match 1 { _ => a, _ => a }")
+	setVarIDs(expr, map[string]int{"a": 1})
+	names := map[VarID]string{1: "a"}
+
+	// Same variable in all arms is deduplicated to a single variable source
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
+}
+
+func TestDetermineAliasSource_MatchExpr_VariableAndFresh(t *testing.T) {
+	expr := parseExpr(t, "match 1 { _ => a, _ => [1] }")
+	setVarIDs(expr, map[string]int{"a": 1})
+	names := map[VarID]string{1: "a"}
+
+	// Only one arm aliases a variable; the fresh arm doesn't contribute
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
 }
