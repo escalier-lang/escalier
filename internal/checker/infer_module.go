@@ -601,6 +601,11 @@ func (c *Checker) InferComponent(
 					Exported: decl.Export(),
 				}
 				nsCtx.Scope.setValue(decl.Name.Name, ctor)
+
+				// Phase 8.6: infer lifetime parameters and default mutability
+				// for the class. Runs once during the placeholder phase since
+				// the class body's stored-field structure is purely syntactic.
+				c.InferConstructorLifetimes(decl, typeAlias, funcType)
 			case *ast.EnumDecl:
 				// Check if we've already processed this enum from another binding key
 				// (enums have both type and value keys that may be in different components)

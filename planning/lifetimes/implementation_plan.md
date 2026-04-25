@@ -1354,6 +1354,36 @@ Additional tests beyond the original plan:
 **Goal:** Add lifetime annotations to function signatures and infer them from
 function bodies.
 
+### Phase 8 implementation status
+
+The initial Phase 8 PR delivers a foundational subset; the following items are
+**deferred to a follow-up PR** so they can be reviewed and tested in isolation:
+
+- **8.3 element-level vs. container-level lifetimes.** Inference produces
+  container-level lifetimes (`'a Array<T>`) for any return that aliases a
+  parameter. Element-level inference (`Array<'a T>` for fresh-container,
+  aliased-elements returns from `.filter`/`.slice`/array-literal-of-aliases)
+  is not yet implemented.
+- **8.3 generator yield lifetimes.** `yield` is treated as a fresh value;
+  `Generator<'a T, _, _>` propagation from yields is not yet implemented.
+- **8.4 escaping reference detection.** `DetectEscapingRefs` and the
+  `'static` lifetime assignment for parameters stored into module-level state
+  are not yet implemented.
+- **8.7 mutually recursive fixed-point iteration.** Lifetime inference runs
+  once per function during the existing dep-graph traversal. Self-recursive
+  functions work as long as their lifetime is determined by a non-recursive
+  return; mutual recursion that requires fixed-point iteration is deferred.
+- **`LifetimeUnion` inference at call sites.** The `LifetimeUnion` type
+  exists and parses, and `InferLifetimes` records multi-source returns, but
+  the call-site path that adds the result to *all* corresponding arguments'
+  alias sets is best-effort — it works for the simple two-branch case and
+  may be tightened later.
+
+The deferred items do not block the rest of Phase 8 from being usable: callers
+of annotated or inferred functions get correct alias-set updates for
+single-source returns and constructor parameters, which is the most common
+case.
+
 ### 8.1 Parser Changes — Lifetime Syntax
 
 Extend the parser to recognize lifetime parameters in function declarations

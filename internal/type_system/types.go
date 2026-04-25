@@ -264,6 +264,13 @@ type TypeAlias struct {
 	LifetimeParams []*LifetimeVar // e.g. ['a, 'b] for Pair<'a, 'b>
 	Exported       bool
 	IsTypeParam    bool // true for type parameter scope entries, not real aliases
+	// DefaultMutableSet records whether DefaultMutable was set explicitly.
+	// Only meaningful for class type aliases — used by callers that
+	// instantiate a class with no explicit `mut` to pick the right
+	// mutability. Three states: unset (nil semantics — fall back to
+	// existing behavior), explicitly mutable, explicitly immutable.
+	DefaultMutableSet bool
+	DefaultMutable    bool
 }
 
 type TypeRefType struct {
@@ -369,17 +376,12 @@ func (t *TypeRefType) Equals(other Type) bool {
 				return false
 			}
 		}
-		if t.Lifetime != other.Lifetime {
-			return false
-		}
-		if len(t.LifetimeArgs) != len(other.LifetimeArgs) {
-			return false
-		}
-		for i := range t.LifetimeArgs {
-			if t.LifetimeArgs[i] != other.LifetimeArgs[i] {
-				return false
-			}
-		}
+		// Lifetime equality is intentionally NOT checked here — lifetime
+		// unification belongs to a later phase and would require fresh
+		// instantiation logic at call sites. For now we treat
+		// lifetime-bearing types as structurally equal regardless of
+		// their lifetime annotations so that pre-Phase-9 unification
+		// continues to work.
 		return true
 	}
 	return false
@@ -1372,9 +1374,7 @@ func (t *ObjectType) Equals(other Type) bool {
 		if t.Interface != other.Interface {
 			return false
 		}
-		if t.Lifetime != other.Lifetime {
-			return false
-		}
+		// Lifetime equality is not checked — see TypeRefType.Equals.
 		// Compare Extends
 		if len(t.Extends) != len(other.Extends) {
 			return false
@@ -1497,9 +1497,7 @@ func (t *TupleType) Accept(v TypeVisitor) Type {
 }
 func (t *TupleType) Equals(other Type) bool {
 	if other, ok := other.(*TupleType); ok {
-		if t.Lifetime != other.Lifetime {
-			return false
-		}
+		// Lifetime equality is not checked — see TypeRefType.Equals.
 		if len(t.Elems) != len(other.Elems) {
 			return false
 		}

@@ -191,7 +191,7 @@ func (c *Checker) trackAliasesForVarDecl(
 	bindings map[string]*type_system.Binding,
 	enclosingStmt ast.Stmt,
 ) []Error {
-	source := liveness.DetermineAliasSource(decl.Init)
+	source := determineCheckerAliasSource(decl.Init)
 
 	var errors []Error
 	switch pat := decl.Pattern.(type) {
@@ -513,7 +513,7 @@ func (c *Checker) trackAliasesForAssignment(
 		aliasMut = liveness.AliasImmutable
 	}
 
-	source := liveness.DetermineAliasSource(rhs)
+	source := determineCheckerAliasSource(rhs)
 
 	switch source.Kind {
 	case liveness.AliasSourceVariable:
@@ -609,7 +609,7 @@ func (c *Checker) trackAliasesForPropAssignment(
 		return
 	}
 
-	source := liveness.DetermineAliasSource(rhs)
+	source := determineCheckerAliasSource(rhs)
 	switch source.Kind {
 	case liveness.AliasSourceVariable:
 		ctx.Aliases.MergeAliasSets(objVarID, source.VarIDs[0])

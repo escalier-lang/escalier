@@ -503,9 +503,9 @@
 [TestParseExprErrorHandling/ParamsMissingClosingParen - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
-        },
-        Params: {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Params:         {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "a",
@@ -779,9 +779,9 @@
 [TestParseExprErrorHandling/ParamsMissingOpeningParen - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
-        },
-        Params: {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Params:         {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "a",
@@ -1036,7 +1036,8 @@
             },
             Fn: &ast.FuncExpr{
                 FuncSig: ast.FuncSig{
-                    TypeParams: {
+                    LifetimeParams: nil,
+                    TypeParams:     {
                     },
                     Params: {
                     },
@@ -1105,7 +1106,8 @@
             },
             Fn: &ast.FuncExpr{
                 FuncSig: ast.FuncSig{
-                    TypeParams: {
+                    LifetimeParams: nil,
+                    TypeParams:     {
                     },
                     Params: {
                     },
@@ -1186,7 +1188,8 @@
             },
             Fn: &ast.FuncExpr{
                 FuncSig: ast.FuncSig{
-                    TypeParams: {
+                    LifetimeParams: nil,
+                    TypeParams:     {
                     },
                     Params: {
                         &ast.Param{
@@ -2861,9 +2864,9 @@
 [TestParseExprNoErrors/FuncExpr - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
-        },
-        Params: {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Params:         {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "a",
@@ -6754,9 +6757,9 @@
 [TestParseExprNoErrors/FuncExprWithReturnType - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
-        },
-        Params: {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Params:         {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "a",
@@ -6890,9 +6893,9 @@
 [TestParseExprNoErrors/FuncExprWithThrows - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
-        },
-        Params: {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Params:         {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "a",
@@ -6945,7 +6948,8 @@
             },
             TypeArgs: {
             },
-            span: ast.Span{
+            Lifetime: nil,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:28},
                 End:      ast.Location{Line:1, Column:33},
                 SourceID: 0,
@@ -7202,9 +7206,9 @@
 [TestParseExprNoErrors/FuncExprReturnIfElse - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
-        },
-        Params: {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Params:         {
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name:    "value",
@@ -7377,7 +7381,8 @@
             },
             Fn: &ast.FuncExpr{
                 FuncSig: ast.FuncSig{
-                    TypeParams: {
+                    LifetimeParams: nil,
+                    TypeParams:     {
                     },
                     Params: {
                     },
@@ -7815,7 +7820,8 @@
 [TestParseExprNoErrors/FuncExprWithTypeParams - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "T",
                 Constraint: nil,
@@ -7848,7 +7854,8 @@
                     },
                     TypeArgs: {
                     },
-                    span: ast.Span{
+                    Lifetime: nil,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:15},
                         End:      ast.Location{Line:1, Column:16},
                         SourceID: 0,
@@ -7868,7 +7875,8 @@
             },
             TypeArgs: {
             },
-            span: ast.Span{
+            Lifetime: nil,
+            span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:21},
                 End:      ast.Location{Line:1, Column:22},
                 SourceID: 0,
@@ -7918,7 +7926,8 @@
 [TestParseExprNoErrors/FuncExprWithMultipleTypeParams - 1]
 &ast.FuncExpr{
     FuncSig: ast.FuncSig{
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "A",
                 Constraint: nil,
@@ -7956,7 +7965,8 @@
                     },
                     TypeArgs: {
                     },
-                    span: ast.Span{
+                    Lifetime: nil,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:14},
                         End:      ast.Location{Line:1, Column:15},
                         SourceID: 0,
@@ -7989,7 +7999,8 @@
                     },
                     TypeArgs: {
                     },
-                    span: ast.Span{
+                    Lifetime: nil,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:20},
                         End:      ast.Location{Line:1, Column:21},
                         SourceID: 0,
@@ -8011,7 +8022,8 @@
                     },
                     TypeArgs: {
                     },
-                    span: ast.Span{
+                    Lifetime: nil,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:27},
                         End:      ast.Location{Line:1, Column:28},
                         SourceID: 0,
@@ -8029,7 +8041,8 @@
                     },
                     TypeArgs: {
                     },
-                    span: ast.Span{
+                    Lifetime: nil,
+                    span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:30},
                         End:      ast.Location{Line:1, Column:31},
                         SourceID: 0,
@@ -8124,7 +8137,8 @@
             },
             Fn: &ast.FuncExpr{
                 FuncSig: ast.FuncSig{
-                    TypeParams: {
+                    LifetimeParams: nil,
+                    TypeParams:     {
                         &ast.TypeParam{
                             Name:       "T",
                             Constraint: nil,
@@ -8157,7 +8171,8 @@
                                 },
                                 TypeArgs: {
                                 },
-                                span: ast.Span{
+                                Lifetime: nil,
+                                span:     ast.Span{
                                     Start:    ast.Location{Line:1, Column:13},
                                     End:      ast.Location{Line:1, Column:14},
                                     SourceID: 0,
@@ -8227,7 +8242,8 @@
             },
             Fn: &ast.FuncExpr{
                 FuncSig: ast.FuncSig{
-                    TypeParams: {
+                    LifetimeParams: nil,
+                    TypeParams:     {
                         &ast.TypeParam{
                             Name:       "T",
                             Constraint: nil,
@@ -8260,7 +8276,8 @@
                                 },
                                 TypeArgs: {
                                 },
-                                span: ast.Span{
+                                Lifetime: nil,
+                                span:     ast.Span{
                                     Start:    ast.Location{Line:1, Column:46},
                                     End:      ast.Location{Line:1, Column:47},
                                     SourceID: 0,

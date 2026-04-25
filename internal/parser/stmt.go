@@ -10,7 +10,7 @@ import (
 func (p *Parser) isStatementInitiator(tt TokenType) bool {
 	// nolint: exhaustive
 	switch tt {
-	case Val, Var, Fn, Type, Interface, Enum, Class, Return, Throw,
+	case Val, Var, Fn, Type, Interface, Enum, Class, Immutable, Return, Throw,
 		For, If, Import, Export, Declare, Async, EndOfFile:
 		return true
 	default:
@@ -27,7 +27,7 @@ func (p *Parser) skipToNextStatement(stopOn TokenType) {
 		switch token.Type {
 		case EndOfFile, stopOn:
 			return
-		case Val, Var, Fn, Type, Interface, Enum, Class, Return, Throw,
+		case Val, Var, Fn, Type, Interface, Enum, Class, Immutable, Return, Throw,
 			For, If, Import, Export, Declare, Async:
 			return
 		default:
@@ -127,7 +127,7 @@ func (p *Parser) stmt() ast.Stmt {
 		stmt = p.importStmt()
 	case For:
 		stmt = p.parseForInStmt()
-	case Async, Fn, Var, Val, Type, Interface, Enum, Declare, Export, Class:
+	case Async, Fn, Var, Val, Type, Interface, Enum, Declare, Export, Class, Immutable:
 		decl := p.Decl()
 		if decl == nil {
 			return nil

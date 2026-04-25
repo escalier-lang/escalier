@@ -8,6 +8,7 @@ type ClassDecl struct {
 	Extends    *TypeRefTypeAnn // optional superclass (can be a simple identifier or a generic type reference)
 	Params     []*Param        // constructor params
 	Body       []ClassElem     // fields, methods, etc.
+	Immutable  bool            // true when declared with `immutable class`
 	export     bool
 	declare    bool
 	span       Span

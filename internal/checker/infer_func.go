@@ -254,6 +254,12 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	}
 
 	c.closeOpenParams(funcSigType)
+
+	// Phase 8.3: infer lifetime parameters from the body. This must run
+	// after returnType has been unified into funcSigType.Return so that
+	// the lifetime is attached to the same type the caller will see.
+	c.InferLifetimes(astParams, body, funcSigType)
+
 	return errors
 }
 

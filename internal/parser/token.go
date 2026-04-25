@@ -47,6 +47,8 @@ const (
 	GreaterThanEqual
 	Identifier
 	If
+	Immutable
+	Lifetime
 	Import
 	In
 	Infer

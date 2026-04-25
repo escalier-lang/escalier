@@ -98,15 +98,27 @@ func printTypeInner(t Type, config PrintConfig) string {
 		} else {
 			head = QualIdentToString(v.Name)
 		}
-		if len(v.TypeArgs) > 0 {
+		if len(v.LifetimeArgs) > 0 || len(v.TypeArgs) > 0 {
 			head += "<"
-			for i, arg := range v.TypeArgs {
-				if i > 0 {
+			first := true
+			for _, lt := range v.LifetimeArgs {
+				if !first {
 					head += ", "
 				}
+				first = false
+				head += printLifetime(lt)
+			}
+			for _, arg := range v.TypeArgs {
+				if !first {
+					head += ", "
+				}
+				first = false
 				head += pt(arg)
 			}
 			head += ">"
+		}
+		if v.Lifetime != nil {
+			return printLifetime(v.Lifetime) + " " + head
 		}
 		return head
 
@@ -374,12 +386,21 @@ func printPatternWithInlineTypesContext(pattern Pat, paramType Type, pt func(Typ
 
 func printFuncType(t *FuncType, pt func(Type) string) string {
 	result := "fn "
-	if len(t.TypeParams) > 0 {
+	if len(t.LifetimeParams) > 0 || len(t.TypeParams) > 0 {
 		result += "<"
-		for i, param := range t.TypeParams {
-			if i > 0 {
+		first := true
+		for _, lp := range t.LifetimeParams {
+			if !first {
 				result += ", "
 			}
+			first = false
+			result += "'" + lp.Name
+		}
+		for _, param := range t.TypeParams {
+			if !first {
+				result += ", "
+			}
+			first = false
 			result += param.Name
 			if param.Constraint != nil {
 				result += ": " + pt(param.Constraint)
@@ -501,6 +522,9 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 		}
 	}
 	result += "}"
+	if t.Lifetime != nil {
+		return printLifetime(t.Lifetime) + " " + result
+	}
 	return result
 }
 
@@ -514,6 +538,9 @@ func printTupleType(t *TupleType, pt func(Type) string) string {
 		result += pt(elem)
 	}
 	result += "]"
+	if t.Lifetime != nil {
+		return printLifetime(t.Lifetime) + " " + result
+	}
 	return result
 }
 
@@ -617,4 +644,33 @@ func printNamespaceType(t *NamespaceType, pt func(Type) string) string {
 	}
 	builder.WriteString("}")
 	return builder.String()
+}
+
+// printLifetime renders a Lifetime value for inclusion in a type's string
+// form. LifetimeVar prints as 'name (or 't<id> for unnamed vars), a
+// resolved LifetimeValue prints its identity name (or 'static when
+// IsStatic), and a LifetimeUnion prints as ('a | 'b).
+func printLifetime(lt Lifetime) string {
+	switch v := PruneLifetime(lt).(type) {
+	case *LifetimeVar:
+		if v.Name != "" {
+			return "'" + v.Name
+		}
+		return "'t" + strconv.Itoa(v.ID)
+	case *LifetimeValue:
+		if v.IsStatic {
+			return "'static"
+		}
+		if v.Name != "" {
+			return "'" + v.Name
+		}
+		return "'v" + strconv.Itoa(v.ID)
+	case *LifetimeUnion:
+		parts := make([]string, len(v.Lifetimes))
+		for i, m := range v.Lifetimes {
+			parts[i] = printLifetime(m)
+		}
+		return "(" + strings.Join(parts, " | ") + ")"
+	}
+	return "<lifetime?>"
 }

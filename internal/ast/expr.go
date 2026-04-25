@@ -314,11 +314,12 @@ func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {
 }
 
 type FuncSig struct {
-	TypeParams []*TypeParam
-	Params     []*Param
-	Return     TypeAnn // optional
-	Throws     TypeAnn // optional
-	Async      bool    // whether this is an async function
+	LifetimeParams []*LifetimeAnn // optional, e.g. ['a, 'b]
+	TypeParams     []*TypeParam
+	Params         []*Param
+	Return         TypeAnn // optional
+	Throws         TypeAnn // optional
+	Async          bool    // whether this is an async function
 }
 
 type FuncExpr struct {

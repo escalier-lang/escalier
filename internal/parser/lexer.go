@@ -43,6 +43,7 @@ var keywords = map[string]TokenType{
 	"else":      Else,
 	"enum":      Enum,
 	"interface": Interface,
+	"immutable": Immutable,
 	"let":       Let,
 	"match":     Match,
 	"try":       Try,
@@ -358,6 +359,18 @@ func (lexer *Lexer) next() *Token {
 			token = NewToken(DoubleColon, "::", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		} else {
 			token = NewToken(Colon, ":", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		}
+	case '\'':
+		// Lifetime token: ' followed by an identifier (e.g. 'a, 'static).
+		// Escalier uses double quotes for strings and has no character literals,
+		// so a lone ' followed by an ident-start is unambiguously a lifetime.
+		identValue, identEndOffset, runeCount := lexer_util.ScanIdent(lexer.source.Contents, startOffset+1)
+		if identValue != "" {
+			endOffset = identEndOffset
+			end.Column = start.Column + 1 + runeCount
+			token = NewToken(Lifetime, identValue, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		} else {
+			token = NewToken(Invalid, "'", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
 	case '"':
 		contents := lexer.source.Contents

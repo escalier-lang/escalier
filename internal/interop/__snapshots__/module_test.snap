@@ -54,7 +54,8 @@
                                 },
                                 VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    TypeParams: {
+                                    LifetimeParams: nil,
+                                    TypeParams:     {
                                     },
                                     Params: {
                                     },
@@ -191,7 +192,8 @@
                                 },
                                 VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    TypeParams: {
+                                    LifetimeParams: nil,
+                                    TypeParams:     {
                                     },
                                     Params: {
                                     },
@@ -407,7 +409,8 @@
                                 },
                                 VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    TypeParams: {
+                                    LifetimeParams: nil,
+                                    TypeParams:     {
                                     },
                                     Params: {
                                     },
@@ -763,7 +766,8 @@
                                 },
                                 VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    TypeParams: {
+                                    LifetimeParams: nil,
+                                    TypeParams:     {
                                     },
                                     Params: {
                                     },
@@ -806,12 +810,13 @@
                                 },
                                 TypeParams: {
                                 },
-                                Extends: (*ast.TypeRefTypeAnn)(nil),
-                                Params:  nil,
-                                Body:    nil,
-                                export:  false,
-                                declare: true,
-                                span:    ast.Span{
+                                Extends:   (*ast.TypeRefTypeAnn)(nil),
+                                Params:    nil,
+                                Body:      nil,
+                                Immutable: false,
+                                export:    false,
+                                declare:   true,
+                                span:      ast.Span{
                                     Start:    ast.Location{Line:4, Column:9},
                                     End:      ast.Location{Line:4, Column:25},
                                     SourceID: 0,
@@ -1132,7 +1137,8 @@
                                 },
                                 VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    TypeParams: {
+                                    LifetimeParams: nil,
+                                    TypeParams:     {
                                     },
                                     Params: {
                                     },
@@ -1175,12 +1181,13 @@
                                 },
                                 TypeParams: {
                                 },
-                                Extends: (*ast.TypeRefTypeAnn)(nil),
-                                Params:  nil,
-                                Body:    nil,
-                                export:  true,
-                                declare: true,
-                                span:    ast.Span{
+                                Extends:   (*ast.TypeRefTypeAnn)(nil),
+                                Params:    nil,
+                                Body:      nil,
+                                Immutable: false,
+                                export:    true,
+                                declare:   true,
+                                span:      ast.Span{
                                     Start:    ast.Location{Line:5, Column:3},
                                     End:      ast.Location{Line:5, Column:19},
                                     SourceID: 0,
@@ -1363,7 +1370,8 @@
                                 },
                                 VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    TypeParams: {
+                                    LifetimeParams: nil,
+                                    TypeParams:     {
                                     },
                                     Params: {
                                     },
@@ -1472,7 +1480,8 @@
                                 },
                                 VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    TypeParams: {
+                                    LifetimeParams: nil,
+                                    TypeParams:     {
                                     },
                                     Params: {
                                     },

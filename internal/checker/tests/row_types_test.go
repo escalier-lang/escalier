@@ -1127,7 +1127,7 @@ func TestRowTypesClosing(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
+				"foo": "fn <'obj, T0>(obj: mut 'obj {x: number, ...T0}) -> 'obj {x: number, ...T0}",
 			},
 		},
 		"MultipleParamsClosedIndependently": {
@@ -1205,8 +1205,8 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 				val r = foo({x: 1, y: 2})
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
-				"r":   "{x: number, y: 2}",
+				"foo": "fn <'obj, T0>(obj: mut 'obj {x: number, ...T0}) -> 'obj {x: number, ...T0}",
+				"r":   "'obj {x: number, y: 2}",
 			},
 		},
 		"MultipleExtraProperties": {
@@ -1219,8 +1219,8 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 				val r = foo({x: 1, y: 2, z: "hi"})
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
-				"r":   "{x: number, y: 2, z: \"hi\"}",
+				"foo": "fn <'obj, T0>(obj: mut 'obj {x: number, ...T0}) -> 'obj {x: number, ...T0}",
+				"r":   "'obj {x: number, y: 2, z: \"hi\"}",
 			},
 		},
 		"NoReturn_RowVarRemoved": {
@@ -1268,8 +1268,8 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 				val r = foo({x: 1, y: "hello"})
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {x: T0, ...T1}) -> {x: T0, ...T1}",
-				"r":   "{x: 1, y: \"hello\"}",
+				"foo": "fn <'obj, T0, T1>(obj: 'obj {x: T0, ...T1}) -> 'obj {x: T0, ...T1}",
+				"r":   "'obj {x: 1, y: \"hello\"}",
 			},
 		},
 		"MultipleParamsRowPolymorphism": {
@@ -1297,8 +1297,8 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 				val r = foo({x: 5})
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {x: number, ...T0}) -> {x: number, ...T0}",
-				"r":   "{x: number}",
+				"foo": "fn <'obj, T0>(obj: mut 'obj {x: number, ...T0}) -> 'obj {x: number, ...T0}",
+				"r":   "'obj {x: number}",
 			},
 		},
 	}
@@ -1329,8 +1329,8 @@ func TestVariadicTupleTypes(t *testing.T) {
 				val r = foo([1, "a", true])
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T>(items: [number, ...T]) -> [number, ...T]",
-				"r":   "[number, \"a\", true]",
+				"foo": "fn <'items, T>(items: 'items [number, ...T]) -> 'items [number, ...T]",
+				"r":   "'items [number, \"a\", true]",
 			},
 		},
 		"FixedVsVariadic_AllAbsorbed": {
@@ -1355,12 +1355,12 @@ func TestVariadicTupleTypes(t *testing.T) {
 		},
 		"Generalization_VariadicRest": {
 			// fn foo<T>(items: [number, ...T]) { return items }
-			// → type: fn <T>(items: [number, ...T]) -> [number, ...T]
+			// → type: fn <'items, T>(items: 'items [number, ...T]) -> 'items [number, ...T]
 			input: `
 				fn foo<T>(items: [number, ...T]) { return items }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T>(items: [number, ...T]) -> [number, ...T]",
+				"foo": "fn <'items, T>(items: 'items [number, ...T]) -> 'items [number, ...T]",
 			},
 		},
 	}
@@ -2263,8 +2263,8 @@ func TestTupleRowPolymorphism(t *testing.T) {
 				val r = foo([1, "hello", true])
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(items: [T0, ...T1]) -> [T0, ...T1]",
-				"r":   "[1, \"hello\", true]",
+				"foo": "fn <'items, T0, T1>(items: 'items [T0, ...T1]) -> 'items [T0, ...T1]",
+				"r":   "'items [1, \"hello\", true]",
 			},
 		},
 		"TupleWithoutReturn_RestRemoved": {
@@ -2312,8 +2312,8 @@ func TestTupleRowPolymorphism(t *testing.T) {
 				val r = foo([42])
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(items: [T0, ...T1]) -> [T0, ...T1]",
-				"r":   "[42]",
+				"foo": "fn <'items, T0, T1>(items: 'items [T0, ...T1]) -> 'items [T0, ...T1]",
+				"r":   "'items [42]",
 			},
 		},
 		"LiteralTypesPreservedThroughRest": {
@@ -2326,8 +2326,8 @@ func TestTupleRowPolymorphism(t *testing.T) {
 				val r = foo([1, "hello"])
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(items: [T0, ...T1]) -> [T0, ...T1]",
-				"r":   "[1, \"hello\"]",
+				"foo": "fn <'items, T0, T1>(items: 'items [T0, ...T1]) -> 'items [T0, ...T1]",
+				"r":   "'items [1, \"hello\"]",
 			},
 		},
 	}

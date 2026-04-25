@@ -29,16 +29,52 @@ type LifetimeValue struct {
 
 func (*LifetimeValue) isLifetime() {}
 
+// LifetimeUnion represents a value that may carry one of several lifetimes.
+// Used when a function returns one of multiple parameters depending on
+// control flow — e.g. `('a | 'b) Point` for `if cond { a } else { b }`.
+// At call sites, the result is added to the alias sets of all corresponding
+// arguments.
+type LifetimeUnion struct {
+	Lifetimes []Lifetime
+}
+
+func (*LifetimeUnion) isLifetime() {}
+
 // PruneLifetime resolves a lifetime variable to its bound value, following
 // the Instance pointer on LifetimeVar. Analogous to Prune for types.
 // Returns the lifetime unchanged if it is nil, a LifetimeValue, or an
 // unbound LifetimeVar. A nil untyped Lifetime is safe here because the
 // type assertion will fail for a nil interface, returning lt unchanged.
+//
+// For a LifetimeUnion, each member is pruned recursively. The union itself
+// is not collapsed even when all members resolve to the same value, because
+// downstream code distinguishes "single source" from "multi-source" based
+// on the wrapper type (a LifetimeUnion always means the value may alias
+// any of its members).
 func PruneLifetime(lt Lifetime) Lifetime {
-	if lv, ok := lt.(*LifetimeVar); ok && lv.Instance != nil {
-		return lv.Instance
+	switch v := lt.(type) {
+	case *LifetimeVar:
+		if v.Instance != nil {
+			return v.Instance
+		}
+		return v
+	case *LifetimeUnion:
+		pruned := make([]Lifetime, len(v.Lifetimes))
+		changed := false
+		for i, m := range v.Lifetimes {
+			pm := PruneLifetime(m)
+			pruned[i] = pm
+			if pm != m {
+				changed = true
+			}
+		}
+		if !changed {
+			return v
+		}
+		return &LifetimeUnion{Lifetimes: pruned}
+	default:
+		return lt
 	}
-	return lt
 }
 
 // GetLifetime extracts the lifetime from a type, walking through wrapper
