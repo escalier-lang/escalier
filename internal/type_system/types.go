@@ -264,13 +264,12 @@ type TypeAlias struct {
 	LifetimeParams []*LifetimeVar // e.g. ['a, 'b] for Pair<'a, 'b>
 	Exported       bool
 	IsTypeParam    bool // true for type parameter scope entries, not real aliases
-	// DefaultMutableSet records whether DefaultMutable was set explicitly.
-	// Only meaningful for class type aliases — used by callers that
-	// instantiate a class with no explicit `mut` to pick the right
-	// mutability. Three states: unset (nil semantics — fall back to
-	// existing behavior), explicitly mutable, explicitly immutable.
-	DefaultMutableSet bool
-	DefaultMutable    bool
+	// DefaultMutable carries the default mutability for class type aliases —
+	// used by callers that instantiate a class with no explicit `mut` to
+	// pick the right mutability. Three states: nil (unset — fall back to
+	// existing behavior), *false (explicitly immutable), *true (explicitly
+	// mutable).
+	DefaultMutable *bool
 }
 
 type TypeRefType struct {
@@ -2517,13 +2516,12 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != typeAlias.Type {
 			changed = true
 			newTypes[name] = &TypeAlias{
-				Type:              newType,
-				TypeParams:        typeAlias.TypeParams,
-				LifetimeParams:    typeAlias.LifetimeParams,
-				Exported:          typeAlias.Exported,
-				IsTypeParam:       typeAlias.IsTypeParam,
-				DefaultMutableSet: typeAlias.DefaultMutableSet,
-				DefaultMutable:    typeAlias.DefaultMutable,
+				Type:           newType,
+				TypeParams:     typeAlias.TypeParams,
+				LifetimeParams: typeAlias.LifetimeParams,
+				Exported:       typeAlias.Exported,
+				IsTypeParam:    typeAlias.IsTypeParam,
+				DefaultMutable: typeAlias.DefaultMutable,
 			}
 		} else {
 			newTypes[name] = typeAlias

@@ -1276,17 +1276,17 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 // TestNamespaceTypeAcceptPreservesTypeAliasMetadata verifies that when
 // NamespaceType.Accept rewrites a TypeAlias whose inner Type was changed
 // by the visitor, the resulting TypeAlias preserves all metadata fields
-// — including DefaultMutableSet and DefaultMutable, which carry the
-// class default-mutability semantics computed during lifetime inference.
+// — including DefaultMutable, which carries the class default-mutability
+// semantics computed during lifetime inference.
 func TestNamespaceTypeAcceptPreservesTypeAliasMetadata(t *testing.T) {
 	oldInner := NewNumPrimType(nil)
 	newInner := NewStrPrimType(nil)
 
+	mutable := true
 	alias := &TypeAlias{
-		Type:              oldInner,
-		Exported:          true,
-		DefaultMutableSet: true,
-		DefaultMutable:    true,
+		Type:           oldInner,
+		Exported:       true,
+		DefaultMutable: &mutable,
 	}
 	ns := NewNamespace()
 	ns.Types["MyClass"] = alias
@@ -1301,10 +1301,11 @@ func TestNamespaceTypeAcceptPreservesTypeAliasMetadata(t *testing.T) {
 	resultAlias := resultNs.Types["MyClass"]
 	assert.NotSame(t, alias, resultAlias, "expected a new TypeAlias instance")
 	assert.Same(t, newInner, resultAlias.Type)
-	assert.True(t, resultAlias.DefaultMutableSet,
-		"DefaultMutableSet must be preserved across visitor rewrite")
-	assert.True(t, resultAlias.DefaultMutable,
-		"DefaultMutable must be preserved across visitor rewrite")
+	if assert.NotNil(t, resultAlias.DefaultMutable,
+		"DefaultMutable must be preserved across visitor rewrite") {
+		assert.True(t, *resultAlias.DefaultMutable,
+			"DefaultMutable must be preserved across visitor rewrite")
+	}
 	assert.True(t, resultAlias.Exported,
 		"Exported must be preserved across visitor rewrite")
 }

@@ -139,17 +139,16 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 // methods → immutable; at least one mut self method → mutable;
 // `data class` modifier → immutable regardless.
 func TestDefaultMutabilityFromClass(t *testing.T) {
+	mutableTrue, mutableFalse := true, false
 	tests := map[string]struct {
-		input          string
-		className      string
-		expectedSet    bool
-		expectedMutable bool
+		input           string
+		className       string
+		expectedMutable *bool
 	}{
 		"NoMutSelf_DefaultsImmutable": {
 			input:           `class Point(x: number, y: number) { x, y, }`,
 			className:       "Point",
-			expectedSet:     true,
-			expectedMutable: false,
+			expectedMutable: &mutableFalse,
 		},
 		"HasMutSelf_DefaultsMutable": {
 			input: `
@@ -159,8 +158,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 				}
 			`,
 			className:       "Counter",
-			expectedSet:     true,
-			expectedMutable: true,
+			expectedMutable: &mutableTrue,
 		},
 		"DataModifier_OverridesMutSelf": {
 			input: `
@@ -170,8 +168,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 				}
 			`,
 			className:       "Config",
-			expectedSet:     true,
-			expectedMutable: false,
+			expectedMutable: &mutableFalse,
 		},
 	}
 
@@ -181,8 +178,6 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			ns := mustInferAsModule(t, test.input)
 			alias := ns.Types[test.className]
 			require.NotNil(t, alias, "class %q not found", test.className)
-			assert.Equal(t, test.expectedSet, alias.DefaultMutableSet,
-				"DefaultMutableSet for %q", test.className)
 			assert.Equal(t, test.expectedMutable, alias.DefaultMutable,
 				"DefaultMutable for %q", test.className)
 		})

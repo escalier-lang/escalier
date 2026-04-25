@@ -218,8 +218,7 @@ func (c *Checker) InferConstructorLifetimes(
 			}
 		}
 	}
-	typeAlias.DefaultMutableSet = true
-	typeAlias.DefaultMutable = mutable
+	typeAlias.DefaultMutable = &mutable
 
 	// Honor explicit lifetime params if the user already wrote them.
 	if len(typeAlias.LifetimeParams) > 0 {
