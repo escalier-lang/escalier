@@ -115,16 +115,16 @@ Built-in collection types like `Map`, `Set`, and `Array` follow this rule
 naturally — they have mutating methods (`set`, `add`, `push`), so their
 constructors return mutable instances by default.
 
-### Overriding the Default with `immutable` Modifier
+### Overriding the Default with `data` Modifier
 
 Some classes have mutating methods but should still default to immutable.
 For example, a data class might have a `withX` method that returns a new
 instance rather than mutating in place, plus a rarely-used `setX` method
 for performance-critical code. The class author can override the default
-with the `immutable` modifier:
+with the `data` modifier:
 
 ```esc
-immutable class Config(host: string, port: number) {
+data class Config(host: string, port: number) {
     host,
     port,
     fn withHost(self, host: string) -> Config {
@@ -141,7 +141,7 @@ val m: mut Config = Config("localhost", 8080)  // explicit mut required
 m.setHost("0.0.0.0")              // OK
 ```
 
-The `immutable` modifier on the class declaration means:
+The `data` modifier on the class declaration means:
 - The constructor returns an immutable instance by default
 - Callers must explicitly write `mut` to get a mutable binding
 - The class may still have `mut self` methods — they just aren't
@@ -165,7 +165,7 @@ This is useful for:
 | Array literal | Immutable |
 | Class instance (no `mut self` methods) | Immutable |
 | Class instance (has `mut self` methods) | Mutable |
-| `immutable class` instance | Immutable (regardless of methods) |
+| `data class` instance | Immutable (regardless of methods) |
 
 ## Rules
 

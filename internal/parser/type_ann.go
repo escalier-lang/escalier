@@ -187,6 +187,47 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		isMut = true
 	}
 
+	// Optional lifetime annotation before the inner type:
+	//   'a Point         → LifetimeAnn{Name: "a"}
+	//   ('a | 'b) Point  → LifetimeUnionAnn{...}
+	// We attach the lifetime to the resulting TypeRefTypeAnn after parsing
+	// the inner type.
+	var lifetime ast.LifetimeAnnNode
+	// nolint: exhaustive
+	switch token.Type {
+	case Lifetime:
+		p.lexer.consume()
+		lifetime = ast.NewLifetimeAnn(token.Value, token.Span)
+		token = p.lexer.peek()
+	case OpenParen:
+		// Try to parse a lifetime union: ( 'a | 'b | ... ) followed by a type.
+		// If the parens don't enclose a lifetime list, restore and fall through
+		// to the regular parenthesized-type-annotation path below.
+		saved := p.saveState()
+		open := p.lexer.next() // consume '('
+		if p.lexer.peek().Type != Lifetime {
+			p.restoreState(saved)
+			break
+		}
+		lifetimes := parseDelimSeq(p, CloseParen, Pipe, func() *ast.LifetimeAnn {
+			lt := p.lexer.peek()
+			if lt.Type != Lifetime {
+				return nil
+			}
+			p.lexer.consume()
+			return ast.NewLifetimeAnn(lt.Value, lt.Span)
+		})
+		closeTok := p.lexer.peek()
+		if closeTok.Type != CloseParen {
+			p.restoreState(saved)
+			break
+		}
+		p.lexer.consume()
+		lifetime = ast.NewLifetimeUnionAnn(lifetimes,
+			ast.MergeSpans(open.Span, closeTok.Span))
+		token = p.lexer.peek()
+	}
+
 	var typeAnn ast.TypeAnn
 
 	for typeAnn == nil {
@@ -275,14 +316,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			)
 		case Fn:
 			p.lexer.consume()
-			var typeParams []*ast.TypeParam
-
-			if p.lexer.peek().Type == LessThan {
-				p.lexer.consume() // consume '<'
-				typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-
-				p.expect(GreaterThan, AlwaysConsume)
-			}
+			lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 
 			p.expect(OpenParen, AlwaysConsume)
 
@@ -304,13 +338,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				endSpan = throwsType.Span()
 			}
 
-			typeAnn = ast.NewFuncTypeAnn(
+			fnAnn := ast.NewFuncTypeAnn(
+				lifetimeParams,
 				typeParams,
 				funcParams,
 				retType,
 				throwsType,
 				ast.NewSpan(token.Span.Start, endSpan.End, p.lexer.source.ID),
 			)
+			typeAnn = fnAnn
 		case If: // conditional type
 			p.lexer.consume() // consume 'if'
 			checkType := p.typeAnnRequired()
@@ -424,6 +460,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			span := ast.MergeSpans(token.Span, value.Span())
 			typeAnn = ast.NewRestSpreadTypeAnn(value, span)
 		default:
+			// If we already consumed a lifetime prefix, we can't return nil —
+			// that would violate the "nil means no consumption" contract.
+			// Report the missing type and return an ErrorTypeAnn whose span
+			// covers the lifetime we consumed.
+			if lifetime != nil {
+				p.reportError(lifetime.Span(),
+					"expected a type annotation after lifetime")
+				return ast.NewErrorTypeAnn(lifetime.Span())
+			}
 			// Return nil without consuming — signals "no type annotation found."
 			// Callers provide their own contextual error messages.
 			return nil
@@ -431,6 +476,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	}
 
 	typeAnn = p.typeAnnSuffix(typeAnn)
+
+	if lifetime != nil {
+		if ref, ok := typeAnn.(*ast.TypeRefTypeAnn); ok {
+			ref.Lifetime = lifetime
+		} else {
+			p.reportError(lifetime.Span(),
+				"lifetime annotation must precede a type reference")
+		}
+	}
 
 	if isMut {
 		typeAnn = ast.NewMutableTypeAnn(typeAnn, token.Span)
@@ -798,6 +852,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		retType := p.typeAnnRequired()
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
+			nil, // object-method type annotations don't yet support lifetime params
 			typeParams,
 			params,
 			retType,

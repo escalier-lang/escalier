@@ -8,6 +8,7 @@ type ClassDecl struct {
 	Extends    *TypeRefTypeAnn // optional superclass (can be a simple identifier or a generic type reference)
 	Params     []*Param        // constructor params
 	Body       []ClassElem     // fields, methods, etc.
+	Data       bool            // true when declared with `data class` — instances default to immutable
 	export     bool
 	declare    bool
 	span       Span
@@ -21,13 +22,14 @@ type ClassElem interface {
 }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, params []*Param, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, params []*Param, body []ClassElem, data, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		Extends:    extends,
 		Params:     params,
 		Body:       body,
+		Data:       data,
 		export:     export,
 		declare:    declare,
 		span:       span,

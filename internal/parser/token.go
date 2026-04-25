@@ -47,6 +47,7 @@ const (
 	GreaterThanEqual
 	Identifier
 	If
+	Lifetime
 	Import
 	In
 	Infer

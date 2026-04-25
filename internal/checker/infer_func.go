@@ -254,6 +254,12 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	}
 
 	c.closeOpenParams(funcSigType)
+
+	// Infer lifetime parameters from the body. This must run after returnType
+	// has been unified into funcSigType.Return so that the lifetime is attached
+	// to the same type the caller will see.
+	c.InferLifetimes(astParams, body, funcSigType)
+
 	return errors
 }
 
@@ -392,7 +398,6 @@ func (v *ThrowVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	// its branches.
 	return true
 }
-
 
 func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.Type, []Error) {
 	errors := []Error{}

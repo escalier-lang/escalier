@@ -6,15 +6,75 @@ import (
 
 // maybeTypeParams parses optional type parameters if present.
 // Returns the parsed type parameters and updates the current token position.
+//
+// Lifetime parameters (e.g. 'a) are syntactically accepted in the same
+// angle-bracket list but are not yet supported on the declaration kinds
+// that call this helper (class, interface, type alias, enum, methods),
+// so we surface a parse error instead of silently dropping them. Callers
+// that do support lifetimes (function decl/expr, `fn` type annotations)
+// use maybeLifetimeAndTypeParams directly.
 func (p *Parser) maybeTypeParams() []*ast.TypeParam {
-	var typeParams []*ast.TypeParam
-	token := p.lexer.peek()
-	if token.Type == LessThan {
-		p.lexer.consume() // consume '<'
-		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, AlwaysConsume)
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	for _, lp := range lifetimeParams {
+		p.reportError(lp.Span(),
+			"lifetime parameters are not supported in this context")
 	}
 	return typeParams
+}
+
+// lifetimeAnn parses a single lifetime annotation token (e.g. 'a) and
+// returns the corresponding AST node. Returns nil when the next token is
+// not a Lifetime — suitable for use as a parseDelimSeq combinator.
+func (p *Parser) lifetimeAnn() *ast.LifetimeAnn {
+	tok := p.lexer.peek()
+	if tok.Type != Lifetime {
+		return nil
+	}
+	p.lexer.consume()
+	return ast.NewLifetimeAnn(tok.Value, tok.Span)
+}
+
+// maybeLifetimeAndTypeParams parses optional generic parameters that may
+// include both lifetime parameters ('a) and type parameters (T). Lifetime
+// parameters must precede type parameters by convention, but this parser
+// accepts them in any order and sorts them out by token kind.
+func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypeParam) {
+	var lifetimeParams []*ast.LifetimeAnn
+	var typeParams []*ast.TypeParam
+	token := p.lexer.peek()
+	if token.Type != LessThan {
+		return nil, nil
+	}
+	p.lexer.consume() // consume '<'
+	for {
+		select {
+		case <-p.ctx.Done():
+			return lifetimeParams, typeParams
+		default:
+		}
+		token = p.lexer.peek()
+		if token.Type == GreaterThan {
+			break
+		}
+		if token.Type == Lifetime {
+			p.lexer.consume()
+			lifetimeParams = append(lifetimeParams, ast.NewLifetimeAnn(token.Value, token.Span))
+		} else {
+			tp := p.typeParam()
+			if tp == nil {
+				break
+			}
+			typeParams = append(typeParams, tp)
+		}
+		token = p.lexer.peek()
+		if token.Type == Comma {
+			p.lexer.consume()
+			continue
+		}
+		break
+	}
+	p.expect(GreaterThan, AlwaysConsume)
+	return lifetimeParams, typeParams
 }
 
 // Decl = 'export'? 'declare'? 'async'? (varDecl | fnDecl)
@@ -22,6 +82,7 @@ func (p *Parser) Decl() ast.Decl {
 	export := false
 	declare := false
 	async := false
+	data := false
 
 	token := p.lexer.next()
 	start := token.Span.Start
@@ -37,6 +98,13 @@ func (p *Parser) Decl() ast.Decl {
 
 	if token.Type == Async {
 		async = true
+		token = p.lexer.next()
+	}
+
+	// `data` is a contextual modifier — only treated as a keyword when it
+	// immediately precedes `class`. Anywhere else it is a regular identifier.
+	if token.Type == Identifier && token.Value == "data" && p.lexer.peek().Type == Class {
+		data = true
 		token = p.lexer.next()
 	}
 
@@ -57,15 +125,15 @@ func (p *Parser) Decl() ast.Decl {
 	case Enum:
 		return p.enumDecl(start, export, declare)
 	case Class:
-		return p.classDecl(start, export, declare)
+		return p.classDecl(start, export, declare, data)
 	default:
 		p.reportError(token.Span, "Unexpected token")
 		return nil
 	}
 }
 
-// classDecl = 'class' ident typeParams? '(' param* ')' ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
-func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
+// classDecl = 'data'? 'class' ident typeParams? '(' param* ')' ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
+func (p *Parser) classDecl(start ast.Location, export, declare, data bool) ast.Decl {
 	token := p.lexer.peek()
 	var name *ast.Ident
 	if token.Type != Identifier {
@@ -131,7 +199,8 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		p.reportError(token.Span, "Expected '{' to start class body")
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-		return ast.NewClassDecl(name, typeParams, extends, params, nil, export, declare, span)
+		decl := ast.NewClassDecl(name, typeParams, extends, params, nil, data, export, declare, span)
+		return decl
 	}
 	p.lexer.consume()
 
@@ -140,7 +209,8 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	return ast.NewClassDecl(name, typeParams, extends, params, body, export, declare, span)
+	decl := ast.NewClassDecl(name, typeParams, extends, params, body, data, export, declare, span)
+	return decl
 }
 
 // parseClassElem parses a single class element (field, method, static, etc.)
@@ -241,7 +311,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.GetterElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+			Fn:      ast.NewFuncExpr(nil, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
 			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,
@@ -282,7 +352,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(typeParams, params, nil, nil, false, body, span),
+			Fn:      ast.NewFuncExpr(nil, typeParams, params, nil, nil, false, body, span),
 			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,
@@ -334,7 +404,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.MethodElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(typeParams, params, returnType, throwsType, isAsync, body, span),
+			Fn:      ast.NewFuncExpr(nil, typeParams, params, returnType, throwsType, isAsync, body, span),
 			MutSelf: mutSelf,
 			Static:  isStatic,
 			Private: isPrivate,
@@ -468,8 +538,8 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		)
 	}
 
-	// Parse optional type parameters for the function
-	typeParams := p.maybeTypeParams()
+	// Parse optional lifetime + type parameters for the function
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 	token = p.lexer.peek()
 
 	if token.Type != OpenParen {
@@ -482,10 +552,11 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 			// partial node to avoid consuming tokens from subsequent
 			// statements.
 			end := ident.Span().End
-			return ast.NewFuncDecl(
-				ident, typeParams, nil, nil, nil, nil, export, declare, async,
+			fd := ast.NewFuncDecl(
+				ident, lifetimeParams, typeParams, nil, nil, nil, nil, export, declare, async,
 				ast.NewSpan(start, end, p.lexer.source.ID),
 			)
+			return fd
 		}
 	} else {
 		p.lexer.consume()
@@ -536,10 +607,11 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		end = body.Span.End
 	}
 
-	return ast.NewFuncDecl(
-		ident, typeParams, params, returnType, throwsType, &body, export, declare, async,
+	fd := ast.NewFuncDecl(
+		ident, lifetimeParams, typeParams, params, returnType, throwsType, &body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
+	return fd
 }
 
 func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Decl {

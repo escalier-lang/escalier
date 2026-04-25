@@ -2356,8 +2356,20 @@ func (v *RemoveUncertainMutabilityVisitor) EnterType(t type_system.Type) type_sy
 }
 
 func (v *RemoveUncertainMutabilityVisitor) ExitType(t type_system.Type) type_system.Type {
-	// If this is a type_system.MutabilityType with uncertain mutability, unwrap it
+	// If this is a type_system.MutabilityType with uncertain mutability, resolve it
+	// using the wrapped type's TypeAlias.DefaultMutable when available (set by
+	// constructor lifetime inference) — this lets `mut?` on a class instance
+	// settle to `mut` for classes with mut-self methods, or to immutable
+	// otherwise. Without that hint, default to immutable.
 	if mut, ok := t.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
+		if ref, ok := type_system.Prune(mut.Type).(*type_system.TypeRefType); ok &&
+			ref.TypeAlias != nil && ref.TypeAlias.DefaultMutable != nil &&
+			*ref.TypeAlias.DefaultMutable {
+			return &type_system.MutabilityType{
+				Type:       mut.Type,
+				Mutability: type_system.MutabilityMutable,
+			}
+		}
 		return mut.Type
 	}
 	return nil

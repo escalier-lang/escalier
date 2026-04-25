@@ -121,19 +121,34 @@ func (p *Parser) stmt() ast.Stmt {
 
 	var stmt ast.Stmt
 
+	// `data` is a contextual modifier — `data class ...` starts a decl.
+	// Detect that here so the decl path is taken instead of expr parsing.
+	isDataClass := false
+	if token.Type == Identifier && token.Value == "data" {
+		saved := p.saveState()
+		p.lexer.consume()
+		if p.lexer.peek().Type == Class {
+			isDataClass = true
+		}
+		p.restoreState(saved)
+	}
+
 	// nolint: exhaustive
-	switch token.Type {
-	case Import:
+	switch {
+	case token.Type == Import:
 		stmt = p.importStmt()
-	case For:
+	case token.Type == For:
 		stmt = p.parseForInStmt()
-	case Async, Fn, Var, Val, Type, Interface, Enum, Declare, Export, Class:
+	case isDataClass,
+		token.Type == Async, token.Type == Fn, token.Type == Var, token.Type == Val,
+		token.Type == Type, token.Type == Interface, token.Type == Enum,
+		token.Type == Declare, token.Type == Export, token.Type == Class:
 		decl := p.Decl()
 		if decl == nil {
 			return nil
 		}
 		stmt = ast.NewDeclStmt(decl, decl.Span())
-	case Return:
+	case token.Type == Return:
 		p.lexer.consume()
 		expr := p.exprWithoutErrorCheck()
 		if expr == nil {

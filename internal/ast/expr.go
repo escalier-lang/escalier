@@ -314,11 +314,12 @@ func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {
 }
 
 type FuncSig struct {
-	TypeParams []*TypeParam
-	Params     []*Param
-	Return     TypeAnn // optional
-	Throws     TypeAnn // optional
-	Async      bool    // whether this is an async function
+	LifetimeParams []*LifetimeAnn // optional, e.g. ['a, 'b]
+	TypeParams     []*TypeParam
+	Params         []*Param
+	Return         TypeAnn // optional
+	Throws         TypeAnn // optional
+	Async          bool    // whether this is an async function
 }
 
 type FuncExpr struct {
@@ -329,6 +330,7 @@ type FuncExpr struct {
 }
 
 func NewFuncExpr(
+	lifetimeParams []*LifetimeAnn,
 	typeParams []*TypeParam,
 	params []*Param,
 	ret TypeAnn, // optional
@@ -339,11 +341,12 @@ func NewFuncExpr(
 ) *FuncExpr {
 	return &FuncExpr{
 		FuncSig: FuncSig{
-			TypeParams: typeParams,
-			Params:     params,
-			Return:     ret,
-			Throws:     throws,
-			Async:      async,
+			LifetimeParams: lifetimeParams,
+			TypeParams:     typeParams,
+			Params:         params,
+			Return:         ret,
+			Throws:         throws,
+			Async:          async,
 		},
 		Body:         body,
 		span:         span,

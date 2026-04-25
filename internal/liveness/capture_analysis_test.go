@@ -119,7 +119,7 @@ func TestAnalyzeCaptures_ReadInAssignmentLHS(t *testing.T) {
 	assignExpr := ast.NewBinary(memberExpr, ast.NewLitExpr(ast.NewNumber(1, ast.Span{})), ast.Assign, ast.Span{})
 
 	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(assignExpr, ast.Span{})}}
-	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, body, ast.Span{})
 
 	// getObj is called (read) on the LHS of an assignment, not mutated itself
 	require.Equal(t, "getObj(immut)", formatCaptures(AnalyzeCaptures(funcExpr)))
@@ -162,12 +162,12 @@ func TestAnalyzeCaptures_NestedFuncExpr_NotRecursedInto(t *testing.T) {
 	outerRef.VarID = -1
 
 	methodBody := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(outerRef, ast.Span{})}}
-	methodFn := ast.NewFuncExpr(nil, nil, nil, nil, false, methodBody, ast.Span{})
+	methodFn := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, methodBody, ast.Span{})
 	method := ast.NewMethod(ast.NewIdent("method", ast.Span{}), methodFn, nil, ast.Span{})
 
 	objExpr := ast.NewObject([]ast.ObjExprElem{method}, ast.Span{})
 	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(objExpr, ast.Span{})}}
-	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, false, body, ast.Span{})
+	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, body, ast.Span{})
 
 	// Nested function bodies are not walked — each gets its own capture analysis
 	require.Equal(t, "[]", formatCaptures(AnalyzeCaptures(funcExpr)))

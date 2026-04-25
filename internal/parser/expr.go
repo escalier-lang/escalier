@@ -511,14 +511,8 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	// }
 	p.lexer.consume() // consume the fn keyword
 
-	// Parse type parameters if present
-	typeParams := []*ast.TypeParam{}
-	token := p.lexer.peek()
-	if token.Type == LessThan {
-		p.lexer.consume() // consume '<'
-		typeParams = parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, ConsumeOnMatch)
-	}
+	// Parse lifetime + type parameters if present
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 
 	p.expect(OpenParen, ConsumeOnMatch)
 	params := parseDelimSeq(p, CloseParen, Comma, p.param)
@@ -526,7 +520,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 
 	var returnType ast.TypeAnn
 	var throwsType ast.TypeAnn
-	token = p.lexer.peek()
+	token := p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
 		typeAnn := p.typeAnn()
@@ -552,7 +546,8 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	body := p.block()
 	end := body.Span.End
 
-	return ast.NewFuncExpr(
+	fn := ast.NewFuncExpr(
+		lifetimeParams,
 		typeParams, // Use parsed type params instead of empty slice
 		params,
 		returnType,
@@ -561,6 +556,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 		&body,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
+	return fn
 }
 
 func (p *Parser) mutSelf() *bool {
@@ -632,6 +628,7 @@ func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam,
 	span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
 
 	fn := ast.NewFuncExpr(
+		nil, // methods don't yet support lifetime params
 		typeParams,
 		params,
 		returnType,
@@ -775,10 +772,10 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		}
 		return nil
 	case LessThan:
-		// Parse type parameters for generic methods
-		p.lexer.consume() // consume '<'
-		typeParams := parseDelimSeq(p, GreaterThan, Comma, p.typeParam)
-		p.expect(GreaterThan, ConsumeOnMatch)
+		// Parse type parameters for generic methods. Object methods do not
+		// yet support lifetime parameters; maybeTypeParams reports them as
+		// errors with a consistent message.
+		typeParams := p.maybeTypeParams()
 
 		// After type parameters, we should have '('
 		token = p.lexer.peek()

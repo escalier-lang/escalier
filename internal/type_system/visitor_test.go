@@ -1273,6 +1273,43 @@ func TestEnterTypeWithComplexStructures(t *testing.T) {
 	})
 }
 
+// TestNamespaceTypeAcceptPreservesTypeAliasMetadata verifies that when
+// NamespaceType.Accept rewrites a TypeAlias whose inner Type was changed
+// by the visitor, the resulting TypeAlias preserves all metadata fields
+// — including DefaultMutable, which carries the class default-mutability
+// semantics computed during lifetime inference.
+func TestNamespaceTypeAcceptPreservesTypeAliasMetadata(t *testing.T) {
+	oldInner := NewNumPrimType(nil)
+	newInner := NewStrPrimType(nil)
+
+	mutable := true
+	alias := &TypeAlias{
+		Type:           oldInner,
+		Exported:       true,
+		DefaultMutable: &mutable,
+	}
+	ns := NewNamespace()
+	ns.Types["MyClass"] = alias
+	nsType := NewNamespaceType(nil, ns)
+
+	visitor := NewTypeReplacementVisitor(map[Type]Type{
+		oldInner: newInner,
+	})
+	result := nsType.Accept(visitor)
+
+	resultNs := result.(*NamespaceType).Namespace
+	resultAlias := resultNs.Types["MyClass"]
+	assert.NotSame(t, alias, resultAlias, "expected a new TypeAlias instance")
+	assert.Same(t, newInner, resultAlias.Type)
+	if assert.NotNil(t, resultAlias.DefaultMutable,
+		"DefaultMutable must be preserved across visitor rewrite") {
+		assert.True(t, *resultAlias.DefaultMutable,
+			"DefaultMutable must be preserved across visitor rewrite")
+	}
+	assert.True(t, resultAlias.Exported,
+		"Exported must be preserved across visitor rewrite")
+}
+
 // BenchmarkVisitorTraversal benchmarks visitor performance on complex type structures
 func BenchmarkVisitorTraversal(b *testing.B) {
 	// Create a complex nested type structure
