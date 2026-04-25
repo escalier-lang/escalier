@@ -70,7 +70,7 @@ func (p *Parser) Decl() ast.Decl {
 	export := false
 	declare := false
 	async := false
-	immutable := false
+	data := false
 
 	token := p.lexer.next()
 	start := token.Span.Start
@@ -89,17 +89,15 @@ func (p *Parser) Decl() ast.Decl {
 		token = p.lexer.next()
 	}
 
-	if token.Type == Immutable {
-		immutable = true
+	// `data` is a contextual modifier — only treated as a keyword when it
+	// immediately precedes `class`. Anywhere else it is a regular identifier.
+	if token.Type == Identifier && token.Value == "data" && p.lexer.peek().Type == Class {
+		data = true
 		token = p.lexer.next()
 	}
 
 	if async && token.Type != Fn {
 		p.reportError(token.Span, "async can only be used with functions")
-	}
-
-	if immutable && token.Type != Class {
-		p.reportError(token.Span, "immutable can only be used with classes")
 	}
 
 	// nolint: exhaustive
@@ -115,15 +113,15 @@ func (p *Parser) Decl() ast.Decl {
 	case Enum:
 		return p.enumDecl(start, export, declare)
 	case Class:
-		return p.classDecl(start, export, declare, immutable)
+		return p.classDecl(start, export, declare, data)
 	default:
 		p.reportError(token.Span, "Unexpected token")
 		return nil
 	}
 }
 
-// classDecl = 'immutable'? 'class' ident typeParams? '(' param* ')' ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
-func (p *Parser) classDecl(start ast.Location, export, declare, immutable bool) ast.Decl {
+// classDecl = 'data'? 'class' ident typeParams? '(' param* ')' ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
+func (p *Parser) classDecl(start ast.Location, export, declare, data bool) ast.Decl {
 	token := p.lexer.peek()
 	var name *ast.Ident
 	if token.Type != Identifier {
@@ -189,7 +187,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, immutable bool) 
 		p.reportError(token.Span, "Expected '{' to start class body")
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-		decl := ast.NewClassDecl(name, typeParams, extends, params, nil, immutable, export, declare, span)
+		decl := ast.NewClassDecl(name, typeParams, extends, params, nil, data, export, declare, span)
 		return decl
 	}
 	p.lexer.consume()
@@ -199,7 +197,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, immutable bool) 
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	decl := ast.NewClassDecl(name, typeParams, extends, params, body, immutable, export, declare, span)
+	decl := ast.NewClassDecl(name, typeParams, extends, params, body, data, export, declare, span)
 	return decl
 }
 

@@ -115,18 +115,18 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 	}
 }
 
-// TestParseImmutableClass snapshots class declarations with the
-// `immutable` modifier and a regular class declaration for contrast.
-func TestParseImmutableClass(t *testing.T) {
+// TestParseDataClass snapshots class declarations with the
+// `data` modifier and a regular class declaration for contrast.
+func TestParseDataClass(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
-		"ImmutableClass": {
-			input: `immutable class Config(host: string) { host, }`,
+		"DataClass": {
+			input: `data class Config(host: string) { host, }`,
 		},
-		"ImmutableClassWithMutSelfMethod": {
+		"DataClassWithMutSelfMethod": {
 			input: `
-				immutable class Config(host: string) {
+				data class Config(host: string) {
 					host,
 					setHost(mut self, h: string) -> void {}
 				}

@@ -204,11 +204,11 @@ func (c *Checker) InferConstructorLifetimes(
 	}
 
 	// Default mutability per Phase 8.6 algorithm step 5:
-	//   - immutable modifier  → immutable
+	//   - data modifier       → immutable (regardless of methods)
 	//   - any mut self method → mutable
 	//   - else                → immutable
 	mutable := false
-	if !classDecl.Immutable {
+	if !classDecl.Data {
 		for _, elem := range classDecl.Body {
 			if methodElem, ok := elem.(*ast.MethodElem); ok {
 				if methodElem.MutSelf != nil && *methodElem.MutSelf {

@@ -137,7 +137,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 // TestDefaultMutabilityFromClass asserts the DefaultMutable bit on the
 // class TypeAlias for the three branches of the algorithm: no mut self
 // methods → immutable; at least one mut self method → mutable;
-// `immutable class` modifier → immutable regardless.
+// `data class` modifier → immutable regardless.
 func TestDefaultMutabilityFromClass(t *testing.T) {
 	tests := map[string]struct {
 		input          string
@@ -162,9 +162,9 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			expectedSet:     true,
 			expectedMutable: true,
 		},
-		"ImmutableModifier_OverridesMutSelf": {
+		"DataModifier_OverridesMutSelf": {
 			input: `
-				immutable class Config(host: string) {
+				data class Config(host: string) {
 					host,
 					setHost(mut self, h: string) -> void {}
 				}

@@ -6129,10 +6129,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:6, Column:6},
             SourceID: 0,
@@ -6281,10 +6281,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:4, Column:6},
             SourceID: 0,
@@ -6374,10 +6374,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   true,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: true,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:4, Column:6},
             SourceID: 0,
@@ -6498,10 +6498,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    true,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  true,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:6, Column:6},
             SourceID: 0,
@@ -6659,10 +6659,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:6, Column:6},
             SourceID: 0,
@@ -6806,10 +6806,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:6, Column:6},
             SourceID: 0,
@@ -6937,10 +6937,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:5, Column:6},
             SourceID: 0,
@@ -7071,10 +7071,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:2, Column:5},
             End:      ast.Location{Line:6, Column:6},
             SourceID: 0,
@@ -8820,10 +8820,10 @@
                 },
             },
         },
-        Immutable: false,
-        export:    false,
-        declare:   false,
-        span:      ast.Span{
+        Data:    false,
+        export:  false,
+        declare: false,
+        span:    ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:45},
             SourceID: 0,

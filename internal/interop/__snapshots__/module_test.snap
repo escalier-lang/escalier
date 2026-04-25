@@ -810,13 +810,13 @@
                                 },
                                 TypeParams: {
                                 },
-                                Extends:   (*ast.TypeRefTypeAnn)(nil),
-                                Params:    nil,
-                                Body:      nil,
-                                Immutable: false,
-                                export:    false,
-                                declare:   true,
-                                span:      ast.Span{
+                                Extends: (*ast.TypeRefTypeAnn)(nil),
+                                Params:  nil,
+                                Body:    nil,
+                                Data:    false,
+                                export:  false,
+                                declare: true,
+                                span:    ast.Span{
                                     Start:    ast.Location{Line:4, Column:9},
                                     End:      ast.Location{Line:4, Column:25},
                                     SourceID: 0,
@@ -1181,13 +1181,13 @@
                                 },
                                 TypeParams: {
                                 },
-                                Extends:   (*ast.TypeRefTypeAnn)(nil),
-                                Params:    nil,
-                                Body:      nil,
-                                Immutable: false,
-                                export:    true,
-                                declare:   true,
-                                span:      ast.Span{
+                                Extends: (*ast.TypeRefTypeAnn)(nil),
+                                Params:  nil,
+                                Body:    nil,
+                                Data:    false,
+                                export:  true,
+                                declare: true,
+                                span:    ast.Span{
                                     Start:    ast.Location{Line:5, Column:3},
                                     End:      ast.Location{Line:5, Column:19},
                                     SourceID: 0,

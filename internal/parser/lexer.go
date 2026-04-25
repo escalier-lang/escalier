@@ -43,7 +43,6 @@ var keywords = map[string]TokenType{
 	"else":      Else,
 	"enum":      Enum,
 	"interface": Interface,
-	"immutable": Immutable,
 	"let":       Let,
 	"match":     Match,
 	"try":       Try,

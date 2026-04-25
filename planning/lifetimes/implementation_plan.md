@@ -1443,23 +1443,26 @@ type MutTypeAnn struct {
 **File:** `internal/parser/decl.go`
 
 Extend `classDecl` (or the declaration dispatcher that calls it) to accept
-an optional `immutable` token before `class`:
+an optional `data` modifier before `class`:
 
 ```esc
-immutable class Config(host: string) {
+data class Config(host: string) {
     fn setHost(mut self, h: string) { self.host = h }
 }
 ```
 
 **Parsing changes:**
-1. Before matching `Class`, check if the current token is `Immutable`
-   (a new keyword token). If so, consume it and set a local flag
-   `isImmutable = true`, then expect `Class` as the next token.
-2. Pass `isImmutable` through to `classDecl`.
+1. `data` is a contextual keyword — only treated as a modifier when it
+   immediately precedes `class`. Anywhere else it remains a regular
+   identifier (so existing code using `data` as a name keeps working).
+2. Before matching `Class`, check if the current token is the identifier
+   `data` and the next token is `Class`. If so, consume the `data` token
+   and set a local flag `isData = true`, then expect `Class` next.
+3. Pass `isData` through to `classDecl`.
 
 **File:** `internal/ast/class.go`
 
-Add an `Immutable` field to `ClassDecl`:
+Add a `Data` field to `ClassDecl`:
 
 ```go
 type ClassDecl struct {
@@ -1468,7 +1471,7 @@ type ClassDecl struct {
     Extends    *TypeRefTypeAnn
     Params     []*Param
     Body       []ClassElem
-    Immutable  bool            // true when declared with `immutable class`
+    Data       bool            // true when declared with `data class` — instances default to immutable
     export     bool
     declare    bool
     span       Span
@@ -1479,7 +1482,7 @@ type ClassDecl struct {
 **Integration with constructor lifetime inference:**
 
 In `InferConstructorLifetimes` (Section 8.6), when determining default
-mutability (step 5), consult `classDecl.Immutable`. If `true`, set
+mutability (step 5), consult `classDecl.Data`. If `true`, set
 `TypeAlias.DefaultMutable = false` regardless of whether the class has
 `mut self` methods.
 
@@ -1904,8 +1907,8 @@ class Counter(var count: number) {
 }
 val c = Counter(0)               // type: mut Counter (mutable)
 
-// immutable modifier overrides default
-immutable class Config(host: string) {
+// data modifier overrides default
+data class Config(host: string) {
     host,
     fn setHost(mut self, h: string) -> void { self.host = h }
 }
