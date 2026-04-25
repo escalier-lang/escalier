@@ -152,6 +152,26 @@ func (c *Checker) checkMutabilityTransition(
 	}}
 }
 
+// isValueType returns true if the type is a primitive or literal type
+// (or a union of such types). Value types have copy semantics — assigning
+// them to another variable creates an independent copy, so alias tracking
+// is unnecessary.
+func isValueType(t type_system.Type) bool {
+	pruned := type_system.Prune(t)
+	switch p := pruned.(type) {
+	case *type_system.PrimType, *type_system.LitType:
+		return true
+	case *type_system.UnionType:
+		for _, member := range p.Types {
+			if !isValueType(member) {
+				return false
+			}
+		}
+		return len(p.Types) > 0
+	}
+	return false
+}
+
 // isMutableType checks whether a type has a mutable wrapper (MutabilityType
 // with MutabilityMutable). This determines how a variable accesses the
 // shared value for alias tracking purposes.
@@ -322,6 +342,12 @@ func (c *Checker) trackCapturedAliases(
 		// the innermost binding, which is the one in scope at this point.
 		binding := ctx.Scope.GetValue(capture.Name)
 		if binding == nil || binding.VarID <= 0 {
+			continue
+		}
+		// Primitives and literals have value semantics — reassigning a
+		// captured primitive inside a closure can't affect other variables
+		// that copied the value, so alias tracking is unnecessary.
+		if isValueType(binding.Type) {
 			continue
 		}
 		enclosingVarID := liveness.VarID(binding.VarID)

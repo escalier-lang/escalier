@@ -362,6 +362,40 @@ func TestMutabilityTransitions(t *testing.T) {
 		// f is dead after its last use, so the transition is safe.
 	}
 
+	// Primitive variables have value semantics — reassigning a captured
+	// primitive inside a closure can't affect other variables that copied
+	// the value, so no transition error should be reported.
+	tests["ClosureCapture_PrimitiveReassign_NoTransitionError"] = struct {
+		input          string
+		expectedErrors []string
+	}{
+		input: `
+			fn test() {
+				var count = 0
+				val count2 = count
+				val f = fn() { count = count + 1 }
+				f()
+				count2
+			}
+		`,
+	}
+
+	// Literal types also have value semantics — same as primitives.
+	tests["ClosureCapture_LiteralTypeReassign_NoTransitionError"] = struct {
+		input          string
+		expectedErrors []string
+	}{
+		input: `
+			fn test() {
+				var label: "on" | "off" = "on"
+				val label2 = label
+				val f = fn() { label = "off" }
+				f()
+				label2
+			}
+		`,
+	}
+
 	// Closure capture with shadowed variable names: the closure should
 	// capture the outer variable (the one in scope at the closure definition),
 	// not a same-named variable from a nested scope.

@@ -158,8 +158,10 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 		case AliasSourceFresh:
 			// Fresh branch — doesn't contribute alias IDs
 		default:
-			// Unknown — cannot determine statically
-			return AliasSource{Kind: AliasSourceUnknown}
+			// Unknown — treat like fresh for alias purposes. We can't
+			// determine what this branch aliases, but that's no reason to
+			// discard alias info from the branches we DO know about.
+			allFresh = false
 		}
 	}
 

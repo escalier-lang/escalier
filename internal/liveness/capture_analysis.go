@@ -25,6 +25,12 @@ type CaptureInfo struct {
 // A capture is mutable if the captured variable appears on the left side
 // of an assignment or as the root of a member/index expression that is
 // assigned to (e.g. `captured.prop = value`).
+//
+// Note: this analysis is purely syntactic — it does not consider types.
+// A mutable capture of a primitive (e.g. `count = count + 1`) is reported
+// as mutable even though primitives have value semantics. The caller
+// (trackCapturedAliases in the checker) is responsible for skipping alias
+// tracking for value types.
 func AnalyzeCaptures(funcExpr *ast.FuncExpr) []CaptureInfo {
 	if funcExpr.Body == nil || len(funcExpr.Body.Stmts) == 0 {
 		return nil

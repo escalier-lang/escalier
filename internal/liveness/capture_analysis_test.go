@@ -68,7 +68,7 @@ func formatCaptures(captures []CaptureInfo) string {
 }
 
 func TestAnalyzeCaptures_ReadOnly(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		val items = [1, 2, 3]
 		val f = fn() { items }
 	`)
@@ -78,7 +78,7 @@ func TestAnalyzeCaptures_ReadOnly(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_MutableDirectAssign(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		var count = 0
 		val f = fn() { count = count + 1 }
 	`)
@@ -88,7 +88,7 @@ func TestAnalyzeCaptures_MutableDirectAssign(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_MutablePropertyAssign(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		val obj = {x: 0}
 		val f = fn() { obj.x = 1 }
 	`)
@@ -98,7 +98,7 @@ func TestAnalyzeCaptures_MutablePropertyAssign(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_NoCaptures(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		val f = fn(x: number) { x + 1 }
 	`)
 
@@ -126,7 +126,7 @@ func TestAnalyzeCaptures_ReadInAssignmentLHS(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_JSXElement_ExprInChild(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		val captured = 1
 		val f = fn() { <div>{captured}</div> }
 	`)
@@ -136,7 +136,7 @@ func TestAnalyzeCaptures_JSXElement_ExprInChild(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_JSXElement_ExprInAttr(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		val captured = 1
 		val f = fn() { <div prop={captured} /> }
 	`)
@@ -146,7 +146,7 @@ func TestAnalyzeCaptures_JSXElement_ExprInAttr(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_JSXElement_SpreadAttr(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		val captured = {a: 1}
 		val f = fn() { <div {...captured} /> }
 	`)
@@ -174,7 +174,7 @@ func TestAnalyzeCaptures_NestedFuncExpr_NotRecursedInto(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_MultipleCaptures_SortedByVarID(t *testing.T) {
-	funcExpr := findFuncExpr(t,`
+	funcExpr := findFuncExpr(t, `
 		val zebra = 1
 		val alpha = 2
 		val middle = 3

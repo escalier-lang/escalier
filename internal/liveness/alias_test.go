@@ -238,6 +238,55 @@ func TestReassignMultiEmptySources(t *testing.T) {
 	require.Equal(t, "[{x(immut)}]", formatAliasSets(tracker.GetAliasSets(x), names))
 }
 
+func TestMultipleAliases(t *testing.T) {
+	// val b = a; val c = a
+	tracker := NewAliasTracker()
+	var a VarID = 1
+	var b VarID = 2
+	var c VarID = 3
+	names := map[VarID]string{1: "a", 2: "b", 3: "c"}
+
+	tracker.NewValue(a, AliasImmutable)
+	tracker.AddAlias(b, a, AliasImmutable)
+	tracker.AddAlias(c, a, AliasImmutable)
+
+	// All three should be in the same set
+	require.Equal(t, "[{a(immut), b(immut), c(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
+}
+
+func TestChainAlias(t *testing.T) {
+	// val b = a; val c = b — transitive aliasing
+	tracker := NewAliasTracker()
+	var a VarID = 1
+	var b VarID = 2
+	var c VarID = 3
+	names := map[VarID]string{1: "a", 2: "b", 3: "c"}
+
+	tracker.NewValue(a, AliasImmutable)
+	tracker.AddAlias(b, a, AliasImmutable)
+	tracker.AddAlias(c, b, AliasImmutable)
+
+	// c aliases b which aliases a, so all three end up in the same set
+	require.Equal(t, "[{a(immut), b(immut), c(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
+}
+
+func TestShadowing(t *testing.T) {
+	// val x = a; val x = {y: 1} — second x (x2) gets a distinct VarID
+	tracker := NewAliasTracker()
+	var a VarID = 1
+	var x1 VarID = 2
+	var x2 VarID = 3
+	names := map[VarID]string{1: "a", 2: "x1", 3: "x2"}
+
+	tracker.NewValue(a, AliasImmutable)
+	tracker.AddAlias(x1, a, AliasImmutable)
+	tracker.NewValue(x2, AliasImmutable)
+
+	// x1 stays in a's set; x2 (the shadow) gets its own fresh set
+	require.Equal(t, "[{a(immut), x1(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
+	require.Equal(t, "[{x2(immut)}]", formatAliasSets(tracker.GetAliasSets(x2), names))
+}
+
 func TestMergeAliasSetsNoOp(t *testing.T) {
 	tracker := NewAliasTracker()
 	var x VarID = 1

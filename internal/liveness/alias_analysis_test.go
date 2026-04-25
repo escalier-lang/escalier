@@ -214,9 +214,10 @@ func TestDetermineAliasSource_IfElseExpr_NoAlt_Fresh(t *testing.T) {
 func TestDetermineAliasSource_IfElseExpr_UnknownAndVariable(t *testing.T) {
 	expr := parseExpr(t, "if true { ext } else { a }")
 	setVarIDs(expr, map[string]int{"ext": -1, "a": 1})
+	names := map[VarID]string{1: "a"}
 
-	// Any unknown branch makes the whole result unknown (conservative)
-	require.Equal(t, "unknown", formatAliasSource(DetermineAliasSource(expr), nil))
+	// Unknown branches are skipped — we still track aliases from known branches
+	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
 }
 
 func TestDetermineAliasSource_IfElseExpr_SameVariable(t *testing.T) {
@@ -253,104 +254,4 @@ func TestDetermineAliasSource_MatchExpr_VariableAndFresh(t *testing.T) {
 
 	// Only one arm aliases a variable; the fresh arm doesn't contribute
 	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
-}
-
-// Integration tests: alias tracking with DetermineAliasSource
-
-func TestAliasTracking_ValBEqualsA(t *testing.T) {
-	// val a = {x: 1}; val b = a
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	names := map[VarID]string{1: "a", 2: "b"}
-
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-
-	// a and b should be in the same alias set
-	require.Equal(t, "[{a(immut), b(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
-	require.Equal(t, "[{a(immut), b(immut)}]", formatAliasSets(tracker.GetAliasSets(b), names))
-}
-
-func TestAliasTracking_ReassignToFresh(t *testing.T) {
-	// var b = a; b = {x: 1}
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	names := map[VarID]string{1: "a", 2: "b"}
-
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-	tracker.Reassign(b, nil, AliasImmutable)
-
-	// b should have left a's set and gotten its own fresh set
-	require.Equal(t, "[{a(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
-	require.Equal(t, "[{b(immut)}]", formatAliasSets(tracker.GetAliasSets(b), names))
-}
-
-func TestAliasTracking_ReassignToOtherVar(t *testing.T) {
-	// var b = a; b = c
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	var c VarID = 3
-	names := map[VarID]string{1: "a", 2: "b", 3: "c"}
-
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-	tracker.NewValue(c, AliasImmutable)
-	tracker.Reassign(b, &c, AliasImmutable)
-
-	// b should have left a's set and joined c's set
-	require.Equal(t, "[{a(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
-	require.Equal(t, "[{b(immut), c(immut)}]", formatAliasSets(tracker.GetAliasSets(b), names))
-}
-
-func TestAliasTracking_MultipleAliases(t *testing.T) {
-	// val b = a; val c = a
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	var c VarID = 3
-	names := map[VarID]string{1: "a", 2: "b", 3: "c"}
-
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-	tracker.AddAlias(c, a, AliasImmutable)
-
-	// All three should be in the same set
-	require.Equal(t, "[{a(immut), b(immut), c(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
-}
-
-func TestAliasTracking_Chain(t *testing.T) {
-	// val b = a; val c = b — transitive aliasing
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var b VarID = 2
-	var c VarID = 3
-	names := map[VarID]string{1: "a", 2: "b", 3: "c"}
-
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(b, a, AliasImmutable)
-	tracker.AddAlias(c, b, AliasImmutable)
-
-	// c aliases b which aliases a, so all three end up in the same set
-	require.Equal(t, "[{a(immut), b(immut), c(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
-}
-
-func TestAliasTracking_Shadowing(t *testing.T) {
-	// val x = a; val x = {y: 1} — second x (x2) gets a distinct VarID
-	tracker := NewAliasTracker()
-	var a VarID = 1
-	var x1 VarID = 2
-	var x2 VarID = 3
-	names := map[VarID]string{1: "a", 2: "x1", 3: "x2"}
-
-	tracker.NewValue(a, AliasImmutable)
-	tracker.AddAlias(x1, a, AliasImmutable)
-	tracker.NewValue(x2, AliasImmutable)
-
-	// x1 stays in a's set; x2 (the shadow) gets its own fresh set
-	require.Equal(t, "[{a(immut), x1(immut)}]", formatAliasSets(tracker.GetAliasSets(a), names))
-	require.Equal(t, "[{x2(immut)}]", formatAliasSets(tracker.GetAliasSets(x2), names))
 }
