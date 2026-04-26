@@ -460,11 +460,11 @@ func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
 	}
 }
 
-// stripMutabilityWrapper strips a MutabilityType wrapper so callers can
+// stripMutabilityWrapper strips a MutType wrapper so callers can
 // match the underlying structural type. Returns the input unchanged if
 // not wrapped.
 func stripMutabilityWrapper(t type_system.Type) type_system.Type {
-	if mt, ok := t.(*type_system.MutabilityType); ok {
+	if mt, ok := t.(*type_system.MutType); ok {
 		return type_system.Prune(mt.Type)
 	}
 	return t
@@ -581,7 +581,7 @@ func setLifetimeOnType(t type_system.Type, lt type_system.Lifetime) {
 		ty.Lifetime = lt
 	case *type_system.TupleType:
 		ty.Lifetime = lt
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		setLifetimeOnType(ty.Type, lt)
 	}
 }
@@ -1124,7 +1124,7 @@ func typeCarriesLifetime(t type_system.Type) bool {
 	case *type_system.ObjectType, *type_system.TupleType:
 		_ = ty
 		return true
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		return typeCarriesLifetime(ty.Type)
 	}
 	return false
@@ -1136,7 +1136,7 @@ func setLifetimeArgsOnType(t type_system.Type, args []type_system.Lifetime) {
 	switch ty := type_system.Prune(t).(type) {
 	case *type_system.TypeRefType:
 		ty.LifetimeArgs = args
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		setLifetimeArgsOnType(ty.Type, args)
 	}
 }

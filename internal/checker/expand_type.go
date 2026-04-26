@@ -78,7 +78,7 @@ func isSymbolIndexKey(key MemberAccessKey) bool {
 		return false
 	}
 	keyType := type_system.Prune(indexKey.Type)
-	if mut, ok := keyType.(*type_system.MutabilityType); ok {
+	if mut, ok := keyType.(*type_system.MutType); ok {
 		keyType = mut.Type
 	}
 	_, isSymbol := keyType.(*type_system.UniqueSymbolType)
@@ -237,7 +237,7 @@ func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.EnterRe
 	// Other composite types do NOT need this treatment:
 	// - UnionType/IntersectionType: transparent combinators, not structural
 	//   boundaries — expanding `Foo | Bar` should see what Foo and Bar are.
-	// - MutabilityType/RestSpreadType: thin wrappers, not containers.
+	// - MutType/RestSpreadType: thin wrappers, not containers.
 	// - CondType: has its own special handling in EnterType and ExitType.
 	// - KeyOfType/IndexType/TemplateLitType: computed types that need their
 	//   children expanded to evaluate.
@@ -365,8 +365,8 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.seen)
 		expandedTarget = type_system.Prune(expandedTarget)
 
-		// Unwrap MutabilityType so keyof sees the actual object type
-		if mut, ok := expandedTarget.(*type_system.MutabilityType); ok {
+		// Unwrap MutType so keyof sees the actual object type
+		if mut, ok := expandedTarget.(*type_system.MutType); ok {
 			expandedTarget = mut.Type
 		}
 
@@ -640,7 +640,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 
 // getMemberTypeImpl is the same as getMemberType but lets internal recursive
 // callers thread an explicit receiverMut flag through unwrappings of
-// MutabilityType. The outer caller's mutability determination must not be
+// MutType. The outer caller's mutability determination must not be
 // lost when we strip the wrapper to look up the property on the inner type.
 func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key MemberAccessKey, mode AccessMode, receiverMut bool) (type_system.Type, []Error) {
 	errors := []Error{}
@@ -717,7 +717,7 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 		if _, ok := objType.(*type_system.TypeVarType); ok {
 			break
 		}
-		if _, ok := objType.(*type_system.MutabilityType); ok {
+		if _, ok := objType.(*type_system.MutType); ok {
 			break
 		}
 
@@ -738,12 +738,10 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 	}
 
 	switch t := objType.(type) {
-	case *type_system.MutabilityType:
-		// For mutable types, get the access from the inner type. Preserve the
-		// receiver-mutability flag — if this wrapper is a definite `mut`,
-		// upgrade an inherited-immutable flag to mutable.
-		innerMut := receiverMut || t.Mutability == type_system.MutabilityMutable
-		return c.getMemberTypeImpl(ctx, t.Type, key, mode, innerMut)
+	case *type_system.MutType:
+		// For mutable types, get the access from the inner type. The wrapper
+		// implies mutable, so the inner receiver is always mutable.
+		return c.getMemberTypeImpl(ctx, t.Type, key, mode, true)
 	case *type_system.TypeRefType:
 		// Fallback for TypeRefTypes that the lazy path couldn't handle
 		// (index access, extends properties, symbol keys, non-ObjectType aliases).
@@ -918,7 +916,7 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 				// If the index is a string literal, route to property access
 				// instead of numeric index access.
 				keyType := type_system.Prune(k.Type)
-				if mut, ok := keyType.(*type_system.MutabilityType); ok {
+				if mut, ok := keyType.(*type_system.MutType); ok {
 					keyType = mut.Type
 				}
 				if litType, ok := keyType.(*type_system.LitType); ok {
@@ -996,10 +994,10 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 }
 
 // resolveToObjectType attempts to resolve a type to an *ObjectType. It handles
-// direct ObjectTypes, MutabilityType wrappers, and TypeRefTypes with aliases.
+// direct ObjectTypes, MutType wrappers, and TypeRefTypes with aliases.
 func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 	resolved := type_system.Prune(t)
-	if mut, ok := resolved.(*type_system.MutabilityType); ok {
+	if mut, ok := resolved.(*type_system.MutType); ok {
 		resolved = type_system.Prune(mut.Type)
 	}
 	if obj, ok := resolved.(*type_system.ObjectType); ok {
@@ -1018,15 +1016,15 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 	return nil
 }
 
-// ReceiverIsDefinitelyMutable reports whether the outer wrapper of a receiver
-// type is a definite `MutabilityMutable`. Missing wrappers are treated as
-// immutable for receiver-mutability gating. For type-variable receivers, the
+// ReceiverIsDefinitelyMutable reports whether the outer wrapper of a
+// receiver type is a `MutType`. Missing wrappers are treated as immutable
+// for receiver-mutability gating. For type-variable receivers, the
 // constraint's wrapper is consulted; an unconstrained type variable is
 // treated as immutable so generic code can't sneak past the gate.
 func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
 	pruned := type_system.Prune(t)
-	if mut, ok := pruned.(*type_system.MutabilityType); ok {
-		return mut.Mutability == type_system.MutabilityMutable
+	if _, ok := pruned.(*type_system.MutType); ok {
+		return true
 	}
 	if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Constraint != nil {
 		return ReceiverIsDefinitelyMutable(tv.Constraint)
@@ -1540,7 +1538,7 @@ func (c *Checker) addNumericPropertyToOpenObject(objType *type_system.ObjectType
 }
 
 // markPropertyWritten finds a property by name on an open ObjectType and sets
-// its Written flag. It handles both bare ObjectType and MutabilityType-wrapped
+// its Written flag. It handles both bare ObjectType and MutType-wrapped
 // ObjectType. Returns true if the property was found and marked.
 func markPropertyWritten(prunedType type_system.Type, propName string) bool {
 	var openObj *type_system.ObjectType
@@ -1549,7 +1547,7 @@ func markPropertyWritten(prunedType type_system.Type, propName string) bool {
 		if t.Open {
 			openObj = t
 		}
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		if obj, ok := t.Type.(*type_system.ObjectType); ok && obj.Open {
 			openObj = obj
 		}
@@ -1812,9 +1810,9 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
-		// Unwrap MutabilityType so explicit `mut Foo` parts are classified as
+		// Unwrap MutType so explicit `mut Foo` parts are classified as
 		// object parts of the intersection.
-		if mut, ok := part.(*type_system.MutabilityType); ok {
+		if mut, ok := part.(*type_system.MutType); ok {
 			part = mut.Type
 		}
 		if objType, ok := part.(*type_system.ObjectType); ok {
@@ -1887,9 +1885,9 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	// If not found in object types, try other parts (primitives, functions, etc.)
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
-		// Skip object types (including MutabilityType-wrapped) since we already checked them
+		// Skip object types (including MutType-wrapped) since we already checked them
 		unwrapped := part
-		if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+		if mut, ok := unwrapped.(*type_system.MutType); ok {
 			unwrapped = mut.Type
 		}
 		if _, ok := unwrapped.(*type_system.ObjectType); ok {

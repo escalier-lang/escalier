@@ -87,7 +87,7 @@ func GetLifetime(t Type) Lifetime {
 		return ty.Lifetime
 	case *TupleType:
 		return ty.Lifetime
-	case *MutabilityType:
+	case *MutType:
 		return GetLifetime(ty.Type)
 	case *UnionType:
 		// Returns the common lifetime if all member types share the same

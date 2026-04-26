@@ -414,15 +414,14 @@ func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.Co
 
 // completionsFromTypeImpl is the same as completionsFromType but lets internal
 // recursive callers thread an explicit receiverMut flag through unwrappings of
-// MutabilityType so the receiver's outer mutability isn't lost when we strip
+// MutType so the receiver's outer mutability isn't lost when we strip
 // the wrapper to look up the inner type's members.
 func completionsFromTypeImpl(t type_system.Type, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
 	t = type_system.Prune(t)
 
 	switch t := t.(type) {
-	case *type_system.MutabilityType:
-		innerMut := receiverMut || t.Mutability == type_system.MutabilityMutable
-		return completionsFromTypeImpl(t.Type, scope, innerMut)
+	case *type_system.MutType:
+		return completionsFromTypeImpl(t.Type, scope, true)
 	case *type_system.ObjectType:
 		return completionsFromObjectType(t, receiverMut)
 	case *type_system.NamespaceType:

@@ -369,18 +369,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	if t2IsTypeVar {
 		return c.bind(ctx, t1, t2, seen)
 	}
-	// | MutableType, MutableType -> ...
-	if mut1, ok := t1.(*type_system.MutabilityType); ok {
-		if mut2, ok := t2.(*type_system.MutabilityType); ok {
-			if mut1.Mutability == type_system.MutabilityMutable && mut2.Mutability == type_system.MutabilityMutable {
-				return c.unifyMut(ctx, mut1, mut2)
-			} else {
-				return c.unifyInner(ctx, mut1.Type, mut2.Type, seen)
-			}
+	// | MutType, MutType -> ...
+	if mut1, ok := t1.(*type_system.MutType); ok {
+		if mut2, ok := t2.(*type_system.MutType); ok {
+			return c.unifyMut(ctx, mut1, mut2)
 		}
 	}
 	// | MutableType, _ -> ...
-	if mut1, ok := t1.(*type_system.MutabilityType); ok {
+	if mut1, ok := t1.(*type_system.MutType); ok {
 		// If t2 is a union or intersection, let their handling code deal with it
 		// This ensures that mut types in unions/intersections are compared properly
 		switch t2.(type) {
@@ -392,8 +388,8 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		}
 	}
 	// | _, MutableType -> ...
-	if mut2, ok := t2.(*type_system.MutabilityType); ok {
-		// When the RHS is a MutabilityType, we need to unwrap it for unification
+	if mut2, ok := t2.(*type_system.MutType); ok {
+		// When the RHS is a MutType, we need to unwrap it for unification
 		// This allows patterns without mutability markers to match against mutable values
 		return c.unifyInner(ctx, t1, mut2.Type, seen)
 	}
@@ -1649,7 +1645,7 @@ func (c *Checker) unifyClosedWithRests(
 			addEffective(elem.Name, elem.Fn.Params[0].Type)
 		case *type_system.RestSpreadElem:
 			pruned := type_system.Prune(elem.Value)
-			if mut, ok := pruned.(*type_system.MutabilityType); ok {
+			if mut, ok := pruned.(*type_system.MutType); ok {
 				pruned = type_system.Prune(mut.Type)
 			}
 			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
@@ -2182,8 +2178,8 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 	constraint := typeVar.ArrayConstraint
 	inner := boundType
 	isMut := false
-	if mut, ok := inner.(*type_system.MutabilityType); ok {
-		isMut = mut.Mutability == type_system.MutabilityMutable
+	if mut, ok := inner.(*type_system.MutType); ok {
+		isMut = true
 		inner = mut.Type
 	}
 
@@ -2260,10 +2256,10 @@ func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, bou
 	if typeVar.Instance != nil {
 		return false // already bound (e.g. during constraint unification)
 	}
-	// Unwrap MutabilityType if present (e.g. `fn bar(x: mut {a: number})`).
-	var mutWrapper *type_system.MutabilityType
+	// Unwrap MutType if present (e.g. `fn bar(x: mut {a: number})`).
+	var mutWrapper *type_system.MutType
 	inner := boundType
-	if mut, ok := inner.(*type_system.MutabilityType); ok {
+	if mut, ok := inner.(*type_system.MutType); ok {
 		mutWrapper = mut
 		inner = mut.Type
 	}
@@ -2281,11 +2277,10 @@ func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, bou
 		Immutable: closedObj.Immutable,
 		Mutable:   closedObj.Mutable,
 	}
-	// Re-wrap in MutabilityType if the original was wrapped.
+	// Re-wrap in MutType if the original was wrapped.
 	if mutWrapper != nil {
-		typeVar.Instance = &type_system.MutabilityType{
-			Type:       openCopy,
-			Mutability: mutWrapper.Mutability,
+		typeVar.Instance = &type_system.MutType{
+			Type: openCopy,
 		}
 	} else {
 		typeVar.Instance = openCopy
@@ -2416,17 +2411,17 @@ func distributeIntersectionOverUnion(intersection *type_system.IntersectionType)
 //   - ObjectType → copy with property values recursively widened
 //   - TupleType → copy with element types recursively widened
 //
-// If the type is wrapped in a MutabilityType, the wrapper is preserved on the
+// If the type is wrapped in a MutType, the wrapper is preserved on the
 // widened inner type. Types that don't match any case are returned unchanged.
 func widenLiteral(t type_system.Type) type_system.Type {
 	inner := t
-	var mutWrapper *type_system.MutabilityType
-	if mut, ok := inner.(*type_system.MutabilityType); ok {
+	var mutWrapper *type_system.MutType
+	if mut, ok := inner.(*type_system.MutType); ok {
 		mutWrapper = mut
 		inner = mut.Type
 	}
 	// Follow TypeVar instances so we can widen the underlying concrete type
-	// (e.g. MutabilityType wrapping a TypeVar whose Instance is an ObjectType).
+	// (e.g. MutType wrapping a TypeVar whose Instance is an ObjectType).
 	inner = type_system.Prune(inner)
 
 	var widened type_system.Type
@@ -2445,9 +2440,8 @@ func widenLiteral(t type_system.Type) type_system.Type {
 	}
 
 	if mutWrapper != nil {
-		return &type_system.MutabilityType{
-			Type:       widened,
-			Mutability: mutWrapper.Mutability,
+		return &type_system.MutType{
+			Type: widened,
 		}
 	}
 	return widened

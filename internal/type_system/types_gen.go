@@ -165,9 +165,9 @@ func (t *InferType) Copy() Type {
 	return &result
 }
 
-func (t *MutabilityType) Provenance() Provenance     { return t.provenance }
-func (t *MutabilityType) SetProvenance(p Provenance) { t.provenance = p }
-func (t *MutabilityType) Copy() Type {
+func (t *MutType) Provenance() Provenance     { return t.provenance }
+func (t *MutType) SetProvenance(p Provenance) { t.provenance = p }
+func (t *MutType) Copy() Type {
 	result := *t // Create a copy of the struct
 	return &result
 }

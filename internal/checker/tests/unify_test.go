@@ -524,9 +524,9 @@ func TestUnifyMutableTypes(t *testing.T) {
 
 	t.Run("nested mutable types should unify with exact same nesting", func(t *testing.T) {
 		numberType := type_system.NewNumPrimType(nil)
-		mutNumber := type_system.NewMutableType(nil, numberType)
-		mutMutNumber1 := type_system.NewMutableType(nil, mutNumber)
-		mutMutNumber2 := type_system.NewMutableType(nil, type_system.NewMutableType(nil, numberType))
+		mutNumber := type_system.NewMutType(nil, numberType)
+		mutMutNumber1 := type_system.NewMutType(nil, mutNumber)
+		mutMutNumber2 := type_system.NewMutType(nil, type_system.NewMutType(nil, numberType))
 
 		errors := checker.Unify(inferCtx, mutMutNumber1, mutMutNumber2)
 		assert.Empty(t, errors, "nested mutable types should unify with exact same nesting")

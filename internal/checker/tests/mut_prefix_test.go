@@ -197,6 +197,54 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			`,
 			expectErrors: false,
 		},
+		"AliasReceiver_MutAliasNonGeneric_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type MutCounter = mut Counter
+				declare val c: MutCounter
+				fn test() -> number { return c.tick() }
+			`,
+			expectErrors: false,
+		},
+		"AliasReceiver_MutAliasGeneric_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type MutT<T> = mut T
+				declare val c: MutT<Counter>
+				fn test() -> number { return c.tick() }
+			`,
+			expectErrors: false,
+		},
+		"AliasReceiver_ImmutableAlias_CannotCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type Alias<T> = T
+				declare val c: Alias<Counter>
+				fn test() -> number { return c.tick() }
+			`,
+			expectErrors: true,
+		},
+		"AliasReceiver_IdentityAliasOfMut_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type Identity<T> = T
+				declare val c: Identity<mut Counter>
+				fn test() -> number { return c.tick() }
+			`,
+			expectErrors: false,
+		},
 	}
 
 	for name, test := range tests {

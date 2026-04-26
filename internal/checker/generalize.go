@@ -96,7 +96,7 @@ func collectUnresolvedTypeVars(
 		}
 	case *type_system.RestSpreadType:
 		collectUnresolvedTypeVars(t.Type, vars, order)
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		collectUnresolvedTypeVars(t.Type, vars, order)
 	case *type_system.KeyOfType:
 		collectUnresolvedTypeVars(t.Type, vars, order)
@@ -197,10 +197,9 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 		return type_system.NewFuncType(nil, t.TypeParams, params,
 			c.deepCloneType(t.Return, varMapping),
 			c.deepCloneType(t.Throws, varMapping))
-	case *type_system.MutabilityType:
-		return &type_system.MutabilityType{
-			Type:       c.deepCloneType(t.Type, varMapping),
-			Mutability: t.Mutability,
+	case *type_system.MutType:
+		return &type_system.MutType{
+			Type: c.deepCloneType(t.Type, varMapping),
 		}
 	case *type_system.TupleType:
 		elems := make([]type_system.Type, len(t.Elems))
@@ -487,8 +486,8 @@ func (c *Checker) resolveCallSites(ctx Context) {
 // the tree was written to.
 //
 // Invariant: open object property values are always TypeVars (created by
-// newOpenObjectWithProperty) and are never pre-wrapped in MutabilityType —
-// nothing in the inference path produces MutabilityType-wrapped open objects
+// newOpenObjectWithProperty) and are never pre-wrapped in MutType —
+// nothing in the inference path produces MutType-wrapped open objects
 // on property values.
 func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 	hasWritten := false
@@ -509,9 +508,8 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 				// invariant break surfaces as a clear no-op + (eventually) a
 				// downstream type error rather than a cryptic panic.
 				if tv, ok := prop.Value.(*type_system.TypeVarType); ok {
-					tv.Instance = &type_system.MutabilityType{
-						Type:       nestedObj,
-						Mutability: type_system.MutabilityMutable,
+					tv.Instance = &type_system.MutType{
+						Type: nestedObj,
 					}
 					// Nested writes propagate upward: the containing object
 					// is also considered written to.
@@ -544,9 +542,8 @@ func GeneralizeFuncType(funcType *type_system.FuncType) {
 			continue
 		}
 		if finalizeOpenObject(openObj) {
-			tv.Instance = &type_system.MutabilityType{
-				Type:       openObj,
-				Mutability: type_system.MutabilityMutable,
+			tv.Instance = &type_system.MutType{
+				Type: openObj,
 			}
 		}
 	}

@@ -172,15 +172,13 @@ func isValueType(t type_system.Type) bool {
 	return false
 }
 
-// isMutableType checks whether a type has a mutable wrapper (MutabilityType
-// with MutabilityMutable). This determines how a variable accesses the
-// shared value for alias tracking purposes.
+// isMutableType checks whether a type has a MutType wrapper. This
+// determines how a variable accesses the shared value for alias tracking
+// purposes.
 func isMutableType(t type_system.Type) bool {
 	pruned := type_system.Prune(t)
-	if mut, ok := pruned.(*type_system.MutabilityType); ok {
-		return mut.Mutability == type_system.MutabilityMutable
-	}
-	return false
+	_, ok := pruned.(*type_system.MutType)
+	return ok
 }
 
 // trackAliasesForVarDecl updates the alias tracker and checks mutability

@@ -89,7 +89,7 @@ func TestIntersectionNormalization(t *testing.T) {
 		obj := NewObjectType(nil, []ObjTypeElem{
 			NewPropertyElem(NewStrKey("a"), NewStrPrimType(nil)),
 		})
-		mutObj := NewMutableType(nil, obj)
+		mutObj := NewMutType(nil, obj)
 		result := NewIntersectionType(nil, mutObj, obj)
 		// Should return the immutable version
 		assert.Equal(t, "{a: string}", result.String())
@@ -99,7 +99,7 @@ func TestIntersectionNormalization(t *testing.T) {
 		obj := NewObjectType(nil, []ObjTypeElem{
 			NewPropertyElem(NewStrKey("a"), NewStrPrimType(nil)),
 		})
-		mutObj := NewMutableType(nil, obj)
+		mutObj := NewMutType(nil, obj)
 		result := NewIntersectionType(nil, obj, mutObj)
 		// Should return the immutable version
 		assert.Equal(t, "{a: string}", result.String())

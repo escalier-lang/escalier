@@ -54,11 +54,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					})
 				} else {
 					pruned := type_system.Prune(objType)
-					// Open object types start without a MutabilityType wrapper —
+					// Open object types start without a MutType wrapper —
 					// mark the property as written since we now know mutation occurs.
 					if !markPropertyWritten(pruned, memberExpr.Prop.Name) {
 						// Not an open object — check if the object type allows mutation
-						if _, ok := pruned.(*type_system.MutabilityType); !ok {
+						if _, ok := pruned.(*type_system.MutType); !ok {
 							errors = append(errors, &CannotMutateImmutableError{
 								Type: objType,
 								span: expr.Left.Span(),
@@ -76,9 +76,9 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				leftType, leftErrors = c.getMemberType(ctx, objType, key, AccessWrite)
 				errors = slices.Concat(errors, leftErrors)
 
-				// Unwrap MutabilityType if present
+				// Unwrap MutType if present
 				unwrappedIndexType := indexType
-				if mutType, ok := unwrappedIndexType.(*type_system.MutabilityType); ok {
+				if mutType, ok := unwrappedIndexType.(*type_system.MutType); ok {
 					unwrappedIndexType = mutType.Type
 				}
 
@@ -105,7 +105,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
 						tv.ArrayConstraint.HasIndexAssignment = true
 					} else {
-						// Open object types start without a MutabilityType wrapper —
+						// Open object types start without a MutType wrapper —
 						// mark the property as written since we now know mutation occurs.
 						marked := false
 						if litType, ok := unwrappedIndexType.(*type_system.LitType); ok {
@@ -115,7 +115,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						}
 						if !marked {
 							// Not an open object — check if the object type allows mutation
-							if _, ok := pruned.(*type_system.MutabilityType); !ok {
+							if _, ok := pruned.(*type_system.MutType); !ok {
 								errors = append(errors, &CannotMutateImmutableError{
 									Type: objType,
 									span: expr.Left.Span(),
@@ -231,10 +231,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// field writes, so `val p = Point(); p.tickInPlace()` still
 			// passes. The mut_prefix tests document this gap.
 			unwrapped := exprType
-			if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+			if mut, ok := unwrapped.(*type_system.MutType); ok {
 				unwrapped = mut.Type
 			}
-			exprType = type_system.NewMutableType(&ast.NodeProvenance{Node: expr}, unwrapped)
+			exprType = type_system.NewMutType(&ast.NodeProvenance{Node: expr}, unwrapped)
 		}
 	case *ast.MemberExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
@@ -319,8 +319,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				errors = slices.Concat(errors, spreadErrors)
 
 				prunedType := type_system.Prune(spreadType)
-				// Unwrap MutabilityType if present
-				if mut, ok := prunedType.(*type_system.MutabilityType); ok {
+				// Unwrap MutType if present
+				if mut, ok := prunedType.(*type_system.MutType); ok {
 					prunedType = type_system.Prune(mut.Type)
 				}
 				handled := false
@@ -488,7 +488,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				if methodExpr.MutSelf != nil {
 					var selfType type_system.Type = type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)
 					if *methodExpr.MutSelf {
-						selfType = type_system.NewMutableType(nil, selfType)
+						selfType = type_system.NewMutType(nil, selfType)
 					}
 					paramBindings["self"] = &type_system.Binding{
 						Source:  &ast.NodeProvenance{Node: expr},
@@ -520,7 +520,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				paramBindings := paramBindingsSlice[i]
 				paramBindings["self"] = &type_system.Binding{
 					Source:  &ast.NodeProvenance{Node: expr},
-					Type:    type_system.NewMutableType(nil, type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)),
+					Type:    type_system.NewMutType(nil, type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)),
 					Mutable: false, // `self` cannot be reassigned
 				}
 
@@ -962,7 +962,7 @@ func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, prop
 	}
 
 	switch t := objType.(type) {
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		// For mutable types, check the inner type
 		return c.isPropertyReadonly(ctx, t.Type, propertyName)
 	case *type_system.TypeRefType:

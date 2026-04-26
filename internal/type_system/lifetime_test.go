@@ -29,15 +29,14 @@ func TestGetLifetimeTupleType(t *testing.T) {
 	require.Equal(t, lt, GetLifetime(ty))
 }
 
-func TestGetLifetimeMutabilityType(t *testing.T) {
+func TestGetLifetimeMutType(t *testing.T) {
 	lt := &LifetimeVar{ID: 1, Name: "a"}
 	inner := &TypeRefType{
 		Name:     NewIdent("Point"),
 		Lifetime: lt,
 	}
-	ty := &MutabilityType{
-		Type:       inner,
-		Mutability: MutabilityMutable,
+	ty := &MutType{
+		Type: inner,
 	}
 	require.Equal(t, lt, GetLifetime(ty))
 }

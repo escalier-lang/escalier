@@ -139,7 +139,7 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		return NewInferType(provenance, ta.Name)
 	case *ast.MutableTypeAnn:
 		targetType := typeAnnToType(ta.Target)
-		return NewMutableType(provenance, targetType)
+		return NewMutType(provenance, targetType)
 	case *ast.WildcardTypeAnn:
 		return NewWildcardType(provenance)
 	default:
