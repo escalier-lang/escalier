@@ -31,8 +31,8 @@ func lifetimeParamName(i int) string {
 // to each such parameter and to the return / yield type, recording
 // lifetime parameters on the FuncType.
 //
-// This is the foundational case of Phase 8.3 + 8.4. The algorithm
-// handles:
+// This is the entry point for the body-side of Phase 8.3 + 8.4 + 8.7.
+// The algorithm handles:
 //   - Returns of a parameter (or property/index access of a parameter):
 //     produces a container-level lifetime on the parameter and return type.
 //   - Multiple returns aliasing different parameters: emits a
@@ -43,6 +43,16 @@ func lifetimeParamName(i int) string {
 //     to the yield type T inside Generator<T, TReturn, TNext> rather than
 //     to the Generator container itself, so each yielded value carries
 //     the lifetime.
+//   - Per-leaf lifetimes for tuple-, object-, and rest-destructured
+//     parameters: walkPatternForLeaves walks each parameter's pattern in
+//     lockstep with its inferred type, producing one (VarID, leafType)
+//     entry per leaf binding so that each destructured leaf can receive
+//     its own lifetime variable.
+//
+// For SCC re-runs in mutual recursion (Phase 8.7), see ReinferLifetimes,
+// which forwards to inferLifetimesCore with reinfer=true so that
+// previously-inferred LifetimeParams can be extended once peers' signatures
+// become resolvable on the second pass.
 //
 // Deferred (see implementation_plan.md Phase 8 status):
 //   - Element-level lifetimes (Array<'a T>) for fresh containers whose
@@ -1010,35 +1020,54 @@ func (v *methodCaptureVisitor) EnterDecl(d ast.Decl) bool {
 	return true
 }
 
-// collectPatternBindingNames adds every identifier name introduced by a
-// pattern (recursively) to the provided set.
-func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
-	if p == nil {
+// forEachLeafBinding invokes fn for every identifier-binding leaf
+// introduced by a pattern, walking through Tuple/Object/Rest containers.
+// Leaves are IdentPat (the pattern's own Name+VarID) and ObjShorthandPat
+// (the property's Key.Name plus the shorthand's own VarID). ObjRestPat,
+// RestPat, and ObjKeyValuePat are container-only; this helper recurses
+// through them.
+//
+// Note: walkPatternForLeaves cannot use this helper because it walks the
+// pattern in *lockstep with the parameter's type* (slicing tuple/object/
+// array sub-positions to compute each leaf's leafType) and intentionally
+// skips ObjRestPat (a freshly-assembled container has no
+// caller-provided lifetime). The two name-only walkers below share this
+// traversal; lifetime walking does not.
+func forEachLeafBinding(pat ast.Pat, fn func(name string, varID int)) {
+	if pat == nil {
 		return
 	}
-	switch pp := p.(type) {
+	switch p := pat.(type) {
 	case *ast.IdentPat:
-		into.Add(pp.Name)
+		fn(p.Name, p.VarID)
 	case *ast.TuplePat:
-		for _, sub := range pp.Elems {
-			collectPatternBindingNames(sub, into)
+		for _, sub := range p.Elems {
+			forEachLeafBinding(sub, fn)
 		}
 	case *ast.ObjectPat:
-		for _, elem := range pp.Elems {
+		for _, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjKeyValuePat:
-				collectPatternBindingNames(e.Value, into)
+				forEachLeafBinding(e.Value, fn)
 			case *ast.ObjShorthandPat:
 				if e.Key != nil {
-					into.Add(e.Key.Name)
+					fn(e.Key.Name, e.VarID)
 				}
 			case *ast.ObjRestPat:
-				collectPatternBindingNames(e.Pattern, into)
+				forEachLeafBinding(e.Pattern, fn)
 			}
 		}
 	case *ast.RestPat:
-		collectPatternBindingNames(pp.Pattern, into)
+		forEachLeafBinding(p.Pattern, fn)
 	}
+}
+
+// collectPatternBindingNames adds every identifier name introduced by a
+// pattern (recursively) to the provided set.
+func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
+	forEachLeafBinding(p, func(name string, _ int) {
+		into.Add(name)
+	})
 }
 
 // typeCarriesLifetime reports whether the given type can carry a lifetime.

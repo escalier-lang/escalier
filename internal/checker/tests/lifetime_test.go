@@ -195,6 +195,27 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"pickHead": "fn <'a>({head: mut 'a {x: number}, tail: mut {x: number}}) -> mut 'a {x: number}",
 			},
 		},
+		"ObjectDestructuredParamWithRest": {
+			// Regression test for the forEachLeafBinding refactor:
+			// object-destructured params using ObjRestPat
+			// (`{x, ...rest}`) must seed an alias entry for `rest` and
+			// a unique VarID via the rename pass, even though
+			// walkPatternForLeaves itself skips ObjRestPat for lifetime
+			// attachment (a freshly-assembled rest object has no
+			// caller-provided lifetime). Returning `x` still yields a
+			// lifetime; the rest binding is type-inferred but doesn't
+			// contribute one.
+			input: `
+				fn pickX(
+					{x, ...rest}: {x: mut {a: number}, y: mut {a: number}},
+				) -> mut {a: number} {
+					return x
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pickX": "fn <'a>({x: mut 'a {a: number}, ...rest}) -> mut 'a {a: number}",
+			},
+		},
 		"ObjectDestructuredParamConditional": {
 			// Phase 8.6: conditional return from an object-destructured
 			// param produces a LifetimeUnion combining both leaves —

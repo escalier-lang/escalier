@@ -92,44 +92,17 @@ func seedParamLeafAliases(
 	paramBindings map[string]*type_system.Binding,
 	aliases *liveness.AliasTracker,
 ) {
-	var walk func(pat ast.Pat)
-	seed := func(name string, varID int) {
-		if varID <= 0 {
-			return
-		}
-		mut := liveness.AliasImmutable
-		if binding := paramBindings[name]; binding != nil && isMutableType(binding.Type) {
-			mut = liveness.AliasMutable
-		}
-		aliases.NewValue(liveness.VarID(varID), mut)
-	}
-	walk = func(pat ast.Pat) {
-		switch p := pat.(type) {
-		case *ast.IdentPat:
-			seed(p.Name, p.VarID)
-		case *ast.TuplePat:
-			for _, elem := range p.Elems {
-				walk(elem)
-			}
-		case *ast.ObjectPat:
-			for _, elem := range p.Elems {
-				switch e := elem.(type) {
-				case *ast.ObjKeyValuePat:
-					walk(e.Value)
-				case *ast.ObjShorthandPat:
-					if e.Key != nil {
-						seed(e.Key.Name, e.VarID)
-					}
-				case *ast.ObjRestPat:
-					walk(e.Pattern)
-				}
-			}
-		case *ast.RestPat:
-			walk(p.Pattern)
-		}
-	}
 	for _, param := range astParams {
-		walk(param.Pattern)
+		forEachLeafBinding(param.Pattern, func(name string, varID int) {
+			if varID <= 0 {
+				return
+			}
+			mut := liveness.AliasImmutable
+			if binding := paramBindings[name]; binding != nil && isMutableType(binding.Type) {
+				mut = liveness.AliasMutable
+			}
+			aliases.NewValue(liveness.VarID(varID), mut)
+		})
 	}
 }
 
