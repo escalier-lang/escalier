@@ -892,12 +892,21 @@ func collectMethodBodyCaptures(
 		v.addBindings(p.Pattern)
 	}
 	if fn.Body != nil {
-		v.walkBlock(fn.Body)
+		fn.Body.Accept(v)
 	}
 	v.popScope()
 }
 
+// methodCaptureVisitor walks a method body looking for identifier
+// references whose name matches a constructor parameter, while tracking
+// the lexical scopes that shadow such names. It implements ast.Visitor
+// directly: EnterBlock/ExitBlock maintain the shadow stack for ordinary
+// blocks; EnterExpr/EnterDecl handle the cases that need bespoke
+// ordering (FuncExpr/FuncDecl push their own scope around the body;
+// VarDecl visits its initializer BEFORE adding the new binding so that
+// `var p = p` resolves the RHS against the outer scope).
 type methodCaptureVisitor struct {
+	ast.DefaultVisitor
 	paramNameToIndex map[string]int
 	storedParams     set.Set[int]
 	// shadowed is a stack of block/function scopes. Each entry is the set
@@ -930,35 +939,43 @@ func (v *methodCaptureVisitor) isShadowed(name string) bool {
 	return false
 }
 
-func (v *methodCaptureVisitor) walkBlock(b *ast.Block) {
-	if b == nil {
-		return
-	}
+func (v *methodCaptureVisitor) EnterBlock(b ast.Block) bool {
 	v.pushScope()
-	for _, stmt := range b.Stmts {
-		v.walkStmt(stmt)
-	}
+	return true
+}
+
+func (v *methodCaptureVisitor) ExitBlock(b ast.Block) {
 	v.popScope()
 }
 
-func (v *methodCaptureVisitor) walkStmt(s ast.Stmt) {
-	if s == nil {
-		return
+func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
+	switch ex := e.(type) {
+	case *ast.IdentExpr:
+		if !v.isShadowed(ex.Name) {
+			if idx, ok := v.paramNameToIndex[ex.Name]; ok {
+				v.storedParams.Add(idx)
+			}
+		}
+		return false
+	case *ast.FuncExpr:
+		// Nested function: its params introduce new shadows for the
+		// duration of its body. Drive the body traversal manually so
+		// the param-scope wraps the body's own block scope; return
+		// false to suppress the framework's default child recursion.
+		v.pushScope()
+		for _, p := range ex.Params {
+			v.addBindings(p.Pattern)
+		}
+		if ex.Body != nil {
+			ex.Body.Accept(v)
+		}
+		v.popScope()
+		return false
 	}
-	switch ss := s.(type) {
-	case *ast.ExprStmt:
-		v.walkExpr(ss.Expr)
-	case *ast.ReturnStmt:
-		v.walkExpr(ss.Expr)
-	case *ast.DeclStmt:
-		v.walkDecl(ss.Decl)
-	}
+	return true
 }
 
-func (v *methodCaptureVisitor) walkDecl(d ast.Decl) {
-	if d == nil {
-		return
-	}
+func (v *methodCaptureVisitor) EnterDecl(d ast.Decl) bool {
 	switch dd := d.(type) {
 	case *ast.VarDecl:
 		// Visit the initializer BEFORE adding the new binding to the
@@ -967,94 +984,27 @@ func (v *methodCaptureVisitor) walkDecl(d ast.Decl) {
 		// it should resolve against the enclosing scope (potentially
 		// the constructor's param).
 		if dd.Init != nil {
-			v.walkExpr(dd.Init)
+			dd.Init.Accept(v)
 		}
 		v.addBindings(dd.Pattern)
+		return false
 	case *ast.FuncDecl:
 		// Nested function declaration: similar to FuncExpr, its params
 		// shadow outer names within its body.
 		if dd.Body == nil {
-			return
+			return false
 		}
 		v.pushScope()
 		for _, p := range dd.Params {
 			v.addBindings(p.Pattern)
 		}
-		v.walkBlock(dd.Body)
+		dd.Body.Accept(v)
 		v.popScope()
+		return false
 	case *ast.ClassDecl:
 		// Skip nested classes — their constructor param names introduce
 		// a fresh shadow scope that's outside the analysis we care about.
-	}
-}
-
-func (v *methodCaptureVisitor) walkExpr(e ast.Expr) {
-	if e == nil {
-		return
-	}
-	switch ex := e.(type) {
-	case *ast.IdentExpr:
-		if v.isShadowed(ex.Name) {
-			return
-		}
-		if idx, ok := v.paramNameToIndex[ex.Name]; ok {
-			v.storedParams.Add(idx)
-		}
-	case *ast.FuncExpr:
-		// Nested function: its params introduce new shadows for the
-		// duration of its body.
-		v.pushScope()
-		for _, p := range ex.Params {
-			v.addBindings(p.Pattern)
-		}
-		v.walkBlock(ex.Body)
-		v.popScope()
-	default:
-		// Walk through other expression shapes by visiting their child
-		// expressions / blocks directly. We use an inner ast Visitor that
-		// re-enters our walk for IdentExpr, FuncExpr, blocks, and decls
-		// so scope tracking stays consistent.
-		ex.Accept(&methodCaptureSubVisitor{outer: v})
-	}
-}
-
-// methodCaptureSubVisitor handles traversal of expression subtrees that
-// don't introduce a new scope themselves. It delegates back to the outer
-// methodCaptureVisitor for IdentExpr lookups and for nodes that DO start
-// a new scope (FuncExpr, FuncDecl, blocks, var decls), so that scope
-// push/pop remains in lockstep with the source structure.
-type methodCaptureSubVisitor struct {
-	ast.DefaultVisitor
-	outer *methodCaptureVisitor
-}
-
-func (v *methodCaptureSubVisitor) EnterExpr(e ast.Expr) bool {
-	switch e.(type) {
-	case *ast.IdentExpr, *ast.FuncExpr:
-		v.outer.walkExpr(e)
-		return false
-	}
-	return true
-}
-
-func (v *methodCaptureSubVisitor) EnterStmt(s ast.Stmt) bool {
-	switch s.(type) {
-	case *ast.DeclStmt:
-		v.outer.walkStmt(s)
-		return false
-	}
-	return true
-}
-
-func (v *methodCaptureSubVisitor) EnterBlock(b ast.Block) bool {
-	v.outer.walkBlock(&b)
-	return false
-}
-
-func (v *methodCaptureSubVisitor) EnterDecl(d ast.Decl) bool {
-	switch d.(type) {
-	case *ast.VarDecl, *ast.FuncDecl, *ast.ClassDecl:
-		v.outer.walkDecl(d)
+		_ = dd
 		return false
 	}
 	return true
