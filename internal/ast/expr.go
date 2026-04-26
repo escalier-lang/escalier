@@ -45,6 +45,7 @@ func (*JSXFragmentExpr) isExpr()       {}
 func (*TypeCastExpr) isExpr()          {}
 func (*YieldExpr) isExpr()             {}
 func (*ArraySpreadExpr) isExpr()       {}
+func (*MutExpr) isExpr()               {}
 
 type ErrorExpr struct {
 	span         Span
@@ -845,6 +846,22 @@ func NewAwait(arg Expr, span Span) *AwaitExpr {
 func (e *AwaitExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Arg.Accept(v)
+	}
+	v.ExitExpr(e)
+}
+
+type MutExpr struct {
+	Expr         Expr
+	span         Span
+	inferredType Type
+}
+
+func NewMutExpr(arg Expr, span Span) *MutExpr {
+	return &MutExpr{Expr: arg, span: span, inferredType: nil}
+}
+func (e *MutExpr) Accept(v Visitor) {
+	if v.EnterExpr(e) {
+		e.Expr.Accept(v)
 	}
 	v.ExitExpr(e)
 }

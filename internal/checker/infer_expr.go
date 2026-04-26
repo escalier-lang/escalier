@@ -569,6 +569,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		errors = argErrors
 		// Throw expressions have type never since they don't return a value
 		exprType = type_system.NewNeverType(nil)
+	case *ast.MutExpr:
+		exprType, errors = c.inferMutExpr(ctx, expr)
 	case *ast.AwaitExpr:
 		// Await can only be used inside async functions
 		if !ctx.IsAsync {
@@ -1308,6 +1310,19 @@ func (c *Checker) handleFuncCall(
 		return returnType, errors
 	}
 }
+func (c *Checker) inferMutExpr(ctx Context, expr *ast.MutExpr) (type_system.Type, []Error) {
+	innerType, errs := c.inferExpr(ctx, expr.Expr)
+	if _, ok := expr.Expr.(*ast.CallExpr); !ok {
+		errs = append(errs, &MutPrefixOnNonCallError{span: expr.Span()})
+		return innerType, errs
+	}
+	unwrapped := innerType
+	if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+		unwrapped = mut.Type
+	}
+	return type_system.NewMutableType(&ast.NodeProvenance{Node: expr}, unwrapped), errs
+}
+
 func (c *Checker) inferIfElse(ctx Context, expr *ast.IfElseExpr) (type_system.Type, []Error) {
 	// Infer the condition and ensure it's a boolean
 	condType, condErrors := c.inferExpr(ctx, expr.Cond)

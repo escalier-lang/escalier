@@ -86,7 +86,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					},
 				}
 
-				val p = Point(5, 10)
+				val p = mut Point(5, 10)
 				val q = p.scale(2).translate(1, -1)
 			`,
 			expectedTypes: map[string]string{
@@ -511,7 +511,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					},
 				}
 
-				val counter = ExtendedCounter(0, 5)
+				val counter = mut ExtendedCounter(0, 5)
 				val incremented = counter.increment()
 			`,
 			expectedTypes: map[string]string{

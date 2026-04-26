@@ -626,21 +626,9 @@ func (c *Checker) InferConstructorLifetimes(
 		return
 	}
 
-	// Default mutability per Phase 8.6 algorithm step 5:
-	//   - data modifier       → immutable (regardless of methods)
-	//   - any mut self method → mutable
-	//   - else                → immutable
+	// Per #499: constructor calls always return immutable instances; the user
+	// opts in to a mutable instance via the `mut` prefix at the call site.
 	mutable := false
-	if !classDecl.Data {
-		for _, elem := range classDecl.Body {
-			if methodElem, ok := elem.(*ast.MethodElem); ok {
-				if methodElem.MutSelf != nil && *methodElem.MutSelf {
-					mutable = true
-					break
-				}
-			}
-		}
-	}
 	typeAlias.DefaultMutable = &mutable
 
 	// Honor explicit lifetime params if the user already wrote them.
@@ -840,6 +828,8 @@ func findCapturedParamsInExpr(
 			visit(ex.Expr)
 		case *ast.AwaitExpr:
 			visit(ex.Arg)
+		case *ast.MutExpr:
+			visit(ex.Expr)
 		case *ast.IfElseExpr:
 			// Conditional that yields a value: both branches may
 			// contribute captures. Use the existing helper to find each

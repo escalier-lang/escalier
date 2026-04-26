@@ -61,6 +61,7 @@ func (e ConstructorUsedAsMatchTargetError) isError()        {}
 func (e NonExhaustiveMatchError) isError()                  {}
 func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
+func (e MutPrefixOnNonCallError) isError()                  {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -101,6 +102,18 @@ func (e ConstructorUsedAsMatchTargetError) IsWarning() bool        { return fals
 func (e NonExhaustiveMatchError) IsWarning() bool                  { return false }
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
+func (e MutPrefixOnNonCallError) IsWarning() bool                  { return false }
+
+type MutPrefixOnNonCallError struct {
+	span ast.Span
+}
+
+func (e MutPrefixOnNonCallError) Span() ast.Span {
+	return e.span
+}
+func (e MutPrefixOnNonCallError) Message() string {
+	return "'mut' prefix can only be applied to a call or constructor expression"
+}
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.

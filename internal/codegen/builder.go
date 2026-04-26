@@ -1858,6 +1858,8 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		awaitExpr := NewAwaitExpr(argExpr, expr)
 
 		return awaitExpr, argStmts
+	case *ast.MutExpr:
+		return b.buildExpr(expr.Expr, expr)
 	case *ast.YieldExpr:
 		var valueExpr Expr
 		var valueStmts []Stmt

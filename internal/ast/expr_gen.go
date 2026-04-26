@@ -82,6 +82,10 @@ func (node *AwaitExpr) Span() Span             { return node.span }
 func (node *AwaitExpr) InferredType() Type     { return node.inferredType }
 func (node *AwaitExpr) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *MutExpr) Span() Span             { return node.span }
+func (node *MutExpr) InferredType() Type     { return node.inferredType }
+func (node *MutExpr) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *YieldExpr) Span() Span             { return node.span }
 func (node *YieldExpr) InferredType() Type     { return node.inferredType }
 func (node *YieldExpr) SetInferredType(t Type) { node.inferredType = t }

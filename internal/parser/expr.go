@@ -426,6 +426,14 @@ func (p *Parser) primaryExpr() ast.Expr {
 				return nil
 			}
 			return ast.NewAwait(arg, ast.MergeSpans(token.Span, arg.Span()))
+		case Mut:
+			p.lexer.consume() // consume 'mut'
+			arg := p.primaryExpr()
+			if arg == nil {
+				p.reportError(token.Span, "Expected expression after 'mut'")
+				return nil
+			}
+			return ast.NewMutExpr(arg, ast.MergeSpans(token.Span, arg.Span()))
 		case Yield:
 			p.lexer.consume() // consume 'yield'
 
