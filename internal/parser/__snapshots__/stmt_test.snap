@@ -3542,6 +3542,8 @@
                                         &!%v(DEPTH EXCEEDED),
                                     },
                                     OptChain: false,
+                                    Mutable:  false,
+                                    MutSpan:  ast.Span{},
                                     span:     ast.Span{
                                         Start:    ast.Location{Line:3, Column:13},
                                         End:      ast.Location{Line:3, Column:41},
@@ -4141,6 +4143,8 @@
                                         &!%v(DEPTH EXCEEDED),
                                     },
                                     OptChain: false,
+                                    Mutable:  false,
+                                    MutSpan:  ast.Span{},
                                     span:     ast.Span{
                                         Start:    ast.Location{Line:1, Column:40},
                                         End:      ast.Location{Line:1, Column:56},
@@ -5159,6 +5163,8 @@
                                     Args: {
                                     },
                                     OptChain: false,
+                                    Mutable:  false,
+                                    MutSpan:  ast.Span{},
                                     span:     ast.Span{
                                         Start:    ast.Location{Line:3, Column:25},
                                         End:      ast.Location{Line:3, Column:38},
@@ -5901,6 +5907,8 @@
                                     Args: {
                                     },
                                     OptChain: false,
+                                    Mutable:  false,
+                                    MutSpan:  ast.Span{},
                                     span:     ast.Span{
                                         Start:    ast.Location{Line:4, Column:25},
                                         End:      ast.Location{Line:4, Column:38},
@@ -7925,6 +7933,8 @@ nil
                         },
                     },
                     OptChain: false,
+                    Mutable:  false,
+                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:21},
                         End:      ast.Location{Line:1, Column:38},

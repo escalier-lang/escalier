@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,8 +173,10 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 	}
 }
 
-// TestMutPrefixOnNonCallRejected ensures the type checker rejects `mut`
-// applied to anything other than a call expression.
+// TestMutPrefixOnNonCallRejected ensures the parser rejects `mut`
+// applied to anything other than a call expression. The constraint is
+// syntactic (the Mutable flag lives on CallExpr itself), so it surfaces
+// at parse time rather than inference time.
 func TestMutPrefixOnNonCallRejected(t *testing.T) {
 	tests := map[string]string{
 		"OnLiteral":  `val x = mut 42`,
@@ -189,21 +192,17 @@ func TestMutPrefixOnNonCallRejected(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			p := parser.NewParser(ctx, source)
-			script, parseErrors := p.ParseScript()
-			require.Empty(t, parseErrors, "expected no parse errors")
-
-			c := NewChecker(ctx)
-			inferCtx := Context{Scope: Prelude(c)}
-			_, inferErrors := c.InferScript(inferCtx, script)
+			_, parseErrors := p.ParseScript()
 
 			found := false
-			for _, err := range inferErrors {
-				if _, ok := err.(*MutPrefixOnNonCallError); ok {
+			for _, err := range parseErrors {
+				if strings.Contains(err.Message, "'mut' prefix can only be applied to a call expression") {
 					found = true
 					break
 				}
 			}
-			assert.Truef(t, found, "expected MutPrefixOnNonCallError, got %v", inferErrors)
+			assert.Truef(t, found,
+				"expected parse error about 'mut' prefix, got %v", parseErrors)
 		})
 	}
 }

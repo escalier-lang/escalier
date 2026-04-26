@@ -229,8 +229,6 @@ func (c *collector) collectExpr(expr ast.Expr) {
 		c.collectExpr(e.Arg)
 	case *ast.AwaitExpr:
 		c.collectExpr(e.Arg)
-	case *ast.MutExpr:
-		c.collectExpr(e.Expr)
 	case *ast.YieldExpr:
 		if e.Value != nil {
 			c.collectExpr(e.Value)

@@ -45,7 +45,6 @@ func (*JSXFragmentExpr) isExpr()       {}
 func (*TypeCastExpr) isExpr()          {}
 func (*YieldExpr) isExpr()             {}
 func (*ArraySpreadExpr) isExpr()       {}
-func (*MutExpr) isExpr()               {}
 
 type ErrorExpr struct {
 	span         Span
@@ -381,9 +380,15 @@ func (e *FuncExpr) Accept(v Visitor) {
 }
 
 type CallExpr struct {
-	Callee       Expr
-	Args         []Expr
-	OptChain     bool
+	Callee   Expr
+	Args     []Expr
+	OptChain bool
+	// Mutable indicates the call site was prefixed with `mut`, opting into a
+	// mutable instance. The `mut` keyword has no runtime representation; this
+	// flag only affects type inference (it produces a definite-mutable result
+	// type) and pretty-printing.
+	Mutable      bool
+	MutSpan      Span // span of the `mut` keyword when Mutable is true
 	span         Span
 	inferredType Type
 }
@@ -846,22 +851,6 @@ func NewAwait(arg Expr, span Span) *AwaitExpr {
 func (e *AwaitExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Arg.Accept(v)
-	}
-	v.ExitExpr(e)
-}
-
-type MutExpr struct {
-	Expr         Expr
-	span         Span
-	inferredType Type
-}
-
-func NewMutExpr(arg Expr, span Span) *MutExpr {
-	return &MutExpr{Expr: arg, span: span, inferredType: nil}
-}
-func (e *MutExpr) Accept(v Visitor) {
-	if v.EnterExpr(e) {
-		e.Expr.Accept(v)
 	}
 	v.ExitExpr(e)
 }

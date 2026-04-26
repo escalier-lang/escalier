@@ -826,8 +826,6 @@ func findCapturedParamsInExpr(
 			visit(ex.Expr)
 		case *ast.AwaitExpr:
 			visit(ex.Arg)
-		case *ast.MutExpr:
-			visit(ex.Expr)
 		case *ast.IfElseExpr:
 			// Conditional that yields a value: both branches may
 			// contribute captures. Use the existing helper to find each

@@ -70,10 +70,6 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	case *ast.AwaitExpr:
 		return DetermineAliasSource(e.Arg)
 
-	// Mut prefix: the alias source is the inner expression
-	case *ast.MutExpr:
-		return DetermineAliasSource(e.Expr)
-
 	// Property access: the value aliases the object's source.
 	// We treat it as aliasing the object variable (conservative).
 	case *ast.MemberExpr:

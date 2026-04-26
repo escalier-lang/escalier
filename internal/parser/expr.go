@@ -427,17 +427,26 @@ func (p *Parser) primaryExpr() ast.Expr {
 			}
 			return ast.NewAwait(arg, ast.MergeSpans(token.Span, arg.Span()))
 		case Mut:
+			mutSpan := token.Span
 			p.lexer.consume() // consume 'mut'
-			// Unlike `await` (which calls p.expr()), `mut` recurses into
-			// primaryExpr so it binds tightly: `mut Point() + 1` parses as
-			// `(mut Point()) + 1`, not `mut (Point() + 1)`. This matches the
-			// design constraint that `mut` must wrap exactly one call.
+			// Bind tightly: `mut` recurses into primaryExpr (not p.expr()) so
+			// `mut Point() + 1` parses as `(mut Point()) + 1`. The mutability
+			// flag rides on the CallExpr itself, so every walker that already
+			// handles CallExpr sees it without needing a separate node case.
 			arg := p.primaryExpr()
 			if arg == nil {
-				p.reportError(token.Span, "Expected expression after 'mut'")
+				p.reportError(mutSpan, "Expected expression after 'mut'")
 				return nil
 			}
-			return ast.NewMutExpr(arg, ast.MergeSpans(token.Span, arg.Span()))
+			call, ok := arg.(*ast.CallExpr)
+			if !ok {
+				p.reportError(ast.MergeSpans(mutSpan, arg.Span()),
+					"'mut' prefix can only be applied to a call expression")
+				return arg
+			}
+			call.Mutable = true
+			call.MutSpan = mutSpan
+			return call
 		case Yield:
 			p.lexer.consume() // consume 'yield'
 

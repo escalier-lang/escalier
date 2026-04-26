@@ -352,8 +352,6 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printAwaitExpr(e)
 	case *ast.ThrowExpr:
 		p.printThrowExpr(e)
-	case *ast.MutExpr:
-		p.printMutExpr(e)
 	case *ast.TemplateLitExpr:
 		p.printTemplateLitExpr(e)
 	case *ast.TaggedTemplateLitExpr:
@@ -417,6 +415,9 @@ func (p *Printer) printUnaryExpr(expr *ast.UnaryExpr) {
 }
 
 func (p *Printer) printCallExpr(expr *ast.CallExpr) {
+	if expr.Mutable {
+		p.writeString("mut ")
+	}
 	if expr.OptChain {
 		p.printExpr(expr.Callee)
 		p.writeString("?(")
@@ -687,11 +688,6 @@ func (p *Printer) printAwaitExpr(expr *ast.AwaitExpr) {
 func (p *Printer) printThrowExpr(expr *ast.ThrowExpr) {
 	p.writeString("throw ")
 	p.printExpr(expr.Arg)
-}
-
-func (p *Printer) printMutExpr(expr *ast.MutExpr) {
-	p.writeString("mut ")
-	p.printExpr(expr.Expr)
 }
 
 func (p *Printer) printTemplateLitExpr(expr *ast.TemplateLitExpr) {
