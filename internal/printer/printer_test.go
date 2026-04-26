@@ -321,6 +321,19 @@ func TestPrintCallExpressions(t *testing.T) {
 		{"call with args", "add(1, 2)", "add(1, 2)"},
 		{"method call", "obj.method()", "obj.method()"},
 		{"optional chaining", "obj?.method()", "obj?.method()"},
+		// `mut` on a call expression. The parser binds `mut` to the
+		// outermost CallExpr that the suffix loop produces, so the printer
+		// must (1) emit `mut` directly on a CallExpr that is itself mutable
+		// and (2) wrap a mutable CallExpr in parens when it appears as the
+		// operand of a suffix-attaching parent (MemberExpr, IndexExpr, or
+		// the callee of an outer CallExpr) so that round-tripping through
+		// the parser preserves which call is mutable.
+		{"mut call", "mut foo()", "mut foo()"},
+		{"mut call chained call", "mut foo().bar()", "mut foo().bar()"},
+		{"mut call chained higher-order call", "mut foo()(1)", "mut foo()(1)"},
+		{"paren mut call then member", "(mut foo()).bar", "(mut foo()).bar"},
+		{"paren mut call then index", "(mut foo())[0]", "(mut foo())[0]"},
+		{"paren mut call then call", "(mut foo())(1)", "(mut foo())(1)"},
 	}
 
 	opts := DefaultOptions()

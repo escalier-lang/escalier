@@ -222,6 +222,20 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 	case *ast.CallExpr:
 		exprType, errors = c.inferCallExpr(ctx, expr)
+		if expr.Mutable {
+			// `mut Foo()` opts into a mutable instance. Strip any existing
+			// mutability wrapper on the return type before re-wrapping with
+			// a definite-mutable one so the result isn't double-wrapped.
+			// TODO: also reject calling a `mut self` method on an immutable
+			// receiver. Today the checker only enforces mutability on direct
+			// field writes, so `val p = Point(); p.tickInPlace()` still
+			// passes. The mut_prefix tests document this gap.
+			unwrapped := exprType
+			if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+				unwrapped = mut.Type
+			}
+			exprType = type_system.NewMutableType(&ast.NodeProvenance{Node: expr}, unwrapped)
+		}
 	case *ast.MemberExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 

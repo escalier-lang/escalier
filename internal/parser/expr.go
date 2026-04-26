@@ -426,6 +426,26 @@ func (p *Parser) primaryExpr() ast.Expr {
 				return nil
 			}
 			return ast.NewAwait(arg, ast.MergeSpans(token.Span, arg.Span()))
+		case Mut:
+			mutSpan := token.Span
+			p.lexer.consume() // consume 'mut'
+			// Bind tightly: `mut` recurses into primaryExpr (not p.expr()) so
+			// `mut Point() + 1` parses as `(mut Point()) + 1`. The mutability
+			// flag rides on the CallExpr itself, so every walker that already
+			// handles CallExpr sees it without needing a separate node case.
+			arg := p.primaryExpr()
+			if arg == nil {
+				p.reportError(mutSpan, "Expected expression after 'mut'")
+				return nil
+			}
+			call, ok := arg.(*ast.CallExpr)
+			if !ok {
+				p.reportError(ast.MergeSpans(mutSpan, arg.Span()),
+					"'mut' prefix can only be applied to a call expression")
+				return arg
+			}
+			call.Mutable = true
+			return call
 		case Yield:
 			p.lexer.consume() // consume 'yield'
 
@@ -681,7 +701,7 @@ func canStartExpr(tt TokenType) bool {
 		// Grouping / collection starters
 		OpenParen, OpenBracket, OpenBrace,
 		// Expression-starting keywords
-		Fn, Async, Await, Yield, If, Match, Try, Throw, Do, LessThan:
+		Fn, Async, Await, Yield, If, Match, Try, Throw, Do, Mut, LessThan:
 		return true
 	default:
 		return false

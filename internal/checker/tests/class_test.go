@@ -8,10 +8,10 @@ import (
 )
 
 // TestDefaultMutabilityFromClass instantiates each class and asserts the
-// printed type of the resulting binding for the three branches of the
-// algorithm: no mut self methods → immutable instance; at least one mut
-// self method → mutable instance; `data class` modifier → immutable
-// instance regardless of methods.
+// printed type of the resulting binding. Per #499, a bare constructor call
+// always produces an immutable instance — regardless of `mut self` methods
+// or the `data` modifier — and the user opts in to mutability with the
+// `mut` prefix at the call site.
 func TestDefaultMutabilityFromClass(t *testing.T) {
 	tests := map[string]struct {
 		input        string
@@ -26,7 +26,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			bindingName:  "p",
 			expectedType: "Point",
 		},
-		"HasMutSelf_DefaultsMutable": {
+		"HasMutSelf_DefaultsImmutable": {
 			input: `
 				class Counter(count: number) {
 					count,
@@ -35,9 +35,20 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 				val c = Counter(0)
 			`,
 			bindingName:  "c",
+			expectedType: "Counter",
+		},
+		"HasMutSelf_MutPrefixYieldsMutable": {
+			input: `
+				class Counter(count: number) {
+					count,
+					increment(mut self) -> number { return self.count }
+				}
+				val c = mut Counter(0)
+			`,
+			bindingName:  "c",
 			expectedType: "mut Counter",
 		},
-		"DataModifier_OverridesMutSelf": {
+		"DataModifier_DefaultsImmutable": {
 			input: `
 				data class Config(host: string) {
 					host,

@@ -322,45 +322,71 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 	}
 }
 
-func UpdateArrayMutability(namespace *type_system.Namespace) {
-	arrayTypeAlias := namespace.Types["Array"]
-	readonlyArrayTypeAlias := namespace.Types["ReadonlyArray"]
-	arrayType := type_system.Prune(arrayTypeAlias.Type).(*type_system.ObjectType)
-	readonlyArrayType := type_system.Prune(readonlyArrayTypeAlias.Type).(*type_system.ObjectType)
+func UpdateCollectionMutability(namespace *type_system.Namespace) {
+	for _, pair := range []struct {
+		mutable, readonly string
+	}{
+		{"Array", "ReadonlyArray"},
+		{"Map", "ReadonlyMap"},
+		{"Set", "ReadonlySet"},
+	} {
+		mergeReadonlyVariant(namespace, pair.mutable, pair.readonly)
+	}
+}
 
-	readonlyArrayElems := make(set.Set[type_system.ObjTypeKey])
-	for _, v := range readonlyArrayType.Elems {
+// mergeReadonlyVariant merges a TypeScript Readonly* interface into its
+// mutable counterpart. Methods that exist on the readonly type are marked
+// `mut_self = false`; methods unique to the mutable type are marked
+// `mut_self = true`. The merged element list is shared between both type
+// aliases so that lookups against either name see the union.
+func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonlyName string) {
+	mutableTypeAlias, ok := namespace.Types[mutableName]
+	if !ok {
+		return
+	}
+	readonlyTypeAlias, ok := namespace.Types[readonlyName]
+	if !ok {
+		return
+	}
+	mutableType, ok := type_system.Prune(mutableTypeAlias.Type).(*type_system.ObjectType)
+	if !ok {
+		return
+	}
+	readonlyType, ok := type_system.Prune(readonlyTypeAlias.Type).(*type_system.ObjectType)
+	if !ok {
+		return
+	}
+
+	readonlyElems := make(set.Set[type_system.ObjTypeKey])
+	for _, v := range readonlyType.Elems {
 		if me, ok := v.(*type_system.MethodElem); ok {
 			key := type_system.ObjTypeKey{
 				Kind: type_system.StrObjTypeKeyKind,
 				Str:  me.Name.Str,
-				Num:  0,
-				Sym:  0,
 			}
-			readonlyArrayElems.Add(key)
+			readonlyElems.Add(key)
 
-			// All methods on ReadonlyArray are non-mutating
+			// Methods on the Readonly* variant are non-mutating.
 			mutSelf := false
 			me.MutSelf = &mutSelf
 		}
 	}
 
-	readonlyArrayType.Elems = arrayType.Elems
-	for _, elem := range arrayType.Elems {
-		switch me := elem.(type) {
-		case *type_system.MethodElem:
-			mutSelf := true
-			key := type_system.ObjTypeKey{
-				Kind: type_system.StrObjTypeKeyKind,
-				Str:  me.Name.Str,
-				Num:  0,
-				Sym:  0,
-			}
-			if readonlyArrayElems.Contains(key) {
-				mutSelf = false
-			}
-			me.MutSelf = &mutSelf
+	readonlyType.Elems = mutableType.Elems
+	for _, elem := range mutableType.Elems {
+		me, ok := elem.(*type_system.MethodElem)
+		if !ok {
+			continue
 		}
+		mutSelf := true
+		key := type_system.ObjTypeKey{
+			Kind: type_system.StrObjTypeKeyKind,
+			Str:  me.Name.Str,
+		}
+		if readonlyElems.Contains(key) {
+			mutSelf = false
+		}
+		me.MutSelf = &mutSelf
 	}
 }
 
@@ -406,7 +432,7 @@ func (c *Checker) initializeGlobalScope() {
 	}
 
 	UpdateMethodMutability(inferCtx, globalNs)
-	UpdateArrayMutability(globalNs)
+	UpdateCollectionMutability(globalNs)
 
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)
