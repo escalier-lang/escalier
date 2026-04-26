@@ -155,7 +155,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 			// inside Generator<T, _, _> (rather than to the Generator
 			// container itself). Each yielded value carries the lifetime.
 			input: `
-				fn iter(p: mut {x: number}) -> Generator<mut {x: number}, void, never> {
+				fn iter(p: mut {x: number}) {
 					yield p
 				}
 			`,
@@ -352,8 +352,10 @@ func TestInferLifetimeTypes(t *testing.T) {
 // reference fields.
 func TestInferConstructorLifetimeTypes(t *testing.T) {
 	tests := map[string]struct {
-		input         string
-		expectedTypes map[string]string
+		input                     string
+		expectedTypes             map[string]string
+		expectedInstanceType      map[string]string
+		expectedInstanceLifetimes map[string]int
 	}{
 		"ContainerStoresMutRef": {
 			input: `
@@ -437,6 +439,17 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			expectedTypes: map[string]string{
 				"C": "{new fn (p: mut {x: number}) -> mut? C}",
 			},
+			expectedInstanceType: map[string]string{
+				// `foo`'s own `p` parameter independently gets a
+				// fresh 'a (the method threads its arg to its
+				// return). The class type alias itself has zero
+				// lifetime params, confirming no capture from the
+				// constructor.
+				"C": "{foo<'a>(self, p: mut 'a {x: number}) -> mut 'a {x: number}}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 0,
+			},
 		},
 		"GetterCapturesConstructorParam": {
 			// Bug B5: getters and setters were not scanned for
@@ -451,6 +464,12 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
+			},
+			expectedInstanceType: map[string]string{
+				"C": "{get q(self) -> mut {x: number}}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 1,
 			},
 		},
 		"SetterCapturesConstructorParam": {
@@ -489,6 +508,19 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				require.Truef(t, ok, "binding %q not found", varName)
 				assert.Equalf(t, want, got,
 					"unexpected type for %q", varName)
+			}
+			for typeName, want := range test.expectedInstanceType {
+				alias, ok := ns.Types[typeName]
+				require.Truef(t, ok, "type alias %q not found", typeName)
+				assert.Equalf(t, want, alias.Type.String(),
+					"unexpected instance type for %q", typeName)
+			}
+			for typeName, want := range test.expectedInstanceLifetimes {
+				alias, ok := ns.Types[typeName]
+				require.Truef(t, ok, "type alias %q not found", typeName)
+				assert.Lenf(t, alias.LifetimeParams, want,
+					"unexpected lifetime-param count on type alias %q",
+					typeName)
 			}
 		})
 	}

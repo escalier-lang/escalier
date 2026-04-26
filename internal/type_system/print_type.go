@@ -445,12 +445,21 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 				result += "new " + printFuncType(elem.Fn, pt)
 			case *MethodElem:
 				result += elem.Name.String()
-				if len(elem.Fn.TypeParams) > 0 {
+				if len(elem.Fn.LifetimeParams) > 0 || len(elem.Fn.TypeParams) > 0 {
 					result += "<"
-					for i, param := range elem.Fn.TypeParams {
-						if i > 0 {
+					first := true
+					for _, lp := range elem.Fn.LifetimeParams {
+						if !first {
 							result += ", "
 						}
+						first = false
+						result += "'" + lp.Name
+					}
+					for _, param := range elem.Fn.TypeParams {
+						if !first {
+							result += ", "
+						}
+						first = false
 						result += param.Name
 						if param.Constraint != nil {
 							result += ": " + pt(param.Constraint)
@@ -489,9 +498,9 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 					result += " throws " + pt(elem.Fn.Throws)
 				}
 			case *SetterElem:
-				result += "set " + elem.Name.String() + "(mut self, "
+				result += "set " + elem.Name.String() + "(mut self"
 				if len(elem.Fn.Params) > 0 {
-					result += printFuncParam(elem.Fn.Params[0], pt)
+					result += ", " + printFuncParam(elem.Fn.Params[0], pt)
 				}
 				result += ") -> undefined"
 				if !IsNeverType(elem.Fn.Throws) {
