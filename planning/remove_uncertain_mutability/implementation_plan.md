@@ -115,11 +115,11 @@ Note: `removeUncertainMutability` is **not currently called from `generalize.go`
   - Param has at least one property write → `mut` wrapper added.
   - Nested case: param's property is itself an object whose inner field is written.
 
-## Phase 3 — Sweep, snapshots, verification
+## Phase 3 — Sweep, snapshots, verification ✅ Landed
 
-- `UPDATE_SNAPS=true go test ./...` — refresh and review snapshot diffs.
-- Re-enable any test cases left disabled during Phase 1 development.
-- Final sanity: `grep -r "mut?" internal/` and `grep -r "MutabilityUncertain" internal/` both return zero hits.
+- `UPDATE_SNAPS=true go test ./...` — clean across all packages, no working-tree drift. Phase 2 already updated every fixture in the same commit it removed `MutabilityUncertain`. ✓
+- Re-enable any test cases left disabled during Phase 1 development — none remained. The two NOTE-block placeholders in `mut_prefix_test.go` were already replaced with active tests during Phase 1 (`ImmutableInstance_CannotCallMutSelfMethod`, `ImmutableMap_CannotClear`, `ImmutableSet_CannotAdd`, plus the typevar-receiver pair). ✓
+- Final sanity: `grep -rn "mut?" internal/` and `grep -rn "MutabilityUncertain" internal/` both return zero hits. ✓ (Only matches anywhere in the repo are a regex false positive on `colorGamut?` in `playground/public/types/lib.dom.d.ts` and intentional historical references in `planning/*.md`.)
 
 ## Risks and unknowns
 
@@ -134,8 +134,8 @@ Note: `removeUncertainMutability` is **not currently called from `generalize.go`
 | -------------------------------------------- | ------------ | -------------------------------------------------------------- |
 | Phase 1 (mut-self gate + LSP)                | ~half-day    | ✅ Landed. Open-object hazard sidestepped via `objType.Open` short-circuit. |
 | Phase 2 (`mut?` removal + finalization pass) | 2–4 days     | ✅ Landed. `removeUncertainMutability` retained as `rebuildContainers` (load-bearing for FromBinding TypeVar normalization). |
-| Phase 3 (fixture sweep + new tests)          | ~half-day    | Mechanical                                                     |
-| **Total**                                    | **3–5 days** | Phases 1–2 done; Phase 3 next.                                 |
+| Phase 3 (fixture sweep + new tests)          | ~half-day    | ✅ Landed. No fixture sweep needed (Phase 2 covered it); no disabled tests remained. |
+| **Total**                                    | **3–5 days** | All phases done.                                               |
 
 ## Verification
 
