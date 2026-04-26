@@ -586,8 +586,6 @@ func printIntersectionType(t *IntersectionType, config PrintConfig) string {
 
 func printMutabilityType(t *MutabilityType, config PrintConfig) string {
 	switch t.Mutability {
-	case MutabilityUncertain:
-		return "mut? " + printTypeMinPrec(t.Type, config, precPrefix)
 	case MutabilityMutable:
 		return "mut " + printTypeMinPrec(t.Type, config, precPrefix)
 	default:

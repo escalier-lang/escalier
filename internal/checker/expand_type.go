@@ -756,9 +756,6 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 	case *type_system.TupleType:
 		if indexKey, ok := key.(IndexKey); ok {
 			var keyType type_system.Type = indexKey.Type
-			if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-				keyType = mut.Type
-			}
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if numLit, ok := indexLit.Lit.(*type_system.NumLit); ok {
 					index := int(numLit.Value)
@@ -949,9 +946,9 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 			propTV, openObj := c.newOpenObjectWithProperty(k.Name, k)
 			if k.OptChain {
 				// Optional chaining: obj?.bar infers obj: {bar: T} | null | undefined.
-				// Use the unwrapped ObjectType (not MutabilityType) since you can't
-				// mutate through optional chaining — the object might be null/undefined.
-				t.Instance = type_system.NewUnionType(nil, openObj.Type, type_system.NewNullType(nil), type_system.NewUndefinedType(nil))
+				// You can't mutate through optional chaining — the object might be
+				// null/undefined.
+				t.Instance = type_system.NewUnionType(nil, openObj, type_system.NewNullType(nil), type_system.NewUndefinedType(nil))
 				// The expression obj?.bar itself may produce undefined
 				return type_system.NewUnionType(nil, propTV, type_system.NewUndefinedType(nil)), errors
 			}
@@ -959,9 +956,6 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 			return propTV, errors
 		case IndexKey:
 			var keyType type_system.Type = k.Type
-			if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-				keyType = mut.Type
-			}
 			// String literal index key — treat like property access
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
@@ -1025,11 +1019,10 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 }
 
 // ReceiverIsDefinitelyMutable reports whether the outer wrapper of a receiver
-// type is a definite `MutabilityMutable`. `MutabilityUncertain` (`mut?`) and
-// missing wrappers are treated as immutable for receiver-mutability gating.
-// For type-variable receivers, the constraint's wrapper is consulted; an
-// unconstrained type variable is treated as immutable so generic code can't
-// sneak past the gate.
+// type is a definite `MutabilityMutable`. Missing wrappers are treated as
+// immutable for receiver-mutability gating. For type-variable receivers, the
+// constraint's wrapper is consulted; an unconstrained type variable is
+// treated as immutable so generic code can't sneak past the gate.
 func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
 	pruned := type_system.Prune(t)
 	if mut, ok := pruned.(*type_system.MutabilityType); ok {
@@ -1269,9 +1262,6 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		return type_system.NewUndefinedType(nil), errors
 	case IndexKey:
 		var keyType type_system.Type = k.Type
-		if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-			keyType = mut.Type
-		}
 		if indexLit, ok := keyType.(*type_system.LitType); ok {
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 				// Search in reverse order for override semantics (same as PropertyKey).
@@ -1512,7 +1502,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 // newOpenObjectWithProperty creates a new open ObjectType with a single property
 // and a rest-spread element, returning the property's type variable and the object.
 // accessKey records the member access that triggered inference of this property.
-func (c *Checker) newOpenObjectWithProperty(name string, accessKey MemberAccessKey) (*type_system.TypeVarType, *type_system.MutabilityType) {
+func (c *Checker) newOpenObjectWithProperty(name string, accessKey MemberAccessKey) (*type_system.TypeVarType, *type_system.ObjectType) {
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
 	rowTV := c.FreshVar(nil)
@@ -1523,10 +1513,7 @@ func (c *Checker) newOpenObjectWithProperty(name string, accessKey MemberAccessK
 		type_system.NewRestSpreadElem(rowTV),
 	})
 	openObj.Open = true
-	return propTV, &type_system.MutabilityType{
-		Type:       openObj,
-		Mutability: type_system.MutabilityUncertain,
-	}
+	return propTV, openObj
 }
 
 // addPropertyToOpenObject appends a new widenable property to an existing open
@@ -1684,9 +1671,6 @@ func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.T
 func (c *Checker) getArrayConstraintIndexAccess(_ Context, t *type_system.TypeVarType, k IndexKey, errors []Error) (type_system.Type, []Error) {
 	constraint := t.ArrayConstraint
 	var keyType type_system.Type = k.Type
-	if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-		keyType = mut.Type
-	}
 
 	if litIndex, ok := asNonNegativeIntLiteral(keyType); ok {
 		if _, exists := constraint.LiteralIndexes[litIndex]; !exists {
@@ -1828,8 +1812,8 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
-		// Unwrap MutabilityType so inferred open objects (wrapped in mut?)
-		// are classified as object parts of the intersection.
+		// Unwrap MutabilityType so explicit `mut Foo` parts are classified as
+		// object parts of the intersection.
 		if mut, ok := part.(*type_system.MutabilityType); ok {
 			part = mut.Type
 		}

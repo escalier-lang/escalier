@@ -78,18 +78,6 @@ func TestTypeContainsUnionNeedle(t *testing.T) {
 		"should not find union(string, void) in union(string, number, boolean)")
 }
 
-func TestUnwrapMutabilityOnlyStripsUncertain(t *testing.T) {
-	strType := ts.NewStrPrimType(nil)
-
-	uncertain := &ts.MutabilityType{Type: strType, Mutability: ts.MutabilityUncertain}
-	assert.Equal(t, strType, unwrapMutability(uncertain), "should strip mut? wrapper")
-
-	mutable := &ts.MutabilityType{Type: strType, Mutability: ts.MutabilityMutable}
-	assert.Equal(t, mutable, unwrapMutability(mutable), "should preserve mut wrapper")
-
-	assert.Equal(t, strType, unwrapMutability(strType), "should return non-wrapped type as-is")
-}
-
 // TestWideningWithAliasedTypeVars verifies that when two Widenable TypeVars are
 // aliased (tvA.Instance = tvB) and then widened via tvA, reading through tvB
 // also observes the widened type. This simulates the case where two open objects

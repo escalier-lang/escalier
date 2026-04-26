@@ -584,7 +584,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<mut? 1 | mut? 2 | mut? 3, void, never>",
+			"fn () -> Generator<1 | 2 | 3, void, never>",
 			types["count"])
 	})
 
@@ -598,7 +598,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<mut? 1 | mut? 2, mut? "done", never>`,
+			`fn () -> Generator<1 | 2, "done", never>`,
 			types["myGen"])
 	})
 
@@ -611,7 +611,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<mut? 1 | mut? "hello", void, never>`,
+			`fn () -> Generator<1 | "hello", void, never>`,
 			types["mixed"])
 	})
 

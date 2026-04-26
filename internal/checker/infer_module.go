@@ -573,10 +573,7 @@ func (c *Checker) InferComponent(
 					typeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
 				}
 
-				retType := &type_system.MutabilityType{
-					Type:       type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
-					Mutability: type_system.MutabilityUncertain,
-				}
+				retType := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...)
 
 				funcType := type_system.NewFuncType(
 					provenance,

@@ -310,10 +310,6 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 	case *ast.LiteralExpr:
 		exprType, errors = c.inferLit(expr.Lit)
-		exprType = &type_system.MutabilityType{
-			Type:       exprType,
-			Mutability: type_system.MutabilityUncertain,
-		}
 	case *ast.TupleExpr:
 		elemTypes := []type_system.Type{}
 		errors = []Error{}
@@ -386,10 +382,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// Array type: [...Array<T>] → Array<T>, and
 		// [...Array<T1>, ...Array<T2>] → Array<T1 | T2>.
 		// Otherwise returns a TupleType.
-		exprType = &type_system.MutabilityType{
-			Type:       collapseArrayRestSpreads(c, elemTypes),
-			Mutability: type_system.MutabilityUncertain,
-		}
+		exprType = collapseArrayRestSpreads(c, elemTypes)
 	case *ast.ObjectExpr:
 		// Create a context for the object so that we can add a `Self` type to it
 		objCtx := ctx.WithNewScope()
@@ -542,10 +535,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			i++
 		}
 
-		exprType = &type_system.MutabilityType{
-			Type:       selfType,
-			Mutability: type_system.MutabilityUncertain,
-		}
+		exprType = selfType
 	case *ast.FuncExpr:
 		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
 		errors = slices.Concat(errors, sigErrors)
@@ -1132,19 +1122,8 @@ func (c *Checker) inferCallExpr(
 		// with no type annotation being called). Create a synthetic FuncType
 		// matching the call site, collect it for deferred resolution, and
 		// delegate to handleFuncCall for argument unification.
-		//
-		// Strip uncertain mutability (mut?) from argument types so the
-		// inferred function signature is clean (e.g. fn(42) not fn(mut? 42)).
-		// The mut? wrapper tracks whether a value will be mutated and is
-		// resolved during generalization — it shouldn't leak into inferred
-		// param types.
-		unwrappedArgTypes := make([]type_system.Type, len(argTypes))
-		for i, at := range argTypes {
-			unwrappedArgTypes[i] = unwrapMutability(at)
-		}
-
-		params := make([]*type_system.FuncParam, len(unwrappedArgTypes))
-		for i := range unwrappedArgTypes {
+		params := make([]*type_system.FuncParam, len(argTypes))
+		for i := range argTypes {
 			params[i] = &type_system.FuncParam{
 				Pattern: type_system.NewIdentPat(fmt.Sprintf("arg%d", i)),
 				Type:    c.FreshVar(nil),
@@ -1163,7 +1142,7 @@ func (c *Checker) inferCallExpr(
 		(*ctx.CallSites)[t.ID] = append((*ctx.CallSites)[t.ID], synthFuncType)
 		(*ctx.CallSiteTypeVars)[t.ID] = t
 
-		return c.handleFuncCall(ctx, synthFuncType, expr, unwrappedArgTypes, provneance, errors)
+		return c.handleFuncCall(ctx, synthFuncType, expr, argTypes, provneance, errors)
 
 	default:
 		return type_system.NewNeverType(provneance), []Error{

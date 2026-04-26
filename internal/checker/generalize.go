@@ -481,13 +481,10 @@ func (c *Checker) resolveCallSites(ctx Context) {
 	*ctx.CallSiteTypeVars = callSiteTypeVars
 }
 
-// GeneralizeFuncType finds unresolved type variables in a function's signature
-// and converts them into proper type parameters. This must be called after type
-// inference completes for the function body.
 // finalizeOpenObject recursively finalizes an open ObjectType's mutability.
 // It checks all properties for Written flags (including nested open objects)
-// and strips mut? wrappers from written property values. Returns true if any
-// property in the tree was written to.
+// and wraps written nested objects in `mut`. Returns true if any property in
+// the tree was written to.
 func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 	hasWritten := false
 	for _, elem := range openObj.Elems {
@@ -495,51 +492,44 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 		if !ok {
 			continue
 		}
-		// Recurse into nested open objects
+		// Recurse into nested open objects. The property's Value is the
+		// widenable TypeVar created by newOpenObjectWithProperty; if any
+		// chained access bound it to another open object, that object is
+		// the recursive target.
 		valPruned := type_system.Prune(prop.Value)
-		if mut, ok := valPruned.(*type_system.MutabilityType); ok {
-			if nestedObj, ok := mut.Type.(*type_system.ObjectType); ok && nestedObj.Open {
-				if finalizeOpenObject(nestedObj) {
-					mut.Mutability = type_system.MutabilityMutable
-					// Nested writes propagate upward: the containing object
-					// is also considered written to.
-					hasWritten = true
-				} else {
-					// Read-only nested object: strip mut? wrapper
-					if valTV, ok := prop.Value.(*type_system.TypeVarType); ok {
-						valTV.Instance = nestedObj
+		if nestedObj, ok := valPruned.(*type_system.ObjectType); ok && nestedObj.Open {
+			if finalizeOpenObject(nestedObj) {
+				if valTV, ok := prop.Value.(*type_system.TypeVarType); ok {
+					valTV.Instance = &type_system.MutabilityType{
+						Type:       nestedObj,
+						Mutability: type_system.MutabilityMutable,
 					}
 				}
+				// Nested writes propagate upward: the containing object
+				// is also considered written to.
+				hasWritten = true
 			}
 		}
 		if prop.Written {
 			hasWritten = true
-			// Strip mut? from the written property's value type
-			valPruned := type_system.Prune(prop.Value)
-			if mut, ok := valPruned.(*type_system.MutabilityType); ok {
-				if valTV, ok := prop.Value.(*type_system.TypeVarType); ok {
-					valTV.Instance = mut.Type
-				}
-			}
 		}
 	}
 	return hasWritten
 }
 
+// GeneralizeFuncType finds unresolved type variables in a function's signature
+// and converts them into proper type parameters. This must be called after type
+// inference completes for the function body.
 func GeneralizeFuncType(funcType *type_system.FuncType) {
 	// Before collecting type vars, finalize open object mutability.
 	// If any property on an open object was written during inference,
-	// wrap the object in `mut` and strip `mut?` from written property values.
+	// wrap the object in `mut`.
 	for _, param := range funcType.Params {
 		tv, ok := param.Type.(*type_system.TypeVarType)
 		if !ok {
 			continue
 		}
 		pruned := type_system.Prune(tv)
-		// Unwrap MutabilityType if present (open objects are wrapped in mut?)
-		if mut, ok := pruned.(*type_system.MutabilityType); ok {
-			pruned = mut.Type
-		}
 		openObj, ok := pruned.(*type_system.ObjectType)
 		if !ok || !openObj.Open {
 			continue
@@ -549,9 +539,6 @@ func GeneralizeFuncType(funcType *type_system.FuncType) {
 				Type:       openObj,
 				Mutability: type_system.MutabilityMutable,
 			}
-		} else {
-			// Read-only: remove the MutabilityType wrapper
-			tv.Instance = openObj
 		}
 	}
 

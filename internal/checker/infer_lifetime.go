@@ -460,12 +460,9 @@ func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
 	}
 }
 
-// stripMutabilityWrapper strips a MutabilityType wrapper (any kind:
-// explicit `mut`, immutable, or uncertain `mut?`) so callers can match
-// the underlying structural type. Returns the input unchanged if not
-// wrapped. Distinct from the more selective `unwrapMutability` in
-// unify.go which only strips uncertain wrappers — here we want the
-// underlying structural type regardless of mutability annotation.
+// stripMutabilityWrapper strips a MutabilityType wrapper so callers can
+// match the underlying structural type. Returns the input unchanged if
+// not wrapped.
 func stripMutabilityWrapper(t type_system.Type) type_system.Type {
 	if mt, ok := t.(*type_system.MutabilityType); ok {
 		return type_system.Prune(mt.Type)

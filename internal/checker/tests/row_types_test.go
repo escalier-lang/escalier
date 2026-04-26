@@ -408,7 +408,7 @@ func TestRowTypesErrors(t *testing.T) {
 }
 
 // TestRowTypesKeyOf tests that keyof works on inferred open object types
-// (which are wrapped in MutabilityType).
+// (including those wrapped in a `mut` MutabilityType).
 func TestRowTypesKeyOf(t *testing.T) {
 	t.Run("KeyOfType unwraps MutabilityType", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -420,8 +420,8 @@ func TestRowTypesKeyOf(t *testing.T) {
 			IsPatMatch: false,
 		}
 
-		// Simulate an inferred open object wrapped in MutabilityType:
-		// mut? {x: string, y: number}
+		// Simulate a finalized open object wrapped in `mut`:
+		// mut {x: string, y: number}
 		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
 			type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewStrPrimType(nil)),
 			type_system.NewPropertyElem(type_system.NewStrKey("y"), type_system.NewNumPrimType(nil)),
@@ -429,7 +429,7 @@ func TestRowTypesKeyOf(t *testing.T) {
 		objType.Open = true
 		mutType := &type_system.MutabilityType{
 			Type:       objType,
-			Mutability: type_system.MutabilityUncertain,
+			Mutability: type_system.MutabilityMutable,
 		}
 
 		keyofType := type_system.NewKeyOfType(nil, mutType)

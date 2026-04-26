@@ -383,7 +383,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				class Container(item: mut {x: number}) { item, }
 			`,
 			expectedTypes: map[string]string{
-				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> mut? Container<'a>}",
+				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> Container<'a>}",
 			},
 		},
 		"PointPrimitivesNoLifetime": {
@@ -391,7 +391,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				class Point(x: number, y: number) { x, y, }
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> mut? Point}",
+				"Point": "{new fn (x: number, y: number) -> Point}",
 			},
 		},
 		"PairOfRefs": {
@@ -401,7 +401,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> mut? Pair<'a, 'b>}",
+				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> Pair<'a, 'b>}",
 			},
 		},
 		"ShorthandWithDefaultStoresParam": {
@@ -411,7 +411,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> mut? Container<'a>}",
+				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> Container<'a>}",
 			},
 		},
 		"FieldWithMemberAccessOfParam": {
@@ -423,7 +423,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Wrap": "{new fn <'a>(p: mut 'a {x: {y: number}}) -> mut? Wrap<'a>}",
+				"Wrap": "{new fn <'a>(p: mut 'a {x: {y: number}}) -> Wrap<'a>}",
 			},
 		},
 		"FieldWithObjectLiteralCapturingParam": {
@@ -434,7 +434,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Wrap": "{new fn <'a>(p: mut 'a {x: number}) -> mut? Wrap<'a>}",
+				"Wrap": "{new fn <'a>(p: mut 'a {x: number}) -> Wrap<'a>}",
 			},
 		},
 		"FieldWithTupleLiteralCapturingParam": {
@@ -445,7 +445,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Wrap": "{new fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> mut? Wrap<'a, 'b>}",
+				"Wrap": "{new fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> Wrap<'a, 'b>}",
 			},
 		},
 		"MethodBodyShadowedParamNotCaptured": {
@@ -458,7 +458,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn (p: mut {x: number}) -> mut? C}",
+				"C": "{new fn (p: mut {x: number}) -> C}",
 			},
 			expectedInstanceType: map[string]string{
 				// `foo`'s own `p` parameter independently gets a
@@ -484,7 +484,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
 			},
 			expectedInstanceType: map[string]string{
 				"C": "{get q(self) -> mut {x: number}}",
@@ -501,7 +501,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
 			},
 		},
 		"NestedFuncParamDefaultCapturesConstructorParam": {
@@ -521,7 +521,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
 			},
 		},
 		"StaticMethodDoesNotCapture": {
@@ -534,7 +534,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn (p: mut {x: number}) -> mut? C, make() -> number}",
+				"C": "{new fn (p: mut {x: number}) -> C, make() -> number}",
 			},
 		},
 	}
