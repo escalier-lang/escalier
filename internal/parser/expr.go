@@ -428,6 +428,10 @@ func (p *Parser) primaryExpr() ast.Expr {
 			return ast.NewAwait(arg, ast.MergeSpans(token.Span, arg.Span()))
 		case Mut:
 			p.lexer.consume() // consume 'mut'
+			// Unlike `await` (which calls p.expr()), `mut` recurses into
+			// primaryExpr so it binds tightly: `mut Point() + 1` parses as
+			// `(mut Point()) + 1`, not `mut (Point() + 1)`. This matches the
+			// design constraint that `mut` must wrap exactly one call.
 			arg := p.primaryExpr()
 			if arg == nil {
 				p.reportError(token.Span, "Expected expression after 'mut'")

@@ -112,7 +112,7 @@ func (e MutPrefixOnNonCallError) Span() ast.Span {
 	return e.span
 }
 func (e MutPrefixOnNonCallError) Message() string {
-	return "'mut' prefix can only be applied to a call or constructor expression"
+	return "'mut' prefix can only be applied to a call expression"
 }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline

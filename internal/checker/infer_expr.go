@@ -1316,6 +1316,10 @@ func (c *Checker) inferMutExpr(ctx Context, expr *ast.MutExpr) (type_system.Type
 		errs = append(errs, &MutPrefixOnNonCallError{span: expr.Span()})
 		return innerType, errs
 	}
+	// TODO: also reject calling a `mut self` method on an immutable receiver.
+	// Today the checker only enforces mutability on direct field writes, so
+	// `val p = Point(); p.tickInPlace()` still passes. The mut_prefix tests
+	// document this gap.
 	unwrapped := innerType
 	if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
 		unwrapped = mut.Type

@@ -322,7 +322,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 	}
 }
 
-func UpdateArrayMutability(namespace *type_system.Namespace) {
+func UpdateCollectionMutability(namespace *type_system.Namespace) {
 	for _, pair := range []struct {
 		mutable, readonly string
 	}{
@@ -432,7 +432,7 @@ func (c *Checker) initializeGlobalScope() {
 	}
 
 	UpdateMethodMutability(inferCtx, globalNs)
-	UpdateArrayMutability(globalNs)
+	UpdateCollectionMutability(globalNs)
 
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)

@@ -628,8 +628,6 @@ func (c *Checker) InferConstructorLifetimes(
 
 	// Per #499: constructor calls always return immutable instances; the user
 	// opts in to a mutable instance via the `mut` prefix at the call site.
-	mutable := false
-	typeAlias.DefaultMutable = &mutable
 
 	// Honor explicit lifetime params if the user already wrote them.
 	if len(typeAlias.LifetimeParams) > 0 {
@@ -643,9 +641,9 @@ func (c *Checker) InferConstructorLifetimes(
 	// InferConstructorLifetimes runs during the namespace placeholder phase,
 	// before the rename pass has populated VarIDs on identifiers in field
 	// initializers or method bodies. We must run this early so the class's
-	// TypeAlias advertises its LifetimeParams (and DefaultMutable) before
-	// any consumer — function param annotations, var decls, constructor
-	// call sites — resolves the class by name during the body phase.
+	// TypeAlias advertises its LifetimeParams before any consumer — function
+	// param annotations, var decls, constructor call sites — resolves the
+	// class by name during the body phase.
 	paramNameToIndex := make(map[string]int)
 	for i, p := range classDecl.Params {
 		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
