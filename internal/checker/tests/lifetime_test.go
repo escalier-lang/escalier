@@ -644,4 +644,3 @@ func collectBindingTypes(ns *type_system.Namespace) map[string]string {
 	}
 	return out
 }
-

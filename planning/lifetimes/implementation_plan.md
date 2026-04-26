@@ -1415,6 +1415,19 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
   Still deferred: `yield from` (delegate yield) propagation from the
   inner iterator's element type, and lifetime inference for the
   generator's `TReturn` slot from explicit `return value` paths.
+- **8.3 async generators.** `inferLifetimesCore` branches on
+  `isGenerator` (yields → yield type) vs. `isAsync` (returns →
+  Promise value type), but the combined async-generator case isn't
+  exercised end-to-end. Although `generatorYieldType` already
+  recognizes `AsyncGenerator<T, TReturn, TNext>` so yields *should*
+  flow to T, there are no tests covering `async fn*` with
+  parameter-aliasing yields, and the `return value` → TReturn slot
+  inherits the same TReturn deferral as regular generators (returns
+  in an async generator do not wrap into Promise). Closing this
+  requires test coverage for parameter-aliasing yields in async
+  generators and, alongside the regular-generator TReturn work,
+  inferring the lifetime on TReturn from explicit `return value`
+  paths.
 - **8.4 escaping reference detection.** `DetectEscapingRefs` walks a
   function body for assignment expressions whose lvalue root is a
   non-local identifier (VarID ≤ 0, set by the rename pass for

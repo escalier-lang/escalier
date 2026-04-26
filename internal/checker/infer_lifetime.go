@@ -38,7 +38,7 @@ func lifetimeParamName(i int) string {
 //   - Multiple returns aliasing different parameters: emits a
 //     LifetimeUnion on the return type.
 //   - Parameters stored into module-level (non-local) state: assigned
-//     'static directly. See DetectEscapingRefs.
+//     'static directly. See detectEscapingLeafIndices.
 //   - Yields aliasing parameters (generators): the lifetime is attached
 //     to the yield type T inside Generator<T, TReturn, TNext> rather than
 //     to the Generator container itself, so each yielded value carries
@@ -190,6 +190,15 @@ func (c *Checker) inferLifetimesCore(
 		}
 	}
 
+	// Skip the alias-source walk entirely when the result type cannot
+	// carry a lifetime (e.g. it's a TypeVar, primitive, or
+	// union/intersection without a common lifetime-bearing structure).
+	// Without a place to attach the lifetime on the result side, the
+	// lifetime parameter would be unused noise in the signature.
+	if !typeCarriesLifetime(resultType) {
+		return
+	}
+
 	// Determine which leaves are aliased across all alias-source
 	// expressions. Use insertion order so the resulting LifetimeParams
 	// list is deterministic.
@@ -231,15 +240,6 @@ func (c *Checker) inferLifetimesCore(
 		return
 	}
 
-	// Skip lifetime inference entirely when the result type cannot carry
-	// a lifetime (e.g. it's a TypeVar, primitive, or union/intersection
-	// without a common lifetime-bearing structure). Without a place to
-	// attach the lifetime on the result side, the lifetime parameter
-	// would be unused noise in the signature.
-	if !typeCarriesLifetime(resultType) {
-		return
-	}
-
 	// Walk the aliased leaves. For each, either:
 	//   (a) Reuse the leaf's existing lifetime (set by a prior pass —
 	//       the LifetimeVar is pointer-shared, already in
@@ -268,17 +268,17 @@ func (c *Checker) inferLifetimesCore(
 		// Reuse an already-inferred LifetimeVar on the leaf so the
 		// signature stays stable across re-runs and pointer identity
 		// is preserved with anything that already references it.
-		if existing, ok := type_system.PruneLifetime(type_system.GetLifetime(leaf.leafType)).(*type_system.LifetimeVar); ok && existing != nil {
-			returnLifetimeMembers = append(returnLifetimeMembers, existing)
+		if existingLV, ok := type_system.PruneLifetime(type_system.GetLifetime(leaf.leafType)).(*type_system.LifetimeVar); ok && existingLV != nil {
+			returnLifetimeMembers = append(returnLifetimeMembers, existingLV)
 			continue
 		}
 		nameIdx := len(funcType.LifetimeParams) + len(newLifetimeParams)
-		lv := c.FreshLifetimeVar(lifetimeParamName(nameIdx))
-		newLifetimeParams = append(newLifetimeParams, lv)
-		returnLifetimeMembers = append(returnLifetimeMembers, lv)
+		newLV := c.FreshLifetimeVar(lifetimeParamName(nameIdx))
+		newLifetimeParams = append(newLifetimeParams, newLV)
+		returnLifetimeMembers = append(returnLifetimeMembers, newLV)
 
 		// Attach the lifetime to the leaf's type position.
-		setLifetimeOnType(leaf.leafType, lv)
+		setLifetimeOnType(leaf.leafType, newLV)
 	}
 
 	if len(returnLifetimeMembers) == 0 && !returnHasStatic {
@@ -343,6 +343,18 @@ func collectParamLeaves(
 	return leaves
 }
 
+// walkPatternForLeaves recurses through a destructuring pattern in
+// lockstep with its inferred type, appending a paramLeaf for every
+// leaf binding (IdentPat or ObjShorthandPat) with a positive VarID.
+//
+// We don't use the ast.Visitor interface here because the visitor only
+// carries pattern context — it has no notion of a parallel type tree.
+// Each container pattern (TuplePat, ObjectPat, RestPat) needs to pick
+// the matching sub-type (tuple element, property value, array element)
+// before descending, which would force a visitor implementation to
+// maintain a side stack of types pushed/popped on EnterPat/ExitPat and
+// to repeat the same type-shape switching done here. With one caller
+// and one purpose, a self-contained recursive walk is simpler.
 func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
 	if pat == nil || t == nil {
 		return
@@ -465,11 +477,13 @@ func arrayElemType(t type_system.Type) type_system.Type {
 	return tref.TypeArgs[0]
 }
 
-// DetectEscapingRefs walks a function body looking for assignments that
-// store one of the function's parameters into a non-local location
-// (module-level variable, prelude binding, or any other binding looked
-// up through the function's enclosing scope chain). Returns the set of
-// parameter indices whose value escapes.
+// detectEscapingLeafIndices walks a function body looking for
+// assignments that store one of the function's parameter leaves into a
+// non-local location (module-level variable, prelude binding, or any
+// other binding looked up through the function's enclosing scope
+// chain). leafIndex maps a leaf binding's VarID to its position in the
+// leaves list; the returned set contains the indices of leaves whose
+// value escapes.
 //
 // Detection is by VarID: the rename pass assigns positive VarIDs to
 // locals and negative VarIDs to outer-scope references. An assignment
@@ -484,17 +498,6 @@ func arrayElemType(t type_system.Type) type_system.Type {
 //     borrow-checker tolerates this (it's sound, just imprecise).
 //   - Stores via property assignment whose root is a local but is
 //     itself stored elsewhere: not tracked here.
-func DetectEscapingRefs(
-	body *ast.Block,
-	paramIndex map[liveness.VarID]int,
-) set.Set[int] {
-	return detectEscapingLeafIndices(body, paramIndex)
-}
-
-// detectEscapingLeafIndices is the leaf-aware version of
-// DetectEscapingRefs: leafIndex maps a leaf binding's VarID to its
-// position in the leaves list, and the returned set contains the
-// indices of leaves whose value escapes.
 func detectEscapingLeafIndices(
 	body *ast.Block,
 	leafIndex map[liveness.VarID]int,
@@ -553,19 +556,10 @@ func (v *escapingRefsVisitor) EnterDecl(d ast.Decl) bool {
 // isNonLocalLValue returns true if the given assignment-target expression's
 // root identifier resolves to a non-local binding (VarID <= 0). Walks
 // through MemberExpr/IndexExpr chains to find the root identifier.
+// rootObjectVarID returns 0 when the root is non-local (or not a simple
+// ident chain), which matches what we want to flag as escaping.
 func isNonLocalLValue(expr ast.Expr) bool {
-	for {
-		switch e := expr.(type) {
-		case *ast.IdentExpr:
-			return e.VarID <= 0
-		case *ast.MemberExpr:
-			expr = e.Object
-		case *ast.IndexExpr:
-			expr = e.Object
-		default:
-			return false
-		}
-	}
+	return rootObjectVarID(expr) == 0
 }
 
 // setLifetimeOnType attaches a lifetime to a type's Lifetime field, walking
@@ -650,7 +644,10 @@ func (c *Checker) InferConstructorLifetimes(
 	// Note: matching is by *name* rather than VarID because
 	// InferConstructorLifetimes runs during the namespace placeholder phase,
 	// before the rename pass has populated VarIDs on identifiers in field
-	// initializers or method bodies.
+	// initializers or method bodies. We must run this early so the class's
+	// TypeAlias advertises its LifetimeParams (and DefaultMutable) before
+	// any consumer — function param annotations, var decls, constructor
+	// call sites — resolves the class by name during the body phase.
 	paramNameToIndex := make(map[string]int)
 	for i, p := range classDecl.Params {
 		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
