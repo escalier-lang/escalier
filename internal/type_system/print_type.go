@@ -46,7 +46,7 @@ func typePrec(t Type) int {
 		return precIntersection
 	case *FuncType:
 		return precFunc
-	case *KeyOfType, *MutabilityType, *RestSpreadType:
+	case *KeyOfType, *MutType, *RestSpreadType:
 		return precPrefix
 	default:
 		return precAtom
@@ -185,8 +185,8 @@ func printTypeInner(t Type, config PrintConfig) string {
 	case *InferType:
 		return "infer " + v.Name
 
-	case *MutabilityType:
-		return printMutabilityType(v, config)
+	case *MutType:
+		return printMutType(v, config)
 
 	case *WildcardType:
 		return "_"
@@ -584,15 +584,8 @@ func printIntersectionType(t *IntersectionType, config PrintConfig) string {
 	return result
 }
 
-func printMutabilityType(t *MutabilityType, config PrintConfig) string {
-	switch t.Mutability {
-	case MutabilityUncertain:
-		return "mut? " + printTypeMinPrec(t.Type, config, precPrefix)
-	case MutabilityMutable:
-		return "mut " + printTypeMinPrec(t.Type, config, precPrefix)
-	default:
-		panic(fmt.Sprintf("unexpected mutability value: %q", t.Mutability))
-	}
+func printMutType(t *MutType, config PrintConfig) string {
+	return "mut " + printTypeMinPrec(t.Type, config, precPrefix)
 }
 
 func printExtractorType(t *ExtractorType, pt func(Type) string) string {

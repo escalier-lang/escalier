@@ -42,8 +42,8 @@ func (c *Checker) getSymbolID(name string) (int, bool) {
 func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_system.Type {
 	t = type_system.Prune(t)
 
-	// Unwrap MutabilityType
-	if mut, ok := t.(*type_system.MutabilityType); ok {
+	// Unwrap MutType
+	if mut, ok := t.(*type_system.MutType); ok {
 		t = type_system.Prune(mut.Type)
 	}
 
@@ -181,7 +181,7 @@ func (c *Checker) extractIteratorElementType(ctx Context, t type_system.Type) ty
 func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_system.Type {
 	t = type_system.Prune(t)
 
-	if mut, ok := t.(*type_system.MutabilityType); ok {
+	if mut, ok := t.(*type_system.MutType); ok {
 		t = type_system.Prune(mut.Type)
 	}
 
@@ -240,7 +240,7 @@ func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_sy
 func (c *Checker) GetAsyncIterableElementType(ctx Context, t type_system.Type) type_system.Type {
 	t = type_system.Prune(t)
 
-	if mut, ok := t.(*type_system.MutabilityType); ok {
+	if mut, ok := t.(*type_system.MutType); ok {
 		t = type_system.Prune(mut.Type)
 	}
 

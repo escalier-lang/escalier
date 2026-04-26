@@ -123,10 +123,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			`,
 			expectErrors: false,
 		},
-		// NOTE: a follow-up should also reject calling a mut-self method
-		// on an immutable receiver. The checker does not yet enforce this
-		// at the call site (only direct field writes are checked), so we
-		// only test the positive case here.
 		"MutInstance_CanCallMutSelfMethod": {
 			input: `
 				class Counter(count: number) {
@@ -140,6 +136,32 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			`,
 			expectErrors: false,
 		},
+		"MutInstance_CanBindMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn test() {
+					val c = mut Counter(0)
+					val t = c.tick
+				}
+			`,
+			expectErrors: false,
+		},
+		"ImmutableInstance_CannotCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn test() {
+					val c = Counter(0)
+					c.tick()
+				}
+			`,
+			expectErrors: true,
+		},
 		"MutFunctionCall_CanAssignField": {
 			input: `
 				class Point(x: number, y: number) { x, y, }
@@ -148,6 +170,78 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					val p = mut makePoint(5, 10)
 					p.x = 99
 				}
+			`,
+			expectErrors: false,
+		},
+		"TypeVarReceiver_ImmutableConstraint_CannotCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn callTick<T: Counter>(t: T) -> number {
+					return t.tick()
+				}
+			`,
+			expectErrors: true,
+		},
+		"TypeVarReceiver_MutConstraint_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn callTick<T: mut Counter>(t: T) -> number {
+					return t.tick()
+				}
+			`,
+			expectErrors: false,
+		},
+		"AliasReceiver_MutAliasNonGeneric_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type MutCounter = mut Counter
+				declare val c: MutCounter
+				fn test() -> number { return c.tick() }
+			`,
+			expectErrors: false,
+		},
+		"AliasReceiver_MutAliasGeneric_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type MutT<T> = mut T
+				declare val c: MutT<Counter>
+				fn test() -> number { return c.tick() }
+			`,
+			expectErrors: false,
+		},
+		"AliasReceiver_ImmutableAlias_CannotCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type Alias<T> = T
+				declare val c: Alias<Counter>
+				fn test() -> number { return c.tick() }
+			`,
+			expectErrors: true,
+		},
+		"AliasReceiver_IdentityAliasOfMut_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				type Identity<T> = T
+				declare val c: Identity<mut Counter>
+				fn test() -> number { return c.tick() }
 			`,
 			expectErrors: false,
 		},
@@ -254,9 +348,20 @@ func TestMutPrefixWithBuiltinCollections(t *testing.T) {
 			`,
 			expectErrors: false,
 		},
-		// NOTE: rejecting mut-self method calls on immutable receivers
-		// is a follow-up — the checker only enforces direct field writes
-		// today, so we only assert the positive cases for Map and Set.
+		"ImmutableMap_CannotClear": {
+			input: `
+				declare val m: Map<string, number>
+				m.clear()
+			`,
+			expectErrors: true,
+		},
+		"ImmutableSet_CannotAdd": {
+			input: `
+				declare val s: Set<number>
+				s.add(1)
+			`,
+			expectErrors: true,
+		},
 	}
 
 	for name, test := range tests {

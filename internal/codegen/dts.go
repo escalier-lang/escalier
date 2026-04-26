@@ -865,7 +865,7 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		return NewTemplateLitTypeAnn(quasis, types)
 	case *type_sys.IntrinsicType:
 		return NewIntrinsicTypeAnn(t.Name, nil)
-	case *type_sys.MutabilityType:
+	case *type_sys.MutType:
 		return b.buildTypeAnn(t.Type) // Mutable types are treated the same in .d.ts files
 	default:
 		panic(fmt.Sprintf("unknown type: %s", t))

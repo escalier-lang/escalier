@@ -534,7 +534,7 @@ func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
 				c.resolveArrayConstraintsInType(prop.Value)
 			}
 		}
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		c.resolveArrayConstraintsInType(p.Type)
 	}
 }
@@ -570,9 +570,8 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 		arrayAlias := c.GlobalScope.Namespace.Types["Array"]
 		arrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, constraint.ElemTypeVar)
 		if constraint.HasMutatingMethod || constraint.HasIndexAssignment {
-			return &type_system.MutabilityType{
-				Type:       arrayType,
-				Mutability: type_system.MutabilityMutable,
+			return &type_system.MutType{
+				Type: arrayType,
 			}
 		}
 		return arrayType
@@ -584,9 +583,8 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 		restTV := c.FreshVar(nil)
 		tupleType := type_system.NewTupleType(nil, type_system.NewRestSpreadType(nil, restTV))
 		if isMut {
-			return &type_system.MutabilityType{
-				Type:       tupleType,
-				Mutability: type_system.MutabilityMutable,
+			return &type_system.MutType{
+				Type: tupleType,
 			}
 		}
 		return tupleType
@@ -613,9 +611,8 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 	elems = append(elems, type_system.NewRestSpreadType(nil, restTV))
 	tupleType := type_system.NewTupleType(nil, elems...)
 	if isMut {
-		return &type_system.MutabilityType{
-			Type:       tupleType,
-			Mutability: type_system.MutabilityMutable,
+		return &type_system.MutType{
+			Type: tupleType,
 		}
 	}
 	return tupleType
@@ -623,7 +620,7 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 
 // closeOpenObjectsInType walks a type tree and closes any open ObjectTypes
 // found within it. When the input type is a TypeVarType whose pruned value
-// is an open ObjectType (possibly wrapped in MutabilityType), it finalizes
+// is an open ObjectType (possibly wrapped in MutType), it finalizes
 // mutability and closes the object. Otherwise, it recurses into type
 // constructors (TypeRefType args, TupleType elements, UnionType options, etc.)
 // to find and close nested open objects.
@@ -637,14 +634,13 @@ func closeOpenObjectsInType(t type_system.Type, returnVars map[int]*type_system.
 	// This is the same pattern used by GeneralizeFuncType in generalize.go.
 	if tv, ok := t.(*type_system.TypeVarType); ok {
 		unwrapped := pruned
-		if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+		if mut, ok := unwrapped.(*type_system.MutType); ok {
 			unwrapped = mut.Type
 		}
 		if objType, ok := unwrapped.(*type_system.ObjectType); ok && objType.Open {
 			if finalizeOpenObject(objType) {
-				tv.Instance = &type_system.MutabilityType{
-					Type:       objType,
-					Mutability: type_system.MutabilityMutable,
+				tv.Instance = &type_system.MutType{
+					Type: objType,
 				}
 			} else {
 				tv.Instance = objType
@@ -656,7 +652,7 @@ func closeOpenObjectsInType(t type_system.Type, returnVars map[int]*type_system.
 
 	// Recurse into type constructors to find nested open objects.
 	switch p := pruned.(type) {
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		closeOpenObjectsInType(p.Type, returnVars)
 	case *type_system.ObjectType:
 		if p.Open {

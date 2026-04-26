@@ -79,7 +79,7 @@ func (*TypeOfType) isType()       {}
 func (*IndexType) isType()        {}
 func (*CondType) isType()         {}
 func (*InferType) isType()        {}
-func (*MutabilityType) isType()   {}
+func (*MutType) isType()          {}
 func (*WildcardType) isType()     {}
 func (*ExtractorType) isType()    {}
 func (*TemplateLitType) isType()  {}
@@ -1841,24 +1841,25 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 		normalized = append(normalized, t)
 	}
 
-	// Second pass: handle MutabilityType
+	// Second pass: handle MutType
 	// If we have both (mut T) and T, keep only T
 	finalNormalized := []Type{}
 	for _, t := range normalized {
-		if mut, ok := t.(*MutabilityType); ok {
-			if mut.Mutability == MutabilityMutable {
-				// Check if immutable version exists in normalized using Equals
-				hasImmutable := false
-				for _, other := range normalized {
-					if other.Equals(mut.Type) {
-						hasImmutable = true
-						break
-					}
+		if mut, ok := t.(*MutType); ok {
+			// Prune mut.Type so a TypeVar bound to a concrete type compares
+			// equal to that concrete type — the first pass already pruned
+			// `normalized` entries the same way.
+			mutInner := Prune(mut.Type)
+			hasImmutable := false
+			for _, other := range normalized {
+				if other.Equals(mutInner) {
+					hasImmutable = true
+					break
 				}
-				if hasImmutable {
-					// Skip the mutable version, keep immutable
-					continue
-				}
+			}
+			if hasImmutable {
+				// Skip the mutable version, keep immutable
+				continue
 			}
 		}
 		finalNormalized = append(finalNormalized, t)
@@ -2158,23 +2159,15 @@ func NewInferType(provenance Provenance, name string) *InferType {
 	}
 }
 
-type Mutability string
-
-const (
-	MutabilityMutable   Mutability = "!"
-	MutabilityUncertain Mutability = "?"
-)
-
-type MutabilityType struct {
+type MutType struct {
 	Type       Type
-	Mutability Mutability
 	provenance Provenance
 }
 
-func (t *MutabilityType) Accept(v TypeVisitor) Type {
+func (t *MutType) Accept(v TypeVisitor) Type {
 	enter := v.EnterType(t)
 	if enter.Type != nil {
-		t = enter.Type.(*MutabilityType)
+		t = enter.Type.(*MutType)
 	}
 	if enter.SkipChildren {
 		if visitResult := v.ExitType(t); visitResult != nil {
@@ -2186,9 +2179,8 @@ func (t *MutabilityType) Accept(v TypeVisitor) Type {
 	newType := t.Type.Accept(v)
 	var result Type = t
 	if newType != t.Type {
-		result = &MutabilityType{
+		result = &MutType{
 			Type:       newType,
-			Mutability: t.Mutability,
 			provenance: t.provenance,
 		}
 	}
@@ -2198,21 +2190,20 @@ func (t *MutabilityType) Accept(v TypeVisitor) Type {
 	}
 	return result
 }
-func (t *MutabilityType) Equals(other Type) bool {
-	if other, ok := other.(*MutabilityType); ok {
-		return t.Mutability == other.Mutability && equals(t.Type, other.Type)
+func (t *MutType) Equals(other Type) bool {
+	if other, ok := other.(*MutType); ok {
+		return equals(t.Type, other.Type)
 	}
 	return false
 }
 
-func (t *MutabilityType) String() string {
+func (t *MutType) String() string {
 	return PrintType(t, PrintConfig{})
 }
 
-func NewMutableType(provenance Provenance, t Type) *MutabilityType {
-	return &MutabilityType{
+func NewMutType(provenance Provenance, t Type) *MutType {
+	return &MutType{
 		Type:       t,
-		Mutability: MutabilityMutable,
 		provenance: provenance,
 	}
 }

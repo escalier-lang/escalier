@@ -409,11 +409,21 @@ func (s *Server) moduleCompletion(
 
 // completionsFromType returns completion items for member access on a type.
 func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.CompletionItem {
+	return completionsFromTypeImpl(t, scope, checker.ReceiverIsDefinitelyMutable(t))
+}
+
+// completionsFromTypeImpl is the same as completionsFromType but lets internal
+// recursive callers thread an explicit receiverMut flag through unwrappings of
+// MutType so the receiver's outer mutability isn't lost when we strip
+// the wrapper to look up the inner type's members.
+func completionsFromTypeImpl(t type_system.Type, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
 	t = type_system.Prune(t)
 
 	switch t := t.(type) {
+	case *type_system.MutType:
+		return completionsFromTypeImpl(t.Type, scope, true)
 	case *type_system.ObjectType:
-		return completionsFromObjectType(t)
+		return completionsFromObjectType(t, receiverMut)
 	case *type_system.NamespaceType:
 		return completionsFromNamespace(t.Namespace)
 	case *type_system.PrimType:
@@ -425,7 +435,7 @@ func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.Co
 		if alias == nil {
 			return nil
 		}
-		return completionsFromType(alias.Type, scope)
+		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
 	case *type_system.LitType:
 		var wrapperName string
 		switch t.Lit.(type) {
@@ -442,26 +452,26 @@ func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.Co
 		if alias == nil {
 			return nil
 		}
-		return completionsFromType(alias.Type, scope)
+		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
 	case *type_system.TupleType:
 		alias := scope.GetTypeAlias("Array")
 		if alias == nil {
 			return nil
 		}
-		return completionsFromType(alias.Type, scope)
+		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
 	case *type_system.FuncType:
 		alias := scope.GetTypeAlias("Function")
 		if alias == nil {
 			return nil
 		}
-		return completionsFromType(alias.Type, scope)
+		return completionsFromTypeImpl(alias.Type, scope, receiverMut)
 	case *type_system.UnionType:
-		return completionsFromUnionType(t, scope)
+		return completionsFromUnionType(t, scope, receiverMut)
 	case *type_system.IntersectionType:
-		return completionsFromIntersectionType(t, scope)
+		return completionsFromIntersectionType(t, scope, receiverMut)
 	case *type_system.TypeRefType:
 		if t.TypeAlias != nil {
-			return completionsFromType(t.TypeAlias.Type, scope)
+			return completionsFromTypeImpl(t.TypeAlias.Type, scope, receiverMut)
 		}
 		return nil
 	case *type_system.TypeVarType:
@@ -474,7 +484,11 @@ func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.Co
 	}
 }
 
-func completionsFromObjectType(obj *type_system.ObjectType) []protocol.CompletionItem {
+func completionsFromObjectType(obj *type_system.ObjectType, receiverMut bool) []protocol.CompletionItem {
+	// Open objects are still being built up by inference and only ever hold
+	// PropertyElems, so the visibility filter has nothing to do here. Treat as
+	// mutable to skip the filter.
+	receiverMutForElems := receiverMut || obj.Open
 	var items []protocol.CompletionItem
 	for _, elem := range obj.Elems {
 		switch elem := elem.(type) {
@@ -496,6 +510,10 @@ func completionsFromObjectType(obj *type_system.ObjectType) []protocol.Completio
 			})
 		case *type_system.MethodElem:
 			if elem.Name.Kind != type_system.StrObjTypeKeyKind {
+				continue
+			}
+			// Hide `mut self` methods on non-mut receivers.
+			if !receiverMutForElems && elem.MutSelf != nil && *elem.MutSelf {
 				continue
 			}
 			kind := protocol.CompletionItemKindMethod
@@ -520,6 +538,12 @@ func completionsFromObjectType(obj *type_system.ObjectType) []protocol.Completio
 			})
 		case *type_system.SetterElem:
 			if elem.Name.Kind != type_system.StrObjTypeKeyKind {
+				continue
+			}
+			// Hide setters on non-mut receivers; if a getter exists for the
+			// same name it still produces a completion item so the property
+			// remains visible read-side.
+			if !receiverMutForElems {
 				continue
 			}
 			kind := protocol.CompletionItemKindProperty
@@ -576,7 +600,7 @@ func completionDedupeKey(item protocol.CompletionItem) string {
 	return item.Label
 }
 
-func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []protocol.CompletionItem {
+func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
 	// Collect members from each variant. Properties that exist on at least one
 	// variant are included. If a property is missing from some variants, its
 	// detail type is shown with "| undefined".
@@ -587,7 +611,7 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []
 		if isNullOrUndefined(variant) {
 			continue
 		}
-		memberItems := completionsFromType(variant, scope)
+		memberItems := completionsFromTypeImpl(variant, scope, receiverMut)
 		set := make(map[string]protocol.CompletionItem, len(memberItems))
 		for _, item := range memberItems {
 			set[completionDedupeKey(item)] = item
@@ -629,12 +653,12 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope) []
 	return items
 }
 
-func completionsFromIntersectionType(inter *type_system.IntersectionType, scope *checker.Scope) []protocol.CompletionItem {
+func completionsFromIntersectionType(inter *type_system.IntersectionType, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
 	// Only keys present in ALL parts are accessible. If a key has different
 	// value types across parts, its detail shows the intersection of those types.
 	var allSets []map[string]protocol.CompletionItem
 	for _, part := range inter.Types {
-		memberItems := completionsFromType(part, scope)
+		memberItems := completionsFromTypeImpl(part, scope, receiverMut)
 		set := make(map[string]protocol.CompletionItem, len(memberItems))
 		for _, item := range memberItems {
 			set[completionDedupeKey(item)] = item

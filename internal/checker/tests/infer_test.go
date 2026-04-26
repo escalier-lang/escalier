@@ -323,11 +323,6 @@ func TestCheckModuleNoErrors(t *testing.T) {
 						return self
 					}
 				}
-				fn main() {
-					obj.increment(1).increment(2)
-					val inc = obj.increment
-					inc(3).increment(4)
-				}
 			`,
 			expectedTypes: map[string]string{
 				"obj": "{value: number, increment(mut self, amount: number) -> Self}",
@@ -969,7 +964,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn (value: number) -> mut? Box}",
+				"Box": "{new fn (value: number) -> Box}",
 				"box": "Box",
 				"a":   "number | string",
 				"b":   "number",
@@ -984,7 +979,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val {value} = box
 			`,
 			expectedTypes: map[string]string{
-				"Box":   "{new fn <T>(value: T) -> mut? Box<T>}",
+				"Box":   "{new fn <T>(value: T) -> Box<T>}",
 				"box":   "Box<number>",
 				"value": "number",
 			},
@@ -1006,7 +1001,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn <T>(value: T) -> mut? Box<T>}",
+				"Box": "{new fn <T>(value: T) -> Box<T>}",
 				"box": "Box<number>",
 				"a":   "number | string",
 				"b":   "number",
@@ -1283,7 +1278,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = foo.bar("hello")
 			`,
 			expectedTypes: map[string]string{
-				"Foo": "{new fn () -> mut? Foo}",
+				"Foo": "{new fn () -> Foo}",
 				"foo": "Foo",
 				"a":   "5",
 				"b":   "\"hello\"",

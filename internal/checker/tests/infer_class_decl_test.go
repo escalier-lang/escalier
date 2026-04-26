@@ -30,7 +30,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val {x, y, z} = p
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> mut? Point}",
+				"Point": "{new fn (x: number, y: number) -> Point}",
 				"p":     "Point",
 				"x":     "number",
 				"y":     "number",
@@ -59,7 +59,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.add(Point(1, 2))
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> mut? Point}",
+				"Point": "{new fn (x: number, y: number) -> Point}",
 				"p":     "Point",
 				"q":     "Point",
 				"len":   "number",
@@ -90,7 +90,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val q = p.scale(2).translate(1, -1)
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> mut? Point}",
+				"Point": "{new fn (x: number, y: number) -> Point}",
 				"p":     "mut Point",
 				"q":     "mut Point",
 			},
@@ -114,7 +114,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val fooBaz = foo[baz]()
 			`,
 			expectedTypes: map[string]string{
-				"Foo":    "{new fn () -> mut? Foo}",
+				"Foo":    "{new fn () -> Foo}",
 				"fooBar": "number",
 				"fooBaz": "number",
 			},
@@ -134,7 +134,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val result = MyMath.add(5, 3)
 			`,
 			expectedTypes: map[string]string{
-				"MyMath": "{new fn () -> mut? MyMath, add(a: number, b: number) -> number}",
+				"MyMath": "{new fn () -> MyMath, add(a: number, b: number) -> number}",
 				"m":      "MyMath",
 				"result": "number",
 			},
@@ -160,7 +160,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val len = p.length()
 			`,
 			expectedTypes: map[string]string{
-				"Point":  "{new fn (x: number, y: number) -> mut? Point, origin() -> Point}",
+				"Point":  "{new fn (x: number, y: number) -> Point, origin() -> Point}",
 				"p":      "Point",
 				"origin": "Point",
 				"len":    "number",
@@ -182,7 +182,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val area = c.area
 			`,
 			expectedTypes: map[string]string{
-				"Circle": "{new fn (radius: number) -> mut? Circle}",
+				"Circle": "{new fn (radius: number) -> Circle}",
 				"c":      "Circle",
 				"area":   "number",
 			},
@@ -205,7 +205,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Temperature": "{new fn (celsius: number) -> mut? Temperature}",
+				"Temperature": "{new fn (celsius: number) -> Temperature}",
 				"temp":        "mut Temperature",
 			},
 			expectedTypeAliases: map[string]string{
@@ -235,7 +235,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Person": "{new fn (firstName: string, lastName: string) -> mut? Person}",
+				"Person": "{new fn (firstName: string, lastName: string) -> Person}",
 				"person": "mut Person",
 				"name":   "string",
 			},
@@ -255,7 +255,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val version = Config.version
 			`,
 			expectedTypes: map[string]string{
-				"Config":  "{new fn () -> mut? Config, get version(self) -> string}",
+				"Config":  "{new fn () -> Config, get version(self) -> string}",
 				"config":  "Config",
 				"version": "string",
 			},
@@ -277,7 +277,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val defaultVal = Counter.defaultValue
 			`,
 			expectedTypes: map[string]string{
-				"Counter":        "{new fn (initialValue: number) -> mut? Counter, totalInstances: number, defaultValue: 100}",
+				"Counter":        "{new fn (initialValue: number) -> Counter, totalInstances: number, defaultValue: 100}",
 				"counter1":       "Counter",
 				"value1":         "number",
 				"totalInstances": "number",
@@ -297,7 +297,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val boxValue = box.value
 			`,
 			expectedTypes: map[string]string{
-				"Box":      "{new fn <T>(value: T) -> mut? Box<T>}",
+				"Box":      "{new fn <T>(value: T) -> Box<T>}",
 				"box":      "Box<number>",
 				"boxValue": "number",
 			},
@@ -326,8 +326,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val dogSound = dog.speak()
 			`,
 			expectedTypes: map[string]string{
-				"Animal":      "{new fn (name: string) -> mut? Animal}",
-				"Dog":         "{new fn (name: string, breed: string) -> mut? Dog}",
+				"Animal":      "{new fn (name: string) -> Animal}",
+				"Dog":         "{new fn (name: string, breed: string) -> Dog}",
 				"animal":      "Animal",
 				"dog":         "Dog",
 				"dogName":     "string",
@@ -364,8 +364,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val carDoors = car.doors
 			`,
 			expectedTypes: map[string]string{
-				"Vehicle":  "{new fn (make: string, model: string) -> mut? Vehicle}",
-				"Car":      "{new fn (make: string, model: string, doors: number) -> mut? Car}",
+				"Vehicle":  "{new fn (make: string, model: string) -> Vehicle}",
+				"Car":      "{new fn (make: string, model: string, doors: number) -> Car}",
 				"car":      "Car",
 				"info":     "string",
 				"fullInfo": "string",
@@ -396,8 +396,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val extD = ext.d
 			`,
 			expectedTypes: map[string]string{
-				"Base":     "{new fn (a: number, b: string) -> mut? Base}",
-				"Extended": "{new fn (a: number, b: string, c: boolean, d: number) -> mut? Extended}",
+				"Base":     "{new fn (a: number, b: string) -> Base}",
+				"Extended": "{new fn (a: number, b: string, c: boolean, d: number) -> Extended}",
 				"ext":      "Extended",
 				"extA":     "number",
 				"extB":     "string",
@@ -427,8 +427,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val circleArea = circle.area
 			`,
 			expectedTypes: map[string]string{
-				"Shape":       "{new fn (color: string) -> mut? Shape}",
-				"Circle":      "{new fn (color: string, radius: number) -> mut? Circle}",
+				"Shape":       "{new fn (color: string) -> Shape}",
+				"Circle":      "{new fn (color: string, radius: number) -> Circle}",
 				"circle":      "Circle",
 				"circleColor": "string",
 				"circleArea":  "number",
@@ -453,7 +453,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val boxContents = box["contents"]
 			`,
 			expectedTypes: map[string]string{
-				"Box":         "{new fn (size: number, contents: string) -> mut? Box}",
+				"Box":         "{new fn (size: number, contents: string) -> Box}",
 				"box":         "Box",
 				"boxSize":     "number",
 				"boxContents": "string",
@@ -483,9 +483,9 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val childAge = child.age
 			`,
 			expectedTypes: map[string]string{
-				"GrandParent": "{new fn (id: number) -> mut? GrandParent}",
-				"Parent":      "{new fn (id: number, name: string) -> mut? Parent}",
-				"Child":       "{new fn (id: number, name: string, age: number) -> mut? Child}",
+				"GrandParent": "{new fn (id: number) -> GrandParent}",
+				"Parent":      "{new fn (id: number, name: string) -> Parent}",
+				"Child":       "{new fn (id: number, name: string, age: number) -> Child}",
 				"child":       "Child",
 				"childId":     "number",
 				"childName":   "string",
@@ -515,8 +515,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val incremented = counter.increment()
 			`,
 			expectedTypes: map[string]string{
-				"Counter":         "{new fn (value: number) -> mut? Counter}",
-				"ExtendedCounter": "{new fn (value: number, step: number) -> mut? ExtendedCounter}",
+				"Counter":         "{new fn (value: number) -> Counter}",
+				"ExtendedCounter": "{new fn (value: number, step: number) -> ExtendedCounter}",
 				"counter":         "mut ExtendedCounter",
 				"incremented":     "mut ExtendedCounter",
 			},
@@ -547,8 +547,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val catName = cat.name
 			`,
 			expectedTypes: map[string]string{
-				"Animal":  "{new fn (name: string) -> mut? Animal}",
-				"Cat":     "{new fn (name: string, lives: number) -> mut? Cat}",
+				"Animal":  "{new fn (name: string) -> Animal}",
+				"Cat":     "{new fn (name: string, lives: number) -> Cat}",
 				"cat":     "Cat",
 				"sound":   "string",
 				"catName": "string",

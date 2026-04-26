@@ -212,6 +212,13 @@ func mergeModules(target, source *ast.Module) {
 // the key is the method name
 type Overrides map[string]bool
 
+// TODO(#500): populate mutabilityOverrides for Date, Promise, Error, and other
+// classes whose methods mutate the receiver. Methods on classes not listed
+// here default to MutSelf=nil (treated as not-mut-self), so e.g.
+// `someImmutableDate.setHours(...)` is currently visible on an immutable
+// receiver. Adding an entry like `"Date": {"setHours": true, ...}` restores
+// mut-self gating for those methods.
+//
 // the key is the interface name
 var mutabilityOverrides = map[string]Overrides{
 	"String": {
@@ -304,14 +311,20 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
 					for _, elem := range it.Elems {
 						if me, ok := elem.(*type_system.MethodElem); ok {
-							mutSelf := true
-							if me.Name.Kind == type_system.StrObjTypeKeyKind {
-								value, exists := overrides[me.Name.Str]
-								if exists {
-									mutSelf = value
-								}
+							// TypeScript .d.ts has no mut-self annotation, so
+							// default to nil (unknown) and only override when
+							// the method appears in the per-interface overrides
+							// table. Treating "unknown" as not-mut-self matches
+							// the rest of the checker (e.g. binding-mutability
+							// in infer_module.go) and avoids hiding non-mutating
+							// methods on classes like Function.
+							if me.Name.Kind != type_system.StrObjTypeKeyKind {
+								continue
 							}
-							me.MutSelf = &mutSelf
+							if value, exists := overrides[me.Name.Str]; exists {
+								mutSelf := value
+								me.MutSelf = &mutSelf
+							}
 						}
 					}
 				} else {

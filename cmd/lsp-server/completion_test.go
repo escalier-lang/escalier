@@ -56,6 +56,115 @@ func getCompletionLabels(items []protocol.CompletionItem) []string {
 	return labels
 }
 
+func TestMemberCompletionHidesMutSelfOnImmutableReceiver(t *testing.T) {
+	source := `declare val m: Map<string, number>
+m.`
+	script, scope := parseAndInferAllowErrors(t, source)
+
+	// Cursor at end of "m." — line 2, after the dot
+	loc := ast.Location{Line: 2, Column: 3}
+	node, _ := findNodeAndParent(script, loc)
+
+	require.NotNil(t, node)
+	memberExpr, ok := node.(*ast.MemberExpr)
+	require.True(t, ok, "expected MemberExpr, got %T", node)
+
+	objType := memberExpr.Object.InferredType()
+	require.NotNil(t, objType)
+
+	items := completionsFromType(objType, scope)
+	labels := getCompletionLabels(items)
+	assert.Contains(t, labels, "has", "read-only method should be visible on immutable receiver")
+	assert.Contains(t, labels, "get", "read-only method should be visible on immutable receiver")
+	assert.NotContains(t, labels, "clear", "mut self method should be hidden on immutable receiver")
+	assert.NotContains(t, labels, "set", "mut self method should be hidden on immutable receiver")
+	assert.NotContains(t, labels, "delete", "mut self method should be hidden on immutable receiver")
+}
+
+func TestMemberCompletionShowsMutSelfOnMutableReceiver(t *testing.T) {
+	source := `declare val m: mut Map<string, number>
+m.`
+	script, scope := parseAndInferAllowErrors(t, source)
+
+	loc := ast.Location{Line: 2, Column: 3}
+	node, _ := findNodeAndParent(script, loc)
+
+	require.NotNil(t, node)
+	memberExpr, ok := node.(*ast.MemberExpr)
+	require.True(t, ok, "expected MemberExpr, got %T", node)
+
+	objType := memberExpr.Object.InferredType()
+	require.NotNil(t, objType)
+
+	items := completionsFromType(objType, scope)
+	labels := getCompletionLabels(items)
+	assert.Contains(t, labels, "has")
+	assert.Contains(t, labels, "get")
+	assert.Contains(t, labels, "clear", "mut self method should be visible on mut receiver")
+	assert.Contains(t, labels, "set", "mut self method should be visible on mut receiver")
+	assert.Contains(t, labels, "delete", "mut self method should be visible on mut receiver")
+}
+
+func TestMemberCompletionGetterVisibleSetterHiddenOnImmutableReceiver(t *testing.T) {
+	source := `declare val obj: {
+    get bar() -> boolean,
+    set bar(value: boolean) -> undefined
+}
+obj.`
+	script, scope := parseAndInferAllowErrors(t, source)
+
+	loc := ast.Location{Line: 5, Column: 5}
+	node, _ := findNodeAndParent(script, loc)
+
+	require.NotNil(t, node)
+	memberExpr, ok := node.(*ast.MemberExpr)
+	require.True(t, ok, "expected MemberExpr, got %T", node)
+
+	objType := memberExpr.Object.InferredType()
+	require.NotNil(t, objType)
+
+	items := completionsFromType(objType, scope)
+
+	var barItems []protocol.CompletionItem
+	for _, item := range items {
+		if item.Label == "bar" {
+			barItems = append(barItems, item)
+		}
+	}
+	require.Len(t, barItems, 1, "getter should produce exactly one bar completion on immutable receiver; setter should be hidden")
+	require.NotNil(t, barItems[0].Detail)
+	assert.NotEqual(t, "setter", *barItems[0].Detail, "the surviving bar item should be the getter, not the setter")
+}
+
+func TestMemberCompletionGetterAndSetterBothVisibleOnMutableReceiver(t *testing.T) {
+	source := `declare val obj: mut {
+    get bar() -> boolean,
+    set bar(value: boolean) -> undefined
+}
+obj.`
+	script, scope := parseAndInferAllowErrors(t, source)
+
+	loc := ast.Location{Line: 5, Column: 5}
+	node, _ := findNodeAndParent(script, loc)
+
+	require.NotNil(t, node)
+	memberExpr, ok := node.(*ast.MemberExpr)
+	require.True(t, ok, "expected MemberExpr, got %T", node)
+
+	objType := memberExpr.Object.InferredType()
+	require.NotNil(t, objType)
+
+	items := completionsFromType(objType, scope)
+
+	var barItems []protocol.CompletionItem
+	for _, item := range items {
+		if item.Label == "bar" {
+			barItems = append(barItems, item)
+		}
+	}
+	require.Len(t, barItems, 2, "both getter and setter should produce bar completions on mutable receiver")
+}
+
 func TestMemberCompletionOnObject(t *testing.T) {
 	source := `val obj: {a: number, b: string} = {a: 1, b: "hello"}
 obj.`

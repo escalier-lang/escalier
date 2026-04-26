@@ -35,12 +35,15 @@ type expandSeen map[expandSeenKey]type_system.Type
 // memberCacheKey identifies a specific property on a specific instantiation of
 // a generic type alias. Used by lazyMemberLookup to cache per-property
 // substitution results (#461). The mode field separates getter-read results
-// from setter-write results so they are never confused.
+// from setter-write results so they are never confused. The receiverMut field
+// distinguishes lookups on mutable vs immutable receivers — `mut self` methods
+// and setters are hidden when the receiver is not definitely mutable.
 type memberCacheKey struct {
-	alias    unsafe.Pointer // TypeAlias pointer
-	typeArgs string         // typeArgKey(typeArgs)
-	member   string         // property name
-	mode     AccessMode     // read vs write (getter vs setter)
+	alias       unsafe.Pointer // TypeAlias pointer
+	typeArgs    string         // typeArgKey(typeArgs)
+	member      string         // property name
+	mode        AccessMode     // read vs write (getter vs setter)
+	receiverMut bool           // whether the receiver is definitely mutable
 }
 
 type memberCache map[memberCacheKey]type_system.Type
@@ -75,7 +78,7 @@ func isSymbolIndexKey(key MemberAccessKey) bool {
 		return false
 	}
 	keyType := type_system.Prune(indexKey.Type)
-	if mut, ok := keyType.(*type_system.MutabilityType); ok {
+	if mut, ok := keyType.(*type_system.MutType); ok {
 		keyType = mut.Type
 	}
 	_, isSymbol := keyType.(*type_system.UniqueSymbolType)
@@ -234,7 +237,7 @@ func (v *TypeExpansionVisitor) EnterType(t type_system.Type) type_system.EnterRe
 	// Other composite types do NOT need this treatment:
 	// - UnionType/IntersectionType: transparent combinators, not structural
 	//   boundaries — expanding `Foo | Bar` should see what Foo and Bar are.
-	// - MutabilityType/RestSpreadType: thin wrappers, not containers.
+	// - MutType/RestSpreadType: thin wrappers, not containers.
 	// - CondType: has its own special handling in EnterType and ExitType.
 	// - KeyOfType/IndexType/TemplateLitType: computed types that need their
 	//   children expanded to evaluate.
@@ -362,8 +365,8 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.seen)
 		expandedTarget = type_system.Prune(expandedTarget)
 
-		// Unwrap MutabilityType so keyof sees the actual object type
-		if mut, ok := expandedTarget.(*type_system.MutabilityType); ok {
+		// Unwrap MutType so keyof sees the actual object type
+		if mut, ok := expandedTarget.(*type_system.MutType); ok {
 			expandedTarget = mut.Type
 		}
 
@@ -632,6 +635,14 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 // mode indicates whether the access is a read (rvalue) or write (lvalue), which affects
 // getter/setter resolution: reads use getters, writes use setters.
 func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key MemberAccessKey, mode AccessMode) (type_system.Type, []Error) {
+	return c.getMemberTypeImpl(ctx, objType, key, mode, ReceiverIsDefinitelyMutable(objType))
+}
+
+// getMemberTypeImpl is the same as getMemberType but lets internal recursive
+// callers thread an explicit receiverMut flag through unwrappings of
+// MutType. The outer caller's mutability determination must not be
+// lost when we strip the wrapper to look up the property on the inner type.
+func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key MemberAccessKey, mode AccessMode, receiverMut bool) (type_system.Type, []Error) {
 	errors := []Error{}
 
 	objType = type_system.Prune(objType)
@@ -651,7 +662,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		// Lazy substitution: find the property on the unsubstituted ObjectType
 		// and substitute only that property's type.
 		if propKey, ok := key.(PropertyKey); ok {
-			if memberType, found := c.lazyMemberLookup(ctx, tref, propKey.Name, mode); found {
+			if memberType, found := c.lazyMemberLookup(ctx, tref, propKey.Name, mode, receiverMut); found {
 				return memberType, errors
 			}
 		}
@@ -706,7 +717,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		if _, ok := objType.(*type_system.TypeVarType); ok {
 			break
 		}
-		if _, ok := objType.(*type_system.MutabilityType); ok {
+		if _, ok := objType.(*type_system.MutType); ok {
 			break
 		}
 
@@ -727,14 +738,15 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	}
 
 	switch t := objType.(type) {
-	case *type_system.MutabilityType:
-		// For mutable types, get the access from the inner type
-		return c.getMemberType(ctx, t.Type, key, mode)
+	case *type_system.MutType:
+		// For mutable types, get the access from the inner type. The wrapper
+		// implies mutable, so the inner receiver is always mutable.
+		return c.getMemberTypeImpl(ctx, t.Type, key, mode, true)
 	case *type_system.TypeRefType:
 		// Fallback for TypeRefTypes that the lazy path couldn't handle
 		// (index access, extends properties, symbol keys, non-ObjectType aliases).
 		expandType, expandErrors := c.expandTypeRef(ctx, t)
-		accessType, accessErrors := c.getMemberType(ctx, expandType, key, mode)
+		accessType, accessErrors := c.getMemberTypeImpl(ctx, expandType, key, mode, receiverMut)
 
 		errors = slices.Concat(errors, accessErrors, expandErrors)
 
@@ -742,9 +754,6 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 	case *type_system.TupleType:
 		if indexKey, ok := key.(IndexKey); ok {
 			var keyType type_system.Type = indexKey.Type
-			if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-				keyType = mut.Type
-			}
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if numLit, ok := indexLit.Lit.(*type_system.NumLit); ok {
 					index := int(numLit.Value)
@@ -797,7 +806,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				Name:     type_system.NewIdent("Array"),
 				TypeArgs: []type_system.Type{elemUnion},
 			}
-			return c.getMemberType(ctx, arrayRef, key, mode)
+			return c.getMemberTypeImpl(ctx, arrayRef, key, mode, receiverMut)
 		}
 		// TupleType doesn't support other property access
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
@@ -821,7 +830,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				TypeArgs: []type_system.Type{},
 			}
 			if _, ok := key.(PropertyKey); ok || isSymbolIndexKey(key) {
-				return c.getMemberType(ctx, builtinRef, key, mode)
+				return c.getMemberTypeImpl(ctx, builtinRef, key, mode, receiverMut)
 			}
 		}
 		// Not a supported primitive method call
@@ -847,7 +856,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				TypeArgs: []type_system.Type{},
 			}
 			if _, ok := key.(PropertyKey); ok || isSymbolIndexKey(key) {
-				return c.getMemberType(ctx, builtinRef, key, mode)
+				return c.getMemberTypeImpl(ctx, builtinRef, key, mode, receiverMut)
 			}
 		}
 		// Fallback handling for other literals
@@ -861,16 +870,16 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				Name:     type_system.NewIdent("Function"),
 				TypeArgs: []type_system.Type{},
 			}
-			return c.getMemberType(ctx, functionRef, key, mode)
+			return c.getMemberTypeImpl(ctx, functionRef, key, mode, receiverMut)
 		}
 		// FuncType doesn't support index access
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 
 	case *type_system.ObjectType:
-		return c.getObjectAccess(t, key, mode, errors)
+		return c.getObjectAccess(t, key, mode, receiverMut, errors)
 	case *type_system.UnionType:
-		return c.getUnionAccess(ctx, t, key, mode, errors)
+		return c.getUnionAccess(ctx, t, key, mode, receiverMut, errors)
 	case *type_system.NamespaceType:
 		if propKey, ok := key.(PropertyKey); ok {
 			if value := t.Namespace.Values[propKey.Name]; value != nil {
@@ -890,7 +899,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 		errors = append(errors, &ExpectedObjectError{Type: objType, span: key.Span()})
 		return type_system.NewNeverType(nil), errors
 	case *type_system.IntersectionType:
-		return c.getIntersectionAccess(ctx, t, key, mode, errors)
+		return c.getIntersectionAccess(ctx, t, key, mode, receiverMut, errors)
 	case *type_system.TypeVarType:
 		// TODO(#389): Check t.Constraint before synthesizing an open object.
 		// Constrained type variables (e.g. `<T: {name: string}>`) should resolve
@@ -907,7 +916,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 				// If the index is a string literal, route to property access
 				// instead of numeric index access.
 				keyType := type_system.Prune(k.Type)
-				if mut, ok := keyType.(*type_system.MutabilityType); ok {
+				if mut, ok := keyType.(*type_system.MutType); ok {
 					keyType = mut.Type
 				}
 				if litType, ok := keyType.(*type_system.LitType); ok {
@@ -935,9 +944,9 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			propTV, openObj := c.newOpenObjectWithProperty(k.Name, k)
 			if k.OptChain {
 				// Optional chaining: obj?.bar infers obj: {bar: T} | null | undefined.
-				// Use the unwrapped ObjectType (not MutabilityType) since you can't
-				// mutate through optional chaining — the object might be null/undefined.
-				t.Instance = type_system.NewUnionType(nil, openObj.Type, type_system.NewNullType(nil), type_system.NewUndefinedType(nil))
+				// You can't mutate through optional chaining — the object might be
+				// null/undefined.
+				t.Instance = type_system.NewUnionType(nil, openObj, type_system.NewNullType(nil), type_system.NewUndefinedType(nil))
 				// The expression obj?.bar itself may produce undefined
 				return type_system.NewUnionType(nil, propTV, type_system.NewUndefinedType(nil)), errors
 			}
@@ -945,9 +954,6 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 			return propTV, errors
 		case IndexKey:
 			var keyType type_system.Type = k.Type
-			if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-				keyType = mut.Type
-			}
 			// String literal index key — treat like property access
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
@@ -988,10 +994,10 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 }
 
 // resolveToObjectType attempts to resolve a type to an *ObjectType. It handles
-// direct ObjectTypes, MutabilityType wrappers, and TypeRefTypes with aliases.
+// direct ObjectTypes, MutType wrappers, and TypeRefTypes with aliases.
 func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 	resolved := type_system.Prune(t)
-	if mut, ok := resolved.(*type_system.MutabilityType); ok {
+	if mut, ok := resolved.(*type_system.MutType); ok {
 		resolved = type_system.Prune(mut.Type)
 	}
 	if obj, ok := resolved.(*type_system.ObjectType); ok {
@@ -1010,14 +1016,48 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 	return nil
 }
 
+// ReceiverIsDefinitelyMutable reports whether the outer wrapper of a
+// receiver type is a `MutType`. Missing wrappers are treated as immutable
+// for receiver-mutability gating. For type-variable receivers, the
+// constraint's wrapper is consulted; an unconstrained type variable is
+// treated as immutable so generic code can't sneak past the gate.
+func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
+	pruned := type_system.Prune(t)
+	if _, ok := pruned.(*type_system.MutType); ok {
+		return true
+	}
+	if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Constraint != nil {
+		return ReceiverIsDefinitelyMutable(tv.Constraint)
+	}
+	return false
+}
+
+// memberElemHidden reports whether an object element should be hidden during
+// member access given the receiver's mutability. Access mode is intentionally
+// not consulted here — setters are caught at the assignment site by
+// CannotMutateImmutableError, which produces a clearer message than hiding the
+// setter and falling through to UnknownPropertyError + a follow-on
+// "cannot be assigned to undefined" type-mismatch error.
+//   - MethodElem with MutSelf == true is hidden on a non-mutable receiver.
+//   - All other elements (including SetterElem) are visible.
+func memberElemHidden(elem type_system.ObjTypeElem, receiverMut bool) bool {
+	if receiverMut {
+		return false
+	}
+	if m, ok := elem.(*type_system.MethodElem); ok {
+		return m.MutSelf != nil && *m.MutSelf
+	}
+	return false
+}
+
 // lazyMemberLookup performs property lookup on a generic TypeRefType without
 // substituting the entire ObjectType. It finds the property on the raw
 // (unsubstituted) ObjectType and substitutes only that property's type.
-// Results are cached per (TypeAlias, typeArgs, memberName) so repeated
-// accesses to the same property are free after the first lookup.
+// Results are cached per (TypeAlias, typeArgs, memberName, mode, receiverMut)
+// so repeated accesses to the same property are free after the first lookup.
 // Returns (memberType, true) if the property was found, or (nil, false)
 // to signal the caller should fall back to full expansion.
-func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name string, mode AccessMode) (type_system.Type, bool) {
+func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name string, mode AccessMode, receiverMut bool) (type_system.Type, bool) {
 	typeAlias := t.TypeAlias
 	if typeAlias == nil {
 		typeAlias = resolveQualifiedTypeAlias(ctx, t.Name)
@@ -1034,10 +1074,11 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 
 	// Check per-member cache first.
 	cacheKey := memberCacheKey{
-		alias:    unsafe.Pointer(typeAlias),
-		typeArgs: typeArgKey(t.TypeArgs),
-		member:   name,
-		mode:     mode,
+		alias:       unsafe.Pointer(typeAlias),
+		typeArgs:    typeArgKey(t.TypeArgs),
+		member:      name,
+		mode:        mode,
+		receiverMut: receiverMut,
 	}
 	if cached, exists := c.memberCache[cacheKey]; exists {
 		return cached, true
@@ -1047,6 +1088,9 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 	targetKey := type_system.NewStrKey(name)
 	var memberType type_system.Type
 	for i := len(objType.Elems) - 1; i >= 0; i-- {
+		if memberElemHidden(objType.Elems[i], receiverMut) {
+			continue
+		}
 		switch elem := objType.Elems[i].(type) {
 		case *type_system.PropertyElem:
 			if elem.Name == targetKey {
@@ -1103,7 +1147,15 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 
 // getObjectAccess handles property and index access on ObjectType.
 // mode controls getter/setter resolution: AccessRead uses getters, AccessWrite uses setters.
-func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, mode AccessMode, errors []Error) (type_system.Type, []Error) {
+// receiverMut indicates whether the receiver was wrapped in a definite `mut`;
+// when false, `mut self` methods and (in AccessWrite mode) setters are hidden,
+// causing the lookup to fall through to the property-not-found path.
+func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAccessKey, mode AccessMode, receiverMut bool, errors []Error) (type_system.Type, []Error) {
+	// Open objects are still being built up by inference; they only ever hold
+	// PropertyElems (no `mut self` methods), so the visibility filter has
+	// nothing to do here. Treat as mutable to skip the filter and avoid any
+	// premature hiding before the open-object's mutability is finalized.
+	receiverMutForElems := receiverMut || objType.Open
 	switch k := key.(type) {
 	case PropertyKey:
 		// Search elements in reverse order so that later elements override
@@ -1112,6 +1164,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		targetKey := type_system.NewStrKey(k.Name)
 		var indexSigFallback type_system.Type
 		for i := len(objType.Elems) - 1; i >= 0; i-- {
+			if memberElemHidden(objType.Elems[i], receiverMutForElems) {
+				continue
+			}
 			switch elem := objType.Elems[i].(type) {
 			case *type_system.PropertyElem:
 				if elem.Name == targetKey {
@@ -1135,7 +1190,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			case *type_system.RestSpreadElem:
 				if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-					spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+					spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, receiverMut, nil)
 					if len(spreadErrors) == 0 {
 						return spreadType, errors
 					}
@@ -1184,7 +1239,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
 				// Recursively check the extended type
-				return c.getObjectAccess(extendsObjType, key, mode, errors)
+				return c.getObjectAccess(extendsObjType, key, mode, receiverMut, errors)
 			}
 
 			// If the extended type cannot be resolved to an ObjectType,
@@ -1205,15 +1260,15 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		return type_system.NewUndefinedType(nil), errors
 	case IndexKey:
 		var keyType type_system.Type = k.Type
-		if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-			keyType = mut.Type
-		}
 		if indexLit, ok := keyType.(*type_system.LitType); ok {
 			if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 				// Search in reverse order for override semantics (same as PropertyKey).
 				targetKey := type_system.NewStrKey(strLit.Value)
 				var indexSigFallback type_system.Type
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
+					if memberElemHidden(objType.Elems[i], receiverMutForElems) {
+						continue
+					}
 					switch elem := objType.Elems[i].(type) {
 					case *type_system.PropertyElem:
 						if elem.Name == targetKey {
@@ -1241,7 +1296,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						}
 					case *type_system.RestSpreadElem:
 						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, receiverMut, nil)
 							if len(spreadErrors) == 0 {
 								return spreadType, errors
 							}
@@ -1288,7 +1343,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						}
 					case *type_system.RestSpreadElem:
 						if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+							spreadType, spreadErrors := c.getObjectAccess(resolvedObj, key, mode, receiverMut, nil)
 							if len(spreadErrors) == 0 {
 								return spreadType, errors
 							}
@@ -1348,6 +1403,9 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			symKey := type_system.NewSymKey(symType.Value)
 			var indexSigFallback type_system.Type
 			for i := len(objType.Elems) - 1; i >= 0; i-- {
+				if memberElemHidden(objType.Elems[i], receiverMutForElems) {
+					continue
+				}
 				switch elem := objType.Elems[i].(type) {
 				case *type_system.PropertyElem:
 					if elem.Name == symKey {
@@ -1375,7 +1433,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					}
 				case *type_system.RestSpreadElem:
 					if resolvedObj := resolveToObjectType(elem.Value); resolvedObj != nil {
-						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, mode, nil)
+						symPropType, symPropErrors := c.getObjectAccess(resolvedObj, key, mode, receiverMut, nil)
 						if len(symPropErrors) == 0 {
 							return symPropType, errors
 						}
@@ -1410,7 +1468,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			}
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
 				// Recursively check the extended type
-				return c.getObjectAccess(extendsObjType, key, mode, errors)
+				return c.getObjectAccess(extendsObjType, key, mode, receiverMut, errors)
 			}
 		}
 
@@ -1442,7 +1500,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 // newOpenObjectWithProperty creates a new open ObjectType with a single property
 // and a rest-spread element, returning the property's type variable and the object.
 // accessKey records the member access that triggered inference of this property.
-func (c *Checker) newOpenObjectWithProperty(name string, accessKey MemberAccessKey) (*type_system.TypeVarType, *type_system.MutabilityType) {
+func (c *Checker) newOpenObjectWithProperty(name string, accessKey MemberAccessKey) (*type_system.TypeVarType, *type_system.ObjectType) {
 	propTV := c.FreshVar(nil)
 	propTV.Widenable = true
 	rowTV := c.FreshVar(nil)
@@ -1453,10 +1511,7 @@ func (c *Checker) newOpenObjectWithProperty(name string, accessKey MemberAccessK
 		type_system.NewRestSpreadElem(rowTV),
 	})
 	openObj.Open = true
-	return propTV, &type_system.MutabilityType{
-		Type:       openObj,
-		Mutability: type_system.MutabilityUncertain,
-	}
+	return propTV, openObj
 }
 
 // addPropertyToOpenObject appends a new widenable property to an existing open
@@ -1483,7 +1538,7 @@ func (c *Checker) addNumericPropertyToOpenObject(objType *type_system.ObjectType
 }
 
 // markPropertyWritten finds a property by name on an open ObjectType and sets
-// its Written flag. It handles both bare ObjectType and MutabilityType-wrapped
+// its Written flag. It handles both bare ObjectType and MutType-wrapped
 // ObjectType. Returns true if the property was found and marked.
 func markPropertyWritten(prunedType type_system.Type, propName string) bool {
 	var openObj *type_system.ObjectType
@@ -1492,7 +1547,7 @@ func markPropertyWritten(prunedType type_system.Type, propName string) bool {
 		if t.Open {
 			openObj = t
 		}
-	case *type_system.MutabilityType:
+	case *type_system.MutType:
 		if obj, ok := t.Type.(*type_system.ObjectType); ok && obj.Open {
 			openObj = obj
 		}
@@ -1592,7 +1647,11 @@ func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.T
 	constraint.MethodElemVars = append(constraint.MethodElemVars, freshElem)
 
 	tempArrayType := type_system.NewTypeRefType(nil, "Array", arrayAlias, freshElem)
-	resultType, accessErrors := c.getMemberType(ctx, tempArrayType, PropertyKey{Name: propName}, AccessRead)
+	// Pass receiverMut=true: ArrayConstraint resolution assumes the eventual
+	// parameter type will be `mut Array<...>` if any mutating method is called
+	// (HasMutatingMethod is recorded below). Looking up `push`/`unshift` etc.
+	// with receiverMut=false would hide them and break inference here.
+	resultType, accessErrors := c.getMemberTypeImpl(ctx, tempArrayType, PropertyKey{Name: propName}, AccessRead, true)
 	errors = slices.Concat(errors, accessErrors)
 
 	// Classify the method as mutating or read-only.
@@ -1610,9 +1669,6 @@ func (c *Checker) getArrayConstraintPropertyAccess(ctx Context, t *type_system.T
 func (c *Checker) getArrayConstraintIndexAccess(_ Context, t *type_system.TypeVarType, k IndexKey, errors []Error) (type_system.Type, []Error) {
 	constraint := t.ArrayConstraint
 	var keyType type_system.Type = k.Type
-	if mut, ok := keyType.(*type_system.MutabilityType); ok && mut.Mutability == type_system.MutabilityUncertain {
-		keyType = mut.Type
-	}
 
 	if litIndex, ok := asNonNegativeIntLiteral(keyType); ok {
 		if _, exists := constraint.LiteralIndexes[litIndex]; !exists {
@@ -1679,7 +1735,7 @@ func (c *Checker) isArrayMutatingMethod(methodName string) bool {
 }
 
 // getUnionAccess handles property and index access on UnionType
-func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, key MemberAccessKey, mode AccessMode, errors []Error) (type_system.Type, []Error) {
+func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, key MemberAccessKey, mode AccessMode, receiverMut bool, errors []Error) (type_system.Type, []Error) {
 	propKey, isPropertyKey := key.(PropertyKey)
 
 	definedElems := c.getDefinedElems(unionType)
@@ -1694,7 +1750,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 
 	if len(definedElems) == 1 {
 		if undefinedCount == 0 {
-			return c.getMemberType(ctx, definedElems[0], key, mode)
+			return c.getMemberTypeImpl(ctx, definedElems[0], key, mode, receiverMut)
 		}
 
 		if undefinedCount > 0 && isPropertyKey && !propKey.OptChain {
@@ -1702,7 +1758,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 			return type_system.NewUndefinedType(nil), errors
 		}
 
-		pType, pErrors := c.getMemberType(ctx, definedElems[0], key, mode)
+		pType, pErrors := c.getMemberTypeImpl(ctx, definedElems[0], key, mode, receiverMut)
 		errors = slices.Concat(errors, pErrors)
 		// Only add undefined if the inner result doesn't already contain it
 		// (e.g. from a nested optional chain on a TypeVarType).
@@ -1716,7 +1772,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 		// Get the member type from each element in the union and combine them
 		memberTypes := []type_system.Type{}
 		for _, elem := range definedElems {
-			memberType, memberErrors := c.getMemberType(ctx, elem, key, mode)
+			memberType, memberErrors := c.getMemberTypeImpl(ctx, elem, key, mode, receiverMut)
 			errors = slices.Concat(errors, memberErrors)
 			memberTypes = append(memberTypes, memberType)
 		}
@@ -1743,7 +1799,7 @@ func (c *Checker) getUnionAccess(ctx Context, unionType *type_system.UnionType, 
 }
 
 // getIntersectionAccess handles property and index access on IntersectionType
-func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_system.IntersectionType, key MemberAccessKey, mode AccessMode, errors []Error) (type_system.Type, []Error) {
+func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_system.IntersectionType, key MemberAccessKey, mode AccessMode, receiverMut bool, errors []Error) (type_system.Type, []Error) {
 	// For an intersection A & B, member access should:
 	// 1. If all parts are object types, merge their properties (the result is the intersection of matching property types)
 	// 2. Otherwise, try to access from each part and use the first successful one
@@ -1754,9 +1810,9 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
-		// Unwrap MutabilityType so inferred open objects (wrapped in mut?)
-		// are classified as object parts of the intersection.
-		if mut, ok := part.(*type_system.MutabilityType); ok {
+		// Unwrap MutType so explicit `mut Foo` parts are classified as
+		// object parts of the intersection.
+		if mut, ok := part.(*type_system.MutType); ok {
 			part = mut.Type
 		}
 		if objType, ok := part.(*type_system.ObjectType); ok {
@@ -1772,7 +1828,7 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 		foundAny := false
 
 		for _, objType := range objectTypes {
-			memberType, memberErrors := c.getObjectAccess(objType, key, mode, nil)
+			memberType, memberErrors := c.getObjectAccess(objType, key, mode, receiverMut, nil)
 			// Only include results from object types that have this property
 			if len(memberErrors) == 0 {
 				memberTypes = append(memberTypes, memberType)
@@ -1810,7 +1866,7 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	// First, collect all properties from object type parts
 	memberTypesFromObjects := []type_system.Type{}
 	for _, objType := range objectTypes {
-		memberType, memberErrors := c.getObjectAccess(objType, key, mode, nil)
+		memberType, memberErrors := c.getObjectAccess(objType, key, mode, receiverMut, nil)
 		if len(memberErrors) == 0 {
 			memberTypesFromObjects = append(memberTypesFromObjects, memberType)
 		}
@@ -1829,15 +1885,15 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	// If not found in object types, try other parts (primitives, functions, etc.)
 	for _, part := range intersectionType.Types {
 		part = type_system.Prune(part)
-		// Skip object types (including MutabilityType-wrapped) since we already checked them
+		// Skip object types (including MutType-wrapped) since we already checked them
 		unwrapped := part
-		if mut, ok := unwrapped.(*type_system.MutabilityType); ok {
+		if mut, ok := unwrapped.(*type_system.MutType); ok {
 			unwrapped = mut.Type
 		}
 		if _, ok := unwrapped.(*type_system.ObjectType); ok {
 			continue
 		}
-		memberType, memberErrors := c.getMemberType(ctx, part, key, mode)
+		memberType, memberErrors := c.getMemberTypeImpl(ctx, part, key, mode, receiverMut)
 		if len(memberErrors) == 0 {
 			return memberType, errors
 		}

@@ -573,10 +573,7 @@ func (c *Checker) InferComponent(
 					typeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
 				}
 
-				retType := &type_system.MutabilityType{
-					Type:       type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...),
-					Mutability: type_system.MutabilityUncertain,
-				}
+				retType := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...)
 
 				funcType := type_system.NewFuncType(
 					provenance,
@@ -1088,7 +1085,7 @@ func (c *Checker) InferComponent(
 								// TODO: handle generic classes
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if methodType.MutSelf != nil && *methodType.MutSelf {
-									t = type_system.NewMutableType(nil, t)
+									t = type_system.NewMutType(nil, t)
 								}
 
 								paramBindings["self"] = &type_system.Binding{
@@ -1211,7 +1208,7 @@ func (c *Checker) InferComponent(
 								// TODO: handle generic classes
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								// Setters typically need mutable self to modify the instance
-								t = type_system.NewMutableType(nil, t)
+								t = type_system.NewMutType(nil, t)
 
 								paramBindings["self"] = &type_system.Binding{
 									Source:  &ast.NodeProvenance{Node: bodyElem},

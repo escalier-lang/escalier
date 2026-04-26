@@ -180,7 +180,7 @@ func (c *Checker) inferTypeAnn(
 	case *ast.MutableTypeAnn:
 		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, targetErrors)
-		t = type_system.NewMutableType(provenance, targetType)
+		t = type_system.NewMutType(provenance, targetType)
 	case *ast.TemplateLitTypeAnn:
 		types := make([]type_system.Type, len(typeAnn.TypeAnns))
 		quasis := make([]*type_system.Quasi, len(typeAnn.Quasis))

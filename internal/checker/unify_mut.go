@@ -7,7 +7,7 @@ import (
 // unifyMut performs invariant type unification where t1 and t2 must be exactly
 // the same type. This is used for mutable types where we need strict type
 // equality to ensure memory safety.
-func (c *Checker) unifyMut(ctx Context, mut1, mut2 *type_system.MutabilityType) []Error {
+func (c *Checker) unifyMut(ctx Context, mut1, mut2 *type_system.MutType) []Error {
 	if mut1 == nil || mut2 == nil {
 		panic("Cannot unify nil types")
 	}
@@ -39,8 +39,8 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *type_system.MutabilityType) 
 	if retry {
 		// We unwrap the mutable types above so we need to rewrap them here
 		// before calling `unifyMut` again.
-		mut1 = type_system.NewMutableType(nil, t1)
-		mut2 = type_system.NewMutableType(nil, t2)
+		mut1 = type_system.NewMutType(nil, t1)
+		mut2 = type_system.NewMutType(nil, t2)
 		return c.unifyMut(ctx, mut1, mut2)
 	}
 
