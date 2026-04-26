@@ -212,6 +212,13 @@ func mergeModules(target, source *ast.Module) {
 // the key is the method name
 type Overrides map[string]bool
 
+// TODO(#500): populate mutabilityOverrides for Date, Promise, Error, and other
+// classes whose methods mutate the receiver. Methods on classes not listed
+// here default to MutSelf=nil (treated as not-mut-self), so e.g.
+// `someImmutableDate.setHours(...)` is currently visible on an immutable
+// receiver. Adding an entry like `"Date": {"setHours": true, ...}` restores
+// mut-self gating for those methods.
+//
 // the key is the interface name
 var mutabilityOverrides = map[string]Overrides{
 	"String": {

@@ -9,49 +9,54 @@ Two pieces of the type system are doing more work than they earn:
 
 Both are doable independently, but Phase 1 (the gate) is the smaller and reviewable-first piece. Phase 2 (`mut?` removal) builds cleanly on top of it.
 
-## Phase 1 — Gate `mut self` / setter access on receiver mutability
+## Phase 1 — Gate `mut self` access on receiver mutability ✅ Landed
 
-### Property lookup filter
+### Property lookup filter (as built)
 
-The element resolution loop appears in **multiple branches** of [internal/checker/expand_type.go](../../internal/checker/expand_type.go) — at [lines 1058, 1124, 1226, 1360](../../internal/checker/expand_type.go) — depending on whether the receiver is an ObjectType, TypeRefType, IntersectionType, or pattern-key access. The cleanest implementation is a small helper that wraps the per-elem decision (returning the elem if visible, nil if hidden) and is called from each of those four loops, plus a `receiverIsMutable(t type_system.Type) bool` helper. Apply it during element resolution:
+A single `memberElemHidden(elem, receiverMut)` helper in [internal/checker/expand_type.go](../../internal/checker/expand_type.go) decides per-element visibility, called from each of the four element-resolution loops (`lazyMemberLookup`, the three branches of `getObjectAccess` for property/string-literal/symbol keys). An `ReceiverIsDefinitelyMutable(t)` helper (exported so the LSP shares it) handles the entry decision.
 
-- `MethodElem` with `MutSelf == true` → skip when the receiver is not definitely `mut`.
-- `SetterElem` → skip when the receiver is not definitely `mut` (but only in `AccessWrite` mode — see edge cases).
-- `GetterElem`, `MethodElem` with `MutSelf` false/nil, plain properties → always visible.
+- `MethodElem` with `MutSelf == true` → skipped when the receiver is not definitely `mut`. ✓
+- `GetterElem`, `MethodElem` with `MutSelf` false/nil, plain properties → always visible. ✓
+- `SetterElem` → **not hidden**. The plan originally called for hiding setters in `AccessWrite` mode, but doing so produced a 3-error cascade for `immutableObj.setterProp = value`: `Unknown property` + the existing `Cannot mutate immutable type` + a follow-on `cannot be assigned to undefined`. The existing `CannotMutateImmutableError` already enforces write gating with a clearer message, so setter hiding adds nothing. (The LSP `completionsFromObjectType` *does* still hide setters from completion suggestions on immutable receivers — completion shows what the user can successfully do, while the checker keeps the better error message.)
 
-When all elements at a key are filtered out, fall through to the existing `UnknownPropertyError` / `KeyNotFoundError` path. **Do not introduce a new error variant** — collapsing the "hidden" and "doesn't exist" paths is the user's stated requirement.
+When all elements at a key are filtered out, the lookup falls through to the existing `UnknownPropertyError` / `KeyNotFoundError` path. No new error variant.
 
-### Edge cases
+To thread the receiver mutability through unwrappings without losing it, `getMemberType` and `completionsFromType` each wrap an `…Impl(…, receiverMut bool)` form that takes the flag as an explicit parameter. The `MutabilityType` switch case ORs `receiverMut || t.Mutability == MutabilityMutable` so a definite `mut` wrapper on an inner layer upgrades an inherited-immutable flag.
 
-- **`mut?` receiver** (until Phase 2 lands) — treat as immutable for filtering, consistent with how `RemoveUncertainMutabilityVisitor` settles after #499. After Phase 2 these don't exist. Important: open objects produced by `newOpenObjectWithProperty` are wrapped in `mut?` and still pre-finalization during body inference — Phase 1 must not start filtering on these prematurely (a method invoked on an open object during inference would otherwise vanish before the body completes). Either restrict the gate to non-open object types, or land Phase 2 first to avoid the ordering hazard.
-- **Type-var receivers** — when the receiver is a `TypeVarType` with a constraint, look at the constraint's mutability wrapper. If unconstrained, treat as immutable so generic code can't sneak past the gate.
-- **Setter access mode** — the existing `AccessMode` parameter on `getMemberType` (`AccessRead` vs `AccessWrite`) already splits the read/write paths. Audit the call sites to confirm: setters only need filtering on `AccessWrite`; methods only on call-style access.
-- **Generic methods on parametric classes** — `Self<T>` carries mutability from its instantiation. Verify the propagation already works (it should, since `MutabilityType` wraps the whole `TypeRefType`).
+The per-member cache key (`memberCacheKey`) was extended with a `receiverMut bool` field so mutable vs immutable lookups don't share a slot. Not-found results aren't cached, which avoids stale-hide pitfalls.
 
-### LSP completion
+### Edge cases (resolved)
 
-[cmd/lsp-server/completion.go:479-497](../../cmd/lsp-server/completion.go#L479-L497) iterates `obj.Elems` and emits a completion item per element (the `MethodElem` branch is on line 497). Apply the same `receiverIsMutable` filter here. Existing tests live in [completion_test.go](../../cmd/lsp-server/completion_test.go) — extend with mut-self cases. ~30 minutes.
+- **`mut?` receiver** — treated as immutable in `ReceiverIsDefinitelyMutable` (only `MutabilityMutable` returns true). The open-object hatch is `receiverMutForElems := receiverMut || objType.Open` in both the checker and LSP paths — open objects under inference only ever hold `PropertyElem`s and `RestSpreadElem`s by construction (per `newOpenObjectWithProperty`), so the filter is a no-op for them. This avoids the ordering hazard the plan flagged.
+- **Type-var receivers** — `ReceiverIsDefinitelyMutable` recurses into `tv.Constraint`. Unconstrained type vars return false. Tested.
+- **`ArrayConstraint` resolution** — `getArrayConstraintPropertyAccess` calls `getMemberTypeImpl` with `receiverMut=true` so `push`/`unshift`/etc. resolve during constraint-driven inference (the eventual parameter type ends up wrapped in `mut Array<…>` if any mutating method is recorded).
+- **`UpdateMethodMutability` in `prelude.go` flipped its default.** The old code defaulted `MutSelf=true` for every method on every `*Constructor` type, then overrode entries from `mutabilityOverrides`. The new code only sets `MutSelf` for methods that appear in the overrides table; everything else is left `nil`. This avoids hiding non-mutating methods on classes like `Function` whose `mutabilityOverrides` entry is empty/missing, but as a side effect, `Date.setHours(...)` and similar mutating methods on classes not in the overrides table are now visible on immutable receivers. Tracked in TODO(#500) at the top of `mutabilityOverrides` — needs entries for `Date`, `Promise`, `Error`, etc.
 
-### Tests
+### LSP completion (as built)
 
-Add to [internal/checker/tests/mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go) — re-enable the cases that are currently commented out:
+`completionsFromType` mirrors the checker structure — it dispatches to `completionsFromTypeImpl` with the receiver-mutability flag computed by `checker.ReceiverIsDefinitelyMutable`. Mut-self methods and setters are hidden from suggestions on immutable receivers; getters at the same key still surface the property as readable. Tests added in [completion_test.go](../../cmd/lsp-server/completion_test.go): `TestMemberCompletionHidesMutSelfOnImmutableReceiver`, `TestMemberCompletionShowsMutSelfOnMutableReceiver`.
 
-- `Counter(0).tick()` → `UnknownPropertyError("tick")` (not a separate mut error).
-- `mut Counter(0).tick()` → succeeds.
-- `Map`/`Set`: `m.clear()` and `s.add(1)` on immutable receivers → property-not-found.
-- Type-var receiver: a generic function calling `t.mutMethod()` where `T extends SomeMutClass` (no `mut` constraint) → property-not-found.
-- LSP completion test (find existing pattern): `obj.` lists `mut self` methods only when `obj` is `mut`.
+### Tests landed
 
-### Critical files
+In [mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go):
 
-- [internal/checker/expand_type.go](../../internal/checker/expand_type.go) — filter logic.
-- LSP completion path (TBD on first grep).
-- [internal/checker/tests/mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go) — re-enable hidden-method tests.
-- A handful of existing fixtures likely call `mut` methods on what is now an immutable receiver and need a `mut` prefix at the construction site.
+- `ImmutableInstance_CannotCallMutSelfMethod` — `Counter(0).tick()` → property-not-found.
+- `MutInstance_CanCallMutSelfMethod` — `mut Counter(0).tick()` → succeeds.
+- `MutInstance_CanBindMutSelfMethod` — `val t = c.tick` on a `mut` instance succeeds (replaces the symmetric coverage lost when the immutable `inc = obj1.increment` line was removed from the `objects_with_self` fixture).
+- `ImmutableMap_CannotClear`, `ImmutableSet_CannotAdd` — collection cases.
+- `TypeVarReceiver_ImmutableConstraint_CannotCallMutSelfMethod` — `<T: Counter>(t: T) -> t.tick()` errors with `Callee is not callable: undefined`.
+- `TypeVarReceiver_MutConstraint_CanCallMutSelfMethod` — `<T: mut Counter>` succeeds.
 
-### Sizing
+Fixtures touched:
 
-Half a day, plus an hour or two for the type-var edge case if it turns out to need real work.
+- `fixtures/objects/error.txt` — back to two errors (the `Cannot mutate` + type-mismatch pair) after dropping setter hiding.
+- `fixtures/class_with_fluent_mutating_methods/lib/index.esc` — added `mut` prefix at construction site since the chained methods are mut-self.
+- `fixtures/objects_with_self/lib/objects_with_self.esc` — removed `val inc = obj1.increment` (binding a mut-self method on an immutable receiver no longer resolves; covered positively by the new bind test above).
+
+### Follow-ups
+
+- **TODO(#500)** — populate `mutabilityOverrides` for `Date`, `Promise`, `Error`, and other classes whose methods mutate the receiver. Without this, mut-self gating silently misses these classes.
+- The `objType.Open` short-circuit assumes open objects only hold `PropertyElem`/`RestSpreadElem`. Currently true; if methods ever get added to open objects, revisit.
 
 ## Phase 2 — Remove `mut?`
 
@@ -113,23 +118,21 @@ Note: `removeUncertainMutability` is **not currently called from `generalize.go`
 - **Open-object finalization order.** If a function body's open-object decision needs to be visible to a *caller's* unification before the caller is checked, single-pass-after-body finalization is fine. If there's a mutual-recursion case where the caller's checks run first, the order may need shuffling — same machinery the lifetimes pass already uses for lifetime params.
 - **Argument unwrapping in `inferCallExpr`.** [infer_expr.go:1143](../../internal/checker/infer_expr.go#L1143) calls `unwrapMutability(at)` on every argument when the callee is a `TypeVarType` — this strips `mut?` from synthetic argument types so the inferred function signature is clean (per the comment at [:1136](../../internal/checker/infer_expr.go#L1136)). After Phase 2 there is no `mut?` to strip; verify the surrounding code still produces clean inferred signatures.
 - **`infer_lifetime.go:466` reference.** The doc comment for `stripMutabilityWrapper` cross-references `unwrapMutability`; rewrite or remove the comment when `unwrapMutability` is deleted.
-- **Generic methods on parametric classes.** A method on `Self<T>` whose mutability is inherited from the instantiation site needs a careful look during Phase 1.
-- **Setter access mode.** Setters as "mut self" elements during write access vs. read access. Likely already handled by `AccessMode`, but worth verifying.
 - **Print-format churn.** Every test fixture mentioning `mut?` will need a sweep — mostly mechanical but loud in PR diff.
 
 ## Sizing
 
-| Phase                                        | Effort       | Risk                                                           |
+| Phase                                        | Effort       | Status / Risk                                                  |
 | -------------------------------------------- | ------------ | -------------------------------------------------------------- |
-| Phase 1 (mut-self gate + LSP)                | ~half-day    | Low; type-var edge case may add 1–2 hours; open-object ordering is a risk if Phase 2 doesn't land first |
+| Phase 1 (mut-self gate + LSP)                | ~half-day    | ✅ Landed. Open-object hazard sidestepped via `objType.Open` short-circuit. |
 | Phase 2 (`mut?` removal + finalization pass) | 2–4 days     | Open-object finalization is the unknown                        |
 | Phase 3 (fixture sweep + new tests)          | ~half-day    | Mechanical                                                     |
-| **Total**                                    | **3–5 days** | Either land Phase 1 first (with a Phase 1.5 step to handle open-object receivers conservatively), or land Phase 2 first and Phase 1 on top |
+| **Total**                                    | **3–5 days** | Phase 1 done; Phase 2 next.                                    |
 
 ## Verification
 
-1. `go test ./...` green after each phase.
+1. `go test ./...` green after each phase. ✓ (Phase 1)
 2. `grep -r "mut?" internal/` and `grep -r "MutabilityUncertain" internal/` both return zero hits after Phase 2.
-3. LSP completion at `immutablePoint.` does not list any `mut self` methods; at `mutablePoint.` it does.
-4. The receiver-mutability tests currently commented out in [mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go) are re-enabled and passing.
-5. Generated JS for existing programs is byte-identical (the change is purely type-level).
+3. LSP completion at `immutablePoint.` does not list any `mut self` methods; at `mutablePoint.` it does. ✓ (Phase 1)
+4. The receiver-mutability tests previously commented out in [mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go) are re-enabled and passing, plus type-var-receiver coverage. ✓ (Phase 1)
+5. Generated JS for existing programs is byte-identical (the change is purely type-level). ✓ (Phase 1; the only fixture JS deltas are removals of `obj1.increment.bind(obj1)` for the binding line that was deleted — no other diffs.)

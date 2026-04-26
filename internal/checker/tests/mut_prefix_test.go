@@ -136,6 +136,19 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			`,
 			expectErrors: false,
 		},
+		"MutInstance_CanBindMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn test() {
+					val c = mut Counter(0)
+					val t = c.tick
+				}
+			`,
+			expectErrors: false,
+		},
 		"ImmutableInstance_CannotCallMutSelfMethod": {
 			input: `
 				class Counter(count: number) {
@@ -156,6 +169,30 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 				fn test() {
 					val p = mut makePoint(5, 10)
 					p.x = 99
+				}
+			`,
+			expectErrors: false,
+		},
+		"TypeVarReceiver_ImmutableConstraint_CannotCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn callTick<T: Counter>(t: T) -> number {
+					return t.tick()
+				}
+			`,
+			expectErrors: true,
+		},
+		"TypeVarReceiver_MutConstraint_CanCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn callTick<T: mut Counter>(t: T) -> number {
+					return t.tick()
 				}
 			`,
 			expectErrors: false,

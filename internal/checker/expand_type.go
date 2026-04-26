@@ -635,7 +635,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 // mode indicates whether the access is a read (rvalue) or write (lvalue), which affects
 // getter/setter resolution: reads use getters, writes use setters.
 func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key MemberAccessKey, mode AccessMode) (type_system.Type, []Error) {
-	return c.getMemberTypeImpl(ctx, objType, key, mode, receiverIsDefinitelyMutable(objType))
+	return c.getMemberTypeImpl(ctx, objType, key, mode, ReceiverIsDefinitelyMutable(objType))
 }
 
 // getMemberTypeImpl is the same as getMemberType but lets internal recursive
@@ -1024,19 +1024,19 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 	return nil
 }
 
-// receiverIsDefinitelyMutable reports whether the outer wrapper of a receiver
+// ReceiverIsDefinitelyMutable reports whether the outer wrapper of a receiver
 // type is a definite `MutabilityMutable`. `MutabilityUncertain` (`mut?`) and
 // missing wrappers are treated as immutable for receiver-mutability gating.
 // For type-variable receivers, the constraint's wrapper is consulted; an
 // unconstrained type variable is treated as immutable so generic code can't
 // sneak past the gate.
-func receiverIsDefinitelyMutable(t type_system.Type) bool {
+func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
 	pruned := type_system.Prune(t)
 	if mut, ok := pruned.(*type_system.MutabilityType); ok {
 		return mut.Mutability == type_system.MutabilityMutable
 	}
 	if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Constraint != nil {
-		return receiverIsDefinitelyMutable(tv.Constraint)
+		return ReceiverIsDefinitelyMutable(tv.Constraint)
 	}
 	return false
 }
@@ -1044,18 +1044,17 @@ func receiverIsDefinitelyMutable(t type_system.Type) bool {
 // memberElemHidden reports whether an object element should be hidden during
 // member access given the receiver's mutability and access mode.
 //   - MethodElem with MutSelf == true is hidden on a non-mutable receiver.
-//   - SetterElem is hidden on a non-mutable receiver but only when writing
-//     (AccessRead can still resolve a getter at the same key).
-//   - All other elements are visible.
-func memberElemHidden(elem type_system.ObjTypeElem, receiverMut bool, mode AccessMode) bool {
+//   - All other elements (including SetterElem) are visible. Writes through a
+//     setter on an immutable receiver are caught by CannotMutateImmutableError
+//     at the assignment site, which produces a clearer message than hiding the
+//     setter and falling through to UnknownPropertyError + a follow-on
+//     "cannot be assigned to undefined" type-mismatch error.
+func memberElemHidden(elem type_system.ObjTypeElem, receiverMut bool) bool {
 	if receiverMut {
 		return false
 	}
-	switch e := elem.(type) {
-	case *type_system.MethodElem:
-		return e.MutSelf != nil && *e.MutSelf
-	case *type_system.SetterElem:
-		return mode == AccessWrite
+	if m, ok := elem.(*type_system.MethodElem); ok {
+		return m.MutSelf != nil && *m.MutSelf
 	}
 	return false
 }
@@ -1098,7 +1097,7 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 	targetKey := type_system.NewStrKey(name)
 	var memberType type_system.Type
 	for i := len(objType.Elems) - 1; i >= 0; i-- {
-		if memberElemHidden(objType.Elems[i], receiverMut, mode) {
+		if memberElemHidden(objType.Elems[i], receiverMut) {
 			continue
 		}
 		switch elem := objType.Elems[i].(type) {
@@ -1174,7 +1173,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		targetKey := type_system.NewStrKey(k.Name)
 		var indexSigFallback type_system.Type
 		for i := len(objType.Elems) - 1; i >= 0; i-- {
-			if memberElemHidden(objType.Elems[i], receiverMutForElems, mode) {
+			if memberElemHidden(objType.Elems[i], receiverMutForElems) {
 				continue
 			}
 			switch elem := objType.Elems[i].(type) {
@@ -1279,7 +1278,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				targetKey := type_system.NewStrKey(strLit.Value)
 				var indexSigFallback type_system.Type
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
-					if memberElemHidden(objType.Elems[i], receiverMutForElems, mode) {
+					if memberElemHidden(objType.Elems[i], receiverMutForElems) {
 						continue
 					}
 					switch elem := objType.Elems[i].(type) {
@@ -1416,7 +1415,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			symKey := type_system.NewSymKey(symType.Value)
 			var indexSigFallback type_system.Type
 			for i := len(objType.Elems) - 1; i >= 0; i-- {
-				if memberElemHidden(objType.Elems[i], receiverMutForElems, mode) {
+				if memberElemHidden(objType.Elems[i], receiverMutForElems) {
 					continue
 				}
 				switch elem := objType.Elems[i].(type) {

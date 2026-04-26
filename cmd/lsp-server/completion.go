@@ -407,24 +407,9 @@ func (s *Server) moduleCompletion(
 	}, nil
 }
 
-// receiverIsDefinitelyMutable reports whether a receiver type's outermost
-// wrapper is a definite `MutabilityMutable`. `MutabilityUncertain` and missing
-// wrappers are treated as immutable so `mut self` methods and setters are
-// hidden from completion on non-mut receivers.
-func receiverIsDefinitelyMutable(t type_system.Type) bool {
-	pruned := type_system.Prune(t)
-	if mut, ok := pruned.(*type_system.MutabilityType); ok {
-		return mut.Mutability == type_system.MutabilityMutable
-	}
-	if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Constraint != nil {
-		return receiverIsDefinitelyMutable(tv.Constraint)
-	}
-	return false
-}
-
 // completionsFromType returns completion items for member access on a type.
 func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.CompletionItem {
-	return completionsFromTypeImpl(t, scope, receiverIsDefinitelyMutable(t))
+	return completionsFromTypeImpl(t, scope, checker.ReceiverIsDefinitelyMutable(t))
 }
 
 // completionsFromTypeImpl is the same as completionsFromType but lets internal
