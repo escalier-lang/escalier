@@ -290,3 +290,63 @@ func TestMutPrefixWithBuiltinCollections(t *testing.T) {
 		})
 	}
 }
+
+// TestMutPrefixOnNonCall_InferenceRecovers ensures that after the parser
+// rejects `mut <non-call>`, the recovered AST (the bare expression without
+// `mut`) still infers cleanly — no panics, no crashes.
+func TestMutPrefixOnNonCall_InferenceRecovers(t *testing.T) {
+	inputs := map[string]string{
+		"OnIdent":    `val a = 1 val b = mut a`,
+		"OnArrayLit": `val x = mut [1, 2, 3]`,
+	}
+	for name, input := range inputs {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+			require.NotEmpty(t, parseErrors, "expected parse error")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			require.NotPanics(t, func() {
+				c.InferScript(inferCtx, script)
+			})
+		})
+	}
+}
+
+// TestMutSuffixBinding documents how `mut` interacts with suffix expressions:
+//   - `mut foo().bar()` is accepted; `mut` applies to the outer call (.bar()).
+//   - `mut foo().bar` is rejected — the user must write `(mut foo()).bar`.
+//   - `mut foo()(arg)` is accepted; `mut` applies to the outer call.
+//   - parenthesized forms always parse cleanly.
+func TestMutSuffixBinding(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		expectError bool
+	}{
+		"MutThenMemberOnly_Rejected":   {`val x = mut foo().bar`, true},
+		"MutThenMemberThenCall_Accept": {`val x = mut foo().bar()`, false},
+		"MutThenChainedCall_Accept":    {`val x = mut foo()(arg)`, false},
+		"ParenMutThenMember_Accept":    {`val x = (mut foo()).bar`, false},
+		"ParenMutThenCall_Accept":      {`val x = (mut foo()).bar()`, false},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			_, errs := p.ParseScript()
+			if test.expectError {
+				assert.NotEmpty(t, errs, "expected parse error for %q", test.input)
+			} else {
+				assert.Empty(t, errs, "expected clean parse for %q", test.input)
+			}
+		})
+	}
+}

@@ -445,7 +445,6 @@ func (p *Parser) primaryExpr() ast.Expr {
 				return arg
 			}
 			call.Mutable = true
-			call.MutSpan = mutSpan
 			return call
 		case Yield:
 			p.lexer.consume() // consume 'yield'

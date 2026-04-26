@@ -26,7 +26,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			bindingName:  "p",
 			expectedType: "Point",
 		},
-		"HasMutSelf_StillDefaultsImmutable": {
+		"HasMutSelf_DefaultsImmutable": {
 			input: `
 				class Counter(count: number) {
 					count,

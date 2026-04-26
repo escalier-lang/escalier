@@ -154,7 +154,6 @@
     },
     OptChain: false,
     Mutable:  false,
-    MutSpan:  ast.Span{},
     span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:7},
@@ -1358,7 +1357,6 @@
     },
     OptChain: false,
     Mutable:  false,
-    MutSpan:  ast.Span{},
     span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:13},
@@ -2253,7 +2251,6 @@
             },
             OptChain: false,
             Mutable:  false,
-            MutSpan:  ast.Span{},
             span:     ast.Span{
                 Start:    ast.Location{Line:1, Column:1},
                 End:      ast.Location{Line:1, Column:7},
@@ -2277,7 +2274,6 @@
         },
         OptChain: false,
         Mutable:  false,
-        MutSpan:  ast.Span{},
         span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:10},
@@ -2301,7 +2297,6 @@
     },
     OptChain: false,
     Mutable:  false,
-    MutSpan:  ast.Span{},
     span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:13},
@@ -2643,7 +2638,6 @@
         },
         OptChain: false,
         Mutable:  false,
-        MutSpan:  ast.Span{},
         span:     ast.Span{
             Start:    ast.Location{Line:1, Column:5},
             End:      ast.Location{Line:1, Column:11},
@@ -2789,7 +2783,6 @@
     },
     OptChain: true,
     Mutable:  false,
-    MutSpan:  ast.Span{},
     span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:10},
@@ -3574,7 +3567,6 @@
     },
     OptChain: false,
     Mutable:  false,
-    MutSpan:  ast.Span{},
     span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:6},
@@ -3737,7 +3729,6 @@
         },
         OptChain: false,
         Mutable:  false,
-        MutSpan:  ast.Span{},
         span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:10},
@@ -4508,7 +4499,6 @@
                                 },
                                 OptChain: false,
                                 Mutable:  false,
-                                MutSpan:  ast.Span{},
                                 span:     ast.Span{
                                     Start:    ast.Location{Line:2, Column:3},
                                     End:      ast.Location{Line:2, Column:17},
@@ -5091,7 +5081,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:23},
@@ -5177,7 +5166,6 @@
                                 },
                                 OptChain: false,
                                 Mutable:  false,
-                                MutSpan:  ast.Span{},
                                 span:     ast.Span{
                                     Start:    ast.Location{Line:1, Column:45},
                                     End:      ast.Location{Line:1, Column:63},
@@ -5242,7 +5230,6 @@
                                     },
                                     OptChain: false,
                                     Mutable:  false,
-                                    MutSpan:  ast.Span{},
                                     span:     ast.Span{
                                         Start:    ast.Location{Line:1, Column:13},
                                         End:      ast.Location{Line:1, Column:29},
@@ -5387,7 +5374,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:23},
@@ -5440,7 +5426,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:17},
@@ -5638,7 +5623,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:18},
@@ -5844,7 +5828,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:25},
@@ -5913,7 +5896,6 @@
                                 },
                                 OptChain: false,
                                 Mutable:  false,
-                                MutSpan:  ast.Span{},
                                 span:     ast.Span{
                                     Start:    ast.Location{Line:2, Column:3},
                                     End:      ast.Location{Line:2, Column:18},
@@ -6018,7 +6000,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:18},
@@ -6105,7 +6086,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:18},
@@ -6227,7 +6207,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:18},
@@ -6458,7 +6437,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:18},
@@ -6524,7 +6502,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:18},
@@ -6705,7 +6682,6 @@
                     },
                     OptChain: false,
                     Mutable:  false,
-                    MutSpan:  ast.Span{},
                     span:     ast.Span{
                         Start:    ast.Location{Line:1, Column:7},
                         End:      ast.Location{Line:1, Column:18},
@@ -7083,7 +7059,6 @@
         },
         OptChain: false,
         Mutable:  false,
-        MutSpan:  ast.Span{},
         span:     ast.Span{
             Start:    ast.Location{Line:1, Column:7},
             End:      ast.Location{Line:1, Column:21},
@@ -8936,7 +8911,6 @@
     },
     OptChain: false,
     Mutable:  false,
-    MutSpan:  ast.Span{},
     span:     ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:9},

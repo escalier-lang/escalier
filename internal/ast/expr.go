@@ -388,7 +388,6 @@ type CallExpr struct {
 	// flag only affects type inference (it produces a definite-mutable result
 	// type) and pretty-printing.
 	Mutable      bool
-	MutSpan      Span // span of the `mut` keyword when Mutable is true
 	span         Span
 	inferredType Type
 }
