@@ -62,12 +62,14 @@ Fixtures touched:
 
 ### Audit every `mut?` creation site
 
+> **Note:** the line numbers in the audit below are a pre-implementation snapshot — they were captured when this plan was written and have since drifted. Symbol names (e.g. `newOpenObjectWithProperty`, `markPropertyWritten`) are the durable references; locate the code by symbol, not line.
+
 Grep `MutabilityUncertain` and any `&type_system.MutabilityType{...}` literal that doesn't specify `MutabilityMutable`. Expected hits:
 
-- [internal/checker/expand_type.go:1445 `newOpenObjectWithProperty`](../../internal/checker/expand_type.go#L1445) — open object widening (the wrapper is constructed at line 1458 with `MutabilityUncertain`). The load-bearing case.
-- [internal/checker/infer_expr.go:315, :391, :547](../../internal/checker/infer_expr.go) — three more `MutabilityUncertain` constructions in expression inference.
-- [internal/checker/infer_module.go:578](../../internal/checker/infer_module.go#L578) — class-decl path.
-- [internal/checker/expand_type.go:745, :948, :1208, :1613](../../internal/checker/expand_type.go) — sites that *check for* `MutabilityUncertain` (key-type unwrapping during member access). These need their `MutabilityUncertain` branch deleted, but they still need to handle the bare-and-mut cases.
+- [internal/checker/expand_type.go `newOpenObjectWithProperty`](../../internal/checker/expand_type.go) — open object widening (the wrapper is constructed inside this function with `MutabilityUncertain`). The load-bearing case.
+- [internal/checker/infer_expr.go](../../internal/checker/infer_expr.go) — three more `MutabilityUncertain` constructions in expression inference.
+- [internal/checker/infer_module.go](../../internal/checker/infer_module.go) — class-decl path.
+- [internal/checker/expand_type.go](../../internal/checker/expand_type.go) — sites that *check for* `MutabilityUncertain` (key-type unwrapping during member access). These need their `MutabilityUncertain` branch deleted, but they still need to handle the bare-and-mut cases.
 
 For each site, choose one of:
 
@@ -84,15 +86,17 @@ Replacement: after each function body completes inference (in `inferFuncBody` or
 - If **any** field has `Written == true` → wrap that param's type in a definite `mut` wrapper.
 - Else → leave unwrapped (immutable).
 
-This is a single forward pass, runs immediately after body inference, and produces definite types that flow into generalization. The `Written` flag plumbing already exists ([expand_type.go:1486+ `markPropertyWritten`](../../internal/checker/expand_type.go#L1486)) — we just shift the decision earlier.
+This is a single forward pass, runs immediately after body inference, and produces definite types that flow into generalization. The `Written` flag plumbing already exists in `markPropertyWritten` ([expand_type.go](../../internal/checker/expand_type.go)) — we just shift the decision earlier.
 
 ### Delete dead machinery
 
-- `MutabilityUncertain` constant at [internal/type_system/types.go:2165](../../internal/type_system/types.go#L2165).
-- `RemoveUncertainMutabilityVisitor` + `removeUncertainMutability` at [internal/checker/unify.go:2351-2371](../../internal/checker/unify.go#L2351). **Call sites of `removeUncertainMutability` are inside `unify.go` itself** ([lines 2075, 2121](../../internal/checker/unify.go#L2075)), not in `generalize.go` — verify before deleting.
-- `unwrapMutability` at [internal/checker/unify.go:2421](../../internal/checker/unify.go#L2421). Only stripped `mut?`. Call sites: [unify.go:236, :243](../../internal/checker/unify.go#L236) and [infer_expr.go:1143](../../internal/checker/infer_expr.go#L1143). Replace each with direct `*MutabilityType` pattern-matching where a strip is still needed.
-- The `mutWrapper.Mutability != type_system.MutabilityUncertain` check at [unify.go:2467](../../internal/checker/unify.go#L2467) becomes always-true (i.e. drop the conditional).
-- All `mut.Mutability == MutabilityUncertain` branches in switches across `expand_type.go` (lines 745, 948, 1208, 1613), `iterable.go`, `infer_lifetime.go`.
+(Symbols below; the pre-implementation snapshot's line numbers have been omitted since they no longer match.)
+
+- `MutabilityUncertain` constant in [internal/type_system/types.go](../../internal/type_system/types.go).
+- `RemoveUncertainMutabilityVisitor` + `removeUncertainMutability` in [internal/checker/unify.go](../../internal/checker/unify.go). **Call sites of `removeUncertainMutability` are inside `unify.go` itself**, not in `generalize.go` — verify before deleting.
+- `unwrapMutability` in [internal/checker/unify.go](../../internal/checker/unify.go). Only stripped `mut?`. Call sites: in `unify.go` and [infer_expr.go `inferCallExpr`](../../internal/checker/infer_expr.go). Replace each with direct `*MutabilityType` pattern-matching where a strip is still needed.
+- The `mutWrapper.Mutability != type_system.MutabilityUncertain` check in `unify.go` becomes always-true (i.e. drop the conditional).
+- All `mut.Mutability == MutabilityUncertain` branches in switches across `expand_type.go`, `iterable.go`, `infer_lifetime.go`.
 - The `?` print in `printMutabilityType`.
 
 ### Generalization interaction

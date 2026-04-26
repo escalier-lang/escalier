@@ -1035,13 +1035,13 @@ func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
 }
 
 // memberElemHidden reports whether an object element should be hidden during
-// member access given the receiver's mutability and access mode.
+// member access given the receiver's mutability. Access mode is intentionally
+// not consulted here — setters are caught at the assignment site by
+// CannotMutateImmutableError, which produces a clearer message than hiding the
+// setter and falling through to UnknownPropertyError + a follow-on
+// "cannot be assigned to undefined" type-mismatch error.
 //   - MethodElem with MutSelf == true is hidden on a non-mutable receiver.
-//   - All other elements (including SetterElem) are visible. Writes through a
-//     setter on an immutable receiver are caught by CannotMutateImmutableError
-//     at the assignment site, which produces a clearer message than hiding the
-//     setter and falling through to UnknownPropertyError + a follow-on
-//     "cannot be assigned to undefined" type-mismatch error.
+//   - All other elements (including SetterElem) are visible.
 func memberElemHidden(elem type_system.ObjTypeElem, receiverMut bool) bool {
 	if receiverMut {
 		return false

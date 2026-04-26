@@ -504,13 +504,19 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 		valPruned := type_system.Prune(prop.Value)
 		if nestedObj, ok := valPruned.(*type_system.ObjectType); ok && nestedObj.Open {
 			if finalizeOpenObject(nestedObj) {
-				prop.Value.(*type_system.TypeVarType).Instance = &type_system.MutabilityType{
-					Type:       nestedObj,
-					Mutability: type_system.MutabilityMutable,
+				// Per the invariant documented above, prop.Value is always a
+				// TypeVarType. Comma-ok rather than a bare assertion so an
+				// invariant break surfaces as a clear no-op + (eventually) a
+				// downstream type error rather than a cryptic panic.
+				if tv, ok := prop.Value.(*type_system.TypeVarType); ok {
+					tv.Instance = &type_system.MutabilityType{
+						Type:       nestedObj,
+						Mutability: type_system.MutabilityMutable,
+					}
+					// Nested writes propagate upward: the containing object
+					// is also considered written to.
+					hasWritten = true
 				}
-				// Nested writes propagate upward: the containing object
-				// is also considered written to.
-				hasWritten = true
 			}
 		}
 		if prop.Written {
