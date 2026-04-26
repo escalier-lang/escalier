@@ -8,8 +8,6 @@ export val obj1 = {
     }
 }
 
-val inc = obj1.increment
-
 export val obj2 = {
     _value: value,
     get value (self) {

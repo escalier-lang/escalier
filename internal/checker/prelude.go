@@ -304,14 +304,20 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
 					for _, elem := range it.Elems {
 						if me, ok := elem.(*type_system.MethodElem); ok {
-							mutSelf := true
-							if me.Name.Kind == type_system.StrObjTypeKeyKind {
-								value, exists := overrides[me.Name.Str]
-								if exists {
-									mutSelf = value
-								}
+							// TypeScript .d.ts has no mut-self annotation, so
+							// default to nil (unknown) and only override when
+							// the method appears in the per-interface overrides
+							// table. Treating "unknown" as not-mut-self matches
+							// the rest of the checker (e.g. binding-mutability
+							// in infer_module.go) and avoids hiding non-mutating
+							// methods on classes like Function.
+							if me.Name.Kind != type_system.StrObjTypeKeyKind {
+								continue
 							}
-							me.MutSelf = &mutSelf
+							if value, exists := overrides[me.Name.Str]; exists {
+								mutSelf := value
+								me.MutSelf = &mutSelf
+							}
 						}
 					}
 				} else {

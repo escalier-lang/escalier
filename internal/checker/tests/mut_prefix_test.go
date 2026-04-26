@@ -123,10 +123,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			`,
 			expectErrors: false,
 		},
-		// NOTE: a follow-up should also reject calling a mut-self method
-		// on an immutable receiver. The checker does not yet enforce this
-		// at the call site (only direct field writes are checked), so we
-		// only test the positive case here.
 		"MutInstance_CanCallMutSelfMethod": {
 			input: `
 				class Counter(count: number) {
@@ -139,6 +135,19 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 				}
 			`,
 			expectErrors: false,
+		},
+		"ImmutableInstance_CannotCallMutSelfMethod": {
+			input: `
+				class Counter(count: number) {
+					count,
+					tick(mut self) -> number { self.count = self.count + 1 return self.count }
+				}
+				fn test() {
+					val c = Counter(0)
+					c.tick()
+				}
+			`,
+			expectErrors: true,
 		},
 		"MutFunctionCall_CanAssignField": {
 			input: `
@@ -254,9 +263,20 @@ func TestMutPrefixWithBuiltinCollections(t *testing.T) {
 			`,
 			expectErrors: false,
 		},
-		// NOTE: rejecting mut-self method calls on immutable receivers
-		// is a follow-up — the checker only enforces direct field writes
-		// today, so we only assert the positive cases for Map and Set.
+		"ImmutableMap_CannotClear": {
+			input: `
+				declare val m: Map<string, number>
+				m.clear()
+			`,
+			expectErrors: true,
+		},
+		"ImmutableSet_CannotAdd": {
+			input: `
+				declare val s: Set<number>
+				s.add(1)
+			`,
+			expectErrors: true,
+		},
 	}
 
 	for name, test := range tests {
