@@ -105,6 +105,18 @@ func TestIntersectionNormalization(t *testing.T) {
 		assert.Equal(t, "{a: string}", result.String())
 	})
 
+	// Regression: when (mut T) wraps a TypeVar whose Instance is bound to T,
+	// the second-pass MutType dedup must compare against the resolved type,
+	// not the type-var identity, so (mut tv) & T still collapses to T.
+	t.Run("(mut tv) & T returns T when tv resolves to T", func(t *testing.T) {
+		strType := NewStrPrimType(nil)
+		tv := NewTypeVarType(nil, 1)
+		tv.Instance = strType
+		mutTV := NewMutType(nil, tv)
+		result := NewIntersectionType(nil, mutTV, strType)
+		assert.Equal(t, "string", result.String())
+	})
+
 	t.Run("multiple unknown types are removed", func(t *testing.T) {
 		strType := NewStrPrimType(nil)
 		unknownType1 := NewUnknownType(nil)

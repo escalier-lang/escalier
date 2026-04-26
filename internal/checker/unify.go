@@ -2564,8 +2564,7 @@ func widenFuncType(fn *type_system.FuncType) *type_system.FuncType {
 }
 
 // widenTupleLiterals returns a copy of the TupleType with all element types
-// recursively widened (literals → primitives) and uncertain mutability wrappers
-// stripped.
+// recursively widened (literals → primitives).
 func widenTupleLiterals(tuple *type_system.TupleType) *type_system.TupleType {
 	newElems := make([]type_system.Type, len(tuple.Elems))
 	changed := false

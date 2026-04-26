@@ -1846,10 +1846,13 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 	finalNormalized := []Type{}
 	for _, t := range normalized {
 		if mut, ok := t.(*MutType); ok {
-			// Check if immutable version exists in normalized using Equals
+			// Prune mut.Type so a TypeVar bound to a concrete type compares
+			// equal to that concrete type — the first pass already pruned
+			// `normalized` entries the same way.
+			mutInner := Prune(mut.Type)
 			hasImmutable := false
 			for _, other := range normalized {
-				if other.Equals(mut.Type) {
+				if other.Equals(mutInner) {
 					hasImmutable = true
 					break
 				}

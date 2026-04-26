@@ -124,6 +124,39 @@ func TestWideningWithAliasedTypeVars(t *testing.T) {
 		"tvB should also see the widened type (alias consistency)")
 }
 
+// TestRebuildContainersNormalizesUnionAfterTypeVarBound verifies that
+// rebuildContainers re-runs container normalization when a TypeVar inside a
+// union has been bound to a concrete type. The setup mirrors a binding site:
+// a union `number | tv` is built before tv is resolved; once tv is bound to
+// the literal 10, calling rebuildContainers must collapse the union to
+// `number` via NewUnionType's literal-absorption pass.
+//
+// This locks in the contract that TypeVarType.Accept prunes through the
+// bound Instance and that UnionType.Accept rebuilds via NewUnionType when
+// children change.
+func TestRebuildContainersNormalizesUnionAfterTypeVarBound(t *testing.T) {
+	numType := ts.NewNumPrimType(nil)
+
+	tv := ts.NewTypeVarType(nil, 1)
+	tv.FromBinding = true
+
+	union := ts.NewUnionType(nil, numType, tv)
+	// Before binding, the union should still have two members.
+	if u, ok := union.(*ts.UnionType); ok {
+		assert.Len(t, u.Types, 2, "union should have 2 members before tv is bound")
+	} else {
+		t.Fatalf("expected UnionType before binding, got %T", union)
+	}
+
+	// Bind tv to a literal 10. NewUnionType has already run, so the union
+	// still references the unbound tv.
+	tv.Instance = ts.NewNumLitType(nil, 10)
+
+	rebuilt := rebuildContainers(union)
+	assert.Equal(t, "number", rebuilt.String(),
+		"rebuildContainers should re-apply NewUnionType normalization, absorbing 10 into number")
+}
+
 // assertFlatUnionMembers verifies that t is a UnionType with exactly the
 // expected members at the top level (no nested unions).
 func assertFlatUnionMembers(t *testing.T, typ ts.Type, expected []ts.Type) {
