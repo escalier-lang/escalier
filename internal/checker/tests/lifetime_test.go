@@ -504,6 +504,26 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
 			},
 		},
+		"NestedFuncParamDefaultCapturesConstructorParam": {
+			// A nested function's parameter default expression evaluates
+			// in its enclosing scope (here, the setter body, where the
+			// constructor's `p` is visible). The capture visitor must
+			// visit nested-function param defaults BEFORE pushing the
+			// nested-function's own scope, otherwise the reference is
+			// silently dropped and the constructor fails to receive a
+			// lifetime. The setter body itself does not directly mention
+			// `p` — only the nested function's param default does.
+			input: `
+				class C(p: mut {x: number}) {
+					set q(mut self, v: number) {
+						val nested = fn(w = p) -> number { return 0 }
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> mut? C<'a>}",
+			},
+		},
 		"StaticMethodDoesNotCapture": {
 			// Phase 8.6 (#4): static methods can't access instance state,
 			// so they should never trigger constructor-param capture even

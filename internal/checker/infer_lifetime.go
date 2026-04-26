@@ -896,6 +896,13 @@ func collectMethodBodyCaptures(
 		paramNameToIndex: paramNameToIndex,
 		storedParams:     storedParams,
 	}
+	// Visit parameter defaults BEFORE pushing the method's own scope:
+	// defaults evaluate against the enclosing (constructor) scope where
+	// `paramNameToIndex` is keyed, so an unshadowed `p` in a default
+	// captures the constructor's `p`.
+	for _, p := range fn.Params {
+		v.visitParamDefaults(p.Pattern)
+	}
 	// The method's own params shadow constructor params with the same name.
 	v.pushScope()
 	for _, p := range fn.Params {
@@ -940,6 +947,44 @@ func (v *methodCaptureVisitor) addBindings(pat ast.Pat) {
 	collectPatternBindingNames(pat, v.shadowed[len(v.shadowed)-1])
 }
 
+// visitParamDefaults visits the default expression of every leaf in a
+// parameter pattern (IdentPat.Default, ObjShorthandPat.Default), recursing
+// through container patterns. Defaults evaluate in the *enclosing* scope
+// at call time, so this must be called BEFORE the param's own bindings
+// are added to the shadow stack — otherwise a default like `q = p` would
+// incorrectly resolve `p` against the freshly-shadowed inner binding
+// instead of the outer (constructor) scope.
+func (v *methodCaptureVisitor) visitParamDefaults(pat ast.Pat) {
+	if pat == nil {
+		return
+	}
+	switch p := pat.(type) {
+	case *ast.IdentPat:
+		if p.Default != nil {
+			p.Default.Accept(v)
+		}
+	case *ast.TuplePat:
+		for _, elem := range p.Elems {
+			v.visitParamDefaults(elem)
+		}
+	case *ast.ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				v.visitParamDefaults(e.Value)
+			case *ast.ObjShorthandPat:
+				if e.Default != nil {
+					e.Default.Accept(v)
+				}
+			case *ast.ObjRestPat:
+				v.visitParamDefaults(e.Pattern)
+			}
+		}
+	case *ast.RestPat:
+		v.visitParamDefaults(p.Pattern)
+	}
+}
+
 func (v *methodCaptureVisitor) isShadowed(name string) bool {
 	for _, s := range v.shadowed {
 		if s.Contains(name) {
@@ -972,6 +1017,12 @@ func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
 		// duration of its body. Drive the body traversal manually so
 		// the param-scope wraps the body's own block scope; return
 		// false to suppress the framework's default child recursion.
+		// Param defaults must be visited BEFORE pushing the new scope —
+		// they resolve against the enclosing scope, not the
+		// freshly-shadowed inner one.
+		for _, p := range ex.Params {
+			v.visitParamDefaults(p.Pattern)
+		}
 		v.pushScope()
 		for _, p := range ex.Params {
 			v.addBindings(p.Pattern)
@@ -1000,9 +1051,14 @@ func (v *methodCaptureVisitor) EnterDecl(d ast.Decl) bool {
 		return false
 	case *ast.FuncDecl:
 		// Nested function declaration: similar to FuncExpr, its params
-		// shadow outer names within its body.
+		// shadow outer names within its body. Param defaults resolve
+		// against the enclosing scope and must be visited BEFORE the
+		// new param scope is pushed.
 		if dd.Body == nil {
 			return false
+		}
+		for _, p := range dd.Params {
+			v.visitParamDefaults(p.Pattern)
 		}
 		v.pushScope()
 		for _, p := range dd.Params {
