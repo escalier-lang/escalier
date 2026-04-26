@@ -231,6 +231,11 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		}
 		funcSigType.Throws = type_system.NewNeverType(nil)
 		c.closeOpenParams(funcSigType)
+
+		// Phase 8.3: infer lifetimes for generator yields. Yields aliasing
+		// parameters propagate the lifetime to T inside Generator<T, ...>.
+		c.InferLifetimes(astParams, body, funcSigType, isAsync)
+
 		return errors
 	}
 
@@ -258,7 +263,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	// Infer lifetime parameters from the body. This must run after returnType
 	// has been unified into funcSigType.Return so that the lifetime is attached
 	// to the same type the caller will see.
-	c.InferLifetimes(astParams, body, funcSigType)
+	c.InferLifetimes(astParams, body, funcSigType, isAsync)
 
 	return errors
 }

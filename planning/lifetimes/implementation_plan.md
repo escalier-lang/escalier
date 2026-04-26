@@ -1359,132 +1359,156 @@ function bodies.
 The initial Phase 8 PR delivers a foundational subset; the following items are
 **deferred to a follow-up PR** so they can be reviewed and tested in isolation:
 
-- **8.3 element-level vs. container-level lifetimes.** Inference produces
-  container-level lifetimes (`'a Array<T>`) for any return that aliases a
-  parameter. Element-level inference (`Array<'a T>` for fresh-container,
-  aliased-elements returns from `.filter`/`.slice`/array-literal-of-aliases)
-  is not yet implemented.
-  - **Rest parameters (`...args: T[]`).** `InferLifetimes` skips rest
-    params entirely (see explicit `case *ast.RestPat` in
-    [infer_lifetime.go:65-79](../../internal/checker/infer_lifetime.go#L65-L79)).
-    A function like `fn first(...args: mut {x: number}[]) -> mut {x: number}`
-    that returns `args[0]` should infer `<'a>` on the element type and
-    on the return; today it produces no lifetime, the same wrong shape
-    as for a non-rest array param. Treatment falls out of element-level
-    lifetimes: descend into the rest pattern, attach the lifetime to the
-    *element* type (not the container, which is freshly assembled per
-    call), and unify against caller-arg lifetimes at call sites (each
-    caller arg must outlive the element lifetime). Aliasing analysis on
-    the body side will also need to recognize that `args[i]` is an
-    element-of source, not a container source — the existing
-    `DetermineAliasSource` will need an "element-of" alias variant for
-    this to work cleanly.
-  - **Destructured parameters (`fn f([a, b]: [mut P, mut P])`,
-    `fn g({x, y}: mut P)`).** `InferLifetimes` skips any param whose
-    pattern is not a bare `IdentPat`, including all tuple/object
-    destructuring patterns (see the `switch` in
-    [infer_lifetime.go:65-79](../../internal/checker/infer_lifetime.go#L65-L79)
-    and the comment on [line 64](../../internal/checker/infer_lifetime.go#L64)).
-    Body-side liveness/alias analysis already tracks the leaf bindings
-    correctly via Phase 7's destructuring-alias work; the gap is on the
-    *param-side wiring*. The current `VarID → param index` map assumes
-    one VarID per parameter, but a destructured param produces N leaf
-    VarIDs and no top-level "whole-param" VarID. Two reasonable
-    implementation shapes:
-    - *Synthesize a top-level param VarID* and treat each leaf binding
-      as if it were `let a = paramSlot.x` introduced at body entry.
-      The existing property/element-projection alias machinery (Phase 7)
-      takes over from there, and `InferLifetimes` just maps the
-      synthetic VarID to its param index. Most uniform with Phase 7;
-      requires a small AST/IR addition for the synthetic slot.
-    - *Track projection paths per leaf VarID* by extending `paramIndex`
-      to `VarID → (paramIndex, projection path)` and generalizing
-      `setLifetimeOnType` to attach a lifetime at a sub-position rather
-      than only at the top. No AST changes; more bookkeeping in this
-      file. Recommended starting shape — keeps the change localized.
+- **8.3 element-level vs. container-level lifetimes.** `InferLifetimes`
+  now walks each parameter's pattern in lockstep with the parameter's
+  inferred type via `collectParamLeaves`, producing a list of
+  `(VarID, leafType)` pairs for every leaf binding. Lifetime allocation
+  and attachment use these leaves rather than the top-level param,
+  which generalizes the analysis to:
+  - **Tuple-destructured parameters** (`fn f([a, b]: [mut P, mut P])`):
+    each leaf gets its own lifetime when aliased by a return; only
+    leaves actually returned receive a lifetime, matching the behavior
+    of non-destructured params. The leaf's lifetime is attached to the
+    corresponding sub-position of the param's tuple type and shows up
+    inline in the printed destructured form.
+  - **Rest parameters** (`...args: Array<T>`): the leaf's `leafType`
+    points at the array's *element* type `T` rather than the container,
+    since the array is freshly assembled per call. Returns of `args[i]`
+    inherit the element-level lifetime, producing
+    `<'a>(...args: Array<mut 'a T>) -> mut 'a T`.
+  - As part of this change, `runLivenessPrePass` was fixed to walk
+    destructuring-pattern leaves when computing `astParamNames`,
+    preventing the rename pass from double-defining destructured leaf
+    bindings (once via `renamePat` walking the pattern, once via the
+    `extraParamNames` path). Without that fix the leaf's `IdentPat.VarID`
+    was stale relative to the body's `IdentExpr.VarID`.
 
-    Either way, the inferred signature should be able to express
-    per-field lifetimes for destructured composite params, e.g.:
+  - **Object-destructured parameters** (`fn g({head, tail}: {head: mut P, tail: mut P})`):
+    the walker now handles `*ast.ObjectPat` by building a key→Type
+    lookup against the corresponding ObjectType's PropertyElems and
+    descending per leaf. Both shorthand (`{ head, tail }`) and
+    key-value (`{ head: first, tail: second }`) patterns are
+    supported. ObjRestPat (`{ ...rest }`) is intentionally skipped —
+    like a function rest param's container, the rest object is
+    freshly assembled per call, and per-property element lifetimes
+    for it are deferred (would require synthesizing a per-call
+    object type).
 
-    ```esc
-    fn pickFirst<'a, 'b>(
-        {head, tail}: {head: mut 'a Point, tail: mut 'b Point}
-    ) -> mut 'a Point { return head }
-    ```
-
-    This is the same per-position lifetime story as `Pair<'a, 'b>` from
-    Phase 8.6, just expressed through destructuring rather than class
-    fields. The semantics piggyback on Phase 7's existing
-    destructuring-alias work; this deferral is purely about the
-    param-side bookkeeping in `InferLifetimes`.
-- **8.3 generator yield lifetimes.** `yield` is treated as a fresh value;
-  `Generator<'a T, _, _>` propagation from yields is not yet implemented.
-- **8.4 escaping reference detection.** `DetectEscapingRefs` and the
-  `'static` lifetime assignment for parameters stored into module-level state
-  are not yet implemented.
+  Still deferred:
+  - **Element-level lifetimes from fresh-container returns**
+    (`return [a, b]` producing `Array<'a T>`, `.filter()` /
+    `.slice()` propagation): the alias-source machinery still treats
+    array literals as fresh and built-in array methods don't carry
+    lifetime annotations. Closing this requires extending
+    `DetermineAliasSource` with an "element-of" variant and annotating
+    the prelude.
+- **8.3 generator yield lifetimes.** `InferLifetimes` now collects every
+  non-delegate `yield expr` value alongside `return` expressions. When
+  the function's return type is `Generator<T, TReturn, TNext>` (or
+  `AsyncGenerator<...>`), the lifetime is attached to T (the yield
+  type) rather than to the Generator container itself, so each yielded
+  value carries the lifetime. Concretely,
+  `fn iter(p: mut Point) -> Generator<mut Point, void, never> { yield p }`
+  infers `<'a>(p: mut 'a Point) -> Generator<mut 'a Point, void, never>`.
+  `inferFuncBodyWithFuncSigType` was extended to call `InferLifetimes`
+  in the generator branch (which previously short-circuited).
+  Still deferred: `yield from` (delegate yield) propagation from the
+  inner iterator's element type, and lifetime inference for the
+  generator's `TReturn` slot from explicit `return value` paths.
+- **8.3 async generators.** `inferLifetimesCore` branches on
+  `isGenerator` (yields → yield type) vs. `isAsync` (returns →
+  Promise value type), but the combined async-generator case isn't
+  exercised end-to-end. Although `generatorYieldType` already
+  recognizes `AsyncGenerator<T, TReturn, TNext>` so yields *should*
+  flow to T, there are no tests covering `async fn*` with
+  parameter-aliasing yields, and the `return value` → TReturn slot
+  inherits the same TReturn deferral as regular generators (returns
+  in an async generator do not wrap into Promise). Closing this
+  requires test coverage for parameter-aliasing yields in async
+  generators and, alongside the regular-generator TReturn work,
+  inferring the lifetime on TReturn from explicit `return value`
+  paths.
+- **8.4 escaping reference detection.** `DetectEscapingRefs` walks a
+  function body for assignment expressions whose lvalue root is a
+  non-local identifier (VarID ≤ 0, set by the rename pass for
+  outer-scope references) and whose RHS aliases one of the function's
+  parameters. Such parameters are assigned `'static` directly via a
+  `LifetimeValue{IsStatic: true}` on their type, bypassing the regular
+  fresh-`'a` allocation path. When the function also returns an
+  escaping param, the return type inherits `'static` (combined with any
+  non-escaping return-aliased lifetimes via `LifetimeUnion`).
+  Limitations: closures over a *nested* function's local will still
+  mark a param as `'static` (over-conservative but sound — the
+  borrow-checker accepts a stricter signature); stores via property
+  assignment whose root is a local but is itself stored elsewhere are
+  not chained-tracked.
 - **8.6 implicit captures from method bodies.** `InferConstructorLifetimes`
-  detects "param is stored on the instance" purely from `*ast.FieldElem`
-  syntax in the class body — shorthand fields (`{ p, }`) and explicit
-  identifier-valued fields (`{ p: p, }`). `*ast.MethodElem` nodes are
-  skipped entirely (see the `if !ok { continue }` at
-  [infer_lifetime.go:256-259](../../internal/checker/infer_lifetime.go#L256-L259)).
-  But Escalier lets a method body reference constructor parameters by
-  name without going through `self`, so:
+  now walks instance method bodies looking for `IdentExpr` references
+  whose name matches a constructor parameter, and adds matching indices
+  to `storedParams` so the constructor gets a lifetime on those params.
+  The walk respects shadowing introduced by inner function params and
+  by `let`/`var` declarations within the method body, and skips static
+  methods, nested classes, and nested function declarations. The
+  matching is by name (not VarID) because `InferConstructorLifetimes`
+  runs during the namespace placeholder phase, before the rename pass
+  populates VarIDs on identifiers in method bodies.
 
-  ```esc
-  class C(p: mut Point) { foo(self) { return p } }
-  ```
+  **Status note:** the analysis is in place but currently dormant
+  end-to-end, because Escalier's method-body scope does not (yet) bring
+  constructor parameters into scope by name — `class C(p) { foo(self) { return p } }`
+  produces an "Unknown identifier: p" type error today. Once the
+  language wires constructor params into method-body scope, the
+  capture detection will activate without further changes.
 
-  is operationally equivalent to:
-
-  ```esc
-  class C(p: mut Point) { p, foo(self) { return self.p } }
-  ```
-
-  yet only the second form gets a lifetime parameter today. The first
-  form silently falls out of the analysis: `storedParams` is empty, no
-  `<'a>` is inferred, and the borrow checker cannot enforce that
-  `C` instances must outlive their captured `p`. This is a **soundness
-  gap** — a caller who constructs `C` from a short-lived borrow can
-  call `c.foo()` after that borrow is gone with no diagnostic.
-
-  Treatment: extend the body walk in `InferConstructorLifetimes` to
-  inspect `*ast.MethodElem` nodes. For each method, walk the method
-  body and collect `IdentExpr` references whose VarID resolves to a
-  constructor parameter; treat any such reference as an implicit
-  capture and add the param's index to `storedParams`. The same VarID
-  set should also feed `InferLifetimes` when it analyzes the method
-  body, so that method return types correctly inherit the captured
-  param's lifetime (e.g. `foo<'a>('a self) -> mut 'a Point` for the
-  example above).
-
-  Static methods (if/when added) should be exempt from capture
-  detection since they don't have access to instance state.
-
+  Still deferred: feeding the captured-param VarID set into
+  `InferLifetimes` so that the *method's* return type inherits the
+  captured param's lifetime (e.g. `foo<'a>('a self) -> mut 'a Point`).
+  The constructor-side lifetime — which is the soundness-critical part
+  — is now handled.
 - **8.6 storage through nested expressions and literals.** Field-init
-  expressions whose value is anything other than a bare identifier are
-  not analyzed today. Concretely, `class C(p: mut P) { x: f(p) }`,
-  `class C(p: mut P) { x: {inner: p} }`, and similar shapes leave the
-  param unstored from the analysis's perspective. Treatment: walk the
-  initializer expression looking for any path that retains a borrow of
-  the parameter — same kind of structural traversal the body-side
-  alias analysis already does for property/element projections.
-- **8.6 non-identity field-initializer expressions.** Even when an
-  expression *does* reference a constructor parameter, the current
-  analysis only treats `field: param` (an exact identity initializer)
-  as a store. `field: param.x`, `field: borrow(param)`, and
-  intermediate-let binding (`let q = p; field: q`) are all skipped.
-  Treatment overlaps with the previous bullet: use the existing alias
-  machinery to resolve the initializer's actual borrow source.
-- **8.7 mutually recursive fixed-point iteration.** Lifetime inference runs
-  once per function during the existing dep-graph traversal. Self-recursive
-  functions work as long as their lifetime is determined by a non-recursive
-  return; mutual recursion that requires fixed-point iteration is deferred.
-- **`LifetimeUnion` inference at call sites.** The `LifetimeUnion` type
-  exists and parses, and `InferLifetimes` records multi-source returns, but
-  the call-site path that adds the result to *all* corresponding arguments'
-  alias sets is best-effort — it works for the simple two-branch case and
-  may be tightened later.
+  expressions are now walked structurally by `findCapturedParamsInExpr`,
+  which descends into object literals (including shorthand props),
+  tuple literals, member/index access, type casts, await, and
+  conditional branches. Function-call initializers (`x: f(p)`) are
+  still not analyzed — calls are treated as fresh; tightening this
+  would require lifetime info from callees that may not yet be
+  resolved at the point where `InferConstructorLifetimes` runs.
+- **8.6 non-identity field-initializer expressions.** `field: p.x`,
+  `field: {inner: p}`, `field: [p, q]`, and analogous projection /
+  composite expressions are now recognized via the
+  `findCapturedParamsInExpr` walker described above.
+  Intermediate-let bindings inside a class-body initializer are still
+  not tracked (none of the field initializers in scope today are
+  multi-statement blocks).
+- **8.7 mutually recursive fixed-point iteration.** `InferComponent` now
+  does a single re-run pass over the FuncDecls in any SCC of size > 1
+  after their initial inference. The re-run picks up lifetimes for any
+  function that didn't infer them on its first pass — its peers may now
+  have lifetime info that wasn't available the first time. Functions
+  that DID infer lifetimes on the first pass are skipped by
+  `InferLifetimes`' early-return guard.
+  This required two supporting fixes: (1) `InferLifetimes` now uses
+  `determineCheckerAliasSource` (the call-aware variant) when collecting
+  return-source aliases, so peer-function lifetimes propagate through
+  call expressions; (2) `determineCheckerAliasSource` no longer gates
+  on `fnType.LifetimeParams` being non-empty — by the time a call is
+  type-checked, callee-side instantiation may have cleared
+  `LifetimeParams` while leaving the lifetime vars themselves attached
+  to the param/return types. Presence of a lifetime on the return type
+  is now the authoritative signal.
+  Still deferred: a true fixed-point loop that iterates until no
+  changes (the current implementation does exactly one re-run, which
+  is enough for most 2-cycle mutual recursion cases but not for chains
+  requiring 3+ iterations).
+- **`LifetimeUnion` inference at call sites.** Verified end-to-end via
+  `TestCallSiteAliasFromLifetimeUnion`: when a function returning
+  `('a | 'b) Point` is called, the result variable joins the alias
+  sets of *both* arguments via `lifetimeVarIDs` walking the union
+  members and matching against each parameter's lifetime. The behavior
+  was already correct for two-branch unions; the `determineCheckerAliasSource`
+  change for Phase 8.7 (no longer gating on `LifetimeParams`) made this
+  work robustly even after callee instantiation clears the
+  `LifetimeParams` list.
 
 The deferred items do not block the rest of Phase 8 from being usable: callers
 of annotated or inferred functions get correct alias-set updates for

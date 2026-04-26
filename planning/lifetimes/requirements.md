@@ -2062,6 +2062,23 @@ because `shared` is permanently live and mutable.
   analogous to Rust's MIR "place" system. The workaround for the
   variable-level model is to extract properties into separate variables
   before freezing, which gives each its own alias set.
+- **Projection-level lifetime attachment for constructor capture:** When
+  a class field initializer captures a constructor parameter through a
+  projection (e.g. `class Wrap(p: mut {x: {y: number}}) { inner: p.x }`),
+  the inferred fresh `'a` is attached to the entire param's type
+  (`mut 'a {x: {y: number}}`) rather than to the captured sub-position
+  (`mut {x: mut 'a {y: number}}`). The capture detector in
+  `findCapturedParamsInExpr` currently records only *which* param was
+  captured, not the projection path within it; reaching projection-level
+  precision would require tracking `(paramIdx, path)` pairs and walking
+  the param's type to set the lifetime on the matching sub-position.
+  Related to "Property-level alias sets" above — both are forms of
+  path-aware precision deferred from the variable-level baseline and
+  could share a common path-representation infrastructure, though they
+  sit in different parts of the system (constructor lifetime inference
+  vs. borrow-checker alias tracking). The current attachment is sound
+  but over-conservative: the whole param is treated as bounded by
+  `'a` even when only a sub-position needed to be.
 
 ## Error Messages
 

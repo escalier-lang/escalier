@@ -24,11 +24,15 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 	// Compute extra param names: bindings in paramBindings that are not in
 	// astParams (e.g. implicit 'self' in methods). These need positive VarIDs
 	// so their uses in the body are tracked as local variables.
+	//
+	// Walk destructuring patterns recursively so that every leaf name bound
+	// by an explicit pattern is recognized — otherwise the rename pass would
+	// also re-define those names from paramBindings, leaving the
+	// pattern-leaf's IdentPat.VarID stale relative to what the body's
+	// IdentExpr.VarID resolves to.
 	astParamNames := set.NewSet[string]()
 	for _, p := range astParams {
-		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
-			astParamNames.Add(identPat.Name)
-		}
+		collectPatternBindingNames(p.Pattern, astParamNames)
 	}
 	var extraParamNames []string
 	for name := range paramBindings {
@@ -49,20 +53,18 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 
 	// Initialize alias tracker and seed parameters so that aliases from
 	// parameters are tracked and mutability transitions are detected.
+	//
+	// Walk every parameter pattern recursively so destructured leaves
+	// (e.g. `head` in `{head, tail}: ...` or `tail` in `[head, ...tail]`)
+	// each get their own alias set. Seeding only top-level IdentPats
+	// would leave destructured leaves untracked, and AddAlias against
+	// an unseeded VarID is a silent no-op — masking transition errors
+	// against the leaves. Read VarIDs directly from the AST nodes
+	// (the rename pass above wrote them there) and look up the leaf's
+	// type by name in paramBindings, which inferPattern populated with
+	// one entry per leaf.
 	aliases := liveness.NewAliasTracker()
-	for _, param := range astParams {
-		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.VarID > 0 {
-			varID := liveness.VarID(identPat.VarID)
-			// Determine mutability from the parameter's type binding in scope.
-			mut := liveness.AliasImmutable
-			if binding := ctx.Scope.Namespace.Values[identPat.Name]; binding != nil {
-				if isMutableType(binding.Type) {
-					mut = liveness.AliasMutable
-				}
-			}
-			aliases.NewValue(varID, mut)
-		}
-	}
+	seedParamLeafAliases(astParams, paramBindings, aliases)
 	// Seed extra params (e.g. 'self') into the alias tracker.
 	for name, varID := range renameResult.ExtraParamVarIDs {
 		mut := liveness.AliasImmutable
@@ -79,6 +81,29 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 	ctx.Aliases = aliases
 	ctx.StmtToRef = stmtToRef
 	ctx.VarIDNames = renameResult.VarIDNames
+}
+
+// seedParamLeafAliases walks each parameter pattern recursively and seeds
+// the alias tracker with one alias set per leaf binding. The mutability of
+// each leaf is read from its corresponding paramBindings entry so that
+// transitions involving the leaf are checked correctly.
+func seedParamLeafAliases(
+	astParams []*ast.Param,
+	paramBindings map[string]*type_system.Binding,
+	aliases *liveness.AliasTracker,
+) {
+	for _, param := range astParams {
+		forEachLeafBinding(param.Pattern, func(name string, varID int) {
+			if varID <= 0 {
+				return
+			}
+			mut := liveness.AliasImmutable
+			if binding := paramBindings[name]; binding != nil && isMutableType(binding.Type) {
+				mut = liveness.AliasMutable
+			}
+			aliases.NewValue(liveness.VarID(varID), mut)
+		})
+	}
 }
 
 // collectOuterBindings walks the scope chain and collects all value binding

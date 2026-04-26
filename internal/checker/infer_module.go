@@ -1244,6 +1244,43 @@ func (c *Checker) InferComponent(
 		}
 	}
 
+	// Phase 8.7 (best-effort): for SCCs of size > 1 (mutually recursive
+	// function groups), do a single re-run pass over the component's
+	// FuncDecls. The re-run picks up lifetimes for any function that
+	// didn't infer them on its first pass — its peers may now have
+	// lifetime info via determineCheckerAliasSource that wasn't
+	// available the first time. The re-run uses ReinferLifetimes
+	// (instead of InferLifetimes) so that functions whose first pass
+	// already inferred SOME lifetimes can still pick up additional ones
+	// via newly-resolved peer signatures (e.g. a return path through a
+	// peer call whose lifetime wasn't yet known on the first pass).
+	// User-explicit lifetimes (declared in the AST) are preserved by
+	// skipping the reinfer entry point for those decls.
+	//
+	// This is a one-pass re-run, not a true fixed-point — chains
+	// requiring 3+ iterations still won't converge fully. In practice
+	// most mutual-recursion cases need at most one re-run because
+	// Tarjan's SCC ordering processes each function's callees first
+	// within a simple cycle.
+	if len(component) > 1 {
+		for _, key := range sortedForDefs {
+			for _, decl := range depGraph.GetDecls(key) {
+				fd, ok := decl.(*ast.FuncDecl)
+				if !ok || fd.Body == nil {
+					continue
+				}
+				ft, ok := funcTypeForDecl[fd]
+				if !ok || ft == nil {
+					continue
+				}
+				if len(fd.FuncSig.LifetimeParams) > 0 {
+					continue
+				}
+				c.ReinferLifetimes(fd.FuncSig.Params, fd.Body, ft, fd.FuncSig.Async)
+			}
+		}
+	}
+
 	// Resolve any type references that were deferred during type annotation inference
 	// to allow for recursive definitions between type and variable declarations.
 	for _, refs := range typeRefsToUpdate {
