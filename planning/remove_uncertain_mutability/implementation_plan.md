@@ -58,7 +58,7 @@ Fixtures touched:
 - **TODO(#500)** — populate `mutabilityOverrides` for `Date`, `Promise`, `Error`, and other classes whose methods mutate the receiver. Without this, mut-self gating silently misses these classes.
 - The `objType.Open` short-circuit assumes open objects only hold `PropertyElem`/`RestSpreadElem`. Currently true; if methods ever get added to open objects, revisit.
 
-## Phase 2 — Remove `mut?`
+## Phase 2 — Remove `mut?` ✅ Landed
 
 ### Audit every `mut?` creation site
 
@@ -99,6 +99,14 @@ This is a single forward pass, runs immediately after body inference, and produc
 
 Note: `removeUncertainMutability` is **not currently called from `generalize.go`** — its only call sites are in `unify.go`. Still audit [internal/checker/generalize.go](../../internal/checker/generalize.go) for any direct `MutabilityUncertain` checks or assumptions that a `mut?` wrapper may appear on the input. After Phase 2, generalize sees only definite types.
 
+### What actually landed (post-implementation notes)
+
+- **`removeUncertainMutability` was not pure deletion — it was renamed to `rebuildContainers` and kept.** The old visitor had two effects: stripping `mut?` (its declared purpose) AND rebuilding containers as it walked via `Accept` (an incidental side effect). The container-rebuild turned out to be load-bearing — three generic-method tests (`ClassWithGenericMethod`, `ObjectWithGenericMethods`, `GenericClassWithGenericMethods`) fail without it. Empirically verified: deleting `rebuildContainers` and re-running tests reproduces the failures. The new function preserves only the rebuild behavior, called at the same `FromBinding` sites in `bind()`. See the comment at [internal/checker/unify.go:2069](../../internal/checker/unify.go#L2069).
+- **`finalizeOpenObject` (in `generalize.go`) replaces `RemoveUncertainMutabilityVisitor` for open-object resolution.** Walks param open-object trees post-body-inference; if any property has `Written == true` (or recurses into a nested open object that does), wraps the param in `mut`. Invariant documented in the function's docstring: open-object property values are always TypeVars, never pre-wrapped in `MutabilityType`.
+- **`MutabilityUncertain` constant fully removed.** `Mutability` is now effectively a single-value enum (`MutabilityMutable = "!"`). Kept as a typed const in case more variants are added later.
+- **`printMutabilityType` lost the `mut?` case** and now panics on unknown mutability values via `default`.
+- **Phase 2 follow-ups not done in this pass**: legacy code-modernization lints (rangeint, minmax, QF1003) flagged in `unify.go` and `generalize.go` are pre-existing and out of scope.
+
 ### Tests and fixtures
 
 - Mass-update fixtures: every `"mut? Foo"` in expected-type strings becomes `"Foo"` (or `"mut Foo"` for the open-object case where the body mutates). Likely 30–50 fixtures across [infer_class_decl_test.go](../../internal/checker/tests/infer_class_decl_test.go), [lifetime_test.go](../../internal/checker/tests/lifetime_test.go), and others.
@@ -125,14 +133,14 @@ Note: `removeUncertainMutability` is **not currently called from `generalize.go`
 | Phase                                        | Effort       | Status / Risk                                                  |
 | -------------------------------------------- | ------------ | -------------------------------------------------------------- |
 | Phase 1 (mut-self gate + LSP)                | ~half-day    | ✅ Landed. Open-object hazard sidestepped via `objType.Open` short-circuit. |
-| Phase 2 (`mut?` removal + finalization pass) | 2–4 days     | Open-object finalization is the unknown                        |
+| Phase 2 (`mut?` removal + finalization pass) | 2–4 days     | ✅ Landed. `removeUncertainMutability` retained as `rebuildContainers` (load-bearing for FromBinding TypeVar normalization). |
 | Phase 3 (fixture sweep + new tests)          | ~half-day    | Mechanical                                                     |
-| **Total**                                    | **3–5 days** | Phase 1 done; Phase 2 next.                                    |
+| **Total**                                    | **3–5 days** | Phases 1–2 done; Phase 3 next.                                 |
 
 ## Verification
 
-1. `go test ./...` green after each phase. ✓ (Phase 1)
-2. `grep -r "mut?" internal/` and `grep -r "MutabilityUncertain" internal/` both return zero hits after Phase 2.
+1. `go test ./...` green after each phase. ✓ (Phases 1–2)
+2. `grep -r "mut?" internal/` and `grep -r "MutabilityUncertain" internal/` both return zero hits after Phase 2. ✓
 3. LSP completion at `immutablePoint.` does not list any `mut self` methods; at `mutablePoint.` it does. ✓ (Phase 1)
 4. The receiver-mutability tests previously commented out in [mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go) are re-enabled and passing, plus type-var-receiver coverage. ✓ (Phase 1)
 5. Generated JS for existing programs is byte-identical (the change is purely type-level). ✓ (Phase 1; the only fixture JS deltas are removals of `obj1.increment.bind(obj1)` for the binding line that was deleted — no other diffs.)

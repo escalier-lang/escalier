@@ -2160,9 +2160,7 @@ func NewInferType(provenance Provenance, name string) *InferType {
 
 type Mutability string
 
-const (
-	MutabilityMutable Mutability = "!"
-)
+const MutabilityMutable Mutability = "!"
 
 type MutabilityType struct {
 	Type       Type

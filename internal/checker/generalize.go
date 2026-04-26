@@ -485,6 +485,11 @@ func (c *Checker) resolveCallSites(ctx Context) {
 // It checks all properties for Written flags (including nested open objects)
 // and wraps written nested objects in `mut`. Returns true if any property in
 // the tree was written to.
+//
+// Invariant: open object property values are always TypeVars (created by
+// newOpenObjectWithProperty) and are never pre-wrapped in MutabilityType —
+// nothing in the inference path produces MutabilityType-wrapped open objects
+// on property values.
 func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 	hasWritten := false
 	for _, elem := range openObj.Elems {
@@ -499,11 +504,9 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 		valPruned := type_system.Prune(prop.Value)
 		if nestedObj, ok := valPruned.(*type_system.ObjectType); ok && nestedObj.Open {
 			if finalizeOpenObject(nestedObj) {
-				if valTV, ok := prop.Value.(*type_system.TypeVarType); ok {
-					valTV.Instance = &type_system.MutabilityType{
-						Type:       nestedObj,
-						Mutability: type_system.MutabilityMutable,
-					}
+				prop.Value.(*type_system.TypeVarType).Instance = &type_system.MutabilityType{
+					Type:       nestedObj,
+					Mutability: type_system.MutabilityMutable,
 				}
 				// Nested writes propagate upward: the containing object
 				// is also considered written to.

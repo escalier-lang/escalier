@@ -2066,11 +2066,13 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				if typeVar1.Widenable {
 					targetType = widenLiteral(targetType)
 				}
+				// FromBinding TypeVars need re-normalization: a union/intersection
+				// built before its inner TypeVars were resolved may now collapse
+				// (e.g. `number | 10` → `number`).
 				if typeVar1.FromBinding {
 					targetType = rebuildContainers(targetType)
 				}
 				typeVar1.Instance = targetType
-				// QUESTION: What should the provenance be if t2 is a type_system.MutabilityType?
 				typeVar1.SetProvenance(&type_system.TypeProvenance{
 					Type: targetType,
 				})
@@ -2110,11 +2112,13 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				if typeVar2.Widenable {
 					targetType = widenLiteral(targetType)
 				}
+				// FromBinding TypeVars need re-normalization: a union/intersection
+				// built before its inner TypeVars were resolved may now collapse
+				// (e.g. `number | 10` → `number`).
 				if typeVar2.FromBinding {
 					targetType = rebuildContainers(targetType)
 				}
 				typeVar2.Instance = targetType
-				// QUESTION: What should the provenance be if t1 is a type_system.MutabilityType?
 				typeVar2.SetProvenance(&type_system.TypeProvenance{
 					Type: targetType,
 				})
