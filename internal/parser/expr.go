@@ -702,7 +702,7 @@ func canStartExpr(tt TokenType) bool {
 		// Grouping / collection starters
 		OpenParen, OpenBracket, OpenBrace,
 		// Expression-starting keywords
-		Fn, Async, Await, Yield, If, Match, Try, Throw, Do, LessThan:
+		Fn, Async, Await, Yield, If, Match, Try, Throw, Do, Mut, LessThan:
 		return true
 	default:
 		return false

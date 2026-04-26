@@ -66,6 +66,17 @@ func TestMutPrefixBindingTypes(t *testing.T) {
 			bindingName:  "p",
 			expectedType: "mut Point",
 		},
+		// Regression: `mut` must be recognized as an expression starter so
+		// it works in spread positions (and other contexts that use
+		// canStartExpr to gate further parsing).
+		"MutInArraySpread_Parses": {
+			input: `
+				class Point(x: number, y: number) { x, y, }
+				val arr = [...[mut Point(1, 2)]]
+			`,
+			bindingName:  "arr",
+			expectedType: "[mut Point]",
+		},
 	}
 
 	for name, test := range tests {
