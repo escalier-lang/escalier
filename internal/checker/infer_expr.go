@@ -480,7 +480,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						Source:     &ast.NodeProvenance{Node: expr},
 						Type:       selfType,
 						Assignable: false, // `self` cannot be reassigned
-						Mutable:    methodExpr.MutSelf != nil && *methodExpr.MutSelf,
+						Mutable:    *methodExpr.MutSelf,
 					}
 				}
 

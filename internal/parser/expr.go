@@ -430,7 +430,10 @@ func (p *Parser) primaryExpr() ast.Expr {
 			p.reportError(token.Span,
 				"'mut' is not allowed in expression position; use `val mut x = ...` to bind a mutable value")
 			p.lexer.consume() // consume 'mut'
-			return p.primaryExpr()
+			// Don't early-return: any prefix operators already collected in
+			// `ops` (e.g., the `-` in `-mut x`) still need to wrap the
+			// recovered expression so post-processing applies them.
+			expr = p.primaryExpr()
 		case Yield:
 			p.lexer.consume() // consume 'yield'
 

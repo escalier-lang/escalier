@@ -36,12 +36,16 @@ func nestedMutInParamErrors(pat ast.Pat) []Error {
 					}
 				case *ast.ObjKeyValuePat:
 					walk(e.Value, false)
+				case *ast.ObjRestPat:
+					walk(e.Pattern, false)
 				}
 			}
 		case *ast.TuplePat:
 			for _, elem := range p.Elems {
 				walk(elem, false)
 			}
+		case *ast.RestPat:
+			walk(p.Pattern, false)
 		}
 	}
 	walk(pat, true)

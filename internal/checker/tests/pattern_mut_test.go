@@ -126,6 +126,21 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 			`,
 			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
 		},
+		"FuncParamNestedTupleRestMut_Rejected": {
+			input: `
+				class Inner(v: number) { v, }
+				fn f([a, ...mut rest]: [Inner, ...Array<Inner>]) {}
+			`,
+			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
+		},
+		"FuncParamNestedObjectRestMut_Rejected": {
+			input: `
+				class Inner(v: number) { v, }
+				class Outer(a: Inner, b: Inner) { a, b, }
+				fn f({ a, ...mut rest }: Outer) {}
+			`,
+			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
+		},
 		"DestructureShorthand_MutLeafCanMutate": {
 			input: `
 				class Inner(v: number) { v, }

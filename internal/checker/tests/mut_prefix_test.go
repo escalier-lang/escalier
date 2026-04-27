@@ -230,6 +230,67 @@ func TestExpressionLevelMutRejected(t *testing.T) {
 	}
 }
 
+// TestExpressionLevelMutPreservesPrefixOps verifies that recovery from
+// `mut` in expression position keeps any unary prefix operators (`-`, `!`,
+// `+`) that have already been collected. Without preservation, `-mut x`
+// would parse as `x` rather than `-x`, silently changing the semantics
+// of the recovered AST.
+func TestExpressionLevelMutPreservesPrefixOps(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected ast.UnaryOp
+	}{
+		"UnaryMinus": {input: `val a = 1 val b = -mut a`, expected: ast.UnaryMinus},
+		"LogicalNot": {input: `val a = true val b = !mut a`, expected: ast.LogicalNot},
+		"UnaryPlus":  {input: `val a = 1 val b = +mut a`, expected: ast.UnaryPlus},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+
+			found := false
+			for _, err := range parseErrors {
+				if strings.Contains(err.Message, "'mut' is not allowed in expression position") {
+					found = true
+					break
+				}
+			}
+			require.Truef(t, found,
+				"expected parse error about expression-level 'mut', got %v", parseErrors)
+
+			require.NotNil(t, script, "expected a parsed script")
+			var bExpr ast.Expr
+			for _, stmt := range script.Stmts {
+				ds, ok := stmt.(*ast.DeclStmt)
+				if !ok {
+					continue
+				}
+				vd, ok := ds.Decl.(*ast.VarDecl)
+				if !ok {
+					continue
+				}
+				ip, ok := vd.Pattern.(*ast.IdentPat)
+				if !ok || ip.Name != "b" {
+					continue
+				}
+				bExpr = vd.Init
+				break
+			}
+			require.NotNil(t, bExpr, "expected to find init for `b`")
+			unary, ok := bExpr.(*ast.UnaryExpr)
+			require.Truef(t, ok,
+				"expected UnaryExpr for recovered `b`, got %T", bExpr)
+			assert.Equal(t, test.expected, unary.Op)
+		})
+	}
+}
+
 // TestMutPrefixWithBuiltinCollections confirms that the prelude merge of
 // Map/ReadonlyMap and Set/ReadonlySet correctly classifies methods so that
 // read methods work on immutable values while mutating methods require mut.
