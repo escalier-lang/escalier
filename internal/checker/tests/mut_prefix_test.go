@@ -13,50 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMutPrefixBindingTypes confirms the inferred type of bindings whose
-// pattern uses (or omits) `mut` on a call-expression initializer.
+// TestMutPrefixBindingTypes confirms that pattern-level `mut` flows
+// through a factory-function initializer (not just a constructor call).
+// The constructor-call and plain-binding cases live in
+// TestPatternLevelMut_BindingTypes.
 func TestMutPrefixBindingTypes(t *testing.T) {
 	tests := map[string]struct {
 		input        string
 		bindingName  string
 		expectedType string
 	}{
-		"BareConstructorCall_Immutable": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				val p = Point(5, 10)
-			`,
-			bindingName:  "p",
-			expectedType: "Point",
-		},
-		"MutConstructorCall_Mutable": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				val mut p = Point(5, 10)
-			`,
-			bindingName:  "p",
-			expectedType: "mut Point",
-		},
-		"MutConstructorCall_OnClassWithMutSelf": {
-			input: `
-				class Counter(count: number) {
-					count,
-					tick(mut self) -> number { return self.count }
-				}
-				val mut c = Counter(0)
-			`,
-			bindingName:  "c",
-			expectedType: "mut Counter",
-		},
-		"BareFunctionCall_Immutable": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				fn makePoint(x: number, y: number) -> Point { return Point(x, y) }
-				val p = makePoint(5, 10)
-			`,
-			bindingName:  "p",
-			expectedType: "Point",
-		},
 		"MutFunctionCall_Mutable": {
 			input: `
 				class Point(x: number, y: number) { x, y, }
@@ -81,50 +47,21 @@ func TestMutPrefixBindingTypes(t *testing.T) {
 	}
 }
 
-// TestMutPrefixMutationBehavior exercises the runtime-relevant consequences
-// of the mut prefix: mutating an immutable instance is rejected, and the
-// `mut` prefix unlocks mutation as well as `mut self` method calls.
+// TestMutPrefixMutationBehavior covers mut-receiver behaviors that aren't
+// in TestPatternLevelMut_MutationBehavior: binding a mut-self method
+// reference, the call-rejection path on an immutable receiver, factory
+// functions returning mut, and type-variable / alias receivers.
 //
 // Class declarations require module context; the mutation statements live
 // inside a function body so they are accepted by ParseLibFiles.
+//
+// expectedErrors is a list of substrings; each substring must match the
+// corresponding inference error in order. An empty list asserts no errors.
 func TestMutPrefixMutationBehavior(t *testing.T) {
 	tests := map[string]struct {
-		input        string
-		expectErrors bool
+		input          string
+		expectedErrors []string
 	}{
-		"ImmutableConstructor_CannotAssignField": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				fn test() {
-					val p = Point(5, 10)
-					p.x = 99
-				}
-			`,
-			expectErrors: true,
-		},
-		"MutConstructor_CanAssignField": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				fn test() {
-					val mut p = Point(5, 10)
-					p.x = 99
-				}
-			`,
-			expectErrors: false,
-		},
-		"MutInstance_CanCallMutSelfMethod": {
-			input: `
-				class Counter(count: number) {
-					count,
-					tick(mut self) -> number { self.count = self.count + 1 return self.count }
-				}
-				fn test() {
-					val mut c = Counter(0)
-					c.tick()
-				}
-			`,
-			expectErrors: false,
-		},
 		"MutInstance_CanBindMutSelfMethod": {
 			input: `
 				class Counter(count: number) {
@@ -136,7 +73,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					val t = c.tick
 				}
 			`,
-			expectErrors: false,
 		},
 		"ImmutableInstance_CannotCallMutSelfMethod": {
 			input: `
@@ -149,7 +85,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					c.tick()
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Callee is not callable"},
 		},
 		"MutFunctionCall_CanAssignField": {
 			input: `
@@ -160,7 +96,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					p.x = 99
 				}
 			`,
-			expectErrors: false,
 		},
 		"TypeVarReceiver_ImmutableConstraint_CannotCallMutSelfMethod": {
 			input: `
@@ -172,7 +107,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					return t.tick()
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Callee is not callable"},
 		},
 		"TypeVarReceiver_MutConstraint_CanCallMutSelfMethod": {
 			input: `
@@ -184,7 +119,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 					return t.tick()
 				}
 			`,
-			expectErrors: false,
 		},
 		"AliasReceiver_MutAliasNonGeneric_CanCallMutSelfMethod": {
 			input: `
@@ -196,7 +130,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 				declare val c: MutCounter
 				fn test() -> number { return c.tick() }
 			`,
-			expectErrors: false,
 		},
 		"AliasReceiver_MutAliasGeneric_CanCallMutSelfMethod": {
 			input: `
@@ -208,7 +141,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 				declare val c: MutT<Counter>
 				fn test() -> number { return c.tick() }
 			`,
-			expectErrors: false,
 		},
 		"AliasReceiver_ImmutableAlias_CannotCallMutSelfMethod": {
 			input: `
@@ -220,7 +152,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 				declare val c: Alias<Counter>
 				fn test() -> number { return c.tick() }
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Callee is not callable"},
 		},
 		"AliasReceiver_IdentityAliasOfMut_CanCallMutSelfMethod": {
 			input: `
@@ -232,7 +164,6 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 				declare val c: Identity<mut Counter>
 				fn test() -> number { return c.tick() }
 			`,
-			expectErrors: false,
 		},
 	}
 
@@ -250,27 +181,16 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 			inferCtx := Context{Scope: Prelude(c)}
 			inferErrors := c.InferModule(inferCtx, module)
 
-			if test.expectErrors {
-				assert.NotEmpty(t, inferErrors, "expected inference errors for %s", name)
-				for i, err := range inferErrors {
-					t.Logf("Error[%d]: %s", i, err.Message())
-				}
-			} else {
-				if len(inferErrors) > 0 {
-					for i, err := range inferErrors {
-						t.Logf("Unexpected Error[%d]: %s", i, err.Message())
-					}
-				}
-				assert.Empty(t, inferErrors, "expected no inference errors for %s", name)
-			}
+			assertExpectedErrors(t, test.expectedErrors, inferErrors)
 		})
 	}
 }
 
 // TestExpressionLevelMutRejected ensures the parser rejects `mut` in any
-// expression position. Pattern-level `mut` (`val mut x = …`,
-// `IdentPat.Mutable` / `ObjShorthandPat.Mutable`) is the only sanctioned
-// form for binding-side mutability — see `TestPatternLevelMut*`.
+// expression position, and that subsequent inference of the recovered AST
+// (the bare expression without `mut`) does not panic. Pattern-level `mut`
+// (`val mut x = …`, `IdentPat.Mutable` / `ObjShorthandPat.Mutable`) is the
+// only sanctioned form for binding-side mutability — see `TestPatternLevelMut*`.
 func TestExpressionLevelMutRejected(t *testing.T) {
 	tests := map[string]string{
 		"ExprMutOnCall":     `val x = mut foo()`,
@@ -287,7 +207,7 @@ func TestExpressionLevelMutRejected(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			p := parser.NewParser(ctx, source)
-			_, parseErrors := p.ParseScript()
+			script, parseErrors := p.ParseScript()
 
 			found := false
 			for _, err := range parseErrors {
@@ -298,6 +218,14 @@ func TestExpressionLevelMutRejected(t *testing.T) {
 			}
 			assert.Truef(t, found,
 				"expected parse error about expression-level 'mut', got %v", parseErrors)
+
+			// Recovered AST (the bare expression without `mut`) must still
+			// infer without panicking.
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			require.NotPanics(t, func() {
+				c.InferScript(inferCtx, script)
+			})
 		})
 	}
 }
@@ -307,50 +235,46 @@ func TestExpressionLevelMutRejected(t *testing.T) {
 // read methods work on immutable values while mutating methods require mut.
 func TestMutPrefixWithBuiltinCollections(t *testing.T) {
 	tests := map[string]struct {
-		input        string
-		expectErrors bool
+		input          string
+		expectedErrors []string
 	}{
 		"ImmutableMap_CanReadHas": {
 			input: `
 				declare val m: Map<string, number>
 				val x = m.has("hello")
 			`,
-			expectErrors: false,
 		},
 		"MutMap_CanClear": {
 			input: `
 				declare val m: mut Map<string, number>
 				m.clear()
 			`,
-			expectErrors: false,
 		},
 		"ImmutableSet_CanReadHas": {
 			input: `
 				declare val s: Set<number>
 				val x = s.has(1)
 			`,
-			expectErrors: false,
 		},
 		"MutSet_CanAdd": {
 			input: `
 				declare val s: mut Set<number>
 				s.add(1)
 			`,
-			expectErrors: false,
 		},
 		"ImmutableMap_CannotClear": {
 			input: `
 				declare val m: Map<string, number>
 				m.clear()
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Callee is not callable"},
 		},
 		"ImmutableSet_CannotAdd": {
 			input: `
 				declare val s: Set<number>
 				s.add(1)
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Callee is not callable"},
 		},
 	}
 
@@ -369,46 +293,8 @@ func TestMutPrefixWithBuiltinCollections(t *testing.T) {
 			inferCtx := Context{Scope: Prelude(c)}
 			_, inferErrors := c.InferScript(inferCtx, script)
 
-			if test.expectErrors {
-				assert.NotEmpty(t, inferErrors, "expected inference errors for %s", name)
-				for i, err := range inferErrors {
-					t.Logf("Error[%d]: %s", i, err.Message())
-				}
-			} else {
-				if len(inferErrors) > 0 {
-					for i, err := range inferErrors {
-						t.Logf("Unexpected Error[%d]: %s", i, err.Message())
-					}
-				}
-				assert.Empty(t, inferErrors, "expected no inference errors for %s", name)
-			}
+			assertExpectedErrors(t, test.expectedErrors, inferErrors)
 		})
 	}
 }
 
-// TestMutPrefixInExpr_InferenceRecovers ensures that after the parser
-// rejects `mut <expr>`, the recovered AST (the bare expression without
-// `mut`) still infers cleanly — no panics, no crashes.
-func TestMutPrefixInExpr_InferenceRecovers(t *testing.T) {
-	inputs := map[string]string{
-		"OnIdent":    `val a = 1 val b = mut a`,
-		"OnArrayLit": `val x = mut [1, 2, 3]`,
-	}
-	for name, input := range inputs {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-			p := parser.NewParser(ctx, source)
-			script, parseErrors := p.ParseScript()
-			require.NotEmpty(t, parseErrors, "expected parse error")
-
-			c := NewChecker(ctx)
-			inferCtx := Context{Scope: Prelude(c)}
-			require.NotPanics(t, func() {
-				c.InferScript(inferCtx, script)
-			})
-		})
-	}
-}

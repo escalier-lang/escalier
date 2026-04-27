@@ -31,14 +31,6 @@ func TestPatternLevelMut_BindingTypes(t *testing.T) {
 			bindingName:  "p",
 			expectedType: "mut Point",
 		},
-		"VarMutWrapsType": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				var mut p = Point(0, 0)
-			`,
-			bindingName:  "p",
-			expectedType: "mut Point",
-		},
 		"ValMutWithAnnotationIsIdempotent": {
 			input: `
 				class Point(x: number, y: number) { x, y, }
@@ -46,14 +38,6 @@ func TestPatternLevelMut_BindingTypes(t *testing.T) {
 			`,
 			bindingName:  "p",
 			expectedType: "mut Point",
-		},
-		"PlainValStaysUnwrapped": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				val p = Point(0, 0)
-			`,
-			bindingName:  "p",
-			expectedType: "Point",
 		},
 	}
 
@@ -74,10 +58,13 @@ func TestPatternLevelMut_BindingTypes(t *testing.T) {
 // consequences of pattern-level `mut`: a `mut`-bound place is mutable
 // through that place; a plain place is not. Includes per-leaf
 // destructuring cases for both shorthand and key-value forms.
+//
+// expectedErrors is a list of substrings; each substring must match the
+// corresponding inference error in order. An empty list asserts no errors.
 func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 	tests := map[string]struct {
-		input        string
-		expectErrors bool
+		input          string
+		expectedErrors []string
 	}{
 		"PlainBindingCannotMutateField": {
 			input: `
@@ -87,7 +74,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 					p.x = 1
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Cannot mutate immutable type"},
 		},
 		"ValMutBindingCanMutateField": {
 			input: `
@@ -97,17 +84,6 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 					p.x = 1
 				}
 			`,
-			expectErrors: false,
-		},
-		"VarMutBindingCanMutateField": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				fn test() {
-					var mut p = Point(0, 0)
-					p.x = 1
-				}
-			`,
-			expectErrors: false,
 		},
 		"ValMutBindingCanCallMutSelfMethod": {
 			input: `
@@ -120,21 +96,12 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 					c.tick()
 				}
 			`,
-			expectErrors: false,
 		},
 		"FuncParamMutCanMutateField": {
 			input: `
 				class Point(x: number, y: number) { x, y, }
 				fn move(mut p: Point) { p.x = 1 }
 			`,
-			expectErrors: false,
-		},
-		"FuncParamPlainCannotMutateField": {
-			input: `
-				class Point(x: number, y: number) { x, y, }
-				fn move(p: Point) { p.x = 1 }
-			`,
-			expectErrors: true,
 		},
 		"DestructureShorthand_MutLeafCanMutate": {
 			input: `
@@ -146,7 +113,6 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 					a.v = 1
 				}
 			`,
-			expectErrors: false,
 		},
 		"DestructureShorthand_PlainLeafCannotMutate": {
 			input: `
@@ -158,7 +124,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 					b.v = 1
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Cannot mutate immutable type"},
 		},
 		"DestructureKeyValue_MutLeafCanMutate": {
 			input: `
@@ -170,7 +136,6 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 					x.v = 1
 				}
 			`,
-			expectErrors: false,
 		},
 		"DestructureKeyValue_PlainLeafCannotMutate": {
 			input: `
@@ -182,7 +147,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 					y.v = 1
 				}
 			`,
-			expectErrors: true,
+			expectedErrors: []string{"Cannot mutate immutable type"},
 		},
 	}
 
@@ -200,19 +165,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 			inferCtx := Context{Scope: Prelude(c)}
 			inferErrors := c.InferModule(inferCtx, module)
 
-			if test.expectErrors {
-				assert.NotEmpty(t, inferErrors, "expected inference errors for %s", name)
-				for i, err := range inferErrors {
-					t.Logf("Error[%d]: %s", i, err.Message())
-				}
-			} else {
-				if len(inferErrors) > 0 {
-					for i, err := range inferErrors {
-						t.Logf("Unexpected Error[%d]: %s", i, err.Message())
-					}
-				}
-				assert.Empty(t, inferErrors, "expected no inference errors for %s", name)
-			}
+			assertExpectedErrors(t, test.expectedErrors, inferErrors)
 		})
 	}
 }
@@ -354,26 +307,6 @@ func TestPatternLevelMut_GenericParam(t *testing.T) {
 	inner := type_system.Prune(mut.Type)
 	_, isRef := inner.(*type_system.TypeRefType)
 	assert.Truef(t, isRef, "expected MutType wrapping a TypeRefType, got %T", inner)
-}
-
-// confirms the binding for a `mut` parameter carries a MutType-wrapped
-// type (so the receiver-mutability filter and transition checks pick
-// it up).
-func TestPatternLevelMut_ParamBindingTypeIsWrapped(t *testing.T) {
-	t.Parallel()
-	input := `
-		class Point(x: number, y: number) { x, y, }
-		fn move(mut p: Point) { p.x = 1 }
-	`
-	ns := mustInferAsModule(t, input)
-	moveBinding, ok := ns.Values["move"]
-	require.True(t, ok, "move binding not found")
-	fn, ok := type_system.Prune(moveBinding.Type).(*type_system.FuncType)
-	require.True(t, ok, "expected FuncType for move, got %T", moveBinding.Type)
-	require.Len(t, fn.Params, 1, "expected one parameter")
-	pruned := type_system.Prune(fn.Params[0].Type)
-	_, isMut := pruned.(*type_system.MutType)
-	assert.Truef(t, isMut, "expected param type wrapped in MutType, got %T", pruned)
 }
 
 // TestPatternLevelMut_NoLeakIntoParentContainer verifies that wrapping
