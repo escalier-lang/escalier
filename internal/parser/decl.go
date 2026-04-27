@@ -482,11 +482,12 @@ func (p *Parser) varDecl(
 	if pat == nil {
 		p.reportError(token.Span, "Expected pattern")
 		pat = ast.NewIdentPat(
-			"",
+			"", false,
+
 			nil,
 			nil,
-			ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID},
-		)
+			ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID})
+
 	}
 	end := pat.Span().End
 

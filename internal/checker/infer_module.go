@@ -1104,6 +1104,12 @@ func (c *Checker) InferComponent(
 
 							// For static methods, no 'self' parameter is added
 
+							// `Mutable` is derived from the type, not the AST pattern's
+							// `Mutable` flag, on purpose: this catches both `mut p: T`
+							// (pattern-level mut, set by inferFuncParams' MutType wrap)
+							// and `p: mut T` (annotation-level mut, set by inferTypeAnn).
+							// Either form means the binding sees a mut value, so the
+							// structural test on param.Type is the unifying source of truth.
 							for _, param := range methodType.Fn.Params {
 								if param.Pattern != nil {
 									_, isMut := param.Type.(*type_system.MutType)
@@ -1166,7 +1172,10 @@ func (c *Checker) InferComponent(
 
 							// For static getters, no 'self' parameter is added
 
-							// Add any explicit parameters from the getter function signature
+							// Add any explicit parameters from the getter function signature.
+							// `isMut` is derived from param.Type (not the AST pattern flag)
+							// to catch both `mut p: T` and `p: mut T` uniformly — see the
+							// MethodElem case above for the full rationale.
 							for _, param := range getterType.Fn.Params {
 								if param.Pattern != nil {
 									_, isMut := param.Type.(*type_system.MutType)
@@ -1232,7 +1241,10 @@ func (c *Checker) InferComponent(
 
 							// For static setters, no 'self' parameter is added
 
-							// Add any explicit parameters from the setter function signature
+							// Add any explicit parameters from the setter function signature.
+							// `isMut` is derived from param.Type (not the AST pattern flag)
+							// to catch both `mut p: T` and `p: mut T` uniformly — see the
+							// MethodElem case above for the full rationale.
 							for _, param := range setterType.Fn.Params {
 								if param.Pattern != nil {
 									_, isMut := param.Type.(*type_system.MutType)

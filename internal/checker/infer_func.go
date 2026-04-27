@@ -43,6 +43,16 @@ func (c *Checker) inferFuncParams(
 		// `p` as a mutable place. The pattern's binding already carries
 		// the wrap from inferPattern; here we mirror it onto the
 		// FuncParam.Type that flows into the generalized signature.
+		//
+		// Only the top-level IdentPat case is handled: a destructuring
+		// param like `fn f({mut a, b}: Outer)` deliberately leaves
+		// FuncParam.Type unwrapped. The per-leaf binding still gets the
+		// MutType wrap via inferPattern, so `a` is mutable inside the
+		// body — but the *parameter's* type stays `Outer`, not
+		// `mut Outer`, because the caller passes an Outer value and
+		// only the leaves are mut-bound. Wrapping the param type would
+		// leak per-leaf mut into the call-site signature, which is the
+		// same no-leak invariant inferPattern enforces (see infer_pat.go).
 		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.Mutable {
 			if _, alreadyMut := typeAnn.(*type_system.MutType); !alreadyMut {
 				typeAnn = type_system.NewMutType(

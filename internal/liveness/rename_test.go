@@ -40,7 +40,7 @@ func ident(name string) *ast.IdentExpr {
 
 // Helper to build an identifier pattern.
 func identPat(name string) *ast.IdentPat {
-	return ast.NewIdentPat(name, nil, nil, span())
+	return ast.NewIdentPat(name, false, nil, nil, span())
 }
 
 // Helper to build a number literal.
@@ -70,9 +70,9 @@ func TestSimpleBindingAndUse(t *testing.T) {
 	result := Rename(nil, body, map[string]VarID{"print": -1})
 
 	require.Empty(t, result.Errors)
-	require.Equal(t, 1, result.UniqueVarCount)            // one local variable
-	require.Equal(t, x.VarID, xRef.VarID)          // use resolves to binding
-	require.NotEqual(t, 0, x.VarID)                 // VarID is set
+	require.Equal(t, 1, result.UniqueVarCount) // one local variable
+	require.Equal(t, x.VarID, xRef.VarID)      // use resolves to binding
+	require.NotEqual(t, 0, x.VarID)            // VarID is set
 }
 
 func TestCrossScopeShadowing(t *testing.T) {
@@ -96,8 +96,8 @@ func TestCrossScopeShadowing(t *testing.T) {
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // two distinct local variables
 	require.NotEqual(t, outerX.VarID, innerX.VarID)
-	require.Equal(t, innerX.VarID, innerRef.VarID)  // inner print(x) → inner x
-	require.Equal(t, outerX.VarID, outerRef.VarID)  // outer print(x) → outer x
+	require.Equal(t, innerX.VarID, innerRef.VarID) // inner print(x) → inner x
+	require.Equal(t, outerX.VarID, outerRef.VarID) // outer print(x) → outer x
 }
 
 func TestSameScopeShadowing(t *testing.T) {
@@ -148,8 +148,8 @@ func TestFunctionParameters(t *testing.T) {
 
 func TestDestructuring(t *testing.T) {
 	// val {a, b} = obj
-	a := ast.NewObjShorthandPat(ast.NewIdentifier("a", span()), nil, nil, span())
-	b := ast.NewObjShorthandPat(ast.NewIdentifier("b", span()), nil, nil, span())
+	a := ast.NewObjShorthandPat(ast.NewIdentifier("a", span()), false, nil, nil, span())
+	b := ast.NewObjShorthandPat(ast.NewIdentifier("b", span()), false, nil, nil, span())
 	objPat := ast.NewObjectPat([]ast.ObjPatElem{a, b}, span())
 
 	body := block(
@@ -313,12 +313,12 @@ func TestFuncDeclBindsName(t *testing.T) {
 			{Pattern: identPat("a")},
 			{Pattern: identPat("b")},
 		},
-		nil,   // return type
-		nil,   // throws type
+		nil,                                  // return type
+		nil,                                  // throws type
 		&ast.Block{Stmts: nil, Span: span()}, // body (not walked)
-		false, // export
-		false, // declare
-		false, // async
+		false,                                // export
+		false,                                // declare
+		false,                                // async
 		span(),
 	)
 
@@ -449,7 +449,7 @@ func TestNestedFuncDeclNotWalked(t *testing.T) {
 	//   inner(x)
 	// }
 	x := identPat("x")
-	xRef := ident("x")       // in inner(x)
+	xRef := ident("x")         // in inner(x)
 	innerRef := ident("inner") // in inner(x)
 
 	// Inside the nested function body — should NOT be touched.
@@ -468,8 +468,8 @@ func TestNestedFuncDeclNotWalked(t *testing.T) {
 		nil, // lifetime params
 		nil, // type params
 		[]*ast.Param{{Pattern: yParam}},
-		nil,   // return
-		nil,   // throws
+		nil, // return
+		nil, // throws
 		&innerBody,
 		false, // export
 		false, // declare
@@ -487,8 +487,8 @@ func TestNestedFuncDeclNotWalked(t *testing.T) {
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, 2, result.UniqueVarCount) // x, inner (not y)
-	require.Equal(t, x.VarID, xRef.VarID)       // inner(x) → outer x
-	require.NotEqual(t, 0, innerRef.VarID) // inner is resolved
+	require.Equal(t, x.VarID, xRef.VarID)      // inner(x) → outer x
+	require.NotEqual(t, 0, innerRef.VarID)     // inner is resolved
 
 	// Inner function nodes should be untouched by the outer rename pass.
 	require.Equal(t, 0, yParam.VarID)
@@ -636,5 +636,5 @@ func TestJSXExpressions(t *testing.T) {
 
 	require.Empty(t, result.Errors)
 	require.Equal(t, name.VarID, attrRef.VarID)  // attribute expression
-	require.Equal(t, name.VarID, childRef.VarID)  // child expression
+	require.Equal(t, name.VarID, childRef.VarID) // child expression
 }

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,6 +180,42 @@ func TestParseMutOnNonIdentDoesNotDoubleReport(t *testing.T) {
 			require.Lenf(t, p.errors, 1,
 				"expected exactly one error for %q, got %d: %v",
 				input, len(p.errors), p.errors)
+		})
+	}
+}
+
+// TestParseMutOnDestructuringSuggestsPerLeaf verifies that `mut [a, b]`
+// and `mut {a, b}` report errors hinting the per-leaf form
+// (`[mut a, b]` / `{mut a, b}`) instead of just saying "must be followed
+// by an identifier", which doesn't tell the user what to do instead.
+func TestParseMutOnDestructuringSuggestsPerLeaf(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectContains string
+	}{
+		"OnTuplePat":  {"mut [a, b]", "[mut a, b]"},
+		"OnObjectPat": {"mut {a, b}", "{mut a, b}"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := NewParser(ctx, source)
+			_ = p.pattern(true, true)
+			require.NotEmpty(t, p.errors, "expected an error for %q", test.input)
+			found := false
+			for _, err := range p.errors {
+				if strings.Contains(err.Message, test.expectContains) {
+					found = true
+					break
+				}
+			}
+			assert.Truef(t, found,
+				"expected error containing %q for input %q, got: %v",
+				test.expectContains, test.input, p.errors)
 		})
 	}
 }

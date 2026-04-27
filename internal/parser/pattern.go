@@ -20,8 +20,19 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 		p.lexer.consume() // consume 'mut'
 		next := p.lexer.peek()
 		if next.Type != Identifier {
-			p.reportError(ast.MergeSpans(mutSpan, next.Span),
-				"'mut' in pattern position must be followed by an identifier")
+			// For destructuring openers, hint the per-leaf form so the
+			// user knows the actual fix rather than just being told the
+			// shape is wrong.
+			var msg string
+			switch next.Type {
+			case OpenBracket:
+				msg = "'mut' cannot be applied to a tuple pattern; use per-leaf mut, e.g. [mut a, b]"
+			case OpenBrace:
+				msg = "'mut' cannot be applied to an object pattern; use per-leaf mut, e.g. {mut a, b}"
+			default:
+				msg = "'mut' in pattern position must be followed by an identifier"
+			}
+			p.reportError(ast.MergeSpans(mutSpan, next.Span), msg)
 			// Don't recurse into p.pattern() for recovery — that path
 			// can re-enter literalPat()'s default case and emit a
 			// second "Expected a pattern" diagnostic for the same
@@ -36,10 +47,8 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 			// `mut` keyword, so diagnostics like CannotMutateImmutableError
 			// underline the binding-side `mut`, not just the identifier.
 			merged := ast.MergeSpans(mutSpan, identPat.Span())
-			rebuilt := ast.NewIdentPat(
-				identPat.Name, identPat.TypeAnn, identPat.Default, merged)
-			rebuilt.Mutable = true
-			return rebuilt
+			return ast.NewIdentPat(
+				identPat.Name, true, identPat.TypeAnn, identPat.Default, merged)
 		}
 		return pat
 	}
@@ -146,7 +155,7 @@ func (p *Parser) identPat(nameToken *Token, allowIdentDefault bool, allowColonTy
 			default_ = expr
 		}
 	}
-	return ast.NewIdentPat(nameToken.Value, typeAnn, default_, span)
+	return ast.NewIdentPat(nameToken.Value, false, typeAnn, default_, span)
 }
 
 // tuplePat = '[' (pattern (',' pattern)*)? ']'
@@ -303,9 +312,7 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 			if mutShorthand {
 				span = ast.MergeSpans(mutPrefixSpan, span)
 			}
-			pat := ast.NewObjShorthandPat(key, typeAnn, default_, span)
-			pat.Mutable = mutShorthand
-			return pat
+			return ast.NewObjShorthandPat(key, mutShorthand, typeAnn, default_, span)
 		}
 	case DotDotDot:
 		p.lexer.consume()

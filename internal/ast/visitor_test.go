@@ -249,7 +249,7 @@ func TestBinaryExpr_Accept_SkipsChildrenWhenEnterReturnsFalse(t *testing.T) {
 func TestIdentPat_Accept(t *testing.T) {
 	visitor := newMockVisitor()
 	span := Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 3}, SourceID: 0}
-	pat := NewIdentPat("foo", nil, nil, span)
+	pat := NewIdentPat("foo", false, nil, nil, span)
 
 	pat.Accept(visitor)
 

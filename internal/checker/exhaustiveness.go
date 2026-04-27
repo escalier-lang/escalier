@@ -1366,7 +1366,7 @@ func (c *Checker) findPropertyPattern(objPat *ast.ObjectPat, propName string) as
 		case *ast.ObjShorthandPat:
 			if e.Key.Name == propName {
 				if e.TypeAnn != nil {
-					return ast.NewIdentPat(e.Key.Name, e.TypeAnn, nil, ast.Span{})
+					return ast.NewIdentPat(e.Key.Name, e.Mutable, e.TypeAnn, nil, ast.Span{})
 				}
 				return ast.NewWildcardPat(ast.Span{}) // shorthand = catch-all
 			}

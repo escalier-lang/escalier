@@ -446,7 +446,7 @@ func (b *Builder) buildPattern(
 				// already been applied in the destructuring pattern
 				if identPat, ok := arg.(*ast.IdentPat); ok && identPat.Default != nil {
 					// Create a new IdentPat without the default
-					arg = ast.NewIdentPat(identPat.Name, identPat.TypeAnn, nil, identPat.Span())
+					arg = ast.NewIdentPat(identPat.Name, identPat.Mutable, identPat.TypeAnn, nil, identPat.Span())
 				}
 				argChecks, argStmts := b.buildPattern(arg, temp, export, ast.ValKind, nsName)
 				checks = slices.Concat(checks, argChecks)

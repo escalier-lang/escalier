@@ -39,7 +39,7 @@ func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
 // convertVarDecl converts a dts_parser.VarDecl to an ast.VarDecl.
 func convertVarDecl(dv *dts_parser.VarDecl) (*ast.VarDecl, error) {
 	// Convert the identifier to a pattern
-	pattern := ast.NewIdentPat(dv.Name.Name, nil, nil, convertSpan(dv.Name.Span()))
+	pattern := ast.NewIdentPat(dv.Name.Name, false, nil, nil, convertSpan(dv.Name.Span()))
 
 	// Convert the type annotation
 	var typeAnn ast.TypeAnn

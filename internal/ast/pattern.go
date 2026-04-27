@@ -29,8 +29,8 @@ type IdentPat struct {
 	inferredType Type
 }
 
-func NewIdentPat(name string, typeAnn TypeAnn, _default Expr, span Span) *IdentPat {
-	return &IdentPat{Name: name, TypeAnn: typeAnn, Default: _default, span: span, inferredType: nil}
+func NewIdentPat(name string, mutable bool, typeAnn TypeAnn, _default Expr, span Span) *IdentPat {
+	return &IdentPat{Name: name, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span, inferredType: nil}
 }
 func (p *IdentPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -76,8 +76,8 @@ type ObjShorthandPat struct {
 	span    Span
 }
 
-func NewObjShorthandPat(key *Ident, typeAnn TypeAnn, _default Expr, span Span) *ObjShorthandPat {
-	return &ObjShorthandPat{Key: key, TypeAnn: typeAnn, Default: _default, span: span}
+func NewObjShorthandPat(key *Ident, mutable bool, typeAnn TypeAnn, _default Expr, span Span) *ObjShorthandPat {
+	return &ObjShorthandPat{Key: key, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span}
 }
 func (p *ObjShorthandPat) Span() Span { return p.span }
 func (p *ObjShorthandPat) Accept(v Visitor) {
