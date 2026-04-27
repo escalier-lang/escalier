@@ -8,6 +8,46 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// nestedMutInParamErrors walks a function parameter's pattern and reports
+// any non-top-level `mut` flag (IdentPat.Mutable inside a destructure, or
+// ObjShorthandPat.Mutable). These forms let the function body mutate the
+// caller's value through a leaf alias while the parameter's printed type
+// does not reflect the mutation — see TestPatternLevelMut_NoLeakIntoParentContainer
+// for the structural side, and the matching positive test
+// FuncParamMutCanMutateField for the legitimate top-level form.
+//
+// The top-level IdentPat.Mutable case is the sanctioned form (`fn f(mut p: T)`),
+// so it is not visited here.
+func nestedMutInParamErrors(pat ast.Pat) []Error {
+	var errs []Error
+	var walk func(p ast.Pat, atTopLevel bool)
+	walk = func(p ast.Pat, atTopLevel bool) {
+		switch p := p.(type) {
+		case *ast.IdentPat:
+			if p.Mutable && !atTopLevel {
+				errs = append(errs, NestedMutInParamError{span: p.Span()})
+			}
+		case *ast.ObjectPat:
+			for _, elem := range p.Elems {
+				switch e := elem.(type) {
+				case *ast.ObjShorthandPat:
+					if e.Mutable {
+						errs = append(errs, NestedMutInParamError{span: e.Span()})
+					}
+				case *ast.ObjKeyValuePat:
+					walk(e.Value, false)
+				}
+			}
+		case *ast.TuplePat:
+			for _, elem := range p.Elems {
+				walk(elem, false)
+			}
+		}
+	}
+	walk(pat, true)
+	return errs
+}
+
 func (c *Checker) inferFuncParams(
 	ctx Context,
 	funcParams []*ast.Param,
@@ -17,6 +57,8 @@ func (c *Checker) inferFuncParams(
 	params := make([]*type_system.FuncParam, len(funcParams))
 
 	for i, param := range funcParams {
+		errors = slices.Concat(errors, nestedMutInParamErrors(param.Pattern))
+
 		patType, patBindings, patErrors := c.inferPattern(ctx, param.Pattern)
 
 		errors = slices.Concat(errors, patErrors)
@@ -44,15 +86,10 @@ func (c *Checker) inferFuncParams(
 		// the wrap from inferPattern; here we mirror it onto the
 		// FuncParam.Type that flows into the generalized signature.
 		//
-		// Only the top-level IdentPat case is handled: a destructuring
-		// param like `fn f({mut a, b}: Outer)` deliberately leaves
-		// FuncParam.Type unwrapped. The per-leaf binding still gets the
-		// MutType wrap via inferPattern, so `a` is mutable inside the
-		// body — but the *parameter's* type stays `Outer`, not
-		// `mut Outer`, because the caller passes an Outer value and
-		// only the leaves are mut-bound. Wrapping the param type would
-		// leak per-leaf mut into the call-site signature, which is the
-		// same no-leak invariant inferPattern enforces (see infer_pat.go).
+		// Only the top-level IdentPat case is wrapped. Nested `mut` on a
+		// destructured leaf is rejected up-front by nestedMutInParamErrors
+		// above — the printed parameter type would not reflect the
+		// mutation, breaking the call-site contract.
 		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.Mutable {
 			if _, alreadyMut := typeAnn.(*type_system.MutType); !alreadyMut {
 				typeAnn = type_system.NewMutType(

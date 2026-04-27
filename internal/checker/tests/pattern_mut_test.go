@@ -103,6 +103,29 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 				fn move(mut p: Point) { p.x = 1 }
 			`,
 		},
+		"FuncParamNestedShorthandMut_Rejected": {
+			input: `
+				class Inner(v: number) { v, }
+				class Outer(a: Inner, b: Inner) { a, b, }
+				fn f({ mut a, b }: Outer) { a.v = 1 }
+			`,
+			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
+		},
+		"FuncParamNestedKeyValueMut_Rejected": {
+			input: `
+				class Inner(v: number) { v, }
+				class Outer(a: Inner, b: Inner) { a, b, }
+				fn f({ a: mut x, b: y }: Outer) { x.v = 1 }
+			`,
+			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
+		},
+		"FuncParamNestedTupleMut_Rejected": {
+			input: `
+				class Inner(v: number) { v, }
+				fn f([mut a, b]: [Inner, Inner]) { a.v = 1 }
+			`,
+			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
+		},
 		"DestructureShorthand_MutLeafCanMutate": {
 			input: `
 				class Inner(v: number) { v, }
@@ -201,6 +224,21 @@ func TestPatternLevelMut_ValVarMatrix(t *testing.T) {
 		},
 		"VarMut": {
 			input:              `class Point(x: number, y: number) { x, y, } var mut p = Point(0, 0)`,
+			bindingName:        "p",
+			expectedAssignable: true,
+			expectedMutable:    true,
+		},
+		// Annotation-only mut: `val p: mut T` should set Mutable=true even
+		// without the pattern-level `mut` keyword. Locks in the OR'd
+		// computation in inferPattern (Mutable = pattern flag || type-is-MutType).
+		"ValAnnotationMut": {
+			input:              `class Point(x: number, y: number) { x, y, } val p: mut Point = Point(0, 0)`,
+			bindingName:        "p",
+			expectedAssignable: false,
+			expectedMutable:    true,
+		},
+		"VarAnnotationMut": {
+			input:              `class Point(x: number, y: number) { x, y, } var p: mut Point = Point(0, 0)`,
 			bindingName:        "p",
 			expectedAssignable: true,
 			expectedMutable:    true,

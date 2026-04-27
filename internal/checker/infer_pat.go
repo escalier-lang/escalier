@@ -53,11 +53,20 @@ func (c *Checker) inferPattern(
 				}
 			}
 
+			// `Binding.Mutable` is derived from BOTH the AST flag (`val mut p = …`)
+			// and a `MutType` wrap on the binding type (`val p: mut T = …`
+			// when the annotation rides on the IdentPat itself, e.g. inside a
+			// destructuring pattern). For top-level annotations that ride on
+			// the VarDecl, the wrap won't be visible here yet — the annotation
+			// is unified into the binding's tvar by the caller. Those callers
+			// run `updateBindingMutableFromType` after unification to OR in
+			// the resolved type-level mut.
+			_, typeIsMut := bindingType.(*type_system.MutType)
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = &type_system.Binding{
 				Source:  provenance,
 				Type:    bindingType,
-				Mutable: p.Mutable,
+				Mutable: p.Mutable || typeIsMut,
 				VarID:   p.VarID,
 			}
 		case *ast.LitPat:
@@ -114,11 +123,15 @@ func (c *Checker) inferPattern(
 								&ast.NodeProvenance{Node: elem}, bindingType)
 						}
 					}
+					// See the IdentPat case above: `Mutable` is OR'd from the
+					// AST flag and a MutType wrap on the binding type so both
+					// surface forms produce consistent metadata.
+					_, leafTypeIsMut := bindingType.(*type_system.MutType)
 					// TODO: report an error if the name is already bound
 					bindings[elem.Key.Name] = &type_system.Binding{
 						Source:  &ast.NodeProvenance{Node: elem.Key},
 						Type:    bindingType,
-						Mutable: elem.Mutable,
+						Mutable: elem.Mutable || leafTypeIsMut,
 						VarID:   elem.VarID,
 					}
 					prop := type_system.NewPropertyElem(name, t)
@@ -199,4 +212,18 @@ func (c *Checker) inferPattern(
 	pattern.SetInferredType(t)
 
 	return t, bindings, errors
+}
+
+// updateBindingMutableFromType promotes Binding.Mutable to true for any
+// binding whose pruned type is `MutType`. Call this after the binding's
+// type has been unified with a type annotation or initializer so that
+// `val p: mut T = …` (annotation on the VarDecl, not the IdentPat) ends
+// up with Mutable=true to match `val mut p: T = …`. The flag should never
+// move from true → false, so this is a one-way OR.
+func updateBindingMutableFromType(bindings map[string]*type_system.Binding) {
+	for _, binding := range bindings {
+		if _, isMut := type_system.Prune(binding.Type).(*type_system.MutType); isMut {
+			binding.Mutable = true
+		}
+	}
 }

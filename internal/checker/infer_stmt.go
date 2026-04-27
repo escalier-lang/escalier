@@ -131,6 +131,11 @@ func (c *Checker) inferVarDecl(
 		errors = slices.Concat(errors, transErrors)
 	}
 
+	// Promote Mutable from a now-resolved MutType wrap on the binding's
+	// type. Catches `val p: mut T = …` (annotation on the VarDecl) which
+	// inferPattern can't see at construction time.
+	updateBindingMutableFromType(bindings)
+
 	return bindings, errors
 }
 
