@@ -125,6 +125,200 @@ Note: `removeUncertainMutability` is **not currently called from `generalize.go`
 - Re-enable any test cases left disabled during Phase 1 development — none remained. The two NOTE-block placeholders in `mut_prefix_test.go` were already replaced with active tests during Phase 1 (`ImmutableInstance_CannotCallMutSelfMethod`, `ImmutableMap_CannotClear`, `ImmutableSet_CannotAdd`, plus the typevar-receiver pair). ✓
 - Final sanity: `grep -rn "mut?" internal/` and `grep -rn "MutabilityUncertain" internal/` both return zero hits. ✓ (Only matches anywhere in the repo are a regex false positive on `colorGamut?` in `playground/public/types/lib.dom.d.ts` and intentional historical references in `planning/*.md`.)
 
+## Phase 4 — Pattern-level `mut` on bindings
+
+### Motivation
+
+After Phase 1, calling a `mut self` method on an immutable receiver is property-not-found. That's the right default, but it leaves a use-site gap. The fixture [fixtures/objects_with_self/lib/objects_with_self.esc](../../fixtures/objects_with_self/lib/objects_with_self.esc) lost its `val inc = obj1.increment` line in Phase 1 because `obj1`'s binding has no way to say "I'm mutable" — today the parser only accepts `mut` directly preceding a `CallExpr`, which doesn't help when the RHS is a literal or another expression.
+
+A second motivation: sometimes we want a mutable reference to an existing variable without knowing (or wanting to spell out) its type. The closest thing today is `val foo: mut typeof bar = bar`, which forces a `typeof` round-trip and a full annotation just to express "same value, mutable view". That's awkward enough to be effectively unusable in practice.
+
+Rather than introduce an expression-level `MutExpr` (an earlier design considered and rejected — see "Alternative considered" below), this phase puts `mut` on the **binding pattern**, mirroring Rust's `let mut x = …`. Mutability is a property of the *place*, not of the value-producing expression:
+
+```
+val mut obj1 = { value: 0, increment(mut self) { ... } }   // binding-side mut
+val mut p    = Point(0, 0)                                 // replaces  val p = mut Point(0, 0)
+val mut inc  = obj1.increment                              // motivating fixture line
+fn move_pt(mut p: Point) { p.x += 1 }                      // function parameters are patterns
+val { x: mut a, y: b } = pt                                // per-leaf control inside destructuring
+```
+
+Two design wins fall out:
+
+1. **No new soundness hole.** The pattern leaf is a fresh place; declaring it `mut` is a statement about that place's permissions. It does not retype an existing value, so the `mut <ident>` aliasing concern from the earlier `MutExpr` design simply doesn't arise. (Whether the underlying object is *actually* mutable through that place is the existing alias/lifetime/transition machinery's job, and is unchanged.)
+2. **Reuses an existing pattern surface.** `Binding.Mutable` already exists in [internal/type_system/types.go](../../internal/type_system/types.go) — `inferPattern` currently sets it to `false // TODO` at every leaf ([internal/checker/infer_pat.go:44, :93](../../internal/checker/infer_pat.go#L44)). The pattern flag is what populates this field. The Phase 1 receiver-mut filter then picks up the binding's mut-ness via the existing path — no new infrastructure in the checker.
+
+`mut <CallExpr>` on the value side stays exactly as it is today (the `Mutable` flag on `*ast.CallExpr`). It's still useful for inline construction-site mut where there's no binding (`someFn(mut Counter())`, `return mut Counter()`, `[mut Counter(), mut Counter()]`). The two forms coexist and fill different niches: pattern `mut` for the binding/place, expression `mut` for the inline allocation.
+
+### AST + parser
+
+- **New flag** on `IdentPat` and `ObjShorthandPat` in [internal/ast/pattern.go](../../internal/ast/pattern.go): `Mutable bool`. These are the only two pattern leaves that introduce a binding name (others either nest patterns or don't bind). Update `NewIdentPat`/`NewObjShorthandPat` constructors; the `//go:generate` directive at the top of `pattern.go` will refresh `pattern_gen.go` for the boilerplate. **Run `go generate ./internal/ast/...`** after the struct edit and commit the diff.
+- **Parser** in [internal/parser/pattern.go](../../internal/parser/pattern.go): in the `pattern()` entry point ([line 10](../../internal/parser/pattern.go#L10)), accept an optional leading `Mut` token. When present, consume it and set `Mutable = true` on the resulting `IdentPat`. Reject (with a clear error) if the token is followed by anything other than an identifier — `mut [a, b]`, `mut { x }`, `mut _`, `mut "literal"`, `mut RestPat` are all meaningless at the pattern level (mutability is per-leaf, expressed inside the destructuring). The `mut` keyword does not need new lexer support — it's already a token (`Mut` at [internal/parser/token.go:65](../../internal/parser/token.go#L65)).
+
+  **Object-pattern per-leaf forms — both shorthand and key-value must be supported:**
+  - **Shorthand**, e.g. `val { mut x, y } = pt`: `mut` precedes the identifier inside an object pattern's `objPatElem` shorthand branch. This sets `Mutable = true` on the `ObjShorthandPat` leaf. Add `Mut` consumption to [internal/parser/pattern.go](../../internal/parser/pattern.go)'s `objPatElem` shorthand branch (around `objPatElem` near [pattern.go:206](../../internal/parser/pattern.go#L206) where shorthand is recognized).
+  - **Key-value**, e.g. `val { x: mut a, y: b } = pt`: the right-hand side of `key: <pat>` is just a nested pattern, so it falls through `pattern()` recursively. Once `pattern()` itself handles `mut <ident>`, this form works **for free** — no extra parser change. The mutability ends up on the inner `IdentPat`'s `Mutable` flag (where `a` is bound), not on the `ObjKeyValuePat` wrapper. Add an explicit parser test to lock this in, since it exercises the recursive path.
+
+  These two forms compose: `val { mut x, y: mut a, z } = pt` mixes shorthand-mut, keyvalue-mut, and immutable shorthand all at once; each leaf carries its own `Mutable` flag independently.
+- **Function parameters are patterns** ([internal/parser/decl.go:481](../../internal/parser/decl.go#L481), `p.pattern(false, false)`), so `fn f(mut p: Point)` works automatically once the pattern parser handles `mut`. The existing `mut self` special-case stays as-is — it lives outside `pattern()` and is parsed separately ([decl.go:341 area](../../internal/parser/decl.go#L341)).
+- **Parser ambiguity check:** `mut self` already has dedicated handling in `decl.go`'s param-list parser; `mut <ident>` in pattern position needs to *not* claim `self` (which is a keyword and would never reach `pattern()` anyway, but worth a parser test).
+
+### Type inference
+
+#### Split `Binding.Mutable` into two fields
+
+The existing `Binding` struct in [internal/type_system/types.go:2395](../../internal/type_system/types.go#L2395) has a single `Mutable bool` field whose intended meaning is ambiguous — today it's effectively unused (defaulted `false` everywhere) but it was originally drafted to mean "rebindable" (var vs val). Pattern `mut` introduces a second, distinct concept: value-level mutability. Conflating the two would make this phase a footgun for future rebind-tracking. **Split the field as part of this phase:**
+
+```go
+type Binding struct {
+    Source      provenance.Provenance
+    Type        Type
+    Assignable  bool  // can the binding name be rebound? (var = true, val = false)
+    Mutable     bool  // can the underlying value be mutated through this name? (mut = true)
+    Exported    bool
+    VarID       int
+}
+```
+
+- **Naming:** `Assignable` for rebind, `Mutable` for value-mutation. `Mutable` keeps its name (it's the more frequently useful field) but the meaning shifts from "TODO" to "value-mutability per the pattern's `mut` flag". `Assignable` is new.
+- **Migration recipe.** Run `grep -rn "type_system.Binding{" internal/` first to enumerate every site — do not rely on the inventory below being exhaustive. Current count (as of this writing): **~64 total**, broken down as ~24 non-test sites in `internal/checker/` + ~2 in `internal/type_system/` + ~38 in `internal/checker/tests/` (mock bindings in `export_statements_test.go`, `import_load_test.go`, `package_registry_test.go`, `infer_test.go`, `benchmark_test.go`, `file_scope_test.go`). Watch for the inline shorthand form `Binding{Type: ..., Mutable: false}` — easy to miss with a multi-line-aware regex.
+- **Migration:** every existing `Binding{Mutable: false}` literal becomes `Binding{Assignable: false, Mutable: false}`. A scripted sweep handles the bulk of it; manual review where the intent matters:
+  - `infer_pat.go:41-46`, `:90-95` — `IdentPat`/`ObjShorthandPat` branches. Set `Assignable` from the enclosing decl kind (`var` vs `val`, threaded through `inferPattern` as a parameter), and `Mutable` from the pattern flag.
+  - `infer_stmt.go:442` — `for-in` currently force-clears the field. After the split: force `Assignable = false` (loop variables can't be rebound to a different iteration value), and leave `Mutable` derived from the loop pattern (`for mut x in xs` keeps value-mutability through the binding's `MutType`-wrapped type). See the matching "Edge cases" entry — both descriptions agree.
+  - `infer_stmt.go:185, 597` — `var`/`val` decl path and the constructor binding path. Set `Assignable` from `VarDecl.Kind`; `Mutable` from the pattern flag.
+  - `infer_module.go:254, 594, 936, 1091, 1102, 1150, 1162, 1213, 1225, 1639` — namespace value bindings, ctor bindings, function-parameter bindings, and the `default` export binding. For function parameters: `Assignable: false`, `Mutable: <pattern flag>`. For ctors and namespace values: copy current behavior (both `false` unless context dictates otherwise).
+  - `infer_expr.go:493, 507, 521` — `self` parameter bindings. `Assignable: false`, `Mutable: <whether the receiver is `mut self`>`.
+  - `infer_expr.go:803`, `infer_func.go:16`, `infer_pat.go:15` — these are empty `map[string]*type_system.Binding{}` initializers, not value literals; they don't need field-list edits but they show up in the grep.
+  - `infer_import.go:494, 604` — re-exporting an imported binding propagates both fields verbatim.
+  - `prelude.go:570-712` — built-in operator and `globalThis` bindings are immutable both ways: `Assignable: false, Mutable: false`.
+  - `type_system/types.go:2486-2489` — namespace cloning needs both fields copied.
+  - `type_system/types.go:2651` — namespace structural equality compares `Mutable`. After the split, compare both `Mutable` and `Assignable` (the comment at [:2645](../../internal/type_system/types.go#L2645) explains why `Mutable` matters for structural identity; the same logic applies to `Assignable`).
+  - **Test files** (`internal/checker/tests/*.go`): ~38 mock-binding constructions across `export_statements_test.go`, `import_load_test.go`, `package_registry_test.go`, `infer_test.go`, `benchmark_test.go`, `file_scope_test.go`. Mostly `Mutable: false` literals representing immutable mock exports; the sweep adds `Assignable: false` alongside. A handful (`package_registry_test.go:122-128`, `infer_test.go:2685-2689`) use the inline `Binding{Type: ..., Mutable: false}` form — confirm those are caught.
+
+The split is a **mechanical rename + new field**, not a behavioral change for the existing field. Phase 4 is the right place to do it because (a) this phase is the first to actually populate the field with non-default data, and (b) it forces every binding-construction site to be touched anyway. Doing it here avoids a follow-up "split the overload" PR.
+
+#### Pattern → binding wiring
+
+- **`inferPattern`** ([internal/checker/infer_pat.go](../../internal/checker/infer_pat.go)): when constructing the `Binding` for an `IdentPat` ([line 41-46](../../internal/checker/infer_pat.go#L41-L46)) or `ObjShorthandPat` ([line 90-95](../../internal/checker/infer_pat.go#L90-L95)), set `Mutable: p.Mutable` (replacing the current `Mutable: false, // TODO`) and `Assignable: <derived from var/val context>`. The `var`/`val` distinction lives on the enclosing `VarDecl.Kind` (or equivalent) — thread it into `inferPattern` as a parameter so leaves can read it. For non-VarDecl pattern contexts (function parameters, for-in loops, match arms), pass the appropriate default (`false` for parameters and loop vars; match-arm bindings follow whatever the surrounding statement context dictates).
+- **Wrap the binding's *type* in `MutType` when the pattern is mut.** This is what makes `val mut p = Point()` produce a `p` whose type passes the Phase 1 `ReceiverIsDefinitelyMutable` filter. Concretely: in the `IdentPat` branch, after computing `t`, if `p.Mutable` is true and `t` is not already wrapped in `MutType`, wrap it: `t = type_system.NewMutType(provenance, t)`. (If a user writes `val mut p: mut Point = Point()` the type annotation already provides the wrapper — preserve idempotence by only wrapping if not already wrapped.) Same logic in the `ObjShorthandPat` branch.
+- **Function parameters:** `inferFuncSig` (and the parameter-binding paths in [infer_module.go](../../internal/checker/infer_module.go) at lines 1091, 1102, 1150, 1162) need to honor `IdentPat.Mutable` on parameter patterns and wrap the parameter type in `MutType` accordingly. Audit those four explicit `Binding{}` literals plus any others surfaced by `grep -n "type_system.Binding{" internal/checker/`.
+
+### Lifetime / alias / transition tracking
+
+The existing machinery already keys off binding identity, so pattern `mut` flows in naturally:
+
+- `check_transitions.go`'s `CannotMutateImmutableError` keys off the binding's type — once the binding type carries `MutType`, mutations through `mut`-bound names are accepted; mutations through plain (non-mut) names continue to error.
+- `infer_lifetime.go`'s alias propagation operates on `VarID` and binding types — no change needed.
+- `liveness/capture_analysis.go`'s `markMutableLHS` walks LHS chains; it doesn't need to know about pattern mutability per se (it works at use sites).
+
+**No new expression-node passthrough sites are required across liveness/lifetime/codegen/printer.** The Phase 4 design's ~10-row passthrough table — preserved in this plan's git history — was scoped to *expression*-level walks (the rejected `MutExpr` would have needed a case in every `switch e := node.(type)` over `ast.Expr`). That table doesn't apply here because pattern-level `mut` adds no new expression node; it only adds a `bool` flag on two existing pattern leaves.
+
+There *is* one printer-level touch and one codegen audit (both small, both pattern-walking only — distinct from the expression-walk surface):
+
+- **Printer:** `IdentPat.Mutable` / `ObjShorthandPat.Mutable` are read at [internal/printer/printer.go:823, 861](../../internal/printer/printer.go#L823) to emit the `mut ` keyword before the bound name. This is a pattern-walk, not an expression-walk — see "Printer / codegen" below for the exact wiring.
+- **Codegen:** the pattern-handling sites in [internal/codegen/builder.go](../../internal/codegen/builder.go) (around lines 278, 321, 383, 562, 656, 815, 934, 997, 1038) construct codegen-side `IdentPat`/`ObjShorthandPat` values. Pattern `mut` is type-only — there is no runtime representation — so codegen should ignore the AST flag entirely and the codegen-side pattern types do not need a `Mutable` field. **Audit, do not propagate.** The audit confirms no path conditionally emits anything based on the AST flag; if the audit finds otherwise, that's a bug in the audit's expectations rather than a real passthrough requirement.
+
+In summary: pattern flags (`IdentPat.Mutable`, `ObjShorthandPat.Mutable`) are printer-level only at the surface; type inference reads them to populate `Binding.Mutable` and to wrap the binding's type in `MutType`; everything downstream of the binding (liveness, lifetime, alias, codegen, transition checking) keys off the binding's *type* (now a `MutType` wrapper) rather than the pattern flag, which is why the expression-node passthrough table doesn't apply.
+
+### Printer / codegen
+
+- **Printer** ([internal/printer/printer.go](../../internal/printer/printer.go), pattern-printing path): when `IdentPat.Mutable` is true, emit `mut ` before the name. Same for `ObjShorthandPat`. Existing fixtures should round-trip; new fixtures using `val mut x = …` add new snapshots.
+- **Codegen**: pattern `mut` has no runtime representation (same as today's `mut <CallExpr>`). The pattern lowering should ignore the flag — `val mut x = e` codegens identically to `val x = e`. Audit [internal/codegen/builder.go](../../internal/codegen/builder.go)'s pattern-handling to confirm no path conditionally emits anything based on a `Mutable` field that doesn't exist there yet.
+
+### Tests and fixtures
+
+- **Keep — and clarify — [`TestMutPrefixOnNonCallRejected`](../../internal/checker/tests/mut_prefix_test.go).** All three sub-tests (`OnLiteral`, `OnIdent`, `OnArrayLit` at [mut_prefix_test.go:287-289](../../internal/checker/tests/mut_prefix_test.go#L287-L289)) **stay** — they assert that expression-level `mut <non-call-expr>` is still a parser error after Phase 4 (`val b = mut a`, `val x = mut [1,2,3]`, `val x = mut 42` remain rejected; the pattern-level form is `val mut b = a`, etc.). What needs to change is naming/docs, not coverage:
+  - Rename the test from `TestMutPrefixOnNonCallRejected` → `TestExpressionLevelMutRejectedOnNonCall` (or similar) so it's clear this is about the **expression**-level `mut`, not the pattern-level `mut` introduced in Phase 4.
+  - Rename sub-tests to lead with the form: `ExprMutOnLiteral`, `ExprMutOnIdent`, `ExprMutOnArrayLit`.
+  - Update the doc comment at [mut_prefix_test.go:281-284](../../internal/checker/tests/mut_prefix_test.go#L281-L284) to call out the dual surface: "Expression-level `mut` (`CallExpr.Mutable`) is restricted to call expressions; pattern-level `mut` (`IdentPat.Mutable`/`ObjShorthandPat.Mutable`) is the sanctioned form for binding-side mutability — see `TestPatternLevelMut*` for those positives."
+  - Consider whether the parser error message itself ("'mut' prefix can only be applied to a call expression") should mention the pattern-level alternative ("...; use `val mut <ident>` for a mutable binding"). Out of scope for the test rename, but worth a follow-up issue.
+- **Add positive parser tests** for pattern `mut` (these are the new positives the user request asks for, kept clearly separate from the expression-level negatives above; group them under a `TestPatternLevelMut` umbrella so the test-file table of contents reads cleanly):
+  - `val mut x = 1` — simple mut binding
+  - `var mut x = expr` — mut on a `var`
+  - `val mut p: Point = Point(0, 0)` — with type annotation (verify wrapping is idempotent)
+  - `val { mut x, y } = pt` — shorthand-form per-leaf mut inside object destructuring (sets `ObjShorthandPat.Mutable` on `x`, leaves `y` immutable)
+  - `val { x: mut a, y: b } = pt` — key-value-form per-leaf mut (sets `IdentPat.Mutable` on the nested `a`, leaves `b` immutable); confirms recursive `pattern()` handles `mut`
+  - `val { mut x, y: mut a, z } = pt` — mixed shorthand-mut + keyvalue-mut + plain shorthand in one pattern, to lock in independence of per-leaf flags
+  - `fn f(mut p: Point) { ... }` — function parameter
+  - `for mut x in iterable { ... }` — **positive** test: the loop pattern's `mut` is preserved and `x.field = ...` inside the body type-checks. Assert on the binding inside the loop body's scope: `binding.Mutable == true` (derived from the pattern flag), `binding.Assignable == false` (forced by the for-in override per the edge-case decision). The implementation point is [infer_stmt.go:442](../../internal/checker/infer_stmt.go#L442) — the line that today reads `binding.Mutable = false` is renamed to `binding.Assignable = false` after the field split, and the `Mutable` flag flows through from `inferPattern` untouched. The test exists specifically to lock in this rename: a regression that re-clobbers `Mutable` would surface as a property-not-found error on the body's `x.field = ...` write.
+- **Add negative parser tests:**
+  - `val mut [a, b] = arr` — `mut` on a tuple pattern → error ("`mut` applies to bindings, not destructuring patterns; write `[mut a, mut b]` instead")
+  - `val mut { a, b } = obj` — same error for object pattern
+  - `val mut _ = expr` — `mut _` is meaningless
+- **Add an end-to-end checker test** covering the motivating fixture's shape:
+  ```
+  val mut obj1 = { value: 0, increment(mut self) -> Self { self.value = self.value + 1; return self } }
+  val inc = obj1.increment    // resolves because obj1 is now mut
+  obj1.increment()             // succeeds
+  ```
+  Assert: no errors; `obj1`'s binding type is `mut { ... }`; `inc`'s type is the (mut-self) method type; the call succeeds.
+- **Add a `var mut`-versus-`val mut` test** that documents the (val) vs (var) vs (val mut) vs (var mut) matrix and exercises both `Binding` fields after the split:
+
+  | Form        | `Assignable` | `Mutable` | Rebindable? | Underlying object mutable? |
+  |-------------|--------------|-----------|-------------|----------------------------|
+  | `val x`     | false        | false     | no          | no                         |
+  | `var x`     | true         | false     | yes         | no                         |
+  | `val mut x` | false        | true      | no          | yes                        |
+  | `var mut x` | true         | true      | yes         | yes                        |
+
+  At least one positive and one negative case per row, covering both the rebind axis (`x = newValue`) and the value-mutation axis (`x.field = newValue`). The rebind axis isn't enforced yet (read-side checks for `Assignable` are out of scope for this phase), so its tests assert binding shape rather than enforcement; the value-mutation axis is fully exercised through `check_transitions.go`.
+- **Restore the deleted line** in [fixtures/objects_with_self/lib/objects_with_self.esc](../../fixtures/objects_with_self/lib/objects_with_self.esc): change `export val obj1 = { ... }` to `export val mut obj1 = { ... }` and add back `val inc = obj1.increment`. **Note:** this changes the public type of the `obj1` export to `mut { ... }`, observable to importers — confirm this is the intended public shape (it matches what the pre-Phase-1 `mut?` resolution produced once the body's writes were observed; now it's stated explicitly at the binding site).
+
+### Edge cases
+
+- **`for mut x in iter`:** the for-in loop currently force-sets `binding.Mutable = false` ([infer_stmt.go:442](../../internal/checker/infer_stmt.go#L442)) to enforce that loop variables aren't reassignable. After the field split, **rename the override to force `binding.Assignable = false`** — that's the rebind axis, which is what the original code was guarding against. Leave `binding.Mutable` derived from the loop pattern (`for mut x in xs` keeps value-mutability via the pattern's `MutType` wrapper on the binding's type). The matrix test should include a `for mut x in xs { x.field = ... }` row to lock this in.
+- **`mut self` parameters:** the existing dedicated parsing for `mut self` ([decl.go around line 341](../../internal/parser/decl.go#L341)) is unaffected — it's a pre-pattern special case. The pattern parser never sees `self`. Add a parser test that confirms `fn f(mut p, mut self)` and similar still parse correctly (or error in the expected way).
+- **Type-annotation interaction:** `val mut p: Point = …` doesn't need any reconciliation logic — the annotation and the pattern's `mut` operate at different layers and compose cleanly:
+  - The annotation provides the **value type** that the initializer is unified against. `inferTypeAnn` returns `Point`; `Unify(taType, patType)` runs as it does today and reconciles the pattern's fresh TypeVar with `Point`.
+  - The pattern's `mut` is then applied **after** unification as an idempotent wrap on the binding's stored type: if the unified type isn't already a `*MutType`, wrap it; otherwise leave it. Pseudocode for the `IdentPat` branch in `inferPattern`:
+    ```
+    if p.Mutable {
+        if _, ok := t.(*type_system.MutType); !ok {
+            t = type_system.NewMutType(provenance, t)
+        }
+    }
+    ```
+  - Result: `val mut p: Point = …` stores `mut Point` in the binding; `val mut p: mut Point = …` stores `mut Point` (no double-wrap); `val p: mut Point = …` stores `mut Point` via the annotation alone.
+  - **No new transition-checker or lifetime-checker hook.** Mutating writes through `p` go through `check_transitions.go`, which already keys off the binding's stored type — once it's `mut Point`, the `CannotMutateImmutableError` path is bypassed naturally. Lifetime params attach to leaf types and propagate via the existing alias machinery; the `mut` wrapper doesn't alter the lifetime graph.
+- **`val mut p = mut Counter()`** (both sides claim mut) — the same idempotent guard above keeps the binding type as `mut Counter`, not `mut (mut Counter)`.
+- **`val mut foo = bar`** where `bar: Point` (immutable) — this is the "second motivation" use case. The pattern wraps `foo`'s type as `mut Point`, but `foo` aliases `bar`. The existing `trackAliasesForVarDecl` ([infer_stmt.go:123](../../internal/checker/infer_stmt.go#L123)) records the alias edge; subsequent writes through `foo` go through `check_transitions.go`, which already handles mut-typed bindings aliasing immutable places. The pattern flag declares the binding-side view; the existing machinery decides whether that view is sound for the aliased value. **Net:** no new soundness story to invent — sound when the alias/transition machinery accepts it, errors when it doesn't.
+
+### Risks
+
+- **`Binding{}` literal sweep — production code.** Splitting `Mutable` into `Assignable` + `Mutable` touches every `Binding{}` construction site. There are ~24 non-test sites in `internal/checker/` plus ~2 in `internal/type_system/`. The compiler catches missed sites if the field is renamed (i.e. don't keep `Mutable` as a backwards-compat alias during the migration — let `go build` fail loudly). `grep -rn "type_system.Binding{" internal/` is the sweep; `go test ./...` plus the function-parameter and val/var × mut/non-mut matrix tests are the regression check.
+- **`Binding{}` literal sweep — test files.** ~38 additional mock-binding constructions live in `internal/checker/tests/` (`export_statements_test.go`, `import_load_test.go`, `package_registry_test.go`, `infer_test.go`, `benchmark_test.go`, `file_scope_test.go`). After the rename every test file fails to compile until updated. Plan for this in the time estimate — the sweep is mechanical but voluminous, and a couple of files use the inline `Binding{Type: ..., Mutable: false}` form that's easy to miss with multi-line-aware regexes.
+- **For-in loop interaction.** The current force-`Mutable=false` at [infer_stmt.go:442](../../internal/checker/infer_stmt.go#L442) becomes force-`Assignable=false` after the split (loop vars aren't rebindable to a different iteration value), and `Mutable` is derived from the loop pattern (`for mut x in xs` keeps value-mutability). A test locks in this behavior.
+- **Namespace structural-equality drift.** [types.go:2651](../../internal/type_system/types.go#L2651) compares `Mutable` as part of namespace identity. After the split, both fields participate in equality. If only `Mutable` is updated and `Assignable` is missed, two namespaces that differ only in val/var would compare equal — likely benign today but a latent footgun. Update the comparison loop and the comment at [:2645](../../internal/type_system/types.go#L2645) in the same change.
+- **`MutType` wrap provenance.** When wrapping the binding's type in the `IdentPat`/`ObjShorthandPat` branches, use the pattern node's provenance (the same `provenance` value already in scope at [infer_pat.go:41](../../internal/checker/infer_pat.go#L41)), not the underlying type's provenance. Error attribution for `CannotMutateImmutableError` and similar should point at the `mut` keyword's binding site, not at wherever the wrapped value originated. Worth a quick test of an error message after Phase 4 to confirm the underline lands on the right span.
+
+### Alternative considered: expression-level `MutExpr`
+
+An earlier design replaced `CallExpr.Mutable` with an `*ast.MutExpr` wrapper that could prefix any expression. It was rejected for three reasons:
+
+1. **Soundness gap.** `mut <ident>` retypes a value the user doesn't own — `(mut x).tickInPlace()` could mutate an object the type system elsewhere considers immutable. Mitigations required restricting the form to construction sites, which then made the wrapper redundant with the existing `CallExpr.Mutable` flag.
+2. **Passthrough surface.** ~10 expression-walking switches across liveness, lifetimes, alias analysis, codegen, and printer would need a new case, with silent-degradation failure modes when any was missed. Pattern-level `mut` adds zero new expression nodes and reuses existing pattern-walking code.
+3. **No destructuring story.** `mut { a, b } = obj` (with `a` mut and `b` not) has no clean expression-level form. Pattern leaves give per-leaf control naturally.
+
+The earlier design's notes — including the passthrough table, the `MutExpr.Accept` recursion requirement, and the `processAssignBranch` early-return hazard — are preserved in this plan's git history if expression-level `mut` is ever revisited.
+
+## Phase 5 — Sweep, snapshots, verification (Phase 4 follow-up)
+
+- `UPDATE_SNAPS=true go test ./...` — review printer/codegen snapshot diffs. Most existing fixtures should be untouched (the only printer-side change is the optional `mut ` prefix on `IdentPat`/`ObjShorthandPat`); the restored `objects_with_self` fixture and any new pattern-mut tests add new snapshots.
+- Confirm the restored `val inc = obj1.increment` line in [fixtures/objects_with_self/lib/objects_with_self.esc](../../fixtures/objects_with_self/lib/objects_with_self.esc) round-trips through codegen and matches the pre-Phase-1 generated JS. The export is now `val mut obj1`, but the runtime emission should be identical — pattern `mut` is type-only.
+- `go generate ./internal/ast/...` produces no diff against the committed `pattern_gen.go` (i.e. the regeneration was committed alongside the struct edit).
+- Lifetimes test suite (`go test ./internal/checker/tests/lifetime_test.go`) green — pattern `mut` should not regress lifetime/alias propagation since binding identity is unchanged. Worth running as a backstop.
+- Mutation-transition tests green (`go test ./internal/checker/tests/check_transitions_test.go` and similar) — mut bindings now succeed at field assignment where plain bindings error. The matrix table from "Tests and fixtures" exercises this directly.
+- `grep -n "Mutable: false, // TODO" internal/checker/` returns zero hits — both `IdentPat` and `ObjShorthandPat` paths in `infer_pat.go` now derive `Mutable` from the pattern flag.
+- `grep -n "type_system.Binding{" internal/` review — every literal sets both `Assignable` and `Mutable` explicitly (or relies on the zero-value default `false`/`false` knowingly). `go build ./...` catches any field-name typos from the split-and-rename.
+- Namespace structural-equality test (anything in `internal/type_system/` that exercises `equals` over `Namespace`) covers two bindings that differ only in `Assignable` and confirms they compare unequal.
+- **Printer round-trip test for pattern `mut`.** Build patterns with `IdentPat.Mutable` and `ObjShorthandPat.Mutable` set to both `true` and `false` variants, run them through `Printer.PrintScript` (entry at [internal/printer/printer.go:91](../../internal/printer/printer.go#L91)), reparse the printed source via `parser.NewParser(ctx, source).ParseScript()` ([internal/parser/parser.go:88](../../internal/parser/parser.go#L88)), and assert structural equality of the resulting AST — specifically that `IdentPat.Mutable` and `ObjShorthandPat.Mutable` survive the round-trip on every relevant leaf. Then print the reparsed AST a second time and assert the two printed outputs are byte-identical (idempotence, the standard print → parse → print test). Cover at minimum: `val mut x = 1`; `val { mut x, y } = pt`; `val { x: mut a, y: b } = pt`; the restored [fixtures/objects_with_self/lib/objects_with_self.esc](../../fixtures/objects_with_self/lib/objects_with_self.esc) under `export val mut obj1`. A round-trip regression (printer drops `mut`, or parser fails to set `Mutable` on the reparsed leaf) would otherwise pass type-checking and only surface as a downstream property-not-found error — this test catches it at the surface.
+- **Generic-parameter interaction test for pattern `mut`.** Add an integration test for `fn f<T>(mut p: T) { ... }` covering three properties — they're independent and a regression in any one would silently lose the `mut` (a) on the parameter type, (b) on the generalized signature, or (c) at the call site:
+  - **(a) Parameter type is wrapped:** after `inferFuncSig` ([internal/checker/infer_func.go:119](../../internal/checker/infer_func.go#L119)) processes the parameter, the `paramBindings["p"].Type` is a `*MutType` wrapping the type variable for `T`, i.e. `MutType(TypeVar(T))`, not bare `TypeVar(T)`. The `IdentPat.Mutable` flag drives the wrap; the existing `inferFuncSig` paths at [infer_module.go:1091, 1102, 1150, 1162, 1213, 1225](../../internal/checker/infer_module.go#L1091) need to honor it.
+  - **(b) Generalization preserves the wrap:** the inferred function type generalizes over `T` (the function is polymorphic in `T`) while keeping the parameter as `mut T`. Assert via `PrintType` that the printed signature reads `fn f<T>(mut p: T)` (or whatever the printer renders for `MutType` in type position) — not `fn f<T>(p: T)`.
+  - **(c) Instantiation at call sites:** `f(myCounter)` where `myCounter: mut Counter` succeeds; `f(immutableCounter)` where the argument has no `MutType` wrapper errors with the same `CannotMutateImmutableError` that fires for non-generic mut-parameter functions. Assert both directions.
+
+  This explicitly verifies that `MutType` composes with type-variable parameters and that the existing `MutType` handling (in `Unify`, alias propagation, and `check_transitions.go`) doesn't have a hidden bare-TypeVar assumption that breaks under `MutType(T)`.
+
 ## Risks and unknowns
 
 - **Open-object finalization order.** If a function body's open-object decision needs to be visible to a *caller's* unification before the caller is checked, single-pass-after-body finalization is fine. If there's a mutual-recursion case where the caller's checks run first, the order may need shuffling — same machinery the lifetimes pass already uses for lifetime params.
@@ -139,12 +333,21 @@ Note: `removeUncertainMutability` is **not currently called from `generalize.go`
 | Phase 1 (mut-self gate + LSP)                | ~half-day    | ✅ Landed. Open-object hazard sidestepped via `objType.Open` short-circuit. |
 | Phase 2 (`mut?` removal + finalization pass) | 2–4 days     | ✅ Landed. `removeUncertainMutability` retained as `rebuildContainers` (load-bearing for FromBinding TypeVar normalization). |
 | Phase 3 (fixture sweep + new tests)          | ~half-day    | ✅ Landed. No fixture sweep needed (Phase 2 covered it); no disabled tests remained. |
-| **Total**                                    | **3–5 days** | All phases done.                                               |
+| Phase 4 (pattern-level `mut` + `Binding` field split) | 2–3 days     | Pending. AST flag + parser + pattern-inference plumbing + function-param sweep + `Binding.Mutable` → `{Assignable, Mutable}` split touching ~64 construction sites (~24 production + ~38 test mocks + ~2 in `internal/type_system/`). No new expression nodes; no liveness/lifetime/codegen passthrough sites. Risks: missing a `Binding{}` site (production or test); namespace-equality drift if the comparison loop isn't updated alongside the struct; test-file sweep volume (mechanical but loud). |
+| Phase 5 (Phase 4 sweep + verification)       | ~half-day    | Pending. Mechanical fixture/snapshot review + the val/var × mut/non-mut matrix tests + namespace-equality regression test. |
+| **Total**                                    | **5–7 days** | Phases 1–3 done; Phases 4–5 pending. |
 
 ## Verification
 
-1. `go test ./...` green after each phase. ✓ (Phases 1–2)
+1. `go test ./...` green after each phase. ✓ (Phases 1–3)
 2. `grep -r "mut?" internal/` and `grep -r "MutabilityUncertain" internal/` both return zero hits after Phase 2. ✓
 3. LSP completion at `immutablePoint.` does not list any `mut self` methods; at `mutablePoint.` it does. ✓ (Phase 1)
 4. The receiver-mutability tests previously commented out in [mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go) are re-enabled and passing, plus type-var-receiver coverage. ✓ (Phase 1)
 5. Generated JS for existing programs is byte-identical (the change is purely type-level). ✓ (Phase 1; the only fixture JS deltas are removals of `obj1.increment.bind(obj1)` for the binding line that was deleted — no other diffs.)
+6. After Phase 4: `val mut p = Counter(); p.tick()` succeeds; `val p = Counter(); p.tick()` errors with property-not-found (Phase 1 filter); the val/var × mut/non-mut matrix test passes.
+7. After Phase 4: the restored `val inc = obj1.increment` line in [fixtures/objects_with_self/lib/objects_with_self.esc](../../fixtures/objects_with_self/lib/objects_with_self.esc) (now under `export val mut obj1 = { ... }`) round-trips through codegen unchanged from the pre-Phase-1 baseline.
+8. After Phase 4: `fn f(mut p: Point) { p.x = 1 }` type-checks; `fn f(p: Point) { p.x = 1 }` errors with the existing `CannotMutateImmutableError`. Function parameters honor pattern `mut`.
+9. After Phase 4: `grep -n "Mutable: false, // TODO" internal/checker/` returns zero hits — both `IdentPat` and `ObjShorthandPat` branches in `infer_pat.go` now derive `Binding.Mutable` from the pattern flag.
+10. After Phase 4: **destructuring respects per-leaf mutability** — the cases enumerated in "Tests and fixtures" (shorthand-form `val { mut x, y } = pt`, key-value-form `val { x: mut a, y: b } = pt`, and the mixed `val { mut x, y: mut a, z } = pt`) all type-check; mutating writes through the `mut`-marked leaves succeed (`x.field = ...` for the shorthand-mut leaf, `a.field = ...` for the keyvalue-mut leaf), and the same writes through the *unmarked* leaves error with `CannotMutateImmutableError`. Each leaf's `Binding.Mutable` is independent — flipping one leaf's `mut` flag does not change another's. This locks in the per-leaf independence claim from the AST/parser section.
+11. After Phase 4: **printer round-trip preserves pattern `mut`** — for every test case in item 10 above plus `val mut x = 1` and the restored `objects_with_self` fixture, `Printer.PrintScript → parser.ParseScript → Printer.PrintScript` produces byte-identical output, and the intermediate reparsed AST has `IdentPat.Mutable`/`ObjShorthandPat.Mutable` matching the original on every leaf.
+12. After Phase 4: **`fn f<T>(mut p: T)` generic-parameter test** — `inferFuncSig` produces a parameter binding whose type is `MutType(TypeVar(T))`; the generalized signature prints as `fn f<T>(mut p: T)`; calling `f(mutValue)` succeeds and `f(immutableValue)` errors with `CannotMutateImmutableError`. Confirms `MutType` composes with type-variable parameters.
