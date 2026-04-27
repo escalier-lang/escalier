@@ -414,32 +414,8 @@ func (p *Printer) printUnaryExpr(expr *ast.UnaryExpr) {
 	}
 }
 
-// isMutCall reports whether expr is a CallExpr that was prefixed with `mut`.
-// Such a call must be parenthesized when it appears as the operand of a
-// suffix-attaching parent (MemberExpr.Object, IndexExpr.Object, or the
-// callee of an outer CallExpr) — otherwise the parser would attach the
-// suffix to the inner call and either reject the result (`.foo` on a mut
-// call is a parse error) or rebind the `mut` to the outer call.
-func isMutCall(expr ast.Expr) bool {
-	call, ok := expr.(*ast.CallExpr)
-	return ok && call.Mutable
-}
-
-func (p *Printer) printSuffixOperand(expr ast.Expr) {
-	if isMutCall(expr) {
-		p.writeString("(")
-		p.printExpr(expr)
-		p.writeString(")")
-		return
-	}
-	p.printExpr(expr)
-}
-
 func (p *Printer) printCallExpr(expr *ast.CallExpr) {
-	if expr.Mutable {
-		p.writeString("mut ")
-	}
-	p.printSuffixOperand(expr.Callee)
+	p.printExpr(expr.Callee)
 	if expr.OptChain {
 		p.writeString("?(")
 	} else {
@@ -456,7 +432,7 @@ func (p *Printer) printCallExpr(expr *ast.CallExpr) {
 }
 
 func (p *Printer) printIndexExpr(expr *ast.IndexExpr) {
-	p.printSuffixOperand(expr.Object)
+	p.printExpr(expr.Object)
 	if expr.OptChain {
 		p.writeString("?[")
 	} else {
@@ -467,7 +443,7 @@ func (p *Printer) printIndexExpr(expr *ast.IndexExpr) {
 }
 
 func (p *Printer) printMemberExpr(expr *ast.MemberExpr) {
-	p.printSuffixOperand(expr.Object)
+	p.printExpr(expr.Object)
 	if expr.OptChain {
 		p.writeString("?.")
 	} else {

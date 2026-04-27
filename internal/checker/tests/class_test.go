@@ -37,13 +37,13 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			bindingName:  "c",
 			expectedType: "Counter",
 		},
-		"HasMutSelf_MutPrefixYieldsMutable": {
+		"HasMutSelf_MutPatternYieldsMutable": {
 			input: `
 				class Counter(count: number) {
 					count,
 					increment(mut self) -> number { return self.count }
 				}
-				val c = mut Counter(0)
+				val mut c = Counter(0)
 			`,
 			bindingName:  "c",
 			expectedType: "mut Counter",
