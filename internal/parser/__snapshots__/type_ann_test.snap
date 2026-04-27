@@ -92,6 +92,7 @@
             Pattern: &ast.IdentPat{
                 Name:    "x",
                 VarID:   0,
+                Mutable: false,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -115,6 +116,7 @@
             Pattern: &ast.IdentPat{
                 Name:    "y",
                 VarID:   0,
+                Mutable: false,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -187,6 +189,7 @@
             Pattern: &ast.IdentPat{
                 Name:    "x",
                 VarID:   0,
+                Mutable: false,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -221,6 +224,7 @@
             Pattern: &ast.IdentPat{
                 Name:    "y",
                 VarID:   0,
+                Mutable: false,
                 TypeAnn: nil,
                 Default: nil,
                 span:    ast.Span{
@@ -1174,6 +1178,7 @@
                     Pattern: &ast.IdentPat{
                         Name:    "args",
                         VarID:   0,
+                        Mutable: false,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -3790,6 +3795,7 @@ nil
                     Pattern: &ast.IdentPat{
                         Name:    "x",
                         VarID:   0,
+                        Mutable: false,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -3834,6 +3840,7 @@ nil
                     Pattern: &ast.IdentPat{
                         Name:    "x",
                         VarID:   0,
+                        Mutable: false,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -3891,6 +3898,7 @@ nil
                     Pattern: &ast.IdentPat{
                         Name:    "x",
                         VarID:   0,
+                        Mutable: false,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{
@@ -3935,6 +3943,7 @@ nil
                     Pattern: &ast.IdentPat{
                         Name:    "x",
                         VarID:   0,
+                        Mutable: false,
                         TypeAnn: nil,
                         Default: nil,
                         span:    ast.Span{

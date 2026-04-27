@@ -289,8 +289,8 @@ func TestConvertPatternToTypePat(t *testing.T) {
 	t.Run("convert TuplePat", func(t *testing.T) {
 		// Create an ast.TuplePat with some elements
 		astTuplePat := ast.NewTuplePat([]ast.Pat{
-			ast.NewIdentPat("a", nil, nil, emptySpan()),
-			ast.NewIdentPat("b", nil, nil, emptySpan()),
+			ast.NewIdentPat("a", false, nil, nil, emptySpan()),
+			ast.NewIdentPat("b", false, nil, nil, emptySpan()),
 			ast.NewWildcardPat(emptySpan()),
 		}, emptySpan())
 
@@ -322,12 +322,12 @@ func TestConvertPatternToTypePat(t *testing.T) {
 	t.Run("convert nested TuplePat", func(t *testing.T) {
 		// Create a nested tuple pattern: [a, [b, c]]
 		nestedTuple := ast.NewTuplePat([]ast.Pat{
-			ast.NewIdentPat("b", nil, nil, emptySpan()),
-			ast.NewIdentPat("c", nil, nil, emptySpan()),
+			ast.NewIdentPat("b", false, nil, nil, emptySpan()),
+			ast.NewIdentPat("c", false, nil, nil, emptySpan()),
 		}, emptySpan())
 
 		astTuplePat := ast.NewTuplePat([]ast.Pat{
-			ast.NewIdentPat("a", nil, nil, emptySpan()),
+			ast.NewIdentPat("a", false, nil, nil, emptySpan()),
 			nestedTuple,
 		}, emptySpan())
 
@@ -364,9 +364,9 @@ func TestConvertPatternToTypePat(t *testing.T) {
 	t.Run("convert TuplePat with RestPat", func(t *testing.T) {
 		// Create a tuple pattern with rest: [a, ...rest]
 		astTuplePat := ast.NewTuplePat([]ast.Pat{
-			ast.NewIdentPat("a", nil, nil, emptySpan()),
+			ast.NewIdentPat("a", false, nil, nil, emptySpan()),
 			ast.NewRestPat(
-				ast.NewIdentPat("rest", nil, nil, emptySpan()),
+				ast.NewIdentPat("rest", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 		}, emptySpan())
@@ -408,12 +408,12 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 		astObjectPat := ast.NewObjectPat([]ast.ObjPatElem{
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("a", emptySpan()),
-				ast.NewIdentPat("x", nil, nil, emptySpan()),
+				ast.NewIdentPat("x", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("b", emptySpan()),
-				ast.NewIdentPat("y", nil, nil, emptySpan()),
+				ast.NewIdentPat("y", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 		}, emptySpan())
@@ -449,17 +449,18 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 		// Create an object pattern: {a, b}
 		astObjectPat := ast.NewObjectPat([]ast.ObjPatElem{
 			ast.NewObjShorthandPat(
-				ast.NewIdentifier("a", emptySpan()),
+				ast.NewIdentifier("a", emptySpan()), false,
+
 				nil,
 				nil,
-				emptySpan(),
-			),
+				emptySpan()),
+
 			ast.NewObjShorthandPat(
-				ast.NewIdentifier("b", emptySpan()),
+				ast.NewIdentifier("b", emptySpan()), false,
+
 				nil,
 				nil,
-				emptySpan(),
-			),
+				emptySpan()),
 		}, emptySpan())
 
 		// Convert to type system pattern
@@ -487,13 +488,14 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 		// Create an object pattern: {a, ...rest}
 		astObjectPat := ast.NewObjectPat([]ast.ObjPatElem{
 			ast.NewObjShorthandPat(
-				ast.NewIdentifier("a", emptySpan()),
+				ast.NewIdentifier("a", emptySpan()), false,
+
 				nil,
 				nil,
-				emptySpan(),
-			),
+				emptySpan()),
+
 			ast.NewObjRestPat(
-				ast.NewIdentPat("rest", nil, nil, emptySpan()),
+				ast.NewIdentPat("rest", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 		}, emptySpan())
@@ -528,7 +530,7 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 		nestedObject := ast.NewObjectPat([]ast.ObjPatElem{
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("b", emptySpan()),
-				ast.NewIdentPat("c", nil, nil, emptySpan()),
+				ast.NewIdentPat("c", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 		}, emptySpan())
@@ -576,17 +578,18 @@ func TestConvertPatternToTypePatObjectPat(t *testing.T) {
 		astObjectPat := ast.NewObjectPat([]ast.ObjPatElem{
 			ast.NewObjKeyValuePat(
 				ast.NewIdentifier("a", emptySpan()),
-				ast.NewIdentPat("x", nil, nil, emptySpan()),
+				ast.NewIdentPat("x", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 			ast.NewObjShorthandPat(
-				ast.NewIdentifier("b", emptySpan()),
+				ast.NewIdentifier("b", emptySpan()), false,
+
 				nil,
 				nil,
-				emptySpan(),
-			),
+				emptySpan()),
+
 			ast.NewObjRestPat(
-				ast.NewIdentPat("rest", nil, nil, emptySpan()),
+				ast.NewIdentPat("rest", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 		}, emptySpan())

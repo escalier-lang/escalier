@@ -222,20 +222,6 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 	case *ast.CallExpr:
 		exprType, errors = c.inferCallExpr(ctx, expr)
-		if expr.Mutable {
-			// `mut Foo()` opts into a mutable instance. Strip any existing
-			// mutability wrapper on the return type before re-wrapping with
-			// a definite-mutable one so the result isn't double-wrapped.
-			// TODO: also reject calling a `mut self` method on an immutable
-			// receiver. Today the checker only enforces mutability on direct
-			// field writes, so `val p = Point(); p.tickInPlace()` still
-			// passes. The mut_prefix tests document this gap.
-			unwrapped := exprType
-			if mut, ok := unwrapped.(*type_system.MutType); ok {
-				unwrapped = mut.Type
-			}
-			exprType = type_system.NewMutType(&ast.NodeProvenance{Node: expr}, unwrapped)
-		}
 	case *ast.MemberExpr:
 		objType, objErrors := c.inferExpr(ctx, expr.Object)
 
@@ -491,9 +477,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						selfType = type_system.NewMutType(nil, selfType)
 					}
 					paramBindings["self"] = &type_system.Binding{
-						Source:  &ast.NodeProvenance{Node: expr},
-						Type:    selfType,
-						Mutable: false, // `self` cannot be reassigned
+						Source:     &ast.NodeProvenance{Node: expr},
+						Type:       selfType,
+						Assignable: false, // `self` cannot be reassigned
+						Mutable:    *methodExpr.MutSelf,
 					}
 				}
 
@@ -505,9 +492,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				funcType := t.(*type_system.FuncType)
 				paramBindings := paramBindingsSlice[i]
 				paramBindings["self"] = &type_system.Binding{
-					Source:  &ast.NodeProvenance{Node: expr},
-					Type:    type_system.NewTypeRefType(nil, "Self", &selfTypeAlias),
-					Mutable: false, // `self` cannot be reassigned
+					Source:     &ast.NodeProvenance{Node: expr},
+					Type:       type_system.NewTypeRefType(nil, "Self", &selfTypeAlias),
+					Assignable: false, // `self` cannot be reassigned
+					Mutable:    false, // getters don't mutate self
 				}
 
 				getterExpr := elem
@@ -519,9 +507,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				funcType := t.(*type_system.FuncType)
 				paramBindings := paramBindingsSlice[i]
 				paramBindings["self"] = &type_system.Binding{
-					Source:  &ast.NodeProvenance{Node: expr},
-					Type:    type_system.NewMutType(nil, type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)),
-					Mutable: false, // `self` cannot be reassigned
+					Source:     &ast.NodeProvenance{Node: expr},
+					Type:       type_system.NewMutType(nil, type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)),
+					Assignable: false, // `self` cannot be reassigned
+					Mutable:    true,  // setters may mutate self
 				}
 
 				setterExpr := elem

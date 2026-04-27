@@ -427,25 +427,13 @@ func (p *Parser) primaryExpr() ast.Expr {
 			}
 			return ast.NewAwait(arg, ast.MergeSpans(token.Span, arg.Span()))
 		case Mut:
-			mutSpan := token.Span
+			p.reportError(token.Span,
+				"'mut' is not allowed in expression position; use `val mut x = ...` to bind a mutable value")
 			p.lexer.consume() // consume 'mut'
-			// Bind tightly: `mut` recurses into primaryExpr (not p.expr()) so
-			// `mut Point() + 1` parses as `(mut Point()) + 1`. The mutability
-			// flag rides on the CallExpr itself, so every walker that already
-			// handles CallExpr sees it without needing a separate node case.
-			arg := p.primaryExpr()
-			if arg == nil {
-				p.reportError(mutSpan, "Expected expression after 'mut'")
-				return nil
-			}
-			call, ok := arg.(*ast.CallExpr)
-			if !ok {
-				p.reportError(ast.MergeSpans(mutSpan, arg.Span()),
-					"'mut' prefix can only be applied to a call expression")
-				return arg
-			}
-			call.Mutable = true
-			return call
+			// Don't early-return: any prefix operators already collected in
+			// `ops` (e.g., the `-` in `-mut x`) still need to wrap the
+			// recovered expression so post-processing applies them.
+			expr = p.primaryExpr()
 		case Yield:
 			p.lexer.consume() // consume 'yield'
 

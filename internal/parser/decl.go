@@ -283,7 +283,8 @@ modifiers_done:
 
 			p.mutSelf() // TODO: check the value of mutSelf
 
-			// TODO: report an error if `self` is not the only param
+			// TODO(#506): report an error if `self` is not the only param
+			// (instance) or if any params are present (static).
 			// _ = parseDelimSeq(p, CloseParen, Comma, p.param)
 			p.expect(CloseParen, AlwaysConsume)
 			next = p.lexer.peek()
@@ -338,7 +339,9 @@ modifiers_done:
 				params = parseDelimSeq(p, CloseParen, Comma, p.param)
 			}
 
-			// TODO: report an error if `mut self` is not the first param
+			// TODO(#506): report an error if `mut self` is not the first
+			// param, if there isn't exactly one value param after it
+			// (instance), or if there isn't exactly one param (static).
 			p.expect(CloseParen, AlwaysConsume)
 			next = p.lexer.peek()
 		}
@@ -482,11 +485,8 @@ func (p *Parser) varDecl(
 	if pat == nil {
 		p.reportError(token.Span, "Expected pattern")
 		pat = ast.NewIdentPat(
-			"",
-			nil,
-			nil,
-			ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID},
-		)
+			"", false, nil, nil,
+			ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID})
 	}
 	end := pat.Span().End
 

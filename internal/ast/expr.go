@@ -380,14 +380,9 @@ func (e *FuncExpr) Accept(v Visitor) {
 }
 
 type CallExpr struct {
-	Callee   Expr
-	Args     []Expr
-	OptChain bool
-	// Mutable indicates the call site was prefixed with `mut`, opting into a
-	// mutable instance. The `mut` keyword has no runtime representation; this
-	// flag only affects type inference (it produces a definite-mutable result
-	// type) and pretty-printing.
-	Mutable      bool
+	Callee       Expr
+	Args         []Expr
+	OptChain     bool
 	span         Span
 	inferredType Type
 }

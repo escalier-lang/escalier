@@ -717,3 +717,32 @@ func collectBindingTypes(ns *type_system.Namespace) map[string]string {
 	}
 	return out
 }
+
+// assertExpectedErrors asserts that actualErrors contains exactly one entry
+// per substring in expected, in order, with each substring appearing in the
+// corresponding error's message. An empty (or nil) expected asserts no
+// errors were produced.
+func assertExpectedErrors(t *testing.T, expected []string, actualErrors []Error) {
+	t.Helper()
+	if len(expected) == 0 {
+		if len(actualErrors) > 0 {
+			for i, err := range actualErrors {
+				t.Logf("Unexpected Error[%d]: %s", i, err.Message())
+			}
+		}
+		assert.Empty(t, actualErrors, "expected no inference errors")
+		return
+	}
+	if !assert.Equalf(t, len(expected), len(actualErrors),
+		"expected %d errors, got %d", len(expected), len(actualErrors)) {
+		for i, err := range actualErrors {
+			t.Logf("Error[%d]: %s", i, err.Message())
+		}
+		return
+	}
+	for i, want := range expected {
+		assert.Containsf(t, actualErrors[i].Message(), want,
+			"error[%d] message %q should contain %q",
+			i, actualErrors[i].Message(), want)
+	}
+}

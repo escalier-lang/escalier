@@ -8,6 +8,50 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// nestedMutInParamErrors walks a function parameter's pattern and reports
+// any non-top-level `mut` flag (IdentPat.Mutable inside a destructure, or
+// ObjShorthandPat.Mutable). These forms let the function body mutate the
+// caller's value through a leaf alias while the parameter's printed type
+// does not reflect the mutation — see TestPatternLevelMut_NoLeakIntoParentContainer
+// for the structural side, and the matching positive test
+// FuncParamMutCanMutateField for the legitimate top-level form.
+//
+// The top-level IdentPat.Mutable case is the sanctioned form (`fn f(mut p: T)`),
+// so it is not visited here.
+func nestedMutInParamErrors(pat ast.Pat) []Error {
+	var errs []Error
+	var walk func(p ast.Pat, atTopLevel bool)
+	walk = func(p ast.Pat, atTopLevel bool) {
+		switch p := p.(type) {
+		case *ast.IdentPat:
+			if p.Mutable && !atTopLevel {
+				errs = append(errs, NestedMutInParamError{span: p.Span()})
+			}
+		case *ast.ObjectPat:
+			for _, elem := range p.Elems {
+				switch e := elem.(type) {
+				case *ast.ObjShorthandPat:
+					if e.Mutable {
+						errs = append(errs, NestedMutInParamError{span: e.Span()})
+					}
+				case *ast.ObjKeyValuePat:
+					walk(e.Value, false)
+				case *ast.ObjRestPat:
+					walk(e.Pattern, false)
+				}
+			}
+		case *ast.TuplePat:
+			for _, elem := range p.Elems {
+				walk(elem, false)
+			}
+		case *ast.RestPat:
+			walk(p.Pattern, false)
+		}
+	}
+	walk(pat, true)
+	return errs
+}
+
 func (c *Checker) inferFuncParams(
 	ctx Context,
 	funcParams []*ast.Param,
@@ -17,6 +61,8 @@ func (c *Checker) inferFuncParams(
 	params := make([]*type_system.FuncParam, len(funcParams))
 
 	for i, param := range funcParams {
+		errors = slices.Concat(errors, nestedMutInParamErrors(param.Pattern))
+
 		patType, patBindings, patErrors := c.inferPattern(ctx, param.Pattern)
 
 		errors = slices.Concat(errors, patErrors)
@@ -36,6 +82,23 @@ func (c *Checker) inferFuncParams(
 			var typeAnnErrors []Error
 			typeAnn, typeAnnErrors = c.inferTypeAnn(ctx, param.TypeAnn)
 			errors = slices.Concat(errors, typeAnnErrors)
+		}
+
+		// `fn f(mut p: Point)` — wrap the param's stored type in MutType
+		// so the receiver-mutability filter and transition checker see
+		// `p` as a mutable place. The pattern's binding already carries
+		// the wrap from inferPattern; here we mirror it onto the
+		// FuncParam.Type that flows into the generalized signature.
+		//
+		// Only the top-level IdentPat case is wrapped. Nested `mut` on a
+		// destructured leaf is rejected up-front by nestedMutInParamErrors
+		// above — the printed parameter type would not reflect the
+		// mutation, breaking the call-site contract.
+		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.Mutable {
+			if _, alreadyMut := typeAnn.(*type_system.MutType); !alreadyMut {
+				typeAnn = type_system.NewMutType(
+					&ast.NodeProvenance{Node: param.Pattern}, typeAnn)
+			}
 		}
 
 		// TODO: handle type annotations on parameters

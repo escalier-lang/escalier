@@ -321,19 +321,6 @@ func TestPrintCallExpressions(t *testing.T) {
 		{"call with args", "add(1, 2)", "add(1, 2)"},
 		{"method call", "obj.method()", "obj.method()"},
 		{"optional chaining", "obj?.method()", "obj?.method()"},
-		// `mut` on a call expression. The parser binds `mut` to the
-		// outermost CallExpr that the suffix loop produces, so the printer
-		// must (1) emit `mut` directly on a CallExpr that is itself mutable
-		// and (2) wrap a mutable CallExpr in parens when it appears as the
-		// operand of a suffix-attaching parent (MemberExpr, IndexExpr, or
-		// the callee of an outer CallExpr) so that round-tripping through
-		// the parser preserves which call is mutable.
-		{"mut call", "mut foo()", "mut foo()"},
-		{"mut call chained call", "mut foo().bar()", "mut foo().bar()"},
-		{"mut call chained higher-order call", "mut foo()(1)", "mut foo()(1)"},
-		{"paren mut call then member", "(mut foo()).bar", "(mut foo()).bar"},
-		{"paren mut call then index", "(mut foo())[0]", "(mut foo())[0]"},
-		{"paren mut call then call", "(mut foo())(1)", "(mut foo())(1)"},
 	}
 
 	opts := DefaultOptions()
@@ -1464,6 +1451,116 @@ func TestPrintObjectTypeElements(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPatternLevelMutRoundTrip verifies that the `mut` prefix on
+// pattern bindings survives a print → parse → print round-trip and
+// that the reparsed AST preserves the Mutable flag on every leaf.
+func TestPatternLevelMutRoundTrip(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"plain mut ident", "val mut x = 1"},
+		{"mut ident with type ann", "val mut p: number = 1"},
+		{"object pattern shorthand mut leaf", "val {mut x, y} = obj"},
+		{"object pattern key-value mut leaf", "val {x: mut a, y: b} = obj"},
+		{"mixed shorthand and key-value mut", "val {mut x, y: mut a, z} = obj"},
+		{"var mut", "var mut x = 1"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script1 := parseScript(t, tt.input)
+			out1, err := PrintScript(script1, opts)
+			if err != nil {
+				t.Fatalf("first PrintScript error: %v", err)
+			}
+
+			script2 := parseScript(t, out1)
+			out2, err := PrintScript(script2, opts)
+			if err != nil {
+				t.Fatalf("second PrintScript error: %v", err)
+			}
+
+			if out1 != out2 {
+				t.Errorf("round-trip not idempotent.\nfirst:  %q\nsecond: %q", out1, out2)
+			}
+
+			mutLeaves1 := collectMutLeaves(script1)
+			mutLeaves2 := collectMutLeaves(script2)
+			if len(mutLeaves1) != len(mutLeaves2) {
+				t.Errorf("mut-leaf count drift: first=%d, second=%d (printed: %q)",
+					len(mutLeaves1), len(mutLeaves2), out1)
+			}
+			for name, m1 := range mutLeaves1 {
+				m2, ok := mutLeaves2[name]
+				if !ok {
+					t.Errorf("mut leaf %q lost on round-trip (printed: %q)", name, out1)
+					continue
+				}
+				if m1 != m2 {
+					t.Errorf("mut leaf %q flag mismatch: first=%v, second=%v",
+						name, m1, m2)
+				}
+			}
+		})
+	}
+}
+
+// collectMutLeaves walks the script collecting the Mutable flag of every
+// IdentPat / ObjShorthandPat leaf, keyed by binding name. It descends
+// into every pattern kind that can carry binding leaves so a future
+// regression that drops `mut` inside, e.g., `{...mut rest}` or
+// `Some(mut x)` would surface as a mismatch rather than be silently
+// skipped.
+func collectMutLeaves(script *ast.Script) map[string]bool {
+	out := map[string]bool{}
+	var walk func(p ast.Pat)
+	walk = func(p ast.Pat) {
+		switch v := p.(type) {
+		case *ast.IdentPat:
+			out[v.Name] = v.Mutable
+		case *ast.ObjectPat:
+			for _, elem := range v.Elems {
+				switch e := elem.(type) {
+				case *ast.ObjShorthandPat:
+					out[e.Key.Name] = e.Mutable
+				case *ast.ObjKeyValuePat:
+					walk(e.Value)
+				case *ast.ObjRestPat:
+					walk(e.Pattern)
+				}
+			}
+		case *ast.TuplePat:
+			for _, elem := range v.Elems {
+				walk(elem)
+			}
+		case *ast.RestPat:
+			walk(v.Pattern)
+		case *ast.ExtractorPat:
+			for _, arg := range v.Args {
+				walk(arg)
+			}
+		case *ast.InstancePat:
+			if v.Object != nil {
+				walk(v.Object)
+			}
+		}
+	}
+	for _, stmt := range script.Stmts {
+		ds, ok := stmt.(*ast.DeclStmt)
+		if !ok {
+			continue
+		}
+		vd, ok := ds.Decl.(*ast.VarDecl)
+		if !ok {
+			continue
+		}
+		walk(vd.Pattern)
+	}
+	return out
 }
 
 // TODO: Add support MatchTypeAnn in the parser

@@ -24,25 +24,25 @@ func TestFindBindings(t *testing.T) {
 	}{
 		{
 			name:     "simple identifier pattern",
-			pat:      NewIdentPat("x", nil, nil, emptySpan()),
+			pat:      NewIdentPat("x", false, nil, nil, emptySpan()),
 			expected: set.FromSlice([]string{"x"}),
 		},
 		{
 			name: "tuple pattern with identifiers",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("a", nil, nil, emptySpan()),
-				NewIdentPat("b", nil, nil, emptySpan()),
-				NewIdentPat("c", nil, nil, emptySpan()),
+				NewIdentPat("a", false, nil, nil, emptySpan()),
+				NewIdentPat("b", false, nil, nil, emptySpan()),
+				NewIdentPat("c", false, nil, nil, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"a", "b", "c"}),
 		},
 		{
 			name: "nested tuple pattern",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("x", nil, nil, emptySpan()),
+				NewIdentPat("x", false, nil, nil, emptySpan()),
 				NewTuplePat([]Pat{
-					NewIdentPat("y", nil, nil, emptySpan()),
-					NewIdentPat("z", nil, nil, emptySpan()),
+					NewIdentPat("y", false, nil, nil, emptySpan()),
+					NewIdentPat("z", false, nil, nil, emptySpan()),
 				}, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"x", "y", "z"}),
@@ -52,12 +52,12 @@ func TestFindBindings(t *testing.T) {
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjKeyValuePat(
 					&Ident{Name: "key1", span: emptySpan()},
-					NewIdentPat("value1", nil, nil, emptySpan()),
+					NewIdentPat("value1", false, nil, nil, emptySpan()),
 					emptySpan(),
 				),
 				NewObjKeyValuePat(
 					&Ident{Name: "key2", span: emptySpan()},
-					NewIdentPat("value2", nil, nil, emptySpan()),
+					NewIdentPat("value2", false, nil, nil, emptySpan()),
 					emptySpan(),
 				),
 			}, emptySpan()),
@@ -67,17 +67,18 @@ func TestFindBindings(t *testing.T) {
 			name: "object pattern with shorthand",
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjShorthandPat(
-					&Ident{Name: "shorthand1", span: emptySpan()},
+					&Ident{Name: "shorthand1", span: emptySpan()}, false,
+
 					nil,
 					nil,
-					emptySpan(),
-				),
+					emptySpan()),
+
 				NewObjShorthandPat(
-					&Ident{Name: "shorthand2", span: emptySpan()},
+					&Ident{Name: "shorthand2", span: emptySpan()}, false,
+
 					nil,
 					nil,
-					emptySpan(),
-				),
+					emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"shorthand1", "shorthand2"}),
 		},
@@ -86,11 +87,11 @@ func TestFindBindings(t *testing.T) {
 			pat: NewObjectPat([]ObjPatElem{
 				NewObjKeyValuePat(
 					&Ident{Name: "key", span: emptySpan()},
-					NewIdentPat("value", nil, nil, emptySpan()),
+					NewIdentPat("value", false, nil, nil, emptySpan()),
 					emptySpan(),
 				),
 				NewObjRestPat(
-					NewIdentPat("rest", nil, nil, emptySpan()),
+					NewIdentPat("rest", false, nil, nil, emptySpan()),
 					emptySpan(),
 				),
 			}, emptySpan()),
@@ -99,7 +100,7 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "rest pattern",
 			pat: NewRestPat(
-				NewIdentPat("rest", nil, nil, emptySpan()),
+				NewIdentPat("rest", false, nil, nil, emptySpan()),
 				emptySpan(),
 			),
 			expected: set.FromSlice([]string{"rest"}),
@@ -107,7 +108,7 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "extractor pattern",
 			pat: NewExtractorPat(NewIdentifier("Some", emptySpan()), []Pat{
-				NewIdentPat("inner", nil, nil, emptySpan()),
+				NewIdentPat("inner", false, nil, nil, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"inner"}),
 		},
@@ -115,7 +116,7 @@ func TestFindBindings(t *testing.T) {
 			name: "nested extractor pattern",
 			pat: NewExtractorPat(NewIdentifier("Result", emptySpan()), []Pat{
 				NewExtractorPat(NewIdentifier("Ok", emptySpan()), []Pat{
-					NewIdentPat("value", nil, nil, emptySpan()),
+					NewIdentPat("value", false, nil, nil, emptySpan()),
 				}, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"value"}),
@@ -136,23 +137,23 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "complex nested pattern",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("first", nil, nil, emptySpan()),
+				NewIdentPat("first", false, nil, nil, emptySpan()),
 				NewObjectPat([]ObjPatElem{
 					NewObjKeyValuePat(
 						&Ident{Name: "nested", span: emptySpan()},
 						NewTuplePat([]Pat{
-							NewIdentPat("x", nil, nil, emptySpan()),
-							NewIdentPat("y", nil, nil, emptySpan()),
+							NewIdentPat("x", false, nil, nil, emptySpan()),
+							NewIdentPat("y", false, nil, nil, emptySpan()),
 						}, emptySpan()),
 						emptySpan(),
 					),
 					NewObjRestPat(
-						NewIdentPat("objRest", nil, nil, emptySpan()),
+						NewIdentPat("objRest", false, nil, nil, emptySpan()),
 						emptySpan(),
 					),
 				}, emptySpan()),
 				NewRestPat(
-					NewIdentPat("tupleRest", nil, nil, emptySpan()),
+					NewIdentPat("tupleRest", false, nil, nil, emptySpan()),
 					emptySpan(),
 				),
 			}, emptySpan()),
@@ -161,10 +162,10 @@ func TestFindBindings(t *testing.T) {
 		{
 			name: "mixed patterns with literals and wildcards",
 			pat: NewTuplePat([]Pat{
-				NewIdentPat("valid", nil, nil, emptySpan()),
+				NewIdentPat("valid", false, nil, nil, emptySpan()),
 				NewLitPat(NewString("literal", emptySpan()), emptySpan()),
 				NewWildcardPat(emptySpan()),
-				NewIdentPat("another", nil, nil, emptySpan()),
+				NewIdentPat("another", false, nil, nil, emptySpan()),
 			}, emptySpan()),
 			expected: set.FromSlice([]string{"valid", "another"}),
 		},
@@ -184,9 +185,9 @@ func TestFindBindings(t *testing.T) {
 func TestFindBindingsOrder(t *testing.T) {
 	// Test that bindings are returned in the order they are encountered
 	pat := NewTuplePat([]Pat{
-		NewIdentPat("third", nil, nil, emptySpan()),  // This should be first in result
-		NewIdentPat("first", nil, nil, emptySpan()),  // This should be second in result
-		NewIdentPat("second", nil, nil, emptySpan()), // This should be third in result
+		NewIdentPat("third", false, nil, nil, emptySpan()),
+		NewIdentPat("first", false, nil, nil, emptySpan()),
+		NewIdentPat("second", false, nil, nil, emptySpan()),
 	}, emptySpan())
 
 	result := FindBindings(pat)
@@ -200,9 +201,9 @@ func TestFindBindingsOrder(t *testing.T) {
 func TestFindBindingsNoDuplicates(t *testing.T) {
 	// Test behavior with duplicate identifier names
 	pat := NewTuplePat([]Pat{
-		NewIdentPat("x", nil, nil, emptySpan()),
-		NewIdentPat("x", nil, nil, emptySpan()), // Duplicate name
-		NewIdentPat("y", nil, nil, emptySpan()),
+		NewIdentPat("x", false, nil, nil, emptySpan()),
+		NewIdentPat("x", false, nil, nil, emptySpan()),
+		NewIdentPat("y", false, nil, nil, emptySpan()),
 	}, emptySpan())
 
 	result := FindBindings(pat)
@@ -210,5 +211,37 @@ func TestFindBindingsNoDuplicates(t *testing.T) {
 
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("FindBindings() with duplicates = %v, expected %v", result, expected)
+	}
+}
+
+// TestNewIdentPatMutableArg locks in the Mutable parameter on
+// NewIdentPat. The ctor previously took only (name, typeAnn, default,
+// span) and required callers to set .Mutable as a follow-up — which the
+// codegen IdentPat-copy path silently forgot to do (builder.go:449).
+// Forcing Mutable through the ctor makes the invariant impossible to
+// drop on accident.
+func TestNewIdentPatMutableArg(t *testing.T) {
+	mutPat := NewIdentPat("x", true, nil, nil, emptySpan())
+	if !mutPat.Mutable {
+		t.Errorf("expected Mutable=true on ctor-built pat, got false")
+	}
+	plainPat := NewIdentPat("x", false, nil, nil, emptySpan())
+	if plainPat.Mutable {
+		t.Errorf("expected Mutable=false on ctor-built pat, got true")
+	}
+}
+
+// TestNewObjShorthandPatMutableArg is the parallel guarantee for
+// NewObjShorthandPat — shorthand `mut` (`{ mut x }`) must round-trip
+// through the ctor.
+func TestNewObjShorthandPatMutableArg(t *testing.T) {
+	key := &Ident{Name: "x", span: emptySpan()}
+	mutPat := NewObjShorthandPat(key, true, nil, nil, emptySpan())
+	if !mutPat.Mutable {
+		t.Errorf("expected Mutable=true on ctor-built pat, got false")
+	}
+	plainPat := NewObjShorthandPat(key, false, nil, nil, emptySpan())
+	if plainPat.Mutable {
+		t.Errorf("expected Mutable=false on ctor-built pat, got true")
 	}
 }

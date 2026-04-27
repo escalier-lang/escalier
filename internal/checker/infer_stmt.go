@@ -83,6 +83,13 @@ func (c *Checker) inferVarDecl(
 	patType, bindings, patErrors := c.inferPattern(ctx, decl.Pattern)
 	errors = slices.Concat(errors, patErrors)
 
+	// `var x` rebinds; `val x` does not. `Mutable` (value-mutation through
+	// the name) was already populated by inferPattern from the pattern flag.
+	assignable := decl.Kind == ast.VarKind
+	for _, binding := range bindings {
+		binding.Assignable = assignable
+	}
+
 	if decl.TypeAnn == nil && decl.Init == nil {
 		return nil, errors
 	}
@@ -123,6 +130,11 @@ func (c *Checker) inferVarDecl(
 		transErrors := c.trackAliasesForVarDecl(ctx, decl, bindings, enclosingStmt)
 		errors = slices.Concat(errors, transErrors)
 	}
+
+	// Promote Mutable from a now-resolved MutType wrap on the binding's
+	// type. Catches `val p: mut T = …` (annotation on the VarDecl) which
+	// inferPattern can't see at construction time.
+	updateBindingMutableFromType(bindings)
 
 	return bindings, errors
 }
@@ -183,9 +195,10 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	GeneralizeFuncType(funcType)
 
 	binding := type_system.Binding{
-		Source:  &ast.NodeProvenance{Node: decl},
-		Type:    funcType,
-		Mutable: false,
+		Source:     &ast.NodeProvenance{Node: decl},
+		Type:       funcType,
+		Assignable: false,
+		Mutable:    false,
 	}
 	ctx.Scope.setValue(decl.Name.Name, &binding)
 	return errors
@@ -437,9 +450,12 @@ func (c *Checker) inferForInStmt(ctx Context, stmt *ast.ForInStmt) []Error {
 	unifyErrors := c.Unify(ctx, elementType, patType)
 	errors = slices.Concat(errors, unifyErrors)
 
-	// Add bindings to loop scope (loop variables are immutable like `val`)
+	// Loop variables can't be rebound to a different iteration value. The
+	// value-mutation axis (`Mutable`) is left to whatever the loop pattern
+	// said — `for mut x in xs` keeps the binding's MutType wrapper so writes
+	// through `x` succeed.
 	for name, binding := range bindings {
-		binding.Mutable = false
+		binding.Assignable = false
 		loopCtx.Scope.setValue(name, binding)
 	}
 
@@ -595,10 +611,11 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 			classObjType.SymbolKeyMap = symbolKeyMap
 
 			ctor := &type_system.Binding{
-				Source:   provenance,
-				Type:     classObjType,
-				Mutable:  false,
-				Exported: decl.Export(),
+				Source:     provenance,
+				Type:       classObjType,
+				Assignable: false,
+				Mutable:    false,
+				Exported:   decl.Export(),
 			}
 
 			ns.Values[elem.Name.Name] = ctor

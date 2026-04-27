@@ -14,5 +14,5 @@ class Point(x: number, y: number) {
     },
 }
 
-val p = mut Point(5, 10)
+val mut p = Point(5, 10)
 val q = p.scale(2).translate(1, -1)

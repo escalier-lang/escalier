@@ -61,9 +61,11 @@ func (e ConstructorUsedAsMatchTargetError) isError()        {}
 func (e NonExhaustiveMatchError) isError()                  {}
 func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
+func (e NestedMutInParamError) isError()                    {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
+func (e NestedMutInParamError) IsWarning() bool                    { return false }
 func (e GenericError) IsWarning() bool                             { return false }
 func (e InvalidObjectKeyError) IsWarning() bool                    { return false }
 func (e KeyNotFoundError) IsWarning() bool                         { return false }
@@ -136,6 +138,20 @@ func (e CannotMutateReadonlyPropertyError) Span() ast.Span {
 }
 func (e CannotMutateReadonlyPropertyError) Message() string {
 	return "Cannot mutate readonly property '" + e.Property + "' on type: " + e.Type.String()
+}
+
+type NestedMutInParamError struct {
+	span ast.Span
+}
+
+func (e NestedMutInParamError) Span() ast.Span {
+	return e.span
+}
+func (e NestedMutInParamError) Message() string {
+	return "nested `mut` is not allowed in a function parameter pattern; " +
+		"the parameter type does not reflect the mutation. " +
+		"Use `mut p: T` and destructure inside the body, " +
+		"or change the parameter type to `mut T`."
 }
 
 type UnimplementedError struct {

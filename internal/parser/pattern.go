@@ -10,6 +10,49 @@ import (
 func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat {
 	token := p.lexer.peek()
 
+	// Optional `mut` prefix on a binding leaf. Mutability lives on the
+	// *place* (the binding name), so it only attaches to identifier patterns.
+	// Per-leaf mutability inside a destructuring pattern is expressed by
+	// putting `mut` on each leaf, e.g. `{ mut x, y: mut a }`, never on the
+	// surrounding tuple/object/rest pattern.
+	if token.Type == Mut {
+		mutSpan := token.Span
+		p.lexer.consume() // consume 'mut'
+		next := p.lexer.peek()
+		if next.Type != Identifier {
+			// For destructuring openers, hint the per-leaf form so the
+			// user knows the actual fix rather than just being told the
+			// shape is wrong.
+			var msg string
+			switch next.Type {
+			case OpenBracket:
+				msg = "'mut' cannot be applied to a tuple pattern; use per-leaf mut, e.g. [mut a, b]"
+			case OpenBrace:
+				msg = "'mut' cannot be applied to an object pattern; use per-leaf mut, e.g. {mut a, b}"
+			default:
+				msg = "'mut' in pattern position must be followed by an identifier"
+			}
+			p.reportError(ast.MergeSpans(mutSpan, next.Span), msg)
+			// Don't recurse into p.pattern() for recovery — that path
+			// can re-enter literalPat()'s default case and emit a
+			// second "Expected a pattern" diagnostic for the same
+			// offending token. Return nil; the caller treats nil as an
+			// invalid pattern.
+			return nil
+		}
+		p.lexer.consume() // consume identifier
+		pat := p.identPat(next, allowIdentDefault, allowColonTypeAnn)
+		if identPat, ok := pat.(*ast.IdentPat); ok {
+			// Rebuild the IdentPat with a span that covers the leading
+			// `mut` keyword, so diagnostics like CannotMutateImmutableError
+			// underline the binding-side `mut`, not just the identifier.
+			merged := ast.MergeSpans(mutSpan, identPat.Span())
+			return ast.NewIdentPat(
+				identPat.Name, true, identPat.TypeAnn, identPat.Default, merged)
+		}
+		return pat
+	}
+
 	// nolint: exhaustive
 	switch token.Type {
 	case Identifier, String, Number, Boolean, Bigint:
@@ -112,7 +155,7 @@ func (p *Parser) identPat(nameToken *Token, allowIdentDefault bool, allowColonTy
 			default_ = expr
 		}
 	}
-	return ast.NewIdentPat(nameToken.Value, typeAnn, default_, span)
+	return ast.NewIdentPat(nameToken.Value, false, typeAnn, default_, span)
 }
 
 // tuplePat = '[' (pattern (',' pattern)*)? ']'
@@ -193,6 +236,26 @@ func (p *Parser) literalPat() ast.Pat {
 func (p *Parser) objPatElem() ast.ObjPatElem {
 	token := p.lexer.peek()
 
+	// Shorthand `mut` prefix: `{ mut x }`. Mutability lives on the
+	// *binding* leaf, so the flag goes on the resulting ObjShorthandPat.
+	// Key-value forms (`{ x: mut a }`) recurse through pattern() and pick
+	// up `mut` via the IdentPat path; nothing extra needed here.
+	mutShorthand := false
+	var mutPrefixSpan ast.Span
+	if token.Type == Mut {
+		mutSpan := token.Span
+		p.lexer.consume() // consume 'mut'
+		next := p.lexer.peek()
+		if next.Type != Identifier {
+			p.reportError(ast.MergeSpans(mutSpan, next.Span),
+				"'mut' in object pattern position must be followed by an identifier")
+			return nil
+		}
+		mutShorthand = true
+		mutPrefixSpan = mutSpan
+		token = next
+	}
+
 	// nolint: exhaustive
 	switch token.Type {
 	case Identifier, String, Number, Boolean, Bigint:
@@ -202,6 +265,10 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 
 		token = p.lexer.peek()
 		if token.Type == Colon {
+			if mutShorthand {
+				p.reportError(ast.MergeSpans(mutPrefixSpan, span),
+					"'mut' in object pattern only applies to shorthand bindings; use `key: mut value` for nested patterns")
+			}
 			p.lexer.consume()
 			value := p.pattern(true, true)
 			if value != nil {
@@ -240,7 +307,12 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 				}
 			}
 
-			return ast.NewObjShorthandPat(key, typeAnn, default_, span)
+			// Extend the span to cover the leading `mut` keyword so
+			// diagnostics underline the full binding-side declaration.
+			if mutShorthand {
+				span = ast.MergeSpans(mutPrefixSpan, span)
+			}
+			return ast.NewObjShorthandPat(key, mutShorthand, typeAnn, default_, span)
 		}
 	case DotDotDot:
 		p.lexer.consume()
