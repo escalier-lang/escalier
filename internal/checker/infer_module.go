@@ -1088,8 +1088,9 @@ func (c *Checker) InferComponent(
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
 								// TODO: handle generic classes
+								isMutableSelf := methodType.MutSelf != nil && *methodType.MutSelf
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
-								if methodType.MutSelf != nil && *methodType.MutSelf {
+								if isMutableSelf {
 									t = type_system.NewMutType(nil, t)
 								}
 
@@ -1097,7 +1098,7 @@ func (c *Checker) InferComponent(
 									Source:     &ast.NodeProvenance{Node: bodyElem},
 									Type:       t,
 									Assignable: false,
-									Mutable:    methodType.MutSelf != nil && *methodType.MutSelf,
+									Mutable:    isMutableSelf,
 								}
 							}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParsePatternNoErrors(t *testing.T) {
@@ -151,6 +152,55 @@ func TestParseMutPatternRejected(t *testing.T) {
 			assert.NotEmpty(t, p.errors,
 				"expected parse error for %q, got none", input)
 		})
+	}
+}
+
+// TestParseMutOnNonIdentDoesNotDoubleReport verifies that recovery
+// from `mut <non-ident>` reports the error exactly once and does not
+// re-enter the pattern parser to produce a second "Expected a pattern"
+// error from literalPat's default case.
+func TestParseMutOnNonIdentDoesNotDoubleReport(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		// Tokens that fall through pattern()'s switch to literalPat
+		// and aren't recognized as literals — these are the cases that
+		// could produce a second "Expected a pattern" diagnostic.
+		"MutCloseParen": "mut )",
+		"MutEOF":        "mut",
+	}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := NewParser(ctx, source)
+			_ = p.pattern(true, true)
+			require.Lenf(t, p.errors, 1,
+				"expected exactly one error for %q, got %d: %v",
+				input, len(p.errors), p.errors)
+		})
+	}
+}
+
+// TestParseMutOnObjKeyValueErrorSpan verifies that `{ mut x: a }` —
+// using `mut` on a key-value form rather than a shorthand — reports the
+// error pointed at the `mut` keyword, not at the key.
+func TestParseMutOnObjKeyValueErrorSpan(t *testing.T) {
+	t.Parallel()
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: "{mut x: a}"}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := NewParser(ctx, source)
+	_ = p.pattern(true, true)
+	require.NotEmpty(t, p.errors, "expected an error")
+	for _, err := range p.errors {
+		// `mut` starts at column 2 in `{mut x: a}` (after `{`).
+		// The error's span should cover the `mut` keyword (column 2..5),
+		// not the key `x` (column 6..7).
+		assert.Equalf(t, 2, int(err.Span.Start.Column),
+			"error span should start at the `mut` keyword (col 2), got col %d (msg: %s)",
+			err.Span.Start.Column, err.Message)
 	}
 }
 

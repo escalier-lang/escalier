@@ -22,9 +22,12 @@ func (p *Parser) pattern(allowIdentDefault bool, allowColonTypeAnn bool) ast.Pat
 		if next.Type != Identifier {
 			p.reportError(ast.MergeSpans(mutSpan, next.Span),
 				"'mut' in pattern position must be followed by an identifier")
-			// Fall through to parse the rest of the pattern as normal so
-			// recovery is graceful.
-			return p.pattern(allowIdentDefault, allowColonTypeAnn)
+			// Don't recurse into p.pattern() for recovery — that path
+			// can re-enter literalPat()'s default case and emit a
+			// second "Expected a pattern" diagnostic for the same
+			// offending token. Return nil; the caller treats nil as an
+			// invalid pattern.
+			return nil
 		}
 		p.lexer.consume() // consume identifier
 		pat := p.identPat(next, allowIdentDefault, allowColonTypeAnn)
@@ -254,7 +257,8 @@ func (p *Parser) objPatElem() ast.ObjPatElem {
 		token = p.lexer.peek()
 		if token.Type == Colon {
 			if mutShorthand {
-				p.reportError(span, "'mut' in object pattern only applies to shorthand bindings; use `key: mut value` for nested patterns")
+				p.reportError(ast.MergeSpans(mutPrefixSpan, span),
+					"'mut' in object pattern only applies to shorthand bindings; use `key: mut value` for nested patterns")
 			}
 			p.lexer.consume()
 			value := p.pattern(true, true)

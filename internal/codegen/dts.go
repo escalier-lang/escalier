@@ -137,7 +137,21 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			if containsSelfTypeRef(bindingType) {
 				ifaceName := fmt.Sprintf("__%s_self__", localName)
 				ifaceType := replaceSelfWithThis(bindingType)
-				ifaceTypeAnn := b.buildTypeAnn(ifaceType)
+				var ifaceTypeAnn TypeAnn
+				if funcType, ok := ifaceType.(*type_sys.FuncType); ok {
+					// A callable binding (e.g. `val inc = obj1.increment`)
+					// must be emitted as an interface containing a call
+					// signature — `interface Name { (args): Ret }` — not
+					// as `interface Name(args) => Ret`, which is invalid
+					// TypeScript syntax.
+					ifaceTypeAnn = NewObjectTypeAnn([]ObjTypeAnnElem{
+						&CallableTypeAnn{
+							Fn: b.buildFuncTypeAnn(funcType),
+						},
+					})
+				} else {
+					ifaceTypeAnn = b.buildTypeAnn(ifaceType)
+				}
 				ifaceDecl := &TypeDecl{
 					Name:       NewIdentifier(ifaceName, nil),
 					TypeParams: nil,

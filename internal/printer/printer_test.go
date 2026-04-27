@@ -1523,7 +1523,11 @@ func TestPatternLevelMutRoundTrip(t *testing.T) {
 }
 
 // collectMutLeaves walks the script collecting the Mutable flag of every
-// IdentPat / ObjShorthandPat leaf, keyed by binding name.
+// IdentPat / ObjShorthandPat leaf, keyed by binding name. It descends
+// into every pattern kind that can carry binding leaves so a future
+// regression that drops `mut` inside, e.g., `{...mut rest}` or
+// `Some(mut x)` would surface as a mismatch rather than be silently
+// skipped.
 func collectMutLeaves(script *ast.Script) map[string]bool {
 	out := map[string]bool{}
 	var walk func(p ast.Pat)
@@ -1538,11 +1542,23 @@ func collectMutLeaves(script *ast.Script) map[string]bool {
 					out[e.Key.Name] = e.Mutable
 				case *ast.ObjKeyValuePat:
 					walk(e.Value)
+				case *ast.ObjRestPat:
+					walk(e.Pattern)
 				}
 			}
 		case *ast.TuplePat:
 			for _, elem := range v.Elems {
 				walk(elem)
+			}
+		case *ast.RestPat:
+			walk(v.Pattern)
+		case *ast.ExtractorPat:
+			for _, arg := range v.Args {
+				walk(arg)
+			}
+		case *ast.InstancePat:
+			if v.Object != nil {
+				walk(v.Object)
 			}
 		}
 	}
