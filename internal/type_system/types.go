@@ -2393,11 +2393,12 @@ func (t *IntrinsicType) String() string {
 
 // We want to model both `let x = 5` as well as `fn (x: number) => x`
 type Binding struct {
-	Source   provenance.Provenance // optional
-	Type     Type
-	Mutable  bool
-	Exported bool
-	VarID    int // liveness VarID assigned by the rename pass; 0 if unset
+	Source     provenance.Provenance // optional
+	Type       Type
+	Assignable bool // can the binding name be rebound? (var = true, val = false)
+	Mutable    bool // can the underlying value be mutated through this name? (mut = true)
+	Exported   bool
+	VarID      int // liveness VarID assigned by the rename pass; 0 if unset
 }
 
 // This is similar to Scope, but instead of inheriting from a parent scope,
@@ -2484,11 +2485,12 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 		if newType != binding.Type {
 			changed = true
 			newValues[name] = &Binding{
-				Source:   binding.Source,
-				Type:     newType,
-				Mutable:  binding.Mutable,
-				Exported: binding.Exported,
-				VarID:    binding.VarID,
+				Source:     binding.Source,
+				Type:       newType,
+				Assignable: binding.Assignable,
+				Mutable:    binding.Mutable,
+				Exported:   binding.Exported,
+				VarID:      binding.VarID,
 			}
 		} else {
 			newValues[name] = binding
@@ -2642,13 +2644,15 @@ func namespaceEquals(n1, n2 *Namespace) bool {
 	if len(n1.Values) != len(n2.Values) {
 		return false
 	}
-	// Only Mutable and Type participate in structural equality. VarID is
-	// liveness metadata and Exported is a module-level concern — neither
-	// affects the identity of the namespace's type structure.
+	// Only Assignable, Mutable, and Type participate in structural equality.
+	// VarID is liveness metadata and Exported is a module-level concern —
+	// neither affects the identity of the namespace's type structure.
 	for k, v1 := range n1.Values {
 		if v2, ok := n2.Values[k]; !ok {
 			return false
 		} else if v1.Mutable != v2.Mutable {
+			return false
+		} else if v1.Assignable != v2.Assignable {
 			return false
 		} else if !equals(v1.Type, v2.Type) {
 			return false

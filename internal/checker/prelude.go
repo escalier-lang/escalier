@@ -568,9 +568,10 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 		type_system.NewNeverType(nil),
 	)
 	binArithBinding := type_system.Binding{
-		Source:  nil,
-		Type:    binArithType,
-		Mutable: false,
+		Source:     nil,
+		Type:       binArithType,
+		Assignable: false,
+		Mutable:    false,
 	}
 
 	binCompType := type_system.NewFuncType(
@@ -584,9 +585,10 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 		type_system.NewNeverType(nil),
 	)
 	binACompBinding := type_system.Binding{
-		Source:  nil,
-		Type:    binCompType,
-		Mutable: false,
+		Source:     nil,
+		Type:       binCompType,
+		Assignable: false,
+		Mutable:    false,
 	}
 
 	binEqType := type_system.NewFuncType(
@@ -600,9 +602,10 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 		type_system.NewNeverType(nil),
 	)
 	binEqBinding := type_system.Binding{
-		Source:  nil,
-		Type:    binEqType,
-		Mutable: false,
+		Source:     nil,
+		Type:       binEqType,
+		Assignable: false,
+		Mutable:    false,
 	}
 
 	binLogicType := type_system.NewFuncType(
@@ -616,9 +619,10 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 		type_system.NewNeverType(nil),
 	)
 	binLogicBinding := type_system.Binding{
-		Source:  nil,
-		Type:    binLogicType,
-		Mutable: false,
+		Source:     nil,
+		Type:       binLogicType,
+		Assignable: false,
+		Mutable:    false,
 	}
 
 	unaryLogicType := type_system.NewFuncType(
@@ -631,9 +635,10 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 		type_system.NewNeverType(nil),
 	)
 	unaryLogicBinding := type_system.Binding{
-		Source:  nil,
-		Type:    unaryLogicType,
-		Mutable: false,
+		Source:     nil,
+		Type:       unaryLogicType,
+		Assignable: false,
+		Mutable:    false,
 	}
 
 	// String concatenation operator
@@ -648,9 +653,10 @@ func (c *Checker) addOperatorBindings(ns *type_system.Namespace) {
 		type_system.NewNeverType(nil),
 	)
 	strConcatBinding := type_system.Binding{
-		Source:  nil,
-		Type:    strConcatType,
-		Mutable: false,
+		Source:     nil,
+		Type:       strConcatType,
+		Assignable: false,
+		Mutable:    false,
 	}
 
 	ns.Values["+"] = &binArithBinding
@@ -710,9 +716,10 @@ func (c *Checker) addCustomMatcherToSymbol(ns *type_system.Namespace) {
 func (c *Checker) addGlobalThisBinding(ns *type_system.Namespace) {
 	globalThisType := type_system.NewNamespaceType(nil, ns)
 	ns.Values["globalThis"] = &type_system.Binding{
-		Source:  nil,
-		Type:    globalThisType,
-		Mutable: false,
+		Source:     nil,
+		Type:       globalThisType,
+		Assignable: false,
+		Mutable:    false,
 	}
 }
 

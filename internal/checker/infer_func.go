@@ -38,6 +38,18 @@ func (c *Checker) inferFuncParams(
 			errors = slices.Concat(errors, typeAnnErrors)
 		}
 
+		// `fn f(mut p: Point)` — wrap the param's stored type in MutType
+		// so the receiver-mutability filter and transition checker see
+		// `p` as a mutable place. The pattern's binding already carries
+		// the wrap from inferPattern; here we mirror it onto the
+		// FuncParam.Type that flows into the generalized signature.
+		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.Mutable {
+			if _, alreadyMut := typeAnn.(*type_system.MutType); !alreadyMut {
+				typeAnn = type_system.NewMutType(
+					&ast.NodeProvenance{Node: param.Pattern}, typeAnn)
+			}
+		}
+
 		// TODO: handle type annotations on parameters
 		c.Unify(ctx, patType, typeAnn)
 

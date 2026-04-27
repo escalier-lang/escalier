@@ -1,12 +1,14 @@
 val value: number = 5
 
-export val obj1 = {
+export val mut obj1 = {
     value,
     increment(mut self, amount: number) -> Self {
         self.value = self.value + amount
         return self
     }
 }
+
+val inc = obj1.increment
 
 export val obj2 = {
     _value: value,

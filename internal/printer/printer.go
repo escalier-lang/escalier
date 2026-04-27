@@ -821,6 +821,9 @@ func (p *Printer) printBlock(block *ast.Block) {
 func (p *Printer) printPattern(pat ast.Pat) {
 	switch pt := pat.(type) {
 	case *ast.IdentPat:
+		if pt.Mutable {
+			p.writeString("mut ")
+		}
 		p.writeString(pt.Name)
 		if pt.TypeAnn != nil {
 			p.writeString(": ")
@@ -859,6 +862,9 @@ func (p *Printer) printObjectPattern(pat *ast.ObjectPat) {
 			p.writeString(": ")
 			p.printPattern(e.Value)
 		case *ast.ObjShorthandPat:
+			if e.Mutable {
+				p.writeString("mut ")
+			}
 			p.writeString(e.Key.Name)
 			if e.TypeAnn != nil {
 				p.writeString(": ")

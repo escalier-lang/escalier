@@ -252,10 +252,11 @@ func (c *Checker) InferComponent(
 				binding := nsCtx.Scope.GetValue(decl.Name.Name)
 				if binding == nil {
 					nsCtx.Scope.setValue(decl.Name.Name, &type_system.Binding{
-						Source:   &ast.NodeProvenance{Node: decl},
-						Type:     funcType,
-						Mutable:  false,
-						Exported: decl.Export(),
+						Source:     &ast.NodeProvenance{Node: decl},
+						Type:       funcType,
+						Assignable: false,
+						Mutable:    false,
+						Exported:   decl.Export(),
 					})
 				} else {
 					// Merge with existing overload by creating a new intersection type
@@ -294,9 +295,11 @@ func (c *Checker) InferComponent(
 				// TODO: handle the situation where both decl.Init and decl.TypeAnn
 				// are nil
 
+				assignable := decl.Kind == ast.VarKind
 				var names []string
 				for name, binding := range bindings {
 					binding.Exported = decl.Export()
+					binding.Assignable = assignable
 					nsCtx.Scope.setValue(name, binding)
 					names = append(names, name)
 				}
@@ -592,10 +595,11 @@ func (c *Checker) InferComponent(
 				classObjType.SymbolKeyMap = staticSymbolKeyMap
 
 				ctor := &type_system.Binding{
-					Source:   &ast.NodeProvenance{Node: decl},
-					Type:     classObjType,
-					Mutable:  false,
-					Exported: decl.Export(),
+					Source:     &ast.NodeProvenance{Node: decl},
+					Type:       classObjType,
+					Assignable: false,
+					Mutable:    false,
+					Exported:   decl.Export(),
 				}
 				nsCtx.Scope.setValue(decl.Name.Name, ctor)
 
@@ -934,10 +938,11 @@ func (c *Checker) InferComponent(
 						classObjType.SymbolKeyMap = symbolKeyMap
 
 						ctor := &type_system.Binding{
-							Source:   provenance,
-							Type:     classObjType,
-							Mutable:  false,
-							Exported: decl.Export(),
+							Source:     provenance,
+							Type:       classObjType,
+							Assignable: false,
+							Mutable:    false,
+							Exported:   decl.Export(),
 						}
 
 						ns.Values[elem.Name.Name] = ctor
@@ -1089,9 +1094,10 @@ func (c *Checker) InferComponent(
 								}
 
 								paramBindings["self"] = &type_system.Binding{
-									Source:  &ast.NodeProvenance{Node: bodyElem},
-									Type:    t,
-									Mutable: methodType.MutSelf != nil && *methodType.MutSelf,
+									Source:     &ast.NodeProvenance{Node: bodyElem},
+									Type:       t,
+									Assignable: false,
+									Mutable:    methodType.MutSelf != nil && *methodType.MutSelf,
 								}
 							}
 
@@ -1099,10 +1105,12 @@ func (c *Checker) InferComponent(
 
 							for _, param := range methodType.Fn.Params {
 								if param.Pattern != nil {
+									_, isMut := param.Type.(*type_system.MutType)
 									paramBindings[param.Pattern.String()] = &type_system.Binding{
-										Source:  &type_system.TypeProvenance{Type: param.Type},
-										Type:    param.Type,
-										Mutable: false,
+										Source:     &type_system.TypeProvenance{Type: param.Type},
+										Type:       param.Type,
+										Assignable: false,
+										Mutable:    isMut,
 									}
 								}
 							}
@@ -1148,9 +1156,10 @@ func (c *Checker) InferComponent(
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 
 								paramBindings["self"] = &type_system.Binding{
-									Source:  &ast.NodeProvenance{Node: bodyElem},
-									Type:    t,
-									Mutable: false, // getters don't mutate self
+									Source:     &ast.NodeProvenance{Node: bodyElem},
+									Type:       t,
+									Assignable: false,
+									Mutable:    false, // getters don't mutate self
 								}
 							}
 
@@ -1159,10 +1168,12 @@ func (c *Checker) InferComponent(
 							// Add any explicit parameters from the getter function signature
 							for _, param := range getterType.Fn.Params {
 								if param.Pattern != nil {
+									_, isMut := param.Type.(*type_system.MutType)
 									paramBindings[param.Pattern.String()] = &type_system.Binding{
-										Source:  &type_system.TypeProvenance{Type: param.Type},
-										Type:    param.Type,
-										Mutable: false,
+										Source:     &type_system.TypeProvenance{Type: param.Type},
+										Type:       param.Type,
+										Assignable: false,
+										Mutable:    isMut,
 									}
 								}
 							}
@@ -1211,9 +1222,10 @@ func (c *Checker) InferComponent(
 								t = type_system.NewMutType(nil, t)
 
 								paramBindings["self"] = &type_system.Binding{
-									Source:  &ast.NodeProvenance{Node: bodyElem},
-									Type:    t,
-									Mutable: true, // setters may mutate self
+									Source:     &ast.NodeProvenance{Node: bodyElem},
+									Type:       t,
+									Assignable: false,
+									Mutable:    true, // setters may mutate self
 								}
 							}
 
@@ -1222,10 +1234,12 @@ func (c *Checker) InferComponent(
 							// Add any explicit parameters from the setter function signature
 							for _, param := range setterType.Fn.Params {
 								if param.Pattern != nil {
+									_, isMut := param.Type.(*type_system.MutType)
 									paramBindings[param.Pattern.String()] = &type_system.Binding{
-										Source:  &type_system.TypeProvenance{Type: param.Type},
-										Type:    param.Type,
-										Mutable: false,
+										Source:     &type_system.TypeProvenance{Type: param.Type},
+										Type:       param.Type,
+										Assignable: false,
+										Mutable:    isMut,
 									}
 								}
 							}
@@ -1637,10 +1651,11 @@ func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Co
 
 	// Create default export
 	ctx.Scope.setValue("default", &type_system.Binding{
-		Source:   &ast.NodeProvenance{Node: stmt},
-		Type:     binding.Type,
-		Mutable:  false,
-		Exported: true,
+		Source:     &ast.NodeProvenance{Node: stmt},
+		Type:       binding.Type,
+		Assignable: binding.Assignable,
+		Mutable:    binding.Mutable,
+		Exported:   true,
 	})
 	return nil
 }

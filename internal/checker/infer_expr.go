@@ -491,9 +491,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						selfType = type_system.NewMutType(nil, selfType)
 					}
 					paramBindings["self"] = &type_system.Binding{
-						Source:  &ast.NodeProvenance{Node: expr},
-						Type:    selfType,
-						Mutable: false, // `self` cannot be reassigned
+						Source:     &ast.NodeProvenance{Node: expr},
+						Type:       selfType,
+						Assignable: false, // `self` cannot be reassigned
+						Mutable:    methodExpr.MutSelf != nil && *methodExpr.MutSelf,
 					}
 				}
 
@@ -505,9 +506,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				funcType := t.(*type_system.FuncType)
 				paramBindings := paramBindingsSlice[i]
 				paramBindings["self"] = &type_system.Binding{
-					Source:  &ast.NodeProvenance{Node: expr},
-					Type:    type_system.NewTypeRefType(nil, "Self", &selfTypeAlias),
-					Mutable: false, // `self` cannot be reassigned
+					Source:     &ast.NodeProvenance{Node: expr},
+					Type:       type_system.NewTypeRefType(nil, "Self", &selfTypeAlias),
+					Assignable: false, // `self` cannot be reassigned
+					Mutable:    false, // getters don't mutate self
 				}
 
 				getterExpr := elem
@@ -519,9 +521,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				funcType := t.(*type_system.FuncType)
 				paramBindings := paramBindingsSlice[i]
 				paramBindings["self"] = &type_system.Binding{
-					Source:  &ast.NodeProvenance{Node: expr},
-					Type:    type_system.NewMutType(nil, type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)),
-					Mutable: false, // `self` cannot be reassigned
+					Source:     &ast.NodeProvenance{Node: expr},
+					Type:       type_system.NewMutType(nil, type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)),
+					Assignable: false, // `self` cannot be reassigned
+					Mutable:    true,  // setters may mutate self
 				}
 
 				setterExpr := elem

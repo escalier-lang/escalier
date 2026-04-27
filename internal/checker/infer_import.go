@@ -492,10 +492,11 @@ func (c *Checker) processNamedExport(
 		if !stmt.TypeOnly {
 			if binding, ok := srcNs.Values[localName]; ok {
 				newBinding := &type_system.Binding{
-					Source:   binding.Source,
-					Type:     binding.Type,
-					Mutable:  binding.Mutable,
-					Exported: true,
+					Source:     binding.Source,
+					Type:       binding.Type,
+					Assignable: binding.Assignable,
+					Mutable:    binding.Mutable,
+					Exported:   true,
 				}
 				pkgNs.Values[exportedName] = newBinding
 				found = true
@@ -602,10 +603,11 @@ func (c *Checker) processExportAll(
 			for name, binding := range depNs.Values {
 				if _, exists := pkgNs.Values[name]; !exists {
 					newBinding := &type_system.Binding{
-						Source:   binding.Source,
-						Type:     binding.Type,
-						Mutable:  binding.Mutable,
-						Exported: true,
+						Source:     binding.Source,
+						Type:       binding.Type,
+						Assignable: binding.Assignable,
+						Mutable:    binding.Mutable,
+						Exported:   true,
 					}
 					pkgNs.Values[name] = newBinding
 				}

@@ -278,15 +278,18 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 	}
 }
 
-// TestMutPrefixOnNonCallRejected ensures the parser rejects `mut`
-// applied to anything other than a call expression. The constraint is
-// syntactic (the Mutable flag lives on CallExpr itself), so it surfaces
-// at parse time rather than inference time.
-func TestMutPrefixOnNonCallRejected(t *testing.T) {
+// TestExpressionLevelMutRejectedOnNonCall ensures the parser rejects
+// expression-level `mut` applied to anything other than a call expression.
+// The constraint is syntactic (the Mutable flag lives on CallExpr itself),
+// so it surfaces at parse time rather than inference time. Pattern-level
+// `mut` (`val mut x = …`, `IdentPat.Mutable` / `ObjShorthandPat.Mutable`)
+// is the sanctioned form for binding-side mutability — see
+// `TestPatternLevelMut*` for those positives.
+func TestExpressionLevelMutRejectedOnNonCall(t *testing.T) {
 	tests := map[string]string{
-		"OnLiteral":  `val x = mut 42`,
-		"OnIdent":    `val a = 1 val b = mut a`,
-		"OnArrayLit": `val x = mut [1, 2, 3]`,
+		"ExprMutOnLiteral":  `val x = mut 42`,
+		"ExprMutOnIdent":    `val a = 1 val b = mut a`,
+		"ExprMutOnArrayLit": `val x = mut [1, 2, 3]`,
 	}
 
 	for name, input := range tests {

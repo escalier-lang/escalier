@@ -37,11 +37,27 @@ func (c *Checker) inferPattern(
 				t = tvar
 			}
 
+			// `val mut x = …` (or `mut p: T` on a parameter) wraps the
+			// *binding*'s stored type in MutType so the receiver-mutability
+			// filter in expand_type.go sees this place as mutable. Wrapping
+			// is idempotent — `val mut p: mut Point = …` stays `mut Point`.
+			//
+			// Only the binding is wrapped; the value returned from
+			// inferPatRec stays unwrapped so it doesn't leak into the parent
+			// pattern's structural identity (e.g. `val [mut a, b] = …`
+			// must still infer `[A, B]`, not `[mut A, B]`).
+			bindingType := t
+			if p.Mutable {
+				if _, alreadyMut := bindingType.(*type_system.MutType); !alreadyMut {
+					bindingType = type_system.NewMutType(provenance, bindingType)
+				}
+			}
+
 			// TODO: report an error if the name is already bound
 			bindings[p.Name] = &type_system.Binding{
 				Source:  provenance,
-				Type:    t,
-				Mutable: false, // TODO
+				Type:    bindingType,
+				Mutable: p.Mutable,
 				VarID:   p.VarID,
 			}
 		case *ast.LitPat:
@@ -86,11 +102,23 @@ func (c *Checker) inferPattern(
 						t = tvar
 					}
 					name := type_system.NewStrKey(elem.Key.Name)
+					// The PropertyElem type used in the parent object pattern
+					// stays unwrapped — it's the *binding* that's mutable, not
+					// the destructured property's value-shape. Wrap only the
+					// binding's stored type so per-leaf `mut` does not leak
+					// into the inferred object type's structural identity.
+					bindingType := t
+					if elem.Mutable {
+						if _, alreadyMut := bindingType.(*type_system.MutType); !alreadyMut {
+							bindingType = type_system.NewMutType(
+								&ast.NodeProvenance{Node: elem}, bindingType)
+						}
+					}
 					// TODO: report an error if the name is already bound
 					bindings[elem.Key.Name] = &type_system.Binding{
 						Source:  &ast.NodeProvenance{Node: elem.Key},
-						Type:    t,
-						Mutable: false, // TODO
+						Type:    bindingType,
+						Mutable: elem.Mutable,
 						VarID:   elem.VarID,
 					}
 					prop := type_system.NewPropertyElem(name, t)
