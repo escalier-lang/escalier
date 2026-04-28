@@ -163,6 +163,105 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, void, never>",
 			},
 		},
+		"GeneratorReturnAliasParam": {
+			// Phase 8.3: a generator's TReturn slot inherits the lifetime
+			// of any parameter aliased by an explicit `return value`
+			// path. The yield type T is unconstrained when no yields
+			// alias parameters; the lifetime attaches only to TReturn.
+			input: `
+				fn iter(p: mut {x: number}) -> Generator<number, mut {x: number}, never> {
+					yield 1
+					return p
+				}
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<number, mut 'a {x: number}, never>",
+			},
+		},
+		"GeneratorYieldAndReturnAliasDistinctParams": {
+			// Phase 8.3: yield T and TReturn are inferred independently.
+			// A generator that yields one parameter and returns another
+			// gets distinct lifetime variables on the two result
+			// positions, each propagated to its own param.
+			input: `
+				fn iter(p: mut {x: number}, q: mut {x: number}) -> Generator<mut {x: number}, mut {x: number}, never> {
+					yield p
+					return q
+				}
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> Generator<mut 'a {x: number}, mut 'b {x: number}, never>",
+			},
+		},
+		"GeneratorYieldAndReturnAliasSameParam": {
+			// Phase 8.3: when yield T and TReturn alias the SAME
+			// parameter, the lifetime is allocated once and reused on
+			// both result positions — `existingLV` reuse in
+			// attachLifetimeToResult preserves pointer identity so the
+			// signature shows a single 'a flowing to all three positions.
+			input: `
+				fn iter(p: mut {x: number}) -> Generator<mut {x: number}, mut {x: number}, never> {
+					yield p
+					return p
+				}
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, mut 'a {x: number}, never>",
+			},
+		},
+		"GeneratorYieldFromAliasParam": {
+			// Phase 8.3: `yield from iter` propagates the iterator's
+			// lifetime to each delegated yield. When iter is a
+			// parameter, the relay generator's yield T inherits the
+			// parameter's lifetime — every value yielded through the
+			// delegate borrows from iter, so its lifetime is bounded
+			// by iter's.
+			input: `
+				fn relay(g: Generator<mut {x: number}, void, never>) {
+					yield from g
+				}
+			`,
+			expectedTypes: map[string]string{
+				"relay": "fn <'a>(g: 'a Generator<mut 'a {x: number}, void, never>) -> Generator<mut 'a {x: number}, void, never>",
+			},
+		},
+		"AsyncGeneratorYieldsAliasParam": {
+			// Phase 8.3: an async generator (async fn containing yield)
+			// should propagate the parameter's lifetime to the yield
+			// type T inside AsyncGenerator<T, _, _>. The AsyncGenerator
+			// container is freshly assembled per call so it has no
+			// caller-provided lifetime — only its inner T does.
+			input: `
+				async fn iter(p: mut {x: number}) {
+					yield p
+				}
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> AsyncGenerator<mut 'a {x: number}, void, never>",
+			},
+		},
+		"GeneratorYieldEscapingReturnAliasing": {
+			// Phase 8.3 + 8.4 cross-cutting: a generator where one param
+			// escapes into module-level state (forcing 'static) AND
+			// another param is aliased on the TReturn path. The escape
+			// detection runs once before either attachLifetimeToResult
+			// call, so 'static is set on `p` up front; the yields call
+			// then sees `returnHasStatic` and writes 'static onto yield T,
+			// while the returns call independently allocates 'a for `q`
+			// and writes it onto TReturn. Confirms the helper is safe to
+			// invoke twice when one of the two paths escapes.
+			input: `
+				var cache: mut {x: number} = {x: 0}
+				fn iter(p: mut {x: number}, q: mut {x: number}) -> Generator<mut {x: number}, mut {x: number}, never> {
+					cache = p
+					yield p
+					return q
+				}
+			`,
+			expectedTypes: map[string]string{
+				"iter": "fn <'a>(p: mut 'static {x: number}, q: mut 'a {x: number}) -> Generator<mut 'static {x: number}, mut 'a {x: number}, never>",
+			},
+		},
 		"RestParamReturnsElement": {
 			// Phase 8.3: rest param `...args: Array<T>` — the lifetime-
 			// bearing position is the *element* type T, not the array

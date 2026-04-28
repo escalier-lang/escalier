@@ -1398,7 +1398,6 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
     bindings (once via `renamePat` walking the pattern, once via the
     `extraParamNames` path). Without that fix the leaf's `IdentPat.VarID`
     was stale relative to the body's `IdentExpr.VarID`.
-
   - **Object-destructured parameters** (`fn g({head, tail}: {head: mut P, tail: mut P})`):
     the walker now handles `*ast.ObjectPat` by building a key→Type
     lookup against the corresponding ObjectType's PropertyElems and
@@ -1409,41 +1408,68 @@ The initial Phase 8 PR delivers a foundational subset; the following items are
     freshly assembled per call, and per-property element lifetimes
     for it are deferred (would require synthesizing a per-call
     object type).
-
-  Still deferred:
-  - **Element-level lifetimes from fresh-container returns**
-    (`return [a, b]` producing `Array<'a T>`, `.filter()` /
-    `.slice()` propagation): the alias-source machinery still treats
-    array literals as fresh and built-in array methods don't carry
-    lifetime annotations. Closing this requires extending
-    `DetermineAliasSource` with an "element-of" variant and annotating
-    the prelude.
-- **8.3 generator yield lifetimes.** `InferLifetimes` now collects every
-  non-delegate `yield expr` value alongside `return` expressions. When
-  the function's return type is `Generator<T, TReturn, TNext>` (or
-  `AsyncGenerator<...>`), the lifetime is attached to T (the yield
-  type) rather than to the Generator container itself, so each yielded
-  value carries the lifetime. Concretely,
+- **8.3 generator yield lifetimes.** `InferLifetimes` collects every
+  yield expression (regular AND delegate) alongside `return`
+  expressions. When the function's return type is
+  `Generator<T, TReturn, TNext>` (or `AsyncGenerator<...>`), the
+  yield-side lifetime is attached to T rather than to the Generator
+  container itself, so each yielded value carries the lifetime.
+  Concretely,
   `fn iter(p: mut Point) -> Generator<mut Point, void, never> { yield p }`
   infers `<'a>(p: mut 'a Point) -> Generator<mut 'a Point, void, never>`.
+  For `yield from iter`, the iterator expression itself is the alias
+  source — each yielded element borrows from `iter`, so the relay
+  generator's yield T inherits `iter`'s lifetime. Concretely,
+  `fn relay(g: Generator<mut Point, void, never>) { yield from g }`
+  infers `<'a>(g: 'a Generator<mut 'a Point, void, never>) -> Generator<mut 'a Point, void, never>`
+  (g's container picks up the alias-source 'a directly; the inner T
+  ends up with 'a too because the underlying type instance is shared
+  with the relay's yield T — see "shared-instance overspecification"
+  below).
+- **8.3 generator `TReturn` lifetimes.** `inferLifetimesCore` was
+  refactored to call a per-result-position helper
+  (`attachLifetimeToResult`) twice for generators: once for yields →
+  yield T, once for `return expr` paths → TReturn. Each result
+  position is inferred independently, so a generator that yields one
+  parameter and returns another gets distinct lifetime variables on
+  the two slots; when both alias the *same* parameter, the
+  pre-existing-LifetimeVar reuse path keeps a single 'a flowing to
+  both positions. Concretely,
+  `fn iter(p: mut Point, q: mut Point) -> Generator<mut Point, mut Point, never> { yield p; return q }`
+  infers `<'a, 'b>(p: mut 'a Point, q: mut 'b Point) -> Generator<mut 'a Point, mut 'b Point, never>`.
   `inferFuncBodyWithFuncSigType` was extended to call `InferLifetimes`
   in the generator branch (which previously short-circuited).
-  Still deferred: `yield from` (delegate yield) propagation from the
-  inner iterator's element type, and lifetime inference for the
-  generator's `TReturn` slot from explicit `return value` paths.
-- **8.3 async generators.** `inferLifetimesCore` branches on
-  `isGenerator` (yields → yield type) vs. `isAsync` (returns →
-  Promise value type), but the combined async-generator case isn't
-  exercised end-to-end. Although `generatorYieldType` already
-  recognizes `AsyncGenerator<T, TReturn, TNext>` so yields *should*
-  flow to T, there are no tests covering `async fn*` with
-  parameter-aliasing yields, and the `return value` → TReturn slot
-  inherits the same TReturn deferral as regular generators (returns
-  in an async generator do not wrap into Promise). Closing this
-  requires test coverage for parameter-aliasing yields in async
-  generators and, alongside the regular-generator TReturn work,
-  inferring the lifetime on TReturn from explicit `return value`
-  paths.
+- **8.3 async generators.** `inferLifetimesCore` is now exercised
+  end-to-end for async generators (`async fn` containing `yield`):
+  `generatorYieldType` already recognized
+  `AsyncGenerator<T, TReturn, TNext>` so yields flow to T. A simple
+  test (`AsyncGeneratorYieldsAliasParam`) confirms parameter-aliasing
+  yields produce
+  `<'a>(p: mut 'a Point) -> AsyncGenerator<mut 'a Point, void, never>`.
+  The TReturn refactor above also runs for async generators, since
+  the per-result-position helper is invoked uniformly for both
+  Generator and AsyncGenerator. Returns in an async generator
+  populate TReturn directly (they do not wrap into Promise — the
+  AsyncGenerator wrapper is the only synthesis the compiler does).
+
+  Still deferred — **shared-instance overspecification (#507).** When a
+  generator's body has multiple `yield` paths whose value types are
+  structurally identical (e.g.
+  `if cond { yield a } else { yield b }` with both params
+  `mut {x: number}`), `NewUnionType` collapses the
+  yielded-types list to a single instance — which is one of the
+  parameter types. The result-side `setLifetimeOnType` then
+  overwrites that param's individual lifetime with the union, leaking
+  `('a | 'b)` onto the param's annotation instead of just 'a. The
+  same pointer-sharing also produces overspecified output for
+  `yield from g`: g's inner T ends up with 'a too, even though only
+  g's container needs it. Both cases are sound (the compiler is
+  *over*-constraining) but visually misleading. Fixing properly
+  requires shallow-cloning the yield T / TReturn type before
+  attaching a result-side lifetime, so the result position can carry
+  a different lifetime than any param it shares structure with.
+  Tracked in
+  [#507](https://github.com/escalier-lang/escalier/issues/507).
 - **8.4 escaping reference detection.** `DetectEscapingRefs` walks a
   function body for assignment expressions whose lvalue root is a
   non-local identifier (VarID ≤ 0, set by the rename pass for
@@ -2061,6 +2087,216 @@ data class Config(host: string) {
 }
 val cfg = Config("localhost")    // type: Config (immutable despite setHost)
 ```
+
+### 8.9 Element-Level and Property-Level Lifetimes
+
+**Goal:** Extend `DetermineAliasSource` so that fresh containers (array
+literals, object literals, tuple literals, calls to builtins like
+`.filter()` / `.slice()` / `.map()`) propagate lifetimes from their
+constituents to the matching slot of the result type — covering both
+the element-of-array case and the property-of-object case under a
+single, path-based abstraction.
+
+This is split out from Phase 8.3 into its own child phase because it
+touches the core alias-source machinery, the prelude annotations, and
+the lifetime-attachment logic — and the two shapes (element-of and
+property-of) want a unified design rather than two parallel ad-hoc
+walkers.
+
+#### Motivation
+
+Today, `DetermineAliasSource` returns a single `VarID` (or "fresh") for
+an expression. Phase 8.3's lifetime attachment works at the
+**top-level** of the return type only:
+
+- `return p` → return type gets `'a` at the top: `mut 'a Point`
+- `return [a, b]` → "fresh", no lifetime attached, even though each
+  element aliases a parameter
+- `return { head: a }` → "fresh", same problem
+
+For element-level (`Array<'a T>`) and property-level (`{ head: 'a P }`)
+lifetimes, the alias source is no longer a single root — it's a *path*
+into a freshly constructed container, where each leaf of the path
+carries its own root and its own lifetime obligation.
+
+A separate ad-hoc walker (`findCapturedParamsInExpr` in
+`InferConstructorLifetimes`, Phase 8.6) already implements a
+specialized version of this for class-body field initializers. This
+phase folds that walker into the general machinery so there is one
+implementation, not two.
+
+#### Design — Projection-Path Alias Source
+
+Replace the flat `AliasSource` with a path-based variant:
+
+```go
+// ProjectionStep names one step from a root variable to a leaf slot
+// inside a freshly-constructed composite value.
+type ProjectionStep interface{ projectionStep() }
+
+type ElementOf  struct{}                  // [a, b]    — array element
+type PropertyOf struct{ Key string }      // {k: a}    — object property
+type IndexOf    struct{ Index int }       // tuple [a, b] at fixed index
+type AwaitOf    struct{}                  // await p   — Promise<T> → T
+type CastOf     struct{ Target Type }     // (p as T)  — pass-through
+
+func (ElementOf)  projectionStep() {}
+func (PropertyOf) projectionStep() {}
+func (IndexOf)    projectionStep() {}
+func (AwaitOf)    projectionStep() {}
+func (CastOf)     projectionStep() {}
+
+// AliasLeaf is one (root, path) pair contributing a lifetime to a
+// specific slot of the surrounding fresh container.
+type AliasLeaf struct {
+    RootVarID VarID
+    Path      []ProjectionStep   // empty path = root itself (legacy case)
+}
+
+// AliasSource is now a *set* of leaves. A direct return of a
+// parameter is a single leaf with empty path; a return of
+// [a, {head: b}] is two leaves: (a, [ElementOf]) and
+// (b, [ElementOf, PropertyOf("head")]).
+type AliasSource struct {
+    Leaves []AliasLeaf
+    Fresh  bool   // true iff Leaves is empty AND nothing aliases out
+}
+```
+
+The empty-path case preserves all existing behavior: a single leaf with
+`Path == nil` is exactly today's "this expression aliases VarID X".
+
+#### Extending `DetermineAliasSource`
+
+For each composite expression form, push the appropriate step before
+recursing:
+
+| Expression                  | Behavior                                           |
+| --------------------------- | -------------------------------------------------- |
+| `[a, b, ...]`               | union of children with `ElementOf` prepended       |
+| `{k1: e1, k2: e2}`          | union of children with `PropertyOf(ki)` prepended  |
+| `{k}` (shorthand)           | same as `{k: k}` — `PropertyOf("k")` + lookup of `k` |
+| `[e1, e2]` (tuple)          | children with `IndexOf(i)` prepended               |
+| `await e`                   | child with `AwaitOf` prepended                     |
+| `e as T`                    | child unchanged (cast is pass-through)             |
+| `f(args)`                   | look up callee's `LifetimeParams`; for each lifetime on the return type, find which arg(s) bind it and emit a leaf for each, using the **return-type path** of that lifetime (see "Prelude annotations" below) |
+| `e.k` (member)              | if `e` is a leaf with path `P`, result is `(root, P ++ [PropertyOf(k)])`; this lets us *un-project* through aliased structs |
+| `e[i]` (index, const i)     | analogous: `P ++ [IndexOf(i)]` for tuples          |
+| identifier / parameter ref  | single leaf, empty path (today's behavior)         |
+
+#### Lifetime Attachment Along a Path
+
+Today, lifetime allocation walks param leaves and attaches a fresh
+`'a` at the top of the return type. With path-based leaves, the
+attachment walks **into** the return type along each path:
+
+```
+Path                                     Attaches 'a at
+[]                                       top of return type
+[ElementOf]                              return type's element type T (Array<T>)
+[PropertyOf("head")]                     return type's "head" property type
+[ElementOf, PropertyOf("head")]          element-of-array's "head" property
+[AwaitOf]                                inside Promise<T>'s T
+```
+
+This requires a small helper that, given a return type and a
+projection path, descends to the correct slot and replaces (or
+unions-in) a lifetime there. The descent fails gracefully (no
+attachment) if the return type's shape doesn't match the path — e.g.
+the body returns a literal but the declared return type is a primitive.
+
+#### Prelude Annotations for Built-in Methods
+
+Built-in collection methods need lifetime signatures so that calls
+through them propagate element-level lifetimes:
+
+```esc
+// Container-level passthrough — return aliases self
+fn (mut self) sort() -> mut Array<T>           // no element-level lifetime needed
+fn (mut self) reverse() -> mut Array<T>
+
+// Fresh container, elements alias self's elements
+fn (self) filter<'a>(self: 'a Array<T>, f: fn(T) -> boolean) -> Array<'a T>
+fn (self) slice<'a>(self: 'a Array<T>, start: number, end: number) -> Array<'a T>
+fn (self) concat<'a, 'b>(self: 'a Array<T>, other: 'b Array<T>) -> Array<('a | 'b) T>
+
+// Map/flatMap — fresh elements (callback constructs them)
+fn (self) map<U>(self: Array<T>, f: fn(T) -> U) -> Array<U>          // no propagation
+// (unless the callback's return type carries a lifetime tied to T —
+// elision rule extension, deferred)
+```
+
+These annotations live in `internal/prelude/` (or wherever the array
+intrinsics are defined today) and are picked up by the call-site
+handling in `DetermineAliasSource`.
+
+#### Unifying with `findCapturedParamsInExpr`
+
+`InferConstructorLifetimes` (Phase 8.6) already walks object literals,
+tuple literals, and member access ad-hoc to discover which constructor
+params a field stores. Once the projection-path alias source exists,
+that walker collapses into:
+
+```go
+src := DetermineAliasSource(fieldInitExpr)
+for _, leaf := range src.Leaves {
+    if leaf.RootVarID matches a constructor param {
+        record (paramIndex, leaf.Path) → field
+    }
+}
+```
+
+The recorded path then drives where on the *class type* the lifetime is
+attached — top-level for `field: p` (today's behavior), element-level
+for `field: [p]`, property-level for `field: { inner: p }`, etc.
+
+#### Tests
+
+```esc
+// Array literal — element-level lifetime on a fresh container
+fn pair(a: mut Point, b: mut Point) -> mut Array<mut Point> {
+    return [a, b]
+}
+// Inferred: fn pair<'a, 'b>(a: mut 'a Point, b: mut 'b Point)
+//             -> mut Array<mut ('a | 'b) Point>
+
+// Object literal — property-level lifetimes on distinct keys
+fn wrap(a: mut Point, b: mut Point) -> { head: mut Point, tail: mut Point } {
+    return { head: a, tail: b }
+}
+// Inferred: fn wrap<'a, 'b>(a: mut 'a Point, b: mut 'b Point)
+//             -> { head: mut 'a Point, tail: mut 'b Point }
+
+// Nested — element of array, property of object inside it
+fn box(p: mut Point) -> Array<{ inner: mut Point }> {
+    return [{ inner: p }]
+}
+// Inferred: fn box<'a>(p: mut 'a Point) -> Array<{ inner: mut 'a Point }>
+
+// Built-in propagation through .filter()
+fn keepBig(items: Array<mut Point>) -> Array<mut Point> {
+    return items.filter(fn (p) { p.x > 0 })
+}
+// Inferred: fn keepBig<'a>(items: 'a Array<mut Point>)
+//             -> Array<mut 'a Point>
+// (filter's signature carries 'a from self to result element type)
+
+// Constructor field with composite initializer
+class Pair(a: mut Point, b: mut Point) {
+    items: [a, b]      // tuple field
+}
+// Inferred: Pair<'a, 'b>(a: mut 'a Point, b: mut 'b Point)
+//   with Pair's `items` field typed as [mut 'a Point, mut 'b Point]
+```
+
+#### Out of scope for 8.9
+
+- Lifetimes flowing through user-defined `.map()` callbacks (requires
+  a notion of "lifetime polymorphism over callback return types").
+  Left for a follow-up.
+- `ObjRestPat` (`{ ...rest }`) per-property lifetimes on rest objects —
+  still requires synthesizing a per-call object type, which is
+  orthogonal to projection paths.
 
 ---
 
