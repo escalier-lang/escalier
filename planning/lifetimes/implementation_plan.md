@@ -4,6 +4,20 @@ This plan describes how to add liveness-based mutability transitions and lifetim
 annotations to Escalier, replacing the current `mut?` system. It is organized
 into phases that build incrementally, each producing a testable milestone.
 
+> **Note (2026-04):** Phase 13 (`Remove mut?`) was implemented out of order, in
+> the parallel [planning/remove_uncertain_mutability/implementation_plan.md](../remove_uncertain_mutability/implementation_plan.md)
+> track (PRs #502 and #504). `MutabilityType`, `MutabilityUncertain`,
+> `MutabilityMutable`, and `unwrapMutability` no longer exist in the source
+> tree. The current shape is: a thin `MutType` wrapper (`mut <T>`) for
+> reference-bearing types, plus `Mutable bool` / `Immutable bool` fields
+> directly on `ObjectType`. See [Phase 13](#phase-13-remove-mut--landed-via-remove_uncertain_mutability-track)
+> for the as-built notes.
+>
+> The remove_uncertain_mutability track also added pattern-level `mut` on
+> bindings (`val mut x = …`) and split `Binding.Mutable` into
+> `{Assignable, Mutable}`. Sections of this plan that referenced
+> `MutabilityType` / `unwrapMutability` are flagged inline below.
+
 ## Phase Overview
 
 | Phase | Description                                          | Depends On | Status |
@@ -20,8 +34,8 @@ into phases that build incrementally, each producing a testable milestone.
 |    10 | Lifetime elision rules                               | 8, 9       |        |
 |    11 | TypeScript interop                                   | 10         |        |
 |    12 | Error messages                                       | 6–11       |        |
-|    13 | Remove `mut?`                                        | 6–12       |        |
-|    14 | PrintType and display                                | 13         |        |
+|    13 | Remove `mut?`                                        | —          | Done (out of order, via remove_uncertain_mutability track) |
+|    14 | PrintType and display                                | —          |        |
 |    15 | Performance optimizations                            | 6          |        |
 
 ---
@@ -125,12 +139,13 @@ type TupleType struct {
     Lifetime Lifetime
 }
 
-// Note: MutabilityType (the existing mut wrapper) is removed in Phase 13.2.
-// After that phase, mutability is tracked via a `Mutable bool` field on
-// each type struct — co-located with the `Lifetime` field added here.
-// Until Phase 13, MutabilityType continues to wrap the inner type, and
-// the lifetime is stored on the inner type (e.g. TypeRefType.Lifetime),
-// not on MutabilityType itself.
+// As-built (post Phase 13, landed via remove_uncertain_mutability):
+// `MutabilityType`, `MutabilityUncertain`, and `MutabilityMutable` were
+// removed. The replacement is a thinner `MutType` wrapper (just
+// `{Type, provenance}`) for `mut <T>` over reference-bearing types,
+// alongside `Mutable bool` / `Immutable bool` fields directly on
+// `ObjectType`. The lifetime is stored on the inner type (e.g.
+// TypeRefType.Lifetime), not on the MutType wrapper.
 ```
 
 Types that do NOT need a `Lifetime` field:
@@ -182,7 +197,8 @@ func GetLifetime(t Type) Lifetime
 
 **Behavior:**
 - `TypeRefType` — returns `t.Lifetime` directly.
-- `MutabilityType` — unwraps and recurses into the inner type.
+- `MutType` — unwraps and recurses into the inner type. (Originally
+  `MutabilityType`; renamed in the remove_uncertain_mutability track.)
 - `UnionType` / `IntersectionType` — returns the common lifetime if all
   member types share the same lifetime; returns `nil` (no single lifetime)
   if they differ. Callers that need stricter handling (e.g. reporting a
@@ -2070,8 +2086,10 @@ Add cases to the unification engine:
 2. **Two types with lifetimes:** Unification succeeds if the lifetimes can be
    unified (same `LifetimeVar`, or one is free and gets bound).
 
-3. **Lifetime on `MutabilityType`:** When unifying `mut 'a T` with `mut 'b T`,
+3. **Lifetime on `MutType`:** When unifying `mut 'a T` with `mut 'b T`,
    both the types and the lifetimes must match (invariant for mutable types).
+   (Type was renamed from `MutabilityType` to `MutType` in the
+   remove_uncertain_mutability track.)
 
 ### 9.2 Lifetime Instantiation at Call Sites
 
@@ -2296,7 +2314,7 @@ type-parameter `TypeRefType`. Two viable shapes:
   `TypeRefType` case (no new `case` needed if it already falls through;
   add one if the current code special-cases `IsTypeParam`).
 - **Option B — Wrapper type.** Introduce a `LifetimeAnnotatedTypeParamType`
-  wrapper analogous to `MutabilityType`. Heavier; only worth it if Option A
+  wrapper analogous to `MutType`. Heavier; only worth it if Option A
   produces awkward printing or unification cases.
 
 Recommend Option A. The printer ([Phase 14](#phase-14-printtype-and-display))
@@ -2342,11 +2360,11 @@ an extra case in the substitution pass.
 #### 9.7.5 Interaction with Mutability
 
 `mut 'a T` where `T extends {x: number}` should behave like `mut 'a {x: number}`
-once `T` is resolved. The `MutabilityType` wrapper already recurses through
+once `T` is resolved. The `MutType` wrapper already recurses through
 `setLifetimeOnType`; the type-parameter case slots in below it without
 special handling.
 
-If the constraint *itself* carries a `MutabilityType` (e.g.
+If the constraint *itself* carries a `MutType` wrapper (e.g.
 `T extends mut {x: number}`), preserve the constraint's mutability through
 substitution — the use site's `mut` and the constraint's `mut` should
 unify, not double-wrap.
@@ -2730,151 +2748,96 @@ cross-function cases, show the function signature with lifetimes highlighted.
 
 ---
 
-## Phase 13: Remove `mut?`
+## Phase 13: Remove `mut?`  ✅ Landed via remove_uncertain_mutability track
 
-**Goal:** Remove `MutabilityUncertain` from the type system, completing the
-transition to liveness-based mutability.
+**Status:** Done out of order, in PRs #502 and #504 of the
+[remove_uncertain_mutability track](../remove_uncertain_mutability/implementation_plan.md).
+The original plan below was partially superseded by what actually shipped.
 
-### 13.1 Audit All Uses of `MutabilityUncertain`
+### What actually landed
 
-The `MutabilityUncertain` variant is used across the codebase. Each use must
-be replaced. The table below lists known files — run
-`grep -r MutabilityUncertain internal/` to produce the complete list before
-starting this phase:
+- **`MutabilityUncertain` constant — removed.** `grep -rn
+  "MutabilityUncertain" internal/` returns zero hits.
+- **`MutabilityType` wrapper — replaced, not eliminated.** The plan
+  originally proposed pushing `Mutable bool` onto every reference-bearing
+  type struct (Phase 13.2 below). What landed instead is a hybrid:
+  - A thinner `MutType` wrapper (just `{Type, provenance}` —
+    `internal/type_system/types.go:2162`) carries `mut <T>` for
+    `TypeRefType`, `ArrayType`, `TupleType`, `FuncType`, etc.
+  - `ObjectType` *did* gain direct fields: `Mutable bool` (for
+    `mut {...}`) and `Immutable bool` (for `#{...}` records) at
+    `internal/type_system/types.go:1254-1255`.
+  - The old `Mutability` enum, `MutabilityType` struct, and
+    `unwrapMutability` helper are all gone. `stripMutabilityWrapper`
+    in `infer_lifetime.go:466` is the surviving helper and unwraps
+    `MutType` only.
+- **`RemoveUncertainMutabilityVisitor` — renamed to `rebuildContainers`.**
+  The old visitor had two effects: stripping `mut?` AND rebuilding
+  containers as it walked. The container-rebuild was load-bearing for
+  generic-method tests (`FromBinding` TypeVar normalization), so the
+  rebuild was kept under a new name in `internal/checker/unify.go:2342`.
+- **Open-object resolution — `finalizeOpenObject`** (in
+  `internal/checker/generalize.go:483`) replaced the visitor-based
+  `mut?` finalization. It walks param open-object trees post-body-inference
+  and wraps the param in `MutType` if any property has `Written == true`.
+- **Pattern-level `mut`** (PR #504) added `IdentPat.Mutable` and
+  `ObjShorthandPat.Mutable` so users can write `val mut x = …` /
+  `fn f(mut p: Point)` / `val { mut x, y: mut a } = pt`. This is the
+  use-site replacement for the original plan's reliance on the
+  expression-level `mut <CallExpr>` form (which still works for inline
+  `mut Counter()` allocations).
+- **`Binding.Mutable` — split into `{Assignable, Mutable}`** (PR #504,
+  `internal/type_system/types.go:2398-2401`). `Assignable` is the rebind
+  axis (`var` vs `val`); `Mutable` is the value-mutation axis
+  (driven by the pattern's `mut` flag).
 
-| File | Current Use | Replacement |
-|------|-------------|-------------|
-| `internal/type_system/types.go` | `MutabilityUncertain` constant | Remove |
-| `internal/type_system/print_type.go` | Printing `mut?` | Remove case |
-| `internal/checker/unify.go` | Special handling during unification | Remove |
-| `internal/checker/unify_mut.go` | Invariant checking with `mut?` | Simplify |
-| `internal/checker/infer_expr.go` | Creating `mut?` types | Use `mut` or immutable directly |
-| `internal/checker/infer_func.go` | `mut?` in parameter inference | Binary inference (mut/immutable) |
-| `internal/checker/infer_module.go` | `mut?` propagation | Remove |
-| `internal/checker/generalize.go` | Stripping `mut?` during generalization | Remove stripping |
-| `internal/checker/expand_type.go` | `mut?` in type expansion | Remove case |
-| `internal/checker/iterable.go` | `mut?` on iterable types | Remove |
-| `internal/codegen/dts.go` | `mut?` in .d.ts output | Remove |
-| *(remaining files)* | Grep for complete list at implementation time | Case-by-case |
+### What was *not* done
 
-### 13.2 Remove `MutabilityType` Wrapper
+The original plan's 13.2 ("move `Mutable bool` onto every type struct")
+was deliberately not pursued. The hybrid above (thin `MutType` wrapper +
+direct fields on `ObjectType`) won out because:
 
-Rather than keeping `MutabilityType` as a wrapper type (even a simplified
-one), move mutability tracking into the type structs directly — the same
-approach used for lifetimes (Phase 1.2). This eliminates the constant
-wrapping/unwrapping of `MutabilityType` throughout the codebase (~110
-occurrences across 14 files).
+- Most call sites that used to pattern-match `*MutabilityType` now match
+  `*MutType`, with the same shape — no codebase-wide refactor needed.
+- `ObjectType` was a special case worth flattening because it was the
+  only type that needed *both* `Mutable` (for `mut {...}`) and
+  `Immutable` (for `#{...}`); a wrapper can't carry both flags
+  symmetrically.
+- The "co-locate mutability and lifetime" benefit cited in 13.2 didn't
+  pan out — `Lifetime` lives on inner types (e.g. `TypeRefType.Lifetime`)
+  and `MutType` recurses into them, so the `GetLifetime` accessor reads
+  the inner type's `Lifetime` field directly without needing
+  mutability-and-lifetime co-location.
 
-Add a `Mutable bool` field to each type struct that can be mutable:
+### Default mutability rules (as built)
 
-```go
-// Before: mut is a wrapper
-//   &MutabilityType{Type: &TypeRefType{...}, Mutability: MutabilityMutable}
+13.3's "default mutability rules" landed as follows (concretized in
+[planning/remove_uncertain_mutability/implementation_plan.md](../remove_uncertain_mutability/implementation_plan.md),
+Phase 2 "open-object finalization pass" + Phase 4 pattern-level `mut`):
 
-// After: mut is a field on the type itself
-type TypeRefType struct {
-    // ... existing fields ...
-    Mutable  bool      // true = mut, false = immutable
-    Lifetime Lifetime  // from Phase 1.2
-}
+- **Function parameters:** open-object `Written == true` ⇒ wrap param in
+  `MutType` via `finalizeOpenObject`. If the user wrote `mut p`, the
+  pattern flag drives the wrap directly (Phase 4).
+- **Variable declarations:** literal initializers are immutable;
+  `val mut x = …` wraps the binding type in `MutType`; `mut Counter()`
+  on the value side stays as a definite-mut construction.
+- **Constructor call default mutability** (Phase 8.6's `DefaultMutable`)
+  is still TBD — currently driven by per-class entries in
+  `mutabilityOverrides` (`internal/checker/prelude.go:223`). TODO(#500)
+  tracks populating overrides for `Date`, `Promise`, `Error`, etc.
 
-type ObjectType struct {
-    // ... existing fields ...
-    Mutable  bool
-    Lifetime Lifetime
-}
+### Snapshot tests
 
-type ArrayType struct {
-    // ... existing fields ...
-    Mutable  bool
-    Lifetime Lifetime
-}
+`UPDATE_SNAPS=true go test ./...` was run as part of PR #502 and is
+clean across all packages. No `mut?` appears in any committed snapshot.
 
-type TupleType struct {
-    // ... existing fields ...
-    Mutable  bool
-    Lifetime Lifetime
-}
+### Verification (as run on this branch)
 
-type FuncType struct {
-    // ... existing fields ...
-    Mutable  bool  // for mutable function references
-}
-```
-
-Types that do NOT need a `Mutable` field:
-- `PrimitiveType` — primitives are always immutable values
-- `LiteralType` — literals are always immutable
-- `VoidType`, `NullType`, `UndefinedType` — cannot be mutable
-- `UnionType`, `IntersectionType` — mutability is on the member types
-
-**Benefits:**
-- No more wrapping/unwrapping — code that checks mutability reads
-  `t.Mutable` directly instead of type-asserting to `*MutabilityType`
-  and then unwrapping `.Type`
-- Mutability and lifetime are co-located on the same struct, which
-  reflects that they are both properties of a value, not separate layers
-- The `Mutability` enum, `MutabilityType` struct, and all associated
-  visitor methods (`EnterType`/`ExitType` for `MutabilityType`) can be
-  removed
-- `GetLifetime` (Phase 1.2) no longer needs to unwrap through
-  `MutabilityType` to find the inner type's lifetime
-
-**Migration:** This is a large mechanical refactor touching ~110 call
-sites. The changes are straightforward but numerous:
-- Every `&MutabilityType{Type: t, Mutability: MutabilityMutable}` becomes
-  setting `t.Mutable = true`
-- Every `case *MutabilityType:` pattern match becomes checking `t.Mutable`
-  on the underlying type
-- Every `unwrapMutability(t)` or similar helper is removed
-- The `TypeVisitor` interface loses the `MutabilityType` enter/exit methods
-- `PrintType` checks `t.Mutable` instead of matching `*MutabilityType`
-
-Remove the `Mutability` type and `MutabilityType` struct entirely:
-
-```go
-// Remove:
-// type Mutability string
-// const MutabilityMutable Mutability = "!"
-// const MutabilityUncertain Mutability = "?"
-// type MutabilityType struct { ... }
-```
-
-### 13.3 Replace `mut?` Inference with Direct Tracking
-
-Where the checker currently creates `MutabilityUncertain` types, replace with
-direct write-tracking and default mutability rules:
-
-**Function parameters:**
-- If a parameter is written to in the function body → `mut`
-- If a parameter is only read → immutable
-- No intermediate `mut?` state
-
-**Variable declarations without explicit type annotations:**
-- Literal initializer (`{x: 1}`, `[1, 2]`, `(1, "a")`) → immutable,
-  unless the object literal has `mut self` methods → mutable
-- Constructor call → apply the class's `DefaultMutable` (from Phase 8.6):
-  immutable unless the class has `mut self` methods and no `immutable`
-  modifier
-- Function call → determined by the function's return type
-- Variable reference → inherits the source's mutability
-
-### 13.4 Update Snapshot Tests
-
-Many snapshot tests will change since `mut?` will no longer appear in type
-output. Run all tests with `UPDATE_SNAPS=true` to update snapshots, then
-review the diffs to ensure correctness.
-
-### 13.5 Tests
-
-- All existing mutation tests should still pass (behavior preserved)
-- Types no longer show `mut?` in any output
-- Object/array/tuple literals default to immutable when unannotated
-- Class instances default to immutable when class has no `mut self` methods
-- Class instances default to mutable when class has `mut self` methods
-- `immutable` modifier on a class overrides default to immutable
-- Explicit `mut` annotation overrides any default
-- `MutabilityUncertain` constant is removed (compile error if referenced)
+- `grep -rn "mut?" internal/` → zero hits ✓
+- `grep -rn "MutabilityUncertain" internal/` → zero hits ✓
+- `grep -rn "MutabilityType\|MutabilityMutable" internal/` → zero hits ✓
+- `grep -rn "unwrapMutability\b" internal/` → zero hits ✓
+- `go test ./...` → all green ✓
 
 ---
 
@@ -3023,8 +2986,8 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
             │                   └── 11. TypeScript interop
             └── 7. Advanced alias tracking ✅
 12. Error messages ←── (depends on 6–11)
-└── 13. Remove mut?
-    └── 14. PrintType & display
+13. Remove mut? ✅ (done out of order via remove_uncertain_mutability track)
+└── 14. PrintType & display
 ```
 
 Phases 3–5 can be developed in parallel (once Phase 2 is complete).
