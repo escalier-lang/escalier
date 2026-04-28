@@ -125,7 +125,7 @@ Note: `removeUncertainMutability` is **not currently called from `generalize.go`
 - Re-enable any test cases left disabled during Phase 1 development — none remained. The two NOTE-block placeholders in `mut_prefix_test.go` were already replaced with active tests during Phase 1 (`ImmutableInstance_CannotCallMutSelfMethod`, `ImmutableMap_CannotClear`, `ImmutableSet_CannotAdd`, plus the typevar-receiver pair). ✓
 - Final sanity: `grep -rn "mut?" internal/` and `grep -rn "MutabilityUncertain" internal/` both return zero hits. ✓ (Only matches anywhere in the repo are a regex false positive on `colorGamut?` in `playground/public/types/lib.dom.d.ts` and intentional historical references in `planning/*.md`.)
 
-## Phase 4 — Pattern-level `mut` on bindings
+## Phase 4 — Pattern-level `mut` on bindings ✅ Landed
 
 ### Motivation
 
@@ -301,7 +301,7 @@ An earlier design replaced `CallExpr.Mutable` with an `*ast.MutExpr` wrapper tha
 
 The earlier design's notes — including the passthrough table, the `MutExpr.Accept` recursion requirement, and the `processAssignBranch` early-return hazard — are preserved in this plan's git history if expression-level `mut` is ever revisited.
 
-## Phase 5 — Sweep, snapshots, verification (Phase 4 follow-up)
+## Phase 5 — Sweep, snapshots, verification (Phase 4 follow-up) ✅ Landed
 
 - `UPDATE_SNAPS=true go test ./...` — review printer/codegen snapshot diffs. Most existing fixtures should be untouched (the only printer-side change is the optional `mut ` prefix on `IdentPat`/`ObjShorthandPat`); the restored `objects_with_self` fixture and any new pattern-mut tests add new snapshots.
 - Confirm the restored `val inc = obj1.increment` line in [fixtures/objects_with_self/lib/objects_with_self.esc](../../fixtures/objects_with_self/lib/objects_with_self.esc) round-trips through codegen and matches the pre-Phase-1 generated JS. The export is now `val mut obj1`, but the runtime emission should be identical — pattern `mut` is type-only.
@@ -333,13 +333,13 @@ The earlier design's notes — including the passthrough table, the `MutExpr.Acc
 | Phase 1 (mut-self gate + LSP)                | ~half-day    | ✅ Landed. Open-object hazard sidestepped via `objType.Open` short-circuit. |
 | Phase 2 (`mut?` removal + finalization pass) | 2–4 days     | ✅ Landed. `removeUncertainMutability` retained as `rebuildContainers` (load-bearing for FromBinding TypeVar normalization). |
 | Phase 3 (fixture sweep + new tests)          | ~half-day    | ✅ Landed. No fixture sweep needed (Phase 2 covered it); no disabled tests remained. |
-| Phase 4 (pattern-level `mut` + `Binding` field split) | 2–3 days     | Pending. AST flag + parser + pattern-inference plumbing + function-param sweep + `Binding.Mutable` → `{Assignable, Mutable}` split touching ~64 construction sites (~24 production + ~38 test mocks + ~2 in `internal/type_system/`). No new expression nodes; no liveness/lifetime/codegen passthrough sites. Risks: missing a `Binding{}` site (production or test); namespace-equality drift if the comparison loop isn't updated alongside the struct; test-file sweep volume (mechanical but loud). |
-| Phase 5 (Phase 4 sweep + verification)       | ~half-day    | Pending. Mechanical fixture/snapshot review + the val/var × mut/non-mut matrix tests + namespace-equality regression test. |
-| **Total**                                    | **5–7 days** | Phases 1–3 done; Phases 4–5 pending. |
+| Phase 4 (pattern-level `mut` + `Binding` field split) | 2–3 days     | ✅ Landed (#504). AST flag + parser + pattern-inference plumbing + function-param sweep + `Binding.Mutable` → `{Assignable, Mutable}` split. No new expression nodes; no liveness/lifetime/codegen passthrough sites. |
+| Phase 5 (Phase 4 sweep + verification)       | ~half-day    | ✅ Landed. Snapshots clean, no working-tree drift; printer round-trip and generic-parameter tests in place; `namespaceEquals` regression test for `Assignable`/`Mutable` added. |
+| **Total**                                    | **5–7 days** | All phases complete. |
 
 ## Verification
 
-1. `go test ./...` green after each phase. ✓ (Phases 1–3)
+1. `go test ./...` green after each phase. ✓ (Phases 1–5)
 2. `grep -r "mut?" internal/` and `grep -r "MutabilityUncertain" internal/` both return zero hits after Phase 2. ✓
 3. LSP completion at `immutablePoint.` does not list any `mut self` methods; at `mutablePoint.` it does. ✓ (Phase 1)
 4. The receiver-mutability tests previously commented out in [mut_prefix_test.go](../../internal/checker/tests/mut_prefix_test.go) are re-enabled and passing, plus type-var-receiver coverage. ✓ (Phase 1)

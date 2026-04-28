@@ -144,3 +144,30 @@ func TestNamespaceNestedSubNamespaces(t *testing.T) {
 	assert.True(t, exists)
 	assert.NotNil(t, binding)
 }
+
+func TestNamespaceEqualsBindingFieldsParticipate(t *testing.T) {
+	mkNs := func(assignable, mutable bool) *Namespace {
+		ns := NewNamespace()
+		ns.Values["x"] = &Binding{
+			Type:       NewNumPrimType(nil),
+			Assignable: assignable,
+			Mutable:    mutable,
+		}
+		return ns
+	}
+
+	base := mkNs(false, false)
+	differMutable := mkNs(false, true)
+	differAssignable := mkNs(true, false)
+	differBoth := mkNs(true, true)
+	same := mkNs(false, false)
+
+	assert.True(t, namespaceEquals(base, same),
+		"namespaces with identical bindings should compare equal")
+	assert.False(t, namespaceEquals(base, differMutable),
+		"namespaces differing only in Binding.Mutable should compare unequal")
+	assert.False(t, namespaceEquals(base, differAssignable),
+		"namespaces differing only in Binding.Assignable should compare unequal")
+	assert.False(t, namespaceEquals(base, differBoth),
+		"namespaces differing in both Binding fields should compare unequal")
+}
