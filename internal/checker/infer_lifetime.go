@@ -642,9 +642,12 @@ func setLifetimeOnType(t type_system.Type, lt type_system.Lifetime) {
 // to the argument has escaped, so the transition checker can flag later
 // mut↔immut transitions on the argument as unsafe.
 //
-// Has no effect when the call's argument is not a simple identifier
-// (e.g. `f(p.x)` would need projection-path tracking, deferred to a
-// later phase) or when the corresponding leaf has no positive VarID.
+// Argument resolution goes through determineCheckerAliasSource, so the
+// escape propagates through identity-like nested calls whose return
+// type aliases an argument (e.g. `cacheItem(id(p))` marks `p`). Has no
+// effect when no underlying VarID can be resolved — e.g. property
+// projections like `f(p.x)`, which would need projection-path tracking,
+// deferred to a later phase.
 func (c *Checker) propagateCalleeStaticLifetimes(
 	ctx Context,
 	fnType *type_system.FuncType,

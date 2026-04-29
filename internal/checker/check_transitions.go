@@ -140,14 +140,14 @@ func (c *Checker) checkMutabilityTransition(
 		// always counts as a live alias of its escaped mutability.
 		// Phase 8.5: callees with `'static` parameters mark the
 		// argument's alias sets via AliasTracker.MarkStatic.
-		if sourceMut && !targetMut {
-			if aliasSet.HasStaticMutAlias {
-				conflictingSet[staticConflictName] = struct{}{}
-			}
-		} else {
-			if aliasSet.HasStaticImmAlias {
-				conflictingSet[staticConflictName] = struct{}{}
-			}
+		//
+		// Rule 1 (mut → immutable): a permanent mutable escape conflicts.
+		if sourceMut && !targetMut && aliasSet.HasStaticMutAlias {
+			conflictingSet[staticConflictName] = struct{}{}
+		}
+		// Rule 2 (immutable → mut): a permanent immutable escape conflicts.
+		if !sourceMut && targetMut && aliasSet.HasStaticImmAlias {
+			conflictingSet[staticConflictName] = struct{}{}
 		}
 		for varID, aliasMut := range aliasSet.Members {
 			if !ctx.Liveness.IsLiveAfter(assignRef, varID) {
