@@ -237,6 +237,13 @@ This reuses the method body-checking machinery, but with `self` as `mut`
 during construction regardless of class-level default mutability (per
 requirements §"Default Mutability").
 
+`inferFuncBodyWithFuncSigType` already infers a `throws` type from the
+body when the signature does not declare one, so constructors get
+throws inference for free — no separate codepath. When the
+`ConstructorElem` does carry an explicit `throws` clause, the body's
+inferred throws set must be assignable to the declared one, same as
+any other function.
+
 **Modeling `mut self`.** Two complementary mechanisms model the same
 thing — they are not separate features:
 
@@ -344,6 +351,13 @@ for _, f := range syntheticFields {
 
 A class with only optional fields (or no fields at all) synthesizes a
 zero-arg constructor, preserving today's behavior for `class Foo {}`.
+
+The synthetic node's `Span` points at the class name (the same span the
+class identifier carries), so any diagnostic produced against the
+synthesized constructor — e.g. a Phase 3 definite-assignment error on
+a synthesized subclass forwarder, or an LSP "go to definition" — lands
+on the class header rather than at offset zero. Each synthesized
+field-write statement carries the originating field's span.
 
 #### Synthesized Subclass Constructors
 
@@ -882,7 +896,8 @@ type CtorDispatchCase struct {
 type ParamGuard struct {
     ParamIndex int
     Kind       GuardKind  // typeofNumber, typeofString, typeofBoolean,
-                          // arrayIsArray, instanceofClass, hasProperty
+                          // typeofObject, arrayIsArray, instanceofClass,
+                          // hasProperty
     Detail     string     // class name for instanceof, property name for hasProperty
 }
 ```
@@ -895,6 +910,8 @@ Algorithm, per arity bucket of size > 1:
    one of:
    - `typeof === "number" | "string" | "boolean"` (primitive vs. anything
      non-primitive on that side)
+   - `typeof === "object" && x !== null` (any non-null object vs. any
+     primitive on the other side)
    - `Array.isArray` (array vs. non-array object)
    - presence of a discriminating property (object types whose required
      property sets differ; pick a property only on one side)
@@ -906,6 +923,19 @@ Algorithm, per arity bucket of size > 1:
 
 When all ctors have distinct arities, the bucket is size 1 and no guards
 are needed; codegen dispatches purely on `arguments.length`.
+
+**Rest constructors.** A constructor whose last formal is `...rest: U[]`
+has minimum arity `N - 1` and matches any `args.length >= N - 1`. Place
+each rest constructor in its own bucket keyed by minimum arity, tried
+**after** the fixed-arity bucket of the same arity (per requirements
+§"Rest Parameters"). For each pair `(rest, fixed)` at the same minimum
+arity, run the same discriminator search as above on a non-rest
+parameter index `i < N - 1`; if none exists, report
+`ConstructorsNotRuntimeDistinguishableError`. Two rest constructors
+with overlapping argument counts (i.e. with min-arities `m1 <= m2`
+where any count `>= m2` is matched by both) likewise need a non-rest
+discriminator on a leading parameter, otherwise
+`AmbiguousConstructorOverloadsError` at definition time.
 
 ### 5.6 New Errors
 
@@ -946,7 +976,10 @@ constructor(...args) {
 
 Per-ctor guard:
 - Arity-only: `args.length === N`
+- Rest-arity-only: `args.length >= N - 1` (rest as last formal,
+  declared parameter count `N`)
 - Arity + ParamGuard: `args.length === N && /* per-param guards joined with && */`
+  (replace `===` with `>=` for the rest case)
 - For `typeofNumber` on param i: `typeof args[i] === "number"`
 - For `typeofObject` on param i: `typeof args[i] === "object" && args[i] !== null`
 - For `arrayIsArray` on param i: `Array.isArray(args[i])`

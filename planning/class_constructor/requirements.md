@@ -396,7 +396,9 @@ Each per-arity bucket emits one positive guard per constructor: every
 arm independently checks every condition that picks it. The codegen does
 **not** rely on fall-through ordering — this keeps the emitted code
 order-independent and makes the generated guards match the dispatch
-plan in [implementation_plan.md](./implementation_plan.md) §4.4 directly.
+plan in [implementation_plan.md](./implementation_plan.md) §5.5
+(Runtime-Distinguishability Analysis) and §5.7 (Codegen — Merged
+Dispatch) directly.
 
 ```js
 class Vec3 {
