@@ -1937,7 +1937,7 @@ constructors always have bodies).
   `IdentExpr` references whose name matches a constructor parameter,
   and adds matching indices to `storedParams` so the constructor gets a
   lifetime on those params. The walk respects shadowing introduced by
-  inner function params and by `let`/`var` declarations within the
+  inner function params and by `val`/`var` declarations within the
   method body, and skips static methods, nested classes, and nested
   function declarations. The matching is by name (not VarID) because
   `InferConstructorLifetimes` runs during the namespace placeholder
@@ -2012,6 +2012,13 @@ within each group.
   set), and skips any decl whose `FuncSig.LifetimeParams` is non-empty
   to preserve user-declared annotations. 3-cycle convergence is
   covered by `TestInferLifetimeTypes/MutuallyRecursiveThreeCycle`.
+  The cap is sufficient because lifetime info propagates at least one
+  hop along an unresolved forwarding chain per pass, and the longest
+  simple chain within an SCC is `len(component) - 1`; if the cap is
+  reached without convergence, the loop simply exits — there is no
+  failure or overflow signal, so any not-yet-acquired lifetimes would
+  silently be missing from the affected signatures. Profile and revisit
+  the bound if this ever surfaces in practice.
 
   This required two supporting fixes: (1) `InferLifetimes` uses
   `determineCheckerAliasSource` (the call-aware variant) when collecting
