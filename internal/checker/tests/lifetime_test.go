@@ -735,6 +735,81 @@ func TestDestructuredParamLeafSeededInAliasTracker(t *testing.T) {
 	assert.Contains(t, mutErrors[0], "cannot assign 'head' to immutable 'q'")
 }
 
+// TestCallSiteStaticEscapeBlocksImmutableAlias exercises Phase 8.5 step 4:
+// when a callee has a `mut 'static` parameter, calling it with a local
+// argument records a permanent mutable escape on the argument's alias
+// sets. A later attempt to freeze the argument as immutable must fail
+// because the permanent external mutable reference could mutate the
+// value while the immutable view assumes it is unchanged.
+func TestCallSiteStaticEscapeBlocksImmutableAlias(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		var cache: mut {x: number} = {x: 0}
+		fn cacheItem(item: mut {x: number}) -> number {
+			cache = item
+			return item.x
+		}
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			cacheItem(p)
+			val frozen: {x: number} = p
+			frozen
+		}
+	`)
+	require.Len(t, mutErrors, 1)
+	assert.Contains(t, mutErrors[0], "cannot assign 'p' to immutable 'frozen'")
+	assert.Contains(t, mutErrors[0], "'static")
+}
+
+// TestCallSiteStaticEscapeAllowsMutableUse verifies that the caller-side
+// escape marking does NOT block legitimate mutable use of the argument
+// after the call — the value is still mutable for the caller, just
+// permanently aliased.
+func TestCallSiteStaticEscapeAllowsMutableUse(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		var cache: mut {x: number} = {x: 0}
+		fn cacheItem(item: mut {x: number}) -> number {
+			cache = item
+			return item.x
+		}
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			cacheItem(p)
+			p.x = 5
+			p
+		}
+	`)
+	assert.Empty(t, mutErrors,
+		"mutating the argument after a 'static escape is allowed; only mut→immut transitions are blocked")
+}
+
+// TestCallSiteStaticEscapeAllRestArgs verifies that when a callee has a
+// rest parameter whose elements escape to `'static`, *every* variadic
+// argument (not just the first) gets its alias sets marked. Without
+// this, only the first rest arg would be flagged, letting later args
+// silently violate mut→immut transitions.
+func TestCallSiteStaticEscapeAllRestArgs(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		var cache: mut Array<mut {x: number}> = []
+		fn cacheAll(...items: Array<mut {x: number}>) -> number {
+			cache = items
+			return 0
+		}
+		fn test() {
+			val a: mut {x: number} = {x: 0}
+			val b: mut {x: number} = {x: 1}
+			cacheAll(a, b)
+			val frozenB: {x: number} = b
+			frozenB
+		}
+	`)
+	require.NotEmpty(t, mutErrors,
+		"freezing 'b' after it escaped via a 'static rest param should be rejected")
+	assert.Contains(t, mutErrors[0], "cannot assign 'b' to immutable 'frozenB'")
+}
+
 // TestCallSiteNoAliasForFreshReturn verifies that a function returning a
 // fresh value does NOT cause its argument and the result to share an
 // alias set.

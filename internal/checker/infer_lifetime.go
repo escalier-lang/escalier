@@ -631,6 +631,104 @@ func setLifetimeOnType(t type_system.Type, lt type_system.Lifetime) {
 	}
 }
 
+// propagateCalleeStaticLifetimes is the caller-side counterpart of Phase
+// 8.4's escape detection. After a call is type-checked, walk the
+// callee's parameters: any param whose lifetime resolves to `'static`
+// represents a value that the callee stored into outer-lived state.
+// For each such param, mark the corresponding argument variable's alias
+// sets via AliasTracker.MarkStatic with the param's mutability — this
+// records that a permanent reference to the argument has escaped, so
+// the transition checker can flag later mut↔immut transitions on the
+// argument as unsafe.
+//
+// Has no effect when the call's argument is not a simple identifier
+// (e.g. `f(p.x)` would need projection-path tracking, deferred to a
+// later phase) or when the corresponding leaf has no positive VarID.
+func (c *Checker) propagateCalleeStaticLifetimes(
+	ctx Context,
+	fnType *type_system.FuncType,
+	args []ast.Expr,
+) {
+	if ctx.Aliases == nil || fnType == nil {
+		return
+	}
+	for i, p := range fnType.Params {
+		// For a rest parameter (`...items: Array<T>`), the lifetime-
+		// bearing position is the *element* type T, not the Array
+		// container. Every variadic argument from this index onward is
+		// passed as an element, so we mark each one — not just args[i].
+		if _, isRest := p.Pattern.(*type_system.RestPat); isRest {
+			elem := arrayElemType(p.Type)
+			if elem == nil {
+				continue
+			}
+			elemLifetime := type_system.PruneLifetime(type_system.GetLifetime(elem))
+			if !lifetimeContainsStatic(elemLifetime) {
+				continue
+			}
+			mut := liveness.AliasImmutable
+			if isMutableType(elem) {
+				mut = liveness.AliasMutable
+			}
+			for j := i; j < len(args); j++ {
+				src := liveness.DetermineAliasSource(args[j])
+				switch src.Kind {
+				case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
+					for _, vid := range src.VarIDs {
+						ctx.Aliases.MarkStatic(vid, mut)
+					}
+				}
+			}
+			return
+		}
+
+		if i >= len(args) {
+			break
+		}
+		paramLifetime := type_system.PruneLifetime(type_system.GetLifetime(p.Type))
+		if !lifetimeContainsStatic(paramLifetime) {
+			continue
+		}
+		// Determine the alias mutability the callee saw — a `mut 'static`
+		// param means a permanent mutable reference escaped, an immutable
+		// `'static` param means a permanent immutable reference escaped.
+		mut := liveness.AliasImmutable
+		if isMutableType(p.Type) {
+			mut = liveness.AliasMutable
+		}
+		// Use the liveness alias-source helper (not the checker-aware
+		// variant) because we want the argument's underlying source —
+		// not whatever the call's *return* would alias. Marking each
+		// referenced VarID's alias sets propagates the escape to all
+		// existing aliases of the argument.
+		src := liveness.DetermineAliasSource(args[i])
+		switch src.Kind {
+		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
+			for _, vid := range src.VarIDs {
+				ctx.Aliases.MarkStatic(vid, mut)
+			}
+		}
+	}
+}
+
+// lifetimeContainsStatic reports whether the given (already pruned)
+// lifetime is `'static` or a LifetimeUnion that contains `'static`. A
+// LifetimeUnion containing `'static` means at least one branch escaped,
+// which is enough to treat the argument as permanently aliased.
+func lifetimeContainsStatic(lt type_system.Lifetime) bool {
+	switch v := lt.(type) {
+	case *type_system.LifetimeValue:
+		return v != nil && v.IsStatic
+	case *type_system.LifetimeUnion:
+		for _, m := range v.Lifetimes {
+			if lifetimeContainsStatic(type_system.PruneLifetime(m)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // InferConstructorLifetimes analyzes a class declaration to determine
 // which constructor parameters are stored as fields (or implicitly
 // captured by method bodies), attaches a fresh LifetimeVar to each such

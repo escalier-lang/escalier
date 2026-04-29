@@ -1250,6 +1250,11 @@ func (c *Checker) handleFuncCall(
 			returnType = returnType.Copy()
 			returnType.SetProvenance(provneance)
 		}
+		// Phase 8.5: if the callee marks any parameter `'static` (i.e. the
+		// value escapes into outer-lived state inside the callee), record
+		// the escape on the corresponding argument's alias sets so the
+		// transition checker can reject later mut↔immut transitions.
+		c.propagateCalleeStaticLifetimes(ctx, fnType, expr.Args)
 		return returnType, errors
 	} else {
 		// No rest parameters
@@ -1287,6 +1292,11 @@ func (c *Checker) handleFuncCall(
 			returnType = returnType.Copy()
 			returnType.SetProvenance(provneance)
 		}
+		// Phase 8.5: if the callee marks any parameter `'static` (i.e. the
+		// value escapes into outer-lived state inside the callee), record
+		// the escape on the corresponding argument's alias sets so the
+		// transition checker can reject later mut↔immut transitions.
+		c.propagateCalleeStaticLifetimes(ctx, fnType, expr.Args)
 		return returnType, errors
 	}
 }
