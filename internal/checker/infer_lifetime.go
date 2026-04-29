@@ -39,10 +39,13 @@ func lifetimeParamName(i int) string {
 //     LifetimeUnion on the return type.
 //   - Parameters stored into module-level (non-local) state: assigned
 //     'static directly. See detectEscapingLeafIndices.
-//   - Yields aliasing parameters (generators): the lifetime is attached
-//     to the yield type T inside Generator<T, TReturn, TNext> rather than
-//     to the Generator container itself, so each yielded value carries
-//     the lifetime.
+//   - Yields and returns aliasing parameters (generators): yields drive
+//     the yield T slot inside Generator<T, TReturn, TNext>; explicit
+//     `return expr` paths drive the TReturn slot. Each is inferred
+//     independently, so a generator may carry distinct lifetimes on
+//     T and TReturn. Lifetimes attach to the inner slots rather than
+//     the Generator container, since the container is freshly assembled
+//     per call. See "Generator-specific behavior" below.
 //   - Per-leaf lifetimes for tuple-, object-, and rest-destructured
 //     parameters: walkPatternForLeaves walks each parameter's pattern in
 //     lockstep with its inferred type, producing one (VarID, leafType)
@@ -54,12 +57,24 @@ func lifetimeParamName(i int) string {
 // previously-inferred LifetimeParams can be extended once peers' signatures
 // become resolvable on the second pass.
 //
+// Generator-specific behavior (Phase 8.3):
+//   - Yields (regular and delegate) drive the yield T position;
+//     `return expr` paths drive the TReturn position; the two are
+//     inferred independently via `attachLifetimeToResult`.
+//   - For `yield from iter`, the iterator expression is the alias
+//     source — each yielded element borrows from iter, so iter's
+//     lifetime propagates to the relay generator's yield T.
+//
 // Deferred (see implementation_plan.md Phase 8 status):
 //   - Element-level lifetimes (Array<'a T>) for fresh containers whose
 //     elements alias a parameter.
-//   - `yield from` (delegate yield) propagation from the inner iterator's
-//     element type.
 //   - Propagating lifetimes through nested calls into other functions.
+//   - TODO(#507): Shared-instance overspecification for unioned yield
+//     types and `yield from`: when the result position shares its
+//     underlying Type instance with a parameter, attaching a lifetime
+//     to the result also writes through to the parameter, producing
+//     tighter output than necessary. Fix would require shallow-cloning
+//     the yield T / TReturn before lifetime attachment.
 //
 // astParams is the list of parameter ASTs (used to map their VarIDs to
 // parameter indices). funcType is mutated in place. isAsync reports
@@ -179,48 +194,71 @@ func (c *Checker) inferLifetimesCore(
 	// lifetime as a whole, not just its inner yield T.
 	isGenerator := len(yields) > 0
 
-	// Determine the *result type* — the position to which the
-	// per-source lifetime is attached. For generators, the result is
-	// the yield type T inside Generator<T, TReturn, TNext>; for async
-	// functions, the result is the resolved type T inside
-	// Promise<T, E>; for plain functions, it's the return type itself.
-	// In the generator/async cases the container is freshly assembled
-	// per call and has no caller-provided lifetime — only its inner T
-	// does. When the function is neither (so the Promise<T>/Generator<T>
-	// in its signature is the user's actual result, not a wrapper the
-	// compiler synthesized), the lifetime must attach to that container.
-	resultType := funcType.Return
+	// Generators have two lifetime-bearing result positions: the yield
+	// type T (driven by `yield expr` paths) and TReturn (driven by
+	// `return expr` paths). They are inferred independently — a generator
+	// might yield from one parameter and return another, in which case
+	// each receives its own lifetime variable. For non-generators there
+	// is a single result position: the return type for plain functions,
+	// or the inner T inside Promise<T, E> for async functions (the
+	// Promise container itself is freshly assembled per call, with no
+	// caller-provided lifetime).
 	if isGenerator {
-		if t := generatorYieldType(funcType.Return); t != nil {
-			resultType = t
-		}
-	} else if isAsync {
+		c.attachLifetimeToResult(funcType, leaves, leafIndex, escapingLeaves, yields, generatorYieldType(funcType.Return))
+		c.attachLifetimeToResult(funcType, leaves, leafIndex, escapingLeaves, v.exprs, generatorReturnType(funcType.Return))
+		return
+	}
+	resultType := funcType.Return
+	if isAsync {
 		if t := promiseValueType(funcType.Return); t != nil {
 			resultType = t
 		}
 	}
+	c.attachLifetimeToResult(funcType, leaves, leafIndex, escapingLeaves, v.exprs, resultType)
+}
 
-	// Skip the alias-source walk entirely when the result type cannot
-	// carry a lifetime (e.g. it's a TypeVar, primitive, or
-	// union/intersection without a common lifetime-bearing structure).
-	// Without a place to attach the lifetime on the result side, the
-	// lifetime parameter would be unused noise in the signature.
-	if !typeCarriesLifetime(resultType) {
+// attachLifetimeToResult is the per-result-position core of lifetime
+// inference: given a list of alias-source expressions (e.g. `return e`
+// or `yield e`) and a single result-type position, walk the expressions
+// to collect aliased leaves, allocate / reuse a LifetimeVar per leaf,
+// attach those lifetimes to the leaves AND to the result, and append
+// any fresh LifetimeVars to funcType.LifetimeParams.
+//
+// resultType may be nil (e.g. a Generator<_, void, _>'s TReturn slot is
+// `void` and carries no lifetime); in that case the function bails
+// without allocating any lifetime params even if returns happen to
+// alias parameters, since there is no result-side position to attach.
+//
+// This is invoked once per result position. Generators call it twice
+// (yields → yield T, returns → TReturn); plain and async functions
+// call it once. When called twice, fresh LifetimeVars allocated by the
+// first call are appended to funcType.LifetimeParams before the second
+// call begins, so the second call's `nameIdx` (which reads
+// len(funcType.LifetimeParams)) correctly continues the 'a, 'b, ...
+// sequence.
+//
+// escapingLeaves names leaves whose lifetime was already overwritten to
+// 'static by inferLifetimesCore prior to this call. Reading those leaves
+// here is read-only — the helper records returnHasStatic but does not
+// re-mutate the leaf's lifetime — so it is safe to invoke twice.
+func (c *Checker) attachLifetimeToResult(
+	funcType *type_system.FuncType,
+	leaves []paramLeaf,
+	leafIndex map[liveness.VarID]int,
+	escapingLeaves set.Set[int],
+	sourceExprs []ast.Expr,
+	resultType type_system.Type,
+) {
+	if resultType == nil || !typeCarriesLifetime(resultType) {
+		return
+	}
+	if len(sourceExprs) == 0 {
 		return
 	}
 
 	// Determine which leaves are aliased across all alias-source
 	// expressions. Use insertion order so the resulting LifetimeParams
 	// list is deterministic.
-	sourceExprs := make([]ast.Expr, 0, len(v.exprs)+len(yields))
-	if isGenerator {
-		// Generator: yields are the lifetime-bearing source.
-		// The function's `return` (if any) sets TReturn — that lifetime
-		// position is not yet inferred (deferred).
-		sourceExprs = append(sourceExprs, yields...)
-	} else {
-		sourceExprs = append(sourceExprs, v.exprs...)
-	}
 	seen := set.NewSet[int]()
 	var orderedLeaves []int
 	for _, re := range sourceExprs {
@@ -277,7 +315,10 @@ func (c *Checker) inferLifetimesCore(
 		}
 		// Reuse an already-inferred LifetimeVar on the leaf so the
 		// signature stays stable across re-runs and pointer identity
-		// is preserved with anything that already references it.
+		// is preserved with anything that already references it. This
+		// also lets the second call (e.g. for generator TReturn) reuse
+		// a lifetime allocated by the first (yield T) call when the
+		// same parameter is aliased on both sides.
 		if existingLV, ok := type_system.PruneLifetime(type_system.GetLifetime(leaf.leafType)).(*type_system.LifetimeVar); ok && existingLV != nil {
 			returnLifetimeMembers = append(returnLifetimeMembers, existingLV)
 			continue
@@ -313,6 +354,10 @@ func (c *Checker) inferLifetimesCore(
 	} else {
 		returnLifetime = &type_system.LifetimeUnion{Lifetimes: returnLifetimeMembers}
 	}
+	// TODO(#507): if resultType is pointer-shared with a param leaf
+	// (which happens for unioned yield types and for `yield from`),
+	// this write bleeds through to the param. Shallow-clone resultType
+	// here and substitute the clone back into funcType.Return.TypeArgs.
 	setLifetimeOnType(resultType, returnLifetime)
 
 	if len(newLifetimeParams) > 0 {
@@ -1337,6 +1382,26 @@ func generatorYieldType(t type_system.Type) type_system.Type {
 	return tref.TypeArgs[0]
 }
 
+// generatorReturnType returns the TReturn slot of a
+// Generator<T, TReturn, TNext> or AsyncGenerator<T, TReturn, TNext>
+// reference, walking past mutability wrappers. Returns nil if t is not
+// a generator reference or doesn't have a second type arg.
+func generatorReturnType(t type_system.Type) type_system.Type {
+	pt := stripMutabilityWrapper(type_system.Prune(t))
+	tref, ok := pt.(*type_system.TypeRefType)
+	if !ok {
+		return nil
+	}
+	name := type_system.QualIdentToString(tref.Name)
+	if name != "Generator" && name != "AsyncGenerator" {
+		return nil
+	}
+	if len(tref.TypeArgs) < 2 {
+		return nil
+	}
+	return tref.TypeArgs[1]
+}
+
 // promiseValueType returns the resolved value type T of a
 // Promise<T, E> reference, walking past mutability wrappers. Returns
 // nil if t is not a Promise reference or has no type args.
@@ -1356,10 +1421,12 @@ func promiseValueType(t type_system.Type) type_system.Type {
 }
 
 // collectYieldExprs walks a function body collecting the value
-// expressions of every (non-delegate) yield expression. Delegate yields
-// (`yield from iter`) are skipped — propagating lifetimes from the
-// inner iterator's element type is deferred. Bare `yield` (with no
-// value) is also skipped because there is no value to alias.
+// expressions of every yield expression — both regular (`yield e`) and
+// delegate (`yield from iter`). For a delegate yield, the iterator
+// expression itself is the alias source: each yielded value is an
+// element of the iterator and so borrows from it, meaning the relay
+// generator's yield T inherits the iterator's lifetime. Bare `yield`
+// (with no value) is skipped because there is no value to alias.
 func collectYieldExprs(body *ast.Block) []ast.Expr {
 	v := &yieldExprVisitor{}
 	for _, stmt := range body.Stmts {
@@ -1376,7 +1443,12 @@ type yieldExprVisitor struct {
 func (v *yieldExprVisitor) EnterExpr(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.YieldExpr:
-		if e.Value != nil && !e.IsDelegate {
+		// Both regular and delegate yields contribute alias-source
+		// information. For `yield expr`, expr is the yielded value;
+		// for `yield from iter`, iter is the source whose elements
+		// are yielded one by one — propagating iter's lifetime to
+		// each yielded element.
+		if e.Value != nil {
 			v.exprs = append(v.exprs, e.Value)
 		}
 		return true
