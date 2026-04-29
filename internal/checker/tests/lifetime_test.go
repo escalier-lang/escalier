@@ -810,6 +810,33 @@ func TestCallSiteStaticEscapeAllRestArgs(t *testing.T) {
 	assert.Contains(t, mutErrors[0], "cannot assign 'b' to immutable 'frozenB'")
 }
 
+// TestCallSiteStaticEscapeThroughIdentityCall verifies that when a
+// static-escape parameter is filled by a *nested* call whose return
+// value aliases the inner argument, the caller-side propagation still
+// records the escape on that underlying argument. Without checker-aware
+// alias-source resolution, the inner call's return looks "fresh" and
+// the escape silently disappears.
+func TestCallSiteStaticEscapeThroughIdentityCall(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		var cache: mut {x: number} = {x: 0}
+		fn cacheItem(item: mut {x: number}) -> number {
+			cache = item
+			return item.x
+		}
+		fn id(p: mut {x: number}) -> mut {x: number} { return p }
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			cacheItem(id(p))
+			val frozen: {x: number} = p
+			frozen
+		}
+	`)
+	require.Len(t, mutErrors, 1)
+	assert.Contains(t, mutErrors[0], "cannot assign 'p' to immutable 'frozen'")
+	assert.Contains(t, mutErrors[0], "'static")
+}
+
 // TestCallSiteNoAliasForFreshReturn verifies that a function returning a
 // fresh value does NOT cause its argument and the result to share an
 // alias set.

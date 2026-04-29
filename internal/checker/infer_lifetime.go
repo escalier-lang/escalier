@@ -671,7 +671,7 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 				mut = liveness.AliasMutable
 			}
 			for j := i; j < len(args); j++ {
-				src := liveness.DetermineAliasSource(args[j])
+				src := determineCheckerAliasSource(args[j])
 				switch src.Kind {
 				case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 					for _, vid := range src.VarIDs {
@@ -696,12 +696,12 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 		if isMutableType(p.Type) {
 			mut = liveness.AliasMutable
 		}
-		// Use the liveness alias-source helper (not the checker-aware
-		// variant) because we want the argument's underlying source —
-		// not whatever the call's *return* would alias. Marking each
-		// referenced VarID's alias sets propagates the escape to all
-		// existing aliases of the argument.
-		src := liveness.DetermineAliasSource(args[i])
+		// Use the checker-aware alias-source helper so a nested call whose
+		// return aliases its argument (e.g. an identity-like wrapper)
+		// propagates the escape to the underlying variable. The plain
+		// liveness helper treats every CallExpr as fresh, hiding such
+		// transitive aliases from the static-escape check.
+		src := determineCheckerAliasSource(args[i])
 		switch src.Kind {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, vid := range src.VarIDs {
