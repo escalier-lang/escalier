@@ -1251,9 +1251,10 @@ func (c *Checker) handleFuncCall(
 			returnType.SetProvenance(provneance)
 		}
 		// Phase 8.5: if the callee marks any parameter `'static` (i.e. the
-		// value escapes into outer-lived state inside the callee), record
-		// the escape on the corresponding argument's alias sets so the
-		// transition checker can reject later mut↔immut transitions.
+		// value escapes into storage whose lifetime outlives the callee's
+		// stack frame), record the escape on the corresponding argument's
+		// alias sets so the transition checker can reject later mut↔immut
+		// transitions.
 		//
 		// Run this even when `errors` is non-empty: the static-lifetime
 		// annotation is a property of the callee's signature, the
@@ -1301,9 +1302,10 @@ func (c *Checker) handleFuncCall(
 			returnType.SetProvenance(provneance)
 		}
 		// Phase 8.5: if the callee marks any parameter `'static` (i.e. the
-		// value escapes into outer-lived state inside the callee), record
-		// the escape on the corresponding argument's alias sets so the
-		// transition checker can reject later mut↔immut transitions.
+		// value escapes into storage whose lifetime outlives the callee's
+		// stack frame), record the escape on the corresponding argument's
+		// alias sets so the transition checker can reject later mut↔immut
+		// transitions.
 		//
 		// Run this even when `errors` is non-empty: the static-lifetime
 		// annotation is a property of the callee's signature, the

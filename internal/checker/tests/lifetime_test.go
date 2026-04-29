@@ -810,6 +810,31 @@ func TestCallSiteStaticEscapeAllRestArgs(t *testing.T) {
 	assert.Contains(t, mutErrors[0], "cannot assign 'b' to immutable 'frozenB'")
 }
 
+// TestCallSiteStaticEscapeOnTupleDestructuredLeaf verifies that
+// caller-side propagation considers per-leaf `'static` lifetimes on a
+// tuple-destructured parameter, not just the top-level tuple lifetime.
+// Without leaf-level walking, a callee that escapes a single tuple
+// element silently drops the caller-side alias-set marking.
+func TestCallSiteStaticEscapeOnTupleDestructuredLeaf(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		var cache: mut {x: number} = {x: 0}
+		fn cacheFirst([a, b]: [mut {x: number}, mut {x: number}]) -> number {
+			cache = a
+			return 0
+		}
+		fn test() {
+			val pair: mut [mut {x: number}, mut {x: number}] = [{x: 0}, {x: 1}]
+			cacheFirst(pair)
+			val frozen: [{x: number}, {x: number}] = pair
+			frozen
+		}
+	`)
+	require.Len(t, mutErrors, 1)
+	assert.Contains(t, mutErrors[0], "cannot assign 'pair' to immutable 'frozen'")
+	assert.Contains(t, mutErrors[0], "'static")
+}
+
 // TestCallSiteStaticEscapeThroughIdentityCall verifies that when a
 // static-escape parameter is filled by a *nested* call whose return
 // value aliases the inner argument, the caller-side propagation still

@@ -14,7 +14,8 @@ import (
 // MutabilityTransitionError.ConflictingVars to represent a permanent
 // alias from a `'static` escape (e.g. an argument passed to a callee
 // whose parameter has a `'static` lifetime, meaning the value was
-// stored into outer-lived state). The error message renders this
+// stored into storage whose lifetime outlives the callee's stack
+// frame). The error message renders this
 // specially rather than printing the literal sentinel.
 const staticConflictName = "<static escape>"
 
