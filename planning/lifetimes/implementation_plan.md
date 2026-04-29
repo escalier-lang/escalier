@@ -1932,30 +1932,39 @@ constructors always have bodies).
 
 #### Status
 
-- **Implicit captures from method bodies.** `InferConstructorLifetimes`
-  walks instance method bodies looking for `IdentExpr` references whose
-  name matches a constructor parameter, and adds matching indices to
-  `storedParams` so the constructor gets a lifetime on those params.
-  The walk respects shadowing introduced by inner function params and
-  by `let`/`var` declarations within the method body, and skips static
-  methods, nested classes, and nested function declarations. The
-  matching is by name (not VarID) because `InferConstructorLifetimes`
-  runs during the namespace placeholder phase, before the rename pass
-  populates VarIDs on identifiers in method bodies.
+- **Implicit captures from method bodies (Done).**
+  `InferConstructorLifetimes` walks instance method bodies looking for
+  `IdentExpr` references whose name matches a constructor parameter,
+  and adds matching indices to `storedParams` so the constructor gets a
+  lifetime on those params. The walk respects shadowing introduced by
+  inner function params and by `val`/`var` declarations within the
+  method body, and skips static methods, nested classes, and nested
+  function declarations. The matching is by name (not VarID) because
+  `InferConstructorLifetimes` runs during the namespace placeholder
+  phase, before the rename pass populates VarIDs on identifiers in
+  method bodies.
 
-  **Status note:** the analysis is in place but currently dormant
-  end-to-end, because Escalier's method-body scope does not (yet) bring
-  constructor parameters into scope by name —
-  `class C(p) { foo(self) { return p } }` produces an
-  "Unknown identifier: p" type error today. Once the language wires
-  constructor params into method-body scope, the capture detection will
-  activate without further changes.
+  Method, getter, and setter bodies now also bring the enclosing
+  class's constructor params into scope as bindings (alongside `self`
+  and the function's own params), so
+  `class C(p) { foo(self) { return p } }` type-checks. The wiring is
+  in `infer_module.go` — each non-static `MethodElem`/`GetterElem`/
+  `SetterElem` `maps.Copy`s `paramBindingsForDecl[decl]` into its
+  `paramBindings` map before adding `self` and method params; method
+  params declared with the same name as a constructor param overwrite
+  and shadow the constructor binding (covered by
+  `MethodBodyShadowedParamNotCaptured`). The capture-detection logic
+  in `InferConstructorLifetimes` was already correct; this change just
+  removes the "dormant end-to-end" caveat.
 
   **Still deferred:** feeding the captured-param VarID set into
   `InferLifetimes` so that the *method's* return type inherits the
   captured param's lifetime (e.g.
   `foo<'a>('a self) -> mut 'a Point`). The constructor-side lifetime —
-  which is the soundness-critical part — is now handled.
+  which is the soundness-critical part — is handled. Implementing this
+  cleanly likely wants Phase 9 lifetime unification (so the method can
+  reference the class's `'a` rather than allocating a fresh one), so
+  it is deliberately left for that phase.
 
 - **Storage through nested expressions and literals (Done).** Field-init
   expressions are walked structurally by `findCapturedParamsInExpr`,
@@ -1991,13 +2000,25 @@ within each group.
 
 #### Status
 
-- **Mutually recursive single-pass re-run (Done).** `InferComponent`
-  does a single re-run pass over the FuncDecls in any SCC of size > 1
-  after their initial inference. The re-run picks up lifetimes for any
-  function that didn't infer them on its first pass — its peers may now
-  have lifetime info that wasn't available the first time. Functions
-  that DID infer lifetimes on the first pass are skipped by
-  `InferLifetimes`' early-return guard.
+- **Mutually recursive fixed-point iteration (Done).** `InferComponent`
+  iterates lifetime inference over the FuncDecls in any SCC of size > 1
+  until a full pass over the component grows no function's
+  `LifetimeParams`, capped at `len(component) - 1` iterations (the
+  worst-case forwarding-chain length within an SCC). Each pass picks up lifetimes for any function
+  that didn't infer them on a previous pass — peers may now have
+  lifetime info visible via `determineCheckerAliasSource`. The loop
+  uses `ReinferLifetimes` (the variant that bypasses the
+  user-explicit-lifetime guard so it can extend an already-inferred
+  set), and skips any decl whose `FuncSig.LifetimeParams` is non-empty
+  to preserve user-declared annotations. 3-cycle convergence is
+  covered by `TestInferLifetimeTypes/MutuallyRecursiveThreeCycle`.
+  The cap is sufficient because lifetime info propagates at least one
+  hop along an unresolved forwarding chain per pass, and the longest
+  simple chain within an SCC is `len(component) - 1`; if the cap is
+  reached without convergence, the loop simply exits — there is no
+  failure or overflow signal, so any not-yet-acquired lifetimes would
+  silently be missing from the affected signatures. Profile and revisit
+  the bound if this ever surfaces in practice.
 
   This required two supporting fixes: (1) `InferLifetimes` uses
   `determineCheckerAliasSource` (the call-aware variant) when collecting
@@ -2008,11 +2029,6 @@ within each group.
   `LifetimeParams` while leaving the lifetime vars themselves attached
   to the param/return types. Presence of a lifetime on the return type
   is now the authoritative signal.
-
-- **Still deferred:** a true fixed-point loop that iterates until no
-  changes (the current implementation does exactly one re-run, which is
-  enough for most 2-cycle mutual recursion cases but not for chains
-  requiring 3+ iterations).
 
 ### 8.8 Tests
 
