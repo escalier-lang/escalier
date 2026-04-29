@@ -2268,7 +2268,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				type ContainerOfContainers = Container<NumberContainer>
 			`,
 			expectedTypes: map[string]string{
-				"NumberContainer":      "{items: number}",
+				"NumberContainer":       "{items: number}",
 				"ContainerOfContainers": "{items: NumberContainer}",
 			},
 		},

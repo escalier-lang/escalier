@@ -149,6 +149,30 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"odd":  "fn <'a>(p: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
 			},
 		},
+		"MutuallyRecursiveThreeCycle": {
+			// Phase 8.7 (fixed-point): three mutually-recursive functions
+			// where only one has a base-case `return p`. The two
+			// forwarding functions can only acquire the lifetime once
+			// their peer has it, so worst-case ordering needs more than
+			// one re-run pass — exercising the fixed-point loop.
+			input: `
+				fn a(p: mut {x: number}, n: number) -> mut {x: number} {
+					if n == 0 { return p }
+					return b(p, n - 1)
+				}
+				fn b(p: mut {x: number}, n: number) -> mut {x: number} {
+					return c(p, n)
+				}
+				fn c(p: mut {x: number}, n: number) -> mut {x: number} {
+					return a(p, n)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"a": "fn <'a>(p: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
+				"b": "fn <'a>(p: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
+				"c": "fn <'a>(p: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
+			},
+		},
 		"GeneratorYieldsAliasParam": {
 			// Phase 8.3: a generator that yields a parameter should
 			// propagate the parameter's lifetime to the yield type T
@@ -634,6 +658,28 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"C": "{new fn (p: mut {x: number}) -> C, make() -> number}",
+			},
+		},
+		"MethodBodyResolvesConstructorParam": {
+			// Phase 8.6: with constructor params now wired into instance
+			// method scope, a method body that references a constructor
+			// param by name type-checks (previously this failed with
+			// "Unknown identifier: p"). The constructor still acquires
+			// the lifetime from the capture; threading it onto the
+			// method's own return type (so `foo` would print as
+			// `foo(self) -> mut 'a {x: number}`) is deferred to Phase 9
+			// lifetime unification, which is why `foo`'s expected
+			// signature here has no `'a`.
+			input: `
+				class C(p: mut {x: number}) {
+					foo(self) -> mut {x: number} { return p }
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
+			},
+			expectedInstanceType: map[string]string{
+				"C": "{foo(self) -> mut {x: number}}",
 			},
 		},
 	}

@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1087,8 +1088,20 @@ func (c *Checker) InferComponent(
 						if methodType != nil {
 							paramBindings := make(map[string]*type_system.Binding)
 
-							// For instance methods, add 'self' parameter
+							// For instance methods, add 'self' parameter and the
+							// enclosing class's constructor params. Escalier
+							// allows method bodies to reference constructor
+							// parameters by name (the analysis in
+							// InferConstructorLifetimes already relies on this);
+							// these copies make the names resolvable during type
+							// checking and the rename/liveness pre-pass. Method
+							// params declared with the same name are added below
+							// and overwrite the constructor binding, preserving
+							// the shadowing semantics covered by
+							// MethodBodyShadowedParamNotCaptured.
 							if !isStatic {
+								maps.Copy(paramBindings, paramBindingsForDecl[decl])
+
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
 								// TODO: handle generic classes
@@ -1166,8 +1179,12 @@ func (c *Checker) InferComponent(
 						if getterType != nil {
 							paramBindings := make(map[string]*type_system.Binding)
 
-							// For instance getters, add 'self' parameter
+							// For instance getters, add 'self' and the enclosing
+							// class's constructor params (see the matching note
+							// in the MethodElem case above for rationale).
 							if !isStatic {
+								maps.Copy(paramBindings, paramBindingsForDecl[decl])
+
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
 								// TODO: handle generic classes
@@ -1234,8 +1251,14 @@ func (c *Checker) InferComponent(
 						if setterType != nil {
 							paramBindings := make(map[string]*type_system.Binding)
 
-							// For instance setters, add 'self' parameter
+							// For instance setters, add 'self' and the enclosing
+							// class's constructor params (see the matching note
+							// in the MethodElem case above for rationale). The
+							// setter's own value param is added below and
+							// shadows any constructor binding sharing its name.
 							if !isStatic {
+								maps.Copy(paramBindings, paramBindingsForDecl[decl])
+
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
 								// TODO: handle generic classes
@@ -1283,39 +1306,50 @@ func (c *Checker) InferComponent(
 		}
 	}
 
-	// Phase 8.7 (best-effort): for SCCs of size > 1 (mutually recursive
-	// function groups), do a single re-run pass over the component's
-	// FuncDecls. The re-run picks up lifetimes for any function that
-	// didn't infer them on its first pass — its peers may now have
-	// lifetime info via determineCheckerAliasSource that wasn't
-	// available the first time. The re-run uses ReinferLifetimes
-	// (instead of InferLifetimes) so that functions whose first pass
-	// already inferred SOME lifetimes can still pick up additional ones
-	// via newly-resolved peer signatures (e.g. a return path through a
-	// peer call whose lifetime wasn't yet known on the first pass).
+	// Phase 8.7: for SCCs of size > 1 (mutually recursive function
+	// groups), iterate lifetime inference to a fixed point. Each pass
+	// can pick up additional lifetimes for functions whose peers gained
+	// lifetime info on the previous pass (visible through
+	// determineCheckerAliasSource). The loop terminates when a full
+	// pass over the component grows no function's LifetimeParams. The
+	// re-run uses ReinferLifetimes (instead of InferLifetimes) so that
+	// functions whose earlier pass already inferred SOME lifetimes can
+	// still acquire additional ones via newly-resolved peer signatures.
 	// User-explicit lifetimes (declared in the AST) are preserved by
 	// skipping the reinfer entry point for those decls.
 	//
-	// This is a one-pass re-run, not a true fixed-point — chains
-	// requiring 3+ iterations still won't converge fully. In practice
-	// most mutual-recursion cases need at most one re-run because
-	// Tarjan's SCC ordering processes each function's callees first
-	// within a simple cycle.
+	// `maxIterations` guards against pathological non-convergence. The
+	// loop is monotonic (each pass can only *add* LifetimeParams, never
+	// remove them) and the worst-case chain length within an SCC is
+	// `len(component) - 1` forwarding hops, so that bound is sufficient
+	// to reach a fixed point. If type-checking is ever flagged as slow
+	// on large SCCs, profile before tightening this.
 	if len(component) > 1 {
-		for _, key := range sortedForDefs {
-			for _, decl := range depGraph.GetDecls(key) {
-				fd, ok := decl.(*ast.FuncDecl)
-				if !ok || fd.Body == nil {
-					continue
+		maxIterations := len(component) - 1
+		for range maxIterations {
+			grew := false
+			for _, key := range sortedForDefs {
+				for _, decl := range depGraph.GetDecls(key) {
+					fd, ok := decl.(*ast.FuncDecl)
+					if !ok || fd.Body == nil {
+						continue
+					}
+					ft, ok := funcTypeForDecl[fd]
+					if !ok || ft == nil {
+						continue
+					}
+					if len(fd.FuncSig.LifetimeParams) > 0 {
+						continue
+					}
+					before := len(ft.LifetimeParams)
+					c.ReinferLifetimes(fd.FuncSig.Params, fd.Body, ft, fd.FuncSig.Async)
+					if len(ft.LifetimeParams) > before {
+						grew = true
+					}
 				}
-				ft, ok := funcTypeForDecl[fd]
-				if !ok || ft == nil {
-					continue
-				}
-				if len(fd.FuncSig.LifetimeParams) > 0 {
-					continue
-				}
-				c.ReinferLifetimes(fd.FuncSig.Params, fd.Body, ft, fd.FuncSig.Async)
+			}
+			if !grew {
+				break
 			}
 		}
 	}
