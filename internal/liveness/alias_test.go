@@ -162,6 +162,45 @@ func TestMergeAliasSetsNoDuplicateSetIDs(t *testing.T) {
 	}
 }
 
+func TestMergeAliasSetsPropagatesStaticFlags(t *testing.T) {
+	tracker := NewAliasTracker()
+	var x VarID = 1
+	var y VarID = 2
+
+	// y's set has a `mut 'static` escape; x's set has none.
+	tracker.NewValue(x, AliasMutable)
+	tracker.NewValue(y, AliasMutable)
+	tracker.MarkStatic(y, AliasMutable)
+
+	require.True(t, tracker.GetAliasSets(y)[0].HasStaticMutAlias)
+
+	// Merging y into x — x is the target. The static flag from y's set
+	// must be preserved on the merged target.
+	tracker.MergeAliasSets(x, y)
+
+	sets := tracker.GetAliasSets(x)
+	require.Len(t, sets, 1)
+	require.True(t, sets[0].HasStaticMutAlias,
+		"merged set should inherit HasStaticMutAlias from the source set")
+}
+
+func TestMergeAliasSetsPropagatesStaticImmFlag(t *testing.T) {
+	tracker := NewAliasTracker()
+	var x VarID = 1
+	var y VarID = 2
+
+	tracker.NewValue(x, AliasImmutable)
+	tracker.NewValue(y, AliasImmutable)
+	tracker.MarkStatic(y, AliasImmutable)
+
+	tracker.MergeAliasSets(x, y)
+
+	sets := tracker.GetAliasSets(x)
+	require.Len(t, sets, 1)
+	require.True(t, sets[0].HasStaticImmAlias,
+		"merged set should inherit HasStaticImmAlias from the source set")
+}
+
 func TestReassignMulti(t *testing.T) {
 	tracker := NewAliasTracker()
 	var a VarID = 1

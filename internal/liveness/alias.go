@@ -17,11 +17,20 @@ type SetID int
 // AliasSet tracks a group of variables that reference the same underlying
 // value. Each value created at runtime gets its own AliasSet. Variables
 // join an alias set when assigned from another variable in the set.
+//
+// A value may also have escaped to a location that outlives the function
+// (e.g. stored into a module-level variable via a `'static` parameter at
+// a call site). The HasStaticMutAlias / HasStaticImmAlias flags record
+// whether such an escape happened, and at what mutability — these are
+// independent because the same value can escape twice via different
+// callees, once mutably and once immutably. Transition checking treats
+// these as permanent (always-live) aliases.
 type AliasSet struct {
-	ID       SetID
-	Members  map[VarID]AliasMutability // variable → whether it holds a mut ref
-	Origin   VarID                     // the variable that created the value
-	IsStatic bool                      // true if this value has 'static lifetime
+	ID                SetID
+	Members           map[VarID]AliasMutability // variable → whether it holds a mut ref
+	Origin            VarID                     // the variable that created the value
+	HasStaticMutAlias bool                      // a `mut 'static` reference escaped
+	HasStaticImmAlias bool                      // an immutable `'static` reference escaped
 }
 
 // AliasTracker manages alias sets for a function body.
@@ -186,6 +195,12 @@ func (a *AliasTracker) MergeAliasSets(v1 VarID, v2 VarID) {
 		if source == nil {
 			continue
 		}
+		// Static-escape flags are properties of the underlying value, not
+		// of any individual member. Merging two sets means the values are
+		// being treated as the same value, so any escape on either side
+		// must apply to the merged set.
+		target.HasStaticMutAlias = target.HasStaticMutAlias || source.HasStaticMutAlias
+		target.HasStaticImmAlias = target.HasStaticImmAlias || source.HasStaticImmAlias
 		for member, mut := range source.Members {
 			target.Members[member] = mut
 			// Update VarToSets: replace setID with targetID, deduplicating
@@ -206,6 +221,33 @@ func (a *AliasTracker) MergeAliasSets(v1 VarID, v2 VarID) {
 			a.VarToSets[member] = newSets
 		}
 		delete(a.Sets, setID)
+	}
+}
+
+// MarkStatic records that a `'static` reference to the value(s) v
+// participates in has escaped to a location that outlives the function
+// (e.g. via a callee whose parameter has a `'static` lifetime). All
+// alias sets v belongs to are marked, since they all share the value
+// that escaped.
+//
+// The mutability records the escape's reference mutability, not v's:
+// a `mut 'static` parameter creates a permanent mutable alias somewhere
+// outside, an immutable `'static` parameter creates a permanent
+// immutable alias. The two flags are independent — the same value may
+// escape twice through different callees.
+//
+// Marking is idempotent: re-marking with the same mutability is a no-op.
+func (a *AliasTracker) MarkStatic(v VarID, mut AliasMutability) {
+	for _, setID := range a.VarToSets[v] {
+		set := a.Sets[setID]
+		if set == nil {
+			continue
+		}
+		if mut == AliasMutable {
+			set.HasStaticMutAlias = true
+		} else {
+			set.HasStaticImmAlias = true
+		}
 	}
 }
 

@@ -1250,6 +1250,20 @@ func (c *Checker) handleFuncCall(
 			returnType = returnType.Copy()
 			returnType.SetProvenance(provneance)
 		}
+		// Phase 8.5: if the callee marks any parameter `'static` (i.e. the
+		// value escapes into storage whose lifetime outlives the callee's
+		// stack frame), record the escape on the corresponding argument's
+		// alias sets so the transition checker can reject later mut↔immut
+		// transitions.
+		//
+		// Run this even when `errors` is non-empty: the static-lifetime
+		// annotation is a property of the callee's signature, the
+		// arg→param mapping is positional, and MarkStatic only sets
+		// flags that make transitions *stricter* — it can never cause
+		// unsound acceptance. Gating on `len(errors) == 0` would only
+		// suppress cascading mut-transition errors on already-invalid
+		// code, which is not worth the extra branch.
+		c.propagateCalleeStaticLifetimes(ctx, fnType, expr.Args)
 		return returnType, errors
 	} else {
 		// No rest parameters
@@ -1287,6 +1301,20 @@ func (c *Checker) handleFuncCall(
 			returnType = returnType.Copy()
 			returnType.SetProvenance(provneance)
 		}
+		// Phase 8.5: if the callee marks any parameter `'static` (i.e. the
+		// value escapes into storage whose lifetime outlives the callee's
+		// stack frame), record the escape on the corresponding argument's
+		// alias sets so the transition checker can reject later mut↔immut
+		// transitions.
+		//
+		// Run this even when `errors` is non-empty: the static-lifetime
+		// annotation is a property of the callee's signature, the
+		// arg→param mapping is positional, and MarkStatic only sets
+		// flags that make transitions *stricter* — it can never cause
+		// unsound acceptance. Gating on `len(errors) == 0` would only
+		// suppress cascading mut-transition errors on already-invalid
+		// code, which is not worth the extra branch.
+		c.propagateCalleeStaticLifetimes(ctx, fnType, expr.Args)
 		return returnType, errors
 	}
 }

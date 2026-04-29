@@ -735,6 +735,158 @@ func TestDestructuredParamLeafSeededInAliasTracker(t *testing.T) {
 	assert.Contains(t, mutErrors[0], "cannot assign 'head' to immutable 'q'")
 }
 
+// TestCallSiteStaticEscapePropagation exercises Phase 8.5 step 4: when a
+// callee has a `'static` parameter, the call records a permanent escape
+// on the corresponding argument's alias sets. Subsequent mut↔immut
+// transitions on the argument must observe the escape as an always-live
+// alias of the escaped mutability.
+func TestCallSiteStaticEscapePropagation(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		// A `mut 'static` escape on the argument blocks a later attempt
+		// to freeze it as immutable: the permanent external mutable
+		// reference could mutate the value while the immutable view
+		// assumes it is unchanged.
+		"MutStaticBlocksImmutableAlias": {
+			input: `
+				var cache: mut {x: number} = {x: 0}
+				fn cacheItem(item: mut {x: number}) -> number {
+					cache = item
+					return item.x
+				}
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					cacheItem(p)
+					val frozen: {x: number} = p
+					frozen
+				}
+			`,
+			expectedErrors: []string{
+				"cannot assign 'p' to immutable 'frozen': a `'static` escape still has mutable access to 'p' after this point",
+			},
+		},
+		// Symmetric immutable case: an immutable `'static` escape on the
+		// argument blocks a later attempt to upgrade it to a mutable
+		// view. Closes the symmetric gap to MutStaticBlocksImmutableAlias.
+		"ImmStaticBlocksMutableAlias": {
+			input: `
+				var cache: {x: number} = {x: 0}
+				fn cacheItem(item: {x: number}) -> number {
+					cache = item
+					return item.x
+				}
+				fn test() {
+					val p: {x: number} = {x: 0}
+					cacheItem(p)
+					val mutp: mut {x: number} = p
+					mutp.x = 5
+					mutp
+				}
+			`,
+			expectedErrors: []string{
+				"cannot assign 'p' to mutable 'mutp': a `'static` escape still has immutable access to 'p' after this point",
+			},
+		},
+		// The caller-side escape marking does NOT block legitimate
+		// mutable use of the argument after the call — the value is
+		// still mutable for the caller, just permanently aliased.
+		"AllowsMutableUseAfterCall": {
+			input: `
+				var cache: mut {x: number} = {x: 0}
+				fn cacheItem(item: mut {x: number}) -> number {
+					cache = item
+					return item.x
+				}
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					cacheItem(p)
+					p.x = 5
+					p
+				}
+			`,
+		},
+		// When a callee has a rest parameter whose elements escape to
+		// `'static`, *every* variadic argument (not just the first)
+		// must be marked. Otherwise later args silently violate the
+		// mut→immut transition rule.
+		"RestParamMarksAllArgs": {
+			input: `
+				var cache: mut Array<mut {x: number}> = []
+				fn cacheAll(...items: Array<mut {x: number}>) -> number {
+					cache = items
+					return 0
+				}
+				fn test() {
+					val a: mut {x: number} = {x: 0}
+					val b: mut {x: number} = {x: 1}
+					cacheAll(a, b)
+					val frozenB: {x: number} = b
+					frozenB
+				}
+			`,
+			expectedErrors: []string{
+				"cannot assign 'b' to immutable 'frozenB': a `'static` escape still has mutable access to 'b' after this point",
+			},
+		},
+		// Caller-side propagation considers per-leaf `'static` lifetimes
+		// on a tuple-destructured parameter, not just the top-level
+		// tuple lifetime. Without leaf-level walking, a callee that
+		// escapes a single tuple element silently drops the marking.
+		"TupleDestructuredLeafEscape": {
+			input: `
+				var cache: mut {x: number} = {x: 0}
+				fn cacheFirst([a, b]: [mut {x: number}, mut {x: number}]) -> number {
+					cache = a
+					return 0
+				}
+				fn test() {
+					val pair: mut [mut {x: number}, mut {x: number}] = [{x: 0}, {x: 1}]
+					cacheFirst(pair)
+					val frozen: [{x: number}, {x: number}] = pair
+					frozen
+				}
+			`,
+			expectedErrors: []string{
+				"cannot assign 'pair' to immutable 'frozen': a `'static` escape still has mutable access to 'pair' after this point",
+			},
+		},
+		// When a static-escape parameter is filled by a nested call
+		// whose return aliases the inner argument, propagation still
+		// records the escape on that underlying argument. Without
+		// checker-aware alias-source resolution, the inner call's
+		// return looks "fresh" and the escape silently disappears.
+		"PropagatesThroughIdentityCall": {
+			input: `
+				var cache: mut {x: number} = {x: 0}
+				fn cacheItem(item: mut {x: number}) -> number {
+					cache = item
+					return item.x
+				}
+				fn id(p: mut {x: number}) -> mut {x: number} { return p }
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					cacheItem(id(p))
+					val frozen: {x: number} = p
+					frozen
+				}
+			`,
+			expectedErrors: []string{
+				"cannot assign 'p' to immutable 'frozen': a `'static` escape still has mutable access to 'p' after this point",
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			mutErrors := mustInferScriptMutErrors(t, tc.input)
+			assert.Equal(t, tc.expectedErrors, mutErrors)
+		})
+	}
+}
+
 // TestCallSiteNoAliasForFreshReturn verifies that a function returning a
 // fresh value does NOT cause its argument and the result to share an
 // alias set.

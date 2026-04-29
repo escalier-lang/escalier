@@ -10,6 +10,15 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// staticConflictName is a sentinel placeholder used in
+// MutabilityTransitionError.ConflictingVars to represent a permanent
+// alias from a `'static` escape (e.g. an argument passed to a callee
+// whose parameter has a `'static` lifetime, meaning the value was
+// stored into storage whose lifetime outlives the callee's stack
+// frame). The error message renders this
+// specially rather than printing the literal sentinel.
+const staticConflictName = "<static escape>"
+
 // MutabilityTransitionError is reported when a mutability transition
 // (mut→immutable or immutable→mut) is attempted while conflicting live
 // aliases exist.
@@ -33,7 +42,18 @@ func (e MutabilityTransitionError) IsWarning() bool {
 	return false
 }
 func (e MutabilityTransitionError) Message() string {
-	vars := "'" + strings.Join(e.ConflictingVars, "', '") + "'"
+	// Render conflicts. The staticConflictName sentinel is rendered
+	// without quotes so the message reads naturally; everything else is
+	// a real identifier that gets single-quoted.
+	parts := make([]string, len(e.ConflictingVars))
+	for i, name := range e.ConflictingVars {
+		if name == staticConflictName {
+			parts[i] = "a `'static` escape"
+		} else {
+			parts[i] = "'" + name + "'"
+		}
+	}
+	vars := strings.Join(parts, ", ")
 	// When the conflicting variable is the source itself, the message is
 	// straightforward. When it's a different variable (an alias), we
 	// clarify the relationship so the user understands the connection.
@@ -115,6 +135,20 @@ func (c *Checker) checkMutabilityTransition(
 	conflictingSet := make(map[string]struct{})
 	aliasSets := ctx.Aliases.GetAliasSets(sourceVarID)
 	for _, aliasSet := range aliasSets {
+		// A `'static` escape on the alias set represents a permanent
+		// outside reference — no liveness check is meaningful, so it
+		// always counts as a live alias of its escaped mutability.
+		// Phase 8.5: callees with `'static` parameters mark the
+		// argument's alias sets via AliasTracker.MarkStatic.
+		//
+		// Rule 1 (mut → immutable): a permanent mutable escape conflicts.
+		if sourceMut && !targetMut && aliasSet.HasStaticMutAlias {
+			conflictingSet[staticConflictName] = struct{}{}
+		}
+		// Rule 2 (immutable → mut): a permanent immutable escape conflicts.
+		if !sourceMut && targetMut && aliasSet.HasStaticImmAlias {
+			conflictingSet[staticConflictName] = struct{}{}
+		}
 		for varID, aliasMut := range aliasSet.Members {
 			if !ctx.Liveness.IsLiveAfter(assignRef, varID) {
 				continue

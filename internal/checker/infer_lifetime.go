@@ -540,8 +540,9 @@ func arrayElemType(t type_system.Type) type_system.Type {
 // Detection is by VarID: the rename pass assigns positive VarIDs to
 // locals and negative VarIDs to outer-scope references. An assignment
 // whose lvalue root is a non-local identifier (VarID <= 0) is treated
-// as a store into outer-lived state. Stores into locals don't escape
-// because the local's lifetime is bounded by the function body.
+// as a store into storage whose lifetime outlives the callee's stack
+// frame. Stores into locals don't escape because the local's lifetime
+// is bounded by the function body.
 //
 // Limitations:
 //   - Closures over a *nested* function's local: inner functions whose
@@ -629,6 +630,203 @@ func setLifetimeOnType(t type_system.Type, lt type_system.Lifetime) {
 	case *type_system.MutType:
 		setLifetimeOnType(ty.Type, lt)
 	}
+}
+
+// propagateCalleeStaticLifetimes is the caller-side counterpart of Phase
+// 8.4's escape detection. After a call is type-checked, walk the
+// callee's parameters: any param whose lifetime resolves to `'static`
+// represents a value that the callee stored into storage whose lifetime
+// outlives the callee's stack frame. For each such param, mark the
+// corresponding argument variable's alias sets via AliasTracker.MarkStatic
+// with the param's mutability — this records that a permanent reference
+// to the argument has escaped, so the transition checker can flag later
+// mut↔immut transitions on the argument as unsafe.
+//
+// Argument resolution goes through determineCheckerAliasSource, so the
+// escape propagates through identity-like nested calls whose return
+// type aliases an argument (e.g. `cacheItem(id(p))` marks `p`). Has no
+// effect when no underlying VarID can be resolved — e.g. property
+// projections like `f(p.x)`, which would need projection-path tracking,
+// deferred to a later phase.
+func (c *Checker) propagateCalleeStaticLifetimes(
+	ctx Context,
+	fnType *type_system.FuncType,
+	args []ast.Expr,
+) {
+	if ctx.Aliases == nil || fnType == nil {
+		return
+	}
+	for i, p := range fnType.Params {
+		// For a rest parameter (`...items: Array<T>`), the lifetime-
+		// bearing position is the *element* type T, not the Array
+		// container. Every variadic argument from this index onward is
+		// passed as an element, so we mark each one — not just args[i].
+		if rp, isRest := p.Pattern.(*type_system.RestPat); isRest {
+			elem := arrayElemType(p.Type)
+			if elem == nil {
+				continue
+			}
+			// Walk the rest's inner pattern × element type to collect
+			// every leaf-position mutability whose lifetime resolved to
+			// `'static`. This catches both `...args: T[]` (a single
+			// IdentPat leaf) and the destructured form `...[a, b]: ...[]`
+			// where individual elements may escape independently.
+			muts := collectStaticEscapeMutabilities(rp.Pattern, elem)
+			if len(muts) == 0 {
+				continue
+			}
+			for j := i; j < len(args); j++ {
+				src := determineCheckerAliasSource(args[j])
+				switch src.Kind {
+				case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
+					for _, mut := range muts {
+						for _, vid := range src.VarIDs {
+							ctx.Aliases.MarkStatic(vid, mut)
+						}
+					}
+				}
+			}
+			return
+		}
+
+		if i >= len(args) {
+			break
+		}
+		// Walk the param's pattern × type in lockstep (same shape as
+		// collectParamLeaves) so that destructured leaves carrying
+		// `'static` are detected even when the *outer* param type has no
+		// `'static` annotation. Phase 8.4's setLifetimeOnType attaches
+		// `'static` at the leaf type position only — a tuple- or object-
+		// destructured param with one escaping leaf has no top-level
+		// static lifetime, so a single `GetLifetime(p.Type)` check would
+		// silently miss it.
+		muts := collectStaticEscapeMutabilities(p.Pattern, p.Type)
+		if len(muts) == 0 {
+			continue
+		}
+		// Use the checker-aware alias-source helper so a nested call whose
+		// return aliases its argument (e.g. an identity-like wrapper)
+		// propagates the escape to the underlying variable. The plain
+		// liveness helper treats every CallExpr as fresh, hiding such
+		// transitive aliases from the static-escape check.
+		src := determineCheckerAliasSource(args[i])
+		switch src.Kind {
+		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
+			for _, mut := range muts {
+				for _, vid := range src.VarIDs {
+					ctx.Aliases.MarkStatic(vid, mut)
+				}
+			}
+		}
+	}
+}
+
+// collectStaticEscapeMutabilities walks a callee's parameter pattern in
+// lockstep with its inferred type and returns the alias mutability of
+// every leaf whose pruned lifetime contains `'static`. Pattern shapes
+// match collectParamLeaves / walkPatternForLeaves: IdentPat is a leaf
+// at the param's full type, TuplePat / ObjectPat / RestPat descend into
+// the matching sub-type, ObjShorthandPat is a leaf at the property
+// type, and ObjRestPat is skipped (its container is freshly assembled
+// per call and can't carry a caller-provided lifetime). The mutability
+// is determined per-leaf via isMutableType so a destructured param can
+// emit a mix of mut/immut escapes.
+func collectStaticEscapeMutabilities(pat type_system.Pat, t type_system.Type) []liveness.AliasMutability {
+	var out []liveness.AliasMutability
+	walkPatternForStaticLeaves(pat, t, &out)
+	return out
+}
+
+func walkPatternForStaticLeaves(pat type_system.Pat, t type_system.Type, into *[]liveness.AliasMutability) {
+	if pat == nil || t == nil {
+		return
+	}
+	pt := stripMutabilityWrapper(type_system.Prune(t))
+	switch p := pat.(type) {
+	case *type_system.IdentPat:
+		lt := type_system.PruneLifetime(type_system.GetLifetime(t))
+		if !lifetimeContainsStatic(lt) {
+			return
+		}
+		mut := liveness.AliasImmutable
+		if isMutableType(t) {
+			mut = liveness.AliasMutable
+		}
+		*into = append(*into, mut)
+	case *type_system.TuplePat:
+		tt, ok := pt.(*type_system.TupleType)
+		if !ok {
+			return
+		}
+		for i, elem := range p.Elems {
+			if i >= len(tt.Elems) {
+				break
+			}
+			elemType := tt.Elems[i]
+			if rest, ok := elemType.(*type_system.RestSpreadType); ok {
+				elemType = rest.Type
+			}
+			walkPatternForStaticLeaves(elem, elemType, into)
+		}
+	case *type_system.ObjectPat:
+		ot, ok := pt.(*type_system.ObjectType)
+		if !ok {
+			return
+		}
+		propTypes := make(map[string]type_system.Type)
+		for _, elem := range ot.Elems {
+			if prop, ok := elem.(*type_system.PropertyElem); ok &&
+				prop.Name.Kind == type_system.StrObjTypeKeyKind {
+				propTypes[prop.Name.Str] = prop.Value
+			}
+		}
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *type_system.ObjKeyValuePat:
+				if propType, exists := propTypes[e.Key]; exists {
+					walkPatternForStaticLeaves(e.Value, propType, into)
+				}
+			case *type_system.ObjShorthandPat:
+				propType, exists := propTypes[e.Key]
+				if !exists {
+					continue
+				}
+				lt := type_system.PruneLifetime(type_system.GetLifetime(propType))
+				if !lifetimeContainsStatic(lt) {
+					continue
+				}
+				mut := liveness.AliasImmutable
+				if isMutableType(propType) {
+					mut = liveness.AliasMutable
+				}
+				*into = append(*into, mut)
+			}
+		}
+	case *type_system.RestPat:
+		elem := arrayElemType(t)
+		if elem == nil {
+			return
+		}
+		walkPatternForStaticLeaves(p.Pattern, elem, into)
+	}
+}
+
+// lifetimeContainsStatic reports whether the given (already pruned)
+// lifetime is `'static` or a LifetimeUnion that contains `'static`. A
+// LifetimeUnion containing `'static` means at least one branch escaped,
+// which is enough to treat the argument as permanently aliased.
+func lifetimeContainsStatic(lt type_system.Lifetime) bool {
+	switch v := lt.(type) {
+	case *type_system.LifetimeValue:
+		return v != nil && v.IsStatic
+	case *type_system.LifetimeUnion:
+		for _, m := range v.Lifetimes {
+			if lifetimeContainsStatic(type_system.PruneLifetime(m)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // InferConstructorLifetimes analyzes a class declaration to determine
