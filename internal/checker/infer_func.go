@@ -258,8 +258,28 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		bodyCtx.AwaitThrowTypes = &awaitThrowTypes
 	}
 
-	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, astParams, body)
+	returnType, inferredThrowType, divergent, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, astParams, body)
 	errors = slices.Concat(errors, bodyErrors)
+
+	// If the body diverges (every reachable path exits via `throw` /
+	// other exit form, with no `return` statements at all) and the
+	// user wrote a non-`never` return annotation, that annotation is
+	// misleading: callers see the type but the function will never
+	// produce a value of it. Require `-> never` instead. This check is
+	// limited to ordinary (non-generator, non-async) functions —
+	// async/generator wrappers wrap the return in a Promise/Generator
+	// where `never` semantics differ.
+	if divergent && !containsYield && !isAsync {
+		annotated := type_system.Prune(funcSigType.Return)
+		if _, isTypeVar := annotated.(*type_system.TypeVarType); !isTypeVar {
+			if _, isNever := annotated.(*type_system.NeverType); !isNever {
+				errors = append(errors, DivergingBodyNonNeverReturnError{
+					DeclaredReturn: annotated.String(),
+					span:           body.Span,
+				})
+			}
+		}
+	}
 
 	// Check if this function is a generator (contains yield)
 	if containsYield {
@@ -332,13 +352,21 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 }
 
 // Infer throws type - handles throws clause inference
-// NOTE: This function updates `funcSigType`
+// NOTE: This function updates `funcSigType`. Returns:
+//   - returnType: the inferred fall-through type of the body (may be
+//     `never` when the body always exits via `throw` / etc.).
+//   - throwType: the union of `throw`-arg types and call-throws.
+//   - divergent: true iff the body has zero top-level `return`
+//     statements AND every reachable path exits via `throw` (or
+//     another diverging form). Callers use this to report
+//     `DivergingBodyNonNeverReturnError` when the user declared a
+//     non-`never` return type.
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]*type_system.Binding,
 	astParams []*ast.Param,
 	body *ast.Block,
-) (type_system.Type, type_system.Type, []Error) {
+) (type_system.Type, type_system.Type, bool, []Error) {
 
 	ctx = ctx.WithNewScope()
 	maps.Copy(ctx.Scope.Namespace.Values, bindings)
@@ -378,17 +406,98 @@ func (c *Checker) inferFuncBody(
 	// code.
 
 	var returnType type_system.Type
+	divergent := false
 	if len(returnTypes) == 1 {
 		returnType = returnTypes[0]
 	} else if len(returnTypes) > 1 {
 		returnType = type_system.NewUnionType(nil, returnTypes...)
+	} else if blockAlwaysExits(body) {
+		// Body has no `return` and every reachable path exits via
+		// `throw` (or another diverging form). The function never
+		// falls off the end normally, so the fall-through type is
+		// `never`, not `void`. This lets a body like `{ throw "x" }`
+		// satisfy a declared `-> number` return without spuriously
+		// reporting `void cannot be assigned to number`. The caller
+		// uses `divergent` to optionally reject misleading non-never
+		// return annotations.
+		returnType = type_system.NewNeverType(nil)
+		divergent = true
 	} else {
 		returnType = type_system.NewVoidType(nil)
 	}
 
 	throwType := type_system.NewUnionType(nil, throwTypes...)
 
-	return returnType, throwType, errors
+	return returnType, throwType, divergent, errors
+}
+
+// blockAlwaysExits reports whether every reachable path through `block`
+// exits via `throw` (or another diverging form like `return`) rather
+// than falling off the end. Used to decide whether a function body's
+// fall-through type should be `never` (unreachable) instead of `void`.
+//
+// This is a syntactic, conservative reachability check — it doesn't
+// reason about loop conditions, only about statement-level control
+// flow. False negatives are fine (we just default to `void`); false
+// positives would be unsound.
+func blockAlwaysExits(block *ast.Block) bool {
+	if block == nil || len(block.Stmts) == 0 {
+		return false
+	}
+	return stmtAlwaysExits(block.Stmts[len(block.Stmts)-1])
+}
+
+func stmtAlwaysExits(stmt ast.Stmt) bool {
+	switch s := stmt.(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.ExprStmt:
+		return exprAlwaysExits(s.Expr)
+	default:
+		return false
+	}
+}
+
+func exprAlwaysExits(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.ThrowExpr:
+		return true
+	case *ast.IfElseExpr:
+		// Without an `else`, fall-through is reachable when the
+		// condition is false.
+		if e.Alt == nil {
+			return false
+		}
+		return blockAlwaysExits(&e.Cons) && blockOrExprAlwaysExits(*e.Alt)
+	case *ast.MatchExpr:
+		// A match exits unconditionally only if every arm does. (We
+		// don't check exhaustiveness here — a non-exhaustive match
+		// would already be an error elsewhere; treating it as
+		// possibly falling through is the safe default.)
+		if len(e.Cases) == 0 {
+			return false
+		}
+		for _, arm := range e.Cases {
+			if !blockOrExprAlwaysExits(arm.Body) {
+				return false
+			}
+		}
+		return true
+	case *ast.DoExpr:
+		return blockAlwaysExits(&e.Body)
+	default:
+		return false
+	}
+}
+
+func blockOrExprAlwaysExits(b ast.BlockOrExpr) bool {
+	if b.Block != nil {
+		return blockAlwaysExits(b.Block)
+	}
+	if b.Expr != nil {
+		return exprAlwaysExits(b.Expr)
+	}
+	return false
 }
 
 type ReturnVisitor struct {
@@ -428,11 +537,19 @@ func (v *ReturnVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 type ThrowVisitor struct {
 	ast.DefaultVisitor
 	Throws []*ast.ThrowExpr
+	// Calls collects every reachable call expression so the enclosing
+	// function inherits each callee's declared `throws` type (call
+	// throws propagate to the caller exactly the same way `throw expr`
+	// statements do — both bubble up to the nearest catch).
+	Calls []*ast.CallExpr
 }
 
 func (v *ThrowVisitor) EnterExpr(expr ast.Expr) bool {
 	if throwExpr, ok := expr.(*ast.ThrowExpr); ok {
 		v.Throws = append(v.Throws, throwExpr)
+	}
+	if callExpr, ok := expr.(*ast.CallExpr); ok {
+		v.Calls = append(v.Calls, callExpr)
 	}
 
 	// Don't visit function expressions since we don't want to include any
@@ -473,6 +590,7 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 	throwVisitor := &ThrowVisitor{
 		DefaultVisitor: ast.DefaultVisitor{},
 		Throws:         []*ast.ThrowExpr{},
+		Calls:          []*ast.CallExpr{},
 	}
 
 	for _, stmt := range block.Stmts {
@@ -488,12 +606,108 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 		}
 	}
 
+	// Collect throws declared by each reachable callee. A `throws T`
+	// clause on the callee surfaces in the caller exactly like a
+	// `throw …` statement: both propagate to the nearest catch (or to
+	// the caller's signature when uncaught). Try/catch scoping is
+	// already handled by the visitor's EnterExpr filter above.
+	for _, callExpr := range throwVisitor.Calls {
+		if t := calleeThrowsType(callExpr); t != nil {
+			throwTypes = append(throwTypes, t)
+		}
+	}
+
 	// Collect throw types from await expressions (collected during inference)
 	if ctx.AwaitThrowTypes != nil {
 		throwTypes = append(throwTypes, *ctx.AwaitThrowTypes...)
 	}
 
 	return throwTypes, errors
+}
+
+// calleeThrowsType returns the `Throws` type declared on the callee of
+// `callExpr`, walking through the type-system shapes a callee can take:
+//
+//   - FuncType: the throws clause is right there.
+//   - ObjectType: a class instance / constructor object — the throws
+//     lives on the embedded ConstructorElem or CallableElem.
+//   - TypeRefType: alias to one of the above; resolve via the
+//     attached `TypeAlias`.
+//   - IntersectionType (overload set): we can't pick a specific
+//     overload here without re-running resolution, so we return the
+//     union of every arm's throws as a sound upper bound. A caller
+//     might dispatch to any arm, so callers must be prepared to handle
+//     any arm's throws.
+//
+// Returns nil when no throws can be attributed (callee has no
+// throws clause, or its throws type is `never`).
+func calleeThrowsType(callExpr *ast.CallExpr) type_system.Type {
+	if callExpr.Callee == nil {
+		return nil
+	}
+	calleeType := callExpr.Callee.InferredType()
+	if calleeType == nil {
+		return nil
+	}
+	fns := collectCalleeFuncTypes(type_system.Prune(calleeType))
+	throws := []type_system.Type{}
+	for _, fn := range fns {
+		if fn.Throws == nil {
+			continue
+		}
+		if _, isNever := type_system.Prune(fn.Throws).(*type_system.NeverType); isNever {
+			continue
+		}
+		throws = append(throws, fn.Throws)
+	}
+	switch len(throws) {
+	case 0:
+		return nil
+	case 1:
+		return throws[0]
+	default:
+		return type_system.NewUnionType(nil, throws...)
+	}
+}
+
+// collectCalleeFuncTypes returns every `*FuncType` arm a call expression
+// can be invoked against. For a single-signature callee this is a slice
+// of one; for an intersection of overloads it returns one entry per
+// arm. Returns an empty slice when the type isn't directly callable
+// (e.g. an unresolved type variable, or non-callable object type).
+func collectCalleeFuncTypes(t type_system.Type) []*type_system.FuncType {
+	switch tt := t.(type) {
+	case *type_system.FuncType:
+		return []*type_system.FuncType{tt}
+	case *type_system.ObjectType:
+		var out []*type_system.FuncType
+		for _, elem := range tt.Elems {
+			// An ObjectType may carry a ConstructorElem (for `new`) and
+			// one or more CallableElems (for plain calls). We collect
+			// every callable shape so overload sets attached to object
+			// types behave like IntersectionType arms.
+			switch e := elem.(type) {
+			case *type_system.ConstructorElem:
+				out = append(out, e.Fn)
+			case *type_system.CallableElem:
+				out = append(out, e.Fn)
+			}
+		}
+		return out
+	case *type_system.TypeRefType:
+		if tt.TypeAlias == nil {
+			return nil
+		}
+		return collectCalleeFuncTypes(type_system.Prune(tt.TypeAlias.Type))
+	case *type_system.IntersectionType:
+		var out []*type_system.FuncType
+		for _, arm := range tt.Types {
+			out = append(out, collectCalleeFuncTypes(type_system.Prune(arm))...)
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 // closeOpenParams closes all open object types on function parameters after

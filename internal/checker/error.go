@@ -62,6 +62,15 @@ func (e NonExhaustiveMatchError) isError()                  {}
 func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 func (e NestedMutInParamError) isError()                    {}
+func (e MixedConstructorFormsError) isError()               {}
+func (e MissingMutSelfParameterError) isError()             {}
+func (e MultipleConstructorsNotYetSupportedError) isError() {}
+func (e ConstructorWithReturnTypeError) isError()           {}
+func (e PrivateConstructorNotYetSupportedError) isError()   {}
+func (e FieldDefaultNotAllowedError) isError()              {}
+func (e ComputedKeyFieldRequiresConstructorError) isError() {}
+func (e SubclassConstructorRequiredError) isError()         {}
+func (e DivergingBodyNonNeverReturnError) isError()         {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -103,6 +112,15 @@ func (e ConstructorUsedAsMatchTargetError) IsWarning() bool        { return fals
 func (e NonExhaustiveMatchError) IsWarning() bool                  { return false }
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
+func (e MixedConstructorFormsError) IsWarning() bool               { return false }
+func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
+func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
+func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
+func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
+func (e FieldDefaultNotAllowedError) IsWarning() bool              { return false }
+func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
+func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
+func (e DivergingBodyNonNeverReturnError) IsWarning() bool         { return false }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.
@@ -707,6 +725,144 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 		names[i] = t.String()
 	}
 	return "Non-exhaustive match: " + memberStr + " is missing inner cases for " + strings.Join(names, ", ")
+}
+
+type MixedConstructorFormsError struct {
+	span ast.Span
+}
+
+func (e MixedConstructorFormsError) Span() ast.Span {
+	return e.span
+}
+func (e MixedConstructorFormsError) Message() string {
+	return "Cannot mix primary-constructor parameters with an in-body `constructor` block; pick one form."
+}
+
+// MissingMutSelfParameterError is reported when a constructor's `mut self`
+// parameter is missing, not declared `mut`, or has a type annotation.
+type MissingMutSelfParameterError struct {
+	Reason MutSelfReason
+	span   ast.Span
+}
+
+// MutSelfReason enumerates the specific shapes of a malformed
+// `mut self` receiver. Typed so the message switch in `Message()` is
+// exhaustive at compile time.
+type MutSelfReason int
+
+const (
+	MutSelfMissing MutSelfReason = iota
+	MutSelfNotMut
+	MutSelfHasTypeAnnotation
+)
+
+func (e MissingMutSelfParameterError) Span() ast.Span {
+	return e.span
+}
+func (e MissingMutSelfParameterError) Message() string {
+	switch e.Reason {
+	case MutSelfMissing:
+		return "Constructors must declare `mut self` as their first parameter."
+	case MutSelfNotMut:
+		return "The `self` parameter of a constructor must be declared `mut self`."
+	case MutSelfHasTypeAnnotation:
+		return "The `mut self` parameter cannot have a type annotation."
+	default:
+		return "Invalid `mut self` parameter on constructor."
+	}
+}
+
+type MultipleConstructorsNotYetSupportedError struct {
+	span ast.Span
+}
+
+func (e MultipleConstructorsNotYetSupportedError) Span() ast.Span {
+	return e.span
+}
+func (e MultipleConstructorsNotYetSupportedError) Message() string {
+	return "Multiple constructors per class are not yet supported."
+}
+
+// ConstructorWithReturnTypeError is reported when a user-written
+// constructor declares an explicit return type (the return type is
+// implicitly `Self`).
+type ConstructorWithReturnTypeError struct {
+	span ast.Span
+}
+
+func (e ConstructorWithReturnTypeError) Span() ast.Span {
+	return e.span
+}
+func (e ConstructorWithReturnTypeError) Message() string {
+	return "Constructors cannot declare a return type; the return type is always `Self`."
+}
+
+type PrivateConstructorNotYetSupportedError struct {
+	span ast.Span
+}
+
+func (e PrivateConstructorNotYetSupportedError) Span() ast.Span {
+	return e.span
+}
+func (e PrivateConstructorNotYetSupportedError) Message() string {
+	return "Private constructors are not yet supported."
+}
+
+type FieldDefaultNotAllowedError struct {
+	FieldName string
+	span      ast.Span
+}
+
+func (e FieldDefaultNotAllowedError) Span() ast.Span {
+	return e.span
+}
+func (e FieldDefaultNotAllowedError) Message() string {
+	return "Field '" + e.FieldName + "' cannot have a default value when the class declares a `constructor` block; assign it inside the constructor body or supply a default on the constructor parameter."
+}
+
+// SubclassConstructorRequiredError is reported when a class with an
+// `extends` clause has no explicit `constructor` block. Synthesizing a
+// constructor for a subclass would silently skip the required
+// `super(...)` call, so we require the user to write the constructor
+// until subclass-constructor semantics are implemented.
+type SubclassConstructorRequiredError struct {
+	span ast.Span
+}
+
+func (e SubclassConstructorRequiredError) Span() ast.Span {
+	return e.span
+}
+func (e SubclassConstructorRequiredError) Message() string {
+	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
+}
+
+type ComputedKeyFieldRequiresConstructorError struct {
+	span ast.Span
+}
+
+func (e ComputedKeyFieldRequiresConstructorError) Span() ast.Span {
+	return e.span
+}
+func (e ComputedKeyFieldRequiresConstructorError) Message() string {
+	return "A class with a non-optional computed-key field cannot have a constructor synthesized; declare an explicit `constructor` block."
+}
+
+// DivergingBodyNonNeverReturnError is reported when a function body
+// never falls through normally (every reachable path exits via `throw`
+// or another diverging form), but the function declares a return type
+// other than `never`. The declared return type misleads callers into
+// thinking the function may produce a value when it never can; the
+// only honest annotation in that case is `never`.
+type DivergingBodyNonNeverReturnError struct {
+	DeclaredReturn string
+	span           ast.Span
+}
+
+func (e DivergingBodyNonNeverReturnError) Span() ast.Span {
+	return e.span
+}
+func (e DivergingBodyNonNeverReturnError) Message() string {
+	return "Function body never returns normally — its declared return type must be `never`, not `" + e.DeclaredReturn + "`."
 }
 
 // TODO: make this a sum type so that different error type can reference other

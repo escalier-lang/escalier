@@ -21,21 +21,21 @@ func TestThrowExpressionInference(t *testing.T) {
 		shouldHaveError bool
 	}{
 		"FunctionWithThrowString": {
-			input: `val testFunc = fn () -> undefined throws _ {
+			input: `val testFunc = fn () -> never throws _ {
 				throw "error message"
 			}`,
 			expectedThrows:  "\"error message\"",
 			shouldHaveError: false,
 		},
 		"FunctionWithThrowError": {
-			input: `val testFunc = fn () -> undefined throws _ {
+			input: `val testFunc = fn () -> never throws _ {
 				throw Error("error message")
 			}`,
 			expectedThrows:  "Error",
 			shouldHaveError: false,
 		},
 		"FunctionWithMultipleThrows": {
-			input: `val testFunc = fn (flag: boolean) -> undefined throws _ {
+			input: `val testFunc = fn (flag: boolean) -> never throws _ {
 				if flag {
 					throw "string error"
 				} else {
@@ -46,8 +46,8 @@ func TestThrowExpressionInference(t *testing.T) {
 			shouldHaveError: false,
 		},
 		"FunctionWithNestedThrows": {
-			input: `val testFunc = fn () -> undefined throws _ {
-				val innerFunc = fn () -> undefined throws _ {
+			input: `val testFunc = fn () -> never throws _ {
+				val innerFunc = fn () -> never throws _ {
 					throw "inner error"
 				}
 				throw "outer error"
@@ -56,11 +56,69 @@ func TestThrowExpressionInference(t *testing.T) {
 			shouldHaveError: false,
 		},
 		"FunctionWithExplicitThrowsAndImplicitThrows": {
-			input: `val testFunc = fn () -> undefined throws "explicit" {
+			input: `val testFunc = fn () -> never throws "explicit" {
 				throw "implicit"
 			}`,
 			expectedThrows:  "\"explicit\"",
 			shouldHaveError: true, // Should error because "implicit" doesn't unify with "explicit"
+		},
+		"InheritsThrowsFromCalledFunction": {
+			input: `val raise = fn () -> never throws "boom" {
+				throw "boom"
+			}
+			val testFunc = fn () -> undefined throws _ {
+				raise()
+			}`,
+			expectedThrows:  "\"boom\"",
+			shouldHaveError: false,
+		},
+		"UnionsOwnThrowAndCalledFunctionThrows": {
+			input: `val raise = fn () -> never throws "from-callee" {
+				throw "from-callee"
+			}
+			val testFunc = fn (flag: boolean) -> undefined throws _ {
+				if flag {
+					throw "from-self"
+				}
+				raise()
+			}`,
+			expectedThrows:  "\"from-self\" | \"from-callee\"",
+			shouldHaveError: false,
+		},
+		"InheritsThrowsFromCalledFunctionInValBinding": {
+			input: `val raise = fn () -> never throws "boom" {
+				throw "boom"
+			}
+			val testFunc = fn () -> undefined throws _ {
+				val n = raise()
+			}`,
+			expectedThrows:  "\"boom\"",
+			shouldHaveError: false,
+		},
+		"TryCatchSuppressesCalleeThrows": {
+			input: `val raise = fn () -> never throws "boom" {
+				throw "boom"
+			}
+			val testFunc = fn () -> undefined throws _ {
+				val recovered = try {
+					raise()
+				} catch {
+					_ => 0
+				}
+			}`,
+			expectedThrows:  "never",
+			shouldHaveError: false,
+		},
+		"CalleeWithoutThrowsContributesNothing": {
+			input: `val pure = fn () -> number {
+				return 42
+			}
+			val testFunc = fn () -> number throws _ {
+				throw "self"
+				return pure()
+			}`,
+			expectedThrows:  "\"self\"",
+			shouldHaveError: false,
 		},
 	}
 
@@ -111,6 +169,220 @@ func TestThrowExpressionInference(t *testing.T) {
 	}
 }
 
+// TestNeverReturnInference pins the inferred *return* type (not the
+// throws type) of functions whose bodies never fall through normally.
+// `inferFuncBody` should produce `never` — not `void` — when every
+// reachable path exits via `throw`/`return`/etc., so that a body like
+// `{ throw "x" }` can satisfy any declared return annotation without
+// reporting `void cannot be assigned to <T>`.
+func TestNeverReturnInference(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedReturn string
+	}{
+		"BodyIsOnlyThrow": {
+			input: `val testFunc = fn () -> never throws _ {
+				throw "boom"
+			}`,
+			expectedReturn: "never",
+		},
+		"IfElseBothBranchesThrow": {
+			input: `val testFunc = fn (flag: boolean) -> never throws _ {
+				if flag {
+					throw "a"
+				} else {
+					throw "b"
+				}
+			}`,
+			expectedReturn: "never",
+		},
+		"IfWithoutElseFallsThrough": {
+			input: `val testFunc = fn (flag: boolean) -> undefined throws _ {
+				if flag {
+					throw "a"
+				}
+			}`,
+			expectedReturn: "undefined",
+		},
+		"FallThroughAfterThrowingBranch": {
+			input: `val testFunc = fn (flag: boolean) -> undefined throws _ {
+				if flag {
+					throw "a"
+				}
+				val x = 1
+			}`,
+			expectedReturn: "undefined",
+		},
+		"DeclaredReturnNeverAcceptedForOnlyThrow": {
+			input: `val testFunc = fn () -> never throws "boom" {
+				throw "boom"
+			}`,
+			expectedReturn: "never",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+			assert.Empty(t, parseErrors, "Expected no parse errors")
+
+			checker := NewChecker(ctx)
+			scope, errors := checker.InferScript(
+				Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false},
+				script,
+			)
+			assert.Empty(t, errors, "Expected no type errors, got: %v", errors)
+
+			binding := scope.GetValue("testFunc")
+			assert.NotNil(t, binding, "Expected testFunc to be defined")
+
+			funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
+			assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type))
+
+			returnStr := type_system.Prune(funcType.Return).String()
+			assert.Equal(t, test.expectedReturn, returnStr, "Expected return type to match")
+		})
+	}
+}
+
+// TestDivergingBodyRejectsNonNeverReturn covers the rule that a
+// function whose body never falls through normally (e.g. only throws)
+// must declare its return type as `never`. Annotating it with any
+// other type would mislead callers into thinking the function might
+// produce a value.
+func TestDivergingBodyRejectsNonNeverReturn(t *testing.T) {
+	tests := map[string]struct {
+		input       string
+		shouldError bool
+	}{
+		"OnlyThrowDeclaredAsNumber": {
+			input: `val f = fn () -> number throws _ {
+				throw "boom"
+			}`,
+			shouldError: true,
+		},
+		"OnlyThrowDeclaredAsUndefined": {
+			input: `val f = fn () -> undefined throws _ {
+				throw "boom"
+			}`,
+			shouldError: true,
+		},
+		"BothBranchesThrowDeclaredAsNumber": {
+			input: `val f = fn (flag: boolean) -> number throws _ {
+				if flag {
+					throw "a"
+				} else {
+					throw "b"
+				}
+			}`,
+			shouldError: true,
+		},
+		"OnlyThrowDeclaredAsNever": {
+			input: `val f = fn () -> never throws _ {
+				throw "boom"
+			}`,
+			shouldError: false,
+		},
+		"FallThroughAfterThrowingBranchOK": {
+			input: `val f = fn (flag: boolean) -> undefined throws _ {
+				if flag {
+					throw "a"
+				}
+			}`,
+			shouldError: false,
+		},
+		"BodyHasReturnAndThrowOK": {
+			input: `val f = fn (flag: boolean) -> number throws _ {
+				if flag {
+					return 1
+				}
+				throw "x"
+			}`,
+			shouldError: false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+			assert.Empty(t, parseErrors, "Expected no parse errors")
+
+			checker := NewChecker(ctx)
+			_, errors := checker.InferScript(
+				Context{Scope: Prelude(checker), IsAsync: false, IsPatMatch: false},
+				script,
+			)
+
+			found := false
+			for _, e := range errors {
+				if _, ok := e.(DivergingBodyNonNeverReturnError); ok {
+					found = true
+					break
+				}
+			}
+			if test.shouldError {
+				assert.Truef(t, found,
+					"expected DivergingBodyNonNeverReturnError; got: %v", errors)
+			} else {
+				assert.Falsef(t, found,
+					"expected NO DivergingBodyNonNeverReturnError; got: %v", errors)
+			}
+		})
+	}
+}
+
+// TestOverloadSetUnionsThrowsAcrossArms verifies that when a callee
+// resolves to an intersection of overload signatures, the caller's
+// inferred `throws _` is the union of throws across every arm. This is
+// a sound upper bound — at the call site we don't know which arm will
+// dispatch, so the caller must be prepared to handle any.
+func TestOverloadSetUnionsThrowsAcrossArms(t *testing.T) {
+	t.Parallel()
+	source := &ast.Source{
+		ID:   0,
+		Path: "input.esc",
+		Contents: `
+			declare fn parse(s: string) -> number throws "bad-string"
+			declare fn parse(n: number) -> number throws "bad-number"
+			val testFunc = fn (x: string) -> number throws _ {
+				return parse(x)
+			}
+		`,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	assert.Empty(t, parseErrors, "Expected no parse errors")
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	errors := c.InferModule(inferCtx, module)
+	assert.Empty(t, errors, "Expected no type errors, got: %v", errors)
+
+	binding, ok := inferCtx.Scope.Namespace.Values["testFunc"]
+	assert.Truef(t, ok, "Expected testFunc to be defined")
+
+	funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
+	assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type))
+
+	throwsStr := type_system.Prune(funcType.Throws).String()
+	assert.Equal(t, "\"bad-string\" | \"bad-number\"", throwsStr,
+		"Expected throws type to union across overload arms")
+}
+
 func TestThrowExpressionUnification(t *testing.T) {
 	tests := map[string]struct {
 		input           string
@@ -125,14 +397,14 @@ func TestThrowExpressionUnification(t *testing.T) {
 			errorType:       "CannotUnifyTypesError",
 		},
 		"ThrowTypeMatch": {
-			input: `val testFunc = fn () -> undefined throws string {
+			input: `val testFunc = fn () -> never throws string {
 				throw "string error"
 			}`,
 			shouldHaveError: false,
 			errorType:       "",
 		},
 		"ThrowUnionTypeMatch": {
-			input: `val testFunc = fn () -> undefined throws string | number {
+			input: `val testFunc = fn () -> never throws string | number {
 				throw "string error"
 			}`,
 			shouldHaveError: false,

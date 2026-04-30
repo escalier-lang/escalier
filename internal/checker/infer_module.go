@@ -215,6 +215,23 @@ func (c *Checker) InferComponent(
 	}
 	methodCtxForElem := make(map[classMethodCtxKey]Context)
 
+	// Track which class declarations have a single in-body ConstructorElem
+	// whose body should be type-checked in the definition phase. `FuncType`
+	// is the "callable" signature used for overload resolution (return
+	// type = Self instance type); `ParamBindings` was produced by
+	// `inferFuncParams` over the constructor's callable params (i.e.
+	// `Fn.Params[1:]`, skipping the leading `mut self`); `Ctx` is the
+	// constructor's own scope (carrying ctor-level type params, e.g. `U`
+	// in `constructor<U>(...)`) so the body-checking phase can resolve
+	// names introduced only by the constructor signature.
+	type ctorInfo struct {
+		Ctor          *ast.ConstructorElem
+		FuncType      *type_system.FuncType
+		ParamBindings map[string]*type_system.Binding
+		Ctx           Context
+	}
+	ctorInfoForDecl := make(map[ast.Decl]*ctorInfo)
+
 	// Track declarations that have been processed in the placeholder phase.
 	// This is needed because classes and enums have both type and value binding keys,
 	// and we don't want to process them twice.
@@ -390,6 +407,86 @@ func (c *Checker) InferComponent(
 					})
 				}
 
+				// Phase 2: pre-walk the body to count in-body constructors.
+				// At most one is allowed for now; mixing with primary-ctor
+				// params is also rejected. If neither form is present we
+				// synthesize a `ConstructorElem` from the instance fields and
+				// prepend it to `decl.Body` so the rest of this phase, the
+				// definition phase, and codegen can consume a uniform shape.
+				inBodyCtors := []*ast.ConstructorElem{}
+				for _, bodyElem := range decl.Body {
+					if ctor, ok := bodyElem.(*ast.ConstructorElem); ok {
+						inBodyCtors = append(inBodyCtors, ctor)
+					}
+				}
+
+				if len(decl.Params) > 0 && len(inBodyCtors) > 0 {
+					errors = append(errors, MixedConstructorFormsError{span: decl.Name.Span()})
+				}
+
+				for _, ctor := range inBodyCtors {
+					if ctor.Private {
+						errors = append(errors, PrivateConstructorNotYetSupportedError{span: ctor.Span()})
+					}
+				}
+
+				if len(inBodyCtors) > 1 {
+					// Report against the second (and later) constructors.
+					for _, extra := range inBodyCtors[1:] {
+						errors = append(errors, MultipleConstructorsNotYetSupportedError{span: extra.Span()})
+					}
+				}
+
+				// Reject field-level defaults when an in-body constructor is
+				// present. Only the explicit `= expr` form (`Default`) is
+				// rejected here — the legacy `x: expr` shorthand
+				// (`FieldElem.Value`) doubles as a typed-field syntax in
+				// the current parser, so we leave it alone until Phase 4
+				// retires it. Defaults remain valid under the synthesized-
+				// constructor case (no in-body ctor).
+				if len(inBodyCtors) > 0 {
+					for _, bodyElem := range decl.Body {
+						field, ok := bodyElem.(*ast.FieldElem)
+						if !ok {
+							continue
+						}
+						if field.Default == nil {
+							continue
+						}
+						errors = append(errors, FieldDefaultNotAllowedError{
+							FieldName: classFieldName(field.Name),
+							span:      field.Span(),
+						})
+					}
+				}
+
+				// Synthesize a constructor when neither a primary-ctor head
+				// nor an in-body constructor is present. Subclasses are
+				// excluded — auto-synthesizing a constructor for an
+				// `extends` class would silently skip the required
+				// `super(...)` call. Until subclass-constructor semantics
+				// land, require an explicit `constructor` block instead.
+				// Subclasses that use the legacy primary-ctor form
+				// (`class Derived(...) extends Base {...}`) still flow
+				// through the legacy path; that whole shape will be
+				// retired in Phase 4.
+				if len(decl.Params) == 0 && len(inBodyCtors) == 0 {
+					if decl.Extends != nil {
+						errors = append(errors, SubclassConstructorRequiredError{
+							span: decl.Name.Span(),
+						})
+					} else {
+						synth, synthErrors := c.synthesizeConstructorElem(decl)
+						errors = slices.Concat(errors, synthErrors)
+						if synth != nil {
+							// Prepend so the rest of the loop sees it like a
+							// user-written constructor.
+							decl.Body = append([]ast.ClassElem{synth}, decl.Body...)
+							inBodyCtors = []*ast.ConstructorElem{synth}
+						}
+					}
+				}
+
 				objTypeElems := []type_system.ObjTypeElem{}
 				staticElems := []type_system.ObjTypeElem{}
 				instanceSymbolKeyMap := make(map[int]any)
@@ -537,7 +634,11 @@ func (c *Checker) InferComponent(
 							)
 						}
 					case *ast.ConstructorElem:
-						// TODO(class-ctor Phase 2): wire up explicit constructor.
+						// Constructors are not class-instance members and so
+						// do not contribute to `objTypeElems`. The callable
+						// signature is built separately below via
+						// `inferConstructorSig` and attached as the
+						// containing class type's `ConstructorElem`.
 						_ = elem
 					default:
 						errors = append(errors, &UnimplementedError{
@@ -575,10 +676,6 @@ func (c *Checker) InferComponent(
 				unifyErrors := c.Unify(ctx, instanceType, objType)
 				errors = slices.Concat(errors, unifyErrors)
 
-				params, paramBindings, paramErrors := c.inferFuncParams(declCtx, decl.Params)
-				errors = slices.Concat(errors, paramErrors)
-				paramBindingsForDecl[decl] = paramBindings
-
 				typeArgs := make([]type_system.Type, len(typeParams))
 				for i := range typeParams {
 					typeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
@@ -586,13 +683,60 @@ func (c *Checker) InferComponent(
 
 				retType := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...)
 
-				funcType := type_system.NewFuncType(
-					provenance,
-					typeParams,
-					params,
-					retType,
-					type_system.NewNeverType(nil), // throws type
-				)
+				// Decide where the constructor signature comes from. Phase 2:
+				// when a single in-body `ConstructorElem` is present, use
+				// `inferConstructorSig` (which strips `mut self`, fixes the
+				// return type to Self, and layers class+ctor type params).
+				// Otherwise fall back to the legacy primary-ctor head until
+				// Phase 4 retires it. Multi-constructor support arrives in
+				// Phase 5.
+				var funcType *type_system.FuncType
+				var paramBindings map[string]*type_system.Binding
+				if len(inBodyCtors) > 0 {
+					ctor := inBodyCtors[0]
+					var sigErrors []Error
+					var ctorCtx Context
+					funcType, ctorCtx, paramBindings, sigErrors = c.inferConstructorSig(
+						declCtx, ctor, typeParams, retType, provenance,
+					)
+					errors = slices.Concat(errors, sigErrors)
+					// In-body constructor params are scoped to the
+					// constructor body only — they must NOT leak into
+					// method/getter/setter scopes (which see fields via
+					// `self.<field>`). Stash them on `ctorInfoForDecl`.
+					// paramBindingsForDecl is populated from
+					// `decl.Params` (the primary-ctor head) below so the
+					// legacy shorthand-field path keeps working in mixed
+					// (erroring) cases without nil-deref'ing.
+					ctorInfoForDecl[decl] = &ctorInfo{
+						Ctor:          ctor,
+						FuncType:      funcType,
+						ParamBindings: paramBindings,
+						Ctx:           ctorCtx,
+					}
+					// TODO(class-ctor Phase 4): drop this primary-ctor
+					// inference once `class Foo(...)` syntax is removed.
+					// In the (already-erroring) mixed-form case the
+					// legacy shorthand-field path downstream still walks
+					// `decl.Body` and dereferences these bindings, so we
+					// have to populate them even though the class is
+					// already failing.
+					_, primaryBindings, primaryErrors := c.inferFuncParams(declCtx, decl.Params)
+					errors = slices.Concat(errors, primaryErrors)
+					paramBindingsForDecl[decl] = primaryBindings
+				} else {
+					params, legacyBindings, legacyParamErrors := c.inferFuncParams(declCtx, decl.Params)
+					errors = slices.Concat(errors, legacyParamErrors)
+					paramBindings = legacyBindings
+					funcType = type_system.NewFuncType(
+						provenance,
+						typeParams,
+						params,
+						retType,
+						type_system.NewNeverType(nil),
+					)
+					paramBindingsForDecl[decl] = paramBindings
+				}
 
 				// Create an object type with a constructor element and static methods/properties
 				constructorElem := &type_system.ConstructorElem{Fn: funcType}
@@ -1305,8 +1449,88 @@ func (c *Checker) InferComponent(
 						}
 
 					case *ast.ConstructorElem:
-						// TODO(class-ctor Phase 2): check the constructor body.
-						_ = bodyElem
+						// Phase 2: type-check the constructor body. We only
+						// reach this branch for the (single) constructor that
+						// won out in the placeholder phase — multiple-ctor
+						// errors were already reported there. Definite-
+						// assignment (Phase 3) is intentionally NOT enforced
+						// here; this pass just resolves names, infers
+						// expression types, and records throws.
+						//
+						// Phase 5 (multi-constructor support): when multiple
+						// in-body constructors are allowed, this branch must
+						// iterate over every `ConstructorElem` in `decl.Body`
+						// rather than short-circuiting on `ctorInfoForDecl`,
+						// so each ctor's body gets type-checked independently.
+						info := ctorInfoForDecl[decl]
+						if info == nil || info.Ctor != bodyElem {
+							continue
+						}
+						ctorFuncType := info.FuncType
+						if ctorFuncType == nil {
+							continue
+						}
+
+						ctorBindings := make(map[string]*type_system.Binding)
+						maps.Copy(ctorBindings, info.ParamBindings)
+
+						// `self` is always `mut Self` inside a constructor,
+						// regardless of the class's default mutability — the
+						// body needs to assign fields. This is invisible to
+						// callers (the returned instance is still immutable
+						// unless the caller binds it with `mut`). For generic
+						// classes the self type carries the class's own
+						// type parameters as type arguments, so the body
+						// sees `self : mut Foo<T, U>` rather than the bare
+						// alias.
+						ctorTypeArgs := make([]type_system.Type, len(typeAlias.TypeParams))
+						for i := range typeAlias.TypeParams {
+							ctorTypeArgs[i] = type_system.NewTypeRefType(nil, typeAlias.TypeParams[i].Name, nil)
+						}
+						selfRefType := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, ctorTypeArgs...)
+						ctorBindings["self"] = &type_system.Binding{
+							Source:     &ast.NodeProvenance{Node: bodyElem},
+							Type:       type_system.NewMutType(nil, selfRefType),
+							Assignable: false,
+							Mutable:    true,
+						}
+
+						if bodyElem.Fn.Body == nil {
+							continue
+						}
+
+						// `inferFuncBodyWithFuncSigType` unifies the body's
+						// inferred return type with `funcSigType.Return`. The
+						// constructor's *callable* return type is the class
+						// instance (Self with type args), but the body has no
+						// `return self` statement — its statements fall off
+						// the end with Void. To avoid a spurious unification
+						// failure we run the body checker against a temporary
+						// FuncType whose Return is Void; the real
+						// `ctorFuncType` (used for overload resolution) keeps
+						// `Return = Self` via `retType`. Throws inferred by
+						// the body are copied back.
+						bodyFuncType := type_system.NewFuncType(
+							ctorFuncType.Provenance(),
+							ctorFuncType.TypeParams,
+							ctorFuncType.Params,
+							type_system.NewVoidType(nil),
+							ctorFuncType.Throws,
+						)
+						// Constructor-local type params (e.g. `<U>` on the
+						// `constructor` itself) live on `info.Ctx`, not on
+						// `bodyCtx`. Use that scope when present so the
+						// body can resolve them.
+						ctorBodyCtx := bodyCtx
+						if info.Ctx.Scope != nil {
+							ctorBodyCtx = info.Ctx.WithNewScope()
+						}
+						bodyErrors := c.inferFuncBodyWithFuncSigType(
+							ctorBodyCtx, bodyFuncType, ctorBindings,
+							ctorCallableParams(bodyElem), bodyElem.Fn.Body, false,
+						)
+						errors = slices.Concat(errors, bodyErrors)
+						ctorFuncType.Throws = bodyFuncType.Throws
 					}
 				}
 			}
