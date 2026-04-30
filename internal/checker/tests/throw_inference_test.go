@@ -66,7 +66,7 @@ func TestThrowExpressionInference(t *testing.T) {
 			input: `val raise = fn () -> never throws "boom" {
 				throw "boom"
 			}
-			val testFunc = fn () -> undefined throws _ {
+			val testFunc = fn () -> never throws _ {
 				raise()
 			}`,
 			expectedThrows:  "\"boom\"",
@@ -76,7 +76,7 @@ func TestThrowExpressionInference(t *testing.T) {
 			input: `val raise = fn () -> never throws "from-callee" {
 				throw "from-callee"
 			}
-			val testFunc = fn (flag: boolean) -> undefined throws _ {
+			val testFunc = fn (flag: boolean) -> never throws _ {
 				if flag {
 					throw "from-self"
 				}

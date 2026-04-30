@@ -485,6 +485,20 @@ func exprAlwaysExits(expr ast.Expr) bool {
 		return true
 	case *ast.DoExpr:
 		return blockAlwaysExits(&e.Body)
+	case *ast.CallExpr:
+		// A call to a function whose return type is `never` (e.g. a
+		// `panic`-style helper declared `() -> never`) cannot return
+		// normally, so a block ending in such a call should be
+		// treated as exiting. Restricted to CallExpr because other
+		// expression forms in this codebase use `never` as a
+		// no-value sentinel rather than as a divergence marker
+		// (notably assignment expressions).
+		if t := e.InferredType(); t != nil {
+			if _, isNever := type_system.Prune(t).(*type_system.NeverType); isNever {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -625,6 +639,12 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 	return throwTypes, errors
 }
 
+// TODO(#516): this reads the callee's declaration-time type, so it
+// loses generic substitutions and unions all overload arms instead of
+// using the one `inferCallExpr` actually picked. Fix by recording the
+// instantiated/resolved signature on `CallExpr` during inference and
+// reading it back here.
+//
 // calleeThrowsType returns the `Throws` type declared on the callee of
 // `callExpr`, walking through the type-system shapes a callee can take:
 //
