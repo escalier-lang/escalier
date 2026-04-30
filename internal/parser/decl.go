@@ -277,10 +277,26 @@ func (p *Parser) parseConstructorElem(
 			p.reportError(colonTok.Span, "the `mut self` parameter cannot have a type annotation")
 		}
 
+		// Materialize the `mut self` parameter as the first entry in params
+		// so downstream phases can read `Fn.Params[0]` uniformly. We skip
+		// this when no `self` token was found (mutSelf == nil); the error
+		// has already been reported, and inserting a phantom param here
+		// would mask the absence in the AST.
+		if mutSelf != nil {
+			selfSpan := ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			selfPat := ast.NewIdentPat("self", *mutSelf, nil, nil, selfSpan)
+			params = append(params, &ast.Param{
+				Pattern:  selfPat,
+				TypeAnn:  nil,
+				Optional: false,
+			})
+		}
+
 		next = p.lexer.peek()
 		if next.Type == Comma {
 			p.lexer.consume() // consume ','
-			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+			rest := parseDelimSeq(p, CloseParen, Comma, p.param)
+			params = append(params, rest...)
 		} else if mutSelf == nil {
 			// Recovery: no leading self was found; parse the params as a
 			// regular list so we still produce a usable AST.
@@ -288,8 +304,13 @@ func (p *Parser) parseConstructorElem(
 		}
 		p.expect(CloseParen, AlwaysConsume)
 
-		// Detect `self` appearing as a non-leading parameter.
-		for _, param := range params {
+		// Detect `self` appearing as a non-leading parameter (skip the
+		// leading self we just inserted).
+		startIdx := 0
+		if mutSelf != nil {
+			startIdx = 1
+		}
+		for _, param := range params[startIdx:] {
 			if ip, ok := param.Pattern.(*ast.IdentPat); ok && ip.Name == "self" {
 				p.reportError(param.Pattern.Span(),
 					"the `self` parameter must be the first parameter of a constructor")

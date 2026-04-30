@@ -9176,6 +9176,23 @@
                         Params:         {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:4, Column:18},
+                                        End:      ast.Location{Line:4, Column:26},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
                                     Name:    "addr",
                                     VarID:   0,
                                     Mutable: false,
@@ -9351,6 +9368,23 @@
                         Params:         {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:18},
+                                        End:      ast.Location{Line:3, Column:26},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
                                     Name:    "x",
                                     VarID:   0,
                                     Mutable: false,
@@ -9518,6 +9552,23 @@
                         LifetimeParams: nil,
                         TypeParams:     nil,
                         Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:4, Column:18},
+                                        End:      ast.Location{Line:4, Column:26},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
                                     Name:    "x",
@@ -9701,6 +9752,23 @@
                         Params: {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:4, Column:21},
+                                        End:      ast.Location{Line:4, Column:29},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
                                     Name:    "value",
                                     VarID:   0,
                                     Mutable: false,
@@ -9881,6 +9949,23 @@
                         Params:         {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:4, Column:18},
+                                        End:      ast.Location{Line:4, Column:26},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
                                     Name:    "x",
                                     VarID:   0,
                                     Mutable: false,
@@ -9973,8 +10058,33 @@
             },
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{},
-                    Body:    &ast.Block{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:7, Column:18},
+                                        End:      ast.Location{Line:7, Column:26},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
                         Stmts: {
                             &ast.ExprStmt{
                                 Expr: &ast.BinaryExpr{
@@ -10071,8 +10181,33 @@
         Body: {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{},
-                    Body:    &ast.Block{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:18},
+                                        End:      ast.Location{Line:3, Column:26},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
                         Stmts: {
                         },
                         Span: ast.Span{
@@ -10133,8 +10268,33 @@
         Body: {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{},
-                    Body:    &ast.Block{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:22},
+                                        End:      ast.Location{Line:3, Column:30},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
                         Stmts: {
                         },
                         Span: ast.Span{
@@ -10195,8 +10355,33 @@
         Body: {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{},
-                    Body:    &ast.Block{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:25},
+                                        End:      ast.Location{Line:3, Column:33},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
                         Stmts: {
                         },
                         Span: ast.Span{
@@ -10257,8 +10442,33 @@
         Body: {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{},
-                    Body:    &ast.Block{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:18},
+                                        End:      ast.Location{Line:3, Column:26},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
                         Stmts: {
                         },
                         Span: ast.Span{
@@ -10319,8 +10529,33 @@
         Body: {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{},
-                    Body:    &ast.Block{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:24},
+                                        End:      ast.Location{Line:3, Column:32},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
                         Stmts: {
                         },
                         Span: ast.Span{
@@ -10522,6 +10757,23 @@
                         Params:         {
                             &ast.Param{
                                 Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:18},
+                                        End:      ast.Location{Line:3, Column:32},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
                                     Name:    "x",
                                     VarID:   0,
                                     Mutable: false,
@@ -10711,8 +10963,33 @@
         Body: {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{},
-                    Body:    &ast.Block{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "self",
+                                    VarID:   0,
+                                    Mutable: false,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:3, Column:18},
+                                        End:      ast.Location{Line:3, Column:22},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  nil,
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
                         Stmts: {
                         },
                         Span: ast.Span{
