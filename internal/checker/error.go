@@ -62,6 +62,13 @@ func (e NonExhaustiveMatchError) isError()                  {}
 func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 func (e NestedMutInParamError) isError()                    {}
+func (e MixedConstructorFormsError) isError()               {}
+func (e MissingMutSelfParameterError) isError()             {}
+func (e MultipleConstructorsNotYetSupportedError) isError() {}
+func (e ConstructorWithReturnTypeError) isError()           {}
+func (e PrivateConstructorNotYetSupportedError) isError()   {}
+func (e FieldDefaultNotAllowedError) isError()              {}
+func (e ComputedKeyFieldRequiresConstructorError) isError() {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -103,6 +110,13 @@ func (e ConstructorUsedAsMatchTargetError) IsWarning() bool        { return fals
 func (e NonExhaustiveMatchError) IsWarning() bool                  { return false }
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
+func (e MixedConstructorFormsError) IsWarning() bool               { return false }
+func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
+func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
+func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
+func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
+func (e FieldDefaultNotAllowedError) IsWarning() bool              { return false }
+func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.
@@ -707,6 +721,106 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 		names[i] = t.String()
 	}
 	return "Non-exhaustive match: " + memberStr + " is missing inner cases for " + strings.Join(names, ", ")
+}
+
+type MixedConstructorFormsError struct {
+	span ast.Span
+}
+
+func (e MixedConstructorFormsError) Span() ast.Span {
+	return e.span
+}
+func (e MixedConstructorFormsError) Message() string {
+	return "Cannot mix primary-constructor parameters with an in-body `constructor` block; pick one form."
+}
+
+// MissingMutSelfParameterError is reported when a constructor's `mut self`
+// parameter is missing, not declared `mut`, has a type annotation, or is
+// not the first parameter. Defined here for use in a later phase that
+// validates user-written constructor signatures (Phase 3+); not yet
+// instantiated.
+type MissingMutSelfParameterError struct {
+	Reason string // "missing", "not-mut", "has-type-annotation", "not-first"
+	span   ast.Span
+}
+
+func (e MissingMutSelfParameterError) Span() ast.Span {
+	return e.span
+}
+func (e MissingMutSelfParameterError) Message() string {
+	switch e.Reason {
+	case "missing":
+		return "Constructors must declare `mut self` as their first parameter."
+	case "not-mut":
+		return "The `self` parameter of a constructor must be declared `mut self`."
+	case "has-type-annotation":
+		return "The `mut self` parameter cannot have a type annotation."
+	case "not-first":
+		return "The `self` parameter must be the first parameter."
+	default:
+		return "Invalid `mut self` parameter on constructor."
+	}
+}
+
+type MultipleConstructorsNotYetSupportedError struct {
+	span ast.Span
+}
+
+func (e MultipleConstructorsNotYetSupportedError) Span() ast.Span {
+	return e.span
+}
+func (e MultipleConstructorsNotYetSupportedError) Message() string {
+	return "Multiple constructors per class are not yet supported."
+}
+
+// ConstructorWithReturnTypeError is reported when a user-written
+// constructor declares an explicit return type (the return type is
+// implicitly `Self`). Defined here for use in a later phase that
+// validates user-written constructor signatures (Phase 3+); not yet
+// instantiated.
+type ConstructorWithReturnTypeError struct {
+	span ast.Span
+}
+
+func (e ConstructorWithReturnTypeError) Span() ast.Span {
+	return e.span
+}
+func (e ConstructorWithReturnTypeError) Message() string {
+	return "Constructors cannot declare a return type; the return type is always `Self`."
+}
+
+type PrivateConstructorNotYetSupportedError struct {
+	span ast.Span
+}
+
+func (e PrivateConstructorNotYetSupportedError) Span() ast.Span {
+	return e.span
+}
+func (e PrivateConstructorNotYetSupportedError) Message() string {
+	return "Private constructors are not yet supported."
+}
+
+type FieldDefaultNotAllowedError struct {
+	FieldName string
+	span      ast.Span
+}
+
+func (e FieldDefaultNotAllowedError) Span() ast.Span {
+	return e.span
+}
+func (e FieldDefaultNotAllowedError) Message() string {
+	return "Field '" + e.FieldName + "' cannot have a default value when the class declares a `constructor` block; assign it inside the constructor body or supply a default on the constructor parameter."
+}
+
+type ComputedKeyFieldRequiresConstructorError struct {
+	span ast.Span
+}
+
+func (e ComputedKeyFieldRequiresConstructorError) Span() ast.Span {
+	return e.span
+}
+func (e ComputedKeyFieldRequiresConstructorError) Message() string {
+	return "A class with a non-optional computed-key field cannot have a constructor synthesized; declare an explicit `constructor` block."
 }
 
 // TODO: make this a sum type so that different error type can reference other

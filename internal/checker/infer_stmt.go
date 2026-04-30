@@ -63,6 +63,7 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl, enclosingStmt ast.Stmt) 
 		ctx.Scope.Namespace.Types[decl.Name.Name] = typeAlias
 		return errors
 	case *ast.ClassDecl:
+		// TODO(#514): Update inferDecl to handle ClassDecls
 		panic("TODO: infer class declaration")
 	case *ast.EnumDecl:
 		return c.inferEnumDecl(ctx, decl)

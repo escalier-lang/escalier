@@ -18,14 +18,15 @@ cut-over, on top of the new single-constructor codepath.
 | Phase | Description                                                                                | Depends On | Status |
 |------:|--------------------------------------------------------------------------------------------|------------|--------|
 |     1 | AST + parser: introduce `ConstructorElem` (additive, alongside primary ctor)               | —          | Done   |
-|     2 | Type checker: derive class constructor type from `ConstructorElem` (single)                | 1          |        |
-|     3 | Definite-assignment analysis on constructor bodies (incl. `super(...)`)                    | 2          |        |
+|     2 | Type checker: derive class constructor type from `ConstructorElem` (single)                | 1          | Done   |
+|     3 | Definite-assignment analysis on constructor bodies                                         | 2          |        |
 |     4 | Combined cut-over: single-ctor codegen, fixture migration, removal of primary ctor + `data` | 3          |        |
 |     5 | Multiple constructors: overload resolution, runtime discriminator analysis, merged codegen | 4          |        |
 |     6 | Polish: error messages, diagnostics, documentation                                         | 5          |        |
 
-The "Future Work" sections of the requirements doc (private constructors,
-`Self(...)` delegation) are explicitly **out of scope** for this plan.
+The "Future Work" sections of the requirements doc (inheritance and
+`super(...)`, private constructors, `Self(...)` delegation) are
+explicitly **out of scope** for this plan.
 
 ---
 
@@ -288,20 +289,22 @@ single source flows through both abstractions:
 
 ### 2.4 Field Initialization Semantics
 
-Field declarations are restricted to the two forms permitted by the
-requirements:
+Field declarations recognized by Phase 2:
 
 - `x: T` — required field.
 - `x?: T` — optional field, implicitly `undefined` until assigned.
+- `x: T = expr` / `x = expr` — field with a default value. The default
+  is the field's initializer; it is treated as already-assigned for
+  Phase 3's definite-assignment pass, and the synthesizer (§2.7) does
+  **not** emit a parameter for it.
 
-The legacy form `x: 0` / `x = 0` (a field-level default) is **not**
-supported under the new model — defaults belong on constructor parameters
-(`constructor(x: T = 0)`) or as explicit assignments inside the constructor
-body. Phase 2 reports `FieldDefaultNotAllowedError` on a `FieldElem` whose
+The legacy form is rejected only when the user has written an in-body
+constructor: `FieldDefaultNotAllowedError` fires on a `FieldElem` whose
 `Value` is non-nil **only when the enclosing class has at least one
-in-body `ConstructorElem`** (i.e. has opted into the new model). Classes
-that still use primary-constructor syntax retain the legacy behavior
-until Phase 5 removes them.
+in-body `ConstructorElem`**. Defaults belong on constructor parameters
+(`constructor(x: T = 0)`) or as explicit assignments inside the
+constructor body. Classes that still use primary-constructor syntax
+retain the legacy behavior until Phase 5 removes them.
 
 For each remaining FieldElem the type comes straight from the annotation
 and the obligation to assign it shifts to the constructor (Phase 3
@@ -352,10 +355,12 @@ Implementation:
 1. Walk `decl.Body` in source order.
 2. Synthesize `Fn.Params[0]` as a `mut self` parameter (same shape as
    user-written constructors) so downstream passes see a uniform AST.
-3. For each `*ast.FieldElem` that is non-static and not optional: append a
-   synthetic param to the constructor signature with the same name and
-   type as the field.
-4. Skip static fields and optional fields.
+3. For each `*ast.FieldElem` that is non-static, not optional, and has
+   no default value: append a synthetic param to the constructor
+   signature with the same name and type as the field.
+4. Skip static fields, optional fields, and fields with default values.
+   Fields with defaults are initialized inside the synthesized body
+   from the default expression rather than from a parameter.
 5. If any qualifying field has a computed key (`*ast.ComputedKey`), report
    `ComputedKeyFieldRequiresConstructorError` and bail — the user must
    write a constructor explicitly.
@@ -372,9 +377,15 @@ the constructor was synthesized or user-written.
 The synthesized body is mechanical:
 
 ```go
-// Pseudocode for the synthesized FuncExpr body
-for _, f := range syntheticFields {
-    body.append(`self.{f.Name} = {f.Name}`)
+// Pseudocode for the synthesized FuncExpr body, walking decl.Body in
+// source order so default-valued fields are interleaved with
+// param-supplied fields:
+for _, f := range nonStaticNonOptionalFields {
+    if f.Default != nil {
+        body.append(`self.{f.Name} = {f.Default}`)
+    } else {
+        body.append(`self.{f.Name} = {f.Name}`)  // f.Name also appears as a param
+    }
 }
 ```
 
@@ -383,35 +394,12 @@ zero-arg constructor, preserving today's behavior for `class Foo {}`.
 
 The synthetic node's `Span` points at the class name (the same span the
 class identifier carries), so any diagnostic produced against the
-synthesized constructor — e.g. a Phase 3 definite-assignment error on
-a synthesized subclass forwarder, or an LSP "go to definition" — lands
-on the class header rather than at offset zero. Each synthesized
-field-write statement carries the originating field's span.
+synthesized constructor lands on the class header rather than at offset
+zero. Each synthesized field-write statement carries the originating
+field's span.
 
-#### Synthesized Subclass Constructors
-
-When the class `extends` a base, synthesis follows requirements
-§"Inheritance and `super`":
-
-1. Base has exactly one constructor, subclass has no non-optional
-   fields → synthesize a constructor whose parameters mirror the base
-   constructor's, body is a single `super(...)` forwarding all
-   parameters.
-2. Base has exactly one constructor, subclass has non-optional fields
-   → synthesize a constructor whose parameters are
-   `(baseParams..., subclassFields...)` (in source order), body is
-   `super(baseParams...)` followed by `self.fi = fi` for each subclass
-   field.
-3. Base has multiple constructors → no synthesis;
-   `SubclassNeedsExplicitConstructorError`.
-4. Base has only `private` constructors (Future Work; today this case
-   cannot arise externally) → reject `extends` with
-   `PrivateBaseConstructorError`.
-
-The synthesized constructor is materialized as a real
-`*ast.ConstructorElem` exactly like the non-`extends` case, so
-Phase 3's super-related checks see the same shape as user-written
-constructors.
+Subclass synthesis (when the class `extends` a base) is deferred to
+Future Work along with the rest of the inheritance/`super(...)` story.
 
 Tests:
 - `class Point { x: number, y: number }` → callable as `Point(1, 2)` with
@@ -424,12 +412,6 @@ Tests:
 - A class with only optional fields → callable as `Foo()`.
 - A class with a `FieldElem` carrying a default value (`x: 0` /
   `x = 0`) → `FieldDefaultNotAllowedError`.
-- `class Dog extends Animal {}` where `Animal` has one ctor → `Dog`
-  forwards.
-- `class Dog extends Animal { breed: string }` where `Animal` has one
-  ctor → `Dog(name, breed)` synthesized.
-- `class Dog extends Vec3 {}` where `Vec3` has three ctors →
-  `SubclassNeedsExplicitConstructorError`.
 
 ---
 
@@ -441,6 +423,9 @@ Tests:
 - Reads of `self.foo` are gated on `foo` being initialized.
 - Method calls on `self`, passing `self`, returning `self`, and any aliasing
   of `self` are all gated on **all** non-optional fields being initialized.
+
+Inheritance/`super(...)` is deferred to Future Work, so this phase only
+analyzes constructor bodies of non-`extends` classes.
 
 ### 3.1 Pass Structure
 
@@ -585,29 +570,6 @@ Cover the requirements doc's examples verbatim:
 Also include happy-path: passing through a single all-defaults class still
 infers correctly with no constructor required.
 
-### 3.8 `super(...)` in Subclass Constructors
-
-For classes that `extends` a base class, the definite-assignment pass
-treats `super(...)` as a special statement:
-
-- `super(...)` performs overload resolution against the base class's
-  constructors and is permitted at most once per reachable path.
-- Before the `super(...)` call: writes to subclass-declared fields are
-  permitted; reads of `self`, calls through `self`, and aliasing `self`
-  are forbidden (`SelfBeforeSuperError`).
-- After `super(...)` returns: every base-class field is added to
-  `initialized`. The remaining definite-assignment rules for subclass
-  fields are unchanged.
-- A subclass constructor whose reachable exit paths do not all call
-  `super(...)` exactly once reports `MissingSuperCallError` /
-  `MultipleSuperCallsError` as appropriate.
-
-Tests:
-- `class Dog extends Animal { … constructor(name, breed) { super(name); self.breed = breed } }` → OK.
-- Subclass constructor that reads `self.x` before `super(...)` → error.
-- Subclass constructor that omits `super(...)` on one branch → error.
-- Subclass constructor that calls `super(...)` twice → error.
-
 ---
 
 ## Phase 4: Combined Cut-Over — Single-Ctor Codegen, Fixture Migration, Removal
@@ -649,10 +611,6 @@ If a parameter has a default value (`constructor(mut self, x: T = expr)`),
 emit the standard JS default-parameter form: `constructor(x = expr) { … }`.
 (Field-level defaults no longer exist — see requirements
 §"Field Declarations".)
-
-**`super(...)` in subclass constructors.** Escalier `super(...)`
-translates directly to a JS `super(...)` call. Argument forwarding is
-whatever the constructor body wrote — no rewriting needed.
 
 ### 4.3 Fixture Migration
 
@@ -797,9 +755,9 @@ single-constructor codegen described in 4.2. Also:
 
 After this phase, `internal/codegen/builder.go` has zero references to
 class-header parameters. The new model: fields are only ever assigned
-by `self.foo = …` statements inside a constructor body (or via
-`super(...)` for inherited fields), and those translate directly. There
-is no implicit "match field to same-named param" anymore.
+by `self.foo = …` statements inside a constructor body, and those
+translate directly. There is no implicit "match field to same-named
+param" anymore.
 
 ### 4.8 Tests
 
@@ -813,8 +771,6 @@ Codegen:
 - Class with no constructor and required fields → emitted JS reflects
   the synthesized constructor (params in field declaration order,
   sequence of `this.fi = fi` writes).
-- Subclass constructor with `super(...)` → emitted JS uses
-  `super(...)` directly.
 
 Parser/checker:
 - Confirm `class Foo(...)` reports the expected "no longer supported"
@@ -1042,12 +998,6 @@ The dispatch plan from 5.5 is attached to the class's
 use), so codegen reads it from the type, not by re-walking the AST.
 Mirror, don't invent.
 
-**`super(...)` in subclass constructors** translates directly to a JS
-`super(...)` call. Argument forwarding is whatever the constructor body
-wrote — no rewriting needed. The merged-dispatch wrapper of a subclass
-calls the per-ctor body, which contains the `super(...)` in source
-order; nothing additional is required at the dispatch level.
-
 ### 5.8 Tests
 
 **Files:** `internal/checker/tests/multi_constructor_test.go` (new) and
@@ -1123,6 +1073,14 @@ These are nice-to-haves; ship the breaking change first.
 
 ## Out of Scope (Future Work)
 
+- **Inheritance and `super(...)`** (requirements §"Inheritance and
+  `super`"): subclassing, `super(...)` calls, subclass-constructor
+  synthesis, and the related `SubclassNeedsExplicitConstructorError` /
+  `SelfBeforeSuperError` / `MissingSuperCallError` /
+  `MultipleSuperCallsError` / `PrivateBaseConstructorError` diagnostics
+  are deferred. Until this lands, classes with `extends` either
+  continue using whatever existing path the codebase has or are
+  rejected — to be decided when the work is picked up.
 - **Private constructors** (requirements §"Private Constructors"): the
   parser already accepts `private constructor` (Phase 1), but the checker
   rejects it. Lifting that and removing `class Foo private(...)` syntax
