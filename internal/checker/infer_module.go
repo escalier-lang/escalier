@@ -466,6 +466,10 @@ func (c *Checker) InferComponent(
 				// `extends` class would silently skip the required
 				// `super(...)` call. Until subclass-constructor semantics
 				// land, require an explicit `constructor` block instead.
+				// Subclasses that use the legacy primary-ctor form
+				// (`class Derived(...) extends Base {...}`) still flow
+				// through the legacy path; that whole shape will be
+				// retired in Phase 4.
 				if len(decl.Params) == 0 && len(inBodyCtors) == 0 {
 					if decl.Extends != nil {
 						errors = append(errors, SubclassConstructorRequiredError{
@@ -712,11 +716,12 @@ func (c *Checker) InferComponent(
 					}
 					// TODO(class-ctor Phase 4): drop this primary-ctor
 					// inference once `class Foo(...)` syntax is removed.
-					// It only exists so the legacy shorthand-field path
-					// has a non-nil `paramBindingsForDecl` entry in the
-					// (already-erroring) mixed-form case.
-					primaryParams, primaryBindings, primaryErrors := c.inferFuncParams(declCtx, decl.Params)
-					_ = primaryParams
+					// In the (already-erroring) mixed-form case the
+					// legacy shorthand-field path downstream still walks
+					// `decl.Body` and dereferences these bindings, so we
+					// have to populate them even though the class is
+					// already failing.
+					_, primaryBindings, primaryErrors := c.inferFuncParams(declCtx, decl.Params)
 					errors = slices.Concat(errors, primaryErrors)
 					paramBindingsForDecl[decl] = primaryBindings
 				} else {

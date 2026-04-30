@@ -267,11 +267,6 @@ func TestConstructorOwnTypeParamsInScope(t *testing.T) {
 		}
 	`
 	errs := inferModuleErrors(t, input)
-	for _, e := range errs {
-		if strings.Contains(e.Message(), "U") || strings.Contains(e.Message(), "type") {
-			t.Logf("error: %s", e.Message())
-		}
-	}
 	require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
 }
 
@@ -419,6 +414,7 @@ func TestSubclassSynthesisIsNotAllowed(t *testing.T) {
 	require.NotEmpty(t, errs,
 		"expected a diagnostic for subclass without an explicit constructor; got none")
 }
+
 
 func formatErrs(errs []Error) []string {
 	out := make([]string, len(errs))

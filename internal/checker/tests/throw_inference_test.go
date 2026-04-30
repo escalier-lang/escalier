@@ -343,6 +343,46 @@ func TestDivergingBodyRejectsNonNeverReturn(t *testing.T) {
 	}
 }
 
+// TestOverloadSetUnionsThrowsAcrossArms verifies that when a callee
+// resolves to an intersection of overload signatures, the caller's
+// inferred `throws _` is the union of throws across every arm. This is
+// a sound upper bound — at the call site we don't know which arm will
+// dispatch, so the caller must be prepared to handle any.
+func TestOverloadSetUnionsThrowsAcrossArms(t *testing.T) {
+	t.Parallel()
+	source := &ast.Source{
+		ID:   0,
+		Path: "input.esc",
+		Contents: `
+			declare fn parse(s: string) -> number throws "bad-string"
+			declare fn parse(n: number) -> number throws "bad-number"
+			val testFunc = fn (x: string) -> number throws _ {
+				return parse(x)
+			}
+		`,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	assert.Empty(t, parseErrors, "Expected no parse errors")
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	errors := c.InferModule(inferCtx, module)
+	assert.Empty(t, errors, "Expected no type errors, got: %v", errors)
+
+	binding, ok := inferCtx.Scope.Namespace.Values["testFunc"]
+	assert.Truef(t, ok, "Expected testFunc to be defined")
+
+	funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
+	assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type))
+
+	throwsStr := type_system.Prune(funcType.Throws).String()
+	assert.Equal(t, "\"bad-string\" | \"bad-number\"", throwsStr,
+		"Expected throws type to union across overload arms")
+}
+
 func TestThrowExpressionUnification(t *testing.T) {
 	tests := map[string]struct {
 		input           string

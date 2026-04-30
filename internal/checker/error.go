@@ -120,7 +120,7 @@ func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return fals
 func (e FieldDefaultNotAllowedError) IsWarning() bool              { return false }
 func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
 func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
-func (e DivergingBodyNonNeverReturnError) IsWarning() bool          { return false }
+func (e DivergingBodyNonNeverReturnError) IsWarning() bool         { return false }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.
@@ -739,26 +739,34 @@ func (e MixedConstructorFormsError) Message() string {
 }
 
 // MissingMutSelfParameterError is reported when a constructor's `mut self`
-// parameter is missing, not declared `mut`, has a type annotation, or is
-// not the first parameter.
+// parameter is missing, not declared `mut`, or has a type annotation.
 type MissingMutSelfParameterError struct {
-	Reason string // "missing", "not-mut", "has-type-annotation", "not-first"
+	Reason MutSelfReason
 	span   ast.Span
 }
+
+// MutSelfReason enumerates the specific shapes of a malformed
+// `mut self` receiver. Typed so the message switch in `Message()` is
+// exhaustive at compile time.
+type MutSelfReason int
+
+const (
+	MutSelfMissing MutSelfReason = iota
+	MutSelfNotMut
+	MutSelfHasTypeAnnotation
+)
 
 func (e MissingMutSelfParameterError) Span() ast.Span {
 	return e.span
 }
 func (e MissingMutSelfParameterError) Message() string {
 	switch e.Reason {
-	case "missing":
+	case MutSelfMissing:
 		return "Constructors must declare `mut self` as their first parameter."
-	case "not-mut":
+	case MutSelfNotMut:
 		return "The `self` parameter of a constructor must be declared `mut self`."
-	case "has-type-annotation":
+	case MutSelfHasTypeAnnotation:
 		return "The `mut self` parameter cannot have a type annotation."
-	case "not-first":
-		return "The `self` parameter must be the first parameter."
 	default:
 		return "Invalid `mut self` parameter on constructor."
 	}

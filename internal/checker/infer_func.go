@@ -634,8 +634,10 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 //   - TypeRefType: alias to one of the above; resolve via the
 //     attached `TypeAlias`.
 //   - IntersectionType (overload set): we can't pick a specific
-//     overload here without re-running resolution, so we return nil
-//     and let the user annotate explicitly if needed.
+//     overload here without re-running resolution, so we return the
+//     union of every arm's throws as a sound upper bound. A caller
+//     might dispatch to any arm, so callers must be prepared to handle
+//     any arm's throws.
 //
 // Returns nil when no throws can be attributed (callee has no
 // throws clause, or its throws type is `never`).
@@ -647,39 +649,62 @@ func calleeThrowsType(callExpr *ast.CallExpr) type_system.Type {
 	if calleeType == nil {
 		return nil
 	}
-	fn := extractCalleeFuncType(type_system.Prune(calleeType))
-	if fn == nil || fn.Throws == nil {
-		return nil
+	fns := collectCalleeFuncTypes(type_system.Prune(calleeType))
+	throws := []type_system.Type{}
+	for _, fn := range fns {
+		if fn.Throws == nil {
+			continue
+		}
+		if _, isNever := type_system.Prune(fn.Throws).(*type_system.NeverType); isNever {
+			continue
+		}
+		throws = append(throws, fn.Throws)
 	}
-	if _, isNever := type_system.Prune(fn.Throws).(*type_system.NeverType); isNever {
+	switch len(throws) {
+	case 0:
 		return nil
+	case 1:
+		return throws[0]
+	default:
+		return type_system.NewUnionType(nil, throws...)
 	}
-	return fn.Throws
 }
 
-// extractCalleeFuncType pulls the underlying `*FuncType` out of any of
-// the type shapes a call expression can be invoked against. Returns nil
-// when the type isn't directly callable (e.g. an unresolved type
-// variable, intersection-of-overloads, or non-callable object type).
-func extractCalleeFuncType(t type_system.Type) *type_system.FuncType {
+// collectCalleeFuncTypes returns every `*FuncType` arm a call expression
+// can be invoked against. For a single-signature callee this is a slice
+// of one; for an intersection of overloads it returns one entry per
+// arm. Returns an empty slice when the type isn't directly callable
+// (e.g. an unresolved type variable, or non-callable object type).
+func collectCalleeFuncTypes(t type_system.Type) []*type_system.FuncType {
 	switch tt := t.(type) {
 	case *type_system.FuncType:
-		return tt
+		return []*type_system.FuncType{tt}
 	case *type_system.ObjectType:
+		var out []*type_system.FuncType
 		for _, elem := range tt.Elems {
+			// An ObjectType may carry a ConstructorElem (for `new`) and
+			// one or more CallableElems (for plain calls). We collect
+			// every callable shape so overload sets attached to object
+			// types behave like IntersectionType arms.
 			switch e := elem.(type) {
 			case *type_system.ConstructorElem:
-				return e.Fn
+				out = append(out, e.Fn)
 			case *type_system.CallableElem:
-				return e.Fn
+				out = append(out, e.Fn)
 			}
 		}
-		return nil
+		return out
 	case *type_system.TypeRefType:
 		if tt.TypeAlias == nil {
 			return nil
 		}
-		return extractCalleeFuncType(type_system.Prune(tt.TypeAlias.Type))
+		return collectCalleeFuncTypes(type_system.Prune(tt.TypeAlias.Type))
+	case *type_system.IntersectionType:
+		var out []*type_system.FuncType
+		for _, arm := range tt.Types {
+			out = append(out, collectCalleeFuncTypes(type_system.Prune(arm))...)
+		}
+		return out
 	default:
 		return nil
 	}

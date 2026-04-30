@@ -35,9 +35,9 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 
 	switch {
 	case ctor.MutSelf == nil:
-		errors = append(errors, MissingMutSelfParameterError{Reason: "missing", span: span})
+		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfMissing, span: span})
 	case !*ctor.MutSelf:
-		errors = append(errors, MissingMutSelfParameterError{Reason: "not-mut", span: span})
+		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfNotMut, span: span})
 	}
 
 	// Only check the type annotation when `self` is actually present —
@@ -46,7 +46,7 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 	if ctor.MutSelf != nil && len(ctor.Fn.Params) > 0 {
 		selfParam := ctor.Fn.Params[0]
 		if selfParam.TypeAnn != nil {
-			errors = append(errors, MissingMutSelfParameterError{Reason: "has-type-annotation", span: selfParam.Span()})
+			errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfHasTypeAnnotation, span: selfParam.Span()})
 		}
 	}
 
@@ -121,6 +121,22 @@ func (c *Checker) inferConstructorSig(
 	return funcType, ctorCtx, paramBindings, errors
 }
 
+// fieldInitializer returns the field's initializer expression — the
+// `= expr` form (`Default`) or the legacy `x: expr` shorthand
+// (`Value`), in that order — or nil if the field has neither. Callers
+// that need to know "is this field already initialized?" should use
+// this helper so the synthesizer's view of "has a default" stays in
+// sync with the rest of the class-checker.
+func fieldInitializer(field *ast.FieldElem) ast.Expr {
+	if field.Default != nil {
+		return field.Default
+	}
+	if field.Value != nil {
+		return field.Value
+	}
+	return nil
+}
+
 // classFieldName extracts a printable identifier for a class field's key.
 // Used in diagnostics where we need a name to attach to a `FieldElem`.
 // Computed-key fields fall back to a placeholder.
@@ -175,13 +191,8 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 		}
 
 		fieldSpan := field.Span()
-		hasDefault := field.Default != nil || field.Value != nil
-		var defaultExpr ast.Expr
-		if field.Default != nil {
-			defaultExpr = field.Default
-		} else if field.Value != nil {
-			defaultExpr = field.Value
-		}
+		defaultExpr := fieldInitializer(field)
+		hasDefault := defaultExpr != nil
 
 		// Determine the field's user-facing name. Computed-key fields
 		// are unconditionally rejected for synthesis — see the function
