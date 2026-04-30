@@ -2544,6 +2544,10 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				source:  e,
 			}
 			outElems = append(outElems, setterElem)
+
+		case *ast.ConstructorElem:
+			// TODO(class-ctor Phase 4): emit single-ctor body.
+			_ = e
 		}
 	}
 

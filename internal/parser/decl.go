@@ -213,6 +213,149 @@ func (p *Parser) classDecl(start ast.Location, export, declare, data bool) ast.D
 	return decl
 }
 
+// parseConstructorElem parses an explicit `constructor(...) { ... }` block.
+// The `constructor` token has not yet been consumed.
+//
+// Per the requirements, the constructor's first parameter must be `mut self`
+// (no type annotation). The remaining params follow after a comma. The
+// `mut self` is preserved as `ConstructorElem.MutSelf` and as `Fn.Params[0]`
+// for the body checker.
+func (p *Parser) parseConstructorElem(
+	start ast.Location,
+	token *Token,
+	isStatic, isAsync, isPrivate, isReadonly, isGet, isSet bool,
+) ast.ClassElem {
+	if isStatic {
+		p.reportError(token.Span, "constructors cannot be static")
+	}
+	if isAsync {
+		p.reportError(token.Span, "constructors cannot be async")
+	}
+	if isReadonly {
+		p.reportError(token.Span, "constructors cannot be readonly")
+	}
+	if isGet || isSet {
+		p.reportError(token.Span, "constructors cannot be getters or setters")
+	}
+
+	p.lexer.consume() // consume `constructor`
+
+	typeParams := p.maybeTypeParams()
+
+	var mutSelf *bool
+	var params []*ast.Param
+
+	next := p.lexer.peek()
+	if next.Type != OpenParen {
+		p.reportError(next.Span, "Expected '(' after 'constructor'")
+	} else {
+		p.lexer.consume() // consume '('
+
+		// Parse leading `mut self` / `self`.
+		selfStart := p.lexer.currentLocation
+		mutSelf = p.mutSelf()
+		if mutSelf == nil {
+			// No `self` at all — error and continue parsing the rest of the
+			// param list as if `self` had been there.
+			p.reportError(
+				ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID},
+				"constructors must declare `mut self` as their first parameter",
+			)
+		} else if !*mutSelf {
+			// `self` without `mut`.
+			p.reportError(
+				ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID},
+				"the `self` parameter of a constructor must be declared `mut self`",
+			)
+		}
+
+		// `mut self : Self` — type annotation on self is not allowed.
+		if mutSelf != nil && p.lexer.peek().Type == Colon {
+			colonTok := p.lexer.peek()
+			p.lexer.consume() // consume ':'
+			_ = p.typeAnn()   // discard the annotation
+			p.reportError(colonTok.Span, "the `mut self` parameter cannot have a type annotation")
+		}
+
+		// Materialize the `mut self` parameter as the first entry in params
+		// so downstream phases can read `Fn.Params[0]` uniformly. We skip
+		// this when no `self` token was found (mutSelf == nil); the error
+		// has already been reported, and inserting a phantom param here
+		// would mask the absence in the AST.
+		if mutSelf != nil {
+			selfSpan := ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			selfPat := ast.NewIdentPat("self", *mutSelf, nil, nil, selfSpan)
+			params = append(params, &ast.Param{
+				Pattern:  selfPat,
+				TypeAnn:  nil,
+				Optional: false,
+			})
+		}
+
+		next = p.lexer.peek()
+		if next.Type == Comma {
+			p.lexer.consume() // consume ','
+			rest := parseDelimSeq(p, CloseParen, Comma, p.param)
+			params = append(params, rest...)
+		} else if mutSelf == nil {
+			// Recovery: no leading self was found; parse the params as a
+			// regular list so we still produce a usable AST.
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		}
+		p.expect(CloseParen, AlwaysConsume)
+
+		// Detect `self` appearing as a non-leading parameter (skip the
+		// leading self we just inserted).
+		startIdx := 0
+		if mutSelf != nil {
+			startIdx = 1
+		}
+		for _, param := range params[startIdx:] {
+			if ip, ok := param.Pattern.(*ast.IdentPat); ok && ip.Name == "self" {
+				p.reportError(param.Pattern.Span(),
+					"the `self` parameter must be the first parameter of a constructor")
+			}
+		}
+	}
+
+	// `throws` may appear in either order relative to `->` (the arrow form
+	// is itself an error). Accept whichever comes first; if both appear we
+	// keep the first one and discard the second.
+	next = p.lexer.peek()
+	var throwsType ast.TypeAnn
+	if next.Type == Throws {
+		p.lexer.consume()
+		throwsType = p.typeAnn()
+		next = p.lexer.peek()
+	}
+	if next.Type == Arrow {
+		p.reportError(next.Span, "constructors cannot declare a return type")
+		p.lexer.consume()
+		_ = p.typeAnn()
+		next = p.lexer.peek()
+		// A `throws` after `->` is also tolerated, but we already errored.
+		if next.Type == Throws && throwsType == nil {
+			p.lexer.consume()
+			throwsType = p.typeAnn()
+			next = p.lexer.peek()
+		}
+	}
+
+	var body *ast.Block
+	if next.Type == OpenBrace {
+		block := p.block()
+		body = &block
+	}
+
+	span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+	return &ast.ConstructorElem{
+		Fn:      ast.NewFuncExpr(nil, typeParams, params, nil, throwsType, false, body, span),
+		MutSelf: mutSelf,
+		Private: isPrivate,
+		Span_:   span,
+	}
+}
+
 // parseClassElem parses a single class element (field, method, static, etc.)
 func (p *Parser) parseClassElem() ast.ClassElem {
 	token := p.lexer.peek()
@@ -262,6 +405,12 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 		token = p.lexer.peek()
 	}
 modifiers_done:
+	// `constructor` is a contextual keyword at the start of a class element.
+	// Anywhere else it is a regular identifier.
+	if token.Type == Identifier && token.Value == "constructor" {
+		return p.parseConstructorElem(start, token, isStatic, isAsync, isPrivate, isReadonly, isGet, isSet)
+	}
+
 	name := p.objExprKey()
 	if name == nil {
 		return nil
