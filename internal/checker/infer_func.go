@@ -258,8 +258,28 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		bodyCtx.AwaitThrowTypes = &awaitThrowTypes
 	}
 
-	returnType, inferredThrowType, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, astParams, body)
+	returnType, inferredThrowType, divergent, bodyErrors := c.inferFuncBody(bodyCtx, paramBindings, astParams, body)
 	errors = slices.Concat(errors, bodyErrors)
+
+	// If the body diverges (every reachable path exits via `throw` /
+	// other exit form, with no `return` statements at all) and the
+	// user wrote a non-`never` return annotation, that annotation is
+	// misleading: callers see the type but the function will never
+	// produce a value of it. Require `-> never` instead. This check is
+	// limited to ordinary (non-generator, non-async) functions —
+	// async/generator wrappers wrap the return in a Promise/Generator
+	// where `never` semantics differ.
+	if divergent && !containsYield && !isAsync {
+		annotated := type_system.Prune(funcSigType.Return)
+		if _, isTypeVar := annotated.(*type_system.TypeVarType); !isTypeVar {
+			if _, isNever := annotated.(*type_system.NeverType); !isNever {
+				errors = append(errors, DivergingBodyNonNeverReturnError{
+					DeclaredReturn: annotated.String(),
+					span:           body.Span,
+				})
+			}
+		}
+	}
 
 	// Check if this function is a generator (contains yield)
 	if containsYield {
@@ -332,13 +352,21 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 }
 
 // Infer throws type - handles throws clause inference
-// NOTE: This function updates `funcSigType`
+// NOTE: This function updates `funcSigType`. Returns:
+//   - returnType: the inferred fall-through type of the body (may be
+//     `never` when the body always exits via `throw` / etc.).
+//   - throwType: the union of `throw`-arg types and call-throws.
+//   - divergent: true iff the body has zero top-level `return`
+//     statements AND every reachable path exits via `throw` (or
+//     another diverging form). Callers use this to report
+//     `DivergingBodyNonNeverReturnError` when the user declared a
+//     non-`never` return type.
 func (c *Checker) inferFuncBody(
 	ctx Context,
 	bindings map[string]*type_system.Binding,
 	astParams []*ast.Param,
 	body *ast.Block,
-) (type_system.Type, type_system.Type, []Error) {
+) (type_system.Type, type_system.Type, bool, []Error) {
 
 	ctx = ctx.WithNewScope()
 	maps.Copy(ctx.Scope.Namespace.Values, bindings)
@@ -378,17 +406,98 @@ func (c *Checker) inferFuncBody(
 	// code.
 
 	var returnType type_system.Type
+	divergent := false
 	if len(returnTypes) == 1 {
 		returnType = returnTypes[0]
 	} else if len(returnTypes) > 1 {
 		returnType = type_system.NewUnionType(nil, returnTypes...)
+	} else if blockAlwaysExits(body) {
+		// Body has no `return` and every reachable path exits via
+		// `throw` (or another diverging form). The function never
+		// falls off the end normally, so the fall-through type is
+		// `never`, not `void`. This lets a body like `{ throw "x" }`
+		// satisfy a declared `-> number` return without spuriously
+		// reporting `void cannot be assigned to number`. The caller
+		// uses `divergent` to optionally reject misleading non-never
+		// return annotations.
+		returnType = type_system.NewNeverType(nil)
+		divergent = true
 	} else {
 		returnType = type_system.NewVoidType(nil)
 	}
 
 	throwType := type_system.NewUnionType(nil, throwTypes...)
 
-	return returnType, throwType, errors
+	return returnType, throwType, divergent, errors
+}
+
+// blockAlwaysExits reports whether every reachable path through `block`
+// exits via `throw` (or another diverging form like `return`) rather
+// than falling off the end. Used to decide whether a function body's
+// fall-through type should be `never` (unreachable) instead of `void`.
+//
+// This is a syntactic, conservative reachability check — it doesn't
+// reason about loop conditions, only about statement-level control
+// flow. False negatives are fine (we just default to `void`); false
+// positives would be unsound.
+func blockAlwaysExits(block *ast.Block) bool {
+	if block == nil || len(block.Stmts) == 0 {
+		return false
+	}
+	return stmtAlwaysExits(block.Stmts[len(block.Stmts)-1])
+}
+
+func stmtAlwaysExits(stmt ast.Stmt) bool {
+	switch s := stmt.(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.ExprStmt:
+		return exprAlwaysExits(s.Expr)
+	default:
+		return false
+	}
+}
+
+func exprAlwaysExits(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.ThrowExpr:
+		return true
+	case *ast.IfElseExpr:
+		// Without an `else`, fall-through is reachable when the
+		// condition is false.
+		if e.Alt == nil {
+			return false
+		}
+		return blockAlwaysExits(&e.Cons) && blockOrExprAlwaysExits(*e.Alt)
+	case *ast.MatchExpr:
+		// A match exits unconditionally only if every arm does. (We
+		// don't check exhaustiveness here — a non-exhaustive match
+		// would already be an error elsewhere; treating it as
+		// possibly falling through is the safe default.)
+		if len(e.Cases) == 0 {
+			return false
+		}
+		for _, arm := range e.Cases {
+			if !blockOrExprAlwaysExits(arm.Body) {
+				return false
+			}
+		}
+		return true
+	case *ast.DoExpr:
+		return blockAlwaysExits(&e.Body)
+	default:
+		return false
+	}
+}
+
+func blockOrExprAlwaysExits(b ast.BlockOrExpr) bool {
+	if b.Block != nil {
+		return blockAlwaysExits(b.Block)
+	}
+	if b.Expr != nil {
+		return exprAlwaysExits(b.Expr)
+	}
+	return false
 }
 
 type ReturnVisitor struct {

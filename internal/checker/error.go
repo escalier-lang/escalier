@@ -70,6 +70,7 @@ func (e PrivateConstructorNotYetSupportedError) isError()   {}
 func (e FieldDefaultNotAllowedError) isError()              {}
 func (e ComputedKeyFieldRequiresConstructorError) isError() {}
 func (e SubclassConstructorRequiredError) isError()         {}
+func (e DivergingBodyNonNeverReturnError) isError()         {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -119,6 +120,7 @@ func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return fals
 func (e FieldDefaultNotAllowedError) IsWarning() bool              { return false }
 func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
 func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
+func (e DivergingBodyNonNeverReturnError) IsWarning() bool          { return false }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.
@@ -835,6 +837,24 @@ func (e ComputedKeyFieldRequiresConstructorError) Span() ast.Span {
 }
 func (e ComputedKeyFieldRequiresConstructorError) Message() string {
 	return "A class with a non-optional computed-key field cannot have a constructor synthesized; declare an explicit `constructor` block."
+}
+
+// DivergingBodyNonNeverReturnError is reported when a function body
+// never falls through normally (every reachable path exits via `throw`
+// or another diverging form), but the function declares a return type
+// other than `never`. The declared return type misleads callers into
+// thinking the function may produce a value when it never can; the
+// only honest annotation in that case is `never`.
+type DivergingBodyNonNeverReturnError struct {
+	DeclaredReturn string
+	span           ast.Span
+}
+
+func (e DivergingBodyNonNeverReturnError) Span() ast.Span {
+	return e.span
+}
+func (e DivergingBodyNonNeverReturnError) Message() string {
+	return "Function body never returns normally — its declared return type must be `never`, not `" + e.DeclaredReturn + "`."
 }
 
 // TODO: make this a sum type so that different error type can reference other
