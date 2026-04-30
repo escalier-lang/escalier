@@ -250,6 +250,82 @@ func TestConstructorErrors(t *testing.T) {
 	}
 }
 
+// TestConstructorOwnTypeParamsInScope verifies that a constructor's own
+// type parameters are visible inside the constructor body. Regression: the
+// Context returned by inferConstructorSig (which carries ctor-local type
+// params) was previously discarded so body checking used the class scope
+// only.
+func TestConstructorOwnTypeParamsInScope(t *testing.T) {
+	t.Parallel()
+	input := `
+		class Foo<T> {
+			x:: T,
+			constructor<U>(mut self, x: T, y: U) {
+				val z: U = y
+				self.x = x
+			}
+		}
+	`
+	errs := inferModuleErrors(t, input)
+	for _, e := range errs {
+		if strings.Contains(e.Message(), "U") || strings.Contains(e.Message(), "type") {
+			t.Logf("error: %s", e.Message())
+		}
+	}
+	require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+}
+
+// TestConstructorParamsDoNotLeakIntoMethods verifies that an in-body
+// constructor's parameters are scoped to the constructor body and are
+// NOT visible inside other methods/getters/setters. Methods see fields
+// via `self.<field>` only.
+func TestConstructorParamsDoNotLeakIntoMethods(t *testing.T) {
+	t.Parallel()
+	input := `
+		class Foo {
+			x:: number,
+			constructor(mut self, secret: number) {
+				self.x = secret
+			},
+			leak(self) -> number {
+				return secret
+			}
+		}
+	`
+	errs := inferModuleErrors(t, input)
+	// Expect an error: 'secret' is not in scope inside leak().
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Message(), "secret") {
+			found = true
+			break
+		}
+	}
+	require.Truef(t, found,
+		"expected an unresolved-name error for 'secret' inside method; got: %v",
+		formatErrs(errs))
+}
+
+// TestSubclassSynthesisIsNotAllowed verifies that a subclass without an
+// explicit constructor does NOT silently get a synthesized constructor
+// (which would skip the required super(...) call).
+func TestSubclassSynthesisIsNotAllowed(t *testing.T) {
+	t.Parallel()
+	input := `
+		class Base {
+			x:: number,
+		}
+		class Derived extends Base {
+			y:: number,
+		}
+	`
+	errs := inferModuleErrors(t, input)
+	// We expect SOME error indicating subclass synthesis isn't supported,
+	// rather than silent success or a confusing downstream type error.
+	require.NotEmpty(t, errs,
+		"expected a diagnostic for subclass without an explicit constructor; got none")
+}
+
 func formatErrs(errs []Error) []string {
 	out := make([]string, len(errs))
 	for i, e := range errs {

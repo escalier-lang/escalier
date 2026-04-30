@@ -69,6 +69,7 @@ func (e ConstructorWithReturnTypeError) isError()           {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
 func (e FieldDefaultNotAllowedError) isError()              {}
 func (e ComputedKeyFieldRequiresConstructorError) isError() {}
+func (e SubclassConstructorRequiredError) isError()         {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -117,6 +118,7 @@ func (e ConstructorWithReturnTypeError) IsWarning() bool           { return fals
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
 func (e FieldDefaultNotAllowedError) IsWarning() bool              { return false }
 func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
+func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.
@@ -810,6 +812,22 @@ func (e FieldDefaultNotAllowedError) Span() ast.Span {
 }
 func (e FieldDefaultNotAllowedError) Message() string {
 	return "Field '" + e.FieldName + "' cannot have a default value when the class declares a `constructor` block; assign it inside the constructor body or supply a default on the constructor parameter."
+}
+
+// SubclassConstructorRequiredError is reported when a class with an
+// `extends` clause has no explicit `constructor` block. Synthesizing a
+// constructor for a subclass would silently skip the required
+// `super(...)` call, so we require the user to write the constructor
+// until subclass-constructor semantics are implemented.
+type SubclassConstructorRequiredError struct {
+	span ast.Span
+}
+
+func (e SubclassConstructorRequiredError) Span() ast.Span {
+	return e.span
+}
+func (e SubclassConstructorRequiredError) Message() string {
+	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
 }
 
 type ComputedKeyFieldRequiresConstructorError struct {

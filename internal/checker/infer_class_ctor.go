@@ -146,8 +146,12 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 		case *ast.StrLit:
 			fieldName = k.Value
 		case *ast.ComputedKey:
+			// We cannot synthesize a parameter name for a computed
+			// key, so abort synthesis entirely rather than emitting a
+			// partial constructor that silently drops the field.
+			// Callers must guard on a nil return.
 			errors = append(errors, ComputedKeyFieldRequiresConstructorError{span: fieldSpan})
-			continue
+			return nil, errors
 		default:
 			continue
 		}

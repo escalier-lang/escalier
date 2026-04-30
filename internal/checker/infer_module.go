@@ -224,6 +224,10 @@ func (c *Checker) InferComponent(
 	inBodyCtorForDecl := make(map[ast.Decl]*ast.ConstructorElem)
 	ctorFuncTypeForDecl := make(map[ast.Decl]*type_system.FuncType)
 	ctorParamBindingsForDecl := make(map[ast.Decl]map[string]*type_system.Binding)
+	// Constructor-local context (carries ctor-level type params, e.g. U
+	// in `constructor<U>(...)`) so the body-checking phase can resolve
+	// names introduced only by the constructor signature.
+	ctorCtxForDecl := make(map[ast.Decl]Context)
 
 	// Track declarations that have been processed in the placeholder phase.
 	// This is needed because classes and enums have both type and value binding keys,
@@ -454,15 +458,25 @@ func (c *Checker) InferComponent(
 				}
 
 				// Synthesize a constructor when neither a primary-ctor head
-				// nor an in-body constructor is present.
+				// nor an in-body constructor is present. Subclasses are
+				// excluded — auto-synthesizing a constructor for an
+				// `extends` class would silently skip the required
+				// `super(...)` call. Until subclass-constructor semantics
+				// land, require an explicit `constructor` block instead.
 				if len(decl.Params) == 0 && len(inBodyCtors) == 0 {
-					synth, synthErrors := c.synthesizeConstructorElem(decl)
-					errors = slices.Concat(errors, synthErrors)
-					if synth != nil {
-						// Prepend so the rest of the loop sees it like a
-						// user-written constructor.
-						decl.Body = append([]ast.ClassElem{synth}, decl.Body...)
-						inBodyCtors = []*ast.ConstructorElem{synth}
+					if decl.Extends != nil {
+						errors = append(errors, SubclassConstructorRequiredError{
+							span: decl.Name.Span(),
+						})
+					} else {
+						synth, synthErrors := c.synthesizeConstructorElem(decl)
+						errors = slices.Concat(errors, synthErrors)
+						if synth != nil {
+							// Prepend so the rest of the loop sees it like a
+							// user-written constructor.
+							decl.Body = append([]ast.ClassElem{synth}, decl.Body...)
+							inBodyCtors = []*ast.ConstructorElem{synth}
+						}
 					}
 				}
 
@@ -674,10 +688,12 @@ func (c *Checker) InferComponent(
 				if len(inBodyCtors) > 0 {
 					ctor := inBodyCtors[0]
 					var sigErrors []Error
-					funcType, _, paramBindings, sigErrors = c.inferConstructorSig(
+					var ctorCtx Context
+					funcType, ctorCtx, paramBindings, sigErrors = c.inferConstructorSig(
 						declCtx, ctor, typeParams, retType, provenance,
 					)
 					errors = slices.Concat(errors, sigErrors)
+					ctorCtxForDecl[decl] = ctorCtx
 				} else {
 					params, legacyBindings, legacyParamErrors := c.inferFuncParams(declCtx, decl.Params)
 					errors = slices.Concat(errors, legacyParamErrors)
@@ -690,12 +706,24 @@ func (c *Checker) InferComponent(
 						type_system.NewNeverType(nil),
 					)
 				}
-				paramBindingsForDecl[decl] = paramBindings
-
 				if len(inBodyCtors) > 0 {
+					// In-body constructor params are scoped to the
+					// constructor body only — they must NOT leak into
+					// method/getter/setter scopes (which see fields via
+					// `self.<field>`). Stash them in the ctor-specific
+					// maps. paramBindingsForDecl is populated from
+					// `decl.Params` (the primary-ctor head) below so the
+					// legacy shorthand-field path keeps working in mixed
+					// (erroring) cases without nil-deref'ing.
 					inBodyCtorForDecl[decl] = inBodyCtors[0]
 					ctorFuncTypeForDecl[decl] = funcType
 					ctorParamBindingsForDecl[decl] = paramBindings
+					primaryParams, primaryBindings, primaryErrors := c.inferFuncParams(declCtx, decl.Params)
+					_ = primaryParams
+					errors = slices.Concat(errors, primaryErrors)
+					paramBindingsForDecl[decl] = primaryBindings
+				} else {
+					paramBindingsForDecl[decl] = paramBindings
 				}
 
 				// Create an object type with a constructor element and static methods/properties
@@ -1481,8 +1509,16 @@ func (c *Checker) InferComponent(
 							type_system.NewVoidType(nil),
 							ctorFuncType.Throws,
 						)
+						// Constructor-local type params (e.g. `<U>` on the
+						// `constructor` itself) live in `ctorCtxForDecl`,
+						// not in `bodyCtx`. Use that scope when present
+						// so the body can resolve them.
+						ctorBodyCtx := bodyCtx
+						if cc, ok := ctorCtxForDecl[decl]; ok {
+							ctorBodyCtx = cc.WithNewScope()
+						}
 						bodyErrors := c.inferFuncBodyWithFuncSigType(
-							bodyCtx, bodyFuncType, ctorBindings,
+							ctorBodyCtx, bodyFuncType, ctorBindings,
 							astCallableParams, bodyElem.Fn.Body, false,
 						)
 						errors = slices.Concat(errors, bodyErrors)
