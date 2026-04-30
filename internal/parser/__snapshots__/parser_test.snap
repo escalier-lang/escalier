@@ -22,7 +22,8 @@
             End:      ast.Location{Line:2, Column:10},
             SourceID: 0,
         },
-        inferredType: nil,
+        inferredType:   nil,
+        resolvedThrows: nil,
     },
     span: ast.Span{
         Start:    ast.Location{Line:2, Column:5},
@@ -554,7 +555,8 @@
             End:      ast.Location{Line:3, Column:10},
             SourceID: 0,
         },
-        inferredType: nil,
+        inferredType:   nil,
+        resolvedThrows: nil,
     },
     span: ast.Span{
         Start:    ast.Location{Line:3, Column:5},
@@ -1585,7 +1587,8 @@
                                     End:      ast.Location{Line:3, Column:37},
                                     SourceID: 0,
                                 },
-                                inferredType: nil,
+                                inferredType:   nil,
+                                resolvedThrows: nil,
                             },
                             span: ast.Span{
                                 Start:    ast.Location{Line:3, Column:21},
@@ -1650,7 +1653,8 @@
                                 End:      ast.Location{Line:4, Column:34},
                                 SourceID: 0,
                             },
-                            inferredType: nil,
+                            inferredType:   nil,
+                            resolvedThrows: nil,
                         },
                         span: ast.Span{
                             Start:    ast.Location{Line:4, Column:13},
@@ -2095,7 +2099,8 @@
                                 End:      ast.Location{Line:3, Column:34},
                                 SourceID: 0,
                             },
-                            inferredType: nil,
+                            inferredType:   nil,
+                            resolvedThrows: nil,
                         },
                         span: ast.Span{
                             Start:    ast.Location{Line:3, Column:13},
@@ -2216,7 +2221,8 @@
                                     End:      ast.Location{Line:3, Column:38},
                                     SourceID: 0,
                                 },
-                                inferredType: nil,
+                                inferredType:   nil,
+                                resolvedThrows: nil,
                             },
                             span: ast.Span{
                                 Start:    ast.Location{Line:3, Column:13},
@@ -2334,7 +2340,8 @@
                                 End:      ast.Location{Line:5, Column:41},
                                 SourceID: 0,
                             },
-                            inferredType: nil,
+                            inferredType:   nil,
+                            resolvedThrows: nil,
                         },
                         span: ast.Span{
                             Start:    ast.Location{Line:5, Column:28},
@@ -2350,7 +2357,8 @@
                     End:      ast.Location{Line:5, Column:42},
                     SourceID: 0,
                 },
-                inferredType: nil,
+                inferredType:   nil,
+                resolvedThrows: nil,
             },
             span: ast.Span{
                 Start:    ast.Location{Line:5, Column:18},
@@ -2469,7 +2477,8 @@
                                 End:      ast.Location{Line:1, Column:52},
                                 SourceID: 0,
                             },
-                            inferredType: nil,
+                            inferredType:   nil,
+                            resolvedThrows: nil,
                         },
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:31},

@@ -343,44 +343,66 @@ func TestDivergingBodyRejectsNonNeverReturn(t *testing.T) {
 	}
 }
 
-// TestOverloadSetUnionsThrowsAcrossArms verifies that when a callee
-// resolves to an intersection of overload signatures, the caller's
-// inferred `throws _` is the union of throws across every arm. This is
-// a sound upper bound — at the call site we don't know which arm will
-// dispatch, so the caller must be prepared to handle any.
-func TestOverloadSetUnionsThrowsAcrossArms(t *testing.T) {
-	t.Parallel()
-	source := &ast.Source{
-		ID:   0,
-		Path: "input.esc",
-		Contents: `
-			declare fn parse(s: string) -> number throws "bad-string"
-			declare fn parse(n: number) -> number throws "bad-number"
-			val testFunc = fn (x: string) -> number throws _ {
-				return parse(x)
-			}
-		`,
+// TestCallSiteThrowsInference covers how `throws _` on a caller is
+// resolved against different kinds of callees:
+//   - OverloadResolutionPicksMatchingArm: when a callee resolves to an
+//     intersection of overload signatures, the inferred throws reflects
+//     only the matched arm (not a union of all arms).
+//   - GenericCallSubstitutesThrowsType: when a generic callee declares
+//     `throws T`, the inferred throws reflects the instantiated type
+//     parameter, not the schema's T.
+func TestCallSiteThrowsInference(t *testing.T) {
+	tests := map[string]struct {
+		input            string
+		expectedTestFunc string
+	}{
+		"OverloadResolutionPicksMatchingArm": {
+			input: `
+				declare fn parse(s: string) -> number throws "bad-string"
+				declare fn parse(n: number) -> number throws "bad-number"
+				val testFunc = fn (x: string) -> number throws _ {
+					return parse(x)
+				}
+			`,
+			expectedTestFunc: `fn (x: string) -> number throws "bad-string"`,
+		},
+		"GenericCallSubstitutesThrowsType": {
+			input: `
+				val raise = fn <T>(x: T) -> never throws T {
+					throw x
+				}
+				val testFunc = fn () -> never throws _ {
+					raise("boom")
+				}
+			`,
+			expectedTestFunc: `fn () -> never throws "boom"`,
+		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-	assert.Empty(t, parseErrors, "Expected no parse errors")
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 
-	c := NewChecker(ctx)
-	inferCtx := Context{Scope: Prelude(c)}
-	errors := c.InferModule(inferCtx, module)
-	assert.Empty(t, errors, "Expected no type errors, got: %v", errors)
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			assert.Empty(t, parseErrors, "Expected no parse errors")
 
-	binding, ok := inferCtx.Scope.Namespace.Values["testFunc"]
-	assert.Truef(t, ok, "Expected testFunc to be defined")
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			errors := c.InferModule(inferCtx, module)
+			assert.Empty(t, errors, "Expected no type errors, got: %v", errors)
 
-	funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
-	assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type))
+			binding, ok := inferCtx.Scope.Namespace.Values["testFunc"]
+			assert.Truef(t, ok, "Expected testFunc to be defined")
 
-	throwsStr := type_system.Prune(funcType.Throws).String()
-	assert.Equal(t, "\"bad-string\" | \"bad-number\"", throwsStr,
-		"Expected throws type to union across overload arms")
+			funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
+			assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type))
+
+			assert.Equal(t, test.expectedTestFunc, funcType.String())
+		})
+	}
 }
 
 func TestThrowExpressionUnification(t *testing.T) {

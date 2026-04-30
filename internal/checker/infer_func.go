@@ -639,29 +639,28 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 	return throwTypes, errors
 }
 
-// TODO(#516): this reads the callee's declaration-time type, so it
-// loses generic substitutions and unions all overload arms instead of
-// using the one `inferCallExpr` actually picked. Fix by recording the
-// instantiated/resolved signature on `CallExpr` during inference and
-// reading it back here.
+// calleeThrowsType returns the `Throws` type of the function actually
+// dispatched to at this call site.
 //
-// calleeThrowsType returns the `Throws` type declared on the callee of
-// `callExpr`, walking through the type-system shapes a callee can take:
+// Preferred path: read `ResolvedThrows`, which inferCallExpr records
+// after picking an overload arm and instantiating any generics. This
+// gives precise throws for both generic substitutions (T → "boom")
+// and overload resolution (only the matched arm's throws).
 //
-//   - FuncType: the throws clause is right there.
-//   - ObjectType: a class instance / constructor object — the throws
-//     lives on the embedded ConstructorElem or CallableElem.
-//   - TypeRefType: alias to one of the above; resolve via the
-//     attached `TypeAlias`.
-//   - IntersectionType (overload set): we can't pick a specific
-//     overload here without re-running resolution, so we return the
-//     union of every arm's throws as a sound upper bound. A caller
-//     might dispatch to any arm, so callers must be prepared to handle
-//     any arm's throws.
+// Fallback path: when no resolved signature is recorded (error paths,
+// or callee shapes inferCallExpr doesn't dispatch through), walk the
+// declaration-time callee type as a sound upper bound — for an
+// intersection that's the union of every arm's throws.
 //
-// Returns nil when no throws can be attributed (callee has no
-// throws clause, or its throws type is `never`).
+// Returns nil when no throws can be attributed (callee has no throws
+// clause, or its throws type is `never`).
 func calleeThrowsType(callExpr *ast.CallExpr) type_system.Type {
+	if rt := callExpr.ResolvedThrows(); rt != nil {
+		if _, isNever := type_system.Prune(rt).(*type_system.NeverType); isNever {
+			return nil
+		}
+		return rt
+	}
 	if callExpr.Callee == nil {
 		return nil
 	}

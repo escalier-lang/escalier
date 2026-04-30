@@ -380,16 +380,29 @@ func (e *FuncExpr) Accept(v Visitor) {
 }
 
 type CallExpr struct {
-	Callee       Expr
-	Args         []Expr
-	OptChain     bool
-	span         Span
-	inferredType Type
+	Callee         Expr
+	Args           []Expr
+	OptChain       bool
+	span           Span
+	inferredType   Type
+	resolvedThrows Type
 }
 
 func NewCall(callee Expr, args []Expr, optChain bool, span Span) *CallExpr {
 	return &CallExpr{Callee: callee, Args: args, OptChain: optChain, span: span, inferredType: nil}
 }
+
+// ResolvedThrows returns the post-instantiation `Throws` type of the
+// function actually dispatched to at this call site — i.e. the picked
+// overload arm and/or the generic substitution. Returns nil when no
+// dispatch was resolved (error paths).
+func (e *CallExpr) ResolvedThrows() Type { return e.resolvedThrows }
+
+// SetResolvedThrows records the throws type from the function signature
+// that was selected and instantiated for this call. Should be set by
+// inferCallExpr at every successful dispatch site.
+func (e *CallExpr) SetResolvedThrows(t Type) { e.resolvedThrows = t }
+
 func (e *CallExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Callee.Accept(v)

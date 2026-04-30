@@ -1098,7 +1098,11 @@ func (c *Checker) inferCallExpr(
 			}
 		}
 
-		// No overload matched - create a comprehensive error
+		// No overload matched - create a comprehensive error.
+		// Clear ResolvedThrows since handleFuncCall set it on the last
+		// attempted (failing) arm; downstream code should treat this
+		// call as having no resolved signature.
+		expr.SetResolvedThrows(nil)
 		overloadErr := &NoMatchingOverloadError{
 			CallExpr:         expr,
 			IntersectionType: t,
@@ -1187,6 +1191,12 @@ func (c *Checker) handleFuncCall(
 	if len(fnType.TypeParams) > 0 {
 		fnType = c.instantiateGenericFunc(fnType)
 	}
+
+	// Record the post-instantiation throws type on the CallExpr so that
+	// later passes (e.g. throws inference) can read the substituted
+	// Throws type rather than re-deriving it from the declaration-time
+	// callee type.
+	expr.SetResolvedThrows(fnType.Throws)
 
 	// Find if the function has a rest parameter
 	var restIndex = -1
