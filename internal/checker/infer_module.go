@@ -216,18 +216,21 @@ func (c *Checker) InferComponent(
 	methodCtxForElem := make(map[classMethodCtxKey]Context)
 
 	// Track which class declarations have a single in-body ConstructorElem
-	// whose body should be type-checked in the definition phase. The
-	// stored FuncType is the "callable" signature used for overload
-	// resolution (return type = Self instance type); the param bindings
-	// were produced by inferFuncParams over the constructor's
-	// `Fn.Params[1:]` (skipping the leading `mut self`).
-	inBodyCtorForDecl := make(map[ast.Decl]*ast.ConstructorElem)
-	ctorFuncTypeForDecl := make(map[ast.Decl]*type_system.FuncType)
-	ctorParamBindingsForDecl := make(map[ast.Decl]map[string]*type_system.Binding)
-	// Constructor-local context (carries ctor-level type params, e.g. U
+	// whose body should be type-checked in the definition phase. `FuncType`
+	// is the "callable" signature used for overload resolution (return
+	// type = Self instance type); `ParamBindings` was produced by
+	// `inferFuncParams` over the constructor's callable params (i.e.
+	// `Fn.Params[1:]`, skipping the leading `mut self`); `Ctx` is the
+	// constructor's own scope (carrying ctor-level type params, e.g. `U`
 	// in `constructor<U>(...)`) so the body-checking phase can resolve
 	// names introduced only by the constructor signature.
-	ctorCtxForDecl := make(map[ast.Decl]Context)
+	type ctorInfo struct {
+		Ctor          *ast.ConstructorElem
+		FuncType      *type_system.FuncType
+		ParamBindings map[string]*type_system.Binding
+		Ctx           Context
+	}
+	ctorInfoForDecl := make(map[ast.Decl]*ctorInfo)
 
 	// Track declarations that have been processed in the placeholder phase.
 	// This is needed because classes and enums have both type and value binding keys,
@@ -693,7 +696,29 @@ func (c *Checker) InferComponent(
 						declCtx, ctor, typeParams, retType, provenance,
 					)
 					errors = slices.Concat(errors, sigErrors)
-					ctorCtxForDecl[decl] = ctorCtx
+					// In-body constructor params are scoped to the
+					// constructor body only — they must NOT leak into
+					// method/getter/setter scopes (which see fields via
+					// `self.<field>`). Stash them on `ctorInfoForDecl`.
+					// paramBindingsForDecl is populated from
+					// `decl.Params` (the primary-ctor head) below so the
+					// legacy shorthand-field path keeps working in mixed
+					// (erroring) cases without nil-deref'ing.
+					ctorInfoForDecl[decl] = &ctorInfo{
+						Ctor:          ctor,
+						FuncType:      funcType,
+						ParamBindings: paramBindings,
+						Ctx:           ctorCtx,
+					}
+					// TODO(class-ctor Phase 4): drop this primary-ctor
+					// inference once `class Foo(...)` syntax is removed.
+					// It only exists so the legacy shorthand-field path
+					// has a non-nil `paramBindingsForDecl` entry in the
+					// (already-erroring) mixed-form case.
+					primaryParams, primaryBindings, primaryErrors := c.inferFuncParams(declCtx, decl.Params)
+					_ = primaryParams
+					errors = slices.Concat(errors, primaryErrors)
+					paramBindingsForDecl[decl] = primaryBindings
 				} else {
 					params, legacyBindings, legacyParamErrors := c.inferFuncParams(declCtx, decl.Params)
 					errors = slices.Concat(errors, legacyParamErrors)
@@ -705,24 +730,6 @@ func (c *Checker) InferComponent(
 						retType,
 						type_system.NewNeverType(nil),
 					)
-				}
-				if len(inBodyCtors) > 0 {
-					// In-body constructor params are scoped to the
-					// constructor body only — they must NOT leak into
-					// method/getter/setter scopes (which see fields via
-					// `self.<field>`). Stash them in the ctor-specific
-					// maps. paramBindingsForDecl is populated from
-					// `decl.Params` (the primary-ctor head) below so the
-					// legacy shorthand-field path keeps working in mixed
-					// (erroring) cases without nil-deref'ing.
-					inBodyCtorForDecl[decl] = inBodyCtors[0]
-					ctorFuncTypeForDecl[decl] = funcType
-					ctorParamBindingsForDecl[decl] = paramBindings
-					primaryParams, primaryBindings, primaryErrors := c.inferFuncParams(declCtx, decl.Params)
-					_ = primaryParams
-					errors = slices.Concat(errors, primaryErrors)
-					paramBindingsForDecl[decl] = primaryBindings
-				} else {
 					paramBindingsForDecl[decl] = paramBindings
 				}
 
@@ -1448,19 +1455,19 @@ func (c *Checker) InferComponent(
 						// Phase 5 (multi-constructor support): when multiple
 						// in-body constructors are allowed, this branch must
 						// iterate over every `ConstructorElem` in `decl.Body`
-						// rather than short-circuiting on `inBodyCtorForDecl`,
+						// rather than short-circuiting on `ctorInfoForDecl`,
 						// so each ctor's body gets type-checked independently.
-						ctor := inBodyCtorForDecl[decl]
-						if ctor != bodyElem {
+						info := ctorInfoForDecl[decl]
+						if info == nil || info.Ctor != bodyElem {
 							continue
 						}
-						ctorFuncType := ctorFuncTypeForDecl[decl]
+						ctorFuncType := info.FuncType
 						if ctorFuncType == nil {
 							continue
 						}
 
 						ctorBindings := make(map[string]*type_system.Binding)
-						maps.Copy(ctorBindings, ctorParamBindingsForDecl[decl])
+						maps.Copy(ctorBindings, info.ParamBindings)
 
 						// `self` is always `mut Self` inside a constructor,
 						// regardless of the class's default mutability — the
@@ -1498,10 +1505,6 @@ func (c *Checker) InferComponent(
 						// `ctorFuncType` (used for overload resolution) keeps
 						// `Return = Self` via `retType`. Throws inferred by
 						// the body are copied back.
-						astCallableParams := bodyElem.Fn.Params
-						if len(astCallableParams) > 0 {
-							astCallableParams = astCallableParams[1:]
-						}
 						bodyFuncType := type_system.NewFuncType(
 							ctorFuncType.Provenance(),
 							ctorFuncType.TypeParams,
@@ -1510,16 +1513,16 @@ func (c *Checker) InferComponent(
 							ctorFuncType.Throws,
 						)
 						// Constructor-local type params (e.g. `<U>` on the
-						// `constructor` itself) live in `ctorCtxForDecl`,
-						// not in `bodyCtx`. Use that scope when present
-						// so the body can resolve them.
+						// `constructor` itself) live on `info.Ctx`, not on
+						// `bodyCtx`. Use that scope when present so the
+						// body can resolve them.
 						ctorBodyCtx := bodyCtx
-						if cc, ok := ctorCtxForDecl[decl]; ok {
-							ctorBodyCtx = cc.WithNewScope()
+						if info.Ctx.Scope != nil {
+							ctorBodyCtx = info.Ctx.WithNewScope()
 						}
 						bodyErrors := c.inferFuncBodyWithFuncSigType(
 							ctorBodyCtx, bodyFuncType, ctorBindings,
-							astCallableParams, bodyElem.Fn.Body, false,
+							ctorCallableParams(bodyElem), bodyElem.Fn.Body, false,
 						)
 						errors = slices.Concat(errors, bodyErrors)
 						ctorFuncType.Throws = bodyFuncType.Throws

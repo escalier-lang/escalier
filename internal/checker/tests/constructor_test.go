@@ -293,18 +293,112 @@ func TestConstructorParamsDoNotLeakIntoMethods(t *testing.T) {
 		}
 	`
 	errs := inferModuleErrors(t, input)
-	// Expect an error: 'secret' is not in scope inside leak().
+	// Expect an UnknownIdentifierError naming 'secret' inside leak().
 	found := false
 	for _, e := range errs {
-		if strings.Contains(e.Message(), "secret") {
+		uie, ok := e.(*UnknownIdentifierError)
+		if ok && uie.Ident != nil && uie.Ident.Name == "secret" {
 			found = true
 			break
 		}
 	}
 	require.Truef(t, found,
-		"expected an unresolved-name error for 'secret' inside method; got: %v",
+		"expected an UnknownIdentifierError for 'secret' inside method; got: %v",
 		formatErrs(errs))
 }
+
+// TestConstructorInferredTypes is a table-based suite that pins the
+// rendered type of every relevant value binding for a few constructor
+// scenarios:
+//
+//   - ThrowingConstructor: a class whose constructor declares a
+//     `throws` clause, and a wrapper `fn ... throws _` that calls it.
+//     Pins both the class's own (constructor-bearing) type and the
+//     wrapper's inferred signature. Documents whether caller-side
+//     throws propagation through `Foo(x)` is in place.
+//   - SynthesizedGenericClass: a generic class with no in-body
+//     constructor, exercising the synthesizer + generic instantiation
+//     at the call site.
+func TestConstructorInferredTypes(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected map[string]string
+	}{
+		"ThrowingConstructor": {
+			input: `
+				class Foo {
+					x:: number,
+					constructor(mut self, x: number) throws string {
+						if x < 0 {
+							throw "negative"
+						}
+						self.x = x
+					}
+				}
+				val make = fn (x: number) -> _ throws _ {
+					return Foo(x)
+				}
+			`,
+			expected: map[string]string{
+				// `Foo`'s class binding renders as a constructor-bearing
+				// object type — the `throws string` clause is attached to
+				// the callable signature.
+				"Foo": "{new fn (x: number) -> Foo throws string}",
+				// Caller-side throws inference propagates the
+				// constructor's declared throws into `make`'s
+				// inferred signature.
+				"make": "fn (x: number) -> Foo throws string",
+			},
+		},
+		"SynthesizedGenericClass": {
+			input: `
+				class Box<T> {
+					value:: T,
+				}
+				val b = Box(42)
+				val s = Box("hi")
+			`,
+			expected: map[string]string{
+				"Box": "{new fn <T>(value: T) -> Box<T>}",
+				"b":   "Box<42>",
+				"s":   "Box<\"hi\">",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			errs := inferModuleErrors(t, test.input)
+			require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+
+			ns := mustInferAsModule(t, test.input)
+			actual := collectBindingTypes(ns)
+			for binding, want := range test.expected {
+				got, ok := actual[binding]
+				require.Truef(t, ok, "binding %q not found", binding)
+				assert.Equalf(t, want, got,
+					"unexpected inferred type for %q", binding)
+			}
+		})
+	}
+}
+
+// Note: optional-field syntax (`x?: T`) is in the §2.4 plan but isn't
+// yet plumbed through the AST, so the "only optional fields → Foo()"
+// case described in the plan can't be exercised at the source level
+// today. The closest current shape — an empty class — is already
+// covered by `TestSynthesizedConstructor/NoFields`.
+
+// Note on `mut self` / explicit-return-type validation: the surface
+// parser already rejects `constructor(self, ...)` /
+// `constructor(x: number)` / `constructor(...) -> T { ... }` at parse
+// time (see `internal/parser/decl.go`), so user-typed code never
+// reaches `validateConstructorSelf`. The checker-side validation
+// remains as defense-in-depth for synthesizers and other AST-building
+// code paths that bypass the parser. Exercising those paths requires
+// hand-built ASTs and is left to direct unit tests in the `checker`
+// package.
 
 // TestSubclassSynthesisIsNotAllowed verifies that a subclass without an
 // explicit constructor does NOT silently get a synthesized constructor

@@ -62,6 +62,40 @@ func TestThrowExpressionInference(t *testing.T) {
 			expectedThrows:  "\"explicit\"",
 			shouldHaveError: true, // Should error because "implicit" doesn't unify with "explicit"
 		},
+		"InheritsThrowsFromCalledFunction": {
+			input: `val raise = fn () -> undefined throws "boom" {
+				throw "boom"
+			}
+			val testFunc = fn () -> undefined throws _ {
+				raise()
+			}`,
+			expectedThrows:  "\"boom\"",
+			shouldHaveError: false,
+		},
+		"UnionsOwnThrowAndCalledFunctionThrows": {
+			input: `val raise = fn () -> undefined throws "from-callee" {
+				throw "from-callee"
+			}
+			val testFunc = fn (flag: boolean) -> undefined throws _ {
+				if flag {
+					throw "from-self"
+				}
+				raise()
+			}`,
+			expectedThrows:  "\"from-self\" | \"from-callee\"",
+			shouldHaveError: false,
+		},
+		"CalleeWithoutThrowsContributesNothing": {
+			input: `val pure = fn () -> number {
+				return 42
+			}
+			val testFunc = fn () -> number throws _ {
+				throw "self"
+				return pure()
+			}`,
+			expectedThrows:  "\"self\"",
+			shouldHaveError: false,
+		},
 	}
 
 	for name, test := range tests {

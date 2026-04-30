@@ -8,16 +8,66 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// ctorCallableParams returns the constructor's callable parameter list —
+// i.e. `Fn.Params` with the leading `mut self` receiver stripped. The
+// `mut self` parameter is not part of how callers invoke `Foo(...)` and
+// must not be passed to `inferFuncParams` or used to compute callable
+// arity.
+func ctorCallableParams(ctor *ast.ConstructorElem) []*ast.Param {
+	if len(ctor.Fn.Params) == 0 {
+		return nil
+	}
+	return ctor.Fn.Params[1:]
+}
+
+// validateConstructorSelf checks that the constructor's first parameter
+// is a well-formed `mut self` receiver and that the constructor does not
+// declare an explicit return type. Returns the diagnostics; an empty
+// slice means the signature shape is acceptable.
+//
+// `MutSelf` is the parser's truth source for whether the user wrote
+// `self` / `mut self`: nil means absent, false means `self`, true means
+// `mut self`. The first `ast.Param` (when present) carries the `self`
+// pattern itself, which is where a stray type annotation would live.
+func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
+	errors := []Error{}
+	span := ctor.Span()
+
+	switch {
+	case ctor.MutSelf == nil:
+		errors = append(errors, MissingMutSelfParameterError{Reason: "missing", span: span})
+	case !*ctor.MutSelf:
+		errors = append(errors, MissingMutSelfParameterError{Reason: "not-mut", span: span})
+	}
+
+	// Only check the type annotation when `self` is actually present —
+	// otherwise the "missing" error above already covers the case and a
+	// secondary "has-type-annotation" would be noise.
+	if ctor.MutSelf != nil && len(ctor.Fn.Params) > 0 {
+		selfParam := ctor.Fn.Params[0]
+		if selfParam.TypeAnn != nil {
+			errors = append(errors, MissingMutSelfParameterError{Reason: "has-type-annotation", span: selfParam.Span()})
+		}
+	}
+
+	if ctor.Fn.Return != nil {
+		errors = append(errors, ConstructorWithReturnTypeError{span: ctor.Fn.Return.Span()})
+	}
+
+	return errors
+}
+
 // inferConstructorSig builds the callable `FuncType` for an in-body
 // `ConstructorElem`. It mirrors `inferFuncSig` but bakes in the three
 // places a constructor signature diverges from a normal function:
 //
 //  1. The return type is fixed to the class's instance type (`retType`,
 //     which already carries the class's type arguments). User-written
-//     return annotations are intentionally ignored here; Phase 3+ will
-//     reject them with `ConstructorWithReturnTypeError`.
+//     return annotations are rejected via `ConstructorWithReturnTypeError`
+//     (see `validateConstructorSelf`) and ignored when building the type.
 //  2. The leading `mut self` parameter is stripped from the callable
-//     arity — it is not part of how callers invoke `Foo(...)`.
+//     arity — it is not part of how callers invoke `Foo(...)`. The
+//     receiver shape is validated via `validateConstructorSelf`.
 //  3. Class-level type params remain in scope (via the caller's
 //     `declCtx`) and are prepended to any constructor-level type params
 //     so the resulting `FuncType` quantifies over both.
@@ -33,7 +83,7 @@ func (c *Checker) inferConstructorSig(
 	retType type_system.Type,
 	prov provenance.Provenance,
 ) (*type_system.FuncType, Context, map[string]*type_system.Binding, []Error) {
-	errors := []Error{}
+	errors := validateConstructorSelf(ctor)
 	ctorCtx := declCtx.WithNewScope()
 
 	// (3) Constructor-level type params (rare) are layered on top of the
@@ -48,11 +98,7 @@ func (c *Checker) inferConstructorSig(
 
 	// (2) Skip Fn.Params[0] — the `mut self` receiver — when computing
 	// the callable arity.
-	astCallableParams := ctor.Fn.Params
-	if len(astCallableParams) > 0 {
-		astCallableParams = astCallableParams[1:]
-	}
-	params, paramBindings, paramErrors := c.inferFuncParams(ctorCtx, astCallableParams)
+	params, paramBindings, paramErrors := c.inferFuncParams(ctorCtx, ctorCallableParams(ctor))
 	errors = slices.Concat(errors, paramErrors)
 
 	var throwsType type_system.Type = type_system.NewNeverType(nil)
@@ -63,7 +109,8 @@ func (c *Checker) inferConstructorSig(
 	}
 
 	// (1) Return type is `Self`-with-type-args, supplied by the caller
-	// as `retType`.
+	// as `retType`. Any user-written `Fn.Return` was already reported by
+	// `validateConstructorSelf`.
 	funcType := type_system.NewFuncType(
 		prov,
 		ctorTypeParams,
@@ -138,7 +185,9 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 
 		// Determine the field's user-facing name. Computed-key fields
 		// are unconditionally rejected for synthesis — see the function
-		// docstring.
+		// docstring. All other ObjKey kinds are exhaustive at the AST
+		// level (`*ast.IdentExpr`, `*ast.StrLit`, `*ast.ComputedKey`),
+		// so any new variant should be handled explicitly here.
 		var fieldName string
 		switch k := field.Name.(type) {
 		case *ast.IdentExpr:
@@ -153,7 +202,7 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 			errors = append(errors, ComputedKeyFieldRequiresConstructorError{span: fieldSpan})
 			return nil, errors
 		default:
-			continue
+			panic("synthesizeConstructorElem: unexpected ObjKey variant")
 		}
 
 		// Build `self.<field> = <rhs>`. For default-bearing fields the

@@ -428,11 +428,19 @@ func (v *ReturnVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 type ThrowVisitor struct {
 	ast.DefaultVisitor
 	Throws []*ast.ThrowExpr
+	// Calls collects every reachable call expression so the enclosing
+	// function inherits each callee's declared `throws` type (call
+	// throws propagate to the caller exactly the same way `throw expr`
+	// statements do — both bubble up to the nearest catch).
+	Calls []*ast.CallExpr
 }
 
 func (v *ThrowVisitor) EnterExpr(expr ast.Expr) bool {
 	if throwExpr, ok := expr.(*ast.ThrowExpr); ok {
 		v.Throws = append(v.Throws, throwExpr)
+	}
+	if callExpr, ok := expr.(*ast.CallExpr); ok {
+		v.Calls = append(v.Calls, callExpr)
 	}
 
 	// Don't visit function expressions since we don't want to include any
@@ -473,6 +481,7 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 	throwVisitor := &ThrowVisitor{
 		DefaultVisitor: ast.DefaultVisitor{},
 		Throws:         []*ast.ThrowExpr{},
+		Calls:          []*ast.CallExpr{},
 	}
 
 	for _, stmt := range block.Stmts {
@@ -488,12 +497,83 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 		}
 	}
 
+	// Collect throws declared by each reachable callee. A `throws T`
+	// clause on the callee surfaces in the caller exactly like a
+	// `throw …` statement: both propagate to the nearest catch (or to
+	// the caller's signature when uncaught). Try/catch scoping is
+	// already handled by the visitor's EnterExpr filter above.
+	for _, callExpr := range throwVisitor.Calls {
+		if t := calleeThrowsType(callExpr); t != nil {
+			throwTypes = append(throwTypes, t)
+		}
+	}
+
 	// Collect throw types from await expressions (collected during inference)
 	if ctx.AwaitThrowTypes != nil {
 		throwTypes = append(throwTypes, *ctx.AwaitThrowTypes...)
 	}
 
 	return throwTypes, errors
+}
+
+// calleeThrowsType returns the `Throws` type declared on the callee of
+// `callExpr`, walking through the type-system shapes a callee can take:
+//
+//   - FuncType: the throws clause is right there.
+//   - ObjectType: a class instance / constructor object — the throws
+//     lives on the embedded ConstructorElem or CallableElem.
+//   - TypeRefType: alias to one of the above; resolve via the
+//     attached `TypeAlias`.
+//   - IntersectionType (overload set): we can't pick a specific
+//     overload here without re-running resolution, so we return nil
+//     and let the user annotate explicitly if needed.
+//
+// Returns nil when no throws can be attributed (callee has no
+// throws clause, or its throws type is `never`).
+func calleeThrowsType(callExpr *ast.CallExpr) type_system.Type {
+	if callExpr.Callee == nil {
+		return nil
+	}
+	calleeType := callExpr.Callee.InferredType()
+	if calleeType == nil {
+		return nil
+	}
+	fn := extractCalleeFuncType(type_system.Prune(calleeType))
+	if fn == nil || fn.Throws == nil {
+		return nil
+	}
+	if _, isNever := type_system.Prune(fn.Throws).(*type_system.NeverType); isNever {
+		return nil
+	}
+	return fn.Throws
+}
+
+// extractCalleeFuncType pulls the underlying `*FuncType` out of any of
+// the type shapes a call expression can be invoked against. Returns nil
+// when the type isn't directly callable (e.g. an unresolved type
+// variable, intersection-of-overloads, or non-callable object type).
+func extractCalleeFuncType(t type_system.Type) *type_system.FuncType {
+	switch tt := t.(type) {
+	case *type_system.FuncType:
+		return tt
+	case *type_system.ObjectType:
+		for _, elem := range tt.Elems {
+			switch e := elem.(type) {
+			case *type_system.ConstructorElem:
+				return e.Fn
+			case *type_system.CallableElem:
+				return e.Fn
+			}
+		}
+		return nil
+	case *type_system.TypeRefType:
+		if tt.TypeAlias == nil {
+			return nil
+		}
+		return extractCalleeFuncType(type_system.Prune(tt.TypeAlias.Type))
+	default:
+		return nil
+	}
 }
 
 // closeOpenParams closes all open object types on function parameters after

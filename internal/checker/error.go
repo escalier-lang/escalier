@@ -738,9 +738,7 @@ func (e MixedConstructorFormsError) Message() string {
 
 // MissingMutSelfParameterError is reported when a constructor's `mut self`
 // parameter is missing, not declared `mut`, has a type annotation, or is
-// not the first parameter. Defined here for use in a later phase that
-// validates user-written constructor signatures (Phase 3+); not yet
-// instantiated.
+// not the first parameter.
 type MissingMutSelfParameterError struct {
 	Reason string // "missing", "not-mut", "has-type-annotation", "not-first"
 	span   ast.Span
@@ -777,9 +775,7 @@ func (e MultipleConstructorsNotYetSupportedError) Message() string {
 
 // ConstructorWithReturnTypeError is reported when a user-written
 // constructor declares an explicit return type (the return type is
-// implicitly `Self`). Defined here for use in a later phase that
-// validates user-written constructor signatures (Phase 3+); not yet
-// instantiated.
+// implicitly `Self`).
 type ConstructorWithReturnTypeError struct {
 	span ast.Span
 }
