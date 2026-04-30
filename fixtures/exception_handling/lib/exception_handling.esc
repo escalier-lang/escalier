@@ -18,7 +18,7 @@ export val throwingFunc = fn(condition: boolean) -> _ throws _ {
     }
 }
 
-export val multipleThrows = fn (flag: boolean) -> undefined throws _ {
+export val multipleThrows = fn (flag: boolean) -> never throws _ {
     if flag {
         throw "string error"
     } else {
@@ -26,8 +26,8 @@ export val multipleThrows = fn (flag: boolean) -> undefined throws _ {
     }
 }
 
-export val nestedThrows = fn () -> undefined throws _ {
-    val innerFunc = fn () -> undefined throws _ {
+export val nestedThrows = fn () -> never throws _ {
+    val innerFunc = fn () -> never throws _ {
         throw "inner error"
     }
     throw "outer error"

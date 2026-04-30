@@ -102,11 +102,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				val bar = "bar"
 				val baz = "baz"
-				class Foo() {
+				class Foo {
 					[bar]: 42:number,
 					[baz](self) {
 						return self[bar]
-					}
+					},
+					constructor(mut self) {}
 				}
 
 				val foo = Foo()

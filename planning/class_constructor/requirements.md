@@ -472,76 +472,6 @@ class Wrapper<T> {
 }
 ```
 
-## Inheritance and `super`
-
-When a class extends a base class, every constructor of the subclass must
-call `super(...)` exactly once before any read of `self` or any
-`self.foo = …` write that targets a base-class field. The `super(...)` call
-selects an overload of the base class's constructor using the usual
-overload-resolution rules.
-
-```ts
-class Animal {
-    name: string,
-
-    constructor(mut self, name: string) {
-        self.name = name
-    },
-}
-
-class Dog extends Animal {
-    breed: string,
-
-    constructor(mut self, name: string, breed: string) {
-        super(name)            // initializes self.name
-        self.breed = breed
-    },
-}
-```
-
-Definite-assignment integrates with `super(...)`:
-
-- Before the `super(...)` call, only writes to subclass-declared fields are
-  permitted; reads of `self`, calls through `self`, and aliasing `self` are
-  forbidden (the base-class portion is not yet initialized).
-- After `super(...)` returns, base-class fields are treated as initialized
-  for the rest of the constructor body.
-- Every reachable exit path of a subclass constructor must have called
-  `super(...)` exactly once.
-- A `throw` before `super(...)` propagates as usual; no instance escapes.
-- A `throw` after `super(...)` returns also propagates; the
-  partially-constructed instance is unreferenced and will be collected.
-  Escalier does not run base-class destructors on construction failure.
-
-If the base class's constructors are all `private` (Future Work), the
-subclass cannot reach `super(...)` from outside the base's module, and
-the `extends` declaration is rejected at class-definition time as
-`PrivateBaseConstructorError`.
-
-A subclass that does not declare any constructor synthesizes one
-according to the following rules:
-
-1. If the base class has a single constructor and the subclass has no
-   non-optional fields of its own, the synthesized constructor takes the
-   base constructor's parameters and forwards them via `super(...)`.
-2. If the base class has a single constructor and the subclass has
-   non-optional fields, the synthesized constructor takes the base
-   constructor's parameters **followed by** parameters for the
-   subclass's non-optional fields (in declaration order); it calls
-   `super(...)` with the leading slice and assigns each remaining
-   parameter to its same-named subclass field.
-3. If the base class has multiple constructors, no constructor is
-   synthesized — the subclass must write its constructors explicitly
-   (`SubclassNeedsExplicitConstructorError`). Picking one base overload
-   for synthesis would be arbitrary.
-4. If every base-class constructor is `private` (Future Work), the
-   subclass cannot extend it externally; that case is rejected at
-   class-definition time.
-
-A subclass with computed-key non-optional fields cannot be synthesized
-for the same reason as in §"Synthesized Constructor"
-(`ComputedKeyFieldRequiresConstructorError`).
-
 ## Throwing Constructors
 
 A constructor may `throw` (the keyword `constructor` allows an optional
@@ -557,12 +487,6 @@ whatever its body throws, like any function). Semantics:
   required field is initialized — see §"Definite-Assignment Rule"), so
   there is no way for the caller to acquire a partially-initialized
   instance.
-- In a subclass constructor, a throw before `super(...)` returns
-  propagates as usual; a throw after `super(...)` returns also
-  propagates and the base-class instance is discarded along with the
-  rest. Whatever finalization the base class needs must be expressed
-  through ordinary `try`/`finally` or disposal patterns — Escalier does
-  not run base-class destructors implicitly on construction failure.
 - Throwing constructors are the recommended way to express
   factory-only patterns whose validation cannot be expressed in the
   type system (e.g. mirroring `document.createElement(tag)`).
@@ -701,6 +625,85 @@ Dropping `data` simplifies the class header and the contextual-keyword
 logic in the parser.
 
 ## Future Work
+
+### Inheritance and `super`
+
+Subclassing (`class Dog extends Animal { ... }`) and the `super(...)`
+call form are deferred. When this lands, the design should be:
+
+When a class extends a base class, every constructor of the subclass must
+call `super(...)` exactly once before any read of `self` or any
+`self.foo = …` write that targets a base-class field. The `super(...)` call
+selects an overload of the base class's constructor using the usual
+overload-resolution rules.
+
+```ts
+class Animal {
+    name: string,
+
+    constructor(mut self, name: string) {
+        self.name = name
+    },
+}
+
+class Dog extends Animal {
+    breed: string,
+
+    constructor(mut self, name: string, breed: string) {
+        super(name)            // initializes self.name
+        self.breed = breed
+    },
+}
+```
+
+Definite-assignment integrates with `super(...)`:
+
+- Before the `super(...)` call, only writes to subclass-declared fields are
+  permitted; reads of `self`, calls through `self`, and aliasing `self` are
+  forbidden (the base-class portion is not yet initialized).
+- After `super(...)` returns, base-class fields are treated as initialized
+  for the rest of the constructor body.
+- Every reachable exit path of a subclass constructor must have called
+  `super(...)` exactly once.
+- A `throw` before `super(...)` propagates as usual; no instance escapes.
+- A `throw` after `super(...)` returns also propagates; the
+  partially-constructed instance is unreferenced and will be collected.
+  Escalier does not run base-class destructors on construction failure.
+
+If the base class's constructors are all `private` (see below), the
+subclass cannot reach `super(...)` from outside the base's module, and
+the `extends` declaration is rejected at class-definition time as
+`PrivateBaseConstructorError`.
+
+A subclass that does not declare any constructor synthesizes one
+according to the following rules:
+
+1. If the base class has a single constructor and the subclass has no
+   non-optional fields of its own, the synthesized constructor takes the
+   base constructor's parameters and forwards them via `super(...)`.
+2. If the base class has a single constructor and the subclass has
+   non-optional fields, the synthesized constructor takes the base
+   constructor's parameters **followed by** parameters for the
+   subclass's non-optional fields (in declaration order); it calls
+   `super(...)` with the leading slice and assigns each remaining
+   parameter to its same-named subclass field.
+3. If the base class has multiple constructors, no constructor is
+   synthesized — the subclass must write its constructors explicitly
+   (`SubclassNeedsExplicitConstructorError`). Picking one base overload
+   for synthesis would be arbitrary.
+4. If every base-class constructor is `private`, the subclass cannot
+   extend it externally; that case is rejected at class-definition time.
+
+A subclass with computed-key non-optional fields cannot be synthesized
+for the same reason as in §"Synthesized Constructor"
+(`ComputedKeyFieldRequiresConstructorError`).
+
+In a subclass constructor, a throw before `super(...)` returns
+propagates as usual; a throw after `super(...)` returns also propagates
+and the base-class instance is discarded along with the rest. Whatever
+finalization the base class needs must be expressed through ordinary
+`try`/`finally` or disposal patterns — Escalier does not run base-class
+destructors implicitly on construction failure.
 
 ### Private Constructors
 
