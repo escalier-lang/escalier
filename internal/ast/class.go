@@ -129,6 +129,30 @@ func (g *GetterElem) Accept(v Visitor) {
 }
 func (g *GetterElem) Span() Span { return g.Span_ }
 
+// ConstructorElem represents an explicit `constructor(...) { ... }` block
+// inside a class body. The constructor's return type is always `Self` and
+// is not part of the AST; `Fn.Return` must remain nil. `Fn.Throws` may be
+// non-nil — constructors may declare a `throws` clause. The first parameter
+// in `Fn.Params` is the user-written `self` (with `MutSelf` recording its
+// mutability flag); remaining params are the constructor's callable params.
+type ConstructorElem struct {
+	Fn      *FuncExpr
+	MutSelf *bool // true if `self` was declared `mut self`; nil if absent
+	Private bool  // reserved for future "Private Constructors" work
+	Span_   Span
+}
+
+func (*ConstructorElem) IsClassElem() {}
+func (c *ConstructorElem) Accept(v Visitor) {
+	if v.EnterClassElem(c) {
+		if c.Fn != nil {
+			c.Fn.Accept(v)
+		}
+	}
+	v.ExitClassElem(c)
+}
+func (c *ConstructorElem) Span() Span { return c.Span_ }
+
 // SetterElem represents a setter in a class.
 type SetterElem struct {
 	Name    ObjKey

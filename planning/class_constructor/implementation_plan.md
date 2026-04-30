@@ -17,7 +17,7 @@ cut-over, on top of the new single-constructor codepath.
 
 | Phase | Description                                                                                | Depends On | Status |
 |------:|--------------------------------------------------------------------------------------------|------------|--------|
-|     1 | AST + parser: introduce `ConstructorElem` (additive, alongside primary ctor)               | —          |        |
+|     1 | AST + parser: introduce `ConstructorElem` (additive, alongside primary ctor)               | —          | Done   |
 |     2 | Type checker: derive class constructor type from `ConstructorElem` (single)                | 1          |        |
 |     3 | Definite-assignment analysis on constructor bodies (incl. `super(...)`)                    | 2          |        |
 |     4 | Combined cut-over: single-ctor codegen, fixture migration, removal of primary ctor + `data` | 3          |        |
@@ -66,6 +66,12 @@ Notes:
 - `Fn.ThrowsType` may be non-nil — constructors may declare a `throws`
   clause (or have one inferred from the body) to express factory-only
   patterns. See requirements §"Throwing Constructors".
+- `Fn.Params[0]` is the user-written `mut self` parameter (see
+  requirements §"Core Concept"). Like methods, constructors require a
+  `self` parameter to be visible in the source — the parser enforces
+  that the first param is `mut self` (no type annotation, `mut`
+  modifier present) and reports a parse error otherwise. The remaining
+  `Fn.Params[1:]` are the constructor's callable parameters.
 - Reuse `FuncExpr` rather than inventing a new struct so visitors and
   rename/liveness passes pick up the body for free.
 
@@ -97,6 +103,17 @@ if token.Type == Identifier && token.Value == "constructor" {
     p.lexer.consume()
     params := parseDelimSeq(p, CloseParen, Comma, p.param)
     p.expect(CloseParen, AlwaysConsume)
+
+    // Enforce that the first parameter is `mut self` (no type annotation,
+    // `mut` modifier present). Methods already require an explicit `self`
+    // first parameter; constructors mirror that, but with `mut` since the
+    // body must be allowed to assign fields. Errors:
+    //   - missing `self` first parameter → "constructors must declare `mut self` as their first parameter"
+    //   - `self` without `mut` → "the `self` parameter of a constructor must be declared `mut self`"
+    //   - `mut self` with a type annotation → "the `mut self` parameter cannot have a type annotation"
+    //   - `self` appearing in a non-leading position → existing rule
+    // The `mut self` parameter is preserved in `Fn.Params[0]`; it is the
+    // single source of truth for the body checker (Phase 2.3).
 
     // Reject explicit return type on constructor (the return type is
     // always `Self`). A `throws` clause IS allowed — constructors may
@@ -149,13 +166,18 @@ existing primary-constructor behavior.
 existing structure)
 
 Add parser tests covering:
-- A class body with one `constructor(...)` block, no params.
-- A class body with one `constructor(x: number)` block.
-- A class body with two `constructor` blocks.
-- A `constructor` with type params.
+- A class body with one `constructor(mut self)` block, no extra params.
+- A class body with one `constructor(mut self, x: number)` block.
+- A class body with two `constructor` blocks (each with `mut self`).
+- A `constructor<U>(mut self, value: U)` with type params.
 - Rejection of `static constructor`, `async constructor`, `get constructor`,
-  `constructor() -> T`. (A `throws` clause is allowed — see
+  `constructor(mut self) -> T`. (A `throws` clause is allowed — see
   §"Throwing Constructors" in requirements.md.)
+- Rejection of `constructor()` (missing `mut self`),
+  `constructor(self, x: number)` (must be `mut`),
+  `constructor(mut self: Self, x: number)` (no type annotation allowed
+  on `self`), and `constructor(x: number, mut self)` (`self` must be
+  first).
 - A class with both primary-constructor params and an in-body
   `constructor` block — parses cleanly here; Phase 2 rejects it in the
   checker.
@@ -211,12 +233,13 @@ In the definition phase (around `infer_module.go:1007`), add a
 
 ```go
 case *ast.ConstructorElem:
-    // Build a function context for the constructor. `self` is in scope as
-    // a `mut Self` reference (modeled by injecting a synthetic `mut self`
-    // as the first parameter — see requirements §"Core Concept"). The
-    // constructor params follow. Return type is `Self` (implicit). The
-    // throws type comes from the optional `throws` clause; constructors
-    // may throw.
+    // Build a function context for the constructor. The user-written
+    // `mut self` parameter (Fn.Params[0]) is the source of truth for
+    // self's binding — its `mut` flag and type (`Self`, supplied by the
+    // checker since the source carries no annotation) drive the scope
+    // setup below. Constructor params follow at Fn.Params[1:]. Return
+    // type is `Self` (implicit). The throws type comes from the optional
+    // `throws` clause; constructors may throw.
     ctorCtx := bodyCtx.WithNewScope()
     ctorCtx.Scope.setValue("self", &type_system.Binding{
         Source:     &ast.NodeProvenance{Node: bodyElem},
@@ -244,23 +267,24 @@ throws inference for free — no separate codepath. When the
 inferred throws set must be assignable to the declared one, same as
 any other function.
 
-**Modeling `mut self`.** Two complementary mechanisms model the same
-thing — they are not separate features:
+**Modeling `mut self`.** The user writes `mut self` as the literal first
+parameter of the constructor (see requirements §"Core Concept"). That
+single source flows through both abstractions:
 
-1. *At the type-system level*, the constructor's `FuncType` carries
-   `mut self: Self` as its first formal parameter (mirroring how method
-   types carry a self parameter). It is **not** part of the
-   constructor's callable arity — overload resolution and codegen-emitted
-   dispatch ignore it.
-2. *At the body-checker level*, the constructor's scope has a `self`
-   binding of type `mut Self` injected before the body is checked (the
-   `ctorCtx.Scope.setValue("self", …)` call in the sketch above).
-
-These are the same `self`, exposed through the two abstractions the
-type checker and body checker each consume. Make sure the two are
-constructed from the same source (e.g. the body-checker reads `self`
-out of the `FuncType`'s leading parameter rather than synthesizing it
-independently) so they cannot drift.
+1. *AST level*: `ConstructorElem.Fn.Params[0]` is the user-written
+   `mut self` `FuncParam`. Methods already follow the same convention.
+2. *Type-system level*: the constructor's `FuncType` carries
+   `mut self: Self` as its first formal parameter (lifted from
+   `Fn.Params[0]`, with the type filled in by the checker as `Self`
+   since the source intentionally has no annotation there). It is
+   **not** part of the constructor's callable arity — overload
+   resolution and codegen-emitted dispatch ignore it.
+3. *Body-checker level*: the constructor's scope has a `self` binding of
+   type `mut Self` injected before the body is checked (the
+   `ctorCtx.Scope.setValue("self", …)` call in the sketch above). This
+   binding is built from `Fn.Params[0]` / the leading `FuncType`
+   parameter, not synthesized independently, so the three views cannot
+   drift.
 
 ### 2.4 Field Initialization Semantics
 
@@ -290,6 +314,9 @@ Add to `internal/checker/error.go`:
 
 - `MixedConstructorFormsError` — class has both primary-ctor params and
   an in-body `constructor`.
+- `MissingMutSelfParameterError` — constructor's first parameter is not
+  `mut self` (also covers `self`-without-`mut` and `self`-with-type-annotation).
+  Reported by the parser, mirrored here for safety.
 - `MultipleConstructorsNotYetSupportedError` — temporary, removed in
   Phase 5.
 - `ConstructorWithReturnTypeError` — caught in the parser, but mirrored
@@ -323,11 +350,13 @@ checker synthesizes one from the instance fields, per requirements
 Implementation:
 
 1. Walk `decl.Body` in source order.
-2. For each `*ast.FieldElem` that is non-static and not optional: append a
+2. Synthesize `Fn.Params[0]` as a `mut self` parameter (same shape as
+   user-written constructors) so downstream passes see a uniform AST.
+3. For each `*ast.FieldElem` that is non-static and not optional: append a
    synthetic param to the constructor signature with the same name and
    type as the field.
-3. Skip static fields and optional fields.
-4. If any qualifying field has a computed key (`*ast.ComputedKey`), report
+4. Skip static fields and optional fields.
+5. If any qualifying field has a computed key (`*ast.ComputedKey`), report
    `ComputedKeyFieldRequiresConstructorError` and bail — the user must
    write a constructor explicitly.
 
@@ -610,11 +639,14 @@ classes with more than one in-body `constructor`.
 
 For Phase 4, every class has exactly one in-body constructor. Emit it
 as a plain JS `constructor(x, y, …)` body — no rest-parameter wrapper,
-no dispatch logic. The constructor's body statements translate directly,
-with `self.x` rewriting to `this.x` (mirrors method-body codegen).
+no dispatch logic. **Skip `Fn.Params[0]` (the `mut self` parameter)**
+when emitting the JS parameter list: it is implicit at the call site
+and bound as `this` inside the JS body. Body statements translate
+directly, with `self.x` rewriting to `this.x` (mirrors method-body
+codegen).
 
-If a parameter has a default value (`constructor(x: T = expr)`), emit
-the standard JS default-parameter form: `constructor(x = expr) { … }`.
+If a parameter has a default value (`constructor(mut self, x: T = expr)`),
+emit the standard JS default-parameter form: `constructor(x = expr) { … }`.
 (Field-level defaults no longer exist — see requirements
 §"Field Declarations".)
 
@@ -654,7 +686,7 @@ class Foo {
     p2: T2,
     other: string,
 
-    constructor(p1: T1, p2: T2) {
+    constructor(mut self, p1: T1, p2: T2) {
         self.p1 = p1
         self.p2 = p2
         self.other = "foo"
@@ -775,8 +807,9 @@ is no implicit "match field to same-named param" anymore.
 parser/checker tests.
 
 Codegen:
-- Single-arity dispatch: `class Point { constructor(x, y) { … } }` →
-  `constructor(x, y) { … }`.
+- Single-arity dispatch: `class Point { constructor(mut self, x, y) { … } }` →
+  `constructor(x, y) { … }` (note `mut self` is dropped from the JS
+  parameter list; only the callable params remain).
 - Class with no constructor and required fields → emitted JS reflects
   the synthesized constructor (params in field declaration order,
   sequence of `this.fi = fi` writes).
@@ -902,7 +935,9 @@ type ParamGuard struct {
 }
 ```
 
-Algorithm, per arity bucket of size > 1:
+Algorithm, per arity bucket of size > 1 (parameter indexing here refers
+to the **callable** params, i.e. `Fn.Params[1:]` — the leading `mut self`
+is excluded throughout dispatch analysis):
 
 1. For each pair of constructors `(A, B)` in the bucket, find the
    smallest parameter index `i` where `A.Params[i].Type` and
@@ -988,10 +1023,11 @@ Per-ctor guard:
 
 Per-ctor body:
 - Bind each formal parameter to its index: `const x = args[0]; const y = args[1];`
-- If a parameter has a default value (`constructor(x: T = expr)`), emit
-  the standard JS default-parameter form when binding: `const x = args[0]
-  !== undefined ? args[0] : expr;`. (Field-level defaults no longer exist
-  — see requirements §"Field Declarations".)
+- If a parameter has a default value (`constructor(mut self, x: T = expr)`),
+  emit the standard JS default-parameter form when binding: `const x = args[0]
+  !== undefined ? args[0] : expr;`. The `mut self` parameter is skipped
+  (it is `this` in the emitted body). (Field-level defaults no longer
+  exist — see requirements §"Field Declarations".)
 - Inline the constructor's body statements, with `self.x` rewriting to
   `this.x` (mirrors method-body codegen).
 - Emit `return;` at the end.

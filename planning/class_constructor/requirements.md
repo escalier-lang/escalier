@@ -53,11 +53,15 @@ blocks**. Constructors look like methods, but:
 - They have no return type — they always return an instance of `Self`. The
   returned instance is immutable by default; the caller opts in to a
   mutable instance with `mut` at the binding site (`val mut p = Point(1, 2)`).
-- They do not take `self` in their callable parameter list, but inside the
-  type-checker the constructor's first parameter is `mut self` (the
-  instance under construction). This first parameter is invisible at call
-  sites — it does not contribute to the constructor's callable arity — and
-  exists so the body uniformly treats `self` as a `mut Self` reference.
+- They take `mut self` as their **first parameter**, just like methods take
+  `self`. Writing `mut self` explicitly makes the source of `self` visible
+  in the source — symmetric with method signatures. The `mut self`
+  parameter is **not** part of the constructor's callable arity: at call
+  sites it is implicit (`Point(1, 2)`, not `Point(self, 1, 2)`), and the
+  type checker enforces that it must appear, must be the first parameter,
+  must be `mut`, and must have no type annotation (its type is always
+  `Self`). Omitting it, declaring it as `self` instead of `mut self`, or
+  putting it anywhere other than first is a parse error.
 - They run a **definite-assignment** check: every non-optional field must be
   initialized before any read of `self` or any call through `self`.
 - They may `throw`. A constructor that throws never produces an instance;
@@ -70,7 +74,7 @@ class Point {
     y: number,
     color: Color,
 
-    constructor(x: number, y: number, color: Color = [255, 0, 0]) {
+    constructor(mut self, x: number, y: number, color: Color = [255, 0, 0]) {
         self.x = x
         self.y = y
         self.color = color
@@ -102,7 +106,7 @@ Notes:
   on only some control-flow branches); the definite-assignment rule
   does not apply to them.
 - Defaults for non-optional fields are expressed as constructor parameter
-  defaults (e.g. `constructor(x: number = 0) { self.x = x }`) rather than
+  defaults (e.g. `constructor(mut self, x: number = 0) { self.x = x }`) rather than
   on the field declaration. This keeps a single place that initializes a
   field and avoids questions about ordering between field-level defaults
   and constructor body statements.
@@ -125,7 +129,7 @@ plain identifier. Specifically:
 - `obj.constructor` (property access on an arbitrary value) is unchanged
   and reads the property called `constructor`.
 - `constructor` is a legal parameter name inside a constructor's
-  parameter list (e.g. `constructor(constructor: string) { ... }`),
+  parameter list (e.g. `constructor(mut self, constructor: string) { ... }`),
   though discouraged for readability.
 - `constructor` is a legal local variable name inside any function or
   method body.
@@ -160,19 +164,19 @@ class User {
     age: number,
     isActive: boolean,
 
-    constructor(name: string, age: number, isActive: boolean = true) {
+    constructor(mut self, name: string, age: number, isActive: boolean = true) {
         self.name = name             // OK
         self.age = age               // OK
         self.isActive = isActive     // OK
     },
 
-    constructor(name: string) {
+    constructor(mut self, name: string) {
         self.name = name
         // ERROR: self.age and self.isActive must be initialized before
         // constructor returns
     },
 
-    constructor(raw: {name: string, age: number}) {
+    constructor(mut self, raw: {name: string, age: number}) {
         log(self.name)               // ERROR: self.name is not initialized
         self.name = raw.name
         self.age = raw.age
@@ -195,7 +199,7 @@ class Email {
     local: string,
     domain: string,
 
-    constructor(raw: string) {
+    constructor(mut self, raw: string) {
         val parts = raw.split("@")     // OK — does not touch self
         if parts.length != 2 {
             throw Error(`bad email: ${raw}`)
@@ -225,7 +229,7 @@ class Range {
     lo: number,
     hi: number,
 
-    constructor(a: number, b: number) {
+    constructor(mut self, a: number, b: number) {
         if a < b {
             self.lo = a
             self.hi = b
@@ -236,7 +240,7 @@ class Range {
         // both fields initialized on both branches → OK
     },
 
-    constructor(a: number, b: number, swap: boolean) {
+    constructor(mut self, a: number, b: number, swap: boolean) {
         if swap {
             self.lo = b
             self.hi = a
@@ -265,7 +269,7 @@ class Point {
     x: number,
     y: number,
 
-    constructor(x: number, y: number) {
+    constructor(mut self, x: number, y: number) {
         self.x = x
         self.y = y
     },
@@ -296,7 +300,7 @@ class User {
     age: number,
     isActive: boolean,
 
-    constructor(name: string) {
+    constructor(mut self, name: string) {
         self.name = name
         self.age = 0
         self.isActive = true
@@ -315,15 +319,15 @@ class Vec3 {
     y: number,
     z: number,
 
-    constructor(x: number, y: number, z: number) {
+    constructor(mut self, x: number, y: number, z: number) {
         self.x = x; self.y = y; self.z = z
     },
 
-    constructor(xyz: number) {
+    constructor(mut self, xyz: number) {
         self.x = xyz; self.y = xyz; self.z = xyz
     },
 
-    constructor(p: {x: number, y: number, z: number}) {
+    constructor(mut self, p: {x: number, y: number, z: number}) {
         self.x = p.x; self.y = p.y; self.z = p.z
     },
 }
@@ -354,9 +358,9 @@ overloads.
 ### Rest Parameters
 
 A constructor may declare a rest parameter as its last formal:
-`constructor(first: T, ...rest: U[])`. Overload resolution treats a rest
+`constructor(mut self, first: T, ...rest: U[])`. Overload resolution treats a rest
 constructor as matching any argument count `≥ N - 1` where `N` is the
-declared parameter count. For runtime dispatch (see §"Codegen —
+declared parameter count (excluding the leading `mut self`). For runtime dispatch (see §"Codegen —
 Constructor Merging"):
 
 - Rest constructors live in their own dispatch bucket and are tried
@@ -433,7 +437,7 @@ into the body:
 class Box<T> {
     value: T,
 
-    constructor(value: T) {
+    constructor(mut self, value: T) {
         self.value = value
     },
 
@@ -446,7 +450,7 @@ class Pair<T: number, U: string> {
     first: T,
     second: U,
 
-    constructor(first: T, second: U) {
+    constructor(mut self, first: T, second: U) {
         self.first = first
         self.second = second
     },
@@ -460,9 +464,9 @@ appear in its signature:
 class Wrapper<T> {
     value: T,
 
-    constructor(value: T) { self.value = value },
+    constructor(mut self, value: T) { self.value = value },
 
-    constructor<U>(other: Wrapper<U>, convert: (U) -> T) {
+    constructor<U>(mut self, other: Wrapper<U>, convert: (U) -> T) {
         self.value = convert(other.value)
     },
 }
@@ -480,7 +484,7 @@ overload-resolution rules.
 class Animal {
     name: string,
 
-    constructor(name: string) {
+    constructor(mut self, name: string) {
         self.name = name
     },
 }
@@ -488,7 +492,7 @@ class Animal {
 class Dog extends Animal {
     breed: string,
 
-    constructor(name: string, breed: string) {
+    constructor(mut self, name: string, breed: string) {
         super(name)            // initializes self.name
         self.breed = breed
     },
@@ -568,7 +572,7 @@ class Email {
     local: string,
     domain: string,
 
-    constructor(raw: string) throws ParseError {
+    constructor(mut self, raw: string) throws ParseError {
         val parts = raw.split("@")
         if parts.length != 2 {
             throw ParseError(`bad email: ${raw}`)
@@ -624,7 +628,7 @@ class User {
     age: number,
     isActive: boolean,
 
-    constructor(name: string, age: number, isActive: boolean = true) {
+    constructor(mut self, name: string, age: number, isActive: boolean = true) {
         self.name = name
         self.age = age
         self.isActive = isActive
@@ -707,7 +711,7 @@ modifier on the constructor block:
 class DBConnection {
     conn: SQLConnection,
 
-    private constructor(conn: SQLConnection) {
+    private constructor(mut self, conn: SQLConnection) {
         self.conn = conn
     },
 
@@ -737,12 +741,12 @@ class Point {
     x: number,
     y: number,
 
-    constructor(x: number, y: number) {
+    constructor(mut self, x: number, y: number) {
         self.x = x
         self.y = y
     },
 
-    constructor(p: {x: number, y: number}) {
+    constructor(mut self, p: {x: number, y: number}) {
         Self(p.x, p.y)               // delegates; self is now fully initialized
         log(`built point at ${self.x},${self.y}`)
     },

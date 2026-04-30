@@ -447,6 +447,65 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
+		"ClassWithConstructorNoParams": {
+			input: `
+				class Foo {
+					constructor(mut self) {}
+				}
+			`,
+		},
+		"ClassWithConstructorOneParam": {
+			input: `
+				class Foo {
+					x: number,
+					constructor(mut self, x: number) {
+						self.x = x
+					},
+				}
+			`,
+		},
+		"ClassWithTwoConstructors": {
+			input: `
+				class Foo {
+					x: number,
+					constructor(mut self, x: number) {
+						self.x = x
+					},
+					constructor(mut self) {
+						self.x = 0
+					},
+				}
+			`,
+		},
+		"ClassWithGenericConstructor": {
+			input: `
+				class Box<T> {
+					value: T,
+					constructor<U>(mut self, value: U) {
+						self.value = value
+					},
+				}
+			`,
+		},
+		"ClassWithConstructorThrows": {
+			input: `
+				class Email {
+					addr: string,
+					constructor(mut self, addr: string) throws ValidationError {
+						self.addr = addr
+					},
+				}
+			`,
+		},
+		"ClassWithBothPrimaryAndInBodyConstructor": {
+			input: `
+				class Foo(x: number) {
+					constructor(mut self, x: number) {
+						self.x = x
+					},
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {
@@ -472,6 +531,102 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			}
 			assert.Len(t, errors, 0)
+		})
+	}
+}
+
+func TestClassConstructorErrors(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"StaticConstructor": {
+			input: `
+				class Foo {
+					static constructor(mut self) {}
+				}
+			`,
+		},
+		"AsyncConstructor": {
+			input: `
+				class Foo {
+					async constructor(mut self) {}
+				}
+			`,
+		},
+		"GetConstructor": {
+			input: `
+				class Foo {
+					get constructor(mut self) {}
+				}
+			`,
+		},
+		"ConstructorWithReturnType": {
+			input: `
+				class Foo {
+					constructor(mut self) -> number {}
+				}
+			`,
+		},
+		"ConstructorMissingSelf": {
+			input: `
+				class Foo {
+					constructor() {}
+				}
+			`,
+		},
+		"ConstructorSelfNotMut": {
+			input: `
+				class Foo {
+					constructor(self) {}
+				}
+			`,
+		},
+		"ConstructorSelfWithTypeAnnotation": {
+			input: `
+				class Foo {
+					constructor(mut self: Self, x: number) {
+						self.x = x
+					}
+				}
+			`,
+		},
+		"ConstructorSelfNotFirst": {
+			input: `
+				class Foo {
+					constructor(x: number, mut self) {
+						self.x = x
+					}
+				}
+			`,
+		},
+		"ConstructorMissingOpenParen": {
+			input: `
+				class Foo {
+					constructor {}
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+
+			for _, stmt := range module.Stmts {
+				snaps.MatchSnapshot(t, stmt)
+			}
+			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
+			snaps.MatchSnapshot(t, errors)
 		})
 	}
 }

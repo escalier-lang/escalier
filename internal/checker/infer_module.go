@@ -536,6 +536,9 @@ func (c *Checker) InferComponent(
 								type_system.NewSetterElem(*key, funcType),
 							)
 						}
+					case *ast.ConstructorElem:
+						// TODO(class-ctor Phase 2): wire up explicit constructor.
+						_ = elem
 					default:
 						errors = append(errors, &UnimplementedError{
 							message: fmt.Sprintf("Unsupported class element type: %T", elem),
@@ -1300,6 +1303,10 @@ func (c *Checker) InferComponent(
 								errors = slices.Concat(errors, bodyErrors)
 							}
 						}
+
+					case *ast.ConstructorElem:
+						// TODO(class-ctor Phase 2): check the constructor body.
+						_ = bodyElem
 					}
 				}
 			}
