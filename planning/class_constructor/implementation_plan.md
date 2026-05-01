@@ -10,7 +10,7 @@ Phase 4 is a single combined cut-over that lands the new codegen for
 single-constructor classes, migrates all fixtures, and removes the old
 primary-constructor syntax and `data` modifier together — the codegen
 change and fixture migration cannot land separately without breaking the
-in-tree fixtures. Multi-constructor support (Phase 5) lands after the
+in-tree fixtures. Multi-constructor support (Phase 6) lands after the
 cut-over, on top of the new single-constructor codepath.
 
 ## Phase Overview
@@ -21,8 +21,9 @@ cut-over, on top of the new single-constructor codepath.
 |     2 | Type checker: derive class constructor type from `ConstructorElem` (single)                | 1          | Done   |
 |     3 | Definite-assignment analysis on constructor bodies                                         | 2          |        |
 |     4 | Combined cut-over: single-ctor codegen, fixture migration, removal of primary ctor + `data` | 3          |        |
-|     5 | Multiple constructors: overload resolution, runtime discriminator analysis, merged codegen | 4          |        |
-|     6 | Polish: error messages, diagnostics, documentation                                         | 5          |        |
+|     5 | Optional fields (`x?: T`): parser/AST plumbing, exclude from definite-assignment, enable all-optional synthesized ctor | 4          |        |
+|     6 | Multiple constructors: overload resolution, runtime discriminator analysis, merged codegen | 5          |        |
+|     7 | Polish: error messages, diagnostics, documentation                                         | 6          |        |
 
 The "Future Work" sections of the requirements doc (inheritance and
 `super(...)`, private constructors, `Self(...)` delegation) are
@@ -192,7 +193,7 @@ the class's constructor signature from it instead of from `ClassDecl.Params`.
 Mixing both forms in the same class is an error.
 
 This phase intentionally restricts to **one** in-body constructor; multiple
-constructors come in Phase 5.
+constructors come in Phase 6.
 
 ### 2.1 Where the Current Logic Lives
 
@@ -304,7 +305,7 @@ constructor: `FieldDefaultNotAllowedError` fires on a `FieldElem` whose
 in-body `ConstructorElem`**. Defaults belong on constructor parameters
 (`constructor(x: T = 0)`) or as explicit assignments inside the
 constructor body. Classes that still use primary-constructor syntax
-retain the legacy behavior until Phase 5 removes them.
+retain the legacy behavior until Phase 6 removes them.
 
 For each remaining FieldElem the type comes straight from the annotation
 and the obligation to assign it shifts to the constructor (Phase 3
@@ -321,7 +322,7 @@ Add to `internal/checker/error.go`:
   `mut self` (also covers `self`-without-`mut` and `self`-with-type-annotation).
   Reported by the parser, mirrored here for safety.
 - `MultipleConstructorsNotYetSupportedError` — temporary, removed in
-  Phase 5.
+  Phase 6.
 - `ConstructorWithReturnTypeError` — caught in the parser, but mirrored
   here for safety.
 - `PrivateConstructorNotYetSupportedError` — for `private constructor`
@@ -342,7 +343,7 @@ Add to `internal/checker/error.go`:
 - A class with both `class Foo(x: number) { ... }` and
   `constructor(...)` in the body → `MixedConstructorFormsError`.
 - A class with two in-body `constructor`s →
-  `MultipleConstructorsNotYetSupportedError` (placeholder for Phase 5).
+  `MultipleConstructorsNotYetSupportedError` (placeholder for Phase 6).
 
 ### 2.7 Synthesized Constructor
 
@@ -587,7 +588,7 @@ without breaking the in-tree fixtures: the codegen change drops the
 old field-init logic that primary-ctor classes depended on, the fixture
 migration removes those classes, and the parser/AST/checker cleanup
 removes the dead syntax that the migrated fixtures no longer use.
-Multi-constructor support is deferred to Phase 5; until then,
+Multi-constructor support is deferred to Phase 6; until then,
 `MultipleConstructorsNotYetSupportedError` from Phase 2 still rejects
 classes with more than one in-body `constructor`.
 
@@ -732,7 +733,7 @@ operates on `decl.Params`. Refactor to operate on the (single)
 `ConstructorElem` in `decl.Body`, per requirements §"Lifetimes": the
 constructor allocates fresh `LifetimeVar`s for its reference-typed
 parameters that are stored as fields, and stamps the result onto its
-own `FuncType`. Phase 5 extends this to multiple constructors.
+own `FuncType`. Phase 6 extends this to multiple constructors.
 
 Also remove any branch that consults `decl.Data` to override default
 mutability. Per requirements §"Default Mutability", constructor calls
@@ -782,7 +783,66 @@ milestone for single-constructor classes.
 
 ---
 
-## Phase 5: Multiple Constructors
+## Phase 5: Optional Fields
+
+**Goal:** Add surface support for optional field declarations (`x?: T`)
+and exclude them from the definite-assignment requirement, enabling the
+"all-optional class → synthesized `Foo()`" case described in §2.4 / §2.7.
+
+This phase is intentionally deferred until after the Phase 4 cut-over.
+Rationale:
+
+- The Phase 3 definite-assignment rule treats fields-that-would-be-optional
+  as required. This is a conservative over-approximation — it produces
+  false positives, never unsoundness — so nothing in Phases 3 or 4
+  depends on optional-field semantics being plumbed through.
+- Phase 4 already churns every in-tree fixture during the syntax cut-over;
+  introducing `?:` mid-cut-over would double the diff and complicate
+  review. Landing it after Phase 4 means editing one stable AST/fixture
+  shape, not two.
+- The blocker is parser/AST work on `*ast.FieldElem`, which is unrelated
+  to the constructor cut-over.
+
+### 5.1 AST + Parser
+
+- Add an `Optional bool` (or equivalent) to `*ast.FieldElem`.
+- Recognize `x?: T` in the field-declaration grammar. The `?` binds to
+  the field name, before the type annotation.
+- Reject `x?: T = expr` (an optional field with a default initializer is
+  redundant — the default already makes the field non-optional in
+  practice). Or accept it and treat the field as non-optional; pick one
+  and document it.
+
+### 5.2 Definite-Assignment
+
+- In `requiredFieldNames` ([internal/checker/init_check.go:489](../../internal/checker/init_check.go#L489)),
+  skip fields with `Optional == true` alongside the existing
+  static / default-initializer / computed-key exclusions.
+- Remove the "Optional fields are not yet plumbed through the AST"
+  comment block above that function.
+
+### 5.3 Synthesized Constructor
+
+- Update the §2.7 synthesizer so a class whose required-field set is
+  empty (which now includes the all-optional case) gets a `Foo()`
+  constructor.
+
+### 5.4 Tests
+
+- Un-stub the §2.4 / §2.7 test cases noted in
+  [internal/checker/tests/constructor_test.go:382](../../internal/checker/tests/constructor_test.go#L382):
+  - Class with only optional fields → callable as `Foo()`.
+  - Mixed required + optional fields → constructor must initialize all
+    required fields; optional fields may be left unassigned.
+  - Optional field assigned in some branches and not others → no
+    diagnostic.
+- Codegen: confirm an unassigned optional field is left as `undefined`
+  (no explicit `this.x = undefined` emission required, but field must
+  not be `delete`-d either).
+
+---
+
+## Phase 6: Multiple Constructors
 
 **Goal:** Allow multiple `ConstructorElem`s per class. At the type level,
 the class's constructor becomes an overload set. Same-arity overloads are
@@ -791,7 +851,7 @@ declared constructors into a single JS `constructor` body that dispatches
 at runtime. This phase removes
 `MultipleConstructorsNotYetSupportedError` introduced in Phase 2.
 
-### 5.1 Type Representation
+### 6.1 Type Representation
 
 `type_system.ConstructorElem` (`internal/type_system/types.go:1010`)
 currently wraps a single `*FuncType`. Two options:
@@ -810,7 +870,7 @@ types"), and avoids leaking constructor-specific machinery into the general
 function type. Overload resolution sees an `[]ConstructorElem` and picks
 one.
 
-### 5.2 Definition-Phase Wiring
+### 6.2 Definition-Phase Wiring
 
 Update Phase 2's branch (`infer_module.go`) to:
 
@@ -824,7 +884,7 @@ state across constructors. Remove
 `MultipleConstructorsNotYetSupportedError` from the checker; the bound
 in Phase 2 only existed because dispatch wasn't ready.
 
-### 5.3 Lifetime Refactor
+### 6.3 Lifetime Refactor
 
 `InferConstructorLifetimes` was refactored in Phase 4.6 to operate on
 the single `ConstructorElem` in `decl.Body`. Extend it now to handle
@@ -835,7 +895,7 @@ fields, and stamps the result onto its own `FuncType`. Two constructors
 that store references into the same field do not share lifetime
 variables.
 
-### 5.4 Overload Resolution at Call Sites
+### 6.4 Overload Resolution at Call Sites
 
 Constructor overload resolution reuses the function-overload resolver.
 The call-site checker for `ClassName(args...)`:
@@ -848,7 +908,7 @@ The call-site checker for `ClassName(args...)`:
    **not** declaration-order-sensitive (modules have no well-defined
    order across files, so privileging "first" would be unsound).
 
-### 5.4a Overload-Set Validity at Class Definition
+### 6.4a Overload-Set Validity at Class Definition
 
 In addition to the call-site rule, the class itself is rejected at
 definition time if any pair of its constructors are mutually assignable
@@ -862,7 +922,7 @@ fully concrete.
 - The check is the same routine used for top-level function overloads;
   factor it out if not already shared.
 
-### 5.5 Runtime-Distinguishability Analysis
+### 6.5 Runtime-Distinguishability Analysis
 
 For codegen (5.7) to emit dispatch logic, same-arity constructors need
 a discriminator. Compute this once per class during the placeholder
@@ -928,7 +988,7 @@ where any count `>= m2` is matched by both) likewise need a non-rest
 discriminator on a leading parameter, otherwise
 `AmbiguousConstructorOverloadsError` at definition time.
 
-### 5.6 New Errors
+### 6.6 New Errors
 
 - `ConstructorsNotRuntimeDistinguishableError{CtorA, CtorB}` — same arity,
   no discriminator found.
@@ -942,7 +1002,7 @@ discriminator on a leading parameter, otherwise
 Also: remove `MultipleConstructorsNotYetSupportedError` (introduced in
 Phase 2.5), since multi-constructor classes are now supported.
 
-### 5.7 Codegen — Merged Dispatch
+### 6.7 Codegen — Merged Dispatch
 
 Replace the single-constructor codegen from Phase 4.7 with a merged
 constructor that takes a JS rest parameter (`...args`) and dispatches
@@ -998,7 +1058,7 @@ The dispatch plan from 5.5 is attached to the class's
 use), so codegen reads it from the type, not by re-walking the AST.
 Mirror, don't invent.
 
-### 5.8 Tests
+### 6.8 Tests
 
 **Files:** `internal/checker/tests/multi_constructor_test.go` (new) and
 `internal/codegen/multi_ctor_test.go` (new).
@@ -1033,11 +1093,11 @@ Codegen:
 
 ---
 
-## Phase 6: Polish
+## Phase 7: Polish
 
 **Goal:** Take care of the loose ends.
 
-### 6.1 Error Messages
+### 7.1 Error Messages
 
 Every error introduced in Phases 2–5 deserves a high-quality message:
 - `FieldNotInitializedError` should list every missing field at the exit
@@ -1049,7 +1109,7 @@ Every error introduced in Phases 2–5 deserves a high-quality message:
   conflicting constructors with a help message describing what makes
   signatures distinguishable.
 
-### 6.2 Documentation
+### 7.2 Documentation
 
 - Update [docs/](../../docs/) — the language reference must describe
   explicit constructors and the definite-assignment rule.
@@ -1058,7 +1118,7 @@ Every error introduced in Phases 2–5 deserves a high-quality message:
 - Update any slides / examples in `slides/` that show the primary-ctor
   syntax.
 
-### 6.3 LSP / Editor Affordances
+### 7.3 LSP / Editor Affordances
 
 - Constructor body completion: inside a constructor, the autocomplete
   should suggest `self.<uninitialized-field> = ` first.
@@ -1090,4 +1150,4 @@ These are nice-to-haves; ship the breaking change first.
   ergonomic gaps are clear.
 - **Same-arity dispatch error UX and explicit discriminator annotations**
   (the open question in requirements §"Open Questions"): leave as the
-  rough error from Phase 5 for now.
+  rough error from Phase 6 for now.

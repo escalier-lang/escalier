@@ -1,11 +1,11 @@
 package checker
 
 import (
-	"maps"
 	"sort"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // ---------------------------------------------------------------------------
@@ -100,25 +100,11 @@ func joinNames(names []string) string {
 // initState carries a flow-sensitive snapshot of which non-optional fields
 // are definitely initialized at a given program point.
 type initState struct {
-	initialized map[string]bool
+	initialized set.Set[string]
 }
 
 func (s initState) clone() initState {
-	out := make(map[string]bool, len(s.initialized))
-	maps.Copy(out, s.initialized)
-	return initState{initialized: out}
-}
-
-// intersect computes the set of fields initialized in *both* a and b.
-// Used at branch joins.
-func intersectInit(a, b map[string]bool) map[string]bool {
-	out := map[string]bool{}
-	for k := range a {
-		if b[k] {
-			out[k] = true
-		}
-	}
-	return out
+	return initState{initialized: s.initialized.Clone()}
 }
 
 // initFlow is the result of analyzing a sub-tree. `terminated` means the
@@ -130,7 +116,7 @@ type initFlow struct {
 }
 
 type initChecker struct {
-	requireAll map[string]bool
+	requireAll set.Set[string]
 	errors     []Error
 }
 
@@ -148,24 +134,15 @@ func (c *Checker) checkConstructorInit(
 	if ctor.Fn == nil || ctor.Fn.Body == nil {
 		return nil
 	}
-	require := make(map[string]bool, len(requiredFields))
-	for _, name := range requiredFields {
-		require[name] = true
-	}
-	ic := &initChecker{requireAll: require}
-	flow := ic.walkBlock(ctor.Fn.Body, initState{initialized: map[string]bool{}})
+	ic := &initChecker{requireAll: set.FromSlice(requiredFields)}
+	flow := ic.walkBlock(ctor.Fn.Body, initState{initialized: set.NewSet[string]()})
 
 	if !flow.terminated {
 		// Compute which required fields are still missing at the
 		// fall-through exit and report a single error listing all of
 		// them. The diagnostic is anchored at the block's open brace
 		// (its span start).
-		missing := []string{}
-		for name := range ic.requireAll {
-			if !flow.state.initialized[name] {
-				missing = append(missing, name)
-			}
-		}
+		missing := ic.requireAll.Difference(flow.state.initialized).ToSlice()
 		if len(missing) > 0 {
 			sort.Strings(missing)
 			ic.errors = append(ic.errors, FieldNotInitializedError{
@@ -246,7 +223,7 @@ func (ic *initChecker) walkExpr(expr ast.Expr, st initState) initFlow {
 					return flow
 				}
 				out := flow.state.clone()
-				out.initialized[mem.Prop.Name] = true
+				out.initialized.Add(mem.Prop.Name)
 				return initFlow{state: out}
 			}
 			if idx, ok := e.Left.(*ast.IndexExpr); ok && isSelfIdent(idx.Object) {
@@ -283,7 +260,7 @@ func (ic *initChecker) walkExpr(expr ast.Expr, st initState) initFlow {
 
 	case *ast.MemberExpr:
 		if isSelfIdent(e.Object) {
-			if !st.initialized[e.Prop.Name] && ic.requireAll[e.Prop.Name] {
+			if !st.initialized.Contains(e.Prop.Name) && ic.requireAll.Contains(e.Prop.Name) {
 				ic.errors = append(ic.errors, ReadBeforeInitError{
 					FieldName: e.Prop.Name,
 					span:      e.Span(),
@@ -414,6 +391,10 @@ func (ic *initChecker) walkExpr(expr ast.Expr, st initState) initFlow {
 		return initFlow{state: st}
 
 	case *ast.TupleExpr:
+		// Unlike the single-arg AwaitExpr/UnaryExpr cases above, a tuple has
+		// multiple sibling sub-expressions threaded through `st`. If one
+		// terminates, the rest are unreachable, so propagate early instead
+		// of walking dead code with a stale state.
 		for _, el := range e.Elems {
 			f := ic.walkExpr(el, st)
 			st = f.state
@@ -459,28 +440,18 @@ func joinFlows(a, b initFlow) initFlow {
 	case b.terminated:
 		return a
 	default:
-		return initFlow{state: initState{initialized: intersectInit(a.state.initialized, b.state.initialized)}}
+		return initFlow{state: initState{initialized: a.state.initialized.Intersection(b.state.initialized)}}
 	}
 }
 
 // allRequiredInit reports whether every required field is in the
 // initialized set.
 func (ic *initChecker) allRequiredInit(st initState) bool {
-	for name := range ic.requireAll {
-		if !st.initialized[name] {
-			return false
-		}
-	}
-	return true
+	return ic.requireAll.IsSubset(st.initialized)
 }
 
 func (ic *initChecker) missing(st initState) []string {
-	out := []string{}
-	for name := range ic.requireAll {
-		if !st.initialized[name] {
-			out = append(out, name)
-		}
-	}
+	out := ic.requireAll.Difference(st.initialized).ToSlice()
 	sort.Strings(out)
 	return out
 }
