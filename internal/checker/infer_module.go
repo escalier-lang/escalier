@@ -1180,7 +1180,11 @@ func (c *Checker) InferComponent(
 
 						if prop != nil {
 							if bodyElem.Type != nil {
-								// TODO: handle type annotations
+								annType, annErrors := c.inferTypeAnn(bodyCtx, bodyElem.Type)
+								errors = slices.Concat(errors, annErrors)
+
+								unifyErrors := c.Unify(ctx, prop.Value, annType)
+								errors = slices.Concat(errors, unifyErrors)
 							} else {
 								if bodyElem.Value != nil {
 									initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)

@@ -603,11 +603,16 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 	//   - extends/super semantics are deferred to Future Work, so any
 	//     subclass test that expects synthesis to walk parent fields
 	//     fails until that lands.
-	//   - SimpleDecl exposes a synthesized-constructor return-type
-	//     interaction with destructuring that needs separate
-	//     investigation.
+	//   - SimpleDecl: object-pattern destructuring of a class instance
+	//     (`val {x, y} = p`) collapses `p`'s displayed type from the
+	//     named alias `Point` to the structural form `{x: number, y:
+	//     number}`. The `::` field-type annotations are now properly
+	//     enforced (type-check no longer reports a spurious error on
+	//     this case), but the destructure step still mutates how the
+	//     binding renders. Tracked separately from the FieldElem.Type
+	//     fix; not blocked by it.
 	skip := map[string]string{
-		"SimpleDecl":                            "synthesized-ctor + destructure interaction (Phase 4 follow-up)",
+		"SimpleDecl":                            "destructure of class instance collapses TypeRefType to structural form (Phase 4 follow-up)",
 		"ClassWithExtends":                      "extends/super deferred to Future Work",
 		"ClassWithExtendsAccessingParentMethods": "extends/super deferred to Future Work",
 		"ClassWithExtendsMultipleFields":        "extends/super deferred to Future Work",

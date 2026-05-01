@@ -2588,6 +2588,16 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			if e.Fn == nil {
 				continue
 			}
+			// Note: unlike the legacy primary-ctor path (which nils
+			// classParamNames before building the ctor body — see
+			// builder.go:836), this path leaves classParamNames as
+			// populated by the surrounding ClassDecl handling. That is
+			// safe today because every fixture has been migrated off
+			// the primary-ctor head (Phase 4.3), so `d.Params` is
+			// always empty here and classParamNames is an empty map.
+			// Phase 4.7 (Codegen Cleanup) will delete the
+			// classParamNames field entirely, eliminating the
+			// asymmetry.
 			// Strip Fn.Params[0] (the `mut self` receiver) — it is `this`
 			// at the JS level, not a callable parameter.
 			callableParams := e.Fn.Params
