@@ -132,6 +132,26 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 				}
 			}
 		`,
+		"MethodCallAfterAllInit": `
+			class Foo {
+				x:: number,
+				constructor(mut self, x: number) {
+					self.x = x
+					self.bump()
+				},
+				bump(self) -> number { return self.x }
+			}
+		`,
+		"PassSelfToExternalFnAfterAllInit": `
+			fn observe<T>(t: T) -> T { return t }
+			class Foo {
+				x:: number,
+				constructor(mut self, x: number) {
+					self.x = x
+					observe(self)
+				}
+			}
+		`,
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -251,6 +271,19 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				}
 			`,
 			expected: "Computed access on `self`",
+		},
+		"PassSelfToExternalFnBeforeInit": {
+			input: `
+				fn observe<T>(t: T) -> T { return t }
+				class Foo {
+					x:: number,
+					constructor(mut self, x: number) {
+						observe(self)
+						self.x = x
+					}
+				}
+			`,
+			expected: "alias",
 		},
 		"ReturnSelfBeforeInit": {
 			input: `
