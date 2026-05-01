@@ -394,13 +394,23 @@ func NewCall(callee Expr, args []Expr, optChain bool, span Span) *CallExpr {
 
 // ResolvedThrows returns the post-instantiation `Throws` type of the
 // function actually dispatched to at this call site — i.e. the picked
-// overload arm and/or the generic substitution. Returns nil when no
-// dispatch was resolved (error paths).
+// overload arm and/or the generic substitution.
+//
+//   - nil           → no dispatch was resolved (error paths)
+//   - NeverType     → resolved to a non-throwing arm (sentinel: the
+//                     callee declared no throws clause)
+//   - any other Type → the resolved throws type
+//
+// Callers that just want "what does this call throw" should treat
+// NeverType the same as nil; the distinction only matters for deciding
+// whether to fall back to walking the declaration-time callee type.
 func (e *CallExpr) ResolvedThrows() Type { return e.resolvedThrows }
 
 // SetResolvedThrows records the throws type from the function signature
 // that was selected and instantiated for this call. Should be set by
-// inferCallExpr at every successful dispatch site.
+// inferCallExpr at every successful dispatch site. Pass a NeverType
+// sentinel (not nil) to mark "resolved but non-throwing" so that
+// readers can distinguish that case from "unresolved".
 func (e *CallExpr) SetResolvedThrows(t Type) { e.resolvedThrows = t }
 
 func (e *CallExpr) Accept(v Visitor) {

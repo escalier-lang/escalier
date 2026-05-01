@@ -1195,8 +1195,14 @@ func (c *Checker) handleFuncCall(
 	// Record the post-instantiation throws type on the CallExpr so that
 	// later passes (e.g. throws inference) can read the substituted
 	// Throws type rather than re-deriving it from the declaration-time
-	// callee type.
-	expr.SetResolvedThrows(fnType.Throws)
+	// callee type. We substitute a NeverType sentinel when the callee
+	// has no throws clause so that ResolvedThrows() can distinguish
+	// "resolved to a non-throwing arm" from "unresolved" (nil).
+	resolvedThrows := fnType.Throws
+	if resolvedThrows == nil {
+		resolvedThrows = type_system.NewNeverType(nil)
+	}
+	expr.SetResolvedThrows(resolvedThrows)
 
 	// Find if the function has a rest parameter
 	var restIndex = -1

@@ -366,6 +366,16 @@ func TestCallSiteThrowsInference(t *testing.T) {
 			`,
 			expectedTestFunc: `fn (x: string) -> number throws "bad-string"`,
 		},
+		"OverloadResolutionPicksNonThrowingArm": {
+			input: `
+				declare fn parse(s: string) -> number throws "bad-string"
+				declare fn parse(n: number) -> number
+				val testFunc = fn (x: number) -> number throws _ {
+					return parse(x)
+				}
+			`,
+			expectedTestFunc: `fn (x: number) -> number`,
+		},
 		"GenericCallSubstitutesThrowsType": {
 			input: `
 				val raise = fn <T>(x: T) -> never throws T {

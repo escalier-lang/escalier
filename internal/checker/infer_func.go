@@ -645,12 +645,15 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 // Preferred path: read `ResolvedThrows`, which inferCallExpr records
 // after picking an overload arm and instantiating any generics. This
 // gives precise throws for both generic substitutions (T → "boom")
-// and overload resolution (only the matched arm's throws).
+// and overload resolution (only the matched arm's throws). A NeverType
+// here is a sentinel meaning "resolved to a non-throwing arm" — we
+// must NOT fall back to the declaration-time walk in that case, or
+// we'd re-introduce the overload-union bug for non-throwing arms.
 //
-// Fallback path: when no resolved signature is recorded (error paths,
-// or callee shapes inferCallExpr doesn't dispatch through), walk the
-// declaration-time callee type as a sound upper bound — for an
-// intersection that's the union of every arm's throws.
+// Fallback path: only when no dispatch was resolved (nil — error
+// paths, or callee shapes inferCallExpr doesn't dispatch through),
+// walk the declaration-time callee type as a sound upper bound — for
+// an intersection that's the union of every arm's throws.
 //
 // Returns nil when no throws can be attributed (callee has no throws
 // clause, or its throws type is `never`).
