@@ -109,7 +109,12 @@ func GetDeclContext(
 // placeholderPriority returns the processing priority for a binding key in the placeholder phase.
 // Lower numbers are processed first. This ensures correct ordering for cyclic
 // dependencies like Symbol/SymbolConstructor.
-func placeholderPriority(key dep_graph.BindingKey) int {
+//
+// VarDecl value-bindings are pushed to the end so that any class value-bindings
+// in the same component are registered first. This matters for VarDecls whose
+// pattern references a class as an extractor (e.g. `val C(msg) = subject`),
+// which need C's value binding in scope when `inferPattern` runs.
+func placeholderPriority(depGraph *dep_graph.DepGraph, key dep_graph.BindingKey) int {
 	name := key.Name()
 	isType := key.IsTypeBinding()
 
@@ -119,11 +124,22 @@ func placeholderPriority(key dep_graph.BindingKey) int {
 		return 0
 	}
 
-	// Priority 1: Value bindings (e.g., Symbol value, variable declarations)
-	// These create value bindings that can be used in computed keys.
-	// Note: ClassDecl creates both type AND value bindings, so processing a class's
-	// value binding will also define its type (via the processedDefinitions check).
+	// Priority 1: Non-VarDecl value bindings (classes, functions, etc.).
+	// These create value bindings that can be used in computed keys and in
+	// VarDecl patterns (extractors).
+	// Note: ClassDecl creates both type AND value bindings, so processing a
+	// class's value binding will also define its type (via the
+	// processedDefinitions check).
 	if !isType {
+		// Priority 3: VarDecl value bindings — defer until after class/function
+		// value bindings are registered so extractor patterns can resolve.
+		if depGraph != nil {
+			for _, decl := range depGraph.GetDecls(key) {
+				if _, isVarDecl := decl.(*ast.VarDecl); isVarDecl {
+					return 3
+				}
+			}
+		}
 		return 1
 	}
 
@@ -155,12 +171,12 @@ func definitionPriority(depGraph *dep_graph.DepGraph, key dep_graph.BindingKey) 
 // 1. *Constructor type bindings (define properties like toPrimitive)
 // 2. Value bindings (create value bindings referencing constructors)
 // 3. Instance type bindings (can now resolve computed keys like [Symbol.toPrimitive])
-func sortKeysForPlaceholders(keys []dep_graph.BindingKey) []dep_graph.BindingKey {
+func sortKeysForPlaceholders(depGraph *dep_graph.DepGraph, keys []dep_graph.BindingKey) []dep_graph.BindingKey {
 	sorted := make([]dep_graph.BindingKey, len(keys))
 	copy(sorted, keys)
 
 	slices.SortStableFunc(sorted, func(a, b dep_graph.BindingKey) int {
-		return placeholderPriority(a) - placeholderPriority(b)
+		return placeholderPriority(depGraph, a) - placeholderPriority(depGraph, b)
 	})
 
 	return sorted
@@ -191,7 +207,7 @@ func (c *Checker) InferComponent(
 	// This ensures *Constructor types are processed before their instance types,
 	// which is necessary for patterns like Symbol/SymbolConstructor where the
 	// instance type uses computed keys that reference values defined in the constructor.
-	sortedComponent := sortKeysForPlaceholders(component)
+	sortedComponent := sortKeysForPlaceholders(depGraph, component)
 
 	// TODO:
 	// - ensure there are no duplicate declarations in the module

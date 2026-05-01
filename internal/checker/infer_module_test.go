@@ -47,7 +47,7 @@ func TestPlaceholderPriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := placeholderPriority(tt.key)
+			actual := placeholderPriority(nil, tt.key)
 			assert.Equal(t, tt.expected, actual)
 		})
 	}
@@ -61,7 +61,7 @@ func TestSortKeysForPlaceholders(t *testing.T) {
 			dep_graph.TypeBindingKey("SymbolConstructor"), // Constructor - priority 0
 		}
 
-		sorted := sortKeysForPlaceholders(component)
+		sorted := sortKeysForPlaceholders(nil, component)
 
 		assert.Equal(t, dep_graph.TypeBindingKey("SymbolConstructor"), sorted[0],
 			"SymbolConstructor should be first")
@@ -78,7 +78,7 @@ func TestSortKeysForPlaceholders(t *testing.T) {
 			dep_graph.ValueBindingKey("baz"),
 		}
 
-		sorted := sortKeysForPlaceholders(component)
+		sorted := sortKeysForPlaceholders(nil, component)
 
 		// Values come before non-constructor types
 		assert.Equal(t, dep_graph.ValueBindingKey("baz"), sorted[0])
@@ -89,7 +89,7 @@ func TestSortKeysForPlaceholders(t *testing.T) {
 
 	t.Run("handles empty component", func(t *testing.T) {
 		component := []dep_graph.BindingKey{}
-		sorted := sortKeysForPlaceholders(component)
+		sorted := sortKeysForPlaceholders(nil, component)
 		assert.Empty(t, sorted)
 	})
 
@@ -97,7 +97,7 @@ func TestSortKeysForPlaceholders(t *testing.T) {
 		component := []dep_graph.BindingKey{
 			dep_graph.TypeBindingKey("Foo"),
 		}
-		sorted := sortKeysForPlaceholders(component)
+		sorted := sortKeysForPlaceholders(nil, component)
 		assert.Equal(t, component, sorted)
 	})
 
@@ -111,7 +111,7 @@ func TestSortKeysForPlaceholders(t *testing.T) {
 			dep_graph.ValueBindingKey("Map"),
 		}
 
-		sorted := sortKeysForPlaceholders(component)
+		sorted := sortKeysForPlaceholders(nil, component)
 
 		// All constructors first (priority 0)
 		assert.True(t, sorted[0] == dep_graph.TypeBindingKey("ArrayConstructor") ||

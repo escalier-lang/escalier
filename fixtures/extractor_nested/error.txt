@@ -1,5 +1,0 @@
-lib/nested.esc:21:15: C<'a, 'b> cannot be assigned to never
-
-21: val subject = C(D("hello"), E(5, 10))
-                  ^^^^^^^^^^^^^^^^^^^^^^^
-
