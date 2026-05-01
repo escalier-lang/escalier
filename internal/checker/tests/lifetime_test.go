@@ -503,7 +503,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 	}{
 		"ContainerStoresMutRef": {
 			input: `
-				class Container(item: mut {x: number}) { item, }
+				class Container { item: mut {x: number} }
 			`,
 			expectedTypes: map[string]string{
 				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> Container<'a>}",
@@ -511,7 +511,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 		},
 		"PointPrimitivesNoLifetime": {
 			input: `
-				class Point(x: number, y: number) { x, y, }
+				class Point { x: number, y: number }
 			`,
 			expectedTypes: map[string]string{
 				"Point": "{new fn (x: number, y: number) -> Point}",
@@ -519,167 +519,64 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 		},
 		"PairOfRefs": {
 			input: `
-				class Pair(first: mut {x: number}, second: mut {x: number}) {
-					first, second,
-				}
+				class Pair { first: mut {x: number}, second: mut {x: number} }
 			`,
 			expectedTypes: map[string]string{
 				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> Pair<'a, 'b>}",
 			},
 		},
-		"ShorthandWithDefaultStoresParam": {
-			input: `
-				class Container(item: mut {x: number}) {
-					item = {x: 0},
-				}
-			`,
-			expectedTypes: map[string]string{
-				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> Container<'a>}",
-			},
-		},
-		"FieldWithMemberAccessOfParam": {
-			// Phase 8.6 (#6): non-identity initializer that reaches into a
-			// param via a property access still captures the param.
-			input: `
-				class Wrap(p: mut {x: {y: number}}) {
-					inner: p.x,
-				}
-			`,
-			expectedTypes: map[string]string{
-				"Wrap": "{new fn <'a>(p: mut 'a {x: {y: number}}) -> Wrap<'a>}",
-			},
-		},
-		"FieldWithObjectLiteralCapturingParam": {
-			// Phase 8.6 (#5): nested object literal in a field initializer.
-			input: `
-				class Wrap(p: mut {x: number}) {
-					inner: {nested: p},
-				}
-			`,
-			expectedTypes: map[string]string{
-				"Wrap": "{new fn <'a>(p: mut 'a {x: number}) -> Wrap<'a>}",
-			},
-		},
-		"FieldWithTupleLiteralCapturingParam": {
-			// Phase 8.6 (#5): tuple/array literal in a field initializer.
-			input: `
-				class Wrap(p: mut {x: number}, q: mut {x: number}) {
-					pair: [p, q],
-				}
-			`,
-			expectedTypes: map[string]string{
-				"Wrap": "{new fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> Wrap<'a, 'b>}",
-			},
-		},
 		"MethodBodyShadowedParamNotCaptured": {
-			// Phase 8.6 (#4): a method with its own param named `p` must
-			// not be treated as capturing the constructor's `p` — the
-			// inner param shadows the outer name within the method body.
+			// A method with its own param named `p` must not be treated as
+			// capturing the constructor's `p` — the inner param shadows
+			// the outer name within the method body.
 			input: `
-				class C(p: mut {x: number}) {
-					foo(self, p: mut {x: number}) -> mut {x: number} { return p }
+				class C {
+					p: mut {x: number},
+					foo(self, p: mut {x: number}) -> mut {x: number} { return p },
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn (p: mut {x: number}) -> C}",
-			},
-			expectedInstanceType: map[string]string{
-				// `foo`'s own `p` parameter independently gets a
-				// fresh 'a (the method threads its arg to its
-				// return). The class type alias itself has zero
-				// lifetime params, confirming no capture from the
-				// constructor.
-				"C": "{foo<'a>(self, p: mut 'a {x: number}) -> mut 'a {x: number}}",
-			},
-			expectedInstanceLifetimes: map[string]int{
-				"C": 0,
-			},
-		},
-		"GetterCapturesConstructorParam": {
-			// Bug B5: getters and setters were not scanned for
-			// constructor-param captures (only FieldElem / MethodElem
-			// were). A getter whose body references a constructor
-			// param by name should force a lifetime onto the
-			// constructor param, just like a method body.
-			input: `
-				class C(p: mut {x: number}) {
-					get q -> mut {x: number} { return p }
-				}
-			`,
-			expectedTypes: map[string]string{
+				// `p` is captured by the synthesized constructor body
+				// (`self.p = p`), so the constructor still picks up a
+				// lifetime. The method's `p` is a fresh argument and
+				// gets its own lifetime from method-level inference.
 				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
 			},
 			expectedInstanceType: map[string]string{
-				"C": "{get q(self) -> mut {x: number}}",
+				"C": "{p: mut 'a {x: number}, foo<'a>(self, p: mut 'a {x: number}) -> mut 'a {x: number}}",
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"C": 1,
 			},
 		},
-		"SetterCapturesConstructorParam": {
-			// Bug B5: same as the getter case but for setters.
+		"GetterCapturesConstructorParam": {
+			// A getter whose body references a constructor param by name
+			// (made visible via the synthesized `self.p = p` body) forces
+			// a lifetime onto the constructor param.
 			input: `
-				class C(p: mut {x: number}) {
-					set q(mut self, v: number) { p.x = v }
+				class C {
+					p: mut {x: number},
+					get q(self) -> mut {x: number} { return self.p },
 				}
 			`,
 			expectedTypes: map[string]string{
 				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
 			},
-		},
-		"NestedFuncParamDefaultCapturesConstructorParam": {
-			// A nested function's parameter default expression evaluates
-			// in its enclosing scope (here, the setter body, where the
-			// constructor's `p` is visible). The capture visitor must
-			// visit nested-function param defaults BEFORE pushing the
-			// nested-function's own scope, otherwise the reference is
-			// silently dropped and the constructor fails to receive a
-			// lifetime. The setter body itself does not directly mention
-			// `p` — only the nested function's param default does.
-			input: `
-				class C(p: mut {x: number}) {
-					set q(mut self, v: number) {
-						val nested = fn(w = p) -> number { return 0 }
-					}
-				}
-			`,
-			expectedTypes: map[string]string{
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
+			expectedInstanceLifetimes: map[string]int{
+				"C": 1,
 			},
 		},
 		"StaticMethodDoesNotCapture": {
-			// Phase 8.6 (#4): static methods can't access instance state,
-			// so they should never trigger constructor-param capture even
-			// if their bodies happen to mention the param name.
+			// Static methods can't access instance state implicitly, so
+			// they should never trigger constructor-param capture.
 			input: `
-				class C(p: mut {x: number}) {
-					static make() -> number { return 0 }
+				class C {
+					p: mut {x: number},
+					static make() -> number { return 0 },
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn (p: mut {x: number}) -> C, make() -> number}",
-			},
-		},
-		"MethodBodyResolvesConstructorParam": {
-			// Phase 8.6: with constructor params now wired into instance
-			// method scope, a method body that references a constructor
-			// param by name type-checks (previously this failed with
-			// "Unknown identifier: p"). The constructor still acquires
-			// the lifetime from the capture; threading it onto the
-			// method's own return type (so `foo` would print as
-			// `foo(self) -> mut 'a {x: number}`) is deferred to Phase 9
-			// lifetime unification, which is why `foo`'s expected
-			// signature here has no `'a`.
-			input: `
-				class C(p: mut {x: number}) {
-					foo(self) -> mut {x: number} { return p }
-				}
-			`,
-			expectedTypes: map[string]string{
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
-			},
-			expectedInstanceType: map[string]string{
-				"C": "{foo(self) -> mut {x: number}}",
+				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>, make() -> number}",
 			},
 		},
 	}

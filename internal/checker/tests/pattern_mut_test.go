@@ -25,7 +25,7 @@ func TestPatternLevelMut_BindingTypes(t *testing.T) {
 	}{
 		"ValMutWrapsType": {
 			input: `
-				class Point { x :: number, y :: number }
+				class Point { x: number, y: number }
 				val mut p = Point(0, 0)
 			`,
 			bindingName:  "p",
@@ -33,7 +33,7 @@ func TestPatternLevelMut_BindingTypes(t *testing.T) {
 		},
 		"ValMutWithAnnotationIsIdempotent": {
 			input: `
-				class Point { x :: number, y :: number }
+				class Point { x: number, y: number }
 				val mut p: Point = Point(0, 0)
 			`,
 			bindingName:  "p",
@@ -68,7 +68,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 	}{
 		"PlainBindingCannotMutateField": {
 			input: `
-				class Point { x :: number, y :: number }
+				class Point { x: number, y: number }
 				fn test() {
 					val p = Point(0, 0)
 					p.x = 1
@@ -78,7 +78,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 		},
 		"ValMutBindingCanMutateField": {
 			input: `
-				class Point { x :: number, y :: number }
+				class Point { x: number, y: number }
 				fn test() {
 					val mut p = Point(0, 0)
 					p.x = 1
@@ -88,7 +88,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 		"ValMutBindingCanCallMutSelfMethod": {
 			input: `
 				class Counter {
-					count :: number,
+					count: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn test() {
@@ -99,52 +99,52 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 		},
 		"FuncParamMutCanMutateField": {
 			input: `
-				class Point { x :: number, y :: number }
+				class Point { x: number, y: number }
 				fn move(mut p: Point) { p.x = 1 }
 			`,
 		},
 		"FuncParamNestedShorthandMut_Rejected": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn f({ mut a, b }: Outer) { a.v = 1 }
 			`,
 			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
 		},
 		"FuncParamNestedKeyValueMut_Rejected": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn f({ a: mut x, b: y }: Outer) { x.v = 1 }
 			`,
 			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
 		},
 		"FuncParamNestedTupleMut_Rejected": {
 			input: `
-				class Inner { v :: number }
+				class Inner { v: number }
 				fn f([mut a, b]: [Inner, Inner]) { a.v = 1 }
 			`,
 			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
 		},
 		"FuncParamNestedTupleRestMut_Rejected": {
 			input: `
-				class Inner { v :: number }
+				class Inner { v: number }
 				fn f([a, ...mut rest]: [Inner, ...Array<Inner>]) {}
 			`,
 			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
 		},
 		"FuncParamNestedObjectRestMut_Rejected": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn f({ a, ...mut rest }: Outer) {}
 			`,
 			expectedErrors: []string{"nested `mut` is not allowed in a function parameter pattern"},
 		},
 		"DestructureShorthand_MutLeafCanMutate": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn test() {
 					val o = Outer(Inner(0), Inner(0))
 					val { mut a, b } = o
@@ -154,8 +154,8 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 		},
 		"DestructureShorthand_PlainLeafCannotMutate": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn test() {
 					val o = Outer(Inner(0), Inner(0))
 					val { mut a, b } = o
@@ -166,8 +166,8 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 		},
 		"DestructureKeyValue_MutLeafCanMutate": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn test() {
 					val o = Outer(Inner(0), Inner(0))
 					val { a: mut x, b: y } = o
@@ -177,8 +177,8 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 		},
 		"DestructureKeyValue_PlainLeafCannotMutate": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn test() {
 					val o = Outer(Inner(0), Inner(0))
 					val { a: mut x, b: y } = o
@@ -220,25 +220,25 @@ func TestPatternLevelMut_ValVarMatrix(t *testing.T) {
 		expectedMutable    bool
 	}{
 		"Val": {
-			input:              `class Point { x :: number, y :: number } val p = Point(0, 0)`,
+			input:              `class Point { x: number, y: number } val p = Point(0, 0)`,
 			bindingName:        "p",
 			expectedAssignable: false,
 			expectedMutable:    false,
 		},
 		"Var": {
-			input:              `class Point { x :: number, y :: number } var p = Point(0, 0)`,
+			input:              `class Point { x: number, y: number } var p = Point(0, 0)`,
 			bindingName:        "p",
 			expectedAssignable: true,
 			expectedMutable:    false,
 		},
 		"ValMut": {
-			input:              `class Point { x :: number, y :: number } val mut p = Point(0, 0)`,
+			input:              `class Point { x: number, y: number } val mut p = Point(0, 0)`,
 			bindingName:        "p",
 			expectedAssignable: false,
 			expectedMutable:    true,
 		},
 		"VarMut": {
-			input:              `class Point { x :: number, y :: number } var mut p = Point(0, 0)`,
+			input:              `class Point { x: number, y: number } var mut p = Point(0, 0)`,
 			bindingName:        "p",
 			expectedAssignable: true,
 			expectedMutable:    true,
@@ -247,13 +247,13 @@ func TestPatternLevelMut_ValVarMatrix(t *testing.T) {
 		// without the pattern-level `mut` keyword. Locks in the OR'd
 		// computation in inferPattern (Mutable = pattern flag || type-is-MutType).
 		"ValAnnotationMut": {
-			input:              `class Point { x :: number, y :: number } val p: mut Point = Point(0, 0)`,
+			input:              `class Point { x: number, y: number } val p: mut Point = Point(0, 0)`,
 			bindingName:        "p",
 			expectedAssignable: false,
 			expectedMutable:    true,
 		},
 		"VarAnnotationMut": {
-			input:              `class Point { x :: number, y :: number } var p: mut Point = Point(0, 0)`,
+			input:              `class Point { x: number, y: number } var p: mut Point = Point(0, 0)`,
 			bindingName:        "p",
 			expectedAssignable: true,
 			expectedMutable:    true,
@@ -314,7 +314,7 @@ func TestPatternLevelMut_BindMutSelfMethod(t *testing.T) {
 func TestPatternLevelMut_ForInPreservesMut(t *testing.T) {
 	t.Parallel()
 	input := `
-		class Point { x :: number, y :: number }
+		class Point { x: number, y: number }
 		fn test(pts: Array<Point>) {
 			for mut p in pts {
 				p.x = 1
@@ -344,7 +344,7 @@ func TestPatternLevelMut_ForInPreservesMut(t *testing.T) {
 func TestPatternLevelMut_GenericParam(t *testing.T) {
 	t.Parallel()
 	input := `
-		class Point { x :: number, y :: number }
+		class Point { x: number, y: number }
 		fn f<T>(mut p: T) -> T { return p }
 	`
 	ns := mustInferAsModule(t, input)
@@ -375,8 +375,8 @@ func TestPatternLevelMut_NoLeakIntoParentContainer(t *testing.T) {
 	}{
 		"ObjKeyValueMutLeaf": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn test() {
 					val o = Outer(Inner(0), Inner(0))
 					val { a: mut x, b: y } = o
@@ -386,8 +386,8 @@ func TestPatternLevelMut_NoLeakIntoParentContainer(t *testing.T) {
 		},
 		"ObjShorthandMutLeaf": {
 			input: `
-				class Inner { v :: number }
-				class Outer { a :: Inner, b :: Inner }
+				class Inner { v: number }
+				class Outer { a: Inner, b: Inner }
 				fn test() {
 					val o = Outer(Inner(0), Inner(0))
 					val { mut a, b } = o
@@ -397,7 +397,7 @@ func TestPatternLevelMut_NoLeakIntoParentContainer(t *testing.T) {
 		},
 		"TupleMutLeaf": {
 			input: `
-				class Inner { v :: number }
+				class Inner { v: number }
 				fn test(t: [Inner, Inner]) {
 					val [mut x, y] = t
 				}

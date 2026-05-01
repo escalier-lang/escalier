@@ -21,8 +21,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"SimpleDecl": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 
 				val p = Point(5, 10)
@@ -42,8 +42,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				declare fn sqrt(x: number) -> number
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 					length(self) {
 						return sqrt(self.x * self.x + self.y * self.y)
 					},
@@ -70,8 +70,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				declare fn sqrt(x: number) -> number
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 					scale(mut self, factor: number) {
 						self.x = self.x * factor
 						self.y = self.y * factor
@@ -101,11 +101,13 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val bar = "bar"
 				val baz = "baz"
 				class Foo {
-					[bar]: 42:number,
+					[bar]: number,
 					[baz](self) {
 						return self[bar]
 					},
-					constructor(mut self) {}
+					constructor(mut self, barVal?: number) {
+						self[bar] = if barVal != undefined { barVal } else { 42 }
+					}
 				}
 
 				val foo = Foo()
@@ -113,7 +115,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val fooBaz = foo[baz]()
 			`,
 			expectedTypes: map[string]string{
-				"Foo":    "{new fn () -> Foo}",
+				"Foo":    "{new fn (barVal?: number) -> Foo}",
 				"fooBar": "number",
 				"fooBaz": "number",
 			},
@@ -144,8 +146,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithStaticAndInstanceMethods": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 					static origin() {
 						return Point(0, 0)
 					},
@@ -171,7 +173,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithInstanceGetter": {
 			input: `
 				class Circle {
-					radius :: number,
+					radius: number,
 					get area(self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
@@ -192,7 +194,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithInstanceSetter": {
 			input: `
 				class Temperature {
-					celsius :: number,
+					celsius: number,
 					set fahrenheit(mut self, value: number) {
 						self.celsius = (value - 32) * 5 / 9
 					},
@@ -215,8 +217,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				declare fn split(s: string, delimiter: string) -> Array<string>
 				class Person {
-					firstName :: string,
-					lastName :: string,
+					firstName: string,
+					lastName: string,
 					get fullName(self) -> string {
 						return self.firstName ++ " " ++ self.lastName
 					},
@@ -265,9 +267,9 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithStaticAndInstanceFields": {
 			input: `
 				class Counter {
-					value :: number,
-					static totalInstances: 0:number,
-					static defaultValue: 100,
+					value: number,
+					static totalInstances: number,
+					static defaultValue: number,
 					constructor(mut self, initialValue: number) {
 						self.value = initialValue
 					},
@@ -279,11 +281,11 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val defaultVal = Counter.defaultValue
 			`,
 			expectedTypes: map[string]string{
-				"Counter":        "{new fn (initialValue: number) -> Counter, totalInstances: number, defaultValue: 100}",
+				"Counter":        "{new fn (initialValue: number) -> Counter, totalInstances: number, defaultValue: number}",
 				"counter1":       "Counter",
 				"value1":         "number",
 				"totalInstances": "number",
-				"defaultVal":     "100",
+				"defaultVal":     "number",
 			},
 			expectedTypeAliases: map[string]string{
 				"Counter": "{value: number}",
@@ -292,7 +294,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"GenericClass": {
 			input: `
 				class Box<T> {
-					value :: T,
+					value: T,
 				}
 
 				val box = Box(42:number)
@@ -307,15 +309,15 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithExtends": {
 			input: `
 				class Animal {
-					name :: string,
+					name: string,
 					speak(self) -> string {
 						return "Animal speaks"
 					},
 				}
 
 				class Dog extends Animal {
-					name :: string,
-					breed :: string,
+					name: string,
+					breed: string,
 					speak(self) -> string {
 						return "Woof!"
 					},
@@ -346,17 +348,17 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithExtendsAccessingParentMethods": {
 			input: `
 				class Vehicle {
-					make :: string,
-					model :: string,
+					make: string,
+					model: string,
 					getInfo(self) -> string {
 						return self.make ++ " " ++ self.model
 					},
 				}
 
 				class Car extends Vehicle {
-					make :: string,
-					model :: string,
-					doors :: number,
+					make: string,
+					model: string,
+					doors: number,
 					getFullInfo(self) -> string {
 						return self.getInfo() ++ " (" ++ "doors" ++ ")"
 					},
@@ -385,15 +387,15 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithExtendsMultipleFields": {
 			input: `
 				class Base {
-					a :: number,
-					b :: string,
+					a: number,
+					b: string,
 				}
 
 				class Extended extends Base {
-					a :: number,
-					b :: string,
-					c :: boolean,
-					d :: number,
+					a: number,
+					b: string,
+					c: boolean,
+					d: number,
 				}
 
 				val ext = Extended(1, "test", true, 42)
@@ -419,12 +421,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithExtendsAndGetter": {
 			input: `
 				class Shape {
-					color :: string,
+					color: string,
 				}
 
 				class Circle extends Shape {
-					color :: string,
-					radius :: number,
+					color: string,
+					radius: number,
 					get area(self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
@@ -449,12 +451,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithExtendsIndexAccess": {
 			input: `
 				class Container {
-					size :: number,
+					size: number,
 				}
 
 				class Box extends Container {
-					size :: number,
-					contents :: string,
+					size: number,
+					contents: string,
 				}
 
 				val box = Box(10, "items")
@@ -475,18 +477,18 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"MultiLevelInheritance": {
 			input: `
 				class GrandParent {
-					id :: number,
+					id: number,
 				}
 
 				class Parent extends GrandParent {
-					id :: number,
-					name :: string,
+					id: number,
+					name: string,
 				}
 
 				class Child extends Parent {
-					id :: number,
-					name :: string,
-					age :: number,
+					id: number,
+					name: string,
+					age: number,
 				}
 
 				val child = Child(1, "Alice", 10)
@@ -512,12 +514,12 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithExtendsAndMutatingMethod": {
 			input: `
 				class Counter {
-					value :: number,
+					value: number,
 				}
 
 				class ExtendedCounter extends Counter {
-					value :: number,
-					step :: number,
+					value: number,
+					step: number,
 					increment(mut self) {
 						self.value = self.value + self.step
 						return self
@@ -542,15 +544,15 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 		"ClassWithExtendsOverridingMethod": {
 			input: `
 				class Animal {
-					name :: string,
+					name: string,
 					makeSound(self) -> string {
 						return "Some sound"
 					},
 				}
 
 				class Cat extends Animal {
-					name :: string,
-					lives :: number,
+					name: string,
+					lives: number,
 					makeSound(self) -> string {
 						return "Meow"
 					},
@@ -705,11 +707,11 @@ func TestNominalClassUnificationTerminates(t *testing.T) {
 		Path: "input.esc",
 		Contents: `
 			class Node {
-				value :: number,
-				next :: Node | null,
+				value: number,
+				next: Node | null,
 			}
 			class Leaf {
-				value :: number,
+				value: number,
 			}
 			val n = Node(1, null)
 			val l: Leaf = n

@@ -89,7 +89,7 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
-		"ClassWithLifetimeParam":      {input: `class Container<'a>(p: 'a Point) { p, }`},
+		"ClassWithLifetimeParam":      {input: `class Container<'a> { p: Point }`},
 		"TypeAliasWithLifetimeParam":  {input: `type Box<'a> = 'a Point`},
 		"InterfaceWithLifetimeParam":  {input: `interface Holder<'a> { p: 'a Point }`},
 		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},

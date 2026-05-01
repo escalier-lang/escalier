@@ -1,7 +1,7 @@
 export class MyMath {
   constructor() {
   }
-  static pi = 3.141592;
+  static pi;
   static add(temp1, temp2) {
     const a = temp1;
     const b = temp2;

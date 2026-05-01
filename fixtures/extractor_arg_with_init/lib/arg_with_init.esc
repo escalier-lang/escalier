@@ -1,6 +1,6 @@
 class C {
-    msg :: string | undefined,
-    value :: number,
+    msg: string | undefined,
+    value: number,
     static [Symbol.customMatcher](subject: C) -> [string | undefined, number] {
         return [subject.msg, subject.value]
     }

@@ -51,8 +51,8 @@ func TestInBodyConstructorBasic(t *testing.T) {
 		"WithFieldsAssignedInBody": {
 			input: `
 				class Point {
-					x:: number,
-					y:: number,
+					x: number,
+					y: number,
 
 					constructor(mut self, x: number, y: number) {
 						self.x = x
@@ -67,7 +67,7 @@ func TestInBodyConstructorBasic(t *testing.T) {
 		"MutBindingYieldsMutInstance": {
 			input: `
 				class Counter {
-					count:: number,
+					count: number,
 
 					constructor(mut self, count: number) {
 						self.count = count
@@ -107,8 +107,8 @@ func TestSynthesizedConstructor(t *testing.T) {
 		"FieldsInDeclarationOrder": {
 			input: `
 				class Point {
-					x:: number,
-					y:: number,
+					x: number,
+					y: number,
 				}
 				val p = Point(1, 2)
 			`,
@@ -118,8 +118,8 @@ func TestSynthesizedConstructor(t *testing.T) {
 		"ReversedDeclarationOrder": {
 			input: `
 				class P {
-					y:: number,
-					x:: number,
+					y: number,
+					x: number,
 				}
 				val p = P(10, 20)
 			`,
@@ -133,17 +133,6 @@ func TestSynthesizedConstructor(t *testing.T) {
 			`,
 			bindingName:  "e",
 			expectedType: "Empty",
-		},
-		"FieldWithDefaultSkippedFromParams": {
-			input: `
-				class WithDefault {
-					x:: number,
-					y:: number = 99,
-				}
-				val w = WithDefault(1)
-			`,
-			bindingName:  "w",
-			expectedType: "WithDefault",
 		},
 	}
 
@@ -169,21 +158,10 @@ func TestConstructorErrors(t *testing.T) {
 		input    string
 		expected []string
 	}{
-		"MixedConstructorForms": {
-			input: `
-				class Foo(x: number) {
-					x,
-					constructor(mut self, x: number) {
-						self.x = x
-					}
-				}
-			`,
-			expected: []string{"Cannot mix primary-constructor"},
-		},
 		"MultipleInBodyConstructors": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) {
 						self.x = x
 					},
@@ -194,22 +172,11 @@ func TestConstructorErrors(t *testing.T) {
 			`,
 			expected: []string{"Multiple constructors"},
 		},
-		"FieldDefaultRejectedWithInBodyCtor": {
-			input: `
-				class Foo {
-					x:: number = 0,
-					constructor(mut self) {
-						self.x = 1
-					}
-				}
-			`,
-			expected: []string{"Field 'x' cannot have a default"},
-		},
 		"ComputedKeyRequiredFieldRejectsSynthesis": {
 			input: `
 				val k = "name"
 				class Foo {
-					[k]:: number,
+					[k]: number,
 				}
 			`,
 			expected: []string{"computed-key field"},
@@ -217,7 +184,7 @@ func TestConstructorErrors(t *testing.T) {
 		"PrivateConstructorRejected": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					private constructor(mut self, x: number) {
 						self.x = x
 					}
@@ -259,7 +226,7 @@ func TestConstructorOwnTypeParamsInScope(t *testing.T) {
 	t.Parallel()
 	input := `
 		class Foo<T> {
-			x:: T,
+			x: T,
 			constructor<U>(mut self, x: T, y: U) {
 				val z: U = y
 				self.x = x
@@ -278,7 +245,7 @@ func TestConstructorParamsDoNotLeakIntoMethods(t *testing.T) {
 	t.Parallel()
 	input := `
 		class Foo {
-			x:: number,
+			x: number,
 			constructor(mut self, secret: number) {
 				self.x = secret
 			},
@@ -322,7 +289,7 @@ func TestConstructorInferredTypes(t *testing.T) {
 		"ThrowingConstructor": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) throws string {
 						if x < 0 {
 							throw "negative"
@@ -348,7 +315,7 @@ func TestConstructorInferredTypes(t *testing.T) {
 		"SynthesizedGenericClass": {
 			input: `
 				class Box<T> {
-					value:: T,
+					value: T,
 				}
 				val b = Box(42)
 				val s = Box("hi")
@@ -402,10 +369,10 @@ func TestSubclassSynthesisIsNotAllowed(t *testing.T) {
 	t.Parallel()
 	input := `
 		class Base {
-			x:: number,
+			x: number,
 		}
 		class Derived extends Base {
-			y:: number,
+			y: number,
 		}
 	`
 	errs := inferModuleErrors(t, input)

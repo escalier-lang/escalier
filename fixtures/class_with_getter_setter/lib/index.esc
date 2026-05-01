@@ -1,7 +1,7 @@
 declare fn split(s: string, delimiter: string) -> Array<string>
 class Person {
-    firstName :: string,
-    lastName :: string,
+    firstName: string,
+    lastName: string,
     get fullName(self) -> string {
         return self.firstName ++ " " ++ self.lastName
     },

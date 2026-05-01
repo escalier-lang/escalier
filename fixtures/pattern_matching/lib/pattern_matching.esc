@@ -94,15 +94,15 @@ export val refMatch = match ref {
 }
 
 class Color {
-	r :: number,
-	g :: number,
-    b :: number,
+	r: number,
+	g: number,
+    b: number,
     static [Symbol.customMatcher](subject: Color) -> [number, number, number] {
         return [subject.r, subject.g, subject.b]
     },
 }
 class Event {
-	kind :: string,
+	kind: string,
     static [Symbol.customMatcher](subject: Event) -> [string] {
         return [subject.kind]
     },
@@ -136,7 +136,7 @@ export val mixedNominalStructural = match obj3 {
 }
 
 // Case 6: Partial match on subset of fields
-class User { name :: string, age :: number, email :: string }
+class User { name: string, age: number, email: string }
 declare val user: User
 export val partialMatch = match user {
 	{name} => name,
@@ -167,7 +167,7 @@ export val literalPatternMatch = match point {
 
 // Case 12: Structural pattern matches a getter
 class Circle {
-	radius :: number,
+	radius: number,
 	get area(self) -> number { return 3.14159 * self.radius * self.radius },
 }
 declare val circle: Circle

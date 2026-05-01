@@ -1,11 +1,13 @@
 val bar = "bar"
 val baz = "baz"
 class Foo {
-    [bar]: 42:number,
+    [bar]: number,
     [baz](self) {
         return self[bar]
     },
-    constructor(mut self) {}
+    constructor(mut self, barVal?: number) {
+        self[bar] = if barVal != undefined { barVal } else { 42 }
+    }
 }
 
 val foo = Foo()

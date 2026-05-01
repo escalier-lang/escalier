@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -408,8 +407,7 @@ func (c *Checker) InferComponent(
 				}
 
 				// Phase 2: pre-walk the body to count in-body constructors.
-				// At most one is allowed for now; mixing with primary-ctor
-				// params is also rejected. If neither form is present we
+				// At most one is allowed for now. If none is present we
 				// synthesize a `ConstructorElem` from the instance fields and
 				// prepend it to `decl.Body` so the rest of this phase, the
 				// definition phase, and codegen can consume a uniform shape.
@@ -418,10 +416,6 @@ func (c *Checker) InferComponent(
 					if ctor, ok := bodyElem.(*ast.ConstructorElem); ok {
 						inBodyCtors = append(inBodyCtors, ctor)
 					}
-				}
-
-				if len(decl.Params) > 0 && len(inBodyCtors) > 0 {
-					errors = append(errors, MixedConstructorFormsError{span: decl.Name.Span()})
 				}
 
 				for _, ctor := range inBodyCtors {
@@ -437,40 +431,18 @@ func (c *Checker) InferComponent(
 					}
 				}
 
-				// Reject field-level defaults when an in-body constructor is
-				// present. Only the explicit `= expr` form (`Default`) is
-				// rejected here — the legacy `x: expr` shorthand
-				// (`FieldElem.Value`) doubles as a typed-field syntax in
-				// the current parser, so we leave it alone until Phase 4
-				// retires it. Defaults remain valid under the synthesized-
-				// constructor case (no in-body ctor).
-				if len(inBodyCtors) > 0 {
-					for _, bodyElem := range decl.Body {
-						field, ok := bodyElem.(*ast.FieldElem)
-						if !ok {
-							continue
-						}
-						if field.Default == nil {
-							continue
-						}
-						errors = append(errors, FieldDefaultNotAllowedError{
-							FieldName: classFieldName(field.Name),
-							span:      field.Span(),
-						})
-					}
-				}
+				// Field-level defaults (`name: T = expr`) are valid on any
+				// class. They are treated as already-assigned for Phase 3's
+				// definite-assignment pass, and the synthesizer (§2.7) does
+				// not emit a parameter for them.
 
-				// Synthesize a constructor when neither a primary-ctor head
-				// nor an in-body constructor is present. Subclasses are
-				// excluded — auto-synthesizing a constructor for an
-				// `extends` class would silently skip the required
-				// `super(...)` call. Until subclass-constructor semantics
-				// land, require an explicit `constructor` block instead.
-				// Subclasses that use the legacy primary-ctor form
-				// (`class Derived(...) extends Base {...}`) still flow
-				// through the legacy path; that whole shape will be
-				// retired in Phase 4.
-				if len(decl.Params) == 0 && len(inBodyCtors) == 0 {
+				// Synthesize a constructor when no in-body constructor is
+				// present. Subclasses are excluded — auto-synthesizing a
+				// constructor for an `extends` class would silently skip
+				// the required `super(...)` call. Until subclass-
+				// constructor semantics land, require an explicit
+				// `constructor` block instead.
+				if len(inBodyCtors) == 0 {
 					if decl.Extends != nil {
 						errors = append(errors, SubclassConstructorRequiredError{
 							span: decl.Name.Span(),
@@ -683,13 +655,15 @@ func (c *Checker) InferComponent(
 
 				retType := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, typeArgs...)
 
-				// Decide where the constructor signature comes from. Phase 2:
-				// when a single in-body `ConstructorElem` is present, use
-				// `inferConstructorSig` (which strips `mut self`, fixes the
-				// return type to Self, and layers class+ctor type params).
-				// Otherwise fall back to the legacy primary-ctor head until
-				// Phase 4 retires it. Multi-constructor support arrives in
-				// Phase 5.
+				// Build the constructor signature from the (single) in-body
+				// `ConstructorElem`. `inferConstructorSig` strips `mut self`,
+				// fixes the return type to Self, and layers class+ctor type
+				// params. When synthesis above failed (subclass without an
+				// explicit constructor, computed-key field, etc.) there is
+				// no in-body constructor; we still need a placeholder
+				// `FuncType` so the rest of the placeholder phase can wire
+				// up the class's static type. Multi-constructor support
+				// arrives in Phase 6.
 				var funcType *type_system.FuncType
 				var paramBindings map[string]*type_system.Binding
 				if len(inBodyCtors) > 0 {
@@ -704,37 +678,25 @@ func (c *Checker) InferComponent(
 					// constructor body only — they must NOT leak into
 					// method/getter/setter scopes (which see fields via
 					// `self.<field>`). Stash them on `ctorInfoForDecl`.
-					// paramBindingsForDecl is populated from
-					// `decl.Params` (the primary-ctor head) below so the
-					// legacy shorthand-field path keeps working in mixed
-					// (erroring) cases without nil-deref'ing.
 					ctorInfoForDecl[decl] = &ctorInfo{
 						Ctor:          ctor,
 						FuncType:      funcType,
 						ParamBindings: paramBindings,
 						Ctx:           ctorCtx,
 					}
-					// TODO(class-ctor Phase 4): drop this primary-ctor
-					// inference once `class Foo(...)` syntax is removed.
-					// In the (already-erroring) mixed-form case the
-					// legacy shorthand-field path downstream still walks
-					// `decl.Body` and dereferences these bindings, so we
-					// have to populate them even though the class is
-					// already failing.
-					_, primaryBindings, primaryErrors := c.inferFuncParams(declCtx, decl.Params)
-					errors = slices.Concat(errors, primaryErrors)
-					paramBindingsForDecl[decl] = primaryBindings
+					paramBindingsForDecl[decl] = map[string]*type_system.Binding{}
 				} else {
-					params, legacyBindings, legacyParamErrors := c.inferFuncParams(declCtx, decl.Params)
-					errors = slices.Concat(errors, legacyParamErrors)
-					paramBindings = legacyBindings
+					// Synthesis failed earlier; emit a placeholder no-arg
+					// signature so downstream phases don't crash. The class
+					// is already in an error state.
 					funcType = type_system.NewFuncType(
 						provenance,
 						typeParams,
-						params,
+						nil,
 						retType,
 						type_system.NewNeverType(nil),
 					)
+					paramBindings = map[string]*type_system.Binding{}
 					paramBindingsForDecl[decl] = paramBindings
 				}
 
@@ -1185,30 +1147,17 @@ func (c *Checker) InferComponent(
 
 								unifyErrors := c.Unify(ctx, prop.Value, annType)
 								errors = slices.Concat(errors, unifyErrors)
-							} else {
-								if bodyElem.Value != nil {
-									initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)
-									errors = slices.Concat(errors, initErrors)
+							} else if bodyElem.Value != nil {
+								initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)
+								errors = slices.Concat(errors, initErrors)
 
-									unifyErrors := c.Unify(ctx, prop.Value, initType)
-									errors = slices.Concat(errors, unifyErrors)
-								} else {
-									var binding *type_system.Binding
-									switch name := bodyElem.Name.(type) {
-									case *ast.IdentExpr:
-										binding = bodyCtx.Scope.GetValue(name.Name)
-									case *ast.StrLit:
-										binding = bodyCtx.Scope.GetValue(name.Value)
-									case *ast.NumLit:
-										binding = bodyCtx.Scope.GetValue(strconv.FormatFloat(name.Value, 'f', -1, 64))
-									case *ast.ComputedKey:
-										panic("computed keys are not supported in shorthand field declarations")
-									}
-
-									unifyErrors := c.Unify(ctx, prop.Value, binding.Type)
-									errors = slices.Concat(errors, unifyErrors)
-								}
+								unifyErrors := c.Unify(ctx, prop.Value, initType)
+								errors = slices.Concat(errors, unifyErrors)
 							}
+							// A field with neither a type annotation nor an
+							// initializer is a placeholder waiting for the
+							// constructor body to assign it. The body checker
+							// (Phase 3 + the synthesizer) supplies the type.
 						}
 
 					case *ast.MethodElem:

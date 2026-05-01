@@ -884,14 +884,52 @@ func (c *Checker) InferConstructorLifetimes(
 	// TypeAlias advertises its LifetimeParams before any consumer — function
 	// param annotations, var decls, constructor call sites — resolves the
 	// class by name during the body phase.
+	// Locate the (single) in-body `ConstructorElem`. After Phase 4 there is
+	// no other source of constructor params on a class. If synthesis or
+	// parsing left no constructor in place, there's nothing to do.
+	var ctorElem *ast.ConstructorElem
+	for _, e := range classDecl.Body {
+		if c, ok := e.(*ast.ConstructorElem); ok {
+			ctorElem = c
+			break
+		}
+	}
+	if ctorElem == nil || ctorElem.Fn == nil {
+		return
+	}
+	// Skip the leading `mut self` — it is not a callable parameter and
+	// the corresponding `ctorFn.Params` slice already excludes it.
+	ctorParams := ctorElem.Fn.Params
+	if len(ctorParams) > 0 {
+		ctorParams = ctorParams[1:]
+	}
+
 	paramNameToIndex := make(map[string]int)
-	for i, p := range classDecl.Params {
+	for i, p := range ctorParams {
 		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
 			paramNameToIndex[identPat.Name] = i
 		}
 	}
 
 	storedParams := set.NewSet[int]()
+
+	// Walk the constructor body itself: any reference to a callable param
+	// that survives shadowing analysis is treated as a capture (the param's
+	// value flowed into `self`, escaped via a method call, etc.). This
+	// replaces the old "shorthand field captures same-named primary-ctor
+	// param" path now that fields are initialized via `self.x = x` inside
+	// the constructor body. Unlike `collectMethodBodyCaptures`, the
+	// constructor body's own params should NOT shadow themselves — they
+	// ARE the params we're trying to detect references to.
+	if ctorElem.Fn.Body != nil {
+		v := &methodCaptureVisitor{
+			paramNameToIndex: paramNameToIndex,
+			storedParams:     storedParams,
+		}
+		v.pushScope()
+		ctorElem.Fn.Body.Accept(v)
+		v.popScope()
+	}
 
 	for _, elem := range classDecl.Body {
 		switch elem := elem.(type) {
@@ -924,9 +962,12 @@ func (c *Checker) InferConstructorLifetimes(
 		return
 	}
 
-	// Allocate lifetimes in parameter order for determinism.
+	// Allocate lifetimes in parameter order for determinism. `ctorParams`
+	// already excludes the leading `mut self`, so the indices line up with
+	// `ctorFn.Params` (which `inferConstructorSig` also populates from the
+	// callable params, dropping `self`).
 	var lifetimeParams []*type_system.LifetimeVar
-	for i, p := range classDecl.Params {
+	for i, p := range ctorParams {
 		if !storedParams.Contains(i) {
 			continue
 		}

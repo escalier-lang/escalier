@@ -6,8 +6,8 @@ val config: mut {readonly apiUrl: string, timeout: number} = {
 
 // Test readonly properties in classes
 class Point {
-    readonly x :: number,
-    y :: number,
+    readonly x: number,
+    y: number,
 }
 
 // Create instances
@@ -32,7 +32,7 @@ fn tryUpdateImmutableProperties() {
 
 // Test readonly fields with explicit values
 class Counter {
-    readonly value :: number,
+    readonly value: number,
     increment(mut self) {
         self.value = self.value + 1
     },

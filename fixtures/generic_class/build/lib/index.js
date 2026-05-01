@@ -1,10 +1,10 @@
 export class Box {
-  constructor(temp2) {
-    const value = temp2;
+  constructor(temp1) {
+    const value = temp1;
     this.value = value;
   }
-  getValue(temp1) {
-    const defaultValue = temp1;
+  getValue(temp2) {
+    const defaultValue = temp2;
     if (this.value != 0) {
       return this.value;
     } else {

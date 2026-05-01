@@ -434,8 +434,20 @@ func TestConvertClassDecl(t *testing.T) {
 				if decl.Name.Name != "Point" {
 					t.Errorf("expected name 'Point', got %q", decl.Name.Name)
 				}
-				if len(decl.Params) != 2 {
-					t.Errorf("expected 2 constructor params, got %d", len(decl.Params))
+				var ctor *ast.ConstructorElem
+				for _, e := range decl.Body {
+					if c, ok := e.(*ast.ConstructorElem); ok {
+						ctor = c
+						break
+					}
+				}
+				if ctor == nil {
+					t.Fatalf("expected an in-body ConstructorElem, found none")
+				}
+				// Fn.Params[0] is the synthesized `mut self`; the
+				// .d.ts-declared params follow.
+				if got := len(ctor.Fn.Params) - 1; got != 2 {
+					t.Errorf("expected 2 constructor params, got %d", got)
 				}
 			},
 		},

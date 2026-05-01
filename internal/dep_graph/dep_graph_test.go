@@ -298,7 +298,7 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 						val bar = "bar"
 						val baz = "baz"
 						class Foo {
-							[bar]: 42:number,
+							[bar]: number,
 							[baz](self) {
 								return self[bar]
 							}

@@ -121,22 +121,6 @@ func (c *Checker) inferConstructorSig(
 	return funcType, ctorCtx, paramBindings, errors
 }
 
-// fieldInitializer returns the field's initializer expression — the
-// `= expr` form (`Default`) or the legacy `x: expr` shorthand
-// (`Value`), in that order — or nil if the field has neither. Callers
-// that need to know "is this field already initialized?" should use
-// this helper so the synthesizer's view of "has a default" stays in
-// sync with the rest of the class-checker.
-func fieldInitializer(field *ast.FieldElem) ast.Expr {
-	if field.Default != nil {
-		return field.Default
-	}
-	if field.Value != nil {
-		return field.Value
-	}
-	return nil
-}
-
 // classFieldName extracts a printable identifier for a class field's key.
 // Used in diagnostics where we need a name to attach to a `FieldElem`.
 // Computed-key fields fall back to a placeholder.
@@ -191,8 +175,6 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 		}
 
 		fieldSpan := field.Span()
-		defaultExpr := fieldInitializer(field)
-		hasDefault := defaultExpr != nil
 
 		// Determine the field's user-facing name. Computed-key fields
 		// are unconditionally rejected for synthesis — see the function
@@ -216,25 +198,20 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 			panic("synthesizeConstructorElem: unexpected ObjKey variant")
 		}
 
-		// Build `self.<field> = <rhs>`. For default-bearing fields the
-		// RHS is the default expression; otherwise the RHS is a reference
-		// to the synthesized parameter of the same name.
+		// Build `self.<field> = <field>`: a synthesized parameter of the
+		// same name and type as the field, assigned into self. Field-level
+		// defaults are no longer supported in the parser, so every required
+		// field receives a corresponding ctor parameter.
 		selfRef := ast.NewIdent("self", fieldSpan)
 		lhs := ast.NewMember(selfRef, ast.NewIdentifier(fieldName, fieldSpan), false, fieldSpan)
+		rhs := ast.NewIdent(fieldName, fieldSpan)
 
-		var rhs ast.Expr
-		if hasDefault {
-			rhs = defaultExpr
-		} else {
-			rhs = ast.NewIdent(fieldName, fieldSpan)
-			// Synthesized parameter: same name and type as the field.
-			paramPat := ast.NewIdentPat(fieldName, false /* not mutable */, nil, nil, fieldSpan)
-			params = append(params, &ast.Param{
-				Pattern:  paramPat,
-				TypeAnn:  field.Type,
-				Optional: false,
-			})
-		}
+		paramPat := ast.NewIdentPat(fieldName, false /* not mutable */, nil, nil, fieldSpan)
+		params = append(params, &ast.Param{
+			Pattern:  paramPat,
+			TypeAnn:  field.Type,
+			Optional: false,
+		})
 
 		assign := ast.NewBinary(lhs, rhs, ast.Assign, fieldSpan)
 		stmts = append(stmts, ast.NewExprStmt(assign, fieldSpan))

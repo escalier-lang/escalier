@@ -4,7 +4,15 @@ export class Foo {
   [baz]() {
     return this[bar];
   }
-  constructor() {
+  constructor(temp1) {
+    const barVal = temp1;
+    let temp2;
+    if (barVal != undefined) {
+      temp2 = barVal;
+    } else {
+      temp2 = 42;
+    }
+    this[bar] = temp2;
   }
 }
 export const foo = new Foo();

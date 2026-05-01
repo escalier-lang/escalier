@@ -1,5 +1,5 @@
 class C {
-    msg :: string | undefined,
+    msg: string | undefined,
     constructor(mut self, msg?: string) {
         self.msg = msg
     },

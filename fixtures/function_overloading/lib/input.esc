@@ -51,12 +51,12 @@ val c3 = combine(42, "test")
 
 // Class-based overloading - requires instanceof checks
 class Point {
-  x :: number,
-  y :: number,
+  x: number,
+  y: number,
 }
 
 class Circle {
-  radius :: number,
+  radius: number,
 }
 
 fn describe(shape: Point) -> string {

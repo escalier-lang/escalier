@@ -6,9 +6,7 @@ type ClassDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam    // generic type parameters
 	Extends    *TypeRefTypeAnn // optional superclass (can be a simple identifier or a generic type reference)
-	Params     []*Param        // constructor params
 	Body       []ClassElem     // fields, methods, etc.
-	Data       bool            // true when declared with `data class` — instances default to immutable
 	export     bool
 	declare    bool
 	span       Span
@@ -22,14 +20,12 @@ type ClassElem interface {
 }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, params []*Param, body []ClassElem, data, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		Extends:    extends,
-		Params:     params,
 		Body:       body,
-		Data:       data,
 		export:     export,
 		declare:    declare,
 		span:       span,
@@ -62,9 +58,8 @@ func (d *ClassDecl) SetProvenance(p provenance.Provenance) {
 
 type FieldElem struct {
 	Name     ObjKey
-	Value    Expr    // optional
-	Type     TypeAnn // optional
-	Default  Expr    // optional
+	Value    Expr    // optional — always nil after Phase 4; legacy interop only
+	Type     TypeAnn // required for class fields; optional for object-pattern shorthands
 	Static   bool    // true if this is a static field
 	Private  bool    // true if this field is private
 	Readonly bool    // true if this field is readonly
@@ -78,10 +73,6 @@ func (f *FieldElem) Accept(v Visitor) {
 		if f.Type != nil {
 			f.Type.Accept(v)
 		}
-		if f.Default != nil {
-			f.Default.Accept(v)
-		}
-		// FieldElem has no children to visit
 	}
 	v.ExitClassElem(f)
 }

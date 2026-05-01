@@ -496,7 +496,7 @@ func requiredFieldNames(decl *ast.ClassDecl) []string {
 		if field.Static {
 			continue
 		}
-		if field.Default != nil || field.Value != nil {
+		if field.Value != nil {
 			continue
 		}
 		switch k := field.Name.(type) {

@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,8 +18,12 @@ func TestParseStmtNoErrors(t *testing.T) {
 	}{
 		"ClassWithProperties": {
 			input: `class Foo {
-			    private readonly id: 1:number,
-				readonly message: "hello":string,
+			    private readonly id: number,
+				readonly message: string,
+				constructor(mut self, id?: number, message?: string) {
+					self.id = if id != undefined { id } else { 1 }
+					self.message = if message != undefined { message } else { "hello" }
+				},
 			}`,
 		},
 		"ClassWithGetter": {
@@ -53,7 +58,10 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"ClassWithPrivateField": {
 			input: `class Secret {
-				private secret: "shh":string,
+				private secret: string,
+				constructor(mut self, secret?: string) {
+					self.secret = if secret != undefined { secret } else { "shh" }
+				},
 				reveal(self) { return this.secret },
 			}`,
 		},
@@ -65,15 +73,22 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"ClassWithPrivateFieldAndMethod": {
 			input: `class Secret {
-				private secret: "shh":string,
+				private secret: string,
+				constructor(mut self, secret?: string) {
+					self.secret = if secret != undefined { secret } else { "shh" }
+				},
 				private reveal(self) { return this.secret },
 				show(self) { return this.reveal() },
 			}`,
 		},
 		"ClassWithMixedPrivateAndPublic": {
 			input: `class Mixed {
-				private foo: 1:number,
-				bar: 2:number ,
+				private foo: number,
+				bar: number,
+				constructor(mut self, foo?: number, bar?: number) {
+					self.foo = if foo != undefined { foo } else { 1 }
+					self.bar = if bar != undefined { bar } else { 2 }
+				},
 				private baz(self) { return this.foo },
 				qux(self) { return this.bar },
 			}`,
@@ -100,8 +115,8 @@ func TestParseStmtNoErrors(t *testing.T) {
 			}`,
 		},
 		"GenericClass": {
-			input: `class Box<T>(value: T) {
-				value,
+			input: `class Box<T> {
+				value: T,
 				get foo(self) -> T {
 					return self.value
 				},
@@ -111,16 +126,17 @@ func TestParseStmtNoErrors(t *testing.T) {
 			}`,
 		},
 		"GenericClassWithConstrainedType": {
-			input: `class Pair<T: number, U: string>(first: T, second: U) {
-				first,
-				second,
+			input: `class Pair<T: number, U: string> {
+				first: T,
+				second: U,
 			}`,
 		},
 		"GenericClassWithDefaultType": {
-			input: "class Response<T: any = string>(data: T) { data: data }",
+			input: "class Response<T: any = string> { data: T }",
 		},
 		"ClassWithGenericMethod": {
-			input: `class Mapper<T>(value: T) {
+			input: `class Mapper<T> {
+				value: T,
 				map<U>(self, callback: fn (value: T) -> U) -> Mapper<U> {
 					return Mapper(callback(self.value))
 				},
@@ -132,13 +148,17 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ClassDeclBasic": {
 			input: "class Foo {}",
 		},
-		"ClassDeclWithParams": {
-			input: "class Bar(x: number, y: string) {}",
+		"ClassDeclWithFields": {
+			input: "class Bar { x: number, y: string, }",
 		},
 		"ClassDeclWithFieldsAndMethods": {
-			input: `class Baz (a: number) {
-				x: a,
-				y::string = "hi",
+			input: `class Baz {
+				x: number,
+				y: string,
+				constructor(mut self, x: number, y?: string) {
+					self.x = x
+					self.y = if y != undefined { y } else { "hi" }
+				},
 				foo(self, a: number) -> undefined {},
 			}`,
 		},
@@ -357,25 +377,21 @@ func TestParseStmtErrorHandling(t *testing.T) {
 	}
 }
 
-// TestParseDataClass snapshots class declarations with the
-// `data` modifier and a regular class declaration for contrast.
-func TestParseDataClass(t *testing.T) {
+// TestRetiredClassSyntax verifies that the primary-constructor syntax
+// (`class Foo(...) { ... }`) and the `data` modifier are no longer
+// accepted by the parser. Phase 4 retired both forms.
+func TestRetiredClassSyntax(t *testing.T) {
 	tests := map[string]struct {
-		input string
+		input         string
+		wantSubstring string
 	}{
-		"DataClass": {
-			input: `data class Config(host: string) { host, }`,
+		"PrimaryConstructorSyntax": {
+			input:         `class Point(x: number, y: number) { x, y, }`,
+			wantSubstring: "primary constructors are no longer supported",
 		},
-		"DataClassWithMutSelfMethod": {
-			input: `
-				data class Config(host: string) {
-					host,
-					setHost(mut self, h: string) -> void {}
-				}
-			`,
-		},
-		"RegularClass": {
-			input: `class Point(x: number, y: number) { x, y, }`,
+		"DataClassKeyword": {
+			input:         `data class Config { host: string, }`,
+			wantSubstring: "Unexpected token",
 		},
 	}
 
@@ -387,17 +403,21 @@ func TestParseDataClass(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
 			parser := NewParser(ctx, source)
-			module, errors := parser.ParseScript()
+			_, errors := parser.ParseScript()
 
-			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+			found := false
+			for _, err := range errors {
+				if strings.Contains(err.Message, test.wantSubstring) {
+					found = true
+					break
+				}
 			}
-			if len(errors) > 0 {
+			if !found {
 				for i, err := range errors {
 					fmt.Printf("Error[%d]: %#v\n", i, err)
 				}
+				t.Errorf("expected an error matching %q, got %d error(s)", test.wantSubstring, len(errors))
 			}
-			assert.Len(t, errors, 0)
 		})
 	}
 }
