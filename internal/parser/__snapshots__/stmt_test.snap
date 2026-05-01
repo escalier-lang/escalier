@@ -3587,7 +3587,8 @@
                                         End:      ast.Location{Line:3, Column:41},
                                         SourceID: 0,
                                     },
-                                    inferredType: nil,
+                                    inferredType:   nil,
+                                    resolvedThrows: nil,
                                 },
                                 span: ast.Span{
                                     Start:    ast.Location{Line:3, Column:6},
@@ -4191,7 +4192,8 @@
                                         End:      ast.Location{Line:1, Column:56},
                                         SourceID: 0,
                                     },
-                                    inferredType: nil,
+                                    inferredType:   nil,
+                                    resolvedThrows: nil,
                                 },
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:40},
@@ -5214,7 +5216,8 @@
                                         End:      ast.Location{Line:3, Column:38},
                                         SourceID: 0,
                                     },
-                                    inferredType: nil,
+                                    inferredType:   nil,
+                                    resolvedThrows: nil,
                                 },
                                 span: ast.Span{
                                     Start:    ast.Location{Line:3, Column:18},
@@ -5956,7 +5959,8 @@
                                         End:      ast.Location{Line:4, Column:38},
                                         SourceID: 0,
                                     },
-                                    inferredType: nil,
+                                    inferredType:   nil,
+                                    resolvedThrows: nil,
                                 },
                                 span: ast.Span{
                                     Start:    ast.Location{Line:4, Column:18},
@@ -7987,7 +7991,8 @@ nil
                         End:      ast.Location{Line:1, Column:38},
                         SourceID: 0,
                     },
-                    inferredType: nil,
+                    inferredType:   nil,
+                    resolvedThrows: nil,
                 },
                 span: ast.Span{
                     Start:    ast.Location{Line:1, Column:21},
