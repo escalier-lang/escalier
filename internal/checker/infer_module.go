@@ -1531,6 +1531,17 @@ func (c *Checker) InferComponent(
 						)
 						errors = slices.Concat(errors, bodyErrors)
 						ctorFuncType.Throws = bodyFuncType.Throws
+
+						// Phase 3: definite-assignment analysis. Subclasses
+						// (`extends`) are deferred — `super(...)` semantics
+						// gate which fields are pre-initialized at the start
+						// of the constructor body, and the inheritance story
+						// is out of scope for now.
+						if decl.Extends == nil {
+							required := requiredFieldNames(decl)
+							initErrors := c.checkConstructorInit(bodyElem, required)
+							errors = slices.Concat(errors, initErrors)
+						}
 					}
 				}
 			}

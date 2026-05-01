@@ -71,6 +71,13 @@ func (e FieldDefaultNotAllowedError) isError()              {}
 func (e ComputedKeyFieldRequiresConstructorError) isError() {}
 func (e SubclassConstructorRequiredError) isError()         {}
 func (e DivergingBodyNonNeverReturnError) isError()         {}
+func (e FieldNotInitializedError) isError()                 {}
+func (e ReadBeforeInitError) isError()                      {}
+func (e MethodCallBeforeInitError) isError()                {}
+func (e SelfAliasBeforeInitError) isError()                 {}
+func (e ComputedSelfAccessBeforeInitError) isError()        {}
+func (e LoopInConstructorNotSupportedError) isError()       {}
+func (e TryInConstructorNotSupportedError) isError()        {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -121,6 +128,13 @@ func (e FieldDefaultNotAllowedError) IsWarning() bool              { return fals
 func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
 func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
 func (e DivergingBodyNonNeverReturnError) IsWarning() bool         { return false }
+func (e FieldNotInitializedError) IsWarning() bool                 { return false }
+func (e ReadBeforeInitError) IsWarning() bool                      { return false }
+func (e MethodCallBeforeInitError) IsWarning() bool                { return false }
+func (e SelfAliasBeforeInitError) IsWarning() bool                 { return false }
+func (e ComputedSelfAccessBeforeInitError) IsWarning() bool        { return false }
+func (e LoopInConstructorNotSupportedError) IsWarning() bool       { return false }
+func (e TryInConstructorNotSupportedError) IsWarning() bool        { return false }
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.
