@@ -44,8 +44,27 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				leftType, leftErrors = c.getMemberType(ctx, objType, key, AccessWrite)
 				errors = slices.Concat(errors, leftErrors)
 
-				// Check if the property is readonly (this check takes precedence)
-				if c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
+				// Check if the property is readonly (this check takes precedence).
+				// Inside a constructor body, writes to `self.<field>` are
+				// initialization rather than mutation, so the readonly
+				// check is suppressed for the receiver `self`. We resolve
+				// `self` through the scope and require that its binding
+				// originates from a `*ast.ConstructorElem` — this guards
+				// against `val self = otherInstance` shadowing the ctor's
+				// receiver inside a nested block.
+				readonlyAllowed := false
+				if ctx.InConstructorBody {
+					if ident, ok := memberExpr.Object.(*ast.IdentExpr); ok && ident.Name == "self" && ctx.Scope != nil {
+						if binding := ctx.Scope.GetValue("self"); binding != nil {
+							if np, ok := binding.Source.(*ast.NodeProvenance); ok {
+								if _, isCtor := np.Node.(*ast.ConstructorElem); isCtor {
+									readonlyAllowed = true
+								}
+							}
+						}
+					}
+				}
+				if !readonlyAllowed && c.isPropertyReadonly(ctx, objType, memberExpr.Prop.Name) {
 					// Even if the type is mutable, readonly properties cannot be mutated
 					errors = append(errors, &CannotMutateReadonlyPropertyError{
 						Type:     objType,
@@ -485,7 +504,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				}
 
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					methodCtx, methodType, paramBindings, methodExpr.Fn.Params, methodExpr.Fn.Body, methodExpr.Fn.Async)
+					methodCtx, methodType, paramBindings, methodExpr.Fn.Params, methodExpr.Fn.Body, methodExpr.Fn.Async, false)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.GetterExpr:
@@ -500,7 +519,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				getterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, getterExpr.Fn.Params, getterExpr.Fn.Body, getterExpr.Fn.Async)
+					objCtx, funcType, paramBindings, getterExpr.Fn.Params, getterExpr.Fn.Body, getterExpr.Fn.Async, false)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.SetterExpr:
@@ -515,7 +534,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				setterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, setterExpr.Fn.Params, setterExpr.Fn.Body, setterExpr.Fn.Async)
+					objCtx, funcType, paramBindings, setterExpr.Fn.Params, setterExpr.Fn.Body, setterExpr.Fn.Async, false)
 				errors = slices.Concat(errors, inferErrors)
 			case *ast.ObjSpreadExpr:
 				// Already handled in the first loop — nothing to do here.
@@ -538,7 +557,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			funcCtx.CallSiteTypeVars = &callSiteTypeVars
 		}
 
-		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.FuncSig.Params, expr.Body, expr.FuncSig.Async)
+		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.FuncSig.Params, expr.Body, expr.FuncSig.Async, false)
 		errors = slices.Concat(errors, inferErrors)
 
 		// Only generalize top-level FuncExprs. Nested FuncExprs (inside function

@@ -598,7 +598,7 @@ classes with more than one in-body `constructor`.
 - The single `*ast.ConstructorElem` in the class body (user-written or
   synthesized per Phase 2.7)
 
-### 4.2 Emission Strategy
+### 4.2 Emission Strategy — Done
 
 For Phase 4, every class has exactly one in-body constructor. Emit it
 as a plain JS `constructor(x, y, …)` body — no rest-parameter wrapper,
@@ -613,7 +613,7 @@ emit the standard JS default-parameter form: `constructor(x = expr) { … }`.
 (Field-level defaults no longer exist — see requirements
 §"Field Declarations".)
 
-### 4.3 Fixture Migration
+### 4.3 Fixture Migration — Done
 
 Hand-edit every `.esc` file that uses primary-constructor syntax. The
 codebase is small enough that this is tractable manually; no codemod is

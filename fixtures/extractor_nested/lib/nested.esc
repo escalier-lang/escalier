@@ -1,19 +1,19 @@
-class D(msg: string) {
-    msg,
+class D {
+    msg :: string,
     static [Symbol.customMatcher](subject: D) -> [string] {
         return [subject.msg]
     }
 }
-class E(x: number, y: number) {
-    x,
-    y,
+class E {
+    x :: number,
+    y :: number,
     static [Symbol.customMatcher](subject: E) -> [number, number] {
         return [subject.x, subject.y]
     }
 }
-class C(d: D, e: E) {
-    d,
-    e,
+class C {
+    d :: D,
+    e :: E,
     static [Symbol.customMatcher](subject: C) -> [D, E] {
         return [subject.d, subject.e]
     }

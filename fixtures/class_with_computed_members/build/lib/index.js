@@ -1,11 +1,10 @@
 export const bar = "bar";
 export const baz = "baz";
 export class Foo {
-  constructor() {
-    this[bar] = 42;
-  }
   [baz]() {
     return this[bar];
+  }
+  constructor() {
   }
 }
 export const foo = new Foo();

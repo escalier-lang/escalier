@@ -9,26 +9,26 @@ export class Circle {
   }
 }
 export class Color {
-  constructor(temp3, temp4, temp5) {
-    const r = temp3;
-    const g = temp4;
-    const b = temp5;
+  constructor(temp2, temp3, temp4) {
+    const r = temp2;
+    const g = temp3;
+    const b = temp4;
     this.r = r;
     this.g = g;
     this.b = b;
   }
-  static [Symbol.customMatcher](temp2) {
-    const subject = temp2;
+  static [Symbol.customMatcher](temp5) {
+    const subject = temp5;
     return [subject.r, subject.g, subject.b];
   }
 }
 export class Event {
-  constructor(temp7) {
-    const kind = temp7;
+  constructor(temp6) {
+    const kind = temp6;
     this.kind = kind;
   }
-  static [Symbol.customMatcher](temp6) {
-    const subject = temp6;
+  static [Symbol.customMatcher](temp7) {
+    const subject = temp7;
     return [subject.kind];
   }
 }

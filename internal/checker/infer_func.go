@@ -229,7 +229,11 @@ func (c *Checker) inferFuncSig(
 	return t, funcCtx, bindings, errors
 }
 
-// NOTE: This function updates `funcSigType`
+// NOTE: This function updates `funcSigType`.
+// `isConstructorBody` enables the readonly-init relaxation for assignments
+// to `self.<field>` inside the body. Pass true only from the constructor
+// inference entry point — nested function bodies must pass false so
+// closures declared inside a constructor cannot bypass the readonly check.
 func (c *Checker) inferFuncBodyWithFuncSigType(
 	ctx Context,
 	funcSigType *type_system.FuncType,
@@ -237,6 +241,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	astParams []*ast.Param,
 	body *ast.Block,
 	isAsync bool,
+	isConstructorBody bool,
 ) []Error {
 	errors := []Error{}
 
@@ -245,9 +250,13 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	containsYield := false
 	yieldedTypes := []type_system.Type{}
 
-	// Create context for the function body
+	// Create context for the function body. `InConstructorBody` is set
+	// from the explicit `isConstructorBody` argument, not inherited from
+	// `ctx`, so closures declared inside a constructor body don't bypass
+	// the readonly check on `self.<field>` assignments.
 	bodyCtx := ctx.WithNewScope()
 	bodyCtx.InFuncBody = true
+	bodyCtx.InConstructorBody = isConstructorBody
 	bodyCtx.IsAsync = isAsync
 	bodyCtx.ContainsYield = &containsYield
 	bodyCtx.YieldedTypes = &yieldedTypes

@@ -20,7 +20,10 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 	}{
 		"NoMutSelf_DefaultsImmutable": {
 			input: `
-				class Point(x: number, y: number) { x, y, }
+				class Point {
+					x :: number,
+					y :: number,
+				}
 				val p = Point(5, 10)
 			`,
 			bindingName:  "p",
@@ -28,8 +31,8 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 		},
 		"HasMutSelf_DefaultsImmutable": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					increment(mut self) -> number { return self.count }
 				}
 				val c = Counter(0)
@@ -39,8 +42,8 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 		},
 		"HasMutSelf_MutPatternYieldsMutable": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					increment(mut self) -> number { return self.count }
 				}
 				val mut c = Counter(0)
@@ -50,8 +53,8 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 		},
 		"DataModifier_DefaultsImmutable": {
 			input: `
-				data class Config(host: string) {
-					host,
+				class Config {
+					host :: string,
 					setHost(mut self, h: string) -> void {}
 				}
 				val cfg = Config("localhost")

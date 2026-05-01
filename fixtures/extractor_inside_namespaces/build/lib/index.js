@@ -1,27 +1,27 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 const MyEnum = {};
 export class MyEnum__Color {
-  constructor(temp2, temp3, temp4) {
-    const r = temp2;
-    const g = temp3;
-    const b = temp4;
+  constructor(temp1, temp2, temp3) {
+    const r = temp1;
+    const g = temp2;
+    const b = temp3;
     this.r = r;
     this.g = g;
     this.b = b;
   }
-  static [Symbol.customMatcher](temp1) {
-    const subject = temp1;
+  static [Symbol.customMatcher](temp4) {
+    const subject = temp4;
     return [subject.r, subject.g, subject.b];
   }
 }
 MyEnum.Color = MyEnum__Color;
 export class MyEnum__MyEvent {
-  constructor(temp6) {
-    const kind = temp6;
+  constructor(temp5) {
+    const kind = temp5;
     this.kind = kind;
   }
-  static [Symbol.customMatcher](temp5) {
-    const subject = temp5;
+  static [Symbol.customMatcher](temp6) {
+    const subject = temp6;
     return [subject.kind];
   }
 }

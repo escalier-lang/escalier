@@ -894,7 +894,7 @@ func (c *Checker) InferComponent(
 					declCtx.CallSiteTypeVars = &callSiteTypeVars
 
 					inferErrors := c.inferFuncBodyWithFuncSigType(
-						declCtx, funcType, paramBindings, decl.FuncSig.Params, decl.Body, decl.FuncSig.Async)
+						declCtx, funcType, paramBindings, decl.FuncSig.Params, decl.Body, decl.FuncSig.Async, false)
 					errors = slices.Concat(errors, inferErrors)
 				}
 
@@ -1294,7 +1294,7 @@ func (c *Checker) InferComponent(
 							}
 
 							methodCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
-							bodyErrors := c.inferFuncBodyWithFuncSigType(methodCtx, methodType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false)
+							bodyErrors := c.inferFuncBodyWithFuncSigType(methodCtx, methodType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false, false)
 							errors = slices.Concat(errors, bodyErrors)
 						}
 
@@ -1365,7 +1365,7 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
-								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, getterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false)
+								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, getterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false, false)
 								errors = slices.Concat(errors, bodyErrors)
 							}
 						}
@@ -1443,7 +1443,7 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
-								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, setterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false)
+								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, setterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false, false)
 								errors = slices.Concat(errors, bodyErrors)
 							}
 						}
@@ -1525,9 +1525,15 @@ func (c *Checker) InferComponent(
 						if info.Ctx.Scope != nil {
 							ctorBodyCtx = info.Ctx.WithNewScope()
 						}
+						// `isConstructorBody = true` enables readonly-init
+						// relaxation for `self.<field>` writes inside the
+						// body. The flag is set on the body's own scope
+						// only; nested function bodies clear it so closures
+						// declared inside the constructor cannot bypass the
+						// readonly check.
 						bodyErrors := c.inferFuncBodyWithFuncSigType(
 							ctorBodyCtx, bodyFuncType, ctorBindings,
-							ctorCallableParams(bodyElem), bodyElem.Fn.Body, false,
+							ctorCallableParams(bodyElem), bodyElem.Fn.Body, false, true,
 						)
 						errors = slices.Concat(errors, bodyErrors)
 						ctorFuncType.Throws = bodyFuncType.Throws

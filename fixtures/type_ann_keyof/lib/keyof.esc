@@ -8,8 +8,8 @@ val coord2: keyof Point = "z"
 val x: Point["x"] = 5
 val y: Point["y"] = 10
 
-class Event(msg: string) {
-    msg,
+class Event {
+    msg :: string,
     print(self) {
         console.log(self.msg)
     }

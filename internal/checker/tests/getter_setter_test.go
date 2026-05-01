@@ -18,8 +18,8 @@ func TestGetterSetterAccess(t *testing.T) {
 	}{
 		"ReadGetterOnlyProperty": {
 			input: `
-				class Circle(radius: number) {
-					radius,
+				class Circle {
+					radius :: number,
 					get area(self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
@@ -31,8 +31,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		},
 		"WriteGetterOnlyPropertyShouldError": {
 			input: `
-				class Circle(radius: number) {
-					radius,
+				class Circle {
+					radius :: number,
 					get area(self) -> number {
 						return 3.14 * self.radius * self.radius
 					},
@@ -49,8 +49,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		},
 		"WriteSetterOnlyProperty": {
 			input: `
-				class Temperature(celsius: number) {
-					celsius,
+				class Temperature {
+					celsius :: number,
 					set fahrenheit(mut self, value: number) {
 						self.celsius = (value - 32) * 5 / 9
 					},
@@ -64,8 +64,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		},
 		"ReadSetterOnlyPropertyShouldError": {
 			input: `
-				class Temperature(celsius: number) {
-					celsius,
+				class Temperature {
+					celsius :: number,
 					set fahrenheit(mut self, value: number) {
 						self.celsius = (value - 32) * 5 / 9
 					},
@@ -80,9 +80,9 @@ func TestGetterSetterAccess(t *testing.T) {
 		"ReadAndWriteWithBothGetterAndSetter": {
 			input: `
 				declare fn split(s: string, delimiter: string) -> Array<string>
-				class Person(firstName: string, lastName: string) {
-					firstName,
-					lastName,
+				class Person {
+					firstName :: string,
+					lastName :: string,
 					get fullName(self) -> string {
 						return self.firstName ++ " " ++ self.lastName
 					},
@@ -130,8 +130,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		},
 		"WriteSetterViaSpreadSource": {
 			input: `
-				class Base(_v: number) {
-					_v,
+				class Base {
+					_v :: number,
 					set value(mut self, v: number) {
 						self._v = v
 					},
@@ -145,8 +145,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		},
 		"ReadGetterViaSpreadSource": {
 			input: `
-				class Base(_v: number) {
-					_v,
+				class Base {
+					_v :: number,
 					get value(self) -> number {
 						return self._v
 					},
@@ -158,8 +158,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		},
 		"ReadSetterViaSpreadSourceShouldError": {
 			input: `
-				class Base(_v: number) {
-					_v,
+				class Base {
+					_v :: number,
 					set value(mut self, v: number) {
 						self._v = v
 					},
@@ -175,12 +175,12 @@ func TestGetterSetterAccess(t *testing.T) {
 		// should not cause nil values in the rest object.
 		"UnionDestructureWithRestSkipsSetterOnlyFields": {
 			input: `
-				class A(x: number) {
-					x,
+				class A {
+					x :: number,
 					set s(mut self, v: number) {},
 				}
-				class B(x: string) {
-					x,
+				class B {
+					x :: string,
 					set s(mut self, v: string) {},
 				}
 				fn foo(u: A | B) {
@@ -197,8 +197,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		// that a subsequent write incorrectly succeeds (or vice versa).
 		"GenericClassGetterThenSetterCacheIsolation": {
 			input: `
-				class Box<T>(value: T) {
-					value,
+				class Box<T> {
+					value :: T,
 					get contents(self) -> T {
 						return self.value
 					},
@@ -217,8 +217,8 @@ func TestGetterSetterAccess(t *testing.T) {
 		// The reverse order: write first, then read.
 		"GenericClassSetterThenGetterCacheIsolation": {
 			input: `
-				class Box<T>(value: T) {
-					value,
+				class Box<T> {
+					value :: T,
 					get contents(self) -> T {
 						return self.value
 					},

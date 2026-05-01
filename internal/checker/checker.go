@@ -145,6 +145,10 @@ type Context struct {
 	// generalization of nested FuncExprs, which must defer generalization to
 	// the outermost enclosing function.
 	InFuncBody bool
+	// InConstructorBody is true when we're inside a class constructor body.
+	// Allows assignments to readonly fields of `self`, which are
+	// initialization rather than mutation.
+	InConstructorBody bool
 	// CallSites collects synthetic FuncTypes created when a TypeVarType is called
 	// as a function. Keyed by TypeVar ID. Pointer so nested scopes share state
 	// with the outermost enclosing function.
@@ -194,6 +198,7 @@ func (ctx *Context) WithNewScope() Context {
 		YieldedTypes:           ctx.YieldedTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
 		InFuncBody:             ctx.InFuncBody,
+		InConstructorBody:      ctx.InConstructorBody,
 		CallSites:              ctx.CallSites,
 		CallSiteTypeVars:       ctx.CallSiteTypeVars,
 		Liveness:               ctx.Liveness,
@@ -219,6 +224,7 @@ func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context 
 		YieldedTypes:      ctx.YieldedTypes,
 		GeneratorNextType: ctx.GeneratorNextType,
 		InFuncBody:        ctx.InFuncBody,
+		InConstructorBody: ctx.InConstructorBody,
 		CallSites:         ctx.CallSites,
 		CallSiteTypeVars:  ctx.CallSiteTypeVars,
 		Liveness:          ctx.Liveness,
@@ -244,6 +250,7 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		YieldedTypes:           ctx.YieldedTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
 		InFuncBody:             ctx.InFuncBody,
+		InConstructorBody:      ctx.InConstructorBody,
 		CallSites:              ctx.CallSites,
 		CallSiteTypeVars:       ctx.CallSiteTypeVars,
 		Liveness:               ctx.Liveness,

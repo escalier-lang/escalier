@@ -1,4 +1,4 @@
-declare type Circle = {get area(): number};
+declare type Circle = {radius: number, get area(): number};
 declare const Circle: {new (radius: number): Circle};
 declare type Color = {r: number, g: number, b: number};
 declare const Color: {new (r: number, g: number, b: number): Color, [Symbol.customMatcher](subject: Color): [number, number, number]};

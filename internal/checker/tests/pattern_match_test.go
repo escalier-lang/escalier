@@ -15,7 +15,11 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 	}{
 		"Case6_PartialMatchSubsetOfFields": {
 			input: `
-				class User(name: string, age: number, email: string) { name, age, email }
+				class User {
+					name :: string,
+					age :: number,
+					email :: string,
+				}
 
 				declare val user: User
 				val result = match user {
@@ -29,8 +33,9 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 		},
 		"Case12_StructuralPatternMatchesGetter": {
 			input: `
-				class Circle(radius: number) {
-					get area(self) -> number { return 3.14159 * radius * radius },
+				class Circle {
+					radius :: number,
+					get area(self) -> number { return 3.14159 * self.radius * self.radius },
 				}
 
 				declare val circle: Circle
@@ -45,7 +50,10 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 		},
 		"PartialMatchMultipleFields": {
 			input: `
-				class Point(x: number, y: number) { x, y }
+				class Point {
+					x :: number,
+					y :: number,
+				}
 
 				declare val p: Point
 				val result = match p {
@@ -59,8 +67,13 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 		},
 		"Case1_StructuralDestructuringOfNominalUnion": {
 			input: `
-				class Point(x: number, y: number) { x, y }
-				class Event(kind: string) { kind }
+				class Point {
+					x :: number,
+					y :: number,
+				}
+				class Event {
+					kind :: string,
+				}
 
 				declare val obj: Point | Event
 				val result = match obj {
@@ -110,8 +123,13 @@ func TestPatternMatchStructuralVsNominal(t *testing.T) {
 		},
 		"Case5_MixedNominalAndStructuralPatterns": {
 			input: `
-				class Point(x: number, y: number) { x, y }
-				class Event(kind: string) { kind }
+				class Point {
+					x :: number,
+					y :: number,
+				}
+				class Event {
+					kind :: string,
+				}
 
 				declare val obj: Point | Event
 				val result = match obj {
@@ -170,7 +188,10 @@ func TestPatternMatchErrors(t *testing.T) {
 	}{
 		"PatternFieldNotFoundOnNominalType": {
 			input: `
-				class Point(x: number, y: number) { x, y }
+				class Point {
+					x :: number,
+					y :: number,
+				}
 
 				declare val p: Point
 				val result = match p {
@@ -187,8 +208,13 @@ func TestPatternMatchErrors(t *testing.T) {
 		},
 		"Case4_PatternFieldNotInAnyUnionMember": {
 			input: `
-				class Point(x: number, y: number) { x, y }
-				class Event(kind: string) { kind }
+				class Point {
+					x :: number,
+					y :: number,
+				}
+				class Event {
+					kind :: string,
+				}
 
 				declare val obj: Point | Event
 				val result = match obj {
@@ -214,8 +240,13 @@ func TestPatternMatchErrors(t *testing.T) {
 		},
 		"Case10_PatternFieldsSplitAcrossMembers": {
 			input: `
-				class Point(x: number, y: number) { x, y }
-				class Event(kind: string) { kind }
+				class Point {
+					x :: number,
+					y :: number,
+				}
+				class Event {
+					kind :: string,
+				}
 
 				declare val obj: Point | Event
 				val result = match obj {

@@ -1,4 +1,4 @@
-class Foo() {
+class Foo {
     value: 5:number,
     getValue<T>(self, defaultValue: T) -> number | T {
         if self.value != 0 {

@@ -254,8 +254,8 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 		wantParamMut   []bool // by index, parameter pattern's IdentPat.Mutable
 	}{
 		"mut self followed by mut p": {
-			input: `class Counter(c: number) {
-				c,
+			input: `class Counter {
+				c :: number,
 				bump(mut self, mut p: number) -> number { return self.c + p },
 			}`,
 			wantParamCount: 1,
@@ -263,8 +263,8 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 			wantParamMut:   []bool{true},
 		},
 		"mut self followed by plain p": {
-			input: `class Counter(c: number) {
-				c,
+			input: `class Counter {
+				c :: number,
 				bump(mut self, p: number) -> number { return self.c + p },
 			}`,
 			wantParamCount: 1,
@@ -272,8 +272,8 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 			wantParamMut:   []bool{false},
 		},
 		"plain self followed by mut p": {
-			input: `class Counter(c: number) {
-				c,
+			input: `class Counter {
+				c :: number,
 				peek(self, mut p: number) -> number { return self.c + p },
 			}`,
 			wantParamCount: 1,
@@ -281,8 +281,8 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 			wantParamMut:   []bool{true},
 		},
 		"mut self followed by mut and plain mix": {
-			input: `class Counter(c: number) {
-				c,
+			input: `class Counter {
+				c :: number,
 				bump(mut self, mut p: number, q: number) -> number { return self.c + p + q },
 			}`,
 			wantParamCount: 2,

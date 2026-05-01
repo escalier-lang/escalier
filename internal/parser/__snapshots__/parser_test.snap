@@ -6902,54 +6902,6 @@
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
         Params:     {
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "x",
-                    VarID:   0,
-                    Mutable: false,
-                    TypeAnn: nil,
-                    Default: nil,
-                    span:    ast.Span{
-                        Start:    ast.Location{Line:2, Column:17},
-                        End:      ast.Location{Line:2, Column:18},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Optional: false,
-                TypeAnn:  &ast.NumberTypeAnn{
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:20},
-                        End:      ast.Location{Line:2, Column:26},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-            },
-            &ast.Param{
-                Pattern: &ast.IdentPat{
-                    Name:    "y",
-                    VarID:   0,
-                    Mutable: false,
-                    TypeAnn: nil,
-                    Default: nil,
-                    span:    ast.Span{
-                        Start:    ast.Location{Line:2, Column:28},
-                        End:      ast.Location{Line:2, Column:29},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-                Optional: false,
-                TypeAnn:  &ast.NumberTypeAnn{
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:31},
-                        End:      ast.Location{Line:2, Column:37},
-                        SourceID: 0,
-                    },
-                    inferredType: nil,
-                },
-            },
         },
         Body: {
             &ast.FieldElem{
@@ -6965,15 +6917,22 @@
                     },
                     inferredType: nil,
                 },
-                Value:    nil,
-                Type:     nil,
+                Value: nil,
+                Type:  &ast.NumberTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:11},
+                        End:      ast.Location{Line:3, Column:17},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
                 Default:  nil,
                 Static:   false,
                 Private:  false,
                 Readonly: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
-                    End:      ast.Location{Line:3, Column:7},
+                    End:      ast.Location{Line:3, Column:17},
                     SourceID: 0,
                 },
             },
@@ -6990,15 +6949,22 @@
                     },
                     inferredType: nil,
                 },
-                Value:    nil,
-                Type:     nil,
+                Value: nil,
+                Type:  &ast.NumberTypeAnn{
+                    span: ast.Span{
+                        Start:    ast.Location{Line:4, Column:11},
+                        End:      ast.Location{Line:4, Column:17},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
                 Default:  nil,
                 Static:   false,
                 Private:  false,
                 Readonly: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
-                    End:      ast.Location{Line:4, Column:7},
+                    End:      ast.Location{Line:4, Column:17},
                     SourceID: 0,
                 },
             },

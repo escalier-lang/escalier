@@ -382,9 +382,9 @@ func TestClassDeclarations(t *testing.T) {
 	}{
 		"BasicClass": {
 			input: `
-				class Point(x: number, y: number) {
-					x,
-					y,
+				class Point {
+					x :: number,
+					y :: number,
 				}
 			`,
 		},

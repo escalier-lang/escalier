@@ -17,9 +17,9 @@ func TestClassDeclDependencies(t *testing.T) {
 	}{
 		"SimpleClass_NoDependencies": {
 			input: `
-				class Point(x: number, y: number) {
-					x,
-					y,
+				class Point {
+					x :: number,
+					y :: number,
 				}
 			`,
 			expected: []string{},
@@ -42,7 +42,9 @@ func TestClassDeclDependencies(t *testing.T) {
 		"ClassWithTypeParamConstraints": {
 			input: `
 				type Serializable = {serialize: fn() -> string}
-				class DataClass<T: Serializable>(value: T) {}
+				class DataClass<T: Serializable> {
+					value :: T,
+				}
 			`,
 			expected: []string{"Serializable"},
 		},
@@ -69,8 +71,8 @@ func TestClassDeclDependencies(t *testing.T) {
 		"ClassWithConstructorParamTypes": {
 			input: `
 				type Config = {debug: boolean}
-				class App(config: Config) {
-					config,
+				class App {
+					config :: Config,
 				}
 			`,
 			expected: []string{"Config"},
@@ -80,7 +82,8 @@ func TestClassDeclDependencies(t *testing.T) {
 				class Base {}
 				type Data = {value: number}
 				type Error = {message: string}
-				class Child(data: Data) extends Base {
+				class Child extends Base {
+					data :: Data,
 					process(self) -> Error {
 						return {message: "error"}
 					}

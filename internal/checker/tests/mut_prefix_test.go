@@ -25,7 +25,10 @@ func TestMutPrefixBindingTypes(t *testing.T) {
 	}{
 		"MutFunctionCall_Mutable": {
 			input: `
-				class Point(x: number, y: number) { x, y, }
+				class Point {
+					x :: number,
+					y :: number,
+				}
 				fn makePoint(x: number, y: number) -> Point { return Point(x, y) }
 				val mut p = makePoint(5, 10)
 			`,
@@ -64,8 +67,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 	}{
 		"MutInstance_CanBindMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn test() {
@@ -76,8 +79,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"ImmutableInstance_CannotCallMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn test() {
@@ -89,7 +92,10 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"MutFunctionCall_CanAssignField": {
 			input: `
-				class Point(x: number, y: number) { x, y, }
+				class Point {
+					x :: number,
+					y :: number,
+				}
 				fn makePoint(x: number, y: number) -> Point { return Point(x, y) }
 				fn test() {
 					val mut p = makePoint(5, 10)
@@ -99,8 +105,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"TypeVarReceiver_ImmutableConstraint_CannotCallMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn callTick<T: Counter>(t: T) -> number {
@@ -111,8 +117,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"TypeVarReceiver_MutConstraint_CanCallMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				fn callTick<T: mut Counter>(t: T) -> number {
@@ -122,8 +128,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"AliasReceiver_MutAliasNonGeneric_CanCallMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type MutCounter = mut Counter
@@ -133,8 +139,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"AliasReceiver_MutAliasGeneric_CanCallMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type MutT<T> = mut T
@@ -144,8 +150,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"AliasReceiver_ImmutableAlias_CannotCallMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type Alias<T> = T
@@ -156,8 +162,8 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 		},
 		"AliasReceiver_IdentityAliasOfMut_CanCallMutSelfMethod": {
 			input: `
-				class Counter(count: number) {
-					count,
+				class Counter {
+					count :: number,
 					tick(mut self) -> number { self.count = self.count + 1 return self.count }
 				}
 				type Identity<T> = T

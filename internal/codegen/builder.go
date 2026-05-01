@@ -799,6 +799,18 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	case *ast.ClassDecl:
 		allStmts := []Stmt{}
 
+		// Detect whether the class body carries an in-body ConstructorElem
+		// (user-written or synthesized in Phase 2.7). When present, codegen
+		// for the constructor lives in buildClassElems; we skip the legacy
+		// primary-ctor wrapper below.
+		hasInBodyCtor := false
+		for _, elem := range d.Body {
+			if _, ok := elem.(*ast.ConstructorElem); ok {
+				hasInBodyCtor = true
+				break
+			}
+		}
+
 		// classParamNames lifecycle:
 		// 1. SET before buildClassElems — so that when getter/method bodies
 		//    reference a constructor param (e.g. `radius`), buildExpr emits
@@ -823,6 +835,33 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 
 		// Step 2: clear classParamNames before building constructor body
 		b.classParamNames = nil
+
+		if hasInBodyCtor {
+			// The constructor was emitted by buildClassElems from the
+			// in-body ConstructorElem (synthesized or user-written).
+			// Skip the legacy primary-ctor field-init/wrapper logic.
+			b.classParamNames = prevClassParamNames
+
+			classDecl := &ClassDecl{
+				Name: &Identifier{
+					Name:   fullyQualifyName(d.Name.Name, nsName),
+					span:   nil,
+					source: d.Name,
+				},
+				Body:    classElems,
+				export:  b.isModule,
+				declare: d.Declare(),
+				span:    nil,
+				source:  d,
+			}
+			stmt := &DeclStmt{
+				Decl:   classDecl,
+				span:   nil,
+				source: d,
+			}
+			allStmts = append(allStmts, stmt)
+			return allStmts
+		}
 
 		// Use buildParams to handle parameter patterns and generate temp variables
 		params, paramStmts := b.buildParams(d.Params)
@@ -2546,8 +2585,34 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			outElems = append(outElems, setterElem)
 
 		case *ast.ConstructorElem:
-			// TODO(class-ctor Phase 4): emit single-ctor body.
-			_ = e
+			if e.Fn == nil {
+				continue
+			}
+			// Strip Fn.Params[0] (the `mut self` receiver) — it is `this`
+			// at the JS level, not a callable parameter.
+			callableParams := e.Fn.Params
+			if len(callableParams) > 0 {
+				callableParams = callableParams[1:]
+			}
+			params, paramStmts := b.buildParams(callableParams)
+			var bodyStmts []Stmt
+			if e.Fn.Body != nil {
+				// Mark that we're inside a method body — same as
+				// the method/getter/setter cases above. Suppresses
+				// `export` on nested decls (see line 743).
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
+				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
+			}
+			constructorMethod := NewMethodElem(
+				NewIdentExpr("constructor", "", e),
+				params,
+				slices.Concat(paramStmts, bodyStmts),
+				MethodElemOptions{},
+				e,
+			)
+			outElems = append(outElems, constructorMethod)
 		}
 	}
 
