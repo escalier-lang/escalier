@@ -383,8 +383,8 @@ func TestClassDeclarations(t *testing.T) {
 		"BasicClass": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 			`,
 		},

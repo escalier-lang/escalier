@@ -18,8 +18,8 @@ func TestClassDeclDependencies(t *testing.T) {
 		"SimpleClass_NoDependencies": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 			`,
 			expected: []string{},
@@ -43,7 +43,7 @@ func TestClassDeclDependencies(t *testing.T) {
 			input: `
 				type Serializable = {serialize: fn() -> string}
 				class DataClass<T: Serializable> {
-					value :: T,
+					value: T,
 				}
 			`,
 			expected: []string{"Serializable"},
@@ -52,7 +52,7 @@ func TestClassDeclDependencies(t *testing.T) {
 			input: `
 				type Point = {x: number, y: number}
 				class Entity {
-					position :: Point,
+					position: Point,
 				}
 			`,
 			expected: []string{"Point"},
@@ -72,7 +72,7 @@ func TestClassDeclDependencies(t *testing.T) {
 			input: `
 				type Config = {debug: boolean}
 				class App {
-					config :: Config,
+					config: Config,
 				}
 			`,
 			expected: []string{"Config"},
@@ -83,7 +83,7 @@ func TestClassDeclDependencies(t *testing.T) {
 				type Data = {value: number}
 				type Error = {message: string}
 				class Child extends Base {
-					data :: Data,
+					data: Data,
 					process(self) -> Error {
 						return {message: "error"}
 					}

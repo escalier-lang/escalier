@@ -106,11 +106,11 @@ func TestExhaustiveMatch(t *testing.T) {
 		"NominalUnionCoveredByInstancePatterns": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 				class Event {
-					kind :: string,
+					kind: string,
 				}
 				declare val obj: Point | Event
 				val result = match obj {
@@ -125,10 +125,10 @@ func TestExhaustiveMatch(t *testing.T) {
 		"InstancePatWithInnerExhaustive": {
 			input: `
 				class Toggle {
-					value :: boolean,
+					value: boolean,
 				}
 				class Label {
-					text :: string,
+					text: string,
 				}
 				declare val obj: Toggle | Label
 				val result = match obj {
@@ -144,10 +144,10 @@ func TestExhaustiveMatch(t *testing.T) {
 		"InstancePatWithInnerNonExhaustive": {
 			input: `
 				class Toggle {
-					value :: boolean,
+					value: boolean,
 				}
 				class Label {
-					text :: string,
+					text: string,
 				}
 				declare val obj: Toggle | Label
 				val result = match obj {
@@ -163,10 +163,10 @@ func TestExhaustiveMatch(t *testing.T) {
 			input: `
 				enum Status { Active(), Inactive() }
 				class Task {
-					status :: Status,
+					status: Status,
 				}
 				class Note {
-					body :: string,
+					body: string,
 				}
 				declare val item: Task | Note
 				val result = match item {
@@ -183,10 +183,10 @@ func TestExhaustiveMatch(t *testing.T) {
 			input: `
 				enum Status { Active(), Inactive() }
 				class Task {
-					status :: Status,
+					status: Status,
 				}
 				class Note {
-					body :: string,
+					body: string,
 				}
 				declare val item: Task | Note
 				val result = match item {
@@ -201,10 +201,10 @@ func TestExhaustiveMatch(t *testing.T) {
 		"InstancePatWithLiteralPropertyExhaustive": {
 			input: `
 				class Packet {
-					kind :: "data" | "ack",
+					kind: "data" | "ack",
 				}
 				class Error {
-					code :: number,
+					code: number,
 				}
 				declare val msg: Packet | Error
 				val result = match msg {
@@ -220,10 +220,10 @@ func TestExhaustiveMatch(t *testing.T) {
 		"InstancePatWithLiteralPropertyNonExhaustive": {
 			input: `
 				class Packet {
-					kind :: "data" | "ack",
+					kind: "data" | "ack",
 				}
 				class Error {
-					code :: number,
+					code: number,
 				}
 				declare val msg: Packet | Error
 				val result = match msg {
@@ -238,7 +238,7 @@ func TestExhaustiveMatch(t *testing.T) {
 		"InstancePatWithNonFinitePropertyNeedsCatchAll": {
 			input: `
 				class Box {
-					value :: number,
+					value: number,
 				}
 				class Empty {}
 				declare val obj: Box | Empty
@@ -290,11 +290,11 @@ func TestExhaustiveMatch(t *testing.T) {
 		"MixedNominalAndStructuralPatterns": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 				class Event {
-					kind :: string,
+					kind: string,
 				}
 				declare val obj: Point | Event
 				val result = match obj {
@@ -438,8 +438,8 @@ func TestExhaustiveMatch(t *testing.T) {
 		"NominalClassNoCatchAll": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 				declare val p: Point
 				val result = match p {
@@ -501,11 +501,11 @@ func TestExhaustiveMatch(t *testing.T) {
 		"RedundantDuplicateInstancePattern": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 				class Event {
-					kind :: string,
+					kind: string,
 				}
 				declare val obj: Point | Event
 				val result = match obj {
@@ -1332,8 +1332,8 @@ func TestExhaustiveMatch(t *testing.T) {
 		"NoExhaustivenessCheckWhenPatternErrors": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 				declare val p: Point
 				val result = match p {

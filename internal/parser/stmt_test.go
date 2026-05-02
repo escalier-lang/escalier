@@ -33,13 +33,13 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"ClassWithSetter": {
 			input: `class Foo {
-			    private _value::number,
+			    private _value: number,
 				set value(self, x: number) { self._value = x },
 			}`,
 		},
 		"ClassWithGetterAndSetter": {
 			input: `class Foo {
-			    private _value::number,
+			    private _value: number,
 				get value(self) -> number { return self._value },
 				set value(self, x: number) { self._value = x },
 			}`,
@@ -51,7 +51,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 		},
 		"ClassWithPrivateGetterSetter": {
 			input: `class Foo {
-			    private _secret::string,
+			    private _secret: string,
 				private get secret(self) -> string { return "shh" },
 				private set secret(self, x: string) { self._secret = x },
 			}`,

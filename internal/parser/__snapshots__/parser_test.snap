@@ -6841,8 +6841,8 @@
                 Value: nil,
                 Type:  &ast.NumberTypeAnn{
                     span: ast.Span{
-                        Start:    ast.Location{Line:3, Column:11},
-                        End:      ast.Location{Line:3, Column:17},
+                        Start:    ast.Location{Line:3, Column:9},
+                        End:      ast.Location{Line:3, Column:15},
                         SourceID: 0,
                     },
                     inferredType: nil,
@@ -6852,7 +6852,7 @@
                 Readonly: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
-                    End:      ast.Location{Line:3, Column:17},
+                    End:      ast.Location{Line:3, Column:15},
                     SourceID: 0,
                 },
             },
@@ -6872,8 +6872,8 @@
                 Value: nil,
                 Type:  &ast.NumberTypeAnn{
                     span: ast.Span{
-                        Start:    ast.Location{Line:4, Column:11},
-                        End:      ast.Location{Line:4, Column:17},
+                        Start:    ast.Location{Line:4, Column:9},
+                        End:      ast.Location{Line:4, Column:15},
                         SourceID: 0,
                     },
                     inferredType: nil,
@@ -6883,7 +6883,7 @@
                 Readonly: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
-                    End:      ast.Location{Line:4, Column:17},
+                    End:      ast.Location{Line:4, Column:15},
                     SourceID: 0,
                 },
             },

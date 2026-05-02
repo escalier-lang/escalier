@@ -573,10 +573,11 @@ modifiers_done:
 
 		// nolint: exhaustive
 		switch next.Type {
-		case Colon, DoubleColon:
-			// `::` is accepted as a transitional alias for `:` here so
-			// in-tree fixtures that still use the old form keep parsing
-			// while the cleanup proceeds.
+		case Colon:
+			p.lexer.consume()
+			typeAnn = p.typeAnn()
+		case DoubleColon:
+			p.reportError(next.Span, "Use ':' instead of '::' for class field type annotations")
 			p.lexer.consume()
 			typeAnn = p.typeAnn()
 		}

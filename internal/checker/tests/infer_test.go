@@ -950,7 +950,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"ClassWithGenericMethod": {
 			input: `
 				class Box {
-					value :: number,
+					value: number,
 					getValue<T>(self, default: T) -> number | T {
 						if self.value != 0 {
 							return self.value
@@ -973,7 +973,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"SimpleGenericClass": {
 			input: `
 				class Box<T> {
-					value :: T,
+					value: T,
 				}
 				val box = Box(5:number)
 				val {value} = box
@@ -987,7 +987,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"GenericClassWithGenericMethods": {
 			input: `
 				class Box<T> {
-					value :: T,
+					value: T,
 					getValue<T>(self, default: T) -> number | T {
 						if self.value != 0 {
 							return self.value
@@ -1027,8 +1027,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"Extractors": {
 			input: `
 				class Foo {
-					a :: number,
-					b :: string,
+					a: number,
+					b: string,
 					static [Symbol.customMatcher](subject: Foo) -> [number, string] {
 						return [subject.a, subject.b]
 					}
@@ -1044,9 +1044,9 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"ExtractorWithRest": {
 			input: `
 				class Foo {
-					a :: number,
-					b :: string,
-					c :: boolean,
+					a: number,
+					b: string,
+					c: boolean,
 					static [Symbol.customMatcher](subject: Foo) -> [number, string, boolean] {
 						return [subject.a, subject.b, subject.c]
 					}
@@ -1062,8 +1062,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"ExtractorWithDefault": {
 			input: `
 				class Foo {
-					a :: number,
-					b :: string | undefined,
+					a: number,
+					b: string | undefined,
 					static [Symbol.customMatcher](subject: Foo) -> [number, string | undefined] {
 						return [subject.a, subject.b]
 					}
@@ -1090,10 +1090,10 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"NominalClasses": {
 			input: `
 				class UserId {
-					id :: number,
+					id: number,
 				}
 				class ProductId {
-					id :: number,
+					id: number,
 				}
 				val userId = UserId(5)
 				val productId: UserId = userId
@@ -1106,7 +1106,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"NomimalCanBeAssignedToStructural": {
 			input: `
 				class UserId {
-					id :: number,
+					id: number,
 				}
 				type HasId = {id: number}
 				val userId = UserId(5)
@@ -1952,10 +1952,10 @@ func TestCheckModuleWithErrors(t *testing.T) {
 		"NominalClasses": {
 			input: `
 				class UserId {
-					id :: number,
+					id: number,
 				}
 				class ProductId {
-					id :: number,
+					id: number,
 				}
 				val userId = UserId(5)
 				val productId: ProductId = userId
@@ -1967,7 +1967,7 @@ func TestCheckModuleWithErrors(t *testing.T) {
 		"StructuralCannotBeAssignedToNominal": {
 			input: `
 				class UserId {
-					id :: number,
+					id: number,
 				}
 				type HasId = {id: number}
 				val hasId: HasId = {id: 5}
@@ -4630,11 +4630,11 @@ func TestMatchExprInference(t *testing.T) {
 		"MatchClasses": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 				class Event {
-					kind :: string,
+					kind: string,
 				}
 				declare val obj: Point | Event
 				val result = match obj {
@@ -4650,11 +4650,11 @@ func TestMatchExprInference(t *testing.T) {
 		"MatchClassesWithObjPat": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 				}
 				class Event {
-					kind :: string,
+					kind: string,
 				}
 				declare val obj: Point | Event
 				val result = match obj {
@@ -4670,14 +4670,14 @@ func TestMatchExprInference(t *testing.T) {
 		"MatchExtractors": {
 			input: `
 				class Point {
-					x :: number,
-					y :: number,
+					x: number,
+					y: number,
 					static [Symbol.customMatcher](subject: Point) -> [number, number] {
 						return [subject.x, subject.y]
 					},
 				}
 				class Event {
-					kind :: string,
+					kind: string,
 					static [Symbol.customMatcher](subject: Event) -> [string] {
 						return [subject.kind]
 					},
