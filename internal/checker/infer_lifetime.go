@@ -907,6 +907,19 @@ func lifetimeContainsStatic(lt type_system.Lifetime) bool {
 //   - Inference of method-side return-type lifetimes when a method
 //     captures a constructor param (the constructor gets the lifetime,
 //     but the method's return type does not yet inherit it).
+//   - Capture through call results: `self.f = wrap(p)` where `wrap`'s
+//     return aliases its argument is currently NOT detected. This pass
+//     runs in the placeholder phase, before any callee body has been
+//     inferred, so `determineCheckerAliasSource` sees no lifetime info on
+//     the callee's return type and falls back to treating the call as
+//     opaque. The non-ctor path solves the analogous problem via the
+//     post-body fixed-point reinference loop (`ReinferLifetimes` in
+//     `InferComponent`); extending that loop to constructors requires
+//     making `setLifetimeOnType` / `setLifetimeArgsOnType` /
+//     `typeAlias.LifetimeParams` updates idempotent and reconciling them
+//     with class consumers that may have already resolved the class
+//     during the body phase. Tracked by `TestCtorCapturesViaWrappingCall`
+//     (currently t.Skip).
 func (c *Checker) InferConstructorLifetimes(
 	ctx Context,
 	classDecl *ast.ClassDecl,
