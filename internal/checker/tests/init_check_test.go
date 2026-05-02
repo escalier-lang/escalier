@@ -173,6 +173,12 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 				static msg: string | undefined,
 			}
 		`,
+		"StaticFieldUndefinedThroughTypeAlias": `
+			type Maybe = string | undefined
+			class Foo {
+				static msg: Maybe,
+			}
+		`,
 		"ReadonlyFieldCanBeInitialized": `
 			class Foo {
 				readonly x: number,

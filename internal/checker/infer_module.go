@@ -1193,7 +1193,13 @@ func (c *Checker) InferComponent(
 							// type). Otherwise the runtime value would be
 							// `undefined`, contradicting the declared type.
 							if isStatic && bodyElem.Value == nil {
-								if !typeContainsUndefined(type_system.Prune(prop.Value)) {
+								// Expand type refs/aliases so that an
+								// `undefined` member nested in an aliased
+								// union (e.g. `type Maybe = string | undefined`)
+								// is detected.
+								resolved, expandErrors := c.ExpandType(ctx, prop.Value, 1)
+								errors = slices.Concat(errors, expandErrors)
+								if !typeContainsUndefined(type_system.Prune(resolved)) {
 									errors = append(errors, StaticFieldMissingInitializerError{
 										FieldName: classFieldName(bodyElem.Name),
 										span:      bodyElem.Span(),
