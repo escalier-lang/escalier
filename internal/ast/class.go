@@ -58,7 +58,6 @@ func (d *ClassDecl) SetProvenance(p provenance.Provenance) {
 
 type FieldElem struct {
 	Name     ObjKey
-	Value    Expr    // optional — always nil after Phase 4; legacy interop only
 	Type     TypeAnn // required for class fields; optional for object-pattern shorthands
 	Static   bool    // true if this is a static field
 	Private  bool    // true if this field is private

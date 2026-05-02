@@ -1163,12 +1163,6 @@ func (c *Checker) InferComponent(
 
 								unifyErrors := c.Unify(ctx, prop.Value, annType)
 								errors = slices.Concat(errors, unifyErrors)
-							} else if bodyElem.Value != nil {
-								initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)
-								errors = slices.Concat(errors, initErrors)
-
-								unifyErrors := c.Unify(ctx, prop.Value, initType)
-								errors = slices.Concat(errors, unifyErrors)
 							}
 							// A field with neither a type annotation nor an
 							// initializer is a placeholder waiting for the

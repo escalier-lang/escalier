@@ -6838,8 +6838,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.NumberTypeAnn{
+                Type: &ast.NumberTypeAnn{
                     span: ast.Span{
                         Start:    ast.Location{Line:3, Column:9},
                         End:      ast.Location{Line:3, Column:15},
@@ -6869,8 +6868,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.NumberTypeAnn{
+                Type: &ast.NumberTypeAnn{
                     span: ast.Span{
                         Start:    ast.Location{Line:4, Column:9},
                         End:      ast.Location{Line:4, Column:15},
@@ -9030,8 +9028,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.StringTypeAnn{
+                Type: &ast.StringTypeAnn{
                     span: ast.Span{
                         Start:    ast.Location{Line:3, Column:12},
                         End:      ast.Location{Line:3, Column:18},
@@ -9373,8 +9370,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.NumberTypeAnn{
+                Type: &ast.NumberTypeAnn{
                     span: ast.Span{
                         Start:    ast.Location{Line:3, Column:9},
                         End:      ast.Location{Line:3, Column:15},
@@ -9557,8 +9553,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.TypeRefTypeAnn{
+                Type: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
                         span: ast.Span{
@@ -9763,8 +9758,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.NumberTypeAnn{
+                Type: &ast.NumberTypeAnn{
                     span: ast.Span{
                         Start:    ast.Location{Line:3, Column:9},
                         End:      ast.Location{Line:3, Column:15},
@@ -11121,8 +11115,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.TypeRefTypeAnn{
+                Type: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
                         span: ast.Span{
@@ -11339,8 +11332,7 @@
                     },
                     inferredType: nil,
                 },
-                Value: nil,
-                Type:  &ast.StringTypeAnn{
+                Type: &ast.StringTypeAnn{
                     span: ast.Span{
                         Start:    ast.Location{Line:3, Column:12},
                         End:      ast.Location{Line:3, Column:18},

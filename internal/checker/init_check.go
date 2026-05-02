@@ -496,9 +496,6 @@ func requiredFieldNames(decl *ast.ClassDecl) []string {
 		if field.Static {
 			continue
 		}
-		if field.Value != nil {
-			continue
-		}
 		switch k := field.Name.(type) {
 		case *ast.IdentExpr:
 			out = append(out, k.Name)

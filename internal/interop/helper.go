@@ -679,7 +679,6 @@ func convertPropertyDecl(pd *dts_parser.PropertyDecl) (*ast.FieldElem, error) {
 
 	return &ast.FieldElem{
 		Name:     name,
-		Value:    nil, // No value in declarations
 		Type:     typeAnn,
 		Static:   pd.Modifiers.Static,
 		Private:  pd.Modifiers.Private,

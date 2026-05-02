@@ -1023,126 +1023,15 @@ func collectFieldStorageParams(
 	storedParams set.Set[int],
 ) {
 	// Field name must be a plain identifier for the shorthand pattern.
-	fieldNameIdent, ok := fieldElem.Name.(*ast.IdentExpr)
-
-	// Shorthand: `{ p, }` or `{ p = fallback, }`. A default does not change
-	// the conclusion: when the caller passes `p`, the field stores the
-	// param, so the param's lifetime matters.
-	if ok && fieldElem.Value == nil {
+	// Shorthand: `{ p, }` or `{ p = fallback, }`. When the caller passes `p`,
+	// the field stores the param, so the param's lifetime matters.
+	if fieldNameIdent, ok := fieldElem.Name.(*ast.IdentExpr); ok {
 		if idx, ok := paramNameToIndex[fieldNameIdent.Name]; ok {
 			storedParams.Add(idx)
 		}
-		return
-	}
-
-	if fieldElem.Value == nil {
-		return
-	}
-
-	// Explicit `name: <expr>` — walk the initializer for any captured params.
-	for _, idx := range findCapturedParamsInExpr(fieldElem.Value, paramNameToIndex) {
-		storedParams.Add(idx)
 	}
 }
 
-// findCapturedParamsInExpr walks a field-initializer expression looking
-// for references to constructor parameters by name. Returns the parameter
-// indices in first-seen order. Recurses into composite literals
-// (object/tuple) and into spread elements; projection expressions
-// (member/index access, type cast, await) fall through to
-// liveness.DetermineAliasSource which already walks past those.
-//
-// Function calls and other complex expressions whose result might capture
-// arguments are NOT analyzed — they are treated as fresh.
-func findCapturedParamsInExpr(
-	expr ast.Expr,
-	paramNameToIndex map[string]int,
-) []int {
-	seen := set.NewSet[int]()
-	var result []int
-
-	addByName := func(name string) {
-		if idx, ok := paramNameToIndex[name]; ok && !seen.Contains(idx) {
-			seen.Add(idx)
-			result = append(result, idx)
-		}
-	}
-
-	var visit func(e ast.Expr)
-	visit = func(e ast.Expr) {
-		if e == nil {
-			return
-		}
-		switch ex := e.(type) {
-		case *ast.ObjectExpr:
-			for _, elem := range ex.Elems {
-				switch el := elem.(type) {
-				case *ast.PropertyExpr:
-					if el.Value != nil {
-						visit(el.Value)
-						continue
-					}
-					// Object shorthand: `{ p }` — the property name doubles
-					// as a value reference.
-					if name, ok := el.Name.(*ast.IdentExpr); ok {
-						addByName(name.Name)
-					}
-				case *ast.ObjSpreadExpr:
-					visit(el.Value)
-				}
-			}
-		case *ast.TupleExpr:
-			for _, sub := range ex.Elems {
-				visit(sub)
-			}
-		case *ast.ArraySpreadExpr:
-			visit(ex.Value)
-		case *ast.IdentExpr:
-			addByName(ex.Name)
-		case *ast.MemberExpr:
-			visit(ex.Object)
-		case *ast.IndexExpr:
-			visit(ex.Object)
-		case *ast.TypeCastExpr:
-			visit(ex.Expr)
-		case *ast.AwaitExpr:
-			visit(ex.Arg)
-		case *ast.IfElseExpr:
-			// Conditional that yields a value: both branches may
-			// contribute captures. Use the existing helper to find each
-			// branch's result expression.
-			cons := blockResultExpr(ex.Cons)
-			if cons != nil {
-				visit(cons)
-			}
-			if ex.Alt != nil {
-				if ex.Alt.Expr != nil {
-					visit(ex.Alt.Expr)
-				} else if ex.Alt.Block != nil {
-					if alt := blockResultExpr(*ex.Alt.Block); alt != nil {
-						visit(alt)
-					}
-				}
-			}
-		}
-	}
-	visit(expr)
-	return result
-}
-
-// blockResultExpr returns the result expression of a block (the last
-// statement if it's an ExprStmt), or nil if the block is empty or ends
-// with a non-expression statement. Mirrors the helper of the same name in
-// the liveness package, duplicated here to avoid an import cycle.
-func blockResultExpr(b ast.Block) ast.Expr {
-	if len(b.Stmts) == 0 {
-		return nil
-	}
-	if exprStmt, ok := b.Stmts[len(b.Stmts)-1].(*ast.ExprStmt); ok {
-		return exprStmt.Expr
-	}
-	return nil
-}
 
 // collectMethodBodyCaptures walks a method body looking for IdentExpr
 // references whose name matches a constructor parameter, and adds the

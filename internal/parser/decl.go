@@ -586,7 +586,6 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.FieldElem{
 			Name:     name,
-			Value:    nil,
 			Type:     typeAnn,
 			Static:   isStatic,
 			Private:  isPrivate,
