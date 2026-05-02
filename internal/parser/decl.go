@@ -580,6 +580,8 @@ modifiers_done:
 			p.reportError(next.Span, "Use ':' instead of '::' for class field type annotations")
 			p.lexer.consume()
 			typeAnn = p.typeAnn()
+		default:
+			p.reportError(next.Span, "Class fields require a type annotation (e.g. `name: T`)")
 		}
 
 		// TODO: report an error if `isAsync` is true

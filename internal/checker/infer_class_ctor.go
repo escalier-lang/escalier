@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"fmt"
 	"slices"
 	"unicode"
 
@@ -10,9 +11,9 @@ import (
 )
 
 // isValidJSIdentifier reports whether s can be used as a parameter name
-// without quoting. The check is intentionally conservative — only ASCII
-// letters, digits, `_` and `$` are accepted, and the first character may
-// not be a digit. This matches the subset of identifiers the synthesized
+// without quoting. Accepts any Unicode letter (per `unicode.IsLetter`),
+// digits, `_` and `$`, with the first character constrained to a letter,
+// `_`, or `$`. This matches the subset of identifiers the synthesized
 // constructor can safely emit as a parameter pattern.
 func isValidJSIdentifier(s string) bool {
 	if s == "" {
@@ -190,6 +191,11 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 	params := []*ast.Param{selfParam}
 	stmts := []ast.Stmt{}
 
+	// tempCounter generates parameter names for fields whose keys are not
+	// valid JS identifiers (e.g. `"foo-bar"`). The synthesized parameter
+	// is named `_field<N>` and the assignment uses index access on `self`.
+	tempCounter := 0
+
 	for _, bodyElem := range decl.Body {
 		field, ok := bodyElem.(*ast.FieldElem)
 		if !ok {
@@ -201,24 +207,31 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 
 		fieldSpan := field.Span()
 
-		// Determine the field's user-facing name. Computed-key fields
-		// are unconditionally rejected for synthesis — see the function
-		// docstring. All other ObjKey kinds are exhaustive at the AST
-		// level (`*ast.IdentExpr`, `*ast.StrLit`, `*ast.ComputedKey`),
-		// so any new variant should be handled explicitly here.
-		var fieldName string
+		// Resolve the field key to (paramName, lhs):
+		//   - paramName is the synthesized constructor parameter's name.
+		//   - lhs is the assignment target on `self` — either
+		//     `self.<ident>` for identifier-shaped keys or
+		//     `self["<key>"]` for string keys that aren't valid
+		//     identifiers. Computed-key fields are rejected outright;
+		//     synthesizing a param name for an arbitrary expression
+		//     would silently drop the field.
+		var paramName string
+		var lhs ast.Expr
+		selfRef := ast.NewIdent("self", fieldSpan)
 		switch k := field.Name.(type) {
 		case *ast.IdentExpr:
-			fieldName = k.Name
+			paramName = k.Name
+			lhs = ast.NewMember(selfRef, ast.NewIdentifier(paramName, fieldSpan), false, fieldSpan)
 		case *ast.StrLit:
-			if !isValidJSIdentifier(k.Value) {
-				// A quoted key like "foo-bar" cannot be used as a
-				// parameter name; treat it the same as a computed key
-				// and require an explicit constructor.
-				errors = append(errors, ComputedKeyFieldRequiresConstructorError{span: fieldSpan})
-				return nil, errors
+			if isValidJSIdentifier(k.Value) {
+				paramName = k.Value
+				lhs = ast.NewMember(selfRef, ast.NewIdentifier(paramName, fieldSpan), false, fieldSpan)
+			} else {
+				tempCounter++
+				paramName = fmt.Sprintf("_field%d", tempCounter)
+				keyExpr := ast.NewLitExpr(ast.NewString(k.Value, fieldSpan))
+				lhs = ast.NewIndex(selfRef, keyExpr, false, fieldSpan)
 			}
-			fieldName = k.Value
 		case *ast.ComputedKey:
 			// We cannot synthesize a parameter name for a computed
 			// key, so abort synthesis entirely rather than emitting a
@@ -230,15 +243,13 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 			panic("synthesizeConstructorElem: unexpected ObjKey variant")
 		}
 
-		// Build `self.<field> = <field>`: a synthesized parameter of the
-		// same name and type as the field, assigned into self. Field-level
+		// Build `<lhs> = <paramName>`: a synthesized parameter of the
+		// same type as the field, assigned into self. Field-level
 		// defaults are no longer supported in the parser, so every required
 		// field receives a corresponding ctor parameter.
-		selfRef := ast.NewIdent("self", fieldSpan)
-		lhs := ast.NewMember(selfRef, ast.NewIdentifier(fieldName, fieldSpan), false, fieldSpan)
-		rhs := ast.NewIdent(fieldName, fieldSpan)
+		rhs := ast.NewIdent(paramName, fieldSpan)
 
-		paramPat := ast.NewIdentPat(fieldName, false /* not mutable */, nil, nil, fieldSpan)
+		paramPat := ast.NewIdentPat(paramName, false /* not mutable */, nil, nil, fieldSpan)
 		params = append(params, &ast.Param{
 			Pattern:  paramPat,
 			TypeAnn:  field.Type,

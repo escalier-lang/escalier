@@ -393,6 +393,10 @@ func TestRetiredClassSyntax(t *testing.T) {
 			input:         `data class Config { host: string, }`,
 			wantSubstring: "Unexpected token",
 		},
+		"FieldWithoutTypeAnnotation": {
+			input:         `class Foo { x, }`,
+			wantSubstring: "Class fields require a type annotation",
+		},
 	}
 
 	for name, test := range tests {

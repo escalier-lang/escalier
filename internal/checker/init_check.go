@@ -227,10 +227,26 @@ func (ic *initChecker) walkExpr(expr ast.Expr, st initState) initFlow {
 				return initFlow{state: out}
 			}
 			if idx, ok := e.Left.(*ast.IndexExpr); ok && isSelfIdent(idx.Object) {
-				// Phase 3 is conservative: any computed self-write before
-				// every required field is initialized is rejected. (A
-				// future pass may special-case literal-string keys whose
-				// name matches a declared field.)
+				// Special case: `self["literal"] = rhs` where the literal
+				// string is the name of a declared field. Treat this the
+				// same as `self.literal = rhs` — it initializes that
+				// field. This is the path the synthesized constructor
+				// uses for fields whose keys aren't valid JS identifiers
+				// (e.g. `"foo-bar"`).
+				if litExpr, ok := idx.Index.(*ast.LiteralExpr); ok {
+					if strLit, ok := litExpr.Lit.(*ast.StrLit); ok && ic.requireAll.Contains(strLit.Value) {
+						flow := ic.walkExpr(e.Right, st)
+						if flow.terminated {
+							return flow
+						}
+						out := flow.state.clone()
+						out.initialized.Add(strLit.Value)
+						return initFlow{state: out}
+					}
+				}
+				// Otherwise, Phase 3 is conservative: any computed
+				// self-write before every required field is initialized
+				// is rejected.
 				if !ic.allRequiredInit(st) {
 					ic.errors = append(ic.errors, ComputedSelfAccessBeforeInitError{span: e.Span()})
 				}

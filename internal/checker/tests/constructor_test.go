@@ -134,6 +134,16 @@ func TestSynthesizedConstructor(t *testing.T) {
 			bindingName:  "e",
 			expectedType: "Empty",
 		},
+		"NonIdentifierStringKey": {
+			input: `
+				class Foo {
+					"foo-bar": number,
+				}
+				val f = Foo(1)
+			`,
+			bindingName:  "f",
+			expectedType: "Foo",
+		},
 	}
 
 	for name, test := range tests {
@@ -177,14 +187,6 @@ func TestConstructorErrors(t *testing.T) {
 				val k = "name"
 				class Foo {
 					[k]: number,
-				}
-			`,
-			expected: []string{"computed-key field"},
-		},
-		"NonIdentifierStringKeyRejectsSynthesis": {
-			input: `
-				class Foo {
-					"foo-bar": number,
 				}
 			`,
 			expected: []string{"computed-key field"},

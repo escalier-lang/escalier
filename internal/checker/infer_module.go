@@ -130,9 +130,10 @@ func placeholderPriority(depGraph *dep_graph.DepGraph, key dep_graph.BindingKey)
 	// Note: ClassDecl creates both type AND value bindings, so processing a
 	// class's value binding will also define its type (via the
 	// processedDefinitions check).
+	//
+	// Priority 3: VarDecl value bindings — defer until after class/function
+	// value bindings are registered so extractor patterns can resolve.
 	if !isType {
-		// Priority 3: VarDecl value bindings — defer until after class/function
-		// value bindings are registered so extractor patterns can resolve.
 		if depGraph != nil {
 			for _, decl := range depGraph.GetDecls(key) {
 				if _, isVarDecl := decl.(*ast.VarDecl); isVarDecl {
@@ -144,7 +145,8 @@ func placeholderPriority(depGraph *dep_graph.DepGraph, key dep_graph.BindingKey)
 	}
 
 	// Priority 2: Other type bindings (e.g., Symbol type)
-	// These may use computed keys that reference values, so they're processed last.
+	// These may use computed keys that reference values, so they're processed
+	// before VarDecl values but after non-VarDecl values.
 	return 2
 }
 
@@ -700,6 +702,14 @@ func (c *Checker) InferComponent(
 						ParamBindings: paramBindings,
 						Ctx:           ctorCtx,
 					}
+					// `paramBindingsForDecl` was populated from the
+					// retired primary-ctor head (`decl.Params`) so that
+					// shorthand-field assignments could resolve them in
+					// downstream phases. Now that the primary-ctor form
+					// is gone, no consumer reads ctor params from this
+					// map — the in-body constructor's params live on
+					// `ctorInfoForDecl` instead. Set an empty map so
+					// existing nil-deref guards downstream stay happy.
 					paramBindingsForDecl[decl] = map[string]*type_system.Binding{}
 				} else {
 					// Synthesis failed earlier; emit a placeholder no-arg
