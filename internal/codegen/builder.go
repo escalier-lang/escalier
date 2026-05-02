@@ -2279,6 +2279,8 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				if e.Value != nil {
 					value, valueStmts = b.buildExpr(e.Value, nil)
 					allStmts = slices.Concat(allStmts, valueStmts)
+				} else if litType, ok := e.Type.(*ast.LitTypeAnn); ok {
+					value = NewLitExpr(buildLit(litType.Lit), nil)
 				}
 
 				fieldElem := &FieldElem{
