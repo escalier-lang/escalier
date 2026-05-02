@@ -269,7 +269,7 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 		"FuncDecl_WithDefaultParams": {
 			declSource: "fn greet(name = \"World\") { return \"Hello, \" + name }",
 			ns:         "",
-			expected:   "function greet(temp1) {\n  const name = \"World\" = temp1;\n  return \"Hello, \" + name;\n}",
+			expected:   "function greet(temp1) {\n  const name = typeof temp1 !== \"undefined\" ? temp1 : \"World\";\n  return \"Hello, \" + name;\n}",
 		},
 		"FuncDecl_WithRestParams": {
 			declSource: "fn sum(...args) { return 42 }",

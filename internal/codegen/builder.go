@@ -2201,18 +2201,57 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 		var paramPat Pat
 		paramPat = NewIdentPat(id, nil, p.Pattern)
 
-		switch pat := p.Pattern.(type) {
+		// Extract default from a top-level IdentPat, if present. We emit the
+		// default as `const name = typeof temp !== "undefined" ? temp : default`
+		// rather than relying on JS parameter defaults, so the rename pass can
+		// freely choose the param name.
+		var identDefault ast.Expr
+		patForBuild := p.Pattern
+		if identPat, ok := p.Pattern.(*ast.IdentPat); ok && identPat.Default != nil {
+			identDefault = identPat.Default
+			patForBuild = ast.NewIdentPat(identPat.Name, identPat.Mutable, identPat.TypeAnn, nil, identPat.Span())
+		}
+
+		switch pat := patForBuild.(type) {
 		case *ast.RestPat:
 			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 			paramPat = NewRestPat(paramPat, nil)
 		default:
-			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
-			outParamStmts = slices.Concat(outParamStmts, paramStmts)
+			if identDefault != nil {
+				identPat := patForBuild.(*ast.IdentPat)
+				defExpr, defStmts := b.buildExpr(identDefault, nil)
+				outParamStmts = slices.Concat(outParamStmts, defStmts)
+
+				tempExpr := NewIdentExpr(id, "", nil)
+				typeofCheck := NewBinaryExpr(
+					NewUnaryExpr(TypeOf, tempExpr, nil),
+					StrictNotEqual,
+					NewLitExpr(NewStrLit("undefined", nil), nil),
+					nil,
+				)
+				init := NewCondExpr(typeofCheck, NewIdentExpr(id, "", nil), defExpr, nil)
+
+				decl := &VarDecl{
+					Kind: ValKind,
+					Decls: []*Declarator{{
+						Pattern: NewIdentPat(identPat.Name, nil, identPat),
+						TypeAnn: nil,
+						Init:    init,
+					}},
+					declare: false,
+					export:  false,
+					span:    nil,
+					source:  nil,
+				}
+				outParamStmts = append(outParamStmts, &DeclStmt{Decl: decl, span: nil, source: nil})
+			} else {
+				_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
+				outParamStmts = slices.Concat(outParamStmts, paramStmts)
+			}
 		}
 
 		outParams = append(outParams, &Param{
-			// TODO: handle param defaults
 			Pattern:  paramPat,
 			Optional: p.Optional,
 			TypeAnn:  nil,

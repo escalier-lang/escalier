@@ -92,9 +92,9 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 			class Foo {
 				[k]: number,
 				name: string,
-				constructor(mut self, name: string, tag?: number) {
+				constructor(mut self, name: string, tag: number = 42) {
 					self.name = name
-					self[k] = if tag != undefined { tag } else { 42 }
+					self[k] = tag
 				}
 			}
 		`,
@@ -340,4 +340,3 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		})
 	}
 }
-

@@ -5,8 +5,8 @@ class Foo {
     [baz](self) {
         return self[bar]
     },
-    constructor(mut self, barVal?: number) {
-        self[bar] = if barVal != undefined { barVal } else { 42 }
+    constructor(mut self, barVal: number = 42) {
+        self[bar] = barVal
     }
 }
 

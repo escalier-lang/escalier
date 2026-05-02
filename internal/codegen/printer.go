@@ -118,6 +118,12 @@ func (p *Printer) PrintExpr(expr Expr) {
 	case *UnaryExpr:
 		p.print(unaryOpMap[e.Op])
 		p.PrintExpr(e.Arg)
+	case *CondExpr:
+		p.PrintExpr(e.Cond)
+		p.print(" ? ")
+		p.PrintExpr(e.Cons)
+		p.print(" : ")
+		p.PrintExpr(e.Alt)
 	case *CallExpr:
 		p.PrintExpr(e.Callee)
 		if e.OptChain {

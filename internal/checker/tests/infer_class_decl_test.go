@@ -105,8 +105,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					[baz](self) {
 						return self[bar]
 					},
-					constructor(mut self, barVal?: number) {
-						self[bar] = if barVal != undefined { barVal } else { 42 }
+					constructor(mut self, barVal: number = 42) {
+						self[bar] = barVal
 					}
 				}
 
@@ -614,15 +614,15 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 	//     binding renders. Tracked separately from the FieldElem.Type
 	//     fix; not blocked by it.
 	skip := map[string]string{
-		"SimpleDecl":                            "destructure of class instance collapses TypeRefType to structural form (Phase 4 follow-up)",
-		"ClassWithExtends":                      "extends/super deferred to Future Work",
+		"SimpleDecl":                             "destructure of class instance collapses TypeRefType to structural form (Phase 4 follow-up)",
+		"ClassWithExtends":                       "extends/super deferred to Future Work",
 		"ClassWithExtendsAccessingParentMethods": "extends/super deferred to Future Work",
-		"ClassWithExtendsMultipleFields":        "extends/super deferred to Future Work",
-		"ClassWithExtendsAndGetter":             "extends/super deferred to Future Work",
-		"ClassWithExtendsIndexAccess":           "extends/super deferred to Future Work",
-		"MultiLevelInheritance":                 "extends/super deferred to Future Work",
-		"ClassWithExtendsAndMutatingMethod":     "extends/super deferred to Future Work",
-		"ClassWithExtendsOverridingMethod":      "extends/super deferred to Future Work",
+		"ClassWithExtendsMultipleFields":         "extends/super deferred to Future Work",
+		"ClassWithExtendsAndGetter":              "extends/super deferred to Future Work",
+		"ClassWithExtendsIndexAccess":            "extends/super deferred to Future Work",
+		"MultiLevelInheritance":                  "extends/super deferred to Future Work",
+		"ClassWithExtendsAndMutatingMethod":      "extends/super deferred to Future Work",
+		"ClassWithExtendsOverridingMethod":       "extends/super deferred to Future Work",
 	}
 
 	for name, test := range tests {

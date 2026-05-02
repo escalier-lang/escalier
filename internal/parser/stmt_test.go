@@ -20,9 +20,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: `class Foo {
 			    private readonly id: number,
 				readonly message: string,
-				constructor(mut self, id?: number, message?: string) {
-					self.id = if id != undefined { id } else { 1 }
-					self.message = if message != undefined { message } else { "hello" }
+				constructor(mut self, id: number = 1, message: string = "hello") {
+					self.id = id
+					self.message = message
 				},
 			}`,
 		},
@@ -59,8 +59,8 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ClassWithPrivateField": {
 			input: `class Secret {
 				private secret: string,
-				constructor(mut self, secret?: string) {
-					self.secret = if secret != undefined { secret } else { "shh" }
+				constructor(mut self, secret: string = "shh") {
+					self.secret = secret
 				},
 				reveal(self) { return this.secret },
 			}`,
@@ -74,8 +74,8 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ClassWithPrivateFieldAndMethod": {
 			input: `class Secret {
 				private secret: string,
-				constructor(mut self, secret?: string) {
-					self.secret = if secret != undefined { secret } else { "shh" }
+				constructor(mut self, secret: string = "shh") {
+					self.secret = secret
 				},
 				private reveal(self) { return this.secret },
 				show(self) { return this.reveal() },
@@ -85,9 +85,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: `class Mixed {
 				private foo: number,
 				bar: number,
-				constructor(mut self, foo?: number, bar?: number) {
-					self.foo = if foo != undefined { foo } else { 1 }
-					self.bar = if bar != undefined { bar } else { 2 }
+				constructor(mut self, foo?: number = 1, bar?: number = 2) {
+					self.foo = foo
+					self.bar = bar
 				},
 				private baz(self) { return this.foo },
 				qux(self) { return this.bar },
@@ -155,9 +155,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: `class Baz {
 				x: number,
 				y: string,
-				constructor(mut self, x: number, y?: string) {
+				constructor(mut self, x: number, y: string = "hi") {
 					self.x = x
-					self.y = if y != undefined { y } else { "hi" }
+					self.y = y
 				},
 				foo(self, a: number) -> undefined {},
 			}`,

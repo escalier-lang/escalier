@@ -5,14 +5,8 @@ export class Foo {
     return this[bar];
   }
   constructor(temp1) {
-    const barVal = temp1;
-    let temp2;
-    if (barVal != undefined) {
-      temp2 = barVal;
-    } else {
-      temp2 = 42;
-    }
-    this[bar] = temp2;
+    const barVal = typeof temp1 !== "undefined" ? temp1 : 42;
+    this[bar] = barVal;
   }
 }
 export const foo = new Foo();

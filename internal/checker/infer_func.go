@@ -106,10 +106,15 @@ func (c *Checker) inferFuncParams(
 
 		maps.Copy(bindings, patBindings)
 
+		optional := param.Optional
+		if identPat, ok := param.Pattern.(*ast.IdentPat); ok && identPat.Default != nil {
+			optional = true
+		}
+
 		params[i] = &type_system.FuncParam{
 			Pattern:  patToPat(param.Pattern),
 			Type:     typeAnn,
-			Optional: param.Optional,
+			Optional: optional,
 		}
 	}
 
