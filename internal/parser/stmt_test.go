@@ -379,7 +379,10 @@ func TestParseStmtErrorHandling(t *testing.T) {
 
 // TestRetiredClassSyntax verifies that the primary-constructor syntax
 // (`class Foo(...) { ... }`) and the `data` modifier are no longer
-// accepted by the parser. Phase 4 retired both forms.
+// accepted by the parser. Phase 4 retired both forms; the parser no
+// longer recognizes the primary-ctor parenthesized head at all and
+// instead falls into its generic "expected `{` to start class body"
+// error path.
 func TestRetiredClassSyntax(t *testing.T) {
 	tests := map[string]struct {
 		input         string
@@ -387,7 +390,7 @@ func TestRetiredClassSyntax(t *testing.T) {
 	}{
 		"PrimaryConstructorSyntax": {
 			input:         `class Point(x: number, y: number) { x, y, }`,
-			wantSubstring: "primary constructors are no longer supported",
+			wantSubstring: "Expected '{' to start class body",
 		},
 		"DataClassKeyword": {
 			input:         `data class Config { host: string, }`,

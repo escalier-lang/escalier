@@ -913,16 +913,26 @@ func (c *Checker) InferConstructorLifetimes(
 
 	storedParams := set.NewSet[int]()
 
-	// Walk the constructor body itself: any reference to a callable param
-	// that survives shadowing analysis is treated as a capture (the param's
-	// value flowed into `self`, escaped via a method call, etc.). Fields
-	// are initialized via `self.x = x` inside the constructor body, so the
-	// body walk is the single source of truth for which params escape. We
-	// push an empty scope rather than seeding it with the ctor's own params:
-	// those params ARE the names we're trying to detect references to, so
-	// they must not appear shadowed.
+	// Walk the constructor body itself: any unshadowed reference to a
+	// callable param is currently treated as a capture. This is a
+	// conservative approximation — a param can appear in a body without
+	// being stored into `self` (e.g. as a guard `if x < 0 { throw … }`,
+	// passed to a function for its side effects, used to derive a fresh
+	// value, etc.). The empty scope below is intentional: the ctor's own
+	// params ARE the names we want to detect references to and must not
+	// appear shadowed.
+	//
+	// TODO(#531): drop this name-match walk and run the same machinery
+	// `inferLifetimesCore` already uses for methods, setters, and regular
+	// functions. That path detects escapes via `escapingRefsVisitor` —
+	// `self.x = p` is a non-local-lvalue assignment with `self` as the
+	// root, and `determineCheckerAliasSource` traces the RHS back to the
+	// captured params. Reusing it would (a) make constructor capture
+	// detection precise instead of conservative, (b) align the
+	// constructor with how every other body is analyzed, and (c) delete
+	// `ctorBodyCaptureVisitor` and the empty-scope hack here.
 	if ctorElem.Fn.Body != nil {
-		v := &methodCaptureVisitor{
+		v := &ctorBodyCaptureVisitor{
 			paramNameToIndex: paramNameToIndex,
 			storedParams:     storedParams,
 		}
@@ -988,20 +998,21 @@ func (c *Checker) InferConstructorLifetimes(
 	setLifetimeArgsOnType(ctorFn.Return, lifetimeArgs)
 }
 
-// methodCaptureVisitor walks a function body looking for identifier
+// ctorBodyCaptureVisitor walks a constructor body looking for identifier
 // references whose name matches a constructor parameter, while tracking
 // the lexical scopes that shadow such names. Used by
-// `InferConstructorLifetimes` to walk the constructor body itself; method/
-// getter/setter bodies cannot reference constructor params (the type
-// checker rejects such references as unknown identifiers), so this
-// visitor is only invoked at the constructor call site.
+// `InferConstructorLifetimes` only — every other function body
+// (methods, setters, getters, regular functions) goes through
+// `inferLifetimesCore`, which performs precise data-flow analysis via
+// `escapingRefsVisitor` instead of name-matching. See the TODO(#531) at
+// the call site for the plan to retire this visitor.
 //
 // It implements ast.Visitor directly: EnterBlock/ExitBlock maintain the
 // shadow stack for ordinary blocks; EnterExpr/EnterDecl handle the cases
 // that need bespoke ordering (FuncExpr/FuncDecl push their own scope
 // around the body; VarDecl visits its initializer BEFORE adding the new
 // binding so that `var p = p` resolves the RHS against the outer scope).
-type methodCaptureVisitor struct {
+type ctorBodyCaptureVisitor struct {
 	ast.DefaultVisitor
 	paramNameToIndex map[string]int
 	storedParams     set.Set[int]
@@ -1011,15 +1022,15 @@ type methodCaptureVisitor struct {
 	shadowed []set.Set[string]
 }
 
-func (v *methodCaptureVisitor) pushScope() {
+func (v *ctorBodyCaptureVisitor) pushScope() {
 	v.shadowed = append(v.shadowed, set.NewSet[string]())
 }
 
-func (v *methodCaptureVisitor) popScope() {
+func (v *ctorBodyCaptureVisitor) popScope() {
 	v.shadowed = v.shadowed[:len(v.shadowed)-1]
 }
 
-func (v *methodCaptureVisitor) addBindings(pat ast.Pat) {
+func (v *ctorBodyCaptureVisitor) addBindings(pat ast.Pat) {
 	if len(v.shadowed) == 0 {
 		return
 	}
@@ -1033,7 +1044,7 @@ func (v *methodCaptureVisitor) addBindings(pat ast.Pat) {
 // are added to the shadow stack — otherwise a default like `q = p` would
 // incorrectly resolve `p` against the freshly-shadowed inner binding
 // instead of the outer scope.
-func (v *methodCaptureVisitor) visitParamDefaults(pat ast.Pat) {
+func (v *ctorBodyCaptureVisitor) visitParamDefaults(pat ast.Pat) {
 	if pat == nil {
 		return
 	}
@@ -1064,7 +1075,7 @@ func (v *methodCaptureVisitor) visitParamDefaults(pat ast.Pat) {
 	}
 }
 
-func (v *methodCaptureVisitor) isShadowed(name string) bool {
+func (v *ctorBodyCaptureVisitor) isShadowed(name string) bool {
 	for _, s := range v.shadowed {
 		if s.Contains(name) {
 			return true
@@ -1073,16 +1084,16 @@ func (v *methodCaptureVisitor) isShadowed(name string) bool {
 	return false
 }
 
-func (v *methodCaptureVisitor) EnterBlock(b ast.Block) bool {
+func (v *ctorBodyCaptureVisitor) EnterBlock(b ast.Block) bool {
 	v.pushScope()
 	return true
 }
 
-func (v *methodCaptureVisitor) ExitBlock(b ast.Block) {
+func (v *ctorBodyCaptureVisitor) ExitBlock(b ast.Block) {
 	v.popScope()
 }
 
-func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
+func (v *ctorBodyCaptureVisitor) EnterExpr(e ast.Expr) bool {
 	switch ex := e.(type) {
 	case *ast.IdentExpr:
 		if !v.isShadowed(ex.Name) {
@@ -1115,7 +1126,7 @@ func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
-func (v *methodCaptureVisitor) EnterDecl(d ast.Decl) bool {
+func (v *ctorBodyCaptureVisitor) EnterDecl(d ast.Decl) bool {
 	switch dd := d.(type) {
 	case *ast.VarDecl:
 		// Visit the initializer BEFORE adding the new binding to the

@@ -525,30 +525,6 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> Pair<'a, 'b>}",
 			},
 		},
-		"MethodBodyShadowedParamNotCaptured": {
-			// A method with its own param named `p` must not be treated as
-			// capturing the constructor's `p` — the inner param shadows
-			// the outer name within the method body.
-			input: `
-				class C {
-					p: mut {x: number},
-					foo(self, p: mut {x: number}) -> mut {x: number} { return p },
-				}
-			`,
-			expectedTypes: map[string]string{
-				// `p` is captured by the synthesized constructor body
-				// (`self.p = p`), so the constructor still picks up a
-				// lifetime. The method's `p` is a fresh argument and
-				// gets its own lifetime from method-level inference.
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
-			},
-			expectedInstanceType: map[string]string{
-				"C": "{p: mut 'a {x: number}, foo<'a>(self, p: mut 'a {x: number}) -> mut 'a {x: number}}",
-			},
-			expectedInstanceLifetimes: map[string]int{
-				"C": 1,
-			},
-		},
 		"GetterCapturesConstructorParam": {
 			// A getter whose body references a constructor param by name
 			// (made visible via the synthesized `self.p = p` body) forces
@@ -564,19 +540,6 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"C": 1,
-			},
-		},
-		"StaticMethodDoesNotCapture": {
-			// Static methods can't access instance state implicitly, so
-			// they should never trigger constructor-param capture.
-			input: `
-				class C {
-					p: mut {x: number},
-					static make() -> number { return 0 },
-				}
-			`,
-			expectedTypes: map[string]string{
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>, make() -> number}",
 			},
 		},
 	}

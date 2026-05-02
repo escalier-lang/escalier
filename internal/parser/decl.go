@@ -143,18 +143,6 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	typeParams := p.maybeTypeParams()
 	token = p.lexer.peek()
 
-	// Primary-constructor syntax (`class Foo(...) { ... }`) was retired in
-	// the Class-Constructor-4 cut-over. Emit an error and consume the
-	// parenthesized params to keep the rest of the parse on track.
-	if token.Type == OpenParen {
-		p.reportError(token.Span,
-			"primary constructors are no longer supported; declare an explicit `constructor` block in the class body")
-		p.lexer.consume()
-		_ = parseDelimSeq(p, CloseParen, Comma, p.param)
-		p.expect(CloseParen, AlwaysConsume)
-		token = p.lexer.peek()
-	}
-
 	// Parse optional extends clause
 	var extends *ast.TypeRefTypeAnn
 	if token.Type == Extends {
@@ -560,30 +548,21 @@ modifiers_done:
 	} else {
 		// Field
 		//
-		// Grammar (post-Phase 4):
+		// Grammar:
 		//   name : T               — type annotation (required)
 		//   name : T = expr        — static fields only; the initializer
 		//                            is rejected by the checker on
 		//                            instance fields. Instance fields are
 		//                            initialized in the constructor body.
-		//
-		// The legacy `name : <expr>` value-as-initializer form and the
-		// `name :: T` double-colon form are not supported.
 		var typeAnn ast.TypeAnn
 		var value ast.Expr
 
 		next = p.lexer.peek()
 
-		// nolint: exhaustive
-		switch next.Type {
-		case Colon:
+		if next.Type == Colon {
 			p.lexer.consume()
 			typeAnn = p.typeAnn()
-		case DoubleColon:
-			p.reportError(next.Span, "Use ':' instead of '::' for class field type annotations")
-			p.lexer.consume()
-			typeAnn = p.typeAnn()
-		default:
+		} else {
 			p.reportError(next.Span, "Class fields require a type annotation (e.g. `name: T`)")
 		}
 

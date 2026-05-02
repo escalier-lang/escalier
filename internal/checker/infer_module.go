@@ -703,11 +703,6 @@ func (c *Checker) InferComponent(
 						ParamBindings: paramBindings,
 						Ctx:           ctorCtx,
 					}
-					// The in-body constructor's param bindings live on
-					// `ctorInfoForDecl`; nothing reads ctor params from
-					// `paramBindingsForDecl` for class decls. Set an
-					// empty map so downstream nil-deref guards stay happy.
-					paramBindingsForDecl[decl] = map[string]*type_system.Binding{}
 				} else {
 					// Synthesis failed earlier; emit a placeholder no-arg
 					// signature so downstream phases don't crash. The class
@@ -719,8 +714,6 @@ func (c *Checker) InferComponent(
 						retType,
 						type_system.NewNeverType(nil),
 					)
-					paramBindings = map[string]*type_system.Binding{}
-					paramBindingsForDecl[decl] = paramBindings
 				}
 
 				// Create an object type with a constructor element and static methods/properties
