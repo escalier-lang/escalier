@@ -1,5 +1,5 @@
 class MyMath {
-    static pi: 3.141592,
+    readonly static pi = 3.141592,
     static add(a: number, b: number) {
         return a + b
     },

@@ -67,6 +67,7 @@ func (e MultipleConstructorsNotYetSupportedError) isError() {}
 func (e ConstructorWithReturnTypeError) isError()           {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
 func (e FieldInitializerNotAllowedError) isError()          {}
+func (e StaticFieldMissingInitializerError) isError()       {}
 func (e ComputedKeyFieldRequiresConstructorError) isError() {}
 func (e SubclassConstructorRequiredError) isError()         {}
 func (e DivergingBodyNonNeverReturnError) isError()         {}
@@ -123,6 +124,7 @@ func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return fals
 func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
 func (e FieldInitializerNotAllowedError) IsWarning() bool          { return false }
+func (e StaticFieldMissingInitializerError) IsWarning() bool       { return false }
 func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
 func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
 func (e DivergingBodyNonNeverReturnError) IsWarning() bool         { return false }
@@ -823,6 +825,23 @@ func (e FieldInitializerNotAllowedError) Span() ast.Span {
 }
 func (e FieldInitializerNotAllowedError) Message() string {
 	return "Field '" + e.FieldName + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
+}
+
+
+// StaticFieldMissingInitializerError is reported when a static field
+// has no `= expr` initializer and no literal-typed annotation that
+// codegen can materialize. Without one of those, the emitted JS
+// produces `undefined` at runtime, contradicting the declared type.
+type StaticFieldMissingInitializerError struct {
+	FieldName string
+	span      ast.Span
+}
+
+func (e StaticFieldMissingInitializerError) Span() ast.Span {
+	return e.span
+}
+func (e StaticFieldMissingInitializerError) Message() string {
+	return "Static field '" + e.FieldName + "' must have an initializer (e.g. `static " + e.FieldName + ": number = 0`)."
 }
 
 

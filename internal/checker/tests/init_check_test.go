@@ -153,6 +153,32 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 				}
 			}
 		`,
+		"StaticFieldWithInitializer": `
+			class Foo {
+				static x: number = 0,
+			}
+		`,
+		"StaticFieldWithLitTypeAnnAndInitializer": `
+			class Foo {
+				static kind: "tag" = "tag",
+			}
+		`,
+		"StaticFieldInferredFromInitializer": `
+			class Foo {
+				static count = 0,
+			}
+		`,
+		"StaticFieldWithUndefinedAllowedNeedsNoInitializer": `
+			class Foo {
+				static msg: string | undefined,
+			}
+		`,
+		"StaticFieldUndefinedThroughTypeAlias": `
+			type Maybe = string | undefined
+			class Foo {
+				static msg: Maybe,
+			}
+		`,
 		"ReadonlyFieldCanBeInitialized": `
 			class Foo {
 				readonly x: number,
@@ -320,6 +346,14 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				}
 			`,
 			expected: "`try`/`catch` is not yet supported",
+		},
+		"StaticFieldMissingInitializer": {
+			input: `
+				class Foo {
+					static x: number,
+				}
+			`,
+			expected: "Static field 'x' must have an initializer",
 		},
 		"ClosureInsideCtorCannotBypassReadonly": {
 			input: `

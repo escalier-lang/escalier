@@ -1186,6 +1186,26 @@ func (c *Checker) InferComponent(
 							// initializer is a placeholder waiting for the
 							// constructor body to assign it. The body checker
 							// (Phase 3 + the synthesizer) supplies the type.
+
+							// Static fields require an initializer unless the
+							// declared type permits `undefined` (in which case
+							// the emitted `static x;` faithfully matches the
+							// type). Otherwise the runtime value would be
+							// `undefined`, contradicting the declared type.
+							if isStatic && bodyElem.Value == nil {
+								// Expand type refs/aliases so that an
+								// `undefined` member nested in an aliased
+								// union (e.g. `type Maybe = string | undefined`)
+								// is detected.
+								resolved, expandErrors := c.ExpandType(ctx, prop.Value, 1)
+								errors = slices.Concat(errors, expandErrors)
+								if !typeContainsUndefined(type_system.Prune(resolved)) {
+									errors = append(errors, StaticFieldMissingInitializerError{
+										FieldName: classFieldName(bodyElem.Name),
+										span:      bodyElem.Span(),
+									})
+								}
+							}
 						}
 
 					case *ast.MethodElem:

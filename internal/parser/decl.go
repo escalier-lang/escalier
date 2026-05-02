@@ -562,7 +562,10 @@ modifiers_done:
 		if next.Type == Colon {
 			p.lexer.consume()
 			typeAnn = p.typeAnn()
-		} else {
+		} else if !isStatic {
+			// Static fields may omit the annotation when an initializer
+			// is present; the checker infers the type from the
+			// initializer expression.
 			p.reportError(next.Span, "Class fields require a type annotation (e.g. `name: T`)")
 		}
 
