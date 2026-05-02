@@ -2273,17 +2273,15 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				name, nameStmts := b.buildObjKey(e.Name)
 				allStmts = slices.Concat(allStmts, nameStmts)
 
-				// Prefer the explicit `= expr` initializer when present.
-				// Fall back to the literal-type-annotation shorthand
-				// (e.g. `static kind: "tag"`) so existing fixtures using
-				// that form continue to emit a JS value.
+				// The checker requires every static field to have an
+				// `= expr` initializer (or a type that admits `undefined`),
+				// so when there is no Value the field is intentionally
+				// emitted as `static x;` (runtime value `undefined`).
 				var value Expr
 				if e.Value != nil {
 					var valueStmts []Stmt
 					value, valueStmts = b.buildExpr(e.Value, nil)
 					allStmts = slices.Concat(allStmts, valueStmts)
-				} else if litType, ok := e.Type.(*ast.LitTypeAnn); ok {
-					value = NewLitExpr(buildLit(litType.Lit), nil)
 				}
 
 				fieldElem := &FieldElem{
