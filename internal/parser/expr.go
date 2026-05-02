@@ -875,6 +875,12 @@ func (p *Parser) param() *ast.Param {
 				newSpan := ast.MergeSpans(identPat.Span(), defaultExpr.Span())
 				pat = ast.NewIdentPat(identPat.Name, identPat.Mutable, identPat.TypeAnn, defaultExpr, newSpan)
 			}
+			// TODO(#522): defaults on destructuring patterns
+			// (ObjectPat, TuplePat) are accepted by the grammar but
+			// not yet threaded through the type checker or codegen.
+			// Storing the default expression requires extending
+			// ast.Param (or each Pat variant) and updating every
+			// consumer.
 		}
 	}
 

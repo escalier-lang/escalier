@@ -181,6 +181,14 @@ func TestConstructorErrors(t *testing.T) {
 			`,
 			expected: []string{"computed-key field"},
 		},
+		"NonIdentifierStringKeyRejectsSynthesis": {
+			input: `
+				class Foo {
+					"foo-bar": number,
+				}
+			`,
+			expected: []string{"computed-key field"},
+		},
 		"PrivateConstructorRejected": {
 			input: `
 				class Foo {

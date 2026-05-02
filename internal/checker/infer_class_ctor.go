@@ -2,11 +2,36 @@ package checker
 
 import (
 	"slices"
+	"unicode"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
+
+// isValidJSIdentifier reports whether s can be used as a parameter name
+// without quoting. The check is intentionally conservative — only ASCII
+// letters, digits, `_` and `$` are accepted, and the first character may
+// not be a digit. This matches the subset of identifiers the synthesized
+// constructor can safely emit as a parameter pattern.
+func isValidJSIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		isLetter := unicode.IsLetter(r) || r == '_' || r == '$'
+		if i == 0 {
+			if !isLetter {
+				return false
+			}
+			continue
+		}
+		if !isLetter && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
 
 // ctorCallableParams returns the constructor's callable parameter list —
 // i.e. `Fn.Params` with the leading `mut self` receiver stripped. The
@@ -186,6 +211,13 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 		case *ast.IdentExpr:
 			fieldName = k.Name
 		case *ast.StrLit:
+			if !isValidJSIdentifier(k.Value) {
+				// A quoted key like "foo-bar" cannot be used as a
+				// parameter name; treat it the same as a computed key
+				// and require an explicit constructor.
+				errors = append(errors, ComputedKeyFieldRequiresConstructorError{span: fieldSpan})
+				return nil, errors
+			}
 			fieldName = k.Value
 		case *ast.ComputedKey:
 			// We cannot synthesize a parameter name for a computed
