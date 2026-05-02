@@ -1,5 +1,8 @@
-class Foo() {
-    value: 5:number,
+class Foo {
+    value: number,
+    constructor(mut self, value: number = 5) {
+        self.value = value
+    },
     getValue<T>(self, defaultValue: T) -> number | T {
         if self.value != 0 {
             return self.value

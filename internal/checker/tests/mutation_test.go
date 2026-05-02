@@ -175,9 +175,9 @@ func TestClassMutation(t *testing.T) {
 	}{
 		"ClassInstanceWithReadonlyFieldCannotBeMutated": {
 			input: `
-				class Point(x: number, y: number) {
-					readonly x,
-					y,
+				class Point {
+					readonly x: number,
+					y: number,
 				}
 				fn main() {
 					val p = Point(5, 10)
@@ -188,9 +188,9 @@ func TestClassMutation(t *testing.T) {
 		},
 		"ClassInstanceWithReadonlyFieldCanBeMutatedOnMutableField": {
 			input: `
-				class Point(x: number, y: number) {
-					readonly x,
-					y,
+				class Point {
+					readonly x: number,
+					y: number,
 				}
 				fn main() {
 					val p: mut Point = Point(5, 10)
@@ -201,9 +201,9 @@ func TestClassMutation(t *testing.T) {
 		},
 		"ClassInstanceWithReadonlyFieldCannotBeMutatedUsingIndexer": {
 			input: `
-				class Point(x: number, y: number) {
-					readonly x,
-					y,
+				class Point {
+					readonly x: number,
+					y: number,
 				}
 				fn main() {
 					val p = Point(5, 10)
@@ -214,9 +214,9 @@ func TestClassMutation(t *testing.T) {
 		},
 		"MutableClassInstanceWithReadonlyFieldCannotBeMutated": {
 			input: `
-				class Point(x: number, y: number) {
-					x,
-					readonly y,
+				class Point {
+					x: number,
+					readonly y: number,
 				}
 				fn main() {
 					val p: mut Point = Point(5, 10)
@@ -228,9 +228,9 @@ func TestClassMutation(t *testing.T) {
 		},
 		"ClassWithAllReadonlyFieldsCannotBeMutated": {
 			input: `
-				class Point(x: number, y: number) {
-					readonly x,
-					readonly y,
+				class Point {
+					readonly x: number,
+					readonly y: number,
 				}
 				fn main() {
 					val p = Point(5, 10)
@@ -242,9 +242,9 @@ func TestClassMutation(t *testing.T) {
 		},
 		"MutableClassInstanceCanBeMutated": {
 			input: `
-				class Point(x: number, y: number) {
-					x,
-					y,
+				class Point {
+					x: number,
+					y: number,
 				}
 				fn main() {
 					val p: mut Point = Point(5, 10)
@@ -256,9 +256,9 @@ func TestClassMutation(t *testing.T) {
 		},
 		"ImmutableClassInstanceCannotBeMutated": {
 			input: `
-				class Point(x: number, y: number) {
-					x,
-					y,
+				class Point {
+					x: number,
+					y: number,
 				}
 				fn main() {
 					val p = Point(5, 10)

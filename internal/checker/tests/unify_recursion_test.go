@@ -298,9 +298,9 @@ func TestUnifyRecursionTerminates(t *testing.T) {
 		// Already covered by TestNominalClassUnificationTerminates but
 		// included here for completeness of the regression suite.
 		errors := inferWithTimeout(t, `
-			class Node(value: number, next: Node | null) {
-				value,
-				next,
+			class Node {
+				value: number,
+				next: Node | null,
 			}
 			val n = Node(1, Node(2, null))
 		`, 2*time.Second)

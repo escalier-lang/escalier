@@ -297,8 +297,8 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 					Contents: `
 						val bar = "bar"
 						val baz = "baz"
-						class Foo() {
-							[bar]: 42:number,
+						class Foo {
+							[bar]: number,
 							[baz](self) {
 								return self[bar]
 							}
@@ -756,7 +756,7 @@ func TestBuildDepGraphV2_ClassAndEnum(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						class Point(x: number, y: number) {}
+						class Point { x: number, y: number }
 					`,
 				},
 			},
@@ -790,7 +790,7 @@ func TestBuildDepGraphV2_ClassAndEnum(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						class User(name: string) {}
+						class User { name: string }
 						enum Status {
 							Active(),
 							Inactive(),
@@ -1668,8 +1668,8 @@ func TestBuildDepGraphV2_ClassExtends(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						class Animal(name: string) {}
-						class Dog(name: string, breed: string) extends Animal {}
+						class Animal { name: string }
+						class Dog extends Animal { name: string, breed: string }
 					`,
 				},
 			},
@@ -1686,14 +1686,14 @@ func TestBuildDepGraphV2_ClassExtends(t *testing.T) {
 					ID:   0,
 					Path: "main.esc",
 					Contents: `
-						class AppEntity(id: number) extends models.Entity {}
+						class AppEntity extends models.Entity { id: number }
 					`,
 				},
 				{
 					ID:   1,
 					Path: "models/entity.esc",
 					Contents: `
-						class Entity(id: number) {}
+						class Entity { id: number }
 					`,
 				},
 			},
@@ -2268,9 +2268,9 @@ func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						class Point(x: number, y: number) {}
+						class Point { x: number, y: number }
 						fn test() {
-							class Point(a: string) {}
+							class Point { a: string }
 							val p: Point = Point("hello")
 							return p
 						}
@@ -2289,10 +2289,10 @@ func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
 					ID:   0,
 					Path: "test.esc",
 					Contents: `
-						class Point(x: number, y: number) {}
+						class Point { x: number, y: number }
 						fn test() {
 							val p1: Point = Point(1, 2)
-							class Point(a: string) {}
+							class Point { a: string }
 							val p2: Point = Point("hello")
 							return p1
 						}
@@ -2451,14 +2451,14 @@ func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
 					Contents: `
 						fn globalFunc() { return 1 }
 						type GlobalType = {x: number}
-						class GlobalClass(n: number) {}
+						class GlobalClass { n: number }
 						interface GlobalInterface { foo() -> number }
 						enum GlobalEnum { A(), B() }
 
 						fn test() {
 							fn globalFunc() { return 2 }
 							type GlobalType = {y: string}
-							class GlobalClass(s: string) {}
+							class GlobalClass { s: string }
 							interface GlobalInterface { bar() -> string }
 							enum GlobalEnum { C(), D() }
 

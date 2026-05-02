@@ -1,43 +1,43 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
-export class C {
-  constructor(temp2, temp3) {
-    const d = temp2;
-    const e = temp3;
-    this.d = d;
-    this.e = e;
-  }
-  static [Symbol.customMatcher](temp1) {
-    const subject = temp1;
-    return [subject.d, subject.e];
-  }
-}
-export class D {
-  constructor(temp5) {
-    const msg = temp5;
-    this.msg = msg;
-  }
-  static [Symbol.customMatcher](temp4) {
-    const subject = temp4;
-    return [subject.msg];
-  }
-}
 export class E {
-  constructor(temp7, temp8) {
-    const x = temp7;
-    const y = temp8;
+  constructor(temp1, temp2) {
+    const x = temp1;
+    const y = temp2;
     this.x = x;
     this.y = y;
   }
-  static [Symbol.customMatcher](temp6) {
-    const subject = temp6;
+  static [Symbol.customMatcher](temp3) {
+    const subject = temp3;
     return [subject.x, subject.y];
   }
 }
+export class D {
+  constructor(temp4) {
+    const msg = temp4;
+    this.msg = msg;
+  }
+  static [Symbol.customMatcher](temp5) {
+    const subject = temp5;
+    return [subject.msg];
+  }
+}
+export const [temp6, temp7] = InvokeCustomMatcherOrThrow(C, subject, undefined);
+export const [temp8] = InvokeCustomMatcherOrThrow(D, temp6, undefined);
+export const msg = temp8;
+export const [temp9, temp10] = InvokeCustomMatcherOrThrow(E, temp7, undefined);
+export const x = temp9;
+export const y = temp10;
+export class C {
+  constructor(temp11, temp12) {
+    const d = temp11;
+    const e = temp12;
+    this.d = d;
+    this.e = e;
+  }
+  static [Symbol.customMatcher](temp13) {
+    const subject = temp13;
+    return [subject.d, subject.e];
+  }
+}
 export const subject = new C(new D("hello"), new E(5, 10));
-export const [temp9, temp10] = InvokeCustomMatcherOrThrow(C, subject, undefined);
-export const [temp11] = InvokeCustomMatcherOrThrow(D, temp9, undefined);
-export const msg = temp11;
-export const [temp12, temp13] = InvokeCustomMatcherOrThrow(E, temp10, undefined);
-export const x = temp12;
-export const y = temp13;
 //# sourceMappingURL=./index.js.map

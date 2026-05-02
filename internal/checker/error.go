@@ -62,12 +62,11 @@ func (e NonExhaustiveMatchError) isError()                  {}
 func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 func (e NestedMutInParamError) isError()                    {}
-func (e MixedConstructorFormsError) isError()               {}
 func (e MissingMutSelfParameterError) isError()             {}
 func (e MultipleConstructorsNotYetSupportedError) isError() {}
 func (e ConstructorWithReturnTypeError) isError()           {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
-func (e FieldDefaultNotAllowedError) isError()              {}
+func (e FieldInitializerNotAllowedError) isError()          {}
 func (e ComputedKeyFieldRequiresConstructorError) isError() {}
 func (e SubclassConstructorRequiredError) isError()         {}
 func (e DivergingBodyNonNeverReturnError) isError()         {}
@@ -119,12 +118,11 @@ func (e ConstructorUsedAsMatchTargetError) IsWarning() bool        { return fals
 func (e NonExhaustiveMatchError) IsWarning() bool                  { return false }
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
-func (e MixedConstructorFormsError) IsWarning() bool               { return false }
 func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
 func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
 func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
-func (e FieldDefaultNotAllowedError) IsWarning() bool              { return false }
+func (e FieldInitializerNotAllowedError) IsWarning() bool          { return false }
 func (e ComputedKeyFieldRequiresConstructorError) IsWarning() bool { return false }
 func (e SubclassConstructorRequiredError) IsWarning() bool         { return false }
 func (e DivergingBodyNonNeverReturnError) IsWarning() bool         { return false }
@@ -741,16 +739,6 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 	return "Non-exhaustive match: " + memberStr + " is missing inner cases for " + strings.Join(names, ", ")
 }
 
-type MixedConstructorFormsError struct {
-	span ast.Span
-}
-
-func (e MixedConstructorFormsError) Span() ast.Span {
-	return e.span
-}
-func (e MixedConstructorFormsError) Message() string {
-	return "Cannot mix primary-constructor parameters with an in-body `constructor` block; pick one form."
-}
 
 // MissingMutSelfParameterError is reported when a constructor's `mut self`
 // parameter is missing, not declared `mut`, or has a type annotation.
@@ -822,17 +810,21 @@ func (e PrivateConstructorNotYetSupportedError) Message() string {
 	return "Private constructors are not yet supported."
 }
 
-type FieldDefaultNotAllowedError struct {
+// FieldInitializerNotAllowedError is reported when an instance field
+// declares a `= expr` initializer. Instance fields must be assigned in
+// the constructor body. Static fields may use the initializer form.
+type FieldInitializerNotAllowedError struct {
 	FieldName string
 	span      ast.Span
 }
 
-func (e FieldDefaultNotAllowedError) Span() ast.Span {
+func (e FieldInitializerNotAllowedError) Span() ast.Span {
 	return e.span
 }
-func (e FieldDefaultNotAllowedError) Message() string {
-	return "Field '" + e.FieldName + "' cannot have a default value when the class declares a `constructor` block; assign it inside the constructor body or supply a default on the constructor parameter."
+func (e FieldInitializerNotAllowedError) Message() string {
+	return "Field '" + e.FieldName + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
 }
+
 
 // SubclassConstructorRequiredError is reported when a class with an
 // `extends` clause has no explicit `constructor` block. Synthesizing a

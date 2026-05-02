@@ -23,7 +23,6 @@ type Builder struct {
 	isModule        bool
 	inBlockScope    bool
 	overloadDecls   map[string][]*ast.FuncDecl // Function name -> list of overload declarations
-	classParamNames map[string]bool            // constructor param names for the current class (used to emit this.paramName in getters/methods)
 }
 
 func (b *Builder) NewTempId() string {
@@ -799,173 +798,12 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	case *ast.ClassDecl:
 		allStmts := []Stmt{}
 
-		// classParamNames lifecycle:
-		// 1. SET before buildClassElems — so that when getter/method bodies
-		//    reference a constructor param (e.g. `radius`), buildExpr emits
-		//    `this.radius` instead of just `radius` (which would be an
-		//    inaccessible local from the constructor).
-		// 2. CLEAR (nil) before building the constructor body — so that the
-		//    field assignment RHS (e.g. `this.r = r`) uses the local const
-		//    binding, not `this.r` (which would produce `this.r = this.r`).
-		// 3. RESTORE after the class is fully built — to support nested class
-		//    declarations, where an outer class's param names must be preserved.
-		prevClassParamNames := b.classParamNames
-		b.classParamNames = make(map[string]bool)
-		for _, param := range d.Params {
-			if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
-				b.classParamNames[identPat.Name] = true
-			}
-		}
-
-		// Step 1: build class body elements (getters/methods will use classParamNames)
+		// Every class has at most one in-body ConstructorElem (user-written
+		// or synthesized in Phase 2.7). buildClassElems emits the
+		// constructor JS from that element directly.
 		classElems, classStmts := b.buildClassElems(d.Body)
 		allStmts = slices.Concat(allStmts, classStmts)
 
-		// Step 2: clear classParamNames before building constructor body
-		b.classParamNames = nil
-
-		// Use buildParams to handle parameter patterns and generate temp variables
-		params, paramStmts := b.buildParams(d.Params)
-		var constructorBodyStmts []Stmt
-
-		// Add parameter statements (variable declarations from buildParams)
-		constructorBodyStmts = slices.Concat(constructorBodyStmts, paramStmts)
-
-		// For each instance field in the class body, create this.fieldName = fieldName assignment
-		for _, elem := range d.Body {
-			if fieldElem, ok := elem.(*ast.FieldElem); ok && !fieldElem.Static {
-				if fieldElem.Name != nil {
-					var lhs Expr
-					switch name := fieldElem.Name.(type) {
-					case *ast.IdentExpr:
-						lhs = NewMemberExpr(
-							NewIdentExpr("this", "", nil),
-							NewIdentifier(name.Name, fieldElem.Name),
-							false,
-							nil,
-						)
-					case *ast.StrLit:
-						lhs = NewIndexExpr(
-							NewIdentExpr("this", "", nil),
-							NewLitExpr(NewStrLit(name.Value, name), nil),
-							false,
-							nil,
-						)
-					case *ast.NumLit:
-						lhs = NewIndexExpr(
-							NewIdentExpr("this", "", nil),
-							NewLitExpr(NewNumLit(name.Value, name), nil),
-							false,
-							nil,
-						)
-					case *ast.ComputedKey:
-						key, keyStmts := b.buildExpr(name.Expr, nil)
-						allStmts = slices.Concat(allStmts, keyStmts)
-
-						lhs = NewIndexExpr(
-							NewIdentExpr("this", "", nil),
-							key,
-							false,
-							nil,
-						)
-					}
-
-					var rhs Expr
-					if fieldElem.Value != nil {
-						value, valueStmts := b.buildExpr(fieldElem.Value, nil)
-						allStmts = slices.Concat(allStmts, valueStmts)
-
-						rhs = value
-					} else {
-						// If the field has no value, assume it's a parameter with the same name
-						switch name := fieldElem.Name.(type) {
-						case *ast.IdentExpr:
-							rhs = NewIdentExpr(name.Name, "", fieldElem.Name)
-						case *ast.StrLit:
-							rhs = NewIdentExpr(name.Value, "", fieldElem.Name)
-						case *ast.NumLit:
-							rhs = NewIdentExpr(fmt.Sprintf("%g", name.Value), "", fieldElem.Name)
-						case *ast.ComputedKey:
-							// Computed keys cannot be constructor parameters
-							panic("Computed keys cannot be constructor parameters")
-						}
-					}
-
-					// Create assignment: this.fieldName = fieldName;
-					assignment := &ExprStmt{
-						Expr:   NewBinaryExpr(lhs, Assign, rhs, fieldElem.Name),
-						span:   nil,
-						source: fieldElem,
-					}
-					constructorBodyStmts = append(constructorBodyStmts, assignment)
-				}
-			}
-		}
-
-		// For constructor params not already covered by field declarations,
-		// assign them to instance properties so getters/methods can access them.
-		//
-		// ** circle.esc **
-		// class Circle(radius: number) {
-		//     get area(self) -> number { return 3.14159 * radius * radius },
-		// }
-		//
-		// ** circle.js **
-		// class Circle {
-		// 	   constructor(temp1) {
-		//		   const radius = temp1;
-		//	       this.radius = radius;  // ← added by the selected code
-		//     }
-		//     get area() {
-		//         return 3.14159 * this.radius * this.radius;
-		//     }
-		// }
-		fieldNames := make(map[string]bool)
-		for _, elem := range d.Body {
-			if fieldElem, ok := elem.(*ast.FieldElem); ok && !fieldElem.Static {
-				if fieldElem.Name != nil {
-					if name, ok := fieldElem.Name.(*ast.IdentExpr); ok {
-						fieldNames[name.Name] = true
-					}
-				}
-			}
-		}
-		for _, param := range d.Params {
-			if identPat, ok := param.Pattern.(*ast.IdentPat); ok {
-				if !fieldNames[identPat.Name] {
-					lhs := NewMemberExpr(
-						NewIdentExpr("this", "", nil),
-						NewIdentifier(identPat.Name, param.Pattern),
-						false,
-						nil,
-					)
-					rhs := NewIdentExpr(identPat.Name, "", param.Pattern)
-					assignment := &ExprStmt{
-						Expr:   NewBinaryExpr(lhs, Assign, rhs, param.Pattern),
-						span:   nil,
-						source: param.Pattern,
-					}
-					constructorBodyStmts = append(constructorBodyStmts, assignment)
-				}
-			}
-		}
-
-		// Create constructor method
-		constructorMethod := NewMethodElem(
-			NewIdentExpr("constructor", "", d),
-			params,
-			constructorBodyStmts,
-			MethodElemOptions{},
-			d,
-		)
-
-		// Add constructor as the first element in the class body
-		classElems = append([]ClassElem{constructorMethod}, classElems...)
-
-		// Step 3: restore classParamNames
-		b.classParamNames = prevClassParamNames
-
-		// Create the class declaration
 		classDecl := &ClassDecl{
 			Name: &Identifier{
 				Name:   fullyQualifyName(d.Name.Name, nsName),
@@ -978,15 +816,12 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			span:    nil,
 			source:  d,
 		}
-
 		stmt := &DeclStmt{
 			Decl:   classDecl,
 			span:   nil,
 			source: d,
 		}
-
 		allStmts = append(allStmts, stmt)
-
 		return allStmts
 	case *ast.EnumDecl:
 		allStmts := []Stmt{}
@@ -1573,15 +1408,6 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
-		// In getter/method bodies, translate constructor param references to this.paramName
-		if b.classParamNames != nil && b.classParamNames[expr.Name] {
-			return NewMemberExpr(
-				NewIdentExpr("this", "", nil),
-				NewIdentifier(expr.Name, expr),
-				false,
-				expr,
-			), []Stmt{}
-		}
 		var namespaceStr string
 		if b.depGraph != nil {
 			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
@@ -2374,18 +2200,57 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 		var paramPat Pat
 		paramPat = NewIdentPat(id, nil, p.Pattern)
 
-		switch pat := p.Pattern.(type) {
+		// Extract default from a top-level IdentPat, if present. We emit the
+		// default as `const name = typeof temp !== "undefined" ? temp : default`
+		// rather than relying on JS parameter defaults, so the rename pass can
+		// freely choose the param name.
+		var identDefault ast.Expr
+		patForBuild := p.Pattern
+		if identPat, ok := p.Pattern.(*ast.IdentPat); ok && identPat.Default != nil {
+			identDefault = identPat.Default
+			patForBuild = ast.NewIdentPat(identPat.Name, identPat.Mutable, identPat.TypeAnn, nil, identPat.Span())
+		}
+
+		switch pat := patForBuild.(type) {
 		case *ast.RestPat:
 			_, paramStmts := b.buildPattern(pat.Pattern, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
 			outParamStmts = slices.Concat(outParamStmts, paramStmts)
 			paramPat = NewRestPat(paramPat, nil)
 		default:
-			_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
-			outParamStmts = slices.Concat(outParamStmts, paramStmts)
+			if identDefault != nil {
+				identPat := patForBuild.(*ast.IdentPat)
+				defExpr, defStmts := b.buildExpr(identDefault, nil)
+				outParamStmts = slices.Concat(outParamStmts, defStmts)
+
+				tempExpr := NewIdentExpr(id, "", nil)
+				typeofCheck := NewBinaryExpr(
+					NewUnaryExpr(TypeOf, tempExpr, nil),
+					StrictNotEqual,
+					NewLitExpr(NewStrLit("undefined", nil), nil),
+					nil,
+				)
+				init := NewCondExpr(typeofCheck, NewIdentExpr(id, "", nil), defExpr, nil)
+
+				decl := &VarDecl{
+					Kind: ValKind,
+					Decls: []*Declarator{{
+						Pattern: NewIdentPat(identPat.Name, nil, identPat),
+						TypeAnn: nil,
+						Init:    init,
+					}},
+					declare: false,
+					export:  false,
+					span:    nil,
+					source:  nil,
+				}
+				outParamStmts = append(outParamStmts, &DeclStmt{Decl: decl, span: nil, source: nil})
+			} else {
+				_, paramStmts := b.buildPattern(pat, NewIdentExpr(id, "", nil), false, ast.ValKind, "")
+				outParamStmts = slices.Concat(outParamStmts, paramStmts)
+			}
 		}
 
 		outParams = append(outParams, &Param{
-			// TODO: handle param defaults
 			Pattern:  paramPat,
 			Optional: p.Optional,
 			TypeAnn:  nil,
@@ -2402,23 +2267,24 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 	for _, elem := range inElems {
 		switch e := elem.(type) {
 		case *ast.FieldElem:
-			// Only handle static fields here; instance fields are handled by the constructor
+			// Only handle static fields here; instance fields are
+			// initialized inside the constructor body.
 			if e.Static {
-				// Static fields should not rewrite identifiers to this.paramName
-				savedClassParamNames := b.classParamNames
-				b.classParamNames = nil
-
 				name, nameStmts := b.buildObjKey(e.Name)
 				allStmts = slices.Concat(allStmts, nameStmts)
 
+				// Prefer the explicit `= expr` initializer when present.
+				// Fall back to the literal-type-annotation shorthand
+				// (e.g. `static kind: "tag"`) so existing fixtures using
+				// that form continue to emit a JS value.
 				var value Expr
-				var valueStmts []Stmt
 				if e.Value != nil {
+					var valueStmts []Stmt
 					value, valueStmts = b.buildExpr(e.Value, nil)
 					allStmts = slices.Concat(allStmts, valueStmts)
+				} else if litType, ok := e.Type.(*ast.LitTypeAnn); ok {
+					value = NewLitExpr(buildLit(litType.Lit), nil)
 				}
-
-				b.classParamNames = savedClassParamNames
 
 				fieldElem := &FieldElem{
 					Name:    name,
@@ -2435,12 +2301,6 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			if e.Fn == nil {
 				continue
 			}
-			// Static methods should not rewrite identifiers to this.paramName
-			var savedClassParamNames map[string]bool
-			if e.Static {
-				savedClassParamNames = b.classParamNames
-				b.classParamNames = nil
-			}
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
@@ -2449,9 +2309,6 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 				b.inBlockScope = prevInBlockScope
-			}
-			if e.Static {
-				b.classParamNames = savedClassParamNames
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -2477,12 +2334,6 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			if e.Fn == nil {
 				continue
 			}
-			// Static getters should not rewrite identifiers to this.paramName
-			var savedClassParamNames map[string]bool
-			if e.Static {
-				savedClassParamNames = b.classParamNames
-				b.classParamNames = nil
-			}
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
 				// Mark that we're inside a getter body
@@ -2490,9 +2341,6 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 				b.inBlockScope = prevInBlockScope
-			}
-			if e.Static {
-				b.classParamNames = savedClassParamNames
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -2512,12 +2360,6 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			if e.Fn == nil {
 				continue
 			}
-			// Static setters should not rewrite identifiers to this.paramName
-			var savedClassParamNames2 map[string]bool
-			if e.Static {
-				savedClassParamNames2 = b.classParamNames
-				b.classParamNames = nil
-			}
 			params, paramStmts := b.buildParams(e.Fn.Params)
 			var bodyStmts []Stmt
 			if e.Fn.Body != nil {
@@ -2526,9 +2368,6 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				b.inBlockScope = true
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 				b.inBlockScope = prevInBlockScope
-			}
-			if e.Static {
-				b.classParamNames = savedClassParamNames2
 			}
 
 			name, nameStmts := b.buildObjKey(e.Name)
@@ -2546,8 +2385,34 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			outElems = append(outElems, setterElem)
 
 		case *ast.ConstructorElem:
-			// TODO(class-ctor Phase 4): emit single-ctor body.
-			_ = e
+			if e.Fn == nil {
+				continue
+			}
+			// Strip Fn.Params[0] (the `mut self` receiver) — it is `this`
+			// at the JS level, not a callable parameter.
+			callableParams := e.Fn.Params
+			if len(callableParams) > 0 {
+				callableParams = callableParams[1:]
+			}
+			params, paramStmts := b.buildParams(callableParams)
+			var bodyStmts []Stmt
+			if e.Fn.Body != nil {
+				// Mark that we're inside a method body — same as
+				// the method/getter/setter cases above. Suppresses
+				// `export` on nested decls (see line 743).
+				prevInBlockScope := b.inBlockScope
+				b.inBlockScope = true
+				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
+				b.inBlockScope = prevInBlockScope
+			}
+			constructorMethod := NewMethodElem(
+				NewIdentExpr("constructor", "", e),
+				params,
+				slices.Concat(paramStmts, bodyStmts),
+				MethodElemOptions{},
+				e,
+			)
+			outElems = append(outElems, constructorMethod)
 		}
 	}
 

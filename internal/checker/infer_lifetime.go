@@ -884,8 +884,28 @@ func (c *Checker) InferConstructorLifetimes(
 	// TypeAlias advertises its LifetimeParams before any consumer — function
 	// param annotations, var decls, constructor call sites — resolves the
 	// class by name during the body phase.
+	// Locate the (single) in-body `ConstructorElem`. After Phase 4 there is
+	// no other source of constructor params on a class. If synthesis or
+	// parsing left no constructor in place, there's nothing to do.
+	var ctorElem *ast.ConstructorElem
+	for _, e := range classDecl.Body {
+		if c, ok := e.(*ast.ConstructorElem); ok {
+			ctorElem = c
+			break
+		}
+	}
+	if ctorElem == nil || ctorElem.Fn == nil {
+		return
+	}
+	// Skip the leading `mut self` — it is not a callable parameter and
+	// the corresponding `ctorFn.Params` slice already excludes it.
+	ctorParams := ctorElem.Fn.Params
+	if len(ctorParams) > 0 {
+		ctorParams = ctorParams[1:]
+	}
+
 	paramNameToIndex := make(map[string]int)
-	for i, p := range classDecl.Params {
+	for i, p := range ctorParams {
 		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
 			paramNameToIndex[identPat.Name] = i
 		}
@@ -893,40 +913,53 @@ func (c *Checker) InferConstructorLifetimes(
 
 	storedParams := set.NewSet[int]()
 
-	for _, elem := range classDecl.Body {
-		switch elem := elem.(type) {
-		case *ast.FieldElem:
-			collectFieldStorageParams(elem, paramNameToIndex, storedParams)
-		case *ast.MethodElem:
-			// Static methods can't access instance state implicitly.
-			if elem.Static || elem.Fn == nil || elem.Fn.Body == nil {
-				continue
-			}
-			collectMethodBodyCaptures(elem.Fn, paramNameToIndex, storedParams)
-		case *ast.GetterElem:
-			// Getters are instance accessors that can implicitly
-			// reference constructor params, just like methods.
-			if elem.Static || elem.Fn == nil || elem.Fn.Body == nil {
-				continue
-			}
-			collectMethodBodyCaptures(elem.Fn, paramNameToIndex, storedParams)
-		case *ast.SetterElem:
-			// Setters likewise — the body may both read and assign
-			// constructor params.
-			if elem.Static || elem.Fn == nil || elem.Fn.Body == nil {
-				continue
-			}
-			collectMethodBodyCaptures(elem.Fn, paramNameToIndex, storedParams)
+	// Walk the constructor body itself: any unshadowed reference to a
+	// callable param is currently treated as a capture. This is a
+	// conservative approximation — a param can appear in a body without
+	// being stored into `self` (e.g. as a guard `if x < 0 { throw … }`,
+	// passed to a function for its side effects, used to derive a fresh
+	// value, etc.). The empty scope below is intentional: the ctor's own
+	// params ARE the names we want to detect references to and must not
+	// appear shadowed.
+	//
+	// TODO(#531): drop this name-match walk and run the same machinery
+	// `inferLifetimesCore` already uses for methods, setters, and regular
+	// functions. That path detects escapes via `escapingRefsVisitor` —
+	// `self.x = p` is a non-local-lvalue assignment with `self` as the
+	// root, and `determineCheckerAliasSource` traces the RHS back to the
+	// captured params. Reusing it would (a) make constructor capture
+	// detection precise instead of conservative, (b) align the
+	// constructor with how every other body is analyzed, and (c) delete
+	// `ctorBodyCaptureVisitor` and the empty-scope hack here.
+	if ctorElem.Fn.Body != nil {
+		v := &ctorBodyCaptureVisitor{
+			paramNameToIndex: paramNameToIndex,
+			storedParams:     storedParams,
 		}
+		v.pushScope()
+		ctorElem.Fn.Body.Accept(v)
+		v.popScope()
 	}
+
+	// The constructor body walk above is the single source of truth for
+	// captures: every assignment of a ctor param into `self` (whether by
+	// the synthesizer or a user-written `self.x = x` style body) flows
+	// through that walk. Methods/getters/setters cannot reference ctor
+	// params by name (the type checker rejects such references as unknown
+	// identifiers — see `TestConstructorParamsDoNotLeakIntoMethods`), and
+	// instance fields no longer carry initializers, so there is nothing
+	// further to inspect on the class body itself.
 
 	if storedParams.Len() == 0 {
 		return
 	}
 
-	// Allocate lifetimes in parameter order for determinism.
+	// Allocate lifetimes in parameter order for determinism. `ctorParams`
+	// already excludes the leading `mut self`, so the indices line up with
+	// `ctorFn.Params` (which `inferConstructorSig` also populates from the
+	// callable params, dropping `self`).
 	var lifetimeParams []*type_system.LifetimeVar
-	for i, p := range classDecl.Params {
+	for i, p := range ctorParams {
 		if !storedParams.Contains(i) {
 			continue
 		}
@@ -965,190 +998,21 @@ func (c *Checker) InferConstructorLifetimes(
 	setLifetimeArgsOnType(ctorFn.Return, lifetimeArgs)
 }
 
-// collectFieldStorageParams inspects a single class field-element and adds
-// the indices of any constructor parameters whose value is captured by the
-// field's initializer to storedParams.
-//
-// The cases handled here mirror the storage shapes documented on
-// InferConstructorLifetimes: shorthand fields, identity initializers, and
-// composite or projection initializers (object/tuple literals, member or
-// index access into a param). Function-call initializers are not analyzed —
-// liveness.DetermineAliasSource treats calls as fresh, and a checker-aware
-// alternative would need lifetime info from callees that may not yet be
-// resolved at this point in inference.
-func collectFieldStorageParams(
-	fieldElem *ast.FieldElem,
-	paramNameToIndex map[string]int,
-	storedParams set.Set[int],
-) {
-	// Field name must be a plain identifier for the shorthand pattern.
-	fieldNameIdent, ok := fieldElem.Name.(*ast.IdentExpr)
-
-	// Shorthand: `{ p, }` or `{ p = fallback, }`. A default does not change
-	// the conclusion: when the caller passes `p`, the field stores the
-	// param, so the param's lifetime matters.
-	if ok && fieldElem.Value == nil {
-		if idx, ok := paramNameToIndex[fieldNameIdent.Name]; ok {
-			storedParams.Add(idx)
-		}
-		return
-	}
-
-	if fieldElem.Value == nil {
-		return
-	}
-
-	// Explicit `name: <expr>` — walk the initializer for any captured params.
-	for _, idx := range findCapturedParamsInExpr(fieldElem.Value, paramNameToIndex) {
-		storedParams.Add(idx)
-	}
-}
-
-// findCapturedParamsInExpr walks a field-initializer expression looking
-// for references to constructor parameters by name. Returns the parameter
-// indices in first-seen order. Recurses into composite literals
-// (object/tuple) and into spread elements; projection expressions
-// (member/index access, type cast, await) fall through to
-// liveness.DetermineAliasSource which already walks past those.
-//
-// Function calls and other complex expressions whose result might capture
-// arguments are NOT analyzed — they are treated as fresh.
-func findCapturedParamsInExpr(
-	expr ast.Expr,
-	paramNameToIndex map[string]int,
-) []int {
-	seen := set.NewSet[int]()
-	var result []int
-
-	addByName := func(name string) {
-		if idx, ok := paramNameToIndex[name]; ok && !seen.Contains(idx) {
-			seen.Add(idx)
-			result = append(result, idx)
-		}
-	}
-
-	var visit func(e ast.Expr)
-	visit = func(e ast.Expr) {
-		if e == nil {
-			return
-		}
-		switch ex := e.(type) {
-		case *ast.ObjectExpr:
-			for _, elem := range ex.Elems {
-				switch el := elem.(type) {
-				case *ast.PropertyExpr:
-					if el.Value != nil {
-						visit(el.Value)
-						continue
-					}
-					// Object shorthand: `{ p }` — the property name doubles
-					// as a value reference.
-					if name, ok := el.Name.(*ast.IdentExpr); ok {
-						addByName(name.Name)
-					}
-				case *ast.ObjSpreadExpr:
-					visit(el.Value)
-				}
-			}
-		case *ast.TupleExpr:
-			for _, sub := range ex.Elems {
-				visit(sub)
-			}
-		case *ast.ArraySpreadExpr:
-			visit(ex.Value)
-		case *ast.IdentExpr:
-			addByName(ex.Name)
-		case *ast.MemberExpr:
-			visit(ex.Object)
-		case *ast.IndexExpr:
-			visit(ex.Object)
-		case *ast.TypeCastExpr:
-			visit(ex.Expr)
-		case *ast.AwaitExpr:
-			visit(ex.Arg)
-		case *ast.IfElseExpr:
-			// Conditional that yields a value: both branches may
-			// contribute captures. Use the existing helper to find each
-			// branch's result expression.
-			cons := blockResultExpr(ex.Cons)
-			if cons != nil {
-				visit(cons)
-			}
-			if ex.Alt != nil {
-				if ex.Alt.Expr != nil {
-					visit(ex.Alt.Expr)
-				} else if ex.Alt.Block != nil {
-					if alt := blockResultExpr(*ex.Alt.Block); alt != nil {
-						visit(alt)
-					}
-				}
-			}
-		}
-	}
-	visit(expr)
-	return result
-}
-
-// blockResultExpr returns the result expression of a block (the last
-// statement if it's an ExprStmt), or nil if the block is empty or ends
-// with a non-expression statement. Mirrors the helper of the same name in
-// the liveness package, duplicated here to avoid an import cycle.
-func blockResultExpr(b ast.Block) ast.Expr {
-	if len(b.Stmts) == 0 {
-		return nil
-	}
-	if exprStmt, ok := b.Stmts[len(b.Stmts)-1].(*ast.ExprStmt); ok {
-		return exprStmt.Expr
-	}
-	return nil
-}
-
-// collectMethodBodyCaptures walks a method body looking for IdentExpr
-// references whose name matches a constructor parameter, and adds the
-// matching parameter indices to storedParams. Tracks shadowing introduced
-// by inner function params and by `var`/`val`/`let` bindings within
-// blocks so that names rebound locally are not counted as captures.
-//
-// This closes the soundness gap where a method body references a
-// constructor param by name (Escalier allows this) without any
-// corresponding `self.field` projection — see the example in
-// implementation_plan.md Phase 8.6 implicit-captures discussion.
-func collectMethodBodyCaptures(
-	fn *ast.FuncExpr,
-	paramNameToIndex map[string]int,
-	storedParams set.Set[int],
-) {
-	v := &methodCaptureVisitor{
-		paramNameToIndex: paramNameToIndex,
-		storedParams:     storedParams,
-	}
-	// Visit parameter defaults BEFORE pushing the method's own scope:
-	// defaults evaluate against the enclosing (constructor) scope where
-	// `paramNameToIndex` is keyed, so an unshadowed `p` in a default
-	// captures the constructor's `p`.
-	for _, p := range fn.Params {
-		v.visitParamDefaults(p.Pattern)
-	}
-	// The method's own params shadow constructor params with the same name.
-	v.pushScope()
-	for _, p := range fn.Params {
-		v.addBindings(p.Pattern)
-	}
-	if fn.Body != nil {
-		fn.Body.Accept(v)
-	}
-	v.popScope()
-}
-
-// methodCaptureVisitor walks a method body looking for identifier
+// ctorBodyCaptureVisitor walks a constructor body looking for identifier
 // references whose name matches a constructor parameter, while tracking
-// the lexical scopes that shadow such names. It implements ast.Visitor
-// directly: EnterBlock/ExitBlock maintain the shadow stack for ordinary
-// blocks; EnterExpr/EnterDecl handle the cases that need bespoke
-// ordering (FuncExpr/FuncDecl push their own scope around the body;
-// VarDecl visits its initializer BEFORE adding the new binding so that
-// `var p = p` resolves the RHS against the outer scope).
-type methodCaptureVisitor struct {
+// the lexical scopes that shadow such names. Used by
+// `InferConstructorLifetimes` only — every other function body
+// (methods, setters, getters, regular functions) goes through
+// `inferLifetimesCore`, which performs precise data-flow analysis via
+// `escapingRefsVisitor` instead of name-matching. See the TODO(#531) at
+// the call site for the plan to retire this visitor.
+//
+// It implements ast.Visitor directly: EnterBlock/ExitBlock maintain the
+// shadow stack for ordinary blocks; EnterExpr/EnterDecl handle the cases
+// that need bespoke ordering (FuncExpr/FuncDecl push their own scope
+// around the body; VarDecl visits its initializer BEFORE adding the new
+// binding so that `var p = p` resolves the RHS against the outer scope).
+type ctorBodyCaptureVisitor struct {
 	ast.DefaultVisitor
 	paramNameToIndex map[string]int
 	storedParams     set.Set[int]
@@ -1158,15 +1022,15 @@ type methodCaptureVisitor struct {
 	shadowed []set.Set[string]
 }
 
-func (v *methodCaptureVisitor) pushScope() {
+func (v *ctorBodyCaptureVisitor) pushScope() {
 	v.shadowed = append(v.shadowed, set.NewSet[string]())
 }
 
-func (v *methodCaptureVisitor) popScope() {
+func (v *ctorBodyCaptureVisitor) popScope() {
 	v.shadowed = v.shadowed[:len(v.shadowed)-1]
 }
 
-func (v *methodCaptureVisitor) addBindings(pat ast.Pat) {
+func (v *ctorBodyCaptureVisitor) addBindings(pat ast.Pat) {
 	if len(v.shadowed) == 0 {
 		return
 	}
@@ -1179,8 +1043,8 @@ func (v *methodCaptureVisitor) addBindings(pat ast.Pat) {
 // at call time, so this must be called BEFORE the param's own bindings
 // are added to the shadow stack — otherwise a default like `q = p` would
 // incorrectly resolve `p` against the freshly-shadowed inner binding
-// instead of the outer (constructor) scope.
-func (v *methodCaptureVisitor) visitParamDefaults(pat ast.Pat) {
+// instead of the outer scope.
+func (v *ctorBodyCaptureVisitor) visitParamDefaults(pat ast.Pat) {
 	if pat == nil {
 		return
 	}
@@ -1211,7 +1075,7 @@ func (v *methodCaptureVisitor) visitParamDefaults(pat ast.Pat) {
 	}
 }
 
-func (v *methodCaptureVisitor) isShadowed(name string) bool {
+func (v *ctorBodyCaptureVisitor) isShadowed(name string) bool {
 	for _, s := range v.shadowed {
 		if s.Contains(name) {
 			return true
@@ -1220,16 +1084,16 @@ func (v *methodCaptureVisitor) isShadowed(name string) bool {
 	return false
 }
 
-func (v *methodCaptureVisitor) EnterBlock(b ast.Block) bool {
+func (v *ctorBodyCaptureVisitor) EnterBlock(b ast.Block) bool {
 	v.pushScope()
 	return true
 }
 
-func (v *methodCaptureVisitor) ExitBlock(b ast.Block) {
+func (v *ctorBodyCaptureVisitor) ExitBlock(b ast.Block) {
 	v.popScope()
 }
 
-func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
+func (v *ctorBodyCaptureVisitor) EnterExpr(e ast.Expr) bool {
 	switch ex := e.(type) {
 	case *ast.IdentExpr:
 		if !v.isShadowed(ex.Name) {
@@ -1262,7 +1126,7 @@ func (v *methodCaptureVisitor) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
-func (v *methodCaptureVisitor) EnterDecl(d ast.Decl) bool {
+func (v *ctorBodyCaptureVisitor) EnterDecl(d ast.Decl) bool {
 	switch dd := d.(type) {
 	case *ast.VarDecl:
 		// Visit the initializer BEFORE adding the new binding to the

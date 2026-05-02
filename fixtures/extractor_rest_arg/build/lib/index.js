@@ -1,15 +1,15 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 export class C {
-  constructor(temp2, temp3, temp4) {
-    const msg = temp2;
-    const value = temp3;
-    const flag = temp4;
+  constructor(temp1, temp2, temp3) {
+    const msg = temp1;
+    const value = temp2;
+    const flag = temp3;
     this.msg = msg;
     this.value = value;
     this.flag = flag;
   }
-  static [Symbol.customMatcher](temp1) {
-    const subject = temp1;
+  static [Symbol.customMatcher](temp4) {
+    const subject = temp4;
     return [subject.msg, subject.value, subject.flag];
   }
 }

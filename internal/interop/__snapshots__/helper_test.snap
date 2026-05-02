@@ -4445,8 +4445,7 @@
         },
         inferredType: nil,
     },
-    Value: nil,
-    Type:  &ast.NumberTypeAnn{
+    Type: &ast.NumberTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:29},
             End:      ast.Location{Line:1, Column:35},
@@ -4454,7 +4453,7 @@
         },
         inferredType: nil,
     },
-    Default:  nil,
+    Value:    nil,
     Static:   false,
     Private:  false,
     Readonly: false,
@@ -4480,8 +4479,7 @@
         },
         inferredType: nil,
     },
-    Value: nil,
-    Type:  &ast.StringTypeAnn{
+    Type: &ast.StringTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:35},
             End:      ast.Location{Line:1, Column:41},
@@ -4489,7 +4487,7 @@
         },
         inferredType: nil,
     },
-    Default:  nil,
+    Value:    nil,
     Static:   false,
     Private:  false,
     Readonly: true,
@@ -4515,8 +4513,7 @@
         },
         inferredType: nil,
     },
-    Value: nil,
-    Type:  &ast.StringTypeAnn{
+    Type: &ast.StringTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:38},
             End:      ast.Location{Line:1, Column:44},
@@ -4524,7 +4521,7 @@
         },
         inferredType: nil,
     },
-    Default:  nil,
+    Value:    nil,
     Static:   true,
     Private:  false,
     Readonly: false,
@@ -4550,8 +4547,7 @@
         },
         inferredType: nil,
     },
-    Value: nil,
-    Type:  &ast.StringTypeAnn{
+    Type: &ast.StringTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:38},
             End:      ast.Location{Line:1, Column:44},
@@ -4559,7 +4555,7 @@
         },
         inferredType: nil,
     },
-    Default:  nil,
+    Value:    nil,
     Static:   false,
     Private:  true,
     Readonly: false,
@@ -4585,8 +4581,7 @@
         },
         inferredType: nil,
     },
-    Value: nil,
-    Type:  &ast.StringTypeAnn{
+    Type: &ast.StringTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:36},
             End:      ast.Location{Line:1, Column:42},
@@ -4594,7 +4589,7 @@
         },
         inferredType: nil,
     },
-    Default:  nil,
+    Value:    nil,
     Static:   false,
     Private:  false,
     Readonly: false,
@@ -4620,8 +4615,7 @@
         },
         inferredType: nil,
     },
-    Value: nil,
-    Type:  &ast.NumberTypeAnn{
+    Type: &ast.NumberTypeAnn{
         span: ast.Span{
             Start:    ast.Location{Line:1, Column:48},
             End:      ast.Location{Line:1, Column:54},
@@ -4629,7 +4623,7 @@
         },
         inferredType: nil,
     },
-    Default:  nil,
+    Value:    nil,
     Static:   true,
     Private:  false,
     Readonly: true,

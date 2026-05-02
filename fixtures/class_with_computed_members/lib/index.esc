@@ -1,11 +1,13 @@
 val bar = "bar"
 val baz = "baz"
 class Foo {
-    [bar]: 42:number,
+    [bar]: number,
     [baz](self) {
         return self[bar]
     },
-    constructor(mut self) {}
+    constructor(mut self, barVal: number = 42) {
+        self[bar] = barVal
+    }
 }
 
 val foo = Foo()

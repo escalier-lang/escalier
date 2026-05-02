@@ -26,8 +26,8 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 	tests := map[string]string{
 		"PointBothFields": `
 			class Point {
-				x:: number,
-				y:: number,
+				x: number,
+				y: number,
 				constructor(mut self, x: number, y: number) {
 					self.x = x
 					self.y = y
@@ -36,8 +36,8 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		`,
 		"PreAssignmentLocalsAreFine": `
 			class Email {
-				local:: string,
-				domain:: string,
+				local: string,
+				domain: string,
 				constructor(mut self, raw: string) {
 					val parts = raw
 					self.local = parts
@@ -47,8 +47,8 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		`,
 		"BothBranchesAssignBoth": `
 			class Range {
-				lo:: number,
-				hi:: number,
+				lo: number,
+				hi: number,
 				constructor(mut self, a: number, b: number) {
 					if a < b {
 						self.lo = a
@@ -62,7 +62,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		`,
 		"ThrowingBranchExcusedFromAssignment": `
 			class Pos {
-				v:: number,
+				v: number,
 				constructor(mut self, x: number) throws string {
 					if x < 0 {
 						throw "negative"
@@ -73,35 +73,36 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		`,
 		"SynthesizedConstructorPasses": `
 			class P {
-				x:: number,
-				y:: number,
+				x: number,
+				y: number,
 			}
 		`,
 		"ComputedSelfAccessAfterAllInit": `
 			val k = "x"
 			class Foo {
-				x:: number,
+				x: number,
 				constructor(mut self, x: number) {
 					self.x = x
 					val v = self[k]
 				}
 			}
 		`,
-		"ComputedKeyFieldWithDefaultIsNotRequired": `
+		"ComputedKeyFieldInitializedInBody": `
 			val k = "tag"
 			class Foo {
-				[k]: 42:number,
-				name:: string,
-				constructor(mut self, name: string) {
+				[k]: number,
+				name: string,
+				constructor(mut self, name: string, tag: number = 42) {
 					self.name = name
+					self[k] = tag
 				}
 			}
 		`,
 		"NestedIfBranchesAllAssign": `
 			class Triple {
-				a:: number,
-				b:: number,
-				c:: number,
+				a: number,
+				b: number,
+				c: number,
 				constructor(mut self, x: number, y: number, z: number) {
 					if x < 0 {
 						self.a = x
@@ -123,7 +124,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		`,
 		"MatchOneArmThrows": `
 			class Foo {
-				v:: number,
+				v: number,
 				constructor(mut self, x: number) throws string {
 					match x {
 						0 => throw "zero",
@@ -134,7 +135,7 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		`,
 		"MethodCallAfterAllInit": `
 			class Foo {
-				x:: number,
+				x: number,
 				constructor(mut self, x: number) {
 					self.x = x
 					self.bump()
@@ -145,10 +146,18 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 		"PassSelfToExternalFnAfterAllInit": `
 			fn observe<T>(t: T) -> T { return t }
 			class Foo {
-				x:: number,
+				x: number,
 				constructor(mut self, x: number) {
 					self.x = x
 					observe(self)
+				}
+			}
+		`,
+		"ReadonlyFieldCanBeInitialized": `
+			class Foo {
+				readonly x: number,
+				constructor(mut self, x: number) {
+					self.x = x
 				}
 			}
 		`,
@@ -171,8 +180,8 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"FieldNotInitialized": {
 			input: `
 				class User {
-					name:: string,
-					age:: number,
+					name: string,
+					age: number,
 					constructor(mut self, name: string, age: number) {
 						self.name = name
 					}
@@ -183,7 +192,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"ReadBeforeInit": {
 			input: `
 				class User {
-					name:: string,
+					name: string,
 					constructor(mut self, name: string) {
 						val n = self.name
 						self.name = name
@@ -195,8 +204,8 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"ConditionalAssignmentInOnlyOneBranch": {
 			input: `
 				class Range {
-					lo:: number,
-					hi:: number,
+					lo: number,
+					hi: number,
 					constructor(mut self, a: number, b: number) {
 						self.lo = a
 						if a < b {
@@ -210,7 +219,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"SelfAliasBeforeInit": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) {
 						val r = self
 						self.x = x
@@ -222,7 +231,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"MethodCallBeforeInit": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) {
 						self.helper()
 						self.x = x
@@ -235,7 +244,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"LoopInConstructor": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, xs: Array<number>) {
 						for v in xs {
 							self.x = v
@@ -249,7 +258,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				val k = "name"
 				class Foo {
-					name:: string,
+					name: string,
 					constructor(mut self, name: string) {
 						val n = self[k]
 						self.name = name
@@ -262,8 +271,8 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				val k = "name"
 				class Foo {
-					name:: string,
-					age:: number,
+					name: string,
+					age: number,
 					constructor(mut self, name: string, age: number) {
 						self[k] = name
 						self.age = age
@@ -276,7 +285,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 			input: `
 				fn observe<T>(t: T) -> T { return t }
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) {
 						observe(self)
 						self.x = x
@@ -288,7 +297,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"ReturnSelfBeforeInit": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) {
 						return self
 					}
@@ -299,7 +308,7 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 		"TryInConstructor": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) {
 						val r = try {
 							x
@@ -311,6 +320,20 @@ func TestConstructorDefiniteAssignmentErrors(t *testing.T) {
 				}
 			`,
 			expected: "`try`/`catch` is not yet supported",
+		},
+		"ClosureInsideCtorCannotBypassReadonly": {
+			input: `
+				class Foo {
+					readonly x: number,
+					constructor(mut self, x: number) {
+						self.x = x
+						val f = fn () {
+							self.x = 0
+						}
+					}
+				}
+			`,
+			expected: "Cannot mutate readonly property 'x'",
 		},
 	}
 

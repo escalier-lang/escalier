@@ -2372,7 +2372,7 @@ similar visitor patterns, so bundling them is cheaper than two passes:
 1. **Closures over a *nested* function's local.** Generalize
    `detectEscapingLeafIndices` to walk into nested function bodies
    while maintaining a scope-frontier of "locals belonging to *our*
-   function," using the `methodCaptureVisitor` (8.6) as a template.
+   function," using the `ctorBodyCaptureVisitor` (8.6) as a template.
    See §8.4's limitations note for the analysis sketch.
 
 2. **Chained property-stores through a local intermediary.** Today the

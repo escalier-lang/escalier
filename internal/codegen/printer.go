@@ -118,6 +118,12 @@ func (p *Printer) PrintExpr(expr Expr) {
 	case *UnaryExpr:
 		p.print(unaryOpMap[e.Op])
 		p.PrintExpr(e.Arg)
+	case *CondExpr:
+		p.PrintExpr(e.Cond)
+		p.print(" ? ")
+		p.PrintExpr(e.Cons)
+		p.print(" : ")
+		p.PrintExpr(e.Alt)
 	case *CallExpr:
 		p.PrintExpr(e.Callee)
 		if e.OptChain {
@@ -330,11 +336,7 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 			if i > 0 {
 				p.print(", ")
 			}
-			p.printPattern(param.Pattern)
-			if param.TypeAnn != nil {
-				p.print(": ")
-				p.PrintTypeAnn(param.TypeAnn)
-			}
+			p.printObjTypeAnnParam(param)
 		}
 		p.print(")")
 		p.print(": ")
@@ -365,11 +367,7 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 			if i > 0 {
 				p.print(", ")
 			}
-			p.printPattern(param.Pattern)
-			if param.TypeAnn != nil {
-				p.print(": ")
-				p.PrintTypeAnn(param.TypeAnn)
-			}
+			p.printObjTypeAnnParam(param)
 		}
 		p.print(")")
 		p.print(": ")
@@ -400,11 +398,7 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 			if i > 0 {
 				p.print(", ")
 			}
-			p.printPattern(param.Pattern)
-			if param.TypeAnn != nil {
-				p.print(": ")
-				p.PrintTypeAnn(param.TypeAnn)
-			}
+			p.printObjTypeAnnParam(param)
 		}
 		p.print(")")
 		p.print(": ")
@@ -417,11 +411,7 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 			if i > 0 {
 				p.print(", ")
 			}
-			p.printPattern(param.Pattern)
-			if param.TypeAnn != nil {
-				p.print(": ")
-				p.PrintTypeAnn(param.TypeAnn)
-			}
+			p.printObjTypeAnnParam(param)
 		}
 		p.print(")")
 		p.print(": ")
@@ -434,11 +424,7 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 			if i > 0 {
 				p.print(", ")
 			}
-			p.printPattern(param.Pattern)
-			if param.TypeAnn != nil {
-				p.print(": ")
-				p.PrintTypeAnn(param.TypeAnn)
-			}
+			p.printObjTypeAnnParam(param)
 		}
 		p.print(")")
 		// TypeScript doesn't allow setters to have a return type
@@ -595,6 +581,32 @@ func (p *Printer) printPattern(pat Pat) {
 
 func (p *Printer) printParam(param *Param) {
 	p.printPattern(param.Pattern)
+	if param.TypeAnn != nil {
+		p.print(": ")
+		p.PrintTypeAnn(param.TypeAnn)
+	}
+}
+
+// printObjTypeAnnParam prints a parameter inside an object type
+// annotation (callable, constructor, method, getter, setter signatures).
+// Unlike printParam, it must not emit a JS default expression — type
+// positions are purely structural — and it must surface the optional
+// marker. A parameter is treated as optional when either the explicit
+// `Optional` flag is set or the underlying identifier pattern carries a
+// default value in source.
+func (p *Printer) printObjTypeAnnParam(param *Param) {
+	optional := param.Optional
+	if ident, ok := param.Pattern.(*IdentPat); ok {
+		p.print(ident.Name)
+		if ident.Default != nil {
+			optional = true
+		}
+	} else {
+		p.printPattern(param.Pattern)
+	}
+	if optional {
+		p.print("?")
+	}
 	if param.TypeAnn != nil {
 		p.print(": ")
 		p.PrintTypeAnn(param.TypeAnn)

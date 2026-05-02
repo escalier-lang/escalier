@@ -154,19 +154,29 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 		return nil, fmt.Errorf("converting type parameters for class %s: %w", dc.Name.Name, err)
 	}
 
-	// Convert class members to constructor params and body elements
-	var constructorParams []*ast.Param
+	// Convert class members. Any TS-side constructor becomes an in-body
+	// `ConstructorElem`. The `mut self` parameter is synthesized so
+	// downstream passes see the same shape as a user-written constructor.
 	var bodyElems []ast.ClassElem
 
 	for _, member := range dc.Members {
 		switch m := member.(type) {
 		case *dts_parser.ConstructorDecl:
-			// Extract constructor parameters
 			params, err := convertParams(m.Params)
 			if err != nil {
 				return nil, fmt.Errorf("converting constructor parameters for class %s: %w", dc.Name.Name, err)
 			}
-			constructorParams = params
+			mutSelf := true
+			selfPat := ast.NewIdentPat("self", true, nil, nil, convertSpan(m.Span()))
+			selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
+			allParams := append([]*ast.Param{selfParam}, params...)
+			fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, convertSpan(m.Span()))
+			bodyElems = append(bodyElems, &ast.ConstructorElem{
+				Fn:      fn,
+				MutSelf: &mutSelf,
+				Private: false,
+				Span_:   convertSpan(m.Span()),
+			})
 
 		case *dts_parser.MethodDecl:
 			elem, err := convertMethodDecl(m)
@@ -213,9 +223,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 		ast.NewIdentifier(dc.Name.Name, convertSpan(dc.Name.Span())),
 		typeParams,
 		nil, // extends - TODO: parse extends clause from .d.ts files
-		constructorParams,
 		bodyElems,
-		false, // data - .d.ts classes are not data classes
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files
 		convertSpan(dc.Span()),

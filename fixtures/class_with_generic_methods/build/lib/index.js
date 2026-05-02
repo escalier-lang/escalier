@@ -1,38 +1,39 @@
 export class Foo {
-  constructor() {
-    this.value = 5;
+  constructor(temp1) {
+    const value = typeof temp1 !== "undefined" ? temp1 : 5;
+    this.value = value;
   }
-  getValue(temp1) {
-    const defaultValue = temp1;
+  getValue(temp2) {
+    const defaultValue = temp2;
     if (this.value != 0) {
       return this.value;
     } else {
       return defaultValue;
     }
   }
-  static addNums1(temp2, temp3) {
-    const a = temp2;
-    const b = temp3;
+  static addNums1(temp3, temp4) {
+    const a = temp3;
+    const b = temp4;
     return a + b;
   }
-  addStrs1(temp4, temp5) {
-    const a = temp4;
-    const b = temp5;
+  addStrs1(temp5, temp6) {
+    const a = temp5;
+    const b = temp6;
     return Foo.addNums1(a, b);
   }
-  addNums2(temp6, temp7) {
-    const a = temp6;
-    const b = temp7;
+  addNums2(temp7, temp8) {
+    const a = temp7;
+    const b = temp8;
     return Foo.addNums1(a, b);
   }
-  static addStrs3(temp8, temp9) {
-    const a = temp8;
-    const b = temp9;
+  static addStrs3(temp9, temp10) {
+    const a = temp9;
+    const b = temp10;
     return Foo.addNums1(a, b);
   }
-  static addNums4(temp10, temp11) {
-    const a = temp10;
-    const b = temp11;
+  static addNums4(temp11, temp12) {
+    const a = temp11;
+    const b = temp12;
     return Foo.addNums1(a, b);
   }
 }

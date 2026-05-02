@@ -269,7 +269,7 @@ func TestBuildDeclWithNamespace(t *testing.T) {
 		"FuncDecl_WithDefaultParams": {
 			declSource: "fn greet(name = \"World\") { return \"Hello, \" + name }",
 			ns:         "",
-			expected:   "function greet(temp1) {\n  const name = \"World\" = temp1;\n  return \"Hello, \" + name;\n}",
+			expected:   "function greet(temp1) {\n  const name = typeof temp1 !== \"undefined\" ? temp1 : \"World\";\n  return \"Hello, \" + name;\n}",
 		},
 		"FuncDecl_WithRestParams": {
 			declSource: "fn sum(...args) { return 42 }",
@@ -422,9 +422,11 @@ class Color__RGB {
 }
 Color.RGB = Color__RGB;`,
 		},
-		"ClassDecl_InstanceGetter_RewritesParamToThis": {
-			declSource: `class Circle(radius: number) {
-	get area(self) -> number { return 3.14159 * radius * radius },
+		"ClassDecl_InstanceGetterReadsField": {
+			declSource: `class Circle {
+	radius: number,
+	constructor(mut self, radius: number) { self.radius = radius },
+	get area(self) -> number { return 3.14159 * self.radius * self.radius },
 }`,
 			ns: "",
 			expected: `class Circle {
@@ -437,18 +439,20 @@ Color.RGB = Color__RGB;`,
   }
 }`,
 		},
-		"ClassDecl_StaticMethod_DoesNotRewriteParams": {
-			declSource: `class Foo(x: number) {
+		"ClassDecl_StaticMethodSeparateScope": {
+			declSource: `class Foo {
+	x: number,
+	constructor(mut self, x: number) { self.x = x },
 	static create(x: number) -> number { return x * 2 },
 }`,
 			ns: "",
 			expected: `class Foo {
-  constructor(temp2) {
-    const x = temp2;
+  constructor(temp1) {
+    const x = temp1;
     this.x = x;
   }
-  static create(temp1) {
-    const x = temp1;
+  static create(temp2) {
+    const x = temp2;
     return x * 2;
   }
 }`,

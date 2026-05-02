@@ -139,6 +139,22 @@ func (*TaggedTemplateLitExpr) isExpr() {}
 func (*EmptyExpr) isExpr()             {}
 func (*SpreadExpr) isExpr()            {}
 func (*YieldExpr) isExpr()             {}
+func (*CondExpr) isExpr()              {}
+
+type CondExpr struct {
+	Cond   Expr
+	Cons   Expr
+	Alt    Expr
+	span   *Span
+	source ast.Node
+}
+
+func NewCondExpr(cond, cons, alt Expr, source ast.Node) *CondExpr {
+	return &CondExpr{Cond: cond, Cons: cons, Alt: alt, source: source, span: nil}
+}
+func (e *CondExpr) Span() *Span        { return e.span }
+func (e *CondExpr) SetSpan(span *Span) { e.span = span }
+func (e *CondExpr) Source() ast.Node   { return e.source }
 
 type MemberExpr struct {
 	Object   Expr

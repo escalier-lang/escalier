@@ -19,8 +19,9 @@ cut-over, on top of the new single-constructor codepath.
 |------:|--------------------------------------------------------------------------------------------|------------|--------|
 |     1 | AST + parser: introduce `ConstructorElem` (additive, alongside primary ctor)               | —          | Done   |
 |     2 | Type checker: derive class constructor type from `ConstructorElem` (single)                | 1          | Done   |
-|     3 | Definite-assignment analysis on constructor bodies                                         | 2          |        |
-|     4 | Combined cut-over: single-ctor codegen, fixture migration, removal of primary ctor + `data` | 3          |        |
+|     3 | Definite-assignment analysis on constructor bodies                                         | 2          | Done   |
+|     4 | Combined cut-over: single-ctor codegen, fixture migration, removal of primary ctor + `data` | 3          | Done (PR [#520](https://github.com/escalier-lang/escalier/pull/520)) |
+|   4.9 | Post-cut-over cleanups (parser tightening, follow-up issues filed)                         | 4          | Done   |
 |     5 | Optional fields (`x?: T`): parser/AST plumbing, exclude from definite-assignment, enable all-optional synthesized ctor | 4          |        |
 |     6 | Multiple constructors: overload resolution, runtime discriminator analysis, merged codegen | 5          |        |
 |     7 | Polish: error messages, diagnostics, documentation                                         | 6          |        |
@@ -598,7 +599,7 @@ classes with more than one in-body `constructor`.
 - The single `*ast.ConstructorElem` in the class body (user-written or
   synthesized per Phase 2.7)
 
-### 4.2 Emission Strategy
+### 4.2 Emission Strategy — Done
 
 For Phase 4, every class has exactly one in-body constructor. Emit it
 as a plain JS `constructor(x, y, …)` body — no rest-parameter wrapper,
@@ -613,7 +614,7 @@ emit the standard JS default-parameter form: `constructor(x = expr) { … }`.
 (Field-level defaults no longer exist — see requirements
 §"Field Declarations".)
 
-### 4.3 Fixture Migration
+### 4.3 Fixture Migration — Done
 
 Hand-edit every `.esc` file that uses primary-constructor syntax. The
 codebase is small enough that this is tractable manually; no codemod is
@@ -689,76 +690,134 @@ Update snapshot fixtures: `UPDATE_SNAPS=true go test ./...`.
 
 **File:** `internal/parser/decl.go`
 
-Delete the `if token.Type == OpenParen { … params = parseDelimSeq(…) }`
-block (currently around line 156). Encountering `(` after the class name
-(and optional type params) now reports `"primary constructors are no
-longer supported; declare an explicit `constructor` block in the class
-body"`.
+Initially the cut-over kept a transitional error path: encountering `(`
+after the class name reported *"primary constructors are no longer
+supported; declare an explicit `constructor` block in the class body"*
+and consumed the parenthesized params for recovery. **This transitional
+block was removed in §4.9** — the parser no longer recognizes the
+parenthesized head at all and falls into its generic *"Expected '{' to
+start class body"* error path.
 
-Also drop the `data` contextual-keyword logic:
+The `data` contextual-keyword logic is gone:
 - `internal/parser/stmt.go:124` and `internal/parser/decl.go:106` —
-  remove the promotion of `data` from identifier to keyword when
-  followed by `class`.
-- `internal/parser/decl.go:136` — remove the `data bool` parameter on
-  `classDecl` and its call sites.
+  the promotion of `data` from identifier to keyword when followed by
+  `class` is removed.
+- `internal/parser/decl.go:136` — the `data bool` parameter on
+  `classDecl` and its call sites are removed.
+
+Also added in PR #520:
+- **Field-level type annotation is required**: `class Foo { x, }`
+  reports *"Class fields require a type annotation (e.g. `name: T`)"*.
+  No-annotation field declarations are rejected at parse time.
+- **The `name :: T` double-colon migration aid was kept briefly**, then
+  removed in §4.9. `::` itself remains a valid token elsewhere
+  (object-pattern shorthand in `pattern.go`).
 
 ### 4.5 AST Cleanup
 
 **File:** `internal/ast/class.go`
 
-Remove `ClassDecl.Params` and `ClassDecl.Data`. Update `NewClassDecl`
-and every call site (notably `internal/interop/decl.go:218`). Sweep the
-codebase with `grep -rn 'decl.Params\|\.Data' internal/checker
-internal/codegen` for class-related usages and delete the dead
-branches.
+`ClassDecl.Params` and `ClassDecl.Data` are removed. `NewClassDecl` and
+every call site (notably `internal/interop/decl.go`) updated.
+
+`*ast.FieldElem` shape after the cut-over:
+
+```go
+type FieldElem struct {
+    Name     ObjKey
+    Type     TypeAnn  // required; reported as a parse error if absent
+    Value    Expr     // static-field initializer ONLY; rejected on instance fields
+    Static   bool
+    Private  bool
+    Readonly bool
+    Span_    Span
+}
+```
+
+Notes:
+- The legacy `Default` field is gone. Field-level defaults moved to
+  *constructor parameter defaults* (`constructor(mut self, x: T = 0)`).
+- `Value` was reintroduced for **static-field initializers**
+  (`static count: number = 0`). Instance fields with a non-nil `Value`
+  are rejected by the checker as `FieldInitializerNotAllowedError` —
+  instance fields must be initialized in the constructor body.
 
 ### 4.6 Type Checker Cleanup
 
 **File:** `internal/checker/infer_module.go`
 
-- Delete the `inferFuncParams(declCtx, decl.Params)` call and the
-  surrounding branch in the placeholder phase.
-- Delete the `paramBindingsForDecl[decl]` plumbing that copies primary
-  ctor params into method bodies (the comment at lines 1091–1101
-  explicitly describes the soon-to-be-removed behavior).
-- Delete the FieldElem fallback that resolves a no-value, no-annotation
-  field from a same-named primary-ctor param (`infer_module.go:1044`
-  area — the `if bodyElem.Value != nil { … } else { … }` branch on
-  the `else` side).
+- The `inferFuncParams(declCtx, decl.Params)` call and its surrounding
+  branch are gone.
+- The `paramBindingsForDecl[decl]` plumbing no longer carries ctor
+  params — class decls populate the map with an empty value, since
+  in-body constructor params live on `ctorInfoForDecl[decl]` instead.
+- The FieldElem fallback that resolved a no-value, no-annotation field
+  from a same-named primary-ctor param is gone. Field type comes from
+  the (now-required) annotation; a static field with `Value != nil`
+  has its initializer's inferred type unified with the annotation.
+
+**File:** `internal/checker/error.go`
+
+New error introduced post-cut-over:
+- `FieldInitializerNotAllowedError{FieldName, span}` — reports
+  `Field 'x' cannot have a `= expr` initializer; only static fields
+  may use this form. Initialize instance fields in the constructor
+  body.`
 
 **File:** `internal/checker/infer_lifetime.go`
 
-`InferConstructorLifetimes` (called at `infer_module.go:614`) currently
-operates on `decl.Params`. Refactor to operate on the (single)
-`ConstructorElem` in `decl.Body`, per requirements §"Lifetimes": the
-constructor allocates fresh `LifetimeVar`s for its reference-typed
-parameters that are stored as fields, and stamps the result onto its
-own `FuncType`. Phase 6 extends this to multiple constructors.
+`InferConstructorLifetimes` was refactored to operate on the (single)
+`ConstructorElem` in `decl.Body`. The constructor body itself is walked
+by `ctorBodyCaptureVisitor` (renamed from `methodCaptureVisitor` in
+§4.9 to reflect its actual scope) — every unshadowed identifier
+reference whose name matches a callable-param name is recorded as a
+capture. This is a **conservative over-approximation**: a param
+referenced in a body is flagged even if it is not actually stored into
+`self`. See [issue #531](https://github.com/escalier-lang/escalier/issues/531)
+for the planned migration to the precise data-flow analysis that
+`inferLifetimesCore` already runs for methods, setters, getters, and
+regular functions.
 
-Also remove any branch that consults `decl.Data` to override default
-mutability. Per requirements §"Default Mutability", constructor calls
-always return immutable; the `data` modifier is gone, and the class
-default-mutability bit now serves only to record "does the class have
-`mut self` methods?" (used by inference at use sites — *not* at
-construction).
+The `decl.Data` branch is also gone. Per requirements §"Default
+Mutability", constructor calls always return immutable; the `data`
+modifier is gone, and the class default-mutability bit now serves only
+to record "does the class have `mut self` methods?" (used by inference
+at use sites — *not* at construction).
 
 ### 4.7 Codegen Cleanup
 
 **File:** `internal/codegen/builder.go`
 
-Replace the field-init logic at `builder.go:834–903` with the new
-single-constructor codegen described in 4.2. Also:
+The field-init logic is replaced with the new single-constructor
+codegen described in 4.2. Also:
 
-- Delete `b.classParamNames` field on `Builder` and all the surrounding
-  lifecycle plumbing (`builder.go:802–818`, `:825`, `:966`).
-- Delete the `fieldNames` / param-fallback block (`:923–951`).
-- Delete `b.buildParams(d.Params)` for class decls.
+- `b.classParamNames` and its lifecycle plumbing (save/restore around
+  class-elem emission, clearing inside ctor body, fallback rewrites of
+  bare identifiers to `this.x`) are gone.
+- The `fieldNames` / param-fallback block that emitted
+  `this.x = x` for primary-ctor params not paired with a field is gone.
+- `b.buildParams(d.Params)` is no longer called for class decls; the
+  constructor's own `Fn.Params[1:]` are passed through `buildParams`
+  via the `*ast.ConstructorElem` path in `buildClassElems`.
 
 After this phase, `internal/codegen/builder.go` has zero references to
-class-header parameters. The new model: fields are only ever assigned
-by `self.foo = …` statements inside a constructor body, and those
-translate directly. There is no implicit "match field to same-named
-param" anymore.
+class-header parameters. Fields are only ever assigned by `self.foo = …`
+statements inside a constructor body, and those translate directly.
+
+**Synthesizer behavior worth noting** (added in PR #520):
+
+- Synthesized constructors mirror the non-static instance fields in
+  declaration order; each field gets a corresponding param of the same
+  name and type, and the body is `self.fieldName = fieldName`.
+- Fields whose key is a non-identifier string (e.g. `"foo-bar": number`)
+  cannot use the field name as a JS parameter name. The synthesizer
+  generates a temp param `_field<N>` and emits an *index-write*
+  `self["foo-bar"] = _field1`. The init-check pass treats
+  `self["literal"] = rhs` (where the literal matches a required field
+  name) as initializing that field — same as `self.literal = rhs`.
+- Computed-key fields are still rejected outright (the synthesizer has
+  no stable name to bind), surfacing as
+  `ComputedKeyFieldRequiresConstructorError`.
 
 ### 4.8 Tests
 
@@ -774,12 +833,77 @@ Codegen:
   sequence of `this.fi = fi` writes).
 
 Parser/checker:
-- Confirm `class Foo(...)` reports the expected "no longer supported"
-  error.
-- Confirm `data class Foo { ... }` is now a parse error.
+- `class Foo(...)` is rejected. The diagnostic is the generic
+  *"Expected '{' to start class body"* (after §4.9 dropped the
+  transitional custom message).
+- `data class Foo { ... }` is now a parse error
+  (`TestRetiredClassSyntax/DataClassKeyword`).
+- `class Foo { x, }` is rejected with *"Class fields require a type
+  annotation"* (`TestRetiredClassSyntax/FieldWithoutTypeAnnotation`).
+- `class Foo { x: number = 1, }` (instance-field initializer) is
+  rejected with `FieldInitializerNotAllowedError`.
+- `class Foo { static x: number = 0, }` is accepted; the codegen emits
+  `static x = 0` and the type checker unifies the initializer's type
+  with the annotation.
+- `class Foo { "foo-bar": number, }` is accepted — synthesizer emits
+  `self["foo-bar"] = _field1` from a generated param.
+- `TestConstructorParamsDoNotLeakIntoMethods` and
+  `TestConstructorParamsDoNotLeakIntoMethodParamDefaults` lock in that
+  ctor params are scoped to the constructor body.
 
 Confirm the entire test suite passes — this phase is the integration
 milestone for single-constructor classes.
+
+### 4.9 Post-Cut-Over Cleanups
+
+After PR #520 landed, several follow-up cleanups tightened the parser
+and removed dead code that had survived the cut-over:
+
+**Parser tightening:**
+- The transitional `OpenParen`-after-class-name error path is removed.
+  The parser no longer special-cases the primary-ctor head; encountering
+  `(` falls into the generic *"Expected '{' to start class body"*
+  diagnostic.
+- The `name :: T` double-colon migration aid for class fields is
+  removed. Fields use `:` exclusively. (The `::` token itself is still
+  used elsewhere in the grammar — object-pattern shorthand.)
+
+**Lifetime-pass cleanup:**
+- `collectMethodBodyCaptures` and its three call sites (method, getter,
+  setter) are removed. Methods cannot reference ctor params by name —
+  the type checker rejects such references as unknown identifiers, so
+  the visitor never had work to do.
+- `collectFieldStorageParams` is removed. It performed string-name
+  matching between field names and ctor-param names — a heuristic from
+  the old shorthand-storage model. The constructor-body walk subsumes
+  it (and is more accurate, since it observes actual `self.x = expr`
+  data flow instead of guessing from name overlap).
+- `methodCaptureVisitor` is renamed to `ctorBodyCaptureVisitor` to
+  reflect its actual scope — it is invoked only from
+  `InferConstructorLifetimes`.
+
+**Open work tracked as issues** (filed during code review):
+
+- [#523](https://github.com/escalier-lang/escalier/issues/523) — disallow
+  non-`VarDecl` declarations inside function/method/block bodies. The
+  parser currently accepts any decl kind in any block, but only
+  `VarDecl` is supported end-to-end.
+- [#524](https://github.com/escalier-lang/escalier/issues/524) — static
+  fields without an initializer are unsound. `static x: number,`
+  parses, type-checks, and emits `static x;` (runtime `undefined`).
+  Either reject or require a literal-typed annotation / explicit
+  initializer.
+- [#525](https://github.com/escalier-lang/escalier/issues/525) — replace
+  bool flag-args in checker with named enums/options. Covers
+  `unifyExtractor`/`unifyRestObj`'s `swapped`,
+  `inferFuncBodyWithFuncSigType`'s `isAsync`+`isConstructorBody`, and
+  `inferLifetimesCore`'s `isAsync`+`reinfer`.
+- [#531](https://github.com/escalier-lang/escalier/issues/531) — drop
+  the constructor-body name-match walk and reuse `inferLifetimesCore`'s
+  precise data-flow analysis. Methods/setters/regular functions
+  already get the precise machinery; the constructor is the odd one
+  out and currently over-constrains lifetimes for params that don't
+  actually flow into `self`.
 
 ---
 
@@ -894,6 +1018,13 @@ the (possibly multiple) `ConstructorElem`s, per requirements
 fields, and stamps the result onto its own `FuncType`. Two constructors
 that store references into the same field do not share lifetime
 variables.
+
+This phase should ideally land *after*
+[#531](https://github.com/escalier-lang/escalier/issues/531) replaces
+the conservative name-match walk with precise data-flow analysis;
+otherwise multi-constructor lifetime inference inherits the
+over-approximation. If #531 hasn't landed yet, the same conservative
+walk runs per constructor.
 
 ### 6.4 Overload Resolution at Call Sites
 

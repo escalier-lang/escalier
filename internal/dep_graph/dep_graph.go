@@ -767,25 +767,8 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 				d.Extends.Accept(visitor)
 			}
 
-			// Visit constructor parameter type annotations
-			for _, param := range d.Params {
-				if param.TypeAnn != nil {
-					param.TypeAnn.Accept(visitor)
-				}
-			}
-
-			// Add constructor parameters to scope
-			if len(visitor.LocalScopes) > 0 {
-				currentScope := &visitor.LocalScopes[len(visitor.LocalScopes)-1]
-				for _, param := range d.Params {
-					bindings := ast.FindBindings(param.Pattern)
-					for binding := range bindings {
-						currentScope.ValueBindings.Add(binding)
-					}
-				}
-			}
-
-			// Visit class body elements
+			// Visit class body elements (constructors are now in-body, so
+			// their param type annotations are reached by the body walk).
 			for _, elem := range d.Body {
 				elem.Accept(visitor)
 			}

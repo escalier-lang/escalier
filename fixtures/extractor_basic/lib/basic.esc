@@ -1,5 +1,5 @@
-class C(msg: string) {
-    msg,
+class C {
+    msg: string,
     static [Symbol.customMatcher](subject: C) -> [string] {
         return [subject.msg]
     }

@@ -382,9 +382,9 @@ func TestClassDeclarations(t *testing.T) {
 	}{
 		"BasicClass": {
 			input: `
-				class Point(x: number, y: number) {
-					x,
-					y,
+				class Point {
+					x: number,
+					y: number,
 				}
 			`,
 		},
@@ -397,12 +397,16 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
-		"ClassWithExtendsAndConstructorParams": {
+		"ClassWithExtendsAndInBodyConstructor": {
 			input: `
-				class Dog(name: string)  extends Animal{
+				class Dog extends Animal {
+					name: string,
+					constructor(mut self, name: string) {
+						self.name = name
+					},
 					bark(self) {
 						return "Woof!"
-					}
+					},
 				}
 			`,
 		},
@@ -431,10 +435,13 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
-		"GenericClassWithExtendsAndParams": {
+		"GenericClassWithExtendsAndInBodyConstructor": {
 			input: `
-				class SpecialBox<T>(value: T) extends Box<T> {
-					isSpecial: true,
+				class SpecialBox<T> extends Box<T> {
+					value: T,
+					constructor(mut self, value: T) {
+						self.value = value
+					},
 				}
 			`,
 		},
@@ -493,15 +500,6 @@ func TestClassDeclarations(t *testing.T) {
 					addr: string,
 					constructor(mut self, addr: string) throws ValidationError {
 						self.addr = addr
-					},
-				}
-			`,
-		},
-		"ClassWithBothPrimaryAndInBodyConstructor": {
-			input: `
-				class Foo(x: number) {
-					constructor(mut self, x: number) {
-						self.x = x
 					},
 				}
 			`,

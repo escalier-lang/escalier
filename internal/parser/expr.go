@@ -860,20 +860,34 @@ func (p *Parser) param() *ast.Param {
 
 	var param ast.Param
 
+	var typeAnn ast.TypeAnn
 	if token.Type == Colon {
 		p.lexer.consume() // consume ':'
-		typeAnn := p.typeAnn()
-		param = ast.Param{
-			Pattern:  pat,
-			TypeAnn:  typeAnn,
-			Optional: opt,
+		typeAnn = p.typeAnn()
+	}
+
+	// Check for default value (allowed after optional type annotation)
+	if next := p.lexer.peek(); next.Type == Equal {
+		p.lexer.consume() // consume '='
+		defaultExpr := p.expr()
+		if defaultExpr != nil {
+			if identPat, ok := pat.(*ast.IdentPat); ok {
+				newSpan := ast.MergeSpans(identPat.Span(), defaultExpr.Span())
+				pat = ast.NewIdentPat(identPat.Name, identPat.Mutable, identPat.TypeAnn, defaultExpr, newSpan)
+			}
+			// TODO(#522): defaults on destructuring patterns
+			// (ObjectPat, TuplePat) are accepted by the grammar but
+			// not yet threaded through the type checker or codegen.
+			// Storing the default expression requires extending
+			// ast.Param (or each Pat variant) and updating every
+			// consumer.
 		}
-	} else {
-		param = ast.Param{
-			Pattern:  pat,
-			TypeAnn:  nil,
-			Optional: opt,
-		}
+	}
+
+	param = ast.Param{
+		Pattern:  pat,
+		TypeAnn:  typeAnn,
+		Optional: opt,
 	}
 
 	return &param

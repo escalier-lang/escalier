@@ -822,9 +822,7 @@
                                 TypeParams: {
                                 },
                                 Extends: (*ast.TypeRefTypeAnn)(nil),
-                                Params:  nil,
                                 Body:    nil,
-                                Data:    false,
                                 export:  false,
                                 declare: true,
                                 span:    ast.Span{
@@ -1196,9 +1194,7 @@
                                 TypeParams: {
                                 },
                                 Extends: (*ast.TypeRefTypeAnn)(nil),
-                                Params:  nil,
                                 Body:    nil,
-                                Data:    false,
                                 export:  true,
                                 declare: true,
                                 span:    ast.Span{

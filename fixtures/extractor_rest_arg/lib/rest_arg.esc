@@ -1,7 +1,7 @@
-class C(msg: string, value: number, flag: boolean) {
-    msg,
-    value,
-    flag,
+class C {
+    msg: string,
+    value: number,
+    flag: boolean,
     static [Symbol.customMatcher](subject: C) -> [string, number, boolean] {
         return [subject.msg, subject.value, subject.flag]
     }

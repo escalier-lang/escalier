@@ -82,7 +82,6 @@ func (p *Parser) Decl() ast.Decl {
 	export := false
 	declare := false
 	async := false
-	data := false
 
 	token := p.lexer.next()
 	start := token.Span.Start
@@ -98,13 +97,6 @@ func (p *Parser) Decl() ast.Decl {
 
 	if token.Type == Async {
 		async = true
-		token = p.lexer.next()
-	}
-
-	// `data` is a contextual modifier — only treated as a keyword when it
-	// immediately precedes `class`. Anywhere else it is a regular identifier.
-	if token.Type == Identifier && token.Value == "data" && p.lexer.peek().Type == Class {
-		data = true
 		token = p.lexer.next()
 	}
 
@@ -125,15 +117,15 @@ func (p *Parser) Decl() ast.Decl {
 	case Enum:
 		return p.enumDecl(start, export, declare)
 	case Class:
-		return p.classDecl(start, export, declare, data)
+		return p.classDecl(start, export, declare)
 	default:
 		p.reportError(token.Span, "Unexpected token")
 		return nil
 	}
 }
 
-// classDecl = 'data'? 'class' ident typeParams? '(' param* ')' ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
-func (p *Parser) classDecl(start ast.Location, export, declare, data bool) ast.Decl {
+// classDecl = 'class' ident typeParams? ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
+func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	var name *ast.Ident
 	if token.Type != Identifier {
@@ -150,15 +142,6 @@ func (p *Parser) classDecl(start ast.Location, export, declare, data bool) ast.D
 	// Parse optional type parameters for the class
 	typeParams := p.maybeTypeParams()
 	token = p.lexer.peek()
-
-	// Parse optional constructor params
-	params := []*ast.Param{}
-	if token.Type == OpenParen {
-		p.lexer.consume()
-		params = parseDelimSeq(p, CloseParen, Comma, p.param)
-		p.expect(CloseParen, AlwaysConsume)
-		token = p.lexer.peek()
-	}
 
 	// Parse optional extends clause
 	var extends *ast.TypeRefTypeAnn
@@ -199,7 +182,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, data bool) ast.D
 		p.reportError(token.Span, "Expected '{' to start class body")
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-		decl := ast.NewClassDecl(name, typeParams, extends, params, nil, data, export, declare, span)
+		decl := ast.NewClassDecl(name, typeParams, extends, nil, export, declare, span)
 		return decl
 	}
 	p.lexer.consume()
@@ -209,7 +192,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, data bool) ast.D
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	decl := ast.NewClassDecl(name, typeParams, extends, params, body, data, export, declare, span)
+	decl := ast.NewClassDecl(name, typeParams, extends, body, export, declare, span)
 	return decl
 }
 
@@ -564,51 +547,40 @@ modifiers_done:
 		}
 	} else {
 		// Field
-		var value ast.Expr
+		//
+		// Grammar:
+		//   name : T               — type annotation (required)
+		//   name : T = expr        — static fields only; the initializer
+		//                            is rejected by the checker on
+		//                            instance fields. Instance fields are
+		//                            initialized in the constructor body.
 		var typeAnn ast.TypeAnn
-		var default_ ast.Expr
+		var value ast.Expr
 
 		next = p.lexer.peek()
 
-		// nolint: exhaustive
-		switch next.Type {
-		case Colon:
-			p.lexer.consume()
-			value = p.expr()
-			next = p.lexer.peek()
-			switch next.Type {
-			case Colon:
-				p.lexer.consume()
-				typeAnn = p.typeAnn()
-				next = p.lexer.peek()
-				if next.Type == Equal {
-					p.lexer.consume()
-					default_ = p.expr()
-				}
-			case Equal:
-				p.lexer.consume()
-				default_ = p.expr()
-			}
-		case DoubleColon:
+		if next.Type == Colon {
 			p.lexer.consume()
 			typeAnn = p.typeAnn()
-			next = p.lexer.peek()
-			if next.Type == Equal {
-				p.lexer.consume()
-				default_ = p.expr()
-			}
-		case Equal:
+		} else {
+			p.reportError(next.Span, "Class fields require a type annotation (e.g. `name: T`)")
+		}
+
+		// Optional initializer (`= expr`). Whether it's allowed depends on
+		// the field being static, which the checker enforces — keeping
+		// the grammar permissive lets the parser recover after an
+		// erroneous instance-field initializer.
+		if p.lexer.peek().Type == Equal {
 			p.lexer.consume()
-			default_ = p.expr()
+			value = p.expr()
 		}
 
 		// TODO: report an error if `isAsync` is true
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.FieldElem{
 			Name:     name,
-			Value:    value,
 			Type:     typeAnn,
-			Default:  default_,
+			Value:    value,
 			Static:   isStatic,
 			Private:  isPrivate,
 			Readonly: isReadonly,

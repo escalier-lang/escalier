@@ -361,12 +361,25 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		return nil
 	}
 
-	// | TypeVarType, _ -> ...
 	if t1IsTypeVar {
+		// ExtractorType is a pattern-side wrapper, not a value type. Route
+		// TypeVar↔ExtractorType through unifyExtractor so that the TypeVar gets
+		// bound to whatever the customMatcher's subject type is, rather than
+		// being directly bound to the ExtractorType wrapper itself.
+		if ext, ok := t2.(*type_system.ExtractorType); ok {
+			return c.unifyExtractor(ctx, t1, ext, false, seen)
+		}
 		return c.bind(ctx, t1, t2, seen)
 	}
 	// | _, TypeVarType -> ...
 	if t2IsTypeVar {
+		// ExtractorType is a pattern-side wrapper, not a value type. Route
+		// TypeVar↔ExtractorType through unifyExtractor so that the TypeVar gets
+		// bound to whatever the customMatcher's subject type is, rather than
+		// being directly bound to the ExtractorType wrapper itself.
+		if ext, ok := t1.(*type_system.ExtractorType); ok {
+			return c.unifyExtractor(ctx, t2, ext, true, seen)
+		}
 		return c.bind(ctx, t1, t2, seen)
 	}
 	// | MutType, MutType -> ...

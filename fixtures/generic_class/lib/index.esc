@@ -1,5 +1,5 @@
-class Box<T>(value: T) {
-    value,
+class Box<T> {
+    value: T,
     getValue<T>(self, defaultValue: T) -> number | T {
         if self.value != 0 {
             return self.value

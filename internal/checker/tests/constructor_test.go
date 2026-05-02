@@ -51,8 +51,8 @@ func TestInBodyConstructorBasic(t *testing.T) {
 		"WithFieldsAssignedInBody": {
 			input: `
 				class Point {
-					x:: number,
-					y:: number,
+					x: number,
+					y: number,
 
 					constructor(mut self, x: number, y: number) {
 						self.x = x
@@ -67,7 +67,7 @@ func TestInBodyConstructorBasic(t *testing.T) {
 		"MutBindingYieldsMutInstance": {
 			input: `
 				class Counter {
-					count:: number,
+					count: number,
 
 					constructor(mut self, count: number) {
 						self.count = count
@@ -107,8 +107,8 @@ func TestSynthesizedConstructor(t *testing.T) {
 		"FieldsInDeclarationOrder": {
 			input: `
 				class Point {
-					x:: number,
-					y:: number,
+					x: number,
+					y: number,
 				}
 				val p = Point(1, 2)
 			`,
@@ -118,8 +118,8 @@ func TestSynthesizedConstructor(t *testing.T) {
 		"ReversedDeclarationOrder": {
 			input: `
 				class P {
-					y:: number,
-					x:: number,
+					y: number,
+					x: number,
 				}
 				val p = P(10, 20)
 			`,
@@ -134,16 +134,15 @@ func TestSynthesizedConstructor(t *testing.T) {
 			bindingName:  "e",
 			expectedType: "Empty",
 		},
-		"FieldWithDefaultSkippedFromParams": {
+		"NonIdentifierStringKey": {
 			input: `
-				class WithDefault {
-					x:: number,
-					y:: number = 99,
+				class Foo {
+					"foo-bar": number,
 				}
-				val w = WithDefault(1)
+				val f = Foo(1)
 			`,
-			bindingName:  "w",
-			expectedType: "WithDefault",
+			bindingName:  "f",
+			expectedType: "Foo",
 		},
 	}
 
@@ -169,21 +168,10 @@ func TestConstructorErrors(t *testing.T) {
 		input    string
 		expected []string
 	}{
-		"MixedConstructorForms": {
-			input: `
-				class Foo(x: number) {
-					x,
-					constructor(mut self, x: number) {
-						self.x = x
-					}
-				}
-			`,
-			expected: []string{"Cannot mix primary-constructor"},
-		},
 		"MultipleInBodyConstructors": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) {
 						self.x = x
 					},
@@ -194,22 +182,11 @@ func TestConstructorErrors(t *testing.T) {
 			`,
 			expected: []string{"Multiple constructors"},
 		},
-		"FieldDefaultRejectedWithInBodyCtor": {
-			input: `
-				class Foo {
-					x:: number = 0,
-					constructor(mut self) {
-						self.x = 1
-					}
-				}
-			`,
-			expected: []string{"Field 'x' cannot have a default"},
-		},
 		"ComputedKeyRequiredFieldRejectsSynthesis": {
 			input: `
 				val k = "name"
 				class Foo {
-					[k]:: number,
+					[k]: number,
 				}
 			`,
 			expected: []string{"computed-key field"},
@@ -217,7 +194,7 @@ func TestConstructorErrors(t *testing.T) {
 		"PrivateConstructorRejected": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					private constructor(mut self, x: number) {
 						self.x = x
 					}
@@ -259,7 +236,7 @@ func TestConstructorOwnTypeParamsInScope(t *testing.T) {
 	t.Parallel()
 	input := `
 		class Foo<T> {
-			x:: T,
+			x: T,
 			constructor<U>(mut self, x: T, y: U) {
 				val z: U = y
 				self.x = x
@@ -278,7 +255,7 @@ func TestConstructorParamsDoNotLeakIntoMethods(t *testing.T) {
 	t.Parallel()
 	input := `
 		class Foo {
-			x:: number,
+			x: number,
 			constructor(mut self, secret: number) {
 				self.x = secret
 			},
@@ -302,6 +279,37 @@ func TestConstructorParamsDoNotLeakIntoMethods(t *testing.T) {
 		formatErrs(errs))
 }
 
+// TestConstructorParamsDoNotLeakIntoMethodParamDefaults verifies that an
+// in-body constructor's params are not visible to method param defaults
+// either. This complements TestConstructorParamsDoNotLeakIntoMethods,
+// which covers the method body itself.
+func TestConstructorParamsDoNotLeakIntoMethodParamDefaults(t *testing.T) {
+	t.Parallel()
+	input := `
+		class Foo {
+			x: number,
+			constructor(mut self, secret: number) {
+				self.x = secret
+			},
+			scaled(self, q: number = secret) -> number {
+				return q
+			}
+		}
+	`
+	errs := inferModuleErrors(t, input)
+	found := false
+	for _, e := range errs {
+		uie, ok := e.(*UnknownIdentifierError)
+		if ok && uie.Ident != nil && uie.Ident.Name == "secret" {
+			found = true
+			break
+		}
+	}
+	require.Truef(t, found,
+		"expected an UnknownIdentifierError for 'secret' inside method param default; got: %v",
+		formatErrs(errs))
+}
+
 // TestConstructorInferredTypes is a table-based suite that pins the
 // rendered type of every relevant value binding for a few constructor
 // scenarios:
@@ -322,7 +330,7 @@ func TestConstructorInferredTypes(t *testing.T) {
 		"ThrowingConstructor": {
 			input: `
 				class Foo {
-					x:: number,
+					x: number,
 					constructor(mut self, x: number) throws string {
 						if x < 0 {
 							throw "negative"
@@ -348,7 +356,7 @@ func TestConstructorInferredTypes(t *testing.T) {
 		"SynthesizedGenericClass": {
 			input: `
 				class Box<T> {
-					value:: T,
+					value: T,
 				}
 				val b = Box(42)
 				val s = Box("hi")
@@ -402,10 +410,10 @@ func TestSubclassSynthesisIsNotAllowed(t *testing.T) {
 	t.Parallel()
 	input := `
 		class Base {
-			x:: number,
+			x: number,
 		}
 		class Derived extends Base {
-			y:: number,
+			y: number,
 		}
 	`
 	errs := inferModuleErrors(t, input)

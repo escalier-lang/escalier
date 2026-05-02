@@ -1,13 +1,13 @@
-class Color(r: number, g: number, b: number) {
-	r,
-	g,
-    b,
+class Color {
+	r: number,
+	g: number,
+    b: number,
     static [Symbol.customMatcher](subject: Color) -> [number, number, number] {
         return [subject.r, subject.g, subject.b]
     },
 }
-class MyEvent(kind: string) {
-	kind,
+class MyEvent {
+	kind: string,
     static [Symbol.customMatcher](subject: MyEvent) -> [string] {
         return [subject.kind]
     },

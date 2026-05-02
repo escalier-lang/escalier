@@ -133,8 +133,13 @@ func TestMatchTargetTypeInference(t *testing.T) {
 
 		"InstancePatMultipleClasses": {
 			input: `
-				class Point(x: number, y: number) { x, y }
-				class Event(kind: string) { kind }
+				class Point {
+					x: number,
+					y: number,
+				}
+				class Event {
+					kind: string,
+				}
 				val handle = fn (obj) {
 					return match obj {
 						Point {x, y} => x + y,
