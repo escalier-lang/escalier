@@ -935,6 +935,9 @@ func (c *Checker) InferConstructorLifetimes(
 			break
 		}
 	}
+	// User-written ctors always parse with a body, and no synthesizer
+	// produces a body-less ConstructorElem; the Body == nil guard is
+	// defensive only.
 	if ctorElem == nil || ctorElem.Fn == nil || ctorElem.Fn.Body == nil {
 		return
 	}
@@ -955,6 +958,13 @@ func (c *Checker) InferConstructorLifetimes(
 	// name (mirroring how methods see their implicit receiver in
 	// `runLivenessPrePass`). Rename errors are ignored: any unresolved
 	// references will be re-reported by the body phase's rename pass.
+	//
+	// VarIDs written here are safely overwritten when the body phase later
+	// runs `runLivenessPrePass` on the same ctor body: `liveness.Rename`
+	// does not recurse into nested FuncExpr/FuncDecl bodies (those get
+	// their own pass), so the only nodes touched here are the outer ctor
+	// body's IdentExprs/IdentPats — exactly the nodes the body phase
+	// overwrites. Inner functions are unaffected by this pass.
 	outerBindings := collectOuterBindings(ctx.Scope)
 	renameResult := liveness.Rename(callableParams, *ctorElem.Fn.Body, outerBindings, "self")
 	selfVarID, ok := renameResult.ExtraParamVarIDs["self"]
@@ -989,42 +999,22 @@ func (c *Checker) InferConstructorLifetimes(
 		return
 	}
 
-	// Map escaped leaf indices back to top-level callable-param indices,
-	// preserving param order for determinism.
-	storedParams := set.NewSet[int]()
-	for i, p := range callableParams {
-		identPat, ok := p.Pattern.(*ast.IdentPat)
-		if !ok {
-			continue
-		}
-		leafIdx, found := leafIndex[liveness.VarID(identPat.VarID)]
-		if !found {
-			continue
-		}
-		if escapingLeaves.Contains(leafIdx) {
-			storedParams.Add(i)
-		}
-	}
-	if storedParams.Len() == 0 {
-		return
-	}
-
-	// Allocate lifetimes in parameter order for determinism.
+	// Allocate one lifetime per escaping leaf (in declaration order for
+	// determinism). For an IdentPat top-level param the leaf type IS the
+	// whole param type; for destructured patterns the leaf type is the
+	// sub-position the rename pass bound (e.g. the tuple element type for
+	// `[a, b]: [mut T, mut U]`).
 	var lifetimeParams []*type_system.LifetimeVar
-	for i := range callableParams {
-		if !storedParams.Contains(i) {
+	for leafIdx, leaf := range leaves {
+		if !escapingLeaves.Contains(leafIdx) {
 			continue
 		}
-		if i >= len(ctorFn.Params) {
-			continue
-		}
-		paramType := ctorFn.Params[i].Type
-		if !typeCarriesLifetime(paramType) {
+		if !typeCarriesLifetime(leaf.leafType) {
 			continue
 		}
 		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
 		lifetimeParams = append(lifetimeParams, lv)
-		setLifetimeOnType(paramType, lv)
+		setLifetimeOnType(leaf.leafType, lv)
 	}
 
 	if len(lifetimeParams) == 0 {

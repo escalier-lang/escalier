@@ -567,6 +567,24 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"C": 0,
 			},
 		},
+		"DestructuredTupleCtorParamCapture": {
+			// A destructured tuple ctor param whose leaves are stored
+			// into self should still pin lifetimes onto the param. (#531)
+			input: `
+				class C {
+					a: mut {x: number},
+					constructor(mut self, [a, b]: [mut {x: number}, mut {x: number}]) {
+						self.a = a
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn <'a>([a: mut 'a {x: number}, b: mut {x: number}]) -> C<'a>}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 1,
+			},
+		},
 		"GetterCapturesConstructorParam": {
 			// A getter whose body references a constructor param by name
 			// (made visible via the synthesized `self.p = p` body) forces
