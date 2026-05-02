@@ -2274,8 +2274,16 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				name, nameStmts := b.buildObjKey(e.Name)
 				allStmts = slices.Concat(allStmts, nameStmts)
 
+				// Prefer the explicit `= expr` initializer when present.
+				// Fall back to the literal-type-annotation shorthand
+				// (e.g. `static kind: "tag"`) so existing fixtures using
+				// that form continue to emit a JS value.
 				var value Expr
-				if litType, ok := e.Type.(*ast.LitTypeAnn); ok {
+				if e.Value != nil {
+					var valueStmts []Stmt
+					value, valueStmts = b.buildExpr(e.Value, nil)
+					allStmts = slices.Concat(allStmts, valueStmts)
+				} else if litType, ok := e.Type.(*ast.LitTypeAnn); ok {
 					value = NewLitExpr(buildLit(litType.Lit), nil)
 				}
 

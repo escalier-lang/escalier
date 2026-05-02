@@ -57,11 +57,16 @@ func (d *ClassDecl) SetProvenance(p provenance.Provenance) {
 }
 
 type FieldElem struct {
-	Name     ObjKey
-	Type     TypeAnn // required for class fields; optional for object-pattern shorthands
-	Static   bool    // true if this is a static field
-	Private  bool    // true if this field is private
-	Readonly bool    // true if this field is readonly
+	Name ObjKey
+	Type TypeAnn // required for class fields; optional for object-pattern shorthands
+	// Value is the field's initializer expression (`= expr`). Only valid
+	// on static fields — instance fields are initialized in the
+	// constructor body. The checker rejects `Value != nil` on instance
+	// fields.
+	Value    Expr
+	Static   bool // true if this is a static field
+	Private  bool // true if this field is private
+	Readonly bool // true if this field is readonly
 	Span_    Span
 }
 
@@ -71,6 +76,9 @@ func (f *FieldElem) Accept(v Visitor) {
 		f.Name.Accept(v)
 		if f.Type != nil {
 			f.Type.Accept(v)
+		}
+		if f.Value != nil {
+			f.Value.Accept(v)
 		}
 	}
 	v.ExitClassElem(f)

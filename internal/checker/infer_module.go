@@ -1174,6 +1174,24 @@ func (c *Checker) InferComponent(
 								unifyErrors := c.Unify(ctx, prop.Value, annType)
 								errors = slices.Concat(errors, unifyErrors)
 							}
+							// Static-field initializer (`static x: T = expr`):
+							// infer the initializer's type and unify with the
+							// declared property type. Reject the same form on
+							// instance fields — they are initialized in the
+							// constructor body, not at declaration.
+							if bodyElem.Value != nil {
+								if !isStatic {
+									errors = append(errors, FieldInitializerNotAllowedError{
+										FieldName: classFieldName(bodyElem.Name),
+										span:      bodyElem.Span(),
+									})
+								} else {
+									initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)
+									errors = slices.Concat(errors, initErrors)
+									unifyErrors := c.Unify(ctx, initType, prop.Value)
+									errors = slices.Concat(errors, unifyErrors)
+								}
+							}
 							// A field with neither a type annotation nor an
 							// initializer is a placeholder waiting for the
 							// constructor body to assign it. The body checker

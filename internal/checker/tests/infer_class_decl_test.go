@@ -268,8 +268,8 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 			input: `
 				class Counter {
 					value: number,
-					static totalInstances: number,
-					static defaultValue: number,
+					static totalInstances: number = 0,
+					static defaultValue: number = 100,
 					constructor(mut self, initialValue: number) {
 						self.value = initialValue
 					},

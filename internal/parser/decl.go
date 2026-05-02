@@ -561,13 +561,17 @@ modifiers_done:
 		// Field
 		//
 		// Grammar (post-Phase 4):
-		//   name : T            — type annotation (required)
+		//   name : T               — type annotation (required)
+		//   name : T = expr        — static fields only; the initializer
+		//                            is rejected by the checker on
+		//                            instance fields. Instance fields are
+		//                            initialized in the constructor body.
 		//
-		// Field-level default values are NOT supported. Initialize fields
-		// inside the constructor body instead. The legacy `name : <expr>`
-		// value-as-initializer form and the `name :: T` double-colon form
-		// were retired alongside the primary-constructor head.
+		// The legacy `name : <expr>` value-as-initializer form and the
+		// `name :: T` double-colon form were retired alongside the
+		// primary-constructor head.
 		var typeAnn ast.TypeAnn
+		var value ast.Expr
 
 		next = p.lexer.peek()
 
@@ -584,11 +588,21 @@ modifiers_done:
 			p.reportError(next.Span, "Class fields require a type annotation (e.g. `name: T`)")
 		}
 
+		// Optional initializer (`= expr`). Whether it's allowed depends on
+		// the field being static, which the checker enforces — keeping
+		// the grammar permissive lets the parser recover after an
+		// erroneous instance-field initializer.
+		if p.lexer.peek().Type == Equal {
+			p.lexer.consume()
+			value = p.expr()
+		}
+
 		// TODO: report an error if `isAsync` is true
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.FieldElem{
 			Name:     name,
 			Type:     typeAnn,
+			Value:    value,
 			Static:   isStatic,
 			Private:  isPrivate,
 			Readonly: isReadonly,
