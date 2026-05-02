@@ -1,7 +1,7 @@
 class Foo {
     value: number,
-    constructor(mut self, value?: number) {
-        self.value = if value != undefined { value } else { 5 }
+    constructor(mut self, value: number = 5) {
+        self.value = value
     },
     getValue<T>(self, defaultValue: T) -> number | T {
         if self.value != 0 {
