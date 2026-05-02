@@ -449,10 +449,11 @@ func (c *Checker) InferComponent(
 					}
 				}
 
-				// Field-level defaults (`name: T = expr`) are valid on any
-				// class. They are treated as already-assigned for Phase 3's
-				// definite-assignment pass, and the synthesizer (§2.7) does
-				// not emit a parameter for them.
+				// Field-level initializers (`static name: T = expr`) are valid
+				// only on static fields. Instance fields with an `= expr`
+				// initializer are rejected by the body-phase check
+				// (`FieldInitializerNotAllowedError`) — instance fields
+				// must be assigned in the constructor body.
 
 				// Synthesize a constructor when no in-body constructor is
 				// present. Subclasses are excluded — auto-synthesizing a
@@ -702,14 +703,10 @@ func (c *Checker) InferComponent(
 						ParamBindings: paramBindings,
 						Ctx:           ctorCtx,
 					}
-					// `paramBindingsForDecl` was populated from the
-					// retired primary-ctor head (`decl.Params`) so that
-					// shorthand-field assignments could resolve them in
-					// downstream phases. Now that the primary-ctor form
-					// is gone, no consumer reads ctor params from this
-					// map — the in-body constructor's params live on
-					// `ctorInfoForDecl` instead. Set an empty map so
-					// existing nil-deref guards downstream stay happy.
+					// The in-body constructor's param bindings live on
+					// `ctorInfoForDecl`; nothing reads ctor params from
+					// `paramBindingsForDecl` for class decls. Set an
+					// empty map so downstream nil-deref guards stay happy.
 					paramBindingsForDecl[decl] = map[string]*type_system.Binding{}
 				} else {
 					// Synthesis failed earlier; emit a placeholder no-arg

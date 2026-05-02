@@ -153,6 +153,14 @@ func TestConstructorDefiniteAssignmentOK(t *testing.T) {
 				}
 			}
 		`,
+		"ReadonlyFieldCanBeInitialized": `
+			class Foo {
+				readonly x: number,
+				constructor(mut self, x: number) {
+					self.x = x
+				}
+			}
+		`,
 	}
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -798,10 +798,9 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 	case *ast.ClassDecl:
 		allStmts := []Stmt{}
 
-		// After Phase 4 every class has at most one in-body ConstructorElem
-		// (user-written or synthesized in Phase 2.7). buildClassElems emits
-		// the constructor JS from that element directly; there is no
-		// primary-ctor head to splice in.
+		// Every class has at most one in-body ConstructorElem (user-written
+		// or synthesized in Phase 2.7). buildClassElems emits the
+		// constructor JS from that element directly.
 		classElems, classStmts := b.buildClassElems(d.Body)
 		allStmts = slices.Concat(allStmts, classStmts)
 

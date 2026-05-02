@@ -155,9 +155,8 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 	}
 
 	// Convert class members. Any TS-side constructor becomes an in-body
-	// `ConstructorElem` (Phase 4 retired the primary-ctor head from
-	// `ClassDecl`). The `mut self` parameter is synthesized so downstream
-	// passes see the same shape as a user-written constructor.
+	// `ConstructorElem`. The `mut self` parameter is synthesized so
+	// downstream passes see the same shape as a user-written constructor.
 	var bodyElems []ast.ClassElem
 
 	for _, member := range dc.Members {

@@ -568,8 +568,7 @@ modifiers_done:
 		//                            initialized in the constructor body.
 		//
 		// The legacy `name : <expr>` value-as-initializer form and the
-		// `name :: T` double-colon form were retired alongside the
-		// primary-constructor head.
+		// `name :: T` double-colon form are not supported.
 		var typeAnn ast.TypeAnn
 		var value ast.Expr
 

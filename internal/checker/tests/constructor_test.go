@@ -279,6 +279,37 @@ func TestConstructorParamsDoNotLeakIntoMethods(t *testing.T) {
 		formatErrs(errs))
 }
 
+// TestConstructorParamsDoNotLeakIntoMethodParamDefaults verifies that an
+// in-body constructor's params are not visible to method param defaults
+// either. This complements TestConstructorParamsDoNotLeakIntoMethods,
+// which covers the method body itself.
+func TestConstructorParamsDoNotLeakIntoMethodParamDefaults(t *testing.T) {
+	t.Parallel()
+	input := `
+		class Foo {
+			x: number,
+			constructor(mut self, secret: number) {
+				self.x = secret
+			},
+			scaled(self, q: number = secret) -> number {
+				return q
+			}
+		}
+	`
+	errs := inferModuleErrors(t, input)
+	found := false
+	for _, e := range errs {
+		uie, ok := e.(*UnknownIdentifierError)
+		if ok && uie.Ident != nil && uie.Ident.Name == "secret" {
+			found = true
+			break
+		}
+	}
+	require.Truef(t, found,
+		"expected an UnknownIdentifierError for 'secret' inside method param default; got: %v",
+		formatErrs(errs))
+}
+
 // TestConstructorInferredTypes is a table-based suite that pins the
 // rendered type of every relevant value binding for a few constructor
 // scenarios:

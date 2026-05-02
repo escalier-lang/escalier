@@ -165,11 +165,9 @@ func classFieldName(key ast.ObjKey) string {
 
 // synthesizeConstructorElem builds a `*ast.ConstructorElem` from a class's
 // instance-field declarations. Per the implementation plan §2.7, this runs
-// only when the class has neither a primary-ctor head nor an in-body
-// `constructor`. The synthesized constructor's parameters mirror the
-// non-static, non-optional, default-less fields in declaration order; its
-// body assigns each such param into `self.<field>`, and emits
-// `self.<field> = <default>` for any field that carries a default value.
+// only when the class has no in-body `constructor`. The synthesized
+// constructor's parameters mirror the non-static instance fields in
+// declaration order; its body assigns each param into `self.<field>`.
 //
 // Subclass synthesis (`extends`) and `super(...)` forwarding are deferred
 // to Future Work.
