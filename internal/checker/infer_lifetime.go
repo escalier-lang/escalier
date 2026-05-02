@@ -555,13 +555,29 @@ func detectEscapingLeafIndices(
 	body *ast.Block,
 	leafIndex map[liveness.VarID]int,
 ) set.Set[int] {
+	return detectEscapingLeafIndicesWithRoots(body, leafIndex, nil)
+}
+
+// detectEscapingLeafIndicesWithRoots is the constructor-aware variant of
+// detectEscapingLeafIndices: in addition to assignments whose lvalue root
+// is non-local (VarID <= 0), it also flags assignments whose lvalue root
+// VarID is in extraEscapeRoots. Used for constructor bodies, where `self`
+// is a local parameter (positive VarID) but `self.<field> = expr` should
+// be treated as escaping because the receiver outlives the constructor's
+// stack frame.
+func detectEscapingLeafIndicesWithRoots(
+	body *ast.Block,
+	leafIndex map[liveness.VarID]int,
+	extraEscapeRoots set.Set[liveness.VarID],
+) set.Set[int] {
 	escaped := set.NewSet[int]()
 	if body == nil || len(leafIndex) == 0 {
 		return escaped
 	}
 	v := &escapingRefsVisitor{
-		leafIndex: leafIndex,
-		escaped:   escaped,
+		leafIndex:        leafIndex,
+		extraEscapeRoots: extraEscapeRoots,
+		escaped:          escaped,
 	}
 	body.Accept(v)
 	return escaped
@@ -569,13 +585,14 @@ func detectEscapingLeafIndices(
 
 type escapingRefsVisitor struct {
 	ast.DefaultVisitor
-	leafIndex map[liveness.VarID]int
-	escaped   set.Set[int]
+	leafIndex        map[liveness.VarID]int
+	extraEscapeRoots set.Set[liveness.VarID] // may be nil
+	escaped          set.Set[int]
 }
 
 func (v *escapingRefsVisitor) EnterExpr(e ast.Expr) bool {
 	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == ast.Assign {
-		if isNonLocalLValue(be.Left) {
+		if v.isEscapingLValue(be.Left) {
 			// Use the checker-aware variant so a parameter that flows
 			// through a call whose callee returns its argument
 			// (`cache = wrap(p)`) is still detected as escaping.
@@ -606,13 +623,22 @@ func (v *escapingRefsVisitor) EnterDecl(d ast.Decl) bool {
 	return true
 }
 
-// isNonLocalLValue returns true if the given assignment-target expression's
-// root identifier resolves to a non-local binding (VarID <= 0). Walks
-// through MemberExpr/IndexExpr chains to find the root identifier.
-// rootObjectVarID returns 0 when the root is non-local (or not a simple
-// ident chain), which matches what we want to flag as escaping.
-func isNonLocalLValue(expr ast.Expr) bool {
-	return rootObjectVarID(expr) == 0
+// isEscapingLValue returns true if the given assignment-target expression's
+// root identifier (walking through MemberExpr/IndexExpr chains) is an
+// escape root: either a non-local binding (rootObjectVarID returns 0,
+// meaning module-level / prelude / outer-scope) or a positive VarID that
+// the caller declared as a forced escape root (e.g. `self` in a
+// constructor body, where `self.<field> = expr` outlives the local frame
+// even though `self` itself is a local parameter).
+func (v *escapingRefsVisitor) isEscapingLValue(expr ast.Expr) bool {
+	root := rootObjectVarID(expr)
+	if root == 0 {
+		return true
+	}
+	if v.extraEscapeRoots != nil && v.extraEscapeRoots.Contains(root) {
+		return true
+	}
+	return false
 }
 
 // setLifetimeOnType attaches a lifetime to a type's Lifetime field, walking
@@ -830,34 +856,59 @@ func lifetimeContainsStatic(lt type_system.Lifetime) bool {
 }
 
 // InferConstructorLifetimes analyzes a class declaration to determine
-// which constructor parameters are stored as fields (or implicitly
-// captured by method bodies), attaches a fresh LifetimeVar to each such
+// which constructor parameters are stored into `self` (as fields or
+// through transitive aliases), attaches a fresh LifetimeVar to each such
 // parameter and to the constructor's return type, and records the
-// lifetime parameters and default mutability on the class TypeAlias.
+// lifetime parameters on the class TypeAlias.
 //
-// Detected storage / capture patterns (Phase 8.6):
-//   - Shorthand field referring to a constructor parameter by name,
-//     with or without a default:
-//     `class C(p: mut Point) { p, }`
-//     `class C(p: mut Point) { p = fallback, }`
-//   - Explicit field whose value references a constructor parameter,
-//     directly or through composite/projection expressions:
-//     `class C(p: mut Point) { x: p, }`
-//     `class C(p: mut Point) { x: p.inner, }`
-//     `class C(p: mut Point) { x: {inner: p}, }`
-//     `class C(p: mut Point) { x: [p, p], }`
-//   - Implicit capture: a method body references a constructor parameter
-//     by name (Escalier allows methods to see constructor params without
-//     going through `self`):
-//     `class C(p: mut Point) { foo(self) { return p } }`
+// Capture detection reuses the *escape-detection* primitives from
+// `inferLifetimesCore` — `escapingRefsVisitor`,
+// `determineCheckerAliasSource`, `collectParamLeaves` — to walk the
+// constructor body for assignments whose lvalue root is `self` (e.g.
+// `self.x = p`, `self.list[0] = p`) and trace the RHS back to the
+// underlying parameter VarID(s). This is precise: guards like
+// `if x < 0 { throw … }`, side-effect calls like `validate(x)`, and
+// transient computation like `var tmp = x * 2` are correctly identified
+// as NOT capturing `x`.
+//
+// To produce VarIDs in the body and on parameter pattern leaves, this
+// function runs its own `liveness.Rename` pass on the constructor body.
+// VarIDs written here will be overwritten by the body phase's
+// `runLivenessPrePass` when the constructor body is later type-checked,
+// which is fine — we only need a consistent VarID space for the
+// duration of this call.
+//
+// Why not call `inferLifetimesCore` directly? Three reasons it isn't a
+// drop-in fit, even after sharing the escape-detection primitives:
+//
+//  1. Escape root differs. `inferLifetimesCore` calls
+//     `detectEscapingLeafIndices`, which only flags lvalues whose root
+//     has `VarID <= 0` (non-local). In a constructor, `self` is a
+//     local positive-VarID parameter, so `self.x = p` wouldn't be
+//     detected. The constructor path uses
+//     `detectEscapingLeafIndicesWithRoots` with `self`'s VarID added
+//     as an extra escape root.
+//
+//  2. No return-alias pass needed. `inferLifetimesCore` does most of
+//     its work in `attachLifetimeToResult` — collecting return/yield
+//     exprs and unioning lifetimes onto the result type. Constructor
+//     bodies have no `return expr` (the return is the implicit
+//     `self`), and the return type already gets `LifetimeArgs`
+//     attached separately below. Running the result-side machinery
+//     would be a no-op at best.
+//
+//  3. Output shape differs. `inferLifetimesCore` writes lifetimes
+//     onto `funcType.LifetimeParams` only. Constructors also write
+//     to `typeAlias.LifetimeParams` and call `setLifetimeArgsOnType`
+//     on the return so callers see `C<'a>`. That's class-specific
+//     bookkeeping `inferLifetimesCore` doesn't do.
 //
 // Deferred (see implementation_plan.md Phase 8 status):
 //   - Inference of method-side return-type lifetimes when a method
 //     captures a constructor param (the constructor gets the lifetime,
 //     but the method's return type does not yet inherit it).
-//   - Storage through function-call results (`x: f(p)`) — calls are
-//     conservatively treated as fresh by the field walker.
 func (c *Checker) InferConstructorLifetimes(
+	ctx Context,
 	classDecl *ast.ClassDecl,
 	typeAlias *type_system.TypeAlias,
 	ctorFn *type_system.FuncType,
@@ -874,16 +925,6 @@ func (c *Checker) InferConstructorLifetimes(
 		return
 	}
 
-	// For each constructor param that is a reference type AND is stored
-	// as a field (or captured by a method), allocate a fresh LifetimeVar.
-	//
-	// Note: matching is by *name* rather than VarID because
-	// InferConstructorLifetimes runs during the namespace placeholder phase,
-	// before the rename pass has populated VarIDs on identifiers in field
-	// initializers or method bodies. We must run this early so the class's
-	// TypeAlias advertises its LifetimeParams before any consumer — function
-	// param annotations, var decls, constructor call sites — resolves the
-	// class by name during the body phase.
 	// Locate the (single) in-body `ConstructorElem`. After Phase 4 there is
 	// no other source of constructor params on a class. If synthesis or
 	// parsing left no constructor in place, there's nothing to do.
@@ -894,77 +935,86 @@ func (c *Checker) InferConstructorLifetimes(
 			break
 		}
 	}
-	if ctorElem == nil || ctorElem.Fn == nil {
+	if ctorElem == nil || ctorElem.Fn == nil || ctorElem.Fn.Body == nil {
 		return
 	}
-	// Skip the leading `mut self` — it is not a callable parameter and
-	// the corresponding `ctorFn.Params` slice already excludes it.
-	ctorParams := ctorElem.Fn.Params
-	if len(ctorParams) > 0 {
-		ctorParams = ctorParams[1:]
+	// The first AST param is `mut self`. The remaining params are the
+	// callable params and line up with `ctorFn.Params` (which
+	// `inferConstructorSig` populates by dropping `self`).
+	allCtorParams := ctorElem.Fn.Params
+	if len(allCtorParams) == 0 {
+		return
+	}
+	callableParams := allCtorParams[1:]
+	if len(callableParams) == 0 {
+		return
 	}
 
-	paramNameToIndex := make(map[string]int)
-	for i, p := range ctorParams {
-		if identPat, ok := p.Pattern.(*ast.IdentPat); ok {
-			paramNameToIndex[identPat.Name] = i
-		}
+	// Run a mini rename pass so we have VarIDs on the callable params and
+	// on every IdentExpr in the body. `self` is treated as an extra param
+	// name (mirroring how methods see their implicit receiver in
+	// `runLivenessPrePass`). Rename errors are ignored: any unresolved
+	// references will be re-reported by the body phase's rename pass.
+	outerBindings := collectOuterBindings(ctx.Scope)
+	renameResult := liveness.Rename(callableParams, *ctorElem.Fn.Body, outerBindings, "self")
+	selfVarID, ok := renameResult.ExtraParamVarIDs["self"]
+	if !ok {
+		return
 	}
 
+	// Build the per-leaf index from callable-param patterns × types so
+	// that destructured leaves are tracked individually (e.g. for
+	// `constructor(self, [a, b]: [...])` each of `a`, `b` gets its own
+	// leaf). Lifetime allocation below still happens at the top-level
+	// param granularity, but per-leaf escape tracking lets the RHS
+	// alias-source tracing find the right binding.
+	leaves := collectParamLeaves(callableParams, ctorFn.Params)
+	if len(leaves) == 0 {
+		return
+	}
+	leafIndex := make(map[liveness.VarID]int)
+	for i, l := range leaves {
+		leafIndex[l.varID] = i
+	}
+
+	// Detect escapes: assignments `self.<…> = expr` where the RHS aliases
+	// one of the callable params. `self`'s VarID is added as an extra
+	// escape root because it is itself a positive-VarID parameter (so
+	// `isNonLocalLValue` alone wouldn't recognize `self.x = p` as
+	// escaping).
+	escapeRoots := set.NewSet[liveness.VarID]()
+	escapeRoots.Add(selfVarID)
+	escapingLeaves := detectEscapingLeafIndicesWithRoots(ctorElem.Fn.Body, leafIndex, escapeRoots)
+	if escapingLeaves.Len() == 0 {
+		return
+	}
+
+	// Map escaped leaf indices back to top-level callable-param indices,
+	// preserving param order for determinism.
 	storedParams := set.NewSet[int]()
-
-	// Walk the constructor body itself: any unshadowed reference to a
-	// callable param is currently treated as a capture. This is a
-	// conservative approximation — a param can appear in a body without
-	// being stored into `self` (e.g. as a guard `if x < 0 { throw … }`,
-	// passed to a function for its side effects, used to derive a fresh
-	// value, etc.). The empty scope below is intentional: the ctor's own
-	// params ARE the names we want to detect references to and must not
-	// appear shadowed.
-	//
-	// TODO(#531): drop this name-match walk and run the same machinery
-	// `inferLifetimesCore` already uses for methods, setters, and regular
-	// functions. That path detects escapes via `escapingRefsVisitor` —
-	// `self.x = p` is a non-local-lvalue assignment with `self` as the
-	// root, and `determineCheckerAliasSource` traces the RHS back to the
-	// captured params. Reusing it would (a) make constructor capture
-	// detection precise instead of conservative, (b) align the
-	// constructor with how every other body is analyzed, and (c) delete
-	// `ctorBodyCaptureVisitor` and the empty-scope hack here.
-	if ctorElem.Fn.Body != nil {
-		v := &ctorBodyCaptureVisitor{
-			paramNameToIndex: paramNameToIndex,
-			storedParams:     storedParams,
+	for i, p := range callableParams {
+		identPat, ok := p.Pattern.(*ast.IdentPat)
+		if !ok {
+			continue
 		}
-		v.pushScope()
-		ctorElem.Fn.Body.Accept(v)
-		v.popScope()
+		leafIdx, found := leafIndex[liveness.VarID(identPat.VarID)]
+		if !found {
+			continue
+		}
+		if escapingLeaves.Contains(leafIdx) {
+			storedParams.Add(i)
+		}
 	}
-
-	// The constructor body walk above is the single source of truth for
-	// captures: every assignment of a ctor param into `self` (whether by
-	// the synthesizer or a user-written `self.x = x` style body) flows
-	// through that walk. Methods/getters/setters cannot reference ctor
-	// params by name (the type checker rejects such references as unknown
-	// identifiers — see `TestConstructorParamsDoNotLeakIntoMethods`), and
-	// instance fields no longer carry initializers, so there is nothing
-	// further to inspect on the class body itself.
-
 	if storedParams.Len() == 0 {
 		return
 	}
 
-	// Allocate lifetimes in parameter order for determinism. `ctorParams`
-	// already excludes the leading `mut self`, so the indices line up with
-	// `ctorFn.Params` (which `inferConstructorSig` also populates from the
-	// callable params, dropping `self`).
+	// Allocate lifetimes in parameter order for determinism.
 	var lifetimeParams []*type_system.LifetimeVar
-	for i, p := range ctorParams {
+	for i := range callableParams {
 		if !storedParams.Contains(i) {
 			continue
 		}
-		// Skip params whose declared type is not a reference type — the
-		// lifetime would have nowhere to attach.
 		if i >= len(ctorFn.Params) {
 			continue
 		}
@@ -972,11 +1022,6 @@ func (c *Checker) InferConstructorLifetimes(
 		if !typeCarriesLifetime(paramType) {
 			continue
 		}
-
-		// storedParams (above) was populated only from params whose name
-		// is in paramNameToIndex, which only contains IdentPat params, so
-		// p.Pattern is guaranteed to be *ast.IdentPat.
-		_ = p.Pattern.(*ast.IdentPat)
 		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
 		lifetimeParams = append(lifetimeParams, lv)
 		setLifetimeOnType(paramType, lv)
@@ -996,174 +1041,6 @@ func (c *Checker) InferConstructorLifetimes(
 		lifetimeArgs[i] = lv
 	}
 	setLifetimeArgsOnType(ctorFn.Return, lifetimeArgs)
-}
-
-// ctorBodyCaptureVisitor walks a constructor body looking for identifier
-// references whose name matches a constructor parameter, while tracking
-// the lexical scopes that shadow such names. Used by
-// `InferConstructorLifetimes` only — every other function body
-// (methods, setters, getters, regular functions) goes through
-// `inferLifetimesCore`, which performs precise data-flow analysis via
-// `escapingRefsVisitor` instead of name-matching. See the TODO(#531) at
-// the call site for the plan to retire this visitor.
-//
-// It implements ast.Visitor directly: EnterBlock/ExitBlock maintain the
-// shadow stack for ordinary blocks; EnterExpr/EnterDecl handle the cases
-// that need bespoke ordering (FuncExpr/FuncDecl push their own scope
-// around the body; VarDecl visits its initializer BEFORE adding the new
-// binding so that `var p = p` resolves the RHS against the outer scope).
-type ctorBodyCaptureVisitor struct {
-	ast.DefaultVisitor
-	paramNameToIndex map[string]int
-	storedParams     set.Set[int]
-	// shadowed is a stack of block/function scopes. Each entry is the set
-	// of names bound in that scope. A name is considered shadowed if it
-	// appears in any active scope.
-	shadowed []set.Set[string]
-}
-
-func (v *ctorBodyCaptureVisitor) pushScope() {
-	v.shadowed = append(v.shadowed, set.NewSet[string]())
-}
-
-func (v *ctorBodyCaptureVisitor) popScope() {
-	v.shadowed = v.shadowed[:len(v.shadowed)-1]
-}
-
-func (v *ctorBodyCaptureVisitor) addBindings(pat ast.Pat) {
-	if len(v.shadowed) == 0 {
-		return
-	}
-	collectPatternBindingNames(pat, v.shadowed[len(v.shadowed)-1])
-}
-
-// visitParamDefaults visits the default expression of every leaf in a
-// parameter pattern (IdentPat.Default, ObjShorthandPat.Default), recursing
-// through container patterns. Defaults evaluate in the *enclosing* scope
-// at call time, so this must be called BEFORE the param's own bindings
-// are added to the shadow stack — otherwise a default like `q = p` would
-// incorrectly resolve `p` against the freshly-shadowed inner binding
-// instead of the outer scope.
-func (v *ctorBodyCaptureVisitor) visitParamDefaults(pat ast.Pat) {
-	if pat == nil {
-		return
-	}
-	switch p := pat.(type) {
-	case *ast.IdentPat:
-		if p.Default != nil {
-			p.Default.Accept(v)
-		}
-	case *ast.TuplePat:
-		for _, elem := range p.Elems {
-			v.visitParamDefaults(elem)
-		}
-	case *ast.ObjectPat:
-		for _, elem := range p.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjKeyValuePat:
-				v.visitParamDefaults(e.Value)
-			case *ast.ObjShorthandPat:
-				if e.Default != nil {
-					e.Default.Accept(v)
-				}
-			case *ast.ObjRestPat:
-				v.visitParamDefaults(e.Pattern)
-			}
-		}
-	case *ast.RestPat:
-		v.visitParamDefaults(p.Pattern)
-	}
-}
-
-func (v *ctorBodyCaptureVisitor) isShadowed(name string) bool {
-	for _, s := range v.shadowed {
-		if s.Contains(name) {
-			return true
-		}
-	}
-	return false
-}
-
-func (v *ctorBodyCaptureVisitor) EnterBlock(b ast.Block) bool {
-	v.pushScope()
-	return true
-}
-
-func (v *ctorBodyCaptureVisitor) ExitBlock(b ast.Block) {
-	v.popScope()
-}
-
-func (v *ctorBodyCaptureVisitor) EnterExpr(e ast.Expr) bool {
-	switch ex := e.(type) {
-	case *ast.IdentExpr:
-		if !v.isShadowed(ex.Name) {
-			if idx, ok := v.paramNameToIndex[ex.Name]; ok {
-				v.storedParams.Add(idx)
-			}
-		}
-		return false
-	case *ast.FuncExpr:
-		// Nested function: its params introduce new shadows for the
-		// duration of its body. Drive the body traversal manually so
-		// the param-scope wraps the body's own block scope; return
-		// false to suppress the framework's default child recursion.
-		// Param defaults must be visited BEFORE pushing the new scope —
-		// they resolve against the enclosing scope, not the
-		// freshly-shadowed inner one.
-		for _, p := range ex.Params {
-			v.visitParamDefaults(p.Pattern)
-		}
-		v.pushScope()
-		for _, p := range ex.Params {
-			v.addBindings(p.Pattern)
-		}
-		if ex.Body != nil {
-			ex.Body.Accept(v)
-		}
-		v.popScope()
-		return false
-	}
-	return true
-}
-
-func (v *ctorBodyCaptureVisitor) EnterDecl(d ast.Decl) bool {
-	switch dd := d.(type) {
-	case *ast.VarDecl:
-		// Visit the initializer BEFORE adding the new binding to the
-		// current scope. This prevents `var p = p` from incorrectly
-		// treating the RHS `p` as the freshly-shadowed inner binding —
-		// it should resolve against the enclosing scope (potentially
-		// the constructor's param).
-		if dd.Init != nil {
-			dd.Init.Accept(v)
-		}
-		v.addBindings(dd.Pattern)
-		return false
-	case *ast.FuncDecl:
-		// Nested function declaration: similar to FuncExpr, its params
-		// shadow outer names within its body. Param defaults resolve
-		// against the enclosing scope and must be visited BEFORE the
-		// new param scope is pushed.
-		if dd.Body == nil {
-			return false
-		}
-		for _, p := range dd.Params {
-			v.visitParamDefaults(p.Pattern)
-		}
-		v.pushScope()
-		for _, p := range dd.Params {
-			v.addBindings(p.Pattern)
-		}
-		dd.Body.Accept(v)
-		v.popScope()
-		return false
-	case *ast.ClassDecl:
-		// Skip nested classes — their constructor param names introduce
-		// a fresh shadow scope that's outside the analysis we care about.
-		_ = dd
-		return false
-	}
-	return true
 }
 
 // forEachLeafBinding invokes fn for every identifier-binding leaf

@@ -525,6 +525,48 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> Pair<'a, 'b>}",
 			},
 		},
+		"GuardOnlyParamNotCaptured": {
+			// A param read by a guard but never stored into self should
+			// NOT pin a lifetime onto the constructor — there's no
+			// reachable state that aliases it after the constructor
+			// returns. (#531)
+			input: `
+				class C {
+					n: number,
+					constructor(mut self, p: mut {x: number}) {
+						self.n = 0
+						if p.x < 0 {
+							self.n = 1
+						}
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn (p: mut {x: number}) -> C}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 0,
+			},
+		},
+		"DerivedValueParamNotCaptured": {
+			// A param used purely to derive a fresh value and store
+			// THAT fresh value should not pin a lifetime onto the param
+			// itself. (#531)
+			input: `
+				class C {
+					n: number,
+					constructor(mut self, p: {x: number}) {
+						self.n = p.x + 1
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn (p: {x: number}) -> C}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 0,
+			},
+		},
 		"GetterCapturesConstructorParam": {
 			// A getter whose body references a constructor param by name
 			// (made visible via the synthesized `self.p = p` body) forces
