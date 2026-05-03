@@ -733,10 +733,10 @@ func (c *Checker) InferComponent(
 				}
 				nsCtx.Scope.setValue(decl.Name.Name, ctor)
 
-				// Infer lifetime parameters and default mutability for the
-				// class. Runs once during the placeholder phase since the class
-				// body's stored-field structure is purely syntactic.
-				c.InferConstructorLifetimes(decl, typeAlias, funcType)
+				// Lifetime inference for the constructor runs in the body
+				// phase (mirroring methods/funcs), after the ctor body has
+				// been type-checked and callee signatures in the same SCC
+				// have been resolved.
 			case *ast.EnumDecl:
 				// Check if we've already processed this enum from another binding key
 				// (enums have both type and value keys that may be in different components)
@@ -1538,6 +1538,14 @@ func (c *Checker) InferComponent(
 						)
 						errors = slices.Concat(errors, bodyErrors)
 						ctorFuncType.Throws = bodyFuncType.Throws
+
+						// Infer lifetime parameters for the ctor now that its
+						// body is fully type-checked. Running here (vs. in the
+						// placeholder phase) means callee signatures from peers
+						// in the same SCC are visible to
+						// `determineCheckerAliasSource`, so escapes through call
+						// expressions like `self.f = wrap(p)` are detected.
+						c.InferConstructorLifetimes(decl, typeAlias, ctorFuncType)
 
 						// Phase 3: definite-assignment analysis. Subclasses
 						// (`extends`) are deferred — `super(...)` semantics

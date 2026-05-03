@@ -525,6 +525,66 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> Pair<'a, 'b>}",
 			},
 		},
+		"GuardOnlyParamNotCaptured": {
+			// A param read by a guard but never stored into self should
+			// NOT pin a lifetime onto the constructor — there's no
+			// reachable state that aliases it after the constructor
+			// returns. (#531)
+			input: `
+				class C {
+					n: number,
+					constructor(mut self, p: mut {x: number}) {
+						self.n = 0
+						if p.x < 0 {
+							self.n = 1
+						}
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn (p: mut {x: number}) -> C}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 0,
+			},
+		},
+		"DerivedValueParamNotCaptured": {
+			// A param used purely to derive a fresh value and store
+			// THAT fresh value should not pin a lifetime onto the param
+			// itself. (#531)
+			input: `
+				class C {
+					n: number,
+					constructor(mut self, p: {x: number}) {
+						self.n = p.x + 1
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn (p: {x: number}) -> C}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 0,
+			},
+		},
+		"DestructuredTupleCtorParamCapture": {
+			// A destructured tuple ctor param whose leaves are stored
+			// into self should still pin lifetimes onto the param. (#531)
+			input: `
+				class C {
+					a: mut {x: number},
+					constructor(mut self, [a, b]: [mut {x: number}, mut {x: number}]) {
+						self.a = a
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"C": "{new fn <'a>([a: mut 'a {x: number}, b: mut {x: number}]) -> C<'a>}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"C": 1,
+			},
+		},
 		"GetterCapturesConstructorParam": {
 			// A getter whose body references a constructor param by name
 			// (made visible via the synthesized `self.p = p` body) forces
@@ -570,6 +630,28 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCtorCapturesViaWrappingCall: `self.f = wrap(p)` pins p's lifetime
+// onto the ctor because wrap's return aliases its argument. Works because
+// InferConstructorLifetimes runs in the body phase (after wrap's signature
+// has been resolved), letting determineCheckerAliasSource trace through
+// the call. (#531)
+func TestCtorCapturesViaWrappingCall(t *testing.T) {
+	t.Parallel()
+	ns := mustInferAsModule(t, `
+		fn wrap(x: mut {y: number}) -> mut {y: number} { return x }
+		class C {
+			f: mut {y: number},
+			constructor(mut self, p: mut {y: number}) {
+				self.f = wrap(p)
+			}
+		}
+	`)
+	actual := collectBindingTypes(ns)
+	got, ok := actual["C"]
+	require.True(t, ok, "binding C not found")
+	assert.Equal(t, "{new fn <'a>(p: mut 'a {y: number}) -> C<'a>}", got)
 }
 
 // TestCallSiteAliasFromLifetimeUnion exercises the LifetimeUnion call-site
