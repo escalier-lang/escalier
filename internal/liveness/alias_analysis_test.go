@@ -432,6 +432,15 @@ func TestDetermineAliasSource_AwaitExpr_AppendsAwait(t *testing.T) {
 	require.Equal(t, "p.await", formatLeaves(src, names))
 }
 
+func TestLeafKey_NoCollisionWithDelimiterInPropertyName(t *testing.T) {
+	// PropertyOf keys are user-supplied (string-keyed object literals can
+	// contain '|' or 'p:'). The dedup key must not collide with a path
+	// where the same characters are split across two property steps.
+	a := leafKey(1, []ProjectionStep{PropertyOf{Key: "foo|p:bar"}})
+	b := leafKey(1, []ProjectionStep{PropertyOf{Key: "foo"}, PropertyOf{Key: "bar"}})
+	require.NotEqual(t, a, b, "different paths must produce different keys")
+}
+
 func TestDetermineAliasSource_MatchExpr_VariableAndFresh(t *testing.T) {
 	expr := parseExpr(t, "match 1 { _ => a, _ => [1] }")
 	setVarIDs(expr, map[string]int{"a": 1})

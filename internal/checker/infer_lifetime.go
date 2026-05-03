@@ -1,9 +1,6 @@
 package checker
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -1441,7 +1438,7 @@ func embeddedLifetimeAliasSource(fnType *type_system.FuncType, callExpr *ast.Cal
 				combined := make([]liveness.ProjectionStep, 0, len(slot.path)+len(argLeaf.Path))
 				combined = append(combined, slot.path...)
 				combined = append(combined, argLeaf.Path...)
-				key := leafKey{rootVarID: argLeaf.RootVarID, pathKey: pathKey(combined)}
+				key := leafKey{rootVarID: argLeaf.RootVarID, pathKey: liveness.PathKey(combined)}
 				if seen[key] {
 					continue
 				}
@@ -1525,31 +1522,6 @@ func walkReturnLifetimeSlots(t type_system.Type, path []liveness.ProjectionStep,
 			walkReturnLifetimeSlots(elem, childPath, into)
 		}
 	}
-}
-
-// pathKey builds a deterministic string key from a projection path so
-// (RootVarID, path) tuples can be deduped via a map.
-func pathKey(path []liveness.ProjectionStep) string {
-	if len(path) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, step := range path {
-		switch s := step.(type) {
-		case liveness.PropertyOf:
-			b.WriteString(".")
-			b.WriteString(s.Key)
-		case liveness.IndexOf:
-			fmt.Fprintf(&b, "[%d]", s.Index)
-		case liveness.ElementOf:
-			b.WriteString(".[]")
-		case liveness.AwaitOf:
-			b.WriteString(".await")
-		case liveness.CastOf:
-			b.WriteString(".cast")
-		}
-	}
-	return b.String()
 }
 
 // extractFuncType reaches into the (possibly wrapped) callee type to find

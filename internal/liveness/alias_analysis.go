@@ -449,13 +449,32 @@ func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
 func leafKey(root VarID, path []ProjectionStep) string {
 	var b strings.Builder
 	b.WriteString(strconv.Itoa(int(root)))
-	for _, step := range path {
-		b.WriteByte('|')
+	b.WriteByte('|')
+	b.WriteString(PathKey(path))
+	return b.String()
+}
+
+// PathKey returns a deterministic, collision-free string encoding of a
+// projection path. Property keys are length-prefixed so user-supplied
+// strings containing the step delimiter ('|') or step-tag prefix ('p:')
+// can't collide with a path of two property steps that happen to render
+// the same when concatenated.
+func PathKey(path []ProjectionStep) string {
+	if len(path) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, step := range path {
+		if i > 0 {
+			b.WriteByte('|')
+		}
 		switch s := step.(type) {
 		case ElementOf:
 			b.WriteString("e")
 		case PropertyOf:
 			b.WriteString("p:")
+			b.WriteString(strconv.Itoa(len(s.Key)))
+			b.WriteByte(':')
 			b.WriteString(s.Key)
 		case IndexOf:
 			b.WriteString("i:")
