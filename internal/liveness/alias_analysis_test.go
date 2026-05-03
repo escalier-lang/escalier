@@ -374,6 +374,54 @@ func TestDetermineAliasSource_TupleOfMember(t *testing.T) {
 	require.Equal(t, "obj[0].x", formatLeaves(src, names))
 }
 
+func TestDetermineAliasSource_TupleExpr_RepeatedRootKeepsBothSlots(t *testing.T) {
+	expr := parseExpr(t, "[a, a]")
+	setVarIDs(expr, map[string]int{"a": 1})
+	names := map[VarID]string{1: "a"}
+
+	// `[a, a]` — two distinct slots, both rooted at `a`. The dedupe key
+	// must be (RootVarID, Path), not RootVarID alone, otherwise IndexOf(1)
+	// is dropped and the second slot loses its lifetime attachment.
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "a[0], a[1]", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_ObjectExpr_RepeatedRootKeepsBothProps(t *testing.T) {
+	expr := parseExpr(t, "{head: a, tail: a}")
+	setVarIDs(expr, map[string]int{"a": 1})
+	names := map[VarID]string{1: "a"}
+
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "a.head, a.tail", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_IfElseExpr_BothFreshContainersStaysFresh(t *testing.T) {
+	expr := parseExpr(t, "if true { [a] } else { [b] }")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	names := map[VarID]string{1: "a", 2: "b"}
+
+	// Both branches produce fresh containers with element-level leaves.
+	// The merged origin should remain Fresh so path-aware lifetime
+	// attachment descends into the array's element type, rather than
+	// attaching at the top.
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "a[0], b[0]", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_IfElseExpr_MixedFreshAndAliasIsAlias(t *testing.T) {
+	expr := parseExpr(t, "if true { [a] } else { b }")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+
+	// One branch is fresh-rooted with an element leaf; the other is an
+	// alias-rooted bare variable. The merged origin must be Alias because
+	// at least one branch's value root aliases an existing variable.
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginAlias, src.Origin)
+}
+
 func TestDetermineAliasSource_AwaitExpr_AppendsAwait(t *testing.T) {
 	expr := parseExpr(t, "await p")
 	setVarIDs(expr, map[string]int{"p": 4})

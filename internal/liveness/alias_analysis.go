@@ -2,6 +2,7 @@ package liveness
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -281,13 +282,16 @@ func blockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
 }
 
 // collectBranchSources collects alias sources from a list of expressions,
-// deduplicating leaves across branches by root VarID. Returns a merged
-// AliasSource. Per-branch projection paths are preserved on each leaf;
-// duplicate roots keep the first leaf's path.
+// deduplicating leaves across branches by (root, projection path) so that
+// fresh-container shapes like {head:a} vs {tail:a} (same root, different
+// slot) are preserved. The merged Origin is Fresh when every contributing
+// branch's value root is fresh; Alias when at least one branch's root
+// itself aliases an existing variable.
 func collectBranchSources(exprs []ast.Expr) AliasSource {
-	seen := set.NewSet[VarID]()
+	seen := set.NewSet[string]()
 	var leaves []AliasLeaf
 	allFresh := true
+	hasAliasOrigin := false
 
 	for _, expr := range exprs {
 		if expr == nil {
@@ -297,11 +301,15 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 		source := DetermineAliasSource(expr)
 		if len(source.Leaves) > 0 {
 			allFresh = false
+			if source.Origin == AliasOriginAlias {
+				hasAliasOrigin = true
+			}
 			for _, leaf := range source.Leaves {
-				if seen.Contains(leaf.RootVarID) {
+				key := leafKey(leaf.RootVarID, leaf.Path)
+				if seen.Contains(key) {
 					continue
 				}
-				seen.Add(leaf.RootVarID)
+				seen.Add(key)
 				leaves = append(leaves, leaf)
 			}
 		} else if source.Origin != AliasOriginFresh {
@@ -318,12 +326,17 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 		}
 		return unknownSource()
 	}
-	// Branch arms that bubbled up an alias-of-existing-root contribute
-	// to a merged Alias-origin source. Per-arm Origin distinctions are
-	// not currently tracked at the branch level: if any arm's leaves
-	// reach here, treat the merged source as Alias so callers see the
-	// historical Variable/Multiple kind.
-	return AliasSource{Origin: AliasOriginAlias, Leaves: leaves}
+	// If every contributing branch produced a fresh-rooted value, the
+	// merged result is also fresh-rooted: leaf paths describe descents
+	// into the fresh container, and lifetime attachment must follow them
+	// into the return type. If any branch's root itself aliases an
+	// existing variable, the merged root aliases too — the legacy
+	// Variable/Multiple kind matters there.
+	origin := AliasOriginFresh
+	if hasAliasOrigin {
+		origin = AliasOriginAlias
+	}
+	return AliasSource{Origin: origin, Leaves: leaves}
 }
 
 // determineConditionalAliasSource determines alias sources for an if-else
@@ -369,20 +382,21 @@ func appendStepToLeaves(src AliasSource, step ProjectionStep) AliasSource {
 // type.
 func determineTupleAliasSource(expr *ast.TupleExpr) AliasSource {
 	var leaves []AliasLeaf
-	seen := set.NewSet[VarID]()
+	seen := set.NewSet[string]()
 	for i, elem := range expr.Elems {
 		if elem == nil {
 			continue
 		}
 		child := DetermineAliasSource(elem)
 		for _, leaf := range child.Leaves {
-			if seen.Contains(leaf.RootVarID) {
-				continue
-			}
-			seen.Add(leaf.RootVarID)
 			newPath := make([]ProjectionStep, 0, len(leaf.Path)+1)
 			newPath = append(newPath, IndexOf{Index: i})
 			newPath = append(newPath, leaf.Path...)
+			key := leafKey(leaf.RootVarID, newPath)
+			if seen.Contains(key) {
+				continue
+			}
+			seen.Add(key)
 			leaves = append(leaves, AliasLeaf{RootVarID: leaf.RootVarID, Path: newPath})
 		}
 	}
@@ -400,7 +414,7 @@ func determineTupleAliasSource(expr *ast.TupleExpr) AliasSource {
 // to a known property of the new container.
 func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
 	var leaves []AliasLeaf
-	seen := set.NewSet[VarID]()
+	seen := set.NewSet[string]()
 	for _, elem := range expr.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok || prop.Value == nil {
@@ -412,13 +426,14 @@ func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
 		}
 		child := DetermineAliasSource(prop.Value)
 		for _, leaf := range child.Leaves {
-			if seen.Contains(leaf.RootVarID) {
-				continue
-			}
-			seen.Add(leaf.RootVarID)
 			newPath := make([]ProjectionStep, 0, len(leaf.Path)+1)
 			newPath = append(newPath, PropertyOf{Key: key})
 			newPath = append(newPath, leaf.Path...)
+			leafK := leafKey(leaf.RootVarID, newPath)
+			if seen.Contains(leafK) {
+				continue
+			}
+			seen.Add(leafK)
 			leaves = append(leaves, AliasLeaf{RootVarID: leaf.RootVarID, Path: newPath})
 		}
 	}
@@ -426,6 +441,32 @@ func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
 		return freshSource()
 	}
 	return freshContainerSource(leaves)
+}
+
+// leafKey returns a stable string representation of a (root, path) pair
+// suitable for use as a deduplication key. Two leaves with the same root
+// and equivalent path produce equal keys.
+func leafKey(root VarID, path []ProjectionStep) string {
+	var b strings.Builder
+	b.WriteString(strconv.Itoa(int(root)))
+	for _, step := range path {
+		b.WriteByte('|')
+		switch s := step.(type) {
+		case ElementOf:
+			b.WriteString("e")
+		case PropertyOf:
+			b.WriteString("p:")
+			b.WriteString(s.Key)
+		case IndexOf:
+			b.WriteString("i:")
+			b.WriteString(strconv.Itoa(s.Index))
+		case AwaitOf:
+			b.WriteString("a")
+		case CastOf:
+			b.WriteString("c")
+		}
+	}
+	return b.String()
 }
 
 // staticPropertyKey returns the static string form of an object key, or
