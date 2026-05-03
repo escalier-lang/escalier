@@ -159,7 +159,7 @@ func (c *Checker) inferLifetimesCore(
 	// pass so that an escaping param gets 'static rather than a fresh 'a
 	// even when it is also returned by some path. Already-set 'static
 	// (from a prior pass) is a no-op.
-	escapingLeaves := detectEscapingLeafIndices(body, leafIndex)
+	escapingLeaves := detectEscapingLeafIndices(body, leafIndex, nil)
 	for idx := range escapingLeaves {
 		leaf := leaves[idx]
 		if !typeCarriesLifetime(leaf.leafType) {
@@ -544,6 +544,12 @@ func arrayElemType(t type_system.Type) type_system.Type {
 // frame. Stores into locals don't escape because the local's lifetime
 // is bounded by the function body.
 //
+// extraEscapeRoots, if non-nil, names additional positive-VarID roots
+// whose lvalue assignments should ALSO be treated as escaping. Used for
+// constructor bodies, where `self` is a local parameter (positive VarID)
+// but `self.<field> = expr` should escape because the receiver outlives
+// the constructor's stack frame. Pass nil for ordinary function bodies.
+//
 // Limitations:
 //   - Closures over a *nested* function's local: inner functions whose
 //     body assigns to an outer function's local will mark that param as
@@ -552,20 +558,6 @@ func arrayElemType(t type_system.Type) type_system.Type {
 //   - Stores via property assignment whose root is a local but is
 //     itself stored elsewhere: not tracked here.
 func detectEscapingLeafIndices(
-	body *ast.Block,
-	leafIndex map[liveness.VarID]int,
-) set.Set[int] {
-	return detectEscapingLeafIndicesWithRoots(body, leafIndex, nil)
-}
-
-// detectEscapingLeafIndicesWithRoots is the constructor-aware variant of
-// detectEscapingLeafIndices: in addition to assignments whose lvalue root
-// is non-local (VarID <= 0), it also flags assignments whose lvalue root
-// VarID is in extraEscapeRoots. Used for constructor bodies, where `self`
-// is a local parameter (positive VarID) but `self.<field> = expr` should
-// be treated as escaping because the receiver outlives the constructor's
-// stack frame.
-func detectEscapingLeafIndicesWithRoots(
 	body *ast.Block,
 	leafIndex map[liveness.VarID]int,
 	extraEscapeRoots set.Set[liveness.VarID],
@@ -882,12 +874,11 @@ func lifetimeContainsStatic(lt type_system.Lifetime) bool {
 // drop-in fit, even after sharing the escape-detection primitives:
 //
 //  1. Escape root differs. `inferLifetimesCore` calls
-//     `detectEscapingLeafIndices`, which only flags lvalues whose root
-//     has `VarID <= 0` (non-local). In a constructor, `self` is a
-//     local positive-VarID parameter, so `self.x = p` wouldn't be
-//     detected. The constructor path uses
-//     `detectEscapingLeafIndicesWithRoots` with `self`'s VarID added
-//     as an extra escape root.
+//     `detectEscapingLeafIndices` with a nil extra-roots set, which
+//     only flags lvalues whose root has `VarID <= 0` (non-local). In a
+//     constructor, `self` is a local positive-VarID parameter, so
+//     `self.x = p` wouldn't be detected. The constructor path passes
+//     `self`'s VarID as an extra escape root to the same function.
 //
 //  2. No return-alias pass needed. `inferLifetimesCore` does most of
 //     its work in `attachLifetimeToResult` — collecting return/yield
@@ -1002,12 +993,11 @@ func (c *Checker) InferConstructorLifetimes(
 
 	// Detect escapes: assignments `self.<…> = expr` where the RHS aliases
 	// one of the callable params. `self`'s VarID is added as an extra
-	// escape root because it is itself a positive-VarID parameter (so
-	// `isNonLocalLValue` alone wouldn't recognize `self.x = p` as
-	// escaping).
+	// escape root because it is itself a positive-VarID parameter — the
+	// non-local-only check would not recognize `self.x = p` as escaping.
 	escapeRoots := set.NewSet[liveness.VarID]()
 	escapeRoots.Add(selfVarID)
-	escapingLeaves := detectEscapingLeafIndicesWithRoots(ctorElem.Fn.Body, leafIndex, escapeRoots)
+	escapingLeaves := detectEscapingLeafIndices(ctorElem.Fn.Body, leafIndex, escapeRoots)
 	if escapingLeaves.Len() == 0 {
 		return
 	}
