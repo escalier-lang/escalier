@@ -930,6 +930,51 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"pair": "{head: mut 'a {x: number}, tail: mut 'b {x: number}}",
 			},
 		},
+		"CtorStoresTupleOfAnnotatedParams_CallResult_FieldSlotsCarryLifetimes": {
+			// (#539) Like CtorStoresTupleOfAnnotatedParams_FieldSlotsCarryLifetimes,
+			// but the RHS of `self.items = …` is a call result rather than
+			// a tuple literal. Exercises the determineCheckerAliasSource
+			// path in attachFieldSlotLifetimes — the call's per-slot leaves
+			// must drive per-slot lifetime attachment on the field type.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> [mut {x: number}, mut {x: number}] {
+					return [a, b]
+				}
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.items = wrap(a, b)
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
+		"CtorStoresObjectOfAnnotatedParams_CallResult_FieldSlotsCarryLifetimes": {
+			// (#539) Sister case to the tuple call-result variant: the RHS
+			// of `self.pair = …` is a call returning a per-property typed
+			// object, and the call's embedded slot lifetimes must surface
+			// at the corresponding field slots.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+				class Wrap {
+					pair: {head: mut {x: number}, tail: mut {x: number}},
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.pair = wrap(a, b)
+					}
+				}
+				val w = Wrap({x: 1}, {x: 2})
+				val pair = w.pair
+			`,
+			expectedTypes: map[string]string{
+				"pair": "{head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
 		"DestructuredTupleCtorParamCapture": {
 			// A destructured tuple ctor param whose leaves are stored
 			// into self should still pin lifetimes onto the param. (#531)

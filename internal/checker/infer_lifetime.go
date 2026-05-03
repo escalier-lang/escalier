@@ -1057,6 +1057,14 @@ func lifetimeContainsStatic(lt type_system.Lifetime) bool {
 // ctor body share the same VarID (assigned as an extra param by
 // `runLivenessPrePass`), so the first match is sufficient. Returns 0
 // when the body has no `self` reference.
+//
+// The visitor descends into nested function expressions, which is
+// safe today because `self` inside a closure within a ctor body
+// captures the outer ctor's `self` and shares its VarID. Nested
+// class declarations are not yet supported by the checker (the body
+// phase panics on them), so a nested class introducing its own
+// `self` is unreachable. If/when nested classes are implemented,
+// this visitor must be hardened to stop at ClassDecl boundaries.
 func findSelfVarID(body *ast.Block) liveness.VarID {
 	if body == nil {
 		return 0
