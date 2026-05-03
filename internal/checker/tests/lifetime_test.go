@@ -706,13 +706,15 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			// composite field, the field's per-slot types in the
 			// instance should reflect the per-slot lifetimes — e.g.
 			// `items[0]: mut 'a {...}`, `items[1]: mut 'b {...}` after
-			// `self.items = [a, b]`. Pin down current behavior so we
-			// know whether the class field type tracks slot-level
-			// lifetimes today.
+			// `self.items = [a, b]`. With per-slot fresh-var tuple
+			// inference (option 1), the constructor's `'a`/`'b` flow
+			// through the `[a, b]` literal's slot vars into the field
+			// type, so each instance's `p.items` carries per-slot
+			// lifetimes from its constructor args.
 			input: `
 				class Pair {
 					items: [mut {x: number}, mut {x: number}],
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(mut self, a, b) {
 						self.items = [a, b]
 					}
 				}
@@ -720,9 +722,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				val items = p.items
 			`,
 			expectedTypes: map[string]string{
-				// Document today's behavior; the fuller Phase 8.9 (e)
-				// would attach per-slot lifetimes here.
-				"items": "[mut {x: number}, mut {x: number}]",
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
 			},
 		},
 		"CtorStoresTupleOfParams_EscapesBoth": {
@@ -733,10 +733,12 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			// fresh-rooted sources, so without path-based escape
 			// recognition only the alias-rooted RHS (e.g. `self.x = a`)
 			// is detected. This case pins down the new behavior.
+			// Constructor params are unannotated; their types and
+			// lifetimes are inferred from the field they store into.
 			input: `
 				class Pair {
 					items: [mut {x: number}, mut {x: number}],
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(mut self, a, b) {
 						self.items = [a, b]
 					}
 				}
@@ -752,10 +754,12 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			// Sister case to CtorStoresTupleOfParams: object-literal
 			// RHS leaves are also fresh-rooted with PropertyOf paths.
 			// Both params should pin distinct lifetimes onto the ctor.
+			// Constructor params are unannotated; their types and
+			// lifetimes are inferred from the field they store into.
 			input: `
 				class Wrap {
 					pair: {head: mut {x: number}, tail: mut {x: number}},
-					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+					constructor(mut self, a, b) {
 						self.pair = {head: a, tail: b}
 					}
 				}

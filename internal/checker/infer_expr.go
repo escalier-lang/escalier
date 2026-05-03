@@ -377,9 +377,21 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					}))
 				}
 			} else {
+				// Use a per-slot fresh var as the literal's slot type
+				// and unify the element's value into it. This mirrors
+				// how object literals handle property values: when the
+				// surrounding context later unifies the tuple type
+				// against `[mut T, mut T]`, each slot var binds to the
+				// MutType-wrapped target, and the element's actual var
+				// (e.g. an unannotated param) inherits the wrapper via
+				// its link to the slot var. Inferring elements directly
+				// would expose the unannotated-param var to the
+				// `_, MutType` unwrap rule and silently strip `mut`.
+				slotVar := c.FreshVar(&ast.NodeProvenance{Node: elem})
 				elemType, elemErrors := c.inferExpr(ctx, elem)
-				elemTypes = append(elemTypes, elemType)
-				errors = slices.Concat(errors, elemErrors)
+				unifyErrors := c.Unify(ctx, elemType, slotVar)
+				elemTypes = append(elemTypes, slotVar)
+				errors = slices.Concat(errors, elemErrors, unifyErrors)
 			}
 		}
 
