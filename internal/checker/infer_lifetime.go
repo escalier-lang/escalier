@@ -1233,7 +1233,10 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 		for i, id := range aggregated {
 			leaves[i] = liveness.AliasLeaf{RootVarID: id}
 		}
-		return liveness.AliasSource{Leaves: leaves}
+		// Aggregated leaves come from arg variable references whose
+		// roots the call result aliases — Alias-origin so callers see
+		// the historical Variable/Multiple kind.
+		return liveness.AliasSource{Origin: liveness.AliasOriginAlias, Leaves: leaves}
 	}
 }
 

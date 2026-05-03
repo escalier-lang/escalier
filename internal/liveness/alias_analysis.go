@@ -1,6 +1,8 @@
 package liveness
 
 import (
+	"strconv"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -54,27 +56,60 @@ const (
 	AliasSourceUnknown                         // cannot determine statically
 )
 
+// AliasOrigin classifies whether the *root* of an expression's value is
+// freshly constructed or an alias of an existing value. The leaf set
+// describes nested slot aliases, but the origin determines whether the
+// root itself participates in aliasing — this distinction matters for
+// the alias tracker, which only merges sets at the root level.
+type AliasOrigin int
+
+const (
+	// AliasOriginUnknown means the alias status of the value cannot be
+	// determined statically. Zero value.
+	AliasOriginUnknown AliasOrigin = iota
+	// AliasOriginFresh means the value's root is brand-new — e.g. a
+	// literal, an array literal, an object literal, a call result, a
+	// function expression. Leaves on a fresh-origin source describe
+	// aliasing of nested slots only; the root itself aliases nothing.
+	AliasOriginFresh
+	// AliasOriginAlias means the value is (or projects from) an
+	// existing variable. The root aliases the leaf roots; leaf paths
+	// describe *where in those roots* the value points. A direct
+	// variable reference is the canonical case (single leaf, empty path).
+	AliasOriginAlias
+)
+
 // AliasSource describes where a value comes from for alias tracking
-// purposes. As of Phase 8.9, an alias source is a *set* of leaves — each
-// leaf names a root variable plus the projection path from that root into
-// the freshly-constructed container that wraps the expression. A direct
-// variable reference is a single leaf with empty path; `[a, b]` is two
-// leaves rooted at `a` and `b` with `[ElementOf]` paths.
+// purposes. As of Phase 8.9, an alias source has both an Origin (root
+// classification) and a *set* of leaves — each leaf names a root variable
+// plus a projection path. The two carry complementary information:
+//
+//   - For Origin=Alias, leaves describe the (root, slot-in-root) the
+//     expression refers to. `obj` is one leaf with empty path; `obj.k`
+//     is one leaf with `[PropertyOf("k")]`.
+//   - For Origin=Fresh, leaves describe (param-root, slot-in-new-container)
+//     that the freshly-constructed root *captures*. `[a, b]` has two
+//     leaves with `[IndexOf(0)]` and `[IndexOf(1)]` rooted at `a`/`b`.
+//     The new container itself aliases nothing at the root.
 type AliasSource struct {
+	Origin AliasOrigin
 	Leaves []AliasLeaf
-	// Fresh is true iff the expression produces a freshly-constructed value
-	// with no aliasing leaves. Distinguishes "definitely fresh" from
-	// "unknown" (the zero value, with no leaves and Fresh==false).
-	Fresh bool
 }
 
-// Kind returns the legacy alias-source kind derived from the leaves.
+// Kind returns the legacy alias-source kind. For backward compatibility
+// with consumers that only track root-level aliasing (the alias tracker,
+// transition checking), a fresh-origin value reports Fresh regardless of
+// whether it has nested-slot leaves — only Alias-origin leaves contribute
+// to the legacy Variable/Multiple classification.
 func (s AliasSource) Kind() AliasSourceKind {
+	switch s.Origin {
+	case AliasOriginFresh:
+		return AliasSourceFresh
+	case AliasOriginUnknown:
+		return AliasSourceUnknown
+	}
 	switch len(s.Leaves) {
 	case 0:
-		if s.Fresh {
-			return AliasSourceFresh
-		}
 		return AliasSourceUnknown
 	case 1:
 		return AliasSourceVariable
@@ -104,7 +139,14 @@ func (s AliasSource) VarIDs() []VarID {
 
 // freshSource is a small constructor for the common "definitely fresh"
 // case so call sites stay readable.
-func freshSource() AliasSource { return AliasSource{Fresh: true} }
+func freshSource() AliasSource { return AliasSource{Origin: AliasOriginFresh} }
+
+// freshContainerSource builds a fresh-origin source carrying nested-slot
+// leaves — e.g. `[a, b]` → fresh root, two leaves with paths into the
+// new container.
+func freshContainerSource(leaves []AliasLeaf) AliasSource {
+	return AliasSource{Origin: AliasOriginFresh, Leaves: leaves}
+}
 
 // unknownSource is the zero value — kept as a constructor for parity with
 // freshSource so the intent is explicit at the call site.
@@ -113,7 +155,10 @@ func unknownSource() AliasSource { return AliasSource{} }
 // rootSource builds an AliasSource for a single direct variable
 // reference (empty projection path).
 func rootSource(id VarID) AliasSource {
-	return AliasSource{Leaves: []AliasLeaf{{RootVarID: id}}}
+	return AliasSource{
+		Origin: AliasOriginAlias,
+		Leaves: []AliasLeaf{{RootVarID: id}},
+	}
 }
 
 // DetermineAliasSource examines an expression and returns its alias source.
@@ -133,9 +178,9 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	case *ast.LiteralExpr:
 		return freshSource()
 	case *ast.ObjectExpr:
-		return freshSource()
+		return determineObjectAliasSource(e)
 	case *ast.TupleExpr:
-		return freshSource()
+		return determineTupleAliasSource(e)
 	case *ast.FuncExpr:
 		return freshSource()
 	case *ast.TemplateLitExpr:
@@ -157,20 +202,23 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	case *ast.BinaryExpr:
 		return freshSource()
 
-	// Type cast: the alias source is the inner expression
+	// Type cast: pure pass-through. The Phase 8.9 spec models a CastOf
+	// projection step, but it carries no slot information; treating it as
+	// transparent matches today's behavior and keeps paths shorter.
 	case *ast.TypeCastExpr:
 		return DetermineAliasSource(e.Expr)
 
-	// Await: the alias source is the inner expression
+	// Await: append AwaitOf to each leaf so that lifetime attachment can
+	// descend into Promise<T>'s inner T.
 	case *ast.AwaitExpr:
-		return DetermineAliasSource(e.Arg)
+		return appendStepToLeaves(DetermineAliasSource(e.Arg), AwaitOf{})
 
-	// Property access: the value aliases the object's source.
-	// We treat it as aliasing the object variable (conservative).
+	// Property access: the value projects into the object. Append
+	// PropertyOf(name) so each leaf records the additional descent.
 	case *ast.MemberExpr:
-		return DetermineAliasSource(e.Object)
+		return appendStepToLeaves(DetermineAliasSource(e.Object), PropertyOf{Key: e.Prop.Name})
 	case *ast.IndexExpr:
-		return DetermineAliasSource(e.Object)
+		return determineIndexAliasSource(e)
 
 	// Conditionals: aliases all branches (Phase 7.4).
 	case *ast.IfElseExpr:
@@ -256,7 +304,7 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 				seen.Add(leaf.RootVarID)
 				leaves = append(leaves, leaf)
 			}
-		} else if !source.Fresh {
+		} else if source.Origin != AliasOriginFresh {
 			// Unknown — treat like fresh for alias purposes. We can't
 			// determine what this branch aliases, but that's no reason
 			// to discard alias info from the branches we DO know about.
@@ -270,7 +318,12 @@ func collectBranchSources(exprs []ast.Expr) AliasSource {
 		}
 		return unknownSource()
 	}
-	return AliasSource{Leaves: leaves}
+	// Branch arms that bubbled up an alias-of-existing-root contribute
+	// to a merged Alias-origin source. Per-arm Origin distinctions are
+	// not currently tracked at the branch level: if any arm's leaves
+	// reach here, treat the merged source as Alias so callers see the
+	// historical Variable/Multiple kind.
+	return AliasSource{Origin: AliasOriginAlias, Leaves: leaves}
 }
 
 // determineConditionalAliasSource determines alias sources for an if-else
@@ -286,6 +339,145 @@ func determineConditionalAliasSource(expr *ast.IfElseExpr) AliasSource {
 	}
 
 	return collectBranchSources([]ast.Expr{consExpr, altExpr})
+}
+
+// appendStepToLeaves returns a new AliasSource whose leaves each have
+// the given step appended to their projection path. Origin is preserved
+// — descending through `obj.field` keeps the alias-of-existing-root
+// classification, and descending through `await fresh` keeps fresh.
+// Sources with no leaves (Fresh or Unknown with no captures) pass
+// through unchanged.
+func appendStepToLeaves(src AliasSource, step ProjectionStep) AliasSource {
+	if len(src.Leaves) == 0 {
+		return src
+	}
+	out := AliasSource{Origin: src.Origin, Leaves: make([]AliasLeaf, len(src.Leaves))}
+	for i, leaf := range src.Leaves {
+		newPath := make([]ProjectionStep, len(leaf.Path)+1)
+		copy(newPath, leaf.Path)
+		newPath[len(leaf.Path)] = step
+		out.Leaves[i] = AliasLeaf{RootVarID: leaf.RootVarID, Path: newPath}
+	}
+	return out
+}
+
+// determineTupleAliasSource computes the alias source for a tuple/array
+// literal `[e0, e1, ...]`. The root is freshly constructed; each element's
+// leaves are folded in with `IndexOf(i)` prepended to their existing path.
+// The lifetime-attachment side decides whether to interpret these as
+// element-of-array or per-slot tuple positions based on the surrounding
+// type.
+func determineTupleAliasSource(expr *ast.TupleExpr) AliasSource {
+	var leaves []AliasLeaf
+	seen := set.NewSet[VarID]()
+	for i, elem := range expr.Elems {
+		if elem == nil {
+			continue
+		}
+		child := DetermineAliasSource(elem)
+		for _, leaf := range child.Leaves {
+			if seen.Contains(leaf.RootVarID) {
+				continue
+			}
+			seen.Add(leaf.RootVarID)
+			newPath := make([]ProjectionStep, 0, len(leaf.Path)+1)
+			newPath = append(newPath, IndexOf{Index: i})
+			newPath = append(newPath, leaf.Path...)
+			leaves = append(leaves, AliasLeaf{RootVarID: leaf.RootVarID, Path: newPath})
+		}
+	}
+	if len(leaves) == 0 {
+		return freshSource()
+	}
+	return freshContainerSource(leaves)
+}
+
+// determineObjectAliasSource computes the alias source for an object
+// literal `{k0: e0, k1: e1, ...}`. The root is freshly constructed; each
+// property value's leaves are folded in with `PropertyOf(key)` prepended.
+// Spread elements, methods, getters/setters, and computed keys without
+// a static name are skipped — their alias contributions can't be slotted
+// to a known property of the new container.
+func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
+	var leaves []AliasLeaf
+	seen := set.NewSet[VarID]()
+	for _, elem := range expr.Elems {
+		prop, ok := elem.(*ast.PropertyExpr)
+		if !ok || prop.Value == nil {
+			continue
+		}
+		key, ok := staticPropertyKey(prop.Name)
+		if !ok {
+			continue
+		}
+		child := DetermineAliasSource(prop.Value)
+		for _, leaf := range child.Leaves {
+			if seen.Contains(leaf.RootVarID) {
+				continue
+			}
+			seen.Add(leaf.RootVarID)
+			newPath := make([]ProjectionStep, 0, len(leaf.Path)+1)
+			newPath = append(newPath, PropertyOf{Key: key})
+			newPath = append(newPath, leaf.Path...)
+			leaves = append(leaves, AliasLeaf{RootVarID: leaf.RootVarID, Path: newPath})
+		}
+	}
+	if len(leaves) == 0 {
+		return freshSource()
+	}
+	return freshContainerSource(leaves)
+}
+
+// staticPropertyKey returns the static string form of an object key, or
+// false if the key is computed (and thus not statically known).
+func staticPropertyKey(k ast.ObjKey) (string, bool) {
+	switch n := k.(type) {
+	case *ast.IdentExpr:
+		return n.Name, true
+	case *ast.StrLit:
+		return n.Value, true
+	case *ast.NumLit:
+		// Numeric keys are valid object keys; stringify for the path.
+		// Use Go's default float formatting — adequate for path equality
+		// since both sides go through the same conversion.
+		return formatNumKey(n.Value), true
+	}
+	return "", false
+}
+
+// formatNumKey stringifies a numeric object key. Kept separate so the
+// formatting choice has one place to live if it later needs to align
+// with another stringifier (e.g. printer output).
+func formatNumKey(v float64) string {
+	return strconv.FormatFloat(v, 'g', -1, 64)
+}
+
+// determineIndexAliasSource computes the alias source for `obj[i]`. The
+// expression projects into obj; we append `IndexOf(i)` only when the
+// index is a constant integer literal (the only case where we can name
+// the slot statically). Non-constant indexes fall back to a transparent
+// descent into the object — the same conservative approximation as
+// before Phase 8.9.
+func determineIndexAliasSource(expr *ast.IndexExpr) AliasSource {
+	src := DetermineAliasSource(expr.Object)
+	if lit, ok := expr.Index.(*ast.LiteralExpr); ok {
+		if num, ok := lit.Lit.(*ast.NumLit); ok {
+			if i, isInt := floatAsInt(num.Value); isInt {
+				return appendStepToLeaves(src, IndexOf{Index: i})
+			}
+		}
+	}
+	return src
+}
+
+// floatAsInt returns the int form of a float64 if it represents a
+// non-negative integer index, and false otherwise.
+func floatAsInt(v float64) (int, bool) {
+	i := int(v)
+	if float64(i) == v && i >= 0 {
+		return i, true
+	}
+	return 0, false
 }
 
 // determineMatchAliasSource determines alias sources for a match expression

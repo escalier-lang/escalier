@@ -249,6 +249,141 @@ func TestDetermineAliasSource_MatchExpr_SameVariable(t *testing.T) {
 	require.Equal(t, "variable [a]", formatAliasSource(DetermineAliasSource(expr), names))
 }
 
+// formatLeaves returns a compact, deterministic string of an alias
+// source's (root, path) pairs — used by Phase 8.9 path-tracking tests
+// where the legacy Kind/VarIDs view loses the projection structure.
+func formatLeaves(source AliasSource, names map[VarID]string) string {
+	parts := make([]string, len(source.Leaves))
+	for i, leaf := range source.Leaves {
+		name, ok := names[leaf.RootVarID]
+		if !ok {
+			name = fmt.Sprintf("%d", leaf.RootVarID)
+		}
+		parts[i] = name + formatPath(leaf.Path)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatPath(path []ProjectionStep) string {
+	if len(path) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, step := range path {
+		switch s := step.(type) {
+		case ElementOf:
+			b.WriteString(".[]")
+		case PropertyOf:
+			b.WriteString(".")
+			b.WriteString(s.Key)
+		case IndexOf:
+			fmt.Fprintf(&b, "[%d]", s.Index)
+		case AwaitOf:
+			b.WriteString(".await")
+		case CastOf:
+			b.WriteString(".cast")
+		}
+	}
+	return b.String()
+}
+
+func TestDetermineAliasSource_MemberExpr_AppendsProperty(t *testing.T) {
+	expr := parseExpr(t, "obj.field.inner")
+	setVarIDs(expr, map[string]int{"obj": 5})
+	names := map[VarID]string{5: "obj"}
+
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginAlias, src.Origin)
+	require.Equal(t, "obj.field.inner", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_IndexExpr_ConstAppendsIndex(t *testing.T) {
+	expr := parseExpr(t, "obj[2]")
+	setVarIDs(expr, map[string]int{"obj": 5})
+	names := map[VarID]string{5: "obj"}
+
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginAlias, src.Origin)
+	require.Equal(t, "obj[2]", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_IndexExpr_NonConstFallsBack(t *testing.T) {
+	expr := parseExpr(t, "obj[i]")
+	setVarIDs(expr, map[string]int{"obj": 5, "i": 7})
+	names := map[VarID]string{5: "obj"}
+
+	// Non-constant indexes can't be slotted statically — leaf has no
+	// IndexOf step, just the bare root.
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginAlias, src.Origin)
+	require.Equal(t, "obj", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_TupleExpr_ProducesIndexLeaves(t *testing.T) {
+	expr := parseExpr(t, "[a, b]")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	names := map[VarID]string{1: "a", 2: "b"}
+
+	src := DetermineAliasSource(expr)
+	// Root is freshly constructed — the alias tracker should still see
+	// "fresh" via the legacy Kind() so it doesn't merge alias sets at
+	// the root level.
+	require.Equal(t, "fresh", formatAliasSource(src, names))
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "a[0], b[1]", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_TupleExpr_AllFreshHasNoLeaves(t *testing.T) {
+	expr := parseExpr(t, "[1, 2]")
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Empty(t, src.Leaves)
+}
+
+func TestDetermineAliasSource_ObjectExpr_ProducesPropertyLeaves(t *testing.T) {
+	expr := parseExpr(t, "{head: a, tail: b}")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	names := map[VarID]string{1: "a", 2: "b"}
+
+	src := DetermineAliasSource(expr)
+	require.Equal(t, "fresh", formatAliasSource(src, names))
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "a.head, b.tail", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_NestedTupleInObject(t *testing.T) {
+	expr := parseExpr(t, "{items: [a, b]}")
+	setVarIDs(expr, map[string]int{"a": 1, "b": 2})
+	names := map[VarID]string{1: "a", 2: "b"}
+
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "a.items[0], b.items[1]", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_TupleOfMember(t *testing.T) {
+	expr := parseExpr(t, "[obj.x]")
+	setVarIDs(expr, map[string]int{"obj": 9})
+	names := map[VarID]string{9: "obj"}
+
+	// `[obj.x]` — fresh root, one leaf rooted at obj with path
+	// [IndexOf(0), PropertyOf("x")] describing the slot in the new
+	// container followed by the projection into obj.
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginFresh, src.Origin)
+	require.Equal(t, "obj[0].x", formatLeaves(src, names))
+}
+
+func TestDetermineAliasSource_AwaitExpr_AppendsAwait(t *testing.T) {
+	expr := parseExpr(t, "await p")
+	setVarIDs(expr, map[string]int{"p": 4})
+	names := map[VarID]string{4: "p"}
+
+	src := DetermineAliasSource(expr)
+	require.Equal(t, AliasOriginAlias, src.Origin)
+	require.Equal(t, "p.await", formatLeaves(src, names))
+}
+
 func TestDetermineAliasSource_MatchExpr_VariableAndFresh(t *testing.T) {
 	expr := parseExpr(t, "match 1 { _ => a, _ => [1] }")
 	setVarIDs(expr, map[string]int{"a": 1})
