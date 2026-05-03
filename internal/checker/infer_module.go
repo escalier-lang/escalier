@@ -1545,7 +1545,7 @@ func (c *Checker) InferComponent(
 						// in the same SCC are visible to
 						// `determineCheckerAliasSource`, so escapes through call
 						// expressions like `self.f = wrap(p)` are detected.
-						c.InferConstructorLifetimes(ctorBodyCtx, decl, typeAlias, ctorFuncType)
+						c.InferConstructorLifetimes(decl, typeAlias, ctorFuncType)
 
 						// Phase 3: definite-assignment analysis. Subclasses
 						// (`extends`) are deferred — `super(...)` semantics

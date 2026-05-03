@@ -847,28 +847,52 @@ func lifetimeContainsStatic(lt type_system.Lifetime) bool {
 	return false
 }
 
+// findSelfVarID returns the VarID of the first `self` IdentExpr it
+// finds in the given body. All references to `self` within a single
+// ctor body share the same VarID (assigned as an extra param by
+// `runLivenessPrePass`), so the first match is sufficient. Returns 0
+// when the body has no `self` reference.
+func findSelfVarID(body *ast.Block) liveness.VarID {
+	if body == nil {
+		return 0
+	}
+	v := &selfVarIDVisitor{}
+	body.Accept(v)
+	return v.found
+}
+
+type selfVarIDVisitor struct {
+	ast.DefaultVisitor
+	found liveness.VarID
+}
+
+func (v *selfVarIDVisitor) EnterExpr(e ast.Expr) bool {
+	if v.found != 0 {
+		return false
+	}
+	if ident, ok := e.(*ast.IdentExpr); ok && ident.Name == "self" && ident.VarID > 0 {
+		v.found = liveness.VarID(ident.VarID)
+		return false
+	}
+	return true
+}
+
 // InferConstructorLifetimes analyzes a class declaration to determine
 // which constructor parameters are stored into `self` (as fields or
 // through transitive aliases), attaches a fresh LifetimeVar to each such
 // parameter and to the constructor's return type, and records the
 // lifetime parameters on the class TypeAlias.
 //
-// Capture detection reuses the *escape-detection* primitives from
-// `inferLifetimesCore` — `escapingRefsVisitor`,
-// `determineCheckerAliasSource`, `collectParamLeaves` — to walk the
-// constructor body for assignments whose lvalue root is `self` (e.g.
-// `self.x = p`, `self.list[0] = p`) and trace the RHS back to the
-// underlying parameter VarID(s). This is precise: guards like
-// `if x < 0 { throw … }`, side-effect calls like `validate(x)`, and
-// transient computation like `var tmp = x * 2` are correctly identified
-// as NOT capturing `x`.
-//
-// To produce VarIDs in the body and on parameter pattern leaves, this
-// function runs its own `liveness.Rename` pass on the constructor body.
-// VarIDs written here will be overwritten by the body phase's
-// `runLivenessPrePass` when the constructor body is later type-checked,
-// which is fine — we only need a consistent VarID space for the
-// duration of this call.
+// Runs in the body phase, after `inferFuncBodyWithFuncSigType` has
+// type-checked the constructor body. By that point the body phase's
+// `runLivenessPrePass` has already populated VarIDs on the callable
+// param patterns and every IdentExpr in the body, and callee signatures
+// from peers in the same SCC are resolved — so
+// `determineCheckerAliasSource` can see lifetime info on call returns
+// and trace escapes like `self.f = wrap(p)`. The only piece the body
+// phase doesn't write is `self`'s IdentPat VarID (it's an extra param,
+// not in the rename's astParams), which `findSelfVarID` recovers by
+// looking at any `self` IdentExpr in the body.
 //
 // Why not call `inferLifetimesCore` directly? Three reasons it isn't a
 // drop-in fit, even after sharing the escape-detection primitives:
@@ -899,7 +923,6 @@ func lifetimeContainsStatic(lt type_system.Lifetime) bool {
 //     captures a constructor param (the constructor gets the lifetime,
 //     but the method's return type does not yet inherit it).
 func (c *Checker) InferConstructorLifetimes(
-	ctx Context,
 	classDecl *ast.ClassDecl,
 	typeAlias *type_system.TypeAlias,
 	ctorFn *type_system.FuncType,
@@ -944,22 +967,16 @@ func (c *Checker) InferConstructorLifetimes(
 		return
 	}
 
-	// Run a mini rename pass so we have VarIDs on the callable params and
-	// on every IdentExpr in the body. `self` is treated as an extra param
-	// name (mirroring how methods see their implicit receiver in
-	// `runLivenessPrePass`). Rename errors are ignored: any unresolved
-	// references will be re-reported by the body phase's rename pass.
-	//
-	// VarIDs written here are safely overwritten when the body phase later
-	// runs `runLivenessPrePass` on the same ctor body: `liveness.Rename`
-	// does not recurse into nested FuncExpr/FuncDecl bodies (those get
-	// their own pass), so the only nodes touched here are the outer ctor
-	// body's IdentExprs/IdentPats — exactly the nodes the body phase
-	// overwrites. Inner functions are unaffected by this pass.
-	outerBindings := collectOuterBindings(ctx.Scope)
-	renameResult := liveness.Rename(callableParams, *ctorElem.Fn.Body, outerBindings, "self")
-	selfVarID, ok := renameResult.ExtraParamVarIDs["self"]
-	if !ok {
+	// VarIDs on the callable params and on every IdentExpr in the body
+	// were already populated by the body phase's `runLivenessPrePass`
+	// before this function was called; we just reuse them. To find
+	// `self`'s VarID we walk the body for any `self` IdentExpr — the
+	// extra-param treatment in `runLivenessPrePass` ensures every `self`
+	// reference resolves to the same positive VarID. If the body never
+	// references `self`, no `self.x = ...` assignment exists, so there
+	// is nothing to capture.
+	selfVarID := findSelfVarID(ctorElem.Fn.Body)
+	if selfVarID == 0 {
 		return
 	}
 
