@@ -683,6 +683,7 @@ func convertPropertyDecl(pd *dts_parser.PropertyDecl) (*ast.FieldElem, error) {
 		Static:   pd.Modifiers.Static,
 		Private:  pd.Modifiers.Private,
 		Readonly: pd.Modifiers.Readonly,
+		Optional: pd.Optional,
 		Span_:    pd.Span(),
 	}, nil
 }

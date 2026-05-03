@@ -4597,7 +4597,7 @@
     Static:   false,
     Private:  false,
     Readonly: false,
-    Optional: false,
+    Optional: true,
     Span_:    ast.Span{
         Start:    ast.Location{Line:1, Column:22},
         End:      ast.Location{Line:1, Column:42},

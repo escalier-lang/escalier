@@ -472,6 +472,23 @@ func TestConvertClassDecl(t *testing.T) {
 			},
 		},
 		{
+			name:      "class with optional property",
+			input:     "declare class Box { note?: string }",
+			wantError: false,
+			checkFunc: func(t *testing.T, decl *ast.ClassDecl) {
+				if len(decl.Body) != 1 {
+					t.Fatalf("expected 1 body element, got %d", len(decl.Body))
+				}
+				field, ok := decl.Body[0].(*ast.FieldElem)
+				if !ok {
+					t.Fatalf("expected FieldElem, got %T", decl.Body[0])
+				}
+				if !field.Optional {
+					t.Errorf("expected Optional=true on field converted from `note?: string`")
+				}
+			},
+		},
+		{
 			name:      "class with method",
 			input:     "declare class Calculator { add(a: number): number }",
 			wantError: false,

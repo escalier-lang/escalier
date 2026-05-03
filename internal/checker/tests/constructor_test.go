@@ -496,6 +496,19 @@ func TestOptionalFields(t *testing.T) {
 		_, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 		require.NotEmpty(t, parseErrors,
 			"expected a parse error for `static x?: number = 0`")
+		var sawStaticOptional, sawDefault bool
+		for _, e := range parseErrors {
+			if strings.Contains(e.Message, "Static fields cannot be optional") {
+				sawStaticOptional = true
+			}
+			if strings.Contains(e.Message, "Optional fields cannot have a default initializer") {
+				sawDefault = true
+			}
+		}
+		assert.True(t, sawStaticOptional,
+			"expected `Static fields cannot be optional` diagnostic; got: %v", parseErrors)
+		assert.True(t, sawDefault,
+			"expected `Optional fields cannot have a default initializer` diagnostic; got: %v", parseErrors)
 	})
 }
 
