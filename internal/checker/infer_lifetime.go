@@ -82,13 +82,27 @@ func lifetimeParamName(i int) string {
 // presence of `yield` in the body it determines whether the return
 // type should be unwrapped to its inner T (Promise<T,_>'s value or
 // Generator<T,_,_>'s yield) or treated as the direct result.
+// lifetimeInferPass distinguishes the first-pass entry point from the
+// SCC re-run. The first pass refuses to touch a signature that already
+// has user-declared LifetimeParams; the reinfer pass deliberately
+// extends a previously-inferred set so peers in a mutually recursive
+// SCC can grow each other's lifetime params to a fixed point.
+type lifetimeInferPass int
+
+const (
+	initialPass lifetimeInferPass = iota
+	reinferPass
+)
+
+func (p lifetimeInferPass) isReinfer() bool { return p == reinferPass }
+
 func (c *Checker) InferLifetimes(
 	astParams []*ast.Param,
 	body *ast.Block,
 	funcType *type_system.FuncType,
-	isAsync bool,
+	async asyncMode,
 ) {
-	c.inferLifetimesCore(astParams, body, funcType, isAsync, false)
+	c.inferLifetimesCore(astParams, body, funcType, async, initialPass)
 }
 
 // ReinferLifetimes re-runs lifetime inference on a function whose first
@@ -104,25 +118,26 @@ func (c *Checker) ReinferLifetimes(
 	astParams []*ast.Param,
 	body *ast.Block,
 	funcType *type_system.FuncType,
-	isAsync bool,
+	async asyncMode,
 ) {
-	c.inferLifetimesCore(astParams, body, funcType, isAsync, true)
+	c.inferLifetimesCore(astParams, body, funcType, async, reinferPass)
 }
 
 // inferLifetimesCore is the shared body of InferLifetimes and
-// ReinferLifetimes. The reinfer flag controls whether the function may
-// extend an already-inferred set of lifetime params: when false, the
-// function bails out as soon as it sees existing LifetimeParams (the
-// historical behavior protecting user-explicit lifetimes); when true,
-// it walks the leaves and *appends* new lifetime params for any leaves
-// that became visible via newly-resolved peer signatures.
+// ReinferLifetimes. The pass argument controls whether the function may
+// extend an already-inferred set of lifetime params: initialPass bails
+// out as soon as it sees existing LifetimeParams (the historical
+// behavior protecting user-explicit lifetimes); reinferPass walks the
+// leaves and *appends* new lifetime params for any leaves that became
+// visible via newly-resolved peer signatures.
 func (c *Checker) inferLifetimesCore(
 	astParams []*ast.Param,
 	body *ast.Block,
 	funcType *type_system.FuncType,
-	isAsync bool,
-	reinfer bool,
+	async asyncMode,
+	pass lifetimeInferPass,
 ) {
+	isAsync := async.isAsync()
 	if body == nil || funcType == nil {
 		return
 	}
@@ -131,7 +146,7 @@ func (c *Checker) inferLifetimesCore(
 	// lifetimes during type-checking is a separate concern handled by
 	// the type-annotation inference path.) The reinfer path skips this
 	// guard so the SCC re-run can extend a previously-inferred result.
-	if !reinfer && len(funcType.LifetimeParams) > 0 {
+	if !pass.isReinfer() && len(funcType.LifetimeParams) > 0 {
 		return
 	}
 

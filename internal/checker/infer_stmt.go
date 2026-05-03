@@ -187,7 +187,10 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 		ctx.CallSiteTypeVars = &callSiteTypeVars
 
 		inferErrors := c.inferFuncBodyWithFuncSigType(
-			ctx, funcType, paramBindings, decl.FuncSig.Params, decl.Body, decl.FuncSig.Async, false)
+			ctx, funcType, paramBindings,
+			decl.FuncSig.Params, decl.Body,
+			asyncModeFrom(decl.FuncSig.Async), nonConstructorBody,
+		)
 		errors = slices.Concat(errors, inferErrors)
 	}
 

@@ -872,7 +872,10 @@ func (c *Checker) InferComponent(
 					declCtx.CallSiteTypeVars = &callSiteTypeVars
 
 					inferErrors := c.inferFuncBodyWithFuncSigType(
-						declCtx, funcType, paramBindings, decl.FuncSig.Params, decl.Body, decl.FuncSig.Async, false)
+						declCtx, funcType, paramBindings,
+						decl.FuncSig.Params, decl.Body,
+						asyncModeFrom(decl.FuncSig.Async), nonConstructorBody,
+					)
 					errors = slices.Concat(errors, inferErrors)
 				}
 
@@ -1295,7 +1298,11 @@ func (c *Checker) InferComponent(
 							}
 
 							methodCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
-							bodyErrors := c.inferFuncBodyWithFuncSigType(methodCtx, methodType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false, false)
+							bodyErrors := c.inferFuncBodyWithFuncSigType(
+								methodCtx, methodType.Fn, paramBindings,
+								bodyElem.Fn.Params, bodyElem.Fn.Body,
+								asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+							)
 							errors = slices.Concat(errors, bodyErrors)
 						}
 
@@ -1366,7 +1373,11 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
-								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, getterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false, false)
+								bodyErrors := c.inferFuncBodyWithFuncSigType(
+									bodyCtx, getterType.Fn, paramBindings,
+									bodyElem.Fn.Params, bodyElem.Fn.Body,
+									asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+								)
 								errors = slices.Concat(errors, bodyErrors)
 							}
 						}
@@ -1444,7 +1455,11 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
-								bodyErrors := c.inferFuncBodyWithFuncSigType(bodyCtx, setterType.Fn, paramBindings, bodyElem.Fn.Params, bodyElem.Fn.Body, false, false)
+								bodyErrors := c.inferFuncBodyWithFuncSigType(
+									bodyCtx, setterType.Fn, paramBindings,
+									bodyElem.Fn.Params, bodyElem.Fn.Body,
+									asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+								)
 								errors = slices.Concat(errors, bodyErrors)
 							}
 						}
@@ -1534,7 +1549,8 @@ func (c *Checker) InferComponent(
 						// readonly check.
 						bodyErrors := c.inferFuncBodyWithFuncSigType(
 							ctorBodyCtx, bodyFuncType, ctorBindings,
-							ctorCallableParams(bodyElem), bodyElem.Fn.Body, false, true,
+							ctorCallableParams(bodyElem), bodyElem.Fn.Body,
+							syncFunc, constructorBody,
 						)
 						errors = slices.Concat(errors, bodyErrors)
 						ctorFuncType.Throws = bodyFuncType.Throws
@@ -1599,7 +1615,7 @@ func (c *Checker) InferComponent(
 						continue
 					}
 					before := len(ft.LifetimeParams)
-					c.ReinferLifetimes(fd.FuncSig.Params, fd.Body, ft, fd.FuncSig.Async)
+					c.ReinferLifetimes(fd.FuncSig.Params, fd.Body, ft, asyncModeFrom(fd.FuncSig.Async))
 					if len(ft.LifetimeParams) > before {
 						grew = true
 					}

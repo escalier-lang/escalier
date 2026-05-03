@@ -254,7 +254,8 @@ case *ast.ConstructorElem:
     // … add constructor params as bindings, just like methods do …
     bodyErrors := c.inferFuncBodyWithFuncSigType(
         ctorCtx, /* ctorFuncType */, paramBindings,
-        bodyElem.Fn.Params, bodyElem.Fn.Body, false /* not async */,
+        bodyElem.Fn.Params, bodyElem.Fn.Body,
+        syncFunc, constructorBody,
     )
     errors = slices.Concat(errors, bodyErrors)
 ```
@@ -894,10 +895,21 @@ and removed dead code that had survived the cut-over:
   Either reject or require a literal-typed annotation / explicit
   initializer.
 - [#525](https://github.com/escalier-lang/escalier/issues/525) — replace
-  bool flag-args in checker with named enums/options. Covers
-  `unifyExtractor`/`unifyRestObj`'s `swapped`,
-  `inferFuncBodyWithFuncSigType`'s `isAsync`+`isConstructorBody`, and
-  `inferLifetimesCore`'s `isAsync`+`reinfer`.
+  bool flag-args in checker with named enums. Landed on branch
+  `fix-525`: `swapped` on `unifyExtractor`/`unifyClosedWithRests` is
+  now a `unifyDirection` (`subjectFromT1` / `subjectFromT2`);
+  `inferFuncBodyWithFuncSigType` takes `asyncMode`
+  (`syncFunc` / `asyncFunc`) and `constructorBodyMode`
+  (`nonConstructorBody` / `constructorBody`); `inferLifetimesCore`
+  takes `asyncMode` plus `lifetimeInferPass` (`initialPass` /
+  `reinferPass`). The Phase 4 sketch above uses the new enum form;
+  the constructor-body call passes `constructorBody`.
+- [#535](https://github.com/escalier-lang/escalier/issues/535) — async
+  class methods are checked as synchronous. Filed while reviewing
+  the #525 call sites: `inferFuncBodyWithFuncSigType` for class
+  methods hardcodes `syncFunc` instead of propagating
+  `bodyElem.Fn.Async`. Constructor path is unaffected (parser
+  already rejects `async` constructors).
 - [#531](https://github.com/escalier-lang/escalier/issues/531) — drop
   the constructor-body name-match walk and reuse `inferLifetimesCore`'s
   precise data-flow analysis. Methods/setters/regular functions
