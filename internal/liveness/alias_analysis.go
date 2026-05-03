@@ -14,14 +14,39 @@ import (
 // expression aliases VarID X" behavior.
 type ProjectionStep interface{ projectionStep() }
 
-// ElementOf is the step into an array literal element ([a, b]).
+// ElementOf is the step into an array element — slot-agnostic, since
+// `Array<T>` has a single element type `T` regardless of position. Use
+// this when the source expression doesn't pin down a specific index
+// (e.g. `arr.map(...)`, iteration, or any operation that yields "some
+// element of an array").
+//
+// NOTE: ElementOf is not currently emitted by any producer. Tuple/array
+// literals always emit IndexOf{Index: i}, and stepIntoSlot collapses
+// IndexOf to element-of-array semantics when the underlying type is
+// Array<T> (see internal/checker/infer_lifetime.go::stepIntoSlot).
+// ElementOf is reserved for future array-iteration / collection-method
+// support, where no specific index is meaningful.
 type ElementOf struct{}
+
+// IndexOf is the step into a specific positional slot — appropriate for
+// tuples, where slot 0 and slot 1 may have distinct types, and for
+// indexed access with a constant integer (`obj[0]`). Carries the slot
+// number as payload.
+//
+// IndexOf is also currently used for *array* literals (`[a, b, c]`
+// emits IndexOf{0}, IndexOf{1}, IndexOf{2}), even though the slot
+// number is semantically irrelevant when the surrounding type resolves
+// to Array<T>. This is because the AST-level producer can't tell
+// whether a literal will be typed as a tuple or an array — that
+// decision happens later. The lifetime-attachment side
+// (stepIntoSlot) handles both: for TupleType it picks the slot at
+// the given index; for Array<T> it ignores the index and returns the
+// element type. Contrast with ElementOf, which is unconditionally
+// slot-agnostic.
+type IndexOf struct{ Index int }
 
 // PropertyOf is the step into an object property ({k: a}).
 type PropertyOf struct{ Key string }
-
-// IndexOf is the step into a fixed tuple slot.
-type IndexOf struct{ Index int }
 
 // AwaitOf is the step through a Promise<T> value (await p).
 type AwaitOf struct{}
@@ -39,6 +64,7 @@ func (CastOf) projectionStep()     {}
 // slot of a surrounding fresh container.
 type AliasLeaf struct {
 	RootVarID VarID
+
 	// Path is the sequence of projection steps from the root into the
 	// freshly-constructed container surrounding this expression. An empty
 	// path means the leaf is the root itself (the legacy single-var case).
@@ -68,11 +94,13 @@ const (
 	// AliasOriginUnknown means the alias status of the value cannot be
 	// determined statically. Zero value.
 	AliasOriginUnknown AliasOrigin = iota
+
 	// AliasOriginFresh means the value's root is brand-new — e.g. a
 	// literal, an array literal, an object literal, a call result, a
 	// function expression. Leaves on a fresh-origin source describe
 	// aliasing of nested slots only; the root itself aliases nothing.
 	AliasOriginFresh
+
 	// AliasOriginAlias means the value is (or projects from) an
 	// existing variable. The root aliases the leaf roots; leaf paths
 	// describe *where in those roots* the value points. A direct
@@ -85,13 +113,15 @@ const (
 // classification) and a *set* of leaves — each leaf names a root variable
 // plus a projection path. The two carry complementary information:
 //
-//   - For Origin=Alias, leaves describe the (root, slot-in-root) the
-//     expression refers to. `obj` is one leaf with empty path; `obj.k`
-//     is one leaf with `[PropertyOf("k")]`.
-//   - For Origin=Fresh, leaves describe (param-root, slot-in-new-container)
-//     that the freshly-constructed root *captures*. `[a, b]` has two
-//     leaves with `[IndexOf(0)]` and `[IndexOf(1)]` rooted at `a`/`b`.
-//     The new container itself aliases nothing at the root.
+//   - For Origin=Alias, each leaf names an existing root variable plus
+//     the path within it that the expression points at. `obj` produces
+//     one leaf rooted at `obj` with an empty path; `obj.k` produces one
+//     leaf rooted at `obj` with path `[PropertyOf("k")]`.
+//   - For Origin=Fresh, the root is a brand-new value that aliases
+//     nothing, but its interior slots may capture references to existing
+//     variables. Each leaf names the captured root variable and the path
+//     *inside the new container* where it lands. `[a, b]` produces two
+//     leaves: `a` at path `[IndexOf(0)]` and `b` at path `[IndexOf(1)]`.
 type AliasSource struct {
 	Origin AliasOrigin
 	Leaves []AliasLeaf
@@ -397,9 +427,8 @@ func determineTupleAliasSource(expr *ast.TupleExpr) AliasSource {
 		}
 		child := DetermineAliasSource(elem)
 		for _, leaf := range child.Leaves {
-			newPath := make([]ProjectionStep, 0, len(leaf.Path)+1)
-			newPath = append(newPath, IndexOf{Index: i})
-			newPath = append(newPath, leaf.Path...)
+			// Build a new path with IndexOf{Index: i} prepended to leaf.Path.
+			newPath := append([]ProjectionStep{IndexOf{Index: i}}, leaf.Path...)
 			key := leafKey(leaf.RootVarID, newPath)
 			if seen.Contains(key) {
 				continue
@@ -428,15 +457,14 @@ func determineObjectAliasSource(expr *ast.ObjectExpr) AliasSource {
 		if !ok || prop.Value == nil {
 			continue
 		}
-		key, ok := staticPropertyKey(prop.Name)
+		key, ok := propertyKeyToString(prop.Name)
 		if !ok {
 			continue
 		}
 		child := DetermineAliasSource(prop.Value)
 		for _, leaf := range child.Leaves {
-			newPath := make([]ProjectionStep, 0, len(leaf.Path)+1)
-			newPath = append(newPath, PropertyOf{Key: key})
-			newPath = append(newPath, leaf.Path...)
+			// Build a new path with PropertyOf{Key: key} prepended to leaf.Path.
+			newPath := append([]ProjectionStep{PropertyOf{Key: key}}, leaf.Path...)
 			leafK := leafKey(leaf.RootVarID, newPath)
 			if seen.Contains(leafK) {
 				continue
@@ -496,9 +524,10 @@ func PathKey(path []ProjectionStep) string {
 	return b.String()
 }
 
-// staticPropertyKey returns the static string form of an object key, or
-// false if the key is computed (and thus not statically known).
-func staticPropertyKey(k ast.ObjKey) (string, bool) {
+// propertyKeyToString returns the string form of an object key when it is
+// statically known (identifier, string literal, or numeric literal), and
+// false for computed keys whose value can't be determined at compile time.
+func propertyKeyToString(k ast.ObjKey) (string, bool) {
 	switch n := k.(type) {
 	case *ast.IdentExpr:
 		return n.Name, true
@@ -508,15 +537,18 @@ func staticPropertyKey(k ast.ObjKey) (string, bool) {
 		// Numeric keys are valid object keys; stringify for the path.
 		// Use Go's default float formatting — adequate for path equality
 		// since both sides go through the same conversion.
-		return formatNumKey(n.Value), true
+		return FormatNumKey(n.Value), true
 	}
 	return "", false
 }
 
-// formatNumKey stringifies a numeric object key. Kept separate so the
-// formatting choice has one place to live if it later needs to align
-// with another stringifier (e.g. printer output).
-func formatNumKey(v float64) string {
+// FormatNumKey stringifies a numeric object key for use as the Key
+// payload of a PropertyOf projection step. Exported so the checker side
+// can produce matching keys when synthesizing PropertyOf steps from a
+// type's NumObjTypeKeyKind property — keeping the exact format choice
+// in one place avoids drift between the producer and consumer of those
+// steps.
+func FormatNumKey(v float64) string {
 	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 

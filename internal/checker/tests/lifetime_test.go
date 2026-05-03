@@ -532,6 +532,27 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"passThrough": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}",
 			},
 		},
+		"PassThroughCallWithNumericKeyedEmbeddedLifetimes": {
+			// Regression for the walkReturnLifetimeSlots fix: when the
+			// callee's return type embeds lifetimes inside numeric-keyed
+			// slots (`{0: 'a P, 1: 'b P}`), walkReturnLifetimeSlots must
+			// emit PropertyOf steps with FormatNumKey-encoded keys so
+			// that embeddedLifetimeAliasSource can match them back to
+			// the corresponding arg leaves. Before the fix the numeric
+			// keys were skipped, the call's slots were lost, and the
+			// caller's signature collapsed to no inferred lifetimes.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {0: mut {x: number}, 1: mut {x: number}} {
+					return {0: a, 1: b}
+				}
+				fn passThrough(a: mut {x: number}, b: mut {x: number}) -> {0: mut {x: number}, 1: mut {x: number}} {
+					return wrap(a, b)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"passThrough": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {0: mut 'a {x: number}, 1: mut 'b {x: number}}",
+			},
+		},
 		"PropertyAccess_ProjectsPerSlotLifetime_KnownGap": {
 			// Caller-side aliasing precision: accessing a single slot
 			// of a per-property-typed result *should* project only
@@ -593,6 +614,38 @@ func TestInferLifetimeTypes(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"stash": "fn <'a>({a: mut 'static {x: number}, b: mut 'a {x: number}}) -> mut 'a {x: number}",
+			},
+		},
+		"NumericKeyedObjectCapturesParam": {
+			// Regression for the stepIntoSlot fix: when a fresh object
+			// literal uses a numeric key (`{0: p}`), the producer emits
+			// PropertyOf{Key: "0"} on the leaf path. The consumer must
+			// match that string against the corresponding NumObjTypeKeyKind
+			// property on the return type. Before the fix, only
+			// StrObjTypeKeyKind properties matched, so the leaf was
+			// dropped and no lifetime was attached to the `0` slot.
+			input: `
+				fn wrap(p: mut {x: number}) -> {0: mut {x: number}} {
+					return {0: p}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"wrap": "fn <'a>(p: mut 'a {x: number}) -> {0: mut 'a {x: number}}",
+			},
+		},
+		"MixedNumericAndStringKeysCapturesDifferentParams": {
+			// Two params land in two slots of the fresh object, one keyed
+			// numerically and one keyed by name. Each gets its own
+			// lifetime, exercising both the NumObjTypeKeyKind and the
+			// StrObjTypeKeyKind arms of stepIntoSlot.PropertyOf in the
+			// same return type.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> {0: mut {x: number}, name: mut {x: number}} {
+					return {0: a, name: b}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pair": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {0: mut 'a {x: number}, name: mut 'b {x: number}}",
 			},
 		},
 		"NestedObjectInArray_DescendsTwoSteps": {

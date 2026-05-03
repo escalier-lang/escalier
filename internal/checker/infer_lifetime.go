@@ -1,6 +1,9 @@
 package checker
 
 import (
+	"slices"
+	"strconv"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -284,7 +287,7 @@ func (c *Checker) attachLifetimeToResult(
 	// returned by descendIntoSlot, so two paths landing on the same
 	// element type of an Array<T> dedupe naturally.
 	type slotEntry struct {
-		members  []type_system.Lifetime
+		members   []type_system.Lifetime
 		hasStatic bool
 	}
 	slotByPtr := map[type_system.Type]*slotEntry{}
@@ -343,6 +346,7 @@ func (c *Checker) attachLifetimeToResult(
 			default:
 				slot = resultType
 			}
+
 			// If the destination slot can't carry a lifetime (e.g. the
 			// path landed on a type parameter, void, or a primitive),
 			// skip the leaf entirely. Allocating a fresh LifetimeVar
@@ -363,7 +367,8 @@ func (c *Checker) attachLifetimeToResult(
 				// Reuse any LifetimeVar already on the leaf so the
 				// signature stays stable across re-runs / generator
 				// TReturn reuse from a prior yield call.
-				if existing, ok := type_system.PruneLifetime(type_system.GetLifetime(paramLeafEntry.leafType)).(*type_system.LifetimeVar); ok && existing != nil {
+				prunedLT := type_system.PruneLifetime(type_system.GetLifetime(paramLeafEntry.leafType))
+				if existing, ok := prunedLT.(*type_system.LifetimeVar); ok && existing != nil {
 					lv = existing
 				} else {
 					nameIdx := len(funcType.LifetimeParams) + len(newLifetimeParams)
@@ -485,13 +490,34 @@ func stepIntoSlot(t type_system.Type, step liveness.ProjectionStep) type_system.
 		}
 	case liveness.PropertyOf:
 		if obj, ok := pruned.(*type_system.ObjectType); ok {
+			// Numeric keys: the producer (propertyKeyToString) stringifies
+			// NumLit indexes via strconv.FormatFloat, so to compare against
+			// a NumObjTypeKeyKind property we parse s.Key back to float64.
+			// Going through float comparison (rather than string round-trip)
+			// avoids coupling to the producer's exact format choice.
+			var keyAsFloat float64
+			var keyIsNumeric bool
+			if f, err := strconv.ParseFloat(s.Key, 64); err == nil {
+				keyAsFloat = f
+				keyIsNumeric = true
+			}
+			// TODO(#543): SymObjTypeKeyKind properties are not handled —
+			// the producer side can't emit symbol-keyed PropertyOf steps
+			// today, so this is currently unreachable.
 			for _, elem := range obj.Elems {
 				prop, ok := elem.(*type_system.PropertyElem)
 				if !ok {
 					continue
 				}
-				if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == s.Key {
-					return prop.Value
+				switch prop.Name.Kind {
+				case type_system.StrObjTypeKeyKind:
+					if prop.Name.Str == s.Key {
+						return prop.Value
+					}
+				case type_system.NumObjTypeKeyKind:
+					if keyIsNumeric && prop.Name.Num == keyAsFloat {
+						return prop.Value
+					}
 				}
 			}
 		}
@@ -1385,30 +1411,38 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 		for i, id := range aggregated {
 			leaves[i] = liveness.AliasLeaf{RootVarID: id}
 		}
-		// Aggregated leaves come from arg variable references whose
-		// roots the call result aliases — Alias-origin so callers see
-		// the historical Variable/Multiple kind.
+		// The callee returns one of its parameters at the top level, so
+		// the call result aliases the corresponding argument root(s) — use
+		// Alias origin (not Fresh) so RootKind() reports Variable for one
+		// aggregated leaf and Multiple for several. That matches what the
+		// alias tracker and transition checker expect for "this expression
+		// directly aliases these variables."
 		return liveness.AliasSource{Origin: liveness.AliasOriginAlias, Leaves: leaves}
 	}
 }
 
-// embeddedLifetimeAliasSource handles the case where a callee's return
-// type carries no top-level Lifetime but has lifetimes embedded in its
-// slots — e.g. `wrap` returns `{head: 'a Point, tail: 'b Point}` with
-// no Lifetime on the ObjectType itself. Walks the return type to
-// collect (path, lifetimeVar) entries; for each entry, finds the
-// param whose lifetime matches and folds the corresponding arg's
-// alias source into the result with the slot's path prepended.
+// embeddedLifetimeAliasSource handles calls whose return type carries
+// no top-level Lifetime but has lifetimes embedded in its inner slots.
+// For example, `wrap` returns `{head: 'a Point, tail: 'b Point}`: the
+// outer ObjectType has no Lifetime, but the `head` and `tail` slots do.
 //
-// Returns a fresh-rooted source — `wrap(a, b)` has a freshly
-// constructed root whose nested slots alias args. If no embedded
-// slots match any param, falls back to the plain liveness handling
-// (which classifies the call as fresh with no leaves).
+// The function walks the return type to collect each (path, lifetimeVar)
+// pair, then for every pair it finds the parameter whose lifetime
+// matches and pulls in the corresponding argument's alias source,
+// prepending the slot's path to each leaf. The result is a fresh-rooted
+// source — calling `wrap(a, b)` constructs a new container whose root
+// aliases nothing, but whose nested slots alias the arguments at the
+// matching paths.
 //
-// TODO(#541): downstream MemberExpr/IndexExpr projection through this
-// source's leaves still uses append-only path semantics, so
-// `wrap(a, b).head` does not yet narrow to `'a`-only. Bidirectional
-// path semantics for the fresh-rooted case are tracked separately.
+// If no embedded slot matches any parameter, the function falls back to
+// the plain liveness handling, which classifies the call as fresh with
+// no leaves.
+//
+// TODO(#541): downstream `MemberExpr` / `IndexExpr` projection through
+// the leaves of this source only ever appends to the leaf paths, so
+// `wrap(a, b).head` doesn't yet narrow to the `'a`-only leaf. Adding
+// bidirectional path semantics for fresh-rooted sources is tracked
+// separately.
 func embeddedLifetimeAliasSource(fnType *type_system.FuncType, callExpr *ast.CallExpr) liveness.AliasSource {
 	slots := collectReturnLifetimeSlots(fnType.Return)
 	if len(slots) == 0 {
@@ -1435,9 +1469,7 @@ func embeddedLifetimeAliasSource(fnType *type_system.FuncType, callExpr *ast.Cal
 			}
 			argSource := determineCheckerAliasSource(callExpr.Args[i])
 			for _, argLeaf := range argSource.Leaves {
-				combined := make([]liveness.ProjectionStep, 0, len(slot.path)+len(argLeaf.Path))
-				combined = append(combined, slot.path...)
-				combined = append(combined, argLeaf.Path...)
+				combined := slices.Concat(slot.path, argLeaf.Path)
 				key := leafKey{rootVarID: argLeaf.RootVarID, pathKey: liveness.PathKey(combined)}
 				if seen[key] {
 					continue
@@ -1470,12 +1502,16 @@ type returnLifetimeSlot struct {
 // collectReturnLifetimeSlots walks a return type and returns one entry
 // per (slot, LifetimeVar) — including the top-level slot when the type
 // carries a Lifetime. Recurses into ObjectType properties and TupleType
-// elements; container TypeRefTypes (Array<T>, Promise<T>) are not
-// descended into here because their TypeArg slots aren't reachable via
-// the projection-step vocabulary that downstream attachment uses
-// (Array<T> would need ElementOf, but TupleType.IndexOf already covers
-// the common literal-as-tuple case). Extending to ElementOf / AwaitOf
-// is straightforward when needed.
+// elements.
+//
+// TODO(#544): container TypeRefTypes (Array<T>, Promise<T>, etc.) are
+// not descended into here, so call sites of explicitly-typed
+// generic-returning functions like `fn wrap<'a>(p: 'a P) -> Array<'a P>`
+// don't pick up the embedded lifetime. The downstream attachment
+// vocabulary already supports ElementOf and AwaitOf (stepIntoSlot
+// handles them); extending this walker to emit them is the missing
+// piece. The literal-as-tuple case is unaffected because TupleType
+// recursion + IndexOf already covers it.
 func collectReturnLifetimeSlots(t type_system.Type) []returnLifetimeSlot {
 	var out []returnLifetimeSlot
 	walkReturnLifetimeSlots(t, nil, &out)
@@ -1510,10 +1546,19 @@ func walkReturnLifetimeSlots(t type_system.Type, path []liveness.ProjectionStep,
 			if !ok {
 				continue
 			}
-			if prop.Name.Kind != type_system.StrObjTypeKeyKind {
+			var key string
+			switch prop.Name.Kind {
+			case type_system.StrObjTypeKeyKind:
+				key = prop.Name.Str
+			case type_system.NumObjTypeKeyKind:
+				key = liveness.FormatNumKey(prop.Name.Num)
+			// TODO(#543): SymObjTypeKeyKind not handled — symbol-keyed
+			// properties need a representation in PropertyOf (or a new
+			// step kind) before they can be walked here.
+			default:
 				continue
 			}
-			childPath := append(path, liveness.PropertyOf{Key: prop.Name.Str})
+			childPath := append(path, liveness.PropertyOf{Key: key})
 			walkReturnLifetimeSlots(prop.Value, childPath, into)
 		}
 	case *type_system.TupleType:
