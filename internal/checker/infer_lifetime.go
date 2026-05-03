@@ -1317,6 +1317,30 @@ func setLifetimeArgsOnType(t type_system.Type, args []type_system.Lifetime) {
 // For non-call expressions and calls whose callee has no lifetime
 // information, this falls through to liveness.DetermineAliasSource.
 func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
+	// Recurse through pure projection nodes using the checker-aware
+	// helper so that fresh-rooted leaves produced by an inner CallExpr
+	// (via embeddedLifetimeAliasSource) survive the descent. Falling
+	// through to liveness.DetermineAliasSource would re-derive the
+	// inner alias source without lifetime information and lose the
+	// per-slot leaves.
+	switch e := expr.(type) {
+	case *ast.MemberExpr:
+		return liveness.ProjectStep(determineCheckerAliasSource(e.Object), liveness.PropertyOf{Key: e.Prop.Name})
+	case *ast.IndexExpr:
+		inner := determineCheckerAliasSource(e.Object)
+		if lit, ok := e.Index.(*ast.LiteralExpr); ok {
+			if num, ok := lit.Lit.(*ast.NumLit); ok {
+				i := int(num.Value)
+				if float64(i) == num.Value && i >= 0 {
+					return liveness.ProjectStep(inner, liveness.IndexOf{Index: i})
+				}
+			}
+		}
+		return inner
+	case *ast.TypeCastExpr:
+		return determineCheckerAliasSource(e.Expr)
+	}
+
 	callExpr, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return liveness.DetermineAliasSource(expr)
@@ -1438,11 +1462,9 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 // the plain liveness handling, which classifies the call as fresh with
 // no leaves.
 //
-// TODO(#541): downstream `MemberExpr` / `IndexExpr` projection through
-// the leaves of this source only ever appends to the leaf paths, so
-// `wrap(a, b).head` doesn't yet narrow to the `'a`-only leaf. Adding
-// bidirectional path semantics for fresh-rooted sources is tracked
-// separately.
+// Downstream `MemberExpr` / `IndexExpr` projection consumes the matching
+// front step from each leaf (see liveness.ProjectStep), so
+// `wrap(a, b).head` correctly narrows to the `'a`-only leaf.
 func embeddedLifetimeAliasSource(fnType *type_system.FuncType, callExpr *ast.CallExpr) liveness.AliasSource {
 	slots := collectReturnLifetimeSlots(fnType.Return)
 	if len(slots) == 0 {

@@ -553,17 +553,15 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"passThrough": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {0: mut 'a {x: number}, 1: mut 'b {x: number}}",
 			},
 		},
-		"PropertyAccess_ProjectsPerSlotLifetime_KnownGap": {
+		"PropertyAccess_ProjectsPerSlotLifetime": {
 			// Caller-side aliasing precision: accessing a single slot
-			// of a per-property-typed result *should* project only
-			// that slot's lifetime — `r.head` would carry `'a`, not
-			// the union, letting the alias tracker distinguish borrows
-			// from `a` vs `b`.
-			//
-			// Today determineCheckerAliasSource only handles top-level
-			// return lifetimes; per-slot projection through a call's
-			// return type isn't threaded yet. Pinning down current
-			// behavior; tracked in the Phase 8.9 follow-up.
+			// of a per-property-typed result projects only that slot's
+			// lifetime — `wrap(a, b).head` carries `'a`, not the union,
+			// so `pickHead`'s signature ties its return to `a` only.
+			// Implemented via bidirectional path semantics in
+			// liveness.ProjectStep: fresh-rooted leaves with per-slot
+			// paths get filtered by the matching front step on
+			// MemberExpr/IndexExpr descent.
 			input: `
 				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
 					return {head: a, tail: b}
@@ -573,14 +571,13 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				// Target: "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}"
-				"pickHead": "fn (a: mut {x: number}, b: mut {x: number}) -> mut {x: number}",
+				"pickHead": "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}",
 			},
 		},
-		"IndexAccess_ProjectsPerSlotLifetime_KnownGap": {
-			// Same gap as PropertyAccess_ProjectsPerSlotLifetime_KnownGap
-			// but for tuple slots — `pair(a, b)[0]` should carry only
-			// `'a`. Pinning today's behavior.
+		"IndexAccess_ProjectsPerSlotLifetime": {
+			// Tuple-slot counterpart to PropertyAccess_ProjectsPerSlotLifetime:
+			// `pair(a, b)[0]` carries only `'a`, so `pickFirst` ties
+			// its return to `a` only.
 			input: `
 				fn pair(a: mut {x: number}, b: mut {x: number}) -> [mut {x: number}, mut {x: number}] {
 					return [a, b]
@@ -590,8 +587,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				// Target: "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}"
-				"pickFirst": "fn (a: mut {x: number}, b: mut {x: number}) -> mut {x: number}",
+				"pickFirst": "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}",
 			},
 		},
 		"PerSlotEscape_OnlyEscapingPropertyGetsStatic": {

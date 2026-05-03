@@ -255,7 +255,7 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	// Property access: the value projects into the object. Append
 	// PropertyOf(name) so each leaf records the additional descent.
 	case *ast.MemberExpr:
-		return appendStepToLeaves(DetermineAliasSource(e.Object), PropertyOf{Key: e.Prop.Name})
+		return ProjectStep(DetermineAliasSource(e.Object), PropertyOf{Key: e.Prop.Name})
 	case *ast.IndexExpr:
 		return determineIndexAliasSource(e)
 
@@ -412,6 +412,54 @@ func appendStepToLeaves(src AliasSource, step ProjectionStep) AliasSource {
 	return out
 }
 
+// ProjectStep applies one descent step to an alias source, with semantics
+// that depend on the source's origin.
+//
+// For Origin=Alias (or Origin=Unknown with leaves), the step appends to
+// each leaf's path — `obj.field.inner` projects deeper into `obj`.
+//
+// For Origin=Fresh with leaves, the leaf paths describe "where in this
+// fresh container the aliasing slot lives," so descending instead
+// *consumes* the matching front step: leaves whose first step doesn't
+// match are dropped, the matching step is stripped, and the origin is
+// reclassified — Alias when any surviving leaf's path becomes empty
+// (the projection lands directly on an existing root), Fresh otherwise
+// (the projection lands inside a still-fresh sub-container). When no
+// leaves match, the result is a plain fresh source.
+//
+// Sources with no leaves pass through unchanged.
+func ProjectStep(src AliasSource, step ProjectionStep) AliasSource {
+	if src.Origin != AliasOriginFresh || len(src.Leaves) == 0 {
+		return appendStepToLeaves(src, step)
+	}
+	var newLeaves []AliasLeaf
+	hasAlias := false
+	for _, leaf := range src.Leaves {
+		if len(leaf.Path) == 0 || !stepsMatch(leaf.Path[0], step) {
+			continue
+		}
+		newPath := append([]ProjectionStep{}, leaf.Path[1:]...)
+		newLeaves = append(newLeaves, AliasLeaf{RootVarID: leaf.RootVarID, Path: newPath})
+		if len(newPath) == 0 {
+			hasAlias = true
+		}
+	}
+	if len(newLeaves) == 0 {
+		return freshSource()
+	}
+	origin := AliasOriginFresh
+	if hasAlias {
+		origin = AliasOriginAlias
+	}
+	return AliasSource{Origin: origin, Leaves: newLeaves}
+}
+
+// stepsMatch reports whether two projection steps refer to the same slot.
+// All step types are value-comparable, so direct equality suffices.
+func stepsMatch(a, b ProjectionStep) bool {
+	return a == b
+}
+
 // determineTupleAliasSource computes the alias source for a tuple/array
 // literal `[e0, e1, ...]`. The root is freshly constructed; each element's
 // leaves are folded in with `IndexOf(i)` prepended to their existing path.
@@ -563,7 +611,7 @@ func determineIndexAliasSource(expr *ast.IndexExpr) AliasSource {
 	if lit, ok := expr.Index.(*ast.LiteralExpr); ok {
 		if num, ok := lit.Lit.(*ast.NumLit); ok {
 			if i, isInt := floatAsInt(num.Value); isInt {
-				return appendStepToLeaves(src, IndexOf{Index: i})
+				return ProjectStep(src, IndexOf{Index: i})
 			}
 		}
 	}
