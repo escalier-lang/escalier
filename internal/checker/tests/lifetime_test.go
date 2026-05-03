@@ -632,20 +632,12 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 	}
 }
 
-// TestCtorCapturesViaWrappingCall is a known-failing case for #531:
-// `self.f = wrap(p)` should pin p's lifetime onto the ctor because wrap's
-// return aliases its argument. The detection works for non-ctor functions
-// (see the SCC reinfer loop in InferComponent) but not for constructors,
-// because InferConstructorLifetimes runs once during the placeholder
-// phase — before any callee body has been inferred — so
-// determineCheckerAliasSource sees no lifetime info on `wrap`'s return
-// and treats the call as opaque. The fix needs the constructor path to
-// participate in the post-body fixed-point reinference loop, which
-// requires making setLifetimeOnType / setLifetimeArgsOnType /
-// typeAlias.LifetimeParams updates idempotent and reconciling them with
-// any class consumers that already resolved C during the body phase.
+// TestCtorCapturesViaWrappingCall: `self.f = wrap(p)` pins p's lifetime
+// onto the ctor because wrap's return aliases its argument. Works because
+// InferConstructorLifetimes runs in the body phase (after wrap's signature
+// has been resolved), letting determineCheckerAliasSource trace through
+// the call. (#531)
 func TestCtorCapturesViaWrappingCall(t *testing.T) {
-	t.Skip("known limitation: ctor-call escapes need post-body reinference (#531)")
 	t.Parallel()
 	ns := mustInferAsModule(t, `
 		fn wrap(x: mut {y: number}) -> mut {y: number} { return x }
