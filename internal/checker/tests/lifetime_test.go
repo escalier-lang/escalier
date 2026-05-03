@@ -892,6 +892,109 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"Wrap": 2,
 			},
 		},
+		"CtorStoresTupleOfAnnotatedParams_FieldSlotsCarryLifetimes": {
+			// (#539) When ctor params are explicitly annotated, the param
+			// types and the field-slot types are distinct pointers, so
+			// `setLifetimeOnType` on the param leaf does not surface to
+			// the field. A separate per-slot pass walks `self.<f> = expr`
+			// and attaches lifetimes to the matching slots in the field
+			// type.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.items = [a, b]
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
+		"CtorStoresObjectOfAnnotatedParams_FieldSlotsCarryLifetimes": {
+			// (#539) Sister case for object-literal RHS with explicitly
+			// annotated params.
+			input: `
+				class Wrap {
+					pair: {head: mut {x: number}, tail: mut {x: number}},
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.pair = {head: a, tail: b}
+					}
+				}
+				val w = Wrap({x: 1}, {x: 2})
+				val pair = w.pair
+			`,
+			expectedTypes: map[string]string{
+				"pair": "{head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
+		"CtorStoresTupleOfAnnotatedParams_CallResult_FieldSlotsCarryLifetimes": {
+			// (#539) Like CtorStoresTupleOfAnnotatedParams_FieldSlotsCarryLifetimes,
+			// but the RHS of `self.items = …` is a call result rather than
+			// a tuple literal. Exercises the determineCheckerAliasSource
+			// path in attachFieldSlotLifetimes — the call's per-slot leaves
+			// must drive per-slot lifetime attachment on the field type.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> [mut {x: number}, mut {x: number}] {
+					return [a, b]
+				}
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.items = wrap(a, b)
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
+		"CtorStoresObjectOfAnnotatedParams_CallResult_FieldSlotsCarryLifetimes": {
+			// (#539) Sister case to the tuple call-result variant: the RHS
+			// of `self.pair = …` is a call returning a per-property typed
+			// object, and the call's embedded slot lifetimes must surface
+			// at the corresponding field slots.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+				class Wrap {
+					pair: {head: mut {x: number}, tail: mut {x: number}},
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.pair = wrap(a, b)
+					}
+				}
+				val w = Wrap({x: 1}, {x: 2})
+				val pair = w.pair
+			`,
+			expectedTypes: map[string]string{
+				"pair": "{head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
+		"CtorStoresViaIndexExpr_FieldSlotsCarryLifetimes": {
+			// (#539) `self["items"] = [a, b]` is a valid form of field
+			// assignment when the key is a string literal. The field-slot
+			// pass must recognize IndexExpr lvalues with literal keys, not
+			// just MemberExpr, so per-slot lifetimes still surface on the
+			// stored field's type.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self["items"] = [a, b]
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
 		"DestructuredTupleCtorParamCapture": {
 			// A destructured tuple ctor param whose leaves are stored
 			// into self should still pin lifetimes onto the param. (#531)

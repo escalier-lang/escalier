@@ -286,31 +286,7 @@ func (c *Checker) attachLifetimeToResult(
 	// all sourceExprs. Slot identity is the post-Prune Type pointer
 	// returned by descendIntoSlot, so two paths landing on the same
 	// element type of an Array<T> dedupe naturally.
-	type slotEntry struct {
-		members   []type_system.Lifetime
-		hasStatic bool
-	}
-	slotByPtr := map[type_system.Type]*slotEntry{}
-	var slotOrder []type_system.Type
-
-	addToSlot := func(slot type_system.Type, lt type_system.Lifetime) {
-		entry, exists := slotByPtr[slot]
-		if !exists {
-			entry = &slotEntry{}
-			slotByPtr[slot] = entry
-			slotOrder = append(slotOrder, slot)
-		}
-		entry.members = append(entry.members, lt)
-	}
-	markSlotStatic := func(slot type_system.Type) {
-		entry, exists := slotByPtr[slot]
-		if !exists {
-			entry = &slotEntry{}
-			slotByPtr[slot] = entry
-			slotOrder = append(slotOrder, slot)
-		}
-		entry.hasStatic = true
-	}
+	slots := newSlotAccumulator()
 
 	for _, re := range sourceExprs {
 		// Use the checker-aware variant so call expressions whose callee
@@ -333,19 +309,7 @@ func (c *Checker) attachLifetimeToResult(
 				continue
 			}
 
-			// Pick the destination slot in the return type. For
-			// fresh-rooted sources (`[a, b]`, `{k: a}`) the leaf path
-			// describes a descent INTO the new container — walk the
-			// return type along it. For alias-rooted sources (`obj`,
-			// `obj.field`) the path describes a projection into the
-			// source root, not a return-side slot — attach at the top.
-			var slot type_system.Type
-			switch src.Origin {
-			case liveness.AliasOriginFresh:
-				slot = descendIntoSlot(resultType, leaf.Path)
-			default:
-				slot = resultType
-			}
+			slot := pickResultSlot(resultType, src.Origin, leaf.Path)
 
 			// If the destination slot can't carry a lifetime (e.g. the
 			// path landed on a type parameter, void, or a primitive),
@@ -358,7 +322,7 @@ func (c *Checker) attachLifetimeToResult(
 			}
 
 			if escapingLeaves.Contains(idx) {
-				markSlotStatic(slot)
+				slots.markStatic(slot)
 				continue
 			}
 
@@ -378,20 +342,78 @@ func (c *Checker) attachLifetimeToResult(
 				}
 				leafLV[idx] = lv
 			}
-			addToSlot(slot, lv)
+			slots.add(slot, lv)
 		}
 	}
 
-	if len(slotOrder) == 0 {
-		return
-	}
+	slots.finalize()
 
-	// Attach a (possibly-unioned) lifetime to each destination slot.
-	// Members within a slot are deduped by pointer identity — repeating
-	// the same LifetimeVar across multiple sourceExprs is common (e.g.
-	// `return p` in two branches both contribute leaf p).
-	for _, slot := range slotOrder {
-		entry := slotByPtr[slot]
+	if len(newLifetimeParams) > 0 {
+		funcType.LifetimeParams = append(funcType.LifetimeParams, newLifetimeParams...)
+	}
+}
+
+// pickResultSlot chooses the destination slot in a result-side type for a
+// leaf. Fresh-rooted sources (`[a, b]`, `{k: a}`) carry leaf paths that
+// describe a descent INTO the new container — walk the result type along
+// the path. Alias-rooted sources (`obj`, `obj.field`) carry paths that
+// describe a projection into the source root, not a result-side slot —
+// attach at the top.
+func pickResultSlot(resultType type_system.Type, origin liveness.AliasOrigin, path []liveness.ProjectionStep) type_system.Type {
+	switch origin {
+	case liveness.AliasOriginFresh:
+		return descendIntoSlot(resultType, path)
+	default:
+		return resultType
+	}
+}
+
+// slotAccumulator collects per-slot lifetime contributions and applies them
+// in a single finalize pass. Slot identity is by Type pointer (typically
+// the post-Prune type returned by descendIntoSlot), so two paths landing
+// on the same element type of an Array<T> dedupe naturally. Used by both
+// attachLifetimeToResult (function results) and attachFieldSlotLifetimes
+// (constructor field assignments) to share the union-vs-single bookkeeping.
+type slotAccumulator struct {
+	byPtr map[type_system.Type]*slotEntry
+	order []type_system.Type
+}
+
+type slotEntry struct {
+	members   []type_system.Lifetime
+	hasStatic bool
+}
+
+func newSlotAccumulator() *slotAccumulator {
+	return &slotAccumulator{byPtr: map[type_system.Type]*slotEntry{}}
+}
+
+func (s *slotAccumulator) entry(slot type_system.Type) *slotEntry {
+	e, ok := s.byPtr[slot]
+	if !ok {
+		e = &slotEntry{}
+		s.byPtr[slot] = e
+		s.order = append(s.order, slot)
+	}
+	return e
+}
+
+func (s *slotAccumulator) add(slot type_system.Type, lt type_system.Lifetime) {
+	e := s.entry(slot)
+	e.members = append(e.members, lt)
+}
+
+func (s *slotAccumulator) markStatic(slot type_system.Type) {
+	s.entry(slot).hasStatic = true
+}
+
+// finalize attaches a (possibly-unioned) lifetime to each accumulated slot.
+// Members within a slot are deduped by pointer identity — repeating the
+// same LifetimeVar across multiple sources is common (e.g. `return p` in
+// two branches both contribute leaf p).
+func (s *slotAccumulator) finalize() {
+	for _, slot := range s.order {
+		entry := s.byPtr[slot]
 		members := dedupeLifetimes(entry.members)
 		if entry.hasStatic {
 			members = append(members, &type_system.LifetimeValue{
@@ -409,14 +431,11 @@ func (c *Checker) attachLifetimeToResult(
 			lt = &type_system.LifetimeUnion{Lifetimes: members}
 		}
 		// TODO(#507): if slot is pointer-shared with a param leaf
-		// (which happens for unioned yield types and for `yield from`),
+		// (e.g. unioned yield types, `yield from`, or unannotated
+		// constructor params whose leaf type IS the field-slot type),
 		// this write bleeds through to the param. Shallow-clone the
 		// shared type here and substitute the clone back.
 		setLifetimeOnType(slot, lt)
-	}
-
-	if len(newLifetimeParams) > 0 {
-		funcType.LifetimeParams = append(funcType.LifetimeParams, newLifetimeParams...)
 	}
 }
 
@@ -1038,6 +1057,14 @@ func lifetimeContainsStatic(lt type_system.Lifetime) bool {
 // ctor body share the same VarID (assigned as an extra param by
 // `runLivenessPrePass`), so the first match is sufficient. Returns 0
 // when the body has no `self` reference.
+//
+// The visitor descends into nested function expressions, which is
+// safe today because `self` inside a closure within a ctor body
+// captures the outer ctor's `self` and shares its VarID. Nested
+// class declarations are not yet supported by the checker (the body
+// phase panics on them), so a nested class introducing its own
+// `self` is unreachable. If/when nested classes are implemented,
+// this visitor must be hardened to stop at ClassDecl boundaries.
 func findSelfVarID(body *ast.Block) liveness.VarID {
 	if body == nil {
 		return 0
@@ -1198,6 +1225,7 @@ func (c *Checker) InferConstructorLifetimes(
 	// sub-position the rename pass bound (e.g. the tuple element type for
 	// `[a, b]: [mut T, mut U]`).
 	var lifetimeParams []*type_system.LifetimeVar
+	leafLV := make(map[int]*type_system.LifetimeVar)
 	for leafIdx, leaf := range leaves {
 		if !escapingLeaves.Contains(leafIdx) {
 			continue
@@ -1208,6 +1236,7 @@ func (c *Checker) InferConstructorLifetimes(
 		lv := c.FreshLifetimeVar(lifetimeParamName(len(lifetimeParams)))
 		lifetimeParams = append(lifetimeParams, lv)
 		setLifetimeOnType(leaf.leafType, lv)
+		leafLV[leafIdx] = lv
 	}
 
 	if len(lifetimeParams) == 0 {
@@ -1224,6 +1253,198 @@ func (c *Checker) InferConstructorLifetimes(
 		lifetimeArgs[i] = lv
 	}
 	setLifetimeArgsOnType(ctorFn.Return, lifetimeArgs)
+
+	// (#539) Walk `self.<field> = expr` assignments and attach per-slot
+	// lifetimes to the field types on the instance. When constructor
+	// params are unannotated, the param type IS the field-slot type
+	// (same pointer) so the setLifetimeOnType call above already
+	// surfaced lifetimes on the instance. With explicit param
+	// annotations the param and field types are distinct, so the field
+	// slots need a separate pass mirroring attachLifetimeToResult.
+	attachFieldSlotLifetimes(ctorElem.Fn.Body, selfVarID, typeAlias.Type, leafIndex, leafLV)
+}
+
+// attachFieldSlotLifetimes walks a constructor body for `self.<field> = expr`
+// assignments and attaches per-slot lifetimes to the corresponding field types
+// on the class instance. Mirrors the slot-accumulation logic in
+// attachLifetimeToResult, except the destination is a class field rather than
+// the function's result type.
+//
+// Only direct `self.<field> = expr` and `self[<literal-key>] = expr`
+// assignments are walked. Nested `self.<f>.<g> = expr` is rejected
+// upstream by the field-initialization checker (every field must be
+// initialized before being read), and `self[k] = expr` with a non-literal
+// key cannot be statically resolved to a single field slot.
+//
+// 'static is intentionally not propagated here. InferConstructorLifetimes
+// allocates a fresh LifetimeVar for every escaping leaf — including leaves
+// that escape into module-level state — rather than pinning 'static, so
+// there are no 'static leaves for this pass to forward. If the upstream
+// allocation is ever taught to distinguish module-level escapes, this
+// helper will need a markStatic path too.
+func attachFieldSlotLifetimes(
+	body *ast.Block,
+	selfVarID liveness.VarID,
+	instanceType type_system.Type,
+	leafIndex map[liveness.VarID]int,
+	leafLV map[int]*type_system.LifetimeVar,
+) {
+	// Nothing to attach if the body is empty or no escaping param leaf
+	// got a LifetimeVar in the prior allocation pass.
+	if body == nil || len(leafLV) == 0 {
+		return
+	}
+	// The instance type is the class's TypeAlias.Type, which after Prune
+	// is the ObjectType holding the field properties. Anything else (e.g.
+	// a generic instantiation that hasn't resolved yet) is skipped.
+	instanceObj, ok := type_system.Prune(instanceType).(*type_system.ObjectType)
+	if !ok {
+		return
+	}
+
+	// Accumulate per-slot lifetime contributions across all `self.<f> = …`
+	// assignments before writing them out in finalize, so multiple
+	// assignments to the same field union their lifetimes (rather than
+	// overwriting each other) and repeated leaves dedupe.
+	slots := newSlotAccumulator()
+	v := &fieldAssignVisitor{
+		selfVarID: selfVarID,
+		onAssign: func(fieldName string, rhs ast.Expr) {
+			// Map the field name to its slot in the instance type. If
+			// the field doesn't exist or is a primitive (no lifetime to
+			// carry), there's nothing to attach.
+			fieldType := lookupInstanceFieldType(instanceObj, fieldName)
+			if fieldType == nil || !typeCarriesLifetime(fieldType) {
+				return
+			}
+			// Resolve the RHS to its underlying parameter leaves. Using
+			// the checker-aware variant means call results like
+			// `self.f = wrap(p)` propagate through the callee's already-
+			// inferred return-aliases-its-arg lifetimes.
+			src := determineCheckerAliasSource(rhs)
+			if len(src.Leaves) == 0 {
+				return
+			}
+			for _, leaf := range src.Leaves {
+				// Only leaves that map back to one of *this* ctor's
+				// escaping params...
+				idx, ok := leafIndex[leaf.RootVarID]
+				if !ok {
+					continue
+				}
+				// ...and got a LifetimeVar, contribute.
+				lv, ok := leafLV[idx]
+				if !ok {
+					continue
+				}
+				// Decide which slot of the field type the leaf lands on.
+				// Fresh-rooted RHS like `[a, b]` or `{head: a}` carries
+				// per-slot paths; alias-rooted RHS attaches at the top
+				// of the field type. See pickResultSlot for the rule.
+				slot := pickResultSlot(fieldType, src.Origin, leaf.Path)
+				if !typeCarriesLifetime(slot) {
+					continue
+				}
+				slots.add(slot, lv)
+			}
+		},
+	}
+	// Walk the body to collect contributions, then write the
+	// (possibly-unioned) lifetimes onto each accumulated slot.
+	body.Accept(v)
+	slots.finalize()
+}
+
+// lookupInstanceFieldType returns the type of an instance field by name on
+// a class instance ObjectType, or nil if no matching property exists. Both
+// string-keyed and number-keyed properties are matched — number keys are
+// compared after formatting via strconv.FormatFloat so the lookup string
+// can come directly from a `self[<numeric-literal>] = …` lvalue.
+//
+// TODO(#543): symbol-keyed properties are not yet handled here. Resolving
+// a symbol key from a `self[<sym>] = …` lvalue requires the same lookup
+// machinery used elsewhere for symbol keys; once that lands, extend this
+// helper to match SymObjTypeKeyKind too.
+func lookupInstanceFieldType(obj *type_system.ObjectType, name string) type_system.Type {
+	for _, elem := range obj.Elems {
+		prop, ok := elem.(*type_system.PropertyElem)
+		if !ok {
+			continue
+		}
+		switch prop.Name.Kind {
+		case type_system.StrObjTypeKeyKind:
+			if prop.Name.Str == name {
+				return prop.Value
+			}
+		case type_system.NumObjTypeKeyKind:
+			if strconv.FormatFloat(prop.Name.Num, 'f', -1, 64) == name {
+				return prop.Value
+			}
+		}
+	}
+	return nil
+}
+
+// fieldAssignVisitor invokes onAssign for every `self.<field> = expr` or
+// `self[<literal-key>] = expr` assignment in a constructor body. Nested
+// function bodies and class/func declarations are skipped so we only see
+// the constructor's own assignments.
+type fieldAssignVisitor struct {
+	ast.DefaultVisitor
+	selfVarID liveness.VarID
+	onAssign  func(fieldName string, rhs ast.Expr)
+}
+
+func (v *fieldAssignVisitor) EnterExpr(e ast.Expr) bool {
+	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == ast.Assign {
+		if name, ok := selfFieldLValueName(be.Left, v.selfVarID); ok {
+			v.onAssign(name, be.Right)
+		}
+	}
+	if _, ok := e.(*ast.FuncExpr); ok {
+		return false
+	}
+	return true
+}
+
+// selfFieldLValueName returns the field name targeted by an lvalue if and
+// only if it is a direct field assignment on `self` — either `self.<name>`
+// (MemberExpr) or `self[<literal-key>]` (IndexExpr with a string- or
+// number-literal index). Other shapes (chained access, computed keys,
+// non-self objects) return ok=false.
+func selfFieldLValueName(lvalue ast.Expr, selfVarID liveness.VarID) (string, bool) {
+	switch e := lvalue.(type) {
+	case *ast.MemberExpr:
+		ident, ok := e.Object.(*ast.IdentExpr)
+		if !ok || liveness.VarID(ident.VarID) != selfVarID || e.Prop == nil {
+			return "", false
+		}
+		return e.Prop.Name, true
+	case *ast.IndexExpr:
+		ident, ok := e.Object.(*ast.IdentExpr)
+		if !ok || liveness.VarID(ident.VarID) != selfVarID {
+			return "", false
+		}
+		lit, ok := e.Index.(*ast.LiteralExpr)
+		if !ok {
+			return "", false
+		}
+		switch k := lit.Lit.(type) {
+		case *ast.StrLit:
+			return k.Value, true
+		case *ast.NumLit:
+			return strconv.FormatFloat(k.Value, 'f', -1, 64), true
+		}
+	}
+	return "", false
+}
+
+func (v *fieldAssignVisitor) EnterDecl(d ast.Decl) bool {
+	switch d.(type) {
+	case *ast.FuncDecl, *ast.ClassDecl:
+		return false
+	}
+	return true
 }
 
 // forEachLeafBinding invokes fn for every identifier-binding leaf
