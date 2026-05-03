@@ -1289,35 +1289,58 @@ func attachFieldSlotLifetimes(
 	leafIndex map[liveness.VarID]int,
 	leafLV map[int]*type_system.LifetimeVar,
 ) {
+	// Nothing to attach if the body is empty or no escaping param leaf
+	// got a LifetimeVar in the prior allocation pass.
 	if body == nil || len(leafLV) == 0 {
 		return
 	}
+	// The instance type is the class's TypeAlias.Type, which after Prune
+	// is the ObjectType holding the field properties. Anything else (e.g.
+	// a generic instantiation that hasn't resolved yet) is skipped.
 	instanceObj, ok := type_system.Prune(instanceType).(*type_system.ObjectType)
 	if !ok {
 		return
 	}
 
+	// Accumulate per-slot lifetime contributions across all `self.<f> = …`
+	// assignments before writing them out in finalize, so multiple
+	// assignments to the same field union their lifetimes (rather than
+	// overwriting each other) and repeated leaves dedupe.
 	slots := newSlotAccumulator()
 	v := &fieldAssignVisitor{
 		selfVarID: selfVarID,
 		onAssign: func(fieldName string, rhs ast.Expr) {
+			// Map the field name to its slot in the instance type. If
+			// the field doesn't exist or is a primitive (no lifetime to
+			// carry), there's nothing to attach.
 			fieldType := lookupInstanceFieldType(instanceObj, fieldName)
 			if fieldType == nil || !typeCarriesLifetime(fieldType) {
 				return
 			}
+			// Resolve the RHS to its underlying parameter leaves. Using
+			// the checker-aware variant means call results like
+			// `self.f = wrap(p)` propagate through the callee's already-
+			// inferred return-aliases-its-arg lifetimes.
 			src := determineCheckerAliasSource(rhs)
 			if len(src.Leaves) == 0 {
 				return
 			}
 			for _, leaf := range src.Leaves {
+				// Only leaves that map back to one of *this* ctor's
+				// escaping params...
 				idx, ok := leafIndex[leaf.RootVarID]
 				if !ok {
 					continue
 				}
+				// ...and got a LifetimeVar, contribute.
 				lv, ok := leafLV[idx]
 				if !ok {
 					continue
 				}
+				// Decide which slot of the field type the leaf lands on.
+				// Fresh-rooted RHS like `[a, b]` or `{head: a}` carries
+				// per-slot paths; alias-rooted RHS attaches at the top
+				// of the field type. See pickResultSlot for the rule.
 				slot := pickResultSlot(fieldType, src.Origin, leaf.Path)
 				if !typeCarriesLifetime(slot) {
 					continue
@@ -1326,26 +1349,37 @@ func attachFieldSlotLifetimes(
 			}
 		},
 	}
+	// Walk the body to collect contributions, then write the
+	// (possibly-unioned) lifetimes onto each accumulated slot.
 	body.Accept(v)
 	slots.finalize()
 }
 
 // lookupInstanceFieldType returns the type of an instance field by name on
-// a class instance ObjectType, or nil if no matching property exists. Only
-// string-keyed properties are matched: numeric class field syntax (e.g.
-// `0: T`) is rejected by the parser/checker, so numeric keys cannot appear
-// on class instance types.
+// a class instance ObjectType, or nil if no matching property exists. Both
+// string-keyed and number-keyed properties are matched — number keys are
+// compared after formatting via strconv.FormatFloat so the lookup string
+// can come directly from a `self[<numeric-literal>] = …` lvalue.
+//
+// TODO(#543): symbol-keyed properties are not yet handled here. Resolving
+// a symbol key from a `self[<sym>] = …` lvalue requires the same lookup
+// machinery used elsewhere for symbol keys; once that lands, extend this
+// helper to match SymObjTypeKeyKind too.
 func lookupInstanceFieldType(obj *type_system.ObjectType, name string) type_system.Type {
 	for _, elem := range obj.Elems {
 		prop, ok := elem.(*type_system.PropertyElem)
 		if !ok {
 			continue
 		}
-		if prop.Name.Kind != type_system.StrObjTypeKeyKind {
-			continue
-		}
-		if prop.Name.Str == name {
-			return prop.Value
+		switch prop.Name.Kind {
+		case type_system.StrObjTypeKeyKind:
+			if prop.Name.Str == name {
+				return prop.Value
+			}
+		case type_system.NumObjTypeKeyKind:
+			if strconv.FormatFloat(prop.Name.Num, 'f', -1, 64) == name {
+				return prop.Value
+			}
 		}
 	}
 	return nil
