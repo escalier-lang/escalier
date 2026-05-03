@@ -409,6 +409,9 @@ func TestOptionalFields(t *testing.T) {
 				val f = Foo()
 			`,
 			expectedTypes: map[string]string{"f": "Foo"},
+			expectedAliasType: map[string]string{
+				"Foo": "{x?: number, y?: string}",
+			},
 		},
 		"OptionalBitPropagatedToInstanceType": {
 			input: `
@@ -442,6 +445,9 @@ func TestOptionalFields(t *testing.T) {
 				}
 				val b = Box(1)
 			`,
+			expectedAliasType: map[string]string{
+				"Box": "{x: number, note?: string}",
+			},
 		},
 		"OptionalAssignedInSomeBranchesIsOk": {
 			input: `
@@ -457,6 +463,9 @@ func TestOptionalFields(t *testing.T) {
 				}
 				val b = Box(1, true)
 			`,
+			expectedAliasType: map[string]string{
+				"Box": "{x: number, note?: string}",
+			},
 		},
 	}
 
@@ -538,7 +547,6 @@ func TestSubclassSynthesisIsNotAllowed(t *testing.T) {
 	require.NotEmpty(t, errs,
 		"expected a diagnostic for subclass without an explicit constructor; got none")
 }
-
 
 func formatErrs(errs []Error) []string {
 	out := make([]string, len(errs))
