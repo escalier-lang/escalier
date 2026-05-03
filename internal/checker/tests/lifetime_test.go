@@ -606,6 +606,72 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"C": 0,
 			},
 		},
+		"CtorStoresTupleOfParams_FieldSlotsCarryLifetimes": {
+			// Phase 8.9 (e) deeper goal: when params escape into a
+			// composite field, the field's per-slot types in the
+			// instance should reflect the per-slot lifetimes — e.g.
+			// `items[0]: mut 'a {...}`, `items[1]: mut 'b {...}` after
+			// `self.items = [a, b]`. Pin down current behavior so we
+			// know whether the class field type tracks slot-level
+			// lifetimes today.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.items = [a, b]
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				// Document today's behavior; the fuller Phase 8.9 (e)
+				// would attach per-slot lifetimes here.
+				"items": "[mut {x: number}, mut {x: number}]",
+			},
+		},
+		"CtorStoresTupleOfParams_EscapesBoth": {
+			// Phase 8.9: `self.items = [a, b]` — the RHS is a fresh
+			// tuple whose leaves both escape into self. Both params
+			// must pin lifetimes onto the ctor; today's escape
+			// detector consults src.Kind() which returns Fresh for
+			// fresh-rooted sources, so without path-based escape
+			// recognition only the alias-rooted RHS (e.g. `self.x = a`)
+			// is detected. This case pins down the new behavior.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.items = [a, b]
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Pair": "{new fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Pair<'a, 'b>}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"Pair": 2,
+			},
+		},
+		"CtorStoresObjectOfParams_EscapesBoth": {
+			// Sister case to CtorStoresTupleOfParams: object-literal
+			// RHS leaves are also fresh-rooted with PropertyOf paths.
+			// Both params should pin distinct lifetimes onto the ctor.
+			input: `
+				class Wrap {
+					pair: {head: mut {x: number}, tail: mut {x: number}},
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.pair = {head: a, tail: b}
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Wrap": "{new fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Wrap<'a, 'b>}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"Wrap": 2,
+			},
+		},
 		"DestructuredTupleCtorParamCapture": {
 			// A destructured tuple ctor param whose leaves are stored
 			// into self should still pin lifetimes onto the param. (#531)

@@ -745,13 +745,16 @@ func (v *escapingRefsVisitor) EnterExpr(e ast.Expr) bool {
 			// Use the checker-aware variant so a parameter that flows
 			// through a call whose callee returns its argument
 			// (`cache = wrap(p)`) is still detected as escaping.
+			//
+			// Iterate Leaves directly (rather than via Kind/VarIDs) so
+			// fresh-rooted sources like `self.items = [a, b]` are
+			// recognized: each leaf names a param that escapes via the
+			// new container's slot, regardless of whether the root of
+			// the RHS is alias-of-existing or freshly-constructed.
 			src := determineCheckerAliasSource(be.Right)
-			switch src.Kind() {
-			case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-				for _, vid := range src.VarIDs() {
-					if idx, ok := v.leafIndex[vid]; ok {
-						v.escaped.Add(idx)
-					}
+			for _, leaf := range src.Leaves {
+				if idx, ok := v.leafIndex[leaf.RootVarID]; ok {
+					v.escaped.Add(idx)
 				}
 			}
 		}
