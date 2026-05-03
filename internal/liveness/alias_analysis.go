@@ -125,10 +125,12 @@ func (s AliasSource) RootKind() AliasSourceKind {
 	}
 }
 
-// VarIDs returns the deduplicated list of root variable IDs across all
-// leaves, in leaf order. Provided for callers that only care about the
-// flat root set (e.g. existing alias-set merging in the checker).
-func (s AliasSource) VarIDs() []VarID {
+// UniqueVarIDs returns the deduplicated list of root variable IDs
+// across all leaves, in leaf order. Provided for callers that only
+// care about the flat root set (e.g. alias-set merging in the
+// checker), so they don't have to dedupe themselves when the same
+// root appears under multiple slot paths.
+func (s AliasSource) UniqueVarIDs() []VarID {
 	if len(s.Leaves) == 0 {
 		return nil
 	}

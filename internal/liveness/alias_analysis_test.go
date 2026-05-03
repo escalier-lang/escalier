@@ -21,7 +21,7 @@ func formatAliasSource(source AliasSource, names map[VarID]string) string {
 	case AliasSourceUnknown:
 		return "unknown"
 	case AliasSourceVariable, AliasSourceMultiple:
-		ids := source.VarIDs()
+		ids := source.UniqueVarIDs()
 		varNames := make([]string, len(ids))
 		for i, id := range ids {
 			if name, ok := names[id]; ok {

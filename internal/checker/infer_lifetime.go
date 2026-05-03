@@ -858,7 +858,7 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 				switch src.RootKind() {
 				case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 					for _, mut := range muts {
-						for _, vid := range src.VarIDs() {
+						for _, vid := range src.UniqueVarIDs() {
 							ctx.Aliases.MarkStatic(vid, mut)
 						}
 					}
@@ -891,7 +891,7 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 		switch src.RootKind() {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, mut := range muts {
-				for _, vid := range src.VarIDs() {
+				for _, vid := range src.UniqueVarIDs() {
 					ctx.Aliases.MarkStatic(vid, mut)
 				}
 			}
@@ -1366,7 +1366,7 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 		argSource := determineCheckerAliasSource(callExpr.Args[i])
 		switch argSource.RootKind() {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-			for _, id := range argSource.VarIDs() {
+			for _, id := range argSource.UniqueVarIDs() {
 				if !seen.Contains(id) {
 					seen.Add(id)
 					aggregated = append(aggregated, id)

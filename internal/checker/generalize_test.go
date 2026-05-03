@@ -187,7 +187,7 @@ func TestDetermineCheckerAliasSource_UnionLifetimeParam(t *testing.T) {
 		"two distinct sources should produce AliasSourceMultiple")
 	assert.ElementsMatch(t,
 		[]liveness.VarID{liveness.VarID(101), liveness.VarID(102)},
-		src.VarIDs(),
+		src.UniqueVarIDs(),
 		"unioned arg (overlap on 'a) and returned arg (exact 'a) should propagate; other arg ('b only) should not")
 }
 

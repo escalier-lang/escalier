@@ -285,7 +285,7 @@ func (c *Checker) trackAliasesForIdentPat(
 
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
-		sourceVarID := source.VarIDs()[0]
+		sourceVarID := source.UniqueVarIDs()[0]
 		ctx.Aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
 
 		// Check mutability transition
@@ -308,7 +308,7 @@ func (c *Checker) trackAliasesForIdentPat(
 	case liveness.AliasSourceMultiple:
 		// Conditional aliasing: the target aliases all possible
 		// source variables. Add it to each source's alias sets.
-		for _, sourceVarID := range source.VarIDs() {
+		for _, sourceVarID := range source.UniqueVarIDs() {
 			ctx.Aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
 		}
 
@@ -316,7 +316,7 @@ func (c *Checker) trackAliasesForIdentPat(
 		var allErrors []Error
 		stmtRef, hasRef := ctx.StmtToRef[enclosingStmt]
 		if hasRef {
-			for _, sourceVarID := range source.VarIDs() {
+			for _, sourceVarID := range source.UniqueVarIDs() {
 				sourceMut := isSourceMutable(ctx, sourceVarID)
 				transErrors := c.checkMutabilityTransition(
 					ctx,
@@ -443,14 +443,14 @@ func (c *Checker) trackAliasesForDestructuringPat(
 				aliasMut = liveness.AliasImmutable
 			}
 
-			for _, sourceVarID := range source.VarIDs() {
+			for _, sourceVarID := range source.UniqueVarIDs() {
 				ctx.Aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
 			}
 
 			// Check mutability transition
 			stmtRef, hasRef := ctx.StmtToRef[enclosingStmt]
 			if hasRef {
-				for _, sourceVarID := range source.VarIDs() {
+				for _, sourceVarID := range source.UniqueVarIDs() {
 					sourceMut := isSourceMutable(ctx, sourceVarID)
 					transErrors := c.checkMutabilityTransition(
 						ctx,
@@ -549,7 +549,7 @@ func (c *Checker) trackAliasesForAssignment(
 
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
-		sourceVarID := source.VarIDs()[0]
+		sourceVarID := source.UniqueVarIDs()[0]
 
 		// Check mutability transition before reassigning
 		stmtRef, hasRef := ctx.StmtToRef[ctx.CurrentStmt]
@@ -580,13 +580,13 @@ func (c *Checker) trackAliasesForAssignment(
 		// ReassignMulti is called before checking transitions (unlike the
 		// single-source case) because we want alias state to be consistent
 		// regardless of whether errors are reported.
-		ctx.Aliases.ReassignMulti(targetVarID, source.VarIDs(), aliasMut)
+		ctx.Aliases.ReassignMulti(targetVarID, source.UniqueVarIDs(), aliasMut)
 
 		// Check mutability transition against each source
 		var allErrors []Error
 		stmtRef, hasRef := ctx.StmtToRef[ctx.CurrentStmt]
 		if hasRef {
-			for _, sourceVarID := range source.VarIDs() {
+			for _, sourceVarID := range source.UniqueVarIDs() {
 				sourceMut := isSourceMutable(ctx, sourceVarID)
 				transErrors := c.checkMutabilityTransition(
 					ctx,
@@ -644,9 +644,9 @@ func (c *Checker) trackAliasesForPropAssignment(
 	source := determineCheckerAliasSource(rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
-		ctx.Aliases.MergeAliasSets(objVarID, source.VarIDs()[0])
+		ctx.Aliases.MergeAliasSets(objVarID, source.UniqueVarIDs()[0])
 	case liveness.AliasSourceMultiple:
-		for _, srcID := range source.VarIDs() {
+		for _, srcID := range source.UniqueVarIDs() {
 			ctx.Aliases.MergeAliasSets(objVarID, srcID)
 		}
 	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
