@@ -474,6 +474,45 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"odd":  "fn <'a>(q: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
 			},
 		},
+		"TupleOfTwoParams_ElementLevelUnion": {
+			// Phase 8.9: a fresh tuple literal `[a, b]` typed as a
+			// homogeneous Array<T> at the slot — both element-level
+			// lifetimes collapse onto the same Array<T>'s element type
+			// and union there.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> mut Array<mut {x: number}> {
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pair": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> mut Array<mut ('a | 'b) {x: number}>",
+			},
+		},
+		"ObjectLiteral_PropertyLevelDistinctLifetimes": {
+			// Phase 8.9: object literal with distinct slots produces
+			// distinct property-level lifetimes on the result.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"wrap": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
+		"NestedObjectInArray_DescendsTwoSteps": {
+			// Phase 8.9: a leaf with path [IndexOf 0, PropertyOf "inner"]
+			// drives lifetime attachment to the inner property of the
+			// array's element type.
+			input: `
+				fn box(p: mut {x: number}) -> Array<{inner: mut {x: number}}> {
+					return [{inner: p}]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"box": "fn <'a>(p: mut 'a {x: number}) -> Array<{inner: mut 'a {x: number}}>",
+			},
+		},
 	}
 
 	for name, test := range tests {

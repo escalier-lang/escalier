@@ -271,11 +271,44 @@ func (c *Checker) attachLifetimeToResult(
 		return
 	}
 
-	// Determine which leaves are aliased across all alias-source
-	// expressions. Use insertion order so the resulting LifetimeParams
-	// list is deterministic.
-	seen := set.NewSet[int]()
-	var orderedLeaves []int
+	// Per-paramLeaf lifetime allocation: each aliased leaf gets at most
+	// one fresh LifetimeVar across all sources. Reused if the leaf
+	// already carries one from an earlier pass / the first generator
+	// call.
+	leafLV := map[int]*type_system.LifetimeVar{}
+	var newLifetimeParams []*type_system.LifetimeVar
+
+	// Per-slot accumulation in the result type. Each (Path-driven)
+	// destination slot collects the lifetimes contributed to it across
+	// all sourceExprs. Slot identity is the post-Prune Type pointer
+	// returned by descendIntoSlot, so two paths landing on the same
+	// element type of an Array<T> dedupe naturally.
+	type slotEntry struct {
+		members  []type_system.Lifetime
+		hasStatic bool
+	}
+	slotByPtr := map[type_system.Type]*slotEntry{}
+	var slotOrder []type_system.Type
+
+	addToSlot := func(slot type_system.Type, lt type_system.Lifetime) {
+		entry, exists := slotByPtr[slot]
+		if !exists {
+			entry = &slotEntry{}
+			slotByPtr[slot] = entry
+			slotOrder = append(slotOrder, slot)
+		}
+		entry.members = append(entry.members, lt)
+	}
+	markSlotStatic := func(slot type_system.Type) {
+		entry, exists := slotByPtr[slot]
+		if !exists {
+			entry = &slotEntry{}
+			slotByPtr[slot] = entry
+			slotOrder = append(slotOrder, slot)
+		}
+		entry.hasStatic = true
+	}
+
 	for _, re := range sourceExprs {
 		// Use the checker-aware variant so call expressions whose callee
 		// has inferred lifetime parameters propagate the relevant
@@ -284,100 +317,209 @@ func (c *Checker) attachLifetimeToResult(
 		// converge: on the second pass, peers' lifetimes are visible
 		// here.
 		src := determineCheckerAliasSource(re)
-		switch src.Kind() {
-		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-			for _, vid := range src.VarIDs() {
-				idx, ok := leafIndex[vid]
-				if !ok {
-					continue
-				}
-				if !seen.Contains(idx) {
-					seen.Add(idx)
-					orderedLeaves = append(orderedLeaves, idx)
-				}
+		if len(src.Leaves) == 0 {
+			continue
+		}
+		for _, leaf := range src.Leaves {
+			idx, ok := leafIndex[leaf.RootVarID]
+			if !ok {
+				continue
 			}
+			paramLeafEntry := leaves[idx]
+			if !typeCarriesLifetime(paramLeafEntry.leafType) {
+				continue
+			}
+
+			// Pick the destination slot in the return type. For
+			// fresh-rooted sources (`[a, b]`, `{k: a}`) the leaf path
+			// describes a descent INTO the new container — walk the
+			// return type along it. For alias-rooted sources (`obj`,
+			// `obj.field`) the path describes a projection into the
+			// source root, not a return-side slot — attach at the top.
+			var slot type_system.Type
+			switch src.Origin {
+			case liveness.AliasOriginFresh:
+				slot = descendIntoSlot(resultType, leaf.Path)
+			default:
+				slot = resultType
+			}
+			// If the destination slot can't carry a lifetime (e.g. the
+			// path landed on a type parameter, void, or a primitive),
+			// skip the leaf entirely. Allocating a fresh LifetimeVar
+			// for the param without anywhere to attach it on the
+			// result side would surface as a phantom 'a in the
+			// signature with no observable effect.
+			if !typeCarriesLifetime(slot) {
+				continue
+			}
+
+			if escapingLeaves.Contains(idx) {
+				markSlotStatic(slot)
+				continue
+			}
+
+			lv, allocated := leafLV[idx]
+			if !allocated {
+				// Reuse any LifetimeVar already on the leaf so the
+				// signature stays stable across re-runs / generator
+				// TReturn reuse from a prior yield call.
+				if existing, ok := type_system.PruneLifetime(type_system.GetLifetime(paramLeafEntry.leafType)).(*type_system.LifetimeVar); ok && existing != nil {
+					lv = existing
+				} else {
+					nameIdx := len(funcType.LifetimeParams) + len(newLifetimeParams)
+					lv = c.FreshLifetimeVar(lifetimeParamName(nameIdx))
+					newLifetimeParams = append(newLifetimeParams, lv)
+					setLifetimeOnType(paramLeafEntry.leafType, lv)
+				}
+				leafLV[idx] = lv
+			}
+			addToSlot(slot, lv)
 		}
 	}
 
-	if len(orderedLeaves) == 0 {
+	if len(slotOrder) == 0 {
 		return
 	}
 
-	// Walk the aliased leaves. For each, either:
-	//   (a) Reuse the leaf's existing lifetime (set by a prior pass —
-	//       the LifetimeVar is pointer-shared, already in
-	//       funcType.LifetimeParams).
-	//   (b) Treat as escaping — contribute 'static to the return.
-	//   (c) Allocate a fresh LifetimeVar — append it to LifetimeParams.
-	// returnLifetimeMembers accumulates ALL lifetimes contributed to
-	// the return, so that on a re-run we can rebuild the union over
-	// both pre-existing and newly-discovered leaves.
-	var newLifetimeParams []*type_system.LifetimeVar
-	returnHasStatic := false
-	var returnLifetimeMembers []type_system.Lifetime
-	for _, idx := range orderedLeaves {
-		leaf := leaves[idx]
-		if !typeCarriesLifetime(leaf.leafType) {
-			continue
+	// Attach a (possibly-unioned) lifetime to each destination slot.
+	// Members within a slot are deduped by pointer identity — repeating
+	// the same LifetimeVar across multiple sourceExprs is common (e.g.
+	// `return p` in two branches both contribute leaf p).
+	for _, slot := range slotOrder {
+		entry := slotByPtr[slot]
+		members := dedupeLifetimes(entry.members)
+		if entry.hasStatic {
+			members = append(members, &type_system.LifetimeValue{
+				Name:     "static",
+				IsStatic: true,
+			})
 		}
-		if escapingLeaves.Contains(idx) {
-			// Leaf already carries 'static. Record that the return
-			// shares this 'static lifetime, but don't allocate a 'a for
-			// it (since the leaf's lifetime is a concrete value, not a
-			// variable).
-			returnHasStatic = true
+		var lt type_system.Lifetime
+		switch len(members) {
+		case 0:
 			continue
+		case 1:
+			lt = members[0]
+		default:
+			lt = &type_system.LifetimeUnion{Lifetimes: members}
 		}
-		// Reuse an already-inferred LifetimeVar on the leaf so the
-		// signature stays stable across re-runs and pointer identity
-		// is preserved with anything that already references it. This
-		// also lets the second call (e.g. for generator TReturn) reuse
-		// a lifetime allocated by the first (yield T) call when the
-		// same parameter is aliased on both sides.
-		if existingLV, ok := type_system.PruneLifetime(type_system.GetLifetime(leaf.leafType)).(*type_system.LifetimeVar); ok && existingLV != nil {
-			returnLifetimeMembers = append(returnLifetimeMembers, existingLV)
-			continue
-		}
-		nameIdx := len(funcType.LifetimeParams) + len(newLifetimeParams)
-		newLV := c.FreshLifetimeVar(lifetimeParamName(nameIdx))
-		newLifetimeParams = append(newLifetimeParams, newLV)
-		returnLifetimeMembers = append(returnLifetimeMembers, newLV)
-
-		// Attach the lifetime to the leaf's type position.
-		setLifetimeOnType(leaf.leafType, newLV)
+		// TODO(#507): if slot is pointer-shared with a param leaf
+		// (which happens for unioned yield types and for `yield from`),
+		// this write bleeds through to the param. Shallow-clone the
+		// shared type here and substitute the clone back.
+		setLifetimeOnType(slot, lt)
 	}
-
-	if len(returnLifetimeMembers) == 0 && !returnHasStatic {
-		return
-	}
-
-	// Construct the lifetime to attach to the return type. The members
-	// include any fresh LifetimeVars allocated above plus a 'static value
-	// when the return aliases an escaping param. The union expresses
-	// "the result could have come from any of these sources, depending on
-	// which branch ran"; the caller treats the result as bounded by the
-	// shortest of the listed lifetimes (and 'static is unbounded).
-	if returnHasStatic {
-		returnLifetimeMembers = append(returnLifetimeMembers, &type_system.LifetimeValue{
-			Name:     "static",
-			IsStatic: true,
-		})
-	}
-	var returnLifetime type_system.Lifetime
-	if len(returnLifetimeMembers) == 1 {
-		returnLifetime = returnLifetimeMembers[0]
-	} else {
-		returnLifetime = &type_system.LifetimeUnion{Lifetimes: returnLifetimeMembers}
-	}
-	// TODO(#507): if resultType is pointer-shared with a param leaf
-	// (which happens for unioned yield types and for `yield from`),
-	// this write bleeds through to the param. Shallow-clone resultType
-	// here and substitute the clone back into funcType.Return.TypeArgs.
-	setLifetimeOnType(resultType, returnLifetime)
 
 	if len(newLifetimeParams) > 0 {
 		funcType.LifetimeParams = append(funcType.LifetimeParams, newLifetimeParams...)
 	}
+}
+
+// dedupeLifetimes returns a copy of members with duplicates (by pointer
+// identity) removed, preserving order of first occurrence. Used to
+// avoid emitting `('a | 'a)` when the same param leaf is aliased by
+// multiple branches of the same source position.
+func dedupeLifetimes(members []type_system.Lifetime) []type_system.Lifetime {
+	if len(members) <= 1 {
+		return members
+	}
+	seen := map[type_system.Lifetime]bool{}
+	out := make([]type_system.Lifetime, 0, len(members))
+	for _, m := range members {
+		if seen[m] {
+			continue
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	return out
+}
+
+// descendIntoSlot walks a return type along a projection path and
+// returns the slot type to attach a lifetime to. When a step cannot be
+// applied to the current type's shape (e.g. a PropertyOf step on an
+// Array<T>), descent stops gracefully and the deepest type reached so
+// far is returned. This realizes the spec's "the descent fails
+// gracefully (no attachment) if the return type's shape doesn't match
+// the path" clause: a partial descent still yields the best slot we
+// could find for a lifetime.
+func descendIntoSlot(t type_system.Type, path []liveness.ProjectionStep) type_system.Type {
+	current := t
+	for _, step := range path {
+		next := stepIntoSlot(current, step)
+		if next == nil {
+			return current
+		}
+		current = next
+	}
+	return current
+}
+
+// stepIntoSlot applies a single projection step to a type, returning
+// the inner slot type or nil if the step doesn't fit the type's shape.
+// The caller is responsible for unwrapping MutType — we Prune and peel
+// here so we can match against TupleType / ObjectType / Array<T> /
+// Promise<T> regardless of mutability wrappers.
+func stepIntoSlot(t type_system.Type, step liveness.ProjectionStep) type_system.Type {
+	pruned := type_system.Prune(t)
+	if mut, ok := pruned.(*type_system.MutType); ok {
+		pruned = type_system.Prune(mut.Type)
+	}
+	switch s := step.(type) {
+	case liveness.IndexOf:
+		if tup, ok := pruned.(*type_system.TupleType); ok {
+			if s.Index >= 0 && s.Index < len(tup.Elems) {
+				return tup.Elems[s.Index]
+			}
+			return nil
+		}
+		// IndexOf on Array<T>: collapse to ElementOf — the source
+		// expression was a tuple-like literal `[a, b]` whose container
+		// type happens to be Array<T> (all elements share T).
+		if elem := arrayElement(pruned); elem != nil {
+			return elem
+		}
+	case liveness.ElementOf:
+		if elem := arrayElement(pruned); elem != nil {
+			return elem
+		}
+	case liveness.PropertyOf:
+		if obj, ok := pruned.(*type_system.ObjectType); ok {
+			for _, elem := range obj.Elems {
+				prop, ok := elem.(*type_system.PropertyElem)
+				if !ok {
+					continue
+				}
+				if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == s.Key {
+					return prop.Value
+				}
+			}
+		}
+	case liveness.AwaitOf:
+		if ref, ok := pruned.(*type_system.TypeRefType); ok && type_system.QualIdentToString(ref.Name) == "Promise" && len(ref.TypeArgs) >= 1 {
+			return ref.TypeArgs[0]
+		}
+	case liveness.CastOf:
+		return pruned
+	}
+	return nil
+}
+
+// arrayElement returns the element type of an Array<T> reference, or
+// nil if the type isn't an Array<T>. Centralized so future container
+// recognizers (ReadonlyArray<T>, etc.) have one place to extend.
+func arrayElement(t type_system.Type) type_system.Type {
+	ref, ok := t.(*type_system.TypeRefType)
+	if !ok {
+		return nil
+	}
+	if type_system.QualIdentToString(ref.Name) != "Array" {
+		return nil
+	}
+	if len(ref.TypeArgs) != 1 {
+		return nil
+	}
+	return ref.TypeArgs[0]
 }
 
 // paramLeaf represents a leaf binding within a function-parameter pattern,
