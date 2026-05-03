@@ -574,6 +574,23 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"pickHead": "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}",
 			},
 		},
+		"PropertyAccess_CastedProjection": {
+			// Exercises the TypeCastExpr branch in
+			// determineCheckerAliasSource: a cast on the call result
+			// must pass through the per-slot leaves so the subsequent
+			// `.head` projection still narrows to `'a` only.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+				fn pickHeadCast(a: mut {x: number}, b: mut {x: number}) -> mut {x: number} {
+					return (wrap(a, b): {head: mut {x: number}, tail: mut {x: number}}).head
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pickHeadCast": "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}",
+			},
+		},
 		"IndexAccess_ProjectsPerSlotLifetime": {
 			// Tuple-slot counterpart to PropertyAccess_ProjectsPerSlotLifetime:
 			// `pair(a, b)[0]` carries only `'a`, so `pickFirst` ties
@@ -642,6 +659,61 @@ func TestInferLifetimeTypes(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"pair": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {0: mut 'a {x: number}, name: mut 'b {x: number}}",
+			},
+		},
+		"AsyncFn_IdentityCarriesLifetimeIntoPromise": {
+			// An async fn that returns its mutable param should infer
+			// a lifetime on that param and propagate it into the
+			// Promise<T> wrapper around the return type. The unwrap
+			// of Promise<T> for inference happens in inferLifetimesCore
+			// based on async mode.
+			input: `
+				async fn identity(p: mut {x: number}) -> mut {x: number} {
+					return p
+				}
+			`,
+			expectedTypes: map[string]string{
+				"identity": "fn <'a>(p: mut 'a {x: number}) -> Promise<mut 'a {x: number}, never>",
+			},
+		},
+		"AsyncFn_ProjectsPerSlotLifetimeIntoPromise": {
+			// Composite-return async fn: the per-slot leaves produced
+			// by the object literal should drive per-property lifetime
+			// attachment inside the Promise<T> wrapper.
+			input: `
+				async fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"wrap": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Promise<{head: mut 'a {x: number}, tail: mut 'b {x: number}}, never>",
+			},
+		},
+		"AsyncFn_AwaitedReturnPropagatesLifetime_KnownGap": {
+			// An async caller that returns `await callee(p)` where
+			// callee is `async fn(p: mut T) -> mut T` should — once
+			// Promise<T> descent is implemented in
+			// collectReturnLifetimeSlots — tie the caller's return to
+			// `p`'s lifetime. Today the call's Promise<T> return type
+			// isn't descended into, so no per-slot leaves are produced
+			// and the caller's signature collapses to no inferred
+			// lifetimes. Pinning current behavior; tracked in #544.
+			//
+			// The AwaitExpr branch in determineCheckerAliasSource is
+			// already in place, so once #544 lands and the call
+			// produces leaves, ProjectStep will consume the AwaitOf
+			// step from each leaf and surface the underlying root.
+			input: `
+				async fn identity(p: mut {x: number}) -> mut {x: number} {
+					return p
+				}
+				async fn caller(p: mut {x: number}) -> mut {x: number} {
+					return await identity(p)
+				}
+			`,
+			expectedTypes: map[string]string{
+				// Target (post-#544): "fn <'a>(p: mut 'a {x: number}) -> Promise<mut 'a {x: number}, never>"
+				"caller": "fn (p: mut {x: number}) -> Promise<mut 'a {x: number}, never>",
 			},
 		},
 		"NestedObjectInArray_DescendsTwoSteps": {

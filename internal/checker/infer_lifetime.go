@@ -1339,6 +1339,8 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 		return inner
 	case *ast.TypeCastExpr:
 		return determineCheckerAliasSource(e.Expr)
+	case *ast.AwaitExpr:
+		return liveness.ProjectStep(determineCheckerAliasSource(e.Arg), liveness.AwaitOf{})
 	}
 
 	callExpr, ok := expr.(*ast.CallExpr)
