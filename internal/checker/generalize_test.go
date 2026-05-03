@@ -183,7 +183,7 @@ func TestDetermineCheckerAliasSource_UnionLifetimeParam(t *testing.T) {
 	src := determineCheckerAliasSource(call)
 
 	// Expect aliasing of args 1 and 2 (overlap on 'a), but not arg 3 ('b only).
-	assert.Equal(t, liveness.AliasSourceMultiple, src.Kind(),
+	assert.Equal(t, liveness.AliasSourceMultiple, src.RootKind(),
 		"two distinct sources should produce AliasSourceMultiple")
 	assert.ElementsMatch(t,
 		[]liveness.VarID{liveness.VarID(101), liveness.VarID(102)},

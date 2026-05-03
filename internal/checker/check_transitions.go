@@ -283,7 +283,7 @@ func (c *Checker) trackAliasesForIdentPat(
 		aliasMut = liveness.AliasImmutable
 	}
 
-	switch source.Kind() {
+	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
 		sourceVarID := source.VarIDs()[0]
 		ctx.Aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
@@ -339,7 +339,7 @@ func (c *Checker) trackAliasesForIdentPat(
 		// Unknown — create a fresh value conservatively
 		ctx.Aliases.NewValue(targetVarID, aliasMut)
 	default:
-		panic(fmt.Sprintf("trackAliasesForIdentPat: unhandled alias source kind %d", source.Kind()))
+		panic(fmt.Sprintf("trackAliasesForIdentPat: unhandled alias source kind %d", source.RootKind()))
 	}
 
 	return nil
@@ -428,7 +428,7 @@ func (c *Checker) trackAliasesForDestructuringPat(
 		return nil
 	}
 
-	switch source.Kind() {
+	switch source.RootKind() {
 	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 		// Each destructured binding aliases the source(s).
 		var allErrors []Error
@@ -483,7 +483,7 @@ func (c *Checker) trackAliasesForDestructuringPat(
 			ctx.Aliases.NewValue(targetVarID, aliasMut)
 		}
 	default:
-		panic(fmt.Sprintf("trackAliasesForDestructuringPat: unhandled alias source kind %d", source.Kind()))
+		panic(fmt.Sprintf("trackAliasesForDestructuringPat: unhandled alias source kind %d", source.RootKind()))
 	}
 
 	return nil
@@ -547,7 +547,7 @@ func (c *Checker) trackAliasesForAssignment(
 
 	source := determineCheckerAliasSource(rhs)
 
-	switch source.Kind() {
+	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
 		sourceVarID := source.VarIDs()[0]
 
@@ -610,7 +610,7 @@ func (c *Checker) trackAliasesForAssignment(
 	case liveness.AliasSourceUnknown:
 		ctx.Aliases.Reassign(targetVarID, nil, aliasMut)
 	default:
-		panic(fmt.Sprintf("trackAliasesForAssignment: unhandled alias source kind %d", source.Kind()))
+		panic(fmt.Sprintf("trackAliasesForAssignment: unhandled alias source kind %d", source.RootKind()))
 	}
 
 	return nil
@@ -642,7 +642,7 @@ func (c *Checker) trackAliasesForPropAssignment(
 	}
 
 	source := determineCheckerAliasSource(rhs)
-	switch source.Kind() {
+	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
 		ctx.Aliases.MergeAliasSets(objVarID, source.VarIDs()[0])
 	case liveness.AliasSourceMultiple:
@@ -652,7 +652,7 @@ func (c *Checker) trackAliasesForPropAssignment(
 	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
 		// No alias relationship to track.
 	default:
-		panic(fmt.Sprintf("trackAliasesForPropAssignment: unhandled alias source kind %d", source.Kind()))
+		panic(fmt.Sprintf("trackAliasesForPropAssignment: unhandled alias source kind %d", source.RootKind()))
 	}
 }
 

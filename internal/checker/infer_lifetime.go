@@ -855,7 +855,7 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 			}
 			for j := i; j < len(args); j++ {
 				src := determineCheckerAliasSource(args[j])
-				switch src.Kind() {
+				switch src.RootKind() {
 				case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 					for _, mut := range muts {
 						for _, vid := range src.VarIDs() {
@@ -888,7 +888,7 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 		// liveness helper treats every CallExpr as fresh, hiding such
 		// transitive aliases from the static-escape check.
 		src := determineCheckerAliasSource(args[i])
-		switch src.Kind() {
+		switch src.RootKind() {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, mut := range muts {
 				for _, vid := range src.VarIDs() {
@@ -1364,7 +1364,7 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 			continue
 		}
 		argSource := determineCheckerAliasSource(callExpr.Args[i])
-		switch argSource.Kind() {
+		switch argSource.RootKind() {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, id := range argSource.VarIDs() {
 				if !seen.Contains(id) {

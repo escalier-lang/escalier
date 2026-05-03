@@ -14,7 +14,7 @@ import (
 // formatAliasSource formats an AliasSource as a readable string for test assertions.
 // Examples: "fresh", "unknown", "variable [x]", "multiple [a, b]"
 func formatAliasSource(source AliasSource, names map[VarID]string) string {
-	kind := source.Kind()
+	kind := source.RootKind()
 	switch kind {
 	case AliasSourceFresh:
 		return "fresh"

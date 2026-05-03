@@ -97,12 +97,18 @@ type AliasSource struct {
 	Leaves []AliasLeaf
 }
 
-// Kind returns the legacy alias-source kind. For backward compatibility
-// with consumers that only track root-level aliasing (the alias tracker,
-// transition checking), a fresh-origin value reports Fresh regardless of
-// whether it has nested-slot leaves — only Alias-origin leaves contribute
-// to the legacy Variable/Multiple classification.
-func (s AliasSource) Kind() AliasSourceKind {
+// Kind returns a root-level view of the alias source for consumers
+// whose data model is "which variable IDs does this value alias at the
+// root?" — the alias tracker, transition checking, and the static-escape
+// propagation, none of which understand projection paths. A fresh-origin
+// value reports Fresh regardless of whether it has nested-slot leaves
+// (the new container's root aliases nothing, even if `[a, b]` captures
+// `a` and `b` at element slots); only Alias-origin leaves contribute to
+// the Variable/Multiple classification.
+//
+// Lifetime attachment uses the path-aware Origin + Leaves view directly.
+// Both views are load-bearing — neither is a backward-compat shim.
+func (s AliasSource) RootKind() AliasSourceKind {
 	switch s.Origin {
 	case AliasOriginFresh:
 		return AliasSourceFresh
