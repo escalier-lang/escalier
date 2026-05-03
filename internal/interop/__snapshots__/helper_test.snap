@@ -4457,6 +4457,7 @@
     Static:   false,
     Private:  false,
     Readonly: false,
+    Optional: false,
     Span_:    ast.Span{
         Start:    ast.Location{Line:1, Column:22},
         End:      ast.Location{Line:1, Column:35},
@@ -4491,6 +4492,7 @@
     Static:   false,
     Private:  false,
     Readonly: true,
+    Optional: false,
     Span_:    ast.Span{
         Start:    ast.Location{Line:1, Column:31},
         End:      ast.Location{Line:1, Column:41},
@@ -4525,6 +4527,7 @@
     Static:   true,
     Private:  false,
     Readonly: false,
+    Optional: false,
     Span_:    ast.Span{
         Start:    ast.Location{Line:1, Column:29},
         End:      ast.Location{Line:1, Column:44},
@@ -4559,6 +4562,7 @@
     Static:   false,
     Private:  true,
     Readonly: false,
+    Optional: false,
     Span_:    ast.Span{
         Start:    ast.Location{Line:1, Column:30},
         End:      ast.Location{Line:1, Column:44},
@@ -4593,6 +4597,7 @@
     Static:   false,
     Private:  false,
     Readonly: false,
+    Optional: false,
     Span_:    ast.Span{
         Start:    ast.Location{Line:1, Column:22},
         End:      ast.Location{Line:1, Column:42},
@@ -4627,6 +4632,7 @@
     Static:   true,
     Private:  false,
     Readonly: true,
+    Optional: false,
     Span_:    ast.Span{
         Start:    ast.Location{Line:1, Column:38},
         End:      ast.Location{Line:1, Column:54},

@@ -387,11 +387,117 @@ func TestConstructorInferredTypes(t *testing.T) {
 	}
 }
 
-// Note: optional-field syntax (`x?: T`) is in the §2.4 plan but isn't
-// yet plumbed through the AST, so the "only optional fields → Foo()"
-// case described in the plan can't be exercised at the source level
-// today. The closest current shape — an empty class — is already
-// covered by `TestSynthesizedConstructor/NoFields`.
+// TestOptionalFields covers Phase 5: optional field declarations
+// (`x?: T`) are excluded from the definite-assignment requirement and
+// from synthesized-constructor parameter lists.
+func TestOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	t.Run("AllOptionalSynthesizesZeroArgCtor", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			class Foo {
+				x?: number,
+				y?: string,
+			}
+			val f = Foo()
+		`
+		errs := inferModuleErrors(t, input)
+		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+		ns := mustInferAsModule(t, input)
+		actual := collectBindingTypes(ns)
+		assert.Equal(t, "Foo", actual["f"])
+	})
+
+	t.Run("OptionalBitPropagatedToInstanceType", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			class Foo {
+				x: number,
+				y?: string,
+			}
+		`
+		errs := inferModuleErrors(t, input)
+		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+		ns := mustInferAsModule(t, input)
+		alias, ok := ns.Types["Foo"]
+		require.True(t, ok, "type alias Foo not found")
+		got := alias.Type.String()
+		assert.Contains(t, got, "y?:",
+			"expected instance type to render `y?:` (Optional propagated); got %q", got)
+		assert.NotContains(t, got, "x?:",
+			"required field x must not render as optional; got %q", got)
+	})
+
+	t.Run("MixedRequiredAndOptionalDropsOptionalFromParams", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			class Mixed {
+				x: number,
+				y?: number,
+			}
+			val m = Mixed(1)
+		`
+		errs := inferModuleErrors(t, input)
+		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+		ns := mustInferAsModule(t, input)
+		actual := collectBindingTypes(ns)
+		assert.Equal(t, "Mixed", actual["m"])
+	})
+
+	t.Run("ExplicitCtorMayLeaveOptionalUnassigned", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			class Box {
+				x: number,
+				note?: string,
+				constructor(mut self, x: number) {
+					self.x = x
+				}
+			}
+			val b = Box(1)
+		`
+		errs := inferModuleErrors(t, input)
+		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+	})
+
+	t.Run("OptionalAssignedInSomeBranchesIsOk", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			class Box {
+				x: number,
+				note?: string,
+				constructor(mut self, x: number, tag: boolean) {
+					self.x = x
+					if tag {
+						self.note = "tagged"
+					}
+				}
+			}
+			val b = Box(1, true)
+		`
+		errs := inferModuleErrors(t, input)
+		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+	})
+
+	t.Run("StaticOptionalWithDefaultIsParseError", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			class Foo {
+				static x?: number = 0,
+			}
+		`
+		// Triggers both the static+optional and optional+default
+		// diagnostics; the dedicated single-error cases live in
+		// internal/parser/stmt_test.go.
+		source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		_, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+		require.NotEmpty(t, parseErrors,
+			"expected a parse error for `static x?: number = 0`")
+	})
+}
 
 // Note on `mut self` / explicit-return-type validation: the surface
 // parser already rejects `constructor(self, ...)` /

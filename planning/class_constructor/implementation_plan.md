@@ -22,7 +22,7 @@ cut-over, on top of the new single-constructor codepath.
 |     3 | Definite-assignment analysis on constructor bodies                                         | 2          | Done   |
 |     4 | Combined cut-over: single-ctor codegen, fixture migration, removal of primary ctor + `data` | 3          | Done (PR [#520](https://github.com/escalier-lang/escalier/pull/520)) |
 |   4.9 | Post-cut-over cleanups (parser tightening, follow-up issues filed)                         | 4          | Done   |
-|     5 | Optional fields (`x?: T`): parser/AST plumbing, exclude from definite-assignment, enable all-optional synthesized ctor | 4          |        |
+|     5 | Optional fields (`x?: T`): parser/AST plumbing, exclude from definite-assignment, enable all-optional synthesized ctor | 4          | Done   |
 |     6 | Multiple constructors: overload resolution, runtime discriminator analysis, merged codegen | 5          |        |
 |     7 | Polish: error messages, diagnostics, documentation                                         | 6          |        |
 

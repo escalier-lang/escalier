@@ -496,12 +496,8 @@ func (ic *initChecker) checkExitMissing(span ast.Span, st initState) {
 
 // requiredFieldNames returns the names of instance fields that must be
 // definitely-assigned by every reachable exit of a constructor body.
-// Static fields, fields with default initializers (`= expr` or the legacy
-// `x: expr` shorthand), and fields with computed keys are excluded.
-//
-// Optional fields (`x?: T`) are not yet plumbed through the AST
-// (see the §2.4 note in `tests/constructor_test.go`); when they are,
-// they should be excluded here too.
+// Static fields, optional fields (`x?: T`), fields with default
+// initializers (`= expr`), and fields with computed keys are excluded.
 func requiredFieldNames(decl *ast.ClassDecl) []string {
 	out := []string{}
 	for _, elem := range decl.Body {
@@ -510,6 +506,9 @@ func requiredFieldNames(decl *ast.ClassDecl) []string {
 			continue
 		}
 		if field.Static {
+			continue
+		}
+		if field.Optional {
 			continue
 		}
 		switch k := field.Name.(type) {
