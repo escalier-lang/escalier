@@ -394,10 +394,9 @@ func TestOptionalFields(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		input           string
-		expectedTypes   map[string]string   // binding name -> type string
-		typeContains    map[string][]string // type alias name -> substrings that must appear
-		typeNotContains map[string][]string // type alias name -> substrings that must not appear
+		input             string
+		expectedTypes     map[string]string // binding name -> type string
+		expectedAliasType map[string]string // type alias name -> full type string
 	}
 
 	cases := map[string]testCase{
@@ -418,8 +417,9 @@ func TestOptionalFields(t *testing.T) {
 					y?: string,
 				}
 			`,
-			typeContains:    map[string][]string{"Foo": {"y?:"}},
-			typeNotContains: map[string][]string{"Foo": {"x?:"}},
+			expectedAliasType: map[string]string{
+				"Foo": "{x: number, y?: string}",
+			},
 		},
 		"MixedRequiredAndOptionalDropsOptionalFromParams": {
 			input: `
@@ -474,23 +474,11 @@ func TestOptionalFields(t *testing.T) {
 						"unexpected type for binding %q", binding)
 				}
 			}
-			for typeName, subs := range tc.typeContains {
+			for typeName, want := range tc.expectedAliasType {
 				alias, ok := ns.Types[typeName]
 				require.Truef(t, ok, "type alias %q not found", typeName)
-				got := alias.Type.String()
-				for _, sub := range subs {
-					assert.Containsf(t, got, sub,
-						"expected type %q to contain %q; got %q", typeName, sub, got)
-				}
-			}
-			for typeName, subs := range tc.typeNotContains {
-				alias, ok := ns.Types[typeName]
-				require.Truef(t, ok, "type alias %q not found", typeName)
-				got := alias.Type.String()
-				for _, sub := range subs {
-					assert.NotContainsf(t, got, sub,
-						"expected type %q not to contain %q; got %q", typeName, sub, got)
-				}
+				assert.Equalf(t, want, alias.Type.String(),
+					"unexpected type for alias %q", typeName)
 			}
 		})
 	}
