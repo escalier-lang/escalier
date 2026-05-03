@@ -202,6 +202,13 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 		if field.Static {
 			continue
 		}
+		// Optional fields (`x?: T`) are not synthesized as constructor
+		// parameters — they default to `undefined` and may be assigned
+		// later. Including them would force callers to pass arguments
+		// for every optional field.
+		if field.Optional {
+			continue
+		}
 
 		fieldSpan := field.Span()
 

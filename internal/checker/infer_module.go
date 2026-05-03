@@ -504,7 +504,11 @@ func (c *Checker) InferComponent(
 						}
 
 						if elem.Static {
-							// Static fields go to the class object type
+							// Static fields go to the class object type.
+							// Optional is intentionally not propagated here:
+							// the parser rejects `static x?: T`, so a static
+							// field with Optional=true only reaches this
+							// point in error-recovery paths.
 							tvar := c.FreshVar(nil)
 							tvar.FromBinding = true
 							propElem := type_system.NewPropertyElem(*key, tvar)
@@ -519,6 +523,7 @@ func (c *Checker) InferComponent(
 							tvar.FromBinding = true
 							propElem := type_system.NewPropertyElem(*key, tvar)
 							propElem.Readonly = elem.Readonly
+							propElem.Optional = elem.Optional
 							objTypeElems = append(
 								objTypeElems,
 								propElem,

@@ -387,11 +387,136 @@ func TestConstructorInferredTypes(t *testing.T) {
 	}
 }
 
-// Note: optional-field syntax (`x?: T`) is in the §2.4 plan but isn't
-// yet plumbed through the AST, so the "only optional fields → Foo()"
-// case described in the plan can't be exercised at the source level
-// today. The closest current shape — an empty class — is already
-// covered by `TestSynthesizedConstructor/NoFields`.
+// TestOptionalFields covers Phase 5: optional field declarations
+// (`x?: T`) are excluded from the definite-assignment requirement and
+// from synthesized-constructor parameter lists.
+func TestOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		input             string
+		expectedTypes     map[string]string // binding name -> type string
+		expectedAliasType map[string]string // type alias name -> full type string
+	}
+
+	cases := map[string]testCase{
+		"AllOptionalSynthesizesZeroArgCtor": {
+			input: `
+				class Foo {
+					x?: number,
+					y?: string,
+				}
+				val f = Foo()
+			`,
+			expectedTypes: map[string]string{"f": "Foo"},
+			expectedAliasType: map[string]string{
+				"Foo": "{x?: number, y?: string}",
+			},
+		},
+		"OptionalBitPropagatedToInstanceType": {
+			input: `
+				class Foo {
+					x: number,
+					y?: string,
+				}
+			`,
+			expectedAliasType: map[string]string{
+				"Foo": "{x: number, y?: string}",
+			},
+		},
+		"MixedRequiredAndOptionalDropsOptionalFromParams": {
+			input: `
+				class Mixed {
+					x: number,
+					y?: number,
+				}
+				val m = Mixed(1)
+			`,
+			expectedTypes: map[string]string{"m": "Mixed"},
+		},
+		"ExplicitCtorMayLeaveOptionalUnassigned": {
+			input: `
+				class Box {
+					x: number,
+					note?: string,
+					constructor(mut self, x: number) {
+						self.x = x
+					}
+				}
+				val b = Box(1)
+			`,
+			expectedAliasType: map[string]string{
+				"Box": "{x: number, note?: string}",
+			},
+		},
+		"OptionalAssignedInSomeBranchesIsOk": {
+			input: `
+				class Box {
+					x: number,
+					note?: string,
+					constructor(mut self, x: number, tag: boolean) {
+						self.x = x
+						if tag {
+							self.note = "tagged"
+						}
+					}
+				}
+				val b = Box(1, true)
+			`,
+			expectedAliasType: map[string]string{
+				"Box": "{x: number, note?: string}",
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			errs := inferModuleErrors(t, tc.input)
+			require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+			ns := mustInferAsModule(t, tc.input)
+
+			if len(tc.expectedTypes) > 0 {
+				actual := collectBindingTypes(ns)
+				for binding, want := range tc.expectedTypes {
+					assert.Equal(t, want, actual[binding],
+						"unexpected type for binding %q", binding)
+				}
+			}
+			for typeName, want := range tc.expectedAliasType {
+				alias, ok := ns.Types[typeName]
+				require.Truef(t, ok, "type alias %q not found", typeName)
+				assert.Equalf(t, want, alias.Type.String(),
+					"unexpected type for alias %q", typeName)
+			}
+		})
+	}
+
+	// StaticOptionalIsParseError is kept separate: it exercises the
+	// parser-error path rather than the inference pipeline.
+	t.Run("StaticOptionalIsParseError", func(t *testing.T) {
+		t.Parallel()
+		input := `
+			class Foo {
+				static x?: number,
+			}
+		`
+		source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		_, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+		require.NotEmpty(t, parseErrors,
+			"expected a parse error for `static x?: number`")
+		var sawStaticOptional bool
+		for _, e := range parseErrors {
+			if strings.Contains(e.Message, "Static fields cannot be optional") {
+				sawStaticOptional = true
+			}
+		}
+		assert.True(t, sawStaticOptional,
+			"expected `Static fields cannot be optional` diagnostic; got: %v", parseErrors)
+	})
+}
 
 // Note on `mut self` / explicit-return-type validation: the surface
 // parser already rejects `constructor(self, ...)` /
@@ -422,7 +547,6 @@ func TestSubclassSynthesisIsNotAllowed(t *testing.T) {
 	require.NotEmpty(t, errs,
 		"expected a diagnostic for subclass without an explicit constructor; got none")
 }
-
 
 func formatErrs(errs []Error) []string {
 	out := make([]string, len(errs))

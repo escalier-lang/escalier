@@ -6850,6 +6850,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:15},
@@ -6881,6 +6882,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:4, Column:15},
@@ -9042,6 +9044,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:18},
@@ -9385,6 +9388,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:15},
@@ -9580,6 +9584,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:14},
@@ -9775,6 +9780,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:15},
@@ -11144,6 +11150,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:14},
@@ -11351,6 +11358,7 @@
                 Static:   false,
                 Private:  false,
                 Readonly: false,
+                Optional: false,
                 Span_:    ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:18},

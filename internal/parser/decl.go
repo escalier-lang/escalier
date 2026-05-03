@@ -556,8 +556,25 @@ modifiers_done:
 		//                            initialized in the constructor body.
 		var typeAnn ast.TypeAnn
 		var value ast.Expr
+		isOptional := false
 
 		next = p.lexer.peek()
+
+		// `name?: T` declares an optional field. The `?` binds to the
+		// name and must precede the type annotation.
+		if next.Type == Question {
+			p.lexer.consume()
+			// We still set isOptional even when isStatic — downstream
+			// consumers (requiredFieldNames, synthesizeConstructorElem)
+			// short-circuit on Static first, so leaving the bit set keeps
+			// error recovery consistent rather than depending on the
+			// order of these guards.
+			isOptional = true
+			if isStatic {
+				p.reportError(next.Span, "Static fields cannot be optional")
+			}
+			next = p.lexer.peek()
+		}
 
 		if next.Type == Colon {
 			p.lexer.consume()
@@ -587,6 +604,7 @@ modifiers_done:
 			Static:   isStatic,
 			Private:  isPrivate,
 			Readonly: isReadonly,
+			Optional: isOptional,
 			Span_:    span,
 		}
 	}

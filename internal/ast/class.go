@@ -67,6 +67,7 @@ type FieldElem struct {
 	Static   bool // true if this is a static field
 	Private  bool // true if this field is private
 	Readonly bool // true if this field is readonly
+	Optional bool // true if this field is declared `name?: T`
 	Span_    Span
 }
 

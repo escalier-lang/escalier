@@ -400,6 +400,10 @@ func TestRetiredClassSyntax(t *testing.T) {
 			input:         `class Foo { x, }`,
 			wantSubstring: "Class fields require a type annotation",
 		},
+		"StaticOptionalField": {
+			input:         `class Foo { static x?: number, }`,
+			wantSubstring: "Static fields cannot be optional",
+		},
 	}
 
 	for name, test := range tests {
