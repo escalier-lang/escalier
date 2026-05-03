@@ -367,7 +367,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		// bound to whatever the customMatcher's subject type is, rather than
 		// being directly bound to the ExtractorType wrapper itself.
 		if ext, ok := t2.(*type_system.ExtractorType); ok {
-			return c.unifyExtractor(ctx, t1, ext, false, seen)
+			return c.unifyExtractor(ctx, t1, ext, subjectFromT1, seen)
 		}
 		return c.bind(ctx, t1, t2, seen)
 	}
@@ -378,7 +378,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		// bound to whatever the customMatcher's subject type is, rather than
 		// being directly bound to the ExtractorType wrapper itself.
 		if ext, ok := t1.(*type_system.ExtractorType); ok {
-			return c.unifyExtractor(ctx, t2, ext, true, seen)
+			return c.unifyExtractor(ctx, t2, ext, subjectFromT2, seen)
 		}
 		return c.bind(ctx, t1, t2, seen)
 	}
@@ -828,11 +828,11 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	}
 	// | _, ExtractorType -> ...
 	if ext, ok := t2.(*type_system.ExtractorType); ok {
-		return c.unifyExtractor(ctx, t1, ext, false, seen)
+		return c.unifyExtractor(ctx, t1, ext, subjectFromT1, seen)
 	}
 	// | ExtractorType, _ -> ...
 	if ext, ok := t1.(*type_system.ExtractorType); ok {
-		return c.unifyExtractor(ctx, t2, ext, true, seen)
+		return c.unifyExtractor(ctx, t2, ext, subjectFromT2, seen)
 	}
 	// | ObjectType, ObjectType -> ...
 	if obj1, ok := t1.(*type_system.ObjectType); ok {
@@ -1022,9 +1022,9 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			hasRests2 := len(restTypes2) > 0
 
 			if hasRests1 && !hasRests2 {
-				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj1, obj2, keys2, namedElems2, false, seen))
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj1, obj2, keys2, namedElems2, subjectFromT1, seen))
 			} else if hasRests2 && !hasRests1 {
-				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, true, seen))
+				errors = slices.Concat(errors, c.unifyClosedWithRests(ctx, obj2, obj1, keys1, namedElems1, subjectFromT2, seen))
 			} else if hasRests1 && hasRests2 {
 				// TODO(#410): implement unification when both sides have RestSpreadElems
 				return []Error{&UnimplementedError{message: "unify types with rest elems on both sides"}}
@@ -1440,22 +1440,39 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	return []Error{&noMatchError{}}
 }
 
+// unifyDirection records which side of the original t1/t2 pair the
+// "subject" came from when an ExtractorType (or rest-bearing object) was
+// peeled off the other side. It lets helpers like unifyExtractor and
+// unifyClosedWithRests preserve the caller's t1/t2 ordering when they
+// recurse back into Unify, which matters for asymmetric checks (e.g.
+// variance, pattern-match mode).
+type unifyDirection int
+
+const (
+	// subjectFromT1 means the subject was t1 and the wrapper (extractor /
+	// rest-object) came from t2 — recurse with (subject, ...).
+	subjectFromT1 unifyDirection = iota
+	// subjectFromT2 means the subject was t2 and the wrapper came from
+	// t1 — recurse with (..., subject) to preserve t1/t2 order.
+	subjectFromT2
+)
+
 // unifyExtractor unifies a subject type against an ExtractorType by finding
 // the [Symbol.customMatcher] method, unifying the subject with the method's
 // param type, and then unifying the extractor's args with the method's return
-// tuple elements. When swapped is true, the Unify argument order is reversed
-// (ext args first, tuple elements second) to preserve the original t1/t2
-// directionality from the caller.
+// tuple elements. When dir is subjectFromT2, the Unify argument order is
+// reversed (ext args first, tuple elements second) to preserve the original
+// t1/t2 directionality from the caller.
 func (c *Checker) unifyExtractor(
 	ctx Context,
 	subject type_system.Type,
 	ext *type_system.ExtractorType,
-	swapped bool,
+	dir unifyDirection,
 	seen unifySeen,
 ) []Error {
 	// Helper to call Unify in the correct argument order.
 	unify := func(a, b type_system.Type) []Error {
-		if swapped {
+		if dir == subjectFromT2 {
 			return c.unifyInner(ctx, b, a, seen)
 		}
 		return c.unifyInner(ctx, a, b, seen)
@@ -1617,16 +1634,16 @@ func (c *Checker) unifyClosedWithRests(
 	restObj, targetObj *type_system.ObjectType,
 	targetKeys []type_system.ObjTypeKey,
 	targetNamed map[type_system.ObjTypeKey]type_system.Type,
-	swapped bool,
+	dir unifyDirection,
 	seen unifySeen,
 ) []Error {
 	errors := []Error{}
 
 	// unifyPair preserves the original t1/t2 ordering for Unify calls.
-	// When swapped is false, restObj=t1 and targetObj=t2.
-	// When swapped is true, restObj=t2 and targetObj=t1.
+	// When dir is subjectFromT1, restObj=t1 and targetObj=t2.
+	// When dir is subjectFromT2, restObj=t2 and targetObj=t1.
 	unifyPair := func(restVal, targetVal type_system.Type) []Error {
-		if swapped {
+		if dir == subjectFromT2 {
 			return c.unifyInner(ctx, targetVal, restVal, seen)
 		}
 		return c.unifyInner(ctx, restVal, targetVal, seen)

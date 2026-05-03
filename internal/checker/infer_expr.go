@@ -504,7 +504,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				}
 
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					methodCtx, methodType, paramBindings, methodExpr.Fn.Params, methodExpr.Fn.Body, methodExpr.Fn.Async, false)
+					methodCtx, methodType, paramBindings,
+					methodExpr.Fn.Params, methodExpr.Fn.Body,
+					asyncModeFrom(methodExpr.Fn.Async), nonConstructorBody,
+				)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.GetterExpr:
@@ -519,7 +522,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				getterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, getterExpr.Fn.Params, getterExpr.Fn.Body, getterExpr.Fn.Async, false)
+					objCtx, funcType, paramBindings,
+					getterExpr.Fn.Params, getterExpr.Fn.Body,
+					asyncModeFrom(getterExpr.Fn.Async), nonConstructorBody,
+				)
 				errors = slices.Concat(errors, inferErrors)
 
 			case *ast.SetterExpr:
@@ -534,7 +540,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 				setterExpr := elem
 				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings, setterExpr.Fn.Params, setterExpr.Fn.Body, setterExpr.Fn.Async, false)
+					objCtx, funcType, paramBindings,
+					setterExpr.Fn.Params, setterExpr.Fn.Body,
+					asyncModeFrom(setterExpr.Fn.Async), nonConstructorBody,
+				)
 				errors = slices.Concat(errors, inferErrors)
 			case *ast.ObjSpreadExpr:
 				// Already handled in the first loop — nothing to do here.
@@ -557,7 +566,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			funcCtx.CallSiteTypeVars = &callSiteTypeVars
 		}
 
-		inferErrors := c.inferFuncBodyWithFuncSigType(funcCtx, funcType, paramBindings, expr.FuncSig.Params, expr.Body, expr.FuncSig.Async, false)
+		inferErrors := c.inferFuncBodyWithFuncSigType(
+			funcCtx, funcType, paramBindings,
+			expr.FuncSig.Params, expr.Body,
+			asyncModeFrom(expr.FuncSig.Async), nonConstructorBody,
+		)
 		errors = slices.Concat(errors, inferErrors)
 
 		// Only generalize top-level FuncExprs. Nested FuncExprs (inside function

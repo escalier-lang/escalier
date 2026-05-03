@@ -239,15 +239,51 @@ func (c *Checker) inferFuncSig(
 // to `self.<field>` inside the body. Pass true only from the constructor
 // inference entry point — nested function bodies must pass false so
 // closures declared inside a constructor cannot bypass the readonly check.
+// asyncMode reports whether a function body is being inferred in
+// async (Promise-wrapping) context or as a plain synchronous body.
+type asyncMode int
+
+const (
+	syncFunc asyncMode = iota
+	asyncFunc
+)
+
+func (am asyncMode) isAsync() bool { return am == asyncFunc }
+
+// asyncModeFrom converts an AST-level async bool (e.g. ast.FuncSig.Async)
+// into the corresponding asyncMode.
+func asyncModeFrom(b bool) asyncMode {
+	if b {
+		return asyncFunc
+	}
+	return syncFunc
+}
+
+// constructorBodyMode marks whether the body about to be inferred is the
+// top-level body of a constructor (relaxes readonly-init for `self.<field>`
+// writes) or any other function body. The flag is set on the body's own
+// scope only — nested function bodies clear it so closures declared inside
+// a constructor cannot bypass the readonly check.
+type constructorBodyMode int
+
+const (
+	nonConstructorBody constructorBodyMode = iota
+	constructorBody
+)
+
+func (m constructorBodyMode) isConstructor() bool { return m == constructorBody }
+
 func (c *Checker) inferFuncBodyWithFuncSigType(
 	ctx Context,
 	funcSigType *type_system.FuncType,
 	paramBindings map[string]*type_system.Binding,
 	astParams []*ast.Param,
 	body *ast.Block,
-	isAsync bool,
-	isConstructorBody bool,
+	async asyncMode,
+	ctorBody constructorBodyMode,
 ) []Error {
+	isAsync := async.isAsync()
+	isConstructorBody := ctorBody.isConstructor()
 	errors := []Error{}
 
 	// Allocate fresh pointers for generator tracking — this function gets its own
@@ -331,7 +367,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 
 		// Phase 8.3: infer lifetimes for generator yields. Yields aliasing
 		// parameters propagate the lifetime to T inside Generator<T, ...>.
-		c.InferLifetimes(astParams, body, funcSigType, isAsync)
+		c.InferLifetimes(astParams, body, funcSigType, async)
 
 		return errors
 	}
@@ -360,7 +396,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	// Infer lifetime parameters from the body. This must run after returnType
 	// has been unified into funcSigType.Return so that the lifetime is attached
 	// to the same type the caller will see.
-	c.InferLifetimes(astParams, body, funcSigType, isAsync)
+	c.InferLifetimes(astParams, body, funcSigType, async)
 
 	return errors
 }
