@@ -284,9 +284,9 @@ func (c *Checker) attachLifetimeToResult(
 		// converge: on the second pass, peers' lifetimes are visible
 		// here.
 		src := determineCheckerAliasSource(re)
-		switch src.Kind {
+		switch src.Kind() {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-			for _, vid := range src.VarIDs {
+			for _, vid := range src.VarIDs() {
 				idx, ok := leafIndex[vid]
 				if !ok {
 					continue
@@ -604,9 +604,9 @@ func (v *escapingRefsVisitor) EnterExpr(e ast.Expr) bool {
 			// through a call whose callee returns its argument
 			// (`cache = wrap(p)`) is still detected as escaping.
 			src := determineCheckerAliasSource(be.Right)
-			switch src.Kind {
+			switch src.Kind() {
 			case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-				for _, vid := range src.VarIDs {
+				for _, vid := range src.VarIDs() {
 					if idx, ok := v.leafIndex[vid]; ok {
 						v.escaped.Add(idx)
 					}
@@ -710,10 +710,10 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 			}
 			for j := i; j < len(args); j++ {
 				src := determineCheckerAliasSource(args[j])
-				switch src.Kind {
+				switch src.Kind() {
 				case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 					for _, mut := range muts {
-						for _, vid := range src.VarIDs {
+						for _, vid := range src.VarIDs() {
 							ctx.Aliases.MarkStatic(vid, mut)
 						}
 					}
@@ -743,10 +743,10 @@ func (c *Checker) propagateCalleeStaticLifetimes(
 		// liveness helper treats every CallExpr as fresh, hiding such
 		// transitive aliases from the static-escape check.
 		src := determineCheckerAliasSource(args[i])
-		switch src.Kind {
+		switch src.Kind() {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
 			for _, mut := range muts {
-				for _, vid := range src.VarIDs {
+				for _, vid := range src.VarIDs() {
 					ctx.Aliases.MarkStatic(vid, mut)
 				}
 			}
@@ -1212,9 +1212,9 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 			continue
 		}
 		argSource := determineCheckerAliasSource(callExpr.Args[i])
-		switch argSource.Kind {
+		switch argSource.Kind() {
 		case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-			for _, id := range argSource.VarIDs {
+			for _, id := range argSource.VarIDs() {
 				if !seen.Contains(id) {
 					seen.Add(id)
 					aggregated = append(aggregated, id)
@@ -1228,10 +1228,12 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 		// None of the matching arguments could be tracked back to a local
 		// variable — fall back to the default treatment.
 		return liveness.DetermineAliasSource(expr)
-	case 1:
-		return liveness.AliasSource{Kind: liveness.AliasSourceVariable, VarIDs: aggregated}
 	default:
-		return liveness.AliasSource{Kind: liveness.AliasSourceMultiple, VarIDs: aggregated}
+		leaves := make([]liveness.AliasLeaf, len(aggregated))
+		for i, id := range aggregated {
+			leaves[i] = liveness.AliasLeaf{RootVarID: id}
+		}
+		return liveness.AliasSource{Leaves: leaves}
 	}
 }
 

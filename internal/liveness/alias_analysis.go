@@ -5,7 +5,46 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// AliasSourceKind describes the kind of alias source an expression represents.
+// ProjectionStep names one step from a root variable to a leaf slot inside
+// a freshly-constructed composite value. The empty-path case (a leaf with
+// no steps) means the leaf is the root itself — this is today's "this
+// expression aliases VarID X" behavior.
+type ProjectionStep interface{ projectionStep() }
+
+// ElementOf is the step into an array literal element ([a, b]).
+type ElementOf struct{}
+
+// PropertyOf is the step into an object property ({k: a}).
+type PropertyOf struct{ Key string }
+
+// IndexOf is the step into a fixed tuple slot.
+type IndexOf struct{ Index int }
+
+// AwaitOf is the step through a Promise<T> value (await p).
+type AwaitOf struct{}
+
+// CastOf is the step through a type cast (p as T) — pass-through.
+type CastOf struct{}
+
+func (ElementOf) projectionStep()  {}
+func (PropertyOf) projectionStep() {}
+func (IndexOf) projectionStep()    {}
+func (AwaitOf) projectionStep()    {}
+func (CastOf) projectionStep()     {}
+
+// AliasLeaf is one (root, path) pair contributing a lifetime to a specific
+// slot of a surrounding fresh container.
+type AliasLeaf struct {
+	RootVarID VarID
+	// Path is the sequence of projection steps from the root into the
+	// freshly-constructed container surrounding this expression. An empty
+	// path means the leaf is the root itself (the legacy single-var case).
+	Path []ProjectionStep
+}
+
+// AliasSourceKind describes the kind of alias source an expression
+// represents. Derived from the (Leaves, Fresh) shape — kept as a typed
+// value so call sites can switch on it.
 type AliasSourceKind int
 
 const (
@@ -15,10 +54,66 @@ const (
 	AliasSourceUnknown                         // cannot determine statically
 )
 
-// AliasSource describes where a value comes from for alias tracking purposes.
+// AliasSource describes where a value comes from for alias tracking
+// purposes. As of Phase 8.9, an alias source is a *set* of leaves — each
+// leaf names a root variable plus the projection path from that root into
+// the freshly-constructed container that wraps the expression. A direct
+// variable reference is a single leaf with empty path; `[a, b]` is two
+// leaves rooted at `a` and `b` with `[ElementOf]` paths.
 type AliasSource struct {
-	Kind   AliasSourceKind
-	VarIDs []VarID // empty for Fresh/Unknown, one for Variable, multiple for Multiple
+	Leaves []AliasLeaf
+	// Fresh is true iff the expression produces a freshly-constructed value
+	// with no aliasing leaves. Distinguishes "definitely fresh" from
+	// "unknown" (the zero value, with no leaves and Fresh==false).
+	Fresh bool
+}
+
+// Kind returns the legacy alias-source kind derived from the leaves.
+func (s AliasSource) Kind() AliasSourceKind {
+	switch len(s.Leaves) {
+	case 0:
+		if s.Fresh {
+			return AliasSourceFresh
+		}
+		return AliasSourceUnknown
+	case 1:
+		return AliasSourceVariable
+	default:
+		return AliasSourceMultiple
+	}
+}
+
+// VarIDs returns the deduplicated list of root variable IDs across all
+// leaves, in leaf order. Provided for callers that only care about the
+// flat root set (e.g. existing alias-set merging in the checker).
+func (s AliasSource) VarIDs() []VarID {
+	if len(s.Leaves) == 0 {
+		return nil
+	}
+	seen := set.NewSet[VarID]()
+	out := make([]VarID, 0, len(s.Leaves))
+	for _, leaf := range s.Leaves {
+		if seen.Contains(leaf.RootVarID) {
+			continue
+		}
+		seen.Add(leaf.RootVarID)
+		out = append(out, leaf.RootVarID)
+	}
+	return out
+}
+
+// freshSource is a small constructor for the common "definitely fresh"
+// case so call sites stay readable.
+func freshSource() AliasSource { return AliasSource{Fresh: true} }
+
+// unknownSource is the zero value — kept as a constructor for parity with
+// freshSource so the intent is explicit at the call site.
+func unknownSource() AliasSource { return AliasSource{} }
+
+// rootSource builds an AliasSource for a single direct variable
+// reference (empty projection path).
+func rootSource(id VarID) AliasSource {
+	return AliasSource{Leaves: []AliasLeaf{{RootVarID: id}}}
 }
 
 // DetermineAliasSource examines an expression and returns its alias source.
@@ -28,39 +123,39 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	switch e := expr.(type) {
 	case *ast.IdentExpr:
 		if e.VarID > 0 {
-			return AliasSource{Kind: AliasSourceVariable, VarIDs: []VarID{VarID(e.VarID)}}
+			return rootSource(VarID(e.VarID))
 		}
 		// Non-local variable (VarID <= 0) — treat as unknown since we
 		// can't track aliases across function boundaries.
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 
 	// Fresh values: literals, object/array construction, function expressions
 	case *ast.LiteralExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.ObjectExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.TupleExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.FuncExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.TemplateLitExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.TaggedTemplateLitExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.JSXElementExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.JSXFragmentExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 
 	// Function calls: treat as fresh for now (Phase 8 adds lifetime-based tracking)
 	case *ast.CallExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 
 	// Unary/binary operations produce fresh primitive values
 	case *ast.UnaryExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.BinaryExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 
 	// Type cast: the alias source is the inner expression
 	case *ast.TypeCastExpr:
@@ -81,32 +176,32 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	case *ast.IfElseExpr:
 		return determineConditionalAliasSource(e)
 	case *ast.IfLetExpr:
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 	case *ast.MatchExpr:
 		return determineMatchAliasSource(e)
 
 	// Do expressions, try-catch: complex control flow, treat as unknown
 	case *ast.DoExpr:
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 	case *ast.TryCatchExpr:
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 
 	// Throw/yield don't produce values that get assigned
 	case *ast.ThrowExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 	case *ast.YieldExpr:
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 
 	// Array spread
 	case *ast.ArraySpreadExpr:
-		return AliasSource{Kind: AliasSourceFresh}
+		return freshSource()
 
 	// Error expression
 	case *ast.ErrorExpr:
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 
 	default:
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 	}
 }
 
@@ -138,44 +233,44 @@ func blockOrExprResultExpr(boe *ast.BlockOrExpr) ast.Expr {
 }
 
 // collectBranchSources collects alias sources from a list of expressions,
-// deduplicating VarIDs across branches. Returns a merged AliasSource.
+// deduplicating leaves across branches by root VarID. Returns a merged
+// AliasSource. Per-branch projection paths are preserved on each leaf;
+// duplicate roots keep the first leaf's path.
 func collectBranchSources(exprs []ast.Expr) AliasSource {
-	varIDs := set.NewOrderedSet[VarID]()
+	seen := set.NewSet[VarID]()
+	var leaves []AliasLeaf
 	allFresh := true
 
 	for _, expr := range exprs {
 		if expr == nil {
-			// A branch with no result expression — treat as unknown
-			return AliasSource{Kind: AliasSourceUnknown}
+			// A branch with no result expression — treat as unknown.
+			return unknownSource()
 		}
 		source := DetermineAliasSource(expr)
-		switch source.Kind {
-		case AliasSourceVariable, AliasSourceMultiple:
+		if len(source.Leaves) > 0 {
 			allFresh = false
-			for _, id := range source.VarIDs {
-				varIDs.Add(id)
+			for _, leaf := range source.Leaves {
+				if seen.Contains(leaf.RootVarID) {
+					continue
+				}
+				seen.Add(leaf.RootVarID)
+				leaves = append(leaves, leaf)
 			}
-		case AliasSourceFresh:
-			// Fresh branch — doesn't contribute alias IDs
-		default:
+		} else if !source.Fresh {
 			// Unknown — treat like fresh for alias purposes. We can't
-			// determine what this branch aliases, but that's no reason to
-			// discard alias info from the branches we DO know about.
+			// determine what this branch aliases, but that's no reason
+			// to discard alias info from the branches we DO know about.
 			allFresh = false
 		}
 	}
 
-	switch varIDs.Len() {
-	case 0:
+	if len(leaves) == 0 {
 		if allFresh {
-			return AliasSource{Kind: AliasSourceFresh}
+			return freshSource()
 		}
-		return AliasSource{Kind: AliasSourceUnknown}
-	case 1:
-		return AliasSource{Kind: AliasSourceVariable, VarIDs: varIDs.ToSlice()}
-	default:
-		return AliasSource{Kind: AliasSourceMultiple, VarIDs: varIDs.ToSlice()}
+		return unknownSource()
 	}
+	return AliasSource{Leaves: leaves}
 }
 
 // determineConditionalAliasSource determines alias sources for an if-else
@@ -197,7 +292,7 @@ func determineConditionalAliasSource(expr *ast.IfElseExpr) AliasSource {
 // by collecting sources from all case bodies.
 func determineMatchAliasSource(expr *ast.MatchExpr) AliasSource {
 	if len(expr.Cases) == 0 {
-		return AliasSource{Kind: AliasSourceUnknown}
+		return unknownSource()
 	}
 
 	branchExprs := make([]ast.Expr, len(expr.Cases))

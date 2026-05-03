@@ -14,26 +14,28 @@ import (
 // formatAliasSource formats an AliasSource as a readable string for test assertions.
 // Examples: "fresh", "unknown", "variable [x]", "multiple [a, b]"
 func formatAliasSource(source AliasSource, names map[VarID]string) string {
-	switch source.Kind {
+	kind := source.Kind()
+	switch kind {
 	case AliasSourceFresh:
 		return "fresh"
 	case AliasSourceUnknown:
 		return "unknown"
 	case AliasSourceVariable, AliasSourceMultiple:
-		varNames := make([]string, len(source.VarIDs))
-		for i, id := range source.VarIDs {
+		ids := source.VarIDs()
+		varNames := make([]string, len(ids))
+		for i, id := range ids {
 			if name, ok := names[id]; ok {
 				varNames[i] = name
 			} else {
 				varNames[i] = fmt.Sprintf("%d", id)
 			}
 		}
-		if source.Kind == AliasSourceVariable {
+		if kind == AliasSourceVariable {
 			return "variable [" + strings.Join(varNames, ", ") + "]"
 		}
 		return "multiple [" + strings.Join(varNames, ", ") + "]"
 	default:
-		return fmt.Sprintf("unknown-kind(%d)", source.Kind)
+		return fmt.Sprintf("unknown-kind(%d)", kind)
 	}
 }
 
