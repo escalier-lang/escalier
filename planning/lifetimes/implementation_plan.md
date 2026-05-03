@@ -4,13 +4,13 @@ This plan describes how to add liveness-based mutability transitions and lifetim
 annotations to Escalier, replacing the current `mut?` system. It is organized
 into phases that build incrementally, each producing a testable milestone.
 
-> **Note (2026-04):** Phase 13 (`Remove mut?`) was implemented out of order, in
+> **Note (2026-04):** Phase 14 (`Remove mut?`) was implemented out of order, in
 > the parallel [planning/remove_uncertain_mutability/implementation_plan.md](../remove_uncertain_mutability/implementation_plan.md)
 > track (PRs #502 and #504). `MutabilityType`, `MutabilityUncertain`,
 > `MutabilityMutable`, and `unwrapMutability` no longer exist in the source
 > tree. The current shape is: a thin `MutType` wrapper (`mut <T>`) for
 > reference-bearing types, plus `Mutable bool` / `Immutable bool` fields
-> directly on `ObjectType`. See [Phase 13](#phase-13-remove-mut--landed-via-remove_uncertain_mutability-track)
+> directly on `ObjectType`. See [Phase 14](#phase-14-remove-mut--landed-via-remove_uncertain_mutability-track)
 > for the as-built notes.
 >
 > The remove_uncertain_mutability track also added pattern-level `mut` on
@@ -30,13 +30,14 @@ into phases that build incrementally, each producing a testable milestone.
 |     6 | Mutability transition checking                       | 4, 5       | Done   |
 |     7 | Alias tracking (properties, closures, destructuring) | 5, 6       | Done   |
 |     8 | Lifetime annotations and inference                   | 6, 7       |        |
-|     9 | Lifetime unification (incl. 9.7 constrained type params) | 8      |        |
-|    10 | Lifetime elision rules                               | 8, 9       |        |
-|    11 | TypeScript interop                                   | 10         |        |
-|    12 | Error messages                                       | 6–11       |        |
-|    13 | Remove `mut?`                                        | —          | Done (out of order, via remove_uncertain_mutability track) |
-|    14 | PrintType and display                                | —          |        |
-|    15 | Performance optimizations                            | 6          |        |
+|     9 | Lifetime unification                                  | 8          |        |
+|    10 | Constrained type parameters that carry a lifetime     | 9          |        |
+|    11 | Lifetime elision rules                               | 8, 9       |        |
+|    12 | TypeScript interop                                   | 11         |        |
+|    13 | Error messages                                       | 6–12       |        |
+|    14 | Remove `mut?`                                        | —          | Done (out of order, via remove_uncertain_mutability track) |
+|    15 | PrintType and display                                | —          |        |
+|    16 | Performance optimizations                            | 6          |        |
 
 ---
 
@@ -139,7 +140,7 @@ type TupleType struct {
     Lifetime Lifetime
 }
 
-// As-built (post Phase 13, landed via remove_uncertain_mutability):
+// As-built (post Phase 14, landed via remove_uncertain_mutability):
 // `MutabilityType`, `MutabilityUncertain`, and `MutabilityMutable` were
 // removed. The replacement is a thinner `MutType` wrapper (just
 // `{Type, provenance}`) for `mut <T>` over reference-bearing types,
@@ -359,7 +360,7 @@ type SetID int
 // Note: AliasSet intentionally carries only a VarID for Origin, not rich
 // diagnostic info (spans, creation context, etc.). Detailed diagnostic
 // context is assembled at error-construction time by the error types in
-// Phase 12 (e.g. AliasOrigin on LiveMutableAliasError). Keeping AliasSet
+// Phase 13 (e.g. AliasOrigin on LiveMutableAliasError). Keeping AliasSet
 // lightweight avoids coupling the analysis data structure to the error
 // reporting format.
 type AliasSet struct {
@@ -2571,13 +2572,15 @@ lifetime linking it to `p`, so the result is independent.
 - Higher-order function: callback with shared lifetime threads through
 - Higher-order function: callback without lifetime produces independent result
 
-### 9.7 Constrained Type Parameters That Carry a Lifetime
+---
+
+## Phase 10: Constrained Type Parameters That Carry a Lifetime
 
 **Goal:** Allow lifetime inference and annotations on type parameters whose
 constraint is itself a lifetime-bearing shape, so generic functions over
 references aren't forced to abandon polymorphism to track borrows.
 
-#### Motivation
+### 10.1 Motivation
 
 Today, `typeCarriesLifetime` ([infer_lifetime.go:315-329](../../internal/checker/infer_lifetime.go#L315-L329))
 returns `false` for any `TypeRefType` whose `TypeAlias.IsTypeParam` is true.
@@ -2602,7 +2605,7 @@ to project or thread a borrow without losing the borrow's lifetime in the
 result type — the same precision argument as `IdentityRefReturn` but
 applied to bounded polymorphism.
 
-#### 9.7.1 Detect Lifetime-Bearing Constraints
+### 10.2 Detect Lifetime-Bearing Constraints
 
 Extend `typeCarriesLifetime` to walk into the bound when the type is a
 type-parameter `TypeRefType`:
@@ -2622,7 +2625,7 @@ reason they're refused at the top level: there is no single `Lifetime`
 field that is consistent across branches. This conservative line keeps
 the change soundness-preserving and matches existing behavior elsewhere.
 
-#### 9.7.2 Storage for the Lifetime on a Type-Parameter Use
+### 10.3 Storage for the Lifetime on a Type-Parameter Use
 
 Add a place to attach the lifetime when the type at a use site is a
 type-parameter `TypeRefType`. Two viable shapes:
@@ -2638,11 +2641,11 @@ type-parameter `TypeRefType`. Two viable shapes:
   wrapper analogous to `MutType`. Heavier; only worth it if Option A
   produces awkward printing or unification cases.
 
-Recommend Option A. The printer ([Phase 14](#phase-14-printtype-and-display))
+Recommend Option A. The printer ([Phase 15](#phase-15-printtype-and-display))
 should render `mut 'a T` when both a mutability wrapper and a lifetime
 attach to the same type-parameter use.
 
-#### 9.7.3 Inference Wiring
+### 10.4 Inference Wiring
 
 With the storage decided, the existing `InferLifetimeParams` flow in
 [infer_lifetime.go:115-160](../../internal/checker/infer_lifetime.go#L115-L160)
@@ -2658,7 +2661,7 @@ works almost unchanged:
 No change to lifetime *parameter* allocation policy — one fresh `LifetimeVar`
 per aliased parameter, same as today.
 
-#### 9.7.4 Substitution at Call Sites
+### 10.5 Substitution at Call Sites
 
 When `T` is instantiated to a concrete shape `S` at a call site, the
 lifetime annotation flows from the type-parameter use onto `S`. Mechanically:
@@ -2678,7 +2681,7 @@ This is the same machinery as nominal types' `LifetimeArgs` substitution,
 generalized to type-parameter substitution. No new unification rules; just
 an extra case in the substitution pass.
 
-#### 9.7.5 Interaction with Mutability
+### 10.6 Interaction with Mutability
 
 `mut 'a T` where `T extends {x: number}` should behave like `mut 'a {x: number}`
 once `T` is resolved. The `MutType` wrapper already recurses through
@@ -2690,7 +2693,7 @@ If the constraint *itself* carries a `MutType` wrapper (e.g.
 substitution — the use site's `mut` and the constraint's `mut` should
 unify, not double-wrap.
 
-#### 9.7.6 Printing
+### 10.7 Printing
 
 The printer should produce signatures of the shape:
 
@@ -2704,12 +2707,12 @@ Notably:
   the inferred `'a` smeared into it — the inferred lifetime is per-use,
   not part of `T`'s definition.
 
-#### 9.7.7 Limits and Non-Goals
+### 10.8 Limits and Non-Goals
 
 - **Unbounded type parameters** continue to be skipped. No change there.
 - **Union/intersection constraints** are skipped. A future refinement
   could lift this if a coherent "lifetime of a sum type" abstraction
-  emerges, but it's not in scope for 9.7.
+  emerges, but it's not in scope for Phase 10.
 - **Higher-kinded constraints** (e.g. `T extends Container<U>` where
   `Container` is itself generic) follow the same rule: walk the bound,
   return `true` iff the bound is lifetime-bearing. Multi-parameter
@@ -2717,11 +2720,11 @@ Notably:
   parameters at the *bound's* class level; the type parameter's
   attached lifetime composes on top.
 - **Lifetime parameters appearing inside the bound** (e.g.
-  `T extends 'b {x: number}`) are out of scope for 9.7 — they require a
+  `T extends 'b {x: number}`) are out of scope for Phase 10 — they require a
   notion of "the type parameter is also lifetime-quantified," which is
   a strictly bigger language change.
 
-#### 9.7.8 Tests
+### 10.9 Tests
 
 - Generic identity over a constrained ref:
   `fn id<T extends {x: number}>(p: mut T) -> mut T { return p }` infers
@@ -2745,12 +2748,12 @@ Notably:
 
 ---
 
-## Phase 10: Lifetime Elision Rules
+## Phase 11: Lifetime Elision Rules
 
 **Goal:** Apply default lifetime rules to body-less declarations so that
 common cases don't require explicit annotations.
 
-### 10.1 Elision Rule Implementation
+### 11.1 Elision Rule Implementation
 
 Elision rules apply only to body-less declarations (interface methods, external
 functions, imported TypeScript types):
@@ -2775,7 +2778,7 @@ func (c *Checker) ApplyLifetimeElision(funcType *type_system.FuncType) { ... }
 When elision is ambiguous (multiple reference parameters, reference return type),
 the compiler requires explicit annotation and reports an error.
 
-### 10.2 Determining "Reference Type"
+### 11.2 Determining "Reference Type"
 
 A type is a "reference type" for elision purposes if it can alias:
 - Object types
@@ -2797,7 +2800,7 @@ A type is a "reference type" for elision purposes if it can alias:
 func IsReferenceType(t type_system.Type) bool { ... }
 ```
 
-### 10.3 Interface Method Lifetime Verification
+### 11.3 Interface Method Lifetime Verification
 
 When a type implements an interface, its method's inferred lifetimes must be
 **compatible** with the interface's declared lifetimes. The requirements
@@ -2850,18 +2853,18 @@ class Storer(var stored: mut Point) implements Transform {
 }
 ```
 
-### 10.4 Integration
+### 11.4 Integration
 
 Apply elision during:
 - Interface method declaration processing (`inferInterface`)
 - External function declaration processing
-- TypeScript type import processing (Phase 11)
+- TypeScript type import processing (Phase 12)
 
 Apply lifetime verification during:
 - Interface implementation checking (when a type declares it implements an
   interface)
 
-### 10.5 Tests
+### 11.5 Tests
 
 - Single ref param + ref return → lifetime inferred
 - Multiple ref params + ref return → error requiring annotation
@@ -2875,12 +2878,12 @@ Apply lifetime verification during:
 
 ---
 
-## Phase 11: TypeScript Interop
+## Phase 12: TypeScript Interop
 
 **Goal:** Automatically assign lifetime annotations to TypeScript type
 declarations imported into Escalier.
 
-### 11.1 Automatic Lifetime Assignment
+### 12.1 Automatic Lifetime Assignment
 
 When importing TypeScript declarations, apply the heuristic rules from the
 requirements (Rules A–F):
@@ -2913,13 +2916,13 @@ When importing a TypeScript class, determine `DefaultMutable` for its
 - If all methods are read-only → `DefaultMutable = false`
 - Built-in types (`Map`, `Set`, `Array`, `WeakMap`, `WeakSet`) are
   hardcoded as `DefaultMutable = true` in the built-in overrides
-  (Phase 11.3)
+  (Phase 12.3)
 
 Since TypeScript declarations don't have an `immutable` modifier,
-overrides (Phase 11.2) can set `DefaultMutable = false` for imported
+overrides (Phase 12.2) can set `DefaultMutable = false` for imported
 classes that should default to immutable despite having mutating methods.
 
-### 11.2 Override Mechanism
+### 12.2 Override Mechanism
 
 Support manual override files for correcting heuristic lifetime assignments:
 
@@ -2933,7 +2936,7 @@ rules.
 **Format:** TBD — could be a subset of Escalier syntax with explicit lifetime
 annotations, or a JSON/TOML configuration file.
 
-### 11.3 Built-in Overrides
+### 12.3 Built-in Overrides
 
 Ship overrides for common TypeScript APIs (Array methods, Promise, etc.)
 as part of the standard library. These are the overrides listed in the
@@ -2970,7 +2973,7 @@ declare fn WeakSet.add<'self, T>(self: mut 'self WeakSet<T>, value: T) -> mut 's
 declare fn WeakSet.delete<T>(self: mut WeakSet<T>, value: T) -> boolean
 ```
 
-### 11.4 Tests
+### 12.4 Tests
 
 - `Array.prototype.sort` → aliases receiver
 - `Array.prototype.map` → fresh array, no container alias
@@ -2986,12 +2989,12 @@ declare fn WeakSet.delete<T>(self: mut WeakSet<T>, value: T) -> boolean
 
 ---
 
-## Phase 12: Error Messages
+## Phase 13: Error Messages
 
 **Goal:** Produce clear, actionable error messages that show lifetime
 information only when it helps the developer.
 
-### 12.1 Error Types
+### 13.1 Error Types
 
 Define error types for lifetime violations:
 
@@ -3036,7 +3039,7 @@ type AliasOrigin struct {
 }
 ```
 
-### 12.2 Error Formatting
+### 13.2 Error Formatting
 
 Error messages follow the format shown in the requirements:
 
@@ -3059,7 +3062,7 @@ error: cannot assign mutable value to immutable variable
 For simple cases (no cross-function aliasing), omit lifetime details. For
 cross-function cases, show the function signature with lifetimes highlighted.
 
-### 12.3 Tests
+### 13.3 Tests
 
 - Simple local alias error message
 - Cross-function alias error message with lifetime shown
@@ -3069,7 +3072,7 @@ cross-function cases, show the function signature with lifetimes highlighted.
 
 ---
 
-## Phase 13: Remove `mut?`  ✅ Landed via remove_uncertain_mutability track
+## Phase 14: Remove `mut?`  ✅ Landed via remove_uncertain_mutability track
 
 **Status:** Done out of order, in PRs #502 and #504 of the
 [remove_uncertain_mutability track](../remove_uncertain_mutability/implementation_plan.md).
@@ -3081,7 +3084,7 @@ The original plan below was partially superseded by what actually shipped.
   "MutabilityUncertain" internal/` returns zero hits.
 - **`MutabilityType` wrapper — replaced, not eliminated.** The plan
   originally proposed pushing `Mutable bool` onto every reference-bearing
-  type struct (Phase 13.2 below). What landed instead is a hybrid:
+  type struct (Phase 14.2 below). What landed instead is a hybrid:
   - A thinner `MutType` wrapper (just `{Type, provenance}` —
     `internal/type_system/types.go:2162`) carries `mut <T>` for
     `TypeRefType`, `ArrayType`, `TupleType`, `FuncType`, etc.
@@ -3114,7 +3117,7 @@ The original plan below was partially superseded by what actually shipped.
 
 ### What was *not* done
 
-The original plan's 13.2 ("move `Mutable bool` onto every type struct")
+The original plan's 14.2 ("move `Mutable bool` onto every type struct")
 was deliberately not pursued. The hybrid above (thin `MutType` wrapper +
 direct fields on `ObjectType`) won out because:
 
@@ -3124,7 +3127,7 @@ direct fields on `ObjectType`) won out because:
   only type that needed *both* `Mutable` (for `mut {...}`) and
   `Immutable` (for `#{...}`); a wrapper can't carry both flags
   symmetrically.
-- The "co-locate mutability and lifetime" benefit cited in 13.2 didn't
+- The "co-locate mutability and lifetime" benefit cited in 14.2 didn't
   pan out — `Lifetime` lives on inner types (e.g. `TypeRefType.Lifetime`)
   and `MutType` recurses into them, so the `GetLifetime` accessor reads
   the inner type's `Lifetime` field directly without needing
@@ -3132,7 +3135,7 @@ direct fields on `ObjectType`) won out because:
 
 ### Default mutability rules (as built)
 
-13.3's "default mutability rules" landed as follows (concretized in
+14.3's "default mutability rules" landed as follows (concretized in
 [planning/remove_uncertain_mutability/implementation_plan.md](../remove_uncertain_mutability/implementation_plan.md),
 Phase 2 "open-object finalization pass" + Phase 4 pattern-level `mut`):
 
@@ -3162,12 +3165,12 @@ clean across all packages. No `mut?` appears in any committed snapshot.
 
 ---
 
-## Phase 14: PrintType and Display
+## Phase 15: PrintType and Display
 
 **Goal:** Update type printing to support lifetime display with configurable
 visibility.
 
-### 14.1 Default: Hidden Lifetimes
+### 15.1 Default: Hidden Lifetimes
 
 By default, `PrintType` does not show lifetime annotations:
 
@@ -3175,7 +3178,7 @@ By default, `PrintType` does not show lifetime annotations:
 // fn identity(p: mut Point) -> mut Point
 ```
 
-### 14.2 Verbose Mode: Show Lifetimes
+### 15.2 Verbose Mode: Show Lifetimes
 
 Add a `ShowLifetimes` option to `PrintConfig`:
 
@@ -3194,13 +3197,13 @@ When `ShowLifetimes` is true:
 // fn identity<'a>(p: mut 'a Point) -> mut 'a Point
 ```
 
-### 14.3 Error Context: Show Relevant Lifetimes
+### 15.3 Error Context: Show Relevant Lifetimes
 
-In error messages (Phase 12), show lifetimes only when they are relevant to
+In error messages (Phase 13), show lifetimes only when they are relevant to
 understanding the error. This uses a targeted print mode that shows lifetimes
 for specific functions referenced in the error, not globally.
 
-### 14.4 Tests
+### 15.4 Tests
 
 - Default printing omits lifetimes
 - Verbose mode includes lifetimes
@@ -3212,12 +3215,12 @@ for specific functions referenced in the error, not globally.
 
 ---
 
-## Phase 15: Performance Optimizations
+## Phase 16: Performance Optimizations
 
 **Goal:** Reduce redundant work in the liveness pre-pass and related analyses
 without changing observable behavior.
 
-### 15.1 Cache `collectOuterBindings` Results
+### 16.1 Cache `collectOuterBindings` Results
 
 `collectOuterBindings` walks the entire scope chain — including the prelude —
 on every call to `runLivenessPrePass`. For a module with many functions, this
@@ -3285,7 +3288,7 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
   - "Remove the use of `x` after the transition" (for simple reordering)
 
   These require integrating with the LSP's code action system and are
-  deferred until the error types (Phase 12) are finalized.
+  deferred until the error types (Phase 13) are finalized.
 
 ---
 
@@ -3303,21 +3306,24 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
             │       └── 8. Lifetime annotations, inference, & constructors
             │           └── 9. Lifetime unification ('static, conflict detection,
             │               │  higher-order function threading)
-            │               └── 10. Elision rules & interface lifetime verification
-            │                   └── 11. TypeScript interop
+            │               ├── 10. Constrained type parameters that carry a lifetime
+            │               └── 11. Elision rules & interface lifetime verification
+            │                   └── 12. TypeScript interop
             └── 7. Advanced alias tracking ✅
-12. Error messages ←── (depends on 6–11)
-13. Remove mut? ✅ (done out of order via remove_uncertain_mutability track)
-└── 14. PrintType & display
+13. Error messages ←── (depends on 6–12)
+14. Remove mut? ✅ (done out of order via remove_uncertain_mutability track)
+└── 15. PrintType & display
+16. Performance optimizations ←── (depends on 6)
 ```
 
 Phases 3–5 can be developed in parallel (once Phase 2 is complete).
-Phases 8–11 can also be partially parallelized (elision and TS interop
-depend on the annotation infrastructure but not on each other).
+Phases 10–12 can also be partially parallelized: Phase 10 (constrained
+type parameters), Phase 11 (elision), and Phase 12 (TS interop) all
+depend on Phase 9 but not on each other.
 
 **Key sub-phase dependencies within phases:**
 - Phase 8.6 (constructors) depends on 8.3 (lifetime inference from bodies)
 - Phase 9.3 (`'static` and conflict detection) depends on 9.1 (lifetime
   binding) and 9.2 (instantiation)
-- Phase 10.3 (interface lifetime verification) depends on 8.3 (inference)
+- Phase 11.3 (interface lifetime verification) depends on 8.3 (inference)
   and 9.1 (binding)
