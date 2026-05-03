@@ -975,6 +975,26 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"pair": "{head: mut 'a {x: number}, tail: mut 'b {x: number}}",
 			},
 		},
+		"CtorStoresViaIndexExpr_FieldSlotsCarryLifetimes": {
+			// (#539) `self["items"] = [a, b]` is a valid form of field
+			// assignment when the key is a string literal. The field-slot
+			// pass must recognize IndexExpr lvalues with literal keys, not
+			// just MemberExpr, so per-slot lifetimes still surface on the
+			// stored field's type.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self["items"] = [a, b]
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
 		"DestructuredTupleCtorParamCapture": {
 			// A destructured tuple ctor param whose leaves are stored
 			// into self should still pin lifetimes onto the param. (#531)

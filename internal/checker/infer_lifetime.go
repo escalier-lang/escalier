@@ -1270,10 +1270,11 @@ func (c *Checker) InferConstructorLifetimes(
 // attachLifetimeToResult, except the destination is a class field rather than
 // the function's result type.
 //
-// Only direct `self.<field> = expr` assignments are walked. Nested
-// `self.<f>.<g> = expr` is rejected upstream by the field-initialization
-// checker (every field must be initialized before being read), and class
-// instances are not indexable so `self[i] = expr` does not arise.
+// Only direct `self.<field> = expr` and `self[<literal-key>] = expr`
+// assignments are walked. Nested `self.<f>.<g> = expr` is rejected
+// upstream by the field-initialization checker (every field must be
+// initialized before being read), and `self[k] = expr` with a non-literal
+// key cannot be statically resolved to a single field slot.
 //
 // 'static is intentionally not propagated here. InferConstructorLifetimes
 // allocates a fresh LifetimeVar for every escaping leaf — including leaves
@@ -1350,9 +1351,10 @@ func lookupInstanceFieldType(obj *type_system.ObjectType, name string) type_syst
 	return nil
 }
 
-// fieldAssignVisitor invokes onAssign for every `self.<field> = expr`
-// assignment in a constructor body. Nested function bodies and class/func
-// declarations are skipped so we only see the constructor's own assignments.
+// fieldAssignVisitor invokes onAssign for every `self.<field> = expr` or
+// `self[<literal-key>] = expr` assignment in a constructor body. Nested
+// function bodies and class/func declarations are skipped so we only see
+// the constructor's own assignments.
 type fieldAssignVisitor struct {
 	ast.DefaultVisitor
 	selfVarID liveness.VarID
@@ -1361,18 +1363,46 @@ type fieldAssignVisitor struct {
 
 func (v *fieldAssignVisitor) EnterExpr(e ast.Expr) bool {
 	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == ast.Assign {
-		if me, ok := be.Left.(*ast.MemberExpr); ok {
-			if ident, ok := me.Object.(*ast.IdentExpr); ok &&
-				liveness.VarID(ident.VarID) == v.selfVarID &&
-				me.Prop != nil {
-				v.onAssign(me.Prop.Name, be.Right)
-			}
+		if name, ok := selfFieldLValueName(be.Left, v.selfVarID); ok {
+			v.onAssign(name, be.Right)
 		}
 	}
 	if _, ok := e.(*ast.FuncExpr); ok {
 		return false
 	}
 	return true
+}
+
+// selfFieldLValueName returns the field name targeted by an lvalue if and
+// only if it is a direct field assignment on `self` — either `self.<name>`
+// (MemberExpr) or `self[<literal-key>]` (IndexExpr with a string- or
+// number-literal index). Other shapes (chained access, computed keys,
+// non-self objects) return ok=false.
+func selfFieldLValueName(lvalue ast.Expr, selfVarID liveness.VarID) (string, bool) {
+	switch e := lvalue.(type) {
+	case *ast.MemberExpr:
+		ident, ok := e.Object.(*ast.IdentExpr)
+		if !ok || liveness.VarID(ident.VarID) != selfVarID || e.Prop == nil {
+			return "", false
+		}
+		return e.Prop.Name, true
+	case *ast.IndexExpr:
+		ident, ok := e.Object.(*ast.IdentExpr)
+		if !ok || liveness.VarID(ident.VarID) != selfVarID {
+			return "", false
+		}
+		lit, ok := e.Index.(*ast.LiteralExpr)
+		if !ok {
+			return "", false
+		}
+		switch k := lit.Lit.(type) {
+		case *ast.StrLit:
+			return k.Value, true
+		case *ast.NumLit:
+			return strconv.FormatFloat(k.Value, 'f', -1, 64), true
+		}
+	}
+	return "", false
 }
 
 func (v *fieldAssignVisitor) EnterDecl(d ast.Decl) bool {
