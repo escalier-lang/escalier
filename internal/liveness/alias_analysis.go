@@ -438,6 +438,9 @@ func ProjectStep(src AliasSource, step ProjectionStep) AliasSource {
 		if len(leaf.Path) == 0 || leaf.Path[0] != step {
 			continue
 		}
+		// Copy rather than reslice: leaf.Path[1:] shares backing storage
+		// with the source leaf, so a later append to the new path could
+		// clobber the original if capacity allows in-place growth.
 		newPath := append([]ProjectionStep{}, leaf.Path[1:]...)
 		newLeaves = append(newLeaves, AliasLeaf{RootVarID: leaf.RootVarID, Path: newPath})
 		if len(newPath) == 0 {

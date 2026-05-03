@@ -892,6 +892,44 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				"Wrap": 2,
 			},
 		},
+		"CtorStoresTupleOfAnnotatedParams_FieldSlotsCarryLifetimes": {
+			// (#539) When ctor params are explicitly annotated, the param
+			// types and the field-slot types are distinct pointers, so
+			// `setLifetimeOnType` on the param leaf does not surface to
+			// the field. A separate per-slot pass walks `self.<f> = expr`
+			// and attaches lifetimes to the matching slots in the field
+			// type.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.items = [a, b]
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
+		"CtorStoresObjectOfAnnotatedParams_FieldSlotsCarryLifetimes": {
+			// (#539) Sister case for object-literal RHS with explicitly
+			// annotated params.
+			input: `
+				class Wrap {
+					pair: {head: mut {x: number}, tail: mut {x: number}},
+					constructor(mut self, a: mut {x: number}, b: mut {x: number}) {
+						self.pair = {head: a, tail: b}
+					}
+				}
+				val w = Wrap({x: 1}, {x: 2})
+				val pair = w.pair
+			`,
+			expectedTypes: map[string]string{
+				"pair": "{head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
 		"DestructuredTupleCtorParamCapture": {
 			// A destructured tuple ctor param whose leaves are stored
 			// into self should still pin lifetimes onto the param. (#531)
