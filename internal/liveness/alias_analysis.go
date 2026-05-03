@@ -435,7 +435,7 @@ func ProjectStep(src AliasSource, step ProjectionStep) AliasSource {
 	var newLeaves []AliasLeaf
 	hasAlias := false
 	for _, leaf := range src.Leaves {
-		if len(leaf.Path) == 0 || !stepsMatch(leaf.Path[0], step) {
+		if len(leaf.Path) == 0 || leaf.Path[0] != step {
 			continue
 		}
 		newPath := append([]ProjectionStep{}, leaf.Path[1:]...)
@@ -452,12 +452,6 @@ func ProjectStep(src AliasSource, step ProjectionStep) AliasSource {
 		origin = AliasOriginAlias
 	}
 	return AliasSource{Origin: origin, Leaves: newLeaves}
-}
-
-// stepsMatch reports whether two projection steps refer to the same slot.
-// All step types are value-comparable, so direct equality suffices.
-func stepsMatch(a, b ProjectionStep) bool {
-	return a == b
 }
 
 // determineTupleAliasSource computes the alias source for a tuple/array
@@ -608,14 +602,25 @@ func FormatNumKey(v float64) string {
 // before Phase 8.9.
 func determineIndexAliasSource(expr *ast.IndexExpr) AliasSource {
 	src := DetermineAliasSource(expr.Object)
+	if step, ok := IndexLiteralStep(expr); ok {
+		return ProjectStep(src, step)
+	}
+	return src
+}
+
+// IndexLiteralStep returns the IndexOf projection step for `obj[i]` when
+// `i` is a constant non-negative integer literal. Non-constant or
+// non-integer indexes return false; callers should treat such cases as
+// a transparent descent into the object.
+func IndexLiteralStep(expr *ast.IndexExpr) (IndexOf, bool) {
 	if lit, ok := expr.Index.(*ast.LiteralExpr); ok {
 		if num, ok := lit.Lit.(*ast.NumLit); ok {
 			if i, isInt := floatAsInt(num.Value); isInt {
-				return ProjectStep(src, IndexOf{Index: i})
+				return IndexOf{Index: i}, true
 			}
 		}
 	}
-	return src
+	return IndexOf{}, false
 }
 
 // floatAsInt returns the int form of a float64 if it represents a

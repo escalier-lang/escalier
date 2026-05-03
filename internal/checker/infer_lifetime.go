@@ -1328,13 +1328,8 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 		return liveness.ProjectStep(determineCheckerAliasSource(e.Object), liveness.PropertyOf{Key: e.Prop.Name})
 	case *ast.IndexExpr:
 		inner := determineCheckerAliasSource(e.Object)
-		if lit, ok := e.Index.(*ast.LiteralExpr); ok {
-			if num, ok := lit.Lit.(*ast.NumLit); ok {
-				i := int(num.Value)
-				if float64(i) == num.Value && i >= 0 {
-					return liveness.ProjectStep(inner, liveness.IndexOf{Index: i})
-				}
-			}
+		if step, ok := liveness.IndexLiteralStep(e); ok {
+			return liveness.ProjectStep(inner, step)
 		}
 		return inner
 	case *ast.TypeCastExpr:
