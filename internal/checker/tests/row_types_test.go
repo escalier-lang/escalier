@@ -1282,8 +1282,8 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 				val r = foo({x: 0, extra1: true}, {y: "", extra2: 42})
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(a: mut {x: number, ...T0}, b: mut {y: string, ...T1}) -> [{x: number, ...T0}, {y: string, ...T1}]",
-				"r":   "[{x: number, extra1: true}, {y: string, extra2: 42}]",
+				"foo": "fn <'a, 'b, T0, T1>(a: mut 'a {x: number, ...T0}, b: mut 'b {y: string, ...T1}) -> ['a {x: number, ...T0}, 'b {y: string, ...T1}]",
+				"r":   "['a {x: number, extra1: true}, 'b {y: string, extra2: 42}]",
 			},
 		},
 		"NoExtraProperties": {
@@ -1349,7 +1349,7 @@ func TestVariadicTupleTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <R1, R2>(a: [number, ...R1], b: [string, ...R2]) -> [[number, ...R1], [string, ...R2]]",
+				"foo": "fn <'a, 'b, R1, R2>(a: 'a [number, ...R1], b: 'b [string, ...R2]) -> ['a [number, ...R1], 'b [string, ...R2]]",
 			},
 		},
 		"Generalization_VariadicRest": {
@@ -2297,8 +2297,8 @@ func TestTupleRowPolymorphism(t *testing.T) {
 				val r = foo([1, 2], ["a", "b"])
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1, T2, T3>(a: [T0, ...T1], b: [T2, ...T3]) -> [[T0, ...T1], [T2, ...T3]]",
-				"r":   "[[1, 2], [\"a\", \"b\"]]",
+				"foo": "fn <'a, 'b, T0, T1, T2, T3>(a: 'a [T0, ...T1], b: 'b [T2, ...T3]) -> ['a [T0, ...T1], 'b [T2, ...T3]]",
+				"r":   "['a [1, 2], 'b [\"a\", \"b\"]]",
 			},
 		},
 		"NoExtraElements_RestResolvesToEmptyTuple": {

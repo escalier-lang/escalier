@@ -474,6 +474,193 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"odd":  "fn <'a>(q: mut 'a {x: number}, n: number) -> mut 'a {x: number}",
 			},
 		},
+		"TupleOfTwoParams_ElementLevelUnion": {
+			// Phase 8.9: a fresh tuple literal `[a, b]` typed as a
+			// homogeneous Array<T> at the slot — both element-level
+			// lifetimes collapse onto the same Array<T>'s element type
+			// and union there.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> mut Array<mut {x: number}> {
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pair": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> mut Array<mut ('a | 'b) {x: number}>",
+			},
+		},
+		"ObjectLiteral_PropertyLevelDistinctLifetimes": {
+			// Phase 8.9: object literal with distinct slots produces
+			// distinct property-level lifetimes on the result.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"wrap": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
+		"TupleOfTwoParams_PerSlotDistinctLifetimes": {
+			// Tuple-typed return (not Array) preserves per-index
+			// lifetimes — `'a` and `'b` stay separate at slots 0 and
+			// 1 rather than collapsing into a union.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> [mut {x: number}, mut {x: number}] {
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pair": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> [mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
+		"PassThroughCallWithEmbeddedReturnLifetimes": {
+			// Fix from determineCheckerAliasSource: when the callee's
+			// return type embeds lifetimes inside slots (rather than
+			// at the top), the call result surfaces those slots as
+			// fresh-rooted leaves with per-slot paths. The caller's
+			// signature inference uses those leaves to drive per-slot
+			// lifetime attachment in its own return type.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+				fn passThrough(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return wrap(a, b)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"passThrough": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
+		"PassThroughCallWithNumericKeyedEmbeddedLifetimes": {
+			// Regression for the walkReturnLifetimeSlots fix: when the
+			// callee's return type embeds lifetimes inside numeric-keyed
+			// slots (`{0: 'a P, 1: 'b P}`), walkReturnLifetimeSlots must
+			// emit PropertyOf steps with FormatNumKey-encoded keys so
+			// that embeddedLifetimeAliasSource can match them back to
+			// the corresponding arg leaves. Before the fix the numeric
+			// keys were skipped, the call's slots were lost, and the
+			// caller's signature collapsed to no inferred lifetimes.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {0: mut {x: number}, 1: mut {x: number}} {
+					return {0: a, 1: b}
+				}
+				fn passThrough(a: mut {x: number}, b: mut {x: number}) -> {0: mut {x: number}, 1: mut {x: number}} {
+					return wrap(a, b)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"passThrough": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {0: mut 'a {x: number}, 1: mut 'b {x: number}}",
+			},
+		},
+		"PropertyAccess_ProjectsPerSlotLifetime_KnownGap": {
+			// Caller-side aliasing precision: accessing a single slot
+			// of a per-property-typed result *should* project only
+			// that slot's lifetime — `r.head` would carry `'a`, not
+			// the union, letting the alias tracker distinguish borrows
+			// from `a` vs `b`.
+			//
+			// Today determineCheckerAliasSource only handles top-level
+			// return lifetimes; per-slot projection through a call's
+			// return type isn't threaded yet. Pinning down current
+			// behavior; tracked in the Phase 8.9 follow-up.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+				fn pickHead(a: mut {x: number}, b: mut {x: number}) -> mut {x: number} {
+					return wrap(a, b).head
+				}
+			`,
+			expectedTypes: map[string]string{
+				// Target: "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}"
+				"pickHead": "fn (a: mut {x: number}, b: mut {x: number}) -> mut {x: number}",
+			},
+		},
+		"IndexAccess_ProjectsPerSlotLifetime_KnownGap": {
+			// Same gap as PropertyAccess_ProjectsPerSlotLifetime_KnownGap
+			// but for tuple slots — `pair(a, b)[0]` should carry only
+			// `'a`. Pinning today's behavior.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> [mut {x: number}, mut {x: number}] {
+					return [a, b]
+				}
+				fn pickFirst(a: mut {x: number}, b: mut {x: number}) -> mut {x: number} {
+					return pair(a, b)[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				// Target: "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}"
+				"pickFirst": "fn (a: mut {x: number}, b: mut {x: number}) -> mut {x: number}",
+			},
+		},
+		"PerSlotEscape_OnlyEscapingPropertyGetsStatic": {
+			// Benefit: fewer false-positive escape errors at the
+			// property level. The single object-destructured param
+			// `{a, b}` has two leaves at distinct property slots;
+			// escaping only `a` should pin `'static` onto the `a`
+			// slot of the param's type while leaving the `b` slot
+			// with its own lifetime variable. Without per-property
+			// granularity the whole param object would widen to
+			// `'static`, dragging `b` along with it.
+			input: `
+				var cache: mut {slot: mut {x: number}} = {slot: {x: 0}}
+				fn stash(
+					{a, b}: {a: mut {x: number}, b: mut {x: number}},
+				) -> mut {x: number} {
+					cache.slot = a
+					return b
+				}
+			`,
+			expectedTypes: map[string]string{
+				"stash": "fn <'a>({a: mut 'static {x: number}, b: mut 'a {x: number}}) -> mut 'a {x: number}",
+			},
+		},
+		"NumericKeyedObjectCapturesParam": {
+			// Regression for the stepIntoSlot fix: when a fresh object
+			// literal uses a numeric key (`{0: p}`), the producer emits
+			// PropertyOf{Key: "0"} on the leaf path. The consumer must
+			// match that string against the corresponding NumObjTypeKeyKind
+			// property on the return type. Before the fix, only
+			// StrObjTypeKeyKind properties matched, so the leaf was
+			// dropped and no lifetime was attached to the `0` slot.
+			input: `
+				fn wrap(p: mut {x: number}) -> {0: mut {x: number}} {
+					return {0: p}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"wrap": "fn <'a>(p: mut 'a {x: number}) -> {0: mut 'a {x: number}}",
+			},
+		},
+		"MixedNumericAndStringKeysCapturesDifferentParams": {
+			// Two params land in two slots of the fresh object, one keyed
+			// numerically and one keyed by name. Each gets its own
+			// lifetime, exercising both the NumObjTypeKeyKind and the
+			// StrObjTypeKeyKind arms of stepIntoSlot.PropertyOf in the
+			// same return type.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> {0: mut {x: number}, name: mut {x: number}} {
+					return {0: a, name: b}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pair": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {0: mut 'a {x: number}, name: mut 'b {x: number}}",
+			},
+		},
+		"NestedObjectInArray_DescendsTwoSteps": {
+			// Phase 8.9: a leaf with path [IndexOf 0, PropertyOf "inner"]
+			// drives lifetime attachment to the inner property of the
+			// array's element type.
+			input: `
+				fn box(p: mut {x: number}) -> Array<{inner: mut {x: number}}> {
+					return [{inner: p}]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"box": "fn <'a>(p: mut 'a {x: number}) -> Array<{inner: mut 'a {x: number}}>",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -565,6 +752,76 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"C": 0,
+			},
+		},
+		"CtorStoresTupleOfParams_FieldSlotsCarryLifetimes": {
+			// Phase 8.9 (e) deeper goal: when params escape into a
+			// composite field, the field's per-slot types in the
+			// instance should reflect the per-slot lifetimes — e.g.
+			// `items[0]: mut 'a {...}`, `items[1]: mut 'b {...}` after
+			// `self.items = [a, b]`. With per-slot fresh-var tuple
+			// inference (option 1), the constructor's `'a`/`'b` flow
+			// through the `[a, b]` literal's slot vars into the field
+			// type, so each instance's `p.items` carries per-slot
+			// lifetimes from its constructor args.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a, b) {
+						self.items = [a, b]
+					}
+				}
+				val p = Pair({x: 1}, {x: 2})
+				val items = p.items
+			`,
+			expectedTypes: map[string]string{
+				"items": "[mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
+		"CtorStoresTupleOfParams_EscapesBoth": {
+			// Phase 8.9: `self.items = [a, b]` — the RHS is a fresh
+			// tuple whose leaves both escape into self. Both params
+			// must pin lifetimes onto the ctor; today's escape
+			// detector consults src.Kind() which returns Fresh for
+			// fresh-rooted sources, so without path-based escape
+			// recognition only the alias-rooted RHS (e.g. `self.x = a`)
+			// is detected. This case pins down the new behavior.
+			// Constructor params are unannotated; their types and
+			// lifetimes are inferred from the field they store into.
+			input: `
+				class Pair {
+					items: [mut {x: number}, mut {x: number}],
+					constructor(mut self, a, b) {
+						self.items = [a, b]
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Pair": "{new fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Pair<'a, 'b>}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"Pair": 2,
+			},
+		},
+		"CtorStoresObjectOfParams_EscapesBoth": {
+			// Sister case to CtorStoresTupleOfParams: object-literal
+			// RHS leaves are also fresh-rooted with PropertyOf paths.
+			// Both params should pin distinct lifetimes onto the ctor.
+			// Constructor params are unannotated; their types and
+			// lifetimes are inferred from the field they store into.
+			input: `
+				class Wrap {
+					pair: {head: mut {x: number}, tail: mut {x: number}},
+					constructor(mut self, a, b) {
+						self.pair = {head: a, tail: b}
+					}
+				}
+			`,
+			expectedTypes: map[string]string{
+				"Wrap": "{new fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Wrap<'a, 'b>}",
+			},
+			expectedInstanceLifetimes: map[string]int{
+				"Wrap": 2,
 			},
 		},
 		"DestructuredTupleCtorParamCapture": {
