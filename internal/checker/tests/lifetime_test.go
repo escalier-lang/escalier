@@ -500,6 +500,101 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"wrap": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}",
 			},
 		},
+		"TupleOfTwoParams_PerSlotDistinctLifetimes": {
+			// Tuple-typed return (not Array) preserves per-index
+			// lifetimes — `'a` and `'b` stay separate at slots 0 and
+			// 1 rather than collapsing into a union.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> [mut {x: number}, mut {x: number}] {
+					return [a, b]
+				}
+			`,
+			expectedTypes: map[string]string{
+				"pair": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> [mut 'a {x: number}, mut 'b {x: number}]",
+			},
+		},
+		"PassThroughCallWithEmbeddedReturnLifetimes": {
+			// Fix from determineCheckerAliasSource: when the callee's
+			// return type embeds lifetimes inside slots (rather than
+			// at the top), the call result surfaces those slots as
+			// fresh-rooted leaves with per-slot paths. The caller's
+			// signature inference uses those leaves to drive per-slot
+			// lifetime attachment in its own return type.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+				fn passThrough(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return wrap(a, b)
+				}
+			`,
+			expectedTypes: map[string]string{
+				"passThrough": "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+			},
+		},
+		"PropertyAccess_ProjectsPerSlotLifetime_KnownGap": {
+			// Caller-side aliasing precision: accessing a single slot
+			// of a per-property-typed result *should* project only
+			// that slot's lifetime — `r.head` would carry `'a`, not
+			// the union, letting the alias tracker distinguish borrows
+			// from `a` vs `b`.
+			//
+			// Today determineCheckerAliasSource only handles top-level
+			// return lifetimes; per-slot projection through a call's
+			// return type isn't threaded yet. Pinning down current
+			// behavior; tracked in the Phase 8.9 follow-up.
+			input: `
+				fn wrap(a: mut {x: number}, b: mut {x: number}) -> {head: mut {x: number}, tail: mut {x: number}} {
+					return {head: a, tail: b}
+				}
+				fn pickHead(a: mut {x: number}, b: mut {x: number}) -> mut {x: number} {
+					return wrap(a, b).head
+				}
+			`,
+			expectedTypes: map[string]string{
+				// Target: "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}"
+				"pickHead": "fn (a: mut {x: number}, b: mut {x: number}) -> mut {x: number}",
+			},
+		},
+		"IndexAccess_ProjectsPerSlotLifetime_KnownGap": {
+			// Same gap as PropertyAccess_ProjectsPerSlotLifetime_KnownGap
+			// but for tuple slots — `pair(a, b)[0]` should carry only
+			// `'a`. Pinning today's behavior.
+			input: `
+				fn pair(a: mut {x: number}, b: mut {x: number}) -> [mut {x: number}, mut {x: number}] {
+					return [a, b]
+				}
+				fn pickFirst(a: mut {x: number}, b: mut {x: number}) -> mut {x: number} {
+					return pair(a, b)[0]
+				}
+			`,
+			expectedTypes: map[string]string{
+				// Target: "fn <'a>(a: mut 'a {x: number}, b: mut {x: number}) -> mut 'a {x: number}"
+				"pickFirst": "fn (a: mut {x: number}, b: mut {x: number}) -> mut {x: number}",
+			},
+		},
+		"PerSlotEscape_OnlyEscapingPropertyGetsStatic": {
+			// Benefit: fewer false-positive escape errors at the
+			// property level. The single object-destructured param
+			// `{a, b}` has two leaves at distinct property slots;
+			// escaping only `a` should pin `'static` onto the `a`
+			// slot of the param's type while leaving the `b` slot
+			// with its own lifetime variable. Without per-property
+			// granularity the whole param object would widen to
+			// `'static`, dragging `b` along with it.
+			input: `
+				var cache: mut {slot: mut {x: number}} = {slot: {x: 0}}
+				fn stash(
+					{a, b}: {a: mut {x: number}, b: mut {x: number}},
+				) -> mut {x: number} {
+					cache.slot = a
+					return b
+				}
+			`,
+			expectedTypes: map[string]string{
+				"stash": "fn <'a>({a: mut 'static {x: number}, b: mut 'a {x: number}}) -> mut 'a {x: number}",
+			},
+		},
 		"NestedObjectInArray_DescendsTwoSteps": {
 			// Phase 8.9: a leaf with path [IndexOf 0, PropertyOf "inner"]
 			// drives lifetime attachment to the inner property of the

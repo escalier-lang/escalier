@@ -1,6 +1,9 @@
 package checker
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -1310,7 +1313,14 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 
 	retLifetime := type_system.PruneLifetime(type_system.GetLifetime(fnType.Return))
 	if retLifetime == nil {
-		return liveness.DetermineAliasSource(expr)
+		// Top-level lifetime is missing, but the return type may still
+		// embed lifetimes inside its slots (e.g. wrap returns
+		// `{head: 'a Point, tail: 'b Point}` with no top-level
+		// Lifetime). Walk the return type to surface those embedded
+		// slots as fresh-rooted leaves with per-slot paths so callers
+		// like `return wrap(a, b)` can drive per-slot lifetime
+		// attachment in their own signatures.
+		return embeddedLifetimeAliasSource(fnType, callExpr)
 	}
 
 	// Build the set of LifetimeVar IDs that the return type carries.
@@ -1383,6 +1393,163 @@ func determineCheckerAliasSource(expr ast.Expr) liveness.AliasSource {
 		// the historical Variable/Multiple kind.
 		return liveness.AliasSource{Origin: liveness.AliasOriginAlias, Leaves: leaves}
 	}
+}
+
+// embeddedLifetimeAliasSource handles the case where a callee's return
+// type carries no top-level Lifetime but has lifetimes embedded in its
+// slots — e.g. `wrap` returns `{head: 'a Point, tail: 'b Point}` with
+// no Lifetime on the ObjectType itself. Walks the return type to
+// collect (path, lifetimeVar) entries; for each entry, finds the
+// param whose lifetime matches and folds the corresponding arg's
+// alias source into the result with the slot's path prepended.
+//
+// Returns a fresh-rooted source — `wrap(a, b)` has a freshly
+// constructed root whose nested slots alias args. If no embedded
+// slots match any param, falls back to the plain liveness handling
+// (which classifies the call as fresh with no leaves).
+//
+// TODO(#541): downstream MemberExpr/IndexExpr projection through this
+// source's leaves still uses append-only path semantics, so
+// `wrap(a, b).head` does not yet narrow to `'a`-only. Bidirectional
+// path semantics for the fresh-rooted case are tracked separately.
+func embeddedLifetimeAliasSource(fnType *type_system.FuncType, callExpr *ast.CallExpr) liveness.AliasSource {
+	slots := collectReturnLifetimeSlots(fnType.Return)
+	if len(slots) == 0 {
+		return liveness.DetermineAliasSource(callExpr)
+	}
+
+	// Per-(arg-leaf-root, slot-path) leaves. Dedupe by (RootVarID,
+	// canonical path) so two slots that bind the same lifetime to the
+	// same arg don't produce duplicate leaves.
+	type leafKey struct {
+		rootVarID liveness.VarID
+		pathKey   string
+	}
+	seen := map[leafKey]bool{}
+	var leaves []liveness.AliasLeaf
+	for _, slot := range slots {
+		for i, p := range fnType.Params {
+			if i >= len(callExpr.Args) {
+				break
+			}
+			paramVarIDs := lifetimeVarIDs(type_system.PruneLifetime(type_system.GetLifetime(p.Type)))
+			if !paramVarIDs.Contains(slot.lifetimeVarID) {
+				continue
+			}
+			argSource := determineCheckerAliasSource(callExpr.Args[i])
+			for _, argLeaf := range argSource.Leaves {
+				combined := make([]liveness.ProjectionStep, 0, len(slot.path)+len(argLeaf.Path))
+				combined = append(combined, slot.path...)
+				combined = append(combined, argLeaf.Path...)
+				key := leafKey{rootVarID: argLeaf.RootVarID, pathKey: pathKey(combined)}
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				leaves = append(leaves, liveness.AliasLeaf{
+					RootVarID: argLeaf.RootVarID,
+					Path:      combined,
+				})
+			}
+		}
+	}
+
+	if len(leaves) == 0 {
+		return liveness.DetermineAliasSource(callExpr)
+	}
+	return liveness.AliasSource{Origin: liveness.AliasOriginFresh, Leaves: leaves}
+}
+
+// returnLifetimeSlot records one (path, lifetimeVarID) pair for a
+// lifetime-bearing slot inside a return type. A slot whose lifetime is
+// a LifetimeUnion produces multiple entries (one per LifetimeVar
+// member) so that each var can be matched independently against
+// param lifetimes.
+type returnLifetimeSlot struct {
+	path          []liveness.ProjectionStep
+	lifetimeVarID int
+}
+
+// collectReturnLifetimeSlots walks a return type and returns one entry
+// per (slot, LifetimeVar) — including the top-level slot when the type
+// carries a Lifetime. Recurses into ObjectType properties and TupleType
+// elements; container TypeRefTypes (Array<T>, Promise<T>) are not
+// descended into here because their TypeArg slots aren't reachable via
+// the projection-step vocabulary that downstream attachment uses
+// (Array<T> would need ElementOf, but TupleType.IndexOf already covers
+// the common literal-as-tuple case). Extending to ElementOf / AwaitOf
+// is straightforward when needed.
+func collectReturnLifetimeSlots(t type_system.Type) []returnLifetimeSlot {
+	var out []returnLifetimeSlot
+	walkReturnLifetimeSlots(t, nil, &out)
+	return out
+}
+
+func walkReturnLifetimeSlots(t type_system.Type, path []liveness.ProjectionStep, into *[]returnLifetimeSlot) {
+	pruned := type_system.Prune(t)
+	if mut, ok := pruned.(*type_system.MutType); ok {
+		pruned = type_system.Prune(mut.Type)
+	}
+	var lifetime type_system.Lifetime
+	switch ty := pruned.(type) {
+	case *type_system.TypeRefType:
+		lifetime = ty.Lifetime
+	case *type_system.ObjectType:
+		lifetime = ty.Lifetime
+	case *type_system.TupleType:
+		lifetime = ty.Lifetime
+	}
+	if lifetime != nil {
+		for id := range lifetimeVarIDs(type_system.PruneLifetime(lifetime)) {
+			pathCopy := make([]liveness.ProjectionStep, len(path))
+			copy(pathCopy, path)
+			*into = append(*into, returnLifetimeSlot{path: pathCopy, lifetimeVarID: id})
+		}
+	}
+	switch ty := pruned.(type) {
+	case *type_system.ObjectType:
+		for _, elem := range ty.Elems {
+			prop, ok := elem.(*type_system.PropertyElem)
+			if !ok {
+				continue
+			}
+			if prop.Name.Kind != type_system.StrObjTypeKeyKind {
+				continue
+			}
+			childPath := append(path, liveness.PropertyOf{Key: prop.Name.Str})
+			walkReturnLifetimeSlots(prop.Value, childPath, into)
+		}
+	case *type_system.TupleType:
+		for i, elem := range ty.Elems {
+			childPath := append(path, liveness.IndexOf{Index: i})
+			walkReturnLifetimeSlots(elem, childPath, into)
+		}
+	}
+}
+
+// pathKey builds a deterministic string key from a projection path so
+// (RootVarID, path) tuples can be deduped via a map.
+func pathKey(path []liveness.ProjectionStep) string {
+	if len(path) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, step := range path {
+		switch s := step.(type) {
+		case liveness.PropertyOf:
+			b.WriteString(".")
+			b.WriteString(s.Key)
+		case liveness.IndexOf:
+			fmt.Fprintf(&b, "[%d]", s.Index)
+		case liveness.ElementOf:
+			b.WriteString(".[]")
+		case liveness.AwaitOf:
+			b.WriteString(".await")
+		case liveness.CastOf:
+			b.WriteString(".cast")
+		}
+	}
+	return b.String()
 }
 
 // extractFuncType reaches into the (possibly wrapped) callee type to find
