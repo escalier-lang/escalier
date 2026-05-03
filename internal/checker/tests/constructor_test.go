@@ -393,122 +393,131 @@ func TestConstructorInferredTypes(t *testing.T) {
 func TestOptionalFields(t *testing.T) {
 	t.Parallel()
 
-	t.Run("AllOptionalSynthesizesZeroArgCtor", func(t *testing.T) {
-		t.Parallel()
-		input := `
-			class Foo {
-				x?: number,
-				y?: string,
-			}
-			val f = Foo()
-		`
-		errs := inferModuleErrors(t, input)
-		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
-		ns := mustInferAsModule(t, input)
-		actual := collectBindingTypes(ns)
-		assert.Equal(t, "Foo", actual["f"])
-	})
+	type testCase struct {
+		input           string
+		expectedTypes   map[string]string   // binding name -> type string
+		typeContains    map[string][]string // type alias name -> substrings that must appear
+		typeNotContains map[string][]string // type alias name -> substrings that must not appear
+	}
 
-	t.Run("OptionalBitPropagatedToInstanceType", func(t *testing.T) {
-		t.Parallel()
-		input := `
-			class Foo {
-				x: number,
-				y?: string,
-			}
-		`
-		errs := inferModuleErrors(t, input)
-		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
-		ns := mustInferAsModule(t, input)
-		alias, ok := ns.Types["Foo"]
-		require.True(t, ok, "type alias Foo not found")
-		got := alias.Type.String()
-		assert.Contains(t, got, "y?:",
-			"expected instance type to render `y?:` (Optional propagated); got %q", got)
-		assert.NotContains(t, got, "x?:",
-			"required field x must not render as optional; got %q", got)
-	})
-
-	t.Run("MixedRequiredAndOptionalDropsOptionalFromParams", func(t *testing.T) {
-		t.Parallel()
-		input := `
-			class Mixed {
-				x: number,
-				y?: number,
-			}
-			val m = Mixed(1)
-		`
-		errs := inferModuleErrors(t, input)
-		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
-		ns := mustInferAsModule(t, input)
-		actual := collectBindingTypes(ns)
-		assert.Equal(t, "Mixed", actual["m"])
-	})
-
-	t.Run("ExplicitCtorMayLeaveOptionalUnassigned", func(t *testing.T) {
-		t.Parallel()
-		input := `
-			class Box {
-				x: number,
-				note?: string,
-				constructor(mut self, x: number) {
-					self.x = x
+	cases := map[string]testCase{
+		"AllOptionalSynthesizesZeroArgCtor": {
+			input: `
+				class Foo {
+					x?: number,
+					y?: string,
 				}
-			}
-			val b = Box(1)
-		`
-		errs := inferModuleErrors(t, input)
-		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
-	})
-
-	t.Run("OptionalAssignedInSomeBranchesIsOk", func(t *testing.T) {
-		t.Parallel()
-		input := `
-			class Box {
-				x: number,
-				note?: string,
-				constructor(mut self, x: number, tag: boolean) {
-					self.x = x
-					if tag {
-						self.note = "tagged"
+				val f = Foo()
+			`,
+			expectedTypes: map[string]string{"f": "Foo"},
+		},
+		"OptionalBitPropagatedToInstanceType": {
+			input: `
+				class Foo {
+					x: number,
+					y?: string,
+				}
+			`,
+			typeContains:    map[string][]string{"Foo": {"y?:"}},
+			typeNotContains: map[string][]string{"Foo": {"x?:"}},
+		},
+		"MixedRequiredAndOptionalDropsOptionalFromParams": {
+			input: `
+				class Mixed {
+					x: number,
+					y?: number,
+				}
+				val m = Mixed(1)
+			`,
+			expectedTypes: map[string]string{"m": "Mixed"},
+		},
+		"ExplicitCtorMayLeaveOptionalUnassigned": {
+			input: `
+				class Box {
+					x: number,
+					note?: string,
+					constructor(mut self, x: number) {
+						self.x = x
 					}
 				}
-			}
-			val b = Box(1, true)
-		`
-		errs := inferModuleErrors(t, input)
-		require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
-	})
+				val b = Box(1)
+			`,
+		},
+		"OptionalAssignedInSomeBranchesIsOk": {
+			input: `
+				class Box {
+					x: number,
+					note?: string,
+					constructor(mut self, x: number, tag: boolean) {
+						self.x = x
+						if tag {
+							self.note = "tagged"
+						}
+					}
+				}
+				val b = Box(1, true)
+			`,
+		},
+	}
 
-	t.Run("StaticOptionalWithDefaultIsParseError", func(t *testing.T) {
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			errs := inferModuleErrors(t, tc.input)
+			require.Empty(t, errs, "expected no errors; got: %v", formatErrs(errs))
+			ns := mustInferAsModule(t, tc.input)
+
+			if len(tc.expectedTypes) > 0 {
+				actual := collectBindingTypes(ns)
+				for binding, want := range tc.expectedTypes {
+					assert.Equal(t, want, actual[binding],
+						"unexpected type for binding %q", binding)
+				}
+			}
+			for typeName, subs := range tc.typeContains {
+				alias, ok := ns.Types[typeName]
+				require.Truef(t, ok, "type alias %q not found", typeName)
+				got := alias.Type.String()
+				for _, sub := range subs {
+					assert.Containsf(t, got, sub,
+						"expected type %q to contain %q; got %q", typeName, sub, got)
+				}
+			}
+			for typeName, subs := range tc.typeNotContains {
+				alias, ok := ns.Types[typeName]
+				require.Truef(t, ok, "type alias %q not found", typeName)
+				got := alias.Type.String()
+				for _, sub := range subs {
+					assert.NotContainsf(t, got, sub,
+						"expected type %q not to contain %q; got %q", typeName, sub, got)
+				}
+			}
+		})
+	}
+
+	// StaticOptionalIsParseError is kept separate: it exercises the
+	// parser-error path rather than the inference pipeline.
+	t.Run("StaticOptionalIsParseError", func(t *testing.T) {
 		t.Parallel()
 		input := `
 			class Foo {
-				static x?: number = 0,
+				static x?: number,
 			}
 		`
-		// Triggers both the static+optional and optional+default
-		// diagnostics; the dedicated single-error cases live in
-		// internal/parser/stmt_test.go.
 		source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 		_, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
 		require.NotEmpty(t, parseErrors,
-			"expected a parse error for `static x?: number = 0`")
-		var sawStaticOptional, sawDefault bool
+			"expected a parse error for `static x?: number`")
+		var sawStaticOptional bool
 		for _, e := range parseErrors {
 			if strings.Contains(e.Message, "Static fields cannot be optional") {
 				sawStaticOptional = true
 			}
-			if strings.Contains(e.Message, "Optional fields cannot have a default initializer") {
-				sawDefault = true
-			}
 		}
 		assert.True(t, sawStaticOptional,
 			"expected `Static fields cannot be optional` diagnostic; got: %v", parseErrors)
-		assert.True(t, sawDefault,
-			"expected `Optional fields cannot have a default initializer` diagnostic; got: %v", parseErrors)
 	})
 }
 

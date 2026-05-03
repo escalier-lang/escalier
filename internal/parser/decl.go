@@ -591,15 +591,8 @@ modifiers_done:
 		// the grammar permissive lets the parser recover after an
 		// erroneous instance-field initializer.
 		if p.lexer.peek().Type == Equal {
-			eqSpan := p.lexer.peek().Span
 			p.lexer.consume()
 			value = p.expr()
-			if isOptional {
-				// `x?: T = expr` is rejected: an optional field with a
-				// default initializer is contradictory — the default
-				// would always apply, leaving nothing optional about it.
-				p.reportError(eqSpan, "Optional fields cannot have a default initializer")
-			}
 		}
 
 		// TODO: report an error if `isAsync` is true

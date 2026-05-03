@@ -400,10 +400,6 @@ func TestRetiredClassSyntax(t *testing.T) {
 			input:         `class Foo { x, }`,
 			wantSubstring: "Class fields require a type annotation",
 		},
-		"OptionalFieldWithDefault": {
-			input:         `class Foo { x?: number = 0, }`,
-			wantSubstring: "Optional fields cannot have a default initializer",
-		},
 		"StaticOptionalField": {
 			input:         `class Foo { static x?: number, }`,
 			wantSubstring: "Static fields cannot be optional",
