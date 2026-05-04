@@ -313,7 +313,7 @@ func (c *Checker) inferFuncTypeAnn(
 
 	// §9.7 class 1: warn about declared `<'a>` clauses that no
 	// parameter, return type, or throws annotation references.
-	errors = slices.Concat(errors, reportUnusedLifetimeParams(&funcType, funcTypeAnn.Span()))
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(&funcType, funcTypeAnn.LifetimeParams, funcTypeAnn.Span()))
 
 	return &funcType, errors
 }

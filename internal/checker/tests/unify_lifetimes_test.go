@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -238,6 +240,36 @@ func TestUnifyLifetimesUnit(t *testing.T) {
 		require.Empty(t, c.UnifyLifetimes(Context{}, lv3, val))
 		assert.Equal(t, type_system.Lifetime(val), type_system.PruneLifetime(lv1))
 	})
+
+	// Pinned but skipped: distribution over a LifetimeUnion against a
+	// free LifetimeVar produces a spurious LifetimeMismatchError today.
+	// The first member binds the var; the second iteration then
+	// unifies the second member against the already-bound var (now
+	// pruned to the first member's value), reporting a mismatch
+	// between two distinct values. The intended semantics is that the
+	// var should be bound to the union as a whole.
+	//
+	// Not source-reachable yet (LifetimeUnion arises only on
+	// multi-source returns and the alias tracker doesn't emit free
+	// Vars on the rhs in that context), so this is left as a pending
+	// fix tracked via the TODO in unify_lifetimes.go's
+	// LifetimeUnion-distribution branch. Once Phase 10/11 makes the
+	// shape reachable, remove the t.Skip and fix the distribution
+	// rule.
+	t.Run("union_vs_free_var_currently_misfires", func(t *testing.T) {
+		t.Skip("pending fix: see TODO(phase-10/11) in unify_lifetimes.go")
+		c := NewChecker(context.Background())
+		v1 := &type_system.LifetimeValue{ID: 1, Name: "p"}
+		v2 := &type_system.LifetimeValue{ID: 2, Name: "q"}
+		union := &type_system.LifetimeUnion{
+			Lifetimes: []type_system.Lifetime{v1, v2},
+		}
+		freeVar := c.FreshLifetimeVar("a")
+		errs := c.UnifyLifetimes(Context{}, union, freeVar)
+		assert.Empty(t, errs,
+			"a free var unifying with a union should bind to the union, "+
+				"not produce a mismatch between members")
+	})
 }
 
 // TestUnifyTypeRefLifetimeArgs covers the parts of the TypeRefType
@@ -365,6 +397,85 @@ func TestSubstituteLifetimes(t *testing.T) {
 		assert.Equal(t, type_system.Lifetime(innerVar),
 			outFn.Return.(*type_system.ObjectType).Lifetime,
 			"inner shadowed return lifetime must be preserved")
+	})
+
+	// Substitution must preserve the original type's Provenance so
+	// downstream diagnostics still point at the right source span. The
+	// canonical Accept-based rebuilds in types.go all thread
+	// `t.provenance` through; the lifetime walker must do the same.
+	// Source-observable: a generic-instantiation site that produces a
+	// type-error after substitution would otherwise lose its span.
+	t.Run("preserves_provenance_through_object_rebuild", func(t *testing.T) {
+		prov := &ast.NodeProvenance{Node: nil}
+		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
+		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
+		obj := type_system.NewObjectType(prov, nil)
+		obj.Lifetime = v1
+		out := SubstituteLifetimes[type_system.Type](obj, map[int]type_system.Lifetime{
+			1: v2,
+		}).(*type_system.ObjectType)
+		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
+			"object rebuild must preserve Provenance")
+	})
+
+	t.Run("preserves_provenance_through_typeref_rebuild", func(t *testing.T) {
+		prov := &ast.NodeProvenance{Node: nil}
+		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
+		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
+		ref := type_system.NewTypeRefType(nil, "Container", nil)
+		// NewTypeRefType drops its provenance arg (pre-existing
+		// quirk), so set it explicitly via the Type interface.
+		ref.SetProvenance(prov)
+		ref.LifetimeArgs = []type_system.Lifetime{v1}
+		out := SubstituteLifetimes[type_system.Type](ref, map[int]type_system.Lifetime{
+			1: v2,
+		}).(*type_system.TypeRefType)
+		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
+			"typeref rebuild must preserve Provenance")
+	})
+
+	t.Run("preserves_provenance_through_tuple_rebuild", func(t *testing.T) {
+		prov := &ast.NodeProvenance{Node: nil}
+		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
+		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
+		obj := type_system.NewObjectType(nil, nil)
+		obj.Lifetime = v1
+		tup := type_system.NewTupleType(prov, obj)
+		out := SubstituteLifetimes[type_system.Type](tup, map[int]type_system.Lifetime{
+			1: v2,
+		}).(*type_system.TupleType)
+		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
+			"tuple rebuild must preserve Provenance")
+	})
+
+	t.Run("preserves_provenance_through_func_rebuild", func(t *testing.T) {
+		prov := &ast.NodeProvenance{Node: nil}
+		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
+		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
+		obj := type_system.NewObjectType(nil, nil)
+		obj.Lifetime = v1
+		fn := type_system.NewFuncType(prov, nil,
+			[]*type_system.FuncParam{{Type: obj}},
+			type_system.NewNumPrimType(nil), nil)
+		out := SubstituteLifetimes[type_system.Type](fn, map[int]type_system.Lifetime{
+			1: v2,
+		}).(*type_system.FuncType)
+		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
+			"func rebuild must preserve Provenance")
+	})
+
+	t.Run("preserves_provenance_through_mut_rebuild", func(t *testing.T) {
+		prov := &ast.NodeProvenance{Node: nil}
+		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
+		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
+		obj := type_system.NewObjectType(nil, nil)
+		obj.Lifetime = v1
+		mut := type_system.NewMutType(prov, obj)
+		out := SubstituteLifetimes[type_system.Type](mut, map[int]type_system.Lifetime{
+			1: v2,
+		}).(*type_system.MutType)
+		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
+			"mut rebuild must preserve Provenance")
 	})
 
 	// `LifetimeArgs` (the lifetime arguments on a constructed type

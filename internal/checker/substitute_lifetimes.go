@@ -49,7 +49,7 @@ func substituteLifetimesInType(t type_system.Type, substs map[int]type_system.Li
 		if inner == ty.Type {
 			return ty
 		}
-		return type_system.NewMutType(nil, inner)
+		return type_system.NewMutType(ty.Provenance(), inner)
 	case *type_system.FuncType:
 		return substituteLifetimesInFunc(ty, substs)
 	case *type_system.UnionType:
@@ -113,7 +113,7 @@ func substituteLifetimesInTypeRef(t *type_system.TypeRefType, substs map[int]typ
 	if !argsChanged && newLifetime == t.Lifetime && !ltArgsChanged {
 		return t
 	}
-	r := type_system.NewTypeRefTypeFromQualIdent(nil, t.Name, t.TypeAlias, newArgs...)
+	r := type_system.NewTypeRefTypeFromQualIdent(t.Provenance(), t.Name, t.TypeAlias, newArgs...)
 	r.Lifetime = newLifetime
 	if len(newLifetimeArgs) > 0 {
 		r.LifetimeArgs = newLifetimeArgs
@@ -135,7 +135,7 @@ func substituteLifetimesInObject(t *type_system.ObjectType, substs map[int]type_
 	if !elemsChanged && newLifetime == t.Lifetime {
 		return t
 	}
-	r := type_system.NewObjectType(nil, newElems)
+	r := type_system.NewObjectType(t.Provenance(), newElems)
 	r.ID = t.ID
 	r.Exact = t.Exact
 	r.Immutable = t.Immutable
@@ -197,7 +197,7 @@ func substituteLifetimesInTuple(t *type_system.TupleType, substs map[int]type_sy
 	if !changed && newLifetime == t.Lifetime {
 		return t
 	}
-	r := type_system.NewTupleType(nil, newElems...)
+	r := type_system.NewTupleType(t.Provenance(), newElems...)
 	r.Lifetime = newLifetime
 	return r
 }
@@ -248,7 +248,7 @@ func substituteLifetimesInFunc(t *type_system.FuncType, substs map[int]type_syst
 	if !paramsChanged && newReturn == t.Return && newThrows == t.Throws {
 		return t
 	}
-	r := type_system.NewFuncType(nil, t.TypeParams, newParams, newReturn, newThrows)
+	r := type_system.NewFuncType(t.Provenance(), t.TypeParams, newParams, newReturn, newThrows)
 	r.LifetimeParams = t.LifetimeParams
 	return r
 }
@@ -266,7 +266,7 @@ func substituteLifetimesInUnion(t *type_system.UnionType, substs map[int]type_sy
 	if !changed {
 		return t
 	}
-	return type_system.NewUnionType(nil, newTypes...)
+	return type_system.NewUnionType(t.Provenance(), newTypes...)
 }
 
 func substituteLifetimesInIntersection(t *type_system.IntersectionType, substs map[int]type_system.Lifetime) type_system.Type {
@@ -282,5 +282,5 @@ func substituteLifetimesInIntersection(t *type_system.IntersectionType, substs m
 	if !changed {
 		return t
 	}
-	return type_system.NewIntersectionType(nil, newTypes...)
+	return type_system.NewIntersectionType(t.Provenance(), newTypes...)
 }

@@ -30,6 +30,19 @@ func TestPhase9_7_UnusedLifetimeParam(t *testing.T) {
 		assert.Equal(t, "a", found.Name)
 		assert.True(t, found.IsWarning(), "class 1 is a warning")
 		assert.Equal(t, "lifetime parameter 'a is declared but never used", found.Message())
+
+		// Span must point at the `'a` declaration itself, not the
+		// whole function. The script puts the function on line 3
+		// (the leading newline + the type alias on line 2). The fn
+		// declaration occupies the line; the `<'a>` is a few chars
+		// in. We assert the diagnostic span is strictly inside the
+		// function span — i.e. not the entire function range — by
+		// checking the column is past the `fn f` identifier.
+		span := found.Span()
+		assert.Equal(t, 3, span.Start.Line,
+			"diagnostic should be on the line containing the fn decl")
+		assert.Greater(t, span.Start.Column, 7,
+			"diagnostic span should point at `<'a>` (past `fn f`), not at the start of the function")
 	})
 
 	t.Run("used_param_does_not_warn", func(t *testing.T) {
@@ -111,6 +124,41 @@ func TestPhase9_7_UndeclaredLifetime(t *testing.T) {
 		assert.Equal(t,
 			"lifetime 'b is used but not declared; did you mean 'a?",
 			found.Message())
+	})
+
+	// Regression: an inner function with no `<>` clause that uses an
+	// undeclared `'b` is a hard error even when nested inside an outer
+	// fn whose `<'a>` clause introduces sibling names.
+	//
+	// `collectVisibleLifetimeNames` walks up `s.Parent`, which on its
+	// face would seem to leak the outer's `'a` into the inner's
+	// suggestion list (and downgrade severity to a warning). In practice
+	// nested `fn` declarations do not inherit the outer function's
+	// signature scope for lifetime lookup — they are processed via a
+	// hoisting pass with a fresh context — so the inner's
+	// resolveSingleLifetime sees no enclosing lifetimes and produces a
+	// hard error. This test pins that behavior so a future change to the
+	// scope chain (or to nested-fn handling) cannot silently regress it.
+	t.Run("nested_fn_without_clause_is_error_even_under_outer_clause", func(t *testing.T) {
+		errs := mustInferScriptAllErrors(t, `
+			type Point = {x: number}
+			fn outer<'a>(p: mut 'a Point) -> mut 'a Point {
+				fn inner(q: mut 'b Point) -> mut 'b Point { return q }
+				return p
+			}
+		`)
+		var found *UndeclaredLifetimeError
+		for _, e := range errs {
+			if ue, ok := e.(UndeclaredLifetimeError); ok && ue.Name == "b" {
+				found = &ue
+				break
+			}
+		}
+		require.NotNil(t, found,
+			"expected an UndeclaredLifetimeError for 'b; got %v", errs)
+		assert.False(t, found.IsWarning(),
+			"inner fn has no <> clause of its own — must be a hard error "+
+				"regardless of outer fn's <'a>")
 	})
 
 	t.Run("declared_sibling_does_not_warn", func(t *testing.T) {

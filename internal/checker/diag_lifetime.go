@@ -91,18 +91,29 @@ func (e DeclaredLifetimeMismatchError) Message() string {
 // (param types, return type, throws type). Used by inferFuncSig and
 // inferFuncTypeAnn after the function type has been assembled.
 //
+// astParams is the parallel AST `<'a, 'b>` clause from the original
+// signature; it is used to attach a precise per-param span to each
+// diagnostic. fallbackSpan covers the (rare) case where the AST and
+// FuncType.LifetimeParams disagree in length — it points at the
+// surrounding function declaration.
+//
 // Implements §9.7 class 1.
 func reportUnusedLifetimeParams(
 	fnType *type_system.FuncType,
-	span ast.Span,
+	astParams []*ast.LifetimeAnn,
+	fallbackSpan ast.Span,
 ) []Error {
 	if len(fnType.LifetimeParams) == 0 {
 		return nil
 	}
 	used := collectInlineLifetimeIDs(fnType)
 	var errors []Error
-	for _, lp := range fnType.LifetimeParams {
+	for i, lp := range fnType.LifetimeParams {
 		if _, ok := used[lp.ID]; !ok {
+			span := fallbackSpan
+			if i < len(astParams) && astParams[i] != nil {
+				span = astParams[i].Span()
+			}
 			errors = append(errors, UnusedLifetimeParamError{
 				Name: lp.Name,
 				span: span,

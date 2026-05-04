@@ -50,6 +50,21 @@ func (c *Checker) UnifyLifetimes(ctx Context, l1, l2 type_system.Lifetime) []Err
 	// the constraint applies. This is how multi-source returns
 	// (e.g. `('a | 'b) Point`) propagate to all source alias sets at a
 	// call site.
+	//
+	// TODO(phase-10/11): the sequential per-member distribution below
+	// misbehaves when the *other* side is a free LifetimeVar: the first
+	// member binds the var; the second member then unifies against the
+	// already-bound var (now a concrete value), producing a spurious
+	// LifetimeMismatchError if the members differ. The intended
+	// semantics is "the var should be bound to the union as a whole,"
+	// which requires either rebuilding the union from post-Prune
+	// members or special-casing the "union vs free var" pair before
+	// distribution. Source code cannot construct this shape today
+	// (LifetimeUnion arises only on the lhs of a return-type with
+	// multiple alias sources, and the alias tracker doesn't yet
+	// produce free Vars on the rhs in that context). See the
+	// `union_vs_free_var_currently_misfires` skipped test in
+	// unify_lifetimes_test.go for the failing shape.
 	if u, ok := l1.(*type_system.LifetimeUnion); ok {
 		var errors []Error
 		for _, m := range u.Lifetimes {

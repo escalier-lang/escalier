@@ -241,7 +241,7 @@ func (c *Checker) inferFuncSig(
 
 	// §9.7 class 1: warn about declared `<'a>` clauses that no
 	// parameter, return type, or throws annotation references.
-	errors = slices.Concat(errors, reportUnusedLifetimeParams(t, node.Span()))
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(t, sig.LifetimeParams, node.Span()))
 	// §9.7 class 3 (scaffolded): hook for declared-vs-actual body
 	// comparison. No-op until inferLifetimesCore gains a non-mutating
 	// "compare" mode.
