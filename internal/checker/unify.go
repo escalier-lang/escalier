@@ -705,6 +705,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					}
 				} else if len(ref1.LifetimeArgs) > 0 && len(ref2.LifetimeArgs) > 0 {
 					// Mismatched lifetime-arg arity is a structural error.
+					// TODO(#547): when one side has zero lifetime args, the
+					// mismatch is currently tolerated. Revisit once Phase 11
+					// elision rules are in place — they may treat the empty
+					// side as fresh vars or as a hard error.
 					errors = append(errors, &CannotUnifyTypesError{T1: ref1, T2: ref2})
 				}
 				return errors

@@ -23,6 +23,12 @@ func SubstituteLifetimes[T type_system.Type](t T, substs map[int]type_system.Lif
 	if len(substs) == 0 {
 		return t
 	}
+	// The final cast back to T is safe for the only current caller
+	// (instantiateGenericFunc, which passes *FuncType) because
+	// substituteLifetimesInFunc always returns a *FuncType. If a future
+	// caller passes a Union- or Intersection-typed T, those branches
+	// return type_system.Type rather than the concrete pointer type, and
+	// this cast would panic — re-evaluate when adding new callers.
 	return substituteLifetimesInType(t, substs).(T)
 }
 
@@ -169,6 +175,10 @@ func substituteLifetimesInObjElem(elem type_system.ObjTypeElem, substs map[int]t
 			MutSelf: e.MutSelf,
 		}
 	default:
+		// TODO(#548): handle CallableElem, ConstructorElem, GetterElem,
+		// SetterElem, MappedElem, IndexSignatureElem, RestSpreadElem.
+		// These can carry lifetime-bearing inner types but are passed
+		// through unchanged today; add cases as future phases need them.
 		return elem
 	}
 }

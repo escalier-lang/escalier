@@ -68,6 +68,11 @@ func (c *Checker) UnifyLifetimes(ctx Context, l1, l2 type_system.Lifetime) []Err
 	// Var on one or both sides: bind. Equating two free Vars is a
 	// directed binding (l1.Instance = l2). Subsequent prunes resolve
 	// through the chain.
+	//
+	// No occurs check: lifetime structure has no recursion (a Var
+	// cannot syntactically appear inside its own union or value), so
+	// the only way to construct a cycle would be a same-var-twice
+	// binding, which the `l1 == l2` early return above already covers.
 	if v1, ok := l1.(*type_system.LifetimeVar); ok {
 		v1.Instance = l2
 		return nil
@@ -113,9 +118,9 @@ type LifetimeMismatchError struct {
 	span ast.Span
 }
 
-func (e LifetimeMismatchError) isError()         {}
-func (e LifetimeMismatchError) IsWarning() bool  { return false }
-func (e LifetimeMismatchError) Span() ast.Span   { return e.span }
+func (e LifetimeMismatchError) isError()        {}
+func (e LifetimeMismatchError) IsWarning() bool { return false }
+func (e LifetimeMismatchError) Span() ast.Span  { return e.span }
 func (e LifetimeMismatchError) Message() string {
 	n1 := e.L1.Name
 	if n1 == "" {

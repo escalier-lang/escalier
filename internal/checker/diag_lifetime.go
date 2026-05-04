@@ -40,10 +40,10 @@ func (e UnusedLifetimeParamError) Message() string {
 // other lifetime names, it is a warning that probably indicates a
 // typo, with Suggestions populated from siblings.
 type UndeclaredLifetimeError struct {
-	Name        string
-	Suggestions []string // sibling lifetime names declared in the nearest enclosing `<>`
-	hasEnclosing bool    // whether an enclosing `<>` clause exists at all
-	span        ast.Span
+	Name         string
+	Suggestions  []string // sibling lifetime names declared in the nearest enclosing `<>`
+	hasEnclosing bool     // whether an enclosing `<>` clause exists at all
+	span         ast.Span
 }
 
 func (e UndeclaredLifetimeError) isError() {}
@@ -72,7 +72,7 @@ func (e UndeclaredLifetimeError) Message() string {
 // unsafe — callers will be told the result aliases p (or doesn't)
 // while the body actually behaves the opposite way.
 type DeclaredLifetimeMismatchError struct {
-	Location string             // e.g. "return type", "parameter 'p'"
+	Location string // e.g. "return type", "parameter 'p'"
 	Declared type_system.Lifetime
 	Inferred type_system.Lifetime
 	span     ast.Span

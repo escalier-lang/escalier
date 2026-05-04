@@ -85,13 +85,16 @@ func (c *Checker) resolveSingleLifetime(
 	// names exist, this is most likely a typo (warning); if no clause
 	// exists at all, the user almost certainly forgot the `<'a>`
 	// declaration entirely (error).
+	//
+	// Collect siblings *before* registering the fallback var so the
+	// undeclared name does not appear in its own Suggestions list.
+	siblings := collectVisibleLifetimeNames(scope)
 	lv := c.FreshLifetimeVar(ann.Name)
 	scope.SetLifetimeVar(ann.Name, lv)
-	siblings := collectVisibleLifetimeNames(scope)
 	err := UndeclaredLifetimeError{
 		Name:         ann.Name,
 		Suggestions:  siblings,
-		hasEnclosing: len(siblings) > 1, // > 1 because we just registered ourselves
+		hasEnclosing: len(siblings) > 0,
 		span:         ann.Span(),
 	}
 	return lv, []Error{err}

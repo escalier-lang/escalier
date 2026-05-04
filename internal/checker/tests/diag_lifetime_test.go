@@ -29,7 +29,7 @@ func TestPhase9_7_UnusedLifetimeParam(t *testing.T) {
 		require.NotNil(t, found, "expected an UnusedLifetimeParamError; got %v", errs)
 		assert.Equal(t, "a", found.Name)
 		assert.True(t, found.IsWarning(), "class 1 is a warning")
-		assert.Contains(t, found.Message(), "lifetime parameter 'a is declared but never used")
+		assert.Equal(t, "lifetime parameter 'a is declared but never used", found.Message())
 	})
 
 	t.Run("used_param_does_not_warn", func(t *testing.T) {
@@ -85,10 +85,9 @@ func TestPhase9_7_UndeclaredLifetime(t *testing.T) {
 		assert.Equal(t, "a", found.Name)
 		assert.False(t, found.IsWarning(),
 			"class 2 with no enclosing <> clause is a hard error")
-		assert.Contains(t, found.Message(),
-			"lifetime 'a is used but not declared")
-		assert.Contains(t, found.Message(),
-			"add `<'a>` to the enclosing function signature")
+		assert.Equal(t,
+			"lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+			found.Message())
 	})
 
 	t.Run("typo_with_sibling_is_warning", func(t *testing.T) {
@@ -108,8 +107,10 @@ func TestPhase9_7_UndeclaredLifetime(t *testing.T) {
 			"expected an UndeclaredLifetimeError for 'b; got %v", errs)
 		assert.True(t, found.IsWarning(),
 			"class 2 with sibling lifetimes is a warning (likely typo)")
-		assert.Contains(t, found.Suggestions, "a",
-			"sibling 'a should be a suggestion")
+		assert.Equal(t, []string{"a"}, found.Suggestions)
+		assert.Equal(t,
+			"lifetime 'b is used but not declared; did you mean 'a?",
+			found.Message())
 	})
 
 	t.Run("declared_sibling_does_not_warn", func(t *testing.T) {
