@@ -84,7 +84,9 @@ Because exact object types have a known, complete set of keys, all three of
 these built-ins can be given precise types when called on an exact object:
 
 - `Object.keys(o)` for an exact `o` returns an exact tuple of literal-string
-  keys (e.g., `["x", "y"]` for `{x: number, y: number}`).
+  keys (e.g., `["x", "y"]: ["x", "y"]` for `{x: number, y: number}`). Its
+  element-type union is `keyof typeof o`, so iterating the tuple yields a
+  binding of type `keyof typeof o`.
 - `Object.values(o)` for an exact `o` returns an exact tuple of the
   corresponding value types (e.g., `[number, number]` for the same object).
 - `Object.entries(o)` for an exact `o` returns an exact tuple of
@@ -267,9 +269,35 @@ type EM = {[K]: string for K in keyof Exact}    // exact: keyof Exact is exact "
 type IM = {[K]: string for K in keyof Inexact}  // inexact: keyof Inexact is inexact "x" | "y" | ...
 // IM is inexact { x: string, y: string, ... }
 
-type Open = {[K]: number for K in string}      // inexact: string is an inexact union of all strings
-// Open is inexact — equivalent to { [k: string]: number, ... }
+type Open = {[K]: number for K in string}       // inexact: string is an inexact union of all strings
+// Open is inexact, and is exactly the desugaring of the TypeScript-style
+// index signature `{ [k: string]: number }` — see the note below.
 ```
+
+#### 2.7.1. Index signatures as sugar for mapped elements
+
+> **Note.** This subsection resolves what was previously an open
+> question about how index signatures interact with exactness.
+
+A TypeScript-style index signature `{[k: K]: V}` is **surface syntax for
+the mapped element** `{[P]: V for P in K}` — the index parameter is
+renamed and its constraint is lifted into the `for ... in ...` clause.
+The two spellings produce the same type:
+
+```
+{[k: string]: number}    ≡    {[K]: number for K in string}
+{[k: keyof E]: number}   ≡    {[K]: number for K in keyof E}
+```
+
+Consequently, the exactness of an object type containing an index
+signature is determined by the constraint on its key, by exactly the
+rule above:
+
+- `{[k: string]: number}` — constraint `string` is an inexact union, so
+  the object type is **inexact**.
+- `{[k: keyof E]: number}` for an exact `E` — constraint is an exact
+  union, so the object type is **exact** (assuming nothing else in the
+  surrounding object forces inexactness).
 
 This rule composes naturally with the other propagation rules: combining a
 mapped element whose constraint is exact with a trailing `...` still yields
@@ -293,8 +321,8 @@ This is distinct from a tuple with an explicit *typed* rest element, which is
 already a TypeScript-style construct:
 
 ```
-type Variadic = [string, ...Array<number>]    // exact arity-wise: 1 string then number rest
-type Inexact  = [string, number, ...]          // inexact: extra elements of any type allowed
+type Variadic     = [string, ...Array<number>]   // exact arity-wise: 1 string then number rest
+type InexactTail  = [string, number, ...]        // inexact: extra elements of any type allowed
 ```
 
 The difference: `[string, ...Array<number>]` is a precise type whose extra
@@ -357,6 +385,25 @@ Optional tuple elements (`[T1, T2?]`) interact with exactness analogously to
 optional object properties: an exact tuple permits absence of optional trailing
 elements but no additional elements beyond the declared ones.
 
+A tuple with a typed rest element and **no trailing `...` sentinel** —
+e.g. `[string, ...Array<number>]` — is **exact**: its shape is fully
+determined by the declaration, and any extras must satisfy the rest
+element type. For subtyping:
+
+- `[string, ...Array<number>] <: [string, ...Array<number>]` (reflexive).
+- `[string, number] <: [string, ...Array<number>]` (the rest element
+  permits zero `number`s).
+- `[string, number, number] <: [string, ...Array<number>]` (any
+  non-negative count of trailing `number`s).
+- `[string, ...Array<number>] </: [string, number]` (the rest tuple may
+  carry more elements than the fixed exact tuple admits).
+- `[string, ...Array<number>] <: [string, number, ...]` (the rest tuple
+  is at least one element with a string head, satisfying the inexact
+  tuple's lower bound).
+- `[string, ...Array<number>] <: [string, ...]` (same idea with a
+  weaker lower bound: one `string` head plus any number of trailing
+  elements, which the unknown-typed inexact tail trivially admits).
+
 ## 4. Function Types
 
 ### 4.1. Syntax
@@ -368,8 +415,8 @@ type InexactCallback = fn(x: number, y: number, ...) -> number
 
 - A bare function type `fn(...) -> T` is **exact** — callers may not pass extra
   arguments beyond those declared.
-- A function type ending in `...` in its parameter list is **inexact** — extra
-  positional arguments are permitted at call sites.
+- A function type whose parameter list ends with a trailing `...` is
+  **inexact** — extra positional arguments are permitted at call sites.
 
 This is distinct from an explicit typed rest parameter:
 
@@ -482,6 +529,18 @@ with optional parameters still has a fixed *maximum* arity; an exact function
 with a typed rest parameter accepts any number of trailing arguments, but each
 extra must satisfy the rest element type.
 
+A function type with a typed rest parameter — e.g.
+`fn(a: A, ...rest: Array<B>) -> R` — consumes *all* trailing arguments,
+each of which must be a `B`. There is no JavaScript-level way to have a
+typed rest parameter coexist with additional positional parameters after
+it, and the same restriction applies in Escalier. Combining a typed rest
+parameter with the inexact `...` sentinel
+(`fn(a: A, ...rest: Array<B>, ...) -> R`) is therefore **disallowed**:
+either the rest type already specifies what the trailing arguments must
+be (no need for the sentinel), or the sentinel is used on its own to
+admit untyped extras (no typed rest). A function with a typed rest
+parameter is always exact in the §4.2.1 sense.
+
 #### 4.2.3. Call-Site Checking
 
 At call sites, the checker enforces:
@@ -536,6 +595,28 @@ rule `[string, number] <: [string, number, ...]`. This is intentional —
 the asymmetry on function-type subtyping reflects the call-contract
 direction, which a tuple of parameter types no longer carries.
 
+#### 4.2.5. `ReturnType<T>` and Other Function Utility Types
+
+The remaining function-shaped utility types are derived analogously, and
+each carries the natural exactness:
+
+- **`ReturnType<T>`** is the declared return type of `T`. Its exactness
+  is whatever exactness the return type has — `ReturnType<fn(...) -> R>`
+  is `R`, with `R`'s exactness preserved.
+- **`Awaited<T>`** unwraps `Promise<T>` chains. Exactness of the result
+  is the exactness of the resolved type at the bottom of the chain.
+- **`ConstructorParameters<T>`** is the `Parameters`-analog for
+  constructor signatures and follows the same rules as §4.2.4.
+- **`InstanceType<T>`** is the instance type produced by a constructor.
+  Its exactness follows §2.6 (exact only if the underlying class is
+  `final`).
+- **`ThisParameterType<T>`** extracts the type of the explicit `this`
+  parameter, with that type's exactness preserved.
+
+The matcher and constraint for each of these utility types are
+exactness-agnostic on the function/constructor type they accept, for the
+same reason as `Parameters` (§4.2.4).
+
 ## 5. Union Types
 
 ### 5.1. Motivation
@@ -573,8 +654,11 @@ type InexactError = IOError | ParseError | ...
 - A bare union `T1 | T2 | ... | Tn` is **exact**: its inhabitants are exactly
   the values in `T1 ∪ T2 ∪ ... ∪ Tn`, and nothing else.
 - A union ending in `| ...` is **inexact**: it contains *at least* the values
-  in those members, and possibly more values of unknown type (effectively
-  some unknown additional union members).
+  in those members, plus an implicit `unknown`-typed tail standing in for
+  zero or more additional union members of unknown type. The tail is always
+  `unknown`-typed; it is not constrained by surrounding context (so e.g.
+  `"a" | "b" | ...` does *not* satisfy a `: string` constraint, since the
+  tail is not proven to be a string — see §7.4.4).
 
 ### 5.3. Semantics
 
@@ -671,13 +755,15 @@ For union types `A` and `B`:
 - **Inexact </: Exact:** An inexact union is *not* a subtype of an exact
   union, because the inexact value may be a member outside the listed set.
 - **Exact <: Exact:** `A <: B` iff every member of `A` is a subtype of some
-  member of `B`. (Standard union subtyping; no extra arity rule beyond what
-  union subtyping already provides.)
+  member of `B`. (Standard union subtyping. There is no "arity" requirement
+  beyond covering every member — the count of listed members on the two
+  sides need not match, only the coverage relation.)
 - **Inexact <: Inexact:** `A <: B` iff every *listed* member of `A` is a
-  subtype of some listed member of `B`, *and* `B`'s "unknown tail" is at
-  least as permissive as `A`'s. In practice, an inexact union is treated as
-  having an implicit `unknown`-like tail member, so `A` and `B` must both
-  permit unknown extras.
+  subtype of some listed member of `B`, and both `A` and `B` are inexact.
+  The `...` tail on each side is implicitly `unknown`-typed, so the tails
+  always match — the only check that matters is that the listed members
+  on the supplier side are covered by the listed members on the consumer
+  side.
 
 ### 5.5. Interop
 
@@ -706,11 +792,26 @@ import type { Color } from "some-ts-lib"     // inferred inexact
 type StrictColor = Exact<Color>              // opt-in to exact
 ```
 
-Escalier-emitted `.d.ts` files preserve exactness via JSDoc annotations
-alongside declarations, so when one Escalier project consumes another
-Escalier project's emitted `.d.ts`, exact unions round-trip correctly. Only
-plain TypeScript-authored declarations (without those JSDoc annotations)
-fall back to the inexact default.
+Escalier-emitted `.d.ts` files preserve the original Escalier type via
+an `@escalier-type` JSDoc tag alongside each declaration (see §9), so
+when one Escalier project consumes another Escalier project's emitted
+`.d.ts`, exact unions round-trip correctly. Only plain
+TypeScript-authored declarations (without an `@escalier-type` tag) fall
+back to the inexact default.
+
+##### Provably-closed primitive unions
+
+A small set of TypeScript types are *provably* closed at the language
+level and are imported as **exact** unions:
+
+- `boolean` is imported as the exact union `true | false`.
+- `null | undefined` (as a TypeScript type) is imported as exact, since
+  TypeScript guarantees no other values inhabit it.
+
+These are the only exceptions to the inexact-by-default rule for
+TypeScript-imported unions; any other imported union (including the
+nominal `Color`-style alias unions, discriminated unions, etc.) follows
+the inexact rule above.
 
 ### 5.6. Template Literal Types
 
@@ -746,6 +847,12 @@ and inexact forms of any type that has a notion of exactness (objects,
 tuples, functions, unions). They are dual: `Exact<T>` tightens, `Inexact<T>`
 loosens.
 
+The function-shaped utility types (`Parameters<T>`, `ReturnType<T>`,
+`ConstructorParameters<T>`, `InstanceType<T>`, `ThisParameterType<T>`,
+`Awaited<T>`) are documented alongside function-type semantics in §4.2.4
+and §4.2.5, since their exactness behavior is bound up with how `infer`
+captures function parameter lists.
+
 ### 6.1. `Exact<T>`
 
 `Exact<T>` produces the exact form of `T`. Its behavior depends on the kind
@@ -761,8 +868,7 @@ of type `T`:
   arguments.
 - **Union types:** `Exact<T1 | T2 | ...>` is `T1 | T2`. The trailing `...`
   is removed; the result is a closed union.
-- **Already-exact types:** `Exact<T>` is `T` if `T` is already exact (and
-  not an interface or non-final class instance — see below).
+- **Already-exact types:** `Exact<T>` is `T` if `T` is already exact.
 
 For types that **cannot be made exact** at the type level, `Exact<T>` is an
 error:
@@ -783,7 +889,9 @@ error:
 - **Tuple types:** `Inexact<[string, number]>` is `[string, number, ...]`.
 - **Function types:** `Inexact<fn(a: A, b: B) -> R>` is
   `fn(a: A, b: B, ...) -> R`. Callers of the result may pass extra
-  arguments.
+  arguments. Note this is the one direction users *cannot* obtain via
+  function-type subtyping (§4.2.1.1) — `Inexact<F>` exists precisely to
+  express it explicitly.
 - **Union types:** `Inexact<T1 | T2>` is `T1 | T2 | ...`.
 - **Already-inexact types:** `Inexact<T>` is `T` if `T` is already
   inexact.
@@ -820,6 +928,10 @@ types in the natural way:
 type T = {x: number, y: number, ...}
 type P = Partial<T>                  // {x?: number, y?: number, ...}
 type EP = Exact<P>                   // {x?: number, y?: number}
+// Note: applying `Exact` here drops the `...` tail — values of type EP
+// may omit `x` or `y` (they're optional), but they may not carry any
+// other property, even though the original `T` admitted arbitrary
+// extras.
 ```
 
 For container generics, `Exact` and `Inexact` apply only to the top-level
@@ -842,9 +954,10 @@ if a real need emerges; we do not provide one initially.
 - The result type (after applying `Exact`/`Inexact`) is what's emitted as a
   plain TypeScript type — TypeScript itself has no notion of exactness, so
   the `Exact<...>` / `Inexact<...>` wrapper is erased.
-- The original Escalier form is preserved in the JSDoc annotation alongside
-  the declaration so that other Escalier consumers can recover the precise
-  exactness.
+- The original Escalier form (including the `Exact<...>` / `Inexact<...>`
+  wrapper) is preserved in the `@escalier-type` JSDoc tag alongside the
+  declaration so that other Escalier consumers can recover the precise
+  exactness. See §9.
 
 ## 7. Type Operators and Exactness Propagation
 
@@ -861,8 +974,16 @@ The exactness of `keyof T` matches the exactness of `T`'s key set:
 - `keyof` of an inexact object type, an interface, a namespace, or a
   non-`final` class instance type is an **inexact** union (those types
   admit unknown additional keys).
-- `keyof` of an exact tuple is the exact union of its valid index literals
-  plus `Array` member keys; `keyof` of an inexact tuple is inexact.
+- `keyof` of a tuple yields the union of its index literals only —
+  `Array` prototype keys are *not* included (this differs from
+  TypeScript). For an exact tuple `[T0, ..., Tn-1]`, `keyof` is the
+  exact union `"0" | ... | "n-1"`. For an inexact tuple
+  `[T0, ..., Tn-1, ...]`, `keyof` is the inexact union
+  `"0" | ... | "n-1" | ...`, since the unknown trailing positions
+  contribute unknown additional index literals.
+
+NOTE: The behaviour of `keyof` in Escalier does not include `Array` prototype
+keys like it does in TypeScript.
 
 ### 7.2. `typeof v`
 
@@ -942,6 +1063,24 @@ type A = Elem<Array<{x: number}>>          // E is exact {x: number}
 type B = Elem<Array<{x: number, ...}>>     // E is inexact {x: number, ...}
 ```
 
+##### `infer` over object, tuple, and function patterns
+
+The general rule, of which §4.2.4 is the function-pattern instance:
+
+- An `infer` binding inside an object, tuple, or function-parameter
+  pattern captures the exactness of the corresponding part of the
+  matched type. `if T : {x: infer X, ...} { X }` against an exact
+  `{x: P, y: Q}` binds `X` to `P` (with `P`'s exactness preserved); the
+  pattern's own `...` says only what the pattern requires of `T`, not
+  what is captured.
+- The pattern itself is matched against `T` using the standard
+  subtyping rules (§2.3, §3.3, §4.2.1) with one exception: patterns
+  built solely to extract via `infer` (e.g. `fn(...args: infer P)`,
+  `Array<infer E>`) are treated as exactness-agnostic on the matched
+  shape, so a single pattern matches both exact and inexact `T`. This
+  matches the rule already given for function patterns in §4.2.4 and
+  generalizes it to object/tuple patterns used for inference.
+
 #### 7.4.3. Distribution over unions
 
 When `T` is a union, the conditional distributes over its members and
@@ -996,11 +1135,12 @@ defensively inside the conditional.
 
 ### 7.5. Mapped types `{[K]: T[K] for K in keyof T}`
 
-Already covered in the **Mapped Elements** subsection: the exactness of
-the resulting object type is determined by the exactness of the
-constraint `Keys`. Exact constraint → exact result; inexact constraint →
-inexact result. (As always, the result can still be forced inexact by
-other elements in the surrounding object type.)
+Already covered in §2.7 **Mapped Elements**: the exactness of the
+resulting object type is determined by the exactness of the constraint
+on the `IndexParam` (the type after `in`). Exact constraint → exact
+result; inexact constraint → inexact result. (As always, the result can
+still be forced inexact by other elements in the surrounding object
+type.)
 
 ### 7.6. Union types `A | B`
 
@@ -1021,6 +1161,17 @@ Intersection inherits exactness from its operands per kind:
   if the inexact type's declared properties are a subset of the exact
   type's declared properties; otherwise it is an error (the extra
   inexact properties cannot be present in an exact value).
+- **Tuple types:** Intersection of two tuple types is well-defined only
+  when their declared lengths agree (or when one is inexact and the
+  other has at least as many declared elements as it does). The result
+  is exact iff both operands are exact, and each element type is the
+  intersection of the corresponding element types from each side.
+- **Function types:** Intersection of function types models overload —
+  `(fn(A) -> R) & (fn(B) -> S)` is callable as either signature.
+  Because function-type subtyping requires arities (and exactness) to
+  match in both directions, the operands' exactnesses do not need to
+  agree; each call site is checked against the matching overload's
+  exactness.
 - **Union types:** Intersection distributes over unions as usual; the
   result's exactness is the conjunction (exact only if both operands are
   exact and the resulting member set is fully determined).
@@ -1052,7 +1203,32 @@ Aliasing is purely a naming layer and does not adjust exactness.
 Mutability is orthogonal to exactness. `mut T` carries the exactness of
 `T`; `mut` neither tightens nor loosens.
 
-### 7.12. Special types
+### 7.12. Generic constraints
+
+When a type parameter is constrained by an exact type, only exact
+arguments may be substituted. An inexact subtype is *not* admissible at
+the call site, even if its declared shape would otherwise satisfy the
+constraint, because the inexact tail represents members the constraint
+cannot prove are present.
+
+```
+fn dump<T : {x: number, y: number}>(t: T) -> string { ... }
+
+dump({x: 1, y: 2})                 // okay — exact argument
+declare val q: {x: number, y: number, ...}
+dump(q)                            // Error — inexact argument fails exact constraint
+```
+
+The dual rule already follows from §2.3: an inexact constraint admits
+both exact and inexact arguments, since exact `<:` inexact for objects,
+tuples, and unions. (Function-type constraints follow the stricter
+arities-must-match-in-both-directions rule of §4.2.1.1.)
+
+In short: the exactness of the *constraint* fixes the exactness of the
+admissible arguments — exact constraints reject inexact arguments;
+inexact constraints accept either.
+
+### 7.13. Special types
 
 - `never`, `unknown`, `any`, and `void` have no notion of arity and
   therefore no exactness distinction. They behave as the absorbing or
@@ -1068,7 +1244,7 @@ Mutability is orthogonal to exactness. `mut T` carries the exactness of
   source are exact by default.** Inexactness must be explicitly opted into
   with `...`.
 - **All types imported from TypeScript** (whether via `.d.ts` files or
-  declarations without Escalier-specific JSDoc annotations) are treated as
+  declarations without an `@escalier-type` JSDoc tag) are treated as
   **inexact** for all four categories — including unions. TypeScript has no
   notion of an exact/closed union, and admits widening through casts, index
   access, and assertions, so Escalier cannot prove the closed-set property
@@ -1076,27 +1252,47 @@ Mutability is orthogonal to exactness. `mut T` carries the exactness of
   behavior across the package boundary and avoids spurious errors when
   calling into TypeScript libraries. Users who know an imported type is
   actually closed can opt into exactness at the use site with `Exact<T>`.
-- **Round-tripping:** As described in the original `07_exact_types.md`, when
-  Escalier emits `.d.ts` files for consumption by other Escalier projects, it
-  should preserve exactness via JSDoc annotations on declarations. TypeScript
+- **Round-tripping:** When Escalier emits `.d.ts` files for consumption by
+  other Escalier projects, it preserves the original Escalier type via an
+  `@escalier-type` JSDoc tag on each declaration (see §9). TypeScript
   consumers will see the (inexact) erased form; Escalier consumers will
-  recover the precise exactness.
+  recover the precise exactness from the JSDoc payload.
 
 ## 9. TypeScript Interop
 
-- Exact object types are emitted as plain TypeScript object types
-  (`{ x: number, y: number }`), losing the exactness annotation. A JSDoc
-  comment carries the original Escalier type for round-trip preservation.
-- Exact tuple types are emitted as plain TypeScript tuple types
-  (`[string, number]`), again with a JSDoc annotation for round-tripping.
-- Exact function types are emitted as plain TypeScript function types. The
-  JSDoc annotation marks the exactness so other Escalier consumers can
-  reconstruct the original type and enforce the arity check.
-- Inexact types are emitted as their natural TypeScript equivalents:
-  `{ x: number, [k: string]: unknown }` for objects (or simply
-  `{ x: number }` if a more faithful encoding is not needed), tuples with a
-  trailing `...Array<unknown>` for tuples, and functions with no arity
-  enforcement.
+This section consolidates the interop story spread across §5.5 (union
+import), §6.5 (`Exact`/`Inexact` erasure), and the per-category emission
+rules. The summary table below shows how each kind of Escalier type
+round-trips through `.d.ts`:
+
+| Escalier kind | Emitted TS form | JSDoc annotation | Round-trip back to Escalier |
+|---|---|---|---|
+| Exact object `{x: T, y: U}` | `{ x: T, y: U }` | `@escalier-type {x: T, y: U}` | exact |
+| Inexact object `{x: T, ...}` | `{ x: T }` | `@escalier-type {x: T, ...}` | inexact |
+| Exact tuple `[T, U]` | `[T, U]` | `@escalier-type [T, U]` | exact |
+| Inexact tuple `[T, U, ...]` | `[T, U, ...Array<unknown>]` | `@escalier-type [T, U, ...]` | inexact |
+| Exact function `fn(a: A) -> R` | `(a: A) => R` | `@escalier-type fn(a: A) -> R` | exact (arity enforced) |
+| Inexact function `fn(a: A, ...) -> R` | `(a: A, ...rest: Array<unknown>) => R` | `@escalier-type fn(a: A, ...) -> R` | inexact |
+| Exact union `A \| B` | `A \| B` | `@escalier-type A \| B` | exact |
+| Inexact union `A \| B \| ...` | `A \| B \| unknown` (i.e. `unknown`) or just `A \| B` | `@escalier-type A \| B \| ...` | inexact |
+| `Exact<T>` / `Inexact<T>` wrappers | erased to the result type | `@escalier-type Exact<T>` / `@escalier-type Inexact<T>` | wrapper recovered |
+
+A single `@escalier-type` JSDoc tag, whose payload is the original
+Escalier type annotation in source form, carries everything needed to
+round-trip the declaration. The emitted TypeScript form is a best-effort
+erasure for plain TS consumers; the JSDoc payload is the source of truth
+for Escalier consumers re-importing the declaration.
+
+**Imports from plain TypeScript** (declarations *without* an
+`@escalier-type` annotation) default to the inexact form for every
+category, with the `boolean` and `null | undefined` exceptions noted in
+§5.5. Users who know an imported type is actually closed can opt in
+explicitly with `Exact<T>`.
+
+**Round-tripping between Escalier projects** is driven entirely by the
+`@escalier-type` annotations above. Plain TypeScript consumers ignore
+the JSDoc payload and see only the erased form (with the inexact
+default).
 
 ## 10. Examples
 
@@ -1106,8 +1302,9 @@ Mutability is orthogonal to exactness. `mut T` carries the exactness of
 type Point = {x: number, y: number}     // exact
 val p: Point = {x: 1, y: 2}
 
+// Object.keys(p) is the exact tuple ["x", "y"]: ["x", "y"]
 for k in Object.keys(p) {
-    // k: "x" | "y" — known precisely because Point is exact
+    // k: keyof Point — i.e. the exact union "x" | "y", since Point is exact
     console.log(k, p[k])
 }
 ```
@@ -1159,10 +1356,5 @@ val h: Headers = {
 
 ## 11. Open Questions
 
-1. **Index signatures and exactness.** How does an explicit index signature
-   (`{[k: string]: T}`) interact with exactness? Probably an index signature
-   implies inexactness, but this should be specified.
-2. **Generic constraints.** When a type parameter `T` is constrained by an
-   exact type, can `T` be substituted with an inexact subtype? Likely no
-   (exact constraint forces exact arguments), but this should be specified
-   alongside variance rules.
+*(None at present — previously open questions about index signatures and
+generic constraints are resolved in §2.7.1 and §7.12 respectively.)*
