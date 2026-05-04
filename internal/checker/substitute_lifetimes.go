@@ -206,6 +206,11 @@ func substituteLifetimesInFunc(t *type_system.FuncType, substs map[int]type_syst
 	// A nested FuncType may bind some of the same lifetime names. Mask
 	// any LifetimeParam IDs that the inner function declares — those
 	// must not be replaced by the outer substitution.
+	//
+	// This is safe at the top level too: the only caller
+	// (instantiateGenericFunc) builds the root FuncType via NewFuncType,
+	// which leaves LifetimeParams nil before SubstituteLifetimes runs,
+	// so the masking branch only fires for nested funcs.
 	innerSubsts := substs
 	if len(t.LifetimeParams) > 0 {
 		innerSubsts = make(map[int]type_system.Lifetime, len(substs))

@@ -240,6 +240,52 @@ func TestUnifyLifetimesUnit(t *testing.T) {
 	})
 }
 
+// TestUnifyTypeRefLifetimeArgs covers the parts of the TypeRefType
+// unification path that reconcile LifetimeArgs. The empty-TypeArgs
+// branch of unifyInner has no source-level path that exercises it
+// today (parser does not surface LifetimeArgs and InferLifetimes does
+// not populate them), so the unit test constructs the inputs directly.
+func TestUnifyTypeRefLifetimeArgs(t *testing.T) {
+	// Two TypeRefTypes with the same alias and no TypeArgs but with
+	// distinct concrete LifetimeArgs must be reported as a lifetime
+	// mismatch. Without explicit reconciliation in the empty-TypeArgs
+	// branch, the unifier silently accepts the pair.
+	t.Run("empty_typeargs_mismatched_lifetime_args", func(t *testing.T) {
+		c := NewChecker(context.Background())
+		alias := &type_system.TypeAlias{
+			Type: type_system.NewObjectType(nil, nil),
+		}
+		v1 := &type_system.LifetimeValue{ID: 1, Name: "p"}
+		v2 := &type_system.LifetimeValue{ID: 2, Name: "q"}
+		ref1 := type_system.NewTypeRefType(nil, "Container", alias)
+		ref1.LifetimeArgs = []type_system.Lifetime{v1}
+		ref2 := type_system.NewTypeRefType(nil, "Container", alias)
+		ref2.LifetimeArgs = []type_system.Lifetime{v2}
+		errs := c.Unify(Context{}, ref1, ref2)
+		require.NotEmpty(t, errs,
+			"distinct LifetimeValues must produce a mismatch error")
+	})
+
+	// Mismatched arity on the empty-TypeArgs path is also a structural
+	// error — the else branch already enforces this for non-empty
+	// TypeArgs; the empty path must too.
+	t.Run("empty_typeargs_mismatched_lifetime_arg_arity", func(t *testing.T) {
+		c := NewChecker(context.Background())
+		alias := &type_system.TypeAlias{
+			Type: type_system.NewObjectType(nil, nil),
+		}
+		v1 := &type_system.LifetimeValue{ID: 1, Name: "p"}
+		v2 := &type_system.LifetimeValue{ID: 2, Name: "q"}
+		ref1 := type_system.NewTypeRefType(nil, "Container", alias)
+		ref1.LifetimeArgs = []type_system.Lifetime{v1, v2}
+		ref2 := type_system.NewTypeRefType(nil, "Container", alias)
+		ref2.LifetimeArgs = []type_system.Lifetime{v1}
+		errs := c.Unify(Context{}, ref1, ref2)
+		require.NotEmpty(t, errs,
+			"mismatched LifetimeArgs arity must produce an error")
+	})
+}
+
 // TestSubstituteLifetimes is a structural unit test for the lifetime
 // substitution walker. It has no script equivalent because the
 // substitution map is a private artifact of generic-function

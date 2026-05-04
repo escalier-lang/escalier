@@ -646,6 +646,24 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	// where different names point to the same alias (e.g., "globalThis.Array" and "Array")
 	if ref1, ok := t1.(*type_system.TypeRefType); ok {
 		if ref2, ok := t2.(*type_system.TypeRefType); ok && c.sameTypeRef(ref1, ref2) {
+			// Phase 9.4: reconcile LifetimeArgs regardless of whether
+			// TypeArgs are present. Lifetime args travel independently
+			// of type args (a non-generic alias may still be lifetime-
+			// generic), so this check applies on both branches below.
+			ltErrors := []Error{}
+			if len(ref1.LifetimeArgs) == len(ref2.LifetimeArgs) {
+				for i := 0; i < len(ref1.LifetimeArgs); i++ {
+					ltErrors = slices.Concat(ltErrors,
+						c.UnifyLifetimes(ctx, ref1.LifetimeArgs[i], ref2.LifetimeArgs[i]))
+				}
+			} else if len(ref1.LifetimeArgs) > 0 && len(ref2.LifetimeArgs) > 0 {
+				// Mismatched lifetime-arg arity is a structural error.
+				// TODO(#547): when one side has zero lifetime args, the
+				// mismatch is currently tolerated. Revisit once Phase 11
+				// elision rules are in place — they may treat the empty
+				// side as fresh vars or as a hard error.
+				ltErrors = append(ltErrors, &CannotUnifyTypesError{T1: ref1, T2: ref2})
+			}
 			if len(ref1.TypeArgs) == 0 && len(ref2.TypeArgs) == 0 {
 				// If both type references have no type arguments, we can unify them
 				// directly.
@@ -675,7 +693,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						}}
 					}
 				}
-				return []Error{}
+				return ltErrors
 				// TODO: Give each TypeAlias a unique ID and if they so avoid
 				// situations where two different type aliases have the same
 				// name but different definitions.
@@ -689,27 +707,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						T2: ref2,
 					}}
 				}
-				errors := []Error{}
+				errors := slices.Clone(ltErrors)
 				for i := 0; i < len(ref1.TypeArgs); i++ {
 					argErrors := c.unifyInner(ctx, ref1.TypeArgs[i], ref2.TypeArgs[i], seen)
 					errors = slices.Concat(errors, argErrors)
-				}
-				// Phase 9.4: unify each LifetimeArg pairwise. These are
-				// the explicit lifetime arguments on a constructed type
-				// (e.g. `Container<'a, T>`), distinct from the outer
-				// Lifetime on the TypeRefType handled in unifyInner.
-				if len(ref1.LifetimeArgs) == len(ref2.LifetimeArgs) {
-					for i := 0; i < len(ref1.LifetimeArgs); i++ {
-						ltErrors := c.UnifyLifetimes(ctx, ref1.LifetimeArgs[i], ref2.LifetimeArgs[i])
-						errors = slices.Concat(errors, ltErrors)
-					}
-				} else if len(ref1.LifetimeArgs) > 0 && len(ref2.LifetimeArgs) > 0 {
-					// Mismatched lifetime-arg arity is a structural error.
-					// TODO(#547): when one side has zero lifetime args, the
-					// mismatch is currently tolerated. Revisit once Phase 11
-					// elision rules are in place — they may treat the empty
-					// side as fresh vars or as a hard error.
-					errors = append(errors, &CannotUnifyTypesError{T1: ref1, T2: ref2})
 				}
 				return errors
 			}
@@ -1541,7 +1542,7 @@ func (c *Checker) unifyExtractor(
 	// Note: instantiateGenericFunc preserves the param count, so the
 	// single-param validation on line 1243 is still satisfied after this.
 	fn := methodElem.Fn
-	if len(fn.TypeParams) > 0 {
+	if len(fn.TypeParams) > 0 || len(fn.LifetimeParams) > 0 {
 		fn = c.instantiateGenericFunc(fn)
 	}
 

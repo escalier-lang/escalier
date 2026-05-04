@@ -94,6 +94,15 @@ func (c *Checker) UnifyLifetimes(ctx Context, l1, l2 type_system.Lifetime) []Err
 		// must observe the value as permanently aliased. Symmetrically,
 		// passing a `'static` value where a free lifetime expects a
 		// concrete value is fine — the caller sees a `'static` binding.
+		//
+		// This branch only sees two LifetimeValues (post-Prune); any
+		// originating LifetimeVar would have been caught by the
+		// var-binding branches above. Promoting the *original* var to
+		// `'static` retroactively would require pre-prune identity to
+		// be threaded through, but no source-reachable scenario today
+		// exercises that path: only `'static`-vs-`'static` is reachable
+		// (alias tracking does not yet emit LifetimeValues for ordinary
+		// call arguments — see the TestUnifyLifetimesUnit commentary).
 		if val1.IsStatic || val2.IsStatic {
 			return nil
 		}
