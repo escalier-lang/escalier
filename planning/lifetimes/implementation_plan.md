@@ -2572,6 +2572,188 @@ lifetime linking it to `p`, so the result is independent.
 - Higher-order function: callback with shared lifetime threads through
 - Higher-order function: callback without lifetime produces independent result
 
+### 9.7 Declared-vs-Actual Lifetime Diagnostics
+
+**Goal:** Report when a user's explicit lifetime annotations on a function
+signature disagree with the lifetimes that body-driven inference would
+have produced — or with the rest of the same signature. Today these
+mismatches are silently accepted because the source-annotation plumbing
+(landed alongside Phase 9.5) writes whatever the user typed straight
+onto `FuncType.LifetimeParams` and the inference pass in
+[`infer_lifetime.go`](../../internal/checker/infer_lifetime.go) bails
+out as soon as it sees declared `LifetimeParams`.
+
+This sub-phase is the lifetime-specific subset of Phase 13's broader
+error work. It lives here (rather than being deferred to 13) because
+the diagnostics depend on machinery introduced by 9.1–9.5 — fresh
+instantiation, unification, and the source→type-system bridge — and
+because their absence is most surprising right after 9.5's tests start
+exercising user-written annotations.
+
+#### Three Diagnostic Classes
+
+**1. Unused declared lifetime parameter.**
+
+```esc
+fn f<'a>(p: Point) -> Point { return {x: 0, y: 0} }
+//   ^^ declared but never referenced in params / return / body
+```
+
+`<'a>` introduces a lifetime variable that no parameter, return type,
+or body-level annotation refers to. The intent is unrecoverable —
+either `'a` was meant to appear inline and was forgotten, or it was
+left over after a refactor.
+
+**Detection:** at the end of `inferFuncSig` (and `inferFuncTypeAnn`),
+walk the constructed `FuncType` collecting every `LifetimeVar.ID`
+that appears inline; report any declared param ID that doesn't appear
+in the collected set.
+
+**File:** `internal/checker/infer_func.go`, `internal/checker/infer_type_ann.go`
+
+**Severity:** warning (the program is still well-typed; the unused
+var is dead weight, not unsafe).
+
+**2. Undeclared inline lifetime reference.**
+
+```esc
+fn f(p: mut 'a Point) -> mut 'a Point { return p }
+//          ^^ no enclosing `<'a>` clause
+```
+
+The user wrote `'a` inline without declaring it on the surrounding
+signature. The current `resolveSingleLifetime` defensively allocates a
+fresh `LifetimeVar` and registers it in scope as a fallback so
+downstream unification has something to bind, but this silently turns
+the function into a generic over `'a` — which may match the user's
+intent or may hide a typo (`'b` where they meant `'a`).
+
+**Detection:** in `resolveSingleLifetime`, when no enclosing scope has
+declared the name, emit a diagnostic instead of (or in addition to)
+the silent fallback.
+
+**File:** `internal/checker/infer_lifetime_ann.go`
+
+**Severity:** error if there is no enclosing function-level `<>`
+clause at all (the user almost certainly meant to declare it);
+warning if a `<>` clause exists but the specific name isn't in it
+(could be a typo of a sibling lifetime).
+
+**Open question — implicit declaration:** should `fn f(p: mut 'a
+Point) -> mut 'a Point` be allowed and treated as sugar for `fn
+f<'a>(...)`? Rust requires explicit declaration; TypeScript-style
+elision (Phase 11) suggests we may want a similar implicit-promote
+mode. If we adopt that, this case becomes a warning ("implicitly
+introduced lifetime parameter `'a`") rather than an error. Decide as
+part of Phase 11 elision design and revisit then.
+
+**3. Declared signature contradicts the body.**
+
+```esc
+fn f<'a>(p: mut 'a Point) -> mut 'a Point {
+    return {x: 0, y: 0}   // body returns a fresh value, not p
+}
+```
+
+The signature says the result aliases `p`; the body says it doesn't.
+Both directions need to be caught:
+
+- **Declared but not actual:** signature has `<'a>` linking some
+  return-type slot back to a parameter, but the body's actual
+  alias-source for that slot is a fresh value.
+- **Actual but not declared:** signature lacks lifetime params, but
+  the body's `return` aliases a parameter — the user wrote a
+  lifetimes-naive signature for a function that in fact returns a
+  borrow.
+
+**Detection:** make `inferLifetimesCore` (currently bails out on
+`len(LifetimeParams) > 0`) take a third pass mode — call it
+`validatePass` — that runs the same alias-source walk it would run on
+an unannotated function, but instead of *writing* lifetimes onto the
+signature, *compares* its findings against what the user declared.
+Any per-leaf disagreement (declared lifetime vs. inferred alias
+source) becomes a diagnostic.
+
+**File:** `internal/checker/infer_lifetime.go`, threaded from
+`inferFuncBodyWithFuncSigType` so it runs after the body has been
+type-checked but before constraint propagation to peers.
+
+**Severity:** error. Unlike (1) and (2), a declaration that
+contradicts the body is unsafe — callers will be told the result
+aliases `p` and reject mut-transitions on `p`, while the body actually
+doesn't produce such an alias (or vice versa, callers will *not*
+reject transitions on a value that the body really did borrow).
+
+#### Error Types
+
+Add to `internal/checker/error.go` alongside the existing
+`LifetimeMismatchError` (introduced in 9.3):
+
+```go
+type UnusedLifetimeParamError struct {
+    Name string
+    span ast.Span
+}
+
+type UndeclaredLifetimeError struct {
+    Name string
+    span ast.Span
+    // Suggested: nearby declared lifetime names for typo correction
+    Suggestions []string
+}
+
+type DeclaredLifetimeMismatchError struct {
+    // The slot in the signature where the disagreement was found
+    // (parameter index, return-type path, etc.)
+    Location  string
+    Declared  type_system.Lifetime  // what the user wrote (or nil)
+    Inferred  type_system.Lifetime  // what the body produced (or nil)
+    span      ast.Span
+}
+```
+
+Wire each through the standard `isError` / `IsWarning` / `Span` /
+`Message` boilerplate at the top of `error.go`, mirroring how
+`LifetimeMismatchError` is registered.
+
+#### Tests
+
+For each diagnostic class, add a test in
+`internal/checker/tests/unify_lifetimes_test.go` (or a sibling file)
+that:
+
+1. Type-checks a script triggering the mismatch.
+2. Asserts the precise error type and message substring.
+3. Asserts that surrounding well-typed code is *not* flagged
+   (negative cases: declared lifetime that *is* used, inline
+   reference that *does* match a `<>` declaration, signature that
+   *does* match the body).
+
+Suggested fixtures:
+- `UnusedLifetimeParam`: `fn f<'a>(p: Point) -> Point { ... }`
+- `UndeclaredLifetimeWithoutAngleBrackets`: `fn f(p: mut 'a Point) -> mut 'a Point { ... }`
+- `UndeclaredLifetimeWithSiblingsTypo`: `fn f<'a>(p: mut 'b Point) -> mut 'a Point { ... }`
+- `DeclaredAliasNotProducedByBody`: `fn f<'a>(p: mut 'a Point) -> mut 'a Point { return {x:0} }`
+- `BodyAliasesButSignatureDoesNot`: `fn f(p: mut Point) -> mut Point { return p }` — verify the body's `'a` is reported as a missing declaration.
+- Negative: each of the existing 9.5 tests should remain warning-free.
+
+#### Interaction with Phase 11 Elision
+
+If Phase 11 introduces lifetime elision (TypeScript-style implicit
+introduction of `'a` for single-borrow signatures), class (2)'s
+"undeclared inline reference" rule must distinguish:
+- the elision rule expanding `mut Point` into `mut 'a Point` (no
+  diagnostic — by design),
+- versus the user *typing* `mut 'a Point` without `<'a>` (still a
+  diagnostic — they invoked the lifetime explicitly without binding
+  it).
+
+Plan: gate class (2) on whether the AST node has a user-written
+`LifetimeAnn` (it does — `MutTypeAnn.Lifetime != nil` came from the
+parser, not from elision). Elision-introduced lifetimes synthesize
+`LifetimeVar`s directly without going through `resolveLifetimeAnn`,
+so the diagnostic only fires for user-typed names.
+
 ---
 
 ## Phase 10: Constrained Type Parameters That Carry a Lifetime
@@ -2994,6 +3176,13 @@ declare fn WeakSet.delete<T>(self: mut WeakSet<T>, value: T) -> boolean
 **Goal:** Produce clear, actionable error messages that show lifetime
 information only when it helps the developer.
 
+**Note:** Diagnostics for *declared-vs-actual* lifetime mismatches
+(unused `<'a>`, undeclared inline `'a`, signature contradicting body)
+are scoped to **§9.7**, not this phase. Phase 13 focuses on the
+runtime / call-site error messages — live-alias conflicts, escaping
+references, transition failures — produced once those mismatches have
+been ruled out at signature time.
+
 ### 13.1 Error Types
 
 Define error types for lifetime violations:
@@ -3325,5 +3514,8 @@ depend on Phase 9 but not on each other.
 - Phase 8.6 (constructors) depends on 8.3 (lifetime inference from bodies)
 - Phase 9.3 (`'static` and conflict detection) depends on 9.1 (lifetime
   binding) and 9.2 (instantiation)
+- Phase 9.7 (declared-vs-actual diagnostics) depends on 9.5 (the source-
+  annotation plumbing landed alongside it) and 8.3 (the inference pass
+  it must adapt into a `validatePass`)
 - Phase 11.3 (interface lifetime verification) depends on 8.3 (inference)
   and 9.1 (binding)

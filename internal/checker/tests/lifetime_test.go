@@ -1347,6 +1347,36 @@ func mustInferAsModule(t *testing.T, input string) *type_system.Namespace {
 	return inferCtx.Scope.Namespace
 }
 
+// mustInferScript parses and type-checks the given input as a script,
+// returning both the inferred binding types (printed) and the
+// MutabilityTransitionError messages. Other errors fail the test.
+// Use this when a test needs to assert on inferred lifetime
+// annotations in addition to (or instead of) mut transition errors.
+func mustInferScript(t *testing.T, input string) (map[string]string, []string) {
+	t.Helper()
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
+	script, parseErrors := p.ParseScript()
+	require.Empty(t, parseErrors, "expected no parse errors")
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	scriptScope, inferErrors := c.InferScript(inferCtx, script)
+
+	var mutErrors []string
+	for _, err := range inferErrors {
+		if mutErr, ok := err.(*MutabilityTransitionError); ok {
+			mutErrors = append(mutErrors, mutErr.Message())
+			continue
+		}
+		t.Fatalf("unexpected non-mutability error: %s", err.Message())
+	}
+	return collectBindingTypes(scriptScope.Namespace), mutErrors
+}
+
 // mustInferScriptMutErrors parses and type-checks the given input as a
 // script, returning the formatted MutabilityTransitionError messages.
 // Other errors fail the test.
@@ -1373,6 +1403,27 @@ func mustInferScriptMutErrors(t *testing.T, input string) []string {
 		t.Fatalf("unexpected non-mutability error: %s", err.Message())
 	}
 	return mutErrors
+}
+
+// mustInferScriptAllErrors parses and type-checks the given input as a
+// script and returns ALL inference errors (warnings included). Use
+// this when a test needs to assert on diagnostics other than the
+// MutabilityTransitionErrors that mustInferScriptMutErrors filters
+// down to (e.g. §9.7 lifetime diagnostics).
+func mustInferScriptAllErrors(t *testing.T, input string) []Error {
+	t.Helper()
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
+	script, parseErrors := p.ParseScript()
+	require.Empty(t, parseErrors, "expected no parse errors")
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	_, inferErrors := c.InferScript(inferCtx, script)
+	return inferErrors
 }
 
 // collectBindingTypes returns a map from binding name to the printed

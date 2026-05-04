@@ -194,6 +194,13 @@ func (c *Checker) inferFuncSig(
 	// Create a new context with type parameters in scope
 	funcCtx := ctx.WithNewScope()
 
+	// Phase 8.1 plumbing: declare any user-written lifetime parameters
+	// on the function scope BEFORE inferring parameter / return types
+	// so that inline `'a` references inside those annotations resolve
+	// to the LifetimeVar declared here rather than allocating a fresh
+	// fallback.
+	lifetimeParams := c.declareLifetimeParams(funcCtx.Scope, sig.LifetimeParams)
+
 	// Handle generic functions by creating type parameters
 	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, sig.TypeParams)
 	errors = slices.Concat(errors, typeParamErrors)
@@ -230,6 +237,15 @@ func (c *Checker) inferFuncSig(
 		returnType,
 		throwsType,
 	)
+	t.LifetimeParams = lifetimeParams
+
+	// §9.7 class 1: warn about declared `<'a>` clauses that no
+	// parameter, return type, or throws annotation references.
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(t, node.Span()))
+	// §9.7 class 3 (scaffolded): hook for declared-vs-actual body
+	// comparison. No-op until inferLifetimesCore gains a non-mutating
+	// "compare" mode.
+	errors = slices.Concat(errors, checkDeclaredVsActualLifetimes(t, node))
 
 	return t, funcCtx, bindings, errors
 }

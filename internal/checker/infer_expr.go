@@ -1191,6 +1191,13 @@ func (c *Checker) inferCallExpr(
 // replacing all type parameters with fresh type variables. This implements HM
 // "instantiation at use" — each reference to a polymorphic binding gets its
 // own fresh type variables.
+//
+// Phase 9.2 extends this to lifetime parameters: each LifetimeVar in
+// fnType.LifetimeParams is replaced with a fresh LifetimeVar so that
+// bindings made for one call do not leak into another. Subsequent
+// argument unification binds the fresh vars via UnifyLifetimes, which
+// (for a 'static-annotated parameter) leaves the original LifetimeValue
+// in place because the substitution only swaps Vars, not Values.
 func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_system.FuncType {
 	// Create a copy of the function type without type params
 	fnTypeWithoutParams := type_system.NewFuncType(
@@ -1220,7 +1227,24 @@ func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_sys
 	}
 
 	// Substitute type refs in the copied function type with fresh type variables
-	return SubstituteTypeParams(fnTypeWithoutParams, substitutions)
+	result := SubstituteTypeParams(fnTypeWithoutParams, substitutions)
+
+	// Phase 9.2: instantiate lifetime parameters with fresh LifetimeVars
+	// so that each call site's lifetime bindings are independent. The
+	// fresh vars are dropped from the resulting FuncType's
+	// LifetimeParams: the instantiated copy is not itself generic over
+	// lifetimes anymore — the caller's argument unification will
+	// resolve them.
+	if len(fnType.LifetimeParams) > 0 {
+		ltSubs := make(map[int]type_system.Lifetime, len(fnType.LifetimeParams))
+		for _, lp := range fnType.LifetimeParams {
+			ltSubs[lp.ID] = c.FreshLifetimeVar(lp.Name)
+		}
+		result = SubstituteLifetimes(result, ltSubs)
+		result.LifetimeParams = nil
+	}
+
+	return result
 }
 
 func (c *Checker) handleFuncCall(
@@ -1231,8 +1255,10 @@ func (c *Checker) handleFuncCall(
 	provneance *ast.NodeProvenance,
 	errors []Error,
 ) (type_system.Type, []Error) {
-	// Handle generic functions by replacing type refs with fresh type variables
-	if len(fnType.TypeParams) > 0 {
+	// Handle generic functions by replacing type refs with fresh type variables.
+	// Phase 9.2 also instantiates lifetime parameters so that each call site
+	// gets independent LifetimeVars.
+	if len(fnType.TypeParams) > 0 || len(fnType.LifetimeParams) > 0 {
 		fnType = c.instantiateGenericFunc(fnType)
 	}
 
@@ -1273,7 +1299,7 @@ func (c *Checker) handleFuncCall(
 		for i := 0; i < restIndex; i++ {
 			argType := argTypes[i]
 			// Instantiate generic function arguments at the call site.
-			if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+			if ft, ok := argType.(*type_system.FuncType); ok && (len(ft.TypeParams) > 0 || len(ft.LifetimeParams) > 0) {
 				argType = c.instantiateGenericFunc(ft)
 			}
 			paramType := fnType.Params[i].Type
@@ -1288,7 +1314,7 @@ func (c *Checker) handleFuncCall(
 				elementType := arrayType.TypeArgs[0]
 				for i := restIndex; i < len(expr.Args); i++ {
 					argType := argTypes[i]
-					if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+					if ft, ok := argType.(*type_system.FuncType); ok && (len(ft.TypeParams) > 0 || len(ft.LifetimeParams) > 0) {
 						argType = c.instantiateGenericFunc(ft)
 					}
 					paramErrors := c.Unify(ctx, argType, elementType)
@@ -1345,7 +1371,7 @@ func (c *Checker) handleFuncCall(
 		// Unify each provided argument with its corresponding parameter.
 		for i, argType := range argTypes {
 			// Instantiate generic function arguments at the call site.
-			if ft, ok := argType.(*type_system.FuncType); ok && len(ft.TypeParams) > 0 {
+			if ft, ok := argType.(*type_system.FuncType); ok && (len(ft.TypeParams) > 0 || len(ft.LifetimeParams) > 0) {
 				argType = c.instantiateGenericFunc(ft)
 			}
 			// Since we have already validated the count, i is safe.
