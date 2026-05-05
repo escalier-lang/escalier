@@ -429,9 +429,10 @@ func (c *Checker) initializeGlobalScope() {
 	// Load global definitions from TypeScript lib files. Toggle the
 	// loadingExternalTypes flag so Phase 11 elision treats lib
 	// signatures permissively (no ambiguous-elision diagnostics).
+	prev := c.loadingExternalTypes
 	c.loadingExternalTypes = true
+	defer func() { c.loadingExternalTypes = prev }()
 	c.loadGlobalDefinitions(globalScope)
-	c.loadingExternalTypes = false
 
 	// Post-process the namespace
 	for _, typeAlias := range globalNs.Types {
