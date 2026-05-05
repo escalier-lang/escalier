@@ -164,6 +164,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 						// Update the function type to have Promise<T, never>
 						newPromiseType := type_system.NewTypeRefType(
 							nil, "Promise", promiseAlias, promiseType.TypeArgs[0], type_system.NewNeverType(nil))
+						newPromiseType.Lifetime = promiseType.Lifetime
 						funcType.Return = newPromiseType
 					}
 				} else if len(promiseType.TypeArgs) >= 2 {

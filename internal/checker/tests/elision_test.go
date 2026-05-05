@@ -76,6 +76,18 @@ func TestLifetimeElision_DeclareFn(t *testing.T) {
 			fnName:       "pick",
 			expectedType: "fn (a: mut {x: number}, b: mut {x: number}) -> mut {x: number}",
 		},
+		"DeclareAsyncFnPreservesLifetimeThroughPromiseNormalization": {
+			// Phase 11: ApplyLifetimeElision attaches a lifetime to the
+			// signature's Return (a `Promise<T>` TypeRefType). The
+			// async-Promise normalization that follows rebuilds the
+			// Return as `Promise<T, never>`; that rebuild must preserve
+			// the elision-applied lifetime rather than dropping it.
+			input: `
+				declare async fn identity(p: mut {x: number}) -> Promise<mut {x: number}>
+			`,
+			fnName:       "identity",
+			expectedType: "fn <'a>(p: mut 'a {x: number}) -> 'a Promise<mut {x: number}, never>",
+		},
 		"AlreadyAnnotatedNotElided": {
 			// User wrote an explicit `<'a>` clause. Elision must not
 			// override it (in particular, must not attach `'a` to b).

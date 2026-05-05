@@ -2935,7 +2935,7 @@ Notably:
 **Goal:** Apply default lifetime rules to body-less declarations so that
 common cases don't require explicit annotations.
 
-**Status:** Landed in #TBD. Elision is wired for body-less `declare fn`
+**Status:** Landed. Elision is wired for body-less `declare fn`
 declarations. Interface-method elision and the `implements` lifetime
 verification check are deferred to Phase 12 (see "Deviations" below).
 
@@ -2951,10 +2951,10 @@ methods are deferred (see 11.4).
 // ApplyLifetimeElision applies default lifetime rules to a function signature
 // that has no body and no explicit lifetime annotations. A no-op when the
 // user wrote any `<'a>` clause (LifetimeParams already populated) or while
-// the checker is loading TypeScript .d.ts files (Phase 12 territory).
+// the checker is loading TypeScript .d.ts files (the `loadingExternalTypes`
+// flag — Phase 12 territory).
 func (c *Checker) ApplyLifetimeElision(
     funcType *type_system.FuncType,
-    fallbackSpan ast.Span,
 ) []Error { ... }
 ```
 
@@ -3052,10 +3052,10 @@ class Storer(var stored: mut Point) implements Transform {
 - `declare fn` processing in `inferFuncDecl` (script path) and
   `InferModule` (module path) — `ApplyLifetimeElision` runs after
   `inferFuncSig` and before `GeneralizeFuncType`.
-- A `loadingPrelude` flag on `Checker` (toggled by `loadGlobalDefinitions`
-  and `inferParsedTypeDef`) suppresses elision while ingesting
-  TypeScript `.d.ts` files. The flag also gates the ambiguous-case
-  diagnostic so lib types don't trip it.
+- A `loadingExternalTypes` flag on `Checker` (toggled by
+  `loadGlobalDefinitions` and `inferParsedTypeDef`) suppresses elision
+  while ingesting TypeScript `.d.ts` files. The flag also gates the
+  ambiguous-case diagnostic so lib types don't trip it.
 
 **Deferred to Phase 12:**
 - Interface method declaration processing (`inferInterface`). The same
