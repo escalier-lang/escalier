@@ -1,0 +1,159 @@
+package checker
+
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/type_system"
+)
+
+// UnifyLifetimes reconciles two lifetime annotations during unification
+// (Phase 9.1, 9.3). It implements the following table after PruneLifetime
+// resolves both sides through any LifetimeVar.Instance chains:
+//
+//	nil           , nil           -> success
+//	nil           , X             -> success (no constraint)
+//	X             , nil           -> success
+//	LifetimeVar   , Lifetime      -> bind v.Instance = Lifetime
+//	Lifetime      , LifetimeVar   -> bind v.Instance = Lifetime (with same-id no-op)
+//	LifetimeValue , LifetimeValue -> success if same ID, or if either is 'static
+//	                                 (the other is upgraded to 'static); otherwise
+//	                                 a LifetimeMismatchError
+//	LifetimeUnion , X             -> each member unifies with X
+//	X             , LifetimeUnion -> X unifies with each member
+//
+// Binding mutates LifetimeVar.Instance directly (mirroring how TypeVar
+// binding works in bind()). The caller is responsible for calling
+// UnifyLifetimes only after the surrounding type unification has
+// otherwise succeeded — a unification error on the type carrier will
+// suppress lifetime errors via the standard error-cascade rules.
+func (c *Checker) UnifyLifetimes(ctx Context, l1, l2 type_system.Lifetime) []Error {
+	if l1 == nil && l2 == nil {
+		return nil
+	}
+	// A nil lifetime on one side means "no constraint" — propagation is
+	// handled implicitly by leaving the other side untouched. This makes
+	// `mut Point` (no lifetime) compatible with `mut 'a Point` (lifetime
+	// flows back to the caller untouched).
+	if l1 == nil || l2 == nil {
+		return nil
+	}
+
+	l1 = type_system.PruneLifetime(l1)
+	l2 = type_system.PruneLifetime(l2)
+
+	// Reflexive identity (after Prune the same Var/Value is pointer-shared).
+	if l1 == l2 {
+		return nil
+	}
+
+	// LifetimeUnion handling: distribute over members. A union on one
+	// side must unify with the other side as a whole — for each member,
+	// the constraint applies. This is how multi-source returns
+	// (e.g. `('a | 'b) Point`) propagate to all source alias sets at a
+	// call site.
+	//
+	// TODO(phase-10/11): the sequential per-member distribution below
+	// misbehaves when the *other* side is a free LifetimeVar: the first
+	// member binds the var; the second member then unifies against the
+	// already-bound var (now a concrete value), producing a spurious
+	// LifetimeMismatchError if the members differ. The intended
+	// semantics is "the var should be bound to the union as a whole,"
+	// which requires either rebuilding the union from post-Prune
+	// members or special-casing the "union vs free var" pair before
+	// distribution. Source code cannot construct this shape today
+	// (LifetimeUnion arises only on the lhs of a return-type with
+	// multiple alias sources, and the alias tracker doesn't yet
+	// produce free Vars on the rhs in that context). See the
+	// `union_vs_free_var_currently_misfires` skipped test in
+	// unify_lifetimes_test.go for the failing shape.
+	if u, ok := l1.(*type_system.LifetimeUnion); ok {
+		var errors []Error
+		for _, m := range u.Lifetimes {
+			errors = append(errors, c.UnifyLifetimes(ctx, m, l2)...)
+		}
+		return errors
+	}
+	if u, ok := l2.(*type_system.LifetimeUnion); ok {
+		var errors []Error
+		for _, m := range u.Lifetimes {
+			errors = append(errors, c.UnifyLifetimes(ctx, l1, m)...)
+		}
+		return errors
+	}
+
+	// Var on one or both sides: bind. Equating two free Vars is a
+	// directed binding (l1.Instance = l2). Subsequent prunes resolve
+	// through the chain.
+	//
+	// No occurs check: lifetime structure has no recursion (a Var
+	// cannot syntactically appear inside its own union or value), so
+	// the only way to construct a cycle would be a same-var-twice
+	// binding, which the `l1 == l2` early return above already covers.
+	if v1, ok := l1.(*type_system.LifetimeVar); ok {
+		v1.Instance = l2
+		return nil
+	}
+	if v2, ok := l2.(*type_system.LifetimeVar); ok {
+		v2.Instance = l1
+		return nil
+	}
+
+	// Value vs Value.
+	val1, ok1 := l1.(*type_system.LifetimeValue)
+	val2, ok2 := l2.(*type_system.LifetimeValue)
+	if ok1 && ok2 {
+		if val1.ID == val2.ID {
+			return nil
+		}
+		// 'static absorbs concrete values: a function parameter declared
+		// with `'static` may bind to any caller value, but the caller
+		// must observe the value as permanently aliased. Symmetrically,
+		// passing a `'static` value where a free lifetime expects a
+		// concrete value is fine — the caller sees a `'static` binding.
+		//
+		// This branch only sees two LifetimeValues (post-Prune); any
+		// originating LifetimeVar would have been caught by the
+		// var-binding branches above. Promoting the *original* var to
+		// `'static` retroactively would require pre-prune identity to
+		// be threaded through, but no source-reachable scenario today
+		// exercises that path: only `'static`-vs-`'static` is reachable
+		// (alias tracking does not yet emit LifetimeValues for ordinary
+		// call arguments — see the TestUnifyLifetimesUnit commentary).
+		if val1.IsStatic || val2.IsStatic {
+			return nil
+		}
+		// Two independent values with the same shared lifetime variable
+		// requirement — the function asked for one identity but got two.
+		return []Error{LifetimeMismatchError{L1: val1, L2: val2}}
+	}
+
+	// Defensive: any other shape (e.g. unknown future Lifetime variant)
+	// — succeed silently rather than crash. PruneLifetime already
+	// resolved Vars, and Unions were distributed above.
+	return nil
+}
+
+// LifetimeMismatchError is reported when unification requires two
+// distinct lifetime values to be the same — typically because a
+// function's signature reuses a single lifetime variable across multiple
+// parameter positions and the caller passed independent values.
+type LifetimeMismatchError struct {
+	L1   *type_system.LifetimeValue
+	L2   *type_system.LifetimeValue
+	span ast.Span
+}
+
+func (e LifetimeMismatchError) isError()        {}
+func (e LifetimeMismatchError) IsWarning() bool { return false }
+func (e LifetimeMismatchError) Span() ast.Span  { return e.span }
+func (e LifetimeMismatchError) Message() string {
+	n1 := e.L1.Name
+	if n1 == "" {
+		n1 = "<anonymous>"
+	}
+	n2 := e.L2.Name
+	if n2 == "" {
+		n2 = "<anonymous>"
+	}
+	return "lifetime mismatch: '" + n1 + " and '" + n2 +
+		" are independent values but the function requires them to share a lifetime"
+}

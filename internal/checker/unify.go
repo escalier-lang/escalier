@@ -211,6 +211,21 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 
 	errors := c.unifyPruned(ctx, t1, t2, seen)
 	if len(errors) == 0 {
+		// Phase 9.1: after the structural unification succeeds, reconcile
+		// the lifetimes carried by t1 and t2. GetLifetime walks through
+		// MutType wrappers, so `mut 'a Point` vs `'b Point` unify their
+		// outer lifetimes here exactly once. TypeArg / LifetimeArg
+		// recursion is performed by the matching cases inside
+		// unifyMatched, which call back into unifyInner per element —
+		// each of those nested calls will also hit this hook for the
+		// per-element lifetime.
+		lt1 := type_system.GetLifetime(t1)
+		lt2 := type_system.GetLifetime(t2)
+		if lt1 != nil || lt2 != nil {
+			if ltErrors := c.UnifyLifetimes(ctx, lt1, lt2); len(ltErrors) > 0 {
+				return ltErrors
+			}
+		}
 		return nil
 	}
 
@@ -631,6 +646,28 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	// where different names point to the same alias (e.g., "globalThis.Array" and "Array")
 	if ref1, ok := t1.(*type_system.TypeRefType); ok {
 		if ref2, ok := t2.(*type_system.TypeRefType); ok && c.sameTypeRef(ref1, ref2) {
+			// Phase 9.4: reconcile LifetimeArgs regardless of whether
+			// TypeArgs are present. Lifetime args travel independently
+			// of type args (a non-generic alias may still be lifetime-
+			// generic — e.g. `type PointRef<'a> = 'a Point` has zero
+			// TypeParams and one LifetimeParam, so `PointRef<'a>` and
+			// `PointRef<'b>` need their lifetime args unified before
+			// the empty-TypeArgs branch below declares them equal),
+			// so this check applies on both branches below.
+			ltErrors := []Error{}
+			if len(ref1.LifetimeArgs) == len(ref2.LifetimeArgs) {
+				for i := 0; i < len(ref1.LifetimeArgs); i++ {
+					ltErrors = slices.Concat(ltErrors,
+						c.UnifyLifetimes(ctx, ref1.LifetimeArgs[i], ref2.LifetimeArgs[i]))
+				}
+			} else if len(ref1.LifetimeArgs) > 0 && len(ref2.LifetimeArgs) > 0 {
+				// Mismatched lifetime-arg arity is a structural error.
+				// TODO(#547): when one side has zero lifetime args, the
+				// mismatch is currently tolerated. Revisit once Phase 11
+				// elision rules are in place — they may treat the empty
+				// side as fresh vars or as a hard error.
+				ltErrors = append(ltErrors, &CannotUnifyTypesError{T1: ref1, T2: ref2})
+			}
 			if len(ref1.TypeArgs) == 0 && len(ref2.TypeArgs) == 0 {
 				// If both type references have no type arguments, we can unify them
 				// directly.
@@ -660,7 +697,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						}}
 					}
 				}
-				return []Error{}
+				return ltErrors
 				// TODO: Give each TypeAlias a unique ID and if they so avoid
 				// situations where two different type aliases have the same
 				// name but different definitions.
@@ -674,7 +711,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						T2: ref2,
 					}}
 				}
-				errors := []Error{}
+				errors := ltErrors
 				for i := 0; i < len(ref1.TypeArgs); i++ {
 					argErrors := c.unifyInner(ctx, ref1.TypeArgs[i], ref2.TypeArgs[i], seen)
 					errors = slices.Concat(errors, argErrors)
@@ -1509,7 +1546,7 @@ func (c *Checker) unifyExtractor(
 	// Note: instantiateGenericFunc preserves the param count, so the
 	// single-param validation on line 1243 is still satisfied after this.
 	fn := methodElem.Fn
-	if len(fn.TypeParams) > 0 {
+	if len(fn.TypeParams) > 0 || len(fn.LifetimeParams) > 0 {
 		fn = c.instantiateGenericFunc(fn)
 	}
 
@@ -1814,6 +1851,22 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 
 	// Check type parameters compatibility
 	if len(func1.TypeParams) != len(func2.TypeParams) {
+		return []Error{&CannotUnifyTypesError{
+			T1: func1,
+			T2: func2,
+		}}
+	}
+
+	// Phase 9.5: lifetime parameter arity must match. Once two function
+	// types are equated their `LifetimeParams` slots line up positionally —
+	// inside the body, lifetime variables that share an index are
+	// implicitly equated by the recursive parameter / return unification
+	// below (each recursive call hits the lifetime-binding hook in
+	// unifyInner). A function type with strictly more or fewer lifetime
+	// parameters than the other cannot be assigned without explicit
+	// elision rules (Phase 11), so we reject the structural mismatch
+	// here.
+	if len(func1.LifetimeParams) != len(func2.LifetimeParams) {
 		return []Error{&CannotUnifyTypesError{
 			T1: func1,
 			T2: func2,

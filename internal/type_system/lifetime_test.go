@@ -112,8 +112,8 @@ func TestLifetimeVarBinding(t *testing.T) {
 	val := &LifetimeValue{ID: 10, Name: "items"}
 	lv.Instance = val
 
-	require.Equal(t, val, lv.Instance)
-	require.Equal(t, 10, lv.Instance.ID)
+	require.Equal(t, Lifetime(val), lv.Instance)
+	require.Equal(t, 10, lv.Instance.(*LifetimeValue).ID)
 }
 
 func TestPruneLifetimeBoundVar(t *testing.T) {

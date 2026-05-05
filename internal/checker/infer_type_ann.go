@@ -29,6 +29,16 @@ func (c *Checker) inferTypeAnn(
 			}
 
 			typeRef := type_system.NewTypeRefTypeFromQualIdent(provenance, convertQualIdent(typeAnn.Name), typeAlias, typeArgs...)
+			// Phase 8.1 plumbing: attach the user-written inline
+			// lifetime annotation (e.g. the `'a` in `mut 'a Point`) to
+			// the resulting TypeRefType. The caller's signature must
+			// have already declared `'a` via `inferFuncSig`, so this
+			// resolves through the scope chain.
+			if typeAnn.Lifetime != nil {
+				lt, ltErrors := c.resolveLifetimeAnn(ctx.Scope, typeAnn.Lifetime)
+				typeRef.Lifetime = lt
+				errors = slices.Concat(errors, ltErrors)
+			}
 			// If the type alias isn't defined yet, add the type ref to `TypeRefsToUpdate`
 			// and update it the type ref later once we know what it is.  See `InferComponent`
 			// for more details.
@@ -245,6 +255,12 @@ func (c *Checker) inferFuncTypeAnn(
 	// Create a new context with type parameters in scope
 	funcCtx := ctx.WithNewScope()
 
+	// Phase 8.1 plumbing: declare lifetime parameters on the function-
+	// type-annotation scope so inline `'a` references inside the
+	// callback-type's params/return resolve here rather than to an
+	// outer signature's `'a`.
+	lifetimeParams := c.declareLifetimeParams(funcCtx.Scope, funcTypeAnn.LifetimeParams)
+
 	// Handle generic functions by creating type parameters
 	typeParams, typeParamErrors := c.inferFuncTypeParams(ctx, funcCtx, funcTypeAnn.TypeParams)
 	errors = slices.Concat(errors, typeParamErrors)
@@ -254,8 +270,6 @@ func (c *Checker) inferFuncTypeAnn(
 		patType, patBindings, patErrors := c.inferPattern(funcCtx, param.Pattern)
 		errors = slices.Concat(errors, patErrors)
 
-		// TODO: make type annoations required on parameters in function type
-		// annotations
 		var typeAnn type_system.Type
 		if param.TypeAnn == nil {
 			typeAnn = c.FreshVar(nil)
@@ -288,11 +302,16 @@ func (c *Checker) inferFuncTypeAnn(
 	}
 
 	funcType := type_system.FuncType{
-		Params:     params,
-		Return:     returnType,
-		Throws:     throwsType,
-		TypeParams: typeParams,
+		LifetimeParams: lifetimeParams,
+		TypeParams:     typeParams,
+		Params:         params,
+		Return:         returnType,
+		Throws:         throwsType,
 	}
+
+	// §9.7 class 1: warn about declared `<'a>` clauses that no
+	// parameter, return type, or throws annotation references.
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(&funcType, funcTypeAnn.LifetimeParams, funcTypeAnn.Span()))
 
 	return &funcType, errors
 }

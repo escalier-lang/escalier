@@ -7,12 +7,15 @@ type Lifetime interface {
 }
 
 // LifetimeVar represents a lifetime parameter (e.g. 'a, 'b).
-// During inference, Instance is nil. Once bound at a call site,
-// Instance points to the concrete LifetimeValue it resolved to.
+// During inference, Instance is nil. Once bound at a call site, Instance
+// points to whatever the variable resolved to — most commonly a
+// LifetimeValue from the alias tracker, but may also be another
+// LifetimeVar (when two free variables are equated during higher-order
+// unification) or a LifetimeUnion. PruneLifetime follows the chain.
 type LifetimeVar struct {
 	ID       int
-	Name     string         // e.g. "a", "b" (without the tick)
-	Instance *LifetimeValue // nil until bound
+	Name     string   // e.g. "a", "b" (without the tick)
+	Instance Lifetime // nil until bound
 }
 
 func (*LifetimeVar) isLifetime() {}
@@ -55,7 +58,7 @@ func PruneLifetime(lt Lifetime) Lifetime {
 	switch v := lt.(type) {
 	case *LifetimeVar:
 		if v.Instance != nil {
-			return v.Instance
+			return PruneLifetime(v.Instance)
 		}
 		return v
 	case *LifetimeUnion:
