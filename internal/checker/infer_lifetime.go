@@ -1498,15 +1498,24 @@ func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
 }
 
 // typeCarriesLifetime reports whether the given type can carry a lifetime.
-// Walks past mutability wrappers. Type parameters (TypeRefType pointing
-// at a TypeAlias with IsTypeParam=true) are excluded, since the parameter
-// might be instantiated to a primitive at the call site, in which case
-// the lifetime would have nowhere to live.
+// Walks past mutability wrappers. Unbounded type parameters are excluded,
+// since the parameter might be instantiated to a primitive at the call
+// site, in which case the lifetime would have nowhere to live. A
+// constrained type parameter is treated as lifetime-bearing iff its
+// constraint is itself lifetime-bearing — every legal instantiation of
+// the parameter will then have a place to attach the lifetime.
 func typeCarriesLifetime(t type_system.Type) bool {
 	switch ty := type_system.Prune(t).(type) {
 	case *type_system.TypeRefType:
 		if ty.TypeAlias != nil && ty.TypeAlias.IsTypeParam {
-			return false
+			// Phase 10.2: walk into the bound. For type-parameter
+			// scope entries, TypeAlias.Type holds the constraint
+			// (or UnknownType for unbounded params, which falls
+			// through to false).
+			if ty.TypeAlias.Type == nil {
+				return false
+			}
+			return typeCarriesLifetime(ty.TypeAlias.Type)
 		}
 		return true
 	case *type_system.ObjectType, *type_system.TupleType:
@@ -1514,6 +1523,25 @@ func typeCarriesLifetime(t type_system.Type) bool {
 		return true
 	case *type_system.MutType:
 		return typeCarriesLifetime(ty.Type)
+	}
+	return false
+}
+
+// lifetimeBearingHasNoLifetime reports whether t can carry a Lifetime
+// field but currently has none. Used by Phase 10.5 substitution to
+// decide whether to transfer the use-site lifetime onto a resolved
+// shape, leaving any pre-existing annotation in place for the caller
+// to unify.
+func lifetimeBearingHasNoLifetime(t type_system.Type) bool {
+	switch ty := type_system.Prune(t).(type) {
+	case *type_system.TypeRefType:
+		return ty.Lifetime == nil
+	case *type_system.ObjectType:
+		return ty.Lifetime == nil
+	case *type_system.TupleType:
+		return ty.Lifetime == nil
+	case *type_system.MutType:
+		return lifetimeBearingHasNoLifetime(ty.Type)
 	}
 	return false
 }

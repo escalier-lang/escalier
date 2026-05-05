@@ -29,9 +29,9 @@ into phases that build incrementally, each producing a testable milestone.
 |     5 | Alias tracking (local variables)                     | 3          | Done   |
 |     6 | Mutability transition checking                       | 4, 5       | Done   |
 |     7 | Alias tracking (properties, closures, destructuring) | 5, 6       | Done   |
-|     8 | Lifetime annotations and inference                   | 6, 7       |        |
-|     9 | Lifetime unification                                  | 8          |        |
-|    10 | Constrained type parameters that carry a lifetime     | 9          |        |
+|     8 | Lifetime annotations and inference                   | 6, 7       | Done   |
+|     9 | Lifetime unification                                  | 8          | Done   |
+|    10 | Constrained type parameters that carry a lifetime     | 9          | Done   |
 |    11 | Lifetime elision rules                               | 8, 9       |        |
 |    12 | TypeScript interop                                   | 11         |        |
 |    13 | Error messages                                       | 6–12       |        |
@@ -1366,7 +1366,7 @@ Additional tests beyond the original plan:
 
 ---
 
-## Phase 8: Lifetime Annotations and Inference
+## Phase 8: Lifetime Annotations and Inference (Done)
 
 **Goal:** Add lifetime annotations to function signatures and infer them from
 function bodies.
@@ -2359,7 +2359,7 @@ class Pair(a: mut Point, b: mut Point) {
 
 ---
 
-## Phase 9: Lifetime Unification
+## Phase 9: Lifetime Unification (Done)
 
 **Goal:** Integrate lifetime variables into the type unification engine so
 that lifetimes are propagated through type inference.
@@ -2756,7 +2756,7 @@ so the diagnostic only fires for user-typed names.
 
 ---
 
-## Phase 10: Constrained Type Parameters That Carry a Lifetime
+## Phase 10: Constrained Type Parameters That Carry a Lifetime (Done)
 
 **Goal:** Allow lifetime inference and annotations on type parameters whose
 constraint is itself a lifetime-bearing shape, so generic functions over
@@ -3492,10 +3492,10 @@ implementation is stable. These are explicitly **not part of Phases 1–14**:
         └── 5. Alias tracking (local) ✅
             ├── 6. Transition checking ✅
             │   └── 7. Advanced alias tracking (properties, closures, destructuring) ✅
-            │       └── 8. Lifetime annotations, inference, & constructors
-            │           └── 9. Lifetime unification ('static, conflict detection,
+            │       └── 8. Lifetime annotations, inference, & constructors ✅
+            │           └── 9. Lifetime unification ('static, conflict detection, ✅
             │               │  higher-order function threading)
-            │               ├── 10. Constrained type parameters that carry a lifetime
+            │               ├── 10. Constrained type parameters that carry a lifetime ✅
             │               └── 11. Elision rules & interface lifetime verification
             │                   └── 12. TypeScript interop
             └── 7. Advanced alias tracking ✅

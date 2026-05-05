@@ -729,6 +729,56 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"box": "fn <'a>(p: mut 'a {x: number}) -> Array<{inner: mut 'a {x: number}}>",
 			},
 		},
+		// Phase 10: a type parameter constrained to a lifetime-bearing
+		// shape carries a lifetime — every legal instantiation has a
+		// place to attach the borrow.
+		"ConstrainedTypeParam_FirstOfTwo": {
+			input: `
+				fn first<T: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"first": "fn <'a, T: {x: number}>(p: mut 'a T, other: mut T) -> mut 'a T",
+			},
+		},
+		"ConstrainedTypeParam_Identity": {
+			input: `
+				fn id<T: {x: number}>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: {x: number}>(p: mut 'a T) -> mut 'a T",
+			},
+		},
+		// Regression guard for the pre-Phase-10 behavior: an unbounded
+		// type parameter has no guaranteed lifetime-bearing shape, so
+		// no lifetime is inferred.
+		"UnboundedTypeParam_NoLifetime": {
+			input: `
+				fn id<T>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <T>(p: mut T) -> mut T",
+			},
+		},
+		// Tuple-bound constraint: every instantiation is a tuple, which
+		// carries a lifetime.
+		"ConstrainedTypeParam_TupleBound": {
+			input: `
+				fn id<T: [number, number]>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: [number, number]>(p: mut 'a T) -> mut 'a T",
+			},
+		},
+		// Primitive-bound constraint: the constraint is not lifetime-
+		// bearing, so the type parameter stays unannotated.
+		"ConstrainedTypeParam_PrimitiveBound": {
+			input: `
+				fn id<T: number>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <T: number>(p: mut T) -> mut T",
+			},
+		},
 	}
 
 	for name, test := range tests {
