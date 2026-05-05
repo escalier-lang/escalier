@@ -148,6 +148,10 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 
 	// For declared functions, we don't have a body to infer from
 	if decl.Declare() && (decl.Body == nil || len(decl.Body.Stmts) == 0) {
+		// Phase 11: apply lifetime elision to body-less declarations.
+		elisionErrors := c.ApplyLifetimeElision(funcType)
+		errors = slices.Concat(errors, elisionErrors)
+
 		// For declared async functions, validate that the return type is a Promise
 		if decl.FuncSig.Async {
 			if promiseType, ok := funcType.Return.(*type_system.TypeRefType); ok &&
@@ -364,6 +368,14 @@ func (c *Checker) inferInterface(
 
 	objType.Interface = true
 	objType.Nominal = true
+
+	// Phase 11 note: the spec calls for lifetime elision on interface
+	// methods, but this `inferInterface` path is shared with TypeScript
+	// .d.ts ingestion (where elision would mis-fire on signatures we
+	// can't annotate). Wiring elision into interfaces is deferred to
+	// Phase 12, which will distinguish user-source interfaces from
+	// imported lib interfaces. Elision still applies to body-less
+	// `declare fn` declarations — see the wiring in infer_module.go.
 
 	// Check if an interface with this name already exists in the CURRENT namespace only.
 	// We don't use GetTypeAlias here because it searches up the scope chain,

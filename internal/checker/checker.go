@@ -24,6 +24,14 @@ type Checker struct {
 	expandCache           expandSeen                 // Cross-call cache for getMemberType's expansion loop (#453)
 	substCache            expandSeen                 // Cross-call cache for expandTypeRef's SubstituteTypeParams (#461)
 	memberCache           memberCache                // Per-property cache for lazy member substitution (#461)
+
+	// loadingExternalTypes is true while ingesting TypeScript types
+	// we cannot annotate (the prelude lib files via
+	// loadGlobalDefinitions, or per-file .d.ts via inferParsedTypeDef).
+	// Phase 11 elision uses this flag to suppress
+	// AmbiguousLifetimeElisionError on those signatures — Phase 12 (TS
+	// interop) will replace this with per-source-file policy.
+	loadingExternalTypes bool
 }
 
 func NewChecker(ctx context.Context) *Checker {
