@@ -30,7 +30,7 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *type_system.MutType) []Error
 		return c.bind(ctx, t2, t1, nil)
 	}
 
-	// For invariant unification, the types must be exactly equal
+	// Otherwise require exact equality.
 	if type_system.Equals(t1, t2) {
 		return nil
 	}

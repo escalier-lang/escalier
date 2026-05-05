@@ -779,6 +779,42 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"id": "fn <T: number>(p: mut T) -> mut T",
 			},
 		},
+		// Alias-bound constraint: the bound is a TypeRefType pointing
+		// at a type alias whose body is lifetime-bearing. Every legal
+		// instantiation of T is still a shape that carries a lifetime,
+		// so the parameter should be lifetime-annotated.
+		"ConstrainedTypeParam_AliasBound": {
+			input: `
+				type Point = {x: number}
+				fn id<T: Point>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: Point>(p: mut 'a T) -> mut 'a T",
+			},
+		},
+		// Alias-bound constraint where the alias body is itself a
+		// primitive: the constraint resolves to a non-lifetime-bearing
+		// shape, so no lifetime should be inferred.
+		"ConstrainedTypeParam_AliasBound_Primitive": {
+			input: `
+				type Num = number
+				fn id<T: Num>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <T: Num>(p: mut T) -> mut T",
+			},
+		},
+		// Class-instance constraint: every legal instantiation of T
+		// is a class instance, which carries a lifetime.
+		"ConstrainedTypeParam_ClassInstanceBound": {
+			input: `
+				class Point { x: number, y: number }
+				fn id<T: Point>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: Point>(p: mut 'a T) -> mut 'a T",
+			},
+		},
 	}
 
 	for name, test := range tests {

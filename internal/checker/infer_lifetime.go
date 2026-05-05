@@ -1511,11 +1511,14 @@ func typeCarriesLifetime(t type_system.Type) bool {
 			// Phase 10.2: walk into the bound. For type-parameter
 			// scope entries, TypeAlias.Type holds the constraint
 			// (or UnknownType for unbounded params, which falls
-			// through to false).
+			// through to false). Use boundCarriesLifetime so a
+			// constraint that itself names an alias resolving to a
+			// primitive (e.g. `type Num = number; T: Num`) returns
+			// false.
 			if ty.TypeAlias.Type == nil {
 				return false
 			}
-			return typeCarriesLifetime(ty.TypeAlias.Type)
+			return boundCarriesLifetime(ty.TypeAlias.Type)
 		}
 		return true
 	case *type_system.ObjectType, *type_system.TupleType:
@@ -1523,6 +1526,36 @@ func typeCarriesLifetime(t type_system.Type) bool {
 		return true
 	case *type_system.MutType:
 		return typeCarriesLifetime(ty.Type)
+	}
+	return false
+}
+
+// boundCarriesLifetime is the constraint-walking variant of
+// typeCarriesLifetime. Unlike the general check, it expands non-type-
+// param TypeRefType bounds to their alias body so that a constraint
+// like `T: Num` (where `type Num = number`) resolves to its primitive
+// body and reports false. Outside the constraint walk we keep the
+// conservative "TypeRefType always carries a lifetime" rule because
+// real reference shapes (classes, parameterized aliases over objects)
+// flow through it.
+func boundCarriesLifetime(t type_system.Type) bool {
+	switch ty := type_system.Prune(t).(type) {
+	case *type_system.TypeRefType:
+		if ty.TypeAlias != nil && ty.TypeAlias.IsTypeParam {
+			if ty.TypeAlias.Type == nil {
+				return false
+			}
+			return boundCarriesLifetime(ty.TypeAlias.Type)
+		}
+		if ty.TypeAlias != nil && ty.TypeAlias.Type != nil {
+			return boundCarriesLifetime(ty.TypeAlias.Type)
+		}
+		return true
+	case *type_system.ObjectType, *type_system.TupleType:
+		_ = ty
+		return true
+	case *type_system.MutType:
+		return boundCarriesLifetime(ty.Type)
 	}
 	return false
 }
