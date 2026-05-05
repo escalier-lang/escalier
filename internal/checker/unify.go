@@ -649,7 +649,11 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			// Phase 9.4: reconcile LifetimeArgs regardless of whether
 			// TypeArgs are present. Lifetime args travel independently
 			// of type args (a non-generic alias may still be lifetime-
-			// generic), so this check applies on both branches below.
+			// generic — e.g. `type PointRef<'a> = 'a Point` has zero
+			// TypeParams and one LifetimeParam, so `PointRef<'a>` and
+			// `PointRef<'b>` need their lifetime args unified before
+			// the empty-TypeArgs branch below declares them equal),
+			// so this check applies on both branches below.
 			ltErrors := []Error{}
 			if len(ref1.LifetimeArgs) == len(ref2.LifetimeArgs) {
 				for i := 0; i < len(ref1.LifetimeArgs); i++ {
@@ -707,7 +711,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						T2: ref2,
 					}}
 				}
-				errors := slices.Clone(ltErrors)
+				errors := ltErrors
 				for i := 0; i < len(ref1.TypeArgs); i++ {
 					argErrors := c.unifyInner(ctx, ref1.TypeArgs[i], ref2.TypeArgs[i], seen)
 					errors = slices.Concat(errors, argErrors)

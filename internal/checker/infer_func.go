@@ -182,8 +182,6 @@ func (c *Checker) inferFuncTypeParams(
 // - the new context with type parameters in scope
 // - a map of parameter bindings
 // - any errors encountered during inference
-// TODO: Accept an ast.Node parameter so that we can set provenance on the
-// inferred type.
 func (c *Checker) inferFuncSig(
 	ctx Context,
 	sig *ast.FuncSig, // TODO: make FuncSig an interface

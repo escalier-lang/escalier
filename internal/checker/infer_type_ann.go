@@ -270,8 +270,6 @@ func (c *Checker) inferFuncTypeAnn(
 		patType, patBindings, patErrors := c.inferPattern(funcCtx, param.Pattern)
 		errors = slices.Concat(errors, patErrors)
 
-		// TODO: make type annoations required on parameters in function type
-		// annotations
 		var typeAnn type_system.Type
 		if param.TypeAnn == nil {
 			typeAnn = c.FreshVar(nil)
@@ -305,10 +303,10 @@ func (c *Checker) inferFuncTypeAnn(
 
 	funcType := type_system.FuncType{
 		LifetimeParams: lifetimeParams,
+		TypeParams:     typeParams,
 		Params:         params,
 		Return:         returnType,
 		Throws:         throwsType,
-		TypeParams:     typeParams,
 	}
 
 	// §9.7 class 1: warn about declared `<'a>` clauses that no

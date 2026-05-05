@@ -128,106 +128,86 @@ func reportUnusedLifetimeParams(
 // any depth — covering both the outer Lifetime field and per-element
 // LifetimeArgs on TypeRefTypes, plus lifetimes inside nested function
 // types' params/return.
+//
+// Lifetimes declared on a *nested* FuncType's LifetimeParams shadow
+// the outer scope's same-named vars, so the visitor pushes a shadow
+// frame on entry to each inner FuncType and pops it on exit; only
+// IDs not bound by any inner frame count as "used by the outer".
 func collectInlineLifetimeIDs(fnType *type_system.FuncType) map[int]struct{} {
-	out := map[int]struct{}{}
-	// Lifetimes declared on a *nested* FuncType's LifetimeParams shadow
-	// the outer scope's same-named vars, so we don't recurse through
-	// nested signatures with their own LifetimeParams — the outer-only
-	// IDs we collect here are the ones the outer signature uses.
-	visited := map[type_system.Type]bool{}
+	c := &lifetimeIDCollector{out: map[int]struct{}{}}
 	for _, p := range fnType.Params {
-		collectLifetimeIDsInType(p.Type, fnType, out, visited)
+		p.Type.Accept(c)
 	}
 	if fnType.Return != nil {
-		collectLifetimeIDsInType(fnType.Return, fnType, out, visited)
+		fnType.Return.Accept(c)
 	}
 	if fnType.Throws != nil {
-		collectLifetimeIDsInType(fnType.Throws, fnType, out, visited)
+		fnType.Throws.Accept(c)
 	}
-	return out
+	return c.out
 }
 
-func collectLifetimeIDsInType(
-	t type_system.Type,
-	owner *type_system.FuncType,
-	out map[int]struct{},
-	visited map[type_system.Type]bool,
-) {
-	if t == nil || visited[t] {
-		return
-	}
-	visited[t] = true
-	t = type_system.Prune(t)
+// lifetimeIDCollector is a read-only TypeVisitor that records every
+// LifetimeVar ID appearing inline on a TypeRefType / ObjectType /
+// TupleType, while honoring shadowing introduced by nested FuncType
+// LifetimeParams.
+type lifetimeIDCollector struct {
+	out         map[int]struct{}
+	shadowStack []map[int]bool
+	depth       int // FuncType nesting depth; we shadow only inner FuncTypes
+}
+
+func (c *lifetimeIDCollector) EnterType(t type_system.Type) type_system.EnterResult {
 	switch ty := t.(type) {
 	case *type_system.TypeRefType:
-		collectLifetimeIDs(ty.Lifetime, out)
+		c.addLifetime(ty.Lifetime)
 		for _, la := range ty.LifetimeArgs {
-			collectLifetimeIDs(la, out)
-		}
-		for _, a := range ty.TypeArgs {
-			collectLifetimeIDsInType(a, owner, out, visited)
+			c.addLifetime(la)
 		}
 	case *type_system.ObjectType:
-		collectLifetimeIDs(ty.Lifetime, out)
-		for _, e := range ty.Elems {
-			if pe, ok := e.(*type_system.PropertyElem); ok {
-				collectLifetimeIDsInType(pe.Value, owner, out, visited)
-			}
-		}
+		c.addLifetime(ty.Lifetime)
 	case *type_system.TupleType:
-		collectLifetimeIDs(ty.Lifetime, out)
-		for _, e := range ty.Elems {
-			collectLifetimeIDsInType(e, owner, out, visited)
-		}
-	case *type_system.MutType:
-		collectLifetimeIDsInType(ty.Type, owner, out, visited)
-	case *type_system.UnionType:
-		for _, m := range ty.Types {
-			collectLifetimeIDsInType(m, owner, out, visited)
-		}
-	case *type_system.IntersectionType:
-		for _, m := range ty.Types {
-			collectLifetimeIDsInType(m, owner, out, visited)
-		}
+		c.addLifetime(ty.Lifetime)
 	case *type_system.FuncType:
-		// A nested FuncType binds its own LifetimeParams. Only treat
-		// inline lifetimes whose ID matches a LifetimeParam of `owner`
-		// (or any outer scope) as "used by owner" — names locally bound
-		// by the inner function don't count.
-		shadowed := map[int]bool{}
-		for _, lp := range ty.LifetimeParams {
-			shadowed[lp.ID] = true
-		}
-		// Recurse but skip lifetimes shadowed by the inner function.
-		nested := map[int]struct{}{}
-		nestedVisited := map[type_system.Type]bool{}
-		for _, p := range ty.Params {
-			collectLifetimeIDsInType(p.Type, ty, nested, nestedVisited)
-		}
-		if ty.Return != nil {
-			collectLifetimeIDsInType(ty.Return, ty, nested, nestedVisited)
-		}
-		if ty.Throws != nil {
-			collectLifetimeIDsInType(ty.Throws, ty, nested, nestedVisited)
-		}
-		for id := range nested {
-			if !shadowed[id] {
-				out[id] = struct{}{}
+		// Only inner FuncTypes introduce a shadow frame; the outer
+		// function's LifetimeParams are the IDs we want to collect.
+		if c.depth > 0 {
+			frame := map[int]bool{}
+			for _, lp := range ty.LifetimeParams {
+				frame[lp.ID] = true
 			}
+			c.shadowStack = append(c.shadowStack, frame)
 		}
+		c.depth++
 	}
+	return type_system.EnterResult{}
 }
 
-func collectLifetimeIDs(lt type_system.Lifetime, out map[int]struct{}) {
+func (c *lifetimeIDCollector) ExitType(t type_system.Type) type_system.Type {
+	if _, ok := t.(*type_system.FuncType); ok {
+		c.depth--
+		if c.depth > 0 {
+			c.shadowStack = c.shadowStack[:len(c.shadowStack)-1]
+		}
+	}
+	return nil
+}
+
+func (c *lifetimeIDCollector) addLifetime(lt type_system.Lifetime) {
 	if lt == nil {
 		return
 	}
 	switch v := type_system.PruneLifetime(lt).(type) {
 	case *type_system.LifetimeVar:
-		out[v.ID] = struct{}{}
+		for _, frame := range c.shadowStack {
+			if frame[v.ID] {
+				return
+			}
+		}
+		c.out[v.ID] = struct{}{}
 	case *type_system.LifetimeUnion:
 		for _, m := range v.Lifetimes {
-			collectLifetimeIDs(m, out)
+			c.addLifetime(m)
 		}
 	}
 }

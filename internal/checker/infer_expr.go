@@ -1209,38 +1209,39 @@ func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_sys
 	)
 
 	// Create fresh type variables for each type parameter
-	substitutions := make(map[string]type_system.Type)
+	tpSubs := make(map[string]type_system.Type)
 	for _, typeParam := range fnType.TypeParams {
 		t := c.FreshVar(nil)
-		substitutions[typeParam.Name] = t
+		tpSubs[typeParam.Name] = t
 	}
 
 	// After all type parameters are in the substitution map,
 	// substitute any type parameter references in the constraints
 	for _, typeParam := range fnType.TypeParams {
 		if typeParam.Constraint != nil {
-			substitutedConstraint := SubstituteTypeParams(typeParam.Constraint, substitutions)
-			if freshVar, ok := substitutions[typeParam.Name].(*type_system.TypeVarType); ok {
+			substitutedConstraint := SubstituteTypeParams(typeParam.Constraint, tpSubs)
+			if freshVar, ok := tpSubs[typeParam.Name].(*type_system.TypeVarType); ok {
 				freshVar.Constraint = substitutedConstraint
 			}
 		}
 	}
 
 	// Substitute type refs in the copied function type with fresh type variables
-	result := SubstituteTypeParams(fnTypeWithoutParams, substitutions)
+	result := SubstituteTypeParams(fnTypeWithoutParams, tpSubs)
 
-	// Phase 9.2: instantiate lifetime parameters with fresh LifetimeVars
-	// so that each call site's lifetime bindings are independent. The
-	// fresh vars are dropped from the resulting FuncType's
-	// LifetimeParams: the instantiated copy is not itself generic over
-	// lifetimes anymore — the caller's argument unification will
-	// resolve them.
 	if len(fnType.LifetimeParams) > 0 {
+		// Create fresh lifetime vars for each lifetime param
 		ltSubs := make(map[int]type_system.Lifetime, len(fnType.LifetimeParams))
 		for _, lp := range fnType.LifetimeParams {
 			ltSubs[lp.ID] = c.FreshLifetimeVar(lp.Name)
 		}
+
+		// Substitute lifetime vars in the function type with the corresponding
+		// fresh liftetime var.
 		result = SubstituteLifetimes(result, ltSubs)
+
+		// We don't need the lifetime params now that they've all be replaced
+		// with lifetime vars.
 		result.LifetimeParams = nil
 	}
 

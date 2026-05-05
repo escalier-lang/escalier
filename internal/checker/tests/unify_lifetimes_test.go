@@ -23,126 +23,162 @@ import (
 func TestLifetimeUnificationByInference(t *testing.T) {
 	t.Parallel()
 
-	// 9.1 + 9.2: a generic identity returns a value sharing the
-	// argument's alias set. Mutating the result while the argument is
-	// frozen must produce the canonical transition error — the only
-	// way that's possible is if the call site bound the function's
-	// LifetimeVar to p's alias set via unification. We also check that
-	// `identity`'s inferred signature still carries the `<'a>` form
-	// after Phase 9.2's instantiation rewrites the original
-	// LifetimeVars on each call.
-	t.Run("GenericIdentityPropagatesLifetimeToResult", func(t *testing.T) {
-		types, mutErrors := mustInferScript(t, `
-			fn identity(p: mut {x: number}) -> mut {x: number} { return p }
-			val p: mut {x: number} = {x: 0}
-			val r: mut {x: number} = identity(p)
-			val q: {x: number} = p
-			r.x = 5
-			q
-		`)
-		assert.Equal(t,
-			"fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}",
-			types["identity"])
-		require.Len(t, mutErrors, 1)
-		assert.Contains(t, mutErrors[0], "cannot assign 'p' to immutable 'q'")
-	})
+	// Each case type-checks a small script and asserts the inferred
+	// signatures and the formatted MutabilityTransitionError messages.
+	// The phase notes on each case explain *why* the assertion shape is
+	// what it is — see the per-case `note` field.
+	cases := []struct {
+		name string
+		// note documents the phase under test and the reasoning behind
+		// the expected outcome; included as the test failure message
+		// for `mutErrors` so a regression points at the rationale, not
+		// just the diff.
+		note          string
+		script        string
+		expectedTypes map[string]string
+		expectedErrs  []string
+	}{
+		{
+			// 9.1 + 9.2: a generic identity returns a value sharing the
+			// argument's alias set. Mutating the result while the argument
+			// is frozen must produce the canonical transition error — the
+			// only way that's possible is if the call site bound the
+			// function's LifetimeVar to p's alias set via unification. We
+			// also check that `identity`'s inferred signature still carries
+			// the `<'a>` form after Phase 9.2's instantiation rewrites the
+			// original LifetimeVars on each call.
+			name: "GenericIdentityPropagatesLifetimeToResult",
+			note: "phase 9.1+9.2: generic identity propagates 'a from arg to result",
+			script: `
+				fn identity(p: mut {x: number}) -> mut {x: number} { return p }
+				val p: mut {x: number} = {x: 0}
+				val r: mut {x: number} = identity(p)
+				val q: {x: number} = p
+				r.x = 5
+				q
+			`,
+			expectedTypes: map[string]string{
+				"identity": "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}",
+			},
+			expectedErrs: []string{
+				"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
+			},
+		},
+		{
+			// 9.2: the second call's fresh lifetime variables must be
+			// independent of the first's. If `instantiateGenericFunc`
+			// failed to freshen LifetimeVars, the second call's binding
+			// would also pin `'a` against p, and mutating r2 would trigger
+			// a spurious error on frozenP.
+			name: "EachCallSiteGetsIndependentLifetimeVars",
+			note: "phase 9.2: the second call's binding must not affect p's alias set",
+			script: `
+				fn identity(p: mut {x: number}) -> mut {x: number} { return p }
+				val p: mut {x: number} = {x: 0}
+				val q: mut {x: number} = {x: 1}
+				val r1: mut {x: number} = identity(p)
+				val r2: mut {x: number} = identity(q)
+				val frozenP: {x: number} = p
+				r2.x = 5
+				frozenP
+			`,
+			expectedErrs: nil,
+		},
+		{
+			// 9.5 — first §9.5 example: a higher-order function whose
+			// callback shares a lifetime variable with the surrounding
+			// signature must structurally unify. The user-written `'a` on
+			// `apply` ties the callback's input/output and `apply`'s
+			// argument together so the result aliases p.
+			name: "HigherOrderCallbackUnifies",
+			note: "phase 9.5: HOF callback shares 'a with surrounding signature",
+			script: `
+				type Point = {x: number}
+				fn identity(p: mut Point) -> mut Point { return p }
+				fn apply<'a>(f: fn(arg: mut 'a Point) -> mut 'a Point, p: mut 'a Point) -> mut 'a Point {
+					return f(p)
+				}
+				val p: mut Point = {x: 0}
+				val r: mut Point = apply(identity, p)
+				r.x = 5
+				r
+			`,
+			expectedTypes: map[string]string{
+				"identity": "fn <'a>(p: mut 'a Point) -> mut 'a Point",
+				"apply":    "fn <'a>(f: fn (arg: mut 'a Point) -> mut 'a Point, p: mut 'a Point) -> mut 'a Point",
+			},
+			expectedErrs: nil,
+		},
+		{
+			// 9.5 — second §9.5 example: a higher-order function whose
+			// callback has no shared lifetime with the surrounding
+			// signature produces an independent result. Here `transform`
+			// carries `<'a>` only on `p`; the callback `f`'s parameter and
+			// return are unparameterized, so unification of `identity`
+			// against `f` does not link `'a` to the callback's lifetimes —
+			// the result of `transform(identity, p)` does not alias p.
+			name: "HigherOrderCallbackWithoutSharedLifetime",
+			note: "phase 9.5: HOF callback without shared 'a — result does not alias p",
+			script: `
+				type Point = {x: number}
+				fn identity(p: mut Point) -> mut Point { return p }
+				fn transform<'a>(f: fn(arg: mut Point) -> mut Point, p: mut 'a Point) -> mut Point {
+					return f(p)
+				}
+				val p: mut Point = {x: 0}
+				val r: mut Point = transform(identity, p)
+				r.x = 5
+				r
+			`,
+			expectedTypes: map[string]string{
+				"transform": "fn <'a>(f: fn (arg: mut Point) -> mut Point, p: mut 'a Point) -> mut Point",
+			},
+			expectedErrs: nil,
+		},
+		{
+			// 9.3: an argument passed to a `'static`-inferring parameter
+			// is marked permanently aliased. Confirms that unification
+			// doesn't reject `'static`-vs-non-static and that the
+			// caller-side escape propagation still fires after Phase 9
+			// wired up the unification hook in unifyInner. We also assert
+			// that `store`'s inferred signature pins the parameter to
+			// `'static`.
+			name: "StaticParameterAbsorbsConcreteArgument",
+			note: "phase 9.3: 'static-inferring param absorbs the arg's alias set",
+			script: `
+				var cache: mut {x: number} = {x: 0}
+				fn store(p: mut {x: number}) -> number {
+					cache = p
+					return p.x
+				}
+				val p: mut {x: number} = {x: 0}
+				store(p)
+				val frozen: {x: number} = p
+				frozen
+			`,
+			expectedTypes: map[string]string{
+				"store": "fn (p: mut 'static {x: number}) -> number",
+			},
+			expectedErrs: []string{
+				"cannot assign 'p' to immutable 'frozen': a `'static` escape still has mutable access to 'p' after this point",
+			},
+		},
+	}
 
-	// 9.2: the second call's fresh lifetime variables must be
-	// independent of the first's. If `instantiateGenericFunc` failed to
-	// freshen LifetimeVars, the second call's binding would also pin
-	// `'a` against p, and mutating r2 would trigger a spurious error
-	// on frozenP.
-	t.Run("EachCallSiteGetsIndependentLifetimeVars", func(t *testing.T) {
-		mutErrors := mustInferScriptMutErrors(t, `
-			fn identity(p: mut {x: number}) -> mut {x: number} { return p }
-			val p: mut {x: number} = {x: 0}
-			val q: mut {x: number} = {x: 1}
-			val r1: mut {x: number} = identity(p)
-			val r2: mut {x: number} = identity(q)
-			val frozenP: {x: number} = p
-			r2.x = 5
-			frozenP
-		`)
-		assert.Empty(t, mutErrors,
-			"the second call's binding should not affect p's alias set")
-	})
-
-	// 9.5 — first §9.5 example: a higher-order function whose
-	// callback shares a lifetime variable with the surrounding
-	// signature must structurally unify. The user-written `'a` on
-	// `apply` ties the callback's input/output and `apply`'s argument
-	// together so the result aliases p.
-	t.Run("HigherOrderCallbackUnifies", func(t *testing.T) {
-		types, mutErrors := mustInferScript(t, `
-			type Point = {x: number}
-			fn identity(p: mut Point) -> mut Point { return p }
-			fn apply<'a>(f: fn(arg: mut 'a Point) -> mut 'a Point, p: mut 'a Point) -> mut 'a Point {
-				return f(p)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			types, mutErrors := mustInferScript(t, tc.script)
+			for name, want := range tc.expectedTypes {
+				assert.Equal(t, want, types[name],
+					"inferred signature for %q (%s)", name, tc.note)
 			}
-			val p: mut Point = {x: 0}
-			val r: mut Point = apply(identity, p)
-			r.x = 5
-			r
-		`)
-		assert.Empty(t, mutErrors)
-		assert.Equal(t,
-			"fn <'a>(p: mut 'a Point) -> mut 'a Point",
-			types["identity"])
-		assert.Equal(t,
-			"fn <'a>(f: fn (arg: mut 'a Point) -> mut 'a Point, p: mut 'a Point) -> mut 'a Point",
-			types["apply"])
-	})
-
-	// 9.5 — second §9.5 example: a higher-order function whose
-	// callback has no shared lifetime with the surrounding signature
-	// produces an independent result. Here `transform` carries `<'a>`
-	// only on `p`; the callback `f`'s parameter and return are
-	// unparameterized, so unification of `identity` against `f` does
-	// not link `'a` to the callback's lifetimes — the result of
-	// `transform(identity, p)` does not alias p.
-	t.Run("HigherOrderCallbackWithoutSharedLifetime", func(t *testing.T) {
-		types, mutErrors := mustInferScript(t, `
-			type Point = {x: number}
-			fn identity(p: mut Point) -> mut Point { return p }
-			fn transform<'a>(f: fn(arg: mut Point) -> mut Point, p: mut 'a Point) -> mut Point {
-				return f(p)
+			if tc.expectedErrs == nil {
+				assert.Empty(t, mutErrors, tc.note)
+			} else {
+				assert.Equal(t, tc.expectedErrs, mutErrors, tc.note)
 			}
-			val p: mut Point = {x: 0}
-			val r: mut Point = transform(identity, p)
-			r.x = 5
-			r
-		`)
-		assert.Empty(t, mutErrors)
-		assert.Equal(t,
-			"fn <'a>(f: fn (arg: mut Point) -> mut Point, p: mut 'a Point) -> mut Point",
-			types["transform"])
-	})
-
-	// 9.3: an argument passed to a `'static`-inferring parameter is
-	// marked permanently aliased. Confirms that unification doesn't
-	// reject `'static`-vs-non-static and that the caller-side escape
-	// propagation still fires after Phase 9 wired up the unification
-	// hook in unifyInner. We also assert that `store`'s inferred
-	// signature pins the parameter to `'static`.
-	t.Run("StaticParameterAbsorbsConcreteArgument", func(t *testing.T) {
-		types, mutErrors := mustInferScript(t, `
-			var cache: mut {x: number} = {x: 0}
-			fn store(p: mut {x: number}) -> number {
-				cache = p
-				return p.x
-			}
-			val p: mut {x: number} = {x: 0}
-			store(p)
-			val frozen: {x: number} = p
-			frozen
-		`)
-		assert.Equal(t,
-			"fn (p: mut 'static {x: number}) -> number",
-			types["store"])
-		require.Len(t, mutErrors, 1)
-		assert.Contains(t, mutErrors[0],
-			"a `'static` escape still has mutable access to 'p'")
-	})
+		})
+	}
 }
 
 // TestUnifyLifetimesUnit covers the parts of the unifyLifetimes table
@@ -345,7 +381,7 @@ func TestSubstituteLifetimes(t *testing.T) {
 	// recursion through MutType is locked in.
 	t.Run("substitutes_through_mut_into_object_lifetime", func(t *testing.T) {
 		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
-		v2 := &type_system.LifetimeVar{ID: 2, Name: "a'"}
+		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
 		obj := type_system.NewObjectType(nil, nil)
 		obj.Lifetime = v1
 		mut := type_system.NewMutType(nil, obj)
@@ -354,17 +390,22 @@ func TestSubstituteLifetimes(t *testing.T) {
 		})
 		outObj := out.(*type_system.MutType).Type.(*type_system.ObjectType)
 		assert.Equal(t, type_system.Lifetime(v2), outObj.Lifetime)
+		assert.Equal(t, "mut 'z {}", out.String())
 	})
 
-	// Shadowing protection cannot be reproduced from source: there is
-	// no syntax today that lets a user write `<'a>` as a lifetime
-	// parameter on a function, and the inferred LifetimeVars allocated
-	// by `c.FreshLifetimeVar(...)` always have unique IDs — so two
-	// functions both named `'a` will have distinct numerical IDs and
-	// the substitution map will never collide with an inner param's
-	// ID. The masking is a defensive structural invariant for any
-	// future feature (user-written lifetime params, lifetime-bearing
-	// type-alias instantiation) that could produce ID collisions.
+	// Shadowing protection is hard to reproduce from source even
+	// though the syntax for `<'a>` on a function exists: every
+	// LifetimeVar allocated via `c.FreshLifetimeVar(...)` gets a
+	// unique monotonically-increasing ID, so two textually-identical
+	// `'a`s on different functions are still distinct numerically and
+	// an outer subst map can't accidentally collide with an inner
+	// param's ID. The masking exercised here is a defensive
+	// structural invariant — it would matter if a future feature
+	// (lifetime-bearing type-alias instantiation, manual map
+	// construction by callers other than instantiateGenericFunc) ever
+	// produced colliding IDs, and unit-testing it directly is the
+	// only way to pin the masking behavior since well-behaved
+	// instantiation never triggers it.
 	t.Run("inner_func_masks_shadowed_lifetime_param", func(t *testing.T) {
 		outerVar := &type_system.LifetimeVar{ID: 1, Name: "a"}
 		innerVar := &type_system.LifetimeVar{ID: 2, Name: "a"}
@@ -397,6 +438,7 @@ func TestSubstituteLifetimes(t *testing.T) {
 		assert.Equal(t, type_system.Lifetime(innerVar),
 			outFn.Return.(*type_system.ObjectType).Lifetime,
 			"inner shadowed return lifetime must be preserved")
+		assert.Equal(t, "['z {}, fn <'a>('a {}) -> 'a {}]", out.String())
 	})
 
 	// Substitution must preserve the original type's Provenance so
@@ -405,78 +447,74 @@ func TestSubstituteLifetimes(t *testing.T) {
 	// `t.provenance` through; the lifetime walker must do the same.
 	// Source-observable: a generic-instantiation site that produces a
 	// type-error after substitution would otherwise lose its span.
-	t.Run("preserves_provenance_through_object_rebuild", func(t *testing.T) {
-		prov := &ast.NodeProvenance{Node: nil}
-		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
-		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
-		obj := type_system.NewObjectType(prov, nil)
-		obj.Lifetime = v1
-		out := SubstituteLifetimes[type_system.Type](obj, map[int]type_system.Lifetime{
-			1: v2,
-		}).(*type_system.ObjectType)
-		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
-			"object rebuild must preserve Provenance")
-	})
-
-	t.Run("preserves_provenance_through_typeref_rebuild", func(t *testing.T) {
-		prov := &ast.NodeProvenance{Node: nil}
-		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
-		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
-		ref := type_system.NewTypeRefType(nil, "Container", nil)
-		// NewTypeRefType drops its provenance arg (pre-existing
-		// quirk), so set it explicitly via the Type interface.
-		ref.SetProvenance(prov)
-		ref.LifetimeArgs = []type_system.Lifetime{v1}
-		out := SubstituteLifetimes[type_system.Type](ref, map[int]type_system.Lifetime{
-			1: v2,
-		}).(*type_system.TypeRefType)
-		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
-			"typeref rebuild must preserve Provenance")
-	})
-
-	t.Run("preserves_provenance_through_tuple_rebuild", func(t *testing.T) {
-		prov := &ast.NodeProvenance{Node: nil}
-		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
-		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
-		obj := type_system.NewObjectType(nil, nil)
-		obj.Lifetime = v1
-		tup := type_system.NewTupleType(prov, obj)
-		out := SubstituteLifetimes[type_system.Type](tup, map[int]type_system.Lifetime{
-			1: v2,
-		}).(*type_system.TupleType)
-		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
-			"tuple rebuild must preserve Provenance")
-	})
-
-	t.Run("preserves_provenance_through_func_rebuild", func(t *testing.T) {
-		prov := &ast.NodeProvenance{Node: nil}
-		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
-		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
-		obj := type_system.NewObjectType(nil, nil)
-		obj.Lifetime = v1
-		fn := type_system.NewFuncType(prov, nil,
-			[]*type_system.FuncParam{{Type: obj}},
-			type_system.NewNumPrimType(nil), nil)
-		out := SubstituteLifetimes[type_system.Type](fn, map[int]type_system.Lifetime{
-			1: v2,
-		}).(*type_system.FuncType)
-		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
-			"func rebuild must preserve Provenance")
-	})
-
-	t.Run("preserves_provenance_through_mut_rebuild", func(t *testing.T) {
-		prov := &ast.NodeProvenance{Node: nil}
-		v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
-		v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
-		obj := type_system.NewObjectType(nil, nil)
-		obj.Lifetime = v1
-		mut := type_system.NewMutType(prov, obj)
-		out := SubstituteLifetimes[type_system.Type](mut, map[int]type_system.Lifetime{
-			1: v2,
-		}).(*type_system.MutType)
-		assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
-			"mut rebuild must preserve Provenance")
-	})
+	//
+	// The kind-specific build functions are the only thing that
+	// differs across these cases — the assertion is identical — so a
+	// table keeps the structural invariant front-and-center without
+	// duplicating per-kind boilerplate.
+	provenanceCases := []struct {
+		name  string
+		build func(prov *ast.NodeProvenance, v1 *type_system.LifetimeVar) type_system.Type
+	}{
+		{
+			name: "object",
+			build: func(prov *ast.NodeProvenance, v1 *type_system.LifetimeVar) type_system.Type {
+				obj := type_system.NewObjectType(prov, nil)
+				obj.Lifetime = v1
+				return obj
+			},
+		},
+		{
+			name: "typeref",
+			build: func(prov *ast.NodeProvenance, v1 *type_system.LifetimeVar) type_system.Type {
+				ref := type_system.NewTypeRefType(nil, "Container", nil)
+				// NewTypeRefType drops its provenance arg (pre-existing
+				// quirk), so set it explicitly via the Type interface.
+				ref.SetProvenance(prov)
+				ref.LifetimeArgs = []type_system.Lifetime{v1}
+				return ref
+			},
+		},
+		{
+			name: "tuple",
+			build: func(prov *ast.NodeProvenance, v1 *type_system.LifetimeVar) type_system.Type {
+				obj := type_system.NewObjectType(nil, nil)
+				obj.Lifetime = v1
+				return type_system.NewTupleType(prov, obj)
+			},
+		},
+		{
+			name: "func",
+			build: func(prov *ast.NodeProvenance, v1 *type_system.LifetimeVar) type_system.Type {
+				obj := type_system.NewObjectType(nil, nil)
+				obj.Lifetime = v1
+				return type_system.NewFuncType(prov, nil,
+					[]*type_system.FuncParam{{Type: obj}},
+					type_system.NewNumPrimType(nil), nil)
+			},
+		},
+		{
+			name: "mut",
+			build: func(prov *ast.NodeProvenance, v1 *type_system.LifetimeVar) type_system.Type {
+				obj := type_system.NewObjectType(nil, nil)
+				obj.Lifetime = v1
+				return type_system.NewMutType(prov, obj)
+			},
+		},
+	}
+	for _, tc := range provenanceCases {
+		t.Run("preserves_provenance_through_"+tc.name+"_rebuild", func(t *testing.T) {
+			prov := &ast.NodeProvenance{Node: nil}
+			v1 := &type_system.LifetimeVar{ID: 1, Name: "a"}
+			v2 := &type_system.LifetimeVar{ID: 2, Name: "z"}
+			in := tc.build(prov, v1)
+			out := SubstituteLifetimes[type_system.Type](in, map[int]type_system.Lifetime{
+				1: v2,
+			})
+			assert.Equal(t, provenance.Provenance(prov), out.Provenance(),
+				tc.name+" rebuild must preserve Provenance")
+		})
+	}
 
 	// `LifetimeArgs` (the lifetime arguments on a constructed type
 	// like `Container<'a>`) are not yet expressible from source: the
@@ -495,5 +533,6 @@ func TestSubstituteLifetimes(t *testing.T) {
 		}).(*type_system.TypeRefType)
 		require.Len(t, out.LifetimeArgs, 1)
 		assert.Equal(t, type_system.Lifetime(v2), out.LifetimeArgs[0])
+		assert.Equal(t, "Container<'z>", out.String())
 	})
 }

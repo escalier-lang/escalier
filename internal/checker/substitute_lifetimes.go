@@ -14,75 +14,114 @@ import (
 // lifetime variables, so that bindings made for one call do not leak
 // into another (see Phase 9.2).
 //
-// The walker is intentionally a small bespoke recursion rather than a
-// TypeVisitor: lifetime substitution touches Lifetime fields that live
-// alongside types but are not themselves visited as Types, and the
-// existing visitor's ExitType signature has no notion of "rebuild
-// because a non-Type child changed."
+// Implementation: a TypeVisitor handles the structural recursion through
+// types and ObjTypeElems. EnterType injects substituted Lifetime fields
+// on TypeRefType / ObjectType / TupleType by returning a replacement
+// node (the visitor's auto-rebuild on child changes preserves Lifetime
+// when copying). FuncType's LifetimeParams are tracked via a shadow
+// stack so an inner function's parameter masks any matching outer subst.
 func SubstituteLifetimes[T type_system.Type](t T, substs map[int]type_system.Lifetime) T {
 	if len(substs) == 0 {
 		return t
 	}
-	// The final cast back to T is safe for the only current caller
-	// (instantiateGenericFunc, which passes *FuncType) because
-	// substituteLifetimesInFunc always returns a *FuncType. If a future
-	// caller passes a Union- or Intersection-typed T, those branches
-	// return type_system.Type rather than the concrete pointer type, and
-	// this cast would panic — re-evaluate when adding new callers.
-	return substituteLifetimesInType(t, substs).(T)
+	v := &lifetimeSubstVisitor{substs: substs}
+	// The cast is safe for the only current caller (instantiateGenericFunc,
+	// passing *FuncType) because every visited concrete type returns its
+	// own kind. UnionType / IntersectionType passed at the top level would
+	// also be preserved by the visitor's rebuild, but a caller passing T =
+	// *UnionType receives Type from Accept and the assertion would still
+	// match — re-evaluate if a future caller uses a less specific T.
+	return t.Accept(v).(T)
 }
 
-func substituteLifetimesInType(t type_system.Type, substs map[int]type_system.Lifetime) type_system.Type {
-	if t == nil {
-		return nil
-	}
-	t = type_system.Prune(t)
+type lifetimeSubstVisitor struct {
+	substs      map[int]type_system.Lifetime
+	shadowStack []map[int]bool
+}
+
+func (v *lifetimeSubstVisitor) EnterType(t type_system.Type) type_system.EnterResult {
 	switch ty := t.(type) {
 	case *type_system.TypeRefType:
-		return substituteLifetimesInTypeRef(ty, substs)
-	case *type_system.ObjectType:
-		return substituteLifetimesInObject(ty, substs)
-	case *type_system.TupleType:
-		return substituteLifetimesInTuple(ty, substs)
-	case *type_system.MutType:
-		inner := substituteLifetimesInType(ty.Type, substs)
-		if inner == ty.Type {
-			return ty
+		newLifetime := v.substituteLifetime(ty.Lifetime)
+		newLifetimeArgs, ltArgsChanged := v.substituteLifetimeSlice(ty.LifetimeArgs)
+		if newLifetime == ty.Lifetime && !ltArgsChanged {
+			return type_system.EnterResult{}
 		}
-		return type_system.NewMutType(ty.Provenance(), inner)
+		r := *ty
+		r.Lifetime = newLifetime
+		r.LifetimeArgs = newLifetimeArgs
+		return type_system.EnterResult{Type: &r}
+	case *type_system.ObjectType:
+		newLifetime := v.substituteLifetime(ty.Lifetime)
+		if newLifetime == ty.Lifetime {
+			return type_system.EnterResult{}
+		}
+		r := *ty
+		r.Lifetime = newLifetime
+		return type_system.EnterResult{Type: &r}
+	case *type_system.TupleType:
+		newLifetime := v.substituteLifetime(ty.Lifetime)
+		if newLifetime == ty.Lifetime {
+			return type_system.EnterResult{}
+		}
+		r := *ty
+		r.Lifetime = newLifetime
+		return type_system.EnterResult{Type: &r}
 	case *type_system.FuncType:
-		return substituteLifetimesInFunc(ty, substs)
-	case *type_system.UnionType:
-		return substituteLifetimesInUnion(ty, substs)
-	case *type_system.IntersectionType:
-		return substituteLifetimesInIntersection(ty, substs)
-	default:
-		return t
+		// A nested FuncType may bind some of the same lifetime names.
+		// Mask any LifetimeParam IDs that the inner function declares —
+		// those must not be replaced by the outer substitution.
+		if len(ty.LifetimeParams) > 0 {
+			frame := make(map[int]bool, len(ty.LifetimeParams))
+			for _, lp := range ty.LifetimeParams {
+				frame[lp.ID] = true
+			}
+			v.shadowStack = append(v.shadowStack, frame)
+		} else {
+			// Push an empty frame so ExitType's pop is symmetric.
+			v.shadowStack = append(v.shadowStack, nil)
+		}
 	}
+	return type_system.EnterResult{}
 }
 
-func substituteLifetime(lt type_system.Lifetime, substs map[int]type_system.Lifetime) type_system.Lifetime {
+func (v *lifetimeSubstVisitor) ExitType(t type_system.Type) type_system.Type {
+	if _, ok := t.(*type_system.FuncType); ok {
+		v.shadowStack = v.shadowStack[:len(v.shadowStack)-1]
+	}
+	return nil
+}
+
+// substituteLifetime returns the replacement for lt, honoring shadowing
+// from any enclosing FuncType.LifetimeParams. Returns lt unchanged when
+// no substitution applies.
+func (v *lifetimeSubstVisitor) substituteLifetime(lt type_system.Lifetime) type_system.Lifetime {
 	if lt == nil {
 		return nil
 	}
-	switch v := lt.(type) {
+	switch x := lt.(type) {
 	case *type_system.LifetimeVar:
-		if repl, ok := substs[v.ID]; ok {
+		for _, frame := range v.shadowStack {
+			if frame[x.ID] {
+				return x
+			}
+		}
+		if repl, ok := v.substs[x.ID]; ok {
 			return repl
 		}
-		return v
+		return x
 	case *type_system.LifetimeUnion:
-		out := make([]type_system.Lifetime, len(v.Lifetimes))
+		out := make([]type_system.Lifetime, len(x.Lifetimes))
 		changed := false
-		for i, m := range v.Lifetimes {
-			nm := substituteLifetime(m, substs)
+		for i, m := range x.Lifetimes {
+			nm := v.substituteLifetime(m)
 			out[i] = nm
 			if nm != m {
 				changed = true
 			}
 		}
 		if !changed {
-			return v
+			return x
 		}
 		return &type_system.LifetimeUnion{Lifetimes: out}
 	default:
@@ -90,197 +129,31 @@ func substituteLifetime(lt type_system.Lifetime, substs map[int]type_system.Life
 	}
 }
 
-func substituteLifetimesInTypeRef(t *type_system.TypeRefType, substs map[int]type_system.Lifetime) *type_system.TypeRefType {
-	newArgs := make([]type_system.Type, len(t.TypeArgs))
-	argsChanged := false
-	for i, a := range t.TypeArgs {
-		na := substituteLifetimesInType(a, substs)
-		newArgs[i] = na
-		if na != a {
-			argsChanged = true
-		}
+// substituteLifetimeSlice maps substituteLifetime over a []Lifetime,
+// returning a new slice and a `changed` flag (or the original slice
+// when no element was substituted, to preserve pointer identity for
+// the caller's no-op short-circuit).
+//
+// We need this even though the rest of the recursion is handled by
+// TypeVisitor: the visitor only walks Type-typed children. Fields
+// like TypeRefType.LifetimeArgs are []Lifetime, and Lifetime is a
+// separate interface hierarchy that Accept does not descend into —
+// so any traversal of those slots has to be done by hand.
+func (v *lifetimeSubstVisitor) substituteLifetimeSlice(lts []type_system.Lifetime) ([]type_system.Lifetime, bool) {
+	if len(lts) == 0 {
+		return lts, false
 	}
-	newLifetime := substituteLifetime(t.Lifetime, substs)
-	newLifetimeArgs := make([]type_system.Lifetime, len(t.LifetimeArgs))
-	ltArgsChanged := false
-	for i, lt := range t.LifetimeArgs {
-		nlt := substituteLifetime(lt, substs)
-		newLifetimeArgs[i] = nlt
+	out := make([]type_system.Lifetime, len(lts))
+	changed := false
+	for i, lt := range lts {
+		nlt := v.substituteLifetime(lt)
+		out[i] = nlt
 		if nlt != lt {
-			ltArgsChanged = true
-		}
-	}
-	if !argsChanged && newLifetime == t.Lifetime && !ltArgsChanged {
-		return t
-	}
-	r := type_system.NewTypeRefTypeFromQualIdent(t.Provenance(), t.Name, t.TypeAlias, newArgs...)
-	r.Lifetime = newLifetime
-	if len(newLifetimeArgs) > 0 {
-		r.LifetimeArgs = newLifetimeArgs
-	}
-	return r
-}
-
-func substituteLifetimesInObject(t *type_system.ObjectType, substs map[int]type_system.Lifetime) *type_system.ObjectType {
-	newLifetime := substituteLifetime(t.Lifetime, substs)
-	newElems := make([]type_system.ObjTypeElem, len(t.Elems))
-	elemsChanged := false
-	for i, elem := range t.Elems {
-		ne := substituteLifetimesInObjElem(elem, substs)
-		newElems[i] = ne
-		if ne != elem {
-			elemsChanged = true
-		}
-	}
-	if !elemsChanged && newLifetime == t.Lifetime {
-		return t
-	}
-	r := type_system.NewObjectType(t.Provenance(), newElems)
-	r.ID = t.ID
-	r.Exact = t.Exact
-	r.Immutable = t.Immutable
-	r.Mutable = t.Mutable
-	r.Nominal = t.Nominal
-	r.Interface = t.Interface
-	r.Extends = t.Extends
-	r.Implements = t.Implements
-	r.SymbolKeyMap = t.SymbolKeyMap
-	r.Open = t.Open
-	r.MatchedUnionMembers = t.MatchedUnionMembers
-	r.Lifetime = newLifetime
-	return r
-}
-
-func substituteLifetimesInObjElem(elem type_system.ObjTypeElem, substs map[int]type_system.Lifetime) type_system.ObjTypeElem {
-	switch e := elem.(type) {
-	case *type_system.PropertyElem:
-		newValue := substituteLifetimesInType(e.Value, substs)
-		if newValue == e.Value {
-			return e
-		}
-		return &type_system.PropertyElem{
-			Name:     e.Name,
-			Value:    newValue,
-			Optional: e.Optional,
-			Readonly: e.Readonly,
-		}
-	case *type_system.MethodElem:
-		newFn, _ := substituteLifetimesInType(e.Fn, substs).(*type_system.FuncType)
-		if newFn == e.Fn {
-			return e
-		}
-		return &type_system.MethodElem{
-			Name:    e.Name,
-			Fn:      newFn,
-			MutSelf: e.MutSelf,
-		}
-	default:
-		// TODO(#548): handle CallableElem, ConstructorElem, GetterElem,
-		// SetterElem, MappedElem, IndexSignatureElem, RestSpreadElem.
-		// These can carry lifetime-bearing inner types but are passed
-		// through unchanged today; add cases as future phases need them.
-		return elem
-	}
-}
-
-func substituteLifetimesInTuple(t *type_system.TupleType, substs map[int]type_system.Lifetime) *type_system.TupleType {
-	newElems := make([]type_system.Type, len(t.Elems))
-	changed := false
-	for i, e := range t.Elems {
-		ne := substituteLifetimesInType(e, substs)
-		newElems[i] = ne
-		if ne != e {
-			changed = true
-		}
-	}
-	newLifetime := substituteLifetime(t.Lifetime, substs)
-	if !changed && newLifetime == t.Lifetime {
-		return t
-	}
-	r := type_system.NewTupleType(t.Provenance(), newElems...)
-	r.Lifetime = newLifetime
-	return r
-}
-
-func substituteLifetimesInFunc(t *type_system.FuncType, substs map[int]type_system.Lifetime) *type_system.FuncType {
-	// A nested FuncType may bind some of the same lifetime names. Mask
-	// any LifetimeParam IDs that the inner function declares — those
-	// must not be replaced by the outer substitution.
-	//
-	// This is safe at the top level too: the only caller
-	// (instantiateGenericFunc) builds the root FuncType via NewFuncType,
-	// which leaves LifetimeParams nil before SubstituteLifetimes runs,
-	// so the masking branch only fires for nested funcs.
-	innerSubsts := substs
-	if len(t.LifetimeParams) > 0 {
-		innerSubsts = make(map[int]type_system.Lifetime, len(substs))
-		for k, v := range substs {
-			innerSubsts[k] = v
-		}
-		for _, lp := range t.LifetimeParams {
-			delete(innerSubsts, lp.ID)
-		}
-	}
-
-	newParams := make([]*type_system.FuncParam, len(t.Params))
-	paramsChanged := false
-	for i, p := range t.Params {
-		nt := substituteLifetimesInType(p.Type, innerSubsts)
-		if nt != p.Type {
-			paramsChanged = true
-			newParams[i] = &type_system.FuncParam{
-				Pattern:  p.Pattern,
-				Type:     nt,
-				Optional: p.Optional,
-			}
-		} else {
-			newParams[i] = p
-		}
-	}
-	var newReturn type_system.Type
-	if t.Return != nil {
-		newReturn = substituteLifetimesInType(t.Return, innerSubsts)
-	}
-	var newThrows type_system.Type
-	if t.Throws != nil {
-		newThrows = substituteLifetimesInType(t.Throws, innerSubsts)
-	}
-	if !paramsChanged && newReturn == t.Return && newThrows == t.Throws {
-		return t
-	}
-	r := type_system.NewFuncType(t.Provenance(), t.TypeParams, newParams, newReturn, newThrows)
-	r.LifetimeParams = t.LifetimeParams
-	return r
-}
-
-func substituteLifetimesInUnion(t *type_system.UnionType, substs map[int]type_system.Lifetime) type_system.Type {
-	newTypes := make([]type_system.Type, len(t.Types))
-	changed := false
-	for i, m := range t.Types {
-		nm := substituteLifetimesInType(m, substs)
-		newTypes[i] = nm
-		if nm != m {
 			changed = true
 		}
 	}
 	if !changed {
-		return t
+		return lts, false
 	}
-	return type_system.NewUnionType(t.Provenance(), newTypes...)
-}
-
-func substituteLifetimesInIntersection(t *type_system.IntersectionType, substs map[int]type_system.Lifetime) type_system.Type {
-	newTypes := make([]type_system.Type, len(t.Types))
-	changed := false
-	for i, m := range t.Types {
-		nm := substituteLifetimesInType(m, substs)
-		newTypes[i] = nm
-		if nm != m {
-			changed = true
-		}
-	}
-	if !changed {
-		return t
-	}
-	return type_system.NewIntersectionType(t.Provenance(), newTypes...)
+	return out, true
 }

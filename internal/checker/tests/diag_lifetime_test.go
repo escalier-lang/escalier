@@ -50,11 +50,11 @@ func TestPhase9_7_UnusedLifetimeParam(t *testing.T) {
 			type Point = {x: number}
 			fn f<'a>(p: mut 'a Point) -> mut 'a Point { return p }
 		`)
+		var messages []string
 		for _, e := range errs {
-			if _, ok := e.(UnusedLifetimeParamError); ok {
-				t.Fatalf("did not expect UnusedLifetimeParamError; got %s", e.Message())
-			}
+			messages = append(messages, e.Message())
 		}
+		assert.Empty(t, messages, "expected no diagnostics")
 	})
 
 	t.Run("partially_used_only_unused_warns", func(t *testing.T) {
@@ -63,14 +63,16 @@ func TestPhase9_7_UnusedLifetimeParam(t *testing.T) {
 			type Point = {x: number}
 			fn f<'a, 'b>(p: mut 'a Point) -> mut 'a Point { return p }
 		`)
-		count := 0
+		var messages []string
 		for _, e := range errs {
-			if ue, ok := e.(UnusedLifetimeParamError); ok {
-				count++
-				assert.Equal(t, "b", ue.Name, "only 'b should be flagged")
+			if _, ok := e.(UnusedLifetimeParamError); ok {
+				messages = append(messages, e.Message())
 			}
 		}
-		assert.Equal(t, 1, count, "exactly one unused-param diagnostic expected")
+		assert.Equal(t,
+			[]string{"lifetime parameter 'b is declared but never used"},
+			messages,
+			"exactly one unused-param diagnostic expected, naming 'b")
 	})
 }
 
@@ -147,16 +149,23 @@ func TestPhase9_7_UndeclaredLifetime(t *testing.T) {
 				return p
 			}
 		`)
-		var found *UndeclaredLifetimeError
+		var messages []string
+		sawHardError := false
 		for _, e := range errs {
-			if ue, ok := e.(UndeclaredLifetimeError); ok && ue.Name == "b" {
-				found = &ue
-				break
+			if ue, ok := e.(UndeclaredLifetimeError); ok {
+				messages = append(messages, ue.Message())
+				if !ue.IsWarning() {
+					sawHardError = true
+				}
 			}
 		}
-		require.NotNil(t, found,
-			"expected an UndeclaredLifetimeError for 'b; got %v", errs)
-		assert.False(t, found.IsWarning(),
+		assert.Equal(t,
+			[]string{
+				"lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
+			},
+			messages,
+			"inner fn has no <> clause — `'b` should be flagged with a hard-error message")
+		assert.True(t, sawHardError,
 			"inner fn has no <> clause of its own — must be a hard error "+
 				"regardless of outer fn's <'a>")
 	})
@@ -166,11 +175,11 @@ func TestPhase9_7_UndeclaredLifetime(t *testing.T) {
 			type Point = {x: number}
 			fn f<'a, 'b>(p: mut 'a Point, q: mut 'b Point) -> mut 'a Point { return p }
 		`)
+		var messages []string
 		for _, e := range errs {
-			if _, ok := e.(UndeclaredLifetimeError); ok {
-				t.Fatalf("did not expect UndeclaredLifetimeError; got %s", e.Message())
-			}
+			messages = append(messages, e.Message())
 		}
+		assert.Empty(t, messages, "expected no diagnostics")
 	})
 }
 
