@@ -68,10 +68,16 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t type_system.Type) type_system.
 			// responsibility (Phase 9.1). Clone the resolved shape before
 			// mutating so other use sites of the same substitute are not
 			// affected.
+			// cloneLifetimeBearing returns nil when the substitute
+			// can't actually carry a lifetime (e.g. a TypeRefType
+			// aliasing a primitive), so this also guards against
+			// silently minting a lifetime on something that can't
+			// hold one.
 			if t.Lifetime != nil && lifetimeBearingHasNoLifetime(substitute) {
-				cloned := cloneLifetimeBearing(substitute)
-				setLifetimeOnType(cloned, t.Lifetime)
-				return cloned
+				if cloned := cloneLifetimeBearing(substitute); cloned != nil {
+					setLifetimeOnType(cloned, t.Lifetime)
+					return cloned
+				}
 			}
 			return substitute
 		}

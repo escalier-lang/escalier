@@ -1560,19 +1560,29 @@ func boundCarriesLifetime(t type_system.Type) bool {
 	return false
 }
 
-// cloneLifetimeBearing returns a shallow copy of t suitable for mutating
-// its Lifetime field without affecting the original. Walks past MutType
-// wrappers so the inner TypeRefType/ObjectType/TupleType is copied too.
-// Returns t unchanged for other shapes.
+// cloneLifetimeBearing returns a shallow copy of t suitable for
+// mutating its Lifetime field without affecting the original, or nil
+// if t cannot actually carry a lifetime. Walks past MutType wrappers
+// so the inner TypeRefType/ObjectType/TupleType is copied too. A
+// TypeRefType is considered lifetime-bearing only if its alias body
+// resolves to a lifetime-bearing shape (per boundCarriesLifetime), so
+// callers can't accidentally attach a lifetime to e.g. a TypeRefType
+// aliasing a primitive.
 func cloneLifetimeBearing(t type_system.Type) type_system.Type {
+	if !boundCarriesLifetime(t) {
+		return nil
+	}
 	switch ty := type_system.Prune(t).(type) {
 	case *type_system.MutType:
 		inner := cloneLifetimeBearing(ty.Type)
+		if inner == nil {
+			return nil
+		}
 		return type_system.NewMutType(nil, inner)
 	case *type_system.TypeRefType, *type_system.ObjectType, *type_system.TupleType:
 		return ty.Copy()
 	}
-	return t
+	return nil
 }
 
 // lifetimeBearingHasNoLifetime reports whether t can carry a Lifetime

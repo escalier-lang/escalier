@@ -417,6 +417,13 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 // must not mutate the shared substitute. Each visit should produce its own
 // copy carrying that use site's lifetime; otherwise the second visit
 // would either see a stale annotation or overwrite the first.
+//
+// Example: substituting `T -> {x: number}` in `[mut 'a T, mut 'b T]`
+// should produce `[mut 'a {x: number}, mut 'b {x: number}]`. With a
+// shared substitute, the first slot would set `{x: number}.Lifetime
+// = 'a`, then the second visit would see the existing 'a annotation,
+// skip its own write, and end up with `'a` in both slots — collapsing
+// `'a` and `'b` into one lifetime.
 func TestSubstituteTypeParams_DoesNotMutateSharedSubstitute(t *testing.T) {
 	ltA := &type_system.LifetimeValue{ID: 1, Name: "a"}
 	ltB := &type_system.LifetimeValue{ID: 2, Name: "b"}
