@@ -1372,6 +1372,61 @@ func TestCallSiteNoAliasForFreshReturn(t *testing.T) {
 		"clone returns a fresh value, so r should not alias p")
 }
 
+// Phase 10 call-site regression: instantiating a generic function with
+// a `mut` argument unifies the fresh type variable with the concrete
+// argument shape. Before the fix, unifyMut required strict equality
+// and rejected the TypeVar↔ObjectType case.
+func TestCallSite_GenericMut_UnboundedTypeParam(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn id<T>(p: mut T) -> mut T { return p }
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			val r: mut {x: number} = id(p)
+			r.x = 5
+		}
+	`)
+	assert.Empty(t, mutErrors)
+}
+
+// Same as above but with a constrained type parameter — exercises both
+// Phase 10 lifetime inference (`'a` attached to `mut T`) and the
+// unifyMut TypeVar-binding fix at the call site.
+func TestCallSite_GenericMut_ConstrainedTypeParam(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn id<T: {x: number}>(p: mut T) -> mut T { return p }
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			val r: mut {x: number} = id(p)
+			r.x = 5
+		}
+	`)
+	assert.Empty(t, mutErrors)
+}
+
+// `first<T: {x: number}>(p, other) -> p` lifetime-links only `p` to the
+// return. After the call, the unrelated argument `q` (passed as
+// `other`) must be free to be frozen to an immutable binding even
+// while the result still holds mutable access — i.e. `q` is not
+// silently linked to `p`'s lifetime.
+func TestCallSite_FirstGeneric_OtherArgNotLinked(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn first<T: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			val q: mut {x: number} = {x: 1}
+			val r: mut {x: number} = first(p, q)
+			val frozenQ: {x: number} = q
+			r.x = 5
+			frozenQ
+		}
+	`)
+	assert.Empty(t, mutErrors,
+		"q is not aliased by r, so freezing q should be allowed")
+}
+
 // mustInferAsModule parses and type-checks the given input as a module
 // (so class declarations are accepted), failing the test on any non-
 // mutability error. Returns the top-level namespace.

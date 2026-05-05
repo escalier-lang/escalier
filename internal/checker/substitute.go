@@ -65,11 +65,13 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t type_system.Type) type_system.
 			// the resolved shape so the lifetime survives substitution.
 			// If the resolved shape already carries a Lifetime, leave it
 			// alone — unification of the two lifetimes is the caller's
-			// responsibility (Phase 9.1).
-			if t.Lifetime != nil {
-				if lifetimeBearingHasNoLifetime(substitute) {
-					setLifetimeOnType(substitute, t.Lifetime)
-				}
+			// responsibility (Phase 9.1). Clone the resolved shape before
+			// mutating so other use sites of the same substitute are not
+			// affected.
+			if t.Lifetime != nil && lifetimeBearingHasNoLifetime(substitute) {
+				cloned := cloneLifetimeBearing(substitute)
+				setLifetimeOnType(cloned, t.Lifetime)
+				return cloned
 			}
 			return substitute
 		}

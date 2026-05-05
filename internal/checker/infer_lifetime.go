@@ -1527,6 +1527,21 @@ func typeCarriesLifetime(t type_system.Type) bool {
 	return false
 }
 
+// cloneLifetimeBearing returns a shallow copy of t suitable for mutating
+// its Lifetime field without affecting the original. Walks past MutType
+// wrappers so the inner TypeRefType/ObjectType/TupleType is copied too.
+// Returns t unchanged for other shapes.
+func cloneLifetimeBearing(t type_system.Type) type_system.Type {
+	switch ty := type_system.Prune(t).(type) {
+	case *type_system.MutType:
+		inner := cloneLifetimeBearing(ty.Type)
+		return type_system.NewMutType(nil, inner)
+	case *type_system.TypeRefType, *type_system.ObjectType, *type_system.TupleType:
+		return ty.Copy()
+	}
+	return t
+}
+
 // lifetimeBearingHasNoLifetime reports whether t can carry a Lifetime
 // field but currently has none. Used by Phase 10.5 substitution to
 // decide whether to transfer the use-site lifetime onto a resolved
