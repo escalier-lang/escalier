@@ -18,7 +18,19 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *type_system.MutType) []Error
 	t1 = type_system.Prune(t1)
 	t2 = type_system.Prune(t2)
 
-	// For invariant unification, the types must be exactly equal
+	// For invariant unification, the types must be exactly equal —
+	// except when one side is an unbound TypeVar (e.g. a fresh
+	// instantiation of a generic type parameter), in which case we
+	// bind it to the other side. After binding, both sides resolve
+	// to the same type, satisfying invariance.
+	if _, ok := t1.(*type_system.TypeVarType); ok {
+		return c.bind(ctx, t1, t2, nil)
+	}
+	if _, ok := t2.(*type_system.TypeVarType); ok {
+		return c.bind(ctx, t2, t1, nil)
+	}
+
+	// Otherwise require exact equality.
 	if type_system.Equals(t1, t2) {
 		return nil
 	}

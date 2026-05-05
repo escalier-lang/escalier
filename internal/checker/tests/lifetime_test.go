@@ -729,6 +729,92 @@ func TestInferLifetimeTypes(t *testing.T) {
 				"box": "fn <'a>(p: mut 'a {x: number}) -> Array<{inner: mut 'a {x: number}}>",
 			},
 		},
+		// Phase 10: a type parameter constrained to a lifetime-bearing
+		// shape carries a lifetime — every legal instantiation has a
+		// place to attach the borrow.
+		"ConstrainedTypeParam_FirstOfTwo": {
+			input: `
+				fn first<T: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"first": "fn <'a, T: {x: number}>(p: mut 'a T, other: mut T) -> mut 'a T",
+			},
+		},
+		"ConstrainedTypeParam_Identity": {
+			input: `
+				fn id<T: {x: number}>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: {x: number}>(p: mut 'a T) -> mut 'a T",
+			},
+		},
+		// Regression guard for the pre-Phase-10 behavior: an unbounded
+		// type parameter has no guaranteed lifetime-bearing shape, so
+		// no lifetime is inferred.
+		"UnboundedTypeParam_NoLifetime": {
+			input: `
+				fn id<T>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <T>(p: mut T) -> mut T",
+			},
+		},
+		// Tuple-bound constraint: every instantiation is a tuple, which
+		// carries a lifetime.
+		"ConstrainedTypeParam_TupleBound": {
+			input: `
+				fn id<T: [number, number]>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: [number, number]>(p: mut 'a T) -> mut 'a T",
+			},
+		},
+		// Primitive-bound constraint: the constraint is not lifetime-
+		// bearing, so the type parameter stays unannotated.
+		"ConstrainedTypeParam_PrimitiveBound": {
+			input: `
+				fn id<T: number>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <T: number>(p: mut T) -> mut T",
+			},
+		},
+		// Alias-bound constraint: the bound is a TypeRefType pointing
+		// at a type alias whose body is lifetime-bearing. Every legal
+		// instantiation of T is still a shape that carries a lifetime,
+		// so the parameter should be lifetime-annotated.
+		"ConstrainedTypeParam_AliasBound": {
+			input: `
+				type Point = {x: number}
+				fn id<T: Point>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: Point>(p: mut 'a T) -> mut 'a T",
+			},
+		},
+		// Alias-bound constraint where the alias body is itself a
+		// primitive: the constraint resolves to a non-lifetime-bearing
+		// shape, so no lifetime should be inferred.
+		"ConstrainedTypeParam_AliasBound_Primitive": {
+			input: `
+				type Num = number
+				fn id<T: Num>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <T: Num>(p: mut T) -> mut T",
+			},
+		},
+		// Class-instance constraint: every legal instantiation of T
+		// is a class instance, which carries a lifetime.
+		"ConstrainedTypeParam_ClassInstanceBound": {
+			input: `
+				class Point { x: number, y: number }
+				fn id<T: Point>(p: mut T) -> mut T { return p }
+			`,
+			expectedTypes: map[string]string{
+				"id": "fn <'a, T: Point>(p: mut 'a T) -> mut 'a T",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -1320,6 +1406,61 @@ func TestCallSiteNoAliasForFreshReturn(t *testing.T) {
 	`)
 	assert.Empty(t, mutErrors,
 		"clone returns a fresh value, so r should not alias p")
+}
+
+// Phase 10 call-site regression: instantiating a generic function with
+// a `mut` argument unifies the fresh type variable with the concrete
+// argument shape. Before the fix, unifyMut required strict equality
+// and rejected the TypeVar↔ObjectType case.
+func TestCallSite_GenericMut_UnboundedTypeParam(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn id<T>(p: mut T) -> mut T { return p }
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			val r: mut {x: number} = id(p)
+			r.x = 5
+		}
+	`)
+	assert.Empty(t, mutErrors)
+}
+
+// Same as above but with a constrained type parameter — exercises both
+// Phase 10 lifetime inference (`'a` attached to `mut T`) and the
+// unifyMut TypeVar-binding fix at the call site.
+func TestCallSite_GenericMut_ConstrainedTypeParam(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn id<T: {x: number}>(p: mut T) -> mut T { return p }
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			val r: mut {x: number} = id(p)
+			r.x = 5
+		}
+	`)
+	assert.Empty(t, mutErrors)
+}
+
+// `first<T: {x: number}>(p, other) -> p` lifetime-links only `p` to the
+// return. After the call, the unrelated argument `q` (passed as
+// `other`) must be free to be frozen to an immutable binding even
+// while the result still holds mutable access — i.e. `q` is not
+// silently linked to `p`'s lifetime.
+func TestCallSite_FirstGeneric_OtherArgNotLinked(t *testing.T) {
+	t.Parallel()
+	mutErrors := mustInferScriptMutErrors(t, `
+		fn first<T: {x: number}>(p: mut T, other: mut T) -> mut T { return p }
+		fn test() {
+			val p: mut {x: number} = {x: 0}
+			val q: mut {x: number} = {x: 1}
+			val r: mut {x: number} = first(p, q)
+			val frozenQ: {x: number} = q
+			r.x = 5
+			frozenQ
+		}
+	`)
+	assert.Empty(t, mutErrors,
+		"q is not aliased by r, so freezing q should be allowed")
 }
 
 // mustInferAsModule parses and type-checks the given input as a module

@@ -1498,15 +1498,27 @@ func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
 }
 
 // typeCarriesLifetime reports whether the given type can carry a lifetime.
-// Walks past mutability wrappers. Type parameters (TypeRefType pointing
-// at a TypeAlias with IsTypeParam=true) are excluded, since the parameter
-// might be instantiated to a primitive at the call site, in which case
-// the lifetime would have nowhere to live.
+// Walks past mutability wrappers. Unbounded type parameters are excluded,
+// since the parameter might be instantiated to a primitive at the call
+// site, in which case the lifetime would have nowhere to live. A
+// constrained type parameter is treated as lifetime-bearing iff its
+// constraint is itself lifetime-bearing — every legal instantiation of
+// the parameter will then have a place to attach the lifetime.
 func typeCarriesLifetime(t type_system.Type) bool {
 	switch ty := type_system.Prune(t).(type) {
 	case *type_system.TypeRefType:
 		if ty.TypeAlias != nil && ty.TypeAlias.IsTypeParam {
-			return false
+			// Phase 10.2: walk into the bound. For type-parameter
+			// scope entries, TypeAlias.Type holds the constraint
+			// (or UnknownType for unbounded params, which falls
+			// through to false). Use boundCarriesLifetime so a
+			// constraint that itself names an alias resolving to a
+			// primitive (e.g. `type Num = number; T: Num`) returns
+			// false.
+			if ty.TypeAlias.Type == nil {
+				return false
+			}
+			return boundCarriesLifetime(ty.TypeAlias.Type)
 		}
 		return true
 	case *type_system.ObjectType, *type_system.TupleType:
@@ -1514,6 +1526,80 @@ func typeCarriesLifetime(t type_system.Type) bool {
 		return true
 	case *type_system.MutType:
 		return typeCarriesLifetime(ty.Type)
+	}
+	return false
+}
+
+// boundCarriesLifetime is the constraint-walking variant of
+// typeCarriesLifetime. Unlike the general check, it expands non-type-
+// param TypeRefType bounds to their alias body so that a constraint
+// like `T: Num` (where `type Num = number`) resolves to its primitive
+// body and reports false. Outside the constraint walk we keep the
+// conservative "TypeRefType always carries a lifetime" rule because
+// real reference shapes (classes, parameterized aliases over objects)
+// flow through it.
+func boundCarriesLifetime(t type_system.Type) bool {
+	switch ty := type_system.Prune(t).(type) {
+	case *type_system.TypeRefType:
+		if ty.TypeAlias != nil && ty.TypeAlias.IsTypeParam {
+			if ty.TypeAlias.Type == nil {
+				return false
+			}
+			return boundCarriesLifetime(ty.TypeAlias.Type)
+		}
+		if ty.TypeAlias != nil && ty.TypeAlias.Type != nil {
+			return boundCarriesLifetime(ty.TypeAlias.Type)
+		}
+		return true
+	case *type_system.ObjectType, *type_system.TupleType:
+		_ = ty
+		return true
+	case *type_system.MutType:
+		return boundCarriesLifetime(ty.Type)
+	}
+	return false
+}
+
+// cloneLifetimeBearing returns a shallow copy of t suitable for
+// mutating its Lifetime field without affecting the original, or nil
+// if t cannot actually carry a lifetime. Walks past MutType wrappers
+// so the inner TypeRefType/ObjectType/TupleType is copied too. A
+// TypeRefType is considered lifetime-bearing only if its alias body
+// resolves to a lifetime-bearing shape (per boundCarriesLifetime), so
+// callers can't accidentally attach a lifetime to e.g. a TypeRefType
+// aliasing a primitive.
+func cloneLifetimeBearing(t type_system.Type) type_system.Type {
+	if !boundCarriesLifetime(t) {
+		return nil
+	}
+	switch ty := type_system.Prune(t).(type) {
+	case *type_system.MutType:
+		inner := cloneLifetimeBearing(ty.Type)
+		if inner == nil {
+			return nil
+		}
+		return type_system.NewMutType(nil, inner)
+	case *type_system.TypeRefType, *type_system.ObjectType, *type_system.TupleType:
+		return ty.Copy()
+	}
+	return nil
+}
+
+// lifetimeBearingHasNoLifetime reports whether t can carry a Lifetime
+// field but currently has none. Used by Phase 10.5 substitution to
+// decide whether to transfer the use-site lifetime onto a resolved
+// shape, leaving any pre-existing annotation in place for the caller
+// to unify.
+func lifetimeBearingHasNoLifetime(t type_system.Type) bool {
+	switch ty := type_system.Prune(t).(type) {
+	case *type_system.TypeRefType:
+		return ty.Lifetime == nil
+	case *type_system.ObjectType:
+		return ty.Lifetime == nil
+	case *type_system.TupleType:
+		return ty.Lifetime == nil
+	case *type_system.MutType:
+		return lifetimeBearingHasNoLifetime(ty.Type)
 	}
 	return false
 }

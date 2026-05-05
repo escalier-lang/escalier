@@ -7,6 +7,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/test_util"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTypeParamSubstitutionVisitor(t *testing.T) {
@@ -409,4 +410,53 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 
 	assert.Equal(t, "{readonly test?: T, method(self, x: T) -> U, get getter(self) -> T, set setter(mut self, value: V) -> undefined, fn (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
 	assert.Equal(t, "{readonly test?: number, method(self, x: number) -> string, get getter(self) -> number, set setter(mut self, value: boolean) -> undefined, fn (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
+}
+
+// Phase 10.5 regression: when the same type-parameter substitute is used
+// at multiple use sites with distinct lifetime annotations, the substituter
+// must not mutate the shared substitute. Each visit should produce its own
+// copy carrying that use site's lifetime; otherwise the second visit
+// would either see a stale annotation or overwrite the first.
+//
+// Example: substituting `T -> {x: number}` in `[mut 'a T, mut 'b T]`
+// should produce `[mut 'a {x: number}, mut 'b {x: number}]`. With a
+// shared substitute, the first slot would set `{x: number}.Lifetime
+// = 'a`, then the second visit would see the existing 'a annotation,
+// skip its own write, and end up with `'a` in both slots — collapsing
+// `'a` and `'b` into one lifetime.
+func TestSubstituteTypeParams_DoesNotMutateSharedSubstitute(t *testing.T) {
+	ltA := &type_system.LifetimeValue{ID: 1, Name: "a"}
+	ltB := &type_system.LifetimeValue{ID: 2, Name: "b"}
+
+	// Constraint shape used as the type-param's bound — this is what
+	// the use-site TypeRefType resolves to when substituted with a
+	// concrete shape.
+	objType := type_system.NewObjectType(nil, nil)
+
+	// Build two type-param uses of T, each with a distinct lifetime.
+	typeAlias := &type_system.TypeAlias{Type: objType, IsTypeParam: true}
+	useA := type_system.NewTypeRefType(nil, "T", typeAlias)
+	useA.Lifetime = ltA
+	useB := type_system.NewTypeRefType(nil, "T", typeAlias)
+	useB.Lifetime = ltB
+
+	tuple := type_system.NewTupleType(nil, useA, useB)
+
+	subs := map[string]type_system.Type{"T": objType}
+	result := SubstituteTypeParams[type_system.Type](tuple, subs)
+
+	resTuple, ok := result.(*type_system.TupleType)
+	require.True(t, ok, "expected tuple result, got %T", result)
+	require.Len(t, resTuple.Elems, 2)
+
+	first, ok := type_system.Prune(resTuple.Elems[0]).(*type_system.ObjectType)
+	require.True(t, ok)
+	second, ok := type_system.Prune(resTuple.Elems[1]).(*type_system.ObjectType)
+	require.True(t, ok)
+
+	assert.Equal(t, ltA, first.Lifetime, "first slot should carry 'a")
+	assert.Equal(t, ltB, second.Lifetime, "second slot should carry 'b — distinct from 'a")
+
+	// And the original constraint object must not have been mutated.
+	assert.Nil(t, objType.Lifetime, "shared substitute must not be mutated")
 }

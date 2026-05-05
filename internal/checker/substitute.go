@@ -60,6 +60,25 @@ func (v *TypeParamSubstitutionVisitor) ExitType(t type_system.Type) type_system.
 
 		// Check if this is a type parameter reference that should be substituted
 		if substitute, found := v.substitutions[typeName]; found {
+			// Phase 10.5: when the type-parameter use site carries a
+			// Lifetime annotation (e.g. `mut 'a T`), transfer it onto
+			// the resolved shape so the lifetime survives substitution.
+			// If the resolved shape already carries a Lifetime, leave it
+			// alone — unification of the two lifetimes is the caller's
+			// responsibility (Phase 9.1). Clone the resolved shape before
+			// mutating so other use sites of the same substitute are not
+			// affected.
+			// cloneLifetimeBearing returns nil when the substitute
+			// can't actually carry a lifetime (e.g. a TypeRefType
+			// aliasing a primitive), so this also guards against
+			// silently minting a lifetime on something that can't
+			// hold one.
+			if t.Lifetime != nil && lifetimeBearingHasNoLifetime(substitute) {
+				if cloned := cloneLifetimeBearing(substitute); cloned != nil {
+					setLifetimeOnType(cloned, t.Lifetime)
+					return cloned
+				}
+			}
 			return substitute
 		}
 
