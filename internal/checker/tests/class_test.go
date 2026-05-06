@@ -69,11 +69,11 @@ func TestClassImplements(t *testing.T) {
 
 // TestClassImplementsConformance pins the gap left by #534: a class can
 // currently claim `implements I` while omitting members of `I` and the
-// checker does not complain. When conformance verification lands
-// (#534-followup), remove the t.Skip and this test will start asserting
-// that the missing-member case produces an error.
+// checker does not complain. When conformance verification lands (#558),
+// remove the t.Skip and this test will start asserting that the
+// missing-member case produces an error.
 func TestClassImplementsConformance(t *testing.T) {
-	t.Skip("conformance check not yet implemented — see TODO at infer_module.go #534-followup")
+	t.Skip("conformance check not yet implemented — see #558")
 
 	input := `
 		interface Greeter {

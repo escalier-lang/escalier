@@ -670,9 +670,6 @@ func (c *Checker) InferComponent(
 				for _, implTypeAnn := range decl.Implements {
 					implType, implErrors := c.inferTypeAnn(declCtx, implTypeAnn)
 					errors = slices.Concat(errors, implErrors)
-					if implType == nil {
-						continue
-					}
 					typeRef, ok := type_system.Prune(implType).(*type_system.TypeRefType)
 					if !ok {
 						continue
@@ -685,19 +682,9 @@ func (c *Checker) InferComponent(
 				unifyErrors := c.Unify(ctx, instanceType, objType)
 				errors = slices.Concat(errors, unifyErrors)
 
-				// TODO(#534-followup): verify the class structurally satisfies
-				// each entry in objType.Implements. The naive `c.Unify(class,
-				// interface)` path is blocked by the nominal-ID mismatch in
-				// unify.go:879 — interface bodies carry Nominal=true (see
-				// infer_stmt.go:371), so a dedicated conformance check that
-				// walks interface members and unifies element-by-element is
-				// needed instead. Element-wise unify is also non-trivial: an
-				// interface method's `self` parameter carries the interface
-				// type while the class method's `self` carries the class
-				// type, so the check must rebind `Self` per member rather
-				// than unifying the raw FuncTypes. Until then, conformance
-				// is unenforced and TestClassImplementsConformance pins the
-				// gap.
+				// TODO(#558): verify the class structurally satisfies each
+				// entry in objType.Implements. Until then, conformance is
+				// unenforced and TestClassImplementsConformance pins the gap.
 
 				typeArgs := make([]type_system.Type, len(typeParams))
 				for i := range typeParams {

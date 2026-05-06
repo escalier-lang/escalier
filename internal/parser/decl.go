@@ -200,7 +200,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 			}
 			typeRef, ok := ta.(*ast.TypeRefTypeAnn)
 			if !ok {
-				p.reportError(implementsTok.Span, "implements clause must be a type reference")
+				p.reportError(ta.Span(), "implements clause must be a type reference")
 			} else {
 				implements = append(implements, typeRef)
 			}
