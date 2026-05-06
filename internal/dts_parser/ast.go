@@ -169,6 +169,10 @@ func (d *FuncDecl) SetDeclare(decl bool) { d.declare = decl }
 type ClassDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
+	// TODO(#559): tighten Extends/Implements to *TypeReference. The
+	// `.d.ts` grammar only allows type references here, but these fields
+	// use the broad TypeAnn interface, forcing runtime casts in
+	// interop/decl.go.
 	Extends    TypeAnn // optional
 	Implements []TypeAnn
 	Members    []ClassMember
@@ -190,6 +194,7 @@ func (d *ClassDecl) SetDeclare(decl bool) { d.declare = decl }
 type InterfaceDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
+	// TODO(#559): tighten Extends to []*TypeReference (see ClassDecl).
 	Extends    []TypeAnn
 	Members    []InterfaceMember
 	export     bool

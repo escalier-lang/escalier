@@ -445,6 +445,42 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
+		"ClassWithImplements": {
+			input: `
+				class Dog implements Animal {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"ClassWithMultipleImplements": {
+			input: `
+				class Dog implements Animal, Runnable {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"ClassWithExtendsAndImplements": {
+			input: `
+				class Dog extends Canine implements Animal, Runnable {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"ClassImplementsQualifiedAndGeneric": {
+			input: `
+				class MyList<T> implements Collections.Iterable<T>, Eq.Comparable<MyList<T>> {
+					len(self) -> number {
+						return 0
+					}
+				}
+			`,
+		},
 		"ClassExtendsQualifiedName": {
 			input: `
 				class CustomButton extends UI.Button {
@@ -601,6 +637,13 @@ func TestClassConstructorErrors(t *testing.T) {
 			input: `
 				class Foo {
 					constructor {}
+				}
+			`,
+		},
+		"ImplementsFollowedByOpenBrace": {
+			input: `
+				class Foo implements {
+					bar(self) {}
 				}
 			`,
 		},

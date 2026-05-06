@@ -4,9 +4,10 @@ import "github.com/escalier-lang/escalier/internal/provenance"
 
 type ClassDecl struct {
 	Name       *Ident
-	TypeParams []*TypeParam    // generic type parameters
-	Extends    *TypeRefTypeAnn // optional superclass (can be a simple identifier or a generic type reference)
-	Body       []ClassElem     // fields, methods, etc.
+	TypeParams []*TypeParam      // generic type parameters
+	Extends    *TypeRefTypeAnn   // optional superclass (can be a simple identifier or a generic type reference)
+	Implements []*TypeRefTypeAnn // interfaces this class implements (may be nil/empty)
+	Body       []ClassElem       // fields, methods, etc.
 	export     bool
 	declare    bool
 	span       Span
@@ -20,11 +21,12 @@ type ClassElem interface {
 }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:       name,
 		TypeParams: typeParams,
 		Extends:    extends,
+		Implements: implements,
 		Body:       body,
 		export:     export,
 		declare:    declare,
@@ -33,15 +35,18 @@ func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn,
 	}
 }
 
-func (*ClassDecl) isDecl()             {}
-func (d *ClassDecl) Export() bool      { return d.export }
-func (d *ClassDecl) SetExport(e bool)  { d.export = e }
-func (d *ClassDecl) Declare() bool     { return d.declare }
-func (d *ClassDecl) Span() Span        { return d.span }
+func (*ClassDecl) isDecl()            {}
+func (d *ClassDecl) Export() bool     { return d.export }
+func (d *ClassDecl) SetExport(e bool) { d.export = e }
+func (d *ClassDecl) Declare() bool    { return d.declare }
+func (d *ClassDecl) Span() Span       { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
 		if d.Extends != nil {
 			d.Extends.Accept(v)
+		}
+		for _, impl := range d.Implements {
+			impl.Accept(v)
 		}
 		for _, elem := range d.Body {
 			elem.Accept(v)

@@ -821,11 +821,12 @@
                                 },
                                 TypeParams: {
                                 },
-                                Extends: (*ast.TypeRefTypeAnn)(nil),
-                                Body:    nil,
-                                export:  false,
-                                declare: true,
-                                span:    ast.Span{
+                                Extends:    (*ast.TypeRefTypeAnn)(nil),
+                                Implements: nil,
+                                Body:       nil,
+                                export:     false,
+                                declare:    true,
+                                span:       ast.Span{
                                     Start:    ast.Location{Line:4, Column:9},
                                     End:      ast.Location{Line:4, Column:25},
                                     SourceID: 0,
@@ -1193,11 +1194,12 @@
                                 },
                                 TypeParams: {
                                 },
-                                Extends: (*ast.TypeRefTypeAnn)(nil),
-                                Body:    nil,
-                                export:  true,
-                                declare: true,
-                                span:    ast.Span{
+                                Extends:    (*ast.TypeRefTypeAnn)(nil),
+                                Implements: nil,
+                                Body:       nil,
+                                export:     true,
+                                declare:    true,
+                                span:       ast.Span{
                                     Start:    ast.Location{Line:5, Column:3},
                                     End:      ast.Location{Line:5, Column:19},
                                     SourceID: 0,

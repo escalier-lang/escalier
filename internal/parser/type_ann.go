@@ -429,19 +429,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			typeAnn = ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 		case Identifier:
 			p.lexer.consume()
-
-			// Parse qualified identifier (e.g., Foo.Bar.Baz)
-			qualIdent := p.parseQualifiedIdent(token)
-
-			// Try to parse a set of type parameters
-			if p.lexer.peek().Type == LessThan {
-				p.lexer.consume() // consume '<'
-				typeArgs := parseDelimSeq(p, GreaterThan, Comma, p.typeAnn)
-				end := p.expect(GreaterThan, AlwaysConsume)
-				typeAnn = ast.NewRefTypeAnn(qualIdent, typeArgs, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
-			} else {
-				typeAnn = ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
-			}
+			typeAnn = p.parseTypeRef(token)
 		case OpenParen: // parenthesized type annotation
 			p.lexer.consume() // consume '('
 			typeAnn = p.typeAnnRequired()
@@ -912,6 +900,22 @@ func (p *Parser) typeParam() *ast.TypeParam {
 
 	typeParam := ast.NewTypeParam(name, constraint, default_)
 	return &typeParam
+}
+
+// parseTypeRef parses a type reference (qualified identifier with optional
+// type arguments, e.g. `Foo`, `Foo.Bar`, `Foo<T>`, `Foo.Bar<T, U>`) starting
+// from an already-consumed leading identifier token. Returns the
+// concrete *TypeRefTypeAnn so callers that require a type ref (extends,
+// implements) can avoid a post-hoc type assertion on the TypeAnn interface.
+func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
+	qualIdent := p.parseQualifiedIdent(firstToken)
+	if p.lexer.peek().Type == LessThan {
+		p.lexer.consume() // consume '<'
+		typeArgs := parseDelimSeq(p, GreaterThan, Comma, p.typeAnn)
+		end := p.expect(GreaterThan, AlwaysConsume)
+		return ast.NewRefTypeAnn(qualIdent, typeArgs, ast.NewSpan(firstToken.Span.Start, end, p.lexer.source.ID))
+	}
+	return ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
 }
 
 // parseQualifiedIdent parses a qualified identifier like Foo.Bar.Baz

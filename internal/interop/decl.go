@@ -216,13 +216,37 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 		}
 	}
 
-	// TODO: Handle Extends and Implements
-	// These would require extending ast.ClassDecl or storing as metadata
+	var extends *ast.TypeRefTypeAnn
+	if dc.Extends != nil {
+		converted, err := convertTypeAnn(dc.Extends)
+		if err != nil {
+			return nil, fmt.Errorf("converting extends type for class %s: %w", dc.Name.Name, err)
+		}
+		typeRef, ok := converted.(*ast.TypeRefTypeAnn)
+		if !ok {
+			return nil, fmt.Errorf("extends type for class %s isn't a type ref", dc.Name.Name)
+		}
+		extends = typeRef
+	}
+
+	var implements []*ast.TypeRefTypeAnn
+	for _, impl := range dc.Implements {
+		converted, err := convertTypeAnn(impl)
+		if err != nil {
+			return nil, fmt.Errorf("converting implements type for class %s: %w", dc.Name.Name, err)
+		}
+		typeRef, ok := converted.(*ast.TypeRefTypeAnn)
+		if !ok {
+			return nil, fmt.Errorf("implements type for class %s isn't a type ref (got %T)", dc.Name.Name, converted)
+		}
+		implements = append(implements, typeRef)
+	}
 
 	return ast.NewClassDecl(
 		ast.NewIdentifier(dc.Name.Name, convertSpan(dc.Name.Span())),
 		typeParams,
-		nil, // extends - TODO: parse extends clause from .d.ts files
+		extends,
+		implements,
 		bodyElems,
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files

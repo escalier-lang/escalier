@@ -48,6 +48,7 @@ const (
 	Identifier
 	If
 	Lifetime
+	Implements
 	Import
 	In
 	Infer

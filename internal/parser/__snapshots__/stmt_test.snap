@@ -2539,6 +2539,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -2914,6 +2915,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
         },
         export:  false,
@@ -2978,6 +2980,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -3141,8 +3144,9 @@
                 Default:    nil,
             },
         },
-        Extends: (*ast.TypeRefTypeAnn)(nil),
-        Body:    {
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "value",
@@ -3444,8 +3448,9 @@
                 Default:    nil,
             },
         },
-        Extends: (*ast.TypeRefTypeAnn)(nil),
-        Body:    {
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "value",
@@ -3745,8 +3750,9 @@
                 },
             },
         },
-        Extends: (*ast.TypeRefTypeAnn)(nil),
-        Body:    {
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "data",
@@ -3845,8 +3851,9 @@
                 Default: nil,
             },
         },
-        Extends: (*ast.TypeRefTypeAnn)(nil),
-        Body:    {
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "first",
@@ -3964,6 +3971,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -4122,6 +4130,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -4257,6 +4266,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -4575,6 +4585,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -4705,6 +4716,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -4811,6 +4823,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -5085,6 +5098,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -5266,6 +5280,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -5738,6 +5753,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -6016,6 +6032,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -6372,6 +6389,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.GetterElem{
                 Name: &ast.IdentExpr{
@@ -6481,6 +6499,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.GetterElem{
                 Name: &ast.IdentExpr{
@@ -6590,6 +6609,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -6764,6 +6784,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -7028,6 +7049,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -7279,6 +7301,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -9109,6 +9132,7 @@ nil
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
