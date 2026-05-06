@@ -461,7 +461,12 @@ func (c *Checker) InferComponent(
 				// the required `super(...)` call. Until subclass-
 				// constructor semantics land, require an explicit
 				// `constructor` block instead.
-				if len(inBodyCtors) == 0 {
+				//
+				// `declare class` blocks are also excluded: they describe
+				// types from `.d.ts` and have no implementation to
+				// synthesize, so the missing-ctor diagnostic doesn't
+				// apply.
+				if len(inBodyCtors) == 0 && !decl.Declare() {
 					if decl.Extends != nil {
 						errors = append(errors, SubclassConstructorRequiredError{
 							span: decl.Name.Span(),
@@ -654,23 +659,39 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, extendsErrors)
 
 					if extendsType != nil {
-						// The extends type should be a TypeRefType
-						if typeRef, ok := extendsType.(*type_system.TypeRefType); ok {
+						if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
 							objType.Extends = []*type_system.TypeRefType{typeRef}
-						} else {
-							// If it's not a TypeRefType, we still set it but wrap it if needed
-							// This handles cases where the type might be pruned or indirect
-							prunedType := type_system.Prune(extendsType)
-							if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
-								objType.Extends = []*type_system.TypeRefType{typeRef}
-							}
 						}
 					}
 				}
 
+				// Infer the Implements clause if present
+				var implementsTypes []*type_system.TypeRefType
+				for _, implTypeAnn := range decl.Implements {
+					implType, implErrors := c.inferTypeAnn(declCtx, implTypeAnn)
+					errors = slices.Concat(errors, implErrors)
+					if implType == nil {
+						continue
+					}
+					typeRef, ok := type_system.Prune(implType).(*type_system.TypeRefType)
+					if !ok {
+						continue
+					}
+					implementsTypes = append(implementsTypes, typeRef)
+				}
+				objType.Implements = implementsTypes
+
 				// TODO: call c.bind() directly
 				unifyErrors := c.Unify(ctx, instanceType, objType)
 				errors = slices.Concat(errors, unifyErrors)
+
+				// TODO(#534-followup): verify the class structurally satisfies
+				// each entry in objType.Implements. The naive `c.Unify(class,
+				// interface)` path is blocked by the nominal-ID mismatch in
+				// unify.go:879 — interface bodies carry Nominal=true (see
+				// infer_stmt.go:371), so a dedicated conformance check that
+				// walks interface members and unifies element-by-element is
+				// needed instead.
 
 				typeArgs := make([]type_system.Type, len(typeParams))
 				for i := range typeParams {

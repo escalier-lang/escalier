@@ -6116,7 +6116,8 @@
             },
             inferredType: nil,
         },
-        Body: {
+        Implements: nil,
+        Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "bark",
@@ -6352,7 +6353,8 @@
             },
             inferredType: nil,
         },
-        Body: {
+        Implements: nil,
+        Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "click",
@@ -6442,7 +6444,8 @@
             },
             inferredType: nil,
         },
-        Body: {
+        Implements: nil,
+        Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "manage",
@@ -6569,7 +6572,8 @@
             },
             inferredType: nil,
         },
-        Body: {
+        Implements: nil,
+        Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "getValue",
@@ -6824,6 +6828,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -6948,7 +6953,8 @@
             },
             inferredType: nil,
         },
-        Body: {
+        Implements: nil,
+        Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "customMethod",
@@ -8702,6 +8708,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
@@ -9018,6 +9025,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -9362,6 +9370,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -9546,8 +9555,9 @@
                 Default:    nil,
             },
         },
-        Extends: (*ast.TypeRefTypeAnn)(nil),
-        Body:    {
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "value",
@@ -9754,6 +9764,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
@@ -10021,6 +10032,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10105,6 +10117,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10189,6 +10202,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10273,6 +10287,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10357,6 +10372,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10493,6 +10509,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10573,6 +10590,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10720,6 +10738,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10779,6 +10798,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -10876,6 +10896,7 @@
         },
         TypeParams: nil,
         Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
         Body:       {
             &ast.ConstructorElem{
                 Fn: &ast.FuncExpr{
@@ -11113,7 +11134,8 @@
             },
             inferredType: nil,
         },
-        Body: {
+        Implements: nil,
+        Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "value",
@@ -11332,7 +11354,8 @@
             },
             inferredType: nil,
         },
-        Body: {
+        Implements: nil,
+        Body:       {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "name",
@@ -11650,6 +11673,434 @@
     span: ast.Span{
         Start:    ast.Location{Line:5, Column:5},
         End:      ast.Location{Line:6, Column:4},
+        SourceID: 0,
+    },
+}
+---
+
+[TestClassDeclarations/ClassWithImplements - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Dog",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:11},
+                End:      ast.Location{Line:2, Column:14},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: {
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Animal",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:26},
+                        End:      ast.Location{Line:2, Column:32},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                Lifetime: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:2, Column:26},
+                    End:      ast.Location{Line:2, Column:32},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+        Body: {
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name:      "bark",
+                    Namespace: 0,
+                    VarID:     0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
+                        Stmts: {
+                            &ast.ReturnStmt{
+                                Expr: &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "Woof!",
+                                        span:  ast.Span{
+                                            Start:    ast.Location{Line:4, Column:14},
+                                            End:      ast.Location{Line:4, Column:21},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:4, Column:14},
+                                        End:      ast.Location{Line:4, Column:21},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:7},
+                                    End:      ast.Location{Line:4, Column:21},
+                                    SourceID: 0,
+                                },
+                            },
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:17},
+                            End:      ast.Location{Line:5, Column:7},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:5, Column:7},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                MutSelf: &bool(false),
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:5, Column:7},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:6, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestClassDeclarations/ClassWithMultipleImplements - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Dog",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:11},
+                End:      ast.Location{Line:2, Column:14},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: {
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Animal",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:26},
+                        End:      ast.Location{Line:2, Column:32},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                Lifetime: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:2, Column:26},
+                    End:      ast.Location{Line:2, Column:32},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Runnable",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:34},
+                        End:      ast.Location{Line:2, Column:42},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                Lifetime: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:2, Column:34},
+                    End:      ast.Location{Line:2, Column:42},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+        Body: {
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name:      "bark",
+                    Namespace: 0,
+                    VarID:     0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
+                        Stmts: {
+                            &ast.ReturnStmt{
+                                Expr: &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "Woof!",
+                                        span:  ast.Span{
+                                            Start:    ast.Location{Line:4, Column:14},
+                                            End:      ast.Location{Line:4, Column:21},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:4, Column:14},
+                                        End:      ast.Location{Line:4, Column:21},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:7},
+                                    End:      ast.Location{Line:4, Column:21},
+                                    SourceID: 0,
+                                },
+                            },
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:17},
+                            End:      ast.Location{Line:5, Column:7},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:5, Column:7},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                MutSelf: &bool(false),
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:5, Column:7},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:6, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestClassDeclarations/ClassWithExtendsAndImplements - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Dog",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:11},
+                End:      ast.Location{Line:2, Column:14},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Canine",
+                span: ast.Span{
+                    Start:    ast.Location{Line:2, Column:23},
+                    End:      ast.Location{Line:2, Column:29},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+            },
+            Lifetime: nil,
+            span:     ast.Span{
+                Start:    ast.Location{Line:2, Column:23},
+                End:      ast.Location{Line:2, Column:29},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Implements: {
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Animal",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:41},
+                        End:      ast.Location{Line:2, Column:47},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                Lifetime: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:2, Column:41},
+                    End:      ast.Location{Line:2, Column:47},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Runnable",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:2, Column:49},
+                        End:      ast.Location{Line:2, Column:57},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                Lifetime: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:2, Column:49},
+                    End:      ast.Location{Line:2, Column:57},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+        Body: {
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name:      "bark",
+                    Namespace: 0,
+                    VarID:     0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:10},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
+                        Stmts: {
+                            &ast.ReturnStmt{
+                                Expr: &ast.LiteralExpr{
+                                    Lit: &ast.StrLit{
+                                        Value: "Woof!",
+                                        span:  ast.Span{
+                                            Start:    ast.Location{Line:4, Column:14},
+                                            End:      ast.Location{Line:4, Column:21},
+                                            SourceID: 0,
+                                        },
+                                    },
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:4, Column:14},
+                                        End:      ast.Location{Line:4, Column:21},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:7},
+                                    End:      ast.Location{Line:4, Column:21},
+                                    SourceID: 0,
+                                },
+                            },
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:17},
+                            End:      ast.Location{Line:5, Column:7},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:5, Column:7},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                MutSelf: &bool(false),
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:5, Column:7},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:6, Column:6},
         SourceID: 0,
     },
 }

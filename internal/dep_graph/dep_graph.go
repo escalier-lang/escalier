@@ -767,6 +767,12 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 				d.Extends.Accept(visitor)
 			}
 
+			// Visit implements clauses so the dep graph knows the class
+			// depends on the interfaces it implements.
+			for _, impl := range d.Implements {
+				impl.Accept(visitor)
+			}
+
 			// Visit class body elements (constructors are now in-body, so
 			// their param type annotations are reached by the body walk).
 			for _, elem := range d.Body {

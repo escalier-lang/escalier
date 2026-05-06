@@ -445,6 +445,33 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
+		"ClassWithImplements": {
+			input: `
+				class Dog implements Animal {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"ClassWithMultipleImplements": {
+			input: `
+				class Dog implements Animal, Runnable {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
+		"ClassWithExtendsAndImplements": {
+			input: `
+				class Dog extends Canine implements Animal, Runnable {
+					bark(self) {
+						return "Woof!"
+					}
+				}
+			`,
+		},
 		"ClassExtendsQualifiedName": {
 			input: `
 				class CustomButton extends UI.Button {

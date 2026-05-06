@@ -124,7 +124,10 @@ func (p *Parser) Decl() ast.Decl {
 	}
 }
 
-// classDecl = 'class' ident typeParams? ('extends' typeAnn ('(' expr* ')')?)? '{' classElem* '}'
+// classDecl = 'class' ident typeParams?
+//             ('extends' typeAnn ('(' expr* ')')?)?
+//             ('implements' typeAnn (',' typeAnn)*)?
+//             '{' classElem* '}'
 func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	var name *ast.Ident
@@ -177,12 +180,37 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		}
 	}
 
+	// Parse optional implements clause
+	var implements []*ast.TypeRefTypeAnn
+	if token.Type == Implements {
+		implementsTok := token
+		p.lexer.consume()
+		for {
+			ta := p.typeAnn()
+			if ta == nil {
+				p.reportError(implementsTok.Span, "Expected type annotation after 'implements'")
+				break
+			}
+			typeRef, ok := ta.(*ast.TypeRefTypeAnn)
+			if !ok {
+				p.reportError(implementsTok.Span, "implements clause must be a type reference")
+			} else {
+				implements = append(implements, typeRef)
+			}
+			if p.lexer.peek().Type != Comma {
+				break
+			}
+			p.lexer.consume()
+		}
+		token = p.lexer.peek()
+	}
+
 	// Parse class body
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected '{' to start class body")
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-		decl := ast.NewClassDecl(name, typeParams, extends, nil, export, declare, span)
+		decl := ast.NewClassDecl(name, typeParams, extends, implements, nil, export, declare, span)
 		return decl
 	}
 	p.lexer.consume()
@@ -192,7 +220,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	decl := ast.NewClassDecl(name, typeParams, extends, body, export, declare, span)
+	decl := ast.NewClassDecl(name, typeParams, extends, implements, body, export, declare, span)
 	return decl
 }
 
