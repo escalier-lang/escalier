@@ -203,6 +203,44 @@ func TestClassImplementsConformance(t *testing.T) {
 			`,
 			wantErr: false,
 		},
+		"PropertyRequiredButClassDeclaresMethod": {
+			input: `
+				interface HasName {
+					name: string,
+				}
+				class Bad implements HasName {
+					name(self) -> string { return "x" }
+				}
+				val b = Bad()
+			`,
+			wantErr:       true,
+			errorContains: "name",
+		},
+		"InterfaceSetterWithSelfReceiver": {
+			input: `
+				interface HasValue {
+					set value(self, x: number) -> undefined,
+				}
+				class Box implements HasValue {
+					_value: number,
+					set value(mut self, x: number) { self._value = x },
+				}
+				val b = Box(0)
+			`,
+			wantErr: false,
+		},
+		"GenericClassImplementsGenericInterface": {
+			input: `
+				interface Container<T> {
+					value: T,
+				}
+				class Box<T> implements Container<T> {
+					value: T,
+				}
+				val b = Box(1)
+			`,
+			wantErr: false,
+		},
 	}
 
 	for name, test := range tests {

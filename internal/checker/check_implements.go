@@ -181,12 +181,15 @@ func (c *Checker) checkInterfaceElem(
 			}
 			return missingMember(span, className, ifaceName, ie.Name.String())
 		}
+		cp, ok := ce.(*type_system.PropertyElem)
+		if !ok {
+			return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+				"member is not a property")
+		}
 		ifaceVal := SubstituteTypeParams(ie.Value, sub)
-		if cp, ok := ce.(*type_system.PropertyElem); ok {
-			if errs := c.Unify(ctx, ifaceVal, cp.Value); len(errs) > 0 {
-				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
-					"property type does not match")
-			}
+		if errs := c.Unify(ctx, ifaceVal, cp.Value); len(errs) > 0 {
+			return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+				"property type does not match")
 		}
 	}
 	return nil

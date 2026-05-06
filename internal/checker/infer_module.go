@@ -684,7 +684,7 @@ func (c *Checker) InferComponent(
 
 				// Verify the class structurally satisfies each entry in
 				// objType.Implements (#558).
-				errors = slices.Concat(errors, c.checkImplements(ctx, decl, objType))
+				errors = slices.Concat(errors, c.checkImplements(declCtx, decl, objType))
 
 				typeArgs := make([]type_system.Type, len(typeParams))
 				for i := range typeParams {
