@@ -12105,3 +12105,97 @@
     },
 }
 ---
+
+[TestClassConstructorErrors/ImplementsFollowedByOpenBrace - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: ast.Span{
+                Start:    ast.Location{Line:2, Column:11},
+                End:      ast.Location{Line:2, Column:14},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
+            &ast.MethodElem{
+                Name: &ast.IdentExpr{
+                    Name:      "bar",
+                    Namespace: 0,
+                    VarID:     0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:9},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
+                        Stmts: {
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:3, Column:16},
+                            End:      ast.Location{Line:3, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:6},
+                        End:      ast.Location{Line:3, Column:18},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                MutSelf: &bool(false),
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:3, Column:18},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:4, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:4, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestClassConstructorErrors/ImplementsFollowedByOpenBrace - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: ast.Span{
+            Start:    ast.Location{Line:2, Column:15},
+            End:      ast.Location{Line:2, Column:25},
+            SourceID: 0,
+        },
+        Message: "Expected type reference after 'implements'",
+    },
+}
+---

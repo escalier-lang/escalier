@@ -691,7 +691,13 @@ func (c *Checker) InferComponent(
 				// unify.go:879 — interface bodies carry Nominal=true (see
 				// infer_stmt.go:371), so a dedicated conformance check that
 				// walks interface members and unifies element-by-element is
-				// needed instead.
+				// needed instead. Element-wise unify is also non-trivial: an
+				// interface method's `self` parameter carries the interface
+				// type while the class method's `self` carries the class
+				// type, so the check must rebind `Self` per member rather
+				// than unifying the raw FuncTypes. Until then, conformance
+				// is unenforced and TestClassImplementsConformance pins the
+				// gap.
 
 				typeArgs := make([]type_system.Type, len(typeParams))
 				for i := range typeParams {

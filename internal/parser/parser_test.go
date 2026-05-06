@@ -631,6 +631,13 @@ func TestClassConstructorErrors(t *testing.T) {
 				}
 			`,
 		},
+		"ImplementsFollowedByOpenBrace": {
+			input: `
+				class Foo implements {
+					bar(self) {}
+				}
+			`,
+		},
 	}
 
 	for name, test := range tests {

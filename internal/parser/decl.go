@@ -186,6 +186,13 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		implementsTok := token
 		p.lexer.consume()
 		for {
+			// A leading '{' here is the class body, not a type ref.
+			// Without this guard p.typeAnn() would parse it as an
+			// object type and consume the body.
+			if p.lexer.peek().Type == OpenBrace {
+				p.reportError(implementsTok.Span, "Expected type reference after 'implements'")
+				break
+			}
 			ta := p.typeAnn()
 			if ta == nil {
 				p.reportError(implementsTok.Span, "Expected type annotation after 'implements'")

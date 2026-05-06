@@ -235,13 +235,9 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 		if err != nil {
 			return nil, fmt.Errorf("converting implements type for class %s: %w", dc.Name.Name, err)
 		}
-		// Skip non-TypeRef implements rather than aborting the whole
-		// class. Mirrors the parser's soft-error path
-		// (parser/decl.go in classDecl); valid `.d.ts` always produces
-		// a TypeReference, so this branch is defensive.
 		typeRef, ok := converted.(*ast.TypeRefTypeAnn)
 		if !ok {
-			continue
+			return nil, fmt.Errorf("implements type for class %s isn't a type ref (got %T)", dc.Name.Name, converted)
 		}
 		implements = append(implements, typeRef)
 	}
