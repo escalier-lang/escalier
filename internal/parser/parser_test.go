@@ -472,6 +472,15 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
+		"ClassImplementsQualifiedAndGeneric": {
+			input: `
+				class MyList<T> implements Collections.Iterable<T>, Eq.Comparable<MyList<T>> {
+					len(self) -> number {
+						return 0
+					}
+				}
+			`,
+		},
 		"ClassExtendsQualifiedName": {
 			input: `
 				class CustomButton extends UI.Button {
