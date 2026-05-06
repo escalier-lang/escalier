@@ -10,6 +10,18 @@ import (
 
 // Phase 11: Lifetime elision rules for body-less function declarations.
 //
+// Note on terminology: "elision" literally means *omission*, which can
+// read backwards here — the compiler is *adding* lifetime annotations,
+// not removing them. The name is borrowed from Rust's "lifetime
+// elision rules" and refers to what the **user** does, not what the
+// compiler does: the user elides (omits) the lifetime annotations
+// from the signature, and these rules tell the compiler how to
+// recover them. We keep the Rust-style name because readers familiar
+// with that vocabulary will look for it; alternatives like "lifetime
+// defaulting" or "lifetime inference for body-less declarations"
+// would describe the compiler-side action more directly but lose the
+// shared convention.
+//
 // Elision applies *only* when the user wrote no explicit lifetime
 // annotations on the signature. The presence of any explicit lifetime
 // shows up as a non-empty FuncType.LifetimeParams (every inline `'a`
@@ -232,6 +244,11 @@ func (c *Checker) VerifyLifetimeCompatibility(
 		if pLT == nil {
 			continue
 		}
+		// Skip parameters the impl does NOT tie to its return — those
+		// parameters and the return have independent lifetimes in the
+		// impl, which is always at least as conservative as the
+		// interface. We only need to flag parameters the impl *does*
+		// alias to the return but the interface didn't authorize.
 		if !lifetimesMatch(pLT, implReturnLT) {
 			continue
 		}

@@ -191,6 +191,8 @@ func TestVerifyLifetimeCompatibility(t *testing.T) {
 	}
 
 	// Case 1: interface ties param to return; impl matches. OK.
+	//   iface: fn <'a>(p: 'a {}) -> 'a {}
+	//   impl:  fn <'a>(p: 'a {}) -> 'a {}
 	t.Run("ImplMatchesIfaceAlias", func(t *testing.T) {
 		ifaceLT := &type_system.LifetimeVar{ID: 1, Name: "a"}
 		implLT := &type_system.LifetimeVar{ID: 2, Name: "a"}
@@ -202,6 +204,8 @@ func TestVerifyLifetimeCompatibility(t *testing.T) {
 
 	// Case 2: interface ties param to return; impl returns a fresh
 	// value (no lifetime). More conservative — OK.
+	//   iface: fn <'a>(p: 'a {}) -> 'a {}
+	//   impl:  fn <'a>(p: 'a {}) -> {}
 	t.Run("ImplFreshReturnIsConservative", func(t *testing.T) {
 		ifaceLT := &type_system.LifetimeVar{ID: 1, Name: "a"}
 		implLT := &type_system.LifetimeVar{ID: 2, Name: "a"}
@@ -213,6 +217,8 @@ func TestVerifyLifetimeCompatibility(t *testing.T) {
 
 	// Case 3: interface promises a fresh return; impl aliases the
 	// param. Less conservative — error.
+	//   iface: fn <'a>(p: 'a {}) -> {}
+	//   impl:  fn <'a>(p: 'a {}) -> 'a {}
 	t.Run("ImplAliasesWhenIfaceFresh", func(t *testing.T) {
 		ifaceLT := &type_system.LifetimeVar{ID: 1, Name: "a"}
 		implLT := &type_system.LifetimeVar{ID: 2, Name: "a"}
@@ -223,6 +229,8 @@ func TestVerifyLifetimeCompatibility(t *testing.T) {
 	})
 
 	// Case 4: parameter count mismatch — error.
+	//   iface: fn <'a>(p: 'a {}) -> 'a {}
+	//   impl:  fn <'a>(a: 'a {}, b: 'a {}) -> 'a {}
 	t.Run("ParamCountMismatch", func(t *testing.T) {
 		ifaceLT := &type_system.LifetimeVar{ID: 1, Name: "a"}
 		implLT := &type_system.LifetimeVar{ID: 2, Name: "a"}
