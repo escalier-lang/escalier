@@ -438,11 +438,14 @@ modifiers_done:
 		var returnType ast.TypeAnn
 		var throwsType ast.TypeAnn
 		var body *ast.Block
+		var mutSelf *bool
 
 		if next.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
-			p.mutSelf() // TODO: check the value of mutSelf
+			if !isStatic {
+				mutSelf = p.mutSelf()
+			}
 
 			// TODO(#506): report an error if `self` is not the only param
 			// (instance) or if any params are present (static).
@@ -474,6 +477,7 @@ modifiers_done:
 		return &ast.GetterElem{
 			Name:    name,
 			Fn:      ast.NewFuncExpr(nil, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+			MutSelf: mutSelf,
 			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,
@@ -484,12 +488,13 @@ modifiers_done:
 	if isSet {
 		var params []*ast.Param
 		var body *ast.Block
+		var mutSelf *bool
 
 		if next.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
 			if !isStatic {
-				p.mutSelf() // TODO: check the value of mutSelf
+				mutSelf = p.mutSelf()
 
 				token = p.lexer.peek()
 				if token.Type == Comma {
@@ -517,6 +522,7 @@ modifiers_done:
 		return &ast.SetterElem{
 			Name:    name,
 			Fn:      ast.NewFuncExpr(nil, typeParams, params, nil, nil, false, body, span),
+			MutSelf: mutSelf,
 			Static:  isStatic,
 			Private: isPrivate,
 			Span_:   span,

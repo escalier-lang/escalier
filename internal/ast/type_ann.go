@@ -205,12 +205,14 @@ type MethodTypeAnn struct {
 	MutSelf *bool // nil = no self, true = mut self, false = self
 }
 type GetterTypeAnn struct {
-	Name ObjKey
-	Fn   *FuncTypeAnn
+	Name    ObjKey
+	Fn      *FuncTypeAnn
+	MutSelf *bool // nil = no self, true = mut self, false = self
 }
 type SetterTypeAnn struct {
-	Name ObjKey
-	Fn   *FuncTypeAnn
+	Name    ObjKey
+	Fn      *FuncTypeAnn
+	MutSelf *bool // nil = no self, true = mut self, false = self
 }
 
 type MappedModifier string

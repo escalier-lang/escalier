@@ -355,7 +355,7 @@ func (c *Checker) inferObjectTypeAnn(
 			}
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn}
+			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
 		case *ast.SetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)
@@ -364,7 +364,7 @@ func (c *Checker) inferObjectTypeAnn(
 			}
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn}
+			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
 		case *ast.PropertyTypeAnn:
 			var t type_system.Type
 			if elem.Value != nil {

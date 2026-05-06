@@ -99,6 +99,14 @@ func (c *Checker) checkInterfaceElem(
 	sub map[string]type_system.Type,
 	span ast.Span,
 ) Error {
+	// Direction: every check below asks "is the class member assignable
+	// to the interface member?" — i.e. could the class member be used
+	// wherever the interface member is expected. This means parameters
+	// are contravariant (class may accept wider input than the iface
+	// promises) and return types are covariant (class may return
+	// narrower output than the iface promises). Setter arguments are
+	// the exception: callers *write* through them, so the iface arg
+	// must be assignable to the class arg.
 	switch ie := ifaceElem.(type) {
 	case *type_system.MethodElem:
 		ce := findElemByKey(ctx, c, classObj, ie.Name)
@@ -112,12 +120,12 @@ func (c *Checker) checkInterfaceElem(
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"self receiver does not match")
 			}
-			if errs := c.unifyFuncTypes(ctx, ifaceFn, m.Fn, make(unifySeen)); len(errs) > 0 {
+			if errs := c.unifyFuncTypes(ctx, m.Fn, ifaceFn, make(unifySeen)); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"signature does not match")
 			}
 		case *type_system.PropertyElem:
-			if errs := c.Unify(ctx, ifaceFn, m.Value); len(errs) > 0 {
+			if errs := c.Unify(ctx, m.Value, ifaceFn); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"property does not satisfy method signature")
 			}
@@ -133,12 +141,16 @@ func (c *Checker) checkInterfaceElem(
 		ifaceRet := SubstituteTypeParams(ie.Fn.Return, sub)
 		switch m := ce.(type) {
 		case *type_system.GetterElem:
-			if errs := c.Unify(ctx, ifaceRet, m.Fn.Return); len(errs) > 0 {
+			if !selfReceiverCompatible(ie.MutSelf, m.MutSelf) {
+				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+					"self receiver does not match")
+			}
+			if errs := c.Unify(ctx, m.Fn.Return, ifaceRet); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"getter return type does not match")
 			}
 		case *type_system.PropertyElem:
-			if errs := c.Unify(ctx, ifaceRet, m.Value); len(errs) > 0 {
+			if errs := c.Unify(ctx, m.Value, ifaceRet); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"property type does not match getter")
 			}
@@ -152,9 +164,15 @@ func (c *Checker) checkInterfaceElem(
 			return missingMember(span, className, ifaceName, ie.Name.String())
 		}
 		// A setter's input type lives on its single non-self parameter.
+		// Setters are write-only: the iface arg must be assignable to
+		// the class arg, hence the iface→class direction below.
 		ifaceArg := setterArgType(ie.Fn)
 		switch m := ce.(type) {
 		case *type_system.SetterElem:
+			if !selfReceiverCompatible(ie.MutSelf, m.MutSelf) {
+				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+					"self receiver does not match")
+			}
 			classArg := setterArgType(m.Fn)
 			if ifaceArg != nil && classArg != nil {
 				if errs := c.Unify(ctx, SubstituteTypeParams(ifaceArg, sub), classArg); len(errs) > 0 {
@@ -187,7 +205,7 @@ func (c *Checker) checkInterfaceElem(
 				"member is not a property")
 		}
 		ifaceVal := SubstituteTypeParams(ie.Value, sub)
-		if errs := c.Unify(ctx, ifaceVal, cp.Value); len(errs) > 0 {
+		if errs := c.Unify(ctx, cp.Value, ifaceVal); len(errs) > 0 {
 			return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 				"property type does not match")
 		}

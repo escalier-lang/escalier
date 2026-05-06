@@ -2617,7 +2617,7 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 			if fn := widenFuncType(e.Fn); fn != e.Fn {
 				changed = true
 				newElems[i] = &type_system.GetterElem{
-					Name: e.Name, Fn: fn,
+					Name: e.Name, Fn: fn, MutSelf: e.MutSelf,
 				}
 			} else {
 				newElems[i] = elem
@@ -2626,7 +2626,7 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 			if fn := widenFuncType(e.Fn); fn != e.Fn {
 				changed = true
 				newElems[i] = &type_system.SetterElem{
-					Name: e.Name, Fn: fn,
+					Name: e.Name, Fn: fn, MutSelf: e.MutSelf,
 				}
 			} else {
 				newElems[i] = elem

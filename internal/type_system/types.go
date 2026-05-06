@@ -1014,12 +1014,14 @@ type MethodElem struct {
 	MutSelf *bool // nil = unknown, true = mut self, false = self
 }
 type GetterElem struct {
-	Name ObjTypeKey
-	Fn   *FuncType
+	Name    ObjTypeKey
+	Fn      *FuncType
+	MutSelf *bool // nil = no self, true = mut self, false = self
 }
 type SetterElem struct {
-	Name ObjTypeKey
-	Fn   *FuncType
+	Name    ObjTypeKey
+	Fn      *FuncType
+	MutSelf *bool // nil = no self, true = mut self, false = self
 }
 type PropertyElem struct {
 	Name       ObjTypeKey
@@ -1037,16 +1039,18 @@ func NewMethodElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElem {
 		MutSelf: mutSelf,
 	}
 }
-func NewGetterElem(name ObjTypeKey, fn *FuncType) *GetterElem {
+func NewGetterElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *GetterElem {
 	return &GetterElem{
-		Name: name,
-		Fn:   fn,
+		Name:    name,
+		Fn:      fn,
+		MutSelf: mutSelf,
 	}
 }
-func NewSetterElem(name ObjTypeKey, fn *FuncType) *SetterElem {
+func NewSetterElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *SetterElem {
 	return &SetterElem{
-		Name: name,
-		Fn:   fn,
+		Name:    name,
+		Fn:      fn,
+		MutSelf: mutSelf,
 	}
 }
 func NewPropertyElem(name ObjTypeKey, value Type) *PropertyElem {
@@ -1146,14 +1150,14 @@ func (m *MethodElem) Accept(v TypeVisitor) ObjTypeElem {
 func (g *GetterElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := g.Fn.Accept(v).(*FuncType)
 	if newFn != g.Fn {
-		return &GetterElem{Name: g.Name, Fn: newFn}
+		return &GetterElem{Name: g.Name, Fn: newFn, MutSelf: g.MutSelf}
 	}
 	return g
 }
 func (s *SetterElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := s.Fn.Accept(v).(*FuncType)
 	if newFn != s.Fn {
-		return &SetterElem{Name: s.Name, Fn: newFn}
+		return &SetterElem{Name: s.Name, Fn: newFn, MutSelf: s.MutSelf}
 	}
 	return s
 }
@@ -2595,11 +2599,11 @@ func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
 		}
 	case *GetterElem:
 		if e2, ok := e2.(*GetterElem); ok {
-			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && e1.MutSelf == e2.MutSelf && equals(e1.Fn, e2.Fn)
 		}
 	case *SetterElem:
 		if e2, ok := e2.(*SetterElem); ok {
-			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && e1.MutSelf == e2.MutSelf && equals(e1.Fn, e2.Fn)
 		}
 	case *PropertyElem:
 		if e2, ok := e2.(*PropertyElem); ok {

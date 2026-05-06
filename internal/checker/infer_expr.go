@@ -444,7 +444,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
-					typeElems[i] = &type_system.GetterElem{Fn: funcType, Name: *key}
+					typeElems[i] = &type_system.GetterElem{Fn: funcType, Name: *key, MutSelf: elem.MutSelf}
 				}
 			case *ast.SetterExpr:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -453,7 +453,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
-					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key}
+					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key, MutSelf: elem.MutSelf}
 				}
 			// No object-type constraint is enforced on the spread source.
 			// This matches JS/TS semantics where spreading non-objects

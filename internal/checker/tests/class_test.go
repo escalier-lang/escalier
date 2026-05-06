@@ -216,7 +216,23 @@ func TestClassImplementsConformance(t *testing.T) {
 			wantErr:       true,
 			errorContains: "name",
 		},
-		"InterfaceSetterWithSelfReceiver": {
+		"InterfaceSetterWithMatchingReceiver": {
+			input: `
+				interface HasValue {
+					set value(mut self, x: number) -> undefined,
+				}
+				class Box implements HasValue {
+					_value: number,
+					set value(mut self, x: number) { self._value = x },
+				}
+				val b = Box(0)
+			`,
+			wantErr: false,
+		},
+		"SetterMutSelfMismatch": {
+			// Iface promises the setter can be called on an immutable
+			// receiver; class needs `mut self`. The class does not
+			// satisfy the iface contract.
 			input: `
 				interface HasValue {
 					set value(self, x: number) -> undefined,
@@ -227,7 +243,44 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Box(0)
 			`,
+			wantErr:       true,
+			errorContains: "self receiver does not match",
+		},
+		"GetterMutSelfMatches": {
+			// A getter that mutates a cache on the instance needs
+			// `mut self`. The interface declares the same shape, so
+			// this is valid.
+			input: `
+				interface CachedSize {
+					get size(mut self) -> number,
+				}
+				class Container implements CachedSize {
+					_cache: number,
+					get size(mut self) -> number {
+						self._cache = 1
+						return self._cache
+					},
+				}
+				val c = Container(0)
+			`,
 			wantErr: false,
+		},
+		"GetterMutSelfMismatch": {
+			// Iface promises a non-mutating getter; class declares
+			// `mut self`. A caller holding the iface ref expects no
+			// mutation from a read, so this is rejected.
+			input: `
+				interface ReadSize {
+					get size(self) -> number,
+				}
+				class Container implements ReadSize {
+					_cache: number,
+					get size(mut self) -> number { return self._cache },
+				}
+				val c = Container(0)
+			`,
+			wantErr:       true,
+			errorContains: "self receiver does not match",
 		},
 		"GenericClassImplementsGenericInterface": {
 			input: `
@@ -238,6 +291,106 @@ func TestClassImplementsConformance(t *testing.T) {
 					value: T,
 				}
 				val b = Box(1)
+			`,
+			wantErr: false,
+		},
+		"NarrowerClassReturnSatisfiesIface": {
+			// The class method's return type is a subtype of the
+			// interface's return type, so the class is substitutable
+			// for the interface. This must be accepted.
+			input: `
+				interface Producer {
+					produce(self) -> number | string,
+				}
+				class IntProducer implements Producer {
+					produce(self) -> number { return 1 }
+				}
+				val p = IntProducer()
+			`,
+			wantErr: false,
+		},
+		"WiderClassReturnRejected": {
+			// The class returns a supertype of what the interface
+			// promises. A caller holding a Producer expects only
+			// `number` back, but the class might return a string.
+			input: `
+				interface Producer {
+					produce(self) -> number,
+				}
+				class Bad implements Producer {
+					produce(self) -> number | string { return 1 }
+				}
+				val p = Bad()
+			`,
+			wantErr:       true,
+			errorContains: "produce",
+		},
+		"WiderClassParamSatisfiesIface": {
+			// Class accepts a wider parameter type than the interface
+			// promises callers can pass. This is contravariantly safe.
+			input: `
+				interface Sink {
+					accept(self, x: number) -> undefined,
+				}
+				class Lenient implements Sink {
+					accept(self, x: number | string) -> undefined { return undefined }
+				}
+				val s = Lenient()
+			`,
+			wantErr: false,
+		},
+		"SetterArgTypeMismatch": {
+			input: `
+				interface HasValue {
+					set value(self, x: number) -> undefined,
+				}
+				class Bad implements HasValue {
+					_value: string,
+					set value(mut self, x: string) { self._value = x },
+				}
+				val b = Bad("")
+			`,
+			wantErr:       true,
+			errorContains: "value",
+		},
+		"GetterReturnTypeMismatch": {
+			input: `
+				interface HasName {
+					get name(self) -> string,
+				}
+				class Bad implements HasName {
+					get name(self) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			wantErr:       true,
+			errorContains: "name",
+		},
+		"MultipleImplementsOneMissing": {
+			input: `
+				interface A {
+					a(self) -> number,
+				}
+				interface B {
+					b(self) -> number,
+				}
+				class Partial implements A, B {
+					a(self) -> number { return 1 }
+				}
+				val p = Partial()
+			`,
+			wantErr:       true,
+			errorContains: "b",
+		},
+		"OptionalPropertyAbsentOnClassIsAllowed": {
+			input: `
+				interface HasOptional {
+					nickname?: string,
+				}
+				class Person implements HasOptional {
+					name: string,
+				}
+				val p = Person("Alice")
 			`,
 			wantErr: false,
 		},

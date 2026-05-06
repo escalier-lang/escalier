@@ -550,13 +550,14 @@ func (e *MethodExpr) Accept(v Visitor) {
 }
 
 type GetterExpr struct {
-	Name ObjKey
-	Fn   *FuncExpr
-	span Span
+	Name    ObjKey
+	Fn      *FuncExpr
+	MutSelf *bool // nil = no self, true = mut self, false = self
+	span    Span
 }
 
-func NewGetter(name ObjKey, fn *FuncExpr, span Span) *GetterExpr {
-	return &GetterExpr{Name: name, Fn: fn, span: span}
+func NewGetter(name ObjKey, fn *FuncExpr, mutSelf *bool, span Span) *GetterExpr {
+	return &GetterExpr{Name: name, Fn: fn, MutSelf: mutSelf, span: span}
 }
 func (e *GetterExpr) Span() Span { return e.span }
 func (e *GetterExpr) Accept(v Visitor) {
@@ -580,13 +581,14 @@ func (e *GetterExpr) Accept(v Visitor) {
 }
 
 type SetterExpr struct {
-	Name ObjKey
-	Fn   *FuncExpr
-	span Span
+	Name    ObjKey
+	Fn      *FuncExpr
+	MutSelf *bool // nil = no self, true = mut self, false = self
+	span    Span
 }
 
-func NewSetter(name ObjKey, fn *FuncExpr, span Span) *SetterExpr {
-	return &SetterExpr{Name: name, Fn: fn, span: span}
+func NewSetter(name ObjKey, fn *FuncExpr, mutSelf *bool, span Span) *SetterExpr {
+	return &SetterExpr{Name: name, Fn: fn, MutSelf: mutSelf, span: span}
 }
 func (e *SetterExpr) Span() Span { return e.span }
 func (e *SetterExpr) Accept(v Visitor) {

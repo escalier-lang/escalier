@@ -4687,6 +4687,7 @@
         },
         inferredType: nil,
     },
+    MutSelf: (*bool)(nil),
     Static:  false,
     Private: false,
     Span_:   ast.Span{
@@ -4754,6 +4755,7 @@
         },
         inferredType: nil,
     },
+    MutSelf: (*bool)(nil),
     Static:  true,
     Private: false,
     Span_:   ast.Span{
@@ -4810,6 +4812,7 @@
         },
         inferredType: nil,
     },
+    MutSelf: (*bool)(nil),
     Static:  false,
     Private: true,
     Span_:   ast.Span{
@@ -4897,6 +4900,7 @@
         },
         inferredType: nil,
     },
+    MutSelf: (*bool)(nil),
     Static:  false,
     Private: false,
     Span_:   ast.Span{
@@ -4986,6 +4990,7 @@
         },
         inferredType: nil,
     },
+    MutSelf: (*bool)(nil),
     Static:  true,
     Private: false,
     Span_:   ast.Span{
@@ -5073,6 +5078,7 @@
         },
         inferredType: nil,
     },
+    MutSelf: (*bool)(nil),
     Static:  false,
     Private: true,
     Span_:   ast.Span{

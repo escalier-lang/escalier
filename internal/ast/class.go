@@ -116,8 +116,9 @@ func (m *MethodElem) Span() Span { return m.Span_ }
 type GetterElem struct {
 	Name    ObjKey
 	Fn      *FuncExpr
-	Static  bool // true if this is a static getter
-	Private bool // true if this is a private getter
+	MutSelf *bool // true if `self` is `mut self`; nil if absent (static getters, etc.)
+	Static  bool  // true if this is a static getter
+	Private bool  // true if this is a private getter
 	Span_   Span
 }
 
@@ -161,8 +162,9 @@ func (c *ConstructorElem) Span() Span { return c.Span_ }
 type SetterElem struct {
 	Name    ObjKey
 	Fn      *FuncExpr
-	Static  bool // true if this is a static setter
-	Private bool // true if this is a private setter
+	MutSelf *bool // true if `self` is `mut self`; nil if absent (static setters, etc.)
+	Static  bool  // true if this is a static setter
+	Private bool  // true if this is a private setter
 	Span_   Span
 }
 

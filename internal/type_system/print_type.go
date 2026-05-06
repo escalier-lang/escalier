@@ -493,14 +493,17 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 					result += " throws " + pt(elem.Fn.Throws)
 				}
 			case *GetterElem:
-				result += "get " + elem.Name.String() + "(self) -> " + pt(elem.Fn.Return)
+				result += "get " + elem.Name.String() + "(" + printSelfReceiver(elem.MutSelf) + ") -> " + pt(elem.Fn.Return)
 				if !IsNeverType(elem.Fn.Throws) {
 					result += " throws " + pt(elem.Fn.Throws)
 				}
 			case *SetterElem:
-				result += "set " + elem.Name.String() + "(mut self"
+				result += "set " + elem.Name.String() + "(" + printSelfReceiver(elem.MutSelf)
 				if len(elem.Fn.Params) > 0 {
-					result += ", " + printFuncParam(elem.Fn.Params[0], pt)
+					if elem.MutSelf != nil {
+						result += ", "
+					}
+					result += printFuncParam(elem.Fn.Params[0], pt)
 				}
 				result += ") -> undefined"
 				if !IsNeverType(elem.Fn.Throws) {
@@ -535,6 +538,18 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 		return printLifetime(t.Lifetime) + " " + result
 	}
 	return result
+}
+
+// printSelfReceiver renders the leading `self` / `mut self` for a method,
+// getter, or setter. Returns "" when the receiver is absent (nil).
+func printSelfReceiver(mutSelf *bool) string {
+	if mutSelf == nil {
+		return ""
+	}
+	if *mutSelf {
+		return "mut self"
+	}
+	return "self"
 }
 
 func printTupleType(t *TupleType, pt func(Type) string) string {

@@ -369,16 +369,21 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 		MutSelf: &mutSelf,
 	}
 
+	selfReceiver := false
+	mutSelfReceiver := true
+
 	getterFunc := test_util.ParseTypeAnn("fn () -> T")
 	getter := &type_system.GetterElem{
-		Name: type_system.NewStrKey("getter"),
-		Fn:   getterFunc.(*type_system.FuncType),
+		Name:    type_system.NewStrKey("getter"),
+		Fn:      getterFunc.(*type_system.FuncType),
+		MutSelf: &selfReceiver,
 	}
 
 	setterFunc := test_util.ParseTypeAnn("fn (value: V) -> undefined")
 	setter := &type_system.SetterElem{
-		Name: type_system.NewStrKey("setter"),
-		Fn:   setterFunc.(*type_system.FuncType),
+		Name:    type_system.NewStrKey("setter"),
+		Fn:      setterFunc.(*type_system.FuncType),
+		MutSelf: &mutSelfReceiver,
 	}
 
 	callableFunc := test_util.ParseTypeAnn("fn (x: T) -> U")

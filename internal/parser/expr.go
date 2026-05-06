@@ -653,6 +653,7 @@ func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam,
 		return ast.NewGetter(
 			objKey,
 			fn,
+			mutSelf,
 			ast.MergeSpans(token.Span, span),
 		)
 	case "set":
@@ -661,6 +662,7 @@ func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam,
 		return ast.NewSetter(
 			objKey,
 			fn,
+			mutSelf,
 			ast.MergeSpans(token.Span, span),
 		)
 	default:

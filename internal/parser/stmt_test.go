@@ -279,6 +279,15 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"InterfaceDeclMethodNoSelf": {
 			input: "interface Free { make() -> number }",
 		},
+		"InterfaceDeclGetterWithSelf": {
+			input: "interface Sized { get size(self) -> number }",
+		},
+		"InterfaceDeclGetterWithMutSelf": {
+			input: "interface Cached { get value(mut self) -> number }",
+		},
+		"InterfaceDeclSetterWithMutSelf": {
+			input: "interface HasValue { set value(mut self, x: number) -> undefined }",
+		},
 		"ImportNamedSingle": {
 			input: `import { foo } from "module"`,
 		},

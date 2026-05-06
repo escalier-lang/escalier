@@ -1034,18 +1034,30 @@ func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
 
 // memberElemHidden reports whether an object element should be hidden during
 // member access given the receiver's mutability. Access mode is intentionally
-// not consulted here — setters are caught at the assignment site by
-// CannotMutateImmutableError, which produces a clearer message than hiding the
-// setter and falling through to UnknownPropertyError + a follow-on
-// "cannot be assigned to undefined" type-mismatch error.
+// not consulted for plain `SetterElem` — write-only setters are caught at the
+// assignment site by CannotMutateImmutableError, which produces a clearer
+// message than hiding the setter and falling through to UnknownPropertyError
+// + a follow-on "cannot be assigned to undefined" type-mismatch error.
 //   - MethodElem with MutSelf == true is hidden on a non-mutable receiver.
-//   - All other elements (including SetterElem) are visible.
+//   - GetterElem with MutSelf == true is hidden on a non-mutable receiver:
+//     a `mut self` getter (e.g. cache memoization) reads but mutates state,
+//     and silently allowing it on a `val` binding would launder mutation
+//     past the immutability boundary.
+//   - SetterElem with MutSelf == true is similarly hidden so that the
+//     assignment-site CannotMutateImmutableError points at the receiver
+//     rather than the value being assigned.
+//   - All other elements are visible.
 func memberElemHidden(elem type_system.ObjTypeElem, receiverMut bool) bool {
 	if receiverMut {
 		return false
 	}
-	if m, ok := elem.(*type_system.MethodElem); ok {
-		return m.MutSelf != nil && *m.MutSelf
+	switch e := elem.(type) {
+	case *type_system.MethodElem:
+		return e.MutSelf != nil && *e.MutSelf
+	case *type_system.GetterElem:
+		return e.MutSelf != nil && *e.MutSelf
+	case *type_system.SetterElem:
+		return e.MutSelf != nil && *e.MutSelf
 	}
 	return false
 }

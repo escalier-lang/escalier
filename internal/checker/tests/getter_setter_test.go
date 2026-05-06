@@ -214,6 +214,43 @@ func TestGetterSetterAccess(t *testing.T) {
 			`,
 			expectedErrors: nil,
 		},
+		// A `mut self` getter mutates a cached field on `self` and
+		// returns it. Reading from a `mut` binding must succeed: type
+		// checking accepts the mutation inside the body, and the
+		// computed return type matches the declared one.
+		"MutSelfGetterMutatesCacheOnMutBinding": {
+			input: `
+				class Counter {
+					_seen: number,
+					get next(mut self) -> number {
+						self._seen = self._seen + 1
+						return self._seen
+					},
+				}
+				val mut c: mut Counter = Counter(0)
+				val n = c.next
+			`,
+			expectedErrors: nil,
+		},
+		// A `mut self` getter must be hidden on a non-mutable receiver,
+		// mirroring the rule for `mut self` methods. Reading `c.next`
+		// would silently mutate state behind a `val` binding's back.
+		"MutSelfGetterOnNonMutBindingFails": {
+			input: `
+				class Counter {
+					_seen: number,
+					get next(mut self) -> number {
+						self._seen = self._seen + 1
+						return self._seen
+					},
+				}
+				val c = Counter(0)
+				val n = c.next
+			`,
+			expectedErrors: []string{
+				"Unknown property 'next' in object type {_seen: number, get next(mut self) -> number}",
+			},
+		},
 		// The reverse order: write first, then read.
 		"GenericClassSetterThenGetterCacheIsolation": {
 			input: `

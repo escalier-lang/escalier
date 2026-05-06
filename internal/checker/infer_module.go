@@ -589,16 +589,17 @@ func (c *Checker) InferComponent(
 						}
 
 						if elem.Static {
-							// Static getters go to the class object type
+							// Static getters go to the class object type;
+							// `self` is meaningless on static members.
 							staticElems = append(
 								staticElems,
-								type_system.NewGetterElem(*key, funcType),
+								type_system.NewGetterElem(*key, funcType, nil),
 							)
 						} else {
 							// Instance getters go to the instance type
 							objTypeElems = append(
 								objTypeElems,
-								type_system.NewGetterElem(*key, funcType),
+								type_system.NewGetterElem(*key, funcType, elem.MutSelf),
 							)
 						}
 					case *ast.SetterElem:
@@ -622,16 +623,17 @@ func (c *Checker) InferComponent(
 						}
 
 						if elem.Static {
-							// Static setters go to the class object type
+							// Static setters go to the class object type;
+							// `self` is meaningless on static members.
 							staticElems = append(
 								staticElems,
-								type_system.NewSetterElem(*key, funcType),
+								type_system.NewSetterElem(*key, funcType, nil),
 							)
 						} else {
 							// Instance setters go to the instance type
 							objTypeElems = append(
 								objTypeElems,
-								type_system.NewSetterElem(*key, funcType),
+								type_system.NewSetterElem(*key, funcType, elem.MutSelf),
 							)
 						}
 					case *ast.ConstructorElem:
@@ -1368,13 +1370,20 @@ func (c *Checker) InferComponent(
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
 								// TODO: handle generic classes
+								// A `mut self` getter (e.g. one that mutates a
+								// memoization cache) needs `self` typed as a
+								// `mut`; a plain `self` getter does not.
+								isMutableSelf := getterType.MutSelf != nil && *getterType.MutSelf
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
+								if isMutableSelf {
+									t = type_system.NewMutType(nil, t)
+								}
 
 								paramBindings["self"] = &type_system.Binding{
 									Source:     &ast.NodeProvenance{Node: bodyElem},
 									Type:       t,
 									Assignable: false,
-									Mutable:    false, // getters don't mutate self
+									Mutable:    isMutableSelf,
 								}
 							}
 
@@ -1446,15 +1455,21 @@ func (c *Checker) InferComponent(
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
 								// TODO: handle generic classes
+								// Mutability follows the user-written receiver.
+								// A setter that doesn't mutate `self` (e.g. one
+								// that forwards to an external sink) may declare
+								// just `set x(self, …)`.
+								isMutableSelf := setterType.MutSelf != nil && *setterType.MutSelf
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
-								// Setters typically need mutable self to modify the instance
-								t = type_system.NewMutType(nil, t)
+								if isMutableSelf {
+									t = type_system.NewMutType(nil, t)
+								}
 
 								paramBindings["self"] = &type_system.Binding{
 									Source:     &ast.NodeProvenance{Node: bodyElem},
 									Type:       t,
 									Assignable: false,
-									Mutable:    true, // setters may mutate self
+									Mutable:    isMutableSelf,
 								}
 							}
 
