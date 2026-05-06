@@ -847,6 +847,12 @@ func (c *Checker) InferComponent(
 				switch d := decl.(type) {
 				case *ast.FuncDecl:
 					if ft, ok := funcTypeForDecl[d]; ok {
+						// Phase 11: apply lifetime elision to body-less
+						// declarations before generalizing. Elision is a
+						// no-op when the user wrote explicit lifetimes
+						// (LifetimeParams already populated).
+						elisionErrors := c.ApplyLifetimeElision(ft)
+						errors = slices.Concat(errors, elisionErrors)
 						c.resolveCallSites(ctx)
 						GeneralizeFuncType(ft)
 					}

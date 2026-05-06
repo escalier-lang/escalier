@@ -308,6 +308,13 @@ func (c *Checker) inferParsedTypeDef(
 	dtsFilePath string,
 	parsedTypeDef *ParsedTypeDef,
 ) (*InferredPackage, []Error) {
+	// Phase 11: while we are processing TypeScript .d.ts ingestion,
+	// suppress the body-less lifetime elision rules. Phase 12 (TS
+	// interop) will replace this with per-source-file policy.
+	prev := c.loadingExternalTypes
+	c.loadingExternalTypes = true
+	defer func() { c.loadingExternalTypes = prev }()
+
 	var errors []Error
 
 	// 1. Process path references (/// <reference path="..." />)

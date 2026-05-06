@@ -32,7 +32,7 @@ into phases that build incrementally, each producing a testable milestone.
 |     8 | Lifetime annotations and inference                   | 6, 7       | Done   |
 |     9 | Lifetime unification                                  | 8          | Done   |
 |    10 | Constrained type parameters that carry a lifetime     | 9          | Done   |
-|    11 | Lifetime elision rules                               | 8, 9       |        |
+|    11 | Lifetime elision rules                               | 8, 9       | Done (partial — interface elision and `implements` verification deferred to 12) |
 |    12 | TypeScript interop                                   | 11         |        |
 |    13 | Error messages                                       | 6–12       |        |
 |    14 | Remove `mut?`                                        | —          | Done (out of order, via remove_uncertain_mutability track) |
@@ -2930,52 +2930,69 @@ Notably:
 
 ---
 
-## Phase 11: Lifetime Elision Rules
+## Phase 11: Lifetime Elision Rules (Done — partial; see deviations)
 
 **Goal:** Apply default lifetime rules to body-less declarations so that
 common cases don't require explicit annotations.
 
+**Status:** Landed. Elision is wired for body-less `declare fn`
+declarations. Interface-method elision and the `implements` lifetime
+verification check are deferred to Phase 12 (see "Deviations" below).
+
 ### 11.1 Elision Rule Implementation
 
-Elision rules apply only to body-less declarations (interface methods, external
-functions, imported TypeScript types):
+Elision rules apply to body-less declarations whose signature has no
+explicit lifetime annotations. Today this means `declare fn` — interface
+methods are deferred (see 11.4).
 
 **File:** `internal/checker/elision.go`
 
 ```go
 // ApplyLifetimeElision applies default lifetime rules to a function signature
-// that has no body and no explicit lifetime annotations.
-func (c *Checker) ApplyLifetimeElision(funcType *type_system.FuncType) { ... }
+// that has no body and no explicit lifetime annotations. A no-op when the
+// user wrote any `<'a>` clause (LifetimeParams already populated) or while
+// the checker is loading TypeScript .d.ts files (the `loadingExternalTypes`
+// flag — Phase 12 territory).
+func (c *Checker) ApplyLifetimeElision(
+    funcType *type_system.FuncType,
+) []Error { ... }
 ```
 
-**Rules:**
-1. **Single reference parameter:** If the declaration has exactly one
-   reference-typed parameter and returns a reference type, the output lifetime
-   matches the input
-2. **No reference return:** If the return type is primitive/void, no lifetimes
-   needed
-3. **Method receiver:** For methods, the return type defaults to the receiver's
-   lifetime
+**Rules implemented:**
+1. **Single reference parameter:** If the signature has exactly one
+   reference-typed parameter and a reference-typed return, allocate a
+   fresh `'a` and attach it to both.
+2. **No reference return:** If the return type is primitive / void /
+   never / null / undefined, no lifetimes are added.
+3. **No reference parameters, reference return:** Treated as a fresh
+   return (no lifetime attached). Equivalent to "callee allocates".
+4. **Multiple reference parameters, reference return (ambiguous):**
+   *Lenient policy* — leave the signature unannotated. The spec calls
+   for an error here; Phase 13 (error-message work) is the natural
+   place to upgrade severity. The classification is still available
+   via `ReportAmbiguousLifetimeElision` for tests / future strict
+   modes.
 
-When elision is ambiguous (multiple reference parameters, reference return type),
-the compiler requires explicit annotation and reports an error.
+The "method receiver" rule from the original draft is not implemented:
+methods carry their receiver implicitly (separate from `FuncType.Params`),
+and the receiver lifetime is supplied at call sites by the existing
+method-call machinery rather than by the elision pass.
 
 ### 11.2 Determining "Reference Type"
 
 A type is a "reference type" for elision purposes if it can alias:
 - Object types
-- Array types
+- Tuple types (Escalier's array shape)
 - Function types
-- Type references that resolve to object/array/function types
+- Type references that resolve to object/tuple/function types
 - **Unresolved type parameters** (e.g. `T` in `declare fn wrap<T>(value: T) -> {inner: T}`)
   — conservatively treated as reference types, since `T` could be instantiated
-  with a reference type at the call site. If the caller instantiates `T` with
-  a primitive, the lifetime is harmless (primitives can't alias). A type
-  parameter with a primitive constraint (e.g. `T extends number`) can be
-  treated as non-reference.
-- NOT: primitives (`number`, `string`, `boolean`), `void`, `null`, `undefined`
-
-**File:** `internal/checker/elision.go`
+  with a reference type at the call site. A type parameter with a constraint
+  that itself resolves to a non-reference shape (e.g. `T extends number`)
+  is treated as non-reference.
+- Unions / intersections — reference if *any* member is a reference type.
+- NOT: primitives (`number`, `string`, `boolean`, `bigint`, `symbol`),
+  `void`, `never`, `null`, `undefined`, `any`, `unknown`.
 
 ```go
 // IsReferenceType returns true if the type can participate in aliasing.
@@ -2984,42 +3001,36 @@ func IsReferenceType(t type_system.Type) bool { ... }
 
 ### 11.3 Interface Method Lifetime Verification
 
-When a type implements an interface, its method's inferred lifetimes must be
-**compatible** with the interface's declared lifetimes. The requirements
-specify that an implementation may be *more conservative* than the interface
-(e.g. returning a fresh value when the interface says it may alias) but not
-less conservative.
+`VerifyLifetimeCompatibility` is implemented as a standalone routine and
+covered by direct unit tests, but is **not yet wired** into checking —
+the parser does not support an `implements` clause, so there is no point
+to invoke it from. Phase 12 will revisit wiring once `implements` lands.
 
-**File:** `internal/checker/check_interface.go`
+**File:** `internal/checker/elision.go`
 
 ```go
-// VerifyLifetimeCompatibility checks that an implementation's inferred
-// lifetimes are compatible with the interface's declared lifetimes.
-// An implementation is compatible if it aliases no MORE than the interface
-// declares — it may alias less (more conservative).
 func (c *Checker) VerifyLifetimeCompatibility(
     ifaceMethod *type_system.FuncType,
     implMethod *type_system.FuncType,
+    span ast.Span,
 ) []Error { ... }
 ```
 
-**Compatibility rules:**
-- If the interface declares `'a` linking a parameter to the return type, the
-  implementation may either: (a) also return an alias of that parameter
-  (matching `'a`), or (b) return a fresh value (more conservative — safe)
-- If the interface declares no lifetime on a parameter, the implementation
-  must NOT return an alias of that parameter (it would violate the caller's
-  assumption that the return value is independent)
-- Lifetime count and parameter positions must match between interface and
-  implementation
+**Compatibility rules (as implemented):**
+- Parameter counts must match.
+- If the interface ties parameter `i`'s lifetime to the return value:
+  the implementation may either match (alias the same parameter) or
+  return a fresh value (no lifetime on return). It must not alias a
+  *different* parameter.
+- If the interface declares a fresh return: the implementation must
+  also not alias any parameter.
 
-**Example:**
+**Example (target syntax — not yet parseable):**
 ```esc
 interface Transform {
     fn apply<'a>(self, p: mut 'a Point) -> mut 'a Point
 }
 
-// Future syntax (once `implements` is supported):
 class Cloner() implements Transform {
     fn apply(self, p: mut Point) -> mut Point {
         return {x: p.x, y: p.y}  // OK: more conservative (fresh value)
@@ -3037,26 +3048,44 @@ class Storer(var stored: mut Point) implements Transform {
 
 ### 11.4 Integration
 
-Apply elision during:
-- Interface method declaration processing (`inferInterface`)
-- External function declaration processing
-- TypeScript type import processing (Phase 12)
+**Wired:**
+- `declare fn` processing in `inferFuncDecl` (script path) and
+  `InferModule` (module path) — `ApplyLifetimeElision` runs after
+  `inferFuncSig` and before `GeneralizeFuncType`.
+- A `loadingExternalTypes` flag on `Checker` (toggled by
+  `loadGlobalDefinitions` and `inferParsedTypeDef`) suppresses elision
+  while ingesting TypeScript `.d.ts` files. The flag also gates the
+  ambiguous-case diagnostic so lib types don't trip it.
 
-Apply lifetime verification during:
-- Interface implementation checking (when a type declares it implements an
-  interface)
+**Deferred to Phase 12:**
+- Interface method declaration processing (`inferInterface`). The same
+  routine is shared with `.d.ts` interface ingestion, so distinguishing
+  user-source interfaces from imported ones is part of TS interop work.
+- TypeScript type import processing.
+- Wiring `VerifyLifetimeCompatibility` into interface implementation
+  checking, gated on the `implements` clause landing in the parser.
 
 ### 11.5 Tests
 
-- Single ref param + ref return → lifetime inferred
-- Multiple ref params + ref return → error requiring annotation
-- Primitive return → no lifetime regardless of params
-- Method receiver → return defaults to receiver's lifetime
-- Void return → no lifetime
-- Already-annotated declaration → elision rules not applied
-- Implementation returning fresh value for aliased interface method → OK
-- Implementation returning wrong alias for interface method → error
-- Implementation aliasing when interface declares no alias → error
+In `internal/checker/tests/elision_test.go`:
+
+- Single ref param + ref return → `'a` allocated and shared.
+- Multiple ref params + ref return → signature left unannotated
+  (lenient policy; the strict-mode classification is exercised
+  separately via `TestReportAmbiguousLifetimeElision`).
+- Primitive return → no lifetime regardless of params.
+- Void / undefined return → no lifetime.
+- No ref params, ref return → fresh return (no lifetime).
+- Already-annotated declaration (`declare fn keep<'a>(...)`) → elision
+  is a no-op.
+- `IsReferenceType` classification table (prim / object / tuple / func
+  / mut wrappers / unions).
+- `VerifyLifetimeCompatibility`: matching alias, fresh-return-is-
+  conservative, alias-when-interface-says-fresh, parameter-count-
+  mismatch.
+
+Method-receiver and interface-implementation tests are deferred along
+with the corresponding wiring.
 
 ---
 
