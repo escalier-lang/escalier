@@ -78,6 +78,7 @@ func (e SelfAliasBeforeInitError) isError()                 {}
 func (e ComputedSelfAccessBeforeInitError) isError()        {}
 func (e LoopInConstructorNotSupportedError) isError()       {}
 func (e TryInConstructorNotSupportedError) isError()        {}
+func (e ClassDoesNotImplementInterfaceError) isError()      {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -135,6 +136,30 @@ func (e SelfAliasBeforeInitError) IsWarning() bool                 { return fals
 func (e ComputedSelfAccessBeforeInitError) IsWarning() bool        { return false }
 func (e LoopInConstructorNotSupportedError) IsWarning() bool       { return false }
 func (e TryInConstructorNotSupportedError) IsWarning() bool        { return false }
+func (e ClassDoesNotImplementInterfaceError) IsWarning() bool      { return false }
+
+// ClassDoesNotImplementInterfaceError is reported when a class declares
+// `implements I` but fails to structurally satisfy `I` — either by missing
+// a member or by declaring one whose signature does not match.
+type ClassDoesNotImplementInterfaceError struct {
+	ClassName     string
+	InterfaceName string
+	MemberName    string
+	Reason        string // "missing" or a description of the mismatch
+	span          ast.Span
+}
+
+func (e ClassDoesNotImplementInterfaceError) Span() ast.Span {
+	return e.span
+}
+func (e ClassDoesNotImplementInterfaceError) Message() string {
+	if e.Reason == "missing" {
+		return "Class '" + e.ClassName + "' does not implement interface '" +
+			e.InterfaceName + "': missing member '" + e.MemberName + "'"
+	}
+	return "Class '" + e.ClassName + "' does not implement interface '" +
+		e.InterfaceName + "': member '" + e.MemberName + "' " + e.Reason
+}
 
 // TypeCheckTimeoutError is returned when the type checker's context deadline
 // is exceeded, preventing infinite loops during unification or type expansion.

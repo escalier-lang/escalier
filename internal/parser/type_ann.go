@@ -832,7 +832,24 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		}
 	case OpenParen:
 		p.lexer.consume() // consume '('
-		params := parseDelimSeq(p, CloseParen, Comma, p.param)
+
+		// Methods (but not getters/setters) accept a leading `self` /
+		// `mut self` receiver. Peel it off so it can be recorded on
+		// `MethodTypeAnn.MutSelf` rather than leaking into `Fn.Params`
+		// as a regular parameter (#560).
+		var mutSelf *bool
+		if mod != "get" && mod != "set" {
+			mutSelf = p.mutSelf()
+		}
+
+		params := []*ast.Param{}
+		next := p.lexer.peek()
+		if mutSelf != nil && next.Type == Comma {
+			p.lexer.consume() // consume ','
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		} else if mutSelf == nil {
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		}
 		p.expect(CloseParen, ConsumeOnMatch)
 
 		p.expect(Arrow, ConsumeOnMatch)
@@ -862,8 +879,9 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 			}
 		default:
 			return &ast.MethodTypeAnn{
-				Name: objKey,
-				Fn:   fnTypeAnn,
+				Name:    objKey,
+				Fn:      fnTypeAnn,
+				MutSelf: mutSelf,
 			}
 		}
 	default:

@@ -335,7 +335,6 @@ func (c *Checker) inferObjectTypeAnn(
 			errors = slices.Concat(errors, fnErrors)
 			elems[i] = &type_system.ConstructorElem{Fn: fn}
 		case *ast.MethodTypeAnn:
-			// TODO: handle `self` and `mut self` parameters
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)
 			if key == nil {
@@ -343,7 +342,11 @@ func (c *Checker) inferObjectTypeAnn(
 			}
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = type_system.NewMethodElem(*key, fn, nil)
+			// `self` / `mut self` is recorded on MethodElem.MutSelf
+			// only; it does not appear in FuncType.Params, mirroring
+			// the class-side `MethodElem` convention. The receiver
+			// type is implicit (the surrounding interface).
+			elems[i] = type_system.NewMethodElem(*key, fn, elem.MutSelf)
 		case *ast.GetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)

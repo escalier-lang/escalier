@@ -200,8 +200,9 @@ func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
 type CallableTypeAnn struct{ Fn *FuncTypeAnn }
 type ConstructorTypeAnn struct{ Fn *FuncTypeAnn }
 type MethodTypeAnn struct {
-	Name ObjKey
-	Fn   *FuncTypeAnn
+	Name    ObjKey
+	Fn      *FuncTypeAnn
+	MutSelf *bool // nil = no self, true = mut self, false = self
 }
 type GetterTypeAnn struct {
 	Name ObjKey

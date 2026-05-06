@@ -682,9 +682,9 @@ func (c *Checker) InferComponent(
 				unifyErrors := c.Unify(ctx, instanceType, objType)
 				errors = slices.Concat(errors, unifyErrors)
 
-				// TODO(#558): verify the class structurally satisfies each
-				// entry in objType.Implements. Until then, conformance is
-				// unenforced and TestClassImplementsConformance pins the gap.
+				// Verify the class structurally satisfies each entry in
+				// objType.Implements (#558).
+				errors = slices.Concat(errors, c.checkImplements(ctx, decl, objType))
 
 				typeArgs := make([]type_system.Type, len(typeParams))
 				for i := range typeParams {

@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,32 +68,193 @@ func TestClassImplements(t *testing.T) {
 	}
 }
 
-// TestClassImplementsConformance pins the gap left by #534: a class can
-// currently claim `implements I` while omitting members of `I` and the
-// checker does not complain. When conformance verification lands (#558),
-// remove the t.Skip and this test will start asserting that the
-// missing-member case produces an error.
+// TestClassImplementsConformance verifies that a class declaring
+// `implements I` is checked structurally against `I` (#558). Each
+// sub-case feeds source through InferModule and asserts on the resulting
+// diagnostics.
 func TestClassImplementsConformance(t *testing.T) {
-	t.Skip("conformance check not yet implemented — see #558")
+	tests := map[string]struct {
+		input         string
+		wantErr       bool
+		errorContains string
+	}{
+		"MissingMember": {
+			input: `
+				interface Greeter {
+					greet(self) -> string,
+				}
+				class Hello implements Greeter {}
+				val h = Hello()
+			`,
+			wantErr:       true,
+			errorContains: "greet",
+		},
+		"AllMembersSatisfied": {
+			input: `
+				interface Greeter {
+					greet(self) -> string,
+				}
+				class Hello implements Greeter {
+					greet(self) -> string { return "hi" }
+				}
+				val h = Hello()
+			`,
+			wantErr: false,
+		},
+		"InheritedMemberSatisfies": {
+			input: `
+				interface Runnable {
+					run(self) -> string,
+				}
+				class Animal {
+					run(self) -> string { return "moving" }
+				}
+				class Dog extends Animal implements Runnable {}
+				val d = Dog()
+			`,
+			wantErr: false,
+		},
+		"ReturnTypeMismatch": {
+			input: `
+				interface Greeter {
+					greet(self) -> string,
+				}
+				class Hello implements Greeter {
+					greet(self) -> number { return 42 }
+				}
+				val h = Hello()
+			`,
+			wantErr:       true,
+			errorContains: "signature does not match",
+		},
+		"ParamTypeMismatch": {
+			input: `
+				interface Adder {
+					add(self, x: number) -> number,
+				}
+				class Bad implements Adder {
+					add(self, x: string) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			wantErr:       true,
+			errorContains: "signature does not match",
+		},
+		"PropertySatisfied": {
+			input: `
+				interface HasName {
+					name: string,
+				}
+				class Person implements HasName {
+					name: string,
+				}
+				val p = Person("Alice")
+			`,
+			wantErr: false,
+		},
+		"SelfReturnType": {
+			input: `
+				interface Cloneable {
+					clone(self) -> Self,
+				}
+				class Box implements Cloneable {
+					value: number,
+					clone(self) -> Box { return Box(self.value) }
+				}
+				val b = Box(1)
+			`,
+			wantErr: false,
+		},
+		"MutSelfRequiredButClassUsesSelf": {
+			input: `
+				interface Counter {
+					increment(mut self) -> number,
+				}
+				class Bad implements Counter {
+					increment(self) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			wantErr:       true,
+			errorContains: "increment",
+		},
+		"SelfRequiredButClassUsesMutSelf": {
+			input: `
+				interface Reader {
+					read(self) -> number,
+				}
+				class Bad implements Reader {
+					read(mut self) -> number { return 0 }
+				}
+				val b = Bad()
+			`,
+			wantErr:       true,
+			errorContains: "read",
+		},
+		"MutSelfMatches": {
+			input: `
+				interface Counter {
+					increment(mut self) -> number,
+				}
+				class Good implements Counter {
+					increment(mut self) -> number { return 0 }
+				}
+				val g = Good()
+			`,
+			wantErr: false,
+		},
+	}
 
-	input := `
-		interface Greeter {
-			greet(self) -> string,
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			inferErrors := c.InferModule(inferCtx, module)
+
+			conformanceErrs := filterConformanceErrors(inferErrors)
+			if test.wantErr {
+				require.NotEmpty(t, conformanceErrs,
+					"expected a conformance error")
+				if test.errorContains != "" {
+					found := false
+					for _, e := range conformanceErrs {
+						if strings.Contains(e.Message(), test.errorContains) {
+							found = true
+							break
+						}
+					}
+					assert.Truef(t, found,
+						"expected an error mentioning %q, got %v",
+						test.errorContains, conformanceErrs)
+				}
+			} else {
+				if len(conformanceErrs) > 0 {
+					msgs := make([]string, len(conformanceErrs))
+					for i, e := range conformanceErrs {
+						msgs[i] = e.Message()
+					}
+					t.Fatalf("expected no conformance errors, got: %v", msgs)
+				}
+			}
+		})
+	}
+}
+
+func filterConformanceErrors(errs []Error) []Error {
+	var out []Error
+	for _, e := range errs {
+		if _, ok := e.(*ClassDoesNotImplementInterfaceError); ok {
+			out = append(out, e)
 		}
-		class Hello implements Greeter {}
-		val h = Hello()
-	`
-	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-	require.Empty(t, parseErrors, "expected no parse errors")
-
-	c := NewChecker(ctx)
-	inferCtx := Context{Scope: Prelude(c)}
-	inferErrors := c.InferModule(inferCtx, module)
-	require.NotEmpty(t, inferErrors,
-		"expected a conformance error: Hello does not implement Greeter.greet")
+	}
+	return out
 }
 
 // TestDefaultMutabilityFromClass instantiates each class and asserts the

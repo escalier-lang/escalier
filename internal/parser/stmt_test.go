@@ -267,6 +267,18 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"InterfaceDeclDeclare": {
 			input: "declare interface Global { version: string }",
 		},
+		"InterfaceDeclMethodWithSelf": {
+			input: "interface Greeter { greet(self) -> string }",
+		},
+		"InterfaceDeclMethodWithMutSelf": {
+			input: "interface Counter { increment(mut self) -> number }",
+		},
+		"InterfaceDeclMethodWithSelfAndParams": {
+			input: "interface Adder { add(self, x: number, y: number) -> number }",
+		},
+		"InterfaceDeclMethodNoSelf": {
+			input: "interface Free { make() -> number }",
+		},
 		"ImportNamedSingle": {
 			input: `import { foo } from "module"`,
 		},
