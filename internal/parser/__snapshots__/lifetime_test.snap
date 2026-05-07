@@ -251,7 +251,8 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: &ast.LifetimeAnn{
+                        LifetimeArgs: nil,
+                        Lifetime:     &ast.LifetimeAnn{
                             Name: "a",
                             span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:18},
@@ -279,7 +280,8 @@
                 },
                 TypeArgs: {
                 },
-                Lifetime: &ast.LifetimeAnn{
+                LifetimeArgs: nil,
+                Lifetime:     &ast.LifetimeAnn{
                     Name: "a",
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:31},
@@ -390,7 +392,8 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: &ast.LifetimeAnn{
+                            LifetimeArgs: nil,
+                            Lifetime:     &ast.LifetimeAnn{
                                 Name: "a",
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:27},
@@ -426,7 +429,8 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: &ast.LifetimeAnn{
+                    LifetimeArgs: nil,
+                    Lifetime:     &ast.LifetimeAnn{
                         Name: "a",
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:40},
@@ -547,7 +551,8 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: &ast.LifetimeAnn{
+                        LifetimeArgs: nil,
+                        Lifetime:     &ast.LifetimeAnn{
                             Name: "a",
                             span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:15},
@@ -575,7 +580,8 @@
                 },
                 TypeArgs: {
                 },
-                Lifetime: &ast.LifetimeAnn{
+                LifetimeArgs: nil,
+                Lifetime:     &ast.LifetimeAnn{
                     Name: "a",
                     span: ast.Span{
                         Start:    ast.Location{Line:1, Column:28},
@@ -698,7 +704,8 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: &ast.LifetimeAnn{
+                            LifetimeArgs: nil,
+                            Lifetime:     &ast.LifetimeAnn{
                                 Name: "a",
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:25},
@@ -748,7 +755,8 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: &ast.LifetimeAnn{
+                            LifetimeArgs: nil,
+                            Lifetime:     &ast.LifetimeAnn{
                                 Name: "b",
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:42},
@@ -784,7 +792,8 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: &ast.LifetimeAnn{
+                    LifetimeArgs: nil,
+                    Lifetime:     &ast.LifetimeAnn{
                         Name: "a",
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:59},
@@ -906,7 +915,8 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: &ast.LifetimeAnn{
+                            LifetimeArgs: nil,
+                            Lifetime:     &ast.LifetimeAnn{
                                 Name: "a",
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:24},
@@ -942,7 +952,8 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: &ast.LifetimeAnn{
+                    LifetimeArgs: nil,
+                    Lifetime:     &ast.LifetimeAnn{
                         Name: "a",
                         span: ast.Span{
                             Start:    ast.Location{Line:1, Column:41},
@@ -1071,7 +1082,8 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: &ast.LifetimeAnn{
+                        LifetimeArgs: nil,
+                        Lifetime:     &ast.LifetimeAnn{
                             Name: "a",
                             span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:20},
@@ -1113,7 +1125,8 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: &ast.LifetimeAnn{
+                        LifetimeArgs: nil,
+                        Lifetime:     &ast.LifetimeAnn{
                             Name: "b",
                             span: ast.Span{
                                 Start:    ast.Location{Line:1, Column:33},
@@ -1165,7 +1178,8 @@
                 },
                 TypeArgs: {
                 },
-                Lifetime: &ast.LifetimeUnionAnn{
+                LifetimeArgs: nil,
+                Lifetime:     &ast.LifetimeUnionAnn{
                     Lifetimes: {
                         &ast.LifetimeAnn{
                             Name: "a",
@@ -1634,9 +1648,10 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.MethodTypeAnn{
                     Name: &ast.IdentExpr{
@@ -1690,7 +1705,8 @@
                                     },
                                     TypeArgs: {
                                     },
-                                    Lifetime: &ast.LifetimeAnn{
+                                    LifetimeArgs: nil,
+                                    Lifetime:     &ast.LifetimeAnn{
                                         Name: "a",
                                         span: ast.Span{
                                             Start:    ast.Location{Line:1, Column:42},
@@ -1718,7 +1734,8 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: &ast.LifetimeAnn{
+                            LifetimeArgs: nil,
+                            Lifetime:     &ast.LifetimeAnn{
                                 Name: "a",
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:55},
@@ -1779,10 +1796,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "borrow",
@@ -1836,7 +1854,8 @@
                                     },
                                     TypeArgs: {
                                     },
-                                    Lifetime: &ast.LifetimeAnn{
+                                    LifetimeArgs: nil,
+                                    Lifetime:     &ast.LifetimeAnn{
                                         Name: "a",
                                         span: ast.Span{
                                             Start:    ast.Location{Line:1, Column:33},
@@ -1864,7 +1883,8 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: &ast.LifetimeAnn{
+                            LifetimeArgs: nil,
+                            Lifetime:     &ast.LifetimeAnn{
                                 Name: "a",
                                 span: ast.Span{
                                     Start:    ast.Location{Line:1, Column:46},
@@ -1939,6 +1959,1034 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:69},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/ClassWithLifetimeParam - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Container",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+        },
+        LifetimeParams: {
+            &ast.LifetimeAnn{
+                Name: "a",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:17},
+                    End:      ast.Location{Line:1, Column:19},
+                    SourceID: 0,
+                },
+            },
+        },
+        TypeParams: nil,
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
+            &ast.FieldElem{
+                Name: &ast.IdentExpr{
+                    Name:      "p",
+                    Namespace: 0,
+                    VarID:     0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:23},
+                        End:      ast.Location{Line:1, Column:24},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Type: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:29},
+                            End:      ast.Location{Line:1, Column:34},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    LifetimeArgs: nil,
+                    Lifetime:     &ast.LifetimeAnn{
+                        Name: "a",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:26},
+                            End:      ast.Location{Line:1, Column:28},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:29},
+                        End:      ast.Location{Line:1, Column:34},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Value:    nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Optional: false,
+                Span_:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:23},
+                    End:      ast.Location{Line:1, Column:34},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:36},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:36},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/InterfaceWithLifetimeParam - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Holder",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 0,
+            },
+        },
+        LifetimeParams: {
+            &ast.LifetimeAnn{
+                Name: "a",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:20},
+                    SourceID: 0,
+                },
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.PropertyTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "p",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:24},
+                            End:      ast.Location{Line:1, Column:25},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    Readonly: false,
+                    Value:    &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "Point",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:30},
+                                End:      ast.Location{Line:1, Column:35},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs: {
+                        },
+                        LifetimeArgs: nil,
+                        Lifetime:     &ast.LifetimeAnn{
+                            Name: "a",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:27},
+                                End:      ast.Location{Line:1, Column:29},
+                                SourceID: 0,
+                            },
+                        },
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:35},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:22},
+                End:      ast.Location{Line:1, Column:37},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:37},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:37},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/TypeRefStaticLifetimeArg - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "v",
+            VarID:   0,
+            Mutable: false,
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Container",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:17},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs:     nil,
+            LifetimeArgs: {
+                &ast.LifetimeAnn{
+                    Name: "static",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:18},
+                        End:      ast.Location{Line:1, Column:25},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Lifetime: nil,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.IdentExpr{
+            Name:      "ref",
+            Namespace: 0,
+            VarID:     0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:29},
+                End:      ast.Location{Line:1, Column:32},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:32},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:32},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/ClassImplementsLifetimeArg - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Forwarder",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+        },
+        LifetimeParams: {
+            &ast.LifetimeAnn{
+                Name: "a",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:17},
+                    End:      ast.Location{Line:1, Column:19},
+                    SourceID: 0,
+                },
+            },
+        },
+        TypeParams: nil,
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: {
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "View",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:32},
+                        End:      ast.Location{Line:1, Column:36},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs:     nil,
+                LifetimeArgs: {
+                    &ast.LifetimeAnn{
+                        Name: "a",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:37},
+                            End:      ast.Location{Line:1, Column:39},
+                            SourceID: 0,
+                        },
+                    },
+                },
+                Lifetime: nil,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:1, Column:32},
+                    End:      ast.Location{Line:1, Column:40},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+        },
+        Body: {
+            &ast.FieldElem{
+                Name: &ast.IdentExpr{
+                    Name:      "value",
+                    Namespace: 0,
+                    VarID:     0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:43},
+                        End:      ast.Location{Line:1, Column:48},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Type: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:53},
+                            End:      ast.Location{Line:1, Column:58},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    LifetimeArgs: nil,
+                    Lifetime:     &ast.LifetimeAnn{
+                        Name: "a",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:50},
+                            End:      ast.Location{Line:1, Column:52},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:53},
+                        End:      ast.Location{Line:1, Column:58},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Value:    nil,
+                Static:   false,
+                Private:  false,
+                Readonly: false,
+                Optional: false,
+                Span_:    ast.Span{
+                    Start:    ast.Location{Line:1, Column:43},
+                    End:      ast.Location{Line:1, Column:58},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:60},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:60},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/TypeRefBareLifetimeArg - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "v",
+            VarID:   0,
+            Mutable: false,
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "View",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs:     nil,
+            LifetimeArgs: {
+                &ast.LifetimeAnn{
+                    Name: "a",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:15},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Lifetime: nil,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.IdentExpr{
+            Name:      "ref",
+            Namespace: 0,
+            VarID:     0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:19},
+                End:      ast.Location{Line:1, Column:22},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:22},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:22},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/TypeRefMixedLifetimeAndTypeArgs - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "v",
+            VarID:   0,
+            Mutable: false,
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Pair",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+                &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:17},
+                            End:      ast.Location{Line:1, Column:18},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
+                        Start:    ast.Location{Line:1, Column:17},
+                        End:      ast.Location{Line:1, Column:18},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            LifetimeArgs: {
+                &ast.LifetimeAnn{
+                    Name: "a",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:15},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Lifetime: nil,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:19},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.IdentExpr{
+            Name:      "ref",
+            Namespace: 0,
+            VarID:     0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:22},
+                End:      ast.Location{Line:1, Column:25},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:25},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:25},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/FnReturnsTypeRefWithLifetimeArg - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "borrow",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:4},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 0,
+            },
+        },
+        VarID:   0,
+        FuncSig: ast.FuncSig{
+            LifetimeParams: {
+                &ast.LifetimeAnn{
+                    Name: "a",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:11},
+                        End:      ast.Location{Line:1, Column:13},
+                        SourceID: 0,
+                    },
+                },
+            },
+            TypeParams: nil,
+            Params:     {
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name:    "c",
+                        VarID:   0,
+                        Mutable: false,
+                        TypeAnn: nil,
+                        Default: nil,
+                        span:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:16},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Optional: false,
+                    TypeAnn:  &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "Container",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:18},
+                                End:      ast.Location{Line:1, Column:27},
+                                SourceID: 0,
+                            },
+                        },
+                        TypeArgs:     nil,
+                        LifetimeArgs: {
+                            &ast.LifetimeAnn{
+                                Name: "a",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:28},
+                                    End:      ast.Location{Line:1, Column:30},
+                                    SourceID: 0,
+                                },
+                            },
+                        },
+                        Lifetime: nil,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:18},
+                            End:      ast.Location{Line:1, Column:31},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                },
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Point",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:39},
+                        End:      ast.Location{Line:1, Column:44},
+                        SourceID: 0,
+                    },
+                },
+                TypeArgs: {
+                },
+                LifetimeArgs: nil,
+                Lifetime:     &ast.LifetimeAnn{
+                    Name: "a",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:36},
+                        End:      ast.Location{Line:1, Column:38},
+                        SourceID: 0,
+                    },
+                },
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:39},
+                    End:      ast.Location{Line:1, Column:44},
+                    SourceID: 0,
+                },
+                inferredType: nil,
+            },
+            Throws: nil,
+            Async:  false,
+        },
+        Body: &ast.Block{
+            Stmts: {
+                &ast.ReturnStmt{
+                    Expr: &ast.MemberExpr{
+                        Object: &ast.IdentExpr{
+                            Name:      "c",
+                            Namespace: 0,
+                            VarID:     0,
+                            Source:    nil,
+                            span:      ast.Span{
+                                Start:    ast.Location{Line:1, Column:54},
+                                End:      ast.Location{Line:1, Column:55},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Prop: &ast.Ident{
+                            Name: "p",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:56},
+                                End:      ast.Location{Line:1, Column:57},
+                                SourceID: 0,
+                            },
+                        },
+                        OptChain: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:1, Column:54},
+                            End:      ast.Location{Line:1, Column:57},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:47},
+                        End:      ast.Location{Line:1, Column:57},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Span: ast.Span{
+                Start:    ast.Location{Line:1, Column:45},
+                End:      ast.Location{Line:1, Column:59},
+                SourceID: 0,
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:59},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:59},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/TypeRefLifetimeUnionArgMixed - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "v",
+            VarID:   0,
+            Mutable: false,
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Pair",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+                &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:24},
+                            End:      ast.Location{Line:1, Column:25},
+                            SourceID: 0,
+                        },
+                    },
+                    TypeArgs: {
+                    },
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
+                        Start:    ast.Location{Line:1, Column:24},
+                        End:      ast.Location{Line:1, Column:25},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            LifetimeArgs: {
+                &ast.LifetimeUnionAnn{
+                    Lifetimes: {
+                        &ast.LifetimeAnn{
+                            Name: "a",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:14},
+                                End:      ast.Location{Line:1, Column:16},
+                                SourceID: 0,
+                            },
+                        },
+                        &ast.LifetimeAnn{
+                            Name: "b",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:19},
+                                End:      ast.Location{Line:1, Column:21},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:22},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Lifetime: nil,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:26},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.IdentExpr{
+            Name:      "ref",
+            Namespace: 0,
+            VarID:     0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:29},
+                End:      ast.Location{Line:1, Column:32},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:32},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:32},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/TypeRefLifetimeUnionArg - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "v",
+            VarID:   0,
+            Mutable: false,
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "View",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:12},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs:     nil,
+            LifetimeArgs: {
+                &ast.LifetimeUnionAnn{
+                    Lifetimes: {
+                        &ast.LifetimeAnn{
+                            Name: "a",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:14},
+                                End:      ast.Location{Line:1, Column:16},
+                                SourceID: 0,
+                            },
+                        },
+                        &ast.LifetimeAnn{
+                            Name: "b",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:19},
+                                End:      ast.Location{Line:1, Column:21},
+                                SourceID: 0,
+                            },
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:22},
+                        SourceID: 0,
+                    },
+                },
+            },
+            Lifetime: nil,
+            span:     ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:23},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.IdentExpr{
+            Name:      "ref",
+            Namespace: 0,
+            VarID:     0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:26},
+                End:      ast.Location{Line:1, Column:29},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:29},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:29},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseLifetimeAnnotations/TypeRefLifetimeUnionFallback - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "v",
+            VarID:   0,
+            Mutable: false,
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+                &ast.UnionTypeAnn{
+                    Types: {
+                        &ast.ErrorTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:13},
+                                End:      ast.Location{Line:1, Column:15},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:18},
+                                    End:      ast.Location{Line:1, Column:19},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: {
+                            },
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
+                                Start:    ast.Location{Line:1, Column:18},
+                                End:      ast.Location{Line:1, Column:19},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:19},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            LifetimeArgs: nil,
+            Lifetime:     nil,
+            span:         ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:21},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.IdentExpr{
+            Name:      "ref",
+            Namespace: 0,
+            VarID:     0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:24},
+                End:      ast.Location{Line:1, Column:27},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:27},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:27},
         SourceID: 0,
     },
 }

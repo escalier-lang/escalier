@@ -206,26 +206,28 @@ func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
 }
 
 type InterfaceDecl struct {
-	Name       *Ident
-	TypeParams []*TypeParam
-	Extends    []*TypeRefTypeAnn
-	TypeAnn    *ObjectTypeAnn
-	export     bool
-	declare    bool
-	span       Span
-	provenance provenance.Provenance
+	Name           *Ident
+	LifetimeParams []*LifetimeAnn
+	TypeParams     []*TypeParam
+	Extends        []*TypeRefTypeAnn
+	TypeAnn        *ObjectTypeAnn
+	export         bool
+	declare        bool
+	span           Span
+	provenance     provenance.Provenance
 }
 
-func NewInterfaceDecl(name *Ident, typeParams []*TypeParam, extends []*TypeRefTypeAnn, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
+func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeAnn, typeParams []*TypeParam, extends []*TypeRefTypeAnn, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
 	return &InterfaceDecl{
-		Name:       name,
-		TypeParams: typeParams,
-		Extends:    extends,
-		TypeAnn:    typeAnn,
-		export:     export,
-		declare:    declare,
-		span:       span,
-		provenance: nil,
+		Name:           name,
+		LifetimeParams: lifetimeParams,
+		TypeParams:     typeParams,
+		Extends:        extends,
+		TypeAnn:        typeAnn,
+		export:         export,
+		declare:        declare,
+		span:           span,
+		provenance:     nil,
 	}
 }
 func (d *InterfaceDecl) Export() bool      { return d.export }

@@ -7003,8 +7003,9 @@
             },
             TypeArgs: {
             },
-            Lifetime: nil,
-            span:     ast.Span{
+            LifetimeArgs: nil,
+            Lifetime:     nil,
+            span:         ast.Span{
                 Start:    ast.Location{Line:1, Column:28},
                 End:      ast.Location{Line:1, Column:33},
                 SourceID: 0,
@@ -7912,8 +7913,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:15},
                         End:      ast.Location{Line:1, Column:16},
                         SourceID: 0,
@@ -7933,8 +7935,9 @@
             },
             TypeArgs: {
             },
-            Lifetime: nil,
-            span:     ast.Span{
+            LifetimeArgs: nil,
+            Lifetime:     nil,
+            span:         ast.Span{
                 Start:    ast.Location{Line:1, Column:21},
                 End:      ast.Location{Line:1, Column:22},
                 SourceID: 0,
@@ -8024,8 +8027,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:14},
                         End:      ast.Location{Line:1, Column:15},
                         SourceID: 0,
@@ -8059,8 +8063,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:20},
                         End:      ast.Location{Line:1, Column:21},
                         SourceID: 0,
@@ -8082,8 +8087,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:27},
                         End:      ast.Location{Line:1, Column:28},
                         SourceID: 0,
@@ -8101,8 +8107,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:30},
                         End:      ast.Location{Line:1, Column:31},
                         SourceID: 0,
@@ -8232,8 +8239,9 @@
                                 },
                                 TypeArgs: {
                                 },
-                                Lifetime: nil,
-                                span:     ast.Span{
+                                LifetimeArgs: nil,
+                                Lifetime:     nil,
+                                span:         ast.Span{
                                     Start:    ast.Location{Line:1, Column:13},
                                     End:      ast.Location{Line:1, Column:14},
                                     SourceID: 0,
@@ -8338,8 +8346,9 @@
                                 },
                                 TypeArgs: {
                                 },
-                                Lifetime: nil,
-                                span:     ast.Span{
+                                LifetimeArgs: nil,
+                                Lifetime:     nil,
+                                span:         ast.Span{
                                     Start:    ast.Location{Line:1, Column:46},
                                     End:      ast.Location{Line:1, Column:47},
                                     SourceID: 0,

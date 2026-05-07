@@ -142,8 +142,8 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		name = ast.NewIdentifier(token.Value, token.Span)
 	}
 
-	// Parse optional type parameters for the class
-	typeParams := p.maybeTypeParams()
+	// Parse optional lifetime + type parameters for the class
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 	token = p.lexer.peek()
 
 	// Parse optional extends clause
@@ -211,7 +211,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		p.reportError(token.Span, "Expected '{' to start class body")
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-		decl := ast.NewClassDecl(name, typeParams, extends, implements, nil, export, declare, span)
+		decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, nil, export, declare, span)
 		return decl
 	}
 	p.lexer.consume()
@@ -221,7 +221,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	decl := ast.NewClassDecl(name, typeParams, extends, implements, body, export, declare, span)
+	decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, body, export, declare, span)
 	return decl
 }
 
@@ -848,8 +848,8 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 		ident = ast.NewIdentifier(token.Value, token.Span)
 	}
 
-	// Parse optional type parameters
-	typeParams := p.maybeTypeParams()
+	// Parse optional lifetime + type parameters
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 
 	// Parse optional extends clause
 	var extends []*ast.TypeRefTypeAnn
@@ -873,7 +873,7 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 		end := p.lexer.currentLocation
 		span := ast.NewSpan(start, end, p.lexer.source.ID)
 		objType := ast.NewObjectTypeAnn(nil, span)
-		return ast.NewInterfaceDecl(ident, typeParams, extends, objType, export, declare, span)
+		return ast.NewInterfaceDecl(ident, lifetimeParams, typeParams, extends, objType, export, declare, span)
 	}
 	p.lexer.consume() // consume '{'
 	elems := parseDelimSeq(p, CloseBrace, Comma, p.objTypeAnnElem)
@@ -881,7 +881,7 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 	objType := ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
-	decl := ast.NewInterfaceDecl(ident, typeParams, extends, objType, export, declare, span)
+	decl := ast.NewInterfaceDecl(ident, lifetimeParams, typeParams, extends, objType, export, declare, span)
 	return decl
 }
 

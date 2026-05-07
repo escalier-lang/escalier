@@ -809,8 +809,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:2, Column:7},
                         End:      ast.Location{Line:2, Column:10},
                         SourceID: 0,
@@ -828,8 +829,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:3, Column:7},
                         End:      ast.Location{Line:3, Column:10},
                         SourceID: 0,
@@ -847,8 +849,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:4, Column:7},
                         End:      ast.Location{Line:4, Column:10},
                         SourceID: 0,
@@ -1205,8 +1208,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:15},
                         End:      ast.Location{Line:1, Column:18},
                         SourceID: 0,
@@ -1224,8 +1228,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:3, Column:7},
                         End:      ast.Location{Line:3, Column:10},
                         SourceID: 0,
@@ -1243,8 +1248,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:5, Column:7},
                         End:      ast.Location{Line:5, Column:10},
                         SourceID: 0,
@@ -2216,8 +2222,9 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: nil,
-                        span:     ast.Span{
+                        LifetimeArgs: nil,
+                        Lifetime:     nil,
+                        span:         ast.Span{
                             Start:    ast.Location{Line:1, Column:38},
                             End:      ast.Location{Line:1, Column:39},
                             SourceID: 0,
@@ -2251,8 +2258,9 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: nil,
-                        span:     ast.Span{
+                        LifetimeArgs: nil,
+                        Lifetime:     nil,
+                        span:         ast.Span{
                             Start:    ast.Location{Line:1, Column:49},
                             End:      ast.Location{Line:1, Column:50},
                             SourceID: 0,
@@ -2324,8 +2332,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:24},
                         End:      ast.Location{Line:1, Column:25},
                         SourceID: 0,
@@ -2333,8 +2342,9 @@
                     inferredType: nil,
                 },
             },
-            Lifetime: nil,
-            span:     ast.Span{
+            LifetimeArgs: nil,
+            Lifetime:     nil,
+            span:         ast.Span{
                 Start:    ast.Location{Line:1, Column:18},
                 End:      ast.Location{Line:1, Column:26},
                 SourceID: 0,
@@ -2415,8 +2425,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:46},
                         End:      ast.Location{Line:1, Column:47},
                         SourceID: 0,
@@ -2434,8 +2445,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:50},
                         End:      ast.Location{Line:1, Column:51},
                         SourceID: 0,
@@ -2537,10 +2549,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "x",
@@ -2913,10 +2926,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
         },
         export:  false,
         declare: false,
@@ -2978,10 +2992,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "identity",
@@ -3032,8 +3047,9 @@
                                     },
                                     TypeArgs: {
                                     },
-                                    Lifetime: nil,
-                                    span:     ast.Span{
+                                    LifetimeArgs: nil,
+                                    Lifetime:     nil,
+                                    span:         ast.Span{
                                         Start:    ast.Location{Line:1, Column:36},
                                         End:      ast.Location{Line:1, Column:37},
                                         SourceID: 0,
@@ -3053,8 +3069,9 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:1, Column:42},
                                 End:      ast.Location{Line:1, Column:43},
                                 SourceID: 0,
@@ -3137,7 +3154,8 @@
                 SourceID: 0,
             },
         },
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "T",
                 Constraint: nil,
@@ -3171,8 +3189,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:2, Column:12},
                         End:      ast.Location{Line:2, Column:13},
                         SourceID: 0,
@@ -3220,8 +3239,9 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:3, Column:22},
                                 End:      ast.Location{Line:3, Column:23},
                                 SourceID: 0,
@@ -3336,8 +3356,9 @@
                                     },
                                     TypeArgs: {
                                     },
-                                    Lifetime: nil,
-                                    span:     ast.Span{
+                                    LifetimeArgs: nil,
+                                    Lifetime:     nil,
+                                    span:         ast.Span{
                                         Start:    ast.Location{Line:6, Column:30},
                                         End:      ast.Location{Line:6, Column:31},
                                         SourceID: 0,
@@ -3443,7 +3464,8 @@
                 SourceID: 0,
             },
         },
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "T",
                 Constraint: nil,
@@ -3477,8 +3499,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:2, Column:12},
                         End:      ast.Location{Line:2, Column:13},
                         SourceID: 0,
@@ -3565,8 +3588,9 @@
                                                 },
                                                 TypeArgs: {
                                                 },
-                                                Lifetime: nil,
-                                                span:     ast.Span{
+                                                LifetimeArgs: nil,
+                                                Lifetime:     nil,
+                                                span:         ast.Span{
                                                     Start:    ast.Location{Line:3, Column:39},
                                                     End:      ast.Location{Line:3, Column:40},
                                                     SourceID: 0,
@@ -3586,8 +3610,9 @@
                                         },
                                         TypeArgs: {
                                         },
-                                        Lifetime: nil,
-                                        span:     ast.Span{
+                                        LifetimeArgs: nil,
+                                        Lifetime:     nil,
+                                        span:         ast.Span{
                                             Start:    ast.Location{Line:3, Column:45},
                                             End:      ast.Location{Line:3, Column:46},
                                             SourceID: 0,
@@ -3625,8 +3650,9 @@
                                     },
                                     TypeArgs: {
                                     },
-                                    Lifetime: nil,
-                                    span:     ast.Span{
+                                    LifetimeArgs: nil,
+                                    Lifetime:     nil,
+                                    span:         ast.Span{
                                         Start:    ast.Location{Line:3, Column:58},
                                         End:      ast.Location{Line:3, Column:59},
                                         SourceID: 0,
@@ -3634,8 +3660,9 @@
                                     inferredType: nil,
                                 },
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:3, Column:51},
                                 End:      ast.Location{Line:3, Column:60},
                                 SourceID: 0,
@@ -3731,7 +3758,8 @@
                 SourceID: 0,
             },
         },
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "T",
                 Constraint: &ast.AnyTypeAnn{
@@ -3779,8 +3807,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:1, Column:41},
                         End:      ast.Location{Line:1, Column:42},
                         SourceID: 0,
@@ -3827,7 +3856,8 @@
                 SourceID: 0,
             },
         },
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "T",
                 Constraint: &ast.NumberTypeAnn{
@@ -3880,8 +3910,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:2, Column:12},
                         End:      ast.Location{Line:2, Column:13},
                         SourceID: 0,
@@ -3923,8 +3954,9 @@
                     },
                     TypeArgs: {
                     },
-                    Lifetime: nil,
-                    span:     ast.Span{
+                    LifetimeArgs: nil,
+                    Lifetime:     nil,
+                    span:         ast.Span{
                         Start:    ast.Location{Line:3, Column:13},
                         End:      ast.Location{Line:3, Column:14},
                         SourceID: 0,
@@ -3971,10 +4003,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "identity",
@@ -4025,8 +4058,9 @@
                                     },
                                     TypeArgs: {
                                     },
-                                    Lifetime: nil,
-                                    span:     ast.Span{
+                                    LifetimeArgs: nil,
+                                    Lifetime:     nil,
+                                    span:         ast.Span{
                                         Start:    ast.Location{Line:1, Column:36},
                                         End:      ast.Location{Line:1, Column:37},
                                         SourceID: 0,
@@ -4046,8 +4080,9 @@
                             },
                             TypeArgs: {
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:1, Column:42},
                                 End:      ast.Location{Line:1, Column:43},
                                 SourceID: 0,
@@ -4130,10 +4165,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "log",
@@ -4266,10 +4302,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "add",
@@ -4585,10 +4622,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "fetchData",
@@ -4651,8 +4689,9 @@
                                     inferredType: nil,
                                 },
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:2, Column:43},
                                 End:      ast.Location{Line:2, Column:58},
                                 SourceID: 0,
@@ -4716,10 +4755,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "doAsyncThing",
@@ -4758,8 +4798,9 @@
                                     inferredType: nil,
                                 },
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:2, Column:36},
                                 End:      ast.Location{Line:2, Column:51},
                                 SourceID: 0,
@@ -4823,10 +4864,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "foo",
@@ -4936,8 +4978,9 @@
                                     inferredType: nil,
                                 },
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:3, Column:24},
                                 End:      ast.Location{Line:3, Column:39},
                                 SourceID: 0,
@@ -5033,8 +5076,9 @@
                                     inferredType: nil,
                                 },
                             },
-                            Lifetime: nil,
-                            span:     ast.Span{
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
                                 Start:    ast.Location{Line:4, Column:27},
                                 End:      ast.Location{Line:4, Column:40},
                                 SourceID: 0,
@@ -5098,10 +5142,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.MethodElem{
                 Name: &ast.IdentExpr{
                     Name:      "reveal",
@@ -5280,10 +5325,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "foo",
@@ -5753,10 +5799,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "secret",
@@ -6032,10 +6079,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "secret",
@@ -6389,10 +6437,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.GetterElem{
                 Name: &ast.IdentExpr{
                     Name:      "value",
@@ -6500,10 +6549,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.GetterElem{
                 Name: &ast.IdentExpr{
                     Name:      "answer",
@@ -6611,10 +6661,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "_value",
@@ -6787,10 +6838,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "_value",
@@ -7054,10 +7106,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "_secret",
@@ -7308,10 +7361,11 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "id",
@@ -7613,9 +7667,10 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
@@ -7677,7 +7732,8 @@
                 SourceID: 0,
             },
         },
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "T",
                 Constraint: nil,
@@ -7718,8 +7774,9 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: nil,
-                        span:     ast.Span{
+                        LifetimeArgs: nil,
+                        Lifetime:     nil,
+                        span:         ast.Span{
                             Start:    ast.Location{Line:1, Column:31},
                             End:      ast.Location{Line:1, Column:32},
                             SourceID: 0,
@@ -7753,8 +7810,9 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: nil,
-                        span:     ast.Span{
+                        LifetimeArgs: nil,
+                        Lifetime:     nil,
+                        span:         ast.Span{
                             Start:    ast.Location{Line:1, Column:42},
                             End:      ast.Location{Line:1, Column:43},
                             SourceID: 0,
@@ -7798,9 +7856,10 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
@@ -7886,7 +7945,8 @@
                 SourceID: 0,
             },
         },
-        TypeParams: {
+        LifetimeParams: nil,
+        TypeParams:     {
             &ast.TypeParam{
                 Name:       "T",
                 Constraint: nil,
@@ -7922,8 +7982,9 @@
                         },
                         TypeArgs: {
                         },
-                        Lifetime: nil,
-                        span:     ast.Span{
+                        LifetimeArgs: nil,
+                        Lifetime:     nil,
+                        span:         ast.Span{
                             Start:    ast.Location{Line:1, Column:27},
                             End:      ast.Location{Line:1, Column:28},
                             SourceID: 0,
@@ -7967,9 +8028,10 @@
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9139,10 +9201,11 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.FieldElem{
                 Name: &ast.IdentExpr{
                     Name:      "x",
@@ -9236,9 +9299,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.MethodTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9360,9 +9424,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.MethodTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9436,9 +9501,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.MethodTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9512,9 +9578,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.MethodTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9588,9 +9655,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.SetterTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9695,9 +9763,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.GetterTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9771,9 +9840,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.GetterTypeAnn{
                     Name: &ast.IdentExpr{
@@ -9847,10 +9917,11 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    (*ast.TypeRefTypeAnn)(nil),
-        Implements: nil,
-        Body:       {
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        (*ast.TypeRefTypeAnn)(nil),
+        Implements:     nil,
+        Body:           {
             &ast.SetterElem{
                 Name: &ast.IdentExpr{
                     Name:      "value",
@@ -9952,9 +10023,10 @@ nil
                 SourceID: 0,
             },
         },
-        TypeParams: nil,
-        Extends:    nil,
-        TypeAnn:    &ast.ObjectTypeAnn{
+        LifetimeParams: nil,
+        TypeParams:     nil,
+        Extends:        nil,
+        TypeAnn:        &ast.ObjectTypeAnn{
             Elems: {
                 &ast.MethodTypeAnn{
                     Name: &ast.IdentExpr{

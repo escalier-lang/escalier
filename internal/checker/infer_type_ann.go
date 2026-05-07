@@ -39,6 +39,45 @@ func (c *Checker) inferTypeAnn(
 				typeRef.Lifetime = lt
 				errors = slices.Concat(errors, ltErrors)
 			}
+			// Resolve bare lifetime arguments inside the angle-bracket
+			// list (e.g. the `'a` in `View<'a>` or `Container<'static>`).
+			if len(typeAnn.LifetimeArgs) > 0 {
+				lifetimeArgs := make([]type_system.Lifetime, 0, len(typeAnn.LifetimeArgs))
+				for _, la := range typeAnn.LifetimeArgs {
+					lt, ltErrors := c.resolveLifetimeAnn(ctx.Scope, la)
+					errors = slices.Concat(errors, ltErrors)
+					if lt != nil {
+						lifetimeArgs = append(lifetimeArgs, lt)
+					}
+				}
+				typeRef.LifetimeArgs = lifetimeArgs
+			}
+			// Validate lifetime-arg arity against the alias's declared
+			// `<'a, ...>` clause. Skipped when the alias isn't resolved
+			// yet (forward reference) or when it's a type parameter; in
+			// those cases either there are no LifetimeParams to compare
+			// against or the deferred update path will take over.
+			//
+			// Note: the deferred path in InferComponent (where ref.TypeAlias
+			// is filled in for refs added to TypeRefsToUpdate) does NOT
+			// re-run this arity check. Reviewers have flagged that as a
+			// theoretical bypass, but in practice the placeholder phase
+			// populates LifetimeParams on every Class/Interface alias
+			// before any TypeAnn is resolved, so typeAlias is non-nil
+			// here even for forward references — see DeferredForwardRef
+			// in TestLifetimeArgArityMismatch. Adding a duplicate check
+			// at the deferred site would be defense-in-depth without
+			// observable behavior change.
+			if typeAlias != nil && !typeAlias.IsTypeParam &&
+				len(typeAnn.LifetimeArgs) > 0 &&
+				len(typeAnn.LifetimeArgs) != len(typeAlias.LifetimeParams) {
+				errors = append(errors, &LifetimeArgCountMismatchError{
+					Name:     ast.QualIdentToString(typeAnn.Name),
+					Expected: len(typeAlias.LifetimeParams),
+					Got:      len(typeAnn.LifetimeArgs),
+					span:     typeAnn.Span(),
+				})
+			}
 			// If the type alias isn't defined yet, add the type ref to `TypeRefsToUpdate`
 			// and update it the type ref later once we know what it is.  See `InferComponent`
 			// for more details.

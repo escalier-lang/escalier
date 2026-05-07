@@ -819,7 +819,8 @@
                                         SourceID: 0,
                                     },
                                 },
-                                TypeParams: {
+                                LifetimeParams: nil,
+                                TypeParams:     {
                                 },
                                 Extends:    (*ast.TypeRefTypeAnn)(nil),
                                 Implements: nil,
@@ -1192,7 +1193,8 @@
                                         SourceID: 0,
                                     },
                                 },
-                                TypeParams: {
+                                LifetimeParams: nil,
+                                TypeParams:     {
                                 },
                                 Extends:    (*ast.TypeRefTypeAnn)(nil),
                                 Implements: nil,
@@ -1215,7 +1217,8 @@
                                         SourceID: 0,
                                     },
                                 },
-                                TypeParams: {
+                                LifetimeParams: nil,
+                                TypeParams:     {
                                 },
                                 Extends: nil,
                                 TypeAnn: &ast.ObjectTypeAnn{

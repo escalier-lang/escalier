@@ -164,8 +164,9 @@ compiler.CompilerOutput{
                                 inferredType: nil,
                             },
                         },
-                        Lifetime: nil,
-                        span:     ast.Span{
+                        LifetimeArgs: nil,
+                        Lifetime:     nil,
+                        span:         ast.Span{
                             Start:    ast.Location{Line:2, Column:22},
                             End:      ast.Location{Line:2, Column:43},
                             SourceID: 0,

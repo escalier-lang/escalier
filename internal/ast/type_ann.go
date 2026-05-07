@@ -367,7 +367,8 @@ func (t *IntersectionTypeAnn) Accept(v Visitor) {
 type TypeRefTypeAnn struct {
 	Name         QualIdent
 	TypeArgs     []TypeAnn
-	Lifetime     LifetimeAnnNode // optional, e.g. 'a in `'a Point` or `mut 'a Point`
+	LifetimeArgs []LifetimeAnnNode // bare lifetime args in `<>` (e.g. `View<'a>`)
+	Lifetime     LifetimeAnnNode   // optional, e.g. 'a in `'a Point` or `mut 'a Point`
 	span         Span
 	inferredType Type
 }

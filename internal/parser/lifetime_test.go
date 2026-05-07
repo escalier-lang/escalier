@@ -64,6 +64,33 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"ClassMethodLifetimeParam": {
 			input: `class Box { borrow<'a>(self, p: 'a Point) -> 'a Point { return p } }`,
 		},
+		"ClassWithLifetimeParam": {
+			input: `class Container<'a> { p: 'a Point }`,
+		},
+		"InterfaceWithLifetimeParam": {
+			input: `interface Holder<'a> { p: 'a Point }`,
+		},
+		"TypeRefBareLifetimeArg": {
+			input: `val v: View<'a> = ref`,
+		},
+		"TypeRefStaticLifetimeArg": {
+			input: `val v: Container<'static> = ref`,
+		},
+		"TypeRefMixedLifetimeAndTypeArgs": {
+			input: `val v: Pair<'a, T> = ref`,
+		},
+		"ClassImplementsLifetimeArg": {
+			input: `class Forwarder<'a> implements View<'a> { value: 'a Point }`,
+		},
+		"FnReturnsTypeRefWithLifetimeArg": {
+			input: `fn borrow<'a>(c: Container<'a>) -> 'a Point { return c.p }`,
+		},
+		"TypeRefLifetimeUnionArg": {
+			input: `val v: View<('a | 'b)> = ref`,
+		},
+		"TypeRefLifetimeUnionArgMixed": {
+			input: `val v: Pair<('a | 'b), T> = ref`,
+		},
 	}
 
 	for name, test := range tests {
@@ -85,19 +112,18 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 }
 
 // TestParseLifetimeInUnsupportedContextErrors verifies that lifetime
-// parameters appearing on declaration kinds that don't yet support them
-// (class/type/interface/enum/methods) produce a parse-time diagnostic
-// rather than being silently dropped. Functions and `fn`-type
-// annotations remain the only supported sites in Phase 8.1.
+// parameters on declaration kinds that still don't support them
+// (type aliases, enums, object/class-field method shorthands) produce
+// a parse-time diagnostic rather than being silently dropped.
+// Functions, `fn`-type annotations, classes, and interfaces all
+// support `<'a, ...>` clauses — see TestParseLifetimeAnnotations.
 func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 	const expected = "lifetime parameters are not supported in this context"
 
 	tests := map[string]struct {
 		input string
 	}{
-		"ClassWithLifetimeParam":      {input: `class Container<'a> { p: Point }`},
 		"TypeAliasWithLifetimeParam":  {input: `type Box<'a> = 'a Point`},
-		"InterfaceWithLifetimeParam":  {input: `interface Holder<'a> { p: 'a Point }`},
 		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},
 		"ObjectMethodWithLifetimeParam": {input: `{ foo<'a>(x: T) {} }`},
 		"ClassFieldWithLifetimeParam":   {input: `class Box { p<'a>: Point }`},

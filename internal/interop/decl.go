@@ -244,6 +244,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 
 	return ast.NewClassDecl(
 		ast.NewIdentifier(dc.Name.Name, convertSpan(dc.Name.Span())),
+		nil,
 		typeParams,
 		extends,
 		implements,
@@ -306,6 +307,7 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 
 	return ast.NewInterfaceDecl(
 		ast.NewIdentifier(di.Name.Name, convertSpan(di.Name.Span())),
+		nil,
 		typeParams,
 		extends,
 		objType,
