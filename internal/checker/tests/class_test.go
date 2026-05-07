@@ -519,6 +519,26 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 				val f = Forwarder()
 			`,
 		},
+		// Lifetime declared at the interface level (not on the method)
+		// flows into a field and a method signature.
+		"InterfaceLevelLifetimeOnField": {
+			input: `
+				type Point = {x: number}
+				interface View<'a> {
+					value: 'a Point,
+					peek(self) -> 'a Point,
+				}
+			`,
+		},
+		// Class-level lifetime parameter on a field.
+		"ClassLevelLifetimeOnField": {
+			input: `
+				type Point = {x: number}
+				class Container<'a> {
+					p: 'a Point,
+				}
+			`,
+		},
 		// Interface promises a fresh (independent) return; the impl
 		// aliases its parameter into the return. Less conservative —
 		// must error.
@@ -576,6 +596,180 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 			if test.expectedErrors == nil {
 				assert.Empty(t, actualMsgs,
 					"expected no lifetime-conformance errors")
+			} else {
+				assert.Equal(t, test.expectedErrors, actualMsgs)
+			}
+		})
+	}
+}
+
+// TestLifetimeArgArityMismatch verifies that a type reference whose
+// number of lifetime arguments disagrees with the type alias's declared
+// lifetime parameters produces a diagnostic at the resolution site.
+// Without this check, mismatched arities can be silently propagated
+// through the type ref and only surface much later (or not at all).
+func TestLifetimeArgArityMismatch(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"TooManyLifetimeArgs": {
+			input: `
+				type Point = {x: number}
+				interface View<'a> {
+					value: 'a Point,
+				}
+				fn use<'a, 'b>(v: View<'a, 'b>) {}
+			`,
+			expectedErrors: []string{
+				"type 'View' expects 1 lifetime argument(s) but got 2",
+			},
+		},
+		"TooFewLifetimeArgs": {
+			input: `
+				type Point = {x: number}
+				interface Pair<'a, 'b> {
+					left: 'a Point,
+					right: 'b Point,
+				}
+				fn use<'a>(p: Pair<'a>) {}
+			`,
+			expectedErrors: []string{
+				"type 'Pair' expects 2 lifetime argument(s) but got 1",
+			},
+		},
+		"MatchingArity": {
+			input: `
+				type Point = {x: number}
+				interface View<'a> {
+					value: 'a Point,
+				}
+				fn use<'a>(v: View<'a>) {}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			inferErrors := c.InferModule(inferCtx, module)
+
+			var arityErrs []Error
+			for _, e := range inferErrors {
+				if _, ok := e.(*LifetimeArgCountMismatchError); ok {
+					arityErrs = append(arityErrs, e)
+				}
+			}
+			actualMsgs := make([]string, len(arityErrs))
+			for i, e := range arityErrs {
+				actualMsgs[i] = e.Message()
+			}
+			if test.expectedErrors == nil {
+				assert.Empty(t, actualMsgs)
+			} else {
+				assert.Equal(t, test.expectedErrors, actualMsgs)
+			}
+		})
+	}
+}
+
+// TestInterfaceMergeLifetimeParamMismatch verifies that duplicate
+// interface declarations whose `<'a, ...>` lifetime clauses disagree
+// produce a diagnostic when merging, mirroring how mismatched type
+// parameters are reported.
+func TestInterfaceMergeLifetimeParamMismatch(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"DifferentArity": {
+			input: `
+				type Point = {x: number}
+				interface View<'a> {
+					value: 'a Point,
+				}
+				interface View<'a, 'b> {
+					other: 'b Point,
+				}
+			`,
+			expectedErrors: []string{
+				"Interface 'View' has 2 lifetime parameter(s) but was previously declared with 1 lifetime parameter(s)",
+			},
+		},
+		"DifferentNames": {
+			input: `
+				type Point = {x: number}
+				interface View<'a> {
+					value: 'a Point,
+				}
+				interface View<'b> {
+					other: 'b Point,
+				}
+			`,
+			expectedErrors: []string{
+				"Lifetime parameter at position 0 has name ''b' but was previously declared with name ''a' in interface 'View'",
+			},
+		},
+		"OneDeclWithLifetimesOneWithout": {
+			input: `
+				type Point = {x: number}
+				interface View<'a> {
+					value: 'a Point,
+				}
+				interface View {
+					tag: number,
+				}
+			`,
+			expectedErrors: []string{
+				"Interface 'View' has 0 lifetime parameter(s) but was previously declared with 1 lifetime parameter(s)",
+			},
+		},
+		"MatchingLifetimeParams": {
+			input: `
+				type Point = {x: number}
+				interface View<'a> {
+					value: 'a Point,
+				}
+				interface View<'a> {
+					tag: number,
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			inferErrors := c.InferModule(inferCtx, module)
+
+			var paramErrs []Error
+			for _, e := range inferErrors {
+				if _, ok := e.(*TypeParamMismatchError); ok {
+					paramErrs = append(paramErrs, e)
+				}
+			}
+			actualMsgs := make([]string, len(paramErrs))
+			for i, e := range paramErrs {
+				actualMsgs[i] = e.Message()
+			}
+			if test.expectedErrors == nil {
+				assert.Empty(t, actualMsgs)
 			} else {
 				assert.Equal(t, test.expectedErrors, actualMsgs)
 			}

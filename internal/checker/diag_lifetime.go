@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -84,6 +85,26 @@ func (e DeclaredLifetimeMismatchError) Span() ast.Span  { return e.span }
 func (e DeclaredLifetimeMismatchError) Message() string {
 	return "declared lifetime on " + e.Location +
 		" disagrees with what the function body actually produces"
+}
+
+// LifetimeArgCountMismatchError reports a `Foo<'a, 'b>` reference whose
+// lifetime-argument count disagrees with the type alias's declared
+// `<'a>` clause. Surfaced at type-annotation resolution so the user
+// sees the error against the bad reference, not at a downstream
+// unification site.
+type LifetimeArgCountMismatchError struct {
+	Name     string
+	Expected int
+	Got      int
+	span     ast.Span
+}
+
+func (e *LifetimeArgCountMismatchError) isError()        {}
+func (e *LifetimeArgCountMismatchError) IsWarning() bool { return false }
+func (e *LifetimeArgCountMismatchError) Span() ast.Span  { return e.span }
+func (e *LifetimeArgCountMismatchError) Message() string {
+	return fmt.Sprintf("type '%s' expects %d lifetime argument(s) but got %d",
+		e.Name, e.Expected, e.Got)
 }
 
 // reportUnusedLifetimeParams scans a fully-built FuncType for any

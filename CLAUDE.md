@@ -18,8 +18,8 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Build: `make` (or `make escalier` / `make lsp-server`)
 - Run all tests: `go test ./...`
 - Run fixture tests only: `go test ./cmd/...`
-- Update snapshots: `UPDATE_SNAPS=1 go test ./...` (uses `github.com/gkampitakis/go-snaps`)
-- Update fixtures: `UPDATE_FIXTURES=1 go test ./cmd/...`
+- Update snapshots: `UPDATE_SNAPS=true go test ./...` (uses `github.com/gkampitakis/go-snaps`)
+- Update fixtures: `UPDATE_FIXTURES=true go test ./cmd/...`
 - After changing checker/codegen/printer output, re-run with both vars set so snapshots and fixtures stay in sync.
 - Don't invoke the CLI directly with `go run ./cmd/escalier check <file>` to try out source. Add a fixture under `fixtures/<name>/lib/index.esc` (with a `package.json`) and run `go test ./cmd/...` — the fixture harness exercises the same pipeline and keeps the test reproducible.
 

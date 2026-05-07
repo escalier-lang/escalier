@@ -338,6 +338,10 @@ func (c *Checker) inferInterface(
 	typeParams := result.TypeParams
 	typeCtx := result.Ctx
 
+	// Declare interface-level lifetime params so fields/methods inside the
+	// body can reference them (e.g. `interface View<'a> { value: 'a Point }`).
+	lifetimeParams := c.declareLifetimeParams(typeCtx.Scope, decl.LifetimeParams)
+
 	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
 
@@ -393,6 +397,15 @@ func (c *Checker) inferInterface(
 		)
 		errors = slices.Concat(errors, validateErrors)
 
+		// Validate that lifetime parameters match
+		validateLifetimeErrors := c.validateLifetimeParams(
+			existingAlias.LifetimeParams,
+			lifetimeParams,
+			decl.Name.Name,
+			decl.Name.Span(),
+		)
+		errors = slices.Concat(errors, validateLifetimeErrors)
+
 		// If it exists, merge the elements
 		if existingObjType, ok := type_system.Prune(existingAlias.Type).(*type_system.ObjectType); ok &&
 			existingObjType.Interface {
@@ -414,8 +427,9 @@ func (c *Checker) inferInterface(
 	}
 
 	typeAlias := type_system.TypeAlias{
-		Type:       objType,
-		TypeParams: typeParams,
+		Type:           objType,
+		TypeParams:     typeParams,
+		LifetimeParams: lifetimeParams,
 	}
 
 	return &typeAlias, errors

@@ -3,15 +3,16 @@ package ast
 import "github.com/escalier-lang/escalier/internal/provenance"
 
 type ClassDecl struct {
-	Name       *Ident
-	TypeParams []*TypeParam      // generic type parameters
-	Extends    *TypeRefTypeAnn   // optional superclass (can be a simple identifier or a generic type reference)
-	Implements []*TypeRefTypeAnn // interfaces this class implements (may be nil/empty)
-	Body       []ClassElem       // fields, methods, etc.
-	export     bool
-	declare    bool
-	span       Span
-	provenance provenance.Provenance
+	Name           *Ident
+	LifetimeParams []*LifetimeAnn    // generic lifetime parameters (e.g. <'a>)
+	TypeParams     []*TypeParam      // generic type parameters
+	Extends        *TypeRefTypeAnn   // optional superclass (can be a simple identifier or a generic type reference)
+	Implements     []*TypeRefTypeAnn // interfaces this class implements (may be nil/empty)
+	Body           []ClassElem       // fields, methods, etc.
+	export         bool
+	declare        bool
+	span           Span
+	provenance     provenance.Provenance
 }
 
 type ClassElem interface {
@@ -21,17 +22,18 @@ type ClassElem interface {
 }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, lifetimeParams []*LifetimeAnn, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
-		Name:       name,
-		TypeParams: typeParams,
-		Extends:    extends,
-		Implements: implements,
-		Body:       body,
-		export:     export,
-		declare:    declare,
-		span:       span,
-		provenance: nil,
+		Name:           name,
+		LifetimeParams: lifetimeParams,
+		TypeParams:     typeParams,
+		Extends:        extends,
+		Implements:     implements,
+		Body:           body,
+		export:         export,
+		declare:        declare,
+		span:           span,
+		provenance:     nil,
 	}
 }
 

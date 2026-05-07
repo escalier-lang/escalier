@@ -345,3 +345,43 @@ func (c *Checker) validateTypeParams(
 
 	return errors
 }
+
+// validateLifetimeParams compares the `<'a, ...>` clauses of two
+// declarations of the same interface name. Mirrors validateTypeParams:
+// arity mismatch is one error; otherwise per-position name mismatches
+// are reported.
+func (c *Checker) validateLifetimeParams(
+	existingParams []*type_system.LifetimeVar,
+	newParams []*type_system.LifetimeVar,
+	interfaceName string,
+	span ast.Span,
+) []Error {
+	errors := []Error{}
+
+	if len(existingParams) != len(newParams) {
+		errors = append(errors, &TypeParamMismatchError{
+			InterfaceName: interfaceName,
+			ExistingCount: len(existingParams),
+			NewCount:      len(newParams),
+			message: fmt.Sprintf(
+				"Interface '%s' has %d lifetime parameter(s) but was previously declared with %d lifetime parameter(s)",
+				interfaceName, len(newParams), len(existingParams)),
+			span: span,
+		})
+		return errors
+	}
+
+	for i := range existingParams {
+		if existingParams[i].Name != newParams[i].Name {
+			errors = append(errors, &TypeParamMismatchError{
+				InterfaceName: interfaceName,
+				message: fmt.Sprintf(
+					"Lifetime parameter at position %d has name ''%s' but was previously declared with name ''%s' in interface '%s'",
+					i, newParams[i].Name, existingParams[i].Name, interfaceName),
+				span: span,
+			})
+		}
+	}
+
+	return errors
+}

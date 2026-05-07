@@ -402,15 +402,22 @@ func (c *Checker) InferComponent(
 
 				typeParams := c.inferTypeParams(decl.TypeParams)
 
+				declCtx := nsCtx.WithNewScope()
+				declCtxMap[decl] = declCtx
+
+				// Declare class-level lifetime params (e.g. `class C<'a>`)
+				// on the declCtx scope so fields and methods can reference
+				// them via inline annotations (e.g. `p: 'a Point`).
+				lifetimeParams := c.declareLifetimeParams(declCtx.Scope, decl.LifetimeParams)
+
 				typeAlias := &type_system.TypeAlias{
-					Type:       instanceType,
-					TypeParams: typeParams,
-					Exported:   decl.Export(),
+					Type:           instanceType,
+					TypeParams:     typeParams,
+					LifetimeParams: lifetimeParams,
+					Exported:       decl.Export(),
 				}
 
 				nsCtx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
-				declCtx := nsCtx.WithNewScope()
-				declCtxMap[decl] = declCtx
 
 				for _, typeParam := range typeParams {
 					var t type_system.Type = type_system.NewUnknownType(nil)
@@ -808,6 +815,16 @@ func (c *Checker) InferComponent(
 				// Similar to TypeDecl, but we need to handle interface merging
 				typeParams := c.inferTypeParams(decl.TypeParams)
 
+				// Allocate placeholder LifetimeVars matching the declared
+				// `<'a, ...>` clause so the alias has the right arity
+				// during the placeholder phase. Concrete LifetimeVars
+				// from inferInterface will replace the alias's slot
+				// in the definition phase.
+				lifetimeParams := make([]*type_system.LifetimeVar, len(decl.LifetimeParams))
+				for i, ann := range decl.LifetimeParams {
+					lifetimeParams[i] = c.FreshLifetimeVar(ann.Name)
+				}
+
 				// Check if an interface with this name already exists in the CURRENT namespace only.
 				// We don't use GetTypeAlias here because it searches up the scope chain,
 				// which would incorrectly try to merge package-level declarations with global ones.
@@ -817,9 +834,10 @@ func (c *Checker) InferComponent(
 					interfaceType := c.FreshVar(&ast.NodeProvenance{Node: decl})
 
 					typeAlias := &type_system.TypeAlias{
-						Type:       interfaceType,
-						TypeParams: typeParams,
-						Exported:   decl.Export(),
+						Type:           interfaceType,
+						TypeParams:     typeParams,
+						LifetimeParams: lifetimeParams,
+						Exported:       decl.Export(),
 					}
 
 					// Directly set in the namespace to allow interface merging
