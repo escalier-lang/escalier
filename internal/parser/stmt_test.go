@@ -288,6 +288,16 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"InterfaceDeclSetterWithMutSelf": {
 			input: "interface HasValue { set value(mut self, x: number) -> undefined }",
 		},
+		"InterfaceDeclMethodWithLeadingMutParam": {
+			// Regression: mutSelf() must not strip a leading `mut` from a
+			// real param `mut x` when `self` does not follow.
+			input: "interface F { call(mut x: number) -> number }",
+		},
+		"ClassDeclSetterWithoutSelf": {
+			// Regression: receiver-less setter must still parse its value
+			// param.
+			input: "class Box { set value(value: number) { } }",
+		},
 		"ImportNamedSingle": {
 			input: `import { foo } from "module"`,
 		},

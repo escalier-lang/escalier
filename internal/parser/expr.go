@@ -568,24 +568,28 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 }
 
 func (p *Parser) mutSelf() *bool {
-	var token *Token
-	var mutSelf *bool
-	token = p.lexer.peek()
+	token := p.lexer.peek()
 	if token.Type == Mut {
+		// Probe for `mut self` without committing to consuming `mut` until
+		// we've confirmed `self` follows. Otherwise a real param like
+		// `mut x` would have its `mut` stripped before parseDelimSeq runs.
+		saved := p.lexer.saveState()
 		p.lexer.consume() // consume 'mut'
-		token = p.lexer.peek()
-		if token.Type == Identifier && token.Value == "self" {
+		next := p.lexer.peek()
+		if next.Type == Identifier && next.Value == "self" {
 			p.lexer.consume() // consume 'self'
 			mut := true
-			mutSelf = &mut
+			return &mut
 		}
+		p.lexer.restoreState(saved)
+		return nil
 	} else if token.Type == Identifier && token.Value == "self" {
 		p.lexer.consume() // consume 'self'
 		mut := false
-		mutSelf = &mut
+		return &mut
 	}
 
-	return mutSelf
+	return nil
 }
 
 // Helper function to parse method after type parameters are already parsed

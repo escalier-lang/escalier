@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -74,9 +73,8 @@ func TestClassImplements(t *testing.T) {
 // diagnostics.
 func TestClassImplementsConformance(t *testing.T) {
 	tests := map[string]struct {
-		input         string
-		wantErr       bool
-		errorContains string
+		input          string
+		expectedErrors []string
 	}{
 		"MissingMember": {
 			input: `
@@ -86,8 +84,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				class Hello implements Greeter {}
 				val h = Hello()
 			`,
-			wantErr:       true,
-			errorContains: "greet",
+			expectedErrors: []string{
+				"Class 'Hello' does not implement interface 'Greeter': missing member 'greet'",
+			},
 		},
 		"AllMembersSatisfied": {
 			input: `
@@ -99,7 +98,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val h = Hello()
 			`,
-			wantErr: false,
 		},
 		"InheritedMemberSatisfies": {
 			input: `
@@ -109,10 +107,11 @@ func TestClassImplementsConformance(t *testing.T) {
 				class Animal {
 					run(self) -> string { return "moving" }
 				}
-				class Dog extends Animal implements Runnable {}
+				class Dog extends Animal implements Runnable {
+					constructor(mut self) {}
+				}
 				val d = Dog()
 			`,
-			wantErr: false,
 		},
 		"ReturnTypeMismatch": {
 			input: `
@@ -124,8 +123,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val h = Hello()
 			`,
-			wantErr:       true,
-			errorContains: "signature does not match",
+			expectedErrors: []string{
+				"Class 'Hello' does not implement interface 'Greeter': member 'greet' signature does not match",
+			},
 		},
 		"ParamTypeMismatch": {
 			input: `
@@ -137,8 +137,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Bad()
 			`,
-			wantErr:       true,
-			errorContains: "signature does not match",
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Adder': member 'add' signature does not match",
+			},
 		},
 		"PropertySatisfied": {
 			input: `
@@ -150,7 +151,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val p = Person("Alice")
 			`,
-			wantErr: false,
 		},
 		"SelfReturnType": {
 			input: `
@@ -163,7 +163,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Box(1)
 			`,
-			wantErr: false,
 		},
 		"MutSelfRequiredButClassUsesSelf": {
 			input: `
@@ -175,8 +174,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Bad()
 			`,
-			wantErr:       true,
-			errorContains: "increment",
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Counter': member 'increment' self receiver does not match",
+			},
 		},
 		"SelfRequiredButClassUsesMutSelf": {
 			input: `
@@ -188,8 +188,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Bad()
 			`,
-			wantErr:       true,
-			errorContains: "read",
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Reader': member 'read' self receiver does not match",
+			},
 		},
 		"MutSelfMatches": {
 			input: `
@@ -201,7 +202,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val g = Good()
 			`,
-			wantErr: false,
 		},
 		"PropertyRequiredButClassDeclaresMethod": {
 			input: `
@@ -213,8 +213,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Bad()
 			`,
-			wantErr:       true,
-			errorContains: "name",
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'HasName': member 'name' member is not a property",
+			},
 		},
 		"InterfaceSetterWithMatchingReceiver": {
 			input: `
@@ -227,7 +228,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Box(0)
 			`,
-			wantErr: false,
 		},
 		"SetterMutSelfMismatch": {
 			// Iface promises the setter can be called on an immutable
@@ -243,8 +243,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Box(0)
 			`,
-			wantErr:       true,
-			errorContains: "self receiver does not match",
+			expectedErrors: []string{
+				"Class 'Box' does not implement interface 'HasValue': member 'value' self receiver does not match",
+			},
 		},
 		"GetterMutSelfMatches": {
 			// A getter that mutates a cache on the instance needs
@@ -263,7 +264,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val c = Container(0)
 			`,
-			wantErr: false,
 		},
 		"GetterMutSelfMismatch": {
 			// Iface promises a non-mutating getter; class declares
@@ -279,8 +279,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val c = Container(0)
 			`,
-			wantErr:       true,
-			errorContains: "self receiver does not match",
+			expectedErrors: []string{
+				"Class 'Container' does not implement interface 'ReadSize': member 'size' self receiver does not match",
+			},
 		},
 		"GenericClassImplementsGenericInterface": {
 			input: `
@@ -292,7 +293,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Box(1)
 			`,
-			wantErr: false,
 		},
 		"NarrowerClassReturnSatisfiesIface": {
 			// The class method's return type is a subtype of the
@@ -307,7 +307,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val p = IntProducer()
 			`,
-			wantErr: false,
 		},
 		"WiderClassReturnRejected": {
 			// The class returns a supertype of what the interface
@@ -322,8 +321,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val p = Bad()
 			`,
-			wantErr:       true,
-			errorContains: "produce",
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'Producer': member 'produce' signature does not match",
+			},
 		},
 		"WiderClassParamSatisfiesIface": {
 			// Class accepts a wider parameter type than the interface
@@ -337,7 +337,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val s = Lenient()
 			`,
-			wantErr: false,
 		},
 		"SetterArgTypeMismatch": {
 			input: `
@@ -350,8 +349,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Bad("")
 			`,
-			wantErr:       true,
-			errorContains: "value",
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'HasValue': member 'value' self receiver does not match",
+			},
 		},
 		"GetterReturnTypeMismatch": {
 			input: `
@@ -363,8 +363,9 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val b = Bad()
 			`,
-			wantErr:       true,
-			errorContains: "name",
+			expectedErrors: []string{
+				"Class 'Bad' does not implement interface 'HasName': member 'name' getter return type does not match",
+			},
 		},
 		"MultipleImplementsOneMissing": {
 			input: `
@@ -379,8 +380,51 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val p = Partial()
 			`,
-			wantErr:       true,
-			errorContains: "b",
+			expectedErrors: []string{
+				"Class 'Partial' does not implement interface 'B': missing member 'b'",
+			},
+		},
+		"OptionalClassPropertyDoesNotSatisfyRequiredInterfaceProperty": {
+			input: `
+				interface HasName {
+					name: string,
+				}
+				class Person implements HasName {
+					name?: string,
+				}
+				val p = Person()
+			`,
+			expectedErrors: []string{
+				"Class 'Person' does not implement interface 'HasName': member 'name' property is optional but interface requires it",
+			},
+		},
+		"OptionalClassPropertyDoesNotSatisfyInterfaceGetter": {
+			input: `
+				interface HasName {
+					get name(self) -> string,
+				}
+				class Person implements HasName {
+					name?: string,
+				}
+				val p = Person()
+			`,
+			expectedErrors: []string{
+				"Class 'Person' does not implement interface 'HasName': member 'name' property is optional but interface requires it",
+			},
+		},
+		"OptionalClassPropertyDoesNotSatisfyInterfaceSetter": {
+			input: `
+				interface HasValue {
+					set value(self, x: number) -> undefined,
+				}
+				class Box implements HasValue {
+					value?: number,
+				}
+				val b = Box()
+			`,
+			expectedErrors: []string{
+				"Class 'Box' does not implement interface 'HasValue': member 'value' property is optional but interface requires it",
+			},
 		},
 		"OptionalPropertyAbsentOnClassIsAllowed": {
 			input: `
@@ -392,7 +436,6 @@ func TestClassImplementsConformance(t *testing.T) {
 				}
 				val p = Person("Alice")
 			`,
-			wantErr: false,
 		},
 	}
 
@@ -410,29 +453,23 @@ func TestClassImplementsConformance(t *testing.T) {
 			inferErrors := c.InferModule(inferCtx, module)
 
 			conformanceErrs := filterConformanceErrors(inferErrors)
-			if test.wantErr {
-				require.NotEmpty(t, conformanceErrs,
-					"expected a conformance error")
-				if test.errorContains != "" {
-					found := false
-					for _, e := range conformanceErrs {
-						if strings.Contains(e.Message(), test.errorContains) {
-							found = true
-							break
-						}
-					}
-					assert.Truef(t, found,
-						"expected an error mentioning %q, got %v",
-						test.errorContains, conformanceErrs)
+			otherErrs := otherInferErrors(inferErrors)
+			if len(otherErrs) > 0 {
+				msgs := make([]string, len(otherErrs))
+				for i, e := range otherErrs {
+					msgs[i] = e.Message()
 				}
+				t.Fatalf("unexpected non-conformance inference errors: %v", msgs)
+			}
+			actualMsgs := make([]string, len(conformanceErrs))
+			for i, e := range conformanceErrs {
+				actualMsgs[i] = e.Message()
+			}
+			if test.expectedErrors == nil {
+				assert.Empty(t, actualMsgs,
+					"expected no conformance errors")
 			} else {
-				if len(conformanceErrs) > 0 {
-					msgs := make([]string, len(conformanceErrs))
-					for i, e := range conformanceErrs {
-						msgs[i] = e.Message()
-					}
-					t.Fatalf("expected no conformance errors, got: %v", msgs)
-				}
+				assert.Equal(t, test.expectedErrors, actualMsgs)
 			}
 		})
 	}
@@ -442,6 +479,16 @@ func filterConformanceErrors(errs []Error) []Error {
 	var out []Error
 	for _, e := range errs {
 		if _, ok := e.(*ClassDoesNotImplementInterfaceError); ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func otherInferErrors(errs []Error) []Error {
+	var out []Error
+	for _, e := range errs {
+		if _, ok := e.(*ClassDoesNotImplementInterfaceError); !ok {
 			out = append(out, e)
 		}
 	}

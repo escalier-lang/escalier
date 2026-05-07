@@ -1032,34 +1032,51 @@ func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
 	return false
 }
 
-// memberElemHidden reports whether an object element should be hidden during
-// member access given the receiver's mutability. Access mode is intentionally
-// not consulted for plain `SetterElem` — write-only setters are caught at the
-// assignment site by CannotMutateImmutableError, which produces a clearer
-// message than hiding the setter and falling through to UnknownPropertyError
-// + a follow-on "cannot be assigned to undefined" type-mismatch error.
-//   - MethodElem with MutSelf == true is hidden on a non-mutable receiver.
-//   - GetterElem with MutSelf == true is hidden on a non-mutable receiver:
-//     a `mut self` getter (e.g. cache memoization) reads but mutates state,
-//     and silently allowing it on a `val` binding would launder mutation
-//     past the immutability boundary.
-//   - SetterElem with MutSelf == true is similarly hidden so that the
-//     assignment-site CannotMutateImmutableError points at the receiver
-//     rather than the value being assigned.
-//   - All other elements are visible.
-func memberElemHidden(elem type_system.ObjTypeElem, receiverMut bool) bool {
-	if receiverMut {
+// isMemberVisible dispatches to the read- or write-side visibility rule
+// based on mode. Kept as a thin wrapper so the four call sites stay tidy
+// while the actual rules live in the role-specific helpers below.
+func isMemberVisible(elem type_system.ObjTypeElem, mode AccessMode, receiverMut bool) bool {
+	if mode == AccessRead {
+		// Report whether elem should appear in the read view of an object given
+		// the receiver's mutability.
+		//
+		//   - SetterElem is invisible: setters are write-only.
+		//   - MethodElem / GetterElem that require `mut self` are invisible on a
+		//     non-mut receiver, since invoking them would launder mutation past
+		//     the `val` boundary the binding opted into.
+		//   - All other elements (PropertyElem, IndexSignatureElem, RestSpreadElem,
+		//     CallableElem, ConstructorElem, MappedElem, …) are visible.
+		switch e := elem.(type) {
+		case *type_system.SetterElem:
+			return false
+		case *type_system.MethodElem:
+			if receiverMut {
+				return true
+			}
+			return e.MutSelf == nil || !*e.MutSelf
+		case *type_system.GetterElem:
+			if receiverMut {
+				return true
+			}
+			return e.MutSelf == nil || !*e.MutSelf
+		default:
+			return true
+		}
+	}
+
+	// Report whether elem should appear in the write view of an object. Receiver
+	// mutability is not gated here — the assignment site emits CannotMutateImmutableError
+	// when the receiver isn't mutable.
+	//
+	//   - MethodElem / GetterElem are invisible: writes don't go through them.
+	//   - All other elements (SetterElem, PropertyElem, IndexSignatureElem, …)
+	//     are visible.
+	switch elem.(type) {
+	case *type_system.MethodElem, *type_system.GetterElem:
 		return false
+	default:
+		return true
 	}
-	switch e := elem.(type) {
-	case *type_system.MethodElem:
-		return e.MutSelf != nil && *e.MutSelf
-	case *type_system.GetterElem:
-		return e.MutSelf != nil && *e.MutSelf
-	case *type_system.SetterElem:
-		return e.MutSelf != nil && *e.MutSelf
-	}
-	return false
 }
 
 // lazyMemberLookup performs property lookup on a generic TypeRefType without
@@ -1100,7 +1117,7 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 	targetKey := type_system.NewStrKey(name)
 	var memberType type_system.Type
 	for i := len(objType.Elems) - 1; i >= 0; i-- {
-		if memberElemHidden(objType.Elems[i], receiverMut) {
+		if !isMemberVisible(objType.Elems[i], mode, receiverMut) {
 			continue
 		}
 		switch elem := objType.Elems[i].(type) {
@@ -1176,7 +1193,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		targetKey := type_system.NewStrKey(k.Name)
 		var indexSigFallback type_system.Type
 		for i := len(objType.Elems) - 1; i >= 0; i-- {
-			if memberElemHidden(objType.Elems[i], receiverMutForElems) {
+			if !isMemberVisible(objType.Elems[i], mode, receiverMutForElems) {
 				continue
 			}
 			switch elem := objType.Elems[i].(type) {
@@ -1278,7 +1295,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				targetKey := type_system.NewStrKey(strLit.Value)
 				var indexSigFallback type_system.Type
 				for i := len(objType.Elems) - 1; i >= 0; i-- {
-					if memberElemHidden(objType.Elems[i], receiverMutForElems) {
+					if !isMemberVisible(objType.Elems[i], mode, receiverMutForElems) {
 						continue
 					}
 					switch elem := objType.Elems[i].(type) {
@@ -1415,7 +1432,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			symKey := type_system.NewSymKey(symType.Value)
 			var indexSigFallback type_system.Type
 			for i := len(objType.Elems) - 1; i >= 0; i-- {
-				if memberElemHidden(objType.Elems[i], receiverMutForElems) {
+				if !isMemberVisible(objType.Elems[i], mode, receiverMutForElems) {
 					continue
 				}
 				switch elem := objType.Elems[i].(type) {

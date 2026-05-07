@@ -150,6 +150,10 @@ func (c *Checker) checkInterfaceElem(
 					"getter return type does not match")
 			}
 		case *type_system.PropertyElem:
+			if m.Optional {
+				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+					"property is optional but interface requires it")
+			}
 			if errs := c.Unify(ctx, m.Value, ifaceRet); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"property type does not match getter")
@@ -181,6 +185,10 @@ func (c *Checker) checkInterfaceElem(
 				}
 			}
 		case *type_system.PropertyElem:
+			if m.Optional {
+				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+					"property is optional but interface requires it")
+			}
 			if ifaceArg != nil {
 				if errs := c.Unify(ctx, SubstituteTypeParams(ifaceArg, sub), m.Value); len(errs) > 0 {
 					return mismatchedMember(span, className, ifaceName, ie.Name.String(),
@@ -203,6 +211,10 @@ func (c *Checker) checkInterfaceElem(
 		if !ok {
 			return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 				"member is not a property")
+		}
+		if !ie.Optional && cp.Optional {
+			return mismatchedMember(span, className, ifaceName, ie.Name.String(),
+				"property is optional but interface requires it")
 		}
 		ifaceVal := SubstituteTypeParams(ie.Value, sub)
 		if errs := c.Unify(ctx, cp.Value, ifaceVal); len(errs) > 0 {

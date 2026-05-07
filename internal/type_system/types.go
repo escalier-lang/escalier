@@ -2553,6 +2553,13 @@ func regexEqual(x, y *regexp.Regexp) bool {
 	return x.String() == y.String()
 }
 
+// boolValue dereferences a *bool, treating nil as false. Used to compare
+// optional bool fields (e.g. MutSelf) by value rather than by pointer
+// identity.
+func boolValue(b *bool) bool {
+	return b != nil && *b
+}
+
 func equals(t1, t2 Type) bool {
 	if t1 == nil && t2 == nil {
 		return true
@@ -2595,15 +2602,15 @@ func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
 		}
 	case *MethodElem:
 		if e2, ok := e2.(*MethodElem); ok {
-			return e1.Name == e2.Name && e1.MutSelf == e2.MutSelf && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && boolValue(e1.MutSelf) == boolValue(e2.MutSelf) && equals(e1.Fn, e2.Fn)
 		}
 	case *GetterElem:
 		if e2, ok := e2.(*GetterElem); ok {
-			return e1.Name == e2.Name && e1.MutSelf == e2.MutSelf && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && boolValue(e1.MutSelf) == boolValue(e2.MutSelf) && equals(e1.Fn, e2.Fn)
 		}
 	case *SetterElem:
 		if e2, ok := e2.(*SetterElem); ok {
-			return e1.Name == e2.Name && e1.MutSelf == e2.MutSelf && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && boolValue(e1.MutSelf) == boolValue(e2.MutSelf) && equals(e1.Fn, e2.Fn)
 		}
 	case *PropertyElem:
 		if e2, ok := e2.(*PropertyElem); ok {

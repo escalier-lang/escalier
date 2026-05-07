@@ -497,8 +497,12 @@ modifiers_done:
 				mutSelf = p.mutSelf()
 
 				token = p.lexer.peek()
-				if token.Type == Comma {
-					p.lexer.consume() // consume ','
+				if mutSelf != nil {
+					if token.Type == Comma {
+						p.lexer.consume() // consume ','
+						params = parseDelimSeq(p, CloseParen, Comma, p.param)
+					}
+				} else if token.Type != CloseParen {
 					params = parseDelimSeq(p, CloseParen, Comma, p.param)
 				}
 			} else {
