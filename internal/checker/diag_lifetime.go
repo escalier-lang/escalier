@@ -99,10 +99,10 @@ type LifetimeArgCountMismatchError struct {
 	span     ast.Span
 }
 
-func (e *LifetimeArgCountMismatchError) isError()        {}
-func (e *LifetimeArgCountMismatchError) IsWarning() bool { return false }
-func (e *LifetimeArgCountMismatchError) Span() ast.Span  { return e.span }
-func (e *LifetimeArgCountMismatchError) Message() string {
+func (e LifetimeArgCountMismatchError) isError()        {}
+func (e LifetimeArgCountMismatchError) IsWarning() bool { return false }
+func (e LifetimeArgCountMismatchError) Span() ast.Span  { return e.span }
+func (e LifetimeArgCountMismatchError) Message() string {
 	return fmt.Sprintf("type '%s' expects %d lifetime argument(s) but got %d",
 		e.Name, e.Expected, e.Got)
 }

@@ -647,6 +647,23 @@ func TestLifetimeArgArityMismatch(t *testing.T) {
 				fn use<'a>(v: View<'a>) {}
 			`,
 		},
+		// VarDecl initializers run with AllowUndefinedTypeRefs and
+		// register unresolved refs in TypeRefsToUpdate. The arity check
+		// must also fire when the alias is resolved on that deferred
+		// path, otherwise forward refs through a var binding silently
+		// bypass the check.
+		"DeferredForwardRef": {
+			input: `
+				type Point = {x: number}
+				declare val v: View<'a, 'b>
+				interface View<'a> {
+					value: 'a Point,
+				}
+			`,
+			expectedErrors: []string{
+				"type 'View' expects 1 lifetime argument(s) but got 2",
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -663,15 +680,27 @@ func TestLifetimeArgArityMismatch(t *testing.T) {
 			inferErrors := c.InferModule(inferCtx, module)
 
 			var arityErrs []Error
+			var otherErrs []Error
 			for _, e := range inferErrors {
 				if _, ok := e.(*LifetimeArgCountMismatchError); ok {
 					arityErrs = append(arityErrs, e)
+				} else if _, ok := e.(UndeclaredLifetimeError); !ok {
+					// UndeclaredLifetimeError is expected because the
+					// `declare val` in DeferredForwardRef references
+					// 'a/'b without an enclosing `<>` clause; it's
+					// unrelated to the arity check under test.
+					otherErrs = append(otherErrs, e)
 				}
 			}
 			actualMsgs := make([]string, len(arityErrs))
 			for i, e := range arityErrs {
 				actualMsgs[i] = e.Message()
 			}
+			otherMsgs := make([]string, len(otherErrs))
+			for i, e := range otherErrs {
+				otherMsgs[i] = e.Message()
+			}
+			assert.Empty(t, otherMsgs, "unexpected non-arity errors")
 			if test.expectedErrors == nil {
 				assert.Empty(t, actualMsgs)
 			} else {
@@ -715,7 +744,7 @@ func TestInterfaceMergeLifetimeParamMismatch(t *testing.T) {
 				}
 			`,
 			expectedErrors: []string{
-				"Lifetime parameter at position 0 has name ''b' but was previously declared with name ''a' in interface 'View'",
+				"Lifetime parameter at position 0 has name 'b' but was previously declared with name 'a' in interface 'View'",
 			},
 		},
 		"OneDeclWithLifetimesOneWithout": {
@@ -759,11 +788,19 @@ func TestInterfaceMergeLifetimeParamMismatch(t *testing.T) {
 			inferErrors := c.InferModule(inferCtx, module)
 
 			var paramErrs []Error
+			var otherErrs []Error
 			for _, e := range inferErrors {
 				if _, ok := e.(*TypeParamMismatchError); ok {
 					paramErrs = append(paramErrs, e)
+				} else {
+					otherErrs = append(otherErrs, e)
 				}
 			}
+			otherMsgs := make([]string, len(otherErrs))
+			for i, e := range otherErrs {
+				otherMsgs[i] = e.Message()
+			}
+			assert.Empty(t, otherMsgs, "unexpected non-param-mismatch errors")
 			actualMsgs := make([]string, len(paramErrs))
 			for i, e := range paramErrs {
 				actualMsgs[i] = e.Message()

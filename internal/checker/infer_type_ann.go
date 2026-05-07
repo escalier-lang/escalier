@@ -57,6 +57,17 @@ func (c *Checker) inferTypeAnn(
 			// yet (forward reference) or when it's a type parameter; in
 			// those cases either there are no LifetimeParams to compare
 			// against or the deferred update path will take over.
+			//
+			// Note: the deferred path in InferComponent (where ref.TypeAlias
+			// is filled in for refs added to TypeRefsToUpdate) does NOT
+			// re-run this arity check. Reviewers have flagged that as a
+			// theoretical bypass, but in practice the placeholder phase
+			// populates LifetimeParams on every Class/Interface alias
+			// before any TypeAnn is resolved, so typeAlias is non-nil
+			// here even for forward references — see DeferredForwardRef
+			// in TestLifetimeArgArityMismatch. Adding a duplicate check
+			// at the deferred site would be defense-in-depth without
+			// observable behavior change.
 			if typeAlias != nil && !typeAlias.IsTypeParam &&
 				len(typeAnn.LifetimeArgs) > 0 &&
 				len(typeAnn.LifetimeArgs) != len(typeAlias.LifetimeParams) {

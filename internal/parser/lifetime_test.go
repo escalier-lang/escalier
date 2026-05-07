@@ -112,10 +112,11 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 }
 
 // TestParseLifetimeInUnsupportedContextErrors verifies that lifetime
-// parameters appearing on declaration kinds that don't yet support them
-// (class/type/interface/enum/methods) produce a parse-time diagnostic
-// rather than being silently dropped. Functions and `fn`-type
-// annotations remain the only supported sites in Phase 8.1.
+// parameters on declaration kinds that still don't support them
+// (type aliases, enums, object/class-field method shorthands) produce
+// a parse-time diagnostic rather than being silently dropped.
+// Functions, `fn`-type annotations, classes, and interfaces all
+// support `<'a, ...>` clauses — see TestParseLifetimeAnnotations.
 func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 	const expected = "lifetime parameters are not supported in this context"
 

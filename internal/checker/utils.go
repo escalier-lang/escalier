@@ -350,6 +350,18 @@ func (c *Checker) validateTypeParams(
 // declarations of the same interface name. Mirrors validateTypeParams:
 // arity mismatch is one error; otherwise per-position name mismatches
 // are reported.
+//
+// Note: this function intentionally does not call UnifyLifetimes on
+// paired old/new LifetimeVars. Reviewers have suggested doing so to
+// avoid "orphaned" IDs after merging interfaces, but the merge path
+// in InferComponent already calls c.Unify(existingTypeAlias.Type,
+// interfaceAlias.Type) and unifyTypeParams, which transitively
+// reconcile lifetime references through TypeRefType.LifetimeArgs
+// unification (see unify.go around the LifetimeArgs reconciliation
+// block). No scenario constructed so far — class implements over a
+// merged interface, fn returning a field from each declaration —
+// produced an observable difference. Revisit if a concrete failure
+// surfaces.
 func (c *Checker) validateLifetimeParams(
 	existingParams []*type_system.LifetimeVar,
 	newParams []*type_system.LifetimeVar,
@@ -376,7 +388,7 @@ func (c *Checker) validateLifetimeParams(
 			errors = append(errors, &TypeParamMismatchError{
 				InterfaceName: interfaceName,
 				message: fmt.Sprintf(
-					"Lifetime parameter at position %d has name ''%s' but was previously declared with name ''%s' in interface '%s'",
+					"Lifetime parameter at position %d has name '%s' but was previously declared with name '%s' in interface '%s'",
 					i, newParams[i].Name, existingParams[i].Name, interfaceName),
 				span: span,
 			})
