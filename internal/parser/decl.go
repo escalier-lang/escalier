@@ -428,8 +428,8 @@ modifiers_done:
 		return nil
 	}
 
-	// Parse optional type parameters for the method
-	typeParams := p.maybeTypeParams()
+	// Parse optional lifetime + type parameters for the method.
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 	next := p.lexer.peek()
 
 	// Handle getter
@@ -476,7 +476,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.GetterElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(nil, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+			Fn:      ast.NewFuncExpr(lifetimeParams, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
 			MutSelf: mutSelf,
 			Static:  isStatic,
 			Private: isPrivate,
@@ -525,7 +525,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(nil, typeParams, params, nil, nil, false, body, span),
+			Fn:      ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, nil, false, body, span),
 			MutSelf: mutSelf,
 			Static:  isStatic,
 			Private: isPrivate,
@@ -578,7 +578,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.MethodElem{
 			Name:    name,
-			Fn:      ast.NewFuncExpr(nil, typeParams, params, returnType, throwsType, isAsync, body, span),
+			Fn:      ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span),
 			MutSelf: mutSelf,
 			Static:  isStatic,
 			Private: isPrivate,

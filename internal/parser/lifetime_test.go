@@ -58,6 +58,12 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"FnTypeAnnLifetimeParams": {
 			input: `val f: fn<'a>(p: 'a Point) -> 'a Point = ref`,
 		},
+		"InterfaceMethodLifetimeParam": {
+			input: `interface Borrower { borrow<'a>(self, p: 'a Point) -> 'a Point }`,
+		},
+		"ClassMethodLifetimeParam": {
+			input: `class Box { borrow<'a>(self, p: 'a Point) -> 'a Point { return p } }`,
+		},
 	}
 
 	for name, test := range tests {

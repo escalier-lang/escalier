@@ -170,13 +170,11 @@ func (c *Checker) ApplyLifetimeElision(
 //   - If the interface declares no lifetime tying parameter i to the
 //     return, the implementation must not alias parameter i either.
 //
-// NOT YET WIRED: this routine is unused at runtime today. The
-// `implements` clause it depends on is deferred to Phase 12
-// (TypeScript interop), which owns both the parser support for
-// `implements` and the integration that calls this function from
-// interface-implementation checking. Until then, the only callers are
-// direct unit tests in `elision_test.go` that pin the compatibility
-// rules in place so Phase 12 can wire them up without redesign.
+// Called from `checkInterfaceElem` after the class method has been
+// shown to match the interface method structurally. Interface-method
+// lifetime elision (auto-populating `<'a>` on body-less interface
+// methods) is still deferred to Phase 12, so today this routine only
+// fires when both sides carry explicit lifetime params.
 func (c *Checker) VerifyLifetimeCompatibility(
 	ifaceMethod *type_system.FuncType,
 	implMethod *type_system.FuncType,

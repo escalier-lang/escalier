@@ -773,8 +773,8 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		return nil
 	}
 
-	// Parse optional type parameters for the method
-	typeParams := p.maybeTypeParams()
+	// Parse optional lifetime + type parameters for the method.
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 
 	token = p.lexer.peek()
 
@@ -853,7 +853,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		retType := p.typeAnnRequired()
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
-			nil, // object-method type annotations don't yet support lifetime params
+			lifetimeParams,
 			typeParams,
 			params,
 			retType,
