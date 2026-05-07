@@ -3283,6 +3283,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -3404,6 +3405,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(true),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -6460,6 +6462,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -6570,6 +6573,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: (*bool)(nil),
                 Static:  true,
                 Private: false,
                 Span_:   ast.Span{
@@ -6745,6 +6749,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -6900,6 +6905,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -7010,6 +7016,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: false,
                 Span_:   ast.Span{
@@ -7152,6 +7159,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: true,
                 Span_:   ast.Span{
@@ -7262,6 +7270,7 @@
                     },
                     inferredType: nil,
                 },
+                MutSelf: &bool(false),
                 Static:  false,
                 Private: true,
                 Span_:   ast.Span{
@@ -9211,6 +9220,822 @@ nil
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:36},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclMethodWithSelfAndParams - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Adder",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.MethodTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "add",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:22},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "x",
+                                    VarID:   0,
+                                    Mutable: false,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:1, Column:29},
+                                        End:      ast.Location{Line:1, Column:30},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  &ast.NumberTypeAnn{
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:32},
+                                        End:      ast.Location{Line:1, Column:38},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "y",
+                                    VarID:   0,
+                                    Mutable: false,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:1, Column:40},
+                                        End:      ast.Location{Line:1, Column:41},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  &ast.NumberTypeAnn{
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:43},
+                                        End:      ast.Location{Line:1, Column:49},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                        },
+                        Return: &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:54},
+                                End:      ast.Location{Line:1, Column:60},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:22},
+                            End:      ast.Location{Line:1, Column:60},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: &bool(false),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:17},
+                End:      ast.Location{Line:1, Column:62},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:62},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:62},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclMethodWithMutSelf - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Counter",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.MethodTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "increment",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:21},
+                            End:      ast.Location{Line:1, Column:30},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:44},
+                                End:      ast.Location{Line:1, Column:50},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:50},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: &bool(true),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:19},
+                End:      ast.Location{Line:1, Column:52},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:52},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:52},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclMethodWithSelf - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Greeter",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:18},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.MethodTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "greet",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:21},
+                            End:      ast.Location{Line:1, Column:26},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: &ast.StringTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:36},
+                                End:      ast.Location{Line:1, Column:42},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:26},
+                            End:      ast.Location{Line:1, Column:42},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: &bool(false),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:19},
+                End:      ast.Location{Line:1, Column:44},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:44},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:44},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclMethodNoSelf - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Free",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:15},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.MethodTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "make",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:18},
+                            End:      ast.Location{Line:1, Column:22},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:28},
+                                End:      ast.Location{Line:1, Column:34},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:22},
+                            End:      ast.Location{Line:1, Column:34},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: (*bool)(nil),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:16},
+                End:      ast.Location{Line:1, Column:36},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:36},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:36},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclSetterWithMutSelf - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "HasValue",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:19},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.SetterTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "value",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:26},
+                            End:      ast.Location{Line:1, Column:31},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "x",
+                                    VarID:   0,
+                                    Mutable: false,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:1, Column:42},
+                                        End:      ast.Location{Line:1, Column:43},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  &ast.NumberTypeAnn{
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:45},
+                                        End:      ast.Location{Line:1, Column:51},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                        },
+                        Return: &ast.LitTypeAnn{
+                            Lit: &ast.UndefinedLit{
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:56},
+                                    End:      ast.Location{Line:1, Column:65},
+                                    SourceID: 0,
+                                },
+                            },
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:56},
+                                End:      ast.Location{Line:1, Column:65},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:31},
+                            End:      ast.Location{Line:1, Column:65},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: &bool(true),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:20},
+                End:      ast.Location{Line:1, Column:67},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:67},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:67},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclGetterWithSelf - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Sized",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:16},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.GetterTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "size",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:23},
+                            End:      ast.Location{Line:1, Column:27},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:43},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:27},
+                            End:      ast.Location{Line:1, Column:43},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: &bool(false),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:17},
+                End:      ast.Location{Line:1, Column:45},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:45},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:45},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclGetterWithMutSelf - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "Cached",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:17},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.GetterTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "value",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:24},
+                            End:      ast.Location{Line:1, Column:29},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                        },
+                        Return: &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:43},
+                                End:      ast.Location{Line:1, Column:49},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:29},
+                            End:      ast.Location{Line:1, Column:49},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: &bool(true),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:18},
+                End:      ast.Location{Line:1, Column:51},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:51},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:51},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ClassDeclSetterWithoutSelf - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Box",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:7},
+                End:      ast.Location{Line:1, Column:10},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    (*ast.TypeRefTypeAnn)(nil),
+        Implements: nil,
+        Body:       {
+            &ast.SetterElem{
+                Name: &ast.IdentExpr{
+                    Name:      "value",
+                    Namespace: 0,
+                    VarID:     0,
+                    Source:    nil,
+                    span:      ast.Span{
+                        Start:    ast.Location{Line:1, Column:17},
+                        End:      ast.Location{Line:1, Column:22},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "value",
+                                    VarID:   0,
+                                    Mutable: false,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:1, Column:23},
+                                        End:      ast.Location{Line:1, Column:28},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  &ast.NumberTypeAnn{
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:30},
+                                        End:      ast.Location{Line:1, Column:36},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                        },
+                        Return: nil,
+                        Throws: nil,
+                        Async:  false,
+                    },
+                    Body: &ast.Block{
+                        Stmts: {
+                        },
+                        Span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:38},
+                            End:      ast.Location{Line:1, Column:41},
+                            SourceID: 0,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:41},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+                MutSelf: (*bool)(nil),
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
+                    Start:    ast.Location{Line:1, Column:13},
+                    End:      ast.Location{Line:1, Column:41},
+                    SourceID: 0,
+                },
+            },
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:43},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:43},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/InterfaceDeclMethodWithLeadingMutParam - 1]
+&ast.DeclStmt{
+    Decl: &ast.InterfaceDecl{
+        Name: &ast.Ident{
+            Name: "F",
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:11},
+                End:      ast.Location{Line:1, Column:12},
+                SourceID: 0,
+            },
+        },
+        TypeParams: nil,
+        Extends:    nil,
+        TypeAnn:    &ast.ObjectTypeAnn{
+            Elems: {
+                &ast.MethodTypeAnn{
+                    Name: &ast.IdentExpr{
+                        Name:      "call",
+                        Namespace: 0,
+                        VarID:     0,
+                        Source:    nil,
+                        span:      ast.Span{
+                            Start:    ast.Location{Line:1, Column:15},
+                            End:      ast.Location{Line:1, Column:19},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    Fn: &ast.FuncTypeAnn{
+                        LifetimeParams: nil,
+                        TypeParams:     nil,
+                        Params:         {
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name:    "x",
+                                    VarID:   0,
+                                    Mutable: true,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:1, Column:20},
+                                        End:      ast.Location{Line:1, Column:25},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Optional: false,
+                                TypeAnn:  &ast.NumberTypeAnn{
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:1, Column:27},
+                                        End:      ast.Location{Line:1, Column:33},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                            },
+                        },
+                        Return: &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:38},
+                                End:      ast.Location{Line:1, Column:44},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Throws: nil,
+                        span:   ast.Span{
+                            Start:    ast.Location{Line:1, Column:19},
+                            End:      ast.Location{Line:1, Column:44},
+                            SourceID: 0,
+                        },
+                        inferredType: nil,
+                    },
+                    MutSelf: (*bool)(nil),
+                },
+            },
+            span: ast.Span{
+                Start:    ast.Location{Line:1, Column:13},
+                End:      ast.Location{Line:1, Column:46},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:46},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:46},
         SourceID: 0,
     },
 }

@@ -214,6 +214,82 @@ func TestGetterSetterAccess(t *testing.T) {
 			`,
 			expectedErrors: nil,
 		},
+		// A `mut self` getter mutates a cached field on `self` and
+		// returns it. Reading from a `mut` binding must succeed: type
+		// checking accepts the mutation inside the body, and the
+		// computed return type matches the declared one.
+		"MutSelfGetterMutatesCacheOnMutBinding": {
+			input: `
+				class Counter {
+					_seen: number,
+					get next(mut self) -> number {
+						self._seen = self._seen + 1
+						return self._seen
+					},
+				}
+				val mut c: mut Counter = Counter(0)
+				val n = c.next
+			`,
+			expectedErrors: nil,
+		},
+		// A `mut self` getter must be hidden on a non-mutable receiver,
+		// mirroring the rule for `mut self` methods. Reading `c.next`
+		// would silently mutate state behind a `val` binding's back.
+		"MutSelfGetterOnNonMutBindingFails": {
+			input: `
+				class Counter {
+					_seen: number,
+					get next(mut self) -> number {
+						self._seen = self._seen + 1
+						return self._seen
+					},
+				}
+				val c = Counter(0)
+				val n = c.next
+			`,
+			expectedErrors: []string{
+				"Unknown property 'next' in object type {_seen: number, get next(mut self) -> number}",
+			},
+		},
+		// An object-literal getter declared with `mut self` must bind
+		// `self` as mutable inside the body so the cache mutation
+		// type-checks.
+		"ObjectLiteralMutSelfGetterAllowsSelfMutation": {
+			input: `
+				val obj = {
+					_x: 0:number,
+					get foo(mut self) -> number {
+						self._x = self._x + 1
+						return self._x
+					},
+				}
+				val mobj: mut typeof obj = obj
+				val v = mobj.foo
+			`,
+			expectedErrors: nil,
+		},
+		// A `mut self` setter must remain visible during write lookup
+		// on a non-mutable receiver so the assignment-site mutability
+		// check fires with a clear CannotMutateImmutable error rather
+		// than falling through to UnknownProperty + a follow-on
+		// "cannot be assigned to undefined" mismatch.
+		"WriteMutSelfSetterOnNonMutBindingFails": {
+			input: `
+				class Counter {
+					_v: number,
+					set value(mut self, v: number) {
+						self._v = v
+					},
+				}
+				val c = Counter(0)
+				fn main() {
+					c.value = 1
+				}
+			`,
+			expectedErrors: []string{
+				"Cannot mutate immutable type: Counter",
+			},
+		},
 		// The reverse order: write first, then read.
 		"GenericClassSetterThenGetterCacheIsolation": {
 			input: `

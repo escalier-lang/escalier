@@ -832,7 +832,20 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		}
 	case OpenParen:
 		p.lexer.consume() // consume '('
-		params := parseDelimSeq(p, CloseParen, Comma, p.param)
+
+		// Methods, getters, and setters all accept a leading `self` /
+		// `mut self` receiver. Peel it off so it does not leak into
+		// `Fn.Params` as a regular parameter (#560).
+		mutSelf := p.mutSelf()
+
+		params := []*ast.Param{}
+		next := p.lexer.peek()
+		if mutSelf != nil && next.Type == Comma {
+			p.lexer.consume() // consume ','
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		} else if mutSelf == nil {
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		}
 		p.expect(CloseParen, ConsumeOnMatch)
 
 		p.expect(Arrow, ConsumeOnMatch)
@@ -852,18 +865,21 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		switch mod {
 		case "get":
 			return &ast.GetterTypeAnn{
-				Name: objKey,
-				Fn:   fnTypeAnn,
+				Name:    objKey,
+				Fn:      fnTypeAnn,
+				MutSelf: mutSelf,
 			}
 		case "set":
 			return &ast.SetterTypeAnn{
-				Name: objKey,
-				Fn:   fnTypeAnn,
+				Name:    objKey,
+				Fn:      fnTypeAnn,
+				MutSelf: mutSelf,
 			}
 		default:
 			return &ast.MethodTypeAnn{
-				Name: objKey,
-				Fn:   fnTypeAnn,
+				Name:    objKey,
+				Fn:      fnTypeAnn,
+				MutSelf: mutSelf,
 			}
 		}
 	default:

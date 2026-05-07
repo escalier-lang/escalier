@@ -222,7 +222,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 					get fullName(self) -> string {
 						return self.firstName ++ " " ++ self.lastName
 					},
-					set fullName(self, value: string) {
+					set fullName(mut self, value: string) {
 						val parts = split(value, " ")
 						self.firstName = parts[0]
 						self.lastName = parts[1]
@@ -256,7 +256,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				val version = Config.version
 			`,
 			expectedTypes: map[string]string{
-				"Config":  "{new fn () -> Config, get version(self) -> string}",
+				"Config":  "{new fn () -> Config, get version() -> string}",
 				"config":  "Config",
 				"version": "string",
 			},

@@ -267,6 +267,37 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"InterfaceDeclDeclare": {
 			input: "declare interface Global { version: string }",
 		},
+		"InterfaceDeclMethodWithSelf": {
+			input: "interface Greeter { greet(self) -> string }",
+		},
+		"InterfaceDeclMethodWithMutSelf": {
+			input: "interface Counter { increment(mut self) -> number }",
+		},
+		"InterfaceDeclMethodWithSelfAndParams": {
+			input: "interface Adder { add(self, x: number, y: number) -> number }",
+		},
+		"InterfaceDeclMethodNoSelf": {
+			input: "interface Free { make() -> number }",
+		},
+		"InterfaceDeclGetterWithSelf": {
+			input: "interface Sized { get size(self) -> number }",
+		},
+		"InterfaceDeclGetterWithMutSelf": {
+			input: "interface Cached { get value(mut self) -> number }",
+		},
+		"InterfaceDeclSetterWithMutSelf": {
+			input: "interface HasValue { set value(mut self, x: number) -> undefined }",
+		},
+		"InterfaceDeclMethodWithLeadingMutParam": {
+			// Regression: mutSelf() must not strip a leading `mut` from a
+			// real param `mut x` when `self` does not follow.
+			input: "interface F { call(mut x: number) -> number }",
+		},
+		"ClassDeclSetterWithoutSelf": {
+			// Regression: receiver-less setter must still parse its value
+			// param.
+			input: "class Box { set value(value: number) { } }",
+		},
 		"ImportNamedSingle": {
 			input: `import { foo } from "module"`,
 		},

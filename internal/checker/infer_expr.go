@@ -444,7 +444,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
-					typeElems[i] = &type_system.GetterElem{Fn: funcType, Name: *key}
+					typeElems[i] = &type_system.GetterElem{Fn: funcType, Name: *key, MutSelf: elem.MutSelf}
 				}
 			case *ast.SetterExpr:
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -453,7 +453,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					paramBindingsSlice[i] = paramBindings
 					types[i] = funcType
-					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key}
+					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key, MutSelf: elem.MutSelf}
 				}
 			// No object-type constraint is enforced on the spread source.
 			// This matches JS/TS semantics where spreading non-objects
@@ -525,11 +525,16 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			case *ast.GetterExpr:
 				funcType := t.(*type_system.FuncType)
 				paramBindings := paramBindingsSlice[i]
+				isMutSelf := elem.MutSelf != nil && *elem.MutSelf
+				var selfTy type_system.Type = type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)
+				if isMutSelf {
+					selfTy = type_system.NewMutType(nil, selfTy)
+				}
 				paramBindings["self"] = &type_system.Binding{
 					Source:     &ast.NodeProvenance{Node: expr},
-					Type:       type_system.NewTypeRefType(nil, "Self", &selfTypeAlias),
-					Assignable: false, // `self` cannot be reassigned
-					Mutable:    false, // getters don't mutate self
+					Type:       selfTy,
+					Assignable: false,
+					Mutable:    isMutSelf,
 				}
 
 				getterExpr := elem
@@ -543,11 +548,16 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			case *ast.SetterExpr:
 				funcType := t.(*type_system.FuncType)
 				paramBindings := paramBindingsSlice[i]
+				isMutSelf := elem.MutSelf != nil && *elem.MutSelf
+				var selfTy type_system.Type = type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)
+				if isMutSelf {
+					selfTy = type_system.NewMutType(nil, selfTy)
+				}
 				paramBindings["self"] = &type_system.Binding{
 					Source:     &ast.NodeProvenance{Node: expr},
-					Type:       type_system.NewMutType(nil, type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)),
-					Assignable: false, // `self` cannot be reassigned
-					Mutable:    true,  // setters may mutate self
+					Type:       selfTy,
+					Assignable: false,
+					Mutable:    isMutSelf,
 				}
 
 				setterExpr := elem
