@@ -773,10 +773,21 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		return nil
 	}
 
-	// Parse optional type parameters for the method
-	typeParams := p.maybeTypeParams()
+	// Parse optional lifetime + type parameters for the method.
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 
 	token = p.lexer.peek()
+
+	// Lifetime params are only meaningful on methods/getters/setters
+	// (the OpenParen branch). Properties — `p: T`, `p?: T`, or the
+	// recovery branches that build a PropertyTypeAnn with no value —
+	// can't carry them, so flag rather than silently dropping.
+	if token.Type != OpenParen {
+		for _, lp := range lifetimeParams {
+			p.reportError(lp.Span(),
+				"lifetime parameters are not supported in this context")
+		}
+	}
 
 	// nolint: exhaustive
 	switch token.Type {
@@ -853,7 +864,7 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		retType := p.typeAnnRequired()
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
-			nil, // object-method type annotations don't yet support lifetime params
+			lifetimeParams,
 			typeParams,
 			params,
 			retType,

@@ -58,6 +58,12 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"FnTypeAnnLifetimeParams": {
 			input: `val f: fn<'a>(p: 'a Point) -> 'a Point = ref`,
 		},
+		"InterfaceMethodLifetimeParam": {
+			input: `interface Borrower { borrow<'a>(self, p: 'a Point) -> 'a Point }`,
+		},
+		"ClassMethodLifetimeParam": {
+			input: `class Box { borrow<'a>(self, p: 'a Point) -> 'a Point { return p } }`,
+		},
 	}
 
 	for name, test := range tests {
@@ -94,6 +100,8 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 		"InterfaceWithLifetimeParam":  {input: `interface Holder<'a> { p: 'a Point }`},
 		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},
 		"ObjectMethodWithLifetimeParam": {input: `{ foo<'a>(x: T) {} }`},
+		"ClassFieldWithLifetimeParam":   {input: `class Box { p<'a>: Point }`},
+		"ObjectPropertyWithLifetimeParam": {input: `val x: { p<'a>: Point } = ref`},
 	}
 
 	for name, test := range tests {

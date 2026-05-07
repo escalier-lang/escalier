@@ -495,6 +495,94 @@ func otherInferErrors(errs []Error) []Error {
 	return out
 }
 
+// TestClassImplementsLifetimeConformance pins the wiring of
+// VerifyLifetimeCompatibility into the implements check. Each case
+// declares an interface method with explicit lifetime parameters and
+// a class method that either matches, is more conservative, or
+// violates the relationship.
+func TestClassImplementsLifetimeConformance(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		// Interface ties param to return; class method ties them
+		// the same way. OK.
+		"MatchingAlias": {
+			input: `
+				type Point = {x: number}
+				interface Borrower {
+					borrow<'a>(self, p: 'a Point) -> 'a Point,
+				}
+				class Forwarder implements Borrower {
+					borrow<'a>(self, p: 'a Point) -> 'a Point { return p }
+				}
+				val f = Forwarder()
+			`,
+		},
+		// Interface promises a fresh (independent) return; the impl
+		// aliases its parameter into the return. Less conservative —
+		// must error.
+		"ImplAliasesWhenIfaceFresh": {
+			input: `
+				type Point = {x: number}
+				interface Borrower {
+					borrow<'a>(self, p: 'a Point) -> Point,
+				}
+				class AliasingImpl implements Borrower {
+					borrow<'a>(self, p: 'a Point) -> 'a Point { return p }
+				}
+				val a = AliasingImpl()
+			`,
+			expectedErrors: []string{
+				"interface implementation lifetime mismatch: implementation aliases parameter 'p' but interface declares the return value is independent",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			inferErrors := c.InferModule(inferCtx, module)
+
+			var lifetimeErrs []Error
+			var otherErrs []Error
+			for _, e := range inferErrors {
+				switch e.(type) {
+				case InterfaceLifetimeMismatchError:
+					lifetimeErrs = append(lifetimeErrs, e)
+				default:
+					otherErrs = append(otherErrs, e)
+				}
+			}
+			if len(otherErrs) > 0 {
+				msgs := make([]string, len(otherErrs))
+				for i, e := range otherErrs {
+					msgs[i] = e.Message()
+				}
+				t.Fatalf("unexpected non-lifetime inference errors: %v", msgs)
+			}
+			actualMsgs := make([]string, len(lifetimeErrs))
+			for i, e := range lifetimeErrs {
+				actualMsgs[i] = e.Message()
+			}
+			if test.expectedErrors == nil {
+				assert.Empty(t, actualMsgs,
+					"expected no lifetime-conformance errors")
+			} else {
+				assert.Equal(t, test.expectedErrors, actualMsgs)
+			}
+		})
+	}
+}
+
 // TestDefaultMutabilityFromClass instantiates each class and asserts the
 // printed type of the resulting binding. Per #499, a bare constructor call
 // always produces an immutable instance — regardless of `mut self` methods

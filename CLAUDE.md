@@ -21,6 +21,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Update snapshots: `UPDATE_SNAPS=1 go test ./...` (uses `github.com/gkampitakis/go-snaps`)
 - Update fixtures: `UPDATE_FIXTURES=1 go test ./cmd/...`
 - After changing checker/codegen/printer output, re-run with both vars set so snapshots and fixtures stay in sync.
+- Don't invoke the CLI directly with `go run ./cmd/escalier check <file>` to try out source. Add a fixture under `fixtures/<name>/lib/index.esc` (with a `package.json`) and run `go test ./cmd/...` — the fixture harness exercises the same pipeline and keeps the test reproducible.
 
 ## Code conventions
 

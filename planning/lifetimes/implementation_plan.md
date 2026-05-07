@@ -32,7 +32,7 @@ into phases that build incrementally, each producing a testable milestone.
 |     8 | Lifetime annotations and inference                   | 6, 7       | Done   |
 |     9 | Lifetime unification                                  | 8          | Done   |
 |    10 | Constrained type parameters that carry a lifetime     | 9          | Done   |
-|    11 | Lifetime elision rules                               | 8, 9       | Done (partial — interface elision and `implements` verification deferred to 12) |
+|    11 | Lifetime elision rules                               | 8, 9       | Done   |
 |    12 | TypeScript interop                                   | 11         |        |
 |    13 | Error messages                                       | 6–12       |        |
 |    14 | Remove `mut?`                                        | —          | Done (out of order, via remove_uncertain_mutability track) |
@@ -2930,14 +2930,17 @@ Notably:
 
 ---
 
-## Phase 11: Lifetime Elision Rules (Done — partial; see deviations)
+## Phase 11: Lifetime Elision Rules (Done)
 
 **Goal:** Apply default lifetime rules to body-less declarations so that
 common cases don't require explicit annotations.
 
 **Status:** Landed. Elision is wired for body-less `declare fn`
-declarations. Interface-method elision and the `implements` lifetime
-verification check are deferred to Phase 12 (see "Deviations" below).
+declarations, and `VerifyLifetimeCompatibility` is wired into
+`implements` checking now that the `implements` clause is in the
+parser. Interface-method elision (auto-populating lifetimes on
+body-less interface methods) is deferred to Phase 12 (see
+"Deviations" below).
 
 ### 11.1 Elision Rule Implementation
 
@@ -3001,10 +3004,13 @@ func IsReferenceType(t type_system.Type) bool { ... }
 
 ### 11.3 Interface Method Lifetime Verification
 
-`VerifyLifetimeCompatibility` is implemented as a standalone routine and
-covered by direct unit tests, but is **not yet wired** into checking —
-the parser does not support an `implements` clause, so there is no point
-to invoke it from. Phase 12 will revisit wiring once `implements` lands.
+`VerifyLifetimeCompatibility` is wired into `checkInterfaceElem` and
+runs after the class method has been shown to match the interface
+method structurally. Today it only fires when both sides carry
+explicit `<'a>` lifetime params on the method signature; once
+interface-method elision lands in Phase 12, body-less interface
+methods will be populated automatically and this verification will
+fire on more cases.
 
 **File:** `internal/checker/elision.go`
 
@@ -3057,13 +3063,17 @@ class Storer(var stored: mut Point) implements Transform {
   while ingesting TypeScript `.d.ts` files. The flag also gates the
   ambiguous-case diagnostic so lib types don't trip it.
 
+**Wired in a follow-up:**
+- `VerifyLifetimeCompatibility` is now invoked from `checkInterfaceElem`
+  in `internal/checker/check_implements.go`, gated on both sides
+  carrying explicit lifetime params. The `implements` clause landed
+  separately, which unblocked this wiring.
+
 **Deferred to Phase 12:**
 - Interface method declaration processing (`inferInterface`). The same
   routine is shared with `.d.ts` interface ingestion, so distinguishing
   user-source interfaces from imported ones is part of TS interop work.
 - TypeScript type import processing.
-- Wiring `VerifyLifetimeCompatibility` into interface implementation
-  checking, gated on the `implements` clause landing in the parser.
 
 ### 11.5 Tests
 

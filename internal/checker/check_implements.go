@@ -61,10 +61,8 @@ func (c *Checker) checkImplementsOne(
 
 	var errors []Error
 	for _, ifaceElem := range ifaceObj.Elems {
-		err := c.checkInterfaceElem(ctx, classObj, ifaceElem, className, ifaceName, sub, span)
-		if err != nil {
-			errors = append(errors, err)
-		}
+		errors = slices.Concat(errors,
+			c.checkInterfaceElem(ctx, classObj, ifaceElem, className, ifaceName, sub, span))
 	}
 	return errors
 }
@@ -98,7 +96,7 @@ func (c *Checker) checkInterfaceElem(
 	className, ifaceName string,
 	sub map[string]type_system.Type,
 	span ast.Span,
-) Error {
+) []Error {
 	// Direction: every check below asks "is the class member assignable
 	// to the interface member?" — i.e. could the class member be used
 	// wherever the interface member is expected. This means parameters
@@ -124,6 +122,21 @@ func (c *Checker) checkInterfaceElem(
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"signature does not match")
 			}
+			// Once the method matches structurally, check that the
+			// implementation's lifetime relationships are at least as
+			// conservative as the interface's. Today this only fires
+			// when both sides carry explicit `<'a>` lifetime params on
+			// the method signature; interface-method elision (deferred
+			// to a later Phase 12 task) will populate them automatically
+			// for body-less interfaces.
+			//
+			// Safe to call unconditionally: when neither side annotates
+			// lifetimes, `GetLifetime` returns nil for both the
+			// interface and the impl return, and the routine short-
+			// circuits to nil. When the structures differ enough that
+			// only one side has lifetimes, `unifyFuncTypes` above will
+			// already have failed and we won't reach this line.
+			return c.VerifyLifetimeCompatibility(ifaceFn, m.Fn, span)
 		case *type_system.PropertyElem:
 			if errs := c.Unify(ctx, m.Value, ifaceFn); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
@@ -281,22 +294,22 @@ func elemKey(elem type_system.ObjTypeElem) (type_system.ObjTypeKey, bool) {
 	return type_system.ObjTypeKey{}, false
 }
 
-func missingMember(span ast.Span, className, ifaceName, member string) Error {
-	return &ClassDoesNotImplementInterfaceError{
+func missingMember(span ast.Span, className, ifaceName, member string) []Error {
+	return []Error{&ClassDoesNotImplementInterfaceError{
 		ClassName:     className,
 		InterfaceName: ifaceName,
 		MemberName:    member,
 		Reason:        "missing",
 		span:          span,
-	}
+	}}
 }
 
-func mismatchedMember(span ast.Span, className, ifaceName, member, reason string) Error {
-	return &ClassDoesNotImplementInterfaceError{
+func mismatchedMember(span ast.Span, className, ifaceName, member, reason string) []Error {
+	return []Error{&ClassDoesNotImplementInterfaceError{
 		ClassName:     className,
 		InterfaceName: ifaceName,
 		MemberName:    member,
 		Reason:        reason,
 		span:          span,
-	}
+	}}
 }
