@@ -1,8 +1,39 @@
 {
   "permissions": {
+    "_comment": "Project-wide auto-approve list. Personal/per-machine entries belong in settings.local.json.",
     "allow": [
       "Bash(pnpm typecheck:*)",
-      "Bash(pnpm test:*)"
+      "Bash(pnpm test:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)"
     ]
+  },
+  "sandbox": {
+    "_comment": "OS-level sandboxing (macOS Seatbelt). Constrains Bash tool calls to the writes/domains below.",
+    "enabled": true,
+    "filesystem": {
+      "_comment": "Project root is writable by default. Entries below are extras outside it or specific carve-outs.",
+      "allowWrite": [
+        "/tmp",
+        "/private/tmp",
+        "./bin",
+        "./node_modules",
+        "./coverage.out",
+        "./fixtures",
+        "./testdata"
+      ]
+    },
+    "network": {
+      "_comment": "GitHub for gh/git, Go module proxy for go build/test, npm registry for pnpm.",
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "objects.githubusercontent.com",
+        "proxy.golang.org",
+        "sum.golang.org",
+        "registry.npmjs.org"
+      ]
+    }
   }
 }
