@@ -2886,3 +2886,108 @@
     },
 }
 ---
+
+[TestParseLifetimeAnnotations/TypeRefLifetimeUnionFallback - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Kind:    0,
+        Pattern: &ast.IdentPat{
+            Name:    "v",
+            VarID:   0,
+            Mutable: false,
+            TypeAnn: nil,
+            Default: nil,
+            span:    ast.Span{
+                Start:    ast.Location{Line:1, Column:5},
+                End:      ast.Location{Line:1, Column:6},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Foo",
+                span: ast.Span{
+                    Start:    ast.Location{Line:1, Column:8},
+                    End:      ast.Location{Line:1, Column:11},
+                    SourceID: 0,
+                },
+            },
+            TypeArgs: {
+                &ast.UnionTypeAnn{
+                    Types: {
+                        &ast.ErrorTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:13},
+                                End:      ast.Location{Line:1, Column:15},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:1, Column:18},
+                                    End:      ast.Location{Line:1, Column:19},
+                                    SourceID: 0,
+                                },
+                            },
+                            TypeArgs: {
+                            },
+                            LifetimeArgs: nil,
+                            Lifetime:     nil,
+                            span:         ast.Span{
+                                Start:    ast.Location{Line:1, Column:18},
+                                End:      ast.Location{Line:1, Column:19},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                    },
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:13},
+                        End:      ast.Location{Line:1, Column:19},
+                        SourceID: 0,
+                    },
+                    inferredType: nil,
+                },
+            },
+            LifetimeArgs: nil,
+            Lifetime:     nil,
+            span:         ast.Span{
+                Start:    ast.Location{Line:1, Column:8},
+                End:      ast.Location{Line:1, Column:21},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        Init: &ast.IdentExpr{
+            Name:      "ref",
+            Namespace: 0,
+            VarID:     0,
+            Source:    nil,
+            span:      ast.Span{
+                Start:    ast.Location{Line:1, Column:24},
+                End:      ast.Location{Line:1, Column:27},
+                SourceID: 0,
+            },
+            inferredType: nil,
+        },
+        export:  false,
+        declare: false,
+        span:    ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:27},
+            SourceID: 0,
+        },
+        InferredType: nil,
+        provenance:   nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:27},
+        SourceID: 0,
+    },
+}
+---
