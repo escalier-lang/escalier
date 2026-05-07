@@ -100,6 +100,8 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 		"InterfaceWithLifetimeParam":  {input: `interface Holder<'a> { p: 'a Point }`},
 		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},
 		"ObjectMethodWithLifetimeParam": {input: `{ foo<'a>(x: T) {} }`},
+		"ClassFieldWithLifetimeParam":   {input: `class Box { p<'a>: Point }`},
+		"ObjectPropertyWithLifetimeParam": {input: `val x: { p<'a>: Point } = ref`},
 	}
 
 	for name, test := range tests {

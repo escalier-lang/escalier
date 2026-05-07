@@ -778,6 +778,17 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 
 	token = p.lexer.peek()
 
+	// Lifetime params are only meaningful on methods/getters/setters
+	// (the OpenParen branch). Properties — `p: T`, `p?: T`, or the
+	// recovery branches that build a PropertyTypeAnn with no value —
+	// can't carry them, so flag rather than silently dropping.
+	if token.Type != OpenParen {
+		for _, lp := range lifetimeParams {
+			p.reportError(lp.Span(),
+				"lifetime parameters are not supported in this context")
+		}
+	}
+
 	// nolint: exhaustive
 	switch token.Type {
 	case CloseBrace:

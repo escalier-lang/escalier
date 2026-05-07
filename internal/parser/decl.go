@@ -593,6 +593,10 @@ modifiers_done:
 		//                            is rejected by the checker on
 		//                            instance fields. Instance fields are
 		//                            initialized in the constructor body.
+		for _, lp := range lifetimeParams {
+			p.reportError(lp.Span(),
+				"lifetime parameters are not supported in this context")
+		}
 		var typeAnn ast.TypeAnn
 		var value ast.Expr
 		isOptional := false

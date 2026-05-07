@@ -129,6 +129,13 @@ func (c *Checker) checkInterfaceElem(
 			// the method signature; interface-method elision (deferred
 			// to a later Phase 12 task) will populate them automatically
 			// for body-less interfaces.
+			//
+			// Safe to call unconditionally: when neither side annotates
+			// lifetimes, `GetLifetime` returns nil for both the
+			// interface and the impl return, and the routine short-
+			// circuits to nil. When the structures differ enough that
+			// only one side has lifetimes, `unifyFuncTypes` above will
+			// already have failed and we won't reach this line.
 			return c.VerifyLifetimeCompatibility(ifaceFn, m.Fn, span)
 		case *type_system.PropertyElem:
 			if errs := c.Unify(ctx, m.Value, ifaceFn); len(errs) > 0 {
