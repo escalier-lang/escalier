@@ -434,6 +434,15 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					methodType, methodCtx, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
 					methodCtxs[i] = methodCtx
 					paramBindingsSlice[i] = paramBindings
+					// Note: object-literal methods deliberately leave
+					// SelfParam unpopulated. The receiver type is the
+					// surrounding object — represented by `selfType`,
+					// a fresh TypeVar that gets bound to the ObjectType
+					// being constructed. Wiring that back into each
+					// method's SelfParam creates a recursive
+					// `obj→method→obj` cycle that breaks the unifier.
+					// Object-literal receivers are structural anyway;
+					// the MethodElem.MutSelf cache covers visibility.
 					types[i] = methodType
 					typeElems[i] = type_system.NewMethodElem(*key, methodType, elem.MutSelf)
 				}
