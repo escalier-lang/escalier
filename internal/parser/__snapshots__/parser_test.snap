@@ -6193,10 +6193,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -6401,10 +6402,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:17},
                     SourceID: 0,
@@ -6525,10 +6527,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -6687,10 +6690,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -7040,10 +7044,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -8821,10 +8826,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:1, Column:21},
                     End:      ast.Location{Line:1, Column:43},
                     SourceID: 0,
@@ -9235,9 +9241,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:6, Column:7},
                     SourceID: 0,
@@ -9563,9 +9570,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:6, Column:7},
                     SourceID: 0,
@@ -9780,9 +9788,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:6, Column:7},
                     SourceID: 0,
@@ -9961,9 +9970,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:6, Column:7},
                     SourceID: 0,
@@ -10049,9 +10059,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:7, Column:6},
                     End:      ast.Location{Line:9, Column:7},
                     SourceID: 0,
@@ -10135,9 +10146,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:30},
                     SourceID: 0,
@@ -10221,9 +10233,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:34},
                     SourceID: 0,
@@ -10307,9 +10320,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:37},
                     SourceID: 0,
@@ -10393,9 +10407,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:40},
                     SourceID: 0,
@@ -10479,9 +10494,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:36},
                     SourceID: 0,
@@ -10600,9 +10616,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: (*bool)(nil),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      (*bool)(nil),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:22},
                     SourceID: 0,
@@ -10762,9 +10779,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -10823,9 +10841,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: (*bool)(nil),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      (*bool)(nil),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:20},
                     SourceID: 0,
@@ -10909,9 +10928,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:26},
                     SourceID: 0,
@@ -11071,9 +11091,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: (*bool)(nil),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      (*bool)(nil),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -11368,9 +11389,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:6, Column:7},
                     SourceID: 0,
@@ -11568,9 +11590,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(true),
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(true),
+                SelfLifetime: nil,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:4, Column:6},
                     End:      ast.Location{Line:6, Column:7},
                     SourceID: 0,
@@ -11638,10 +11661,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:7, Column:6},
                     End:      ast.Location{Line:9, Column:7},
                     SourceID: 0,
@@ -11850,10 +11874,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -11996,10 +12021,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -12161,10 +12187,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,
@@ -12243,10 +12270,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:3, Column:18},
                     SourceID: 0,
@@ -12495,10 +12523,11 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf: &bool(false),
-                Static:  false,
-                Private: false,
-                Span_:   ast.Span{
+                MutSelf:      &bool(false),
+                SelfLifetime: nil,
+                Static:       false,
+                Private:      false,
+                Span_:        ast.Span{
                     Start:    ast.Location{Line:3, Column:6},
                     End:      ast.Location{Line:5, Column:7},
                     SourceID: 0,

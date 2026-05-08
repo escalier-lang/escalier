@@ -845,9 +845,10 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		p.lexer.consume() // consume '('
 
 		// Methods, getters, and setters all accept a leading `self` /
-		// `mut self` receiver. Peel it off so it does not leak into
+		// `mut self` receiver (optionally with a lifetime: `'a self` /
+		// `mut 'a self`). Peel it off so it does not leak into
 		// `Fn.Params` as a regular parameter (#560).
-		mutSelf := p.mutSelf()
+		mutSelf, selfLifetime := p.selfReceiver()
 
 		params := []*ast.Param{}
 		next := p.lexer.peek()
@@ -876,21 +877,24 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		switch mod {
 		case "get":
 			return &ast.GetterTypeAnn{
-				Name:    objKey,
-				Fn:      fnTypeAnn,
-				MutSelf: mutSelf,
+				Name:         objKey,
+				Fn:           fnTypeAnn,
+				MutSelf:      mutSelf,
+				SelfLifetime: selfLifetime,
 			}
 		case "set":
 			return &ast.SetterTypeAnn{
-				Name:    objKey,
-				Fn:      fnTypeAnn,
-				MutSelf: mutSelf,
+				Name:         objKey,
+				Fn:           fnTypeAnn,
+				MutSelf:      mutSelf,
+				SelfLifetime: selfLifetime,
 			}
 		default:
 			return &ast.MethodTypeAnn{
-				Name:    objKey,
-				Fn:      fnTypeAnn,
-				MutSelf: mutSelf,
+				Name:         objKey,
+				Fn:           fnTypeAnn,
+				MutSelf:      mutSelf,
+				SelfLifetime: selfLifetime,
 			}
 		}
 	default:

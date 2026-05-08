@@ -118,7 +118,11 @@ func (e LifetimeArgCountMismatchError) Message() string {
 // FuncType.LifetimeParams disagree in length — it points at the
 // surrounding function declaration.
 //
-// Implements §9.7 class 1.
+// Implements §9.7 class 1. Runs as a *deferred* check: callers of
+// inferFuncSig / inferFuncTypeAnn must invoke this after wiring any
+// late-bound positions (SelfParam in particular). A `<'a>` referenced
+// only by `'a self` would otherwise be flagged as unused, since the
+// receiver is not present in `Params` at signature-inference time.
 func reportUnusedLifetimeParams(
 	fnType *type_system.FuncType,
 	astParams []*ast.LifetimeAnn,
@@ -156,6 +160,9 @@ func reportUnusedLifetimeParams(
 // IDs not bound by any inner frame count as "used by the outer".
 func collectInlineLifetimeIDs(fnType *type_system.FuncType) map[int]struct{} {
 	c := &lifetimeIDCollector{out: map[int]struct{}{}}
+	if fnType.SelfParam != nil && fnType.SelfParam.Type != nil {
+		fnType.SelfParam.Type.Accept(c)
+	}
 	for _, p := range fnType.Params {
 		p.Type.Accept(c)
 	}

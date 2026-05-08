@@ -94,12 +94,13 @@ func (f *FieldElem) Accept(v Visitor) {
 func (f *FieldElem) Span() Span { return f.Span_ }
 
 type MethodElem struct {
-	Name    ObjKey
-	Fn      *FuncExpr
-	MutSelf *bool // true if 'self' is mutable
-	Static  bool  // true if this is a static method
-	Private bool  // true if this is a private method
-	Span_   Span
+	Name         ObjKey
+	Fn           *FuncExpr
+	MutSelf      *bool           // true if 'self' is mutable
+	SelfLifetime LifetimeAnnNode // optional; lifetime on `self` (e.g. `'a self`)
+	Static       bool            // true if this is a static method
+	Private      bool            // true if this is a private method
+	Span_        Span
 }
 
 func (*MethodElem) IsClassElem() {}
@@ -116,12 +117,13 @@ func (m *MethodElem) Span() Span { return m.Span_ }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
-	Name    ObjKey
-	Fn      *FuncExpr
-	MutSelf *bool // true if `self` is `mut self`; nil if absent (static getters, etc.)
-	Static  bool  // true if this is a static getter
-	Private bool  // true if this is a private getter
-	Span_   Span
+	Name         ObjKey
+	Fn           *FuncExpr
+	MutSelf      *bool           // true if `self` is `mut self`; nil if absent (static getters, etc.)
+	SelfLifetime LifetimeAnnNode // optional; lifetime on `self`
+	Static       bool            // true if this is a static getter
+	Private      bool            // true if this is a private getter
+	Span_        Span
 }
 
 func (*GetterElem) IsClassElem() {}
@@ -143,10 +145,11 @@ func (g *GetterElem) Span() Span { return g.Span_ }
 // in `Fn.Params` is the user-written `self` (with `MutSelf` recording its
 // mutability flag); remaining params are the constructor's callable params.
 type ConstructorElem struct {
-	Fn      *FuncExpr
-	MutSelf *bool // true if `self` was declared `mut self`; nil if absent
-	Private bool  // reserved for future "Private Constructors" work
-	Span_   Span
+	Fn           *FuncExpr
+	MutSelf      *bool           // true if `self` was declared `mut self`; nil if absent
+	SelfLifetime LifetimeAnnNode // always rejected by validation; carried for diagnostics
+	Private      bool            // reserved for future "Private Constructors" work
+	Span_        Span
 }
 
 func (*ConstructorElem) IsClassElem() {}
@@ -162,12 +165,13 @@ func (c *ConstructorElem) Span() Span { return c.Span_ }
 
 // SetterElem represents a setter in a class.
 type SetterElem struct {
-	Name    ObjKey
-	Fn      *FuncExpr
-	MutSelf *bool // true if `self` is `mut self`; nil if absent (static setters, etc.)
-	Static  bool  // true if this is a static setter
-	Private bool  // true if this is a private setter
-	Span_   Span
+	Name         ObjKey
+	Fn           *FuncExpr
+	MutSelf      *bool           // true if `self` is `mut self`; nil if absent (static setters, etc.)
+	SelfLifetime LifetimeAnnNode // optional; lifetime on `self`
+	Static       bool            // true if this is a static setter
+	Private      bool            // true if this is a private setter
+	Span_        Span
 }
 
 func (*SetterElem) IsClassElem() {}

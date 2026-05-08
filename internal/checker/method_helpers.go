@@ -25,6 +25,36 @@ func makeSelfParam(containingType type_system.Type, mutSelf *bool) *type_system.
 	}
 }
 
+// makeSelfParamWithLifetime is the lifetime-bearing form of makeSelfParam.
+// `base` is the class/interface receiver TypeRefType — shared across all
+// methods of a class as `classSelfRef` — and a fresh shallow clone is made
+// here so that setting `.Lifetime` does not poison sibling methods that
+// declared a different (or no) receiver lifetime. When `lifetime` is nil
+// the result is identical to `makeSelfParam(base, mutSelf)`.
+func makeSelfParamWithLifetime(
+	base *type_system.TypeRefType,
+	mutSelf *bool,
+	lifetime type_system.Lifetime,
+) *type_system.FuncParam {
+	if mutSelf == nil || base == nil {
+		return nil
+	}
+	receiver := base
+	if lifetime != nil {
+		clone := *base
+		clone.Lifetime = lifetime
+		receiver = &clone
+	}
+	var t type_system.Type = receiver
+	if *mutSelf {
+		t = type_system.NewMutType(nil, receiver)
+	}
+	return &type_system.FuncParam{
+		Pattern: type_system.NewIdentPat("self"),
+		Type:    t,
+	}
+}
+
 // methodRequiresMutSelf reports whether a method/getter requires a `mut self`
 // receiver. Reads FuncType.SelfParam when populated (single source of truth);
 // falls back to the denormalized MutSelf flag for elements that haven't gone

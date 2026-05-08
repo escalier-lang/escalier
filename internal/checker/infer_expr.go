@@ -468,6 +468,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 	case *ast.FuncExpr:
 		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
 		errors = slices.Concat(errors, sigErrors)
+		errors = slices.Concat(errors, reportUnusedLifetimeParams(funcType, expr.FuncSig.LifetimeParams, expr.Span()))
 
 		// Allocate call-site maps for outermost FuncExprs. Nested FuncExprs
 		// inherit the parent's maps via Context copying.

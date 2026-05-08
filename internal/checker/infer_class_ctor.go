@@ -76,6 +76,13 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 		}
 	}
 
+	// A lifetime on the constructor's `self` is rejected: constructors
+	// return a freshly-allocated `Self`, so there is no inbound borrow
+	// for the lifetime to constrain.
+	if ctor.MutSelf != nil && ctor.SelfLifetime != nil {
+		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfHasLifetime, span: ctor.SelfLifetime.Span()})
+	}
+
 	if ctor.Fn.Return != nil {
 		errors = append(errors, ConstructorWithReturnTypeError{span: ctor.Fn.Return.Span()})
 	}

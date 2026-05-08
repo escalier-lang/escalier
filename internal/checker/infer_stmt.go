@@ -145,6 +145,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 
 	funcType, _, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig, decl)
 	errors = slices.Concat(errors, sigErrors)
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(funcType, decl.FuncSig.LifetimeParams, decl.Span()))
 
 	// For declared functions, we don't have a body to infer from
 	if decl.Declare() && (decl.Body == nil || len(decl.Body.Stmts) == 0) {
@@ -343,30 +344,12 @@ func (c *Checker) inferInterface(
 	// body can reference them (e.g. `interface View<'a> { value: 'a Point }`).
 	lifetimeParams := c.declareLifetimeParams(typeCtx.Scope, decl.LifetimeParams)
 
-	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
+	// inferObjectTypeAnn wires SelfParam on instance method/getter/setter
+	// elements directly, using the receiver we pass in — so the AST and
+	// type slices stay paired within a single iteration instead of being
+	// re-zipped by index after the fact.
+	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn, selfType)
 	errors = slices.Concat(errors, typeErrors)
-
-	// Populate SelfParam on each instance method/getter/setter so receiver
-	// lifetimes flow through the same machinery as parameter lifetimes.
-	// inferObjectTypeAnn is generic across object-type contexts (interfaces,
-	// object-type-literals); only here, in the interface entry point, do we
-	// know the receiver type to attach.
-	for _, elem := range objType.Elems {
-		switch e := elem.(type) {
-		case *type_system.MethodElem:
-			if e.Fn != nil && e.Fn.SelfParam == nil {
-				e.Fn.SelfParam = makeSelfParam(selfType, e.MutSelf)
-			}
-		case *type_system.GetterElem:
-			if e.Fn != nil && e.Fn.SelfParam == nil {
-				e.Fn.SelfParam = makeSelfParam(selfType, e.MutSelf)
-			}
-		case *type_system.SetterElem:
-			if e.Fn != nil && e.Fn.SelfParam == nil {
-				e.Fn.SelfParam = makeSelfParam(selfType, e.MutSelf)
-			}
-		}
-	}
 
 	// Infer the Extends clause if present
 	if decl.Extends != nil {

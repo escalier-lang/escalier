@@ -255,6 +255,7 @@ func (p *Parser) parseConstructorElem(
 	typeParams := p.maybeTypeParams()
 
 	var mutSelf *bool
+	var selfLifetime ast.LifetimeAnnNode
 	var params []*ast.Param
 
 	next := p.lexer.peek()
@@ -263,9 +264,12 @@ func (p *Parser) parseConstructorElem(
 	} else {
 		p.lexer.consume() // consume '('
 
-		// Parse leading `mut self` / `self`.
+		// Parse leading `mut self` / `self`. A lifetime on the receiver
+		// (`'a self`) is captured into selfLifetime and reported by the
+		// checker (MutSelfHasLifetime); the parser stays silent so the
+		// user sees one diagnostic, not two.
 		selfStart := p.lexer.currentLocation
-		mutSelf = p.mutSelf()
+		mutSelf, selfLifetime = p.selfReceiver()
 		if mutSelf == nil {
 			// No `self` at all — error and continue parsing the rest of the
 			// param list as if `self` had been there.
@@ -361,10 +365,11 @@ func (p *Parser) parseConstructorElem(
 
 	span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 	return &ast.ConstructorElem{
-		Fn:      ast.NewFuncExpr(nil, typeParams, params, nil, throwsType, false, body, span),
-		MutSelf: mutSelf,
-		Private: isPrivate,
-		Span_:   span,
+		Fn:           ast.NewFuncExpr(nil, typeParams, params, nil, throwsType, false, body, span),
+		MutSelf:      mutSelf,
+		SelfLifetime: selfLifetime,
+		Private:      isPrivate,
+		Span_:        span,
 	}
 }
 
@@ -439,12 +444,13 @@ modifiers_done:
 		var throwsType ast.TypeAnn
 		var body *ast.Block
 		var mutSelf *bool
+		var selfLifetime ast.LifetimeAnnNode
 
 		if next.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
 			if !isStatic {
-				mutSelf = p.mutSelf()
+				mutSelf, selfLifetime = p.selfReceiver()
 			}
 
 			// TODO(#506): report an error if `self` is not the only param
@@ -475,12 +481,13 @@ modifiers_done:
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.GetterElem{
-			Name:    name,
-			Fn:      ast.NewFuncExpr(lifetimeParams, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
-			MutSelf: mutSelf,
-			Static:  isStatic,
-			Private: isPrivate,
-			Span_:   span,
+			Name:         name,
+			Fn:           ast.NewFuncExpr(lifetimeParams, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+			MutSelf:      mutSelf,
+			SelfLifetime: selfLifetime,
+			Static:       isStatic,
+			Private:      isPrivate,
+			Span_:        span,
 		}
 	}
 
@@ -489,12 +496,13 @@ modifiers_done:
 		var params []*ast.Param
 		var body *ast.Block
 		var mutSelf *bool
+		var selfLifetime ast.LifetimeAnnNode
 
 		if next.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
 			if !isStatic {
-				mutSelf = p.mutSelf()
+				mutSelf, selfLifetime = p.selfReceiver()
 
 				token = p.lexer.peek()
 				if mutSelf != nil {
@@ -524,12 +532,13 @@ modifiers_done:
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
-			Name:    name,
-			Fn:      ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, nil, false, body, span),
-			MutSelf: mutSelf,
-			Static:  isStatic,
-			Private: isPrivate,
-			Span_:   span,
+			Name:         name,
+			Fn:           ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, nil, false, body, span),
+			MutSelf:      mutSelf,
+			SelfLifetime: selfLifetime,
+			Static:       isStatic,
+			Private:      isPrivate,
+			Span_:        span,
 		}
 	}
 
@@ -538,7 +547,7 @@ modifiers_done:
 		p.lexer.consume() // consume '('
 
 		// TODO: skip mutSelf if `isStatic` is true
-		mutSelf := p.mutSelf()
+		mutSelf, selfLifetime := p.selfReceiver()
 
 		params := []*ast.Param{}
 		if isStatic {
@@ -577,12 +586,13 @@ modifiers_done:
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.MethodElem{
-			Name:    name,
-			Fn:      ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span),
-			MutSelf: mutSelf,
-			Static:  isStatic,
-			Private: isPrivate,
-			Span_:   span,
+			Name:         name,
+			Fn:           ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span),
+			MutSelf:      mutSelf,
+			SelfLifetime: selfLifetime,
+			Static:       isStatic,
+			Private:      isPrivate,
+			Span_:        span,
 		}
 	} else {
 		// Field

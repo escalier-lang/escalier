@@ -783,6 +783,7 @@ const (
 	MutSelfMissing MutSelfReason = iota
 	MutSelfNotMut
 	MutSelfHasTypeAnnotation
+	MutSelfHasLifetime
 )
 
 func (e MissingMutSelfParameterError) Span() ast.Span {
@@ -796,6 +797,8 @@ func (e MissingMutSelfParameterError) Message() string {
 		return "The `self` parameter of a constructor must be declared `mut self`."
 	case MutSelfHasTypeAnnotation:
 		return "The `mut self` parameter cannot have a type annotation."
+	case MutSelfHasLifetime:
+		return "Constructors cannot have a lifetime on `self`."
 	default:
 		return "Invalid `mut self` parameter on constructor."
 	}
