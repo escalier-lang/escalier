@@ -48,3 +48,53 @@ func TestFuncTypeAcceptVisitsSelfParam(t *testing.T) {
 	assert.Contains(t, v.visited, Type(returnType),
 		"FuncType.Accept must visit Return (regression check)")
 }
+
+// TestFuncTypeEqualsConsidersSelfParam pins that FuncType.Equals compares
+// SelfParam. Without this, a method's `(self) -> T` and `(mut self) -> T`
+// FuncTypes are structurally equal — which would let normalization or
+// any equality-keyed cache silently merge them, dropping receiver-mutability
+// information from method-call typing.
+func TestFuncTypeEqualsConsidersSelfParam(t *testing.T) {
+	mkFn := func() *FuncType {
+		return NewFuncType(nil, nil, nil, NewNeverType(nil), NewNeverType(nil))
+	}
+	receiver := NewTypeRefType(nil, "Receiver", nil)
+
+	bare := mkFn()
+
+	withImmutSelf := mkFn()
+	withImmutSelf.SelfParam = &FuncParam{
+		Pattern: NewIdentPat("self"),
+		Type:    receiver,
+	}
+
+	withMutSelf := mkFn()
+	withMutSelf.SelfParam = &FuncParam{
+		Pattern: NewIdentPat("self"),
+		Type:    NewMutType(nil, receiver),
+	}
+
+	otherReceiver := NewTypeRefType(nil, "Other", nil)
+	withOtherSelf := mkFn()
+	withOtherSelf.SelfParam = &FuncParam{
+		Pattern: NewIdentPat("self"),
+		Type:    otherReceiver,
+	}
+
+	assert.False(t, bare.Equals(withImmutSelf),
+		"bare FuncType must not equal one with a SelfParam")
+	assert.False(t, withImmutSelf.Equals(bare),
+		"FuncType with SelfParam must not equal a bare one (symmetry)")
+	assert.False(t, withImmutSelf.Equals(withMutSelf),
+		"`self` and `mut self` FuncTypes must not be equal")
+	assert.False(t, withImmutSelf.Equals(withOtherSelf),
+		"FuncTypes with different SelfParam types must not be equal")
+
+	withImmutSelf2 := mkFn()
+	withImmutSelf2.SelfParam = &FuncParam{
+		Pattern: NewIdentPat("self"),
+		Type:    receiver,
+	}
+	assert.True(t, withImmutSelf.Equals(withImmutSelf2),
+		"FuncTypes with structurally-equal SelfParams must be equal")
+}

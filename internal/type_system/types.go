@@ -947,6 +947,21 @@ func (t *FuncType) Equals(other Type) bool {
 		if len(t.LifetimeParams) != len(other.LifetimeParams) {
 			return false
 		}
+		// Compare SelfParam — receiver presence and mutability is part
+		// of a method's identity. The MutType wrapper on the receiver
+		// type carries `mut self` vs `self`, so a structural equals on
+		// SelfParam.Type covers both.
+		if (t.SelfParam == nil) != (other.SelfParam == nil) {
+			return false
+		}
+		if t.SelfParam != nil {
+			if !equals(t.SelfParam.Type, other.SelfParam.Type) {
+				return false
+			}
+			if t.SelfParam.Optional != other.SelfParam.Optional {
+				return false
+			}
+		}
 		// Compare Params
 		if len(t.Params) != len(other.Params) {
 			return false

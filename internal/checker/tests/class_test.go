@@ -654,6 +654,28 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			methodName:   "make",
 			expectStatic: true,
 		},
+		"GetterImmutableSelf": {
+			input: `
+				class Reader {
+					_value: number,
+					get value(self) -> number { return self._value }
+				}
+			`,
+			className:  "Reader",
+			methodName: "value",
+		},
+		"SetterMutSelf": {
+			input: `
+				class Writer {
+					_value: number,
+					constructor(mut self) { self._value = 0 },
+					set value(mut self, x: number) { self._value = x }
+				}
+			`,
+			className:  "Writer",
+			methodName: "value",
+			expectMut:  true,
+		},
 	}
 
 	for name, test := range tests {
@@ -678,16 +700,32 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 
 			var methodFn *type_system.FuncType
 			var methodMutSelf *bool
+			matchKey := func(k type_system.ObjTypeKey) bool {
+				return k.Kind == type_system.StrObjTypeKeyKind && k.Str == test.methodName
+			}
 			for _, elem := range searchObj.Elems {
-				if me, ok := elem.(*type_system.MethodElem); ok {
-					if me.Name.Kind == type_system.StrObjTypeKeyKind && me.Name.Str == test.methodName {
-						methodFn = me.Fn
-						methodMutSelf = me.MutSelf
-						break
+				switch e := elem.(type) {
+				case *type_system.MethodElem:
+					if matchKey(e.Name) {
+						methodFn = e.Fn
+						methodMutSelf = e.MutSelf
+					}
+				case *type_system.GetterElem:
+					if matchKey(e.Name) {
+						methodFn = e.Fn
+						methodMutSelf = e.MutSelf
+					}
+				case *type_system.SetterElem:
+					if matchKey(e.Name) {
+						methodFn = e.Fn
+						methodMutSelf = e.MutSelf
 					}
 				}
+				if methodFn != nil {
+					break
+				}
 			}
-			require.NotNilf(t, methodFn, "method %q not found", test.methodName)
+			require.NotNilf(t, methodFn, "method/accessor %q not found", test.methodName)
 
 			if test.expectStatic {
 				assert.Nil(t, methodFn.SelfParam,

@@ -46,8 +46,13 @@ func methodRequiresMutSelf(fn *type_system.FuncType, mutSelf *bool) bool {
 // covers the .d.ts-loaded TypeScript lib types — Array, Map, Set,
 // Promise, etc. — which arrive without a receiver representation. The
 // pass runs in initializeGlobalScope after UpdateMethodMutability has
-// already populated MutSelf on these elements.
+// already populated MutSelf on these elements. Recurses into nested
+// namespaces so namespaced lib types (e.g. `Intl.Collator`) are
+// covered too.
 func populateSelfParams(ns *type_system.Namespace) {
+	for _, child := range ns.Namespaces {
+		populateSelfParams(child)
+	}
 	for name, typeAlias := range ns.Types {
 		objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
 		if !ok {
