@@ -982,21 +982,6 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				"foo": "fn (obj: mut {data: {coords: [number, number], label: string}}) -> void",
 			},
 		},
-		"DeepWidenMethodGetterSetter": {
-			input: `
-				fn foo(obj) {
-					obj.config = {
-						_x: 0,
-						getValue(self) { return self._x },
-						get x(self) { return self._x },
-						set x(mut self, v) { self._x = v },
-					}
-				}
-			`,
-			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {config: {_x: number, getValue(self) -> number, get x(self) -> number, set x(mut self, v: number) -> undefined}}) -> void",
-			},
-		},
 		"NormalTypeVarConflictStillErrors": {
 			input: `
 				val x: number = "hello"
@@ -2712,45 +2697,6 @@ func TestObjectSpread(t *testing.T) {
 				"b": "5",
 				"c": "20",
 				"d": "30",
-			},
-		},
-		"SpreadOfObjectWithMethod": {
-			// Methods are copied as function-valued properties.
-			input: `
-				val obj = {x: 1, greet() { return "hello" }}
-				val result = {...obj, y: 2}
-				val g = result.greet
-			`,
-			expectedTypes: map[string]string{
-				"g": "fn () -> \"hello\"",
-			},
-		},
-		"SpreadOfObjectWithGetter": {
-			// Getter's return value becomes a plain property.
-			input: `
-				val obj = {
-					_x: 10,
-					get x(self) { return self._x },
-				}
-				val result = {...obj, y: 2}
-				val v = result.x
-			`,
-			expectedTypes: map[string]string{
-				"v": "10",
-			},
-		},
-		"SpreadOfObjectWithSetterOnly": {
-			// Setter-only properties are omitted from the spread.
-			// The explicit property 'x' in the target is preserved.
-			input: `
-				val obj = {
-					set x(mut self, v: number) { },
-				}
-				val result = {x: "kept", ...obj}
-				val v = result.x
-			`,
-			expectedTypes: map[string]string{
-				"v": "\"kept\"",
 			},
 		},
 		"SpreadOfAnnotatedVariable": {

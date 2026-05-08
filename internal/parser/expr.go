@@ -592,93 +592,6 @@ func (p *Parser) mutSelf() *bool {
 	return nil
 }
 
-// Helper function to parse method after type parameters are already parsed
-func (p *Parser) parseMethodBody(objKey ast.ObjKey, typeParams []*ast.TypeParam, mod string) ast.ObjExprElem {
-	mutSelf := p.mutSelf()
-
-	params := []*ast.Param{}
-	token := p.lexer.peek()
-	if mutSelf != nil && token.Type == Comma {
-		// If we have a self parameter, consume the comma and parse additional params
-		p.lexer.consume() // consume ','
-		params = parseDelimSeq(p, CloseParen, Comma, p.param)
-	} else if mutSelf == nil {
-		// If we don't have a self parameter, parse all params directly
-		params = parseDelimSeq(p, CloseParen, Comma, p.param)
-	}
-	// If we have self but no comma, then there are no additional params (empty slice)
-	p.expect(CloseParen, ConsumeOnMatch)
-
-	var returnType ast.TypeAnn
-	var throwsType ast.TypeAnn
-	token = p.lexer.peek()
-	if token.Type == Arrow {
-		p.lexer.consume()
-		typeAnn := p.typeAnn()
-		if typeAnn == nil {
-			p.reportError(token.Span, "Expected type annotation after arrow")
-			return nil
-		}
-		returnType = typeAnn
-
-		// Check for throws clause after return type
-		token = p.lexer.peek()
-		if token.Type == Throws {
-			p.lexer.consume()
-			throwsTypeAnn := p.typeAnn()
-			if throwsTypeAnn == nil {
-				p.reportError(token.Span, "Expected type annotation after 'throws'")
-			} else {
-				throwsType = throwsTypeAnn
-			}
-		}
-	}
-
-	body := p.block()
-	end := body.Span.End
-
-	span := ast.Span{Start: objKey.Span().Start, End: end, SourceID: p.lexer.source.ID}
-
-	fn := ast.NewFuncExpr(
-		nil, // methods don't yet support lifetime params
-		typeParams,
-		params,
-		returnType,
-		throwsType,
-		false, // methods can't be async for now
-		&body,
-		span,
-	)
-
-	switch mod {
-	case "get":
-		// TODO: check that params is empty when using `get`
-		// and raise an error if it's not.
-		return ast.NewGetter(
-			objKey,
-			fn,
-			mutSelf,
-			ast.MergeSpans(token.Span, span),
-		)
-	case "set":
-		// TODO: check that mutSelf is `true` when using `set`
-		// and raise an error if it's `false` or `nil`.
-		return ast.NewSetter(
-			objKey,
-			fn,
-			mutSelf,
-			ast.MergeSpans(token.Span, span),
-		)
-	default:
-		return ast.NewMethod(
-			objKey,
-			fn,
-			mutSelf,
-			ast.MergeSpans(token.Span, span),
-		)
-	}
-}
-
 // canStartExpr returns true if the given token type can begin an expression.
 // This is used to avoid calling p.expr() when the next token clearly cannot
 // start one, which prevents primaryExpr's default branch from consuming
@@ -732,17 +645,9 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 	}
 
-	// TODO: raise an error if 'get' or 'set' is used with a property definition
-	// instead of a method.
-	mod := ""
-	// nolint: exhaustive
-	switch token.Type {
-	case Get:
-		p.lexer.consume() // consume 'get'
-		mod = "get"
-	case Set:
-		p.lexer.consume() // consume 'set'
-		mod = "set"
+	if token.Type == Get || token.Type == Set {
+		p.reportError(token.Span, "Method shorthand is not allowed in object literals; use a class instead")
+		return nil
 	}
 
 	objKey := p.objExprKey()
@@ -785,29 +690,9 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 			return property
 		}
 		return nil
-	case LessThan:
-		// Parse type parameters for generic methods. Object methods do not
-		// yet support lifetime parameters; maybeTypeParams reports them as
-		// errors with a consistent message.
-		typeParams := p.maybeTypeParams()
-
-		// After type parameters, we should have '('
-		token = p.lexer.peek()
-		if token.Type != OpenParen {
-			p.reportError(token.Span, "Expected '(' after type parameters")
-			return nil
-		}
-
-		p.lexer.consume() // consume '('
-
-		return p.parseMethodBody(objKey, typeParams, mod)
-	case OpenParen:
-		// Parse method without type parameters
-		typeParams := []*ast.TypeParam{} // Empty for non-generic methods
-
-		p.lexer.consume() // consume '('
-
-		return p.parseMethodBody(objKey, typeParams, mod)
+	case LessThan, OpenParen:
+		p.reportError(token.Span, "Method shorthand is not allowed in object literals; use a class instead")
+		return nil
 	default:
 		switch objKey.(type) {
 		case *ast.IdentExpr:

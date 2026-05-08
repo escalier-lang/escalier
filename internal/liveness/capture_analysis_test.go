@@ -156,16 +156,16 @@ func TestAnalyzeCaptures_JSXElement_SpreadAttr(t *testing.T) {
 }
 
 func TestAnalyzeCaptures_NestedFuncExpr_NotRecursedInto(t *testing.T) {
-	// Build manually: fn() { {method() { outerRef }} }
-	// The method body contains outerRef but should NOT be recursed into.
+	// Build manually: fn() { {f: fn() { outerRef }} }
+	// The nested function body contains outerRef but should NOT be recursed into.
 	outerRef := ast.NewIdent("outerRef", ast.Span{})
 	outerRef.VarID = -1
 
-	methodBody := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(outerRef, ast.Span{})}}
-	methodFn := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, methodBody, ast.Span{})
-	method := ast.NewMethod(ast.NewIdent("method", ast.Span{}), methodFn, nil, ast.Span{})
+	innerBody := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(outerRef, ast.Span{})}}
+	innerFn := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, innerBody, ast.Span{})
+	prop := ast.NewProperty(ast.NewIdent("f", ast.Span{}), false, false, innerFn, ast.Span{})
 
-	objExpr := ast.NewObject([]ast.ObjExprElem{method}, ast.Span{})
+	objExpr := ast.NewObject([]ast.ObjExprElem{prop}, ast.Span{})
 	body := &ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(objExpr, ast.Span{})}}
 	funcExpr := ast.NewFuncExpr(nil, nil, nil, nil, nil, false, body, ast.Span{})
 

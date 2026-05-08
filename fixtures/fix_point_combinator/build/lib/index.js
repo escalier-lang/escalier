@@ -1,23 +1,31 @@
-export const fact = function (temp1) {
-  const cont = temp1;
-  return function (temp2) {
-    const n = temp2;
-    let temp3;
+export class Fix {
+  constructor(temp1) {
+    const f = temp1;
+    this.f = f;
+  }
+  recurse(temp2) {
+    const arg = temp2;
+    const g = this.f;
+    return g(this.recurse.bind(this))(arg);
+  }
+}
+export const fact = function (temp3) {
+  const cont = temp3;
+  return function (temp4) {
+    const n = temp4;
+    let temp5;
     if (n <= 0) {
-      temp3 = 1;
+      temp5 = 1;
     } else {
-      temp3 = n * cont(n - 1);
+      temp5 = n * cont(n - 1);
     }
-    return temp3;
+    return temp5;
   };
 };
-export const fix = function (temp4) {
-  const f = temp4;
-  const temp6 = {recurse(temp5) {
-    const arg = temp5;
-    return f(this.recurse.bind(this))(arg);
-  }};
-  return temp6.recurse.bind(temp6);
+export const fix = function (temp6) {
+  const f = temp6;
+  const temp7 = new Fix(f);
+  return temp7.recurse.bind(temp7);
 };
 export const result = fix(fact)(10);
 //# sourceMappingURL=./index.js.map

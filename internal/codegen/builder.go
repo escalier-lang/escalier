@@ -1491,36 +1491,6 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		elems := make([]ObjExprElem, len(expr.Elems))
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
-			case *ast.MethodExpr:
-				key, keyStmts := b.buildObjKey(elem.Name)
-				stmts = slices.Concat(stmts, keyStmts)
-				params, allParamStmts := b.buildParams(elem.Fn.Params)
-
-				elems[i] = NewMethodExpr(
-					key,
-					params,
-					slices.Concat(allParamStmts, b.buildStmts(elem.Fn.Body.Stmts)),
-					elem,
-				)
-			case *ast.GetterExpr:
-				key, keyStmts := b.buildObjKey(elem.Name)
-				stmts = slices.Concat(stmts, keyStmts)
-
-				elems[i] = NewGetterExpr(
-					key,
-					b.buildStmts(elem.Fn.Body.Stmts),
-					elem,
-				)
-			case *ast.SetterExpr:
-				key, keyStmts := b.buildObjKey(elem.Name)
-				stmts = slices.Concat(stmts, keyStmts)
-				params, allParamStmts := b.buildParams(elem.Fn.Params)
-				elems[i] = NewSetterExpr(
-					key,
-					params,
-					slices.Concat(allParamStmts, b.buildStmts(elem.Fn.Body.Stmts)),
-					elem,
-				)
 			case *ast.PropertyExpr:
 				key, keyStmts := b.buildObjKey(elem.Name)
 				stmts = slices.Concat(stmts, keyStmts)

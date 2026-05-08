@@ -313,46 +313,14 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"c": "boolean",
 			},
 		},
-		"ObjectWithMethods": {
-			input: `
-				val value: number = 5
-				val obj = {
-					value,
-					increment(mut self, amount: number) -> Self {
-						self.value = self.value + amount
-						return self
-					}
-				}
-			`,
-			expectedTypes: map[string]string{
-				"obj": "{value: number, increment(mut self, amount: number) -> Self}",
-			},
-		},
-		"ObjectWithGetterSetter": {
-			input: `
-				val value: number = 5
-				val obj = {
-					_value: value,
-					get value (self) {
-						return self._value
-					},
-					set value (mut self, value: number) {
-						self._value = value
-					},
-				}
-			`,
-			expectedTypes: map[string]string{
-				"obj": "{_value: number, get value(self) -> number, set value(mut self, value: number) -> undefined}",
-			},
-		},
 		"ObjectWithComputedKeys": {
 			input: `
 				val foo = "foo"
 				val bar = "bar"
 				val obj = {
 					[foo]: 42:number,
-					[bar](self) {
-						return self[foo]
+					[bar]: fn () {
+						return "hello":string
 					}
 				}
 
@@ -360,9 +328,9 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = obj[bar]()
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{foo: number, bar(self) -> number}",
+				"obj": "{foo: number, bar: fn () -> string}",
 				"a":   "number",
-				"b":   "number",
+				"b":   "string",
 			},
 		},
 		"IfElseExpr": {
@@ -924,27 +892,6 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			expectedTypes: map[string]string{
 				"fst": "fn <A: number, B: number>(a: A, b: B) -> A",
 				"a":   "5",
-			},
-		},
-		"ObjectWithGenericMethods": {
-			input: `
-				val container = {
-					value: 5:number,
-					getValue<T>(self, default: T) -> number | T {
-						if self.value != 0 {
-							return self.value
-						} else {
-							return default
-						}
-					}
-				}
-				val a = container.getValue("default":string)
-				val b = container.getValue(10)
-			`,
-			expectedTypes: map[string]string{
-				"container": "{value: number, getValue<T>(self, default: T) -> number | T}",
-				"a":         "number | string",
-				"b":         "number",
 			},
 		},
 		"ClassWithGenericMethod": {

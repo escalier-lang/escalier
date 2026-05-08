@@ -308,55 +308,8 @@ type ObjExprElem interface {
 	Node
 }
 
-func (*MethodExpr) isObjExprElem()     {}
-func (*GetterExpr) isObjExprElem()     {}
-func (*SetterExpr) isObjExprElem()     {}
 func (*PropertyExpr) isObjExprElem()   {}
 func (*RestSpreadExpr) isObjExprElem() {}
-
-type MethodExpr struct {
-	Name   ObjKey
-	Params []*Param
-	Body   []Stmt
-	source ast.Node
-	span   *Span
-}
-
-func NewMethodExpr(name ObjKey, params []*Param, body []Stmt, source ast.Node) *MethodExpr {
-	return &MethodExpr{Name: name, Params: params, Body: body, source: source, span: nil}
-}
-func (e *MethodExpr) Span() *Span        { return e.span }
-func (e *MethodExpr) SetSpan(span *Span) { e.span = span }
-func (e *MethodExpr) Source() ast.Node   { return e.source }
-
-type GetterExpr struct {
-	Name   ObjKey
-	Body   []Stmt
-	source ast.Node
-	span   *Span
-}
-
-func NewGetterExpr(name ObjKey, body []Stmt, source ast.Node) *GetterExpr {
-	return &GetterExpr{Name: name, Body: body, source: source, span: nil}
-}
-func (e *GetterExpr) Span() *Span        { return e.span }
-func (e *GetterExpr) SetSpan(span *Span) { e.span = span }
-func (e *GetterExpr) Source() ast.Node   { return e.source }
-
-type SetterExpr struct {
-	Name   ObjKey
-	Params []*Param
-	Body   []Stmt
-	source ast.Node
-	span   *Span
-}
-
-func NewSetterExpr(name ObjKey, params []*Param, body []Stmt, source ast.Node) *SetterExpr {
-	return &SetterExpr{Name: name, Params: params, Body: body, source: source, span: nil}
-}
-func (e *SetterExpr) Span() *Span        { return e.span }
-func (e *SetterExpr) SetSpan(span *Span) { e.span = span }
-func (e *SetterExpr) Source() ast.Node   { return e.source }
 
 type PropertyExpr struct {
 	Key    ObjKey

@@ -397,20 +397,6 @@ func (r *renamer) renameObjExprElems(elems []ast.ObjExprElem) {
 					ident.VarID = int(r.resolve(ident.Name, ident.Span()))
 				}
 			}
-		case *ast.MethodExpr:
-			// Method key: only resolve computed keys.
-			if ck, ok := e.Name.(*ast.ComputedKey); ok {
-				r.renameExpr(ck.Expr)
-			}
-			// Don't recurse into the method body.
-		case *ast.GetterExpr:
-			if ck, ok := e.Name.(*ast.ComputedKey); ok {
-				r.renameExpr(ck.Expr)
-			}
-		case *ast.SetterExpr:
-			if ck, ok := e.Name.(*ast.ComputedKey); ok {
-				r.renameExpr(ck.Expr)
-			}
 		case *ast.CallableExpr:
 			// Don't recurse into the callable body.
 		case *ast.ConstructorExpr:

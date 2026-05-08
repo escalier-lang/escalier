@@ -401,21 +401,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// Otherwise returns a TupleType.
 		exprType = collapseArrayRestSpreads(c, elemTypes)
 	case *ast.ObjectExpr:
-		// Create a context for the object so that we can add a `Self` type to it
-		objCtx := ctx.WithNewScope()
-
 		// TODO(#413): typeElems may contain nil entries when astKeyToTypeKey
-		// fails (e.g. for unsupported computed key types). These nil entries
-		// cause a panic in bind. Filter them out before creating the ObjectType.
+		// fails (e.g. for unsupported computed key types). Filter them out
+		// before creating the ObjectType.
 		typeElems := make([]type_system.ObjTypeElem, len(expr.Elems))
 		types := make([]type_system.Type, len(expr.Elems))
-		paramBindingsSlice := make([]map[string]*type_system.Binding, len(expr.Elems))
-
-		selfType := c.FreshVar(nil)
-		selfTypeAlias := type_system.TypeAlias{Type: selfType, TypeParams: []*type_system.TypeParam{}}
-		objCtx.Scope.SetTypeAlias("Self", &selfTypeAlias)
-
-		methodCtxs := make([]Context, len(expr.Elems))
 
 		for i, elem := range expr.Elems {
 			switch elem := elem.(type) {
@@ -423,46 +413,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 				errors = slices.Concat(errors, keyErrors)
 				if key != nil {
+					// The property slot is a fresh TypeVar so that
+					// bidirectional unification with the surrounding
+					// context (e.g. an assignment target's annotated
+					// field type) can flow back into the value's type.
 					t := c.FreshVar(&ast.NodeProvenance{Node: elem})
 					types[i] = t
 					typeElems[i] = type_system.NewPropertyElem(*key, t)
-				}
-			case *ast.MethodExpr:
-				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
-				errors = slices.Concat(errors, keyErrors)
-				if key != nil {
-					methodType, methodCtx, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
-					methodCtxs[i] = methodCtx
-					paramBindingsSlice[i] = paramBindings
-					// Note: object-literal methods deliberately leave
-					// SelfParam unpopulated. The receiver type is the
-					// surrounding object — represented by `selfType`,
-					// a fresh TypeVar that gets bound to the ObjectType
-					// being constructed. Wiring that back into each
-					// method's SelfParam creates a recursive
-					// `obj→method→obj` cycle that breaks the unifier.
-					// Object-literal receivers are structural anyway;
-					// the MethodElem.MutSelf cache covers visibility.
-					types[i] = methodType
-					typeElems[i] = type_system.NewMethodElem(*key, methodType, elem.MutSelf)
-				}
-			case *ast.GetterExpr:
-				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
-				errors = slices.Concat(errors, keyErrors)
-				if key != nil {
-					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
-					paramBindingsSlice[i] = paramBindings
-					types[i] = funcType
-					typeElems[i] = &type_system.GetterElem{Fn: funcType, Name: *key, MutSelf: elem.MutSelf}
-				}
-			case *ast.SetterExpr:
-				key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
-				errors = slices.Concat(errors, keyErrors)
-				if key != nil {
-					funcType, _, paramBindings, _ := c.inferFuncSig(objCtx, &elem.Fn.FuncSig, elem.Fn)
-					paramBindingsSlice[i] = paramBindings
-					types[i] = funcType
-					typeElems[i] = &type_system.SetterElem{Fn: funcType, Name: *key, MutSelf: elem.MutSelf}
 				}
 			// No object-type constraint is enforced on the spread source.
 			// This matches JS/TS semantics where spreading non-objects
@@ -475,27 +432,24 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 
 		objType := type_system.NewObjectType(provenance, typeElems)
-		bindErrors := c.bind(objCtx, selfType, objType, make(unifySeen))
-		errors = slices.Concat(errors, bindErrors)
 
-		i := 0 // indexes into paramBindingsSlice
 		for t, exprElem := range Zip(types, expr.Elems) {
 			switch elem := exprElem.(type) {
 			case *ast.PropertyExpr:
 				if elem.Value != nil {
-					valueType, valueErrors := c.inferExpr(objCtx, elem.Value)
-					unifyErrors := c.Unify(objCtx, valueType, t)
+					valueType, valueErrors := c.inferExpr(ctx, elem.Value)
+					unifyErrors := c.Unify(ctx, valueType, t)
 
 					errors = slices.Concat(errors, valueErrors, unifyErrors)
 				} else {
 					switch key := elem.Name.(type) {
 					case *ast.IdentExpr:
 						// TODO: dedupe with *ast.IdentExpr case
-						if binding := objCtx.Scope.GetValue(key.Name); binding != nil {
-							unifyErrors := c.Unify(objCtx, binding.Type, t)
+						if binding := ctx.Scope.GetValue(key.Name); binding != nil {
+							unifyErrors := c.Unify(ctx, binding.Type, t)
 							errors = slices.Concat(errors, unifyErrors)
 						} else {
-							unifyErrors := c.Unify(objCtx, type_system.NewNeverType(nil), t)
+							unifyErrors := c.Unify(ctx, type_system.NewNeverType(nil), t)
 							errors = slices.Concat(errors, unifyErrors)
 
 							errors = append(
@@ -505,85 +459,12 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						}
 					}
 				}
-			case *ast.MethodExpr:
-				methodType := t.(*type_system.FuncType)
-				methodCtx := methodCtxs[i]
-				methodExpr := elem
-				paramBindings := paramBindingsSlice[i]
-
-				if methodExpr.MutSelf != nil {
-					var selfType type_system.Type = type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)
-					if *methodExpr.MutSelf {
-						selfType = type_system.NewMutType(nil, selfType)
-					}
-					paramBindings["self"] = &type_system.Binding{
-						Source:     &ast.NodeProvenance{Node: expr},
-						Type:       selfType,
-						Assignable: false, // `self` cannot be reassigned
-						Mutable:    *methodExpr.MutSelf,
-					}
-				}
-
-				inferErrors := c.inferFuncBodyWithFuncSigType(
-					methodCtx, methodType, paramBindings,
-					methodExpr.Fn.Params, methodExpr.Fn.Body,
-					asyncModeFrom(methodExpr.Fn.Async), nonConstructorBody,
-				)
-				errors = slices.Concat(errors, inferErrors)
-
-			case *ast.GetterExpr:
-				funcType := t.(*type_system.FuncType)
-				paramBindings := paramBindingsSlice[i]
-				isMutSelf := elem.MutSelf != nil && *elem.MutSelf
-				var selfTy type_system.Type = type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)
-				if isMutSelf {
-					selfTy = type_system.NewMutType(nil, selfTy)
-				}
-				paramBindings["self"] = &type_system.Binding{
-					Source:     &ast.NodeProvenance{Node: expr},
-					Type:       selfTy,
-					Assignable: false,
-					Mutable:    isMutSelf,
-				}
-
-				getterExpr := elem
-				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings,
-					getterExpr.Fn.Params, getterExpr.Fn.Body,
-					asyncModeFrom(getterExpr.Fn.Async), nonConstructorBody,
-				)
-				errors = slices.Concat(errors, inferErrors)
-
-			case *ast.SetterExpr:
-				funcType := t.(*type_system.FuncType)
-				paramBindings := paramBindingsSlice[i]
-				isMutSelf := elem.MutSelf != nil && *elem.MutSelf
-				var selfTy type_system.Type = type_system.NewTypeRefType(nil, "Self", &selfTypeAlias)
-				if isMutSelf {
-					selfTy = type_system.NewMutType(nil, selfTy)
-				}
-				paramBindings["self"] = &type_system.Binding{
-					Source:     &ast.NodeProvenance{Node: expr},
-					Type:       selfTy,
-					Assignable: false,
-					Mutable:    isMutSelf,
-				}
-
-				setterExpr := elem
-				inferErrors := c.inferFuncBodyWithFuncSigType(
-					objCtx, funcType, paramBindings,
-					setterExpr.Fn.Params, setterExpr.Fn.Body,
-					asyncModeFrom(setterExpr.Fn.Async), nonConstructorBody,
-				)
-				errors = slices.Concat(errors, inferErrors)
 			case *ast.ObjSpreadExpr:
 				// Already handled in the first loop — nothing to do here.
 			}
-
-			i++
 		}
 
-		exprType = selfType
+		exprType = objType
 	case *ast.FuncExpr:
 		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
 		errors = slices.Concat(errors, sigErrors)

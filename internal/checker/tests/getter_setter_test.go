@@ -100,34 +100,6 @@ func TestGetterSetterAccess(t *testing.T) {
 			`,
 			expectedErrors: nil,
 		},
-		"ObjectLiteralReadGetter": {
-			input: `
-				val value: number = 5
-				val obj = {
-					get value(self) {
-						return self._value
-					},
-					_value: value,
-				}
-				val v = obj.value
-			`,
-			expectedErrors: nil,
-		},
-		"ObjectLiteralWriteSetterOnly": {
-			input: `
-				val obj = {
-					_value: 0:number,
-					set value(mut self, v: number) {
-						self._value = v
-					},
-				}
-				val mobj: mut typeof obj = obj
-				fn main() {
-					mobj.value = 42
-				}
-			`,
-			expectedErrors: nil,
-		},
 		"WriteSetterViaSpreadSource": {
 			input: `
 				class Base {
@@ -250,23 +222,6 @@ func TestGetterSetterAccess(t *testing.T) {
 			expectedErrors: []string{
 				"Unknown property 'next' in object type {_seen: number, get next(mut self) -> number}",
 			},
-		},
-		// An object-literal getter declared with `mut self` must bind
-		// `self` as mutable inside the body so the cache mutation
-		// type-checks.
-		"ObjectLiteralMutSelfGetterAllowsSelfMutation": {
-			input: `
-				val obj = {
-					_x: 0:number,
-					get foo(mut self) -> number {
-						self._x = self._x + 1
-						return self._x
-					},
-				}
-				val mobj: mut typeof obj = obj
-				val v = mobj.foo
-			`,
-			expectedErrors: nil,
 		},
 		// A `mut self` setter must remain visible during write lookup
 		// on a non-mutable receiver so the assignment-site mutability

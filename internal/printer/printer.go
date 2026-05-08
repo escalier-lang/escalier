@@ -492,62 +492,6 @@ func (p *Printer) printObjExprElem(elem ast.ObjExprElem) {
 	case *ast.ConstructorExpr:
 		p.writeString("new")
 		p.printFuncExpr(&e.Fn)
-	case *ast.MethodExpr:
-		p.printObjKey(e.Name)
-		if e.MutSelf != nil {
-			p.writeString("(")
-			if *e.MutSelf {
-				p.writeString("mut self")
-			} else {
-				p.writeString("self")
-			}
-			if len(e.Fn.Params) > 0 {
-				p.writeString(", ")
-			}
-		} else {
-			p.writeString("(")
-		}
-		for i, param := range e.Fn.Params {
-			p.printPattern(param.Pattern)
-			if param.TypeAnn != nil {
-				p.writeString(": ")
-				p.printTypeAnn(param.TypeAnn)
-			}
-			if i < len(e.Fn.Params)-1 {
-				p.writeString(", ")
-			}
-		}
-		p.writeString(")")
-		if e.Fn.Return != nil {
-			p.writeString(": ")
-			p.printTypeAnn(e.Fn.Return)
-		}
-		p.space()
-		p.printBlock(e.Fn.Body)
-	case *ast.GetterExpr:
-		p.writeString("get ")
-		p.printObjKey(e.Name)
-		p.writeString("(self)")
-		if e.Fn.Return != nil {
-			p.writeString(": ")
-			p.printTypeAnn(e.Fn.Return)
-		}
-		p.space()
-		p.printBlock(e.Fn.Body)
-	case *ast.SetterExpr:
-		p.writeString("set ")
-		p.printObjKey(e.Name)
-		p.writeString("(mut self,")
-		if len(e.Fn.Params) > 0 {
-			p.printPattern(e.Fn.Params[0].Pattern)
-			if e.Fn.Params[0].TypeAnn != nil {
-				p.writeString(": ")
-				p.printTypeAnn(e.Fn.Params[0].TypeAnn)
-			}
-		}
-		p.writeString(")")
-		p.space()
-		p.printBlock(e.Fn.Body)
 	case *ast.PropertyExpr:
 		if e.Readonly {
 			p.writeString("readonly ")

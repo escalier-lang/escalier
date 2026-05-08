@@ -325,27 +325,6 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 	case *ObjectExpr:
 		for _, elem := range ek.Elems {
 			switch elem := elem.(type) {
-			case *MethodExpr:
-				s.AddSegmentForNode(elem.Name)
-				for _, param := range elem.Params {
-					s.AddSegmentForNode(param.Pattern)
-				}
-				for _, stmt := range elem.Body {
-					s.TraverseStmt(stmt)
-				}
-			case *GetterExpr:
-				s.AddSegmentForNode(elem.Name)
-				for _, stmt := range elem.Body {
-					s.TraverseStmt(stmt)
-				}
-			case *SetterExpr:
-				s.AddSegmentForNode(elem.Name)
-				for _, param := range elem.Params {
-					s.AddSegmentForNode(param.Pattern)
-				}
-				for _, stmt := range elem.Body {
-					s.TraverseStmt(stmt)
-				}
 			case *PropertyExpr:
 				s.AddSegmentForNode(elem.Key)
 				if elem.Value != nil {

@@ -140,15 +140,6 @@ func TestParseExprNoErrors(t *testing.T) {
 		"ObjectWithSpreads": {
 			input: "{a, ...b, ...{c, d}}",
 		},
-		"ObjectWithMethods": {
-			input: "{ foo(self) { return 5 }, get bar(self) { return self.x }, set bar(mut self, x) { this.x = x } }",
-		},
-		"ObjectWithStaticMethod": {
-			input: "{ foo() { return 5 } }",
-		},
-		"ObjectWithGenericMethod": {
-			input: "{ foo<T>(x: T) { return x }, bar<T>(self, x: T) { return x } }",
-		},
 		"TypeCast": {
 			input: "value: string",
 		},
@@ -395,6 +386,15 @@ func TestParseExprErrorHandling(t *testing.T) {
 		},
 		"ObjectSpreadMissingOperandBeforeComma": {
 			input: "{..., a: 1}",
+		},
+		"ObjectMethodShorthand": {
+			input: "{ foo() { return 5 } }",
+		},
+		"ObjectGetterShorthand": {
+			input: "{ get foo() { return 5 } }",
+		},
+		"ObjectSetterShorthand": {
+			input: "{ set foo(v) { } }",
 		},
 	}
 

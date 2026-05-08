@@ -1,5 +1,5 @@
 {
-    "name": "objects_with_generic_methods",
+    "name": "fix_point_combinator",
     "version": "0.0.1",
     "type": "module",
     "main": "build/lib/index.js"

@@ -203,14 +203,6 @@ func (p *Printer) PrintExpr(expr Expr) {
 				p.print(", ")
 			}
 			switch elem := elem.(type) {
-			case *MethodExpr:
-				p.printMethod(elem.Name, elem.Params, elem.Body)
-			case *GetterExpr:
-				p.print("get ")
-				p.printMethod(elem.Name, []*Param{}, elem.Body)
-			case *SetterExpr:
-				p.print("set ")
-				p.printMethod(elem.Name, elem.Params, elem.Body)
 			case *PropertyExpr:
 				p.printObjKey(elem.Key)
 				if elem.Value != nil {
@@ -486,25 +478,6 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 	}
 }
 
-func (p *Printer) printMethod(name ObjKey, params []*Param, body []Stmt) {
-	p.printObjKey(name)
-	p.print("(")
-	for i, param := range params {
-		if i > 0 {
-			p.print(", ")
-		}
-		p.printPattern(param.Pattern)
-	}
-	p.print(") {")
-	p.indent++
-	for _, stmt := range body {
-		p.NewLine()
-		p.PrintStmt(stmt)
-	}
-	p.indent--
-	p.NewLine()
-	p.print("}")
-}
 
 func (p *Printer) printIdent(id *Identifier) {
 	start := p.location
