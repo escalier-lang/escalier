@@ -144,6 +144,11 @@ func (c *Checker) inferConstructorSig(
 		retType,
 		throwsType,
 	)
+	// Note: constructors deliberately do NOT carry SelfParam. A
+	// constructor produces a receiver via its return type — there is no
+	// pre-existing receiver to bind. Callers invoke `C(args)`, not
+	// `instance.constructor(args)`. The validateConstructorSelf check
+	// above still enforces that the AST-level `mut self` is present.
 	return funcType, ctorCtx, paramBindings, errors
 }
 

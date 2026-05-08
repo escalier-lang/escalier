@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	. "github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -599,6 +600,151 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 			} else {
 				assert.Equal(t, test.expectedErrors, actualMsgs)
 			}
+		})
+	}
+}
+
+// TestClassMethodSelfParamPopulated pins that class method/getter/setter
+// inference populates FuncType.SelfParam with a receiver whose type is
+// the class instance ref (wrapped in MutType for `mut self`). This is
+// the type-system-level invariant the checker relies on once
+// receiver-lifetime work goes downstream of method-call typing.
+func TestClassMethodSelfParamPopulated(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		className    string
+		methodName   string
+		expectMut    bool
+		expectStatic bool
+	}{
+		"ImmutableSelf": {
+			input: `
+				class Box {
+					value: number,
+					read(self) -> number { return self.value }
+				}
+			`,
+			className:  "Box",
+			methodName: "read",
+		},
+		"MutSelf": {
+			input: `
+				class Counter {
+					n: number,
+					constructor(mut self) { self.n = 0 },
+					bump(mut self) -> number {
+						self.n = self.n + 1
+						return self.n
+					}
+				}
+			`,
+			className:  "Counter",
+			methodName: "bump",
+			expectMut:  true,
+		},
+		"StaticHasNoSelfParam": {
+			// Static methods must NOT carry a SelfParam — they have no
+			// receiver to bind. The method elem's MutSelf is nil.
+			input: `
+				class Boxer {
+					static make() -> number { return 0 }
+				}
+			`,
+			className:    "Boxer",
+			methodName:   "make",
+			expectStatic: true,
+		},
+		"GetterImmutableSelf": {
+			input: `
+				class Reader {
+					_value: number,
+					get value(self) -> number { return self._value }
+				}
+			`,
+			className:  "Reader",
+			methodName: "value",
+		},
+		"SetterMutSelf": {
+			input: `
+				class Writer {
+					_value: number,
+					constructor(mut self) { self._value = 0 },
+					set value(mut self, x: number) { self._value = x }
+				}
+			`,
+			className:  "Writer",
+			methodName: "value",
+			expectMut:  true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ns := mustInferAsModule(t, test.input)
+
+			classAlias := ns.Types[test.className]
+			require.NotNilf(t, classAlias, "class type alias %q not found", test.className)
+
+			searchObj := type_system.Prune(classAlias.Type).(*type_system.ObjectType)
+			if test.expectStatic {
+				// Static methods live on the class object's value
+				// binding, not on the instance type. Look up the
+				// constructor type alias for the class to inspect them.
+				ctorBinding := ns.Values[test.className]
+				require.NotNil(t, ctorBinding, "constructor binding not found")
+				if obj, ok := type_system.Prune(ctorBinding.Type).(*type_system.ObjectType); ok {
+					searchObj = obj
+				}
+			}
+
+			var methodFn *type_system.FuncType
+			var methodMutSelf *bool
+			matchKey := func(k type_system.ObjTypeKey) bool {
+				return k.Kind == type_system.StrObjTypeKeyKind && k.Str == test.methodName
+			}
+			for _, elem := range searchObj.Elems {
+				switch e := elem.(type) {
+				case *type_system.MethodElem:
+					if matchKey(e.Name) {
+						methodFn = e.Fn
+						methodMutSelf = e.MutSelf
+					}
+				case *type_system.GetterElem:
+					if matchKey(e.Name) {
+						methodFn = e.Fn
+						methodMutSelf = e.MutSelf
+					}
+				case *type_system.SetterElem:
+					if matchKey(e.Name) {
+						methodFn = e.Fn
+						methodMutSelf = e.MutSelf
+					}
+				}
+				if methodFn != nil {
+					break
+				}
+			}
+			require.NotNilf(t, methodFn, "method/accessor %q not found", test.methodName)
+
+			if test.expectStatic {
+				assert.Nil(t, methodFn.SelfParam,
+					"static methods must not carry SelfParam")
+				assert.Nil(t, methodMutSelf,
+					"static methods' MutSelf must be nil")
+				return
+			}
+
+			require.NotNil(t, methodFn.SelfParam,
+				"instance methods must carry SelfParam")
+			require.NotNil(t, methodMutSelf,
+				"instance methods' MutSelf must be set")
+
+			_, isMut := methodFn.SelfParam.Type.(*type_system.MutType)
+			assert.Equalf(t, test.expectMut, isMut,
+				"SelfParam.Type wrap-in-MutType should reflect MutSelf=%v", *methodMutSelf)
+			assert.Equalf(t, test.expectMut, *methodMutSelf,
+				"MutSelf should match the test expectation")
 		})
 	}
 }

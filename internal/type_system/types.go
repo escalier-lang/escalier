@@ -812,10 +812,19 @@ func NewFuncParam(pattern Pat, t Type) *FuncParam {
 type FuncType struct {
 	LifetimeParams []*LifetimeVar // e.g. ['a, 'b]
 	TypeParams     []*TypeParam
-	Params         []*FuncParam
-	Return         Type
-	Throws         Type
-	provenance     Provenance
+	// SelfParam carries the implicit `self` receiver of a method when this
+	// FuncType belongs to a MethodElem/GetterElem/SetterElem. It is nil for
+	// plain functions and static methods. The receiver type lives in
+	// SelfParam.Type — wrapped in MutType for `mut self` — so receiver
+	// lifetimes flow through the visitor / substitution / lifetime
+	// machinery the same way parameter lifetimes do. Element-level
+	// MutSelf *bool is a denormalized cache that mirrors whether
+	// SelfParam.Type is a MutType wrapper.
+	SelfParam  *FuncParam
+	Params     []*FuncParam
+	Return     Type
+	Throws     Type
+	provenance Provenance
 }
 
 func NewFuncType(provenance Provenance, typeParams []*TypeParam, params []*FuncParam, returnType Type, throws Type) *FuncType {
@@ -840,6 +849,20 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 	}
 
 	changed := false
+
+	var newSelfParam *FuncParam
+	if t.SelfParam != nil {
+		newSelfType := t.SelfParam.Type.Accept(v)
+		if newSelfType != t.SelfParam.Type {
+			changed = true
+			newSelfParam = &FuncParam{
+				Pattern:  t.SelfParam.Pattern,
+				Type:     newSelfType,
+				Optional: t.SelfParam.Optional,
+			}
+		}
+	}
+
 	var newParams []*FuncParam
 	for i, param := range t.Params {
 		newType := param.Type.Accept(v)
@@ -881,6 +904,10 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 		if newParams != nil {
 			params = newParams
 		}
+		selfParam := t.SelfParam
+		if newSelfParam != nil {
+			selfParam = newSelfParam
+		}
 		r := NewFuncType(
 			t.provenance,
 			t.TypeParams,
@@ -889,6 +916,7 @@ func (t *FuncType) Accept(v TypeVisitor) Type {
 			newThrows,
 		)
 		r.LifetimeParams = t.LifetimeParams
+		r.SelfParam = selfParam
 		result = r
 	}
 
@@ -918,6 +946,21 @@ func (t *FuncType) Equals(other Type) bool {
 		// Compare LifetimeParams
 		if len(t.LifetimeParams) != len(other.LifetimeParams) {
 			return false
+		}
+		// Compare SelfParam — receiver presence and mutability is part
+		// of a method's identity. The MutType wrapper on the receiver
+		// type carries `mut self` vs `self`, so a structural equals on
+		// SelfParam.Type covers both.
+		if (t.SelfParam == nil) != (other.SelfParam == nil) {
+			return false
+		}
+		if t.SelfParam != nil {
+			if !equals(t.SelfParam.Type, other.SelfParam.Type) {
+				return false
+			}
+			if t.SelfParam.Optional != other.SelfParam.Optional {
+				return false
+			}
 		}
 		// Compare Params
 		if len(t.Params) != len(other.Params) {

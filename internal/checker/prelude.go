@@ -451,6 +451,7 @@ func (c *Checker) initializeGlobalScope() {
 
 	UpdateMethodMutability(inferCtx, globalNs)
 	UpdateCollectionMutability(globalNs)
+	populateSelfParams(globalNs)
 
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)

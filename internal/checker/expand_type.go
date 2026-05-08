@@ -1053,12 +1053,12 @@ func isMemberVisible(elem type_system.ObjTypeElem, mode AccessMode, receiverMut 
 			if receiverMut {
 				return true
 			}
-			return e.MutSelf == nil || !*e.MutSelf
+			return !methodRequiresMutSelf(e.Fn, e.MutSelf)
 		case *type_system.GetterElem:
 			if receiverMut {
 				return true
 			}
-			return e.MutSelf == nil || !*e.MutSelf
+			return !methodRequiresMutSelf(e.Fn, e.MutSelf)
 		default:
 			return true
 		}

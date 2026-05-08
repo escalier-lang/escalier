@@ -330,8 +330,9 @@ func (c *Checker) inferInterface(
 	for i, typeParam := range decl.TypeParams {
 		typeArgs[i] = type_system.NewTypeRefType(nil, typeParam.Name, nil)
 	}
-	selfType := type_system.NewTypeRefType(nil, decl.Name.Name, nil, typeArgs...)
-	selfTypeAlias := type_system.TypeAlias{Type: selfType, TypeParams: []*type_system.TypeParam{}}
+	selfTypeAlias := type_system.TypeAlias{TypeParams: []*type_system.TypeParam{}}
+	selfType := type_system.NewTypeRefType(nil, decl.Name.Name, &selfTypeAlias, typeArgs...)
+	selfTypeAlias.Type = selfType
 
 	result := c.buildTypeParams(ctx, decl.TypeParams, &selfTypeAlias)
 	errors := result.Errors
@@ -344,6 +345,28 @@ func (c *Checker) inferInterface(
 
 	objType, typeErrors := c.inferObjectTypeAnn(typeCtx, decl.TypeAnn)
 	errors = slices.Concat(errors, typeErrors)
+
+	// Populate SelfParam on each instance method/getter/setter so receiver
+	// lifetimes flow through the same machinery as parameter lifetimes.
+	// inferObjectTypeAnn is generic across object-type contexts (interfaces,
+	// object-type-literals); only here, in the interface entry point, do we
+	// know the receiver type to attach.
+	for _, elem := range objType.Elems {
+		switch e := elem.(type) {
+		case *type_system.MethodElem:
+			if e.Fn != nil && e.Fn.SelfParam == nil {
+				e.Fn.SelfParam = makeSelfParam(selfType, e.MutSelf)
+			}
+		case *type_system.GetterElem:
+			if e.Fn != nil && e.Fn.SelfParam == nil {
+				e.Fn.SelfParam = makeSelfParam(selfType, e.MutSelf)
+			}
+		case *type_system.SetterElem:
+			if e.Fn != nil && e.Fn.SelfParam == nil {
+				e.Fn.SelfParam = makeSelfParam(selfType, e.MutSelf)
+			}
+		}
+	}
 
 	// Infer the Extends clause if present
 	if decl.Extends != nil {

@@ -495,6 +495,15 @@ func (c *Checker) InferComponent(
 				instanceSymbolKeyMap := make(map[int]any)
 				staticSymbolKeyMap := make(map[int]any)
 
+				// Build the class instance ref once so each method/getter/setter
+				// can attach it as their FuncType.SelfParam. Mirrors the
+				// retType construction below.
+				classTypeArgs := make([]type_system.Type, len(typeParams))
+				for i := range typeParams {
+					classTypeArgs[i] = type_system.NewTypeRefType(nil, typeParams[i].Name, nil)
+				}
+				classSelfRef := type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias, classTypeArgs...)
+
 				for i, elem := range decl.Body {
 					switch elem := elem.(type) {
 					case *ast.FieldElem:
@@ -570,6 +579,7 @@ func (c *Checker) InferComponent(
 							)
 						} else {
 							// Instance methods go to the instance type
+							methodType.SelfParam = makeSelfParam(classSelfRef, elem.MutSelf)
 							objTypeElems = append(
 								objTypeElems,
 								type_system.NewMethodElem(*key, methodType, elem.MutSelf),
@@ -604,6 +614,7 @@ func (c *Checker) InferComponent(
 							)
 						} else {
 							// Instance getters go to the instance type
+							funcType.SelfParam = makeSelfParam(classSelfRef, elem.MutSelf)
 							objTypeElems = append(
 								objTypeElems,
 								type_system.NewGetterElem(*key, funcType, elem.MutSelf),
@@ -638,6 +649,7 @@ func (c *Checker) InferComponent(
 							)
 						} else {
 							// Instance setters go to the instance type
+							funcType.SelfParam = makeSelfParam(classSelfRef, elem.MutSelf)
 							objTypeElems = append(
 								objTypeElems,
 								type_system.NewSetterElem(*key, funcType, elem.MutSelf),

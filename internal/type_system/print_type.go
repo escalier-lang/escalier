@@ -412,6 +412,14 @@ func printFuncType(t *FuncType, pt func(Type) string) string {
 		result += ">"
 	}
 	result += "("
+	// Note: SelfParam is intentionally NOT printed here. printFuncType
+	// is shared between (a) bare function values and (b) the inner
+	// signature of method elements. Method elements emit `self` /
+	// `mut self` themselves at the printObjectType level; printing
+	// SelfParam here would duplicate it for methods AND, more
+	// problematically, attach a phantom `self` to function values
+	// extracted from a method (`val f = obj.method`), where the
+	// receiver is already bound and shouldn't surface.
 	if len(t.Params) > 0 {
 		for i, param := range t.Params {
 			if i > 0 {
