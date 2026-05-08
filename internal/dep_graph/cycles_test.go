@@ -139,7 +139,7 @@ func TestFindCycles(t *testing.T) {
 		},
 		"MethodCallCycle_OutsideFunction_Problematic": {
 			input: `
-				val obj1 = { foo() { obj2.bar } }
+				val obj1 = { foo: fn() { obj2.bar } }
 				val obj2 = { bar: obj1.foo() }
 			`,
 			expectedCycles:    1,
@@ -148,7 +148,7 @@ func TestFindCycles(t *testing.T) {
 		},
 		"DeepMethodCallCycle_OutsideFunction_Problematic": {
 			input: `
-				val obj1 = { a: { b() { obj2.c.d } } }
+				val obj1 = { a: { b: fn() { obj2.c.d } } }
 				val obj2 = { c: { d: obj1.a.b() } }
 			`,
 			expectedCycles:    1,
@@ -211,8 +211,8 @@ func TestFindCycles(t *testing.T) {
 		},
 		"MethodMutualRecursion_InsideFunction_Allowed": {
 			input: `
-				val obj1 = { foo() { obj2.bar() } }
-				val obj2 = { bar() { obj1.foo() } }
+				val obj1 = { foo: fn() { obj2.bar() } }
+				val obj2 = { bar: fn() { obj1.foo() } }
 			`,
 			expectedCycles:    0, // Calls inside method bodies are allowed
 			expectProblematic: false,

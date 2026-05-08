@@ -292,18 +292,6 @@ func (c *collector) collectObjExprElems(elems []ast.ObjExprElem) {
 					c.addUse(ident.VarID)
 				}
 			}
-		case *ast.MethodExpr:
-			if ck, ok := e.Name.(*ast.ComputedKey); ok {
-				c.collectExpr(ck.Expr)
-			}
-		case *ast.GetterExpr:
-			if ck, ok := e.Name.(*ast.ComputedKey); ok {
-				c.collectExpr(ck.Expr)
-			}
-		case *ast.SetterExpr:
-			if ck, ok := e.Name.(*ast.ComputedKey); ok {
-				c.collectExpr(ck.Expr)
-			}
 		case *ast.CallableExpr:
 			// Don't recurse into callable body.
 		case *ast.ConstructorExpr:

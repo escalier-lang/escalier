@@ -1093,51 +1093,6 @@ func TestPrintFunctionWithThrows(t *testing.T) {
 	}
 }
 
-func TestPrintObjectMethods(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-	}{
-		{
-			"getter",
-			`val obj = {
-				get value() { return 42 }
-			}`,
-		},
-		{
-			"setter",
-			`val obj = {
-				set value(v: number) { this.v = v }
-			}`,
-		},
-		{
-			"method",
-			`val obj = {
-				greet(name: string) -> string { return "Hello" }
-			}`,
-		},
-	}
-
-	opts := DefaultOptions()
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			decl := parseDecl(t, tt.input)
-			result, err := Print(decl, opts)
-			if err != nil {
-				t.Fatalf("Print error: %v", err)
-			}
-
-			// Verify key elements are present
-			if tt.name == "getter" && !strings.Contains(result, "get") {
-				t.Error("Expected output to contain 'get'")
-			}
-			if tt.name == "setter" && !strings.Contains(result, "set") {
-				t.Error("Expected output to contain 'set'")
-			}
-		})
-	}
-}
-
 func TestPrintComplexTypeAnnotations(t *testing.T) {
 	tests := []struct {
 		name     string

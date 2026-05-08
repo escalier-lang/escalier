@@ -125,7 +125,6 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 	}{
 		"TypeAliasWithLifetimeParam":  {input: `type Box<'a> = 'a Point`},
 		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},
-		"ObjectMethodWithLifetimeParam": {input: `{ foo<'a>(x: T) {} }`},
 		"ClassFieldWithLifetimeParam":   {input: `class Box { p<'a>: Point }`},
 		"ObjectPropertyWithLifetimeParam": {input: `val x: { p<'a>: Point } = ref`},
 	}

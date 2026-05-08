@@ -486,9 +486,6 @@ type ObjExprElem interface {
 // TODO: rename these to CallableSig or something like that
 func (*CallableExpr) isObjExprElem()    {}
 func (*ConstructorExpr) isObjExprElem() {}
-func (*MethodExpr) isObjExprElem()      {}
-func (*GetterExpr) isObjExprElem()      {}
-func (*SetterExpr) isObjExprElem()      {}
 func (*PropertyExpr) isObjExprElem()    {}
 func (*ObjSpreadExpr) isObjExprElem()   {}
 
@@ -513,99 +510,6 @@ type ConstructorExpr struct {
 func (e *ConstructorExpr) Span() Span { return e.span }
 func (e *ConstructorExpr) Accept(v Visitor) {
 	if v.EnterObjExprElem(e) {
-		e.Fn.Accept(v)
-	}
-	v.ExitObjExprElem(e)
-}
-
-type MethodExpr struct {
-	Name    ObjKey
-	Fn      *FuncExpr
-	MutSelf *bool // nil = no self, true = mut self, false = self
-	span    Span
-}
-
-func NewMethod(name ObjKey, fn *FuncExpr, mutSelf *bool, span Span) *MethodExpr {
-	return &MethodExpr{Name: name, Fn: fn, MutSelf: mutSelf, span: span}
-}
-func (e *MethodExpr) Span() Span { return e.span }
-func (e *MethodExpr) Accept(v Visitor) {
-	if v.EnterObjExprElem(e) {
-		switch key := e.Name.(type) {
-		case *IdentExpr:
-			// IdentExpr here is a method name (a label), not a variable reference,
-			// so we skip visiting it to avoid treating it as a reference in scope.
-			_ = key
-		case *StrLit:
-			key.Accept(v)
-		case *NumLit:
-			key.Accept(v)
-		case *ComputedKey:
-			key.Accept(v)
-		}
-
-		e.Fn.Accept(v)
-	}
-	v.ExitObjExprElem(e)
-}
-
-type GetterExpr struct {
-	Name    ObjKey
-	Fn      *FuncExpr
-	MutSelf *bool // nil = no self, true = mut self, false = self
-	span    Span
-}
-
-func NewGetter(name ObjKey, fn *FuncExpr, mutSelf *bool, span Span) *GetterExpr {
-	return &GetterExpr{Name: name, Fn: fn, MutSelf: mutSelf, span: span}
-}
-func (e *GetterExpr) Span() Span { return e.span }
-func (e *GetterExpr) Accept(v Visitor) {
-	if v.EnterObjExprElem(e) {
-		switch key := e.Name.(type) {
-		case *IdentExpr:
-			// IdentExpr here is a getter name (a label), not a variable reference,
-			// so we skip visiting it to avoid treating it as a reference in scope.
-			_ = key
-		case *StrLit:
-			key.Accept(v)
-		case *NumLit:
-			key.Accept(v)
-		case *ComputedKey:
-			key.Accept(v)
-		}
-
-		e.Fn.Accept(v)
-	}
-	v.ExitObjExprElem(e)
-}
-
-type SetterExpr struct {
-	Name    ObjKey
-	Fn      *FuncExpr
-	MutSelf *bool // nil = no self, true = mut self, false = self
-	span    Span
-}
-
-func NewSetter(name ObjKey, fn *FuncExpr, mutSelf *bool, span Span) *SetterExpr {
-	return &SetterExpr{Name: name, Fn: fn, MutSelf: mutSelf, span: span}
-}
-func (e *SetterExpr) Span() Span { return e.span }
-func (e *SetterExpr) Accept(v Visitor) {
-	if v.EnterObjExprElem(e) {
-		switch key := e.Name.(type) {
-		case *IdentExpr:
-			// IdentExpr here is a setter name (a label), not a variable reference,
-			// so we skip visiting it to avoid treating it as a reference in scope.
-			_ = key
-		case *StrLit:
-			key.Accept(v)
-		case *NumLit:
-			key.Accept(v)
-		case *ComputedKey:
-			key.Accept(v)
-		}
-
 		e.Fn.Accept(v)
 	}
 	v.ExitObjExprElem(e)

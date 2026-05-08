@@ -274,40 +274,6 @@ func TestPatternLevelMut_ValVarMatrix(t *testing.T) {
 	}
 }
 
-// TestPatternLevelMut_BindMutSelfMethod replays the motivating fixture
-// shape: with the binding marked `mut`, the mut-self method becomes
-// visible at the use site (Phase 1 receiver-mutability filter).
-func TestPatternLevelMut_BindMutSelfMethod(t *testing.T) {
-	t.Parallel()
-	input := `
-		val value: number = 0
-		val mut obj1 = {
-			value,
-			increment(mut self) -> number {
-				self.value = self.value + 1
-				return self.value
-			},
-		}
-		val inc = obj1.increment
-	`
-	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	p := parser.NewParser(ctx, source)
-	script, parseErrors := p.ParseScript()
-	require.Empty(t, parseErrors, "expected no parse errors")
-
-	c := NewChecker(ctx)
-	inferCtx := Context{Scope: Prelude(c)}
-	_, inferErrors := c.InferScript(inferCtx, script)
-	if len(inferErrors) > 0 {
-		for i, err := range inferErrors {
-			t.Logf("Unexpected Error[%d]: %s", i, err.Message())
-		}
-	}
-	assert.Empty(t, inferErrors, "expected no inference errors")
-}
-
 // TestPatternLevelMut_ForInPreservesMut covers the `for mut x in xs`
 // loop pattern: Assignable is force-cleared (loop vars don't rebind)
 // while Mutable flows through from the pattern.
