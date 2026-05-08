@@ -319,14 +319,16 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val bar = "bar"
 				val obj = {
 					[foo]: 42:number,
-					[bar]: "hello":string,
+					[bar]: fn () {
+						return "hello":string
+					}
 				}
 
 				val a = obj[foo]
-				val b = obj[bar]
+				val b = obj[bar]()
 			`,
 			expectedTypes: map[string]string{
-				"obj": "{foo: number, bar: string}",
+				"obj": "{foo: number, bar: fn () -> string}",
 				"a":   "number",
 				"b":   "string",
 			},
