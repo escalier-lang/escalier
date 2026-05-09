@@ -546,13 +546,19 @@ modifiers_done:
 		// Method
 		p.lexer.consume() // consume '('
 
+		receiverStart := p.lexer.currentLocation
 		mutSelf, selfLifetime := p.selfReceiver()
 
 		params := []*ast.Param{}
 		if isStatic {
-			// Static methods have no receiver — discard whatever
-			// `selfReceiver` consumed so MutSelf/SelfLifetime stay
-			// nil on the resulting MethodElem.
+			// Static methods have no receiver. If the user wrote one
+			// anyway (`static foo(self)`, `static foo(mut self)`,
+			// `static foo<'a>('a self)`), report it — silently dropping
+			// would leave the user thinking `self` was meaningful.
+			if mutSelf != nil {
+				span := ast.Span{Start: receiverStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+				p.reportError(span, "static methods cannot have a `self` receiver")
+			}
 			mutSelf = nil
 			selfLifetime = nil
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)

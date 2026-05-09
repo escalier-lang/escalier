@@ -553,9 +553,10 @@ func (c *Checker) InferComponent(
 					case *ast.MethodElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						errors = slices.Concat(errors, recvErrs)
 						methodType, methodCtx, _, sigErrors := c.inferFuncSig(
-							declCtx, &elem.Fn.FuncSig, elem.Fn,
-							&methodReceiver{Type: classSelfRef, MutSelf: elem.MutSelf, LifetimeNode: elem.SelfLifetime})
+							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -591,9 +592,10 @@ func (c *Checker) InferComponent(
 					case *ast.GetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						errors = slices.Concat(errors, recvErrs)
 						funcType, _, _, sigErrors := c.inferFuncSig(
-							declCtx, &elem.Fn.FuncSig, elem.Fn,
-							&methodReceiver{Type: classSelfRef, MutSelf: elem.MutSelf, LifetimeNode: elem.SelfLifetime})
+							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -628,9 +630,10 @@ func (c *Checker) InferComponent(
 					case *ast.SetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						errors = slices.Concat(errors, recvErrs)
 						funcType, _, _, sigErrors := c.inferFuncSig(
-							declCtx, &elem.Fn.FuncSig, elem.Fn,
-							&methodReceiver{Type: classSelfRef, MutSelf: elem.MutSelf, LifetimeNode: elem.SelfLifetime})
+							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -1319,7 +1322,7 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes — we deliberately
+								// TODO(#574): handle generic classes — we deliberately
 								// drop type args and the `'a self` lifetime here
 								// because downstream codegen (MemberExpr →
 								// .bind(this) heuristic in builder.go) misclassifies
@@ -1413,7 +1416,7 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes — see the matching
+								// TODO(#574): handle generic classes — see the matching
 								// note in the MethodElem case above for why the
 								// receiver is rebuilt here instead of reusing
 								// getterType.Fn.SelfParam.Type.
@@ -1501,7 +1504,7 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes — see the matching
+								// TODO(#574): handle generic classes — see the matching
 								// note in the MethodElem case above for why the
 								// receiver is rebuilt here instead of reusing
 								// setterType.Fn.SelfParam.Type.
