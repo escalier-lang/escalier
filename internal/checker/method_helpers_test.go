@@ -9,20 +9,16 @@ import (
 )
 
 // makeMethodObjAlias builds a TypeAlias whose Type is an ObjectType
-// containing a single instance MethodElem with the given mutability.
-// The method's FuncType has no SelfParam yet — the shape produced by
-// .d.ts loading, which populateSelfParams should backfill.
-func makeMethodObjAlias(methodName string, mutSelf bool) *type_system.TypeAlias {
+// containing a single instance MethodElem. The method's FuncType has no
+// SelfParam yet — the shape produced by .d.ts loading, which
+// populateSelfParams should backfill.
+func makeMethodObjAlias(methodName string) *type_system.TypeAlias {
 	fn := type_system.NewFuncType(
 		nil, nil, nil,
 		type_system.NewNeverType(nil),
 		type_system.NewNeverType(nil),
 	)
-	method := type_system.NewMethodElem(
-		type_system.NewStrKey(methodName),
-		fn,
-		&mutSelf,
-	)
+	method := type_system.NewMethodElem(type_system.NewStrKey(methodName), fn)
 	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{method})
 	return &type_system.TypeAlias{Type: obj}
 }
@@ -39,16 +35,16 @@ func TestPopulateSelfParamsRecursesIntoNestedNamespaces(t *testing.T) {
 	child := type_system.NewNamespace()
 	grandchild := type_system.NewNamespace()
 
-	root.Types["Top"] = makeMethodObjAlias("topMethod", false)
-	child.Types["Mid"] = makeMethodObjAlias("midMethod", true)
-	grandchild.Types["Leaf"] = makeMethodObjAlias("leafMethod", false)
+	root.Types["Top"] = makeMethodObjAlias("topMethod")
+	child.Types["Mid"] = makeMethodObjAlias("midMethod")
+	grandchild.Types["Leaf"] = makeMethodObjAlias("leafMethod")
 
 	require.NoError(t, child.SetNamespace("Grand", grandchild))
 	require.NoError(t, root.SetNamespace("Child", child))
 
 	populateSelfParams(root)
 
-	check := func(alias *type_system.TypeAlias, methodName string, expectMut bool) {
+	check := func(alias *type_system.TypeAlias, methodName string) {
 		obj := type_system.Prune(alias.Type).(*type_system.ObjectType)
 		var fn *type_system.FuncType
 		for _, elem := range obj.Elems {
@@ -60,10 +56,10 @@ func TestPopulateSelfParamsRecursesIntoNestedNamespaces(t *testing.T) {
 		require.NotNilf(t, fn, "method %q not found", methodName)
 		require.NotNilf(t, fn.SelfParam, "SelfParam missing for %q", methodName)
 		_, isMut := fn.SelfParam.Type.(*type_system.MutType)
-		assert.Equalf(t, expectMut, isMut, "MutType wrap for %q", methodName)
+		assert.Falsef(t, isMut, "default non-mut for %q", methodName)
 	}
 
-	check(root.Types["Top"], "topMethod", false)
-	check(child.Types["Mid"], "midMethod", true)
-	check(grandchild.Types["Leaf"], "leafMethod", false)
+	check(root.Types["Top"], "topMethod")
+	check(child.Types["Mid"], "midMethod")
+	check(grandchild.Types["Leaf"], "leafMethod")
 }

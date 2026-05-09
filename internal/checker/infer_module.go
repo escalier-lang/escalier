@@ -553,7 +553,7 @@ func (c *Checker) InferComponent(
 					case *ast.MethodElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
 						methodType, methodCtx, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
@@ -578,7 +578,7 @@ func (c *Checker) InferComponent(
 							// Static methods go to the class object type
 							staticElems = append(
 								staticElems,
-								type_system.NewMethodElem(*key, methodType, nil), // static methods don't have self
+								type_system.NewMethodElem(*key, methodType), // static methods don't have self
 							)
 						} else {
 							// Instance methods go to the instance type.
@@ -586,13 +586,13 @@ func (c *Checker) InferComponent(
 							// lifetime check could consider it.
 							objTypeElems = append(
 								objTypeElems,
-								type_system.NewMethodElem(*key, methodType, elem.MutSelf),
+								type_system.NewMethodElem(*key, methodType),
 							)
 						}
 					case *ast.GetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
 						funcType, _, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
@@ -617,20 +617,20 @@ func (c *Checker) InferComponent(
 							// `self` is meaningless on static members.
 							staticElems = append(
 								staticElems,
-								type_system.NewGetterElem(*key, funcType, nil),
+								type_system.NewGetterElem(*key, funcType),
 							)
 						} else {
 							// Instance getters go to the instance type;
 							// SelfParam was wired above.
 							objTypeElems = append(
 								objTypeElems,
-								type_system.NewGetterElem(*key, funcType, elem.MutSelf),
+								type_system.NewGetterElem(*key, funcType),
 							)
 						}
 					case *ast.SetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
 						funcType, _, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
@@ -655,14 +655,14 @@ func (c *Checker) InferComponent(
 							// `self` is meaningless on static members.
 							staticElems = append(
 								staticElems,
-								type_system.NewSetterElem(*key, funcType, nil),
+								type_system.NewSetterElem(*key, funcType),
 							)
 						} else {
 							// Instance setters go to the instance type;
 							// SelfParam was wired above.
 							objTypeElems = append(
 								objTypeElems,
-								type_system.NewSetterElem(*key, funcType, elem.MutSelf),
+								type_system.NewSetterElem(*key, funcType),
 							)
 						}
 					case *ast.ConstructorElem:
@@ -1090,7 +1090,6 @@ func (c *Checker) InferComponent(
 
 						switch customMatcher := type_system.Prune(customMatcher).(type) {
 						case *type_system.UniqueSymbolType:
-							self := false
 							subjectPat := &type_system.IdentPat{Name: "subject"}
 							// The subject type should include type arguments if the enum is generic
 							subjectType := type_system.NewTypeRefType(
@@ -1117,7 +1116,6 @@ func (c *Checker) InferComponent(
 									returnType,
 									type_system.NewNeverType(nil),
 								),
-								MutSelf: &self,
 							}
 							classObjTypeElems = append(classObjTypeElems, methodElem)
 
@@ -1330,7 +1328,7 @@ func (c *Checker) InferComponent(
 								// args. Reusing methodType.Fn.SelfParam.Type would
 								// be more correct but requires fixing that
 								// classifier first.
-								isMutableSelf := methodType.MutSelf != nil && *methodType.MutSelf
+								isMutableSelf := type_system.ReceiverIsMut(methodType.Fn)
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {
 									t = type_system.NewMutType(nil, t)
@@ -1423,7 +1421,7 @@ func (c *Checker) InferComponent(
 								// A `mut self` getter (e.g. one that mutates a
 								// memoization cache) needs `self` typed as a
 								// `mut`; a plain `self` getter does not.
-								isMutableSelf := getterType.MutSelf != nil && *getterType.MutSelf
+								isMutableSelf := type_system.ReceiverIsMut(getterType.Fn)
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {
 									t = type_system.NewMutType(nil, t)
@@ -1512,7 +1510,7 @@ func (c *Checker) InferComponent(
 								// A setter that doesn't mutate `self` (e.g. one
 								// that forwards to an external sink) may declare
 								// just `set x(self, …)`.
-								isMutableSelf := setterType.MutSelf != nil && *setterType.MutSelf
+								isMutableSelf := type_system.ReceiverIsMut(setterType.Fn)
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {
 									t = type_system.NewMutType(nil, t)

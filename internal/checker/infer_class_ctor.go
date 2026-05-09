@@ -60,16 +60,16 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 	span := ctor.Span()
 
 	switch {
-	case ctor.MutSelf == nil:
+	case ctor.Receiver == nil:
 		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfMissing, span: span})
-	case !*ctor.MutSelf:
+	case !ctor.Receiver.Mut:
 		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfNotMut, span: span})
 	}
 
 	// Only check the type annotation when `self` is actually present —
 	// otherwise the "missing" error above already covers the case and a
 	// secondary "has-type-annotation" would be noise.
-	if ctor.MutSelf != nil && len(ctor.Fn.Params) > 0 {
+	if ctor.Receiver != nil && len(ctor.Fn.Params) > 0 {
 		selfParam := ctor.Fn.Params[0]
 		if selfParam.TypeAnn != nil {
 			errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfHasTypeAnnotation, span: selfParam.Span()})
@@ -79,8 +79,8 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 	// A lifetime on the constructor's `self` is rejected: constructors
 	// return a freshly-allocated `Self`, so there is no inbound borrow
 	// for the lifetime to constrain.
-	if ctor.MutSelf != nil && ctor.SelfLifetime != nil {
-		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfHasLifetime, span: ctor.SelfLifetime.Span()})
+	if ctor.Receiver != nil && ctor.Receiver.Lifetime != nil {
+		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfHasLifetime, span: ctor.Receiver.Lifetime.Span()})
 	}
 
 	if ctor.Fn.Return != nil {
@@ -278,12 +278,11 @@ func (c *Checker) synthesizeConstructorElem(decl *ast.ClassDecl) (*ast.Construct
 	}
 
 	body := &ast.Block{Stmts: stmts, Span: classSpan}
-	mutSelf := true
 	fnExpr := ast.NewFuncExpr(nil, nil, params, nil, nil, false, body, classSpan)
 	return &ast.ConstructorElem{
-		Fn:      fnExpr,
-		MutSelf: &mutSelf,
-		Private: false,
-		Span_:   classSpan,
+		Fn:       fnExpr,
+		Receiver: &ast.MethodReceiver{Mut: true, Span_: classSpan},
+		Private:  false,
+		Span_:    classSpan,
 	}, errors
 }

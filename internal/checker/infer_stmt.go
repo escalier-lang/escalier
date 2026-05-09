@@ -590,7 +590,6 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 
 			switch customMatcher := type_system.Prune(customMatcher).(type) {
 			case *type_system.UniqueSymbolType:
-				self := false
 				subjectPat := &type_system.IdentPat{Name: "subject"}
 				subjectType := type_system.NewTypeRefType(
 					nil, elem.Name.Name, instanceTypeAlias, typeArgs...)
@@ -620,7 +619,6 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 						returnType,
 						type_system.NewNeverType(nil),
 					),
-					MutSelf: &self,
 				}
 				classObjTypeElems = append(classObjTypeElems, methodElem)
 

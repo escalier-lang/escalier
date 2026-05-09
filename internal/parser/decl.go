@@ -254,8 +254,7 @@ func (p *Parser) parseConstructorElem(
 
 	typeParams := p.maybeTypeParams()
 
-	var mutSelf *bool
-	var selfLifetime ast.LifetimeAnnNode
+	var receiver *ast.MethodReceiver
 	var params []*ast.Param
 
 	next := p.lexer.peek()
@@ -265,28 +264,28 @@ func (p *Parser) parseConstructorElem(
 		p.lexer.consume() // consume '('
 
 		// Parse leading `mut self` / `self`. A lifetime on the receiver
-		// (`'a self`) is captured into selfLifetime and reported by the
-		// checker (MutSelfHasLifetime); the parser stays silent so the
-		// user sees one diagnostic, not two.
+		// (`'a self`) is captured into receiver.Lifetime and reported by
+		// the checker (MutSelfHasLifetime); the parser stays silent so
+		// the user sees one diagnostic, not two.
 		selfStart := p.lexer.currentLocation
-		mutSelf, selfLifetime = p.selfReceiver()
-		if mutSelf == nil {
+		receiver = p.selfReceiver()
+		if receiver == nil {
 			// No `self` at all — error and continue parsing the rest of the
 			// param list as if `self` had been there.
 			p.reportError(
 				ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID},
 				"constructors must declare `mut self` as their first parameter",
 			)
-		} else if !*mutSelf {
+		} else if !receiver.Mut {
 			// `self` without `mut`.
 			p.reportError(
-				ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID},
+				receiver.Span_,
 				"the `self` parameter of a constructor must be declared `mut self`",
 			)
 		}
 
 		// `mut self : Self` — type annotation on self is not allowed.
-		if mutSelf != nil && p.lexer.peek().Type == Colon {
+		if receiver != nil && p.lexer.peek().Type == Colon {
 			colonTok := p.lexer.peek()
 			p.lexer.consume() // consume ':'
 			_ = p.typeAnn()   // discard the annotation
@@ -295,12 +294,11 @@ func (p *Parser) parseConstructorElem(
 
 		// Materialize the `mut self` parameter as the first entry in params
 		// so downstream phases can read `Fn.Params[0]` uniformly. We skip
-		// this when no `self` token was found (mutSelf == nil); the error
+		// this when no `self` token was found (receiver == nil); the error
 		// has already been reported, and inserting a phantom param here
 		// would mask the absence in the AST.
-		if mutSelf != nil {
-			selfSpan := ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
-			selfPat := ast.NewIdentPat("self", *mutSelf, nil, nil, selfSpan)
+		if receiver != nil {
+			selfPat := ast.NewIdentPat("self", receiver.Mut, nil, nil, receiver.Span_)
 			params = append(params, &ast.Param{
 				Pattern:  selfPat,
 				TypeAnn:  nil,
@@ -313,7 +311,7 @@ func (p *Parser) parseConstructorElem(
 			p.lexer.consume() // consume ','
 			rest := parseDelimSeq(p, CloseParen, Comma, p.param)
 			params = append(params, rest...)
-		} else if mutSelf == nil {
+		} else if receiver == nil {
 			// Recovery: no leading self was found; parse the params as a
 			// regular list so we still produce a usable AST.
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)
@@ -323,7 +321,7 @@ func (p *Parser) parseConstructorElem(
 		// Detect `self` appearing as a non-leading parameter (skip the
 		// leading self we just inserted).
 		startIdx := 0
-		if mutSelf != nil {
+		if receiver != nil {
 			startIdx = 1
 		}
 		for _, param := range params[startIdx:] {
@@ -365,11 +363,10 @@ func (p *Parser) parseConstructorElem(
 
 	span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 	return &ast.ConstructorElem{
-		Fn:           ast.NewFuncExpr(nil, typeParams, params, nil, throwsType, false, body, span),
-		MutSelf:      mutSelf,
-		SelfLifetime: selfLifetime,
-		Private:      isPrivate,
-		Span_:        span,
+		Fn:       ast.NewFuncExpr(nil, typeParams, params, nil, throwsType, false, body, span),
+		Receiver: receiver,
+		Private:  isPrivate,
+		Span_:    span,
 	}
 }
 
@@ -443,14 +440,13 @@ modifiers_done:
 		var returnType ast.TypeAnn
 		var throwsType ast.TypeAnn
 		var body *ast.Block
-		var mutSelf *bool
-		var selfLifetime ast.LifetimeAnnNode
+		var receiver *ast.MethodReceiver
 
 		if next.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
 			if !isStatic {
-				mutSelf, selfLifetime = p.selfReceiver()
+				receiver = p.selfReceiver()
 			}
 
 			// TODO(#506): report an error if `self` is not the only param
@@ -481,13 +477,12 @@ modifiers_done:
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.GetterElem{
-			Name:         name,
-			Fn:           ast.NewFuncExpr(lifetimeParams, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
-			MutSelf:      mutSelf,
-			SelfLifetime: selfLifetime,
-			Static:       isStatic,
-			Private:      isPrivate,
-			Span_:        span,
+			Name:     name,
+			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
+			Receiver: receiver,
+			Static:   isStatic,
+			Private:  isPrivate,
+			Span_:    span,
 		}
 	}
 
@@ -495,17 +490,16 @@ modifiers_done:
 	if isSet {
 		var params []*ast.Param
 		var body *ast.Block
-		var mutSelf *bool
-		var selfLifetime ast.LifetimeAnnNode
+		var receiver *ast.MethodReceiver
 
 		if next.Type == OpenParen {
 			p.lexer.consume() // consume '('
 
 			if !isStatic {
-				mutSelf, selfLifetime = p.selfReceiver()
+				receiver = p.selfReceiver()
 
 				token = p.lexer.peek()
-				if mutSelf != nil {
+				if receiver != nil {
 					if token.Type == Comma {
 						p.lexer.consume() // consume ','
 						params = parseDelimSeq(p, CloseParen, Comma, p.param)
@@ -532,13 +526,12 @@ modifiers_done:
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
-			Name:         name,
-			Fn:           ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, nil, false, body, span),
-			MutSelf:      mutSelf,
-			SelfLifetime: selfLifetime,
-			Static:       isStatic,
-			Private:      isPrivate,
-			Span_:        span,
+			Name:     name,
+			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, nil, false, body, span),
+			Receiver: receiver,
+			Static:   isStatic,
+			Private:  isPrivate,
+			Span_:    span,
 		}
 	}
 
@@ -546,8 +539,7 @@ modifiers_done:
 		// Method
 		p.lexer.consume() // consume '('
 
-		receiverStart := p.lexer.currentLocation
-		mutSelf, selfLifetime := p.selfReceiver()
+		receiver := p.selfReceiver()
 
 		params := []*ast.Param{}
 		if isStatic {
@@ -555,12 +547,10 @@ modifiers_done:
 			// anyway (`static foo(self)`, `static foo(mut self)`,
 			// `static foo<'a>('a self)`), report it — silently dropping
 			// would leave the user thinking `self` was meaningful.
-			if mutSelf != nil {
-				span := ast.Span{Start: receiverStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
-				p.reportError(span, "static methods cannot have a `self` receiver")
+			if receiver != nil {
+				p.reportError(receiver.Span_, "static methods cannot have a `self` receiver")
 			}
-			mutSelf = nil
-			selfLifetime = nil
+			receiver = nil
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)
 		} else {
 			token = p.lexer.peek()
@@ -596,13 +586,12 @@ modifiers_done:
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.MethodElem{
-			Name:         name,
-			Fn:           ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span),
-			MutSelf:      mutSelf,
-			SelfLifetime: selfLifetime,
-			Static:       isStatic,
-			Private:      isPrivate,
-			Span_:        span,
+			Name:     name,
+			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span),
+			Receiver: receiver,
+			Static:   isStatic,
+			Private:  isPrivate,
+			Span_:    span,
 		}
 	} else {
 		// Field

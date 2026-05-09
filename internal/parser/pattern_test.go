@@ -306,13 +306,13 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 				t.Fatalf("expected to find a MethodElem")
 			}
 			if test.wantMutSelf {
-				assert.NotNil(t, method.MutSelf, "expected MutSelf to be set")
-				if method.MutSelf != nil {
-					assert.True(t, *method.MutSelf, "expected MutSelf to be true")
+				assert.NotNil(t, method.Receiver, "expected Receiver to be set")
+				if method.Receiver != nil {
+					assert.True(t, method.Receiver.Mut, "expected Receiver.Mut to be true")
 				}
 			} else {
-				if method.MutSelf != nil {
-					assert.False(t, *method.MutSelf, "expected MutSelf to be false (plain self)")
+				if method.Receiver != nil {
+					assert.False(t, method.Receiver.Mut, "expected Receiver.Mut to be false (plain self)")
 				}
 			}
 			assert.Len(t, method.Fn.Params, test.wantParamCount,
@@ -377,10 +377,8 @@ func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
 			method := findFirstMethodInScript(script)
 			require.NotNil(t, method, "expected to find a MethodElem")
 			assert.True(t, method.Static, "method should be static")
-			assert.Nil(t, method.MutSelf,
-				"static method must not retain a MutSelf flag from a parsed `self` receiver")
-			assert.Nil(t, method.SelfLifetime,
-				"static method must not retain a SelfLifetime from a parsed receiver")
+			assert.Nil(t, method.Receiver,
+				"static method must not retain a Receiver from a parsed `self` receiver")
 
 			messages := make([]string, len(parseErrors))
 			for i, pe := range parseErrors {

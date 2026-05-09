@@ -733,7 +733,6 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			}
 
 			var methodFn *type_system.FuncType
-			var methodMutSelf *bool
 			matchKey := func(k type_system.ObjTypeKey) bool {
 				return k.Kind == type_system.StrObjTypeKeyKind && k.Str == test.methodName
 			}
@@ -742,17 +741,14 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 				case *type_system.MethodElem:
 					if matchKey(e.Name) {
 						methodFn = e.Fn
-						methodMutSelf = e.MutSelf
 					}
 				case *type_system.GetterElem:
 					if matchKey(e.Name) {
 						methodFn = e.Fn
-						methodMutSelf = e.MutSelf
 					}
 				case *type_system.SetterElem:
 					if matchKey(e.Name) {
 						methodFn = e.Fn
-						methodMutSelf = e.MutSelf
 					}
 				}
 				if methodFn != nil {
@@ -764,21 +760,15 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			if test.expectStatic {
 				assert.Nil(t, methodFn.SelfParam,
 					"static methods must not carry SelfParam")
-				assert.Nil(t, methodMutSelf,
-					"static methods' MutSelf must be nil")
 				return
 			}
 
 			require.NotNil(t, methodFn.SelfParam,
 				"instance methods must carry SelfParam")
-			require.NotNil(t, methodMutSelf,
-				"instance methods' MutSelf must be set")
 
 			_, isMut := methodFn.SelfParam.Type.(*type_system.MutType)
 			assert.Equalf(t, test.expectMut, isMut,
-				"SelfParam.Type wrap-in-MutType should reflect MutSelf=%v", *methodMutSelf)
-			assert.Equalf(t, test.expectMut, *methodMutSelf,
-				"MutSelf should match the test expectation")
+				"SelfParam.Type wrap-in-MutType should reflect mutability")
 		})
 	}
 }

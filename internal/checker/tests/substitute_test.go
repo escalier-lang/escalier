@@ -361,29 +361,37 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 		Value:    tType,
 	}
 
-	methodFunc := test_util.ParseTypeAnn("fn (x: T) -> U")
-	mutSelf := false
+	selfRef := type_system.NewTypeRefType(nil, "Self", nil)
+	selfParam := func(mut bool) *type_system.FuncParam {
+		var t type_system.Type = selfRef
+		if mut {
+			t = type_system.NewMutType(nil, selfRef)
+		}
+		return &type_system.FuncParam{
+			Pattern: type_system.NewIdentPat("self"),
+			Type:    t,
+		}
+	}
+
+	methodFunc := test_util.ParseTypeAnn("fn (x: T) -> U").(*type_system.FuncType)
+	methodFunc.SelfParam = selfParam(false)
 	method := &type_system.MethodElem{
-		Name:    type_system.NewStrKey("method"),
-		Fn:      methodFunc.(*type_system.FuncType),
-		MutSelf: &mutSelf,
+		Name: type_system.NewStrKey("method"),
+		Fn:   methodFunc,
 	}
 
-	selfReceiver := false
-	mutSelfReceiver := true
-
-	getterFunc := test_util.ParseTypeAnn("fn () -> T")
+	getterFunc := test_util.ParseTypeAnn("fn () -> T").(*type_system.FuncType)
+	getterFunc.SelfParam = selfParam(false)
 	getter := &type_system.GetterElem{
-		Name:    type_system.NewStrKey("getter"),
-		Fn:      getterFunc.(*type_system.FuncType),
-		MutSelf: &selfReceiver,
+		Name: type_system.NewStrKey("getter"),
+		Fn:   getterFunc,
 	}
 
-	setterFunc := test_util.ParseTypeAnn("fn (value: V) -> undefined")
+	setterFunc := test_util.ParseTypeAnn("fn (value: V) -> undefined").(*type_system.FuncType)
+	setterFunc.SelfParam = selfParam(true)
 	setter := &type_system.SetterElem{
-		Name:    type_system.NewStrKey("setter"),
-		Fn:      setterFunc.(*type_system.FuncType),
-		MutSelf: &mutSelfReceiver,
+		Name: type_system.NewStrKey("setter"),
+		Fn:   setterFunc,
 	}
 
 	callableFunc := test_util.ParseTypeAnn("fn (x: T) -> U")

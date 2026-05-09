@@ -1053,12 +1053,12 @@ func isMemberVisible(elem type_system.ObjTypeElem, mode AccessMode, receiverMut 
 			if receiverMut {
 				return true
 			}
-			return !methodRequiresMutSelf(e.Fn, e.MutSelf)
+			return !type_system.ReceiverIsMut(e.Fn)
 		case *type_system.GetterElem:
 			if receiverMut {
 				return true
 			}
-			return !methodRequiresMutSelf(e.Fn, e.MutSelf)
+			return !type_system.ReceiverIsMut(e.Fn)
 		default:
 			return true
 		}
@@ -1753,10 +1753,7 @@ func (c *Checker) isArrayMutatingMethod(methodName string) bool {
 	for _, elem := range objType.Elems {
 		if method, ok := elem.(*type_system.MethodElem); ok {
 			if method.Name == type_system.NewStrKey(methodName) {
-				if method.MutSelf != nil && *method.MutSelf {
-					return true
-				}
-				return false
+				return type_system.ReceiverIsMut(method.Fn)
 			}
 		}
 	}

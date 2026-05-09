@@ -2803,10 +2803,17 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(true),
-                SelfLifetime: nil,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      true,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:4, Column:17},
+                        End:      ast.Location{Line:4, Column:25},
+                        SourceID: 0,
+                    },
+                },
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:4, Column:5},
                     End:      ast.Location{Line:7, Column:6},
                     SourceID: 0,
@@ -2889,11 +2896,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:8, Column:9},
+                        End:      ast.Location{Line:8, Column:13},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:8, Column:5},
                     End:      ast.Location{Line:8, Column:41},
                     SourceID: 0,
@@ -3118,11 +3132,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       true,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   true,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:56},
                     SourceID: 0,
@@ -3306,11 +3319,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:13},
+                        End:      ast.Location{Line:3, Column:17},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:5, Column:6},
                     SourceID: 0,
@@ -3430,11 +3450,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(true),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      true,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:6, Column:13},
+                        End:      ast.Location{Line:6, Column:21},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:6, Column:5},
                     End:      ast.Location{Line:8, Column:6},
                     SourceID: 0,
@@ -3725,11 +3752,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:12},
+                        End:      ast.Location{Line:3, Column:16},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:5, Column:6},
                     SourceID: 0,
@@ -4133,11 +4167,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       true,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   true,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:56},
                     SourceID: 0,
@@ -4271,11 +4304,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       true,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   true,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:58},
                     SourceID: 0,
@@ -4449,11 +4481,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       true,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   true,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:4, Column:6},
                     SourceID: 0,
@@ -4593,11 +4624,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:5, Column:9},
+                        End:      ast.Location{Line:5, Column:13},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:5, Column:5},
                     End:      ast.Location{Line:7, Column:6},
                     SourceID: 0,
@@ -4727,11 +4765,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:2, Column:21},
+                        End:      ast.Location{Line:2, Column:25},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:4, Column:6},
                     SourceID: 0,
@@ -4837,11 +4882,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       true,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   true,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:4, Column:6},
                     SourceID: 0,
@@ -4943,11 +4987,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:2, Column:9},
+                        End:      ast.Location{Line:2, Column:13},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:27},
                     SourceID: 0,
@@ -5042,11 +5093,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:15},
+                        End:      ast.Location{Line:3, Column:19},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:52},
                     SourceID: 0,
@@ -5118,11 +5176,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       true,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   true,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:4, Column:5},
                     End:      ast.Location{Line:4, Column:43},
                     SourceID: 0,
@@ -5224,11 +5281,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      true,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:2, Column:20},
+                        End:      ast.Location{Line:2, Column:24},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: true,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:45},
                     SourceID: 0,
@@ -5303,11 +5367,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:10},
+                        End:      ast.Location{Line:3, Column:14},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:40},
                     SourceID: 0,
@@ -5611,10 +5682,17 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(true),
-                SelfLifetime: nil,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      true,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:4, Column:17},
+                        End:      ast.Location{Line:4, Column:25},
+                        SourceID: 0,
+                    },
+                },
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:4, Column:5},
                     End:      ast.Location{Line:7, Column:6},
                     SourceID: 0,
@@ -5695,11 +5773,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      true,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:8, Column:17},
+                        End:      ast.Location{Line:8, Column:21},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: true,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:8, Column:5},
                     End:      ast.Location{Line:8, Column:42},
                     SourceID: 0,
@@ -5780,11 +5865,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:9, Column:9},
+                        End:      ast.Location{Line:9, Column:13},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:9, Column:5},
                     End:      ast.Location{Line:9, Column:34},
                     SourceID: 0,
@@ -5978,10 +6070,17 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(true),
-                SelfLifetime: nil,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      true,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:17},
+                        End:      ast.Location{Line:3, Column:25},
+                        SourceID: 0,
+                    },
+                },
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:5, Column:6},
                     SourceID: 0,
@@ -6062,11 +6161,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:6, Column:12},
+                        End:      ast.Location{Line:6, Column:16},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:6, Column:5},
                     End:      ast.Location{Line:6, Column:40},
                     SourceID: 0,
@@ -6260,10 +6366,17 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(true),
-                SelfLifetime: nil,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      true,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:17},
+                        End:      ast.Location{Line:3, Column:25},
+                        SourceID: 0,
+                    },
+                },
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:5, Column:6},
                     SourceID: 0,
@@ -6344,11 +6457,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      true,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:6, Column:20},
+                        End:      ast.Location{Line:6, Column:24},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: true,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:6, Column:5},
                     End:      ast.Location{Line:6, Column:48},
                     SourceID: 0,
@@ -6423,11 +6543,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:7, Column:10},
+                        End:      ast.Location{Line:7, Column:14},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:7, Column:5},
                     End:      ast.Location{Line:7, Column:40},
                     SourceID: 0,
@@ -6536,11 +6663,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   false,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:40},
                     SourceID: 0,
@@ -6649,11 +6775,10 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       true,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   true,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:2, Column:5},
                     End:      ast.Location{Line:2, Column:48},
                     SourceID: 0,
@@ -6827,11 +6952,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:15},
+                        End:      ast.Location{Line:3, Column:19},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:51},
                     SourceID: 0,
@@ -6985,11 +7117,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:15},
+                        End:      ast.Location{Line:3, Column:19},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:53},
                     SourceID: 0,
@@ -7097,11 +7236,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:4, Column:15},
+                        End:      ast.Location{Line:4, Column:19},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:4, Column:5},
                     End:      ast.Location{Line:4, Column:51},
                     SourceID: 0,
@@ -7242,11 +7388,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      true,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:3, Column:24},
+                        End:      ast.Location{Line:3, Column:28},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: true,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:3, Column:5},
                     End:      ast.Location{Line:3, Column:56},
                     SourceID: 0,
@@ -7354,11 +7507,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      true,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:4, Column:24},
+                        End:      ast.Location{Line:4, Column:28},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: true,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:4, Column:5},
                     End:      ast.Location{Line:4, Column:61},
                     SourceID: 0,
@@ -7662,10 +7822,17 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(true),
-                SelfLifetime: nil,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      true,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:4, Column:17},
+                        End:      ast.Location{Line:4, Column:25},
+                        SourceID: 0,
+                    },
+                },
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:4, Column:5},
                     End:      ast.Location{Line:7, Column:6},
                     SourceID: 0,
@@ -9419,8 +9586,15 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(false),
-                    SelfLifetime: nil,
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      false,
+                        Lifetime: nil,
+                        Span_:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:23},
+                            End:      ast.Location{Line:1, Column:27},
+                            SourceID: 0,
+                        },
+                    },
                 },
             },
             span: ast.Span{
@@ -9497,8 +9671,15 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(true),
-                    SelfLifetime: nil,
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      true,
+                        Lifetime: nil,
+                        Span_:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:31},
+                            End:      ast.Location{Line:1, Column:39},
+                            SourceID: 0,
+                        },
+                    },
                 },
             },
             span: ast.Span{
@@ -9575,8 +9756,15 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(false),
-                    SelfLifetime: nil,
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      false,
+                        Lifetime: nil,
+                        Span_:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:27},
+                            End:      ast.Location{Line:1, Column:31},
+                            SourceID: 0,
+                        },
+                    },
                 },
             },
             span: ast.Span{
@@ -9653,8 +9841,7 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      (*bool)(nil),
-                    SelfLifetime: nil,
+                    Receiver: (*ast.MethodReceiver)(nil),
                 },
             },
             span: ast.Span{
@@ -9762,8 +9949,15 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(true),
-                    SelfLifetime: nil,
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      true,
+                        Lifetime: nil,
+                        Span_:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:32},
+                            End:      ast.Location{Line:1, Column:40},
+                            SourceID: 0,
+                        },
+                    },
                 },
             },
             span: ast.Span{
@@ -9840,8 +10034,15 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(false),
-                    SelfLifetime: nil,
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      false,
+                        Lifetime: nil,
+                        Span_:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:28},
+                            End:      ast.Location{Line:1, Column:32},
+                            SourceID: 0,
+                        },
+                    },
                 },
             },
             span: ast.Span{
@@ -9918,8 +10119,15 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(true),
-                    SelfLifetime: nil,
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      true,
+                        Lifetime: nil,
+                        Span_:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:30},
+                            End:      ast.Location{Line:1, Column:38},
+                            SourceID: 0,
+                        },
+                    },
                 },
             },
             span: ast.Span{
@@ -10025,11 +10233,10 @@ nil
                     },
                     inferredType: nil,
                 },
-                MutSelf:      (*bool)(nil),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: (*ast.MethodReceiver)(nil),
+                Static:   false,
+                Private:  false,
+                Span_:    ast.Span{
                     Start:    ast.Location{Line:1, Column:13},
                     End:      ast.Location{Line:1, Column:41},
                     SourceID: 0,
@@ -10127,8 +10334,7 @@ nil
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      (*bool)(nil),
-                    SelfLifetime: nil,
+                    Receiver: (*ast.MethodReceiver)(nil),
                 },
             },
             span: ast.Span{

@@ -569,20 +569,21 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 
 // selfReceiver probes the upcoming tokens for one of:
 //
-//	self           → (&false, nil)
-//	mut self       → (&true,  nil)
-//	'a self        → (&false, LifetimeAnn)
-//	mut 'a self    → (&true,  LifetimeAnn)
+//	self           → &MethodReceiver{Mut: false}
+//	mut self       → &MethodReceiver{Mut: true}
+//	'a self        → &MethodReceiver{Mut: false, Lifetime: 'a}
+//	mut 'a self    → &MethodReceiver{Mut: true,  Lifetime: 'a}
 //
-// Returns (nil, nil) when the lookahead does not start a `self` receiver
-// — the lexer state is restored so the surrounding parser can take over
-// (e.g. parsing a regular `mut x` parameter, or reporting a stray `'a`).
+// Returns nil when the lookahead does not start a `self` receiver — the
+// lexer state is restored so the surrounding parser can take over (e.g.
+// parsing a regular `mut x` parameter, or reporting a stray `'a`).
 //
 // Receiver lifetimes are single only — `('a | 'b) self` is intentionally
 // not recognised (lifetime unions only appear on return-position types
 // per the design).
-func (p *Parser) selfReceiver() (*bool, ast.LifetimeAnnNode) {
+func (p *Parser) selfReceiver() *ast.MethodReceiver {
 	saved := p.lexer.saveState()
+	start := p.lexer.currentLocation
 
 	mut := false
 	if p.lexer.peek().Type == Mut {
@@ -598,12 +599,12 @@ func (p *Parser) selfReceiver() (*bool, ast.LifetimeAnnNode) {
 
 	if next := p.lexer.peek(); next.Type == Identifier && next.Value == "self" {
 		p.lexer.consume() // consume 'self'
-		mutPtr := mut
-		return &mutPtr, lifetime
+		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		return &ast.MethodReceiver{Mut: mut, Lifetime: lifetime, Span_: span}
 	}
 
 	p.lexer.restoreState(saved)
-	return nil, nil
+	return nil
 }
 
 // canStartExpr returns true if the given token type can begin an expression.

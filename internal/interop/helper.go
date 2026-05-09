@@ -651,12 +651,12 @@ func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
 	funcExpr := ast.NewFuncExpr(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(md.Span()), md.Modifiers.Async, nil, md.Span())
 
 	return &ast.MethodElem{
-		Name:    name,
-		Fn:      funcExpr,
-		MutSelf: nil, // Not determined from .d.ts
-		Static:  md.Modifiers.Static,
-		Private: md.Modifiers.Private,
-		Span_:   md.Span(),
+		Name:     name,
+		Fn:       funcExpr,
+		Receiver: nil, // Not determined from .d.ts
+		Static:   md.Modifiers.Static,
+		Private:  md.Modifiers.Private,
+		Span_:    md.Span(),
 	}, nil
 }
 

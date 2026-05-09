@@ -200,22 +200,19 @@ func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
 type CallableTypeAnn struct{ Fn *FuncTypeAnn }
 type ConstructorTypeAnn struct{ Fn *FuncTypeAnn }
 type MethodTypeAnn struct {
-	Name         ObjKey
-	Fn           *FuncTypeAnn
-	MutSelf      *bool           // nil = no self, true = mut self, false = self
-	SelfLifetime LifetimeAnnNode // optional; lifetime on `self` (e.g. `'a self`)
+	Name     ObjKey
+	Fn       *FuncTypeAnn
+	Receiver *MethodReceiver // nil if no receiver
 }
 type GetterTypeAnn struct {
-	Name         ObjKey
-	Fn           *FuncTypeAnn
-	MutSelf      *bool           // nil = no self, true = mut self, false = self
-	SelfLifetime LifetimeAnnNode // optional; lifetime on `self`
+	Name     ObjKey
+	Fn       *FuncTypeAnn
+	Receiver *MethodReceiver // nil if no receiver
 }
 type SetterTypeAnn struct {
-	Name         ObjKey
-	Fn           *FuncTypeAnn
-	MutSelf      *bool           // nil = no self, true = mut self, false = self
-	SelfLifetime LifetimeAnnNode // optional; lifetime on `self`
+	Name     ObjKey
+	Fn       *FuncTypeAnn
+	Receiver *MethodReceiver // nil if no receiver
 }
 
 type MappedModifier string

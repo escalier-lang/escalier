@@ -114,7 +114,7 @@ func (c *Checker) checkInterfaceElem(
 		ifaceFn := SubstituteTypeParams(ie.Fn, sub)
 		switch m := ce.(type) {
 		case *type_system.MethodElem:
-			if !selfReceiverCompatible(ie.MutSelf, m.MutSelf) {
+			if !selfReceiverCompatible(ie.Fn, m.Fn) {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"self receiver does not match")
 			}
@@ -154,7 +154,7 @@ func (c *Checker) checkInterfaceElem(
 		ifaceRet := SubstituteTypeParams(ie.Fn.Return, sub)
 		switch m := ce.(type) {
 		case *type_system.GetterElem:
-			if !selfReceiverCompatible(ie.MutSelf, m.MutSelf) {
+			if !selfReceiverCompatible(ie.Fn, m.Fn) {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"self receiver does not match")
 			}
@@ -186,7 +186,7 @@ func (c *Checker) checkInterfaceElem(
 		ifaceArg := setterArgType(ie.Fn)
 		switch m := ce.(type) {
 		case *type_system.SetterElem:
-			if !selfReceiverCompatible(ie.MutSelf, m.MutSelf) {
+			if !selfReceiverCompatible(ie.Fn, m.Fn) {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"self receiver does not match")
 			}
@@ -243,12 +243,14 @@ func (c *Checker) checkInterfaceElem(
 // declaring `mut self` is not satisfied by a class method declaring `self`
 // (the class loses mutation ability), and vice versa (the class would
 // require mutability the interface doesn't promise). A nil receiver (no
-// `self`) only matches another nil.
-func selfReceiverCompatible(ifaceSelf, classSelf *bool) bool {
-	if ifaceSelf == nil || classSelf == nil {
-		return ifaceSelf == classSelf
+// `self`, e.g. a static method) only matches another nil.
+func selfReceiverCompatible(ifaceFn, classFn *type_system.FuncType) bool {
+	ifaceHas := ifaceFn != nil && ifaceFn.SelfParam != nil
+	classHas := classFn != nil && classFn.SelfParam != nil
+	if !ifaceHas || !classHas {
+		return ifaceHas == classHas
 	}
-	return *ifaceSelf == *classSelf
+	return type_system.ReceiverIsMut(ifaceFn) == type_system.ReceiverIsMut(classFn)
 }
 
 // setterArgType returns the value-input type of a setter signature.

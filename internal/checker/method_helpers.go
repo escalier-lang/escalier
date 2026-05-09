@@ -65,9 +65,15 @@ func makeSelfParamWithLifetime(
 // no-lifetime case so plain object-literal methods continue to work.
 func buildMethodReceiver(
 	receiverType *type_system.TypeRefType,
-	mutSelf *bool,
-	lifetimeNode ast.LifetimeAnnNode,
+	astRecv *ast.MethodReceiver,
 ) (*methodReceiver, []Error) {
+	var mutSelf *bool
+	var lifetimeNode ast.LifetimeAnnNode
+	if astRecv != nil {
+		m := astRecv.Mut
+		mutSelf = &m
+		lifetimeNode = astRecv.Lifetime
+	}
 	if receiverType == nil {
 		if lifetimeNode != nil {
 			return nil, []Error{ReceiverLifetimeOutsideMemberError{span: lifetimeNode.Span()}}
@@ -93,18 +99,23 @@ type methodReceiver struct {
 	LifetimeNode ast.LifetimeAnnNode
 }
 
-// methodRequiresMutSelf reports whether a method/getter requires a `mut self`
-// receiver. Reads FuncType.SelfParam when populated (single source of truth);
-// falls back to the denormalized MutSelf flag for elements that haven't gone
-// through SelfParam population yet (a defensive fallback — every code path
-// that constructs MethodElem/GetterElem/SetterElem now sets SelfParam, and
-// the prelude backfill covers .d.ts-loaded types).
-func methodRequiresMutSelf(fn *type_system.FuncType, mutSelf *bool) bool {
-	if fn != nil && fn.SelfParam != nil {
-		_, isMut := fn.SelfParam.Type.(*type_system.MutType)
-		return isMut
+// setReceiverMut sets the receiver mutability of fn by adding or removing
+// a MutType wrapper on fn.SelfParam.Type. No-op if fn or SelfParam is nil.
+// Used by the .d.ts prelude passes that classify lib methods as mut/non-mut
+// after populateSelfParams has wired the receiver.
+func setReceiverMut(fn *type_system.FuncType, mut bool) {
+	if fn == nil || fn.SelfParam == nil {
+		return
 	}
-	return mutSelf != nil && *mutSelf
+	inner := fn.SelfParam.Type
+	if mt, ok := inner.(*type_system.MutType); ok {
+		inner = mt.Type
+	}
+	if mut {
+		fn.SelfParam.Type = type_system.NewMutType(nil, inner)
+	} else {
+		fn.SelfParam.Type = inner
+	}
 }
 
 // populateSelfParams backfills FuncType.SelfParam on every instance
@@ -112,11 +123,11 @@ func methodRequiresMutSelf(fn *type_system.FuncType, mutSelf *bool) bool {
 // ObjectType. Source-inferred types already get SelfParam at inference
 // time (see infer_module.go, infer_stmt.go, infer_expr.go); this pass
 // covers the .d.ts-loaded TypeScript lib types — Array, Map, Set,
-// Promise, etc. — which arrive without a receiver representation. The
-// pass runs in initializeGlobalScope after UpdateMethodMutability has
-// already populated MutSelf on these elements. Recurses into nested
-// namespaces so namespaced lib types (e.g. `Intl.Collator`) are
-// covered too.
+// Promise, etc. — which arrive without a receiver representation.
+// The default mutability is non-mut self; UpdateMethodMutability and
+// mergeReadonlyVariant run afterwards and flip individual receivers to
+// `mut self` via setReceiverMut. Recurses into nested namespaces so
+// namespaced lib types (e.g. `Intl.Collator`) are covered too.
 func populateSelfParams(ns *type_system.Namespace) {
 	for _, child := range ns.Namespaces {
 		populateSelfParams(child)
@@ -133,20 +144,21 @@ func populateSelfParams(ns *type_system.Namespace) {
 			typeArgs[i] = type_system.NewTypeRefType(nil, tp.Name, nil)
 		}
 		selfRef := type_system.NewTypeRefType(nil, name, typeAlias, typeArgs...)
+		nonMut := false
 
 		for _, elem := range objType.Elems {
 			switch e := elem.(type) {
 			case *type_system.MethodElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = makeSelfParam(selfRef, e.MutSelf)
+					e.Fn.SelfParam = makeSelfParam(selfRef, &nonMut)
 				}
 			case *type_system.GetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = makeSelfParam(selfRef, e.MutSelf)
+					e.Fn.SelfParam = makeSelfParam(selfRef, &nonMut)
 				}
 			case *type_system.SetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = makeSelfParam(selfRef, e.MutSelf)
+					e.Fn.SelfParam = makeSelfParam(selfRef, &nonMut)
 				}
 			}
 		}
