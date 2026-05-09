@@ -1,6 +1,9 @@
 package checker
 
-import "github.com/escalier-lang/escalier/internal/type_system"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/type_system"
+)
 
 // makeSelfParam returns a FuncParam representing an implicit `self` receiver
 // for a method whose containing type is `containingType`. `mutSelf` is the
@@ -23,6 +26,71 @@ func makeSelfParam(containingType type_system.Type, mutSelf *bool) *type_system.
 		Pattern: type_system.NewIdentPat("self"),
 		Type:    t,
 	}
+}
+
+// makeSelfParamWithLifetime is the lifetime-bearing form of makeSelfParam.
+// `selfType` is the class/interface receiver TypeRefType — shared across all
+// methods of a class as `classSelfRef` — and a fresh shallow clone is made
+// here so that setting `.Lifetime` does not poison sibling methods that
+// declared a different (or no) receiver lifetime. When `lifetime` is nil
+// the result is identical to `makeSelfParam(selfType, mutSelf)`.
+func makeSelfParamWithLifetime(
+	selfType *type_system.TypeRefType,
+	mutSelf *bool,
+	lifetime type_system.Lifetime,
+) *type_system.FuncParam {
+	if mutSelf == nil || selfType == nil {
+		return nil
+	}
+	clone := *selfType
+	if lifetime != nil {
+		clone.Lifetime = lifetime
+	}
+	receiver := &clone
+	var t type_system.Type = receiver
+	if *mutSelf {
+		t = type_system.NewMutType(nil, receiver)
+	}
+	return &type_system.FuncParam{
+		Pattern: type_system.NewIdentPat("self"),
+		Type:    t,
+	}
+}
+
+// buildMethodReceiver packages the receiver shape for inferFuncSig /
+// inferFuncTypeAnn. When `receiverType` is nil (e.g. a method-shaped
+// element inside a structural object-type annotation), there is no
+// receiver to attach a lifetime to — we surface a diagnostic rather
+// than silently drop `'a self`. Returns (nil, nil) for the no-receiver,
+// no-lifetime case so plain object-literal methods continue to work.
+func buildMethodReceiver(
+	receiverType *type_system.TypeRefType,
+	mutSelf *bool,
+	lifetimeNode ast.LifetimeAnnNode,
+) (*methodReceiver, []Error) {
+	if receiverType == nil {
+		if lifetimeNode != nil {
+			return nil, []Error{ReceiverLifetimeOutsideMemberError{span: lifetimeNode.Span()}}
+		}
+		return nil, nil
+	}
+	return &methodReceiver{
+		Type:         receiverType,
+		MutSelf:      mutSelf,
+		LifetimeNode: lifetimeNode,
+	}, nil
+}
+
+// methodReceiver bundles the bits inferFuncSig / inferFuncTypeAnn need
+// to wire a `self` receiver onto the resulting FuncType. Pass nil for
+// plain (non-method) callers; pass a populated value for class methods,
+// getters, setters, and interface method type-annotations. `Type` is
+// the class/interface-instance ref the method is attached to;
+// `LifetimeNode` is the optional `'a self` annotation (nil when absent).
+type methodReceiver struct {
+	Type         *type_system.TypeRefType
+	MutSelf      *bool
+	LifetimeNode ast.LifetimeAnnNode
 }
 
 // methodRequiresMutSelf reports whether a method/getter requires a `mut self`

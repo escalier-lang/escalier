@@ -466,7 +466,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 		exprType = objType
 	case *ast.FuncExpr:
-		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr)
+		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr, nil)
 		errors = slices.Concat(errors, sigErrors)
 
 		// Allocate call-site maps for outermost FuncExprs. Nested FuncExprs

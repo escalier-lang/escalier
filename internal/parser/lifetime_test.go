@@ -64,6 +64,18 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"ClassMethodLifetimeParam": {
 			input: `class Box { borrow<'a>(self, p: 'a Point) -> 'a Point { return p } }`,
 		},
+		"ClassMethodMutSelfLifetime": {
+			input: `class Container { setItem<'a>(mut 'a self, p: mut 'a Point) -> void { } }`,
+		},
+		"ClassMethodSelfLifetime": {
+			input: `class View { peek<'a>('a self) -> 'a Point { return self.p } }`,
+		},
+		"InterfaceMethodMutSelfLifetime": {
+			input: `interface Mutator { setItem<'a>(mut 'a self, p: mut 'a Point) -> void }`,
+		},
+		"InterfaceMethodSelfLifetime": {
+			input: `interface Viewer { peek<'a>('a self) -> 'a Point }`,
+		},
 		"ClassWithLifetimeParam": {
 			input: `class Container<'a> { p: 'a Point }`,
 		},

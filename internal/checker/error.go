@@ -79,6 +79,7 @@ func (e ComputedSelfAccessBeforeInitError) isError()        {}
 func (e LoopInConstructorNotSupportedError) isError()       {}
 func (e TryInConstructorNotSupportedError) isError()        {}
 func (e ClassDoesNotImplementInterfaceError) isError()      {}
+func (e ReceiverLifetimeOutsideMemberError) isError()       {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -137,6 +138,7 @@ func (e ComputedSelfAccessBeforeInitError) IsWarning() bool        { return fals
 func (e LoopInConstructorNotSupportedError) IsWarning() bool       { return false }
 func (e TryInConstructorNotSupportedError) IsWarning() bool        { return false }
 func (e ClassDoesNotImplementInterfaceError) IsWarning() bool      { return false }
+func (e ReceiverLifetimeOutsideMemberError) IsWarning() bool       { return false }
 
 // ClassDoesNotImplementInterfaceError is reported when a class declares
 // `implements I` but fails to structurally satisfy `I` — either by missing
@@ -769,6 +771,10 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 
 // MissingMutSelfParameterError is reported when a constructor's `mut self`
 // parameter is missing, not declared `mut`, or has a type annotation.
+//
+// TODO(#571): split this into one error type per `MutSelfReason` shape —
+// the four reasons share no structural template, and three of them are
+// not about a *missing* parameter at all.
 type MissingMutSelfParameterError struct {
 	Reason MutSelfReason
 	span   ast.Span
@@ -783,6 +789,7 @@ const (
 	MutSelfMissing MutSelfReason = iota
 	MutSelfNotMut
 	MutSelfHasTypeAnnotation
+	MutSelfHasLifetime
 )
 
 func (e MissingMutSelfParameterError) Span() ast.Span {
@@ -796,9 +803,28 @@ func (e MissingMutSelfParameterError) Message() string {
 		return "The `self` parameter of a constructor must be declared `mut self`."
 	case MutSelfHasTypeAnnotation:
 		return "The `mut self` parameter cannot have a type annotation."
+	case MutSelfHasLifetime:
+		return "Constructors cannot have a lifetime on `self`."
 	default:
 		return "Invalid `mut self` parameter on constructor."
 	}
+}
+
+// ReceiverLifetimeOutsideMemberError is reported when a `'a self`
+// annotation appears on a method/getter/setter inside a structural
+// object-type annotation (e.g. `type X = { m('a self) -> 'a T }`).
+// Such positions have no class/interface receiver type to attach the
+// lifetime to, so the annotation would be silently dropped — we
+// surface it explicitly instead.
+type ReceiverLifetimeOutsideMemberError struct {
+	span ast.Span
+}
+
+func (e ReceiverLifetimeOutsideMemberError) Span() ast.Span {
+	return e.span
+}
+func (e ReceiverLifetimeOutsideMemberError) Message() string {
+	return "A lifetime on `self` is only valid on class or interface members."
 }
 
 type MultipleConstructorsNotYetSupportedError struct {

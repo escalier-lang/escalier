@@ -195,11 +195,21 @@ func (c *Checker) VerifyLifetimeCompatibility(
 	ifaceReturnLT := type_system.GetLifetime(ifaceMethod.Return)
 	implReturnLT := type_system.GetLifetime(implMethod.Return)
 
+	ifaceSelfLT := selfParamLifetime(ifaceMethod)
+	implSelfLT := selfParamLifetime(implMethod)
+
 	if ifaceReturnLT == nil {
 		// Interface promises a fresh return: implementation must also
-		// not alias any parameter.
+		// not alias any parameter (or the receiver).
 		if implReturnLT == nil {
 			return nil
+		}
+		if implSelfLT != nil && lifetimesMatch(implSelfLT, implReturnLT) {
+			return []Error{InterfaceLifetimeMismatchError{
+				Reason: "implementation aliases `self` " +
+					"but interface declares the return value is independent",
+				span: span,
+			}}
 		}
 		for i, p := range implMethod.Params {
 			pLT := type_system.GetLifetime(p.Type)
@@ -235,6 +245,17 @@ func (c *Checker) VerifyLifetimeCompatibility(
 			tiedIfaceParams[i] = true
 		}
 	}
+	// Receiver position: if the impl ties `self` to its return, the
+	// interface must also tie its `self` to *its* return.
+	if implSelfLT != nil && lifetimesMatch(implSelfLT, implReturnLT) {
+		if ifaceSelfLT == nil || !lifetimesMatch(ifaceSelfLT, ifaceReturnLT) {
+			return []Error{InterfaceLifetimeMismatchError{
+				Reason: "implementation aliases `self` " +
+					"but interface does not declare that alias",
+				span: span,
+			}}
+		}
+	}
 	// The implementation must alias only parameters that the
 	// interface also ties to the return.
 	for i, p := range implMethod.Params {
@@ -259,6 +280,21 @@ func (c *Checker) VerifyLifetimeCompatibility(
 		}
 	}
 	return nil
+}
+
+// selfParamLifetime returns the lifetime annotation on a method's
+// receiver, if any. The receiver is wrapped in MutType for `mut self`,
+// so unwrap one level before reading the underlying TypeRefType's
+// Lifetime.
+func selfParamLifetime(fn *type_system.FuncType) type_system.Lifetime {
+	if fn == nil || fn.SelfParam == nil || fn.SelfParam.Type == nil {
+		return nil
+	}
+	t := fn.SelfParam.Type
+	if mt, ok := t.(*type_system.MutType); ok {
+		t = mt.Type
+	}
+	return type_system.GetLifetime(t)
 }
 
 // lifetimesMatch reports whether two lifetimes refer to the same

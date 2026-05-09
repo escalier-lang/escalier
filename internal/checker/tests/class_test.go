@@ -540,6 +540,40 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 				}
 			`,
 		},
+		// Receiver lifetime: interface ties self to return; impl
+		// matches. OK.
+		"MatchingReceiverLifetime": {
+			input: `
+				type Point = {x: number}
+				interface Viewer {
+					peek<'a>('a self) -> 'a Point,
+				}
+				class V implements Viewer {
+					p: Point,
+					peek<'a>('a self) -> 'a Point { return self.p }
+				}
+				val v = V({x: 0})
+			`,
+		},
+		// Receiver lifetime: interface promises a fresh (independent)
+		// return; the impl aliases self into the return. Less
+		// conservative — must error.
+		"ImplAliasesSelfWhenIfaceFresh": {
+			input: `
+				type Point = {x: number}
+				interface Viewer {
+					peek<'a>('a self) -> Point,
+				}
+				class V implements Viewer {
+					p: Point,
+					peek<'a>('a self) -> 'a Point { return self.p }
+				}
+				val v = V({x: 0})
+			`,
+			expectedErrors: []string{
+				"interface implementation lifetime mismatch: implementation aliases `self` but interface declares the return value is independent",
+			},
+		},
 		// Interface promises a fresh (independent) return; the impl
 		// aliases its parameter into the return. Less conservative —
 		// must error.
@@ -747,6 +781,140 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 				"MutSelf should match the test expectation")
 		})
 	}
+}
+
+// TestClassMethodSelfLifetime pins that an explicit `'a self` /
+// `mut 'a self` annotation produces a `SelfParam.Type` carrying the
+// resolved LifetimeVar — and that two methods declaring their own
+// `<'a>` get independent receiver TypeRefType clones (regression
+// against accidentally sharing `classSelfRef`).
+func TestClassMethodSelfLifetime(t *testing.T) {
+	src := `
+		type Point = {x: number}
+		class Container {
+			p: Point,
+			peek<'a>('a self) -> 'a Point { return self.p },
+			swap<'b>(mut 'b self, q: mut 'b Point) -> mut 'b Point { return q }
+		}
+	`
+	ns := mustInferAsModule(t, src)
+	classAlias := ns.Types["Container"]
+	require.NotNil(t, classAlias)
+	objType := type_system.Prune(classAlias.Type).(*type_system.ObjectType)
+
+	findMethod := func(name string) *type_system.FuncType {
+		for _, e := range objType.Elems {
+			if m, ok := e.(*type_system.MethodElem); ok &&
+				m.Name.Kind == type_system.StrObjTypeKeyKind && m.Name.Str == name {
+				return m.Fn
+			}
+		}
+		return nil
+	}
+
+	peek := findMethod("peek")
+	require.NotNil(t, peek, "peek method should exist")
+	require.NotNil(t, peek.SelfParam, "peek must carry a SelfParam")
+	peekRef, ok := peek.SelfParam.Type.(*type_system.TypeRefType)
+	require.True(t, ok, "peek SelfParam.Type must be a bare TypeRefType (immutable self)")
+	require.NotNil(t, peekRef.Lifetime, "peek receiver must carry the 'a lifetime")
+	require.Len(t, peek.LifetimeParams, 1)
+	assert.Equal(t, peek.LifetimeParams[0], peekRef.Lifetime,
+		"peek receiver lifetime must be the same LifetimeVar as the method's <'a>")
+
+	swap := findMethod("swap")
+	require.NotNil(t, swap)
+	require.NotNil(t, swap.SelfParam)
+	swapMut, ok := swap.SelfParam.Type.(*type_system.MutType)
+	require.True(t, ok, "swap SelfParam.Type must be a MutType wrapping the receiver")
+	swapRef, ok := swapMut.Type.(*type_system.TypeRefType)
+	require.True(t, ok)
+	require.NotNil(t, swapRef.Lifetime)
+	require.Len(t, swap.LifetimeParams, 1)
+	assert.Equal(t, swap.LifetimeParams[0], swapRef.Lifetime,
+		"swap receiver lifetime must be the method's <'b>")
+
+	// Per-method clone regression: peek's and swap's receiver TypeRefTypes
+	// must be distinct pointers — sharing one would mean writing into one
+	// method's lifetime poisoned the other.
+	assert.NotSame(t, peekRef, swapRef,
+		"each method must own a distinct receiver TypeRefType clone")
+	assert.NotEqual(t, peekRef.Lifetime, swapRef.Lifetime,
+		"each method's receiver carries its own LifetimeVar")
+}
+
+// TestConstructorRejectsSelfLifetime pins that a constructor with a
+// lifetime on `self` produces the dedicated diagnostic.
+func TestConstructorRejectsSelfLifetime(t *testing.T) {
+	src := `
+		class C {
+			n: number,
+			constructor(mut 'a self) { self.n = 0 }
+		}
+	`
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	inferErrors := c.InferModule(inferCtx, module)
+
+	count := 0
+	for _, e := range inferErrors {
+		if me, ok := e.(MissingMutSelfParameterError); ok && me.Reason == MutSelfHasLifetime {
+			if count == 0 {
+				assert.Equal(t, "Constructors cannot have a lifetime on `self`.", me.Message())
+			}
+			count++
+		}
+	}
+	assert.Equal(t, 1, count,
+		"expected exactly one MutSelfHasLifetime diagnostic; got %v", inferErrors)
+
+	// The parser must NOT also report its own lifetime-on-self error:
+	// having both fire produces a duplicate diagnostic for one mistake.
+	for _, pe := range parseErrors {
+		assert.NotContains(t, pe.Message,
+			"constructors cannot have a lifetime on `self`",
+			"parser should not duplicate the checker's MutSelfHasLifetime diagnostic")
+	}
+}
+
+// TestObjectTypeAnnRejectsReceiverLifetime pins that `'a self` written
+// inside a structural object-type annotation (no class/interface
+// receiver to attach the lifetime to) produces a dedicated diagnostic
+// rather than being silently dropped.
+func TestObjectTypeAnnRejectsReceiverLifetime(t *testing.T) {
+	src := `
+		type Point = {x: number}
+		type Viewer = {
+			peek<'a>('a self) -> 'a Point,
+		}
+	`
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	inferErrors := c.InferModule(inferCtx, module)
+
+	count := 0
+	for _, e := range inferErrors {
+		if me, ok := e.(ReceiverLifetimeOutsideMemberError); ok {
+			if count == 0 {
+				assert.Equal(t,
+					"A lifetime on `self` is only valid on class or interface members.",
+					me.Message())
+			}
+			count++
+		}
+	}
+	assert.Equal(t, 1, count,
+		"expected exactly one ReceiverLifetimeOutsideMemberError; got %v", inferErrors)
 }
 
 // TestLifetimeArgArityMismatch verifies that a type reference whose

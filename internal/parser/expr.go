@@ -567,29 +567,43 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	return fn
 }
 
-func (p *Parser) mutSelf() *bool {
-	token := p.lexer.peek()
-	if token.Type == Mut {
-		// Probe for `mut self` without committing to consuming `mut` until
-		// we've confirmed `self` follows. Otherwise a real param like
-		// `mut x` would have its `mut` stripped before parseDelimSeq runs.
-		saved := p.lexer.saveState()
-		p.lexer.consume() // consume 'mut'
-		next := p.lexer.peek()
-		if next.Type == Identifier && next.Value == "self" {
-			p.lexer.consume() // consume 'self'
-			mut := true
-			return &mut
-		}
-		p.lexer.restoreState(saved)
-		return nil
-	} else if token.Type == Identifier && token.Value == "self" {
-		p.lexer.consume() // consume 'self'
-		mut := false
-		return &mut
+// selfReceiver probes the upcoming tokens for one of:
+//
+//	self           → (&false, nil)
+//	mut self       → (&true,  nil)
+//	'a self        → (&false, LifetimeAnn)
+//	mut 'a self    → (&true,  LifetimeAnn)
+//
+// Returns (nil, nil) when the lookahead does not start a `self` receiver
+// — the lexer state is restored so the surrounding parser can take over
+// (e.g. parsing a regular `mut x` parameter, or reporting a stray `'a`).
+//
+// Receiver lifetimes are single only — `('a | 'b) self` is intentionally
+// not recognised (lifetime unions only appear on return-position types
+// per the design).
+func (p *Parser) selfReceiver() (*bool, ast.LifetimeAnnNode) {
+	saved := p.lexer.saveState()
+
+	mut := false
+	if p.lexer.peek().Type == Mut {
+		p.lexer.consume()
+		mut = true
 	}
 
-	return nil
+	var lifetime ast.LifetimeAnnNode
+	if lt := p.lexer.peek(); lt.Type == Lifetime {
+		p.lexer.consume()
+		lifetime = ast.NewLifetimeAnn(lt.Value, lt.Span)
+	}
+
+	if next := p.lexer.peek(); next.Type == Identifier && next.Value == "self" {
+		p.lexer.consume() // consume 'self'
+		mutPtr := mut
+		return &mutPtr, lifetime
+	}
+
+	p.lexer.restoreState(saved)
+	return nil, nil
 }
 
 // canStartExpr returns true if the given token type can begin an expression.

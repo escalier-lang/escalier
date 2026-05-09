@@ -271,7 +271,7 @@ func (c *Checker) InferComponent(
 
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
-				funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(nsCtx, &decl.FuncSig, decl)
+				funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(nsCtx, &decl.FuncSig, decl, nil)
 				paramBindingsForDecl[decl] = paramBindings
 				errors = slices.Concat(errors, sigErrors)
 
@@ -553,7 +553,10 @@ func (c *Checker) InferComponent(
 					case *ast.MethodElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						methodType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						errors = slices.Concat(errors, recvErrs)
+						methodType, methodCtx, _, sigErrors := c.inferFuncSig(
+							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -578,8 +581,9 @@ func (c *Checker) InferComponent(
 								type_system.NewMethodElem(*key, methodType, nil), // static methods don't have self
 							)
 						} else {
-							// Instance methods go to the instance type
-							methodType.SelfParam = makeSelfParam(classSelfRef, elem.MutSelf)
+							// Instance methods go to the instance type.
+							// SelfParam was wired above so the unused-
+							// lifetime check could consider it.
 							objTypeElems = append(
 								objTypeElems,
 								type_system.NewMethodElem(*key, methodType, elem.MutSelf),
@@ -588,7 +592,10 @@ func (c *Checker) InferComponent(
 					case *ast.GetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						errors = slices.Concat(errors, recvErrs)
+						funcType, _, _, sigErrors := c.inferFuncSig(
+							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -613,8 +620,8 @@ func (c *Checker) InferComponent(
 								type_system.NewGetterElem(*key, funcType, nil),
 							)
 						} else {
-							// Instance getters go to the instance type
-							funcType.SelfParam = makeSelfParam(classSelfRef, elem.MutSelf)
+							// Instance getters go to the instance type;
+							// SelfParam was wired above.
 							objTypeElems = append(
 								objTypeElems,
 								type_system.NewGetterElem(*key, funcType, elem.MutSelf),
@@ -623,7 +630,10 @@ func (c *Checker) InferComponent(
 					case *ast.SetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						funcType, _, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
+						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.MutSelf, elem.SelfLifetime)
+						errors = slices.Concat(errors, recvErrs)
+						funcType, _, _, sigErrors := c.inferFuncSig(
+							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -648,8 +658,8 @@ func (c *Checker) InferComponent(
 								type_system.NewSetterElem(*key, funcType, nil),
 							)
 						} else {
-							// Instance setters go to the instance type
-							funcType.SelfParam = makeSelfParam(classSelfRef, elem.MutSelf)
+							// Instance setters go to the instance type;
+							// SelfParam was wired above.
 							objTypeElems = append(
 								objTypeElems,
 								type_system.NewSetterElem(*key, funcType, elem.MutSelf),
@@ -1312,7 +1322,14 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes
+								// TODO(#574): handle generic classes — we deliberately
+								// drop type args and the `'a self` lifetime here
+								// because downstream codegen (MemberExpr →
+								// .bind(this) heuristic in builder.go) misclassifies
+								// stored function fields once self carries its type
+								// args. Reusing methodType.Fn.SelfParam.Type would
+								// be more correct but requires fixing that
+								// classifier first.
 								isMutableSelf := methodType.MutSelf != nil && *methodType.MutSelf
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {
@@ -1399,7 +1416,10 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes
+								// TODO(#574): handle generic classes — see the matching
+								// note in the MethodElem case above for why the
+								// receiver is rebuilt here instead of reusing
+								// getterType.Fn.SelfParam.Type.
 								// A `mut self` getter (e.g. one that mutates a
 								// memoization cache) needs `self` typed as a
 								// `mut`; a plain `self` getter does not.
@@ -1484,7 +1504,10 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes
+								// TODO(#574): handle generic classes — see the matching
+								// note in the MethodElem case above for why the
+								// receiver is rebuilt here instead of reusing
+								// setterType.Fn.SelfParam.Type.
 								// Mutability follows the user-written receiver.
 								// A setter that doesn't mutate `self` (e.g. one
 								// that forwards to an external sink) may declare

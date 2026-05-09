@@ -333,6 +333,64 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 	}
 }
 
+// TestStaticMethodRejectsSelfReceiver pins that the method parser
+// emits a diagnostic when a `static` method declares a `self`,
+// `mut self`, or `'a self` receiver — and that the receiver does
+// not leak into MethodElem.MutSelf / SelfLifetime regardless.
+// Static methods have no instance, so a written receiver is a user
+// mistake; downstream code (checker, codegen) treats those fields
+// as ground truth that the method has a receiver.
+func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
+	tests := map[string]struct {
+		input   string
+		wantErr string
+	}{
+		"static plain self": {
+			input: `class Foo {
+				static bar(self) -> number { return 1 },
+			}`,
+			wantErr: "static methods cannot have a `self` receiver",
+		},
+		"static mut self": {
+			input: `class Foo {
+				static bar(mut self) -> number { return 1 },
+			}`,
+			wantErr: "static methods cannot have a `self` receiver",
+		},
+		"static 'a self": {
+			input: `class Foo {
+				static bar<'a>('a self) -> number { return 1 },
+			}`,
+			wantErr: "static methods cannot have a `self` receiver",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: tc.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+			require.NotNil(t, script)
+			method := findFirstMethodInScript(script)
+			require.NotNil(t, method, "expected to find a MethodElem")
+			assert.True(t, method.Static, "method should be static")
+			assert.Nil(t, method.MutSelf,
+				"static method must not retain a MutSelf flag from a parsed `self` receiver")
+			assert.Nil(t, method.SelfLifetime,
+				"static method must not retain a SelfLifetime from a parsed receiver")
+
+			messages := make([]string, len(parseErrors))
+			for i, pe := range parseErrors {
+				messages[i] = pe.Message
+			}
+			assert.Equal(t, []string{tc.wantErr}, messages)
+		})
+	}
+}
+
 func findFirstMethodInScript(script *ast.Script) *ast.MethodElem {
 	for _, stmt := range script.Stmts {
 		ds, ok := stmt.(*ast.DeclStmt)

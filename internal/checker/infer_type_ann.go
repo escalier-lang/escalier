@@ -143,7 +143,7 @@ func (c *Checker) inferTypeAnn(
 		}
 		t = type_system.NewTupleType(provenance, elems...)
 	case *ast.ObjectTypeAnn:
-		objType, objErrors := c.inferObjectTypeAnn(ctx, typeAnn)
+		objType, objErrors := c.inferObjectTypeAnn(ctx, typeAnn, nil)
 		t = objType
 		errors = slices.Concat(errors, objErrors)
 	case *ast.UnionTypeAnn:
@@ -163,7 +163,7 @@ func (c *Checker) inferTypeAnn(
 		}
 		t = type_system.NewIntersectionType(nil, types...)
 	case *ast.FuncTypeAnn:
-		funcType, funcErrors := c.inferFuncTypeAnn(ctx, typeAnn)
+		funcType, funcErrors := c.inferFuncTypeAnn(ctx, typeAnn, nil)
 		t = funcType
 		errors = slices.Concat(errors, funcErrors)
 	case *ast.CondTypeAnn:
@@ -285,9 +285,15 @@ func (c *Checker) inferTypeAnn(
 	return t, errors
 }
 
+// `recv`, when non-nil, makes this a method-shaped type-annotation:
+// SelfParam is wired and `'a self` is resolved before the §9.7 class 1
+// unused-lifetime-params check runs. Pass nil for plain (non-method)
+// callers — `inferTypeAnn` (FuncTypeAnn case), `CallableTypeAnn`, and
+// `ConstructorTypeAnn` all do.
 func (c *Checker) inferFuncTypeAnn(
 	ctx Context,
 	funcTypeAnn *ast.FuncTypeAnn,
+	recv *methodReceiver,
 ) (*type_system.FuncType, []Error) {
 	errors := []Error{}
 
@@ -348,16 +354,32 @@ func (c *Checker) inferFuncTypeAnn(
 		Throws:         throwsType,
 	}
 
+	// Wire receiver (method-shaped callers only) before the unused-
+	// lifetime check so a `<'a>` referenced only by `'a self`
+	// participates in the "used" set.
+	if recv != nil {
+		selfLT, ltErrs := c.resolveLifetimeAnn(funcCtx.Scope, recv.LifetimeNode)
+		errors = slices.Concat(errors, ltErrs)
+		funcType.SelfParam = makeSelfParamWithLifetime(recv.Type, recv.MutSelf, selfLT)
+	}
+
 	// §9.7 class 1: warn about declared `<'a>` clauses that no
-	// parameter, return type, or throws annotation references.
+	// parameter, return type, throws annotation, or receiver references.
 	errors = slices.Concat(errors, reportUnusedLifetimeParams(&funcType, funcTypeAnn.LifetimeParams, funcTypeAnn.Span()))
 
 	return &funcType, errors
 }
 
+// inferObjectTypeAnn lowers an `ObjectTypeAnn` (interface body or
+// object-type literal) to an `ObjectType`. When `receiver` is non-nil,
+// methods/getters/setters get a `SelfParam` wired against it — and any
+// `'a self` annotation is resolved against the function's lifetime
+// params with fallback to the surrounding scope. Pass nil for
+// non-method contexts (object-type literals).
 func (c *Checker) inferObjectTypeAnn(
 	ctx Context,
 	typeAnn *ast.ObjectTypeAnn,
+	receiver *type_system.TypeRefType,
 ) (*type_system.ObjectType, []Error) {
 	errors := []Error{}
 	provenance := &ast.NodeProvenance{Node: typeAnn}
@@ -366,11 +388,11 @@ func (c *Checker) inferObjectTypeAnn(
 	for i, elem := range typeAnn.Elems {
 		switch elem := elem.(type) {
 		case *ast.CallableTypeAnn:
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, nil)
 			errors = slices.Concat(errors, fnErrors)
 			elems[i] = &type_system.CallableElem{Fn: fn}
 		case *ast.ConstructorTypeAnn:
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, nil)
 			errors = slices.Concat(errors, fnErrors)
 			elems[i] = &type_system.ConstructorElem{Fn: fn}
 		case *ast.MethodTypeAnn:
@@ -379,12 +401,10 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			recv, recvErrs := buildMethodReceiver(receiver, elem.MutSelf, elem.SelfLifetime)
+			errors = slices.Concat(errors, recvErrs)
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
-			// `self` / `mut self` is recorded on MethodElem.MutSelf
-			// only; it does not appear in FuncType.Params, mirroring
-			// the class-side `MethodElem` convention. The receiver
-			// type is implicit (the surrounding interface).
 			elems[i] = type_system.NewMethodElem(*key, fn, elem.MutSelf)
 		case *ast.GetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -392,7 +412,9 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			recv, recvErrs := buildMethodReceiver(receiver, elem.MutSelf, elem.SelfLifetime)
+			errors = slices.Concat(errors, recvErrs)
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
 			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
 		case *ast.SetterTypeAnn:
@@ -401,7 +423,9 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			recv, recvErrs := buildMethodReceiver(receiver, elem.MutSelf, elem.SelfLifetime)
+			errors = slices.Concat(errors, recvErrs)
+			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
 			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
 		case *ast.PropertyTypeAnn:

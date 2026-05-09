@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -118,7 +119,11 @@ func (e LifetimeArgCountMismatchError) Message() string {
 // FuncType.LifetimeParams disagree in length — it points at the
 // surrounding function declaration.
 //
-// Implements §9.7 class 1.
+// Implements §9.7 class 1. Runs as a *deferred* check: callers of
+// inferFuncSig / inferFuncTypeAnn must invoke this after wiring any
+// late-bound positions (SelfParam in particular). A `<'a>` referenced
+// only by `'a self` would otherwise be flagged as unused, since the
+// receiver is not present in `Params` at signature-inference time.
 func reportUnusedLifetimeParams(
 	fnType *type_system.FuncType,
 	astParams []*ast.LifetimeAnn,
@@ -130,7 +135,7 @@ func reportUnusedLifetimeParams(
 	used := collectInlineLifetimeIDs(fnType)
 	var errors []Error
 	for i, lp := range fnType.LifetimeParams {
-		if _, ok := used[lp.ID]; !ok {
+		if !used.Contains(lp.ID) {
 			span := fallbackSpan
 			if i < len(astParams) && astParams[i] != nil {
 				span = astParams[i].Span()
@@ -154,8 +159,11 @@ func reportUnusedLifetimeParams(
 // the outer scope's same-named vars, so the visitor pushes a shadow
 // frame on entry to each inner FuncType and pops it on exit; only
 // IDs not bound by any inner frame count as "used by the outer".
-func collectInlineLifetimeIDs(fnType *type_system.FuncType) map[int]struct{} {
-	c := &lifetimeIDCollector{out: map[int]struct{}{}}
+func collectInlineLifetimeIDs(fnType *type_system.FuncType) set.Set[int] {
+	c := &lifetimeIDCollector{out: set.NewSet[int]()}
+	if fnType.SelfParam != nil && fnType.SelfParam.Type != nil {
+		fnType.SelfParam.Type.Accept(c)
+	}
 	for _, p := range fnType.Params {
 		p.Type.Accept(c)
 	}
@@ -173,8 +181,8 @@ func collectInlineLifetimeIDs(fnType *type_system.FuncType) map[int]struct{} {
 // TupleType, while honoring shadowing introduced by nested FuncType
 // LifetimeParams.
 type lifetimeIDCollector struct {
-	out         map[int]struct{}
-	shadowStack []map[int]bool
+	out         set.Set[int]
+	shadowStack []set.Set[int]
 	depth       int // FuncType nesting depth; we shadow only inner FuncTypes
 }
 
@@ -193,9 +201,9 @@ func (c *lifetimeIDCollector) EnterType(t type_system.Type) type_system.EnterRes
 		// Only inner FuncTypes introduce a shadow frame; the outer
 		// function's LifetimeParams are the IDs we want to collect.
 		if c.depth > 0 {
-			frame := map[int]bool{}
+			frame := set.NewSet[int]()
 			for _, lp := range ty.LifetimeParams {
-				frame[lp.ID] = true
+				frame.Add(lp.ID)
 			}
 			c.shadowStack = append(c.shadowStack, frame)
 		}
@@ -221,11 +229,11 @@ func (c *lifetimeIDCollector) addLifetime(lt type_system.Lifetime) {
 	switch v := type_system.PruneLifetime(lt).(type) {
 	case *type_system.LifetimeVar:
 		for _, frame := range c.shadowStack {
-			if frame[v.ID] {
+			if frame.Contains(v.ID) {
 				return
 			}
 		}
-		c.out[v.ID] = struct{}{}
+		c.out.Add(v.ID)
 	case *type_system.LifetimeUnion:
 		for _, m := range v.Lifetimes {
 			c.addLifetime(m)
