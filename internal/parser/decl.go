@@ -557,6 +557,8 @@ modifiers_done:
 			if token.Type == Comma {
 				p.lexer.consume() // consume ','
 				params = parseDelimSeq(p, CloseParen, Comma, p.param)
+			} else if receiver == nil && token.Type != CloseParen {
+				params = parseDelimSeq(p, CloseParen, Comma, p.param)
 			}
 		}
 		p.expect(CloseParen, AlwaysConsume)

@@ -305,15 +305,11 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 			if method == nil {
 				t.Fatalf("expected to find a MethodElem")
 			}
+			require.NotNil(t, method.Receiver, "expected Receiver to be set")
 			if test.wantMutSelf {
-				assert.NotNil(t, method.Receiver, "expected Receiver to be set")
-				if method.Receiver != nil {
-					assert.True(t, method.Receiver.Mut, "expected Receiver.Mut to be true")
-				}
+				assert.True(t, method.Receiver.Mut, "expected Receiver.Mut to be true")
 			} else {
-				if method.Receiver != nil {
-					assert.False(t, method.Receiver.Mut, "expected Receiver.Mut to be false (plain self)")
-				}
+				assert.False(t, method.Receiver.Mut, "expected Receiver.Mut to be false (plain self)")
 			}
 			assert.Len(t, method.Fn.Params, test.wantParamCount,
 				"unexpected param count")
@@ -387,6 +383,26 @@ func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
 			assert.Equal(t, []string{tc.wantErr}, messages)
 		})
 	}
+}
+
+// TestParseMethodWithoutSelfReceiver pins that a non-static method with no
+// `self` receiver still parses its parameter list — currently the parser
+// would silently treat the params as a syntax error.
+func TestParseMethodWithoutSelfReceiver(t *testing.T) {
+	t.Parallel()
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `class Foo {
+		bar(x: number, y: number) -> number { return x + y },
+	}`}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := NewParser(ctx, source)
+	script, errs := p.ParseScript()
+	require.NotNil(t, script)
+	assert.Empty(t, errs, "expected no parse errors")
+	method := findFirstMethodInScript(script)
+	require.NotNil(t, method, "expected to find a MethodElem")
+	assert.Nil(t, method.Receiver, "expected no receiver")
+	assert.Len(t, method.Fn.Params, 2, "expected both params parsed")
 }
 
 func findFirstMethodInScript(script *ast.Script) *ast.MethodElem {

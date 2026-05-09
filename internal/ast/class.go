@@ -153,11 +153,14 @@ func (g *GetterElem) Accept(v Visitor) {
 func (g *GetterElem) Span() Span { return g.Span_ }
 
 // ConstructorElem represents an explicit `constructor(...) { ... }` block
-// inside a class body. The constructor's return type is always `Self` and
-// is not part of the AST; `Fn.Return` must remain nil. `Fn.Throws` may be
-// non-nil — constructors may declare a `throws` clause. The first parameter
-// in `Fn.Params` is the user-written `self` (with `MutSelf` recording its
-// mutability flag); remaining params are the constructor's callable params.
+// inside a class body. The constructor's receiver is represented by
+// `Receiver *MethodReceiver` (nil when absent — a non-nil `Lifetime` is
+// rejected by validation). The first entry in `Fn.Params` corresponds to
+// the user-written receiver when `Receiver` is non-nil; the receiver's
+// mutability is recorded on `Receiver`, not on the param. Remaining params
+// are the constructor's callable params. The constructor's return type is
+// always `Self` and is not part of the AST; `Fn.Return` must remain nil.
+// `Fn.Throws` may be non-nil — constructors may declare a `throws` clause.
 type ConstructorElem struct {
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if absent. Carried for diagnostics — a non-nil Lifetime is rejected by validation.

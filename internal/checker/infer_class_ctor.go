@@ -35,11 +35,18 @@ func isValidJSIdentifier(s string) bool {
 }
 
 // ctorCallableParams returns the constructor's callable parameter list —
-// i.e. `Fn.Params` with the leading `mut self` receiver stripped. The
-// `mut self` parameter is not part of how callers invoke `Foo(...)` and
-// must not be passed to `inferFuncParams` or used to compute callable
-// arity.
+// i.e. `Fn.Params` with the leading `mut self` receiver stripped when the
+// receiver is present. The `mut self` parameter is not part of how callers
+// invoke `Foo(...)` and must not be passed to `inferFuncParams` or used to
+// compute callable arity. When `ctor.Receiver` is nil (a malformed
+// constructor missing its receiver), `Fn.Params[0]` is a real user
+// parameter and must not be stripped — otherwise downstream inference
+// produces a callable with the first param dropped, compounding the
+// already-reported MissingMutSelfParameterError with a misleading arity.
 func ctorCallableParams(ctor *ast.ConstructorElem) []*ast.Param {
+	if ctor.Receiver == nil {
+		return ctor.Fn.Params
+	}
 	if len(ctor.Fn.Params) == 0 {
 		return nil
 	}
