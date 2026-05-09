@@ -109,6 +109,7 @@ const (
 	Readonly
 	Bigint
 	Void
+	Override
 )
 
 type Token struct {

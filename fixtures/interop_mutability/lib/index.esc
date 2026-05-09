@@ -1,0 +1,136 @@
+// Test cases exercising the resolution-order tiers from
+// planning/interop_mutability/requirements.md. Each section labels which
+// tier(s) it covers. Where a call is expected to error once the
+// corresponding phase lands, the line is marked "// EXPECTED-ERROR (tier N)".
+
+// ---------------------------------------------------------------------------
+// Tier 2 / principle #2: Readonly collection variants. In Escalier source,
+// `Array<T>` is the immutable form; `mut Array<T>` is the mutable form.
+// (Across the interop boundary, TS `ReadonlyArray<T>` maps to `Array<T>`
+// and TS `Array<T>` maps to `mut Array<T>`.)
+// ---------------------------------------------------------------------------
+
+// Non-mutating methods on an immutable Array work on an immutable receiver.
+fn read_from_immutable_array(xs: Array<number>) -> number {
+    return xs.length
+}
+
+// Calling a mutating method on an immutable Array is a type error.
+fn cannot_push_to_immutable(xs: Array<number>) {
+    xs.push(1)  // EXPECTED-ERROR (tier 2)
+}
+
+// ---------------------------------------------------------------------------
+// Tier 2 / principle #6: readonly properties are always readonly
+// ---------------------------------------------------------------------------
+
+class Point {
+    readonly x: number,
+    y: number,
+}
+
+fn cannot_write_readonly_field_on_mut(p: mut Point) {
+    p.x = 0     // EXPECTED-ERROR (tier 2: readonly prop)
+    p.y = 1     // OK: y is not readonly, p is mutable
+}
+
+// ---------------------------------------------------------------------------
+// Tier 4 / principle #3: primitive wrapper classes are non-mutating
+// ---------------------------------------------------------------------------
+
+fn string_methods_on_immutable() -> string {
+    val s = "hello"
+    return s.toUpperCase()  // OK: String methods are non-mutating
+}
+
+// ---------------------------------------------------------------------------
+// Tier 4 (shipped overrides) — Date.setHours mutates; getHours does not
+// ---------------------------------------------------------------------------
+
+fn read_immutable_date(d: Date) -> number {
+    return d.getHours()     // OK: getHours non-mutating
+}
+
+fn cannot_mutate_immutable_date(d: Date) {
+    d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
+}
+
+fn mutate_mutable_date(d: mut Date) {
+    d.setHours(12)          // OK: receiver is mutable
+}
+
+// ---------------------------------------------------------------------------
+// Tier 4 — ES2023 toSorted is non-mutating despite the "sort" substring;
+// sort itself mutates. This is the counter-example for the "prefer mutating
+// on prefix conflict" rule.
+// ---------------------------------------------------------------------------
+
+fn to_sorted_on_immutable(xs: Array<number>) -> Array<number> {
+    return xs.toSorted()    // OK: toSorted returns a new array
+}
+
+fn cannot_sort_immutable(xs: Array<number>) {
+    xs.sort()               // EXPECTED-ERROR (tier 2: sort requires mut Array)
+}
+
+// ---------------------------------------------------------------------------
+// Tier 6 / principle #4: get* prefix is non-mutating; getOrInsert mutates
+// ---------------------------------------------------------------------------
+
+class Cache {
+    items: Array<number>,
+    getValue(self) {
+        return self.items.length
+    },
+    getOrInsert(mut self, _key: string, default_: number) {
+        return default_
+    },
+}
+
+fn get_on_immutable_cache(c: Cache) -> number {
+    return c.getValue()     // OK: get* assumed non-mutating
+}
+
+fn cannot_get_or_insert_on_immutable(c: Cache) {
+    c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
+}
+
+// ---------------------------------------------------------------------------
+// Tier 7 (name heuristics) — predicate / conversion / query / copy prefixes
+// ---------------------------------------------------------------------------
+
+// tier 7: predicate (isReady), well-known symbol (toJSON),
+// copy (clone), default-mutating (render).
+class Widget {
+    name: string,
+    isReady(self) {
+        return true
+    },
+    toJSON(self) {
+        return self.name
+    },
+    clone(self) {
+        return Widget(self.name)
+    },
+    render(mut self) {
+        self.name = ""
+    },
+}
+
+fn name_heuristics_on_immutable(w: Widget) -> Widget {
+    val ready = w.isReady()
+    val json = w.toJSON()
+    val copy = w.clone()
+    return copy
+}
+
+fn cannot_render_immutable(w: Widget) {
+    w.render()              // EXPECTED-ERROR (tier 8: defaults to mutating)
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 — @esctype round-trip (smoke test only; the actual emit + consume
+// happens via .d.ts -> .esc, which this fixture can't exercise on its own).
+// Once Phase 6 lands, an upstream `.esc` package emitting `.d.ts` consumed
+// here would round-trip mutability losslessly.
+// ---------------------------------------------------------------------------
