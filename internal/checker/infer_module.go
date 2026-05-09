@@ -554,12 +554,10 @@ func (c *Checker) InferComponent(
 					case *ast.MethodElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						methodType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
+						methodType, methodCtx, _, sigErrors := c.inferMethodFuncSig(
+							declCtx, &elem.Fn.FuncSig, elem.Fn,
+							classSelfRef, elem.MutSelf, elem.SelfLifetime)
 						errors = slices.Concat(errors, sigErrors)
-						selfLT, selfLTErrors := c.resolveLifetimeAnn(methodCtx.Scope, elem.SelfLifetime)
-						errors = slices.Concat(errors, selfLTErrors)
-						methodType.SelfParam = makeSelfParamWithLifetime(classSelfRef, elem.MutSelf, selfLT)
-						errors = slices.Concat(errors, reportUnusedLifetimeParams(methodType, elem.Fn.FuncSig.LifetimeParams, elem.Fn.Span()))
 						if key == nil {
 							continue
 						}
@@ -594,12 +592,10 @@ func (c *Checker) InferComponent(
 					case *ast.GetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						funcType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
+						funcType, _, _, sigErrors := c.inferMethodFuncSig(
+							declCtx, &elem.Fn.FuncSig, elem.Fn,
+							classSelfRef, elem.MutSelf, elem.SelfLifetime)
 						errors = slices.Concat(errors, sigErrors)
-						selfLT, selfLTErrors := c.resolveLifetimeAnn(methodCtx.Scope, elem.SelfLifetime)
-						errors = slices.Concat(errors, selfLTErrors)
-						funcType.SelfParam = makeSelfParamWithLifetime(classSelfRef, elem.MutSelf, selfLT)
-						errors = slices.Concat(errors, reportUnusedLifetimeParams(funcType, elem.Fn.FuncSig.LifetimeParams, elem.Fn.Span()))
 						if key == nil {
 							continue
 						}
@@ -633,12 +629,10 @@ func (c *Checker) InferComponent(
 					case *ast.SetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						funcType, methodCtx, _, sigErrors := c.inferFuncSig(declCtx, &elem.Fn.FuncSig, elem.Fn)
+						funcType, _, _, sigErrors := c.inferMethodFuncSig(
+							declCtx, &elem.Fn.FuncSig, elem.Fn,
+							classSelfRef, elem.MutSelf, elem.SelfLifetime)
 						errors = slices.Concat(errors, sigErrors)
-						selfLT, selfLTErrors := c.resolveLifetimeAnn(methodCtx.Scope, elem.SelfLifetime)
-						errors = slices.Concat(errors, selfLTErrors)
-						funcType.SelfParam = makeSelfParamWithLifetime(classSelfRef, elem.MutSelf, selfLT)
-						errors = slices.Concat(errors, reportUnusedLifetimeParams(funcType, elem.Fn.FuncSig.LifetimeParams, elem.Fn.Span()))
 						if key == nil {
 							continue
 						}

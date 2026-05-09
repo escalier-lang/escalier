@@ -243,9 +243,10 @@ func (c *Checker) inferFuncSig(
 	errors = slices.Concat(errors, checkDeclaredVsActualLifetimes(t, node))
 
 	// §9.7 class 1 unused-lifetime-params check is deferred to the
-	// caller (reportUnusedLifetimeParams) so SelfParam — wired by
-	// method/getter/setter callers after this returns — participates
-	// in the "used" set.
+	// caller (reportUnusedLifetimeParams) so SelfParam participates
+	// in the "used" set. Method-shaped callers should use
+	// inferMethodFuncSig, which wires SelfParam and runs the check
+	// in the correct order.
 
 	return t, funcCtx, bindings, errors
 }

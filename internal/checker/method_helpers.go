@@ -1,6 +1,11 @@
 package checker
 
-import "github.com/escalier-lang/escalier/internal/type_system"
+import (
+	"slices"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/type_system"
+)
 
 // makeSelfParam returns a FuncParam representing an implicit `self` receiver
 // for a method whose containing type is `containingType`. `mutSelf` is the
@@ -26,20 +31,20 @@ func makeSelfParam(containingType type_system.Type, mutSelf *bool) *type_system.
 }
 
 // makeSelfParamWithLifetime is the lifetime-bearing form of makeSelfParam.
-// `base` is the class/interface receiver TypeRefType — shared across all
+// `selfType` is the class/interface receiver TypeRefType — shared across all
 // methods of a class as `classSelfRef` — and a fresh shallow clone is made
 // here so that setting `.Lifetime` does not poison sibling methods that
 // declared a different (or no) receiver lifetime. When `lifetime` is nil
-// the result is identical to `makeSelfParam(base, mutSelf)`.
+// the result is identical to `makeSelfParam(selfType, mutSelf)`.
 func makeSelfParamWithLifetime(
-	base *type_system.TypeRefType,
+	selfType *type_system.TypeRefType,
 	mutSelf *bool,
 	lifetime type_system.Lifetime,
 ) *type_system.FuncParam {
-	if mutSelf == nil || base == nil {
+	if mutSelf == nil || selfType == nil {
 		return nil
 	}
-	clone := *base
+	clone := *selfType
 	if lifetime != nil {
 		clone.Lifetime = lifetime
 	}
@@ -52,6 +57,56 @@ func makeSelfParamWithLifetime(
 		Pattern: type_system.NewIdentPat("self"),
 		Type:    t,
 	}
+}
+
+// inferMethodFuncSig is the method-context wrapper around inferFuncSig.
+// It runs signature inference, resolves the optional `'a self` lifetime
+// against the function's own scope, wires SelfParam onto the resulting
+// FuncType, then runs the §9.7 class 1 unused-lifetime-params check —
+// in that order so a `<'a>` referenced only by `'a self` participates
+// in the "used" set.
+//
+// `receiver` is the class/interface-instance ref the method is attached
+// to. `mutSelf` carries the AST `self` vs `mut self` flag. Pass nil for
+// `selfLifetimeNode` when there is no `'a self` annotation.
+func (c *Checker) inferMethodFuncSig(
+	ctx Context,
+	sig *ast.FuncSig,
+	node ast.Node,
+	receiver *type_system.TypeRefType,
+	mutSelf *bool,
+	selfLifetimeNode ast.LifetimeAnnNode,
+) (*type_system.FuncType, Context, map[string]*type_system.Binding, []Error) {
+	fn, funcCtx, bindings, errors := c.inferFuncSig(ctx, sig, node)
+	selfLT, ltErrs := c.resolveLifetimeAnn(funcCtx.Scope, selfLifetimeNode)
+	errors = slices.Concat(errors, ltErrs)
+	fn.SelfParam = makeSelfParamWithLifetime(receiver, mutSelf, selfLT)
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(fn, sig.LifetimeParams, node.Span()))
+	return fn, funcCtx, bindings, errors
+}
+
+// inferMethodFuncTypeAnn is the method-context wrapper around
+// inferFuncTypeAnn. Mirrors inferMethodFuncSig but for type-annotation
+// positions (interface method/getter/setter bodies).
+//
+// Because inferFuncTypeAnn does not return its per-function scope, this
+// wrapper resolves `'a self` via resolveSelfLifetimeForFn — which
+// rebuilds a scope from `fn.LifetimeParams` on top of `ctx.Scope` so
+// the receiver lifetime can be looked up by name. See issue #572 for
+// the plan to unify this with resolveLifetimeAnn.
+func (c *Checker) inferMethodFuncTypeAnn(
+	ctx Context,
+	fnAnn *ast.FuncTypeAnn,
+	receiver *type_system.TypeRefType,
+	mutSelf *bool,
+	selfLifetimeNode ast.LifetimeAnnNode,
+) (*type_system.FuncType, []Error) {
+	fn, errors := c.inferFuncTypeAnn(ctx, fnAnn)
+	selfLT, ltErrs := c.resolveSelfLifetimeForFn(ctx.Scope, fn, selfLifetimeNode)
+	errors = slices.Concat(errors, ltErrs)
+	fn.SelfParam = makeSelfParamWithLifetime(receiver, mutSelf, selfLT)
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(fn, fnAnn.LifetimeParams, fnAnn.Span()))
+	return fn, errors
 }
 
 // methodRequiresMutSelf reports whether a method/getter requires a `mut self`

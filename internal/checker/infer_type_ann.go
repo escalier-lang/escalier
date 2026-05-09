@@ -351,9 +351,10 @@ func (c *Checker) inferFuncTypeAnn(
 
 	// §9.7 class 1 unused-lifetime-params check is deferred to the
 	// caller (reportUnusedLifetimeParams) so interface-method
-	// SelfParam — wired in inferObjectTypeAnn after this returns —
-	// participates in the "used" set. Non-method callers must run the
-	// deferred check themselves to retain the diagnostic.
+	// SelfParam participates in the "used" set. Method-shaped callers
+	// should use inferMethodFuncTypeAnn, which wires SelfParam and
+	// runs the check in the correct order; non-method callers must
+	// run the deferred check themselves to retain the diagnostic.
 	return &funcType, errors
 }
 
@@ -370,30 +371,6 @@ func (c *Checker) inferObjectTypeAnn(
 ) (*type_system.ObjectType, []Error) {
 	errors := []Error{}
 	provenance := &ast.NodeProvenance{Node: typeAnn}
-
-	// wireMethodLike resolves `'a self`, attaches `SelfParam`, and runs
-	// the deferred unused-lifetime-params check — in that order so the
-	// receiver lifetime participates in the "used" set. Returns the
-	// errors produced; the caller stitches them into the running list.
-	wireMethodLike := func(
-		fn *type_system.FuncType,
-		mutSelf *bool,
-		selfLifetimeNode ast.LifetimeAnnNode,
-		fnAnn *ast.FuncTypeAnn,
-	) []Error {
-		var errs []Error
-		if receiver != nil {
-			var selfLT type_system.Lifetime
-			if selfLifetimeNode != nil {
-				lt, ltErrs := c.resolveSelfLifetimeForFn(ctx.Scope, fn, selfLifetimeNode)
-				errs = slices.Concat(errs, ltErrs)
-				selfLT = lt
-			}
-			fn.SelfParam = makeSelfParamWithLifetime(receiver, mutSelf, selfLT)
-		}
-		errs = slices.Concat(errs, reportUnusedLifetimeParams(fn, fnAnn.LifetimeParams, fnAnn.Span()))
-		return errs
-	}
 
 	elems := make([]type_system.ObjTypeElem, len(typeAnn.Elems))
 	for i, elem := range typeAnn.Elems {
@@ -414,9 +391,8 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			fn, fnErrors := c.inferMethodFuncTypeAnn(ctx, elem.Fn, receiver, elem.MutSelf, elem.SelfLifetime)
 			errors = slices.Concat(errors, fnErrors)
-			errors = slices.Concat(errors, wireMethodLike(fn, elem.MutSelf, elem.SelfLifetime, elem.Fn))
 			elems[i] = type_system.NewMethodElem(*key, fn, elem.MutSelf)
 		case *ast.GetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -424,9 +400,8 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			fn, fnErrors := c.inferMethodFuncTypeAnn(ctx, elem.Fn, receiver, elem.MutSelf, elem.SelfLifetime)
 			errors = slices.Concat(errors, fnErrors)
-			errors = slices.Concat(errors, wireMethodLike(fn, elem.MutSelf, elem.SelfLifetime, elem.Fn))
 			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
 		case *ast.SetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
@@ -434,9 +409,8 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn)
+			fn, fnErrors := c.inferMethodFuncTypeAnn(ctx, elem.Fn, receiver, elem.MutSelf, elem.SelfLifetime)
 			errors = slices.Concat(errors, fnErrors)
-			errors = slices.Concat(errors, wireMethodLike(fn, elem.MutSelf, elem.SelfLifetime, elem.Fn))
 			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
 		case *ast.PropertyTypeAnn:
 			var t type_system.Type
