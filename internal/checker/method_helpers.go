@@ -1,8 +1,6 @@
 package checker
 
 import (
-	"slices"
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -59,54 +57,40 @@ func makeSelfParamWithLifetime(
 	}
 }
 
-// inferMethodFuncSig is the method-context wrapper around inferFuncSig.
-// It runs signature inference, resolves the optional `'a self` lifetime
-// against the function's own scope, wires SelfParam onto the resulting
-// FuncType, then runs the §9.7 class 1 unused-lifetime-params check —
-// in that order so a `<'a>` referenced only by `'a self` participates
-// in the "used" set.
-//
-// `receiver` is the class/interface-instance ref the method is attached
-// to. `mutSelf` carries the AST `self` vs `mut self` flag. Pass nil for
-// `selfLifetimeNode` when there is no `'a self` annotation.
-func (c *Checker) inferMethodFuncSig(
-	ctx Context,
-	sig *ast.FuncSig,
-	node ast.Node,
-	receiver *type_system.TypeRefType,
+// buildMethodReceiver packages the receiver shape for inferFuncSig /
+// inferFuncTypeAnn. When `receiverType` is nil (e.g. a method-shaped
+// element inside a structural object-type annotation), there is no
+// receiver to attach a lifetime to — we surface a diagnostic rather
+// than silently drop `'a self`. Returns (nil, nil) for the no-receiver,
+// no-lifetime case so plain object-literal methods continue to work.
+func buildMethodReceiver(
+	receiverType *type_system.TypeRefType,
 	mutSelf *bool,
-	selfLifetimeNode ast.LifetimeAnnNode,
-) (*type_system.FuncType, Context, map[string]*type_system.Binding, []Error) {
-	fn, funcCtx, bindings, errors := c.inferFuncSig(ctx, sig, node)
-	selfLT, ltErrs := c.resolveLifetimeAnn(funcCtx.Scope, selfLifetimeNode)
-	errors = slices.Concat(errors, ltErrs)
-	fn.SelfParam = makeSelfParamWithLifetime(receiver, mutSelf, selfLT)
-	errors = slices.Concat(errors, reportUnusedLifetimeParams(fn, sig.LifetimeParams, node.Span()))
-	return fn, funcCtx, bindings, errors
+	lifetimeNode ast.LifetimeAnnNode,
+) (*methodReceiver, []Error) {
+	if receiverType == nil {
+		if lifetimeNode != nil {
+			return nil, []Error{ReceiverLifetimeOutsideMemberError{span: lifetimeNode.Span()}}
+		}
+		return nil, nil
+	}
+	return &methodReceiver{
+		Type:         receiverType,
+		MutSelf:      mutSelf,
+		LifetimeNode: lifetimeNode,
+	}, nil
 }
 
-// inferMethodFuncTypeAnn is the method-context wrapper around
-// inferFuncTypeAnn. Mirrors inferMethodFuncSig but for type-annotation
-// positions (interface method/getter/setter bodies).
-//
-// Because inferFuncTypeAnn does not return its per-function scope, this
-// wrapper resolves `'a self` via resolveSelfLifetimeForFn — which
-// rebuilds a scope from `fn.LifetimeParams` on top of `ctx.Scope` so
-// the receiver lifetime can be looked up by name. See issue #572 for
-// the plan to unify this with resolveLifetimeAnn.
-func (c *Checker) inferMethodFuncTypeAnn(
-	ctx Context,
-	fnAnn *ast.FuncTypeAnn,
-	receiver *type_system.TypeRefType,
-	mutSelf *bool,
-	selfLifetimeNode ast.LifetimeAnnNode,
-) (*type_system.FuncType, []Error) {
-	fn, errors := c.inferFuncTypeAnn(ctx, fnAnn)
-	selfLT, ltErrs := c.resolveSelfLifetimeForFn(ctx.Scope, fn, selfLifetimeNode)
-	errors = slices.Concat(errors, ltErrs)
-	fn.SelfParam = makeSelfParamWithLifetime(receiver, mutSelf, selfLT)
-	errors = slices.Concat(errors, reportUnusedLifetimeParams(fn, fnAnn.LifetimeParams, fnAnn.Span()))
-	return fn, errors
+// methodReceiver bundles the bits inferFuncSig / inferFuncTypeAnn need
+// to wire a `self` receiver onto the resulting FuncType. Pass nil for
+// plain (non-method) callers; pass a populated value for class methods,
+// getters, setters, and interface method type-annotations. `Type` is
+// the class/interface-instance ref the method is attached to;
+// `LifetimeNode` is the optional `'a self` annotation (nil when absent).
+type methodReceiver struct {
+	Type         *type_system.TypeRefType
+	MutSelf      *bool
+	LifetimeNode ast.LifetimeAnnNode
 }
 
 // methodRequiresMutSelf reports whether a method/getter requires a `mut self`

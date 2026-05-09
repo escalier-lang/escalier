@@ -882,6 +882,41 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 	}
 }
 
+// TestObjectTypeAnnRejectsReceiverLifetime pins that `'a self` written
+// inside a structural object-type annotation (no class/interface
+// receiver to attach the lifetime to) produces a dedicated diagnostic
+// rather than being silently dropped.
+func TestObjectTypeAnnRejectsReceiverLifetime(t *testing.T) {
+	src := `
+		type Point = {x: number}
+		type Viewer = {
+			peek<'a>('a self) -> 'a Point,
+		}
+	`
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	inferErrors := c.InferModule(inferCtx, module)
+
+	count := 0
+	for _, e := range inferErrors {
+		if me, ok := e.(ReceiverLifetimeOutsideMemberError); ok {
+			if count == 0 {
+				assert.Equal(t,
+					"A lifetime on `self` is only valid on class or interface members.",
+					me.Message())
+			}
+			count++
+		}
+	}
+	assert.Equal(t, 1, count,
+		"expected exactly one ReceiverLifetimeOutsideMemberError; got %v", inferErrors)
+}
+
 // TestLifetimeArgArityMismatch verifies that a type reference whose
 // number of lifetime arguments disagrees with the type alias's declared
 // lifetime parameters produces a diagnostic at the resolution site.

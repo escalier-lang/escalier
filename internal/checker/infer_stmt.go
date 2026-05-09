@@ -143,9 +143,8 @@ func (c *Checker) inferVarDecl(
 func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	errors := []Error{}
 
-	funcType, _, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig, decl)
+	funcType, _, paramBindings, sigErrors := c.inferFuncSig(ctx, &decl.FuncSig, decl, nil)
 	errors = slices.Concat(errors, sigErrors)
-	errors = slices.Concat(errors, reportUnusedLifetimeParams(funcType, decl.FuncSig.LifetimeParams, decl.Span()))
 
 	// For declared functions, we don't have a body to infer from
 	if decl.Declare() && (decl.Body == nil || len(decl.Body.Stmts) == 0) {

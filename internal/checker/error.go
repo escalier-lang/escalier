@@ -79,6 +79,7 @@ func (e ComputedSelfAccessBeforeInitError) isError()        {}
 func (e LoopInConstructorNotSupportedError) isError()       {}
 func (e TryInConstructorNotSupportedError) isError()        {}
 func (e ClassDoesNotImplementInterfaceError) isError()      {}
+func (e ReceiverLifetimeOutsideMemberError) isError()       {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -137,6 +138,7 @@ func (e ComputedSelfAccessBeforeInitError) IsWarning() bool        { return fals
 func (e LoopInConstructorNotSupportedError) IsWarning() bool       { return false }
 func (e TryInConstructorNotSupportedError) IsWarning() bool        { return false }
 func (e ClassDoesNotImplementInterfaceError) IsWarning() bool      { return false }
+func (e ReceiverLifetimeOutsideMemberError) IsWarning() bool       { return false }
 
 // ClassDoesNotImplementInterfaceError is reported when a class declares
 // `implements I` but fails to structurally satisfy `I` — either by missing
@@ -806,6 +808,23 @@ func (e MissingMutSelfParameterError) Message() string {
 	default:
 		return "Invalid `mut self` parameter on constructor."
 	}
+}
+
+// ReceiverLifetimeOutsideMemberError is reported when a `'a self`
+// annotation appears on a method/getter/setter inside a structural
+// object-type annotation (e.g. `type X = { m('a self) -> 'a T }`).
+// Such positions have no class/interface receiver type to attach the
+// lifetime to, so the annotation would be silently dropped — we
+// surface it explicitly instead.
+type ReceiverLifetimeOutsideMemberError struct {
+	span ast.Span
+}
+
+func (e ReceiverLifetimeOutsideMemberError) Span() ast.Span {
+	return e.span
+}
+func (e ReceiverLifetimeOutsideMemberError) Message() string {
+	return "A lifetime on `self` is only valid on class or interface members."
 }
 
 type MultipleConstructorsNotYetSupportedError struct {

@@ -271,10 +271,9 @@ func (c *Checker) InferComponent(
 
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
-				funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(nsCtx, &decl.FuncSig, decl)
+				funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(nsCtx, &decl.FuncSig, decl, nil)
 				paramBindingsForDecl[decl] = paramBindings
 				errors = slices.Concat(errors, sigErrors)
-				errors = slices.Concat(errors, reportUnusedLifetimeParams(funcType, decl.FuncSig.LifetimeParams, decl.Span()))
 
 				// Save the context for inferring the function body later
 				declCtxMap[decl] = funcCtx
@@ -554,9 +553,9 @@ func (c *Checker) InferComponent(
 					case *ast.MethodElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						methodType, methodCtx, _, sigErrors := c.inferMethodFuncSig(
+						methodType, methodCtx, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn,
-							classSelfRef, elem.MutSelf, elem.SelfLifetime)
+							&methodReceiver{Type: classSelfRef, MutSelf: elem.MutSelf, LifetimeNode: elem.SelfLifetime})
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -592,9 +591,9 @@ func (c *Checker) InferComponent(
 					case *ast.GetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						funcType, _, _, sigErrors := c.inferMethodFuncSig(
+						funcType, _, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn,
-							classSelfRef, elem.MutSelf, elem.SelfLifetime)
+							&methodReceiver{Type: classSelfRef, MutSelf: elem.MutSelf, LifetimeNode: elem.SelfLifetime})
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue
@@ -629,9 +628,9 @@ func (c *Checker) InferComponent(
 					case *ast.SetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
-						funcType, _, _, sigErrors := c.inferMethodFuncSig(
+						funcType, _, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn,
-							classSelfRef, elem.MutSelf, elem.SelfLifetime)
+							&methodReceiver{Type: classSelfRef, MutSelf: elem.MutSelf, LifetimeNode: elem.SelfLifetime})
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
 							continue

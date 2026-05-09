@@ -100,31 +100,6 @@ func (c *Checker) resolveSingleLifetime(
 	return lv, []Error{err}
 }
 
-// resolveSelfLifetimeForFn resolves a `'a self` lifetime annotation on a
-// method/getter/setter receiver after the function's lifetime parameters
-// have already been baked into `fn.LifetimeParams`. Used by
-// `inferObjectTypeAnn` (interface method type-annotations) where the
-// per-method scope is no longer reachable but the function's
-// LifetimeParams are. The lookup falls back to `enclosingScope` so the
-// surrounding interface's `<'a>` is also visible.
-func (c *Checker) resolveSelfLifetimeForFn(
-	enclosingScope *Scope,
-	fn *type_system.FuncType,
-	node ast.LifetimeAnnNode,
-) (type_system.Lifetime, []Error) {
-	if node == nil {
-		return nil, nil
-	}
-	scope := enclosingScope
-	if len(fn.LifetimeParams) > 0 {
-		scope = &Scope{Parent: enclosingScope, Namespace: type_system.NewNamespace()}
-		for _, lp := range fn.LifetimeParams {
-			scope.SetLifetimeVar(lp.Name, lp)
-		}
-	}
-	return c.resolveLifetimeAnn(scope, node)
-}
-
 // collectVisibleLifetimeNames returns the user-written names of every
 // LifetimeVar visible from `scope` upward. Used to populate suggestion
 // lists for UndeclaredLifetimeError and to decide its severity.

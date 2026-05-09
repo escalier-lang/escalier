@@ -182,10 +182,17 @@ func (c *Checker) inferFuncTypeParams(
 // - the new context with type parameters in scope
 // - a map of parameter bindings
 // - any errors encountered during inference
+// `recv`, when non-nil, makes this a method-shaped signature: SelfParam
+// is wired from `recv.Type` / `recv.MutSelf` and any `'a self` lifetime
+// (`recv.LifetimeNode`) is resolved against the function's own scope
+// before the §9.7 class 1 unused-lifetime-params check runs — so a
+// `<'a>` referenced only by `'a self` participates in the "used" set.
+// Pass nil for plain (non-method) functions.
 func (c *Checker) inferFuncSig(
 	ctx Context,
 	sig *ast.FuncSig, // TODO: make FuncSig an interface
 	node ast.Node,
+	recv *methodReceiver,
 ) (*type_system.FuncType, Context, map[string]*type_system.Binding, []Error) {
 	errors := []Error{}
 
@@ -242,11 +249,18 @@ func (c *Checker) inferFuncSig(
 	// "compare" mode.
 	errors = slices.Concat(errors, checkDeclaredVsActualLifetimes(t, node))
 
-	// §9.7 class 1 unused-lifetime-params check is deferred to the
-	// caller (reportUnusedLifetimeParams) so SelfParam participates
-	// in the "used" set. Method-shaped callers should use
-	// inferMethodFuncSig, which wires SelfParam and runs the check
-	// in the correct order.
+	// Wire receiver (method-shaped callers only) before the unused-
+	// lifetime check so a `<'a>` referenced only by `'a self`
+	// participates in the "used" set.
+	if recv != nil {
+		selfLT, ltErrs := c.resolveLifetimeAnn(funcCtx.Scope, recv.LifetimeNode)
+		errors = slices.Concat(errors, ltErrs)
+		t.SelfParam = makeSelfParamWithLifetime(recv.Type, recv.MutSelf, selfLT)
+	}
+
+	// §9.7 class 1: warn about declared `<'a>` clauses that no
+	// parameter, return type, throws annotation, or receiver references.
+	errors = slices.Concat(errors, reportUnusedLifetimeParams(t, sig.LifetimeParams, node.Span()))
 
 	return t, funcCtx, bindings, errors
 }
