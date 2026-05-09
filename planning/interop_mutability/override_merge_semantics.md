@@ -47,13 +47,16 @@ declaration:
 | -------- | -------- | --------- |
 | Present  | Present  | Override replaces original (subject to overload rules below) |
 | Present  | Absent   | Original passes through unchanged |
-| Absent   | Present  | **Error** by default. See "Targeting nonexistent members" |
+| Absent   | Present  | **Error.** See "Targeting nonexistent members" |
 
 **Targeting nonexistent members.** If an override declares a member
 that does not exist on the original, the compiler emits a hard error.
-Rationale: silently adding members is too easy a way to mask typos.
-A future opt-in pragma (`@allow_new`) on the override class can
-relax this to a warning when authors genuinely intend to extend.
+Rationale: silently adding members is too easy a way to mask typos,
+and there's already a separate, explicit mechanism for adding
+members — a plain (non-`override`) `declare module "foo" { ... }` or
+`declare global { ... }` block, which performs ordinary declaration
+merging with the original. `override` is reserved for modifying
+existing members.
 
 ### Overload collapsing
 
@@ -142,14 +145,27 @@ phase.
 
 ## Module-level (`override declare module "x"`)
 
-The body of `override declare module "x" { ... }` may contain any of:
+The body of `override declare module "x" { ... }` may contain any of
+the forms below. Inside the block, `override` and `declare` are
+implied — repeating either is a parse error. This mirrors
+TypeScript's `declare module "x" { ... }`, where members of the block
+are implicitly ambient.
 
-- `override declare class C { ... }` — patches an exported class
-- `override declare interface I { ... }` — patches an exported interface
-- `override declare fn f(...)` — patches an exported function
-- `override declare type T = ...` — patches an exported type alias
-- `override declare val v: T` — patches an exported binding
+`export` is still required on declarations that are part of the
+module's public surface — the same rule TS uses for module bodies.
+Members without `export` are visible only inside the override block
+(rare; useful only for shared type aliases used by other entries in
+the same block).
+
+- `export class C { ... }` — patches an exported class
+- `export interface I { ... }` — patches an exported interface
+- `export fn f(...)` — patches an exported function
+- `export type T = ...` — patches an exported type alias
+- `export val v: T` — patches an exported binding
 - A blanket pragma at the top of the block (see below)
+
+Inside `override declare global { ... }`, declarations are ambient by
+definition; `export` is neither required nor allowed.
 
 ### Blanket pragma
 
@@ -179,8 +195,10 @@ blanket:
 override declare module "fp-ts" {
   @all_pure
 
-  // Exception: this one really does mutate.
-  override declare fn unsafePush(arr: mut Array<number>, x: number) -> void
+  // Exception: this one really does mutate. `override` and `declare`
+  // are implied by the enclosing block; `export` is still required
+  // because the symbol is part of the module's public surface.
+  export fn unsafePush(arr: mut Array<number>, x: number) -> void
 }
 ```
 
@@ -227,8 +245,6 @@ honest:
 
 - **Argument-mutation refinements** (per-parameter mutability) need a
   schema extension. Reserved for Phase 8.
-- **`@allow_new` pragma** for extending classes legitimately. Not in
-  the initial milestone.
 - **`@all_pure` transitivity** through returned functions / curried
   forms. Out of scope; revisit if FP libraries hit false positives.
 - **TS module augmentation in `.d.ts`**: the override file is the

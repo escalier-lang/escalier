@@ -122,7 +122,6 @@ Implement, in `internal/interop/mutability.go`, classification for:
 - Well-known symbol methods — small allow-list (`toString`, `toJSON`,
   `toLocaleString`, `valueOf`, `[Symbol.iterator]`,
   `[Symbol.asyncIterator]`, `[Symbol.toPrimitive]`).
-- All-`readonly` class — straightforward scan over the class body.
 - `readonly` properties (principle #6) — already partially handled;
   consolidate so it's not bypassed by anything else.
 
@@ -158,11 +157,52 @@ Goal: author the data tables that the resolver loads at startup.
 
 Two sub-tasks, parallelizable:
 
-- **Standard library** — `Array` (including ES2023 `toSorted`,
-  `toReversed`, `toSpliced`, `with`), `Map`, `Set`, `Date`, `RegExp`,
-  `Promise`, `Error`, typed arrays, `URL`, `URLSearchParams`,
-  `WeakRef`, iterator/generator protocols. Source of truth: MDN.
+- **Standard library** — classes that don't ship a `Readonly*`
+  variant in TypeScript's lib files and therefore can't be classified
+  by tier 2 alone: `Date`, `RegExp`, `Promise`, `Error`, typed arrays
+  (`Int8Array` etc.), `URL`, `URLSearchParams`, `WeakRef`, `WeakMap`,
+  `WeakSet`, iterator / generator protocols. Source of truth: MDN.
   Coverage tracked in a checklist in this file as entries are added.
+
+  `Array` / `Map` / `Set` are **not** in this list — TypeScript
+  ships `ReadonlyArray` / `ReadonlyMap` / `ReadonlySet` alongside
+  the mutable variants, so principle #2 (tier 2) handles them
+  directly. The ES2023 `toSorted` / `toReversed` / `toSpliced` /
+  `with` methods appear on `ReadonlyArray` in lib.es2023, so they
+  classify as non-mutating without an override entry.
+
+  **Layout: group by ECMAScript spec revision**, mirroring
+  TypeScript's `lib.es*.d.ts` split. A symbol introduced in a given
+  revision lives in that revision's directory:
+
+  ```
+  overrides/stdlib/
+    es5/
+      Date.esc
+      RegExp.esc
+      Error.esc
+    es2015/
+      Promise.esc
+      WeakMap.esc
+      WeakSet.esc
+      iterator.esc
+    es2017/
+      typedarrays.esc
+    es2021/
+      WeakRef.esc
+    es2023/
+      // (none today — Array additions are tier 2)
+    dom/
+      URL.esc
+      URLSearchParams.esc
+  ```
+
+  When an Escalier project later gains a target-ES-version setting,
+  the loader can include only the override files at or below the
+  selected revision, matching TS's `lib` semantics. Until then, all
+  revisions load. The `dom/` bucket is separate because DOM types
+  aren't keyed to ECMAScript revisions; they map to TS's
+  `lib.dom.d.ts`.
 - **FP / immutability libraries** (principle #5) — Ramda, fp-ts,
   Effect, Immutable.js, lodash/fp. For these, default every method to
   non-mutating in receiver and arguments; one blanket entry per

@@ -88,7 +88,7 @@ stop at the first match:
 1. **`@esctype` tag** on the symbol (round-trip from Escalier source).
 2. **Explicit author signals** — `readonly this`, getters/setters,
    `Readonly<T>` collection variant, `readonly` properties (principle
-   #6), well-known symbol methods, all-`readonly` class.
+   #6), well-known symbol methods.
 3. **User overrides** for the symbol's module / class.
 4. **Shipped overrides** — stdlib (principle covers `Array`/`Map`/`Set`
    readonly variants by shape; explicit override entries cover `Date`,
@@ -127,12 +127,6 @@ following heuristics, grouped from strongest to weakest signal.
   `[Symbol.toPrimitive]` are non-mutating by convention. (Iterator state is
   advanced via `next`/`return`/`throw`, not via the symbol method — see
   Special cases below.)
-- **Class with all `readonly` properties.** Methods on such a class cannot
-  mutate the receiver — there are no writable fields to touch — so the
-  receiver can be treated as non-mutated and the method callable on
-  immutable references. This says nothing about parameters: the method may
-  still mutate objects passed in as arguments (see the argument-mutation
-  decision below).
 - **Standard-library overrides.** For `Date`, `RegExp`, `Promise`,
   `Error`, typed arrays, `URL`, `URLSearchParams`, `WeakRef`, etc.,
   ship overrides that explicitly mark each method as mutating or
@@ -205,11 +199,14 @@ classifier for any library where the compiler ships explicit knowledge
 (stdlib, well-known FP / immutability libraries per principle #5). The
 same machinery serves user-supplied corrections for third-party APIs.
 
-- **Shipped overrides** — bundled with the compiler. Cover the standard
-  library (`Array`, `Map`, `Set`, `Date`, `RegExp`, `Promise`, typed
-  arrays, `URL`, `URLSearchParams`, etc.) and well-known FP /
-  immutability libraries (Ramda, fp-ts, Effect, Immutable.js,
-  lodash/fp).
+- **Shipped overrides** — bundled with the compiler. Cover standard-
+  library classes that don't have a `Readonly*` variant in TS's lib
+  files (`Date`, `RegExp`, `Promise`, `Error`, typed arrays, `URL`,
+  `URLSearchParams`, `WeakRef`/`WeakMap`/`WeakSet`, etc.) plus
+  well-known FP / immutability libraries (Ramda, fp-ts, Effect,
+  Immutable.js, lodash/fp). `Array` / `Map` / `Set` need no entry —
+  their mutability is already encoded in the
+  `Readonly*` / mutable interface split that TypeScript ships.
 - **User override files** — checked into the consuming project,
   declaring per-module corrections for third-party APIs. Loaded
   through the same machinery as the shipped overrides.
@@ -251,7 +248,15 @@ mutability along with the rest of the type.
   ```
 
   Without `override`, a `declare module` / `declare global` is a
-  normal ambient declaration, not an override.
+  normal ambient declaration, not an override. Inside the body of an
+  `override declare module "..."` or `override declare global { ... }`
+  block, `override` and `declare` are implied on each contained
+  declaration and must not be repeated — mirroring TypeScript's
+  behavior inside `declare module "x" { ... }`. `export` is still
+  required on declarations that are part of the module's exported
+  surface (same rule as TS modules); inside `override declare global`,
+  declarations are ambient by definition and `export` is neither
+  required nor allowed.
 - **Partial overrides.** A class or interface body inside an override
   block need only list the members being overridden. Members present
   in the original `.d.ts` but absent from the override remain
