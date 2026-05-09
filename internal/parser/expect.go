@@ -37,6 +37,7 @@ var TokenMap = map[TokenType]string{
 	Type:                "type",
 	Return:              "return",
 	Declare:             "declare",
+	Override:            "override",
 	Export:              "export",
 	Import:              "import",
 	If:                  "if",

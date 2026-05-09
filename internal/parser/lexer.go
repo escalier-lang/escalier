@@ -38,6 +38,7 @@ var keywords = map[string]TokenType{
 	"import":     Import,
 	"export":     Export,
 	"declare":    Declare,
+	"override":   Override,
 	"infer":      Infer,
 	"if":         If,
 	"else":       Else,

@@ -1,0 +1,30 @@
+lib/index.esc:95:5: Callee is not callable: undefined
+
+95:     c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
+        ^^^^^^^^^^^^^
+
+lib/index.esc:20:5: Callee is not callable: undefined
+
+20:     xs.push(1)  // EXPECTED-ERROR (tier 2)
+        ^^^^^^^
+
+lib/index.esc:128:5: Callee is not callable: undefined
+
+128:    w.render()              // EXPECTED-ERROR (tier 8: defaults to mutating)
+        ^^^^^^^^
+
+lib/index.esc:73:5: Callee is not callable: undefined
+
+73:     xs.sort()               // EXPECTED-ERROR (tier 2: sort requires mut Array)
+        ^^^^^^^
+
+lib/index.esc:33:5: Cannot mutate readonly property 'x' on type: mut Point
+
+33:     p.x = 0     // EXPECTED-ERROR (tier 2: readonly prop)
+        ^^^
+
+lib/index.esc:69:12: Callee is not callable: undefined
+
+69:     return xs.toSorted()    // OK: toSorted returns a new array
+               ^^^^^^^^^^^
+

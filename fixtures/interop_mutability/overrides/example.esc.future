@@ -1,0 +1,51 @@
+// Placeholder: this file demonstrates the intended override-file
+// syntax once `declare module "..."` parsing lands (see Phase 0
+// follow-up in implementation_plan.md). The `.future` extension
+// keeps the build harness from picking it up today.
+
+// Inside `override declare module / global { ... }`, the `override`
+// and `declare` keywords are implied on each contained declaration
+// (mirrors TypeScript's `declare module "x" { ... }` behavior).
+// `export` is still required inside `override declare module` for
+// symbols that are part of the module's public surface; inside
+// `override declare global`, declarations are ambient and `export`
+// is neither required nor allowed.
+
+// Partial override: only `setHours` is patched; every other method
+// of Date passes through from lib.es5.d.ts unchanged.
+override declare global {
+    class Date {
+        setHours(mut self, hours: number) -> number
+    }
+}
+
+// Overload collapsing: original Array.prototype.slice has multiple
+// overloads. A single override entry replaces all of them.
+override declare global {
+    class Array<T> {
+        slice(self, start?: number, end?: number) -> Array<T>
+    }
+}
+
+// Override-defined overloads: declaring the same method twice in the
+// override forms an overload set in the effective type.
+override declare global {
+    class Foo {
+        bar(self, x: string) -> string
+        bar(self, x: number) -> number
+    }
+}
+
+// Module-level blanket pragma: every export of "ramda" is pure.
+override declare module "ramda" {
+    @all_pure
+}
+
+// Module-level pragma + per-member exception. `override` and
+// `declare` are implied; `export` is required because `unsafePush`
+// is part of the module's public surface.
+override declare module "fp-ts" {
+    @all_pure
+
+    export fn unsafePush(arr: mut Array<number>, x: number) -> void
+}
