@@ -1075,6 +1075,25 @@ func ReceiverIsMut(fn *FuncType) bool {
 	_, isMut := fn.SelfParam.Type.(*MutType)
 	return isMut
 }
+
+// NewSelfParam builds a FuncParam representing a `self` receiver of the
+// given containing type, wrapped in MutType when `mut` is true. This is
+// the canonical way to construct FuncType.SelfParam at the type-system
+// boundary — use it from tests and any non-checker code path that needs
+// to attach a receiver. Returns nil when receiverType is nil.
+func NewSelfParam(receiverType Type, mut bool) *FuncParam {
+	if receiverType == nil {
+		return nil
+	}
+	t := receiverType
+	if mut {
+		t = NewMutType(nil, receiverType)
+	}
+	return &FuncParam{
+		Pattern: NewIdentPat("self"),
+		Type:    t,
+	}
+}
 type PropertyElem struct {
 	Name       ObjTypeKey
 	Optional   bool

@@ -2283,17 +2283,11 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			allStmts = slices.Concat(allStmts, nameStmts)
 
 			isGenerator := e.Fn.Body != nil && containsYield(e.Fn.Body.Stmts)
-			var mutSelf *bool
-			if e.Receiver != nil {
-				m := e.Receiver.Mut
-				mutSelf = &m
-			}
 			methodElem := NewMethodElem(
 				name,
 				params,
 				slices.Concat(paramStmts, bodyStmts),
 				MethodElemOptions{
-					MutSelf:   mutSelf,
 					Static:    e.Static,
 					Private:   e.Private,
 					Async:     e.Fn.Async,

@@ -10,22 +10,14 @@ import (
 // AST-level mutability flag (nil = static / no self, *false = `self`,
 // *true = `mut self`). Returns nil when there is no receiver.
 //
-// The receiver's pattern is always `self`; the type is the containing type,
-// wrapped in MutType when mutSelf points to true. Used during method
-// inference to populate FuncType.SelfParam in lockstep with the existing
-// MutSelf *bool denormalized cache on element nodes.
+// Thin wrapper around type_system.NewSelfParam that bridges the AST-level
+// `*bool` (where nil means "no receiver") to the type-system-level `bool`
+// (where the no-receiver case is communicated by skipping the call).
 func makeSelfParam(containingType type_system.Type, mutSelf *bool) *type_system.FuncParam {
-	if mutSelf == nil || containingType == nil {
+	if mutSelf == nil {
 		return nil
 	}
-	t := containingType
-	if *mutSelf {
-		t = type_system.NewMutType(nil, containingType)
-	}
-	return &type_system.FuncParam{
-		Pattern: type_system.NewIdentPat("self"),
-		Type:    t,
-	}
+	return type_system.NewSelfParam(containingType, *mutSelf)
 }
 
 // makeSelfParamWithLifetime is the lifetime-bearing form of makeSelfParam.

@@ -63,6 +63,7 @@ func (e InnerNonExhaustiveMatchError) isError()             {}
 func (e RedundantMatchCaseWarning) isError()                {}
 func (e NestedMutInParamError) isError()                    {}
 func (e MissingMutSelfParameterError) isError()             {}
+func (e MissingSelfReceiverError) isError()                 {}
 func (e MultipleConstructorsNotYetSupportedError) isError() {}
 func (e ConstructorWithReturnTypeError) isError()           {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
@@ -122,6 +123,7 @@ func (e NonExhaustiveMatchError) IsWarning() bool                  { return fals
 func (e InnerNonExhaustiveMatchError) IsWarning() bool             { return false }
 func (e RedundantMatchCaseWarning) IsWarning() bool                { return true }
 func (e MissingMutSelfParameterError) IsWarning() bool             { return false }
+func (e MissingSelfReceiverError) IsWarning() bool                 { return false }
 func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
 func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
@@ -825,6 +827,21 @@ func (e ReceiverLifetimeOutsideMemberError) Span() ast.Span {
 }
 func (e ReceiverLifetimeOutsideMemberError) Message() string {
 	return "A lifetime on `self` is only valid on class or interface members."
+}
+
+// MissingSelfReceiverError is reported when a non-static instance method,
+// getter, or setter omits its `self` receiver. Without a receiver the
+// element has no `self` in scope and cannot be invoked through an
+// instance — most likely the user forgot the keyword.
+type MissingSelfReceiverError struct {
+	span ast.Span
+}
+
+func (e MissingSelfReceiverError) Span() ast.Span {
+	return e.span
+}
+func (e MissingSelfReceiverError) Message() string {
+	return "Instance methods, getters, and setters must declare a `self` receiver as their first parameter."
 }
 
 type MultipleConstructorsNotYetSupportedError struct {

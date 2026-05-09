@@ -553,6 +553,9 @@ func (c *Checker) InferComponent(
 					case *ast.MethodElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
+						if !elem.Static && elem.Receiver == nil {
+							errors = append(errors, MissingSelfReceiverError{span: elem.Span_})
+						}
 						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
 						methodType, methodCtx, _, sigErrors := c.inferFuncSig(
@@ -592,6 +595,9 @@ func (c *Checker) InferComponent(
 					case *ast.GetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
+						if !elem.Static && elem.Receiver == nil {
+							errors = append(errors, MissingSelfReceiverError{span: elem.Span_})
+						}
 						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
 						funcType, _, _, sigErrors := c.inferFuncSig(
@@ -630,6 +636,9 @@ func (c *Checker) InferComponent(
 					case *ast.SetterElem:
 						key, keyErrors := c.astKeyToTypeKey(declCtx, elem.Name)
 						errors = slices.Concat(errors, keyErrors)
+						if !elem.Static && elem.Receiver == nil {
+							errors = append(errors, MissingSelfReceiverError{span: elem.Span_})
+						}
 						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
 						funcType, _, _, sigErrors := c.inferFuncSig(

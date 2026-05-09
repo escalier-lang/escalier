@@ -872,6 +872,64 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 	}
 }
 
+// TestInstanceMethodMissingSelfReceiver pins that a non-static class
+// method, getter, or setter that omits its `self` receiver produces a
+// MissingSelfReceiverError. The parser accepts the shape (so we still
+// produce a usable AST), but the checker rejects it.
+func TestInstanceMethodMissingSelfReceiver(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"Method": {
+			input: `
+				class Foo {
+					bar(x: number) -> number { return x },
+				}
+			`,
+		},
+		"Getter": {
+			input: `
+				class Foo {
+					get bar() -> number { return 0 },
+				}
+			`,
+		},
+		"Setter": {
+			input: `
+				class Foo {
+					set bar(x: number) {},
+				}
+			`,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			inferErrors := c.InferModule(inferCtx, module)
+
+			count := 0
+			for _, e := range inferErrors {
+				if me, ok := e.(MissingSelfReceiverError); ok {
+					if count == 0 {
+						assert.Equal(t,
+							"Instance methods, getters, and setters must declare a `self` receiver as their first parameter.",
+							me.Message())
+					}
+					count++
+				}
+			}
+			assert.Equal(t, 1, count,
+				"expected exactly one MissingSelfReceiverError; got %v", inferErrors)
+		})
+	}
+}
+
 // TestObjectTypeAnnRejectsReceiverLifetime pins that `'a self` written
 // inside a structural object-type annotation (no class/interface
 // receiver to attach the lifetime to) produces a dedicated diagnostic

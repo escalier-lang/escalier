@@ -22,8 +22,10 @@ type ClassElem interface {
 }
 
 // MethodReceiver describes a `self` receiver on a method, getter, setter, or
-// constructor. A nil *MethodReceiver means there is no receiver (e.g. a
-// static method or, for setters/getters, an absent receiver).
+// constructor. A nil *MethodReceiver means no receiver was written — this
+// covers static members, getters/setters with an empty parameter list, and
+// also non-static instance methods that omit `self` (the checker reports
+// MissingSelfReceiverError for the latter).
 //
 //	self           → &MethodReceiver{Mut: false}
 //	mut self       → &MethodReceiver{Mut: true}

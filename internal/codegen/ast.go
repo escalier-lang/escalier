@@ -1074,7 +1074,6 @@ type MethodElem struct {
 	Name      ObjKey
 	Params    []*Param
 	Body      []Stmt // optional for declare
-	MutSelf   *bool  // true if 'self' is mutable, optional
 	Static    bool   // true if this is a static method
 	Private   bool   // true if this is a private method
 	Async     bool   // true if this is an async method
@@ -1084,7 +1083,6 @@ type MethodElem struct {
 }
 
 type MethodElemOptions struct {
-	MutSelf   *bool
 	Static    bool
 	Private   bool
 	Async     bool
@@ -1096,7 +1094,6 @@ func NewMethodElem(name ObjKey, params []*Param, body []Stmt, opts MethodElemOpt
 		Name:      name,
 		Params:    params,
 		Body:      body,
-		MutSelf:   opts.MutSelf,
 		Static:    opts.Static,
 		Private:   opts.Private,
 		Async:     opts.Async,
