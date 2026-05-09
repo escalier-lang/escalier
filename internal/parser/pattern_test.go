@@ -386,8 +386,7 @@ func TestStaticMethodRejectsSelfReceiver(t *testing.T) {
 }
 
 // TestParseMethodWithoutSelfReceiver pins that a non-static method with no
-// `self` receiver still parses its parameter list — currently the parser
-// would silently treat the params as a syntax error.
+// `self` receiver still parses its parameter list.
 func TestParseMethodWithoutSelfReceiver(t *testing.T) {
 	t.Parallel()
 	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `class Foo {

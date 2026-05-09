@@ -245,10 +245,8 @@ func (c *Checker) checkInterfaceElem(
 // require mutability the interface doesn't promise). A nil receiver (no
 // `self`, e.g. a static method) only matches another nil.
 func selfReceiverCompatible(ifaceFn, classFn *type_system.FuncType) bool {
-	ifaceHas := ifaceFn != nil && ifaceFn.SelfParam != nil
-	classHas := classFn != nil && classFn.SelfParam != nil
-	if !ifaceHas || !classHas {
-		return ifaceHas == classHas
+	if (ifaceFn.SelfParam == nil) != (classFn.SelfParam == nil) {
+		return false
 	}
 	return type_system.ReceiverIsMut(ifaceFn) == type_system.ReceiverIsMut(classFn)
 }

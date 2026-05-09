@@ -5,27 +5,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// makeSelfParam returns a FuncParam representing an implicit `self` receiver
-// for a method whose containing type is `containingType`. `mutSelf` is the
-// AST-level mutability flag (nil = static / no self, *false = `self`,
-// *true = `mut self`). Returns nil when there is no receiver.
-//
-// Thin wrapper around type_system.NewSelfParam that bridges the AST-level
-// `*bool` (where nil means "no receiver") to the type-system-level `bool`
-// (where the no-receiver case is communicated by skipping the call).
-func makeSelfParam(containingType type_system.Type, mutSelf *bool) *type_system.FuncParam {
-	if mutSelf == nil {
-		return nil
-	}
-	return type_system.NewSelfParam(containingType, *mutSelf)
-}
-
-// makeSelfParamWithLifetime is the lifetime-bearing form of makeSelfParam.
-// `selfType` is the class/interface receiver TypeRefType — shared across all
-// methods of a class as `classSelfRef` — and a fresh shallow clone is made
-// here so that setting `.Lifetime` does not poison sibling methods that
-// declared a different (or no) receiver lifetime. When `lifetime` is nil
-// the result is identical to `makeSelfParam(selfType, mutSelf)`.
+// makeSelfParamWithLifetime returns a FuncParam representing an implicit
+// `self` receiver for a method on `selfType`, optionally annotated with a
+// receiver lifetime. `mutSelf` is the AST-level mutability flag (nil = no
+// receiver, *false = `self`, *true = `mut self`); returns nil when there
+// is no receiver. `selfType` is the class/interface receiver TypeRefType
+// — shared across all methods of a class as `classSelfRef` — and a fresh
+// shallow clone is made here so that setting `.Lifetime` does not poison
+// sibling methods that declared a different (or no) receiver lifetime.
 func makeSelfParamWithLifetime(
 	selfType *type_system.TypeRefType,
 	mutSelf *bool,
@@ -136,21 +123,20 @@ func populateSelfParams(ns *type_system.Namespace) {
 			typeArgs[i] = type_system.NewTypeRefType(nil, tp.Name, nil)
 		}
 		selfRef := type_system.NewTypeRefType(nil, name, typeAlias, typeArgs...)
-		nonMut := false
 
 		for _, elem := range objType.Elems {
 			switch e := elem.(type) {
 			case *type_system.MethodElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = makeSelfParam(selfRef, &nonMut)
+					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, false)
 				}
 			case *type_system.GetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = makeSelfParam(selfRef, &nonMut)
+					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, false)
 				}
 			case *type_system.SetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = makeSelfParam(selfRef, &nonMut)
+					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, false)
 				}
 			}
 		}
