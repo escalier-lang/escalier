@@ -21,6 +21,24 @@ type ClassElem interface {
 	Span() Span
 }
 
+// MethodReceiver describes a `self` receiver on a method, getter, setter, or
+// constructor. A nil *MethodReceiver means no receiver was written — this
+// covers static members, getters/setters with an empty parameter list, and
+// also non-static instance methods that omit `self` (the checker reports
+// MissingSelfReceiverError for the latter).
+//
+//	self           → &MethodReceiver{Mut: false}
+//	mut self       → &MethodReceiver{Mut: true}
+//	'a self        → &MethodReceiver{Mut: false, Lifetime: 'a}
+//	mut 'a self    → &MethodReceiver{Mut: true,  Lifetime: 'a}
+type MethodReceiver struct {
+	Mut      bool
+	Lifetime LifetimeAnnNode // optional
+	Span_    Span
+}
+
+func (r *MethodReceiver) Span() Span { return r.Span_ }
+
 // Exported constructor for use in parser
 func NewClassDecl(name *Ident, lifetimeParams []*LifetimeAnn, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
@@ -94,13 +112,12 @@ func (f *FieldElem) Accept(v Visitor) {
 func (f *FieldElem) Span() Span { return f.Span_ }
 
 type MethodElem struct {
-	Name         ObjKey
-	Fn           *FuncExpr
-	MutSelf      *bool           // true if 'self' is mutable
-	SelfLifetime LifetimeAnnNode // optional; lifetime on `self` (e.g. `'a self`)
-	Static       bool            // true if this is a static method
-	Private      bool            // true if this is a private method
-	Span_        Span
+	Name     ObjKey
+	Fn       *FuncExpr
+	Receiver *MethodReceiver // nil if static / no receiver
+	Static   bool            // true if this is a static method
+	Private  bool            // true if this is a private method
+	Span_    Span
 }
 
 func (*MethodElem) IsClassElem() {}
@@ -117,13 +134,12 @@ func (m *MethodElem) Span() Span { return m.Span_ }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
-	Name         ObjKey
-	Fn           *FuncExpr
-	MutSelf      *bool           // true if `self` is `mut self`; nil if absent (static getters, etc.)
-	SelfLifetime LifetimeAnnNode // optional; lifetime on `self`
-	Static       bool            // true if this is a static getter
-	Private      bool            // true if this is a private getter
-	Span_        Span
+	Name     ObjKey
+	Fn       *FuncExpr
+	Receiver *MethodReceiver // nil if static / no receiver
+	Static   bool            // true if this is a static getter
+	Private  bool            // true if this is a private getter
+	Span_    Span
 }
 
 func (*GetterElem) IsClassElem() {}
@@ -139,17 +155,19 @@ func (g *GetterElem) Accept(v Visitor) {
 func (g *GetterElem) Span() Span { return g.Span_ }
 
 // ConstructorElem represents an explicit `constructor(...) { ... }` block
-// inside a class body. The constructor's return type is always `Self` and
-// is not part of the AST; `Fn.Return` must remain nil. `Fn.Throws` may be
-// non-nil — constructors may declare a `throws` clause. The first parameter
-// in `Fn.Params` is the user-written `self` (with `MutSelf` recording its
-// mutability flag); remaining params are the constructor's callable params.
+// inside a class body. The constructor's receiver is represented by
+// `Receiver *MethodReceiver` (nil when absent — a non-nil `Lifetime` is
+// rejected by validation). The first entry in `Fn.Params` corresponds to
+// the user-written receiver when `Receiver` is non-nil; the receiver's
+// mutability is recorded on `Receiver`, not on the param. Remaining params
+// are the constructor's callable params. The constructor's return type is
+// always `Self` and is not part of the AST; `Fn.Return` must remain nil.
+// `Fn.Throws` may be non-nil — constructors may declare a `throws` clause.
 type ConstructorElem struct {
-	Fn           *FuncExpr
-	MutSelf      *bool           // true if `self` was declared `mut self`; nil if absent
-	SelfLifetime LifetimeAnnNode // optional (may be nil); carried for diagnostics — when set (non-nil) it is rejected by validation
-	Private      bool            // reserved for future "Private Constructors" work
-	Span_        Span
+	Fn       *FuncExpr
+	Receiver *MethodReceiver // nil if absent. Carried for diagnostics — a non-nil Lifetime is rejected by validation.
+	Private  bool            // reserved for future "Private Constructors" work
+	Span_    Span
 }
 
 func (*ConstructorElem) IsClassElem() {}
@@ -165,13 +183,12 @@ func (c *ConstructorElem) Span() Span { return c.Span_ }
 
 // SetterElem represents a setter in a class.
 type SetterElem struct {
-	Name         ObjKey
-	Fn           *FuncExpr
-	MutSelf      *bool           // true if `self` is `mut self`; nil if absent (static setters, etc.)
-	SelfLifetime LifetimeAnnNode // optional; lifetime on `self`
-	Static       bool            // true if this is a static setter
-	Private      bool            // true if this is a private setter
-	Span_        Span
+	Name     ObjKey
+	Fn       *FuncExpr
+	Receiver *MethodReceiver // nil if static / no receiver
+	Static   bool            // true if this is a static setter
+	Private  bool            // true if this is a private setter
+	Span_    Span
 }
 
 func (*SetterElem) IsClassElem() {}

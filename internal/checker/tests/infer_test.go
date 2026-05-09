@@ -1096,8 +1096,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			expectedTypes: map[string]string{
-				"rgb":  "{new fn (r: number, g: number, b: number) -> Color, symbol12(self, subject: RGB) -> [number, number, number]}",
-				"hex":  "{new fn (code: string) -> Color, symbol12(self, subject: Hex) -> [string]}",
+				"rgb":  "{new fn (r: number, g: number, b: number) -> Color, symbol12(subject: RGB) -> [number, number, number]}",
+				"hex":  "{new fn (code: string) -> Color, symbol12(subject: Hex) -> [string]}",
 				"red":  "Color",
 				"blue": "Color",
 			},
@@ -1135,8 +1135,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"option": "MyOption<number>",
-				"some":   "{new fn <T>(value: T) -> MyOption<T>, symbol12<T>(self, subject: Some<T>) -> [T]}",
-				"none":   "{new fn <T>() -> MyOption<T>, symbol12<T>(self, subject: None<T>) -> []}",
+				"some":   "{new fn <T>(value: T) -> MyOption<T>, symbol12<T>(subject: Some<T>) -> [T]}",
+				"none":   "{new fn <T>() -> MyOption<T>, symbol12<T>(subject: None<T>) -> []}",
 				"result": "number",
 			},
 		},
@@ -3943,7 +3943,7 @@ func TestExpandType(t *testing.T) {
 		funcType := type_system.NewFuncType(nil, nil, nil, type_system.NewUndefinedType(nil), nil)
 		objType := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
 			type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewStrPrimType(nil)),
-			type_system.NewMethodElem(type_system.NewStrKey("foo"), funcType, nil),
+			type_system.NewMethodElem(type_system.NewStrKey("foo"), funcType),
 		})
 
 		// Create keyof object type

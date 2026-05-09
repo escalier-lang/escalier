@@ -401,33 +401,33 @@ func (c *Checker) inferObjectTypeAnn(
 			if key == nil {
 				continue
 			}
-			recv, recvErrs := buildMethodReceiver(receiver, elem.MutSelf, elem.SelfLifetime)
+			recv, recvErrs := buildMethodReceiver(receiver, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = type_system.NewMethodElem(*key, fn, elem.MutSelf)
+			elems[i] = type_system.NewMethodElem(*key, fn)
 		case *ast.GetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)
 			if key == nil {
 				continue
 			}
-			recv, recvErrs := buildMethodReceiver(receiver, elem.MutSelf, elem.SelfLifetime)
+			recv, recvErrs := buildMethodReceiver(receiver, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
+			elems[i] = &type_system.GetterElem{Name: *key, Fn: fn}
 		case *ast.SetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)
 			if key == nil {
 				continue
 			}
-			recv, recvErrs := buildMethodReceiver(receiver, elem.MutSelf, elem.SelfLifetime)
+			recv, recvErrs := buildMethodReceiver(receiver, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn, MutSelf: elem.MutSelf}
+			elems[i] = &type_system.SetterElem{Name: *key, Fn: fn}
 		case *ast.PropertyTypeAnn:
 			var t type_system.Type
 			if elem.Value != nil {

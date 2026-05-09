@@ -312,18 +312,17 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 					for _, elem := range it.Elems {
 						if me, ok := elem.(*type_system.MethodElem); ok {
 							// TypeScript .d.ts has no mut-self annotation, so
-							// default to nil (unknown) and only override when
-							// the method appears in the per-interface overrides
-							// table. Treating "unknown" as not-mut-self matches
-							// the rest of the checker (e.g. binding-mutability
-							// in infer_module.go) and avoids hiding non-mutating
-							// methods on classes like Function.
+							// methods default to non-mut self (set by
+							// populateSelfParams) and we only flip individual
+							// receivers to `mut self` when the method appears
+							// in the per-interface overrides table. This
+							// avoids hiding non-mutating methods on classes
+							// like Function.
 							if me.Name.Kind != type_system.StrObjTypeKeyKind {
 								continue
 							}
 							if value, exists := overrides[me.Name.Str]; exists {
-								mutSelf := value
-								me.MutSelf = &mutSelf
+								setReceiverMut(me.Fn, value)
 							}
 						}
 					}
@@ -380,8 +379,7 @@ func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonl
 			readonlyElems.Add(key)
 
 			// Methods on the Readonly* variant are non-mutating.
-			mutSelf := false
-			me.MutSelf = &mutSelf
+			setReceiverMut(me.Fn, false)
 		}
 	}
 
@@ -391,15 +389,12 @@ func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonl
 		if !ok {
 			continue
 		}
-		mutSelf := true
 		key := type_system.ObjTypeKey{
 			Kind: type_system.StrObjTypeKeyKind,
 			Str:  me.Name.Str,
 		}
-		if readonlyElems.Contains(key) {
-			mutSelf = false
-		}
-		me.MutSelf = &mutSelf
+		mut := !readonlyElems.Contains(key)
+		setReceiverMut(me.Fn, mut)
 	}
 }
 
@@ -449,9 +444,12 @@ func (c *Checker) initializeGlobalScope() {
 		IsPatMatch: false,
 	}
 
+	// Wire SelfParam onto every .d.ts-loaded method first (default
+	// non-mut), then let the override passes flip individual receivers
+	// to `mut self` by mutating SelfParam.Type in place.
+	populateSelfParams(globalNs)
 	UpdateMethodMutability(inferCtx, globalNs)
 	UpdateCollectionMutability(globalNs)
-	populateSelfParams(globalNs)
 
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)

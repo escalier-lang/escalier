@@ -513,7 +513,7 @@ func completionsFromObjectType(obj *type_system.ObjectType, receiverMut bool) []
 				continue
 			}
 			// Hide `mut self` methods on non-mut receivers.
-			if !receiverMutForElems && elem.MutSelf != nil && *elem.MutSelf {
+			if !receiverMutForElems && type_system.ReceiverIsMut(elem.Fn) {
 				continue
 			}
 			kind := protocol.CompletionItemKindMethod

@@ -733,7 +733,6 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			}
 
 			var methodFn *type_system.FuncType
-			var methodMutSelf *bool
 			matchKey := func(k type_system.ObjTypeKey) bool {
 				return k.Kind == type_system.StrObjTypeKeyKind && k.Str == test.methodName
 			}
@@ -742,17 +741,14 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 				case *type_system.MethodElem:
 					if matchKey(e.Name) {
 						methodFn = e.Fn
-						methodMutSelf = e.MutSelf
 					}
 				case *type_system.GetterElem:
 					if matchKey(e.Name) {
 						methodFn = e.Fn
-						methodMutSelf = e.MutSelf
 					}
 				case *type_system.SetterElem:
 					if matchKey(e.Name) {
 						methodFn = e.Fn
-						methodMutSelf = e.MutSelf
 					}
 				}
 				if methodFn != nil {
@@ -764,21 +760,15 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			if test.expectStatic {
 				assert.Nil(t, methodFn.SelfParam,
 					"static methods must not carry SelfParam")
-				assert.Nil(t, methodMutSelf,
-					"static methods' MutSelf must be nil")
 				return
 			}
 
 			require.NotNil(t, methodFn.SelfParam,
 				"instance methods must carry SelfParam")
-			require.NotNil(t, methodMutSelf,
-				"instance methods' MutSelf must be set")
 
 			_, isMut := methodFn.SelfParam.Type.(*type_system.MutType)
 			assert.Equalf(t, test.expectMut, isMut,
-				"SelfParam.Type wrap-in-MutType should reflect MutSelf=%v", *methodMutSelf)
-			assert.Equalf(t, test.expectMut, *methodMutSelf,
-				"MutSelf should match the test expectation")
+				"SelfParam.Type wrap-in-MutType should reflect mutability")
 		})
 	}
 }
@@ -879,6 +869,64 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 		assert.NotContains(t, pe.Message,
 			"constructors cannot have a lifetime on `self`",
 			"parser should not duplicate the checker's MutSelfHasLifetime diagnostic")
+	}
+}
+
+// TestInstanceMethodMissingSelfReceiver pins that a non-static class
+// method, getter, or setter that omits its `self` receiver produces a
+// MissingSelfReceiverError. The parser accepts the shape (so we still
+// produce a usable AST), but the checker rejects it.
+func TestInstanceMethodMissingSelfReceiver(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"Method": {
+			input: `
+				class Foo {
+					bar(x: number) -> number { return x },
+				}
+			`,
+		},
+		"Getter": {
+			input: `
+				class Foo {
+					get bar() -> number { return 0 },
+				}
+			`,
+		},
+		"Setter": {
+			input: `
+				class Foo {
+					set bar(x: number) {},
+				}
+			`,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, _ := parser.ParseLibFiles(ctx, []*ast.Source{source})
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			inferErrors := c.InferModule(inferCtx, module)
+
+			count := 0
+			for _, e := range inferErrors {
+				if me, ok := e.(MissingSelfReceiverError); ok {
+					if count == 0 {
+						assert.Equal(t,
+							"Instance methods, getters, and setters must declare a `self` receiver as their first parameter.",
+							me.Message())
+					}
+					count++
+				}
+			}
+			assert.Equal(t, 1, count,
+				"expected exactly one MissingSelfReceiverError; got %v", inferErrors)
+		})
 	}
 }
 

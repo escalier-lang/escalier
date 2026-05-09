@@ -166,16 +166,16 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			if err != nil {
 				return nil, fmt.Errorf("converting constructor parameters for class %s: %w", dc.Name.Name, err)
 			}
-			mutSelf := true
-			selfPat := ast.NewIdentPat("self", true, nil, nil, convertSpan(m.Span()))
+			selfSpan := convertSpan(m.Span())
+			selfPat := ast.NewIdentPat("self", true, nil, nil, selfSpan)
 			selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
 			allParams := append([]*ast.Param{selfParam}, params...)
 			fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, convertSpan(m.Span()))
 			bodyElems = append(bodyElems, &ast.ConstructorElem{
-				Fn:      fn,
-				MutSelf: &mutSelf,
-				Private: false,
-				Span_:   convertSpan(m.Span()),
+				Fn:       fn,
+				Receiver: &ast.MethodReceiver{Mut: true, Span_: selfSpan},
+				Private:  false,
+				Span_:    convertSpan(m.Span()),
 			})
 
 		case *dts_parser.MethodDecl:

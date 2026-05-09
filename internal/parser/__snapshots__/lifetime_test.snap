@@ -1758,8 +1758,15 @@
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(false),
-                    SelfLifetime: nil,
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      false,
+                        Lifetime: nil,
+                        Span_:    ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:37},
+                            SourceID: 0,
+                        },
+                    },
                 },
             },
             span: ast.Span{
@@ -1938,11 +1945,18 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: nil,
-                Static:       false,
-                Private:      false,
-                Span_:        ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: nil,
+                    Span_:    ast.Span{
+                        Start:    ast.Location{Line:1, Column:24},
+                        End:      ast.Location{Line:1, Column:28},
+                        SourceID: 0,
+                    },
+                },
+                Static:  false,
+                Private: false,
+                Span_:   ast.Span{
                     Start:    ast.Location{Line:1, Column:13},
                     End:      ast.Location{Line:1, Column:67},
                     SourceID: 0,
@@ -3120,12 +3134,19 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(false),
-                SelfLifetime: &ast.LifetimeAnn{
-                    Name: "a",
-                    span: ast.Span{
+                Receiver: &ast.MethodReceiver{
+                    Mut:      false,
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "a",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:23},
+                            End:      ast.Location{Line:1, Column:25},
+                            SourceID: 0,
+                        },
+                    },
+                    Span_: ast.Span{
                         Start:    ast.Location{Line:1, Column:23},
-                        End:      ast.Location{Line:1, Column:25},
+                        End:      ast.Location{Line:1, Column:30},
                         SourceID: 0,
                     },
                 },
@@ -3233,12 +3254,19 @@
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(false),
-                    SelfLifetime: &ast.LifetimeAnn{
-                        Name: "a",
-                        span: ast.Span{
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      false,
+                        Lifetime: &ast.LifetimeAnn{
+                            Name: "a",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:29},
+                                End:      ast.Location{Line:1, Column:31},
+                                SourceID: 0,
+                            },
+                        },
+                        Span_: ast.Span{
                             Start:    ast.Location{Line:1, Column:29},
-                            End:      ast.Location{Line:1, Column:31},
+                            End:      ast.Location{Line:1, Column:36},
                             SourceID: 0,
                         },
                     },
@@ -3378,12 +3406,19 @@
                         },
                         inferredType: nil,
                     },
-                    MutSelf:      &bool(true),
-                    SelfLifetime: &ast.LifetimeAnn{
-                        Name: "a",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:37},
-                            End:      ast.Location{Line:1, Column:39},
+                    Receiver: &ast.MethodReceiver{
+                        Mut:      true,
+                        Lifetime: &ast.LifetimeAnn{
+                            Name: "a",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:1, Column:37},
+                                End:      ast.Location{Line:1, Column:39},
+                                SourceID: 0,
+                            },
+                        },
+                        Span_: ast.Span{
+                            Start:    ast.Location{Line:1, Column:33},
+                            End:      ast.Location{Line:1, Column:44},
                             SourceID: 0,
                         },
                     },
@@ -3535,12 +3570,19 @@
                     },
                     inferredType: nil,
                 },
-                MutSelf:      &bool(true),
-                SelfLifetime: &ast.LifetimeAnn{
-                    Name: "a",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:35},
-                        End:      ast.Location{Line:1, Column:37},
+                Receiver: &ast.MethodReceiver{
+                    Mut:      true,
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "a",
+                        span: ast.Span{
+                            Start:    ast.Location{Line:1, Column:35},
+                            End:      ast.Location{Line:1, Column:37},
+                            SourceID: 0,
+                        },
+                    },
+                    Span_: ast.Span{
+                        Start:    ast.Location{Line:1, Column:31},
+                        End:      ast.Location{Line:1, Column:42},
                         SourceID: 0,
                     },
                 },

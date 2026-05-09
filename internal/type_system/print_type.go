@@ -479,15 +479,16 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 					result += ">"
 				}
 				result += "("
-				if elem.MutSelf != nil {
-					if *elem.MutSelf {
+				hasSelf := elem.Fn != nil && elem.Fn.SelfParam != nil
+				if hasSelf {
+					if ReceiverIsMut(elem.Fn) {
 						result += "mut "
 					}
 					result += "self"
 				}
 				if len(elem.Fn.Params) > 0 {
 					for i, param := range elem.Fn.Params {
-						if i > 0 || elem.MutSelf != nil {
+						if i > 0 || hasSelf {
 							result += ", "
 						}
 						result += printFuncParam(param, pt)
@@ -501,14 +502,14 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 					result += " throws " + pt(elem.Fn.Throws)
 				}
 			case *GetterElem:
-				result += "get " + elem.Name.String() + "(" + printSelfReceiver(elem.MutSelf) + ") -> " + pt(elem.Fn.Return)
+				result += "get " + elem.Name.String() + "(" + printSelfReceiver(elem.Fn) + ") -> " + pt(elem.Fn.Return)
 				if !IsNeverType(elem.Fn.Throws) {
 					result += " throws " + pt(elem.Fn.Throws)
 				}
 			case *SetterElem:
-				result += "set " + elem.Name.String() + "(" + printSelfReceiver(elem.MutSelf)
+				result += "set " + elem.Name.String() + "(" + printSelfReceiver(elem.Fn)
 				if len(elem.Fn.Params) > 0 {
-					if elem.MutSelf != nil {
+					if elem.Fn.SelfParam != nil {
 						result += ", "
 					}
 					result += printFuncParam(elem.Fn.Params[0], pt)
@@ -549,12 +550,12 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 }
 
 // printSelfReceiver renders the leading `self` / `mut self` for a method,
-// getter, or setter. Returns "" when the receiver is absent (nil).
-func printSelfReceiver(mutSelf *bool) string {
-	if mutSelf == nil {
+// getter, or setter. Returns "" when the receiver is absent.
+func printSelfReceiver(fn *FuncType) string {
+	if fn == nil || fn.SelfParam == nil {
 		return ""
 	}
-	if *mutSelf {
+	if ReceiverIsMut(fn) {
 		return "mut self"
 	}
 	return "self"

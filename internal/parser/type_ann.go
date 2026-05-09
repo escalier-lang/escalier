@@ -848,14 +848,14 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		// `mut self` receiver (optionally with a lifetime: `'a self` /
 		// `mut 'a self`). Peel it off so it does not leak into
 		// `Fn.Params` as a regular parameter (#560).
-		mutSelf, selfLifetime := p.selfReceiver()
+		receiver := p.selfReceiver()
 
 		params := []*ast.Param{}
 		next := p.lexer.peek()
-		if mutSelf != nil && next.Type == Comma {
+		if receiver != nil && next.Type == Comma {
 			p.lexer.consume() // consume ','
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)
-		} else if mutSelf == nil {
+		} else if receiver == nil {
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)
 		}
 		p.expect(CloseParen, ConsumeOnMatch)
@@ -877,24 +877,21 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 		switch mod {
 		case "get":
 			return &ast.GetterTypeAnn{
-				Name:         objKey,
-				Fn:           fnTypeAnn,
-				MutSelf:      mutSelf,
-				SelfLifetime: selfLifetime,
+				Name:     objKey,
+				Fn:       fnTypeAnn,
+				Receiver: receiver,
 			}
 		case "set":
 			return &ast.SetterTypeAnn{
-				Name:         objKey,
-				Fn:           fnTypeAnn,
-				MutSelf:      mutSelf,
-				SelfLifetime: selfLifetime,
+				Name:     objKey,
+				Fn:       fnTypeAnn,
+				Receiver: receiver,
 			}
 		default:
 			return &ast.MethodTypeAnn{
-				Name:         objKey,
-				Fn:           fnTypeAnn,
-				MutSelf:      mutSelf,
-				SelfLifetime: selfLifetime,
+				Name:     objKey,
+				Fn:       fnTypeAnn,
+				Receiver: receiver,
 			}
 		}
 	default:

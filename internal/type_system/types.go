@@ -817,9 +817,8 @@ type FuncType struct {
 	// plain functions and static methods. The receiver type lives in
 	// SelfParam.Type — wrapped in MutType for `mut self` — so receiver
 	// lifetimes flow through the visitor / substitution / lifetime
-	// machinery the same way parameter lifetimes do. Element-level
-	// MutSelf *bool is a denormalized cache that mirrors whether
-	// SelfParam.Type is a MutType wrapper.
+	// machinery the same way parameter lifetimes do. Use ReceiverIsMut(fn)
+	// to inspect mutability.
 	SelfParam  *FuncParam
 	Params     []*FuncParam
 	Return     Type
@@ -1052,19 +1051,48 @@ type ObjTypeElem interface {
 type CallableElem struct{ Fn *FuncType }
 type ConstructorElem struct{ Fn *FuncType }
 type MethodElem struct {
-	Name    ObjTypeKey
-	Fn      *FuncType
-	MutSelf *bool // nil = unknown, true = mut self, false = self
+	Name ObjTypeKey
+	Fn   *FuncType
 }
 type GetterElem struct {
-	Name    ObjTypeKey
-	Fn      *FuncType
-	MutSelf *bool // nil = no self, true = mut self, false = self
+	Name ObjTypeKey
+	Fn   *FuncType
 }
 type SetterElem struct {
-	Name    ObjTypeKey
-	Fn      *FuncType
-	MutSelf *bool // nil = no self, true = mut self, false = self
+	Name ObjTypeKey
+	Fn   *FuncType
+}
+
+// ReceiverIsMut reports whether the function's `self` receiver is
+// `mut self`. Reads Fn.SelfParam (the source of truth); returns false
+// when the function is nil, has no receiver, or has a non-mut receiver.
+// Use this anywhere a method/getter/setter element's mutability needs
+// to be inspected.
+func ReceiverIsMut(fn *FuncType) bool {
+	if fn == nil || fn.SelfParam == nil {
+		return false
+	}
+	_, isMut := fn.SelfParam.Type.(*MutType)
+	return isMut
+}
+
+// NewSelfParam builds a FuncParam representing a `self` receiver of the
+// given containing type, wrapped in MutType when `mut` is true. This is
+// the canonical way to construct FuncType.SelfParam at the type-system
+// boundary — use it from tests and any non-checker code path that needs
+// to attach a receiver. Returns nil when receiverType is nil.
+func NewSelfParam(receiverType Type, mut bool) *FuncParam {
+	if receiverType == nil {
+		return nil
+	}
+	t := receiverType
+	if mut {
+		t = NewMutType(nil, receiverType)
+	}
+	return &FuncParam{
+		Pattern: NewIdentPat("self"),
+		Type:    t,
+	}
 }
 type PropertyElem struct {
 	Name       ObjTypeKey
@@ -1075,26 +1103,14 @@ type PropertyElem struct {
 	Provenance provenance.Provenance // span of the property access that inferred this property (nil for declared properties)
 }
 
-func NewMethodElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *MethodElem {
-	return &MethodElem{
-		Name:    name,
-		Fn:      fn,
-		MutSelf: mutSelf,
-	}
+func NewMethodElem(name ObjTypeKey, fn *FuncType) *MethodElem {
+	return &MethodElem{Name: name, Fn: fn}
 }
-func NewGetterElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *GetterElem {
-	return &GetterElem{
-		Name:    name,
-		Fn:      fn,
-		MutSelf: mutSelf,
-	}
+func NewGetterElem(name ObjTypeKey, fn *FuncType) *GetterElem {
+	return &GetterElem{Name: name, Fn: fn}
 }
-func NewSetterElem(name ObjTypeKey, fn *FuncType, mutSelf *bool) *SetterElem {
-	return &SetterElem{
-		Name:    name,
-		Fn:      fn,
-		MutSelf: mutSelf,
-	}
+func NewSetterElem(name ObjTypeKey, fn *FuncType) *SetterElem {
+	return &SetterElem{Name: name, Fn: fn}
 }
 func NewPropertyElem(name ObjTypeKey, value Type) *PropertyElem {
 	return &PropertyElem{
@@ -1186,21 +1202,21 @@ func (c *ConstructorElem) Accept(v TypeVisitor) ObjTypeElem {
 func (m *MethodElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := m.Fn.Accept(v).(*FuncType)
 	if newFn != m.Fn {
-		return &MethodElem{Name: m.Name, Fn: newFn, MutSelf: m.MutSelf}
+		return &MethodElem{Name: m.Name, Fn: newFn}
 	}
 	return m
 }
 func (g *GetterElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := g.Fn.Accept(v).(*FuncType)
 	if newFn != g.Fn {
-		return &GetterElem{Name: g.Name, Fn: newFn, MutSelf: g.MutSelf}
+		return &GetterElem{Name: g.Name, Fn: newFn}
 	}
 	return g
 }
 func (s *SetterElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := s.Fn.Accept(v).(*FuncType)
 	if newFn != s.Fn {
-		return &SetterElem{Name: s.Name, Fn: newFn, MutSelf: s.MutSelf}
+		return &SetterElem{Name: s.Name, Fn: newFn}
 	}
 	return s
 }
@@ -2596,13 +2612,6 @@ func regexEqual(x, y *regexp.Regexp) bool {
 	return x.String() == y.String()
 }
 
-// boolValue dereferences a *bool, treating nil as false. Used to compare
-// optional bool fields (e.g. MutSelf) by value rather than by pointer
-// identity.
-func boolValue(b *bool) bool {
-	return b != nil && *b
-}
-
 func equals(t1, t2 Type) bool {
 	if t1 == nil && t2 == nil {
 		return true
@@ -2645,15 +2654,15 @@ func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
 		}
 	case *MethodElem:
 		if e2, ok := e2.(*MethodElem); ok {
-			return e1.Name == e2.Name && boolValue(e1.MutSelf) == boolValue(e2.MutSelf) && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
 		}
 	case *GetterElem:
 		if e2, ok := e2.(*GetterElem); ok {
-			return e1.Name == e2.Name && boolValue(e1.MutSelf) == boolValue(e2.MutSelf) && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
 		}
 	case *SetterElem:
 		if e2, ok := e2.(*SetterElem); ok {
-			return e1.Name == e2.Name && boolValue(e1.MutSelf) == boolValue(e2.MutSelf) && equals(e1.Fn, e2.Fn)
+			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
 		}
 	case *PropertyElem:
 		if e2, ok := e2.(*PropertyElem); ok {

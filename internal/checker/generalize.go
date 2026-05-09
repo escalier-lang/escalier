@@ -240,21 +240,18 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 				}
 			case *type_system.MethodElem:
 				elems[i] = &type_system.MethodElem{
-					Name:    e.Name,
-					Fn:      c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
-					MutSelf: e.MutSelf,
+					Name: e.Name,
+					Fn:   c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
 				}
 			case *type_system.GetterElem:
 				elems[i] = &type_system.GetterElem{
-					Name:    e.Name,
-					Fn:      c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
-					MutSelf: e.MutSelf,
+					Name: e.Name,
+					Fn:   c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
 				}
 			case *type_system.SetterElem:
 				elems[i] = &type_system.SetterElem{
-					Name:    e.Name,
-					Fn:      c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
-					MutSelf: e.MutSelf,
+					Name: e.Name,
+					Fn:   c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
 				}
 			case *type_system.CallableElem:
 				elems[i] = &type_system.CallableElem{

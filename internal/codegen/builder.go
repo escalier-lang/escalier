@@ -2288,7 +2288,6 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				params,
 				slices.Concat(paramStmts, bodyStmts),
 				MethodElemOptions{
-					MutSelf:   e.MutSelf,
 					Static:    e.Static,
 					Private:   e.Private,
 					Async:     e.Fn.Async,
