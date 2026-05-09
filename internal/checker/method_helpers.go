@@ -39,12 +39,11 @@ func makeSelfParamWithLifetime(
 	if mutSelf == nil || base == nil {
 		return nil
 	}
-	receiver := base
+	clone := *base
 	if lifetime != nil {
-		clone := *base
 		clone.Lifetime = lifetime
-		receiver = &clone
 	}
+	receiver := &clone
 	var t type_system.Type = receiver
 	if *mutSelf {
 		t = type_system.NewMutType(nil, receiver)

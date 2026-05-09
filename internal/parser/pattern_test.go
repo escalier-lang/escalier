@@ -333,6 +333,45 @@ func TestParseMutSelfWithMutParam(t *testing.T) {
 	}
 }
 
+// TestStaticMethodIgnoresSelfReceiver pins that the method parser does
+// not retain a `self` (or `'a self`) receiver on a `static` method.
+// Static methods have no instance, so any receiver written by the user
+// must not leak into MethodElem.MutSelf / SelfLifetime — downstream code
+// (checker, codegen) treats those fields as ground truth that the method
+// has a receiver.
+func TestStaticMethodIgnoresSelfReceiver(t *testing.T) {
+	tests := map[string]string{
+		"static plain self": `class Foo {
+				static bar(self) -> number { return 1 },
+			}`,
+		"static mut self": `class Foo {
+				static bar(mut self) -> number { return 1 },
+			}`,
+		"static 'a self": `class Foo {
+				static bar<'a>('a self) -> number { return 1 },
+			}`,
+	}
+
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := NewParser(ctx, source)
+			script, _ := p.ParseScript()
+			require.NotNil(t, script)
+			method := findFirstMethodInScript(script)
+			require.NotNil(t, method, "expected to find a MethodElem")
+			assert.True(t, method.Static, "method should be static")
+			assert.Nil(t, method.MutSelf,
+				"static method must not retain a MutSelf flag from a parsed `self` receiver")
+			assert.Nil(t, method.SelfLifetime,
+				"static method must not retain a SelfLifetime from a parsed receiver")
+		})
+	}
+}
+
 func findFirstMethodInScript(script *ast.Script) *ast.MethodElem {
 	for _, stmt := range script.Stmts {
 		ds, ok := stmt.(*ast.DeclStmt)

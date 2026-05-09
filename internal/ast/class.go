@@ -147,7 +147,7 @@ func (g *GetterElem) Span() Span { return g.Span_ }
 type ConstructorElem struct {
 	Fn           *FuncExpr
 	MutSelf      *bool           // true if `self` was declared `mut self`; nil if absent
-	SelfLifetime LifetimeAnnNode // always rejected by validation; carried for diagnostics
+	SelfLifetime LifetimeAnnNode // optional (may be nil); carried for diagnostics — when set (non-nil) it is rejected by validation
 	Private      bool            // reserved for future "Private Constructors" work
 	Span_        Span
 }

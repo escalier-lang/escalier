@@ -769,6 +769,10 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 
 // MissingMutSelfParameterError is reported when a constructor's `mut self`
 // parameter is missing, not declared `mut`, or has a type annotation.
+//
+// TODO(#571): split this into one error type per `MutSelfReason` shape —
+// the four reasons share no structural template, and three of them are
+// not about a *missing* parameter at all.
 type MissingMutSelfParameterError struct {
 	Reason MutSelfReason
 	span   ast.Span

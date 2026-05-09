@@ -546,11 +546,15 @@ modifiers_done:
 		// Method
 		p.lexer.consume() // consume '('
 
-		// TODO: skip mutSelf if `isStatic` is true
 		mutSelf, selfLifetime := p.selfReceiver()
 
 		params := []*ast.Param{}
 		if isStatic {
+			// Static methods have no receiver — discard whatever
+			// `selfReceiver` consumed so MutSelf/SelfLifetime stay
+			// nil on the resulting MethodElem.
+			mutSelf = nil
+			selfLifetime = nil
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)
 		} else {
 			token = p.lexer.peek()

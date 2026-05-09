@@ -1326,7 +1326,14 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes
+								// TODO: handle generic classes — we deliberately
+								// drop type args and the `'a self` lifetime here
+								// because downstream codegen (MemberExpr →
+								// .bind(this) heuristic in builder.go) misclassifies
+								// stored function fields once self carries its type
+								// args. Reusing methodType.Fn.SelfParam.Type would
+								// be more correct but requires fixing that
+								// classifier first.
 								isMutableSelf := methodType.MutSelf != nil && *methodType.MutSelf
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {
@@ -1413,7 +1420,10 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes
+								// TODO: handle generic classes — see the matching
+								// note in the MethodElem case above for why the
+								// receiver is rebuilt here instead of reusing
+								// getterType.Fn.SelfParam.Type.
 								// A `mut self` getter (e.g. one that mutates a
 								// memoization cache) needs `self` typed as a
 								// `mut`; a plain `self` getter does not.
@@ -1498,7 +1508,10 @@ func (c *Checker) InferComponent(
 
 								// We use the name of the class as the type here to avoid
 								// a RecursiveUnificationError.
-								// TODO: handle generic classes
+								// TODO: handle generic classes — see the matching
+								// note in the MethodElem case above for why the
+								// receiver is rebuilt here instead of reusing
+								// setterType.Fn.SelfParam.Type.
 								// Mutability follows the user-written receiver.
 								// A setter that doesn't mutate `self` (e.g. one
 								// that forwards to an external sink) may declare

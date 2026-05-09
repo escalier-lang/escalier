@@ -861,14 +861,17 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 	inferCtx := Context{Scope: Prelude(c)}
 	inferErrors := c.InferModule(inferCtx, module)
 
-	var found bool
+	count := 0
 	for _, e := range inferErrors {
 		if me, ok := e.(MissingMutSelfParameterError); ok && me.Reason == MutSelfHasLifetime {
-			assert.Equal(t, "Constructors cannot have a lifetime on `self`.", me.Message())
-			found = true
+			if count == 0 {
+				assert.Equal(t, "Constructors cannot have a lifetime on `self`.", me.Message())
+			}
+			count++
 		}
 	}
-	assert.True(t, found, "expected a MutSelfHasLifetime diagnostic; got %v", inferErrors)
+	assert.Equal(t, 1, count,
+		"expected exactly one MutSelfHasLifetime diagnostic; got %v", inferErrors)
 
 	// The parser must NOT also report its own lifetime-on-self error:
 	// having both fire produces a duplicate diagnostic for one mistake.
