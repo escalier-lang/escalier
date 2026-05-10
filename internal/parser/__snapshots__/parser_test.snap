@@ -12444,7 +12444,7 @@
                         Body:     &ast.Block{},
                         export:   false,
                         declare:  true,
-                        override: false,
+                        override: true,
                         span:     ast.Span{
                             Start:    ast.Location{Line:4, Column:7},
                             End:      ast.Location{Line:4, Column:42},

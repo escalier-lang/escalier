@@ -381,6 +381,26 @@ func TestParseDeclareBlockErrors(t *testing.T) {
 			input:         `export override declare module "x" { }`,
 			expectedError: "'export' is not allowed before 'declare module'",
 		},
+		"ExportOverrideDeclareGlobal": {
+			input:         `export override declare global { }`,
+			expectedError: "'export' is not allowed before 'declare global'",
+		},
+		"OverrideWithoutDeclareFn": {
+			input:         `override fn foo() -> number`,
+			expectedError: "'override' requires 'declare'",
+		},
+		"OverrideWithoutDeclareClass": {
+			input:         `override class Foo {}`,
+			expectedError: "'override' requires 'declare'",
+		},
+		"DeclareModuleMissingStringLiteral": {
+			input:         `declare module 42 { }`,
+			expectedError: "Expected string literal after 'module'",
+		},
+		"DeclareGlobalNamespaceMissingIdent": {
+			input:         `declare global { namespace 42 { } }`,
+			expectedError: "Expected identifier after 'namespace'",
+		},
 	}
 
 	for name, test := range tests {
@@ -463,6 +483,39 @@ func TestParseOverrideDeclareBlockPropagates(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseOverridePropagatesIntoNamespace(t *testing.T) {
+	t.Parallel()
+	input := `
+		override declare global {
+			namespace Math {
+				declare fn abs(x: number) -> number
+			}
+		}
+	`
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	parser := NewParser(ctx, source)
+	module, errors := parser.ParseScript()
+	require.Empty(t, errors, "expected no parse errors")
+	require.Len(t, module.Stmts, 1)
+
+	declStmt, ok := module.Stmts[0].(*ast.DeclStmt)
+	require.True(t, ok)
+	outer, ok := declStmt.Decl.(*ast.DeclareGlobalDecl)
+	require.True(t, ok)
+	assert.True(t, outer.Override(), "outer DeclareGlobalDecl.Override() should be true")
+	require.Len(t, outer.Decls, 1)
+
+	ns, ok := outer.Decls[0].(*ast.NamespaceDecl)
+	require.True(t, ok, "expected NamespaceDecl inside declare global")
+	assert.True(t, ns.Override(), "NamespaceDecl.Override() should be true")
+	require.Len(t, ns.Decls, 1)
+
+	innerDecl := ns.Decls[0]
+	assert.True(t, innerDecl.Override(), "decl inside namespace should have Override() == true")
 }
 
 func TestParseEnumErrorHandling(t *testing.T) {

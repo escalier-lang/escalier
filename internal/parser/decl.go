@@ -96,8 +96,10 @@ func (p *Parser) Decl() ast.Decl {
 		token = p.lexer.next()
 	}
 
+	var overrideSpan ast.Span
 	if token.Type == Override {
 		override = true
+		overrideSpan = token.Span
 		token = p.lexer.next()
 	}
 
@@ -120,6 +122,10 @@ func (p *Parser) Decl() ast.Decl {
 			}
 			return p.declareGlobalDecl(start, override)
 		}
+	}
+
+	if override && !declare {
+		p.reportError(overrideSpan, "'override' requires 'declare'")
 	}
 
 	if token.Type == Async {
@@ -184,13 +190,12 @@ func (p *Parser) namespaceDecl(start ast.Location, export, override bool) *ast.N
 	return ast.NewNamespaceDecl(name, decls, export, override, span)
 }
 
-// declareModuleDecl parses `module "<name>" { <decl>* }` after the
-// `declare` keyword has already been consumed (along with the `module`
-// keyword). The opening `module` is the current token. `override` indicates
-// whether the enclosing `Decl()` saw an `override` keyword; it's stamped on the
-// resulting decl and propagated to every inner declaration in the block body.
+// declareModuleDecl parses `module "<name>" { <decl>* }` after both the
+// `declare` and `module` keywords have already been consumed by the caller.
+// `override` indicates whether the enclosing `Decl()` saw an `override`
+// keyword; it's stamped on the resulting decl and propagated to every inner
+// declaration in the block body.
 func (p *Parser) declareModuleDecl(start ast.Location, override bool) *ast.DeclareModuleDecl {
-	// `module` was already consumed by the caller via lexer.next().
 	nameTok := p.lexer.next()
 	var name *ast.StrLit
 	if nameTok.Type != StrLit {
@@ -206,9 +211,9 @@ func (p *Parser) declareModuleDecl(start ast.Location, override bool) *ast.Decla
 	return ast.NewDeclareModuleDecl(name, decls, override, span)
 }
 
-// declareGlobalDecl parses `global { <decl>* }` after the `declare` keyword
-// has been consumed and the `global` identifier is the current token. See
-// declareModuleDecl for the meaning of `override`.
+// declareGlobalDecl parses `global { <decl>* }` after both the `declare`
+// keyword and the `global` identifier have already been consumed by the caller.
+// See declareModuleDecl for the meaning of `override`.
 func (p *Parser) declareGlobalDecl(start ast.Location, override bool) *ast.DeclareGlobalDecl {
 	// `global` was already consumed by the caller via lexer.next().
 	decls := p.declareBlockBody(override)
@@ -217,10 +222,23 @@ func (p *Parser) declareGlobalDecl(start ast.Location, override bool) *ast.Decla
 	return ast.NewDeclareGlobalDecl(decls, override, span)
 }
 
+// setOverrideRecursive stamps override=true on d and, if d is a
+// NamespaceDecl, recurses into its children so that every decl in the
+// namespace tree also carries the flag.
+func setOverrideRecursive(d ast.Decl) {
+	d.SetOverride(true)
+	if ns, ok := d.(*ast.NamespaceDecl); ok {
+		for _, child := range ns.Decls {
+			setOverrideRecursive(child)
+		}
+	}
+}
+
 // declareBlockBody parses the `{ <decl>* }` body shared by
 // `declare module` and `declare global`. When `override` is true, each
-// inner decl inherits the override flag — this matches the design where
-// `override declare module / global` implies `override` on every member.
+// inner decl (and all decls nested inside NamespaceDecls) inherits the
+// override flag — this matches the design where `override declare module /
+// global` implies `override` on every member.
 // Returns once the next token is `}` or EOF; the caller is responsible
 // for consuming the closing brace.
 func (p *Parser) declareBlockBody(override bool) []ast.Decl {
@@ -248,7 +266,7 @@ func (p *Parser) declareBlockBody(override bool) []ast.Decl {
 			continue
 		}
 		if override {
-			inner.SetOverride(true)
+			setOverrideRecursive(inner)
 		}
 		decls = append(decls, inner)
 	}
