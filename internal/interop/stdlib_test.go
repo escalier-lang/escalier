@@ -8,21 +8,18 @@ import (
 
 // TestStdlibFilesParse verifies that every shipped stdlib override file under
 // stdlib/ can be parsed without error and produces at least one override entry.
+// Uses WalkDir to match loadStdlib's recursive traversal.
 func TestStdlibFilesParse(t *testing.T) {
-	dir := filepath.Join("stdlib")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("ReadDir stdlib: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("no files found in stdlib/")
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".esc" {
-			continue
+	found := 0
+	err := filepath.WalkDir("stdlib", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		path := filepath.Join(dir, entry.Name())
-		t.Run(entry.Name(), func(t *testing.T) {
+		if d.IsDir() || filepath.Ext(d.Name()) != ".esc" {
+			return nil
+		}
+		found++
+		t.Run(path, func(t *testing.T) {
 			data, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("ReadFile: %v", err)
@@ -35,6 +32,13 @@ func TestStdlibFilesParse(t *testing.T) {
 				t.Errorf("expected at least one override entry, got none")
 			}
 		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir stdlib: %v", err)
+	}
+	if found == 0 {
+		t.Fatal("no .esc files found under stdlib/")
 	}
 }
 

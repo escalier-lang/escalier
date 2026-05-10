@@ -345,6 +345,31 @@ func TestClassifyTier3_NoRegistryFallsThrough(t *testing.T) {
 	}
 }
 
+func TestClassifyTier3_SymbolComputedKeyOverride(t *testing.T) {
+	// [Symbol.species] is not in wellKnownSymbols, so tier 2 won't handle it.
+	// With a registry entry keyed as "symbol:species", it should reach tier 3.
+	src := `
+override declare global {
+    declare class MyCollection {
+        [Symbol.species](self) -> number,
+    }
+}
+`
+	reg := newRegistryFromSource(t, src, true)
+	method := makeComputedMethodDecl("Symbol", "species")
+	result := Classify(ClassifyContext{
+		Member:    method,
+		ClassName: "MyCollection",
+		Registry:  reg,
+	})
+	if result.Mut {
+		t.Error("override says non-mutating but got mutating")
+	}
+	if result.Source != TierUserOverride {
+		t.Errorf("expected TierUserOverride, got %d", result.Source)
+	}
+}
+
 func TestClassifyTier2_BeatsOverride(t *testing.T) {
 	// Tier 2 (getter) must win even when an override exists for the same name.
 	src := `

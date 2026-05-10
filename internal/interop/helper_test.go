@@ -533,6 +533,48 @@ func TestConvertMethodDecl(t *testing.T) {
 	}
 }
 
+// TestConvertMethodDecl_RegistryOverridesReceiver verifies that a non-empty
+// convCtx (registry + modulePath) is consulted and can flip receiver mutability.
+func TestConvertMethodDecl_RegistryOverridesReceiver(t *testing.T) {
+	const src = `
+override declare module "my-lib" {
+    declare class Widget {
+        render(self) -> void,
+    }
+}
+`
+	r := newOverrideRegistry()
+	if err := r.loadSource(src, "test.esc", true); err != nil {
+		t.Fatalf("loadSource: %v", err)
+	}
+
+	source := &ast.Source{
+		Path:     "test.d.ts",
+		Contents: "declare class Widget { render(): void }",
+		ID:       0,
+	}
+	parser := dts_parser.NewDtsParser(source)
+	module, errors := parser.ParseModule()
+	if len(errors) > 0 {
+		t.Fatalf("Parse errors: %v", errors)
+	}
+
+	classDecl := module.Statements[0].(*dts_parser.ClassDecl)
+	methodDecl := classDecl.Members[0].(*dts_parser.MethodDecl)
+
+	ctx := convCtx{registry: r, modulePath: "my-lib"}
+	result, err := convertMethodDecl(methodDecl, "Widget", ctx)
+	if err != nil {
+		t.Fatalf("convertMethodDecl failed: %v", err)
+	}
+	if result.Receiver == nil {
+		t.Fatal("expected a receiver")
+	}
+	if result.Receiver.Mut {
+		t.Error("registry override says non-mutating but receiver.Mut is true")
+	}
+}
+
 func TestConvertPropertyDecl(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -194,7 +194,10 @@ type ParsedTypeDef struct {
 
 // parseTypeDef parses a .d.ts file and classifies its contents
 // using the FileClassification system from dts_parser/classifier.go.
-func parseTypeDef(filename string) (*ParsedTypeDef, error) {
+// packageName is the npm package identity (e.g. "react", "lodash/fp"); pass ""
+// for path-referenced files that have no package identity. It is forwarded to
+// ConvertModule so tier 3/4 override lookups can match module-scoped entries.
+func parseTypeDef(filename string, packageName string) (*ParsedTypeDef, error) {
 	// Read the file
 	contents, err := os.ReadFile(filename)
 	if err != nil {
@@ -240,7 +243,7 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 		pkgDtsModule := &dts_parser.Module{
 			Statements: classification.PackageDecls,
 		}
-		pkgAstModule, err := interop.ConvertModule(pkgDtsModule, interop.DefaultRegistry(), "")
+		pkgAstModule, err := interop.ConvertModule(pkgDtsModule, interop.DefaultRegistry(), packageName)
 		if err != nil {
 			return nil, fmt.Errorf("converting package declarations: %w", err)
 		}
@@ -734,7 +737,7 @@ func resolveRelativeDtsPath(sourceFilePath string, relativePath string) string {
 func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 	var errors []Error
 
-	parsedTypeDef, loadErr := parseTypeDef(filePath)
+	parsedTypeDef, loadErr := parseTypeDef(filePath, "")
 	if loadErr != nil {
 		// Remove the in-progress entry so later loads can retry and report the real failure.
 		delete(c.PackageRegistry.packages, filePath)
@@ -825,7 +828,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	c.PackageRegistry.MarkInProgress(dtsFilePath)
 
 	// Step 3: Load and classify the .d.ts file
-	parsedTypeDef, loadErr := parseTypeDef(dtsFilePath)
+	parsedTypeDef, loadErr := parseTypeDef(dtsFilePath, packageName)
 	if loadErr != nil {
 		// Clean up sentinel so the package can be retried
 		delete(c.PackageRegistry.packages, dtsFilePath) // Need to expose a Remove method

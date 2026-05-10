@@ -184,4 +184,11 @@ func TestLoadSource_GetterSetter(t *testing.T) {
 	} else if entry.Mut {
 		t.Error("getter should be non-mutating")
 	}
+
+	setter := overrideKey{Module: "", ClassName: "Foo", Member: "value", Kind: kindSetter}
+	if entry, _, ok := r.lookup(setter); !ok {
+		t.Fatal("expected setter entry")
+	} else if !entry.Mut {
+		t.Error("setter should be mutating")
+	}
 }

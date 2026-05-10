@@ -526,7 +526,7 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 
 	for _, filename := range allLibFiles {
 		libPath := filepath.Join(libDir, filename)
-		parsedTypeDef, loadErr := parseTypeDef(libPath)
+		parsedTypeDef, loadErr := parseTypeDef(libPath, "")
 		if loadErr != nil {
 			panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", libPath, loadErr))
 		}

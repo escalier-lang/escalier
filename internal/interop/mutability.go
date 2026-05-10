@@ -201,8 +201,9 @@ func isReadonlyWrapperType(t dts_parser.TypeAnn) bool {
 	return false
 }
 
-// memberName extracts the simple string name and kind from a ClassMember.
-// Returns ("", 0, false) for computed keys (e.g. [Symbol.iterator]).
+// memberName extracts a stable string name and kind from a ClassMember.
+// For [Symbol.foo] computed keys it returns "symbol:foo".
+// Other computed keys return ("", 0, false) and skip override lookup.
 func memberName(m dts_parser.ClassMember) (string, memberKind, bool) {
 	var key dts_parser.PropertyKey
 	var kind memberKind
@@ -224,6 +225,13 @@ func memberName(m dts_parser.ClassMember) (string, memberKind, bool) {
 	}
 	if ident, ok := key.(*dts_parser.Ident); ok {
 		return ident.Name, kind, true
+	}
+	if computed, ok := key.(*dts_parser.ComputedKey); ok {
+		if member, ok := computed.Expr.(*dts_parser.MemberExpr); ok {
+			if obj, ok := member.Object.(*dts_parser.IdentExpr); ok && obj.Name == "Symbol" {
+				return "symbol:" + member.Prop.Name, kind, true
+			}
+		}
 	}
 	return "", 0, false
 }

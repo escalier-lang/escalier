@@ -200,14 +200,25 @@ func overrideClassElemEntry(elem ast.ClassElem) (string, memberKind, bool, bool)
 	return "", 0, false, false
 }
 
-// overrideObjKeyName extracts a simple string name from an ObjKey.
-// Returns ("", false) for computed keys.
+// overrideObjKeyName extracts a stable string name from an ObjKey.
+// Computed keys of the form [Symbol.foo] are normalized to "symbol:foo".
+// All other computed keys return ("", false).
 func overrideObjKeyName(key ast.ObjKey) (string, bool) {
 	switch k := key.(type) {
 	case *ast.IdentExpr:
 		return k.Name, true
 	case *ast.StrLit:
 		return k.Value, true
+	case *ast.ComputedKey:
+		member, ok := k.Expr.(*ast.MemberExpr)
+		if !ok {
+			return "", false
+		}
+		obj, ok := member.Object.(*ast.IdentExpr)
+		if !ok || obj.Name != "Symbol" {
+			return "", false
+		}
+		return "symbol:" + member.Prop.Name, true
 	}
 	return "", false
 }
