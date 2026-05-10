@@ -3,6 +3,7 @@ package checker
 import (
 	"fmt"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -578,13 +579,26 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		returnOrder []int
 	}
 	perFunc := make([]funcVars, len(funcTypes))
-	globalVars := map[int]*type_system.TypeVarType{}
-	globalOrder := []int{}
-	paramVarIDs := map[int]bool{}
-	addToGlobal := func(id int, tv *type_system.TypeVarType) {
-		if _, seen := globalVars[id]; !seen {
-			globalVars[id] = tv
-			globalOrder = append(globalOrder, id)
+	// sigVars / sigOrder together form the deduplicated union of every
+	// unresolved TV reachable from any function's *signature surface*
+	// (params + return) across the whole group. Throws-position vars are
+	// tracked separately below — keeping them out of sigVars is what lets
+	// the throws-only-default-to-never check distinguish "appears in a
+	// signature somewhere" from "appears only in throws".
+	//
+	// sigVars: id → TV pointer, for O(1) "is this id in a signature?" lookups.
+	// sigOrder: insertion order of those ids (first-seen across the iteration
+	// of funcTypes, then params before return within each function). The two
+	// always agree on membership; sigOrder exists purely so the downstream
+	// `T0`, `T1`, ... naming and per-function TypeParams append order are
+	// deterministic instead of map-iteration-order-dependent.
+	sigVars := map[int]*type_system.TypeVarType{}
+	sigOrder := []int{}
+	paramVarIDs := set.NewSet[int]()
+	addToSig := func(id int, tv *type_system.TypeVarType) {
+		if _, seen := sigVars[id]; !seen {
+			sigVars[id] = tv
+			sigOrder = append(sigOrder, id)
 		}
 	}
 	for i, funcType := range funcTypes {
@@ -598,11 +612,11 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		collectUnresolvedTypeVars(funcType.Return, fv.returnVars, &fv.returnOrder)
 		perFunc[i] = fv
 		for _, id := range fv.paramOrder {
-			paramVarIDs[id] = true
-			addToGlobal(id, fv.paramVars[id])
+			paramVarIDs.Add(id)
+			addToSig(id, fv.paramVars[id])
 		}
 		for _, id := range fv.returnOrder {
-			addToGlobal(id, fv.returnVars[id])
+			addToSig(id, fv.returnVars[id])
 		}
 	}
 
@@ -613,13 +627,13 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		throwsOrder := []int{}
 		collectUnresolvedTypeVars(funcType.Throws, throwsVars, &throwsOrder)
 		for id, tv := range throwsVars {
-			if _, inParamsOrReturn := globalVars[id]; !inParamsOrReturn {
+			if _, inParamsOrReturn := sigVars[id]; !inParamsOrReturn {
 				tv.Instance = type_system.NewNeverType(nil)
 			}
 		}
 	}
 
-	if len(globalVars) == 0 {
+	if len(sigVars) == 0 {
 		return
 	}
 
@@ -635,9 +649,9 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 	// function whose return type stays a free TV after inference (e.g.
 	// the body only throws and never returns) collapses to `void` rather
 	// than producing a phantom `T0` no caller can supply or observe.
-	simplifyToVoid := map[int]bool{}
-	for _, id := range globalOrder {
-		if paramVarIDs[id] {
+	simplifyToVoid := set.NewSet[int]()
+	for _, id := range sigOrder {
+		if paramVarIDs.Contains(id) {
 			continue
 		}
 		allTopLevel := true
@@ -654,7 +668,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 			}
 		}
 		if allTopLevel {
-			simplifyToVoid[id] = true
+			simplifyToVoid.Add(id)
 		}
 	}
 	// Before binding `void` to the TV's Instance, rescue any function
@@ -668,20 +682,20 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		if !ok {
 			continue
 		}
-		if simplifyToVoid[throwsTV.ID] {
+		if simplifyToVoid.Contains(throwsTV.ID) {
 			funcType.Throws = type_system.NewNeverType(nil)
 		}
 	}
 	for id := range simplifyToVoid {
-		globalVars[id].Instance = type_system.NewVoidType(nil)
+		sigVars[id].Instance = type_system.NewVoidType(nil)
 	}
 
 	// Seed name collisions from every function's existing type params so we
 	// pick a unique T-name across the group.
-	existingNames := map[string]bool{}
+	existingNames := set.NewSet[string]()
 	for _, funcType := range funcTypes {
 		for _, tp := range funcType.TypeParams {
-			existingNames[tp.Name] = true
+			existingNames.Add(tp.Name)
 		}
 	}
 
@@ -690,20 +704,20 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 	// resolves by name in whichever function it appears in, and each
 	// function's TypeParams list below carries a reference to the same
 	// TypeParam object.
-	typeParams := make(map[int]*type_system.TypeParam, len(globalVars))
+	typeParams := make(map[int]*type_system.TypeParam, len(sigVars))
 	nameIndex := 0
-	for _, id := range globalOrder {
-		if simplifyToVoid[id] {
+	for _, id := range sigOrder {
+		if simplifyToVoid.Contains(id) {
 			continue
 		}
-		tv := globalVars[id]
+		tv := sigVars[id]
 		name := fmt.Sprintf("T%d", nameIndex)
-		for existingNames[name] {
+		for existingNames.Contains(name) {
 			nameIndex++
 			name = fmt.Sprintf("T%d", nameIndex)
 		}
 		nameIndex++
-		existingNames[name] = true
+		existingNames.Add(name)
 		tp := &type_system.TypeParam{
 			Name:       name,
 			Constraint: tv.Constraint,
@@ -711,6 +725,16 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		}
 		typeParams[id] = tp
 
+		// Bind the TV in place rather than walking each function's type
+		// tree to substitute references. Every consumer of a type goes
+		// through Prune, which follows tv.Instance — so a single mutation
+		// here updates every reachable reference (params, return, throws,
+		// nested generics, peers in the SCC) atomically and without us
+		// having to enumerate them. A real substitution pass would also
+		// have to handle structural sharing (the same TV appears in
+		// multiple positions), avoid re-cloning unchanged subtrees, and
+		// stay in sync with collectUnresolvedTypeVars' traversal — all
+		// of which Prune-chasing gives us for free.
 		tv.Instance = type_system.NewTypeRefType(nil, name, &type_system.TypeAlias{
 			Type:        type_system.NewUnknownType(nil),
 			TypeParams:  []*type_system.TypeParam{},
@@ -724,13 +748,13 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 	// in both params and return.
 	for i, funcType := range funcTypes {
 		fv := perFunc[i]
-		added := map[int]bool{}
+		added := set.NewSet[int]()
 		var newTypeParams []*type_system.TypeParam
 		appendVar := func(id int) {
-			if simplifyToVoid[id] || added[id] {
+			if simplifyToVoid.Contains(id) || added.Contains(id) {
 				return
 			}
-			added[id] = true
+			added.Add(id)
 			newTypeParams = append(newTypeParams, typeParams[id])
 		}
 		for _, id := range fv.paramOrder {
