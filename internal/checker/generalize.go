@@ -3,12 +3,19 @@ package checker
 import (
 	"fmt"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // collectUnresolvedTypeVars walks a type tree and collects all unresolved
 // TypeVarType nodes (where Prune returns the same TypeVarType). Results are
 // stored in the vars map keyed by type var ID, and order tracks insertion order.
+//
+// TODO(#590): cycle detection. Composite types (UnionType, IntersectionType,
+// ObjectType, etc.) are not tracked in a visited set, so a cyclic union (e.g.
+// produced by mutually recursive functions with an if/else base case where
+// each function's return type contains a TypeVar that prunes back to the
+// other function's return) causes infinite recursion and a stack overflow.
 func collectUnresolvedTypeVars(
 	t type_system.Type,
 	vars map[int]*type_system.TypeVarType,
@@ -527,79 +534,207 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 // and converts them into proper type parameters. This must be called after type
 // inference completes for the function body.
 func GeneralizeFuncType(funcType *type_system.FuncType) {
-	// Before collecting type vars, finalize open object mutability.
-	// If any property on an open object was written during inference,
-	// wrap the object in `mut`.
-	for _, param := range funcType.Params {
-		tv, ok := param.Type.(*type_system.TypeVarType)
-		if !ok {
-			continue
-		}
-		pruned := type_system.Prune(tv)
-		openObj, ok := pruned.(*type_system.ObjectType)
-		if !ok || !openObj.Open {
-			continue
-		}
-		if finalizeOpenObject(openObj) {
-			tv.Instance = &type_system.MutType{
-				Type: openObj,
+	generalizeFuncTypes([]*type_system.FuncType{funcType})
+}
+
+// generalizeFuncTypes generalizes a group of function types together. Unresolved
+// type variables shared across the group (e.g. introduced by mutually recursive
+// calls within a strongly connected component) are assigned a single TypeParam
+// shared by every function whose signature references them, ensuring all
+// references resolve to the same generalized name rather than leaking a free
+// type var from one declaration into another.
+//
+// For a single FuncType, this behaves identically to GeneralizeFuncType.
+func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
+	// Finalize open object mutability for each func. If any property on an
+	// open object was written during inference, wrap the object in `mut`.
+	for _, funcType := range funcTypes {
+		for _, param := range funcType.Params {
+			tv, ok := param.Type.(*type_system.TypeVarType)
+			if !ok {
+				continue
+			}
+			pruned := type_system.Prune(tv)
+			openObj, ok := pruned.(*type_system.ObjectType)
+			if !ok || !openObj.Open {
+				continue
+			}
+			if finalizeOpenObject(openObj) {
+				tv.Instance = &type_system.MutType{
+					Type: openObj,
+				}
 			}
 		}
 	}
 
-	vars := map[int]*type_system.TypeVarType{}
-	order := []int{}
-
-	// Collect from params and return type
-	for _, param := range funcType.Params {
-		collectUnresolvedTypeVars(param.Type, vars, &order)
+	// Collect param vars and return vars separately for each function so we
+	// can detect type vars that appear only as a top-level return — those
+	// can be simplified to `void` rather than generalized, since the
+	// function provably can never produce a value of that type (the type
+	// param would be unobservable from any caller).
+	type funcVars struct {
+		paramVars   map[int]*type_system.TypeVarType
+		paramOrder  []int
+		returnVars  map[int]*type_system.TypeVarType
+		returnOrder []int
 	}
-	collectUnresolvedTypeVars(funcType.Return, vars, &order)
-
-	// Collect from throws separately to detect throws-only type vars
-	throwsVars := map[int]*type_system.TypeVarType{}
-	throwsOrder := []int{}
-	collectUnresolvedTypeVars(funcType.Throws, throwsVars, &throwsOrder)
-
-	// If the throws type is an unresolved type var not referenced by params or
-	// return, default it to never instead of generalizing it.
-	for id, tv := range throwsVars {
-		if _, inParamsOrReturn := vars[id]; !inParamsOrReturn {
-			tv.Instance = type_system.NewNeverType(nil)
+	perFunc := make([]funcVars, len(funcTypes))
+	// sigVars / sigOrder together form the deduplicated union of every
+	// unresolved TV reachable from any function's *signature surface*
+	// (params + return) across the whole group. Throws-position vars are
+	// tracked separately below — keeping them out of sigVars is what lets
+	// the throws-only-default-to-never check distinguish "appears in a
+	// signature somewhere" from "appears only in throws".
+	//
+	// sigVars: id → TV pointer, for O(1) "is this id in a signature?" lookups.
+	// sigOrder: insertion order of those ids (first-seen across the iteration
+	// of funcTypes, then params before return within each function). The two
+	// always agree on membership; sigOrder exists purely so the downstream
+	// `T0`, `T1`, ... naming and per-function TypeParams append order are
+	// deterministic instead of map-iteration-order-dependent.
+	sigVars := map[int]*type_system.TypeVarType{}
+	sigOrder := []int{}
+	paramVarIDs := set.NewSet[int]()
+	addToSig := func(id int, tv *type_system.TypeVarType) {
+		if _, seen := sigVars[id]; !seen {
+			sigVars[id] = tv
+			sigOrder = append(sigOrder, id)
+		}
+	}
+	for i, funcType := range funcTypes {
+		fv := funcVars{
+			paramVars:  map[int]*type_system.TypeVarType{},
+			returnVars: map[int]*type_system.TypeVarType{},
+		}
+		for _, param := range funcType.Params {
+			collectUnresolvedTypeVars(param.Type, fv.paramVars, &fv.paramOrder)
+		}
+		collectUnresolvedTypeVars(funcType.Return, fv.returnVars, &fv.returnOrder)
+		perFunc[i] = fv
+		for _, id := range fv.paramOrder {
+			paramVarIDs.Add(id)
+			addToSig(id, fv.paramVars[id])
+		}
+		for _, id := range fv.returnOrder {
+			addToSig(id, fv.returnVars[id])
 		}
 	}
 
-	if len(vars) == 0 {
+	// Collect throws vars across the group and default any throws-only vars
+	// (not appearing in any function's params or return) to never.
+	for _, funcType := range funcTypes {
+		throwsVars := map[int]*type_system.TypeVarType{}
+		throwsOrder := []int{}
+		collectUnresolvedTypeVars(funcType.Throws, throwsVars, &throwsOrder)
+		for id, tv := range throwsVars {
+			if _, inParamsOrReturn := sigVars[id]; !inParamsOrReturn {
+				tv.Instance = type_system.NewNeverType(nil)
+			}
+		}
+	}
+
+	if len(sigVars) == 0 {
 		return
 	}
 
-	// Collect existing type param names to avoid collisions
-	existingNames := map[string]bool{}
-	for _, tp := range funcType.TypeParams {
-		existingNames[tp.Name] = true
+	// A type var simplifies to `void` iff it never appears in any param
+	// (anywhere — top-level or nested) and, in every function that
+	// references it, it IS the top-level return type. In that case the
+	// only path the function has to produce a value of that type is
+	// divergent (recursion through peers in the SCC, throws, etc.), so
+	// the generalized type parameter is unobservable and `void` is the
+	// honest signature.
+	//
+	// This applies to single-function inputs as well as SCCs: a lone
+	// function whose return type stays a free TV after inference (e.g.
+	// the body only throws and never returns) collapses to `void` rather
+	// than producing a phantom `T0` no caller can supply or observe.
+	simplifyToVoid := set.NewSet[int]()
+	for _, id := range sigOrder {
+		if paramVarIDs.Contains(id) {
+			continue
+		}
+		allTopLevel := true
+		for i, funcType := range funcTypes {
+			fv := perFunc[i]
+			if _, inReturn := fv.returnVars[id]; !inReturn {
+				continue
+			}
+			pruned := type_system.Prune(funcType.Return)
+			tv, ok := pruned.(*type_system.TypeVarType)
+			if !ok || tv.ID != id {
+				allTopLevel = false
+				break
+			}
+		}
+		if allTopLevel {
+			simplifyToVoid.Add(id)
+		}
+	}
+	// Before binding `void` to the TV's Instance, rescue any function
+	// whose Throws field is exactly that TV: replace it with `never` so
+	// the throws position doesn't inherit the void from the shared TV.
+	// (Return position legitimately wants void; throws position wants
+	// never — these can't both be expressed via TV.Instance, so the
+	// throws field is rewritten directly.)
+	for _, funcType := range funcTypes {
+		throwsTV, ok := type_system.Prune(funcType.Throws).(*type_system.TypeVarType)
+		if !ok {
+			continue
+		}
+		if simplifyToVoid.Contains(throwsTV.ID) {
+			funcType.Throws = type_system.NewNeverType(nil)
+		}
+	}
+	for id := range simplifyToVoid {
+		sigVars[id].Instance = type_system.NewVoidType(nil)
 	}
 
-	// Create type params and bind each unresolved type var
-	newTypeParams := make([]*type_system.TypeParam, len(order))
+	// Seed name collisions from every function's existing type params so we
+	// pick a unique T-name across the group.
+	existingNames := set.NewSet[string]()
+	for _, funcType := range funcTypes {
+		for _, tp := range funcType.TypeParams {
+			existingNames.Add(tp.Name)
+		}
+	}
+
+	// One TypeParam per unique unresolved type var across the group (minus
+	// those simplified to void). The TypeRefType bound to the type var
+	// resolves by name in whichever function it appears in, and each
+	// function's TypeParams list below carries a reference to the same
+	// TypeParam object.
+	typeParams := make(map[int]*type_system.TypeParam, len(sigVars))
 	nameIndex := 0
-	for i, id := range order {
-		tv := vars[id]
+	for _, id := range sigOrder {
+		if simplifyToVoid.Contains(id) {
+			continue
+		}
+		tv := sigVars[id]
 		name := fmt.Sprintf("T%d", nameIndex)
-		for existingNames[name] {
+		for existingNames.Contains(name) {
 			nameIndex++
 			name = fmt.Sprintf("T%d", nameIndex)
 		}
 		nameIndex++
-		existingNames[name] = true
+		existingNames.Add(name)
 		tp := &type_system.TypeParam{
 			Name:       name,
 			Constraint: tv.Constraint,
 			Default:    tv.Default,
 		}
-		newTypeParams[i] = tp
+		typeParams[id] = tp
 
-		// Bind the type var to a TypeRefType referencing the new type param.
-		// All existing references to this type var will resolve via Prune.
+		// Bind the TV in place rather than walking each function's type
+		// tree to substitute references. Every consumer of a type goes
+		// through Prune, which follows tv.Instance — so a single mutation
+		// here updates every reachable reference (params, return, throws,
+		// nested generics, peers in the SCC) atomically and without us
+		// having to enumerate them. A real substitution pass would also
+		// have to handle structural sharing (the same TV appears in
+		// multiple positions), avoid re-cloning unchanged subtrees, and
+		// stay in sync with collectUnresolvedTypeVars' traversal — all
+		// of which Prune-chasing gives us for free.
 		tv.Instance = type_system.NewTypeRefType(nil, name, &type_system.TypeAlias{
 			Type:        type_system.NewUnknownType(nil),
 			TypeParams:  []*type_system.TypeParam{},
@@ -607,5 +742,27 @@ func GeneralizeFuncType(funcType *type_system.FuncType) {
 		})
 	}
 
-	funcType.TypeParams = append(funcType.TypeParams, newTypeParams...)
+	// Append the relevant type params to each function in that function's
+	// own insertion order (params first, then return), skipping vars that
+	// were simplified to void and avoiding duplicates when a var appears
+	// in both params and return.
+	for i, funcType := range funcTypes {
+		fv := perFunc[i]
+		added := set.NewSet[int]()
+		var newTypeParams []*type_system.TypeParam
+		appendVar := func(id int) {
+			if simplifyToVoid.Contains(id) || added.Contains(id) {
+				return
+			}
+			added.Add(id)
+			newTypeParams = append(newTypeParams, typeParams[id])
+		}
+		for _, id := range fv.paramOrder {
+			appendVar(id)
+		}
+		for _, id := range fv.returnOrder {
+			appendVar(id)
+		}
+		funcType.TypeParams = append(funcType.TypeParams, newTypeParams...)
+	}
 }

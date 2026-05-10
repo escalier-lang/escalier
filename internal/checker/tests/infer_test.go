@@ -502,16 +502,30 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		// TODO: figure out how to infer throws types in mutually recursive functions
 		"MutualRecuriveFunctions": {
 			input: `
-				fn foo() -> number {
+				fn foo() {
 					return bar() + 1
 				}
-				fn bar() -> number {
+				fn bar() {
 					return foo() - 1
 				}
 			`,
 			expectedTypes: map[string]string{
 				"foo": "fn () -> number",
 				"bar": "fn () -> number",
+			},
+		},
+		"MutualRecuriveFunctionsWithoutReturnsVoid": {
+			input: `
+				fn foo() {
+					return bar()
+				}
+				fn bar() {
+					return foo()
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn () -> void",
+				"bar": "fn () -> void",
 			},
 		},
 		"UnionTypeVariable": {
@@ -2509,6 +2523,49 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 					ID:       2,
 					Path:     "bar.esc",
 					Contents: `type Bar = { foo: Foo }`,
+				},
+			},
+		},
+		// Cross-file equivalents of TestCheckModuleNoErrors's
+		// MutualRecuriveFunctions / ...WithoutReturnsVoid. These exercise the
+		// same generalizeFuncTypes batching path through InferComponent's
+		// dep-graph SCC handling, but with the recursive peers in separate
+		// source files. Type assertions are deferred until this harness grows
+		// an expectedTypes mechanism; for now we verify the SCC infers
+		// without errors.
+		"MutualRecuriveFunctionsCrossFile": {
+			sources: []*ast.Source{
+				{
+					ID:   1,
+					Path: "foo.esc",
+					Contents: `fn foo() {
+						return bar() + 1
+					}`,
+				},
+				{
+					ID:   2,
+					Path: "bar.esc",
+					Contents: `fn bar() {
+						return foo() - 1
+					}`,
+				},
+			},
+		},
+		"MutualRecuriveFunctionsCrossFileWithoutReturnsVoid": {
+			sources: []*ast.Source{
+				{
+					ID:   1,
+					Path: "foo.esc",
+					Contents: `fn foo() {
+						return bar()
+					}`,
+				},
+				{
+					ID:   2,
+					Path: "bar.esc",
+					Contents: `fn bar() {
+						return foo()
+					}`,
 				},
 			},
 		},
