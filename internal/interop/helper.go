@@ -650,10 +650,17 @@ func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
 	// Create a function expression for the method
 	funcExpr := ast.NewFuncExpr(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(md.Span()), md.Modifiers.Async, nil, md.Span())
 
+	// Classify receiver mutability. Static methods have no receiver.
+	var receiver *ast.MethodReceiver
+	if !md.Modifiers.Static {
+		result := Classify(ClassifyContext{Member: md})
+		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: md.Span()}
+	}
+
 	return &ast.MethodElem{
 		Name:     name,
 		Fn:       funcExpr,
-		Receiver: nil, // Not determined from .d.ts
+		Receiver: receiver,
 		Static:   md.Modifiers.Static,
 		Private:  md.Modifiers.Private,
 		Span_:    md.Span(),
