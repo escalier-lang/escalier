@@ -35,9 +35,11 @@ writing code that depends on either.
   [expect.go](../../internal/parser/expect.go)). Tests pass; no
   conflicts with existing identifiers.
 - **`overrides/` discovery rule** specified in
-  [requirements.md](requirements.md) — three-tier walk (shipped →
-  dep `node_modules/*/overrides/` → consuming project), recursive
-  within each, subdirectory layout has no semantic effect.
+  [requirements.md](requirements.md) — three-location walk (shipped
+  tier 4 → dep `node_modules/*/overrides/` tier 1a → consuming
+  project tier 1b), recursive within each, subdirectory layout has
+  no semantic effect. "Root of a package" means the directory
+  containing `package.json`.
 - **Merge-semantics doc** —
   [override_merge_semantics.md](override_merge_semantics.md) covers
   member-presence rules, overload collapsing, override-defined
@@ -52,8 +54,8 @@ writing code that depends on either.
   unescape on consume.
 - **Resolution-order fixture** —
   [fixtures/interop_mutability/](../../fixtures/interop_mutability/)
-  exercises tiers 2–8. Captures current behavior; will flip to
-  passing as later phases land.
+  exercises tiers 2–8 (everything below user overrides). Captures
+  current behavior; will flip to passing as later phases land.
 - **Override-merge fixture placeholder** —
   [fixtures/interop_mutability/overrides/example.esc.future](../../fixtures/interop_mutability/overrides/example.esc.future)
   shows the intended syntax. Renamed from `.esc` so the build
@@ -68,12 +70,30 @@ in the grammar. This is its own self-contained task.
 
 - Add `declare module "<name>" { <decl>* }` to the grammar.
 - Add `declare global { <decl>* }` to the grammar.
+- Add `declare namespace <ident> { <decl>* }` to the grammar
+  (supports nesting per the requirements).
 - Accept an optional `override` prefix on top-level `declare module`
-  / `declare global` and on the existing top-level declare forms
-  (`declare class`, `declare interface`, `declare fn`, `declare
-  type`, `declare val`).
+  / `declare global` / `declare namespace` and on the existing
+  top-level declare forms (`declare class`, `declare interface`,
+  `declare fn`, `declare type`, `declare val`).
+- Inside an `override declare ...` block, treat `override` and
+  `declare` as implied on contained declarations and reject them as
+  parse errors if repeated (matches TS's `declare module` behavior).
+- Accept computed member names in override class/interface/namespace
+  bodies in two shapes:
+  - Qualified identifier path (e.g. `[Symbol.iterator]`,
+    `[MyLib.tag]`, `[a.b.c.key]`).
+  - String-literal key (e.g. `["foo bar"]`).
+  Other expression shapes are rejected at parse time.
 - Plumb an `Override bool` flag through the affected AST nodes
   alongside the existing `Declare bool`.
+- **Future-extensibility note.** The function-signature grammar used
+  inside override blocks must be the full Escalier signature
+  grammar, not a stripped-down receiver-only subset — so lifetime
+  parameters and `throws` clauses can be added in later phases
+  without a syntax break (per requirements §"Scope and future
+  extensibility"). Concretely: the parser must already accept these
+  forms, even though Phase 1 only consumes the receiver mode.
 - Once parsing works, rename
   `fixtures/interop_mutability/overrides/example.esc.future` to
   `.esc` and snapshot.
@@ -95,14 +115,16 @@ behavior (so output is unchanged).
   the uncertainty warning.
 - Route every place in `interop/decl.go` and `interop/helper.go` that
   currently decides method/parameter mutability through `Classify`.
-  At this phase the function only implements tiers 2 (the existing
-  `readonly`-property handling) and 8 (default to mutating).
+  At this phase the function only implements tier 3 (the existing
+  `readonly`-property handling, which is part of "Explicit author
+  signals" in the renumbered ladder) and tier 8 (default to
+  mutating).
 - Snapshot tests in `internal/interop/` verify no behavior change.
 
 Exit criteria: `Classify` is the single decision point; `go test ./...`
 green with no snapshot churn.
 
-## Phase 2 — Strong signals (resolution-order tier 2)
+## Phase 2 — Strong signals (resolution-order tier 3)
 
 Goal: cover all explicit author signals that don't require external
 data.
@@ -110,7 +132,7 @@ data.
 Implement, in `internal/interop/mutability.go`, classification for:
 
 - `Readonly<T>` / `ReadonlyArray<T>` / `ReadonlySet<T>` /
-  `ReadonlyMap<T>` — drives tier-2 classification. Requires
+  `ReadonlyMap<T>` — drives tier-3 classification. Requires
   `dts_parser` to expose the unresolved type-reference name; extend if
   not already present.
 - `readonly` `this` parameter — requires `dts_parser` to model the
@@ -131,42 +153,75 @@ Tests: extend the Phase 0 fixtures; add table-driven unit tests in
 Exit criteria: every symbol in the Phase 0 strong-signals fixture
 classifies correctly, with `source = strong-signal`.
 
-## Phase 3 — Override file format & loader
+## Phase 3 — Override file format, loader & merge
 
-Goal: build the loader that Phase 4 (shipped overrides) and the user
-override file feature both depend on.
+Goal: build the eager-merge pipeline (Approach A, per requirements
+§"Implementation decision") that Phase 4 (shipped overrides) and the
+user override file feature both depend on.
 
 - Implement the format chosen in Phase 0 in a new
   `internal/interop/overrides/` subpackage (or inline if small).
-- Resolver: given a fully-qualified TS symbol path
-  (`module#Class.prototype.method`), return the override entry or
-  nothing.
-- Load priority: user overrides > shipped overrides (matches
-  resolution-order tiers 3 and 4).
-- `Classify` consults the resolver between tiers 2 and 5.
+- **Discovery & loading.** Walk the three locations in the
+  precedence order from requirements:
+  - Tier 4: shipped overrides bundled with the compiler.
+  - Tier 1a: `node_modules/<dep>/overrides/**/*.esc`.
+  - Tier 1b: consuming project's own `overrides/**/*.esc`.
+  Within tier 1, 1b wins over 1a on conflict; both win over
+  tier 4. Within a tier, duplicate-member declarations across files
+  are a hard error (per `override_merge_semantics.md`).
+- **Eager merge pass.** After both `.d.ts` and override `.esc` are
+  parsed, run a merge keyed on `(module/namespace, qualified-name,
+  kind)` that produces a fresh effective type. Originals are not
+  mutated. Apply per-member rules from
+  `override_merge_semantics.md`: member-presence (override on a
+  nonexistent member is an error), overload collapsing,
+  override-defined overloads, static/instance separation,
+  getter/setter independence, generics arity matching.
+- **Signature-shape consistency check.** During merge, verify that
+  every override signature matches the upstream `.d.ts`'s arity,
+  non-receiver parameter types, and return type (per requirements
+  §"Consistency with upstream `.d.ts`"). Mismatch is a hard merge
+  error reporting the specific member and which field disagrees.
+  This runs from Phase 1 onward even though Phase 1 only consumes
+  the receiver mode.
+- **Provenance.** Every effective type records its provenance —
+  origin `.d.ts` location plus the specific override entries that
+  contributed — for use in diagnostics and the uncertainty warning.
+- **Resolver.** Given a fully-qualified TS symbol path
+  (`module#Class.prototype.method`), return the merged effective
+  type plus the source tier of the mutability classification.
+- `Classify` consults user overrides first (tier 1) and shipped
+  overrides at tier 4; the existing tier-3 strong signals fit
+  between them.
 
-Tests: load a synthetic override file in tests, verify resolver order
-and that user overrides win over shipped.
+Tests:
+- Load a synthetic override file; verify merge result matches a
+  hand-written expected effective type.
+- Verify tier 1b wins over tier 1a, and both win over tier 4.
+- Verify hard errors on: nonexistent-member override; arity
+  mismatch; param-type mismatch; return-type mismatch; duplicate
+  member declarations across files in the same tier.
+- Verify overload collapsing and override-defined-overload semantics.
 
-Exit criteria: loader covered by unit tests; `Classify` consults it but
-no overrides are shipped yet.
+Exit criteria: loader + merge covered by unit tests; `Classify`
+consults the merged store but no overrides are shipped yet.
 
 ## Phase 4 — Shipped overrides
 
 Goal: author the data tables that the resolver loads at startup.
 
-Two sub-tasks, parallelizable:
+Three sub-tasks, the first two parallelizable:
 
-- **Standard library** — classes that don't ship a `Readonly*`
-  variant in TypeScript's lib files and therefore can't be classified
-  by tier 2 alone: `Date`, `RegExp`, `Promise`, `Error`, typed arrays
+- **Built-ins** — classes that don't ship a `Readonly*` variant in
+  TypeScript's lib files and therefore can't be classified by tier
+  3 alone: `Date`, `RegExp`, `Promise`, `Error`, typed arrays
   (`Int8Array` etc.), `URL`, `URLSearchParams`, `WeakRef`, `WeakMap`,
   `WeakSet`, iterator / generator protocols. Source of truth: MDN.
   Coverage tracked in a checklist in this file as entries are added.
 
   `Array` / `Map` / `Set` are **not** in this list — TypeScript
   ships `ReadonlyArray` / `ReadonlyMap` / `ReadonlySet` alongside
-  the mutable variants, so principle #2 (tier 2) handles them
+  the mutable variants, so principle #2 (tier 3) handles them
   directly. The ES2023 `toSorted` / `toReversed` / `toSpliced` /
   `with` methods appear on `ReadonlyArray` in lib.es2023, so they
   classify as non-mutating without an override entry.
@@ -176,7 +231,7 @@ Two sub-tasks, parallelizable:
   revision lives in that revision's directory:
 
   ```
-  overrides/stdlib/
+  overrides/builtins/
     es5/
       Date.esc
       RegExp.esc
@@ -191,7 +246,7 @@ Two sub-tasks, parallelizable:
     es2021/
       WeakRef.esc
     es2023/
-      // (none today — Array additions are tier 2)
+      // (none today — Array additions are tier 3)
     dom/
       URL.esc
       URLSearchParams.esc
@@ -205,15 +260,32 @@ Two sub-tasks, parallelizable:
   `lib.dom.d.ts`.
 - **FP / immutability libraries** (principle #5) — Ramda, fp-ts,
   Effect, Immutable.js, lodash/fp. For these, default every method to
-  non-mutating in receiver and arguments; one blanket entry per
-  module rather than per-method.
+  non-mutating in receiver and arguments; one blanket entry
+  (`@all_pure` per `override_merge_semantics.md`) per module rather
+  than per-method.
+
+- **Consistency test against upstream `.d.ts`.** Test in the
+  compiler suite that runs over every shipped override entry where
+  a corresponding upstream `.d.ts` exists:
+  - Built-in symbols → bundled TS lib `.d.ts` set, version pinned
+    to the compiler's TS lib version.
+  - FP / immutability libraries → corresponding `@types/*` package
+    (or the library's own bundled types), pinned alongside the
+    shipped override.
+  For each entry, look up the upstream declaration, compare
+  non-receiver arity / parameter types / return type under the
+  same mapping the merge uses, and fail the build on divergence.
+  Libraries that ship no upstream types are exempt by definition.
+  Bumping any pinned version surfaces drift as a deliberate
+  fix-up step.
 
 Tests: fixture per library that imports a representative subset and
-checks the classification.
+checks the classification; the consistency test itself runs as part
+of `go test ./...`.
 
-Exit criteria: stdlib counter-examples (`Date.setHours` mutates,
+Exit criteria: built-in counter-examples (`Date.setHours` mutates,
 `toSorted` doesn't, `Object.assign` mutates target) all classify
-correctly.
+correctly; consistency test green against pinned upstream versions.
 
 ## Phase 5 — Heuristics (tiers 5–7)
 
@@ -245,17 +317,59 @@ Goal: round-trip Escalier types through `.d.ts` losslessly.
   the Escalier printer for the value.
 - **Consume side** in `internal/interop/mutability.go`: parse
   `@esctype` from the leading TSDoc block, run the value through the
-  Escalier type parser, return as the tier-1 classification (and as
-  the full Escalier type, bypassing every other inference).
+  Escalier type parser, return as the tier-2 classification (and as
+  the full Escalier type, bypassing tiers 3–8). User overrides
+  (tier 1) still outrank `@esctype` — the override merge runs
+  first, and `@esctype` is consulted only if no user override
+  matched. Hand-authored `@esctype` on a TS-author-written `.d.ts`
+  is consumed identically to round-tripped tags.
 - Ship a `tsdoc.json` template documenting `@esctype` so consumers'
   TSDoc tooling doesn't flag it as unknown.
 - Round-trip fixture: `.esc` → `.d.ts` → consumed back as Escalier;
   diff the two type printouts, expect identical.
+- User-override-beats-`@esctype` fixture: a vendored `.d.ts` with
+  an `@esctype` tag plus a user override for the same symbol;
+  verify the user override wins and the symbol is classified as
+  explicit (not uncertain).
 
-Exit criteria: round-trip fixture passes; classification tier 1 wired
-in.
+Exit criteria: round-trip fixture passes; user-override-precedence
+fixture passes; classification tier 2 wired in.
 
-## Phase 7 — Uncertainty warning
+## Phase 7 — `implements` mutability conformance
+
+Goal: enforce that a class implementing an interface matches the
+interface's mutability annotations on each implemented method (per
+requirements §"Policy decisions" — `implements` requires mutability
+conformance).
+
+- In `internal/checker/`, at the point where `implements` clauses
+  are resolved, walk each interface member and find the
+  corresponding class member.
+- Compare receiver mutability (`self` vs `mut self`) post-merge —
+  i.e. after override resolution and `@esctype` consumption have
+  produced the effective type for both class and interface.
+- On mismatch, emit a hard conformance error reporting which member
+  diverges and which side has which annotation. Same error class as
+  return-type / arity mismatch.
+- Member resolution itself is unchanged: `getObjectAccess` still
+  doesn't walk `Implements`. This phase only adds a check, not new
+  resolution behavior.
+- Where the class or interface side gets its mutability from a
+  heuristic (tiers 5–7), the check still runs against the resolved
+  classification. This is the one place a heuristic can produce a
+  hard error rather than the uncertainty warning; the diagnostic
+  should suggest adding an explicit signal (override entry,
+  `@esctype`, or `readonly this`) on the side that's wrong.
+
+Tests: fixtures covering (a) class & interface agree, (b) class
+mutates but interface declares `self` — error, (c) reverse, (d)
+heuristic-classified mismatch — error with suggested fix in
+diagnostic.
+
+Exit criteria: conformance check is on by default (not gated by the
+uncertainty flag); fixtures pass.
+
+## Phase 8 — Uncertainty warning
 
 Goal: opt-in warning when an immutable-receiver call relies on a
 heuristic.
@@ -273,18 +387,22 @@ Tests: fixture-driven, both with and without the flag.
 Exit criteria: warning fires only on heuristic-classified non-mutating
 calls; never fires on `@esctype`, strong signals, or overrides.
 
-## Phase 8 — Argument mutation refinement (deferred)
+## Phase 9 — Argument mutation refinement (deferred)
 
 Goal: tighten the "all params default to mutating" decision via
 overrides, using MDN as source of truth.
 
 - Extend the override schema with per-parameter mutability entries.
-- Backfill the standard-library override file with the documented
-  cases (`Array.prototype.map` callback receiver: non-mutating;
+- Backfill the built-in override file with the documented cases
+  (`Array.prototype.map` callback receiver: non-mutating;
   `Object.assign` target: mutating; etc.).
 
 Deferred from the initial milestone; tracked here so the schema in
-Phase 0 leaves room for it.
+Phase 0 leaves room for it. Lifetime annotations and `throws`
+clauses (per requirements §"Scope and future extensibility") are
+also deferred follow-ons that reuse the merge machinery; they slot
+in here as additional override-payload fields rather than new
+top-level forms.
 
 ## Cross-cutting concerns
 
@@ -299,12 +417,18 @@ Phase 0 leaves room for it.
 
 ## Open implementation questions
 
-- Should the override file live in the consuming project's repo, in
-  `node_modules/<lib>/`, or both? Probably both, with an explicit
-  precedence (consuming-repo wins).
 - `*/` inside a string literal in an `@esctype` value would prematurely
   terminate the surrounding `/* */` comment. Settle in Phase 0:
   `*\/` escape on emit, or use line-comment blocks where supported.
 - Does the Escalier type printer already produce a parseable
   representation, or do we need a stable serialization format
   separate from the human-readable one? Worth checking before Phase 6.
+- How should the consistency test (Phase 4) source the pinned
+  `@types/*` tarballs at test time — vendored under `testdata/`,
+  fetched once and cached, or shelled out to `npm pack`? Pick during
+  Phase 4; vendoring is the simplest default but inflates repo size.
+
+(Resolved: override-file location precedence — see requirements
+§"Override file format". Tier 1b consuming-project wins over
+tier 1a `node_modules/<dep>/overrides/`; both win over tier 4
+shipped.)
