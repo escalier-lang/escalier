@@ -67,6 +67,12 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl, enclosingStmt ast.Stmt) 
 		panic("TODO: infer class declaration")
 	case *ast.EnumDecl:
 		return c.inferEnumDecl(ctx, decl)
+	case *ast.DeclareModuleDecl, *ast.DeclareGlobalDecl:
+		// Ambient block declarations (`declare module "x" { ... }` /
+		// `declare global { ... }`, optionally `override`-prefixed) are
+		// recognized by the parser but not yet processed by the checker.
+		// Treat as a no-op so they don't crash the type-inference pass.
+		return []Error{}
 	default:
 		panic(fmt.Sprintf("Unknown declaration type: %T", decl))
 	}

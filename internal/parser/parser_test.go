@@ -3,12 +3,15 @@ package parser
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseModuleNoErrors(t *testing.T) {
@@ -227,6 +230,69 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"DeclareModuleEmpty": {
+			input: `declare module "fp-ts" { }`,
+		},
+		"DeclareModuleWithDecls": {
+			input: `
+				declare module "fp-ts" {
+					declare fn pipe(x: number) -> number
+					declare class Foo { }
+				}
+			`,
+		},
+		"DeclareGlobalEmpty": {
+			input: `declare global { }`,
+		},
+		"DeclareGlobalWithClass": {
+			input: `
+				declare global {
+					declare class Date {
+						setHours(mut self, hours: number) -> number,
+					}
+				}
+			`,
+		},
+		"OverrideDeclareModule": {
+			input: `
+				override declare module "ramda" {
+					declare fn map() -> number
+				}
+			`,
+		},
+		"OverrideDeclareGlobal": {
+			input: `
+				override declare global {
+					declare class Foo { }
+				}
+			`,
+		},
+		"OverrideDeclareClass": {
+			input: `override declare class Date { setHours(mut self, hours: number) -> number, }`,
+		},
+		"OverrideDeclareFn": {
+			input: `override declare fn pipe(x: number) -> number`,
+		},
+		"OverrideDeclareInterface": {
+			input: `override declare interface Foo { x: number }`,
+		},
+		"OverrideDeclareType": {
+			input: `override declare type Foo = number`,
+		},
+		"OverrideDeclareVal": {
+			input: `override declare val x: number`,
+		},
+	}
+
+	// Pull in the override-file fixture so a parse failure in
+	// fixtures/interop_mutability/overrides/example.esc surfaces here.
+	repoRoot, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	exampleBytes, err := os.ReadFile(filepath.Join(repoRoot,
+		"fixtures", "interop_mutability", "overrides", "example.esc"))
+	require.NoError(t, err)
+	tests["InteropMutabilityOverrideExample"] = struct{ input string }{
+		input: string(exampleBytes),
 	}
 
 	for name, test := range tests {
@@ -252,6 +318,107 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			}
 			assert.Len(t, errors, 0)
+		})
+	}
+}
+
+func TestParseDeclareBlockErrors(t *testing.T) {
+	tests := map[string]struct {
+		input         string
+		expectedError string
+	}{
+		"ExportDeclareModule": {
+			input:         `export declare module "x" { }`,
+			expectedError: "'export' is not allowed before 'declare module'",
+		},
+		"ExportDeclareGlobal": {
+			input:         `export declare global { }`,
+			expectedError: "'export' is not allowed before 'declare global'",
+		},
+		"ExportOverrideDeclareModule": {
+			input:         `export override declare module "x" { }`,
+			expectedError: "'export' is not allowed before 'declare module'",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			_, errors := parser.ParseScript()
+
+			require.NotEmpty(t, errors, "expected parse errors")
+			found := false
+			for _, e := range errors {
+				if e.Message == test.expectedError {
+					found = true
+					break
+				}
+			}
+			if !found {
+				msgs := make([]string, len(errors))
+				for i, e := range errors {
+					msgs[i] = e.Message
+				}
+				t.Fatalf("expected error %q, got %v", test.expectedError, msgs)
+			}
+		})
+	}
+}
+
+func TestParseOverrideDeclareBlockPropagates(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"OverrideDeclareModulePropagates": {
+			input: `
+				override declare module "ramda" {
+					declare fn map() -> number
+				}
+			`,
+		},
+		"OverrideDeclareGlobalPropagates": {
+			input: `
+				override declare global {
+					declare class Foo { }
+				}
+			`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			module, errors := parser.ParseScript()
+			require.Empty(t, errors, "expected no parse errors")
+			require.NotEmpty(t, module.Stmts)
+
+			declStmt, ok := module.Stmts[0].(*ast.DeclStmt)
+			require.True(t, ok, "expected DeclStmt")
+
+			var inner []ast.Decl
+			switch outer := declStmt.Decl.(type) {
+			case *ast.DeclareModuleDecl:
+				assert.True(t, outer.Override(), "outer Override() should be true")
+				inner = outer.Decls
+			case *ast.DeclareGlobalDecl:
+				assert.True(t, outer.Override(), "outer Override() should be true")
+				inner = outer.Decls
+			default:
+				t.Fatalf("expected DeclareModuleDecl/DeclareGlobalDecl, got %T", declStmt.Decl)
+			}
+
+			require.NotEmpty(t, inner)
+			for i, d := range inner {
+				assert.True(t, d.Override(), "inner decl %d Override() should be true", i)
+			}
 		})
 	}
 }

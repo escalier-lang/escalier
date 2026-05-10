@@ -6,6 +6,8 @@ type DeclGetters interface {
 	Export() bool
 	SetExport(bool)
 	Declare() bool
+	Override() bool
+	SetOverride(bool)
 	Provenance() provenance.Provenance
 	SetProvenance(p provenance.Provenance)
 }
@@ -24,6 +26,8 @@ func (*TypeDecl) isDecl()             {}
 func (*InterfaceDecl) isDecl()        {}
 func (*EnumDecl) isDecl()             {}
 func (*ExportAssignmentStmt) isDecl() {}
+func (*DeclareModuleDecl) isDecl()    {}
+func (*DeclareGlobalDecl) isDecl()    {}
 
 type VariableKind int
 
@@ -39,6 +43,7 @@ type VarDecl struct {
 	Init         Expr    // optional
 	export       bool
 	declare      bool
+	override     bool
 	span         Span
 	InferredType Type // optional, used to store the inferred pattern type
 	provenance   provenance.Provenance
@@ -65,10 +70,12 @@ func NewVarDecl(
 		provenance:   nil,
 	}
 }
-func (d *VarDecl) Export() bool      { return d.export }
-func (d *VarDecl) SetExport(e bool)  { d.export = e }
-func (d *VarDecl) Declare() bool     { return d.declare }
-func (d *VarDecl) Span() Span    { return d.span }
+func (d *VarDecl) Export() bool       { return d.export }
+func (d *VarDecl) SetExport(e bool)   { d.export = e }
+func (d *VarDecl) Declare() bool      { return d.declare }
+func (d *VarDecl) Override() bool     { return d.override }
+func (d *VarDecl) SetOverride(o bool) { d.override = o }
+func (d *VarDecl) Span() Span         { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
 		d.Pattern.Accept(v)
@@ -105,6 +112,7 @@ type FuncDecl struct {
 	Body       *Block // optional
 	export     bool
 	declare    bool
+	override   bool
 	span       Span
 	provenance provenance.Provenance
 }
@@ -139,10 +147,12 @@ func NewFuncDecl(
 		provenance: nil,
 	}
 }
-func (d *FuncDecl) Export() bool      { return d.export }
-func (d *FuncDecl) SetExport(e bool)  { d.export = e }
-func (d *FuncDecl) Declare() bool     { return d.declare }
-func (d *FuncDecl) Span() Span    { return d.span }
+func (d *FuncDecl) Export() bool       { return d.export }
+func (d *FuncDecl) SetExport(e bool)   { d.export = e }
+func (d *FuncDecl) Declare() bool      { return d.declare }
+func (d *FuncDecl) Override() bool     { return d.override }
+func (d *FuncDecl) SetOverride(o bool) { d.override = o }
+func (d *FuncDecl) Span() Span         { return d.span }
 func (d *FuncDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
 		for _, param := range d.Params {
@@ -170,6 +180,7 @@ type TypeDecl struct {
 	TypeAnn    TypeAnn
 	export     bool
 	declare    bool
+	override   bool
 	span       Span
 	provenance provenance.Provenance
 }
@@ -185,10 +196,12 @@ func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, 
 		provenance: nil,
 	}
 }
-func (d *TypeDecl) Export() bool      { return d.export }
-func (d *TypeDecl) SetExport(e bool)  { d.export = e }
-func (d *TypeDecl) Declare() bool     { return d.declare }
-func (d *TypeDecl) Span() Span    { return d.span }
+func (d *TypeDecl) Export() bool       { return d.export }
+func (d *TypeDecl) SetExport(e bool)   { d.export = e }
+func (d *TypeDecl) Declare() bool      { return d.declare }
+func (d *TypeDecl) Override() bool     { return d.override }
+func (d *TypeDecl) SetOverride(o bool) { d.override = o }
+func (d *TypeDecl) Span() Span         { return d.span }
 func (d *TypeDecl) Accept(v Visitor) {
 	// TODO: visit type params
 	if v.EnterDecl(d) {
@@ -213,6 +226,7 @@ type InterfaceDecl struct {
 	TypeAnn        *ObjectTypeAnn
 	export         bool
 	declare        bool
+	override       bool
 	span           Span
 	provenance     provenance.Provenance
 }
@@ -230,10 +244,12 @@ func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeAnn, typeParams []*
 		provenance:     nil,
 	}
 }
-func (d *InterfaceDecl) Export() bool      { return d.export }
-func (d *InterfaceDecl) SetExport(e bool)  { d.export = e }
-func (d *InterfaceDecl) Declare() bool     { return d.declare }
-func (d *InterfaceDecl) Span() Span    { return d.span }
+func (d *InterfaceDecl) Export() bool       { return d.export }
+func (d *InterfaceDecl) SetExport(e bool)   { d.export = e }
+func (d *InterfaceDecl) Declare() bool      { return d.declare }
+func (d *InterfaceDecl) Override() bool     { return d.override }
+func (d *InterfaceDecl) SetOverride(o bool) { d.override = o }
+func (d *InterfaceDecl) Span() Span         { return d.span }
 func (d *InterfaceDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
 		for _, tp := range d.TypeParams {
@@ -313,6 +329,7 @@ type EnumDecl struct {
 	Elems      []EnumElem // variants and spreads
 	export     bool
 	declare    bool
+	override   bool
 	span       Span
 	provenance provenance.Provenance
 }
@@ -328,10 +345,12 @@ func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export,
 		provenance: nil,
 	}
 }
-func (d *EnumDecl) Export() bool      { return d.export }
-func (d *EnumDecl) SetExport(e bool)  { d.export = e }
-func (d *EnumDecl) Declare() bool     { return d.declare }
-func (d *EnumDecl) Span() Span    { return d.span }
+func (d *EnumDecl) Export() bool       { return d.export }
+func (d *EnumDecl) SetExport(e bool)   { d.export = e }
+func (d *EnumDecl) Declare() bool      { return d.declare }
+func (d *EnumDecl) Override() bool     { return d.override }
+func (d *EnumDecl) SetOverride(o bool) { d.override = o }
+func (d *EnumDecl) Span() Span         { return d.span }
 func (d *EnumDecl) Accept(v Visitor) {
 	// TODO: visit type params
 	if v.EnterDecl(d) {
@@ -362,6 +381,7 @@ func (d *EnumDecl) SetProvenance(p provenance.Provenance) {
 type ExportAssignmentStmt struct {
 	Name       *Ident
 	declare    bool
+	override   bool
 	span       Span
 	provenance provenance.Provenance
 }
@@ -374,10 +394,12 @@ func NewExportAssignmentStmt(name *Ident, declare bool, span Span) *ExportAssign
 		provenance: nil,
 	}
 }
-func (e *ExportAssignmentStmt) Export() bool                          { return true } // Always exported
-func (e *ExportAssignmentStmt) SetExport(bool)                        {}              // No-op, always exported
-func (e *ExportAssignmentStmt) Declare() bool                         { return e.declare }
-func (e *ExportAssignmentStmt) Span() Span                            { return e.span }
+func (e *ExportAssignmentStmt) Export() bool       { return true } // Always exported
+func (e *ExportAssignmentStmt) SetExport(bool)     {}              // No-op, always exported
+func (e *ExportAssignmentStmt) Declare() bool      { return e.declare }
+func (e *ExportAssignmentStmt) Override() bool     { return e.override }
+func (e *ExportAssignmentStmt) SetOverride(o bool) { e.override = o }
+func (e *ExportAssignmentStmt) Span() Span         { return e.span }
 func (e *ExportAssignmentStmt) Accept(v Visitor) {
 	if v.EnterDecl(e) {
 		// Nothing to walk - ExportAssignmentStmt has no child nodes to visit
@@ -386,3 +408,75 @@ func (e *ExportAssignmentStmt) Accept(v Visitor) {
 }
 func (e *ExportAssignmentStmt) Provenance() provenance.Provenance     { return e.provenance }
 func (e *ExportAssignmentStmt) SetProvenance(p provenance.Provenance) { e.provenance = p }
+
+// DeclareModuleDecl represents `declare module "<name>" { <decl>* }`,
+// optionally prefixed by `override`. Used for ambient module
+// declarations (the override-file format relies on this).
+type DeclareModuleDecl struct {
+	Name       *StrLit // module name as a string literal
+	Decls      []Decl
+	override   bool
+	span       Span
+	provenance provenance.Provenance
+}
+
+func NewDeclareModuleDecl(name *StrLit, decls []Decl, override bool, span Span) *DeclareModuleDecl {
+	return &DeclareModuleDecl{
+		Name:       name,
+		Decls:      decls,
+		override:   override,
+		span:       span,
+		provenance: nil,
+	}
+}
+func (d *DeclareModuleDecl) Export() bool       { return false }
+func (d *DeclareModuleDecl) SetExport(bool)     {}
+func (d *DeclareModuleDecl) Declare() bool      { return true }
+func (d *DeclareModuleDecl) Override() bool     { return d.override }
+func (d *DeclareModuleDecl) SetOverride(o bool) { d.override = o }
+func (d *DeclareModuleDecl) Span() Span         { return d.span }
+func (d *DeclareModuleDecl) Accept(v Visitor) {
+	if v.EnterDecl(d) {
+		for _, inner := range d.Decls {
+			inner.Accept(v)
+		}
+	}
+	v.ExitDecl(d)
+}
+func (d *DeclareModuleDecl) Provenance() provenance.Provenance     { return d.provenance }
+func (d *DeclareModuleDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }
+
+// DeclareGlobalDecl represents `declare global { <decl>* }`, optionally
+// prefixed by `override`. Used for ambient augmentations of the global
+// scope.
+type DeclareGlobalDecl struct {
+	Decls      []Decl
+	override   bool
+	span       Span
+	provenance provenance.Provenance
+}
+
+func NewDeclareGlobalDecl(decls []Decl, override bool, span Span) *DeclareGlobalDecl {
+	return &DeclareGlobalDecl{
+		Decls:      decls,
+		override:   override,
+		span:       span,
+		provenance: nil,
+	}
+}
+func (d *DeclareGlobalDecl) Export() bool       { return false }
+func (d *DeclareGlobalDecl) SetExport(bool)     {}
+func (d *DeclareGlobalDecl) Declare() bool      { return true }
+func (d *DeclareGlobalDecl) Override() bool     { return d.override }
+func (d *DeclareGlobalDecl) SetOverride(o bool) { d.override = o }
+func (d *DeclareGlobalDecl) Span() Span         { return d.span }
+func (d *DeclareGlobalDecl) Accept(v Visitor) {
+	if v.EnterDecl(d) {
+		for _, inner := range d.Decls {
+			inner.Accept(v)
+		}
+	}
+	v.ExitDecl(d)
+}
+func (d *DeclareGlobalDecl) Provenance() provenance.Provenance     { return d.provenance }
+func (d *DeclareGlobalDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }

@@ -142,7 +142,7 @@ func (p *Parser) stmt() ast.Stmt {
 	case isDataClass,
 		token.Type == Async, token.Type == Fn, token.Type == Var, token.Type == Val,
 		token.Type == Type, token.Type == Interface, token.Type == Enum,
-		token.Type == Declare, token.Type == Export, token.Type == Class:
+		token.Type == Declare, token.Type == Export, token.Type == Override, token.Type == Class:
 		decl := p.Decl()
 		if decl == nil {
 			return nil

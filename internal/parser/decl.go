@@ -77,22 +77,48 @@ func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypePa
 	return lifetimeParams, typeParams
 }
 
-// Decl = 'export'? 'declare'? 'async'? (varDecl | fnDecl)
+// Decl = 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)
+//      | 'override'? 'declare' 'module' StrLit '{' decl* '}'
+//      | 'override'? 'declare' 'global' '{' decl* '}'
 func (p *Parser) Decl() ast.Decl {
 	export := false
+	override := false
 	declare := false
 	async := false
 
 	token := p.lexer.next()
 	start := token.Span.Start
+	var exportSpan ast.Span
 	if token.Type == Export {
 		export = true
+		exportSpan = token.Span
+		token = p.lexer.next()
+	}
+
+	if token.Type == Override {
+		override = true
 		token = p.lexer.next()
 	}
 
 	if token.Type == Declare {
 		declare = true
 		token = p.lexer.next()
+
+		// `module "name" { ... }` and `global { ... }` are contextual:
+		// `module` and `global` are plain identifiers everywhere else, so
+		// only treat them as block headers immediately after `declare`.
+		if token.Type == Identifier && token.Value == "module" {
+			if export {
+				p.reportError(exportSpan, "'export' is not allowed before 'declare module'")
+			}
+			return p.declareModuleDecl(start, override)
+		}
+		if token.Type == Identifier && token.Value == "global" {
+			if export {
+				p.reportError(exportSpan, "'export' is not allowed before 'declare global'")
+			}
+			return p.declareGlobalDecl(start, override)
+		}
 	}
 
 	if token.Type == Async {
@@ -104,23 +130,99 @@ func (p *Parser) Decl() ast.Decl {
 		p.reportError(token.Span, "async can only be used with functions")
 	}
 
+	var decl ast.Decl
 	// nolint: exhaustive
 	switch token.Type {
 	case Val, Var:
-		return p.varDecl(start, token, export, declare)
+		decl = p.varDecl(start, token, export, declare)
 	case Fn:
-		return p.fnDecl(start, export, declare, async)
+		decl = p.fnDecl(start, export, declare, async)
 	case Type:
-		return p.typeDecl(start, export, declare)
+		decl = p.typeDecl(start, export, declare)
 	case Interface:
-		return p.interfaceDecl(start, export, declare)
+		decl = p.interfaceDecl(start, export, declare)
 	case Enum:
-		return p.enumDecl(start, export, declare)
+		decl = p.enumDecl(start, export, declare)
 	case Class:
-		return p.classDecl(start, export, declare)
+		decl = p.classDecl(start, export, declare)
 	default:
 		p.reportError(token.Span, "Unexpected token")
 		return nil
+	}
+	if decl != nil && override {
+		decl.SetOverride(true)
+	}
+	return decl
+}
+
+// declareModuleDecl parses `module "<name>" { <decl>* }` after the
+// `declare` keyword has already been consumed (along with the `module`
+// identifier). The opening identifier `module` is the current token.
+// `override` indicates whether the enclosing `Decl()` saw an `override`
+// keyword; it's stamped on the resulting decl and propagated to every
+// inner declaration in the block body.
+func (p *Parser) declareModuleDecl(start ast.Location, override bool) *ast.DeclareModuleDecl {
+	// `module` was already consumed by the caller via lexer.next().
+	nameTok := p.lexer.next()
+	var name *ast.StrLit
+	if nameTok.Type != StrLit {
+		p.reportError(nameTok.Span, "Expected string literal after 'module'")
+		name = ast.NewString("", nameTok.Span)
+	} else {
+		name = ast.NewString(nameTok.Value, nameTok.Span)
+	}
+
+	decls := p.declareBlockBody(override)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	return ast.NewDeclareModuleDecl(name, decls, override, span)
+}
+
+// declareGlobalDecl parses `global { <decl>* }` after the `declare`
+// keyword has been consumed and the `global` identifier is the current
+// token. See declareModuleDecl for the meaning of `override`.
+func (p *Parser) declareGlobalDecl(start ast.Location, override bool) *ast.DeclareGlobalDecl {
+	// `global` was already consumed by the caller via lexer.next().
+	decls := p.declareBlockBody(override)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	return ast.NewDeclareGlobalDecl(decls, override, span)
+}
+
+// declareBlockBody parses the `{ <decl>* }` body shared by
+// `declare module` and `declare global`. When `override` is true, each
+// inner decl inherits the override flag — this matches the design where
+// `override declare module / global` implies `override` on every member.
+// Returns once the next token is `}` or EOF; the caller is responsible
+// for consuming the closing brace.
+func (p *Parser) declareBlockBody(override bool) []ast.Decl {
+	p.expect(OpenBrace, AlwaysConsume)
+	decls := []ast.Decl{}
+	for {
+		select {
+		case <-p.ctx.Done():
+			return decls
+		default:
+		}
+		token := p.lexer.peek()
+		// nolint: exhaustive
+		switch token.Type {
+		case CloseBrace, EndOfFile:
+			return decls
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			continue
+		}
+		inner := p.Decl()
+		if inner == nil {
+			// Decl() always consumes at least one token before returning
+			// nil, so the loop is guaranteed to make progress.
+			continue
+		}
+		if override {
+			inner.SetOverride(true)
+		}
+		decls = append(decls, inner)
 	}
 }
 

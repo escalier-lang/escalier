@@ -190,6 +190,46 @@ func TestCheckScriptNoErrors(t *testing.T) {
 	}
 }
 
+// Regression: `declare module "..." { ... }` and `declare global { ... }`
+// at the script top level reach inferStmt -> inferDecl. Without explicit
+// cases for the new ambient block decls, inferDecl's default branch
+// panics with "Unknown declaration type".
+func TestCheckScriptDeclareBlocksAreNoOps(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"DeclareModule": {
+			input: `declare module "fp-ts" { }`,
+		},
+		"DeclareGlobal": {
+			input: `declare global { }`,
+		},
+		"OverrideDeclareModule": {
+			input: `override declare module "fp-ts" { }`,
+		},
+		"OverrideDeclareGlobal": {
+			input: `override declare global { }`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := parser.NewParser(ctx, source)
+			script, parseErrors := p.ParseScript()
+			assert.Empty(t, parseErrors)
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			_, inferErrors := c.InferScript(inferCtx, script)
+			assert.Empty(t, inferErrors)
+		})
+	}
+}
+
 func loadSchema(t *testing.T) *graphql_ast.Schema {
 	// Read schema.graphql from disk
 	schemaBytes, err := os.ReadFile("schema.graphql")
