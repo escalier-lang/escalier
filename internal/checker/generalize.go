@@ -630,6 +630,11 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 	// divergent (recursion through peers in the SCC, throws, etc.), so
 	// the generalized type parameter is unobservable and `void` is the
 	// honest signature.
+	//
+	// This applies to single-function inputs as well as SCCs: a lone
+	// function whose return type stays a free TV after inference (e.g.
+	// the body only throws and never returns) collapses to `void` rather
+	// than producing a phantom `T0` no caller can supply or observe.
 	simplifyToVoid := map[int]bool{}
 	for _, id := range globalOrder {
 		if paramVarIDs[id] {
@@ -650,6 +655,21 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		}
 		if allTopLevel {
 			simplifyToVoid[id] = true
+		}
+	}
+	// Before binding `void` to the TV's Instance, rescue any function
+	// whose Throws field is exactly that TV: replace it with `never` so
+	// the throws position doesn't inherit the void from the shared TV.
+	// (Return position legitimately wants void; throws position wants
+	// never — these can't both be expressed via TV.Instance, so the
+	// throws field is rewritten directly.)
+	for _, funcType := range funcTypes {
+		throwsTV, ok := type_system.Prune(funcType.Throws).(*type_system.TypeVarType)
+		if !ok {
+			continue
+		}
+		if simplifyToVoid[throwsTV.ID] {
+			funcType.Throws = type_system.NewNeverType(nil)
 		}
 	}
 	for id := range simplifyToVoid {
@@ -719,8 +739,6 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		for _, id := range fv.returnOrder {
 			appendVar(id)
 		}
-		if len(newTypeParams) > 0 {
-			funcType.TypeParams = append(funcType.TypeParams, newTypeParams...)
-		}
+		funcType.TypeParams = append(funcType.TypeParams, newTypeParams...)
 	}
 }

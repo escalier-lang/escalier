@@ -1694,6 +1694,12 @@ func (c *Checker) InferComponent(
 	// components this is equivalent to the old per-decl GeneralizeFuncType
 	// call; for mutually recursive groups it ensures shared unresolved type
 	// vars become a single generalized parameter (issue #589).
+	//
+	// Ordering note: generalization is deferred until *after* every decl
+	// in the component has been inferred (and its call sites resolved)
+	// but *before* the Phase 8.7 lifetime fixed-point loop below — that
+	// loop's ReinferLifetimes calls expect peer signatures to already be
+	// generalized. Don't move this call.
 	generalizeFuncTypes(pendingFuncTypes)
 
 	// Phase 8.7: for SCCs of size > 1 (mutually recursive function
