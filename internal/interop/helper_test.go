@@ -523,7 +523,7 @@ func TestConvertMethodDecl(t *testing.T) {
 				t.Fatalf("Expected MethodDecl at index %d, got %T", tt.methodIdx, classDecl.Members[tt.methodIdx])
 			}
 
-			result, err := convertMethodDecl(methodDecl)
+			result, err := convertMethodDecl(methodDecl, classDecl.Name.Name)
 			if err != nil {
 				t.Fatalf("convertMethodDecl failed: %v", err)
 			}
@@ -670,7 +670,7 @@ func TestConvertGetterDecl(t *testing.T) {
 				t.Fatalf("Expected GetterDecl at index %d, got %T", tt.getterIdx, classDecl.Members[tt.getterIdx])
 			}
 
-			result, err := convertGetterDecl(getterDecl)
+			result, err := convertGetterDecl(getterDecl, classDecl.Name.Name)
 			if err != nil {
 				t.Fatalf("convertGetterDecl failed: %v", err)
 			}
@@ -736,7 +736,7 @@ func TestConvertSetterDecl(t *testing.T) {
 				t.Fatalf("Expected SetterDecl at index %d, got %T", tt.setterIdx, classDecl.Members[tt.setterIdx])
 			}
 
-			result, err := convertSetterDecl(setterDecl)
+			result, err := convertSetterDecl(setterDecl, classDecl.Name.Name)
 			if err != nil {
 				t.Fatalf("convertSetterDecl failed: %v", err)
 			}

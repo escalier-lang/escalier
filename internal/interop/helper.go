@@ -619,7 +619,8 @@ func convertParams(params []*dts_parser.Param) ([]*ast.Param, error) {
 }
 
 // convertMethodDecl converts a dts_parser.MethodDecl to an ast.MethodElem.
-func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
+// className is the enclosing class name, passed to Classify for tier-2 signals.
+func convertMethodDecl(md *dts_parser.MethodDecl, className string) (*ast.MethodElem, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(md.TypeParams)
 	if err != nil {
@@ -653,7 +654,7 @@ func convertMethodDecl(md *dts_parser.MethodDecl) (*ast.MethodElem, error) {
 	// Classify receiver mutability. Static methods have no receiver.
 	var receiver *ast.MethodReceiver
 	if !md.Modifiers.Static {
-		result := Classify(ClassifyContext{Member: md})
+		result := Classify(ClassifyContext{Member: md, ClassName: className})
 		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: md.Span()}
 	}
 
@@ -696,7 +697,8 @@ func convertPropertyDecl(pd *dts_parser.PropertyDecl) (*ast.FieldElem, error) {
 }
 
 // convertGetterDecl converts a dts_parser.GetterDecl to an ast.GetterElem.
-func convertGetterDecl(gd *dts_parser.GetterDecl) (*ast.GetterElem, error) {
+// className is the enclosing class name, passed to Classify for tier-2 signals.
+func convertGetterDecl(gd *dts_parser.GetterDecl, className string) (*ast.GetterElem, error) {
 	// Convert property key to object key
 	name, err := convertPropertyKey(gd.Name)
 	if err != nil {
@@ -715,17 +717,26 @@ func convertGetterDecl(gd *dts_parser.GetterDecl) (*ast.GetterElem, error) {
 	// Create a function expression for the getter (no params, returns the type)
 	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{}, returnType, ast.NewNeverTypeAnn(gd.Span()), false, nil, gd.Span())
 
+	// Classify receiver mutability. Static getters have no receiver.
+	var receiver *ast.MethodReceiver
+	if !gd.Modifiers.Static {
+		result := Classify(ClassifyContext{Member: gd, ClassName: className})
+		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: gd.Span()}
+	}
+
 	return &ast.GetterElem{
-		Name:    name,
-		Fn:      funcExpr,
-		Static:  gd.Modifiers.Static,
-		Private: gd.Modifiers.Private,
-		Span_:   gd.Span(),
+		Name:     name,
+		Fn:       funcExpr,
+		Receiver: receiver,
+		Static:   gd.Modifiers.Static,
+		Private:  gd.Modifiers.Private,
+		Span_:    gd.Span(),
 	}, nil
 }
 
 // convertSetterDecl converts a dts_parser.SetterDecl to an ast.SetterElem.
-func convertSetterDecl(sd *dts_parser.SetterDecl) (*ast.SetterElem, error) {
+// className is the enclosing class name, passed to Classify for tier-2 signals.
+func convertSetterDecl(sd *dts_parser.SetterDecl, className string) (*ast.SetterElem, error) {
 	// Convert property key to object key
 	name, err := convertPropertyKey(sd.Name)
 	if err != nil {
@@ -742,11 +753,19 @@ func convertSetterDecl(sd *dts_parser.SetterDecl) (*ast.SetterElem, error) {
 	returnType := ast.NewLitTypeAnn(ast.NewUndefined(sd.Span()), sd.Span())
 	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{param}, returnType, ast.NewNeverTypeAnn(sd.Span()), false, nil, sd.Span())
 
+	// Classify receiver mutability. Static setters have no receiver.
+	var receiver *ast.MethodReceiver
+	if !sd.Modifiers.Static {
+		result := Classify(ClassifyContext{Member: sd, ClassName: className})
+		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: sd.Span()}
+	}
+
 	return &ast.SetterElem{
-		Name:    name,
-		Fn:      funcExpr,
-		Static:  sd.Modifiers.Static,
-		Private: sd.Modifiers.Private,
-		Span_:   sd.Span(),
+		Name:     name,
+		Fn:       funcExpr,
+		Receiver: receiver,
+		Static:   sd.Modifiers.Static,
+		Private:  sd.Modifiers.Private,
+		Span_:    sd.Span(),
 	}, nil
 }

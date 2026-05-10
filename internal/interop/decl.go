@@ -180,7 +180,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			})
 
 		case *dts_parser.MethodDecl:
-			elem, err := convertMethodDecl(m)
+			elem, err := convertMethodDecl(m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting method for class %s: %w", dc.Name.Name, err)
 			}
@@ -194,14 +194,14 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			bodyElems = append(bodyElems, elem)
 
 		case *dts_parser.GetterDecl:
-			elem, err := convertGetterDecl(m)
+			elem, err := convertGetterDecl(m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting getter for class %s: %w", dc.Name.Name, err)
 			}
 			bodyElems = append(bodyElems, elem)
 
 		case *dts_parser.SetterDecl:
-			elem, err := convertSetterDecl(m)
+			elem, err := convertSetterDecl(m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting setter for class %s: %w", dc.Name.Name, err)
 			}
