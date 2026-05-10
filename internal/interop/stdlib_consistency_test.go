@@ -47,7 +47,7 @@ func TestStdlibOverrideConsistency(t *testing.T) {
 	for _, escFile := range escFiles {
 		libFiles := escFileToLibs[escFile]
 		t.Run(escFile, func(t *testing.T) {
-			escEntries, err := parseEscClassMembers(filepath.Join("stdlib", escFile))
+			escEntries, err := parseEscClassMembers(t, filepath.Join("stdlib", escFile))
 			if err != nil {
 				t.Fatalf("parse .esc: %v", err)
 			}
@@ -153,35 +153,31 @@ func tsLibPath() (string, bool) {
 }
 
 // escEntry represents a single override entry parsed from a .esc file.
-// Kind is one of "method", "getter", "setter", "field".
+// Kind is one of "method", "getter", "setter", "field" — derived from the
+// concrete type of Member at use sites via type switch.
 type escEntry struct {
-	Class    string
-	Method   string
-	Kind     string
-	Line     int
-	Method_  *ast.MethodElem // populated when Kind == "method"
-	Getter_  *ast.GetterElem
-	Setter_  *ast.SetterElem
-	Field_   *ast.FieldElem
+	Class  string
+	Method string
+	Kind   string
+	Line   int
+	Member ast.ClassElem // *MethodElem | *GetterElem | *SetterElem | *FieldElem
 }
 
 // tsSig represents a single declaration parsed from a TS lib file.
+// Member holds the underlying signature; use a type switch to recover it.
 type tsSig struct {
-	Class    string
-	Method   string
-	Kind     string
-	SrcFile  string
-	// Method/getter/setter
-	Method_ *dts_parser.MethodSignature
-	Getter_ *dts_parser.GetterSignature
-	Setter_ *dts_parser.SetterSignature
-	Field_  *dts_parser.PropertySignature
+	Class   string
+	Method  string
+	Kind    string
+	SrcFile string
+	Member  dts_parser.InterfaceMember // *MethodSignature | *GetterSignature | *SetterSignature | *PropertySignature
 }
 
 // parseEscClassMembers parses an Escalier .esc override file and returns one
 // escEntry per class member declaration found inside any
 // `override declare global { ... }` block.
-func parseEscClassMembers(path string) ([]escEntry, error) {
+func parseEscClassMembers(t *testing.T, path string) ([]escEntry, error) {
+	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -212,33 +208,45 @@ func parseEscClassMembers(path string) ([]escEntry, error) {
 			for _, elem := range cd.Body {
 				switch e := elem.(type) {
 				case *ast.MethodElem:
-					if name, ok := objKeyName(e.Name); ok {
-						out = append(out, escEntry{
-							Class: className, Method: name, Kind: "method",
-							Line: e.Span().Start.Line, Method_: e,
-						})
+					name, ok := objKeyName(e.Name)
+					if !ok {
+						t.Errorf("%s:%d %s: unsupported method key %T", path, e.Span().Start.Line, className, e.Name)
+						continue
 					}
+					out = append(out, escEntry{
+						Class: className, Method: name, Kind: "method",
+						Line: e.Span().Start.Line, Member: e,
+					})
 				case *ast.GetterElem:
-					if name, ok := objKeyName(e.Name); ok {
-						out = append(out, escEntry{
-							Class: className, Method: name, Kind: "getter",
-							Line: e.Span().Start.Line, Getter_: e,
-						})
+					name, ok := objKeyName(e.Name)
+					if !ok {
+						t.Errorf("%s:%d %s: unsupported getter key %T", path, e.Span().Start.Line, className, e.Name)
+						continue
 					}
+					out = append(out, escEntry{
+						Class: className, Method: name, Kind: "getter",
+						Line: e.Span().Start.Line, Member: e,
+					})
 				case *ast.SetterElem:
-					if name, ok := objKeyName(e.Name); ok {
-						out = append(out, escEntry{
-							Class: className, Method: name, Kind: "setter",
-							Line: e.Span().Start.Line, Setter_: e,
-						})
+					name, ok := objKeyName(e.Name)
+					if !ok {
+						t.Errorf("%s:%d %s: unsupported setter key %T", path, e.Span().Start.Line, className, e.Name)
+						continue
 					}
+					out = append(out, escEntry{
+						Class: className, Method: name, Kind: "setter",
+						Line: e.Span().Start.Line, Member: e,
+					})
 				case *ast.FieldElem:
-					if name, ok := objKeyName(e.Name); ok {
-						out = append(out, escEntry{
-							Class: className, Method: name, Kind: "field",
-							Line: e.Span().Start.Line, Field_: e,
-						})
+					name, ok := objKeyName(e.Name)
+					if !ok {
+						t.Errorf("%s:%d %s: unsupported field key %T", path, e.Span().Start.Line, className, e.Name)
+						continue
 					}
+					out = append(out, escEntry{
+						Class: className, Method: name, Kind: "field",
+						Line: e.Span().Start.Line, Member: e,
+					})
 				}
 			}
 		}
@@ -280,21 +288,17 @@ func parseTSLibInto(path string, lookup map[[3]string][]tsSig, srcFile string) e
 	return nil
 }
 
-// visitTSStatement walks any interface declarations (top-level or nested in
-// declare global / declare module / namespace) and collects their members.
+// visitTSStatement walks interface declarations in global scope only —
+// top-level or nested inside `declare global`. ModuleDecl and NamespaceDecl
+// are intentionally skipped: the Escalier override files only declare classes
+// inside `override declare global { ... }`, so namespacing TS-side entries
+// under a module/namespace would let unqualified names collide with globals
+// and produce spurious matches.
 func visitTSStatement(stmt dts_parser.Statement, lookup map[[3]string][]tsSig, srcFile string) {
 	switch s := stmt.(type) {
 	case *dts_parser.InterfaceDecl:
 		collectInterfaceMembers(s, lookup, srcFile)
 	case *dts_parser.GlobalDecl:
-		for _, inner := range s.Statements {
-			visitTSStatement(inner, lookup, srcFile)
-		}
-	case *dts_parser.ModuleDecl:
-		for _, inner := range s.Statements {
-			visitTSStatement(inner, lookup, srcFile)
-		}
-	case *dts_parser.NamespaceDecl:
 		for _, inner := range s.Statements {
 			visitTSStatement(inner, lookup, srcFile)
 		}
@@ -310,7 +314,7 @@ func collectInterfaceMembers(iface *dts_parser.InterfaceDecl, lookup map[[3]stri
 				key := [3]string{className, name, "method"}
 				lookup[key] = append(lookup[key], tsSig{
 					Class: className, Method: name, Kind: "method",
-					SrcFile: srcFile, Method_: v,
+					SrcFile: srcFile, Member: v,
 				})
 			}
 		case *dts_parser.GetterSignature:
@@ -318,7 +322,7 @@ func collectInterfaceMembers(iface *dts_parser.InterfaceDecl, lookup map[[3]stri
 				key := [3]string{className, name, "getter"}
 				lookup[key] = append(lookup[key], tsSig{
 					Class: className, Method: name, Kind: "getter",
-					SrcFile: srcFile, Getter_: v,
+					SrcFile: srcFile, Member: v,
 				})
 			}
 		case *dts_parser.SetterSignature:
@@ -326,7 +330,7 @@ func collectInterfaceMembers(iface *dts_parser.InterfaceDecl, lookup map[[3]stri
 				key := [3]string{className, name, "setter"}
 				lookup[key] = append(lookup[key], tsSig{
 					Class: className, Method: name, Kind: "setter",
-					SrcFile: srcFile, Setter_: v,
+					SrcFile: srcFile, Member: v,
 				})
 			}
 		case *dts_parser.PropertySignature:
@@ -334,7 +338,7 @@ func collectInterfaceMembers(iface *dts_parser.InterfaceDecl, lookup map[[3]stri
 				key := [3]string{className, name, "field"}
 				lookup[key] = append(lookup[key], tsSig{
 					Class: className, Method: name, Kind: "field",
-					SrcFile: srcFile, Field_: v,
+					SrcFile: srcFile, Member: v,
 				})
 			}
 		}
@@ -354,27 +358,31 @@ func propertyKeyName(k dts_parser.PropertyKey) (string, bool) {
 // compareEntry returns a list of mismatch messages between the .esc entry
 // and the TS signature. Empty list means a clean match.
 func compareEntry(e escEntry, ts tsSig) []string {
-	switch e.Kind {
-	case "method":
-		if ts.Method_ == nil {
+	switch escMember := e.Member.(type) {
+	case *ast.MethodElem:
+		tsMember, ok := ts.Member.(*dts_parser.MethodSignature)
+		if !ok {
 			return []string{"kind mismatch: esc=method ts=" + ts.Kind}
 		}
-		return compareMethod(e.Method_, ts.Method_)
-	case "getter":
-		if ts.Getter_ == nil {
+		return compareMethod(escMember, tsMember)
+	case *ast.GetterElem:
+		tsMember, ok := ts.Member.(*dts_parser.GetterSignature)
+		if !ok {
 			return []string{"kind mismatch: esc=getter ts=" + ts.Kind}
 		}
-		return compareGetter(e.Getter_, ts.Getter_)
-	case "setter":
-		if ts.Setter_ == nil {
+		return compareGetter(escMember, tsMember)
+	case *ast.SetterElem:
+		tsMember, ok := ts.Member.(*dts_parser.SetterSignature)
+		if !ok {
 			return []string{"kind mismatch: esc=setter ts=" + ts.Kind}
 		}
-		return compareSetter(e.Setter_, ts.Setter_)
-	case "field":
-		if ts.Field_ == nil {
+		return compareSetter(escMember, tsMember)
+	case *ast.FieldElem:
+		tsMember, ok := ts.Member.(*dts_parser.PropertySignature)
+		if !ok {
 			return []string{"kind mismatch: esc=field ts=" + ts.Kind}
 		}
-		return compareField(e.Field_, ts.Field_)
+		return compareField(escMember, tsMember)
 	}
 	return []string{"unknown kind: " + e.Kind}
 }

@@ -519,6 +519,31 @@ func (p *Parser) parseConstructorElem(
 	}
 }
 
+// consumeContextualGetSet handles the `get`/`set` contextual-keyword
+// disambiguation at the start of a class element.
+//
+// `get` and `set` are only modifiers when followed by a property name. If the
+// next token after `get`/`set` is `(` or `<`, then the word itself is the
+// method name (e.g. `get()` is a method named `get`, `get<T>()` is a generic
+// method named `get`). The token list `OpenParen | LessThan` covers both
+// cases — those are the only tokens that can start the formal-parameter or
+// type-parameter list of a method definition; an actual getter/setter is
+// always followed by an identifier (the property name).
+//
+// On call, the current token must be `get` or `set`. Returns true and leaves
+// the lexer positioned after the consumed keyword if the keyword acts as a
+// modifier; returns false and restores the lexer state if it doesn't.
+func (p *Parser) consumeContextualGetSet() bool {
+	saved := p.saveState()
+	p.lexer.consume()
+	after := p.lexer.peek()
+	if after.Type == OpenParen || after.Type == LessThan {
+		p.restoreState(saved)
+		return false
+	}
+	return true
+}
+
 // parseClassElem parses a single class element (field, method, static, etc.)
 func (p *Parser) parseClassElem() ast.ClassElem {
 	token := p.lexer.peek()
@@ -557,26 +582,12 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 			isReadonly = true
 			p.lexer.consume()
 		case Get:
-			// `get` is a contextual keyword: only a modifier when followed by a
-			// property name. If the very next token after `get` is `(` or `<`,
-			// the word `get` is the method name itself.
-			saved := p.saveState()
-			p.lexer.consume()
-			after := p.lexer.peek()
-			if after.Type == OpenParen || after.Type == LessThan {
-				p.restoreState(saved)
+			if !p.consumeContextualGetSet() {
 				goto modifiers_done
 			}
 			isGet = true
 		case Set:
-			// `set` is a contextual keyword: only a modifier when followed by a
-			// property name. If the very next token after `set` is `(` or `<`,
-			// the word `set` is the method name itself.
-			saved := p.saveState()
-			p.lexer.consume()
-			after := p.lexer.peek()
-			if after.Type == OpenParen || after.Type == LessThan {
-				p.restoreState(saved)
+			if !p.consumeContextualGetSet() {
 				goto modifiers_done
 			}
 			isSet = true

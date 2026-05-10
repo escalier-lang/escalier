@@ -218,9 +218,10 @@ func TestStdlibWeakRefMutability(t *testing.T) {
 	}
 }
 
-// TestStdlibURLSearchParamsMutability spot-checks URLSearchParams in dom.esc.
-// Iteration methods (keys/values/entries/forEach) live in dom.iterable.esc and
-// are exercised by TestStdlibURLSearchParamsAcrossFiles.
+// TestStdlibURLSearchParamsMutability spot-checks URLSearchParams in dom.esc
+// (including forEach, which is declared in dom.esc — not dom.iterable.esc).
+// Iteration methods (keys/values/entries) live in dom.iterable.esc and are
+// exercised by TestStdlibURLSearchParamsAcrossFiles.
 func TestStdlibURLSearchParamsMutability(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("stdlib", "dom.esc"))
 	if err != nil {

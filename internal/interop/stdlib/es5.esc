@@ -4,7 +4,8 @@
 // every/filter/find/findIndex/forEach/indexOf/join/lastIndexOf/map/reduce/reduceRight/slice/some/subarray are non-mutating.
 // (entries/keys/values come from lib.es2015.iterable.d.ts → es2015.iterable.esc;
 //  includes comes from lib.es2016.array.include.d.ts → es2016.esc.)
-// Note: parameter and return types are placeholders (number/void); only the mut receiver annotation matters.
+// Note: the mut receiver annotation is the primary mutability indicator, but parameter and
+// return shapes are validated against the corresponding TypeScript .d.ts during consistency checks.
 override declare global {
     declare class Date {
         setDate(mut self, date: number) -> number,

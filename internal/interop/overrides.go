@@ -56,6 +56,10 @@ func newOverrideRegistry() *OverrideRegistry {
 // path is used only in error messages. isUser=true places entries in the user
 // tier (resolution-order tier 3); isUser=false places them in the shipped tier
 // (tier 4).
+//
+// Returns an error when the same (module, class, member, kind) key is loaded
+// twice into the same tier — silent overwrites would let stdlib drift go
+// undetected.
 func (r *OverrideRegistry) loadSource(src, path string, isUser bool) error {
 	entries, err := parseOverrideSource(src, path)
 	if err != nil {
@@ -66,9 +70,33 @@ func (r *OverrideRegistry) loadSource(src, path string, isUser bool) error {
 		target = r.user
 	}
 	for k, v := range entries {
+		if _, exists := target[k]; exists {
+			return fmt.Errorf("duplicate override for %s in %s", formatOverrideKey(k), path)
+		}
 		target[k] = v
 	}
 	return nil
+}
+
+// formatOverrideKey renders a key for diagnostic messages.
+func formatOverrideKey(k overrideKey) string {
+	kindStr := "method"
+	switch k.Kind {
+	case kindGetter:
+		kindStr = "getter"
+	case kindSetter:
+		kindStr = "setter"
+	case kindField:
+		kindStr = "field"
+	}
+	scope := "global"
+	if k.Module != "" {
+		scope = fmt.Sprintf("module %q", k.Module)
+	}
+	if k.ClassName == "" {
+		return fmt.Sprintf("%s %s in %s", kindStr, k.Member, scope)
+	}
+	return fmt.Sprintf("%s %s.%s in %s", kindStr, k.ClassName, k.Member, scope)
 }
 
 // loadFile reads an .esc file and adds its override entries to the registry.
@@ -161,14 +189,29 @@ func extractOverrideClassEntries(decls []ast.Decl, module string, result map[ove
 				result[key] = overrideEntry{Mut: mut}
 			}
 		case *ast.FuncDecl:
-			// Module-level function overrides are always non-mutating (pure).
+			// Module-level function overrides are always non-mutating: a free
+			// function has no `self`, so receiver-mutability isn't applicable.
+			// The entry exists purely so a class-method lookup against the
+			// same module returns "no entry" while a free-function lookup
+			// (which the classifier never issues today) would resolve as
+			// non-mutating. Keyed under kindMethod with empty ClassName to
+			// match the lookup site's key shape.
 			key := overrideKey{Module: module, ClassName: "", Member: d.Name.Name, Kind: kindMethod}
 			result[key] = overrideEntry{Mut: false}
 		}
 	}
 }
 
-// overrideClassElemEntry extracts (memberName, kind, isMutating, ok) from a class element.
+// overrideClassElemEntry extracts (memberName, kind, isMutating, ok) from a
+// class element.
+//
+// Receiver semantics:
+//   - Method:   mutating iff `Receiver.Mut` (default non-mut for static / no receiver).
+//   - Getter:   non-mutating by default; honor `mut self` when written explicitly
+//               (e.g. lazy-initialization patterns).
+//   - Setter:   mutating by default; honor a plain `self` (no `mut`) to mark a
+//               non-mutating setter (proxies, no-ops).
+//   - Field:    mutating iff not `readonly`.
 func overrideClassElemEntry(elem ast.ClassElem) (string, memberKind, bool, bool) {
 	switch e := elem.(type) {
 	case *ast.MethodElem:
@@ -183,13 +226,15 @@ func overrideClassElemEntry(elem ast.ClassElem) (string, memberKind, bool, bool)
 		if !ok {
 			return "", 0, false, false
 		}
-		return name, kindGetter, false, true
+		mut := e.Receiver != nil && e.Receiver.Mut
+		return name, kindGetter, mut, true
 	case *ast.SetterElem:
 		name, ok := overrideObjKeyName(e.Name)
 		if !ok {
 			return "", 0, false, false
 		}
-		return name, kindSetter, true, true
+		mut := e.Receiver == nil || e.Receiver.Mut
+		return name, kindSetter, mut, true
 	case *ast.FieldElem:
 		name, ok := overrideObjKeyName(e.Name)
 		if !ok {
