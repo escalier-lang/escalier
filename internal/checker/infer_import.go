@@ -240,7 +240,7 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 		pkgDtsModule := &dts_parser.Module{
 			Statements: classification.PackageDecls,
 		}
-		pkgAstModule, err := interop.ConvertModule(pkgDtsModule)
+		pkgAstModule, err := interop.ConvertModule(pkgDtsModule, interop.DefaultRegistry(), "")
 		if err != nil {
 			return nil, fmt.Errorf("converting package declarations: %w", err)
 		}
@@ -253,7 +253,7 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 		globalDtsModule := &dts_parser.Module{
 			Statements: classification.GlobalDecls,
 		}
-		globalAstModule, err := interop.ConvertModule(globalDtsModule)
+		globalAstModule, err := interop.ConvertModule(globalDtsModule, interop.DefaultRegistry(), "")
 		if err != nil {
 			return nil, fmt.Errorf("converting global declarations: %w", err)
 		}
@@ -266,7 +266,7 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 		namedDtsModule := &dts_parser.Module{
 			Statements: namedMod.Decls,
 		}
-		namedAstModule, err := interop.ConvertModule(namedDtsModule)
+		namedAstModule, err := interop.ConvertModule(namedDtsModule, interop.DefaultRegistry(), namedMod.ModuleName)
 		if err != nil {
 			return nil, fmt.Errorf("converting named module %s: %w", namedMod.ModuleName, err)
 		}

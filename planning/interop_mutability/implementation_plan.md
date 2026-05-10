@@ -171,38 +171,24 @@ Two sub-tasks, parallelizable:
   `with` methods appear on `ReadonlyArray` in lib.es2023, so they
   classify as non-mutating without an override entry.
 
-  **Layout: group by ECMAScript spec revision**, mirroring
-  TypeScript's `lib.es*.d.ts` split. A symbol introduced in a given
-  revision lives in that revision's directory:
+  **Layout: one file per ECMAScript revision**, embedded into the binary at
+  compile time with `//go:embed`. All classes introduced in a given revision
+  live in a single file for that revision:
 
   ```
-  overrides/stdlib/
-    es5/
-      Date.esc
-      RegExp.esc
-      Error.esc
-    es2015/
-      Promise.esc
-      WeakMap.esc
-      WeakSet.esc
-      iterator.esc
-    es2017/
-      typedarrays.esc
-    es2021/
-      WeakRef.esc
-    es2023/
-      // (none today — Array additions are tier 2)
-    dom/
-      URL.esc
-      URLSearchParams.esc
+  internal/interop/stdlib/
+    es5.esc       // Date, RegExp, Error
+    es2015.esc    // Promise, WeakMap, WeakSet, iterator protocol
+    es2017.esc    // typed arrays
+    es2021.esc    // WeakRef
+    dom.esc       // URL, URLSearchParams
   ```
 
-  When an Escalier project later gains a target-ES-version setting,
-  the loader can include only the override files at or below the
-  selected revision, matching TS's `lib` semantics. Until then, all
-  revisions load. The `dom/` bucket is separate because DOM types
-  aren't keyed to ECMAScript revisions; they map to TS's
-  `lib.dom.d.ts`.
+  Using one file per revision (rather than one file per class) keeps the file
+  count small while preserving the version boundary that matters for a future
+  target-ES-version setting. When that setting lands, the loader simply skips
+  files above the selected revision. Embedding avoids any filesystem I/O on
+  startup.
 - **FP / immutability libraries** (principle #5) — Ramda, fp-ts,
   Effect, Immutable.js, lodash/fp. For these, default every method to
   non-mutating in receiver and arguments; one blanket entry per

@@ -1,0 +1,16 @@
+// URLSearchParams: append/set/delete/sort mutate; get/getAll/has/keys/values/entries/forEach are non-mutating
+override declare global {
+    declare class URLSearchParams {
+        append(mut self, name: string, value: string) -> void,
+        set(mut self, name: string, value: string) -> void,
+        delete(mut self, name: string) -> void,
+        sort(mut self) -> void,
+        get(self, name: string) -> string,
+        getAll(self, name: string) -> number,
+        has(self, name: string) -> boolean,
+        keys(self) -> number,
+        values(self) -> number,
+        entries(self) -> number,
+        forEach(self, f: number) -> void,
+    }
+}

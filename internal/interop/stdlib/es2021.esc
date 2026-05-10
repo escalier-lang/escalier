@@ -1,0 +1,6 @@
+// WeakRef: deref is a non-mutating read
+override declare global {
+    declare class WeakRef {
+        deref(self) -> number,
+    }
+}

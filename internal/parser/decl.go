@@ -557,11 +557,29 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 			isReadonly = true
 			p.lexer.consume()
 		case Get:
+			// `get` is a contextual keyword: only a modifier when followed by a
+			// property name. If the very next token after `get` is `(` or `<`,
+			// the word `get` is the method name itself.
+			saved := p.saveState()
+			p.lexer.consume()
+			after := p.lexer.peek()
+			if after.Type == OpenParen || after.Type == LessThan {
+				p.restoreState(saved)
+				goto modifiers_done
+			}
 			isGet = true
-			p.lexer.consume()
 		case Set:
-			isSet = true
+			// `set` is a contextual keyword: only a modifier when followed by a
+			// property name. If the very next token after `set` is `(` or `<`,
+			// the word `set` is the method name itself.
+			saved := p.saveState()
 			p.lexer.consume()
+			after := p.lexer.peek()
+			if after.Type == OpenParen || after.Type == LessThan {
+				p.restoreState(saved)
+				goto modifiers_done
+			}
+			isSet = true
 		default:
 			goto modifiers_done
 		}

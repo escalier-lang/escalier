@@ -302,7 +302,9 @@ func (p *Parser) objExprKey() ast.ObjKey {
 
 	// nolint: exhaustive
 	switch token.Type {
-	case Identifier, Underscore, String, Number, Boolean, Bigint:
+	case Identifier, Underscore, String, Number, Boolean, Bigint,
+		// Contextual keywords that may appear as property/method names:
+		Get, Set, Catch:
 		p.lexer.consume()
 		return ast.NewIdent(token.Value, token.Span)
 	case StrLit:

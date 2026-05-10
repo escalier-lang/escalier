@@ -1,0 +1,21 @@
+// Promise: all methods return new Promises, non-mutating
+// WeakMap: set/delete mutate; get/has are non-mutating reads
+// WeakSet: add/delete mutate; has is a non-mutating read
+override declare global {
+    declare class Promise {
+        then(self, onFulfilled: number) -> number,
+        catch(self, onRejected: number) -> number,
+        finally(self, onFinally: number) -> number,
+    }
+    declare class WeakMap {
+        set(mut self, key: number, value: number) -> void,
+        delete(mut self, key: number) -> boolean,
+        get(self, key: number) -> number,
+        has(self, key: number) -> boolean,
+    }
+    declare class WeakSet {
+        add(mut self, value: number) -> void,
+        delete(mut self, value: number) -> boolean,
+        has(self, value: number) -> boolean,
+    }
+}

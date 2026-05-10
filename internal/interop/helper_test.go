@@ -523,7 +523,7 @@ func TestConvertMethodDecl(t *testing.T) {
 				t.Fatalf("Expected MethodDecl at index %d, got %T", tt.methodIdx, classDecl.Members[tt.methodIdx])
 			}
 
-			result, err := convertMethodDecl(methodDecl, classDecl.Name.Name)
+			result, err := convertMethodDecl(methodDecl, classDecl.Name.Name, convCtx{})
 			if err != nil {
 				t.Fatalf("convertMethodDecl failed: %v", err)
 			}
@@ -670,7 +670,7 @@ func TestConvertGetterDecl(t *testing.T) {
 				t.Fatalf("Expected GetterDecl at index %d, got %T", tt.getterIdx, classDecl.Members[tt.getterIdx])
 			}
 
-			result, err := convertGetterDecl(getterDecl, classDecl.Name.Name)
+			result, err := convertGetterDecl(getterDecl, classDecl.Name.Name, convCtx{})
 			if err != nil {
 				t.Fatalf("convertGetterDecl failed: %v", err)
 			}
@@ -736,7 +736,7 @@ func TestConvertSetterDecl(t *testing.T) {
 				t.Fatalf("Expected SetterDecl at index %d, got %T", tt.setterIdx, classDecl.Members[tt.setterIdx])
 			}
 
-			result, err := convertSetterDecl(setterDecl, classDecl.Name.Name)
+			result, err := convertSetterDecl(setterDecl, classDecl.Name.Name, convCtx{})
 			if err != nil {
 				t.Fatalf("convertSetterDecl failed: %v", err)
 			}
@@ -800,7 +800,7 @@ func TestConvertComputedKey(t *testing.T) {
 			}
 
 			// Convert the module
-			converted, err := ConvertModule(module)
+			converted, err := ConvertModule(module, nil, "")
 			if err != nil {
 				t.Fatalf("ConvertModule failed: %v", err)
 			}
@@ -884,7 +884,7 @@ func TestConvertComputedKeySimpleIdent(t *testing.T) {
 	}
 
 	// Convert the module
-	converted, err := ConvertModule(module)
+	converted, err := ConvertModule(module, nil, "")
 	if err != nil {
 		t.Fatalf("ConvertModule failed: %v", err)
 	}

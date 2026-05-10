@@ -9,6 +9,12 @@ import (
 	"github.com/tidwall/btree"
 )
 
+// convCtx carries shared state during dts → ast conversion.
+type convCtx struct {
+	registry   *overrideRegistry
+	modulePath string
+}
+
 // qualifiedName constructs a qualified namespace name by appending a child name to a parent name.
 // If parent is empty (root namespace), returns just the child name.
 // Otherwise, returns "parent.child".
@@ -31,6 +37,7 @@ func processNamespace(
 	namespaces *btree.Map[string, *ast.Namespace],
 	inAmbientNamespace bool,
 	isExported bool,
+	ctx convCtx,
 ) error {
 	var decls []ast.Decl
 
@@ -43,7 +50,7 @@ func processNamespace(
 			nestedName := qualifiedName(name, s.Name.Name)
 			nestedAmbient := inAmbientNamespace || s.Declare()
 			nestedExported := s.Export()
-			if err := processNamespace(nestedName, s.Statements, namespaces, nestedAmbient, nestedExported); err != nil {
+			if err := processNamespace(nestedName, s.Statements, namespaces, nestedAmbient, nestedExported, ctx); err != nil {
 				return fmt.Errorf("processing namespace %s: %w", s.Name.Name, err)
 			}
 
@@ -75,7 +82,7 @@ func processNamespace(
 		default:
 			// Convert regular declarations
 			// Skip declarations that fail to convert (e.g., due to unsupported features)
-			decl, err := convertStatement(s)
+			decl, err := convertStatement(s, ctx)
 			if err != nil {
 				// Log the error but continue processing other declarations
 				fmt.Fprintf(os.Stderr, "Warning: skipping statement due to conversion error: %v\n", err)
@@ -132,14 +139,11 @@ func mergeNamespace(
 }
 
 // ConvertModule converts dts_parser.Module to ast.Module.
-func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
+func ConvertModule(dtsModule *dts_parser.Module, registry *overrideRegistry, modulePath string) (*ast.Module, error) {
 	var namespaces btree.Map[string, *ast.Namespace]
 
-	// Process all statements, organizing them into namespaces
-	// Use empty string "" as the root/global namespace name
-	// Pass false for inAmbientNamespace since we're at the top level
-	// Pass false for isExported since the root namespace is not exported
-	if err := processNamespace("", dtsModule.Statements, &namespaces, false, false); err != nil {
+	ctx := convCtx{registry: registry, modulePath: modulePath}
+	if err := processNamespace("", dtsModule.Statements, &namespaces, false, false, ctx); err != nil {
 		return nil, fmt.Errorf("converting module: %w", err)
 	}
 

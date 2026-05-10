@@ -37,7 +37,7 @@ type MyType = string;
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -77,7 +77,7 @@ declare namespace MyNamespace {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -114,7 +114,7 @@ declare namespace Outer {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -156,7 +156,7 @@ declare function globalFunc(): void;
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -195,7 +195,7 @@ declare namespace NS2 {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -234,7 +234,7 @@ declare namespace MyNamespace {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -260,7 +260,7 @@ declare class MyClass {}
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -286,7 +286,7 @@ declare namespace MyNamespace {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -313,7 +313,7 @@ declare module "my-module" {
 `
 
 	dtsModule := parseModule(t, input)
-	_, err := ConvertModule(dtsModule)
+	_, err := ConvertModule(dtsModule, nil, "")
 
 	// Module declarations should error since Escalier doesn't support importing packages
 	if err == nil {
@@ -339,7 +339,7 @@ declare namespace A {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -394,7 +394,7 @@ declare namespace MyNamespace {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -428,7 +428,7 @@ declare namespace Outer {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -466,7 +466,7 @@ declare function foo(): void;
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -498,7 +498,7 @@ declare namespace MyNamespace {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -529,7 +529,7 @@ export namespace Property {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -564,7 +564,7 @@ namespace Internal {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -591,7 +591,7 @@ export namespace Outer {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -626,7 +626,7 @@ export namespace Exported {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -660,7 +660,7 @@ declare namespace AmbientNS {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -693,7 +693,7 @@ export declare namespace ExportedAmbientNS {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -730,7 +730,7 @@ namespace MergedNS {
 `
 
 	dtsModule := parseModule(t, input)
-	astModule, err := ConvertModule(dtsModule)
+	astModule, err := ConvertModule(dtsModule, nil, "")
 
 	if err != nil {
 		t.Fatalf("ConvertModule returned error: %v", err)
@@ -804,7 +804,7 @@ func TestConvertES2015LibFiles(t *testing.T) {
 			}
 
 			// Convert with interop
-			_, convertErr := ConvertModule(module)
+			_, convertErr := ConvertModule(module, nil, "")
 			if convertErr != nil {
 				t.Fatalf("Interop conversion error for %s: %v", filename, convertErr)
 			}

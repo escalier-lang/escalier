@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // memberKind distinguishes the kind of a class member for override lookup.
@@ -38,14 +39,16 @@ type overrideEntry struct {
 // overrideRegistry holds parsed overrides indexed by overrideKey.
 // User overrides take priority over shipped overrides on lookup.
 type overrideRegistry struct {
-	user    map[overrideKey]overrideEntry
-	shipped map[overrideKey]overrideEntry
+	user        map[overrideKey]overrideEntry
+	shipped     map[overrideKey]overrideEntry
+	pureModules set.Set[string]
 }
 
 func newOverrideRegistry() *overrideRegistry {
 	return &overrideRegistry{
-		user:    make(map[overrideKey]overrideEntry),
-		shipped: make(map[overrideKey]overrideEntry),
+		user:        make(map[overrideKey]overrideEntry),
+		shipped:     make(map[overrideKey]overrideEntry),
+		pureModules: set.NewSet[string](),
 	}
 }
 
@@ -90,6 +93,13 @@ func (r *overrideRegistry) loadDir(dir string, isUser bool) error {
 	})
 }
 
+// addPureModule marks an entire module as non-mutating at tier 4.
+// Any lookup for a key whose Module matches returns non-mutating when no
+// specific override exists.
+func (r *overrideRegistry) addPureModule(module string) {
+	r.pureModules.Add(module)
+}
+
 // lookup finds the override entry for key, preferring user overrides over
 // shipped overrides. Returns (entry, isUser, true) if found.
 func (r *overrideRegistry) lookup(key overrideKey) (overrideEntry, bool, bool) {
@@ -98,6 +108,9 @@ func (r *overrideRegistry) lookup(key overrideKey) (overrideEntry, bool, bool) {
 	}
 	if entry, ok := r.shipped[key]; ok {
 		return entry, false, true
+	}
+	if key.Module != "" && r.pureModules.Contains(key.Module) {
+		return overrideEntry{Mut: false}, false, true
 	}
 	return overrideEntry{}, false, false
 }
