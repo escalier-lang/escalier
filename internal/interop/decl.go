@@ -171,15 +171,16 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
 			allParams := append([]*ast.Param{selfParam}, params...)
 			fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, convertSpan(m.Span()))
+			ctorResult := Classify(ClassifyContext{Member: m, ClassName: dc.Name.Name})
 			bodyElems = append(bodyElems, &ast.ConstructorElem{
 				Fn:       fn,
-				Receiver: &ast.MethodReceiver{Mut: true, Span_: selfSpan},
+				Receiver: &ast.MethodReceiver{Mut: ctorResult.Mut, Span_: selfSpan},
 				Private:  false,
 				Span_:    convertSpan(m.Span()),
 			})
 
 		case *dts_parser.MethodDecl:
-			elem, err := convertMethodDecl(m)
+			elem, err := convertMethodDecl(m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting method for class %s: %w", dc.Name.Name, err)
 			}
@@ -193,14 +194,14 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			bodyElems = append(bodyElems, elem)
 
 		case *dts_parser.GetterDecl:
-			elem, err := convertGetterDecl(m)
+			elem, err := convertGetterDecl(m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting getter for class %s: %w", dc.Name.Name, err)
 			}
 			bodyElems = append(bodyElems, elem)
 
 		case *dts_parser.SetterDecl:
-			elem, err := convertSetterDecl(m)
+			elem, err := convertSetterDecl(m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting setter for class %s: %w", dc.Name.Name, err)
 			}
