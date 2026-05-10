@@ -2697,10 +2697,6 @@
 }
 ---
 
-[TestParseTypeAnnNoErrors/MutableUnionTypeWithParens - 1]
-nil
----
-
 [TestParseTypeAnnNoErrors/MutableUnionType - 1]
 &ast.UnionTypeAnn{
     Types: {

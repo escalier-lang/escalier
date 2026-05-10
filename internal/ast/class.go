@@ -11,6 +11,7 @@ type ClassDecl struct {
 	Body           []ClassElem       // fields, methods, etc.
 	export         bool
 	declare        bool
+	override       bool
 	span           Span
 	provenance     provenance.Provenance
 }
@@ -55,11 +56,13 @@ func NewClassDecl(name *Ident, lifetimeParams []*LifetimeAnn, typeParams []*Type
 	}
 }
 
-func (*ClassDecl) isDecl()            {}
-func (d *ClassDecl) Export() bool     { return d.export }
-func (d *ClassDecl) SetExport(e bool) { d.export = e }
-func (d *ClassDecl) Declare() bool    { return d.declare }
-func (d *ClassDecl) Span() Span       { return d.span }
+func (*ClassDecl) isDecl()             {}
+func (d *ClassDecl) Export() bool      { return d.export }
+func (d *ClassDecl) SetExport(e bool)  { d.export = e }
+func (d *ClassDecl) Declare() bool     { return d.declare }
+func (d *ClassDecl) Override() bool    { return d.override }
+func (d *ClassDecl) SetOverride(o bool) { d.override = o }
+func (d *ClassDecl) Span() Span        { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
 		if d.Extends != nil {

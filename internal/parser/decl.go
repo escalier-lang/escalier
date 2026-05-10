@@ -77,22 +77,55 @@ func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypePa
 	return lifetimeParams, typeParams
 }
 
-// Decl = 'export'? 'declare'? 'async'? (varDecl | fnDecl)
+// Decl = 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)
+//
+//	| 'override'? 'declare' 'module' StrLit '{' decl* '}'
+//	| 'override'? 'declare' 'global' '{' decl* '}'
 func (p *Parser) Decl() ast.Decl {
 	export := false
+	override := false
 	declare := false
 	async := false
 
 	token := p.lexer.next()
 	start := token.Span.Start
+	var exportSpan ast.Span
 	if token.Type == Export {
 		export = true
+		exportSpan = token.Span
+		token = p.lexer.next()
+	}
+
+	var overrideSpan ast.Span
+	if token.Type == Override {
+		override = true
+		overrideSpan = token.Span
 		token = p.lexer.next()
 	}
 
 	if token.Type == Declare {
 		declare = true
 		token = p.lexer.next()
+
+		// `module "name" { ... }` and `global { ... }` are contextual:
+		// `module` and `global` are plain identifiers everywhere else, so
+		// only treat them as block headers immediately after `declare`.
+		if token.Type == Identifier && token.Value == "module" {
+			if export {
+				p.reportError(exportSpan, "'export' is not allowed before 'declare module'")
+			}
+			return p.declareModuleDecl(start, override)
+		}
+		if token.Type == Identifier && token.Value == "global" {
+			if export {
+				p.reportError(exportSpan, "'export' is not allowed before 'declare global'")
+			}
+			return p.declareGlobalDecl(start, override)
+		}
+	}
+
+	if override && !declare {
+		p.reportError(overrideSpan, "'override' requires 'declare'")
 	}
 
 	if token.Type == Async {
@@ -104,30 +137,146 @@ func (p *Parser) Decl() ast.Decl {
 		p.reportError(token.Span, "async can only be used with functions")
 	}
 
+	var decl ast.Decl
 	// nolint: exhaustive
 	switch token.Type {
 	case Val, Var:
-		return p.varDecl(start, token, export, declare)
+		decl = p.varDecl(start, token, export, declare)
 	case Fn:
-		return p.fnDecl(start, export, declare, async)
+		decl = p.fnDecl(start, export, declare, async)
 	case Type:
-		return p.typeDecl(start, export, declare)
+		decl = p.typeDecl(start, export, declare)
 	case Interface:
-		return p.interfaceDecl(start, export, declare)
+		decl = p.interfaceDecl(start, export, declare)
 	case Enum:
-		return p.enumDecl(start, export, declare)
+		decl = p.enumDecl(start, export, declare)
 	case Class:
-		return p.classDecl(start, export, declare)
+		decl = p.classDecl(start, export, declare)
+	case Identifier:
+		// `namespace` is contextual — only meaningful inside declare blocks,
+		// but we parse it wherever a decl is valid and let the checker enforce
+		// placement rules.
+		if token.Value == "namespace" {
+			decl = p.namespaceDecl(start, export, override)
+		} else {
+			p.reportError(token.Span, "Unexpected token")
+			return nil
+		}
 	default:
 		p.reportError(token.Span, "Unexpected token")
 		return nil
 	}
+	if decl != nil && override {
+		decl.SetOverride(true)
+	}
+	return decl
+}
+
+// namespaceDecl parses `namespace Name { <decl>* }` after the `namespace`
+// identifier has already been consumed by the caller.
+func (p *Parser) namespaceDecl(start ast.Location, export, override bool) *ast.NamespaceDecl {
+	nameTok := p.lexer.next()
+	var name *ast.Ident
+	if nameTok.Type != Identifier {
+		p.reportError(nameTok.Span, "Expected identifier after 'namespace'")
+		name = ast.NewIdentifier("", nameTok.Span)
+	} else {
+		name = ast.NewIdentifier(nameTok.Value, nameTok.Span)
+	}
+
+	decls := p.declareBlockBody(override)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	return ast.NewNamespaceDecl(name, decls, export, override, span)
+}
+
+// declareModuleDecl parses `module "<name>" { <decl>* }` after both the
+// `declare` and `module` keywords have already been consumed by the caller.
+// `override` indicates whether the enclosing `Decl()` saw an `override`
+// keyword; it's stamped on the resulting decl and propagated to every inner
+// declaration in the block body.
+func (p *Parser) declareModuleDecl(start ast.Location, override bool) *ast.DeclareModuleDecl {
+	nameTok := p.lexer.next()
+	var name *ast.StrLit
+	if nameTok.Type != StrLit {
+		p.reportError(nameTok.Span, "Expected string literal after 'module'")
+		name = ast.NewString("", nameTok.Span)
+	} else {
+		name = ast.NewString(nameTok.Value, nameTok.Span)
+	}
+
+	decls := p.declareBlockBody(override)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	return ast.NewDeclareModuleDecl(name, decls, override, span)
+}
+
+// declareGlobalDecl parses `global { <decl>* }` after both the `declare`
+// keyword and the `global` identifier have already been consumed by the caller.
+// See declareModuleDecl for the meaning of `override`.
+func (p *Parser) declareGlobalDecl(start ast.Location, override bool) *ast.DeclareGlobalDecl {
+	// `global` was already consumed by the caller via lexer.next().
+	decls := p.declareBlockBody(override)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	return ast.NewDeclareGlobalDecl(decls, override, span)
+}
+
+// setOverrideRecursive stamps override=true on d and, if d is a
+// NamespaceDecl, recurses into its children so that every decl in the
+// namespace tree also carries the flag.
+func setOverrideRecursive(d ast.Decl) {
+	d.SetOverride(true)
+	if ns, ok := d.(*ast.NamespaceDecl); ok {
+		for _, child := range ns.Decls {
+			setOverrideRecursive(child)
+		}
+	}
+}
+
+// declareBlockBody parses the `{ <decl>* }` body shared by
+// `declare module` and `declare global`. When `override` is true, each
+// inner decl (and all decls nested inside NamespaceDecls) inherits the
+// override flag — this matches the design where `override declare module /
+// global` implies `override` on every member.
+// Returns once the next token is `}` or EOF; the caller is responsible
+// for consuming the closing brace.
+func (p *Parser) declareBlockBody(override bool) []ast.Decl {
+	p.expect(OpenBrace, AlwaysConsume)
+	decls := []ast.Decl{}
+	for {
+		select {
+		case <-p.ctx.Done():
+			return decls
+		default:
+		}
+		token := p.lexer.peek()
+		// nolint: exhaustive
+		switch token.Type {
+		case CloseBrace, EndOfFile:
+			return decls
+		case LineComment, BlockComment:
+			p.lexer.consume()
+			continue
+		}
+		inner := p.Decl()
+		if inner == nil {
+			// Decl() always consumes at least one token before returning
+			// nil, so the loop is guaranteed to make progress.
+			continue
+		}
+		if override {
+			setOverrideRecursive(inner)
+		}
+		decls = append(decls, inner)
+	}
 }
 
 // classDecl = 'class' ident typeParams?
-//             ('extends' typeAnn ('(' expr* ')')?)?
-//             ('implements' typeAnn (',' typeAnn)*)?
-//             '{' classElem* '}'
+//
+//	('extends' typeAnn ('(' expr* ')')?)?
+//	('implements' typeAnn (',' typeAnn)*)?
+//	'{' classElem* '}'
 func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	var name *ast.Ident
