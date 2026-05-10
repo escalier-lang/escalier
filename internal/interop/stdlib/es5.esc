@@ -1,5 +1,6 @@
 // Date: set* methods mutate in-place; get* and to* methods are non-mutating
 // RegExp: exec/test are non-mutating reads; compile mutates the pattern
+// Note: parameter and return types are placeholders (number/void); only the mut receiver annotation matters.
 override declare global {
     declare class Date {
         setDate(mut self, date: number) -> number,

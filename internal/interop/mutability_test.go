@@ -215,7 +215,7 @@ func TestClassifyTier2_SymbolNonSymbol(t *testing.T) {
 	}
 }
 
-func newRegistryFromSource(t *testing.T, src string, isUser bool) *overrideRegistry {
+func newRegistryFromSource(t *testing.T, src string, isUser bool) *OverrideRegistry {
 	t.Helper()
 	r := newOverrideRegistry()
 	if err := r.loadSource(src, "test.esc", isUser); err != nil {

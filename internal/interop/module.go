@@ -11,7 +11,7 @@ import (
 
 // convCtx carries shared state during dts → ast conversion.
 type convCtx struct {
-	registry   *overrideRegistry
+	registry   *OverrideRegistry
 	modulePath string
 }
 
@@ -139,7 +139,7 @@ func mergeNamespace(
 }
 
 // ConvertModule converts dts_parser.Module to ast.Module.
-func ConvertModule(dtsModule *dts_parser.Module, registry *overrideRegistry, modulePath string) (*ast.Module, error) {
+func ConvertModule(dtsModule *dts_parser.Module, registry *OverrideRegistry, modulePath string) (*ast.Module, error) {
 	var namespaces btree.Map[string, *ast.Namespace]
 
 	ctx := convCtx{registry: registry, modulePath: modulePath}

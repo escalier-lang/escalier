@@ -23,7 +23,7 @@ var blanketPureLibs = []string{
 
 // NewStdlibRegistry creates an override registry pre-populated with embedded
 // stdlib overrides and blanket-pure FP library entries.
-func NewStdlibRegistry() (*overrideRegistry, error) {
+func NewStdlibRegistry() (*OverrideRegistry, error) {
 	r := newOverrideRegistry()
 	if err := loadStdlib(r); err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func NewStdlibRegistry() (*overrideRegistry, error) {
 	return r, nil
 }
 
-func loadStdlib(r *overrideRegistry) error {
+func loadStdlib(r *OverrideRegistry) error {
 	return fs.WalkDir(stdlibFS, "stdlib", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -52,13 +52,13 @@ func loadStdlib(r *overrideRegistry) error {
 
 var (
 	defaultRegistryOnce sync.Once
-	defaultRegistryVal  *overrideRegistry
+	defaultRegistryVal  *OverrideRegistry
 )
 
 // DefaultRegistry returns the process-wide default override registry,
 // pre-populated with embedded stdlib overrides and known pure FP libraries.
 // Panics if the embedded data fails to parse (should never happen in production).
-func DefaultRegistry() *overrideRegistry {
+func DefaultRegistry() *OverrideRegistry {
 	defaultRegistryOnce.Do(func() {
 		r, err := NewStdlibRegistry()
 		if err != nil {

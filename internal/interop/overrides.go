@@ -36,16 +36,16 @@ type overrideEntry struct {
 	Mut bool // true = mutating receiver
 }
 
-// overrideRegistry holds parsed overrides indexed by overrideKey.
+// OverrideRegistry holds parsed overrides indexed by overrideKey.
 // User overrides take priority over shipped overrides on lookup.
-type overrideRegistry struct {
+type OverrideRegistry struct {
 	user        map[overrideKey]overrideEntry
 	shipped     map[overrideKey]overrideEntry
 	pureModules set.Set[string]
 }
 
-func newOverrideRegistry() *overrideRegistry {
-	return &overrideRegistry{
+func newOverrideRegistry() *OverrideRegistry {
+	return &OverrideRegistry{
 		user:        make(map[overrideKey]overrideEntry),
 		shipped:     make(map[overrideKey]overrideEntry),
 		pureModules: set.NewSet[string](),
@@ -56,7 +56,7 @@ func newOverrideRegistry() *overrideRegistry {
 // path is used only in error messages. isUser=true places entries in the user
 // tier (resolution-order tier 3); isUser=false places them in the shipped tier
 // (tier 4).
-func (r *overrideRegistry) loadSource(src, path string, isUser bool) error {
+func (r *OverrideRegistry) loadSource(src, path string, isUser bool) error {
 	entries, err := parseOverrideSource(src, path)
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ func (r *overrideRegistry) loadSource(src, path string, isUser bool) error {
 }
 
 // loadFile reads an .esc file and adds its override entries to the registry.
-func (r *overrideRegistry) loadFile(path string, isUser bool) error {
+func (r *OverrideRegistry) loadFile(path string, isUser bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -81,7 +81,7 @@ func (r *overrideRegistry) loadFile(path string, isUser bool) error {
 }
 
 // loadDir recursively loads all .esc files under dir into the registry.
-func (r *overrideRegistry) loadDir(dir string, isUser bool) error {
+func (r *OverrideRegistry) loadDir(dir string, isUser bool) error {
 	return filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -96,13 +96,13 @@ func (r *overrideRegistry) loadDir(dir string, isUser bool) error {
 // addPureModule marks an entire module as non-mutating at tier 4.
 // Any lookup for a key whose Module matches returns non-mutating when no
 // specific override exists.
-func (r *overrideRegistry) addPureModule(module string) {
+func (r *OverrideRegistry) addPureModule(module string) {
 	r.pureModules.Add(module)
 }
 
 // lookup finds the override entry for key, preferring user overrides over
 // shipped overrides. Returns (entry, isUser, true) if found.
-func (r *overrideRegistry) lookup(key overrideKey) (overrideEntry, bool, bool) {
+func (r *OverrideRegistry) lookup(key overrideKey) (overrideEntry, bool, bool) {
 	if entry, ok := r.user[key]; ok {
 		return entry, true, true
 	}

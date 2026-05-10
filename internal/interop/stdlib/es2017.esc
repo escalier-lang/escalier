@@ -1,4 +1,5 @@
 // Typed arrays: copyWithin/fill/reverse/set/sort mutate in-place; all others are non-mutating
+// Note: parameter and return types are placeholders (number/void); only the mut receiver annotation matters.
 override declare global {
     declare class Int8Array {
         copyWithin(mut self, target: number, start: number) -> void,

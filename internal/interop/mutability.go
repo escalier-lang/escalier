@@ -43,7 +43,7 @@ type ClassifyContext struct {
 	Member     dts_parser.ClassMember // the declaration being classified
 	ClassName  string                 // enclosing class name (empty if none)
 	ModulePath string                 // module path (empty if none)
-	Registry   *overrideRegistry      // optional; consulted for tiers 3 and 4
+	Registry   *OverrideRegistry      // optional; consulted for tiers 3 and 4
 }
 
 // Classify determines the mutability of a class member's receiver using the
