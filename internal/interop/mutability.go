@@ -43,6 +43,7 @@ type ClassifyContext struct {
 	Member     dts_parser.ClassMember // the declaration being classified
 	ClassName  string                 // enclosing class name (empty if none)
 	ModulePath string                 // module path (empty if none)
+	Registry   *overrideRegistry      // optional; consulted for tiers 3 and 4
 }
 
 // Classify determines the mutability of a class member's receiver using the
@@ -56,9 +57,24 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return result
 	}
 
-	// Tier 3: user override files — Phase 3.
-
-	// Tier 4: shipped overrides (stdlib, FP libraries) — Phase 4.
+	// Tiers 3 & 4: override files (user overrides win over shipped overrides).
+	if ctx.Registry != nil {
+		if name, kind, ok := memberName(ctx.Member); ok {
+			key := overrideKey{
+				Module:    ctx.ModulePath,
+				ClassName: ctx.ClassName,
+				Member:    name,
+				Kind:      kind,
+			}
+			if entry, fromUser, found := ctx.Registry.lookup(key); found {
+				tier := TierShippedOverride
+				if fromUser {
+					tier = TierUserOverride
+				}
+				return ClassifyResult{Mut: entry.Mut, Source: tier}
+			}
+		}
+	}
 
 	// Tier 5: primitive wrapper classes — Phase 5.
 
@@ -183,6 +199,33 @@ func isReadonlyWrapperType(t dts_parser.TypeAnn) bool {
 		return true
 	}
 	return false
+}
+
+// memberName extracts the simple string name and kind from a ClassMember.
+// Returns ("", 0, false) for computed keys (e.g. [Symbol.iterator]).
+func memberName(m dts_parser.ClassMember) (string, memberKind, bool) {
+	var key dts_parser.PropertyKey
+	var kind memberKind
+	switch v := m.(type) {
+	case *dts_parser.MethodDecl:
+		key = v.Name
+		kind = kindMethod
+	case *dts_parser.GetterDecl:
+		key = v.Name
+		kind = kindGetter
+	case *dts_parser.SetterDecl:
+		key = v.Name
+		kind = kindSetter
+	case *dts_parser.PropertyDecl:
+		key = v.Name
+		kind = kindField
+	default:
+		return "", 0, false
+	}
+	if ident, ok := key.(*dts_parser.Ident); ok {
+		return ident.Name, kind, true
+	}
+	return "", 0, false
 }
 
 // isReadonlyCollectionClass returns true when the class name is one of

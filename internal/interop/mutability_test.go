@@ -214,3 +214,157 @@ func TestClassifyTier2_SymbolNonSymbol(t *testing.T) {
 		t.Error("[Foo.iterator] should not be classified as non-mutating")
 	}
 }
+
+func newRegistryFromSource(t *testing.T, src string, isUser bool) *overrideRegistry {
+	t.Helper()
+	r := newOverrideRegistry()
+	if err := r.loadSource(src, "test.esc", isUser); err != nil {
+		t.Fatalf("LoadSource: %v", err)
+	}
+	return r
+}
+
+func TestClassifyTier3_UserOverride(t *testing.T) {
+	src := `
+override declare global {
+    declare class Foo {
+        doWork(self) -> void,
+    }
+}
+`
+	reg := newRegistryFromSource(t, src, true)
+	method := makeMethodDecl("doWork", nil)
+	result := Classify(ClassifyContext{
+		Member:    method,
+		ClassName: "Foo",
+		Registry:  reg,
+	})
+	if result.Mut {
+		t.Error("user override says non-mutating but got mutating")
+	}
+	if result.Source != TierUserOverride {
+		t.Errorf("expected TierUserOverride, got %d", result.Source)
+	}
+}
+
+func TestClassifyTier4_ShippedOverride(t *testing.T) {
+	src := `
+override declare global {
+    declare class Date {
+        setHours(mut self, hours: number) -> number,
+    }
+}
+`
+	reg := newRegistryFromSource(t, src, false)
+	method := makeMethodDecl("setHours", nil)
+	result := Classify(ClassifyContext{
+		Member:    method,
+		ClassName: "Date",
+		Registry:  reg,
+	})
+	if !result.Mut {
+		t.Error("shipped override says mutating but got non-mutating")
+	}
+	if result.Source != TierShippedOverride {
+		t.Errorf("expected TierShippedOverride, got %d", result.Source)
+	}
+}
+
+func TestClassifyTier3_WinsOverTier4(t *testing.T) {
+	shipped := `
+override declare global {
+    declare class Foo {
+        bar(mut self) -> void,
+    }
+}
+`
+	user := `
+override declare global {
+    declare class Foo {
+        bar(self) -> void,
+    }
+}
+`
+	reg := newOverrideRegistry()
+	if err := reg.loadSource(shipped, "shipped.esc", false); err != nil {
+		t.Fatalf("LoadSource shipped: %v", err)
+	}
+	if err := reg.loadSource(user, "user.esc", true); err != nil {
+		t.Fatalf("LoadSource user: %v", err)
+	}
+
+	method := makeMethodDecl("bar", nil)
+	result := Classify(ClassifyContext{
+		Member:    method,
+		ClassName: "Foo",
+		Registry:  reg,
+	})
+	if result.Mut {
+		t.Error("user override (non-mutating) should win over shipped override (mutating)")
+	}
+	if result.Source != TierUserOverride {
+		t.Errorf("expected TierUserOverride, got %d", result.Source)
+	}
+}
+
+func TestClassifyTier3_ModulePath(t *testing.T) {
+	src := `
+override declare module "my-lib" {
+    declare class Widget {
+        render(self) -> void,
+    }
+}
+`
+	reg := newRegistryFromSource(t, src, true)
+	method := makeMethodDecl("render", nil)
+	result := Classify(ClassifyContext{
+		Member:     method,
+		ClassName:  "Widget",
+		ModulePath: "my-lib",
+		Registry:   reg,
+	})
+	if result.Mut {
+		t.Error("override says non-mutating but got mutating")
+	}
+	if result.Source != TierUserOverride {
+		t.Errorf("expected TierUserOverride, got %d", result.Source)
+	}
+}
+
+func TestClassifyTier3_NoRegistryFallsThrough(t *testing.T) {
+	// Without a registry, a plain method falls through to tier 8 (default mutating).
+	result := Classify(ClassifyContext{
+		Member:    makeMethodDecl("doWork", nil),
+		ClassName: "Foo",
+	})
+	if !result.Mut {
+		t.Error("without registry, method should default to mutating")
+	}
+	if result.Source != TierDefault {
+		t.Errorf("expected TierDefault, got %d", result.Source)
+	}
+}
+
+func TestClassifyTier2_BeatsOverride(t *testing.T) {
+	// Tier 2 (getter) must win even when an override exists for the same name.
+	src := `
+override declare global {
+    declare class Foo {
+        get value(self) -> number,
+    }
+}
+`
+	reg := newRegistryFromSource(t, src, true)
+	// A getter is always classified at tier 2, never reaching tier 3.
+	result := Classify(ClassifyContext{
+		Member:    &dts_parser.GetterDecl{},
+		ClassName: "Foo",
+		Registry:  reg,
+	})
+	if result.Mut {
+		t.Error("getter should be non-mutating (tier 2)")
+	}
+	if result.Source != TierExplicitSignal {
+		t.Errorf("getter should use TierExplicitSignal, got %d", result.Source)
+	}
+}
