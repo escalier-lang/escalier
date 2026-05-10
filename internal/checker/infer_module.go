@@ -888,6 +888,14 @@ func (c *Checker) InferComponent(
 	// return types are inferred before VarDecl initializers that may reference them.
 	sortedForDefs := sortKeysForDefinitions(depGraph, sortedComponent)
 
+	// Accumulate FuncTypes for FuncDecls and VarDecls whose initializer
+	// resolves to a FuncType so that they can be generalized as a group.
+	// This ensures unresolved type vars shared across the SCC (e.g. from
+	// mutually recursive calls without explicit return annotations) bind to a
+	// single set of type params rather than leaking from one declaration into
+	// another. See issue #589.
+	pendingFuncTypes := []*type_system.FuncType{}
+
 	// Infer definitions - single pass with VarDecl processed last due to sorting
 	for _, key := range sortedForDefs {
 		decls := depGraph.GetDecls(key)
@@ -919,7 +927,7 @@ func (c *Checker) InferComponent(
 						elisionErrors := c.ApplyLifetimeElision(ft)
 						errors = slices.Concat(errors, elisionErrors)
 						c.resolveCallSites(ctx)
-						GeneralizeFuncType(ft)
+						pendingFuncTypes = append(pendingFuncTypes, ft)
 					}
 					continue
 				case *ast.VarDecl:
@@ -955,9 +963,12 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, inferErrors)
 				}
 
-				// Resolve deferred call sites and generalize type variables into type parameters
+				// Resolve deferred call sites now; generalization is deferred
+				// until all FuncDecls in the component have been inferred so
+				// that mutually recursive functions share a consistent set of
+				// generalized type parameters (issue #589).
 				c.resolveCallSites(declCtx)
-				GeneralizeFuncType(funcType)
+				pendingFuncTypes = append(pendingFuncTypes, funcType)
 
 			case *ast.VarDecl:
 				// Skip if this VarDecl was processed in a previous component
@@ -987,7 +998,7 @@ func (c *Checker) InferComponent(
 					prunedType := type_system.Prune(decl.InferredType)
 					if funcType, ok := prunedType.(*type_system.FuncType); ok {
 						c.resolveCallSites(nsCtx)
-						GeneralizeFuncType(funcType)
+						pendingFuncTypes = append(pendingFuncTypes, funcType)
 					}
 				}
 			case *ast.TypeDecl:
@@ -1678,6 +1689,12 @@ func (c *Checker) InferComponent(
 			}
 		}
 	}
+
+	// Generalize all collected FuncTypes as a group. For singleton
+	// components this is equivalent to the old per-decl GeneralizeFuncType
+	// call; for mutually recursive groups it ensures shared unresolved type
+	// vars become a single generalized parameter (issue #589).
+	generalizeFuncTypes(pendingFuncTypes)
 
 	// Phase 8.7: for SCCs of size > 1 (mutually recursive function
 	// groups), iterate lifetime inference to a fixed point. Each pass

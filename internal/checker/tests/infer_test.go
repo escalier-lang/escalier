@@ -502,16 +502,30 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		// TODO: figure out how to infer throws types in mutually recursive functions
 		"MutualRecuriveFunctions": {
 			input: `
-				fn foo() -> number {
+				fn foo() {
 					return bar() + 1
 				}
-				fn bar() -> number {
+				fn bar() {
 					return foo() - 1
 				}
 			`,
 			expectedTypes: map[string]string{
 				"foo": "fn () -> number",
 				"bar": "fn () -> number",
+			},
+		},
+		"MutualRecuriveFunctionsWithoutReturnsVoid": {
+			input: `
+				fn foo() {
+					return bar()
+				}
+				fn bar() {
+					return foo()
+				}
+			`,
+			expectedTypes: map[string]string{
+				"foo": "fn () -> void",
+				"bar": "fn () -> void",
 			},
 		},
 		"UnionTypeVariable": {
