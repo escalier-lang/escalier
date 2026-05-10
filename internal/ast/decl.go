@@ -28,6 +28,7 @@ func (*EnumDecl) isDecl()             {}
 func (*ExportAssignmentStmt) isDecl() {}
 func (*DeclareModuleDecl) isDecl()    {}
 func (*DeclareGlobalDecl) isDecl()    {}
+func (*NamespaceDecl) isDecl()        {}
 
 type VariableKind int
 
@@ -409,9 +410,15 @@ func (e *ExportAssignmentStmt) Accept(v Visitor) {
 func (e *ExportAssignmentStmt) Provenance() provenance.Provenance     { return e.provenance }
 func (e *ExportAssignmentStmt) SetProvenance(p provenance.Provenance) { e.provenance = p }
 
-// DeclareModuleDecl represents `declare module "<name>" { <decl>* }`,
-// optionally prefixed by `override`. Used for ambient module
-// declarations (the override-file format relies on this).
+// DeclareModuleDecl represents `declare module "<name>" { <decl>* }` written
+// in Escalier source (.esc files), optionally prefixed by `override`.
+//
+// Note: .d.ts files are handled by an entirely separate pipeline
+// (internal/dts_parser + internal/interop) that has its own
+// dts_parser.ModuleDecl and dts_parser.GlobalDecl types. Those are
+// classified and converted into Escalier AST nodes before they ever
+// reach this package. DeclareModuleDecl and DeclareGlobalDecl below
+// exist solely for the Escalier override-file format.
 type DeclareModuleDecl struct {
 	Name       *StrLit // module name as a string literal
 	Decls      []Decl
@@ -446,9 +453,9 @@ func (d *DeclareModuleDecl) Accept(v Visitor) {
 func (d *DeclareModuleDecl) Provenance() provenance.Provenance     { return d.provenance }
 func (d *DeclareModuleDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }
 
-// DeclareGlobalDecl represents `declare global { <decl>* }`, optionally
-// prefixed by `override`. Used for ambient augmentations of the global
-// scope.
+// DeclareGlobalDecl represents `declare global { <decl>* }` written in
+// Escalier source (.esc files), optionally prefixed by `override`. See the
+// note on DeclareModuleDecl for how this differs from dts_parser.GlobalDecl.
 type DeclareGlobalDecl struct {
 	Decls      []Decl
 	override   bool
@@ -480,3 +487,44 @@ func (d *DeclareGlobalDecl) Accept(v Visitor) {
 }
 func (d *DeclareGlobalDecl) Provenance() provenance.Provenance     { return d.provenance }
 func (d *DeclareGlobalDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }
+
+// NamespaceDecl represents `namespace Name { <decl>* }` inside a declare
+// block (e.g. inside `declare module "x" { ... }` or `declare global { ... }`).
+// Like DeclareModuleDecl/DeclareGlobalDecl, this is an Escalier-source construct;
+// the dts_parser has its own dts_parser.NamespaceDecl for .d.ts files.
+// Declare() always returns true because namespaces are inherently ambient.
+type NamespaceDecl struct {
+	Name       *Ident
+	Decls      []Decl
+	export     bool
+	override   bool
+	span       Span
+	provenance provenance.Provenance
+}
+
+func NewNamespaceDecl(name *Ident, decls []Decl, export, override bool, span Span) *NamespaceDecl {
+	return &NamespaceDecl{
+		Name:       name,
+		Decls:      decls,
+		export:     export,
+		override:   override,
+		span:       span,
+		provenance: nil,
+	}
+}
+func (d *NamespaceDecl) Export() bool       { return d.export }
+func (d *NamespaceDecl) SetExport(e bool)   { d.export = e }
+func (d *NamespaceDecl) Declare() bool      { return true }
+func (d *NamespaceDecl) Override() bool     { return d.override }
+func (d *NamespaceDecl) SetOverride(o bool) { d.override = o }
+func (d *NamespaceDecl) Span() Span         { return d.span }
+func (d *NamespaceDecl) Accept(v Visitor) {
+	if v.EnterDecl(d) {
+		for _, inner := range d.Decls {
+			inner.Accept(v)
+		}
+	}
+	v.ExitDecl(d)
+}
+func (d *NamespaceDecl) Provenance() provenance.Provenance     { return d.provenance }
+func (d *NamespaceDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }

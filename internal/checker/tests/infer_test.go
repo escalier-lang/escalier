@@ -190,10 +190,10 @@ func TestCheckScriptNoErrors(t *testing.T) {
 	}
 }
 
-// Regression: `declare module "..." { ... }` and `declare global { ... }`
-// at the script top level reach inferStmt -> inferDecl. Without explicit
-// cases for the new ambient block decls, inferDecl's default branch
-// panics with "Unknown declaration type".
+// Ambient block declarations (`declare module "..." { ... }` and
+// `declare global { ... }`) at the script top level flow through
+// inferStmt -> inferDecl. This test ensures they are treated as no-ops
+// and produce no errors.
 func TestCheckScriptDeclareBlocksAreNoOps(t *testing.T) {
 	tests := map[string]struct {
 		input string
@@ -209,6 +209,15 @@ func TestCheckScriptDeclareBlocksAreNoOps(t *testing.T) {
 		},
 		"OverrideDeclareGlobal": {
 			input: `override declare global { }`,
+		},
+		"NamespaceInDeclareGlobal": {
+			input: `declare global { namespace Math { declare fn abs(x: number) -> number } }`,
+		},
+		"NamespaceInDeclareModule": {
+			input: `declare module "lib" { namespace Foo { declare val x: number } }`,
+		},
+		"NestedNamespace": {
+			input: `declare global { namespace Outer { namespace Inner { declare val x: number } } }`,
 		},
 	}
 

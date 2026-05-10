@@ -78,8 +78,9 @@ func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypePa
 }
 
 // Decl = 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)
-//      | 'override'? 'declare' 'module' StrLit '{' decl* '}'
-//      | 'override'? 'declare' 'global' '{' decl* '}'
+//
+//	| 'override'? 'declare' 'module' StrLit '{' decl* '}'
+//	| 'override'? 'declare' 'global' '{' decl* '}'
 func (p *Parser) Decl() ast.Decl {
 	export := false
 	override := false
@@ -145,6 +146,16 @@ func (p *Parser) Decl() ast.Decl {
 		decl = p.enumDecl(start, export, declare)
 	case Class:
 		decl = p.classDecl(start, export, declare)
+	case Identifier:
+		// `namespace` is contextual — only meaningful inside declare blocks,
+		// but we parse it wherever a decl is valid and let the checker enforce
+		// placement rules.
+		if token.Value == "namespace" {
+			decl = p.namespaceDecl(start, export, override)
+		} else {
+			p.reportError(token.Span, "Unexpected token")
+			return nil
+		}
 	default:
 		p.reportError(token.Span, "Unexpected token")
 		return nil
@@ -155,12 +166,29 @@ func (p *Parser) Decl() ast.Decl {
 	return decl
 }
 
+// namespaceDecl parses `namespace Name { <decl>* }` after the `namespace`
+// identifier has already been consumed by the caller.
+func (p *Parser) namespaceDecl(start ast.Location, export, override bool) *ast.NamespaceDecl {
+	nameTok := p.lexer.next()
+	var name *ast.Ident
+	if nameTok.Type != Identifier {
+		p.reportError(nameTok.Span, "Expected identifier after 'namespace'")
+		name = ast.NewIdentifier("", nameTok.Span)
+	} else {
+		name = ast.NewIdentifier(nameTok.Value, nameTok.Span)
+	}
+
+	decls := p.declareBlockBody(override)
+	end := p.expect(CloseBrace, AlwaysConsume)
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	return ast.NewNamespaceDecl(name, decls, export, override, span)
+}
+
 // declareModuleDecl parses `module "<name>" { <decl>* }` after the
 // `declare` keyword has already been consumed (along with the `module`
-// identifier). The opening identifier `module` is the current token.
-// `override` indicates whether the enclosing `Decl()` saw an `override`
-// keyword; it's stamped on the resulting decl and propagated to every
-// inner declaration in the block body.
+// keyword). The opening `module` is the current token. `override` indicates
+// whether the enclosing `Decl()` saw an `override` keyword; it's stamped on the
+// resulting decl and propagated to every inner declaration in the block body.
 func (p *Parser) declareModuleDecl(start ast.Location, override bool) *ast.DeclareModuleDecl {
 	// `module` was already consumed by the caller via lexer.next().
 	nameTok := p.lexer.next()
@@ -178,9 +206,9 @@ func (p *Parser) declareModuleDecl(start ast.Location, override bool) *ast.Decla
 	return ast.NewDeclareModuleDecl(name, decls, override, span)
 }
 
-// declareGlobalDecl parses `global { <decl>* }` after the `declare`
-// keyword has been consumed and the `global` identifier is the current
-// token. See declareModuleDecl for the meaning of `override`.
+// declareGlobalDecl parses `global { <decl>* }` after the `declare` keyword
+// has been consumed and the `global` identifier is the current token. See
+// declareModuleDecl for the meaning of `override`.
 func (p *Parser) declareGlobalDecl(start ast.Location, override bool) *ast.DeclareGlobalDecl {
 	// `global` was already consumed by the caller via lexer.next().
 	decls := p.declareBlockBody(override)
@@ -227,9 +255,10 @@ func (p *Parser) declareBlockBody(override bool) []ast.Decl {
 }
 
 // classDecl = 'class' ident typeParams?
-//             ('extends' typeAnn ('(' expr* ')')?)?
-//             ('implements' typeAnn (',' typeAnn)*)?
-//             '{' classElem* '}'
+//
+//	('extends' typeAnn ('(' expr* ')')?)?
+//	('implements' typeAnn (',' typeAnn)*)?
+//	'{' classElem* '}'
 func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	token := p.lexer.peek()
 	var name *ast.Ident

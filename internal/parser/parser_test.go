@@ -282,6 +282,48 @@ func TestParseModuleNoErrors(t *testing.T) {
 		"OverrideDeclareVal": {
 			input: `override declare val x: number`,
 		},
+		"NamespaceEmpty": {
+			input: `declare global { namespace Math { } }`,
+		},
+		"NamespaceWithDecls": {
+			input: `
+				declare global {
+					namespace Math {
+						declare fn abs(x: number) -> number
+						declare fn sqrt(x: number) -> number
+					}
+				}
+			`,
+		},
+		"NamespaceNested": {
+			input: `
+				declare module "lib" {
+					namespace Outer {
+						namespace Inner {
+							declare val x: number
+						}
+					}
+				}
+			`,
+		},
+		"OverrideNamespace": {
+			input: `
+				override declare global {
+					namespace Math {
+						declare fn abs(x: number) -> number
+					}
+				}
+			`,
+		},
+		"ExportNamespace": {
+			input: `
+				declare module "lib" {
+					export namespace Foo {
+						declare val x: number
+					}
+				}
+			`,
+		},
 	}
 
 	// Pull in the override-file fixture so a parse failure in

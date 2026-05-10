@@ -12376,3 +12376,497 @@
     },
 }
 ---
+
+[TestParseModuleNoErrors/OverrideNamespace - 1]
+&ast.DeclStmt{
+    Decl: &ast.DeclareGlobalDecl{
+        Decls: {
+            &ast.NamespaceDecl{
+                Name: &ast.Ident{
+                    Name: "Math",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:16},
+                        End:      ast.Location{Line:3, Column:20},
+                        SourceID: 0,
+                    },
+                },
+                Decls: {
+                    &ast.FuncDecl{
+                        Name: &ast.Ident{
+                            Name: "abs",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:18},
+                                End:      ast.Location{Line:4, Column:21},
+                                SourceID: 0,
+                            },
+                        },
+                        VarID:   0,
+                        FuncSig: ast.FuncSig{
+                            LifetimeParams: nil,
+                            TypeParams:     nil,
+                            Params:         {
+                                &ast.Param{
+                                    Pattern: &ast.IdentPat{
+                                        Name:    "x",
+                                        VarID:   0,
+                                        Mutable: false,
+                                        TypeAnn: nil,
+                                        Default: nil,
+                                        span:    ast.Span{
+                                            Start:    ast.Location{Line:4, Column:22},
+                                            End:      ast.Location{Line:4, Column:23},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                    Optional: false,
+                                    TypeAnn:  &ast.NumberTypeAnn{
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:4, Column:25},
+                                            End:      ast.Location{Line:4, Column:31},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                },
+                            },
+                            Return: &ast.NumberTypeAnn{
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:36},
+                                    End:      ast.Location{Line:4, Column:42},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Throws: nil,
+                            Async:  false,
+                        },
+                        Body:     &ast.Block{},
+                        export:   false,
+                        declare:  true,
+                        override: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:4, Column:7},
+                            End:      ast.Location{Line:4, Column:42},
+                            SourceID: 0,
+                        },
+                        provenance: nil,
+                    },
+                },
+                export:   false,
+                override: true,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:5, Column:7},
+                    SourceID: 0,
+                },
+                provenance: nil,
+            },
+        },
+        override: true,
+        span:     ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:6, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/NamespaceWithDecls - 1]
+&ast.DeclStmt{
+    Decl: &ast.DeclareGlobalDecl{
+        Decls: {
+            &ast.NamespaceDecl{
+                Name: &ast.Ident{
+                    Name: "Math",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:16},
+                        End:      ast.Location{Line:3, Column:20},
+                        SourceID: 0,
+                    },
+                },
+                Decls: {
+                    &ast.FuncDecl{
+                        Name: &ast.Ident{
+                            Name: "abs",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:18},
+                                End:      ast.Location{Line:4, Column:21},
+                                SourceID: 0,
+                            },
+                        },
+                        VarID:   0,
+                        FuncSig: ast.FuncSig{
+                            LifetimeParams: nil,
+                            TypeParams:     nil,
+                            Params:         {
+                                &ast.Param{
+                                    Pattern: &ast.IdentPat{
+                                        Name:    "x",
+                                        VarID:   0,
+                                        Mutable: false,
+                                        TypeAnn: nil,
+                                        Default: nil,
+                                        span:    ast.Span{
+                                            Start:    ast.Location{Line:4, Column:22},
+                                            End:      ast.Location{Line:4, Column:23},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                    Optional: false,
+                                    TypeAnn:  &ast.NumberTypeAnn{
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:4, Column:25},
+                                            End:      ast.Location{Line:4, Column:31},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                },
+                            },
+                            Return: &ast.NumberTypeAnn{
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:4, Column:36},
+                                    End:      ast.Location{Line:4, Column:42},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Throws: nil,
+                            Async:  false,
+                        },
+                        Body:     &ast.Block{},
+                        export:   false,
+                        declare:  true,
+                        override: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:4, Column:7},
+                            End:      ast.Location{Line:4, Column:42},
+                            SourceID: 0,
+                        },
+                        provenance: nil,
+                    },
+                    &ast.FuncDecl{
+                        Name: &ast.Ident{
+                            Name: "sqrt",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:5, Column:18},
+                                End:      ast.Location{Line:5, Column:22},
+                                SourceID: 0,
+                            },
+                        },
+                        VarID:   0,
+                        FuncSig: ast.FuncSig{
+                            LifetimeParams: nil,
+                            TypeParams:     nil,
+                            Params:         {
+                                &ast.Param{
+                                    Pattern: &ast.IdentPat{
+                                        Name:    "x",
+                                        VarID:   0,
+                                        Mutable: false,
+                                        TypeAnn: nil,
+                                        Default: nil,
+                                        span:    ast.Span{
+                                            Start:    ast.Location{Line:5, Column:23},
+                                            End:      ast.Location{Line:5, Column:24},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                    Optional: false,
+                                    TypeAnn:  &ast.NumberTypeAnn{
+                                        span: ast.Span{
+                                            Start:    ast.Location{Line:5, Column:26},
+                                            End:      ast.Location{Line:5, Column:32},
+                                            SourceID: 0,
+                                        },
+                                        inferredType: nil,
+                                    },
+                                },
+                            },
+                            Return: &ast.NumberTypeAnn{
+                                span: ast.Span{
+                                    Start:    ast.Location{Line:5, Column:37},
+                                    End:      ast.Location{Line:5, Column:43},
+                                    SourceID: 0,
+                                },
+                                inferredType: nil,
+                            },
+                            Throws: nil,
+                            Async:  false,
+                        },
+                        Body:     &ast.Block{},
+                        export:   false,
+                        declare:  true,
+                        override: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:5, Column:7},
+                            End:      ast.Location{Line:5, Column:43},
+                            SourceID: 0,
+                        },
+                        provenance: nil,
+                    },
+                },
+                export:   false,
+                override: false,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:6, Column:7},
+                    SourceID: 0,
+                },
+                provenance: nil,
+            },
+        },
+        override: false,
+        span:     ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:7, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:7, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/NamespaceEmpty - 1]
+&ast.DeclStmt{
+    Decl: &ast.DeclareGlobalDecl{
+        Decls: {
+            &ast.NamespaceDecl{
+                Name: &ast.Ident{
+                    Name: "Math",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:1, Column:28},
+                        End:      ast.Location{Line:1, Column:32},
+                        SourceID: 0,
+                    },
+                },
+                Decls: {
+                },
+                export:   false,
+                override: false,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:1, Column:18},
+                    End:      ast.Location{Line:1, Column:36},
+                    SourceID: 0,
+                },
+                provenance: nil,
+            },
+        },
+        override: false,
+        span:     ast.Span{
+            Start:    ast.Location{Line:1, Column:1},
+            End:      ast.Location{Line:1, Column:38},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:38},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/ExportNamespace - 1]
+&ast.DeclStmt{
+    Decl: &ast.DeclareModuleDecl{
+        Name: &ast.StrLit{
+            Value: "lib",
+            span:  ast.Span{
+                Start:    ast.Location{Line:2, Column:20},
+                End:      ast.Location{Line:2, Column:25},
+                SourceID: 0,
+            },
+        },
+        Decls: {
+            &ast.NamespaceDecl{
+                Name: &ast.Ident{
+                    Name: "Foo",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:23},
+                        End:      ast.Location{Line:3, Column:26},
+                        SourceID: 0,
+                    },
+                },
+                Decls: {
+                    &ast.VarDecl{
+                        Kind:    0,
+                        Pattern: &ast.IdentPat{
+                            Name:    "x",
+                            VarID:   0,
+                            Mutable: false,
+                            TypeAnn: nil,
+                            Default: nil,
+                            span:    ast.Span{
+                                Start:    ast.Location{Line:4, Column:19},
+                                End:      ast.Location{Line:4, Column:20},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        TypeAnn: &ast.NumberTypeAnn{
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:22},
+                                End:      ast.Location{Line:4, Column:28},
+                                SourceID: 0,
+                            },
+                            inferredType: nil,
+                        },
+                        Init:     nil,
+                        export:   false,
+                        declare:  true,
+                        override: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:4, Column:7},
+                            End:      ast.Location{Line:4, Column:20},
+                            SourceID: 0,
+                        },
+                        InferredType: nil,
+                        provenance:   nil,
+                    },
+                },
+                export:   true,
+                override: false,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:5, Column:7},
+                    SourceID: 0,
+                },
+                provenance: nil,
+            },
+        },
+        override: false,
+        span:     ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:6, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:6, Column:6},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseModuleNoErrors/NamespaceNested - 1]
+&ast.DeclStmt{
+    Decl: &ast.DeclareModuleDecl{
+        Name: &ast.StrLit{
+            Value: "lib",
+            span:  ast.Span{
+                Start:    ast.Location{Line:2, Column:20},
+                End:      ast.Location{Line:2, Column:25},
+                SourceID: 0,
+            },
+        },
+        Decls: {
+            &ast.NamespaceDecl{
+                Name: &ast.Ident{
+                    Name: "Outer",
+                    span: ast.Span{
+                        Start:    ast.Location{Line:3, Column:16},
+                        End:      ast.Location{Line:3, Column:21},
+                        SourceID: 0,
+                    },
+                },
+                Decls: {
+                    &ast.NamespaceDecl{
+                        Name: &ast.Ident{
+                            Name: "Inner",
+                            span: ast.Span{
+                                Start:    ast.Location{Line:4, Column:17},
+                                End:      ast.Location{Line:4, Column:22},
+                                SourceID: 0,
+                            },
+                        },
+                        Decls: {
+                            &ast.VarDecl{
+                                Kind:    0,
+                                Pattern: &ast.IdentPat{
+                                    Name:    "x",
+                                    VarID:   0,
+                                    Mutable: false,
+                                    TypeAnn: nil,
+                                    Default: nil,
+                                    span:    ast.Span{
+                                        Start:    ast.Location{Line:5, Column:20},
+                                        End:      ast.Location{Line:5, Column:21},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                TypeAnn: &ast.NumberTypeAnn{
+                                    span: ast.Span{
+                                        Start:    ast.Location{Line:5, Column:23},
+                                        End:      ast.Location{Line:5, Column:29},
+                                        SourceID: 0,
+                                    },
+                                    inferredType: nil,
+                                },
+                                Init:     nil,
+                                export:   false,
+                                declare:  true,
+                                override: false,
+                                span:     ast.Span{
+                                    Start:    ast.Location{Line:5, Column:8},
+                                    End:      ast.Location{Line:5, Column:21},
+                                    SourceID: 0,
+                                },
+                                InferredType: nil,
+                                provenance:   nil,
+                            },
+                        },
+                        export:   false,
+                        override: false,
+                        span:     ast.Span{
+                            Start:    ast.Location{Line:4, Column:7},
+                            End:      ast.Location{Line:6, Column:8},
+                            SourceID: 0,
+                        },
+                        provenance: nil,
+                    },
+                },
+                export:   false,
+                override: false,
+                span:     ast.Span{
+                    Start:    ast.Location{Line:3, Column:6},
+                    End:      ast.Location{Line:7, Column:7},
+                    SourceID: 0,
+                },
+                provenance: nil,
+            },
+        },
+        override: false,
+        span:     ast.Span{
+            Start:    ast.Location{Line:2, Column:5},
+            End:      ast.Location{Line:8, Column:6},
+            SourceID: 0,
+        },
+        provenance: nil,
+    },
+    span: ast.Span{
+        Start:    ast.Location{Line:2, Column:5},
+        End:      ast.Location{Line:8, Column:6},
+        SourceID: 0,
+    },
+}
+---
