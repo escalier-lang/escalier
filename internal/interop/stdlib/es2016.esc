@@ -1,0 +1,31 @@
+// Typed array `includes` method (from lib.es2016.array.include.d.ts).
+// includes is a non-mutating read.
+override declare global {
+    declare class Int8Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Uint8Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Int16Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Uint16Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Int32Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Uint32Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Float32Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Float64Array {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+    declare class Uint8ClampedArray {
+        includes(self, searchElement: number, fromIndex?: number) -> boolean,
+    }
+}

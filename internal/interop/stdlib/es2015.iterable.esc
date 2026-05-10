@@ -1,0 +1,49 @@
+// Typed array iteration methods (from lib.es2015.iterable.d.ts).
+// entries/keys/values are non-mutating reads of the underlying buffer view.
+override declare global {
+    declare class Int8Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Uint8Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Int16Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Uint16Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Int32Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Uint32Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Float32Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Float64Array {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+    declare class Uint8ClampedArray {
+        entries(self) -> ArrayIterator<[number, number]>,
+        keys(self) -> ArrayIterator<number>,
+        values(self) -> ArrayIterator<number>,
+    }
+}

@@ -1,7 +1,6 @@
-// WeakRef: deref is a non-mutating read
-// Note: parameter and return types are placeholders (number/void); only the mut receiver annotation matters.
+// WeakRef: deref is a non-mutating read.
 override declare global {
-    declare class WeakRef {
-        deref(self) -> number,
+    declare class WeakRef<T> {
+        deref(self) -> T | undefined,
     }
 }

@@ -1,22 +1,27 @@
-// Promise: all methods return new Promises, non-mutating
-// WeakMap: set/delete mutate; get/has are non-mutating reads
-// WeakSet: add/delete mutate; has is a non-mutating read
-// Note: parameter and return types are placeholders (number/void); only the mut receiver annotation matters.
+// Promise (then/catch from lib.es5.d.ts; finally from lib.es2018.promise.d.ts):
+// all instance methods return new Promises, non-mutating.
+// WeakMap (lib.es2015.collection.d.ts): set/delete mutate; get/has are non-mutating reads.
+// WeakSet (lib.es2015.collection.d.ts): add/delete mutate; has is a non-mutating read.
 override declare global {
-    declare class Promise {
-        then(self, onFulfilled: number) -> number,
-        catch(self, onRejected: number) -> number,
-        finally(self, onFinally: number) -> number,
+    declare class Promise<T> {
+        then<TResult1, TResult2>(self,
+            onfulfilled?: (fn(value: T) -> TResult1 | PromiseLike<TResult1>) | undefined | null,
+            onrejected?: (fn(reason: any) -> TResult2 | PromiseLike<TResult2>) | undefined | null,
+        ) -> Promise<TResult1 | TResult2>,
+        catch<TResult>(self,
+            onrejected?: (fn(reason: any) -> TResult | PromiseLike<TResult>) | undefined | null,
+        ) -> Promise<T | TResult>,
+        finally(self, onfinally?: (fn() -> void) | undefined | null) -> Promise<T>,
     }
-    declare class WeakMap {
-        set(mut self, key: number, value: number) -> void,
-        delete(mut self, key: number) -> boolean,
-        get(self, key: number) -> number,
-        has(self, key: number) -> boolean,
+    declare class WeakMap<K : WeakKey, V> {
+        delete(mut self, key: K) -> boolean,
+        get(self, key: K) -> V | undefined,
+        has(self, key: K) -> boolean,
+        set(mut self, key: K, value: V) -> WeakMap<K, V>,
     }
-    declare class WeakSet {
-        add(mut self, value: number) -> void,
-        delete(mut self, value: number) -> boolean,
-        has(self, value: number) -> boolean,
+    declare class WeakSet<T : WeakKey> {
+        add(mut self, value: T) -> WeakSet<T>,
+        delete(mut self, value: T) -> boolean,
+        has(self, value: T) -> boolean,
     }
 }

@@ -1,17 +1,15 @@
-// URLSearchParams: append/set/delete/sort mutate; get/getAll/has/keys/values/entries/forEach are non-mutating
-// Note: parameter and return types are placeholders (number/void); only the mut receiver annotation matters.
+// URLSearchParams (from lib.dom.d.ts): append/set/delete/sort mutate; get/getAll/has/forEach/toString are non-mutating reads.
+// Iteration methods (entries/keys/values) come from lib.dom.iterable.d.ts and live in dom.iterable.esc.
 override declare global {
     declare class URLSearchParams {
         append(mut self, name: string, value: string) -> void,
+        delete(mut self, name: string, value?: string) -> void,
+        get(self, name: string) -> string | null,
+        getAll(self, name: string) -> Array<string>,
+        has(self, name: string, value?: string) -> boolean,
         set(mut self, name: string, value: string) -> void,
-        delete(mut self, name: string) -> void,
         sort(mut self) -> void,
-        get(self, name: string) -> string,
-        getAll(self, name: string) -> number,
-        has(self, name: string) -> boolean,
-        keys(self) -> number,
-        values(self) -> number,
-        entries(self) -> number,
-        forEach(self, f: number) -> void,
+        toString(self) -> string,
+        forEach(self, callbackfn: fn(value: string, key: string, parent: URLSearchParams) -> void, thisArg?: any) -> void,
     }
 }

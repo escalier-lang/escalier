@@ -1,0 +1,9 @@
+// URLSearchParams iteration methods (from lib.dom.iterable.d.ts):
+// entries/keys/values are non-mutating reads of the underlying entries.
+override declare global {
+    declare class URLSearchParams {
+        entries(self) -> URLSearchParamsIterator<[string, string]>,
+        keys(self) -> URLSearchParamsIterator<string>,
+        values(self) -> URLSearchParamsIterator<string>,
+    }
+}

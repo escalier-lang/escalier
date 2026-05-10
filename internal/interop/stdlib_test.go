@@ -152,15 +152,14 @@ func TestStdlibES2015Mutability(t *testing.T) {
 	}
 }
 
-// TestStdlibTypedArrayMutability spot-checks Int8Array and Float64Array in es2017.esc.
+// TestStdlibTypedArrayMutability spot-checks typed array methods which are
+// split across es5.esc (core methods), es2015.iterable.esc (entries/keys/values),
+// and es2016.esc (includes). Loads via NewStdlibRegistry() to verify the
+// cross-file merge produces a coherent view per class.
 func TestStdlibTypedArrayMutability(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("stdlib", "es2017.esc"))
+	r, err := NewStdlibRegistry()
 	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	r := newOverrideRegistry()
-	if err := r.loadSource(string(data), "es2017.esc", false); err != nil {
-		t.Fatalf("loadSource: %v", err)
+		t.Fatalf("NewStdlibRegistry: %v", err)
 	}
 
 	tests := []struct {
@@ -168,6 +167,7 @@ func TestStdlibTypedArrayMutability(t *testing.T) {
 		method  string
 		wantMut bool
 	}{
+		// es5.esc
 		{"Int8Array", "fill", true},
 		{"Int8Array", "reverse", true},
 		{"Int8Array", "sort", true},
@@ -176,7 +176,12 @@ func TestStdlibTypedArrayMutability(t *testing.T) {
 		{"Float64Array", "copyWithin", true},
 		{"Float64Array", "forEach", false},
 		{"Uint8ClampedArray", "set", true},
+		// es2015.iterable.esc
 		{"Uint8ClampedArray", "values", false},
+		{"Int8Array", "entries", false},
+		{"Float32Array", "keys", false},
+		// es2016.esc
+		{"Uint16Array", "includes", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.class+"."+tt.method, func(t *testing.T) {
@@ -214,6 +219,8 @@ func TestStdlibWeakRefMutability(t *testing.T) {
 }
 
 // TestStdlibURLSearchParamsMutability spot-checks URLSearchParams in dom.esc.
+// Iteration methods (keys/values/entries/forEach) live in dom.iterable.esc and
+// are exercised by TestStdlibURLSearchParamsAcrossFiles.
 func TestStdlibURLSearchParamsMutability(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("stdlib", "dom.esc"))
 	if err != nil {
@@ -235,10 +242,6 @@ func TestStdlibURLSearchParamsMutability(t *testing.T) {
 		{"get", false},
 		{"getAll", false},
 		{"has", false},
-		{"keys", false},
-		{"values", false},
-		{"entries", false},
-		{"forEach", false},
 	}
 	for _, tt := range tests {
 		t.Run("URLSearchParams."+tt.method, func(t *testing.T) {
@@ -246,6 +249,48 @@ func TestStdlibURLSearchParamsMutability(t *testing.T) {
 			entry, _, ok := r.lookup(key)
 			if !ok {
 				t.Fatalf("no entry for URLSearchParams.%s", tt.method)
+			}
+			if entry.Mut != tt.wantMut {
+				t.Errorf("URLSearchParams.%s: got Mut=%v, want %v", tt.method, entry.Mut, tt.wantMut)
+			}
+		})
+	}
+}
+
+// TestStdlibURLSearchParamsAcrossFiles verifies that overrides for the same
+// class declared in two different .esc files (dom.esc + dom.iterable.esc) merge
+// into a single registry entry set when loaded via the default registry.
+func TestStdlibURLSearchParamsAcrossFiles(t *testing.T) {
+	r, err := NewStdlibRegistry()
+	if err != nil {
+		t.Fatalf("NewStdlibRegistry: %v", err)
+	}
+
+	tests := []struct {
+		method  string
+		wantMut bool
+		source  string // expected source file (informational)
+	}{
+		// from dom.esc
+		{"append", true, "dom.esc"},
+		{"set", true, "dom.esc"},
+		{"delete", true, "dom.esc"},
+		{"sort", true, "dom.esc"},
+		{"get", false, "dom.esc"},
+		{"getAll", false, "dom.esc"},
+		{"has", false, "dom.esc"},
+		{"forEach", false, "dom.esc"},
+		// from dom.iterable.esc
+		{"keys", false, "dom.iterable.esc"},
+		{"values", false, "dom.iterable.esc"},
+		{"entries", false, "dom.iterable.esc"},
+	}
+	for _, tt := range tests {
+		t.Run("URLSearchParams."+tt.method, func(t *testing.T) {
+			key := overrideKey{Module: "", ClassName: "URLSearchParams", Member: tt.method, Kind: kindMethod}
+			entry, _, ok := r.lookup(key)
+			if !ok {
+				t.Fatalf("no entry for URLSearchParams.%s (expected from %s)", tt.method, tt.source)
 			}
 			if entry.Mut != tt.wantMut {
 				t.Errorf("URLSearchParams.%s: got Mut=%v, want %v", tt.method, entry.Mut, tt.wantMut)
