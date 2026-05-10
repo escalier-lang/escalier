@@ -155,26 +155,26 @@ func TestClassifyTier2_ReadonlyThisParam(t *testing.T) {
 	}
 }
 
-func TestClassifyTier2_ReadonlyCollectionClass(t *testing.T) {
-	tests := []struct {
-		className string
-		wantMut   bool
-	}{
-		{"ReadonlyArray", false},
-		{"ReadonlySet", false},
-		{"ReadonlyMap", false},
-		{"Array", true},
-		{"Set", true},
-		{"Map", true},
-		{"Foo", true},
+func TestClassifyTier2_MethodOnReadonlyPrefixedClass(t *testing.T) {
+	for _, className := range []string{"ReadonlyArray", "ReadonlySet", "ReadonlyMap"} {
+		t.Run(className, func(t *testing.T) {
+			result := Classify(ClassifyContext{Member: makeMethodDecl("forEach", nil), ClassName: className})
+			if result.Mut {
+				t.Errorf("method on %s should be non-mutating", className)
+			}
+			if result.Source != TierExplicitSignal {
+				t.Errorf("method on %s should use TierExplicitSignal, got %d", className, result.Source)
+			}
+		})
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.className, func(t *testing.T) {
-			method := makeMethodDecl("forEach", nil)
-			result := Classify(ClassifyContext{Member: method, ClassName: tt.className})
-			if result.Mut != tt.wantMut {
-				t.Errorf("method on %s: got Mut=%v, want Mut=%v", tt.className, result.Mut, tt.wantMut)
+func TestClassifyTier8_MethodOnMutableCollectionClass(t *testing.T) {
+	for _, className := range []string{"Array", "Set", "Map", "Foo"} {
+		t.Run(className, func(t *testing.T) {
+			result := Classify(ClassifyContext{Member: makeMethodDecl("forEach", nil), ClassName: className})
+			if !result.Mut {
+				t.Errorf("method on %s should fall through to mutating (tier 8)", className)
 			}
 		})
 	}
@@ -195,7 +195,7 @@ func TestClassifyTier8_DefaultMutating(t *testing.T) {
 }
 
 func TestClassifyTier2_ThisParamNotFirst(t *testing.T) {
-	// `this` param that is NOT first should not trigger readonly-this classification.
+	// `this` param that is NOT first should not trigger this: Readonly<T> classification.
 	method := makeMethodDecl("doSomething", []*dts_parser.Param{
 		makeParam("arg", makeTypeRef("string")),
 		makeParam("this", makeTypeRef("Readonly")),

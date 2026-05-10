@@ -10,7 +10,7 @@ import (
 //
 // The tiers match the requirements document:
 //  1. @esctype tag (round-trip from Escalier source)
-//  2. Explicit author signals (readonly this, getters/setters, Readonly<T>, readonly props)
+//  2. Explicit author signals (this: Readonly<T>, getters/setters, Readonly<T>, readonly props)
 //  3. User override files
 //  4. Shipped overrides (stdlib, FP libraries)
 //  5. Primitive wrapper classes (Number, BigInt, String, Boolean)
@@ -73,7 +73,7 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 // classifyTier2 applies explicit author signals:
 //   - Getters never mutate the receiver.
 //   - Setters always mutate the receiver.
-//   - Methods with a `readonly this` parameter are non-mutating.
+//   - Methods with a `this: Readonly<T>` (or `this: readonly T[]`) parameter are non-mutating.
 //   - Methods on Readonly-prefixed collection classes (ReadonlyArray, etc.) are non-mutating.
 //   - Well-known symbol methods (toString, toJSON, etc.) are non-mutating.
 //   - readonly properties are non-mutating (principle #6).
@@ -98,7 +98,7 @@ func classifyTier2(ctx ClassifyContext) (ClassifyResult, bool) {
 		if isWellKnownMethod(m.Name) {
 			return nonMut, true
 		}
-		// Explicit `readonly this` parameter.
+		// Explicit `this: Readonly<T>` (or `this: readonly T[]`) parameter.
 		if hasReadonlyThisParam(m.Params) {
 			return nonMut, true
 		}
