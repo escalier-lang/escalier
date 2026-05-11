@@ -21,6 +21,12 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 	var exprType type_system.Type
 	var errors []Error
 
+	// Snapshot and clear the GeneralizeFuncExpr signal — see its Context
+	// doc. ObjectExpr and TupleExpr restore it on recursive descent; every
+	// other expression kind leaves it cleared.
+	generalizeFuncExpr := ctx.GeneralizeFuncExpr
+	ctx.GeneralizeFuncExpr = false
+
 	provenance := &ast.NodeProvenance{Node: expr}
 
 	switch expr := expr.(type) {
@@ -388,7 +394,11 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// would expose the unannotated-param var to the
 				// `_, MutType` unwrap rule and silently strip `mut`.
 				slotVar := c.FreshVar(&ast.NodeProvenance{Node: elem})
-				elemType, elemErrors := c.inferExpr(ctx, elem)
+				// Restore GeneralizeFuncExpr so a FuncExpr at this tuple
+				// slot is recognized as flowing into a named binding.
+				elemCtx := ctx
+				elemCtx.GeneralizeFuncExpr = generalizeFuncExpr
+				elemType, elemErrors := c.inferExpr(elemCtx, elem)
 				unifyErrors := c.Unify(ctx, elemType, slotVar)
 				elemTypes = append(elemTypes, slotVar)
 				errors = slices.Concat(errors, elemErrors, unifyErrors)
@@ -437,7 +447,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			switch elem := exprElem.(type) {
 			case *ast.PropertyExpr:
 				if elem.Value != nil {
-					valueType, valueErrors := c.inferExpr(ctx, elem.Value)
+					// Restore GeneralizeFuncExpr so a FuncExpr at this
+					// property value is recognized as flowing into a
+					// named binding (either via shorthand or via a
+					// key-value destructuring pattern).
+					valueCtx := ctx
+					valueCtx.GeneralizeFuncExpr = generalizeFuncExpr
+					valueType, valueErrors := c.inferExpr(valueCtx, elem.Value)
 					unifyErrors := c.Unify(ctx, valueType, t)
 
 					errors = slices.Concat(errors, valueErrors, unifyErrors)
@@ -469,9 +485,12 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		funcType, funcCtx, paramBindings, sigErrors := c.inferFuncSig(ctx, &expr.FuncSig, expr, nil)
 		errors = slices.Concat(errors, sigErrors)
 
-		// Allocate call-site maps for outermost FuncExprs. Nested FuncExprs
-		// inherit the parent's maps via Context copying.
-		if !ctx.InFuncBody {
+		// Allocate call-site maps for outermost FuncExprs and for body-level
+		// FuncExprs that are about to be let-generalized. Other nested
+		// FuncExprs inherit the parent's maps via Context copying so their
+		// call sites accumulate at the outermost function.
+		isolateCallSites := !ctx.InFuncBody || generalizeFuncExpr
+		if isolateCallSites {
 			callSites := make(map[int][]*type_system.FuncType)
 			callSiteTypeVars := make(map[int]*type_system.TypeVarType)
 			funcCtx.CallSites = &callSites
@@ -485,12 +504,24 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		)
 		errors = slices.Concat(errors, inferErrors)
 
-		// Only generalize top-level FuncExprs. Nested FuncExprs (inside function
-		// bodies) share type variables with outer functions, so their generalization
-		// is deferred to the outermost function.
-		if !ctx.InFuncBody {
+		// Generalize when this FuncExpr is either top-level (the original
+		// case) or signaled for let-generalization by an enclosing VarDecl
+		// with aligned pattern/init shape. In the body-level case, env-FTV
+		// filtering keeps captured outer-scope TVs unresolved so the outer
+		// function continues to own them.
+		switch {
+		case !ctx.InFuncBody:
 			c.resolveCallSites(funcCtx)
 			GeneralizeFuncType(funcType)
+		case generalizeFuncExpr:
+			c.resolveCallSites(funcCtx)
+			// Recompute env-FTV at generalize time so we follow the
+			// Instance chains established during this inner function's
+			// body inference. If a captured outer TV was unified with one
+			// of inner's own TVs during the body, Prune will resolve to
+			// the post-unification ID — which is what we need to exclude.
+			envTVs := CollectEnvUnresolvedTypeVars(ctx.Scope, c.GlobalScope)
+			GeneralizeFuncTypeWithEnv(funcType, envTVs)
 		}
 
 		exprType = funcType

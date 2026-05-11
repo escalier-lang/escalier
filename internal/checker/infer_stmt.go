@@ -114,6 +114,11 @@ func (c *Checker) inferVarDecl(
 		errors = slices.Concat(errors, unifyErrors)
 
 		if decl.Init != nil {
+			// Intentionally do NOT set GeneralizeFuncExpr here: the user's
+			// annotation determines the binding's scheme, and unifying a
+			// generalized init against a monomorphic annotation would
+			// either over-constrain or silently widen. Generalization
+			// happens only on the no-annotation branch below.
 			initType, initErrors := c.inferExpr(ctx, decl.Init)
 			errors = slices.Concat(errors, initErrors)
 
@@ -125,7 +130,13 @@ func (c *Checker) inferVarDecl(
 			// TODO: report an error, but set initType to be `unknown`
 			panic("Expected either a type annotation or an initializer expression")
 		}
-		initType, initErrors := c.inferExpr(ctx, decl.Init)
+		initCtx := ctx
+		// Set GeneralizeFuncExpr when pattern/init shapes align — see
+		// `shouldGeneralizeFuncExpr` and the Context doc.
+		if shouldGeneralizeFuncExpr(decl.Pattern, decl.Init) {
+			initCtx.GeneralizeFuncExpr = true
+		}
+		initType, initErrors := c.inferExpr(initCtx, decl.Init)
 		errors = slices.Concat(errors, initErrors)
 
 		unifyErrors := c.Unify(ctx, initType, patType)
@@ -205,9 +216,19 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 		errors = slices.Concat(errors, inferErrors)
 	}
 
-	// Resolve deferred call sites and generalize type variables into type parameters
+	// Resolve deferred call sites and generalize type variables into type
+	// parameters. Compute env-FTV at this point — AFTER body inference —
+	// so that we follow any Instance chains established by unifications
+	// during the body, ensuring captured outer-scope TVs are identified by
+	// their current (post-pruning) IDs rather than pre-unification ones.
+	//
+	// `inferFuncDecl` is only reached via `inferDecl` -> `inferStmt`, so it
+	// always runs for body-level FuncDecls. Top-level FuncDecls are handled
+	// by `InferComponent` and never come through here, so the env-FTV walk
+	// doesn't pay for prelude bindings at the module top level.
 	c.resolveCallSites(ctx)
-	GeneralizeFuncType(funcType)
+	envTVs := CollectEnvUnresolvedTypeVars(ctx.Scope, c.GlobalScope)
+	GeneralizeFuncTypeWithEnv(funcType, envTVs)
 
 	binding := type_system.Binding{
 		Source:     &ast.NodeProvenance{Node: decl},
@@ -217,6 +238,32 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	}
 	ctx.Scope.setValue(decl.Name.Name, &binding)
 	return errors
+}
+
+// shouldGeneralizeFuncExpr decides whether the GeneralizeFuncExpr signal
+// should be set when inferring a VarDecl's init expression. The trigger
+// requires that the pattern and init shapes align so that FuncExpr values
+// flow directly into named bindings: IdentPat + FuncExpr, ObjectPat +
+// ObjectExpr, or TuplePat + TupleExpr. When aligned, propagation through
+// inferExpr's ObjectExpr/TupleExpr branches reaches every FuncExpr that
+// occupies a destructurable slot (recursively for nested literals).
+//
+// IdentPat + non-FuncExpr (e.g. `val o = { f: fn(x){x} }`) does NOT set the
+// signal — `o` is bound as an object value, and making its field
+// polymorphic would require first-class polymorphism on object fields.
+func shouldGeneralizeFuncExpr(pat ast.Pat, init ast.Expr) bool {
+	switch pat.(type) {
+	case *ast.IdentPat:
+		_, ok := init.(*ast.FuncExpr)
+		return ok
+	case *ast.ObjectPat:
+		_, ok := init.(*ast.ObjectExpr)
+		return ok
+	case *ast.TuplePat:
+		_, ok := init.(*ast.TupleExpr)
+		return ok
+	}
+	return false
 }
 
 // TypeParamsResult contains the result of processing type parameters.

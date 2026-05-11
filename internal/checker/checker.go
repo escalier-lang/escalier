@@ -165,6 +165,21 @@ type Context struct {
 	// bind it when resolving call sites. Pointer for the same reason as CallSites.
 	CallSiteTypeVars *map[int]*type_system.TypeVarType
 
+	// GeneralizeFuncExpr is set by `inferVarDecl` when a VarDecl's
+	// pattern/init shapes align so FuncExpr values flow into named bindings
+	// (IdentPat + FuncExpr, ObjectPat + ObjectExpr, TuplePat + TupleExpr).
+	// Observed and cleared by `inferExpr`'s FuncExpr branch, which
+	// let-generalizes the FuncType while filtering out the enclosing
+	// environment's free type variables (so captured outer-scope TVs stay
+	// owned by the outer function). Propagated only through ObjectExpr and
+	// TupleExpr literal subexpressions; every other expression kind clears
+	// it.
+	//
+	// TODO(#593): remove this field. The (pattern, init) dispatch belongs in
+	// `inferVarDecl` via a binding-aware `inferExprForBinding` entry point,
+	// not as a flag threaded through `inferExpr`.
+	GeneralizeFuncExpr bool
+
 	// Liveness stores the results of liveness analysis for the current function body.
 	// Set after running AnalyzeBlock (Phase 3) or AnalyzeFunction (Phase 4).
 	Liveness *liveness.LivenessInfo
