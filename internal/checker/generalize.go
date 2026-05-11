@@ -596,6 +596,10 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 				walk(e)
 			}
 		case *type_system.FuncType:
+			for _, tp := range t.TypeParams {
+				walk(tp.Constraint)
+				walk(tp.Default)
+			}
 			for _, p := range t.Params {
 				walk(p.Type)
 			}
@@ -627,6 +631,9 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 					walk(e.Name)
 					walk(e.Check)
 					walk(e.Extends)
+					if e.TypeParam != nil {
+						walk(e.TypeParam.Constraint)
+					}
 				case *type_system.IndexSignatureElem:
 					walk(e.KeyType)
 					walk(e.Value)
