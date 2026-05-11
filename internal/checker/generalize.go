@@ -15,7 +15,7 @@ func collectUnresolvedTypeVars(
 	vars map[int]*type_system.TypeVarType,
 	order *[]int,
 ) {
-	collectUnresolvedTypeVarsImpl(t, vars, order, map[type_system.Type]struct{}{})
+	collectUnresolvedTypeVarsImpl(t, vars, order, set.NewSet[type_system.Type]())
 }
 
 // collectUnresolvedTypeVarsImpl is the worker for collectUnresolvedTypeVars.
@@ -28,7 +28,7 @@ func collectUnresolvedTypeVarsImpl(
 	t type_system.Type,
 	vars map[int]*type_system.TypeVarType,
 	order *[]int,
-	visited map[type_system.Type]struct{},
+	visited set.Set[type_system.Type],
 ) {
 	if t == nil {
 		return
@@ -89,10 +89,10 @@ func collectUnresolvedTypeVarsImpl(
 	case *type_system.ExtractorType:
 		return
 	}
-	if _, seen := visited[t]; seen {
+	if visited.Contains(t) {
 		return
 	}
-	visited[t] = struct{}{}
+	visited.Add(t)
 	switch t := t.(type) {
 	case *type_system.FuncType:
 		for _, tp := range t.TypeParams {
@@ -574,17 +574,17 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 // pass, rather than the first simplification hiding the cycle from the second.
 func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 	unions := []*type_system.UnionType{}
-	visited := map[type_system.Type]struct{}{}
+	visited := set.NewSet[type_system.Type]()
 	var walk func(t type_system.Type)
 	walk = func(t type_system.Type) {
 		if t == nil {
 			return
 		}
 		t = type_system.Prune(t)
-		if _, seen := visited[t]; seen {
+		if visited.Contains(t) {
 			return
 		}
-		visited[t] = struct{}{}
+		visited.Add(t)
 		switch t := t.(type) {
 		case *type_system.UnionType:
 			unions = append(unions, t)
@@ -612,7 +612,23 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 					walk(e.Value)
 				case *type_system.MethodElem:
 					walk(e.Fn)
+				case *type_system.GetterElem:
+					walk(e.Fn)
+				case *type_system.SetterElem:
+					walk(e.Fn)
+				case *type_system.CallableElem:
+					walk(e.Fn)
+				case *type_system.ConstructorElem:
+					walk(e.Fn)
+				case *type_system.RestSpreadElem:
+					walk(e.Value)
+				case *type_system.MappedElem:
+					walk(e.Value)
+					walk(e.Name)
+					walk(e.Check)
+					walk(e.Extends)
 				case *type_system.IndexSignatureElem:
+					walk(e.KeyType)
 					walk(e.Value)
 				}
 			}
@@ -624,6 +640,20 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 			for _, a := range t.TypeArgs {
 				walk(a)
 			}
+		case *type_system.KeyOfType:
+			walk(t.Type)
+		case *type_system.IndexType:
+			walk(t.Target)
+			walk(t.Index)
+		case *type_system.CondType:
+			walk(t.Check)
+			walk(t.Extends)
+			walk(t.Then)
+			walk(t.Else)
+		case *type_system.TemplateLitType:
+			for _, e := range t.Types {
+				walk(e)
+			}
 		}
 	}
 	for _, ft := range funcTypes {
@@ -634,7 +664,7 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 	for _, u := range unions {
 		kept := make([]type_system.Type, 0, len(u.Types))
 		for _, elem := range u.Types {
-			if leadsToUnion(elem, u, map[type_system.Type]struct{}{}) {
+			if leadsToUnion(elem, u, set.NewSet[type_system.Type]()) {
 				continue
 			}
 			kept = append(kept, elem)
@@ -648,9 +678,13 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 	}
 }
 
-// leadsToUnion reports whether t's transitive Prune chain reaches `target`.
-// Used to detect union elements that fold back to the union they belong to.
-func leadsToUnion(t type_system.Type, target *type_system.UnionType, visited map[type_system.Type]struct{}) bool {
+// leadsToUnion reports whether t's transitive Prune chain reaches `target`
+// through Union/Intersection elements only. The narrow traversal is
+// intentional: a union element that wraps `target` inside another constructor
+// (tuple, conditional, object) is a legitimately distinct type and must NOT
+// be dropped — only union/intersection-of-unions folding is structurally
+// equivalent to the containing union.
+func leadsToUnion(t type_system.Type, target *type_system.UnionType, visited set.Set[type_system.Type]) bool {
 	if t == nil {
 		return false
 	}
@@ -658,10 +692,10 @@ func leadsToUnion(t type_system.Type, target *type_system.UnionType, visited map
 	if u, ok := t.(*type_system.UnionType); ok && u == target {
 		return true
 	}
-	if _, seen := visited[t]; seen {
+	if visited.Contains(t) {
 		return false
 	}
-	visited[t] = struct{}{}
+	visited.Add(t)
 	switch t := t.(type) {
 	case *type_system.UnionType:
 		for _, e := range t.Types {
