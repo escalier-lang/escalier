@@ -10,132 +10,132 @@ import (
 // collectUnresolvedTypeVars walks a type tree and collects all unresolved
 // TypeVarType nodes (where Prune returns the same TypeVarType). Results are
 // stored in the vars map keyed by type var ID, and order tracks insertion order.
-//
-// TODO(#590): cycle detection. Composite types (UnionType, IntersectionType,
-// ObjectType, etc.) are not tracked in a visited set, so a cyclic union (e.g.
-// produced by mutually recursive functions with an if/else base case where
-// each function's return type contains a TypeVar that prunes back to the
-// other function's return) causes infinite recursion and a stack overflow.
 func collectUnresolvedTypeVars(
 	t type_system.Type,
 	vars map[int]*type_system.TypeVarType,
 	order *[]int,
 ) {
+	collectUnresolvedTypeVarsImpl(t, vars, order, set.NewSet[type_system.Type]())
+}
+
+// collectUnresolvedTypeVarsImpl is the worker for collectUnresolvedTypeVars.
+// `visited` tracks already-traversed composite types by pointer identity to
+// prevent infinite recursion on cyclic type graphs — e.g. a UnionType whose
+// elements transitively prune back to itself, as produced by mutually
+// recursive functions whose return types reference each other (issue #590).
+// TypeVarType cycles are already broken by the `vars` membership check.
+func collectUnresolvedTypeVarsImpl(
+	t type_system.Type,
+	vars map[int]*type_system.TypeVarType,
+	order *[]int,
+	visited set.Set[type_system.Type],
+) {
 	if t == nil {
 		return
 	}
+
 	t = type_system.Prune(t)
+
+	if visited.Contains(t) {
+		return
+	}
+
+	visited.Add(t)
+
 	switch t := t.(type) {
 	case *type_system.TypeVarType:
 		if _, seen := vars[t.ID]; !seen {
 			vars[t.ID] = t
 			*order = append(*order, t.ID)
-			collectUnresolvedTypeVars(t.Constraint, vars, order)
-			collectUnresolvedTypeVars(t.Default, vars, order)
+			collectUnresolvedTypeVarsImpl(t.Constraint, vars, order, visited)
+			collectUnresolvedTypeVarsImpl(t.Default, vars, order, visited)
 			// Defensive: ArrayConstraints are resolved before generalization
 			// runs, so this branch is unlikely to execute. If it does, we
 			// need to collect the element type vars so they get generalized.
 			if t.ArrayConstraint != nil {
 				for _, elemTV := range t.ArrayConstraint.LiteralIndexes {
-					collectUnresolvedTypeVars(elemTV, vars, order)
+					collectUnresolvedTypeVarsImpl(elemTV, vars, order, visited)
 				}
-				collectUnresolvedTypeVars(t.ArrayConstraint.ElemTypeVar, vars, order)
+				collectUnresolvedTypeVarsImpl(t.ArrayConstraint.ElemTypeVar, vars, order, visited)
 				for _, mev := range t.ArrayConstraint.MethodElemVars {
-					collectUnresolvedTypeVars(mev, vars, order)
+					collectUnresolvedTypeVarsImpl(mev, vars, order, visited)
 				}
 			}
 		}
 	case *type_system.FuncType:
 		for _, tp := range t.TypeParams {
-			collectUnresolvedTypeVars(tp.Constraint, vars, order)
-			collectUnresolvedTypeVars(tp.Default, vars, order)
+			collectUnresolvedTypeVarsImpl(tp.Constraint, vars, order, visited)
+			collectUnresolvedTypeVarsImpl(tp.Default, vars, order, visited)
 		}
 		for _, param := range t.Params {
-			collectUnresolvedTypeVars(param.Type, vars, order)
+			collectUnresolvedTypeVarsImpl(param.Type, vars, order, visited)
 		}
-		collectUnresolvedTypeVars(t.Return, vars, order)
-		collectUnresolvedTypeVars(t.Throws, vars, order)
+		collectUnresolvedTypeVarsImpl(t.Return, vars, order, visited)
+		collectUnresolvedTypeVarsImpl(t.Throws, vars, order, visited)
 	case *type_system.TypeRefType:
 		for _, arg := range t.TypeArgs {
-			collectUnresolvedTypeVars(arg, vars, order)
+			collectUnresolvedTypeVarsImpl(arg, vars, order, visited)
 		}
 	case *type_system.ObjectType:
 		for _, elem := range t.Elems {
 			switch e := elem.(type) {
 			case *type_system.PropertyElem:
-				collectUnresolvedTypeVars(e.Value, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Value, vars, order, visited)
 			case *type_system.MethodElem:
-				collectUnresolvedTypeVars(e.Fn, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Fn, vars, order, visited)
 			case *type_system.GetterElem:
-				collectUnresolvedTypeVars(e.Fn, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Fn, vars, order, visited)
 			case *type_system.SetterElem:
-				collectUnresolvedTypeVars(e.Fn, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Fn, vars, order, visited)
 			case *type_system.CallableElem:
-				collectUnresolvedTypeVars(e.Fn, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Fn, vars, order, visited)
 			case *type_system.ConstructorElem:
-				collectUnresolvedTypeVars(e.Fn, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Fn, vars, order, visited)
 			case *type_system.RestSpreadElem:
-				collectUnresolvedTypeVars(e.Value, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Value, vars, order, visited)
 			case *type_system.MappedElem:
-				collectUnresolvedTypeVars(e.Value, vars, order)
-				collectUnresolvedTypeVars(e.Name, vars, order)
-				collectUnresolvedTypeVars(e.Check, vars, order)
-				collectUnresolvedTypeVars(e.Extends, vars, order)
+				collectUnresolvedTypeVarsImpl(e.Value, vars, order, visited)
+				collectUnresolvedTypeVarsImpl(e.Name, vars, order, visited)
+				collectUnresolvedTypeVarsImpl(e.Check, vars, order, visited)
+				collectUnresolvedTypeVarsImpl(e.Extends, vars, order, visited)
 				if e.TypeParam != nil {
-					collectUnresolvedTypeVars(e.TypeParam.Constraint, vars, order)
+					collectUnresolvedTypeVarsImpl(e.TypeParam.Constraint, vars, order, visited)
 				}
 			case *type_system.IndexSignatureElem:
-				collectUnresolvedTypeVars(e.KeyType, vars, order)
-				collectUnresolvedTypeVars(e.Value, vars, order)
+				collectUnresolvedTypeVarsImpl(e.KeyType, vars, order, visited)
+				collectUnresolvedTypeVarsImpl(e.Value, vars, order, visited)
 			}
 		}
 	case *type_system.TupleType:
 		for _, elem := range t.Elems {
-			collectUnresolvedTypeVars(elem, vars, order)
+			collectUnresolvedTypeVarsImpl(elem, vars, order, visited)
 		}
 	case *type_system.UnionType:
 		for _, elem := range t.Types {
-			collectUnresolvedTypeVars(elem, vars, order)
+			collectUnresolvedTypeVarsImpl(elem, vars, order, visited)
 		}
 	case *type_system.IntersectionType:
 		for _, elem := range t.Types {
-			collectUnresolvedTypeVars(elem, vars, order)
+			collectUnresolvedTypeVarsImpl(elem, vars, order, visited)
 		}
 	case *type_system.RestSpreadType:
-		collectUnresolvedTypeVars(t.Type, vars, order)
+		collectUnresolvedTypeVarsImpl(t.Type, vars, order, visited)
 	case *type_system.MutType:
-		collectUnresolvedTypeVars(t.Type, vars, order)
+		collectUnresolvedTypeVarsImpl(t.Type, vars, order, visited)
 	case *type_system.KeyOfType:
-		collectUnresolvedTypeVars(t.Type, vars, order)
+		collectUnresolvedTypeVarsImpl(t.Type, vars, order, visited)
 	case *type_system.IndexType:
-		collectUnresolvedTypeVars(t.Target, vars, order)
-		collectUnresolvedTypeVars(t.Index, vars, order)
+		collectUnresolvedTypeVarsImpl(t.Target, vars, order, visited)
+		collectUnresolvedTypeVarsImpl(t.Index, vars, order, visited)
 	case *type_system.CondType:
-		collectUnresolvedTypeVars(t.Check, vars, order)
-		collectUnresolvedTypeVars(t.Extends, vars, order)
-		collectUnresolvedTypeVars(t.Then, vars, order)
-		collectUnresolvedTypeVars(t.Else, vars, order)
-	// Leaf types with no type children to traverse:
-	case *type_system.PrimType:
-	case *type_system.LitType:
-	case *type_system.UnknownType:
-	case *type_system.NeverType:
-	case *type_system.VoidType:
-	case *type_system.AnyType:
-	case *type_system.UniqueSymbolType:
+		collectUnresolvedTypeVarsImpl(t.Check, vars, order, visited)
+		collectUnresolvedTypeVarsImpl(t.Extends, vars, order, visited)
+		collectUnresolvedTypeVarsImpl(t.Then, vars, order, visited)
+		collectUnresolvedTypeVarsImpl(t.Else, vars, order, visited)
 	case *type_system.TemplateLitType:
 		for _, t := range t.Types {
-			collectUnresolvedTypeVars(t, vars, order)
+			collectUnresolvedTypeVarsImpl(t, vars, order, visited)
 		}
-	case *type_system.GlobalThisType:
-	case *type_system.ErrorType:
-	case *type_system.RegexType:
-	case *type_system.WildcardType:
-	case *type_system.IntrinsicType:
-	case *type_system.NamespaceType:
-	case *type_system.TypeOfType:
-	case *type_system.InferType:
-	case *type_system.ExtractorType:
 	}
 }
 
@@ -530,6 +530,160 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 	return hasWritten
 }
 
+// simplifyRecursiveCycles walks each function's signature, collects every
+// reachable UnionType and IntersectionType, and drops elements whose Prune
+// chain leads back to the containing node. This handles the cyclic-union /
+// cyclic-intersection shape produced by mutually recursive two-arm functions
+// (issue #590), where foo.Return = T | bar.Return and bar.Return = T |
+// foo.Return — semantically equivalent to T, but a literal graph cycle that
+// any naive walker (printer, visitor, collector) would loop on. The same
+// reduction applies to intersections: T & (T & I) = T by idempotence.
+//
+// Updates are gathered against the original graph before any mutation so that
+// symmetric cycles (each side referencing the other) are both broken in a
+// single pass, rather than the first simplification hiding the cycle from
+// the second.
+//
+// Limitations:
+//
+//   - Only Union and Intersection cycles are simplified. These are the only
+//     two type constructors with the idempotent / absorption laws that make
+//     a self-referencing element redundant (T | T = T, T & T = T,
+//     T | (T & X) = T, T & (T | X) = T).
+//   - Cycles through any other constructor — FuncType, ObjectType, TupleType,
+//     TypeRefType, CondType, etc. — are *genuinely recursive* types (e.g.
+//     `fn() -> fn() -> …`, `{ x: { x: … } }`) and are NOT reduced. They
+//     remain as graph cycles. Downstream consumers must do their own cycle
+//     detection: collectUnresolvedTypeVarsImpl and unionCollector do, but
+//     the printer in internal/type_system/print_type.go currently does not
+//     and will stack-overflow on such types.
+//   - Cycle detection uses pointer identity. Two structurally equal but
+//     distinct UnionType / IntersectionType instances are NOT treated as
+//     the same target.
+//   - FuncType.Accept does not descend into TypeParams[i].{Constraint,
+//     Default}; this function pre-visits them manually to compensate.
+func simplifyRecursiveCycles(funcTypes []*type_system.FuncType) {
+	collector := &cycleCollector{visited: set.NewSet[type_system.Type]()}
+	for _, ft := range funcTypes {
+		// FuncType.Accept doesn't walk into TypeParams[i].{Constraint,Default};
+		// pre-visit them so cyclic unions / intersections reachable only via
+		// a pre-existing type parameter's constraint or default are still
+		// discovered.
+		for _, tp := range ft.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(collector)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(collector)
+			}
+		}
+		ft.Accept(collector)
+	}
+
+	type cycleNode struct {
+		target type_system.Type
+		elems  []type_system.Type
+	}
+
+	nodes := make([]cycleNode, 0, len(collector.unions)+len(collector.intersections))
+	for _, u := range collector.unions {
+		nodes = append(nodes, cycleNode{u, u.Types})
+	}
+	for _, i := range collector.intersections {
+		nodes = append(nodes, cycleNode{i, i.Types})
+	}
+
+	type update struct {
+		target type_system.Type
+		kept   []type_system.Type
+	}
+
+	updates := []update{}
+	for _, n := range nodes {
+		kept := make([]type_system.Type, 0, len(n.elems))
+		for _, elem := range n.elems {
+			if leadsToCycle(elem, n.target, set.NewSet[type_system.Type]()) {
+				continue
+			}
+			kept = append(kept, elem)
+		}
+		if len(kept) != len(n.elems) {
+			updates = append(updates, update{n.target, kept})
+		}
+	}
+
+	for _, u := range updates {
+		switch target := u.target.(type) {
+		case *type_system.UnionType:
+			target.Types = u.kept
+		case *type_system.IntersectionType:
+			target.Types = u.kept
+		}
+	}
+}
+
+// cycleCollector is a read-only TypeVisitor that records every reachable
+// UnionType and IntersectionType while skipping any node it has already
+// entered. The visited set breaks cycles that the canonical Accept walker
+// would otherwise loop on — it's the whole reason simplifyRecursiveCycles
+// exists.
+type cycleCollector struct {
+	unions        []*type_system.UnionType
+	intersections []*type_system.IntersectionType
+	visited       set.Set[type_system.Type]
+}
+
+func (c *cycleCollector) EnterType(t type_system.Type) type_system.EnterResult {
+	if c.visited.Contains(t) {
+		return type_system.EnterResult{SkipChildren: true}
+	}
+	c.visited.Add(t)
+	switch t := t.(type) {
+	case *type_system.UnionType:
+		c.unions = append(c.unions, t)
+	case *type_system.IntersectionType:
+		c.intersections = append(c.intersections, t)
+	}
+	return type_system.EnterResult{}
+}
+
+func (*cycleCollector) ExitType(type_system.Type) type_system.Type { return nil }
+
+// leadsToCycle reports whether t's transitive Prune chain reaches `target`
+// through Union/Intersection elements only. The narrow traversal is
+// intentional: an element that wraps `target` inside another constructor
+// (tuple, conditional, object, function) is a legitimately distinct type
+// and must NOT be dropped — only the absorption/idempotence laws of union
+// and intersection make a self-referencing element redundant.
+func leadsToCycle(t type_system.Type, target type_system.Type, visited set.Set[type_system.Type]) bool {
+	if t == nil {
+		return false
+	}
+	t = type_system.Prune(t)
+	if t == target {
+		return true
+	}
+	if visited.Contains(t) {
+		return false
+	}
+	visited.Add(t)
+	switch t := t.(type) {
+	case *type_system.UnionType:
+		for _, e := range t.Types {
+			if leadsToCycle(e, target, visited) {
+				return true
+			}
+		}
+	case *type_system.IntersectionType:
+		for _, e := range t.Types {
+			if leadsToCycle(e, target, visited) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GeneralizeFuncType finds unresolved type variables in a function's signature
 // and converts them into proper type parameters. This must be called after type
 // inference completes for the function body.
@@ -597,6 +751,13 @@ func CollectEnvUnresolvedTypeVars(scope *Scope, stopAt *Scope) set.Set[int] {
 // the throws-only-default-to-never or return-only-simplify-to-void
 // transformations either. A nil `excluded` means "no exclusions".
 func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int]) {
+	// Break any cyclic UnionTypes reachable from the group's signatures
+	// before any downstream walker (collectUnresolvedTypeVars, the printer,
+	// the type-system visitor) traverses them. A union that transitively
+	// contains itself simplifies to the union of its non-self-referencing
+	// elements — see issue #590.
+	simplifyRecursiveCycles(funcTypes)
+
 	// Finalize open object mutability for each func. If any property on an
 	// open object was written during inference, wrap the object in `mut`.
 	for _, funcType := range funcTypes {

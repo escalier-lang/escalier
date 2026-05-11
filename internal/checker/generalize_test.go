@@ -191,6 +191,119 @@ func TestDetermineCheckerAliasSource_UnionLifetimeParam(t *testing.T) {
 		"unioned arg (overlap on 'a) and returned arg (exact 'a) should propagate; other arg ('b only) should not")
 }
 
+// TestGeneralizeFuncType_CyclicUnionDoesNotStackOverflow exercises issue
+// #590: a cyclic UnionType (as formed by mutually recursive two-arm
+// functions whose returns reference each other) must not send
+// collectUnresolvedTypeVars into infinite recursion.
+func TestGeneralizeFuncType_CyclicUnionDoesNotStackOverflow(t *testing.T) {
+	// Build foo.Return = U1 = [T, bar.Return.TV] and
+	//      bar.Return = U2 = [T, foo.Return.TV]
+	// where Prune(foo.Return.TV) = U1 and Prune(bar.Return.TV) = U2,
+	// matching the cyclic structure described in the issue.
+	tvT := ts.NewTypeVarType(nil, 1)
+	fooRetTV := ts.NewTypeVarType(nil, 2)
+	barRetTV := ts.NewTypeVarType(nil, 3)
+
+	u1 := ts.NewUnionType(nil, tvT, barRetTV).(*ts.UnionType)
+	u2 := ts.NewUnionType(nil, tvT, fooRetTV).(*ts.UnionType)
+	fooRetTV.Instance = u1
+	barRetTV.Instance = u2
+
+	fooType := ts.NewFuncType(
+		nil, nil,
+		[]*ts.FuncParam{ts.NewFuncParam(ts.NewIdentPat("x"), tvT)},
+		fooRetTV,
+		ts.NewNeverType(nil),
+	)
+
+	// Must not stack-overflow.
+	GeneralizeFuncType(fooType)
+
+	assert.Len(t, fooType.TypeParams, 1)
+	assert.Equal(t, "T0", fooType.TypeParams[0].Name)
+}
+
+// TestSimplifyRecursiveCycles_ReachesViaFuncTypeParams verifies that the
+// cyclic-type simplifier traverses FuncType.TypeParams[i].{Constraint,Default},
+// mirroring collectUnresolvedTypeVarsImpl's coverage. Without this traversal,
+// a cyclic union reachable only through a pre-existing TypeParam's Constraint
+// slips past the simplifier and downstream walkers will loop on it.
+func TestSimplifyRecursiveCycles_ReachesViaFuncTypeParams(t *testing.T) {
+	selfRefTV := ts.NewTypeVarType(nil, 1)
+	tvLeaf := ts.NewTypeVarType(nil, 2)
+	cyclic := ts.NewUnionType(nil, tvLeaf, selfRefTV).(*ts.UnionType)
+	selfRefTV.Instance = cyclic
+
+	existingTP := &ts.TypeParam{Name: "U", Constraint: cyclic}
+	funcType := ts.NewFuncType(
+		nil,
+		[]*ts.TypeParam{existingTP},
+		[]*ts.FuncParam{ts.NewFuncParam(ts.NewIdentPat("x"), ts.NewNeverType(nil))},
+		ts.NewNeverType(nil),
+		ts.NewNeverType(nil),
+	)
+
+	simplifyRecursiveCycles([]*ts.FuncType{funcType})
+
+	if got := len(cyclic.Types); got != 1 {
+		t.Fatalf("cyclic union reachable via FuncType.TypeParams[i].Constraint not simplified: got %d elements, want 1", got)
+	}
+}
+
+// TestSimplifyRecursiveCycles_ReachesViaMappedElemTypeParam verifies coverage
+// of MappedElem.TypeParam.Constraint, which collectUnresolvedTypeVarsImpl
+// visits but the simplifier's walk previously skipped.
+func TestSimplifyRecursiveCycles_ReachesViaMappedElemTypeParam(t *testing.T) {
+	selfRefTV := ts.NewTypeVarType(nil, 1)
+	tvLeaf := ts.NewTypeVarType(nil, 2)
+	cyclic := ts.NewUnionType(nil, tvLeaf, selfRefTV).(*ts.UnionType)
+	selfRefTV.Instance = cyclic
+
+	mapped := &ts.MappedElem{
+		TypeParam: &ts.IndexParam{Name: "K", Constraint: cyclic},
+		Name:      ts.NewNeverType(nil),
+		Value:     ts.NewNeverType(nil),
+	}
+	obj := ts.NewObjectType(nil, []ts.ObjTypeElem{mapped})
+	funcType := ts.NewFuncType(
+		nil, nil,
+		[]*ts.FuncParam{ts.NewFuncParam(ts.NewIdentPat("x"), obj)},
+		ts.NewNeverType(nil),
+		ts.NewNeverType(nil),
+	)
+
+	simplifyRecursiveCycles([]*ts.FuncType{funcType})
+
+	if got := len(cyclic.Types); got != 1 {
+		t.Fatalf("cyclic union reachable via MappedElem.TypeParam.Constraint not simplified: got %d elements, want 1", got)
+	}
+}
+
+// TestSimplifyRecursiveCycles_IntersectionCycle verifies that a cyclic
+// IntersectionType is simplified the same way as a cyclic UnionType.
+// Intersection is idempotent (T & T = T), so a self-referencing element
+// is redundant; absorption (T & (T | I) = T) lets us drop the element
+// without changing the type's meaning.
+func TestSimplifyRecursiveCycles_IntersectionCycle(t *testing.T) {
+	selfRefTV := ts.NewTypeVarType(nil, 1)
+	tvLeaf := ts.NewTypeVarType(nil, 2)
+	cyclic := ts.NewIntersectionType(nil, tvLeaf, selfRefTV).(*ts.IntersectionType)
+	selfRefTV.Instance = cyclic
+
+	funcType := ts.NewFuncType(
+		nil, nil,
+		[]*ts.FuncParam{ts.NewFuncParam(ts.NewIdentPat("x"), ts.NewNeverType(nil))},
+		cyclic,
+		ts.NewNeverType(nil),
+	)
+
+	simplifyRecursiveCycles([]*ts.FuncType{funcType})
+
+	if got := len(cyclic.Types); got != 1 {
+		t.Fatalf("cyclic intersection not simplified: got %d elements, want 1", got)
+	}
+}
+
 func TestGeneralizeFuncType_ThrowsOnlyTypeVarBecomesNever(t *testing.T) {
 	// A type var that only appears in throws should become never, not a type param.
 	tvThrows := ts.NewTypeVarType(nil, 1) // unresolved, only in throws
