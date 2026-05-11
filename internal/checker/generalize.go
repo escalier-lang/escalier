@@ -534,7 +534,47 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 // and converts them into proper type parameters. This must be called after type
 // inference completes for the function body.
 func GeneralizeFuncType(funcType *type_system.FuncType) {
-	generalizeFuncTypes([]*type_system.FuncType{funcType})
+	generalizeFuncTypes([]*type_system.FuncType{funcType}, nil)
+}
+
+// GeneralizeFuncTypeWithEnv is like GeneralizeFuncType, but excludes any
+// unresolved type variables in `envTVs` (free type variables of the enclosing
+// type environment) from generalization. Captured outer-function TVs must
+// stay unresolved so the outer function continues to own them — generalizing
+// or simplifying them on the inner function would leak the outer scope.
+func GeneralizeFuncTypeWithEnv(funcType *type_system.FuncType, envTVs set.Set[int]) {
+	generalizeFuncTypes([]*type_system.FuncType{funcType}, envTVs)
+}
+
+// CollectEnvUnresolvedTypeVars walks the scope chain rooted at `scope` and
+// collects the set of unresolved TypeVar IDs reachable from every in-scope
+// value binding's type. These are the TVs that belong to outer (or sibling)
+// constructs and must NOT be generalized by an inner function that captures
+// them.
+func CollectEnvUnresolvedTypeVars(scope *Scope) set.Set[int] {
+	envTVs := set.NewSet[int]()
+	if scope == nil {
+		return envTVs
+	}
+	vars := map[int]*type_system.TypeVarType{}
+	// `collectUnresolvedTypeVars` requires a non-nil *[]int but its order
+	// information is irrelevant here — we only need the set of IDs.
+	var orderSink []int
+	for s := scope; s != nil; s = s.Parent {
+		if s.Namespace == nil {
+			continue
+		}
+		for _, binding := range s.Namespace.Values {
+			if binding == nil {
+				continue
+			}
+			collectUnresolvedTypeVars(binding.Type, vars, &orderSink)
+		}
+	}
+	for id := range vars {
+		envTVs.Add(id)
+	}
+	return envTVs
 }
 
 // generalizeFuncTypes generalizes a group of function types together. Unresolved
@@ -545,7 +585,19 @@ func GeneralizeFuncType(funcType *type_system.FuncType) {
 // type var from one declaration into another.
 //
 // For a single FuncType, this behaves identically to GeneralizeFuncType.
-func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
+//
+// `excluded` is an optional set of unresolved TypeVar IDs that must NOT be
+// generalized — typically the free type variables of the enclosing type
+// environment. TVs in `excluded` are left unresolved and are not subject to
+// the throws-only-default-to-never or return-only-simplify-to-void
+// transformations either. A nil `excluded` means "no exclusions".
+func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int]) {
+	isExcluded := func(id int) bool {
+		if excluded == nil {
+			return false
+		}
+		return excluded.Contains(id)
+	}
 	// Finalize open object mutability for each func. If any property on an
 	// open object was written during inference, wrap the object in `mut`.
 	for _, funcType := range funcTypes {
@@ -627,6 +679,9 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		throwsOrder := []int{}
 		collectUnresolvedTypeVars(funcType.Throws, throwsVars, &throwsOrder)
 		for id, tv := range throwsVars {
+			if isExcluded(id) {
+				continue
+			}
 			if _, inParamsOrReturn := sigVars[id]; !inParamsOrReturn {
 				tv.Instance = type_system.NewNeverType(nil)
 			}
@@ -651,6 +706,9 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 	// than producing a phantom `T0` no caller can supply or observe.
 	simplifyToVoid := set.NewSet[int]()
 	for _, id := range sigOrder {
+		if isExcluded(id) {
+			continue
+		}
 		if paramVarIDs.Contains(id) {
 			continue
 		}
@@ -710,6 +768,9 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		if simplifyToVoid.Contains(id) {
 			continue
 		}
+		if isExcluded(id) {
+			continue
+		}
 		tv := sigVars[id]
 		name := fmt.Sprintf("T%d", nameIndex)
 		for existingNames.Contains(name) {
@@ -751,7 +812,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType) {
 		added := set.NewSet[int]()
 		var newTypeParams []*type_system.TypeParam
 		appendVar := func(id int) {
-			if simplifyToVoid.Contains(id) || added.Contains(id) {
+			if simplifyToVoid.Contains(id) || added.Contains(id) || isExcluded(id) {
 				return
 			}
 			added.Add(id)

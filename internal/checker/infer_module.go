@@ -1700,7 +1700,7 @@ func (c *Checker) InferComponent(
 	// but *before* the Phase 8.7 lifetime fixed-point loop below — that
 	// loop's ReinferLifetimes calls expect peer signatures to already be
 	// generalized. Don't move this call.
-	generalizeFuncTypes(pendingFuncTypes)
+	generalizeFuncTypes(pendingFuncTypes, nil)
 
 	// Phase 8.7: for SCCs of size > 1 (mutually recursive function
 	// groups), iterate lifetime inference to a fixed point. Each pass
