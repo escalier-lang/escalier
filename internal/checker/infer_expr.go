@@ -22,8 +22,8 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 	var errors []Error
 
 	// Snapshot and clear the GeneralizeFuncExpr signal — see its Context
-	// doc. ObjectExpr and TupleExpr re-arm it on recursive descent; every
-	// other expression kind is a barrier.
+	// doc. ObjectExpr and TupleExpr restore it on recursive descent; every
+	// other expression kind leaves it cleared.
 	generalizeFuncExpr := ctx.GeneralizeFuncExpr
 	ctx.GeneralizeFuncExpr = false
 
@@ -394,7 +394,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// would expose the unannotated-param var to the
 				// `_, MutType` unwrap rule and silently strip `mut`.
 				slotVar := c.FreshVar(&ast.NodeProvenance{Node: elem})
-				// Re-arm GeneralizeFuncExpr so a FuncExpr at this tuple
+				// Restore GeneralizeFuncExpr so a FuncExpr at this tuple
 				// slot is recognized as flowing into a named binding.
 				elemCtx := ctx
 				elemCtx.GeneralizeFuncExpr = generalizeFuncExpr
@@ -447,7 +447,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			switch elem := exprElem.(type) {
 			case *ast.PropertyExpr:
 				if elem.Value != nil {
-					// Re-arm GeneralizeFuncExpr so a FuncExpr at this
+					// Restore GeneralizeFuncExpr so a FuncExpr at this
 					// property value is recognized as flowing into a
 					// named binding (either via shorthand or via a
 					// key-value destructuring pattern).
@@ -505,7 +505,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		errors = slices.Concat(errors, inferErrors)
 
 		// Generalize when this FuncExpr is either top-level (the original
-		// case) or armed for let-generalization by an enclosing VarDecl
+		// case) or signaled for let-generalization by an enclosing VarDecl
 		// with aligned pattern/init shape. In the body-level case, env-FTV
 		// filtering keeps captured outer-scope TVs unresolved so the outer
 		// function continues to own them.
@@ -520,7 +520,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// body inference. If a captured outer TV was unified with one
 			// of inner's own TVs during the body, Prune will resolve to
 			// the post-unification ID — which is what we need to exclude.
-			envTVs := CollectEnvUnresolvedTypeVars(ctx.Scope)
+			envTVs := CollectEnvUnresolvedTypeVars(ctx.Scope, c.GlobalScope)
 			GeneralizeFuncTypeWithEnv(funcType, envTVs)
 		}
 

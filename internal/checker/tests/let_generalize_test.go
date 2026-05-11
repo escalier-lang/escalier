@@ -163,6 +163,20 @@ func TestBodyLetGeneralization(t *testing.T) {
 				"outer": "fn <T0>(y: T0) -> [T0, T0]",
 			},
 		},
+		// `outer` returns the polymorphic `id` itself. The returned
+		// function value must preserve its generalized scheme so callers
+		// of `outer()(...)` can use it at multiple incompatible types.
+		"BodyVarDecl_ReturnPolymorphicFunc": {
+			input: `
+				fn outer() {
+					val id = fn (x) { return x }
+					return id
+				}
+			`,
+			expectedTypes: map[string]string{
+				"outer": "fn () -> fn <T0>(x: T0) -> T0",
+			},
+		},
 		"TopLevelLetPolymorphismUnchanged": {
 			input: `
 				val id = fn (x) { return x }
@@ -201,12 +215,10 @@ func TestBodyLetGeneralization(t *testing.T) {
 			}
 			inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
-			if len(inferErrors) > 0 {
-				for i, err := range inferErrors {
-					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
-				}
-				assert.Equal(t, inferErrors, []*Error{})
+			for i, err := range inferErrors {
+				fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
 			}
+			assert.Empty(t, inferErrors)
 
 			actualTypes := make(map[string]string)
 			for name, binding := range scope.Values {

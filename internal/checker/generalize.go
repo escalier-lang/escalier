@@ -551,7 +551,12 @@ func GeneralizeFuncTypeWithEnv(funcType *type_system.FuncType, envTVs set.Set[in
 // value binding's type. These are the TVs that belong to outer (or sibling)
 // constructs and must NOT be generalized by an inner function that captures
 // them.
-func CollectEnvUnresolvedTypeVars(scope *Scope) set.Set[int] {
+//
+// The walk stops at `stopAt` (exclusive). Callers pass `c.GlobalScope` so we
+// don't traverse the prelude — its bindings are fully constructed and have no
+// unresolved TVs, and walking them on every body-level generalization is
+// pure overhead.
+func CollectEnvUnresolvedTypeVars(scope *Scope, stopAt *Scope) set.Set[int] {
 	envTVs := set.NewSet[int]()
 	if scope == nil {
 		return envTVs
@@ -560,7 +565,7 @@ func CollectEnvUnresolvedTypeVars(scope *Scope) set.Set[int] {
 	// `collectUnresolvedTypeVars` requires a non-nil *[]int but its order
 	// information is irrelevant here — we only need the set of IDs.
 	var orderSink []int
-	for s := scope; s != nil; s = s.Parent {
+	for s := scope; s != nil && s != stopAt; s = s.Parent {
 		if s.Namespace == nil {
 			continue
 		}
@@ -592,12 +597,6 @@ func CollectEnvUnresolvedTypeVars(scope *Scope) set.Set[int] {
 // the throws-only-default-to-never or return-only-simplify-to-void
 // transformations either. A nil `excluded` means "no exclusions".
 func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int]) {
-	isExcluded := func(id int) bool {
-		if excluded == nil {
-			return false
-		}
-		return excluded.Contains(id)
-	}
 	// Finalize open object mutability for each func. If any property on an
 	// open object was written during inference, wrap the object in `mut`.
 	for _, funcType := range funcTypes {
@@ -679,7 +678,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 		throwsOrder := []int{}
 		collectUnresolvedTypeVars(funcType.Throws, throwsVars, &throwsOrder)
 		for id, tv := range throwsVars {
-			if isExcluded(id) {
+			if excluded.Contains(id) {
 				continue
 			}
 			if _, inParamsOrReturn := sigVars[id]; !inParamsOrReturn {
@@ -706,7 +705,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 	// than producing a phantom `T0` no caller can supply or observe.
 	simplifyToVoid := set.NewSet[int]()
 	for _, id := range sigOrder {
-		if isExcluded(id) {
+		if excluded.Contains(id) {
 			continue
 		}
 		if paramVarIDs.Contains(id) {
@@ -768,7 +767,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 		if simplifyToVoid.Contains(id) {
 			continue
 		}
-		if isExcluded(id) {
+		if excluded.Contains(id) {
 			continue
 		}
 		tv := sigVars[id]
@@ -812,7 +811,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 		added := set.NewSet[int]()
 		var newTypeParams []*type_system.TypeParam
 		appendVar := func(id int) {
-			if simplifyToVoid.Contains(id) || added.Contains(id) || isExcluded(id) {
+			if simplifyToVoid.Contains(id) || added.Contains(id) || excluded.Contains(id) {
 				return
 			}
 			added.Add(id)

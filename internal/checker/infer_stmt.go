@@ -114,7 +114,7 @@ func (c *Checker) inferVarDecl(
 		errors = slices.Concat(errors, unifyErrors)
 
 		if decl.Init != nil {
-			// Intentionally do NOT arm GeneralizeFuncExpr here: the user's
+			// Intentionally do NOT set GeneralizeFuncExpr here: the user's
 			// annotation determines the binding's scheme, and unifying a
 			// generalized init against a monomorphic annotation would
 			// either over-constrain or silently widen. Generalization
@@ -131,9 +131,9 @@ func (c *Checker) inferVarDecl(
 			panic("Expected either a type annotation or an initializer expression")
 		}
 		initCtx := ctx
-		// Arm GeneralizeFuncExpr when pattern/init shapes align — see
-		// `shouldArmGeneralizeFuncExpr` and the Context doc.
-		if shouldArmGeneralizeFuncExpr(decl.Pattern, decl.Init) {
+		// Set GeneralizeFuncExpr when pattern/init shapes align — see
+		// `shouldGeneralizeFuncExpr` and the Context doc.
+		if shouldGeneralizeFuncExpr(decl.Pattern, decl.Init) {
 			initCtx.GeneralizeFuncExpr = true
 		}
 		initType, initErrors := c.inferExpr(initCtx, decl.Init)
@@ -227,7 +227,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	// by `InferComponent` and never come through here, so the env-FTV walk
 	// doesn't pay for prelude bindings at the module top level.
 	c.resolveCallSites(ctx)
-	envTVs := CollectEnvUnresolvedTypeVars(ctx.Scope)
+	envTVs := CollectEnvUnresolvedTypeVars(ctx.Scope, c.GlobalScope)
 	GeneralizeFuncTypeWithEnv(funcType, envTVs)
 
 	binding := type_system.Binding{
@@ -240,7 +240,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 	return errors
 }
 
-// shouldArmGeneralizeFuncExpr decides whether the GeneralizeFuncExpr signal
+// shouldGeneralizeFuncExpr decides whether the GeneralizeFuncExpr signal
 // should be set when inferring a VarDecl's init expression. The trigger
 // requires that the pattern and init shapes align so that FuncExpr values
 // flow directly into named bindings: IdentPat + FuncExpr, ObjectPat +
@@ -248,10 +248,10 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 // inferExpr's ObjectExpr/TupleExpr branches reaches every FuncExpr that
 // occupies a destructurable slot (recursively for nested literals).
 //
-// IdentPat + non-FuncExpr (e.g. `val o = { f: fn(x){x} }`) does NOT arm the
+// IdentPat + non-FuncExpr (e.g. `val o = { f: fn(x){x} }`) does NOT set the
 // signal — `o` is bound as an object value, and making its field
 // polymorphic would require first-class polymorphism on object fields.
-func shouldArmGeneralizeFuncExpr(pat ast.Pat, init ast.Expr) bool {
+func shouldGeneralizeFuncExpr(pat ast.Pat, init ast.Expr) bool {
 	switch pat.(type) {
 	case *ast.IdentPat:
 		_, ok := init.(*ast.FuncExpr)
