@@ -528,6 +528,33 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				"bar": "fn () -> void",
 			},
 		},
+		// Issue #590: mutually recursive two-arm functions form a cyclic
+		// UnionType (foo.Return = T | bar.Return, bar.Return = T | foo.Return).
+		// The cycle-detection fix in collectUnresolvedTypeVars lets inference
+		// terminate; the surrounding cycle in the resulting type itself is
+		// tracked separately (option 2 in #590).
+		"MutualRecuriveFunctionsWithBaseCase": {
+			input: `
+				fn foo(x, n: number) {
+					if (n == 0) {
+						return x
+					}
+					return bar(x, n - 1)
+				}
+				fn bar(y, n: number) {
+					if (n == 0) {
+						return y
+					}
+					return foo(y, n - 1)
+				}
+			`,
+			expectedTypes: map[string]string{
+				// TODO(#595): foo's return ideally simplifies to T0; the
+				// duplicate `T0 | T0` is a UnionType-dedupe gap.
+				"foo": "fn <T0>(x: T0, n: number) -> T0 | T0",
+				"bar": "fn <T0>(y: T0, n: number) -> T0",
+			},
+		},
 		"UnionTypeVariable": {
 			input: `
 				val x: string | number = 5

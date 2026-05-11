@@ -191,6 +191,38 @@ func TestDetermineCheckerAliasSource_UnionLifetimeParam(t *testing.T) {
 		"unioned arg (overlap on 'a) and returned arg (exact 'a) should propagate; other arg ('b only) should not")
 }
 
+// TestGeneralizeFuncType_CyclicUnionDoesNotStackOverflow exercises issue
+// #590: a cyclic UnionType (as formed by mutually recursive two-arm
+// functions whose returns reference each other) must not send
+// collectUnresolvedTypeVars into infinite recursion.
+func TestGeneralizeFuncType_CyclicUnionDoesNotStackOverflow(t *testing.T) {
+	// Build foo.Return = U1 = [T, bar.Return.TV] and
+	//      bar.Return = U2 = [T, foo.Return.TV]
+	// where Prune(foo.Return.TV) = U1 and Prune(bar.Return.TV) = U2,
+	// matching the cyclic structure described in the issue.
+	tvT := ts.NewTypeVarType(nil, 1)
+	fooRetTV := ts.NewTypeVarType(nil, 2)
+	barRetTV := ts.NewTypeVarType(nil, 3)
+
+	u1 := ts.NewUnionType(nil, tvT, barRetTV).(*ts.UnionType)
+	u2 := ts.NewUnionType(nil, tvT, fooRetTV).(*ts.UnionType)
+	fooRetTV.Instance = u1
+	barRetTV.Instance = u2
+
+	fooType := ts.NewFuncType(
+		nil, nil,
+		[]*ts.FuncParam{ts.NewFuncParam(ts.NewIdentPat("x"), tvT)},
+		fooRetTV,
+		ts.NewNeverType(nil),
+	)
+
+	// Must not stack-overflow.
+	GeneralizeFuncType(fooType)
+
+	assert.Len(t, fooType.TypeParams, 1)
+	assert.Equal(t, "T0", fooType.TypeParams[0].Name)
+}
+
 func TestGeneralizeFuncType_ThrowsOnlyTypeVarBecomesNever(t *testing.T) {
 	// A type var that only appears in throws should become never, not a type param.
 	tvThrows := ts.NewTypeVarType(nil, 1) // unresolved, only in throws
