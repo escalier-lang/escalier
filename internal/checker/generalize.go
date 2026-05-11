@@ -33,7 +33,15 @@ func collectUnresolvedTypeVarsImpl(
 	if t == nil {
 		return
 	}
+
 	t = type_system.Prune(t)
+
+	if visited.Contains(t) {
+		return
+	}
+
+	visited.Add(t)
+
 	switch t := t.(type) {
 	case *type_system.TypeVarType:
 		if _, seen := vars[t.ID]; !seen {
@@ -54,46 +62,6 @@ func collectUnresolvedTypeVarsImpl(
 				}
 			}
 		}
-		return
-	// Leaf types with no type children to traverse:
-	case *type_system.PrimType:
-		return
-	case *type_system.LitType:
-		return
-	case *type_system.UnknownType:
-		return
-	case *type_system.NeverType:
-		return
-	case *type_system.VoidType:
-		return
-	case *type_system.AnyType:
-		return
-	case *type_system.UniqueSymbolType:
-		return
-	case *type_system.GlobalThisType:
-		return
-	case *type_system.ErrorType:
-		return
-	case *type_system.RegexType:
-		return
-	case *type_system.WildcardType:
-		return
-	case *type_system.IntrinsicType:
-		return
-	case *type_system.NamespaceType:
-		return
-	case *type_system.TypeOfType:
-		return
-	case *type_system.InferType:
-		return
-	case *type_system.ExtractorType:
-		return
-	}
-	if visited.Contains(t) {
-		return
-	}
-	visited.Add(t)
-	switch t := t.(type) {
 	case *type_system.FuncType:
 		for _, tp := range t.TypeParams {
 			collectUnresolvedTypeVarsImpl(tp.Constraint, vars, order, visited)
@@ -573,102 +541,24 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 // symmetric cycles (each side referencing the other) are both broken in a single
 // pass, rather than the first simplification hiding the cycle from the second.
 func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
-	unions := []*type_system.UnionType{}
-	visited := set.NewSet[type_system.Type]()
-	var walk func(t type_system.Type)
-	walk = func(t type_system.Type) {
-		if t == nil {
-			return
-		}
-		t = type_system.Prune(t)
-		if visited.Contains(t) {
-			return
-		}
-		visited.Add(t)
-		switch t := t.(type) {
-		case *type_system.UnionType:
-			unions = append(unions, t)
-			for _, e := range t.Types {
-				walk(e)
-			}
-		case *type_system.IntersectionType:
-			for _, e := range t.Types {
-				walk(e)
-			}
-		case *type_system.FuncType:
-			for _, tp := range t.TypeParams {
-				walk(tp.Constraint)
-				walk(tp.Default)
-			}
-			for _, p := range t.Params {
-				walk(p.Type)
-			}
-			walk(t.Return)
-			walk(t.Throws)
-		case *type_system.TupleType:
-			for _, e := range t.Elems {
-				walk(e)
-			}
-		case *type_system.ObjectType:
-			for _, elem := range t.Elems {
-				switch e := elem.(type) {
-				case *type_system.PropertyElem:
-					walk(e.Value)
-				case *type_system.MethodElem:
-					walk(e.Fn)
-				case *type_system.GetterElem:
-					walk(e.Fn)
-				case *type_system.SetterElem:
-					walk(e.Fn)
-				case *type_system.CallableElem:
-					walk(e.Fn)
-				case *type_system.ConstructorElem:
-					walk(e.Fn)
-				case *type_system.RestSpreadElem:
-					walk(e.Value)
-				case *type_system.MappedElem:
-					walk(e.Value)
-					walk(e.Name)
-					walk(e.Check)
-					walk(e.Extends)
-					if e.TypeParam != nil {
-						walk(e.TypeParam.Constraint)
-					}
-				case *type_system.IndexSignatureElem:
-					walk(e.KeyType)
-					walk(e.Value)
-				}
-			}
-		case *type_system.MutType:
-			walk(t.Type)
-		case *type_system.RestSpreadType:
-			walk(t.Type)
-		case *type_system.TypeRefType:
-			for _, a := range t.TypeArgs {
-				walk(a)
-			}
-		case *type_system.KeyOfType:
-			walk(t.Type)
-		case *type_system.IndexType:
-			walk(t.Target)
-			walk(t.Index)
-		case *type_system.CondType:
-			walk(t.Check)
-			walk(t.Extends)
-			walk(t.Then)
-			walk(t.Else)
-		case *type_system.TemplateLitType:
-			for _, e := range t.Types {
-				walk(e)
-			}
-		}
-	}
+	collector := &unionCollector{visited: set.NewSet[type_system.Type]()}
 	for _, ft := range funcTypes {
-		walk(ft)
+		// FuncType.Accept doesn't walk into TypeParams[i].{Constraint,Default};
+		// pre-visit them so cyclic unions reachable only via a pre-existing
+		// type parameter's constraint or default are still discovered.
+		for _, tp := range ft.TypeParams {
+			if tp.Constraint != nil {
+				tp.Constraint.Accept(collector)
+			}
+			if tp.Default != nil {
+				tp.Default.Accept(collector)
+			}
+		}
+		ft.Accept(collector)
 	}
 
 	updates := map[*type_system.UnionType][]type_system.Type{}
-	for _, u := range unions {
+	for _, u := range collector.unions {
 		kept := make([]type_system.Type, 0, len(u.Types))
 		for _, elem := range u.Types {
 			if leadsToUnion(elem, u, set.NewSet[type_system.Type]()) {
@@ -684,6 +574,28 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 		u.Types = kept
 	}
 }
+
+// unionCollector is a read-only TypeVisitor that records every reachable
+// UnionType while skipping any node it has already entered. The visited set
+// breaks cycles that the canonical Accept walker would otherwise loop on —
+// it's the whole reason simplifyRecursiveUnions exists.
+type unionCollector struct {
+	unions  []*type_system.UnionType
+	visited set.Set[type_system.Type]
+}
+
+func (c *unionCollector) EnterType(t type_system.Type) type_system.EnterResult {
+	if c.visited.Contains(t) {
+		return type_system.EnterResult{SkipChildren: true}
+	}
+	c.visited.Add(t)
+	if u, ok := t.(*type_system.UnionType); ok {
+		c.unions = append(c.unions, u)
+	}
+	return type_system.EnterResult{}
+}
+
+func (*unionCollector) ExitType(type_system.Type) type_system.Type { return nil }
 
 // leadsToUnion reports whether t's transitive Prune chain reaches `target`
 // through Union/Intersection elements only. The narrow traversal is
