@@ -223,12 +223,12 @@ func TestGeneralizeFuncType_CyclicUnionDoesNotStackOverflow(t *testing.T) {
 	assert.Equal(t, "T0", fooType.TypeParams[0].Name)
 }
 
-// TestSimplifyRecursiveUnions_ReachesViaFuncTypeParams verifies that the
-// cyclic-union simplifier traverses FuncType.TypeParams[i].{Constraint,Default},
+// TestSimplifyRecursiveCycles_ReachesViaFuncTypeParams verifies that the
+// cyclic-type simplifier traverses FuncType.TypeParams[i].{Constraint,Default},
 // mirroring collectUnresolvedTypeVarsImpl's coverage. Without this traversal,
 // a cyclic union reachable only through a pre-existing TypeParam's Constraint
 // slips past the simplifier and downstream walkers will loop on it.
-func TestSimplifyRecursiveUnions_ReachesViaFuncTypeParams(t *testing.T) {
+func TestSimplifyRecursiveCycles_ReachesViaFuncTypeParams(t *testing.T) {
 	selfRefTV := ts.NewTypeVarType(nil, 1)
 	tvLeaf := ts.NewTypeVarType(nil, 2)
 	cyclic := ts.NewUnionType(nil, tvLeaf, selfRefTV).(*ts.UnionType)
@@ -243,17 +243,17 @@ func TestSimplifyRecursiveUnions_ReachesViaFuncTypeParams(t *testing.T) {
 		ts.NewNeverType(nil),
 	)
 
-	simplifyRecursiveUnions([]*ts.FuncType{funcType})
+	simplifyRecursiveCycles([]*ts.FuncType{funcType})
 
 	if got := len(cyclic.Types); got != 1 {
 		t.Fatalf("cyclic union reachable via FuncType.TypeParams[i].Constraint not simplified: got %d elements, want 1", got)
 	}
 }
 
-// TestSimplifyRecursiveUnions_ReachesViaMappedElemTypeParam verifies coverage
+// TestSimplifyRecursiveCycles_ReachesViaMappedElemTypeParam verifies coverage
 // of MappedElem.TypeParam.Constraint, which collectUnresolvedTypeVarsImpl
 // visits but the simplifier's walk previously skipped.
-func TestSimplifyRecursiveUnions_ReachesViaMappedElemTypeParam(t *testing.T) {
+func TestSimplifyRecursiveCycles_ReachesViaMappedElemTypeParam(t *testing.T) {
 	selfRefTV := ts.NewTypeVarType(nil, 1)
 	tvLeaf := ts.NewTypeVarType(nil, 2)
 	cyclic := ts.NewUnionType(nil, tvLeaf, selfRefTV).(*ts.UnionType)
@@ -272,10 +272,35 @@ func TestSimplifyRecursiveUnions_ReachesViaMappedElemTypeParam(t *testing.T) {
 		ts.NewNeverType(nil),
 	)
 
-	simplifyRecursiveUnions([]*ts.FuncType{funcType})
+	simplifyRecursiveCycles([]*ts.FuncType{funcType})
 
 	if got := len(cyclic.Types); got != 1 {
 		t.Fatalf("cyclic union reachable via MappedElem.TypeParam.Constraint not simplified: got %d elements, want 1", got)
+	}
+}
+
+// TestSimplifyRecursiveCycles_IntersectionCycle verifies that a cyclic
+// IntersectionType is simplified the same way as a cyclic UnionType.
+// Intersection is idempotent (T & T = T), so a self-referencing element
+// is redundant; absorption (T & (T | I) = T) lets us drop the element
+// without changing the type's meaning.
+func TestSimplifyRecursiveCycles_IntersectionCycle(t *testing.T) {
+	selfRefTV := ts.NewTypeVarType(nil, 1)
+	tvLeaf := ts.NewTypeVarType(nil, 2)
+	cyclic := ts.NewIntersectionType(nil, tvLeaf, selfRefTV).(*ts.IntersectionType)
+	selfRefTV.Instance = cyclic
+
+	funcType := ts.NewFuncType(
+		nil, nil,
+		[]*ts.FuncParam{ts.NewFuncParam(ts.NewIdentPat("x"), ts.NewNeverType(nil))},
+		cyclic,
+		ts.NewNeverType(nil),
+	)
+
+	simplifyRecursiveCycles([]*ts.FuncType{funcType})
+
+	if got := len(cyclic.Types); got != 1 {
+		t.Fatalf("cyclic intersection not simplified: got %d elements, want 1", got)
 	}
 }
 

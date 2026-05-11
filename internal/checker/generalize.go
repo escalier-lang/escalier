@@ -530,22 +530,45 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 	return hasWritten
 }
 
-// simplifyRecursiveUnions walks each function's signature, collects every
-// reachable UnionType, and drops elements whose Prune chain leads back to the
-// containing union. This handles the cyclic-union shape produced by mutually
-// recursive two-arm functions (issue #590), where foo.Return = T | bar.Return
-// and bar.Return = T | foo.Return — semantically equivalent to T, but a literal
-// graph cycle that any naive walker (printer, visitor, collector) would loop on.
+// simplifyRecursiveCycles walks each function's signature, collects every
+// reachable UnionType and IntersectionType, and drops elements whose Prune
+// chain leads back to the containing node. This handles the cyclic-union /
+// cyclic-intersection shape produced by mutually recursive two-arm functions
+// (issue #590), where foo.Return = T | bar.Return and bar.Return = T |
+// foo.Return — semantically equivalent to T, but a literal graph cycle that
+// any naive walker (printer, visitor, collector) would loop on. The same
+// reduction applies to intersections: T & (T & I) = T by idempotence.
 //
 // Updates are gathered against the original graph before any mutation so that
-// symmetric cycles (each side referencing the other) are both broken in a single
-// pass, rather than the first simplification hiding the cycle from the second.
-func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
-	collector := &unionCollector{visited: set.NewSet[type_system.Type]()}
+// symmetric cycles (each side referencing the other) are both broken in a
+// single pass, rather than the first simplification hiding the cycle from
+// the second.
+//
+// Limitations:
+//
+//   - Only Union and Intersection cycles are simplified. These are the only
+//     two type constructors with the idempotent / absorption laws that make
+//     a self-referencing element redundant (T | T = T, T & T = T,
+//     T | (T & X) = T, T & (T | X) = T).
+//   - Cycles through any other constructor — FuncType, ObjectType, TupleType,
+//     TypeRefType, CondType, etc. — are *genuinely recursive* types (e.g.
+//     `fn() -> fn() -> …`, `{ x: { x: … } }`) and are NOT reduced. They
+//     remain as graph cycles. Downstream consumers must do their own cycle
+//     detection: collectUnresolvedTypeVarsImpl and unionCollector do, but
+//     the printer in internal/type_system/print_type.go currently does not
+//     and will stack-overflow on such types.
+//   - Cycle detection uses pointer identity. Two structurally equal but
+//     distinct UnionType / IntersectionType instances are NOT treated as
+//     the same target.
+//   - FuncType.Accept does not descend into TypeParams[i].{Constraint,
+//     Default}; this function pre-visits them manually to compensate.
+func simplifyRecursiveCycles(funcTypes []*type_system.FuncType) {
+	collector := &cycleCollector{visited: set.NewSet[type_system.Type]()}
 	for _, ft := range funcTypes {
 		// FuncType.Accept doesn't walk into TypeParams[i].{Constraint,Default};
-		// pre-visit them so cyclic unions reachable only via a pre-existing
-		// type parameter's constraint or default are still discovered.
+		// pre-visit them so cyclic unions / intersections reachable only via
+		// a pre-existing type parameter's constraint or default are still
+		// discovered.
 		for _, tp := range ft.TypeParams {
 			if tp.Constraint != nil {
 				tp.Constraint.Accept(collector)
@@ -557,58 +580,87 @@ func simplifyRecursiveUnions(funcTypes []*type_system.FuncType) {
 		ft.Accept(collector)
 	}
 
-	updates := map[*type_system.UnionType][]type_system.Type{}
+	type cycleNode struct {
+		target type_system.Type
+		elems  []type_system.Type
+	}
+
+	nodes := make([]cycleNode, 0, len(collector.unions)+len(collector.intersections))
 	for _, u := range collector.unions {
-		kept := make([]type_system.Type, 0, len(u.Types))
-		for _, elem := range u.Types {
-			if leadsToUnion(elem, u, set.NewSet[type_system.Type]()) {
+		nodes = append(nodes, cycleNode{u, u.Types})
+	}
+	for _, i := range collector.intersections {
+		nodes = append(nodes, cycleNode{i, i.Types})
+	}
+
+	type update struct {
+		target type_system.Type
+		kept   []type_system.Type
+	}
+
+	updates := []update{}
+	for _, n := range nodes {
+		kept := make([]type_system.Type, 0, len(n.elems))
+		for _, elem := range n.elems {
+			if leadsToCycle(elem, n.target, set.NewSet[type_system.Type]()) {
 				continue
 			}
 			kept = append(kept, elem)
 		}
-		if len(kept) != len(u.Types) {
-			updates[u] = kept
+		if len(kept) != len(n.elems) {
+			updates = append(updates, update{n.target, kept})
 		}
 	}
-	for u, kept := range updates {
-		u.Types = kept
+
+	for _, u := range updates {
+		switch target := u.target.(type) {
+		case *type_system.UnionType:
+			target.Types = u.kept
+		case *type_system.IntersectionType:
+			target.Types = u.kept
+		}
 	}
 }
 
-// unionCollector is a read-only TypeVisitor that records every reachable
-// UnionType while skipping any node it has already entered. The visited set
-// breaks cycles that the canonical Accept walker would otherwise loop on —
-// it's the whole reason simplifyRecursiveUnions exists.
-type unionCollector struct {
-	unions  []*type_system.UnionType
-	visited set.Set[type_system.Type]
+// cycleCollector is a read-only TypeVisitor that records every reachable
+// UnionType and IntersectionType while skipping any node it has already
+// entered. The visited set breaks cycles that the canonical Accept walker
+// would otherwise loop on — it's the whole reason simplifyRecursiveCycles
+// exists.
+type cycleCollector struct {
+	unions        []*type_system.UnionType
+	intersections []*type_system.IntersectionType
+	visited       set.Set[type_system.Type]
 }
 
-func (c *unionCollector) EnterType(t type_system.Type) type_system.EnterResult {
+func (c *cycleCollector) EnterType(t type_system.Type) type_system.EnterResult {
 	if c.visited.Contains(t) {
 		return type_system.EnterResult{SkipChildren: true}
 	}
 	c.visited.Add(t)
-	if u, ok := t.(*type_system.UnionType); ok {
-		c.unions = append(c.unions, u)
+	switch t := t.(type) {
+	case *type_system.UnionType:
+		c.unions = append(c.unions, t)
+	case *type_system.IntersectionType:
+		c.intersections = append(c.intersections, t)
 	}
 	return type_system.EnterResult{}
 }
 
-func (*unionCollector) ExitType(type_system.Type) type_system.Type { return nil }
+func (*cycleCollector) ExitType(type_system.Type) type_system.Type { return nil }
 
-// leadsToUnion reports whether t's transitive Prune chain reaches `target`
+// leadsToCycle reports whether t's transitive Prune chain reaches `target`
 // through Union/Intersection elements only. The narrow traversal is
-// intentional: a union element that wraps `target` inside another constructor
-// (tuple, conditional, object) is a legitimately distinct type and must NOT
-// be dropped — only union/intersection-of-unions folding is structurally
-// equivalent to the containing union.
-func leadsToUnion(t type_system.Type, target *type_system.UnionType, visited set.Set[type_system.Type]) bool {
+// intentional: an element that wraps `target` inside another constructor
+// (tuple, conditional, object, function) is a legitimately distinct type
+// and must NOT be dropped — only the absorption/idempotence laws of union
+// and intersection make a self-referencing element redundant.
+func leadsToCycle(t type_system.Type, target type_system.Type, visited set.Set[type_system.Type]) bool {
 	if t == nil {
 		return false
 	}
 	t = type_system.Prune(t)
-	if u, ok := t.(*type_system.UnionType); ok && u == target {
+	if t == target {
 		return true
 	}
 	if visited.Contains(t) {
@@ -618,13 +670,13 @@ func leadsToUnion(t type_system.Type, target *type_system.UnionType, visited set
 	switch t := t.(type) {
 	case *type_system.UnionType:
 		for _, e := range t.Types {
-			if leadsToUnion(e, target, visited) {
+			if leadsToCycle(e, target, visited) {
 				return true
 			}
 		}
 	case *type_system.IntersectionType:
 		for _, e := range t.Types {
-			if leadsToUnion(e, target, visited) {
+			if leadsToCycle(e, target, visited) {
 				return true
 			}
 		}
@@ -704,7 +756,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 	// the type-system visitor) traverses them. A union that transitively
 	// contains itself simplifies to the union of its non-self-referencing
 	// elements — see issue #590.
-	simplifyRecursiveUnions(funcTypes)
+	simplifyRecursiveCycles(funcTypes)
 
 	// Finalize open object mutability for each func. If any property on an
 	// open object was written during inference, wrap the object in `mut`.
