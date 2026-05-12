@@ -92,6 +92,19 @@ in the grammar. This is its own self-contained task.
   Other expression shapes are rejected at parse time.
 - Plumb an `Override bool` flag through the affected AST nodes
   alongside the existing `Declare bool`.
+- **Sugar desugaring.** Per
+  [override_merge_semantics.md](override_merge_semantics.md)
+  §"Top-level matching", `override declare class Foo { ... }` and
+  `override declare interface Foo { ... }` at file root are sugar
+  for `override declare global { class Foo { ... } }` (and the
+  interface equivalent). The same applies to top-level
+  `override declare fn` / `override declare type` / `override
+  declare val` — they target the global scope. Desugaring happens
+  in the parser: the resulting AST has a single canonical shape
+  (an `override declare global { ... }` block whose body contains
+  the sugared decl), so downstream consumers don't need to know
+  the sugar existed. This keeps §5's loader / merge logic from
+  branching on top-level form.
 - **Future-extensibility note.** The function-signature grammar used
   inside override blocks must be the full Escalier signature
   grammar, not a stripped-down receiver-only subset — so lifetime
@@ -113,17 +126,39 @@ Goal: introduce the eight-tier resolution order from the requirements
 as a single function, wired in but populated only with existing
 behavior (so output is unchanged).
 
-- Add `internal/interop/mutability.go` with a `Classify` entry point
-  that takes the TS-side declaration plus surrounding context (class
-  shape, module path) and returns `(mutability, source)`, where
-  `source` is one of the eight resolution tiers. `source` is needed for
-  the uncertainty warning.
+- Add `internal/interop/mutability.go` defining the `ResolutionTier`
+  enum (the canonical 8-tier ladder, plus a zero-valued
+  "user-authored source" sentinel — see §11.2):
+
+  ```go
+  type ResolutionTier int
+
+  const (
+      TierUserSource        ResolutionTier = iota // 0: user-authored .esc source
+      TierUserOverride                            // 1: requirements tier 1
+      TierEsctype                                 // 2
+      TierExplicitSignal                          // 3
+      TierShippedOverride                         // 4
+      TierPrimitiveWrapper                        // 5
+      TierGetPrefix                               // 6
+      TierNameHeuristic                           // 7
+      TierDefault                                 // 8
+  )
+  ```
+
+  Plus a `Classify` entry point that takes the TS-side declaration
+  plus surrounding context (class shape, module path) and returns
+  a `ClassifyResult` (see §9.3). The `Source` field of the result
+  is one of the constants above and is needed by §10's conformance
+  check and §11's uncertainty warning.
 - Route every place in `interop/decl.go` and `interop/helper.go` that
   currently decides method/parameter mutability through `Classify`.
-  At this phase the function only implements tier 3 (the existing
-  `readonly`-property handling, which is part of "Explicit author
-  signals" in the renumbered ladder) and tier 8 (default to
-  mutating).
+  At this phase `Classify` implements only tier 8 (default to
+  mutating) — strong signals land in §4, the override store in §5,
+  `@esctype` in §9, and the heuristics in §7. The existing
+  `readonly`-property handling is a *property-write* check, separate
+  from receiver-mutability classification; it stays where it is and
+  §4 will consolidate it.
 - Snapshot tests in `internal/interop/` verify no behavior change.
 
 Exit criteria: `Classify` is the single decision point; `go test ./...`
@@ -152,11 +187,12 @@ Implement, in `internal/interop/mutability.go`, classification for:
 - `readonly` properties (principle #6) — already partially handled;
   consolidate so it's not bypassed by anything else.
 
-Tests: extend the §2 fixtures; add table-driven unit tests in
+Tests: extend the §2 resolution-order fixture with strong-signal
+cases; add table-driven unit tests in
 `internal/interop/mutability_test.go`.
 
-Exit criteria: every symbol in the §2 strong-signals fixture
-classifies correctly, with `source = strong-signal`.
+Exit criteria: every strong-signal case in the §2 resolution-order
+fixture classifies correctly, with `Source = TierExplicitSignal`.
 
 ## 5. Override file format, loader & merge
 
@@ -174,34 +210,42 @@ from other tiers are dropped, not merged with it.
 There are two layers of competition:
 
 1. **Within the override system** — three internal tiers
-   (`TierUserProject` > `TierUserDep` > `TierShipped`). The loader
-   builds one `Scope` per tier. The merge collapses them into a
-   single override scope by walking slot-by-slot and keeping the
-   highest-precedence non-empty entry.
+   (`OverrideTierUserProject` > `OverrideTierUserDep` >
+   `OverrideTierShipped`). The loader builds one `Scope` per tier.
+   The merge collapses them into a single override scope by walking
+   slot-by-slot and keeping the highest-precedence non-empty entry.
+   See §5.5a for the explicit collapse step.
 2. **Override system vs. upstream `.d.ts`** — the collapsed
    override scope is then zipped against the upstream scope. A slot
    present on the override side wholesale displaces upstream's
    type for that slot; a slot only on upstream passes through with
-   `Source = TierDefault` for later refinement by `Classify`.
+   no `Source` stamped (leaving classification to `Classify`'s
+   later tiers).
+
+Naming convention: `OverrideTier` is the *internal* three-tier enum
+used only inside `internal/interop/overrides/`. `ResolutionTier`
+(defined in `internal/interop/mutability.go`) is the broader 8-tier
+ladder. The two never appear in the same field or function
+parameter; the merge translates between them at leaf construction.
 
 After merge, `Effective.Source` records which tier of the broader
 8-tier resolution ladder produced the value: `TierUserOverride`
-(tier 3) when a user-project or user-dep entry won, or
-`TierShippedOverride` (tier 4) when only a shipped entry was
+(ladder tier 1) when a user-project or user-dep entry won, or
+`TierShippedOverride` (ladder tier 4) when only a shipped entry was
 present. `Classify` reads this value to decide where in the ladder
 the override fits, and §11's warning predicate reads it to
 suppress warnings on override-backed classifications.
 
 **Duplicate-detection rules:**
 
-- *Within a tier:* two entries occupying the same slot is a hard
-  error (`ErrDuplicateMember`, carrying both `Origin`s). This is
-  what enforces "one source of truth per tier" — you can't have
-  two `overrides/*.esc` files in the same project both claiming
-  `Array.prototype.map`.
-- *Across tiers:* the lower-precedence entry is silently dropped.
-  This is the whole point of the tier system — user overrides
-  shadow shipped ones without complaint.
+- *Within an `OverrideTier`:* two entries occupying the same slot
+  is a hard error (`ErrDuplicateMember`, carrying both `Origin`s).
+  This is what enforces "one source of truth per tier" — you can't
+  have two `overrides/*.esc` files in the same project both
+  claiming `Array.prototype.map`.
+- *Across `OverrideTier`s:* the lower-precedence entry is silently
+  dropped. This is the whole point of the tier system — user
+  overrides shadow shipped ones without complaint.
 
 The same shadowing applies to `@all_pure`: a module pragma at a
 higher tier wins over the same pragma at a lower tier, but does
@@ -264,12 +308,22 @@ type MemberSet struct {
     Ctor       *Effective            // single slot per class
 }
 
-// Tier identifies where an override came from.
-type Tier int
+// OverrideTier identifies where an override came from. Distinct
+// from interop.ResolutionTier (the 8-tier classification ladder)
+// — OverrideTier is only used inside this package to drive the
+// internal three-tier collapse (§5.5a). The merge translates the
+// winning OverrideTier into a ResolutionTier on the resulting
+// Effective.Source.
+//
+// Lower integer = higher precedence (UserProject beats UserDep
+// beats Shipped). This matches the convention used by
+// ResolutionTier where TierUserOverride = 1 outranks
+// TierShippedOverride = 4.
+type OverrideTier int
 const (
-    TierUserProject Tier = iota // 1b
-    TierUserDep                 // 1a
-    TierShipped                 // 4
+    OverrideTierUserProject OverrideTier = iota // requirements tier 1b
+    OverrideTierUserDep                         // requirements tier 1a
+    OverrideTierShipped                         // requirements tier 4
 )
 
 // Effective is the merged result for a single member. It carries
@@ -298,11 +352,14 @@ type Path struct {
     Static bool
 }
 
-// OverrideStore wraps a Scope plus the per-tier raw entries used to
-// detect within-tier duplicates and to report provenance.
+// OverrideStore wraps the post-merge effective scope. Per-tier
+// pre-merge scopes exist only inside loader.Load (used to run
+// within-tier duplicate detection and the slot-by-slot collapse
+// of §5.5a) and are not retained on the store — every diagnostic
+// that needs provenance reads Effective.Provenance, which already
+// carries the contributing Origins.
 type OverrideStore struct {
-    Effective *Scope                  // merged across all tiers
-    PerTier   map[Tier]*Scope         // pre-merge, retained for diagnostics
+    Effective *Scope // merged across all OverrideTiers + upstream
 }
 
 // Resolve walks Effective by Path. Returns nil if the path has no
@@ -329,20 +386,43 @@ all call it.
 `loader.Load(root string, deps []DepInfo, shipped fs.FS) (*OverrideStore, []error)`:
 
 1. Walk `shipped` (embedded `fs.FS` populated in §6) — emit
-   `Entry`s with `Tier = TierShipped`.
+   `Entry`s with `OverrideTier = OverrideTierShipped`.
 2. For each dep in `deps`, walk `<dep.Dir>/overrides/**/*.esc` — emit
-   with `Tier = TierUserDep`. `dep.Dir` is the directory containing
-   that dep's `package.json`.
+   with `OverrideTier = OverrideTierUserDep`. `dep.Dir` is the
+   directory containing that dep's `package.json`.
 3. Walk `<root>/overrides/**/*.esc` — emit with
-   `Tier = TierUserProject`.
+   `OverrideTier = OverrideTierUserProject`.
 4. Parse each file via the existing `internal/parser` entry point;
    reject files with parse errors as hard errors.
-5. Build one `Scope` per tier by walking parsed decls and inserting
-   each into the appropriate `MemberSet` slot. Within a tier,
-   inserting into an already-occupied slot is `ErrDuplicateMember`
-   (carries both files' `Origin`s). Across tiers, the higher
-   precedence scope shadows lower; per semantics doc, shadowing is
-   wholesale per slot.
+5. Build one `Scope` per `OverrideTier` by walking parsed decls and
+   inserting each into the appropriate `MemberSet` slot. Within an
+   `OverrideTier`, inserting into an already-occupied slot is
+   `ErrDuplicateMember` (carries both files' `Origin`s). Cross-tier
+   shadowing is handled by §5.5a, not here.
+
+### 5.5a Internal three-tier collapse
+
+Before the merge against upstream (§5.6) runs, the three per-tier
+scopes from §5.5 are collapsed into a single override scope. The
+collapse walks the trees in parallel, slot-by-slot:
+
+```
+collapsed[slot] := first non-nil of (
+    userProject[slot],
+    userDep[slot],
+    shipped[slot])
+```
+
+Concretely, the walk descends `Modules` → `Owners` → (`Instance` |
+`Static`) → (`Methods` | `Getters` | `Setters` | `Properties` |
+`Ctor`) and takes the highest-precedence non-empty leaf at every
+key. `ModuleScope.AllPure` collapses the same way: a higher-tier
+`@all_pure` shadows a lower-tier one entirely (no stacking).
+
+The collapsed scope records, for each surviving leaf, the
+`OverrideTier` it came from on a transient field that §5.6 reads
+when stamping `Effective.Source`. The per-tier scopes are dropped
+after collapse — they have no consumer past this point.
 
 ### 5.6 Eager merge pass
 
@@ -361,11 +441,22 @@ a fresh `Effective` for every leaf. Per node:
   fields). Nested namespaces match by name.
 - **MemberSet level.** Each kind (Methods/Getters/Setters/Properties)
   has its own slot — getter/setter independence falls out of the
-  shape. Generics arity mismatch at this point is
-  `ErrGenericArityMismatch`.
+  shape.
+
+Generics arity is checked at two places:
+
+- **Owner-level generics** (class/interface type parameters) are
+  checked when entering an `OwnerScope`: if the override's owner
+  declares a different arity than upstream, emit
+  `ErrGenericArityMismatch{Path: Path{Owner: ...}, ...}` and skip
+  merging this owner's body.
+- **Method-level generics** (per-signature type parameters on a
+  method or free function) are checked inside
+  `consistency.Check` (§5.7), since they're part of the
+  per-signature equivalence contract.
 - **Leaf.** Construct `Effective`:
-  - If only upstream: `Source = TierDefault` (§5 leaves
-    classification to the existing `Classify` pipeline).
+  - If only upstream: leave `Source` unstamped (zero value), so
+    `Classify`'s later tiers determine the final classification.
   - If only override and member-presence requires upstream
     (`@all_pure` is the one case that doesn't): emit
     `ErrUnknownMember` with the available-name list pulled from the
@@ -375,9 +466,10 @@ a fresh `Effective` for every leaf. Per node:
     emit the merged `Effective`.
   - If `ModuleScope.AllPure` is true and the slot is a method
     without an explicit override: synthesise an `Effective` with
-    `Mut = false` and `Source = TierShippedOverride` (or
-    `TierUserOverride` per the contributing tier), preserving
-    upstream's full type.
+    `Mut = false` and `Source` set per the contributing
+    `OverrideTier` — `TierUserOverride` for UserProject/UserDep,
+    `TierShippedOverride` for Shipped — preserving upstream's full
+    type.
 
 Originals are not mutated; merge builds a fresh `Scope`.
 
@@ -487,20 +579,30 @@ left-most identifier down. A nil `Owner` is reserved for `KindFree`.
 ### 5.11 `Classify` integration
 
 Extend `ClassifyContext` with `Store *overrides.OverrideStore` (nil
-is allowed and means "no overrides registered"). Insert two new
-clauses in `Classify`:
+is allowed and means "no overrides registered"). `Classify` calls
+`Store.Resolve(path)` exactly once at the very top of the cascade.
+The merge has already decided whether a user-project, user-dep, or
+shipped entry won, and stamped that decision on `Effective.Source`
+as either `TierUserOverride` or `TierShippedOverride`. So:
 
-- Tier 1 (user override): consult `Store.Resolve` filtered to
-  `Tier ∈ {TierUserProject, TierUserDep}`.
-- Tier 4 (shipped override): consult `Store.Resolve` filtered to
-  `Tier == TierShipped`.
+- If `Resolve` returns nil: fall through to tier 2 (`@esctype`).
+- If `Resolve` returns an `Effective` with `Source =
+  TierUserOverride`: the result lands at ladder tier 1.
+- If `Resolve` returns an `Effective` with `Source =
+  TierShippedOverride`: the result lands at ladder tier 4 — but
+  *only* if no earlier tier (2 or 3) supersedes it. Concretely:
+  `Classify` evaluates tier 1 (the `TierUserOverride` case), then
+  tier 2 (`@esctype`), then tier 3 (strong signals), and only
+  then accepts a `TierShippedOverride` hit. The override store
+  thus contributes to two non-adjacent ladder rungs; the easiest
+  shape in code is to consult the store once at the top, hold the
+  result, and use it at the appropriate point.
 
-A hit returns `ClassifyResult{Mut: eff.Mut, Source: eff.Source}`
-(the source carries through from the merge — `TierUserOverride` for
-tier 1, `TierShippedOverride` for tier 4). The `Effective.Type`
-also displaces the upstream type at the call site that constructs
-the class's effective member map — but that wiring lives in
-`decl.go`, not `Classify`.
+In all cases the hit returns `ClassifyResult{Mut: eff.Mut, Source:
+eff.Source, Replacement: eff.Type}` (Replacement defined in §9.3).
+The `Effective.Type` also displaces the upstream type at the call
+site that constructs the class's effective member map — that wiring
+lives in `decl.go`, not `Classify`.
 
 ### 5.12 Tests
 
@@ -657,12 +759,21 @@ from `Classify` in tier order. Each returns
 
 ### 7.1 Tier 5: primitive wrappers
 
+The classification only applies to the four built-in global
+constructors, not to any user-defined class that happens to share a
+name. `ClassifyContext` carries an `OwnerScope` flag distinguishing
+"this class came from the ambient/global scope of a TS lib `.d.ts`"
+from "this class came from a user module."
+
 ```go
 var primitiveWrapperClasses = set.FromSlice([]string{
     "Number", "BigInt", "String", "Boolean",
 })
 
 func classifyTier5(ctx ClassifyContext) (ClassifyResult, bool) {
+    if !ctx.OwnerIsGlobalBuiltin {
+        return ClassifyResult{}, false
+    }
     if primitiveWrapperClasses.Contains(ctx.ClassName) {
         return ClassifyResult{Mut: false, Source: TierPrimitiveWrapper}, true
     }
@@ -670,19 +781,32 @@ func classifyTier5(ctx ClassifyContext) (ClassifyResult, bool) {
 }
 ```
 
+`OwnerIsGlobalBuiltin` is true iff the declaring `.d.ts` is part of
+the TS standard-library set bundled at the path used by the §6
+consistency test (`node_modules/typescript/lib/lib.*.d.ts`). A
+user-defined class named `String` in the consuming project's
+`.d.ts` therefore does not match.
+
 (`Symbol` is intentionally excluded — it has no mutable surface in
 practice but the requirements don't list it; revisit if needed.)
 
 ### 7.2 Tier 6: `get*` prefix rule
 
+Requirements §"Core principles" #4 names three mutate-on-miss
+shapes that must not be caught by the `get*` rule: `getOrInsert*`,
+`getOrUpdate*`, `getOrCreate*` (note: `getOrDefault*` is *not* an
+exception — it returns a default without writing). These are
+short-circuited *before* the tier-6 match so tier 7's mutating-
+prefix logic can claim them.
+
 ```go
-// Methods whose name starts with "get" followed by an uppercase
-// letter are non-mutating, except for the documented exceptions
-// where the JS spec uses "get" for a mutating action (none in the
-// built-ins today, but the slot exists for future additions).
-var getPrefixExceptions = set.FromSlice([]string{
-    // populated as exceptions are discovered; empty is fine.
-})
+// getOrMutatingPrefixes are name shapes where the leading "get"
+// is followed by a mutating action. Tier 6 must not classify
+// these as non-mutating; tier 7 picks them up via its mutating-
+// prefix list.
+var getOrMutatingPrefixes = []string{
+    "getOrInsert", "getOrUpdate", "getOrCreate",
+}
 
 func classifyTier6(ctx ClassifyContext) (ClassifyResult, bool) {
     m, ok := ctx.Member.(*dts_parser.MethodDecl)
@@ -692,8 +816,11 @@ func classifyTier6(ctx ClassifyContext) (ClassifyResult, bool) {
         !unicode.IsUpper(rune(name[3])) {
         return ClassifyResult{}, false
     }
-    if getPrefixExceptions.Contains(ctx.ClassName + "." + name) {
-        return ClassifyResult{}, false // fall through to tier 7
+    for _, p := range getOrMutatingPrefixes {
+        if strings.HasPrefix(name, p) &&
+            (len(name) == len(p) || unicode.IsUpper(rune(name[len(p)]))) {
+            return ClassifyResult{}, false // fall through to tier 7
+        }
     }
     return ClassifyResult{Mut: false, Source: TierGetPrefix}, true
 }
@@ -702,23 +829,41 @@ func classifyTier6(ctx ClassifyContext) (ClassifyResult, bool) {
 `identName` extracts the name string from a `PropertyKey` (Ident or
 string-literal computed key); returns `""` for symbol-keyed members.
 
+The mutating-prefix list in §7.3 must include `getOrInsert*`,
+`getOrUpdate*`, `getOrCreate*` so that the fall-through actually
+lands on a mutating classification. Requirements §"Heuristics" →
+Mutating-name signals lists `getOrInsert` / `getOrCreate` /
+`getOrUpdate` as examples of "both prefixes → prefer mutating," so
+this matches the spec.
+
 ### 7.3 Tier 7: name-based heuristics
 
-Two prefix sets, both keyed off the lowercase method name. The
-matching predicate checks for a prefix followed by either end-of-string
-or an uppercase letter (so `setting` doesn't match `set`).
+Requirements §"Heuristics" → Medium signals mixes two shapes:
+*prefixes* (e.g. `is*`, `to*`, `find*`) and *exact-match keywords*
+that are themselves whole method names (e.g. `contains`, `equals`,
+`indexOf`, `forEach`, `keys`, `values`, `entries`, `at`, `every`,
+`some`). Tier 7 needs both: the prefix matcher fires when the name
+starts with the prefix and is followed by end-of-string or an
+uppercase letter, while the exact-match list compares the name in
+full.
 
-The actual prefix lists are defined in
-[requirements.md](requirements.md) §"Heuristics". The implementation
-mirrors that spec verbatim — if the lists need to change, update
-requirements.md first and then re-sync the slices here.
+All four slices below are the source of truth synced from
+requirements.md; updating one means updating the other.
 
 ```go
 // Source of truth: requirements.md §"Heuristics".
-var nonMutatingPrefixes = []string{ /* predicate / conversion /
-    query / copy / iteration prefixes from requirements */ }
-var mutatingPrefixes    = []string{ /* mutating prefixes from
-    requirements */ }
+var nonMutatingPrefixes = []string{ /* is, has, can, should, will,
+    was, did, to, as, with, find, filter, map, reduce, clone, copy,
+    count, ... */ }
+var nonMutatingExact    = []string{ "contains", "includes",
+    "equals", "matches", "slice", "concat", "at", "every", "some",
+    "indexOf", "lastIndexOf", "forEach", "keys", "values",
+    "entries" }
+var mutatingPrefixes    = []string{ /* set, add, remove, delete,
+    clear, reset, init, push, pop, shift, unshift, insert, replace,
+    update, register, unregister, dispatch, emit, write, flush,
+    getOrInsert, getOrUpdate, getOrCreate, ... */ }
+var mutatingExact       = []string{ "sort", "reverse" }
 ```
 
 Lookup logic:
@@ -727,8 +872,10 @@ Lookup logic:
 func classifyTier7(ctx ClassifyContext) (ClassifyResult, bool) {
     name := identName(memberName(ctx.Member))
     if name == "" { return ClassifyResult{}, false }
-    isNonMut := matchesAnyPrefix(name, nonMutatingPrefixes)
-    isMut    := matchesAnyPrefix(name, mutatingPrefixes)
+    isNonMut := matchesAnyPrefix(name, nonMutatingPrefixes) ||
+                stringInSlice(name, nonMutatingExact)
+    isMut    := matchesAnyPrefix(name, mutatingPrefixes) ||
+                stringInSlice(name, mutatingExact)
     switch {
     case isMut: // requirements: if both, prefer mutating
         return ClassifyResult{Mut: true,  Source: TierNameHeuristic}, true
@@ -739,8 +886,47 @@ func classifyTier7(ctx ClassifyContext) (ClassifyResult, bool) {
 }
 ```
 
-The two prefix slices are package-level `var` so they can be re-synced
+The four slices are package-level `var` so they can be re-synced
 from requirements without changing the matching function.
+
+### 7.3a Inheritance fallthrough
+
+Requirements §"Resolution order" → Inherited classifications: when
+a subclass method has no direct match at any tier, the
+classification is inherited from the nearest base-class method, and
+the inherited result carries the *base method's* tier — so an
+inherited classification from a base whose tier was an explicit
+signal stays explicit, and one inherited from a heuristic stays
+uncertain. Inheritance never upgrades certainty.
+
+This is implemented as a fallthrough wrapper around the per-tier
+cascade, not as a new tier number. After tiers 1–7 all miss on the
+subclass's member, `Classify` re-runs itself against the same
+member name on the nearest base class. The recursion terminates at
+the root of the inheritance chain; if no base method exists,
+`Classify` falls through to tier 8 (default mutating).
+
+```go
+func Classify(ctx ClassifyContext) ClassifyResult {
+    if r, ok := classifySelf(ctx); ok { return r } // tiers 1..7
+    if base, ok := nearestBaseMember(ctx); ok {
+        return Classify(base) // inherited tier carries through
+    }
+    return ClassifyResult{Mut: true, Source: TierDefault}
+}
+```
+
+`nearestBaseMember` walks the `Extends` chain on `ctx.Owner`,
+looking up the same member name (canonicalised per §5.4) at each
+level. Static and instance scopes are walked independently. The
+context passed to the recursive call has `Owner` and `Member`
+swapped to the base; the rest (module path, store, etc.) carries
+through unchanged so the override store still gets consulted
+against the base member's qualified path.
+
+The §11 uncertainty warning predicate (`isHeuristicTier`) reads the
+final `Source` and so naturally fires on inherited heuristic
+classifications without special-casing.
 
 ### 7.4 Tests
 
@@ -757,9 +943,16 @@ from requirements without changing the matching function.
 - `TestClassifyTierOrdering` — a method that would match multiple
   tiers (e.g. a `Number` method named `setFoo`) resolves at the
   earliest matching tier. Verifies wiring, not heuristic content.
+- `TestClassifyInheritance` — covers §7.3a: subclass method with
+  no direct match inherits the base method's classification *and*
+  tier (explicit-on-base stays explicit, heuristic-on-base stays
+  heuristic); no-base-method falls through to `TierDefault`;
+  override-store hit on the subclass path takes precedence over
+  inheriting from the base.
 
 Exit criteria: every heuristic in the requirements is testable and
-covered; tier-ordering test passes.
+covered; tier-ordering test passes; inheritance preserves the base
+tier as required.
 
 ## 8. Type printer round-trip audit
 
@@ -827,9 +1020,9 @@ New file `internal/interop/esctype.go`:
 
 ```go
 // ParseEsctype scans a TSDoc block for the first `@esctype {...}`
-// tag, returns the parsed Escalier type, or (nil, false) if absent.
-// Returns an error only for malformed tags.
-func ParseEsctype(doc string) (*type_system.Type, bool, error)
+// tag. Returns nil, nil if no tag is present. Returns a non-nil
+// error only when a tag is present but malformed.
+func ParseEsctype(doc string) (*type_system.Type, error)
 ```
 
 Implementation:
@@ -859,14 +1052,17 @@ type ClassifyResult struct {
 }
 ```
 
-Existing tiers leave `Replacement` nil; tier 1 sets it; the merge
-pipeline from §5 uses it to replace the upstream type
-wholesale. User overrides (tier 3 / 4 in the source enum, i.e. the
-override store) still outrank `@esctype`: `Classify` consults the
-store *before* `classifyTier1`. If both apply, the store wins and
-the symbol is classified as `TierUserOverride`/`TierShippedOverride`,
-not `TierEsctype` — this is what the "user override beats `@esctype`"
-fixture verifies.
+Tiers other than user overrides and `@esctype` leave `Replacement`
+nil; the override store (§5) and the `@esctype` tag (this section)
+both set it, and `decl.go` uses it to replace the upstream type
+wholesale. User overrides still outrank `@esctype` per requirements
+§"Round-tripping" → Precedence: `Classify` evaluates the override
+store's `TierUserOverride` path *before* `classifyTier1`. If both
+apply, the store wins and the symbol's `Source` is
+`TierUserOverride` — never `TierEsctype` — which is what the "user
+override beats `@esctype`" fixture verifies. The store's
+`TierShippedOverride` path is evaluated *after* `classifyTier1`
+(see §5.11), so `@esctype` outranks shipped overrides.
 
 ### 9.4 TSDoc tooling
 
@@ -930,26 +1126,30 @@ more specific error than a generic unification failure.
 
 ### 10.2 Comparison rule
 
+Per requirements §"Policy decisions" → `implements`, the check is
+**strict bidirectional equality on the receiver mode**, not
+subtyping. Either direction of mismatch is a hard error: a class
+method declared `mut self` cannot satisfy an interface method
+declared `self`, *and* a class method declared `self` cannot
+satisfy an interface method declared `mut self`. The fix is to
+align the annotation (or add an explicit signal) on whichever side
+is wrong.
+
 For each interface member matched against a class member:
 
-- If both have `SelfParam` set: compare the receiver mode
-  (`Mut bool`). They must be equal.
-- If the interface declares `mut self` and the class declares
-  `self`: error — the class promises non-mutation but the
-  interface allows mutation; passing a class instance to code
-  that expects the interface would let it call non-mutating
-  methods only, but the interface contract is broader.
-  *Actually* — re-read the requirements before finalising the
-  direction. The check is bidirectional equality, not subtyping;
-  the requirements explicitly call this out as "conformance"
-  rather than "compatibility". Keep it strict.
-- If only one side has a `SelfParam`: treat the absent one as
-  `mut self` (the default per the type system) before comparing.
+- If both have a `SelfParam`: their `Mut` fields must be equal.
+- If only one side has a `SelfParam`: treat the absent side as
+  `mut self` (the type-system default for an unannotated receiver)
+  before comparing.
 
 Both sides are read from the **post-merge** effective type — i.e.
 after `OverrideStore.Resolve` and `@esctype` consumption have run
 during interop conversion. By the time `check_implements` runs the
-types are already effective.
+types are already effective. A `SelfParam.Source` of
+`TierUserSource` (the class or interface was authored in `.esc`)
+counts as authoritative — the conformance check treats it like any
+other explicit tier when deciding whether to emit the "add an
+explicit signal" suggestion.
 
 ### 10.3 Diagnostic
 
@@ -980,9 +1180,23 @@ but interface declares `self`
   `@esctype` tag to make this deterministic
 ```
 
-When either source is in {5, 6, 7}, the diagnostic includes the
-"add an explicit signal" suggestion — this is the one place a
-heuristic produces a hard error rather than the §11 warning.
+When either source is in `{TierPrimitiveWrapper, TierGetPrefix,
+TierNameHeuristic}`, the diagnostic includes the "add an explicit
+signal" suggestion — this is the one place a heuristic produces a
+hard error rather than the §11 warning. `TierUserSource` and the
+explicit tiers (`TierUserOverride`, `TierEsctype`,
+`TierExplicitSignal`, `TierShippedOverride`) do not trigger the
+suggestion.
+
+**Import direction.** `checker` already depends on `interop` for
+type construction; the new error type extends that direction with
+`interop.ResolutionTier` and the merge package's `overrides.Origin`.
+`interop` and `overrides` must not import `checker` (overrides
+errors live in `internal/interop/overrides/errors.go` per §5.8 and
+are surfaced through the checker's existing error channel by value,
+not by interface reference back into checker). Confirm at
+implementation time that no checker → interop → checker cycle
+exists.
 
 ### 10.4 Scope (unchanged)
 
@@ -1034,28 +1248,17 @@ Add a non-serialised field `Source ResolutionTier` on `SelfParam`,
 set by `interop/decl.go` when it constructs the type from
 `ClassifyResult`. The field is metadata, not part of unification.
 
-**Default tier for user-authored Escalier source.** Tiers 1–8 are
-the interop ladder. A `SelfParam` constructed by the checker from
-`.esc` source (a user-written `mut self` or `self` annotation) is
-not produced by `Classify` at all, so its `Source` must sit
-outside the ladder. Add:
-
-```go
-// TierUserSource is the zero value of ResolutionTier and marks
-// types whose mutability came from authoritative user-authored
-// Escalier source, not from interop classification. Classify
-// never returns this tier. Predicates that branch on tier (e.g.
-// the §11 uncertainty warning) must explicitly exclude it.
-const TierUserSource ResolutionTier = 0
-```
-
-Renumber the existing tier constants to start at 1 (or leave them
-where they are if they already do — the existing
-`internal/interop/mutability.go` puts `TierEsctype = 1`, so adding
-`TierUserSource = 0` is non-breaking). The zero value of
-`ResolutionTier` is then `TierUserSource`, which is exactly the
-"default if nobody set it" behaviour we want for checker-constructed
-`SelfParam`s.
+**Default tier for user-authored Escalier source.** Ladder tiers
+1–8 cover the interop classification path. A `SelfParam`
+constructed by the checker from `.esc` source (a user-written
+`mut self` or `self` annotation) is not produced by `Classify` at
+all, so its `Source` must sit outside the ladder. This is
+`TierUserSource`, defined in §3 as the zero value of
+`ResolutionTier`. `Classify` never returns it; checker-constructed
+`SelfParam`s carry it implicitly; predicates that branch on tier
+(e.g. the §11 uncertainty warning, §10's heuristic-suggestion
+clause) must explicitly handle it as "authoritative, never
+uncertain."
 
 (A side table from `*FuncType` to tier is heavier plumbing and
 preferred only if `SelfParam` turns out to be shared across
@@ -1117,7 +1320,11 @@ The message names the tier ("name heuristic", "get prefix",
 
 The warning must **not** fire when:
 
-- `Source ∈ {TierEsctype, TierExplicitSignal, TierUserOverride, TierShippedOverride}`.
+- `Source ∈ {TierUserSource, TierUserOverride, TierEsctype,
+  TierExplicitSignal, TierShippedOverride, TierDefault}`. (The
+  `TierDefault` case is "assume mutating"; non-mutating calls
+  can't reach that tier, so it can't trigger the warning in
+  practice — listed for completeness.)
 - The receiver is mutable (no immutable-call concern).
 - The method is mutating (no contract risk for the immutable caller —
   this would be a hard error, not a warning).
