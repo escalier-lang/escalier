@@ -79,6 +79,12 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return result
 	}
 
+	// IMPORTANT: when adding new per-class tiers (1, 2, 4), insert them
+	// ABOVE this block. Inheritance fallthrough must only fire after
+	// every per-class tier has missed on the subclass; placing a new
+	// tier below this point would let the base override a stronger
+	// subclass signal.
+	//
 	// §7.3 inheritance fallthrough: re-run the cascade against the
 	// same-named member on the nearest base class. The inherited result
 	// carries the base method's tier — inheritance never upgrades
@@ -130,6 +136,13 @@ var getOrMutatingPrefixes = []string{
 // both, prefer mutating"). The slices below are the source of truth and
 // must stay synced with the requirements document.
 func classifyNameHeuristic(ctx ClassifyContext) (ClassifyResult, bool) {
+	// Heuristics are about method-call semantics ("does calling this
+	// mutate the receiver?"). Properties are classified by tier 3
+	// (readonly modifier) and otherwise fall through to the default;
+	// they must not be name-matched here.
+	if _, ok := ctx.Member.(*dts_parser.MethodDecl); !ok {
+		return ClassifyResult{}, false
+	}
 	name := memberName(ctx.Member)
 	if name == "" {
 		return ClassifyResult{}, false
@@ -169,13 +182,13 @@ var nonMutatingExact = set.FromSlice([]string{
 })
 
 // Source of truth: requirements.md §"Heuristics" → "Mutating-name signals".
-var mutatingPrefixes = []string{
+// The `getOr*` entries are appended from getOrMutatingPrefixes so tier 5's
+// fall-throughs and tier 6's mutating list stay in sync.
+var mutatingPrefixes = append([]string{
 	"set", "add", "remove", "delete", "clear", "reset", "init",
 	"push", "pop", "shift", "unshift", "insert", "replace", "update",
 	"register", "unregister", "dispatch", "emit", "write", "flush",
-	// get*-with-write-on-miss: keeps tier-5 fall-throughs mutating.
-	"getOrInsert", "getOrUpdate", "getOrCreate",
-}
+}, getOrMutatingPrefixes...)
 
 var mutatingExact = set.FromSlice([]string{
 	"sort", "reverse",
