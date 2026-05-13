@@ -356,6 +356,11 @@ func TestClassifyTier5_GetPrefix(t *testing.T) {
 		{"getOrInsert falls through → tier 6 mutating", "getOrInsertFoo", true, TierNameHeuristic},
 		{"getOrUpdate falls through → tier 6 mutating", "getOrUpdateThing", true, TierNameHeuristic},
 		{"getOrCreate falls through → tier 6 mutating", "getOrCreateX", true, TierNameHeuristic},
+		// Exact bare names fall through to tier 6 — consistent with the
+		// suffixed cases above.
+		{"bare getOrInsert falls through", "getOrInsert", true, TierNameHeuristic},
+		{"bare getOrUpdate falls through", "getOrUpdate", true, TierNameHeuristic},
+		{"bare getOrCreate falls through", "getOrCreate", true, TierNameHeuristic},
 		// getOrDefault is NOT a mutating exception (per requirements).
 		{"getOrDefault stays non-mutating", "getOrDefault", false, TierGetPrefix},
 	}
@@ -568,6 +573,28 @@ func TestClassifyInheritance(t *testing.T) {
 		})
 		if result.Source != TierExplicitSignal {
 			t.Errorf("subclass tier-3 should win, got Source=%d", result.Source)
+		}
+	})
+
+	// Realistic same-name case: subclass overrides `toString` (no signal
+	// on the subclass member itself — the override is a plain MethodDecl
+	// with no readonly-this and no Readonly class). The base member with
+	// the same name is the well-known `toString`, classified non-mutating
+	// at tier 3. Inheritance fallthrough must carry that tier 3 result up.
+	t.Run("same-name override inherits base tier-3", func(t *testing.T) {
+		baseCtx := &ClassifyContext{
+			Member:    makeMethodDecl("toString", nil),
+			ClassName: "Base",
+		}
+		result := Classify(ClassifyContext{
+			Member:    makeMethodDecl("toString", nil),
+			ClassName: "Sub",
+			Base:      baseCtx,
+		})
+		// Subclass `toString` itself hits tier 3 (well-known) directly,
+		// before inheritance fallthrough is even consulted.
+		if result.Mut || result.Source != TierExplicitSignal {
+			t.Errorf("got Mut=%v Source=%d, want Mut=false Source=TierExplicitSignal", result.Mut, result.Source)
 		}
 	})
 }

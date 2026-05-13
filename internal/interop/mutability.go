@@ -3,6 +3,7 @@ package interop
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -112,16 +113,25 @@ func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
 	if !hasPrefixWithUpperContinuation(name, "get") {
 		return ClassifyResult{}, false
 	}
-	// Mutating exceptions: getOrInsert*, getOrUpdate*, getOrCreate*. The
-	// `get` + uppercase guard above ensures len(name) > len(p), so the
-	// next-char lookup is safe.
+	// Mutating exceptions: getOrInsert*, getOrUpdate*, getOrCreate*.
 	//
 	// Returning `(_, false)` here is the fall-through signal — it means
 	// tier 5 declines to classify, so `Classify` proceeds to tier 6 where
 	// `mutatingPrefixes` (which includes `getOrMutatingPrefixes`) picks
 	// the name up as mutating. This is *not* a non-mutating return.
+	//
+	// Exact-name matches (e.g. bare `getOrInsert`) and any uppercase or
+	// non-ASCII continuation fall through; only an ASCII-lowercase
+	// continuation like `getOrInserter` stays at tier 5.
 	for _, p := range getOrMutatingPrefixes {
-		if strings.HasPrefix(name, p) && len(name) > len(p) && unicode.IsUpper(rune(name[len(p)])) {
+		if !strings.HasPrefix(name, p) {
+			continue
+		}
+		if len(name) == len(p) {
+			return ClassifyResult{}, false
+		}
+		r, _ := utf8.DecodeRuneInString(name[len(p):])
+		if !unicode.IsLower(r) {
 			return ClassifyResult{}, false
 		}
 	}
@@ -205,7 +215,8 @@ func hasPrefixWithUpperContinuation(name, prefix string) bool {
 	if !strings.HasPrefix(name, prefix) || len(name) <= len(prefix) {
 		return false
 	}
-	return unicode.IsUpper(rune(name[len(prefix)]))
+	r, _ := utf8.DecodeRuneInString(name[len(prefix):])
+	return unicode.IsUpper(r)
 }
 
 // matchesAnyPrefix reports whether name starts with one of the prefixes
@@ -219,7 +230,8 @@ func matchesAnyPrefix(name string, prefixes []string) bool {
 		if len(name) == len(p) {
 			return true
 		}
-		if unicode.IsUpper(rune(name[len(p)])) {
+		r, _ := utf8.DecodeRuneInString(name[len(p):])
+		if unicode.IsUpper(r) {
 			return true
 		}
 	}
