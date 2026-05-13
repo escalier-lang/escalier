@@ -40,6 +40,33 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 	}
 }
 
+// inferDeclareBlock walks the inner declarations of an Override()-prefixed
+// `declare module "..."`, `declare global`, or `declare namespace`
+// block, inferring each into the surrounding namespace. The block
+// itself is a parser-recognized grouping; for override files the inner
+// decls are what carry the actual types consumed by §5's shape
+// extractor.
+//
+// Non-override ambient blocks are still no-ops — when the legacy .d.ts
+// ingestion path needs them, this helper can be reused from those
+// branches as well.
+func (c *Checker) inferDeclareBlock(ctx Context, decls []ast.Decl, enclosingStmt ast.Stmt) []Error {
+	var errors []Error
+	for _, d := range decls {
+		// `override declare class Foo { ... }` is sugar for
+		// `override declare global { class Foo { ... } }`, so override
+		// blocks legitimately contain ClassDecls. inferDecl panics on
+		// ClassDecl pending #514; skip them here so override files don't
+		// crash the checker. The override-extract pass still picks up
+		// the class shape from the AST.
+		if _, ok := d.(*ast.ClassDecl); ok {
+			continue
+		}
+		errors = append(errors, c.inferDecl(ctx, d, enclosingStmt)...)
+	}
+	return errors
+}
+
 func (c *Checker) inferDecl(ctx Context, decl ast.Decl, enclosingStmt ast.Stmt) []Error {
 	switch decl := decl.(type) {
 	case *ast.FuncDecl:
@@ -67,11 +94,23 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl, enclosingStmt ast.Stmt) 
 		panic("TODO: infer class declaration")
 	case *ast.EnumDecl:
 		return c.inferEnumDecl(ctx, decl)
-	case *ast.DeclareModuleDecl, *ast.DeclareGlobalDecl, *ast.NamespaceDecl:
-		// Ambient block declarations (`declare module "x" { ... }` /
-		// `declare global { ... }`, optionally `override`-prefixed) are
-		// recognized by the parser but not yet processed by the checker.
-		// Treat as a no-op so they don't crash the type-inference pass.
+	case *ast.DeclareModuleDecl:
+		// Override blocks descend into their contained declarations;
+		// non-override `declare module` blocks remain a no-op until the
+		// .d.ts ingestion path needs them.
+		if decl.Override() {
+			return c.inferDeclareBlock(ctx, decl.Decls, enclosingStmt)
+		}
+		return []Error{}
+	case *ast.DeclareGlobalDecl:
+		if decl.Override() {
+			return c.inferDeclareBlock(ctx, decl.Decls, enclosingStmt)
+		}
+		return []Error{}
+	case *ast.NamespaceDecl:
+		if decl.Override() {
+			return c.inferDeclareBlock(ctx, decl.Decls, enclosingStmt)
+		}
 		return []Error{}
 	default:
 		panic(fmt.Sprintf("Unknown declaration type: %T", decl))
