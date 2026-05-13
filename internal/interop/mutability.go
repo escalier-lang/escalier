@@ -5,29 +5,29 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// ResolutionTier identifies which tier in the eight-tier resolution order
+// ResolutionTier identifies which tier in the seven-tier resolution order
 // produced a mutability classification for a class member's receiver.
 //
 // The tiers match the requirements document:
-//  1. @esctype tag (round-trip from Escalier source)
-//  2. Explicit author signals (this: Readonly<T>, getters/setters, Readonly<T>, readonly props)
-//  3. User override files
+//  0. User-authored .esc source (sentinel; not produced by Classify — see §11.2)
+//  1. User override files
+//  2. @esctype tag (round-trip from Escalier source)
+//  3. Explicit author signals (this: Readonly<T>, getters/setters, Readonly<T>, readonly props)
 //  4. Shipped overrides (stdlib, FP libraries)
-//  5. Primitive wrapper classes (Number, BigInt, String, Boolean)
-//  6. get* prefix rule (with documented exceptions)
-//  7. Name-based heuristics
-//  8. Default: mutating
+//  5. get* prefix rule (with documented exceptions)
+//  6. Name-based heuristics
+//  7. Default: mutating
 type ResolutionTier int
 
 const (
-	TierEsctype          ResolutionTier = 1
-	TierExplicitSignal   ResolutionTier = 2
-	TierUserOverride     ResolutionTier = 3
-	TierShippedOverride  ResolutionTier = 4
-	TierPrimitiveWrapper ResolutionTier = 5
-	TierGetPrefix        ResolutionTier = 6
-	TierNameHeuristic    ResolutionTier = 7
-	TierDefault          ResolutionTier = 8
+	TierUserSource      ResolutionTier = iota // 0: user-authored .esc source (sentinel)
+	TierUserOverride                          // 1
+	TierEsctype                               // 2
+	TierExplicitSignal                        // 3
+	TierShippedOverride                       // 4
+	TierGetPrefix                             // 5
+	TierNameHeuristic                         // 6
+	TierDefault                               // 7
 )
 
 // ClassifyResult is the outcome of Classify.
@@ -46,38 +46,36 @@ type ClassifyContext struct {
 }
 
 // Classify determines the mutability of a class member's receiver using the
-// eight-tier resolution order defined in
+// seven-tier resolution order defined in
 // planning/interop_mutability/requirements.md.
 func Classify(ctx ClassifyContext) ClassifyResult {
-	// Tier 1: @esctype tag — Phase 6.
+	// Tier 1: user override files — §5.
 
-	// Tier 2: explicit author signals.
-	if result, ok := classifyTier2(ctx); ok {
+	// Tier 2: @esctype tag — §9.
+
+	// Tier 3: explicit author signals.
+	if result, ok := classifyExplicitSignal(ctx); ok {
 		return result
 	}
 
-	// Tier 3: user override files — Phase 3.
+	// Tier 4: shipped overrides (stdlib, FP libraries) — §6.
 
-	// Tier 4: shipped overrides (stdlib, FP libraries) — Phase 4.
+	// Tier 5: get* prefix rule — §7.1.
 
-	// Tier 5: primitive wrapper classes — Phase 5.
+	// Tier 6: name-based heuristics — §7.2.
 
-	// Tier 6: get* prefix rule — Phase 5.
-
-	// Tier 7: name-based heuristics — Phase 5.
-
-	// Tier 8: default to mutating.
+	// Tier 7: default to mutating.
 	return ClassifyResult{Mut: true, Source: TierDefault}
 }
 
-// classifyTier2 applies explicit author signals:
+// classifyExplicitSignal applies explicit author signals (tier 3):
 //   - Getters never mutate the receiver.
 //   - Setters always mutate the receiver.
 //   - Methods with a `this: Readonly<T>` (or `this: readonly T[]`) parameter are non-mutating.
 //   - Methods on Readonly-prefixed collection classes (ReadonlyArray, etc.) are non-mutating.
 //   - Well-known symbol methods (toString, toJSON, etc.) are non-mutating.
 //   - readonly properties are non-mutating (principle #6).
-func classifyTier2(ctx ClassifyContext) (ClassifyResult, bool) {
+func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 	nonMut := ClassifyResult{Mut: false, Source: TierExplicitSignal}
 	mut := ClassifyResult{Mut: true, Source: TierExplicitSignal}
 

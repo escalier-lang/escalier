@@ -46,7 +46,7 @@ func makeComputedMethodDecl(obj, prop string) *dts_parser.MethodDecl {
 	}
 }
 
-func TestClassifyTier2_Getter(t *testing.T) {
+func TestClassifyTier3_Getter(t *testing.T) {
 	result := Classify(ClassifyContext{
 		Member: &dts_parser.GetterDecl{},
 	})
@@ -58,7 +58,7 @@ func TestClassifyTier2_Getter(t *testing.T) {
 	}
 }
 
-func TestClassifyTier2_Setter(t *testing.T) {
+func TestClassifyTier3_Setter(t *testing.T) {
 	result := Classify(ClassifyContext{
 		Member: &dts_parser.SetterDecl{},
 	})
@@ -70,7 +70,7 @@ func TestClassifyTier2_Setter(t *testing.T) {
 	}
 }
 
-func TestClassifyTier2_ReadonlyProperty(t *testing.T) {
+func TestClassifyTier3_ReadonlyProperty(t *testing.T) {
 	result := Classify(ClassifyContext{
 		Member: &dts_parser.PropertyDecl{
 			Modifiers: dts_parser.Modifiers{Readonly: true},
@@ -84,21 +84,21 @@ func TestClassifyTier2_ReadonlyProperty(t *testing.T) {
 	}
 }
 
-func TestClassifyTier8_WritableProperty(t *testing.T) {
+func TestClassifyTier7_WritableProperty(t *testing.T) {
 	result := Classify(ClassifyContext{
 		Member: &dts_parser.PropertyDecl{
 			Modifiers: dts_parser.Modifiers{Readonly: false},
 		},
 	})
 	if !result.Mut {
-		t.Error("writable property should fall through to tier 8 (mutating)")
+		t.Error("writable property should fall through to tier 7 (mutating)")
 	}
 	if result.Source != TierDefault {
 		t.Errorf("writable property should use TierDefault, got %d", result.Source)
 	}
 }
 
-func TestClassifyTier2_WellKnownMethods(t *testing.T) {
+func TestClassifyTier3_WellKnownMethods(t *testing.T) {
 	tests := []struct {
 		name   string
 		member dts_parser.ClassMember
@@ -125,7 +125,7 @@ func TestClassifyTier2_WellKnownMethods(t *testing.T) {
 	}
 }
 
-func TestClassifyTier2_ReadonlyThisParam(t *testing.T) {
+func TestClassifyTier3_ReadonlyThisParam(t *testing.T) {
 	tests := []struct {
 		name     string
 		thisType dts_parser.TypeAnn
@@ -155,7 +155,7 @@ func TestClassifyTier2_ReadonlyThisParam(t *testing.T) {
 	}
 }
 
-func TestClassifyTier2_MethodOnReadonlyPrefixedClass(t *testing.T) {
+func TestClassifyTier3_MethodOnReadonlyPrefixedClass(t *testing.T) {
 	for _, className := range []string{"ReadonlyArray", "ReadonlySet", "ReadonlyMap"} {
 		t.Run(className, func(t *testing.T) {
 			result := Classify(ClassifyContext{Member: makeMethodDecl("forEach", nil), ClassName: className})
@@ -169,19 +169,19 @@ func TestClassifyTier2_MethodOnReadonlyPrefixedClass(t *testing.T) {
 	}
 }
 
-func TestClassifyTier8_MethodOnMutableCollectionClass(t *testing.T) {
+func TestClassifyTier7_MethodOnMutableCollectionClass(t *testing.T) {
 	for _, className := range []string{"Array", "Set", "Map", "Foo"} {
 		t.Run(className, func(t *testing.T) {
 			result := Classify(ClassifyContext{Member: makeMethodDecl("forEach", nil), ClassName: className})
 			if !result.Mut {
-				t.Errorf("method on %s should fall through to mutating (tier 8)", className)
+				t.Errorf("method on %s should fall through to mutating (tier 7)", className)
 			}
 		})
 	}
 }
 
-func TestClassifyTier8_DefaultMutating(t *testing.T) {
-	// A plain method with no signals falls through to tier 8.
+func TestClassifyTier7_DefaultMutating(t *testing.T) {
+	// A plain method with no signals falls through to tier 7.
 	result := Classify(ClassifyContext{
 		Member:    makeMethodDecl("doSomething", nil),
 		ClassName: "Foo",
@@ -194,7 +194,7 @@ func TestClassifyTier8_DefaultMutating(t *testing.T) {
 	}
 }
 
-func TestClassifyTier2_ThisParamNotFirst(t *testing.T) {
+func TestClassifyTier3_ThisParamNotFirst(t *testing.T) {
 	// `this` param that is NOT first should not trigger this: Readonly<T> classification.
 	method := makeMethodDecl("doSomething", []*dts_parser.Param{
 		makeParam("arg", makeTypeRef("string")),
@@ -206,7 +206,7 @@ func TestClassifyTier2_ThisParamNotFirst(t *testing.T) {
 	}
 }
 
-func TestClassifyTier2_SymbolNonSymbol(t *testing.T) {
+func TestClassifyTier3_SymbolNonSymbol(t *testing.T) {
 	// [Foo.iterator] where Foo != "Symbol" is not a well-known symbol.
 	method := makeComputedMethodDecl("Foo", "iterator")
 	result := Classify(ClassifyContext{Member: method})
