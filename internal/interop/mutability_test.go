@@ -169,12 +169,18 @@ func TestClassifyTier3_MethodOnReadonlyPrefixedClass(t *testing.T) {
 	}
 }
 
-func TestClassifyTier7_MethodOnMutableCollectionClass(t *testing.T) {
+func TestClassifyTier6_ForEachOnMutableCollectionClass(t *testing.T) {
+	// `forEach` lands at tier 6 (name heuristic, iteration accessor) regardless
+	// of containing class; the class name only matters for Readonly-prefixed
+	// variants which trigger tier 3.
 	for _, className := range []string{"Array", "Set", "Map", "Foo"} {
 		t.Run(className, func(t *testing.T) {
 			result := Classify(ClassifyContext{Member: makeMethodDecl("forEach", nil), ClassName: className})
-			if !result.Mut {
-				t.Errorf("method on %s should fall through to mutating (tier 7)", className)
+			if result.Mut {
+				t.Errorf("forEach should be classified non-mutating (tier 6), got Mut=true on %s", className)
+			}
+			if result.Source != TierNameHeuristic {
+				t.Errorf("forEach should use TierNameHeuristic, got %d", result.Source)
 			}
 		})
 	}
@@ -332,4 +338,232 @@ func TestClassifyTier3_EndToEnd(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClassifyTier5_GetPrefix(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		wantMut    bool
+		wantSource ResolutionTier
+	}{
+		{"getFoo is non-mutating", "getFoo", false, TierGetPrefix},
+		{"getX is non-mutating", "getX", false, TierGetPrefix},
+		{"bare get falls through (default mut)", "get", true, TierDefault},
+		{"getter falls through to tier 7 default", "getter", true, TierDefault},
+		{"gets falls through to default", "gets", true, TierDefault},
+		{"setFoo not a get prefix → tier 6 mutating", "setFoo", true, TierNameHeuristic},
+		{"getOrInsert falls through → tier 6 mutating", "getOrInsertFoo", true, TierNameHeuristic},
+		{"getOrUpdate falls through → tier 6 mutating", "getOrUpdateThing", true, TierNameHeuristic},
+		{"getOrCreate falls through → tier 6 mutating", "getOrCreateX", true, TierNameHeuristic},
+		// getOrDefault is NOT a mutating exception (per requirements).
+		{"getOrDefault stays non-mutating", "getOrDefault", false, TierGetPrefix},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Classify(ClassifyContext{Member: makeMethodDecl(tt.method, nil)})
+			if result.Mut != tt.wantMut {
+				t.Errorf("%s: Mut=%v, want %v", tt.method, result.Mut, tt.wantMut)
+			}
+			if result.Source != tt.wantSource {
+				t.Errorf("%s: Source=%d, want %d", tt.method, result.Source, tt.wantSource)
+			}
+		})
+	}
+}
+
+func TestClassifyTier6_NameHeuristics(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		wantMut    bool
+		wantSource ResolutionTier
+	}{
+		// Non-mutating prefixes.
+		{"isReady", "isReady", false, TierNameHeuristic},
+		{"hasValue", "hasValue", false, TierNameHeuristic},
+		{"canRun", "canRun", false, TierNameHeuristic},
+		{"shouldRetry", "shouldRetry", false, TierNameHeuristic},
+		{"willFire", "willFire", false, TierNameHeuristic},
+		{"wasDone", "wasDone", false, TierNameHeuristic},
+		{"didMount", "didMount", false, TierNameHeuristic},
+		{"toUpperCase", "toUpperCase", false, TierNameHeuristic},
+		{"asReadonly", "asReadonly", false, TierNameHeuristic},
+		{"withDefault", "withDefault", false, TierNameHeuristic},
+		{"findItem", "findItem", false, TierNameHeuristic},
+		{"filterX", "filterX", false, TierNameHeuristic},
+		{"mapValues", "mapValues", false, TierNameHeuristic},
+		{"reduceRight", "reduceRight", false, TierNameHeuristic},
+		{"countItems", "countItems", false, TierNameHeuristic},
+		{"cloneDeep", "cloneDeep", false, TierNameHeuristic},
+		{"copyWithin", "copyWithin", false, TierNameHeuristic},
+		// Non-mutating exact.
+		{"contains", "contains", false, TierNameHeuristic},
+		{"includes", "includes", false, TierNameHeuristic},
+		{"equals", "equals", false, TierNameHeuristic},
+		{"matches", "matches", false, TierNameHeuristic},
+		{"every", "every", false, TierNameHeuristic},
+		{"some", "some", false, TierNameHeuristic},
+		{"indexOf", "indexOf", false, TierNameHeuristic},
+		{"lastIndexOf", "lastIndexOf", false, TierNameHeuristic},
+		{"at", "at", false, TierNameHeuristic},
+		{"keys", "keys", false, TierNameHeuristic},
+		{"values", "values", false, TierNameHeuristic},
+		{"entries", "entries", false, TierNameHeuristic},
+		{"forEach", "forEach", false, TierNameHeuristic},
+		{"slice", "slice", false, TierNameHeuristic},
+		{"concat", "concat", false, TierNameHeuristic},
+		// Mutating prefixes.
+		{"setX", "setX", true, TierNameHeuristic},
+		{"addItem", "addItem", true, TierNameHeuristic},
+		{"removeItem", "removeItem", true, TierNameHeuristic},
+		{"deleteAll", "deleteAll", true, TierNameHeuristic},
+		{"clearCache", "clearCache", true, TierNameHeuristic},
+		{"resetState", "resetState", true, TierNameHeuristic},
+		{"initFoo", "initFoo", true, TierNameHeuristic},
+		{"pushVal", "pushVal", true, TierNameHeuristic},
+		{"popLast", "popLast", true, TierNameHeuristic},
+		{"shiftItem", "shiftItem", true, TierNameHeuristic},
+		{"unshiftFoo", "unshiftFoo", true, TierNameHeuristic},
+		{"insertAt", "insertAt", true, TierNameHeuristic},
+		{"replaceWith", "replaceWith", true, TierNameHeuristic},
+		{"updateValue", "updateValue", true, TierNameHeuristic},
+		{"registerHandler", "registerHandler", true, TierNameHeuristic},
+		{"unregisterHandler", "unregisterHandler", true, TierNameHeuristic},
+		{"dispatchEvent", "dispatchEvent", true, TierNameHeuristic},
+		{"emitChange", "emitChange", true, TierNameHeuristic},
+		{"writeBytes", "writeBytes", true, TierNameHeuristic},
+		{"flushBuffer", "flushBuffer", true, TierNameHeuristic},
+		// Mutating exact.
+		{"sort", "sort", true, TierNameHeuristic},
+		{"reverse", "reverse", true, TierNameHeuristic},
+		// Both prefixes → mutating wins.
+		{"setToString (mut wins)", "setToString", true, TierNameHeuristic},
+		// Counter-examples — must NOT match a prefix.
+		{"today is not to-prefix", "today", true, TierDefault},
+		{"render falls through", "render", true, TierDefault},
+		{"asynchronous is not as-prefix", "asynchronous", true, TierDefault},
+		{"setting is not set-prefix", "setting", true, TierDefault},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Classify(ClassifyContext{Member: makeMethodDecl(tt.method, nil)})
+			if result.Mut != tt.wantMut {
+				t.Errorf("%s: Mut=%v, want %v", tt.method, result.Mut, tt.wantMut)
+			}
+			if result.Source != tt.wantSource {
+				t.Errorf("%s: Source=%d, want %d", tt.method, result.Source, tt.wantSource)
+			}
+		})
+	}
+}
+
+func TestClassifyTierOrdering(t *testing.T) {
+	// `toString` matches both tier 3 (well-known) and tier 6 (to-prefix);
+	// tier 3 must win.
+	result := Classify(ClassifyContext{Member: makeMethodDecl("toString", nil)})
+	if result.Source != TierExplicitSignal {
+		t.Errorf("toString should resolve at tier 3 (well-known), got %d", result.Source)
+	}
+
+	// `getValue` on a `ReadonlyArray` class matches both tier 3 (Readonly
+	// collection class) and tier 5 (get-prefix); tier 3 must win.
+	result = Classify(ClassifyContext{
+		Member:    makeMethodDecl("getValue", nil),
+		ClassName: "ReadonlyArray",
+	})
+	if result.Source != TierExplicitSignal {
+		t.Errorf("getValue on ReadonlyArray should resolve at tier 3, got %d", result.Source)
+	}
+
+	// `setX` matches tier 6 (set-prefix) but not tier 5; verify it stops
+	// at tier 6, not the default.
+	result = Classify(ClassifyContext{Member: makeMethodDecl("setX", nil)})
+	if result.Source != TierNameHeuristic {
+		t.Errorf("setX should resolve at tier 6, got %d", result.Source)
+	}
+
+	// `getFoo` stops at tier 5 and never reaches tier 6.
+	result = Classify(ClassifyContext{Member: makeMethodDecl("getFoo", nil)})
+	if result.Source != TierGetPrefix {
+		t.Errorf("getFoo should resolve at tier 5, got %d", result.Source)
+	}
+}
+
+func TestClassifyInheritance(t *testing.T) {
+	// Build a base context whose member is `render` (no signals → default
+	// mutating on the base).
+	baseRender := makeMethodDecl("render", nil)
+	subRender := makeMethodDecl("render", nil)
+
+	// Subclass `render` with no direct match: inherits from base, which
+	// also falls through to TierDefault. The inherited result carries the
+	// base's tier — which here is TierDefault.
+	t.Run("no signals anywhere → TierDefault", func(t *testing.T) {
+		baseCtx := &ClassifyContext{Member: baseRender, ClassName: "Base"}
+		result := Classify(ClassifyContext{
+			Member:    subRender,
+			ClassName: "Sub",
+			Base:      baseCtx,
+		})
+		if !result.Mut || result.Source != TierDefault {
+			t.Errorf("got Mut=%v Source=%d, want Mut=true Source=TierDefault", result.Mut, result.Source)
+		}
+	})
+
+	// Base member is a getter — explicit-signal classification on the
+	// base. Subclass inherits and the *base's* TierExplicitSignal carries
+	// through.
+	t.Run("explicit-on-base stays explicit", func(t *testing.T) {
+		baseGetter := &dts_parser.GetterDecl{}
+		baseCtx := &ClassifyContext{Member: baseGetter, ClassName: "Base"}
+		result := Classify(ClassifyContext{
+			Member:    makeMethodDecl("unrelated_no_match", nil), // tier 6 won't match
+			ClassName: "Sub",
+			Base:      baseCtx,
+		})
+		// `unrelated_no_match` falls through tiers 3..6 on the subclass
+		// (no prefix match), so we recurse into base. Base's getter is
+		// classified at tier 3 non-mutating.
+		// NOTE: this test mixes member names — in practice the caller
+		// must look up the same-named member on the base; here we
+		// exercise the fall-through wiring only.
+		if result.Mut || result.Source != TierExplicitSignal {
+			t.Errorf("got Mut=%v Source=%d, want Mut=false Source=TierExplicitSignal", result.Mut, result.Source)
+		}
+	})
+
+	// Base member is a heuristic match (e.g. `findThing`); subclass
+	// inherits and the heuristic tier carries.
+	t.Run("heuristic-on-base stays heuristic", func(t *testing.T) {
+		baseCtx := &ClassifyContext{
+			Member:    makeMethodDecl("findThing", nil),
+			ClassName: "Base",
+		}
+		result := Classify(ClassifyContext{
+			Member:    makeMethodDecl("unrelated_no_match", nil),
+			ClassName: "Sub",
+			Base:      baseCtx,
+		})
+		if result.Mut || result.Source != TierNameHeuristic {
+			t.Errorf("got Mut=%v Source=%d, want Mut=false Source=TierNameHeuristic", result.Mut, result.Source)
+		}
+	})
+
+	// Subclass has a direct tier-3 hit (getter): inheritance is NOT
+	// consulted — earlier-tier wins on the subclass.
+	t.Run("subclass tier-3 wins over base inheritance", func(t *testing.T) {
+		baseCtx := &ClassifyContext{
+			Member:    makeMethodDecl("findThing", nil), // would be non-mut tier 6
+			ClassName: "Base",
+		}
+		result := Classify(ClassifyContext{
+			Member:    &dts_parser.GetterDecl{}, // subclass getter — tier 3
+			ClassName: "Sub",
+			Base:      baseCtx,
+		})
+		if result.Source != TierExplicitSignal {
+			t.Errorf("subclass tier-3 should win, got Source=%d", result.Source)
+		}
+	})
 }

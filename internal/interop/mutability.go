@@ -1,6 +1,9 @@
 package interop
 
 import (
+	"strings"
+	"unicode"
+
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/set"
 )
@@ -43,6 +46,12 @@ type ClassifyContext struct {
 	Member     dts_parser.ClassMember // the declaration being classified
 	ClassName  string                 // enclosing class name (empty if none)
 	ModulePath string                 // module path (empty if none)
+
+	// Base, if non-nil, is the inheritance fallthrough context: if all
+	// per-class tiers (1–6) miss on `Member`, `Classify` recurses on
+	// *Base. The caller is responsible for resolving the same-named
+	// member on the base class and constructing the new context. See §7.3.
+	Base *ClassifyContext
 }
 
 // Classify determines the mutability of a class member's receiver using the
@@ -60,12 +69,168 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 
 	// Tier 4: shipped overrides (stdlib, FP libraries) — §6.
 
-	// Tier 5: get* prefix rule — §7.1.
+	// Tier 5: get* prefix rule.
+	if result, ok := classifyGetPrefix(ctx); ok {
+		return result
+	}
 
-	// Tier 6: name-based heuristics — §7.2.
+	// Tier 6: name-based heuristics.
+	if result, ok := classifyNameHeuristic(ctx); ok {
+		return result
+	}
+
+	// §7.3 inheritance fallthrough: re-run the cascade against the
+	// same-named member on the nearest base class. The inherited result
+	// carries the base method's tier — inheritance never upgrades
+	// certainty.
+	if ctx.Base != nil {
+		return Classify(*ctx.Base)
+	}
 
 	// Tier 7: default to mutating.
 	return ClassifyResult{Mut: true, Source: TierDefault}
+}
+
+// classifyGetPrefix implements tier 5: `get*` methods are non-mutating,
+// except for the documented mutate-on-miss prefixes (`getOrInsert`,
+// `getOrUpdate`, `getOrCreate`), which fall through to tier 6 and get
+// classified mutating there.
+func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
+	m, ok := ctx.Member.(*dts_parser.MethodDecl)
+	if !ok {
+		return ClassifyResult{}, false
+	}
+	name := identName(m.Name)
+	// Require `get` + uppercase continuation. Bare `get` and lowercase
+	// continuations (`getter`, `gets`) fall through.
+	if !hasPrefixWithUpperContinuation(name, "get") {
+		return ClassifyResult{}, false
+	}
+	// Mutating exceptions: getOrInsert*, getOrUpdate*, getOrCreate*. The
+	// `get` + uppercase guard above ensures len(name) > len(p), so the
+	// next-char lookup is safe.
+	for _, p := range getOrMutatingPrefixes {
+		if strings.HasPrefix(name, p) && len(name) > len(p) && unicode.IsUpper(rune(name[len(p)])) {
+			return ClassifyResult{}, false
+		}
+	}
+	return ClassifyResult{Mut: false, Source: TierGetPrefix}, true
+}
+
+// getOrMutatingPrefixes are `get`-led names whose leading `get` is
+// followed by a write-on-miss action. Tier 5 must not classify these as
+// non-mutating; tier 6's mutating-prefix list picks them up.
+var getOrMutatingPrefixes = []string{
+	"getOrInsert", "getOrUpdate", "getOrCreate",
+}
+
+// classifyNameHeuristic implements tier 6: name-based heuristics drawn
+// from requirements.md §"Heuristics". When a name matches both a
+// mutating and non-mutating signal, mutating wins (requirements: "if
+// both, prefer mutating"). The slices below are the source of truth and
+// must stay synced with the requirements document.
+func classifyNameHeuristic(ctx ClassifyContext) (ClassifyResult, bool) {
+	name := memberName(ctx.Member)
+	if name == "" {
+		return ClassifyResult{}, false
+	}
+	isMut := matchesAnyPrefix(name, mutatingPrefixes) || mutatingExact.Contains(name)
+	isNonMut := matchesAnyPrefix(name, nonMutatingPrefixes) || nonMutatingExact.Contains(name)
+	switch {
+	case isMut:
+		return ClassifyResult{Mut: true, Source: TierNameHeuristic}, true
+	case isNonMut:
+		return ClassifyResult{Mut: false, Source: TierNameHeuristic}, true
+	}
+	return ClassifyResult{}, false
+}
+
+// Source of truth: requirements.md §"Heuristics" → "Medium signals".
+var nonMutatingPrefixes = []string{
+	// Predicate prefixes.
+	"is", "has", "can", "should", "will", "was", "did",
+	// Conversion / projection prefixes.
+	"to", "as", "with",
+	// Query / search prefixes.
+	"find", "filter", "map", "reduce", "count",
+	// Copy / clone prefixes.
+	"clone", "copy",
+}
+
+var nonMutatingExact = set.FromSlice([]string{
+	// Predicate / equality.
+	"contains", "includes", "equals", "matches",
+	// Query / search.
+	"every", "some", "indexOf", "lastIndexOf", "at",
+	// Iteration accessors.
+	"keys", "values", "entries", "forEach",
+	// Copy / projection.
+	"slice", "concat",
+})
+
+// Source of truth: requirements.md §"Heuristics" → "Mutating-name signals".
+var mutatingPrefixes = []string{
+	"set", "add", "remove", "delete", "clear", "reset", "init",
+	"push", "pop", "shift", "unshift", "insert", "replace", "update",
+	"register", "unregister", "dispatch", "emit", "write", "flush",
+	// get*-with-write-on-miss: keeps tier-5 fall-throughs mutating.
+	"getOrInsert", "getOrUpdate", "getOrCreate",
+}
+
+var mutatingExact = set.FromSlice([]string{
+	"sort", "reverse",
+})
+
+// hasPrefixWithUpperContinuation reports whether name == prefix + UpperRune + rest.
+// Used by tier 5 where bare prefix or lowercase continuation must NOT match.
+func hasPrefixWithUpperContinuation(name, prefix string) bool {
+	if !strings.HasPrefix(name, prefix) || len(name) <= len(prefix) {
+		return false
+	}
+	return unicode.IsUpper(rune(name[len(prefix)]))
+}
+
+// matchesAnyPrefix reports whether name starts with one of the prefixes
+// AND is followed by end-of-string or an uppercase letter (so `to` and
+// `toUpperCase` both match `to`, but `today` does not).
+func matchesAnyPrefix(name string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if !strings.HasPrefix(name, p) {
+			continue
+		}
+		if len(name) == len(p) {
+			return true
+		}
+		if unicode.IsUpper(rune(name[len(p)])) {
+			return true
+		}
+	}
+	return false
+}
+
+// memberName returns the identifier-style name of a class member, or ""
+// if the member has no usable name (symbol-keyed, etc.).
+func memberName(member dts_parser.ClassMember) string {
+	switch m := member.(type) {
+	case *dts_parser.MethodDecl:
+		return identName(m.Name)
+	case *dts_parser.GetterDecl:
+		return identName(m.Name)
+	case *dts_parser.SetterDecl:
+		return identName(m.Name)
+	case *dts_parser.PropertyDecl:
+		return identName(m.Name)
+	}
+	return ""
+}
+
+// identName extracts a plain identifier name from a PropertyKey. Returns
+// "" for computed keys (symbol-keyed members are not name-classified).
+func identName(key dts_parser.PropertyKey) string {
+	if id, ok := key.(*dts_parser.Ident); ok {
+		return id.Name
+	}
+	return ""
 }
 
 // classifyExplicitSignal applies explicit author signals (tier 3):
