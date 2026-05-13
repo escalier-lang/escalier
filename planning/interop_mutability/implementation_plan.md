@@ -984,8 +984,11 @@ func classifyTier5(ctx ClassifyContext) (ClassifyResult, bool) {
         return ClassifyResult{}, false
     }
     for _, p := range getOrMutatingPrefixes {
-        if strings.HasPrefix(name, p) &&
-            (len(name) == len(p) || unicode.IsUpper(rune(name[len(p)]))) {
+        // The outer `get*` guard above already requires len(name) > len("get")
+        // and an uppercase letter at index 3, so every `p` (which begins with
+        // "get" + uppercase) is strictly shorter than `name` when matched —
+        // no len(name) == len(p) arm needed.
+        if strings.HasPrefix(name, p) && unicode.IsUpper(rune(name[len(p)])) {
             return ClassifyResult{}, false // fall through to tier 6
         }
     }
@@ -1191,10 +1194,15 @@ preservation. Concrete work needed:
    strip the `/**` / `*/` markers, normalise per-line `*` prefixes,
    and store the contents on the buffer. A non-doc comment
    (`/*` without the second `*`, or a `//` line comment) clears
-   the buffer; so does any non-whitespace token that isn't the
-   start of a decl, so intervening "noise" resets it. Multiple
-   adjacent `/**` blocks: keep only the most recent (matches TS's
-   own TSDoc resolution).
+   the buffer; so does any non-whitespace token that isn't either
+   the start of a decl or a leading modifier keyword that prefixes
+   one. The decl-modifier whitelist — tokens that the buffer
+   survives — is `export`, `default`, `declare`, `async`, `public`,
+   `private`, `protected`, `static`, `readonly`, `abstract`,
+   `override`, plus any modifier the parser later grows. Anything
+   else resets the buffer so intervening "noise" doesn't leak doc
+   from a prior decl. Multiple adjacent `/**` blocks: keep only
+   the most recent (matches TS's own TSDoc resolution).
 2. When the decl-parsing function constructs its AST node, attach
    the pending buffer to a new `LeadingDoc string` field on that
    node and clear the buffer.
@@ -1212,7 +1220,10 @@ preservation. Concrete work needed:
    last wins), TSDoc followed by a `//` line comment then the
    decl (buffer reset — the TSDoc is no longer immediately above),
    TSDoc followed by an unrelated decl (buffer cleared, no leak
-   to the next decl). Snapshots in `__snapshots__/` regenerate to
+   to the next decl), TSDoc followed by one or more decl modifiers
+   (`export`, `declare`, `export default`, `export declare`,
+   `readonly`, etc.) then the decl (buffer survives and attaches
+   to the decl). Snapshots in `__snapshots__/` regenerate to
    include the new field on every decl node.
 
 New file `internal/interop/esctype.go`:
@@ -1554,12 +1565,17 @@ in reserve.)
 
 ### 11.3 Call-site check
 
-In [internal/checker/check_implements.go](../../internal/checker/check_implements.go)'s
-neighbour file that handles method invocation (likely
-`infer_expr.go` — verify; this is where mutability conflicts on
-receivers are currently surfaced), at the point that compares the
-call's receiver mutability to the method's via
-`type_system.ReceiverIsMut(method)`:
+The receiver-mutability gate already lives in
+[internal/checker/expand_type.go](../../internal/checker/expand_type.go) —
+member-lookup filters out `mut self` methods and setters when the
+receiver is not definitely mutable (the `ReceiverIsMut` calls at
+[expand_type.go:1056](../../internal/checker/expand_type.go#L1056) and
+[expand_type.go:1756](../../internal/checker/expand_type.go#L1756) are
+the canonical sites). The §11 warning attaches at the inverse case:
+when a non-mutating call resolves successfully but the callee's
+non-mutating classification came from a heuristic. Add the warning
+emission immediately after the existing gate, around the same
+comparison:
 
 ```go
 if !methodNeedsMut && receiverIsImmut {
