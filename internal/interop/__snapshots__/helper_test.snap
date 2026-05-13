@@ -4527,7 +4527,7 @@
         inferredType: nil,
     },
     Receiver: &ast.MethodReceiver{
-        Mut:      true,
+        Mut:      false,
         Lifetime: nil,
         Span_:    ast.Span{
             Start:    ast.Location{Line:1, Column:22},

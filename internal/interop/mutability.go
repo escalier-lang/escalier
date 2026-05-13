@@ -1,33 +1,37 @@
 package interop
 
 import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// ResolutionTier identifies which tier in the eight-tier resolution order
+// ResolutionTier identifies which tier in the seven-tier resolution order
 // produced a mutability classification for a class member's receiver.
 //
 // The tiers match the requirements document:
-//  1. @esctype tag (round-trip from Escalier source)
-//  2. Explicit author signals (this: Readonly<T>, getters/setters, Readonly<T>, readonly props)
-//  3. User override files
+//  0. User-authored .esc source (sentinel; not produced by Classify — see §11.2)
+//  1. User override files
+//  2. @esctype tag (round-trip from Escalier source)
+//  3. Explicit author signals (this: Readonly<T>, getters/setters, Readonly<T>, readonly props)
 //  4. Shipped overrides (stdlib, FP libraries)
-//  5. Primitive wrapper classes (Number, BigInt, String, Boolean)
-//  6. get* prefix rule (with documented exceptions)
-//  7. Name-based heuristics
-//  8. Default: mutating
+//  5. get* prefix rule (with documented exceptions)
+//  6. Name-based heuristics
+//  7. Default: mutating
 type ResolutionTier int
 
 const (
-	TierEsctype          ResolutionTier = 1
-	TierExplicitSignal   ResolutionTier = 2
-	TierUserOverride     ResolutionTier = 3
-	TierShippedOverride  ResolutionTier = 4
-	TierPrimitiveWrapper ResolutionTier = 5
-	TierGetPrefix        ResolutionTier = 6
-	TierNameHeuristic    ResolutionTier = 7
-	TierDefault          ResolutionTier = 8
+	TierUserSource      ResolutionTier = iota // 0: user-authored .esc source (sentinel)
+	TierUserOverride                          // 1
+	TierEsctype                               // 2
+	TierExplicitSignal                        // 3
+	TierShippedOverride                       // 4
+	TierGetPrefix                             // 5
+	TierNameHeuristic                         // 6
+	TierDefault                               // 7
 )
 
 // ClassifyResult is the outcome of Classify.
@@ -43,41 +47,231 @@ type ClassifyContext struct {
 	Member     dts_parser.ClassMember // the declaration being classified
 	ClassName  string                 // enclosing class name (empty if none)
 	ModulePath string                 // module path (empty if none)
+
+	// Base, if non-nil, is the inheritance fallthrough context: if all
+	// per-class tiers (1–6) miss on `Member`, `Classify` recurses on
+	// *Base. The caller is responsible for resolving the same-named
+	// member on the base class and constructing the new context. See §7.3.
+	Base *ClassifyContext
 }
 
 // Classify determines the mutability of a class member's receiver using the
-// eight-tier resolution order defined in
+// seven-tier resolution order defined in
 // planning/interop_mutability/requirements.md.
 func Classify(ctx ClassifyContext) ClassifyResult {
-	// Tier 1: @esctype tag — Phase 6.
+	// Tier 1: user override files — §5.
 
-	// Tier 2: explicit author signals.
-	if result, ok := classifyTier2(ctx); ok {
+	// Tier 2: @esctype tag — §9.
+
+	// Tier 3: explicit author signals.
+	if result, ok := classifyExplicitSignal(ctx); ok {
 		return result
 	}
 
-	// Tier 3: user override files — Phase 3.
+	// Tier 4: shipped overrides (stdlib, FP libraries) — §6.
 
-	// Tier 4: shipped overrides (stdlib, FP libraries) — Phase 4.
+	// Tier 5: get* prefix rule.
+	if result, ok := classifyGetPrefix(ctx); ok {
+		return result
+	}
 
-	// Tier 5: primitive wrapper classes — Phase 5.
+	// Tier 6: name-based heuristics.
+	if result, ok := classifyNameHeuristic(ctx); ok {
+		return result
+	}
 
-	// Tier 6: get* prefix rule — Phase 5.
+	// IMPORTANT: when adding new per-class tiers (1, 2, 4), insert them
+	// ABOVE this block. Inheritance fallthrough must only fire after
+	// every per-class tier has missed on the subclass; placing a new
+	// tier below this point would let the base override a stronger
+	// subclass signal.
+	//
+	// §7.3 inheritance fallthrough: re-run the cascade against the
+	// same-named member on the nearest base class. The inherited result
+	// carries the base method's tier — inheritance never upgrades
+	// certainty.
+	if ctx.Base != nil {
+		return Classify(*ctx.Base)
+	}
 
-	// Tier 7: name-based heuristics — Phase 5.
-
-	// Tier 8: default to mutating.
+	// Tier 7: default to mutating.
 	return ClassifyResult{Mut: true, Source: TierDefault}
 }
 
-// classifyTier2 applies explicit author signals:
+// classifyGetPrefix implements tier 5: `get*` methods are non-mutating,
+// except for the documented mutate-on-miss prefixes (`getOrInsert`,
+// `getOrUpdate`, `getOrCreate`), which fall through to tier 6 and get
+// classified mutating there.
+func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
+	m, ok := ctx.Member.(*dts_parser.MethodDecl)
+	if !ok {
+		return ClassifyResult{}, false
+	}
+	name := identName(m.Name)
+	// Match bare `get` (the canonical JS lookup idiom — Map.prototype.get,
+	// URLSearchParams.prototype.get, etc.) and `get` + uppercase
+	// continuation (`getFoo`, `getX`). Lowercase continuations
+	// (`getter`, `gets`) fall through.
+	if name != "get" && !hasPrefixWithUpperContinuation(name, "get") {
+		return ClassifyResult{}, false
+	}
+	// Mutating exceptions: getOrInsert*, getOrUpdate*, getOrCreate*.
+	//
+	// Returning `(_, false)` here is the fall-through signal — it means
+	// tier 5 declines to classify, so `Classify` proceeds to tier 6 where
+	// `mutatingPrefixes` (which includes `getOrMutatingPrefixes`) picks
+	// the name up as mutating. This is *not* a non-mutating return.
+	//
+	// Exact-name matches (e.g. bare `getOrInsert`) and any uppercase or
+	// non-ASCII continuation fall through; only an ASCII-lowercase
+	// continuation like `getOrInserter` stays at tier 5.
+	for _, p := range getOrMutatingPrefixes {
+		if !strings.HasPrefix(name, p) {
+			continue
+		}
+		if len(name) == len(p) {
+			return ClassifyResult{}, false
+		}
+		r, _ := utf8.DecodeRuneInString(name[len(p):])
+		if !unicode.IsLower(r) {
+			return ClassifyResult{}, false
+		}
+	}
+	return ClassifyResult{Mut: false, Source: TierGetPrefix}, true
+}
+
+// getOrMutatingPrefixes are `get`-led names whose leading `get` is
+// followed by a write-on-miss action. Tier 5 must not classify these as
+// non-mutating; tier 6's mutating-prefix list picks them up.
+var getOrMutatingPrefixes = []string{
+	"getOrInsert", "getOrUpdate", "getOrCreate",
+}
+
+// classifyNameHeuristic implements tier 6: name-based heuristics drawn
+// from requirements.md §"Heuristics". When a name matches both a
+// mutating and non-mutating signal, mutating wins (requirements: "if
+// both, prefer mutating"). The slices below are the source of truth and
+// must stay synced with the requirements document.
+func classifyNameHeuristic(ctx ClassifyContext) (ClassifyResult, bool) {
+	// Heuristics are about method-call semantics ("does calling this
+	// mutate the receiver?"). Properties are classified by tier 3
+	// (readonly modifier) and otherwise fall through to the default;
+	// they must not be name-matched here.
+	if _, ok := ctx.Member.(*dts_parser.MethodDecl); !ok {
+		return ClassifyResult{}, false
+	}
+	name := memberName(ctx.Member)
+	if name == "" {
+		return ClassifyResult{}, false
+	}
+	isMut := matchesAnyPrefix(name, mutatingPrefixes) || mutatingExact.Contains(name)
+	isNonMut := matchesAnyPrefix(name, nonMutatingPrefixes) || nonMutatingExact.Contains(name)
+	switch {
+	case isMut:
+		return ClassifyResult{Mut: true, Source: TierNameHeuristic}, true
+	case isNonMut:
+		return ClassifyResult{Mut: false, Source: TierNameHeuristic}, true
+	}
+	return ClassifyResult{}, false
+}
+
+// Source of truth: requirements.md §"Heuristics" → "Medium signals".
+var nonMutatingPrefixes = []string{
+	// Predicate prefixes.
+	"is", "has", "can", "should", "will", "was", "did",
+	// Conversion / projection prefixes.
+	"to", "as", "with",
+	// Query / search prefixes.
+	"find", "filter", "map", "reduce", "count",
+	// Copy / clone prefixes.
+	"clone", "copy",
+}
+
+var nonMutatingExact = set.FromSlice([]string{
+	// Predicate / equality.
+	"contains", "includes", "equals", "matches",
+	// Query / search.
+	"every", "some", "indexOf", "lastIndexOf", "at",
+	// Iteration accessors.
+	"keys", "values", "entries", "forEach",
+	// Copy / projection.
+	"slice", "concat",
+})
+
+// Source of truth: requirements.md §"Heuristics" → "Mutating-name signals".
+// The `getOr*` entries are appended from getOrMutatingPrefixes so tier 5's
+// fall-throughs and tier 6's mutating list stay in sync.
+var mutatingPrefixes = append([]string{
+	"set", "add", "remove", "delete", "clear", "reset", "init",
+	"push", "pop", "shift", "unshift", "insert", "replace", "update",
+	"register", "unregister", "dispatch", "emit", "write", "flush",
+}, getOrMutatingPrefixes...)
+
+var mutatingExact = set.FromSlice([]string{
+	"sort", "reverse",
+})
+
+// hasPrefixWithUpperContinuation reports whether name == prefix + UpperRune + rest.
+// Used by tier 5 where bare prefix or lowercase continuation must NOT match.
+func hasPrefixWithUpperContinuation(name, prefix string) bool {
+	if !strings.HasPrefix(name, prefix) || len(name) <= len(prefix) {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(name[len(prefix):])
+	return unicode.IsUpper(r)
+}
+
+// matchesAnyPrefix reports whether name starts with one of the prefixes
+// AND is followed by end-of-string or an uppercase letter (so `to` and
+// `toUpperCase` both match `to`, but `today` does not).
+func matchesAnyPrefix(name string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if !strings.HasPrefix(name, p) {
+			continue
+		}
+		if len(name) == len(p) {
+			return true
+		}
+		r, _ := utf8.DecodeRuneInString(name[len(p):])
+		if unicode.IsUpper(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// memberName returns the identifier-style name of a class member, or ""
+// if the member has no usable name (symbol-keyed, etc.).
+func memberName(member dts_parser.ClassMember) string {
+	switch m := member.(type) {
+	case *dts_parser.MethodDecl:
+		return identName(m.Name)
+	case *dts_parser.GetterDecl:
+		return identName(m.Name)
+	case *dts_parser.SetterDecl:
+		return identName(m.Name)
+	}
+	return ""
+}
+
+// identName extracts a plain identifier name from a PropertyKey. Returns
+// "" for computed keys (symbol-keyed members are not name-classified).
+func identName(key dts_parser.PropertyKey) string {
+	if id, ok := key.(*dts_parser.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+// classifyExplicitSignal applies explicit author signals (tier 3):
 //   - Getters never mutate the receiver.
 //   - Setters always mutate the receiver.
 //   - Methods with a `this: Readonly<T>` (or `this: readonly T[]`) parameter are non-mutating.
-//   - Methods on Readonly-prefixed collection classes (ReadonlyArray, etc.) are non-mutating.
 //   - Well-known symbol methods (toString, toJSON, etc.) are non-mutating.
-//   - readonly properties are non-mutating (principle #6).
-func classifyTier2(ctx ClassifyContext) (ClassifyResult, bool) {
+//
+// Property mutability is handled outside Classify (see convertPropertyDecl
+// in helper.go) — PropertyDecl is intentionally not a case here.
+func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 	nonMut := ClassifyResult{Mut: false, Source: TierExplicitSignal}
 	mut := ClassifyResult{Mut: true, Source: TierExplicitSignal}
 
@@ -88,11 +282,6 @@ func classifyTier2(ctx ClassifyContext) (ClassifyResult, bool) {
 	case *dts_parser.SetterDecl:
 		return mut, true
 
-	case *dts_parser.PropertyDecl:
-		if m.Modifiers.Readonly {
-			return nonMut, true
-		}
-
 	case *dts_parser.MethodDecl:
 		// Well-known symbol methods are non-mutating by convention.
 		if isWellKnownMethod(m.Name) {
@@ -100,10 +289,6 @@ func classifyTier2(ctx ClassifyContext) (ClassifyResult, bool) {
 		}
 		// Explicit `this: Readonly<T>` (or `this: readonly T[]`) parameter.
 		if hasReadonlyThisParam(m.Params) {
-			return nonMut, true
-		}
-		// Class is a Readonly-prefixed collection variant.
-		if isReadonlyCollectionClass(ctx.ClassName) {
 			return nonMut, true
 		}
 	}
@@ -185,12 +370,3 @@ func isReadonlyWrapperType(t dts_parser.TypeAnn) bool {
 	return false
 }
 
-// isReadonlyCollectionClass returns true when the class name is one of
-// TypeScript's Readonly-prefixed collection variants.
-func isReadonlyCollectionClass(name string) bool {
-	switch name {
-	case "ReadonlyArray", "ReadonlySet", "ReadonlyMap":
-		return true
-	}
-	return false
-}
