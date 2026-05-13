@@ -1245,7 +1245,7 @@ tier 2 hits. Extend `ClassifyResult`:
 ```go
 type ClassifyResult struct {
     // SelfMut is the mutability decision for the `self` receiver,
-    // produced by tiers that classify methods (3/5/6/7/8). It is
+    // produced by tiers that classify methods (3/5/6/7). It is
     // only read by decl.go on code paths that build a SelfParam
     // — instance methods, getters, setters, constructors. For
     // static methods and bare functions, decl.go does not consult
@@ -1497,7 +1497,7 @@ interop → checker cycle exists.
 - `err_class_mut_iface_self/` — class mutates, interface declares
   `self`; expects `ImplementsMutabilityMismatchError`.
 - `err_class_self_iface_mut/` — reverse, expects error.
-- `err_heuristic_source/` — class member name matches a tier-7
+- `err_heuristic_source/` — class member name matches a tier-6
   mutating prefix while interface declares `self`; expects error
   with the "add explicit signal" suggestion text.
 
@@ -1630,7 +1630,7 @@ The warning must **not** fire when:
   → silent.
 
 Plus a checker unit test asserting `isHeuristicTier` returns true
-for exactly tiers 5/6/7 and false otherwise.
+for exactly tiers 5 and 6 and false otherwise.
 
 Exit criteria: warning fires only on heuristic-classified
 non-mutating calls; never fires on `@esctype`, strong signals, or
