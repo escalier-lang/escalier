@@ -108,9 +108,11 @@ func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
 		return ClassifyResult{}, false
 	}
 	name := identName(m.Name)
-	// Require `get` + uppercase continuation. Bare `get` and lowercase
-	// continuations (`getter`, `gets`) fall through.
-	if !hasPrefixWithUpperContinuation(name, "get") {
+	// Match bare `get` (the canonical JS lookup idiom — Map.prototype.get,
+	// URLSearchParams.prototype.get, etc.) and `get` + uppercase
+	// continuation (`getFoo`, `getX`). Lowercase continuations
+	// (`getter`, `gets`) fall through.
+	if name != "get" && !hasPrefixWithUpperContinuation(name, "get") {
 		return ClassifyResult{}, false
 	}
 	// Mutating exceptions: getOrInsert*, getOrUpdate*, getOrCreate*.
@@ -248,8 +250,6 @@ func memberName(member dts_parser.ClassMember) string {
 		return identName(m.Name)
 	case *dts_parser.SetterDecl:
 		return identName(m.Name)
-	case *dts_parser.PropertyDecl:
-		return identName(m.Name)
 	}
 	return ""
 }
@@ -267,9 +267,10 @@ func identName(key dts_parser.PropertyKey) string {
 //   - Getters never mutate the receiver.
 //   - Setters always mutate the receiver.
 //   - Methods with a `this: Readonly<T>` (or `this: readonly T[]`) parameter are non-mutating.
-//   - Methods on Readonly-prefixed collection classes (ReadonlyArray, etc.) are non-mutating.
 //   - Well-known symbol methods (toString, toJSON, etc.) are non-mutating.
-//   - readonly properties are non-mutating (principle #6).
+//
+// Property mutability is handled outside Classify (see convertPropertyDecl
+// in helper.go) — PropertyDecl is intentionally not a case here.
 func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 	nonMut := ClassifyResult{Mut: false, Source: TierExplicitSignal}
 	mut := ClassifyResult{Mut: true, Source: TierExplicitSignal}
@@ -281,11 +282,6 @@ func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 	case *dts_parser.SetterDecl:
 		return mut, true
 
-	case *dts_parser.PropertyDecl:
-		if m.Modifiers.Readonly {
-			return nonMut, true
-		}
-
 	case *dts_parser.MethodDecl:
 		// Well-known symbol methods are non-mutating by convention.
 		if isWellKnownMethod(m.Name) {
@@ -293,10 +289,6 @@ func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 		}
 		// Explicit `this: Readonly<T>` (or `this: readonly T[]`) parameter.
 		if hasReadonlyThisParam(m.Params) {
-			return nonMut, true
-		}
-		// Class is a Readonly-prefixed collection variant.
-		if isReadonlyCollectionClass(ctx.ClassName) {
 			return nonMut, true
 		}
 	}
@@ -378,12 +370,3 @@ func isReadonlyWrapperType(t dts_parser.TypeAnn) bool {
 	return false
 }
 
-// isReadonlyCollectionClass returns true when the class name is one of
-// TypeScript's Readonly-prefixed collection variants.
-func isReadonlyCollectionClass(name string) bool {
-	switch name {
-	case "ReadonlyArray", "ReadonlySet", "ReadonlyMap":
-		return true
-	}
-	return false
-}

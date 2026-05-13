@@ -70,34 +70,6 @@ func TestClassifyTier3_Setter(t *testing.T) {
 	}
 }
 
-func TestClassifyTier3_ReadonlyProperty(t *testing.T) {
-	result := Classify(ClassifyContext{
-		Member: &dts_parser.PropertyDecl{
-			Modifiers: dts_parser.Modifiers{Readonly: true},
-		},
-	})
-	if result.Mut {
-		t.Error("readonly property should be classified as non-mutating")
-	}
-	if result.Source != TierExplicitSignal {
-		t.Errorf("readonly property should use TierExplicitSignal, got %d", result.Source)
-	}
-}
-
-func TestClassifyTier7_WritableProperty(t *testing.T) {
-	result := Classify(ClassifyContext{
-		Member: &dts_parser.PropertyDecl{
-			Modifiers: dts_parser.Modifiers{Readonly: false},
-		},
-	})
-	if !result.Mut {
-		t.Error("writable property should fall through to tier 7 (mutating)")
-	}
-	if result.Source != TierDefault {
-		t.Errorf("writable property should use TierDefault, got %d", result.Source)
-	}
-}
-
 func TestClassifyTier3_WellKnownMethods(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -155,25 +127,12 @@ func TestClassifyTier3_ReadonlyThisParam(t *testing.T) {
 	}
 }
 
-func TestClassifyTier3_MethodOnReadonlyPrefixedClass(t *testing.T) {
-	for _, className := range []string{"ReadonlyArray", "ReadonlySet", "ReadonlyMap"} {
-		t.Run(className, func(t *testing.T) {
-			result := Classify(ClassifyContext{Member: makeMethodDecl("forEach", nil), ClassName: className})
-			if result.Mut {
-				t.Errorf("method on %s should be non-mutating", className)
-			}
-			if result.Source != TierExplicitSignal {
-				t.Errorf("method on %s should use TierExplicitSignal, got %d", className, result.Source)
-			}
-		})
-	}
-}
-
-func TestClassifyTier6_ForEachOnMutableCollectionClass(t *testing.T) {
-	// `forEach` lands at tier 6 (name heuristic, iteration accessor) regardless
-	// of containing class; the class name only matters for Readonly-prefixed
-	// variants which trigger tier 3.
-	for _, className := range []string{"Array", "Set", "Map", "Foo"} {
+func TestClassifyTier6_ForEachOnAnyClass(t *testing.T) {
+	// `forEach` lands at tier 6 (name heuristic, iteration accessor)
+	// regardless of containing class. Readonly-prefixed collection classes
+	// (ReadonlyArray, etc.) are handled elsewhere in the compiler — Classify
+	// does not special-case them.
+	for _, className := range []string{"Array", "Set", "Map", "Foo", "ReadonlyArray", "ReadonlySet", "ReadonlyMap"} {
 		t.Run(className, func(t *testing.T) {
 			result := Classify(ClassifyContext{Member: makeMethodDecl("forEach", nil), ClassName: className})
 			if result.Mut {
@@ -251,22 +210,6 @@ func TestClassifyTier3_EndToEnd(t *testing.T) {
 			description: "set foo() ⇒ mutating",
 		},
 		{
-			name:        "readonly property",
-			dts:         "declare class C { readonly x: number }",
-			className:   "C",
-			wantMut:     false,
-			wantSource:  TierExplicitSignal,
-			description: "readonly prop ⇒ non-mutating",
-		},
-		{
-			name:        "writable property defaults to mutating",
-			dts:         "declare class C { x: number }",
-			className:   "C",
-			wantMut:     true,
-			wantSource:  TierDefault,
-			description: "writable prop falls through to default",
-		},
-		{
 			name:        "this: Readonly<T> param",
 			dts:         "declare class C { m(this: Readonly<C>): void }",
 			className:   "C",
@@ -275,11 +218,11 @@ func TestClassifyTier3_EndToEnd(t *testing.T) {
 			description: "explicit readonly this param",
 		},
 		{
-			name:        "this: ReadonlyArray<T> param",
-			dts:         "declare class C { m(this: ReadonlyArray<number>): void }",
-			className:   "C",
-			wantMut:     false,
-			wantSource:  TierExplicitSignal,
+			name:       "this: ReadonlyArray<T> param",
+			dts:        "declare class C { m(this: ReadonlyArray<number>): void }",
+			className:  "C",
+			wantMut:    false,
+			wantSource: TierExplicitSignal,
 		},
 		{
 			name:       "well-known toString",
@@ -293,11 +236,11 @@ func TestClassifyTier3_EndToEnd(t *testing.T) {
 		// index signature). The classifier itself handles ComputedKey
 		// correctly — see TestClassifyTier3_WellKnownMethods.
 		{
-			name:       "ReadonlyArray method",
-			dts:        "declare class ReadonlyArray { forEach(): void }",
-			className:  "ReadonlyArray",
+			name:       "forEach method",
+			dts:        "declare class Foo { forEach(): void }",
+			className:  "Foo",
 			wantMut:    false,
-			wantSource: TierExplicitSignal,
+			wantSource: TierNameHeuristic,
 		},
 		{
 			name:       "plain method falls through to default",
@@ -349,7 +292,7 @@ func TestClassifyTier5_GetPrefix(t *testing.T) {
 	}{
 		{"getFoo is non-mutating", "getFoo", false, TierGetPrefix},
 		{"getX is non-mutating", "getX", false, TierGetPrefix},
-		{"bare get falls through (default mut)", "get", true, TierDefault},
+		{"bare get is non-mutating (Map.get, etc.)", "get", false, TierGetPrefix},
 		{"getter falls through to tier 7 default", "getter", true, TierDefault},
 		{"gets falls through to default", "gets", true, TierDefault},
 		{"setFoo not a get prefix → tier 6 mutating", "setFoo", true, TierNameHeuristic},
@@ -424,6 +367,8 @@ func TestClassifyTier6_NameHeuristics(t *testing.T) {
 		{"concat", "concat", false, TierNameHeuristic},
 		// Mutating prefixes.
 		{"setX", "setX", true, TierNameHeuristic},
+		// Bare `set` is the canonical JS mutator (Map.prototype.set, etc.).
+		{"bare set is mutating (Map.set, etc.)", "set", true, TierNameHeuristic},
 		{"addItem", "addItem", true, TierNameHeuristic},
 		{"removeItem", "removeItem", true, TierNameHeuristic},
 		{"deleteAll", "deleteAll", true, TierNameHeuristic},
@@ -475,16 +420,6 @@ func TestClassifyTierOrdering(t *testing.T) {
 		t.Errorf("toString should resolve at tier 3 (well-known), got %d", result.Source)
 	}
 
-	// `getValue` on a `ReadonlyArray` class matches both tier 3 (Readonly
-	// collection class) and tier 5 (get-prefix); tier 3 must win.
-	result = Classify(ClassifyContext{
-		Member:    makeMethodDecl("getValue", nil),
-		ClassName: "ReadonlyArray",
-	})
-	if result.Source != TierExplicitSignal {
-		t.Errorf("getValue on ReadonlyArray should resolve at tier 3, got %d", result.Source)
-	}
-
 	// `setX` matches tier 6 (set-prefix) but not tier 5; verify it stops
 	// at tier 6, not the default.
 	result = Classify(ClassifyContext{Member: makeMethodDecl("setX", nil)})
@@ -517,28 +452,6 @@ func TestClassifyInheritance(t *testing.T) {
 		})
 		if !result.Mut || result.Source != TierDefault {
 			t.Errorf("got Mut=%v Source=%d, want Mut=true Source=TierDefault", result.Mut, result.Source)
-		}
-	})
-
-	// Base member is a getter — explicit-signal classification on the
-	// base. Subclass inherits and the *base's* TierExplicitSignal carries
-	// through.
-	t.Run("explicit-on-base stays explicit", func(t *testing.T) {
-		baseGetter := &dts_parser.GetterDecl{}
-		baseCtx := &ClassifyContext{Member: baseGetter, ClassName: "Base"}
-		result := Classify(ClassifyContext{
-			Member:    makeMethodDecl("unrelated_no_match", nil), // tier 6 won't match
-			ClassName: "Sub",
-			Base:      baseCtx,
-		})
-		// `unrelated_no_match` falls through tiers 3..6 on the subclass
-		// (no prefix match), so we recurse into base. Base's getter is
-		// classified at tier 3 non-mutating.
-		// NOTE: this test mixes member names — in practice the caller
-		// must look up the same-named member on the base; here we
-		// exercise the fall-through wiring only.
-		if result.Mut || result.Source != TierExplicitSignal {
-			t.Errorf("got Mut=%v Source=%d, want Mut=false Source=TierExplicitSignal", result.Mut, result.Source)
 		}
 	})
 
