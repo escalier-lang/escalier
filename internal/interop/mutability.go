@@ -115,6 +115,11 @@ func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
 	// Mutating exceptions: getOrInsert*, getOrUpdate*, getOrCreate*. The
 	// `get` + uppercase guard above ensures len(name) > len(p), so the
 	// next-char lookup is safe.
+	//
+	// Returning `(_, false)` here is the fall-through signal — it means
+	// tier 5 declines to classify, so `Classify` proceeds to tier 6 where
+	// `mutatingPrefixes` (which includes `getOrMutatingPrefixes`) picks
+	// the name up as mutating. This is *not* a non-mutating return.
 	for _, p := range getOrMutatingPrefixes {
 		if strings.HasPrefix(name, p) && len(name) > len(p) && unicode.IsUpper(rune(name[len(p)])) {
 			return ClassifyResult{}, false
