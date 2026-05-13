@@ -214,3 +214,122 @@ func TestClassifyTier3_SymbolNonSymbol(t *testing.T) {
 		t.Error("[Foo.iterator] should not be classified as non-mutating")
 	}
 }
+
+// TestClassifyTier3_EndToEnd parses real .d.ts source through dts_parser and
+// confirms each strong-signal shape is plumbed end-to-end into the
+// ClassMember that Classify consumes.
+func TestClassifyTier3_EndToEnd(t *testing.T) {
+	tests := []struct {
+		name        string
+		dts         string // declares a single class `C` with one member
+		className   string
+		memberIdx   int // which class member to classify
+		wantMut     bool
+		wantSource  ResolutionTier
+		description string
+	}{
+		{
+			name:        "getter is non-mutating",
+			dts:         "declare class C { get foo(): number }",
+			className:   "C",
+			wantMut:     false,
+			wantSource:  TierExplicitSignal,
+			description: "get foo() ⇒ non-mutating",
+		},
+		{
+			name:        "setter is mutating",
+			dts:         "declare class C { set foo(v: number) }",
+			className:   "C",
+			wantMut:     true,
+			wantSource:  TierExplicitSignal,
+			description: "set foo() ⇒ mutating",
+		},
+		{
+			name:        "readonly property",
+			dts:         "declare class C { readonly x: number }",
+			className:   "C",
+			wantMut:     false,
+			wantSource:  TierExplicitSignal,
+			description: "readonly prop ⇒ non-mutating",
+		},
+		{
+			name:        "writable property defaults to mutating",
+			dts:         "declare class C { x: number }",
+			className:   "C",
+			wantMut:     true,
+			wantSource:  TierDefault,
+			description: "writable prop falls through to default",
+		},
+		{
+			name:        "this: Readonly<T> param",
+			dts:         "declare class C { m(this: Readonly<C>): void }",
+			className:   "C",
+			wantMut:     false,
+			wantSource:  TierExplicitSignal,
+			description: "explicit readonly this param",
+		},
+		{
+			name:        "this: ReadonlyArray<T> param",
+			dts:         "declare class C { m(this: ReadonlyArray<number>): void }",
+			className:   "C",
+			wantMut:     false,
+			wantSource:  TierExplicitSignal,
+		},
+		{
+			name:       "well-known toString",
+			dts:        "declare class C { toString(): string }",
+			className:  "C",
+			wantMut:    false,
+			wantSource: TierExplicitSignal,
+		},
+		// Computed-method-name syntax like `[Symbol.iterator]()` is not yet
+		// supported by `dts_parser` (it treats `[` at member position as an
+		// index signature). The classifier itself handles ComputedKey
+		// correctly — see TestClassifyTier3_WellKnownMethods.
+		{
+			name:       "ReadonlyArray method",
+			dts:        "declare class ReadonlyArray { forEach(): void }",
+			className:  "ReadonlyArray",
+			wantMut:    false,
+			wantSource: TierExplicitSignal,
+		},
+		{
+			name:       "plain method falls through to default",
+			dts:        "declare class C { doIt(): void }",
+			className:  "C",
+			wantMut:    true,
+			wantSource: TierDefault,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: tt.dts, ID: 0}
+			parser := dts_parser.NewDtsParser(source)
+			module, errs := parser.ParseModule()
+			if len(errs) > 0 {
+				t.Fatalf("parse errors: %v", errs)
+			}
+			if len(module.Statements) == 0 {
+				t.Fatalf("no statements parsed")
+			}
+			classDecl, ok := module.Statements[0].(*dts_parser.ClassDecl)
+			if !ok {
+				t.Fatalf("expected ClassDecl, got %T", module.Statements[0])
+			}
+			if len(classDecl.Members) <= tt.memberIdx {
+				t.Fatalf("class has %d members, wanted index %d", len(classDecl.Members), tt.memberIdx)
+			}
+			result := Classify(ClassifyContext{
+				Member:    classDecl.Members[tt.memberIdx],
+				ClassName: tt.className,
+			})
+			if result.Mut != tt.wantMut {
+				t.Errorf("Mut: got %v, want %v (%s)", result.Mut, tt.wantMut, tt.description)
+			}
+			if result.Source != tt.wantSource {
+				t.Errorf("Source: got %d, want %d", result.Source, tt.wantSource)
+			}
+		})
+	}
+}
