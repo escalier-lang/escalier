@@ -422,6 +422,16 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 			paramBindings := make(map[string]*type_system.Binding)
 			if !isStatic {
+				// We use the name of the class as the type here to avoid
+				// a RecursiveUnificationError.
+				// TODO(#574): handle generic classes — we deliberately
+				// drop type args and the `'a self` lifetime here
+				// because downstream codegen (MemberExpr →
+				// .bind(this) heuristic in builder.go) misclassifies
+				// stored function fields once self carries its type
+				// args. Reusing methodType.Fn.SelfParam.Type would
+				// be more correct but requires fixing that
+				// classifier first.
 				isMutableSelf := type_system.ReceiverIsMut(methodType.Fn)
 				var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 				if isMutableSelf {
@@ -491,6 +501,9 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 			paramBindings := make(map[string]*type_system.Binding)
 			if !isStatic {
+				// TODO(#574): handle generic classes — see the matching
+				// note on the method branch above. Same codegen
+				// constraint applies here.
 				isMutableSelf := type_system.ReceiverIsMut(getterType.Fn)
 				var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 				if isMutableSelf {
@@ -554,6 +567,9 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 			paramBindings := make(map[string]*type_system.Binding)
 			if !isStatic {
+				// TODO(#574): handle generic classes — see the matching
+				// note on the method branch above. Same codegen
+				// constraint applies here.
 				isMutableSelf := type_system.ReceiverIsMut(setterType.Fn)
 				var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 				if isMutableSelf {
