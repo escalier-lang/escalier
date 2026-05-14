@@ -983,3 +983,91 @@ func TestCheckScriptLevelClassDeclNoErrors(t *testing.T) {
 		})
 	}
 }
+
+// Getter and setter bodies must be type-checked with the context returned by
+// inferFuncSig so that type parameters declared on the accessor signature are
+// resolvable inside the body. Before that context was preserved, a body that
+// referred to such a type parameter (e.g. in a local type annotation) would
+// fail to resolve the name.
+
+func TestGetterSetterPreservesSignatureContext(t *testing.T) {
+	tests := map[string]struct {
+		input string
+	}{
+		"ModuleLevelGenericGetter": {
+			input: `
+				class Box {
+					value: number,
+					get cast<T>(self) -> T {
+						val x: T = self.value:T
+						return x
+					},
+				}
+			`,
+		},
+		"ModuleLevelGenericSetter": {
+			input: `
+				class Box {
+					value: number,
+					set cast<T>(mut self, v: T) {
+						val x: T = v
+						val y: T = x
+					},
+				}
+			`,
+		},
+		"BodyLevelGenericGetter": {
+			input: `
+				fn make() {
+					class Box {
+						value: number,
+						get cast<T>(self) -> T {
+							val x: T = self.value:T
+							return x
+						},
+					}
+					return Box(0)
+				}
+			`,
+		},
+		"BodyLevelGenericSetter": {
+			input: `
+				fn make() {
+					class Box {
+						value: number,
+						set cast<T>(mut self, v: T) {
+							val x: T = v
+							val y: T = x
+						},
+					}
+					return Box(0)
+				}
+			`,
+		},
+	}
+
+	schema := loadSchema(t)
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			require.Empty(t, parseErrors, "expected no parse errors")
+
+			c := NewChecker(ctx)
+			inferCtx := Context{Scope: Prelude(c)}
+			c.Schema = schema
+			inferErrors := c.InferModule(inferCtx, module)
+			if len(inferErrors) > 0 {
+				for i, err := range inferErrors {
+					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
+				}
+			}
+			require.Empty(t, inferErrors)
+		})
+	}
+}

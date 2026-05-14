@@ -600,7 +600,7 @@ func (c *Checker) InferComponent(
 						}
 						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
-						funcType, _, _, sigErrors := c.inferFuncSig(
+						funcType, sigCtx, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
@@ -618,6 +618,7 @@ func (c *Checker) InferComponent(
 							}
 						}
 
+						methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}] = sigCtx
 						if elem.Static {
 							// Static getters go to the class object type;
 							// `self` is meaningless on static members.
@@ -641,7 +642,7 @@ func (c *Checker) InferComponent(
 						}
 						recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 						errors = slices.Concat(errors, recvErrs)
-						funcType, _, _, sigErrors := c.inferFuncSig(
+						funcType, sigCtx, _, sigErrors := c.inferFuncSig(
 							declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 						errors = slices.Concat(errors, sigErrors)
 						if key == nil {
@@ -659,6 +660,7 @@ func (c *Checker) InferComponent(
 							}
 						}
 
+						methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}] = sigCtx
 						if elem.Static {
 							// Static setters go to the class object type;
 							// `self` is meaningless on static members.
@@ -1475,8 +1477,12 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
+								getterCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
+								if getterCtx.Scope == nil {
+									getterCtx = bodyCtx
+								}
 								bodyErrors := c.inferFuncBodyWithFuncSigType(
-									bodyCtx, getterType.Fn, paramBindings,
+									getterCtx, getterType.Fn, paramBindings,
 									bodyElem.Fn.Params, bodyElem.Fn.Body,
 									asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
 								)
@@ -1566,8 +1572,12 @@ func (c *Checker) InferComponent(
 							}
 
 							if bodyElem.Fn.Body != nil {
+								setterCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
+								if setterCtx.Scope == nil {
+									setterCtx = bodyCtx
+								}
 								bodyErrors := c.inferFuncBodyWithFuncSigType(
-									bodyCtx, setterType.Fn, paramBindings,
+									setterCtx, setterType.Fn, paramBindings,
 									bodyElem.Fn.Params, bodyElem.Fn.Body,
 									asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
 								)

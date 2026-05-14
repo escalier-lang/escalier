@@ -188,7 +188,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			}
 			recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
-			funcType, _, _, sigErrors := c.inferFuncSig(
+			funcType, sigCtx, _, sigErrors := c.inferFuncSig(
 				declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 			errors = slices.Concat(errors, sigErrors)
 			if key == nil {
@@ -206,6 +206,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				}
 			}
 
+			methodCtxForElem[i] = sigCtx
 			if elem.Static {
 				staticElems = append(staticElems,
 					type_system.NewGetterElem(*key, funcType))
@@ -221,7 +222,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			}
 			recv, recvErrs := buildMethodReceiver(classSelfRef, elem.Receiver)
 			errors = slices.Concat(errors, recvErrs)
-			funcType, _, _, sigErrors := c.inferFuncSig(
+			funcType, sigCtx, _, sigErrors := c.inferFuncSig(
 				declCtx, &elem.Fn.FuncSig, elem.Fn, recv)
 			errors = slices.Concat(errors, sigErrors)
 			if key == nil {
@@ -239,6 +240,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				}
 			}
 
+			methodCtxForElem[i] = sigCtx
 			if elem.Static {
 				staticElems = append(staticElems,
 					type_system.NewSetterElem(*key, funcType))
@@ -530,8 +532,12 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			}
 
 			if bodyElem.Fn.Body != nil {
+				getterCtx := methodCtxForElem[i]
+				if getterCtx.Scope == nil {
+					getterCtx = bodyCtx
+				}
 				bodyErrors := c.inferFuncBodyWithFuncSigType(
-					bodyCtx, getterType.Fn, paramBindings,
+					getterCtx, getterType.Fn, paramBindings,
 					bodyElem.Fn.Params, bodyElem.Fn.Body,
 					asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
 				)
@@ -596,8 +602,12 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			}
 
 			if bodyElem.Fn.Body != nil {
+				setterCtx := methodCtxForElem[i]
+				if setterCtx.Scope == nil {
+					setterCtx = bodyCtx
+				}
 				bodyErrors := c.inferFuncBodyWithFuncSigType(
-					bodyCtx, setterType.Fn, paramBindings,
+					setterCtx, setterType.Fn, paramBindings,
 					bodyElem.Fn.Params, bodyElem.Fn.Body,
 					asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
 				)
