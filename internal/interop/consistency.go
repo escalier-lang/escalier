@@ -60,12 +60,13 @@ func Check(override, original *type_system.FuncType, path Path, origin Origin) e
 
 // funcSignatureEquivalent compares two FuncTypes for the consistency
 // contract: arity (excluding any `this`/`self` receiver), per-position
-// non-receiver param types, and return type. Parameter names are
-// ignored. SelfParam mode is intentionally excluded — that's the field
-// the override is allowed to change. Type parameters and lifetime
-// parameters must match in arity (per-signature generics arity), and
-// in the per-pair comparison their declared constraints are compared
-// structurally.
+// non-receiver param types and Optional flag, and return type.
+// Parameter names are ignored. SelfParam mode is intentionally excluded — that's the field
+// the override is allowed to change. Type parameters must match in
+// arity, and in the per-pair comparison their declared constraints
+// and defaults are compared structurally. Lifetime parameters are not
+// compared: TypeScript has no lifetime syntax, so overrides will
+// routinely add lifetimes the original lacks.
 func funcSignatureEquivalent(a, b *type_system.FuncType) (field string, ok bool) {
 	if a == nil || b == nil {
 		return "nilFunc", a == b
@@ -83,15 +84,25 @@ func funcSignatureEquivalent(a, b *type_system.FuncType) (field string, ok bool)
 		if ap.Constraint != nil && !ap.Constraint.Equals(bp.Constraint) {
 			return fmt.Sprintf("typeParam[%d]/constraint", i), false
 		}
+		if (ap.Default == nil) != (bp.Default == nil) {
+			return fmt.Sprintf("typeParam[%d]/default", i), false
+		}
+		if ap.Default != nil && !ap.Default.Equals(bp.Default) {
+			return fmt.Sprintf("typeParam[%d]/default", i), false
+		}
 	}
-	if len(a.LifetimeParams) != len(b.LifetimeParams) {
-		return "lifetimeParams", false
-	}
-
 	if len(a.Params) != len(b.Params) {
 		return "arity", false
 	}
+	// Type.Equals ignores lifetime annotations on lifetime-bearing types
+	// (TypeRefType, ObjectType, TupleType) and `LifetimeParams` arity on
+	// nested FuncTypes. That's what lets an override add lifetimes to a
+	// TS-derived original without tripping the consistency check — TS
+	// has no lifetime syntax, so originals never carry them.
 	for i := range a.Params {
+		if a.Params[i].Optional != b.Params[i].Optional {
+			return fmt.Sprintf("param[%d]", i), false
+		}
 		if a.Params[i].Type == nil || b.Params[i].Type == nil {
 			if a.Params[i].Type != b.Params[i].Type {
 				return fmt.Sprintf("param[%d]", i), false

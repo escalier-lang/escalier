@@ -177,6 +177,11 @@ func Build(
 		OverrideTierShipped:     {},
 	}
 
+	if tc == nil && len(files) > 0 {
+		errs = append(errs, fmt.Errorf("interop.Build: nil TypeChecker, cannot type-check %d override file(s)", len(files)))
+		return NewOverrideStore(), errs
+	}
+
 	for _, f := range files {
 		globalNs, namedNs, tcErrs := tc(f)
 		errs = append(errs, tcErrs...)

@@ -942,10 +942,9 @@ func (t *FuncType) Equals(other Type) bool {
 				return false
 			}
 		}
-		// Compare LifetimeParams
-		if len(t.LifetimeParams) != len(other.LifetimeParams) {
-			return false
-		}
+		// LifetimeParams arity is intentionally NOT compared — structural
+		// equality treats the lifetime-erased shape as the identity, and
+		// lifetime reconciliation lives in UnifyLifetimes.
 		// Compare SelfParam — receiver presence and mutability is part
 		// of a method's identity. The MutType wrapper on the receiver
 		// type carries `mut self` vs `self`, so a structural equals on

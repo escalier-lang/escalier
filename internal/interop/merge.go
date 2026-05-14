@@ -15,6 +15,7 @@ package interop
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -39,7 +40,9 @@ func appendOwner(owner dts_parser.QualIdent, child string) dts_parser.QualIdent 
 // won from; the merge pass reads that field when populating Source.
 func Collapse(tiers []map[string]*ModuleScope, tierOrder []OverrideTier) map[string]*ModuleScope {
 	out := make(map[string]*ModuleScope)
-	for i, t := range tiers {
+	n := min(len(tiers), len(tierOrder))
+	for i := range n {
+		t := tiers[i]
 		ot := tierOrder[i]
 		for modName, ms := range t {
 			if ms == nil {
@@ -151,12 +154,12 @@ func Merge(original, override map[string]*ModuleScope) (*OverrideStore, []error)
 	var errs []error
 
 	// Visit every module that appears on either side.
-	seen := make(map[string]bool)
+	seen := set.NewSet[string]()
 	for modName := range original {
-		seen[modName] = true
+		seen.Add(modName)
 	}
 	for modName := range override {
-		seen[modName] = true
+		seen.Add(modName)
 	}
 
 	for modName := range seen {
@@ -203,15 +206,15 @@ func mergeContainer(
 	errs *[]error,
 ) {
 	// Free entries: union of names from both sides.
-	names := make(map[string]bool)
+	names := set.NewSet[string]()
 	if orig != nil {
 		for n := range orig.Free {
-			names[n] = true
+			names.Add(n)
 		}
 	}
 	if over != nil {
 		for n := range over.Free {
-			names[n] = true
+			names.Add(n)
 		}
 	}
 	for n := range names {
@@ -232,15 +235,15 @@ func mergeContainer(
 	}
 
 	// Children: union of names.
-	childNames := make(map[string]bool)
+	childNames := set.NewSet[string]()
 	if orig != nil {
 		for n := range orig.Children {
-			childNames[n] = true
+			childNames.Add(n)
 		}
 	}
 	if over != nil {
 		for n := range over.Children {
-			childNames[n] = true
+			childNames.Add(n)
 		}
 	}
 	for n := range childNames {
@@ -357,12 +360,12 @@ func mergeKind(
 	oMap := kindMap(orig, kind)
 	vMap := kindMap(over, kind)
 	dMap := kindMap(dst, kind)
-	names := make(map[string]bool)
+	names := set.NewSet[string]()
 	for n := range oMap {
-		names[n] = true
+		names.Add(n)
 	}
 	for n := range vMap {
-		names[n] = true
+		names.Add(n)
 	}
 	origParentExists := orig != nil
 	for n := range names {
