@@ -329,24 +329,74 @@ leaves from a lower-tier `@all_pure`.
 
 ### 5.2 Package layout
 
-The override system lives directly in `internal/interop/`
-alongside the existing `decl.go` / `helper.go` / `mutability.go`
-— no subpackage. New files:
+Override `.esc` files are ordinary Escalier source, so the
+ambient declarations they contain are converted to
+`type_system.Type` values by **reusing the existing checker
+pipeline** (the same pipeline that already handles `.d.ts`
+interop via `interop.ConvertModule` → `Checker.InferModule`).
+No new `ast.Decl → type_system.Type` converter is written: every
+existing inference helper (`inferTypeAnn`, `inferFuncSig`,
+`inferTypeDecl`, `inferInterface`, etc.) applies directly.
 
-- `store.go` — `OverrideStore` type and public lookup API.
-- `loader.go` — discovery walk + filesystem reading.
-- `merge.go` — eager merge of override decls onto the original `.d.ts`.
-- `consistency.go` — signature-shape consistency check (arity /
-  non-receiver param types / return type).
-- `errors.go` — typed merge errors (see "Error categories" below).
-- `store_test.go`, `loader_test.go`, `merge_test.go`,
-  `consistency_test.go` — unit coverage.
+The whole override system lives in `internal/interop/`. Note
+that this is possible because `Build` does *not* import
+`checker` directly — it takes a `TypeChecker` function-type
+callback that the consumer (in `internal/checker/`) plugs in.
+The callback seam sidesteps the cycle that would otherwise
+arise (`checker` already imports `interop` for
+`interop.ConvertModule`), so no subpackage is needed.
 
-All new exported types (`OverrideStore`, `ModuleScope`,
-`ChildScope`, `MemberSet`, `Effective`, `Origin`, `Path`, the
-`Err*` types, the `OverrideTier`/`ResolutionTier` enums, etc.)
-sit in package `interop`; external callers reference them as
-`interop.OverrideStore`, `interop.Origin`, and so on.
+Files added to `internal/interop/`:
+
+- `store.go` — `OverrideStore`, `ModuleScope`, `ChildScope`,
+  `Container`, `MemberSet`, `Effective`, `Origin`, `Path`,
+  `OverrideTier`, `MemberKind` plus `Resolve` (§5.10) and
+  canonical-name helpers (§5.4).
+- `errors.go` — typed merge errors (§5.8).
+- `consistency.go` — signature-shape consistency check
+  (§5.7).
+- `extract.go` — "shape extractor" that walks the parsed
+  override AST alongside the checker-produced
+  `*type_system.Namespace` to build the `ModuleScope` /
+  `ChildScope` / `MemberSet` tree (the namespace alone does
+  not preserve method/getter/setter slot independence — the
+  AST does).
+- `merge.go` — `Collapse` (three-tier shadowing) and `Merge`
+  (eager merge of override scopes onto the original `.d.ts`
+  scope) — §5.6.
+- `loader.go` — `Discover` (filesystem walk + parse) and
+  `Build` (full pipeline: discover → typecheck via injected
+  `TypeChecker` → extract → collapse → merge).
+- `store_test.go`, `consistency_test.go`, `merge_test.go`,
+  `loader_test.go`, `extract_test.go` — unit coverage.
+
+External callers reference `interop.OverrideStore`,
+`interop.Build`, `interop.Origin`, and so on. `Classify` reads
+`*OverrideStore` through `ClassifyContext.Store`; the store
+itself is built by `interop.Build` invoked from
+`internal/checker/`.
+
+**Checker hook.** The checker currently no-ops on
+`*ast.DeclareModuleDecl`, `*ast.DeclareGlobalDecl`, and
+`*ast.NamespaceDecl` (see
+[infer_stmt.go](../../internal/checker/infer_stmt.go) — the
+`return []Error{}` branch). When `Override()` is true on one
+of these, the checker must instead descend into the block
+and infer the contained declarations into the surrounding
+namespace, exactly as it does for top-level declarations. The
+hook is small (one switch arm wired to the existing per-decl
+helpers) and is the only checker change §5 requires.
+
+**Sequencing.** Override decls reference types declared in
+the original `.d.ts` (e.g. an override of `Array.prototype.map`
+mentions `Array<T>`). The loader must therefore run *after*
+the relevant `.d.ts` has been inferred, so the global /
+package scope is populated. Concretely: `interop.Build` is
+invoked from the same call site that wires `.d.ts` inference
+into the checker (today
+[infer_import.go](../../internal/checker/infer_import.go)),
+after the package and global namespaces are in place but
+before user-source inference starts.
 
 ### 5.3 Core data types
 
@@ -357,11 +407,12 @@ map-key problem doesn't arise; lookups walk the tree.
 
 ```go
 // OverrideStore holds the post-merge module map. Per-tier
-// pre-merge module maps exist only inside loader.Load (used to
-// run within-tier duplicate detection and the slot-by-slot
-// collapse of §5.5) and are not retained on the store — every
-// diagnostic that needs provenance reads Effective.Provenance,
-// which already carries the contributing Origins.
+// pre-merge module maps exist only inside Build (used to run
+// within-tier duplicate detection and the slot-by-slot
+// collapse of §5.5) and are not retained on the store —
+// every diagnostic that needs provenance reads
+// Effective.Provenance, which already carries the
+// contributing Origins.
 type OverrideStore struct {
     // Merged across all OverrideTiers + the original. Key is the
     // module specifier ("" = global; "lodash", "fs", etc.).
@@ -479,7 +530,30 @@ all call it.
 
 ### 5.5 Discovery, loading, and three-tier collapse
 
-`loader.Load(root string, deps []DepInfo, shipped fs.FS) (*OverrideStore, []error)`:
+Entry point (in package `interop`):
+
+```go
+// TypeChecker is the dependency-injection seam that lets the
+// loader invoke the checker without importing it (and thereby
+// avoid the cycle that would arise — checker already imports
+// interop). The consumer in internal/checker/ wires up a
+// TypeChecker that runs InferModule against scopes populated
+// with the original .d.ts symbols (§5.2 "Sequencing").
+type TypeChecker func(p *ParsedOverride) (
+    globalNs *type_system.Namespace,
+    namedNs map[string]*type_system.Namespace,
+    errs []error,
+)
+
+func Build(
+    ctx context.Context,
+    tc TypeChecker,
+    root string,
+    deps []DepInfo,
+    shipped fs.FS,
+    originals map[string]*ModuleScope,
+) (*OverrideStore, []error)
+```
 
 1. Walk `shipped` (embedded `fs.FS` populated in §6) — emit
    `Entry`s with `OverrideTier = OverrideTierShipped`.
@@ -488,15 +562,31 @@ all call it.
    directory containing that dep's `package.json`.
 3. Walk `<root>/overrides/**/*.esc` — emit with
    `OverrideTier = OverrideTierUserProject`.
-4. Parse each file via the existing `internal/parser` entry point;
-   reject files with parse errors as hard errors.
-5. Build one `map[string]*ModuleScope` per `OverrideTier` by
-   walking parsed decls and inserting each into the appropriate
-   `MemberSet` slot. Within an `OverrideTier`, inserting into an
-   already-occupied slot is `ErrDuplicateMember` (carries both
-   files' `Origin`s). Cross-tier shadowing is handled by the
-   collapse step below.
-6. Collapse the three per-tier scopes into a single override
+4. Parse each file via the existing `internal/parser` entry point
+   (`parser.ParseLibFiles`); reject files with parse errors as
+   hard errors.
+5. **Type-check.** Drive `Checker.InferModule` (or a
+   per-decl variant) over each parsed override file against
+   the same package/global scopes the `.d.ts` populated in
+   step 0 (the implicit prerequisite per §5.2 "Sequencing").
+   The checker's `Override()`-aware branch (§5.2 "Checker
+   hook") descends into `override declare module "..."`,
+   `override declare global`, and `override declare
+   namespace` blocks and infers the contained decls into a
+   fresh `*type_system.Namespace`. Type-check errors are
+   surfaced as hard errors — overrides whose types don't
+   resolve are not silently dropped.
+6. **Shape-extract.** Walk each override file's parsed AST in
+   lockstep with the checker-produced `*type_system.Namespace`
+   and build one `*ModuleScope` per `OverrideTier`. The AST
+   walk decides which slot a declaration lands in (method vs.
+   getter vs. setter vs. property, static vs. instance, free
+   function vs. nested namespace member); the namespace
+   supplies the typed `type_system.Type` for each slot. Within
+   an `OverrideTier`, inserting into an already-occupied slot
+   is `ErrDuplicateMember` (carries both files' `Origin`s).
+   Cross-tier shadowing is handled by the collapse step below.
+7. Collapse the three per-tier scopes into a single override
    scope by walking all three trees together, slot-by-slot:
 
    ```text
@@ -524,7 +614,9 @@ all call it.
 
 ### 5.6 Eager merge pass
 
-`merge.Apply(original, override map[string]*ModuleScope) (*OverrideStore, []error)`:
+Lives in `internal/interop/merge.go`:
+
+`Merge(original, override map[string]*ModuleScope) (*OverrideStore, []error)`:
 
 The merge is a recursive tree walk: visit the original scope and
 the collapsed override scope together, slot-by-slot (override
@@ -749,6 +841,10 @@ of any `QualIdent` walk.
 
 ### 5.11 `Classify` integration
 
+`Classify` lives in `internal/interop/mutability.go`; the
+store it consults is built upstream by `interop.Build`
+(§5.2) and handed in via `ClassifyContext`.
+
 Extend `ClassifyContext` with `Store *OverrideStore` (nil
 is allowed and means "no overrides registered"). `Classify` calls
 `Store.Resolve(path)` exactly once at the very top of the cascade.
@@ -780,21 +876,87 @@ lives in `decl.go`, not `Classify`.
 
 ### 5.12 Tests
 
-- `loader_test.go`: synthetic fs with files at all three tiers;
-  assert grouping, precedence, duplicate-within-tier error.
-- `merge_test.go`: hand-rolled original + override pairs; assert
-  resulting `Effective`. Cover overload collapsing,
+All tests live in `internal/interop/`:
+
+- `store_test.go`: `OverrideStore.Resolve` walks against
+  hand-built scope trees; verify free-function vs. nested
+  member resolution and the kind/static dispatch.
+- `consistency_test.go`: each of arity, param-type,
+  return-type, and generics-arity mismatches produces the
+  right error. Inputs are hand-built `*type_system.FuncType`
+  pairs — no parser/checker dependency.
+- `extract_test.go`: small Escalier-source snippets parsed
+  and checker-inferred (the real pipeline, driven through
+  the `TypeChecker` callback); assert the resulting
+  `*ModuleScope` shape — method vs. getter vs. setter slot,
+  static/instance separation, namespace nesting, `@all_pure`
+  propagation.
+- `loader_test.go`: synthetic fs with files at all three
+  tiers; assert grouping, precedence,
+  duplicate-within-tier error.
+- `merge_test.go`: hand-rolled original + override pairs;
+  assert resulting `Effective`. Cover overload collapsing,
   override-defined overloads, getter/setter independence,
   static/instance separation, `@all_pure`.
-- `consistency_test.go`: each of arity, param-type, return-type,
-  generics-arity mismatches produces the right error.
 - Integration: a fixture under
   `fixtures/interop_mutability/overrides_loaded/` with a real
-  `package.json` + `overrides/foo.esc` + a `.d.ts` it references.
+  `package.json` + `overrides/foo.esc` + a `.d.ts` it
+  references — exercises the full
+  parse → check → extract → merge → resolve pipeline.
 
 Exit criteria: loader + merge covered by unit tests; `Classify`
 consults the merged store but no overrides are shipped yet
 (§6 ships them).
+
+### 5.13 Deferred to a follow-up PR
+
+The initial landing of §5 (PR #603) plumbs the
+discover → check → extract → merge → resolve pipeline end to
+end and wires `Classify` into the merged store, but several
+threads were left for a follow-up to keep that PR
+reviewable:
+
+- **Static-side method/property types.** `extract.go`
+  `lookupMethodType` and `lookupPropertyType` short-circuit
+  to `nil` when `static == true` because the static side of
+  a class isn't reachable from the instance `ObjectType`
+  exposed by the checker. As a result, static overrides
+  flow through the pipeline structurally but with
+  `Effective.Type == nil`, and the consistency check is
+  silently skipped on the static side. Fix is to surface a
+  separate static-side `ObjectType` (or equivalent
+  member-keyed map) from the checker and have the
+  extractor consult it.
+
+- **Lifetime-erased signature equivalence.** §5.7's
+  `funcSignatureEquivalent` uses the strict
+  `Type.Equals`, which is sensitive to `LifetimeParams`
+  arity on nested `FuncType`-valued parameters. TS-derived
+  originals never carry lifetimes, so overrides that add
+  lifetimes to a nested function-type param will trip the
+  consistency check spuriously. Introduce a
+  lifetime-erased equivalence routine (or a flag on
+  `Equals`) and use it only on the consistency-check path.
+
+- **Property-type consistency.** `mergeLeaf` only runs the
+  consistency check when both `orig` and `over` carry
+  `*FuncType`. Property slots (and any other non-function
+  leaf) can silently diverge in type between override and
+  original. Add a structural-equivalence check on
+  non-function leaves.
+
+- **Namespace-vs-class shape conflict.** `mergeChild`
+  decides namespace-vs-class via `hasMembers` on either
+  side. If the original is a namespace and an override is
+  a class (or vice versa), the merge silently mixes the
+  two shapes instead of reporting an `ErrShapeConflict`.
+
+- **Destructuring `VarDecl` patterns in override files.**
+  `extract.go` `patternNames` only handles `*ast.IdentPat`;
+  destructured bindings in an override file produce no
+  scope entries. Either extend the walk or reject
+  destructured patterns in override files with a clear
+  error.
 
 ## 6. Shipped overrides
 
