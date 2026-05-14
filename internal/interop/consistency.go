@@ -34,12 +34,21 @@ func CheckSet(override, original []*type_system.FuncType, path Path, origin Orig
 		return &ErrSignatureMismatch{
 			Path:           path,
 			Field:          field,
-			Override:       override[i].String(),
-			Original:       original[i].String(),
+			Override:       funcString(override[i]),
+			Original:       funcString(original[i]),
 			OverrideOrigin: origin,
 		}
 	}
 	return nil
+}
+
+// funcString renders a FuncType for diagnostics, returning "nilFunc"
+// when the pointer is nil so error construction never panics.
+func funcString(f *type_system.FuncType) string {
+	if f == nil {
+		return "nilFunc"
+	}
+	return f.String()
 }
 
 // Check is the per-signature helper used by CheckSet and exposed
@@ -52,8 +61,8 @@ func Check(override, original *type_system.FuncType, path Path, origin Origin) e
 	return &ErrSignatureMismatch{
 		Path:           path,
 		Field:          field,
-		Override:       override.String(),
-		Original:       original.String(),
+		Override:       funcString(override),
+		Original:       funcString(original),
 		OverrideOrigin: origin,
 	}
 }

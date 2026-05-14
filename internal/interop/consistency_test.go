@@ -115,6 +115,43 @@ func TestCheckSetOverloadCountMismatch(t *testing.T) {
 	}
 }
 
+func TestCheckNilOverride(t *testing.T) {
+	original := mkFunc([]type_system.Type{stringPrim}, numberPrim)
+	err := Check(nil, original, Path{}, Origin{})
+	if err == nil {
+		t.Fatal("expected nilFunc mismatch error; got nil")
+	}
+	want := expectedSigMismatch("nilFunc", "nilFunc", original.String())
+	if err.Error() != want {
+		t.Fatalf("error mismatch\n got: %q\nwant: %q", err.Error(), want)
+	}
+}
+
+func TestCheckNilOriginal(t *testing.T) {
+	override := mkFunc([]type_system.Type{stringPrim}, numberPrim)
+	err := Check(override, nil, Path{}, Origin{})
+	if err == nil {
+		t.Fatal("expected nilFunc mismatch error; got nil")
+	}
+	want := expectedSigMismatch("nilFunc", override.String(), "nilFunc")
+	if err.Error() != want {
+		t.Fatalf("error mismatch\n got: %q\nwant: %q", err.Error(), want)
+	}
+}
+
+func TestCheckSetNilSignature(t *testing.T) {
+	override := []*type_system.FuncType{nil}
+	original := []*type_system.FuncType{mkFunc([]type_system.Type{stringPrim}, numberPrim)}
+	err := CheckSet(override, original, Path{}, Origin{})
+	if err == nil {
+		t.Fatal("expected nilFunc mismatch error; got nil")
+	}
+	want := expectedSigMismatch("nilFunc", "nilFunc", original[0].String())
+	if err.Error() != want {
+		t.Fatalf("error mismatch\n got: %q\nwant: %q", err.Error(), want)
+	}
+}
+
 func TestCheckSetPerSignatureMismatchAnnotatesIndex(t *testing.T) {
 	override := []*type_system.FuncType{
 		mkFunc([]type_system.Type{stringPrim}, numberPrim),

@@ -293,7 +293,6 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 		return child
 	}
 	classType := lookupClassObject(ns, decl.Name.Name)
-	span := decl.Span()
 	for _, elem := range decl.TypeAnn.Elems {
 		switch e := elem.(type) {
 		case *ast.MethodTypeAnn:
@@ -304,7 +303,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Methods[name] = &Effective{
 				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
 		case *ast.GetterTypeAnn:
@@ -315,7 +314,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Getters[name] = &Effective{
 				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
 		case *ast.SetterTypeAnn:
@@ -326,7 +325,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Setters[name] = &Effective{
 				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
 		case *ast.PropertyTypeAnn:
@@ -337,7 +336,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Properties[name] = &Effective{
 				Type:       lookupPropertyType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
 		}
@@ -458,10 +457,40 @@ func objElemMatch(elem type_system.ObjTypeElem) (type_system.Type, string, bool)
 
 // patternNames returns the surface identifier names a VarDecl pattern
 // binds — the keys used to look up checker-produced bindings in `ns`.
+// Recurses into destructuring patterns (object/tuple/rest) so nested
+// IdentPat bindings aren't silently dropped.
+//
+// TODO: ExtractorPat and InstancePat aren't handled — they bind names
+// from arbitrary class extractor signatures and aren't currently used
+// at module scope in interop override files. LitPat and WildcardPat
+// bind no names and are intentionally skipped.
 func patternNames(p ast.Pat) []string {
 	switch x := p.(type) {
 	case *ast.IdentPat:
 		return []string{x.Name}
+	case *ast.ObjectPat:
+		var names []string
+		for _, elem := range x.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				names = append(names, patternNames(e.Value)...)
+			case *ast.ObjShorthandPat:
+				if e.Key != nil {
+					names = append(names, e.Key.Name)
+				}
+			case *ast.ObjRestPat:
+				names = append(names, patternNames(e.Pattern)...)
+			}
+		}
+		return names
+	case *ast.TuplePat:
+		var names []string
+		for _, elem := range x.Elems {
+			names = append(names, patternNames(elem)...)
+		}
+		return names
+	case *ast.RestPat:
+		return patternNames(x.Pattern)
 	}
 	return nil
 }
