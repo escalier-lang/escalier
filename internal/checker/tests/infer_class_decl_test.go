@@ -307,6 +307,27 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"boxValue": "number",
 			},
 		},
+		// Issue #574: method bodies on generic classes resolve self.* fields
+		// through the receiver's type-args. Both round-tripping a T-typed
+		// field and projecting a B-typed field through an A-typed slot are
+		// covered here.
+		"GenericClassMethodReturnsTypeParamField": {
+			input: `
+				class Box<T> {
+					value: T,
+					peek(self) -> T {
+						return self.value
+					},
+				}
+
+				val box = Box(42:number)
+				val boxValue = box.peek()
+			`,
+			expectedTypes: map[string]string{
+				"box":      "Box<number>",
+				"boxValue": "number",
+			},
+		},
 		"ClassWithExtends": {
 			input: `
 				class Animal {
@@ -1038,6 +1059,53 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 						set cast<T>(mut self, v: T) {
 							val x: T = v
 							val y: T = x
+						},
+					}
+					return Box(0)
+				}
+			`,
+		},
+		// Class-level type params must register with their own type-ref
+		// identity in declCtx (matching buildTypeParams), so member bodies
+		// see `T` as the generic parameter rather than its constraint.
+		// Without this, a local annotation typed `T` inside a method body
+		// resolves to `unknown` and the assignment fails type-checking.
+		"BodyLevelClassTypeParamInMethodBody": {
+			input: `
+				fn make() {
+					class Box<T> {
+						value: T,
+						identity(self, x: T) -> T {
+							val y: T = x
+							return y
+						},
+					}
+					return Box(0)
+				}
+			`,
+		},
+		"BodyLevelClassTypeParamInGetterBody": {
+			input: `
+				fn make() {
+					class Box<T> {
+						value: T,
+						get peek(self) -> T {
+							val y: T = self.value
+							return y
+						},
+					}
+					return Box(0)
+				}
+			`,
+		},
+		"BodyLevelClassTypeParamInSetterBody": {
+			input: `
+				fn make() {
+					class Box<T> {
+						value: T,
+						set poke(mut self, v: T) {
+							val y: T = v
+							self.value = y
 						},
 					}
 					return Box(0)
