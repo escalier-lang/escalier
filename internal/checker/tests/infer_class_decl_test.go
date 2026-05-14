@@ -307,10 +307,9 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				"boxValue": "number",
 			},
 		},
-		// Issue #574: method bodies on generic classes resolve self.* fields
-		// through the receiver's type-args. Both round-tripping a T-typed
-		// field and projecting a B-typed field through an A-typed slot are
-		// covered here.
+		// Issue #574: a method body on a generic class returns self.value
+		// (typed T) and the call site substitutes T to the receiver's type
+		// arg (number here).
 		"GenericClassMethodReturnsTypeParamField": {
 			input: `
 				class Box<T> {
@@ -1138,4 +1137,52 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 			require.Empty(t, inferErrors)
 		})
 	}
+}
+
+// Body-level inferClassDecl binds `self` to classSelfRef (carrying type
+// args), so a method that returns `self` without an explicit return-type
+// annotation infers a return of `Self<T...>` and the call site substitutes
+// to the concrete type. If `self` were bound to the bare type alias
+// (`Box` rather than `Box<T>`), the inferred return would lose its
+// generic parameter and `box.identity().value` could not be typed as
+// `number`. InferScript drives inferStmt -> inferDecl, exercising the
+// body-level inferClassDecl path without needing a function wrapper.
+
+func TestBodyLevelGenericSelfReturnPreservesTypeArgs(t *testing.T) {
+	input := `
+		class Box<T> {
+			value: T,
+			identity(self) {
+				return self
+			},
+		}
+		val box = Box(42:number)
+		val same = box.identity()
+		val v = same.value
+	`
+
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: input}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := parser.NewParser(ctx, source)
+	script, parseErrors := p.ParseScript()
+	require.Empty(t, parseErrors, "expected no parse errors")
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	scriptScope, inferErrors := c.InferScript(inferCtx, script)
+	if len(inferErrors) > 0 {
+		for i, err := range inferErrors {
+			fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
+		}
+	}
+	require.Empty(t, inferErrors)
+
+	vBinding, ok := scriptScope.Namespace.Values["v"]
+	require.True(t, ok, "expected `v` to be declared")
+	assert.Equal(t, "number", vBinding.Type.String(),
+		"`v` should be `number`; if self were bound to the bare class "+
+			"alias, identity()'s inferred return would drop its type "+
+			"args and `.value` would not project to number")
 }
