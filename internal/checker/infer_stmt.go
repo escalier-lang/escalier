@@ -53,15 +53,6 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 func (c *Checker) inferDeclareBlock(ctx Context, decls []ast.Decl, enclosingStmt ast.Stmt) []Error {
 	var errors []Error
 	for _, d := range decls {
-		// `override declare class Foo { ... }` is sugar for
-		// `override declare global { class Foo { ... } }`, so override
-		// blocks legitimately contain ClassDecls. inferDecl panics on
-		// ClassDecl pending #514; skip them here so override files don't
-		// crash the checker. The override-extract pass still picks up
-		// the class shape from the AST.
-		if _, ok := d.(*ast.ClassDecl); ok {
-			continue
-		}
 		errors = append(errors, c.inferDecl(ctx, d, enclosingStmt)...)
 	}
 	return errors

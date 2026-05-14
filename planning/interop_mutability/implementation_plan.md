@@ -908,6 +908,56 @@ Exit criteria: loader + merge covered by unit tests; `Classify`
 consults the merged store but no overrides are shipped yet
 (§6 ships them).
 
+### 5.13 Deferred to a follow-up PR
+
+The initial landing of §5 (PR #603) plumbs the
+discover → check → extract → merge → resolve pipeline end to
+end and wires `Classify` into the merged store, but several
+threads were left for a follow-up to keep that PR
+reviewable:
+
+- **Static-side method/property types.** `extract.go`
+  `lookupMethodType` and `lookupPropertyType` short-circuit
+  to `nil` when `static == true` because the static side of
+  a class isn't reachable from the instance `ObjectType`
+  exposed by the checker. As a result, static overrides
+  flow through the pipeline structurally but with
+  `Effective.Type == nil`, and the consistency check is
+  silently skipped on the static side. Fix is to surface a
+  separate static-side `ObjectType` (or equivalent
+  member-keyed map) from the checker and have the
+  extractor consult it.
+
+- **Lifetime-erased signature equivalence.** §5.7's
+  `funcSignatureEquivalent` uses the strict
+  `Type.Equals`, which is sensitive to `LifetimeParams`
+  arity on nested `FuncType`-valued parameters. TS-derived
+  originals never carry lifetimes, so overrides that add
+  lifetimes to a nested function-type param will trip the
+  consistency check spuriously. Introduce a
+  lifetime-erased equivalence routine (or a flag on
+  `Equals`) and use it only on the consistency-check path.
+
+- **Property-type consistency.** `mergeLeaf` only runs the
+  consistency check when both `orig` and `over` carry
+  `*FuncType`. Property slots (and any other non-function
+  leaf) can silently diverge in type between override and
+  original. Add a structural-equivalence check on
+  non-function leaves.
+
+- **Namespace-vs-class shape conflict.** `mergeChild`
+  decides namespace-vs-class via `hasMembers` on either
+  side. If the original is a namespace and an override is
+  a class (or vice versa), the merge silently mixes the
+  two shapes instead of reporting an `ErrShapeConflict`.
+
+- **Destructuring `VarDecl` patterns in override files.**
+  `extract.go` `patternNames` only handles `*ast.IdentPat`;
+  destructured bindings in an override file produce no
+  scope entries. Either extend the walk or reject
+  destructured patterns in override files with a clear
+  error.
+
 ## 6. Shipped overrides
 
 Goal: author the data tables that the resolver loads at startup.

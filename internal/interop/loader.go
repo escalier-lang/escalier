@@ -75,7 +75,7 @@ func Discover(
 			continue
 		}
 		depFS := os.DirFS(depRoot)
-		depFiles, dErrs := parseFromFS(ctx, depFS, ".", depRoot+string(os.PathSeparator), OverrideTierUserDep)
+		depFiles, dErrs := parseFromFS(ctx, depFS, ".", depRoot+"/", OverrideTierUserDep)
 		out = append(out, depFiles...)
 		errs = append(errs, dErrs...)
 	}
@@ -84,7 +84,7 @@ func Discover(
 		userRoot := filepath.Join(root, "overrides")
 		if dirExists(userRoot) {
 			userFS := os.DirFS(userRoot)
-			userFiles, uErrs := parseFromFS(ctx, userFS, ".", userRoot+string(os.PathSeparator), OverrideTierUserProject)
+			userFiles, uErrs := parseFromFS(ctx, userFS, ".", userRoot+"/", OverrideTierUserProject)
 			out = append(out, userFiles...)
 			errs = append(errs, uErrs...)
 		}
@@ -132,7 +132,9 @@ func parseFromFS(
 		src := &ast.Source{Path: fullPath, Contents: string(contents)}
 		mod, pErrs := parser.ParseLibFiles(ctx, []*ast.Source{src})
 		if len(pErrs) > 0 {
-			errs = append(errs, fmt.Errorf("parsing %s: %d parse error(s)", fullPath, len(pErrs)))
+			for _, pe := range pErrs {
+				errs = append(errs, fmt.Errorf("parsing %s: %s", fullPath, pe.String()))
+			}
 			return nil
 		}
 		decls := collectDecls(mod)

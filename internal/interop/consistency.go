@@ -94,11 +94,11 @@ func funcSignatureEquivalent(a, b *type_system.FuncType) (field string, ok bool)
 	if len(a.Params) != len(b.Params) {
 		return "arity", false
 	}
-	// Type.Equals ignores lifetime annotations on lifetime-bearing types
-	// (TypeRefType, ObjectType, TupleType) and `LifetimeParams` arity on
-	// nested FuncTypes. That's what lets an override add lifetimes to a
-	// TS-derived original without tripping the consistency check — TS
-	// has no lifetime syntax, so originals never carry them.
+	// Param types are compared via Type.Equals — which is strict on
+	// lifetime annotations. Overrides that add lifetimes to nested
+	// FuncType-valued params relative to a TS-derived original will
+	// therefore mismatch; a lifetime-erased equivalence variant for
+	// the override path is tracked in §5.13.
 	for i := range a.Params {
 		if a.Params[i].Optional != b.Params[i].Optional {
 			return fmt.Sprintf("param[%d]", i), false
