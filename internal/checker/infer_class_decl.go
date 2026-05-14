@@ -23,6 +23,10 @@ import (
 // The behaviour mirrors the inlined ClassDecl branches at
 // infer_module.go:390-798 (placeholder) and infer_module.go:1193-1687
 // (definition); helpers are reused unchanged.
+//
+// TODO(#604): extract `inferClassDeclPlaceholder` / `inferClassDeclDefinition`
+// helpers and have both this function and the two inlined branches in
+// infer_module.go call them, so per-element semantics live in one place.
 func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 	errors := []Error{}
 
@@ -333,7 +337,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	// --- Definition phase ----------------------------------------------------
 
-	bodyCtx := declCtx.WithNewScope()
+	classBodyCtx := declCtx.WithNewScope()
 
 	for i, bodyElem := range decl.Body {
 		switch bodyElem := bodyElem.(type) {
@@ -346,7 +350,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				targetType = objType
 			}
 
-			astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+			astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 			errors = slices.Concat(errors, keyErrors)
 			var prop *type_system.PropertyElem
 			if astKey != nil {
@@ -365,7 +369,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			}
 
 			if bodyElem.Type != nil {
-				annType, annErrors := c.inferTypeAnn(bodyCtx, bodyElem.Type)
+				annType, annErrors := c.inferTypeAnn(classBodyCtx, bodyElem.Type)
 				errors = slices.Concat(errors, annErrors)
 				unifyErrors := c.Unify(ctx, prop.Value, annType)
 				errors = slices.Concat(errors, unifyErrors)
@@ -377,7 +381,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 						span:      bodyElem.Span(),
 					})
 				} else {
-					initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)
+					initType, initErrors := c.inferExpr(classBodyCtx, bodyElem.Value)
 					errors = slices.Concat(errors, initErrors)
 					unifyErrors := c.Unify(ctx, initType, prop.Value)
 					errors = slices.Concat(errors, unifyErrors)
@@ -404,7 +408,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				targetType = objType
 			}
 
-			astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+			astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 			errors = slices.Concat(errors, keyErrors)
 			var methodType *type_system.MethodElem
 			if astKey != nil {
@@ -483,7 +487,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				targetType = objType
 			}
 
-			astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+			astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 			errors = slices.Concat(errors, keyErrors)
 			var getterType *type_system.GetterElem
 			if astKey != nil {
@@ -534,7 +538,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			if bodyElem.Fn.Body != nil {
 				getterCtx := methodCtxForElem[i]
 				if getterCtx.Scope == nil {
-					getterCtx = bodyCtx
+					getterCtx = classBodyCtx
 				}
 				bodyErrors := c.inferFuncBodyWithFuncSigType(
 					getterCtx, getterType.Fn, paramBindings,
@@ -553,7 +557,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				targetType = objType
 			}
 
-			astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+			astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 			errors = slices.Concat(errors, keyErrors)
 			var setterType *type_system.SetterElem
 			if astKey != nil {
@@ -604,7 +608,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			if bodyElem.Fn.Body != nil {
 				setterCtx := methodCtxForElem[i]
 				if setterCtx.Scope == nil {
-					setterCtx = bodyCtx
+					setterCtx = classBodyCtx
 				}
 				bodyErrors := c.inferFuncBodyWithFuncSigType(
 					setterCtx, setterType.Fn, paramBindings,
@@ -649,7 +653,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				ctorFuncType.Throws,
 			)
 
-			ctorBodyCtx := bodyCtx
+			ctorBodyCtx := classBodyCtx
 			if ctorCtx.Scope != nil {
 				ctorBodyCtx = ctorCtx.WithNewScope()
 			}

@@ -388,6 +388,11 @@ func (c *Checker) InferComponent(
 
 				nsCtx.Scope.SetTypeAlias(decl.Name.Name, typeAlias)
 			case *ast.ClassDecl:
+				// TODO(#604): the placeholder body below is duplicated in
+				// infer_class_decl.go (body-level inferClassDecl). Extract a
+				// shared `inferClassDeclPlaceholder` helper and call it from
+				// both sites.
+
 				// Check if we've already processed this class from another binding key
 				// (classes have both type and value keys that may be in different components)
 				// Only check the current namespace, not parent scopes - we want to allow
@@ -1193,6 +1198,11 @@ func (c *Checker) InferComponent(
 				typeParamErrors := c.unifyTypeParams(nsCtx, typeAlias.TypeParams, typeParams)
 				errors = slices.Concat(errors, typeParamErrors)
 			case *ast.ClassDecl:
+				// TODO(#604): the definition body below is duplicated in
+				// infer_class_decl.go (body-level inferClassDecl). Extract a
+				// shared `inferClassDeclDefinition` helper and call it from
+				// both sites.
+
 				// Skip if this class was processed in a previous component
 				// (classes have both type and value keys that may be in different components)
 				if _, ok := declCtxMap[decl]; !ok {
@@ -1212,10 +1222,10 @@ func (c *Checker) InferComponent(
 				paramBindings := paramBindingsForDecl[decl]
 
 				declCtx := declCtxMap[decl]
-				bodyCtx := declCtx.WithNewScope()
+				classBodyCtx := declCtx.WithNewScope()
 
 				for name, binding := range paramBindings {
-					bodyCtx.Scope.setValue(name, binding)
+					classBodyCtx.Scope.setValue(name, binding)
 				}
 
 				// Process each element in the class body
@@ -1233,7 +1243,7 @@ func (c *Checker) InferComponent(
 							targetType = instanceType
 						}
 
-						astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+						astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 						errors = slices.Concat(errors, keyErrors)
 						if astKey != nil {
 							for _, elem := range targetType.Elems {
@@ -1248,7 +1258,7 @@ func (c *Checker) InferComponent(
 
 						if prop != nil {
 							if bodyElem.Type != nil {
-								annType, annErrors := c.inferTypeAnn(bodyCtx, bodyElem.Type)
+								annType, annErrors := c.inferTypeAnn(classBodyCtx, bodyElem.Type)
 								errors = slices.Concat(errors, annErrors)
 
 								unifyErrors := c.Unify(ctx, prop.Value, annType)
@@ -1266,7 +1276,7 @@ func (c *Checker) InferComponent(
 										span:      bodyElem.Span(),
 									})
 								} else {
-									initType, initErrors := c.inferExpr(bodyCtx, bodyElem.Value)
+									initType, initErrors := c.inferExpr(classBodyCtx, bodyElem.Value)
 									errors = slices.Concat(errors, initErrors)
 									unifyErrors := c.Unify(ctx, initType, prop.Value)
 									errors = slices.Concat(errors, unifyErrors)
@@ -1310,7 +1320,7 @@ func (c *Checker) InferComponent(
 							targetType = instanceType
 						}
 
-						astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+						astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 						errors = slices.Concat(errors, keyErrors)
 						if astKey != nil {
 							for _, elem := range targetType.Elems {
@@ -1412,7 +1422,7 @@ func (c *Checker) InferComponent(
 							targetType = instanceType
 						}
 
-						astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+						astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 						errors = slices.Concat(errors, keyErrors)
 						if astKey != nil {
 							for _, elem := range targetType.Elems {
@@ -1479,7 +1489,7 @@ func (c *Checker) InferComponent(
 							if bodyElem.Fn.Body != nil {
 								getterCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
 								if getterCtx.Scope == nil {
-									getterCtx = bodyCtx
+									getterCtx = classBodyCtx
 								}
 								bodyErrors := c.inferFuncBodyWithFuncSigType(
 									getterCtx, getterType.Fn, paramBindings,
@@ -1502,7 +1512,7 @@ func (c *Checker) InferComponent(
 							targetType = instanceType
 						}
 
-						astKey, keyErrors := c.astKeyToTypeKey(bodyCtx, bodyElem.Name)
+						astKey, keyErrors := c.astKeyToTypeKey(classBodyCtx, bodyElem.Name)
 						errors = slices.Concat(errors, keyErrors)
 						if astKey != nil {
 							for _, elem := range targetType.Elems {
@@ -1574,7 +1584,7 @@ func (c *Checker) InferComponent(
 							if bodyElem.Fn.Body != nil {
 								setterCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
 								if setterCtx.Scope == nil {
-									setterCtx = bodyCtx
+									setterCtx = classBodyCtx
 								}
 								bodyErrors := c.inferFuncBodyWithFuncSigType(
 									setterCtx, setterType.Fn, paramBindings,
@@ -1658,7 +1668,7 @@ func (c *Checker) InferComponent(
 						// `constructor` itself) live on `info.Ctx`, not on
 						// `bodyCtx`. Use that scope when present so the
 						// body can resolve them.
-						ctorBodyCtx := bodyCtx
+						ctorBodyCtx := classBodyCtx
 						if info.Ctx.Scope != nil {
 							ctorBodyCtx = info.Ctx.WithNewScope()
 						}
