@@ -157,3 +157,186 @@ func TestMergePassesThroughOriginalWithoutOverride(t *testing.T) {
 	// lower tiers then decide the final tier.
 	require.Equal(t, TierUserSource, got.Source)
 }
+
+// TestMergeAllPureStripsMutSelf: @all_pure on the override module side
+// rewrites instance methods that have only an original to drop their
+// `mut self` receiver wrapping.
+func TestMergeAllPureStripsMutSelf(t *testing.T) {
+	receiver := type_system.NewNumPrimType(nil)
+	mutReceiver := type_system.NewMutType(nil, receiver)
+	origMethod := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
+	origMethod.SelfParam = &type_system.FuncParam{Type: mutReceiver}
+
+	original := map[string]*ModuleScope{
+		"": {
+			Container: Container{
+				Free: map[string]*Effective{},
+				Children: map[string]*ChildScope{
+					"C": {
+						Container: Container{
+							Free:     map[string]*Effective{},
+							Children: map[string]*ChildScope{},
+						},
+						Instance: &MemberSet{
+							Methods:    map[string]*Effective{"m": {Type: origMethod}},
+							Getters:    map[string]*Effective{},
+							Setters:    map[string]*Effective{},
+							Properties: map[string]*Effective{},
+						},
+						Static: NewMemberSet(),
+					},
+				},
+			},
+		},
+	}
+	// Override module declares @all_pure but does not redeclare C.m.
+	override := map[string]*ModuleScope{
+		"": {
+			Container: Container{
+				Free:     map[string]*Effective{},
+				Children: map[string]*ChildScope{},
+			},
+			AllPure:     true,
+			AllPureTier: OverrideTierUserProject,
+		},
+	}
+
+	store, errs := Merge(original, override)
+	require.Empty(t, errs)
+	got := store.Modules[""].Children["C"].Instance.Methods["m"]
+	require.NotNil(t, got)
+	fn, ok := got.Type.(*type_system.FuncType)
+	require.True(t, ok, "expected merged method to remain a FuncType")
+	require.NotNil(t, fn.SelfParam)
+	_, stillMut := fn.SelfParam.Type.(*type_system.MutType)
+	require.False(t, stillMut, "@all_pure must unwrap MutType from instance method receiver")
+	require.Same(t, receiver, fn.SelfParam.Type)
+	require.Equal(t, TierUserOverride, got.Source)
+}
+
+// TestMergeUnknownMemberWhenOverrideOnlyAndParentExists: an override
+// adds a free name the original side does not declare, while the
+// original parent (module) was pre-loaded — that is `ErrUnknownMember`.
+func TestMergeUnknownMemberWhenOverrideOnlyAndParentExists(t *testing.T) {
+	origFn := mkFn()
+	overFn := mkFn()
+	original := map[string]*ModuleScope{
+		"": {
+			Container: Container{
+				Free:     map[string]*Effective{"foo": {Type: origFn}},
+				Children: map[string]*ChildScope{},
+			},
+		},
+	}
+	override := map[string]*ModuleScope{
+		"": {
+			Container: Container{
+				Free:     map[string]*Effective{"bar": {Type: overFn, Source: TierUserOverride}},
+				Children: map[string]*ChildScope{},
+			},
+		},
+	}
+	store, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrUnknownMember)
+	require.True(t, ok, "expected *ErrUnknownMember; got %T", errs[0])
+
+	// The override-only leaf is still emitted into the store so downstream
+	// queries can find it; the error tells the user it has nothing to
+	// compare against.
+	require.NotNil(t, store.Modules[""].Free["bar"])
+}
+
+// TestMergeUnknownMemberSuppressedWhenParentOriginalAbsent: when the
+// parent module wasn't pre-loaded on the original side, an override-only
+// leaf is accepted silently (per §5.7).
+func TestMergeUnknownMemberSuppressedWhenParentOriginalAbsent(t *testing.T) {
+	overFn := mkFn()
+	override := map[string]*ModuleScope{
+		"lodash": {
+			Container: Container{
+				Free:     map[string]*Effective{"map": {Type: overFn, Source: TierUserOverride}},
+				Children: map[string]*ChildScope{},
+			},
+		},
+	}
+	store, errs := Merge(nil, override)
+	require.Empty(t, errs)
+	require.NotNil(t, store.Modules["lodash"].Free["map"])
+}
+
+// TestMergeCtorOverrideReplacesOriginal: the constructor slot is single
+// per class; an override Ctor replaces the original Ctor.
+func TestMergeCtorOverrideReplacesOriginal(t *testing.T) {
+	origCtor := mkFn()
+	overCtor := mkFn()
+	mkClass := func(ctor *type_system.FuncType) *ChildScope {
+		return &ChildScope{
+			Container: Container{
+				Free:     map[string]*Effective{},
+				Children: map[string]*ChildScope{},
+			},
+			Instance: &MemberSet{
+				Methods:    map[string]*Effective{},
+				Getters:    map[string]*Effective{},
+				Setters:    map[string]*Effective{},
+				Properties: map[string]*Effective{},
+				Ctor:       &Effective{Type: ctor},
+			},
+			Static: NewMemberSet(),
+		}
+	}
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]*ChildScope{"C": mkClass(origCtor)},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]*ChildScope{"C": mkClass(overCtor)},
+		}},
+	}
+	store, errs := Merge(original, override)
+	require.Empty(t, errs)
+	got := store.Modules[""].Children["C"].Instance.Ctor
+	require.NotNil(t, got)
+	require.Same(t, overCtor, got.Type)
+}
+
+// TestMergeFuncTypeMismatchSurfacesError: when both sides have a
+// *FuncType at the same slot and signatures disagree, `Check` runs and
+// returns *ErrSignatureMismatch, but the override still wins in the
+// merged store.
+func TestMergeFuncTypeMismatchSurfacesError(t *testing.T) {
+	num := type_system.NewNumPrimType(nil)
+	str := type_system.NewStrPrimType(nil)
+	origFn := type_system.NewFuncType(
+		nil, nil,
+		[]*type_system.FuncParam{{Type: num}},
+		num, nil,
+	)
+	overFn := type_system.NewFuncType(
+		nil, nil,
+		[]*type_system.FuncParam{{Type: num}, {Type: str}},
+		num, nil,
+	)
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"f": {Type: origFn}},
+			Children: map[string]*ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"f": {Type: overFn, Source: TierUserOverride}},
+			Children: map[string]*ChildScope{},
+		}},
+	}
+	store, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrSignatureMismatch)
+	require.True(t, ok, "expected *ErrSignatureMismatch; got %T", errs[0])
+	require.Same(t, overFn, store.Modules[""].Free["f"].Type)
+}

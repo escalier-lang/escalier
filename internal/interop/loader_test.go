@@ -10,6 +10,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/stretchr/testify/require"
 )
 
 const declareFooFile = `override declare global {
@@ -23,26 +24,18 @@ func TestDiscoverGroupsByTier(t *testing.T) {
 	}
 
 	userRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(userRoot, "overrides"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(
+	require.NoError(t, os.MkdirAll(filepath.Join(userRoot, "overrides"), 0o755))
+	require.NoError(t, os.WriteFile(
 		filepath.Join(userRoot, "overrides", "user.esc"),
 		[]byte(declareFooFile), 0o644,
-	); err != nil {
-		t.Fatalf("write user override: %v", err)
-	}
+	))
 
 	depDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(depDir, "overrides"), 0o755); err != nil {
-		t.Fatalf("mkdir dep: %v", err)
-	}
-	if err := os.WriteFile(
+	require.NoError(t, os.MkdirAll(filepath.Join(depDir, "overrides"), 0o755))
+	require.NoError(t, os.WriteFile(
 		filepath.Join(depDir, "overrides", "dep.esc"),
 		[]byte(declareFooFile), 0o644,
-	); err != nil {
-		t.Fatalf("write dep override: %v", err)
-	}
+	))
 
 	files, errs := Discover(
 		context.Background(),
@@ -50,24 +43,16 @@ func TestDiscoverGroupsByTier(t *testing.T) {
 		[]DepInfo{{Name: "lib", Dir: depDir}},
 		shipped,
 	)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected discover errors: %v", errs)
-	}
+	require.Empty(t, errs)
 
 	tierByName := map[string]OverrideTier{}
 	for _, f := range files {
 		base := filepath.Base(f.FilePath)
 		tierByName[base] = f.Tier
 	}
-	if tierByName["core.esc"] != OverrideTierShipped {
-		t.Fatalf("expected core.esc tagged Shipped; got %v", tierByName["core.esc"])
-	}
-	if tierByName["dep.esc"] != OverrideTierUserDep {
-		t.Fatalf("expected dep.esc tagged UserDep; got %v", tierByName["dep.esc"])
-	}
-	if tierByName["user.esc"] != OverrideTierUserProject {
-		t.Fatalf("expected user.esc tagged UserProject; got %v", tierByName["user.esc"])
-	}
+	require.Equal(t, OverrideTierShipped, tierByName["core.esc"])
+	require.Equal(t, OverrideTierUserDep, tierByName["dep.esc"])
+	require.Equal(t, OverrideTierUserProject, tierByName["user.esc"])
 }
 
 func TestDiscoverMissingOverrideDirsIsNotAnError(t *testing.T) {
@@ -75,12 +60,8 @@ func TestDiscoverMissingOverrideDirsIsNotAnError(t *testing.T) {
 	// files and no errors.
 	root := t.TempDir()
 	files, errs := Discover(context.Background(), root, nil, nil)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected errors: %v", errs)
-	}
-	if len(files) != 0 {
-		t.Fatalf("expected zero files; got %d", len(files))
-	}
+	require.Empty(t, errs)
+	require.Empty(t, files)
 }
 
 func TestDiscoverReportsParseErrors(t *testing.T) {
@@ -89,13 +70,10 @@ func TestDiscoverReportsParseErrors(t *testing.T) {
 		"broken.esc": &fstest.MapFile{Data: []byte("declare global { @@@ }\n")},
 	}
 	files, errs := Discover(context.Background(), "", nil, shipped)
-	if len(errs) == 0 {
-		t.Fatalf("expected parse error to surface; got none")
-	}
+	require.NotEmpty(t, errs, "expected parse error to surface")
 	for _, f := range files {
-		if strings.Contains(f.FilePath, "broken.esc") {
-			t.Fatalf("the broken file should not be in the parsed set; got %s", f.FilePath)
-		}
+		require.NotContains(t, f.FilePath, "broken.esc",
+			"the broken file should not be in the parsed set")
 	}
 }
 
@@ -115,20 +93,13 @@ func TestBuildPipelineWithStubChecker(t *testing.T) {
 	}
 
 	store, errs := Build(context.Background(), tc, "", nil, shipped, nil)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected build errors: %v", errs)
-	}
+	require.Empty(t, errs)
 	mod := store.Modules[""]
-	if mod == nil {
-		t.Fatalf("expected global module scope")
-	}
+	require.NotNil(t, mod, "expected global module scope")
 	eff := mod.Free["foo"]
-	if eff == nil || eff.Type != fn {
-		t.Fatalf("expected merged store to carry shipped foo; got %#v", eff)
-	}
-	if eff.Source != TierShippedOverride {
-		t.Fatalf("expected Source=TierShippedOverride; got %v", eff.Source)
-	}
+	require.NotNil(t, eff)
+	require.Same(t, fn, eff.Type)
+	require.Equal(t, TierShippedOverride, eff.Source)
 }
 
 func TestBuildWithoutTypeCheckerErrorsWhenFilesPresent(t *testing.T) {
@@ -136,9 +107,7 @@ func TestBuildWithoutTypeCheckerErrorsWhenFilesPresent(t *testing.T) {
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
 	_, errs := Build(context.Background(), nil, "", nil, shipped, nil)
-	if len(errs) == 0 {
-		t.Fatalf("expected an error when TypeChecker is nil and files exist")
-	}
+	require.NotEmpty(t, errs, "expected an error when TypeChecker is nil and files exist")
 }
 
 func TestBuildPrecedenceUserProjectBeatsShipped(t *testing.T) {
@@ -146,15 +115,11 @@ func TestBuildPrecedenceUserProjectBeatsShipped(t *testing.T) {
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
 	userRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(userRoot, "overrides"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(
+	require.NoError(t, os.MkdirAll(filepath.Join(userRoot, "overrides"), 0o755))
+	require.NoError(t, os.WriteFile(
 		filepath.Join(userRoot, "overrides", "user.esc"),
 		[]byte(declareFooFile), 0o644,
-	); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	))
 
 	fnShipped := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
 	fnUser := type_system.NewFuncType(nil, nil, nil, type_system.NewStrPrimType(nil), nil)
@@ -169,16 +134,11 @@ func TestBuildPrecedenceUserProjectBeatsShipped(t *testing.T) {
 	}
 
 	store, errs := Build(context.Background(), tc, userRoot, nil, shipped, nil)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected errors: %v", errs)
-	}
+	require.Empty(t, errs)
 	eff := store.Modules[""].Free["foo"]
-	if eff == nil || eff.Type != fnUser {
-		t.Fatalf("expected user-project to win over shipped; got %#v", eff)
-	}
-	if eff.Source != TierUserOverride {
-		t.Fatalf("expected TierUserOverride; got %v", eff.Source)
-	}
+	require.NotNil(t, eff)
+	require.Same(t, fnUser, eff.Type)
+	require.Equal(t, TierUserOverride, eff.Source)
 }
 
 func TestBuildDuplicateWithinTierIsAnError(t *testing.T) {
@@ -202,9 +162,31 @@ func TestBuildDuplicateWithinTierIsAnError(t *testing.T) {
 			break
 		}
 	}
-	if !sawDup {
-		t.Fatalf("expected ErrDuplicateMember in errors; got %v", errs)
+	require.True(t, sawDup, "expected ErrDuplicateMember in errors; got %v", errs)
+}
+
+// TestDiscoverHonorsCanceledContext: a canceled context aborts the walk
+// before parsing files, so no overrides come back. We can't easily
+// observe the cancellation error without per-file synthesis, but the
+// returned file set should be empty (cancellation short-circuits).
+func TestDiscoverHonorsCanceledContext(t *testing.T) {
+	shipped := fstest.MapFS{
+		"a.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
+		"b.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	files, errs := Discover(ctx, "", nil, shipped)
+	require.Empty(t, files, "canceled context must not yield parsed files")
+	require.NotEmpty(t, errs, "canceled context should surface ctx.Err()")
+	sawCanceled := false
+	for _, e := range errs {
+		if strings.Contains(e.Error(), context.Canceled.Error()) {
+			sawCanceled = true
+			break
+		}
+	}
+	require.True(t, sawCanceled, "expected a context.Canceled error; got %v", errs)
 }
 
 // Ensure the parser is actually reading our content (vs silently
@@ -215,16 +197,9 @@ func TestDiscoverActuallyParsesDecls(t *testing.T) {
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
 	files, errs := Discover(context.Background(), "", nil, shipped)
-	if len(errs) > 0 {
-		t.Fatalf("parse errors: %v", errs)
-	}
-	if len(files) != 1 {
-		t.Fatalf("expected 1 file; got %d", len(files))
-	}
-	if len(files[0].Decls) == 0 {
-		t.Fatalf("expected at least one decl; got 0")
-	}
-	if _, ok := files[0].Decls[0].(*ast.DeclareGlobalDecl); !ok {
-		t.Fatalf("expected top decl to be DeclareGlobalDecl; got %T", files[0].Decls[0])
-	}
+	require.Empty(t, errs)
+	require.Len(t, files, 1)
+	require.NotEmpty(t, files[0].Decls)
+	_, ok := files[0].Decls[0].(*ast.DeclareGlobalDecl)
+	require.True(t, ok, "expected top decl to be DeclareGlobalDecl; got %T", files[0].Decls[0])
 }

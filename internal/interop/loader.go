@@ -113,6 +113,9 @@ func parseFromFS(
 		errs []error
 	)
 	walkErr := fs.WalkDir(fsys, root, func(p string, d fs.DirEntry, err error) error {
+		if cErr := ctx.Err(); cErr != nil {
+			return cErr
+		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("walking %s%s: %w", pathPrefix, p, err))
 			return nil
@@ -253,6 +256,11 @@ func mergeWithinContainer(
 			continue
 		}
 		mergeWithinContainer(&existing.Container, &child.Container, appendChild(owner, name), errs)
+		// Adoption happens after the merge: when existing's shape is
+		// nil, mergeWithinMemberSet no-ops and we then take child's set
+		// wholesale. Hoisting the adoption would alias existing and
+		// child onto the same map and trigger spurious duplicate-member
+		// errors in the call below.
 		mergeWithinMemberSet(existing.Instance, child.Instance, appendChild(owner, name), false, errs)
 		mergeWithinMemberSet(existing.Static, child.Static, appendChild(owner, name), true, errs)
 		if existing.Instance == nil && child.Instance != nil {
