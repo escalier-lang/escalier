@@ -204,16 +204,24 @@ type MethodTypeAnn struct {
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
 }
+
+func (m *MethodTypeAnn) Span() Span { return m.Name.Span() }
+
 type GetterTypeAnn struct {
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
 }
+
+func (g *GetterTypeAnn) Span() Span { return g.Name.Span() }
+
 type SetterTypeAnn struct {
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
 }
+
+func (s *SetterTypeAnn) Span() Span { return s.Name.Span() }
 
 type MappedModifier string
 
@@ -222,13 +230,18 @@ const (
 	MMRemove MappedModifier = "remove"
 )
 
-// TODO: include span
+// TODO: include a dedicated span covering the full property declaration
+// (including modifiers like `readonly`/`?`); for now Span() returns the
+// name's span so callers get a per-member position instead of the
+// enclosing container's span.
 type PropertyTypeAnn struct {
 	Name     ObjKey
 	Optional bool
 	Readonly bool
 	Value    TypeAnn
 }
+
+func (p *PropertyTypeAnn) Span() Span { return p.Name.Span() }
 
 type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
