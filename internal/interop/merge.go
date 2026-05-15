@@ -87,6 +87,15 @@ func collapseContainer(dst, src *Container, ot OverrideTier) {
 			dst.Children[name] = dstChild
 		}
 		collapseContainer(&dstChild.Container, &child.Container, ot)
+		// If an earlier (higher-precedence) tier introduced this child
+		// as a namespace, Instance/Static may still be nil here; allocate
+		// on demand so a later tier's members aren't silently dropped.
+		if child.Instance != nil && dstChild.Instance == nil {
+			dstChild.Instance = NewMemberSet()
+		}
+		if child.Static != nil && dstChild.Static == nil {
+			dstChild.Static = NewMemberSet()
+		}
 		collapseMemberSet(dstChild.Instance, child.Instance, ot)
 		collapseMemberSet(dstChild.Static, child.Static, ot)
 	}

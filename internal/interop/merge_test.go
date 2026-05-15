@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/stretchr/testify/require"
 )
 
 func mkFn() *type_system.FuncType {
@@ -39,21 +40,69 @@ func TestCollapseShadowing(t *testing.T) {
 		[]OverrideTier{OverrideTierUserProject, OverrideTierShipped},
 	)
 	mod := out["lodash"]
-	if mod == nil {
-		t.Fatal("expected lodash in collapsed output")
+	require.NotNil(t, mod, "expected lodash in collapsed output")
+	require.NotNil(t, mod.Free["map"])
+	require.Same(t, fnUser, mod.Free["map"].Type)
+	require.Equal(t, TierUserOverride, mod.Free["map"].Source)
+	require.NotNil(t, mod.Free["filter"])
+	require.Same(t, fnShipped, mod.Free["filter"].Type)
+	require.Equal(t, TierShippedOverride, mod.Free["filter"].Source)
+}
+
+// TestCollapseChildMemberSetAcrossTiers exercises the case where an
+// earlier (higher-precedence) tier introduces a child as a namespace
+// (Instance/Static nil) and a later tier introduces the same child as a
+// class with members. The later tier's members should still merge into
+// the collapsed child rather than being silently dropped.
+func TestCollapseChildMemberSetAcrossTiers(t *testing.T) {
+	fnMethod := mkFn()
+	// Higher tier: child "C" as a namespace.
+	userProject := map[string]*ModuleScope{
+		"m": {
+			Container: Container{
+				Free: map[string]*Effective{},
+				Children: map[string]*ChildScope{
+					"C": {
+						Container: Container{
+							Free:     map[string]*Effective{},
+							Children: map[string]*ChildScope{},
+						},
+					},
+				},
+			},
+		},
 	}
-	if got := mod.Free["map"]; got == nil || got.Type != fnUser {
-		t.Fatalf("user-project entry should win; got %#v", got)
+	// Lower tier: child "C" as a class with an instance method.
+	shippedInstance := NewMemberSet()
+	shippedInstance.Methods["m"] = &Effective{Type: fnMethod}
+	shipped := map[string]*ModuleScope{
+		"m": {
+			Container: Container{
+				Free: map[string]*Effective{},
+				Children: map[string]*ChildScope{
+					"C": {
+						Container: Container{
+							Free:     map[string]*Effective{},
+							Children: map[string]*ChildScope{},
+						},
+						Instance: shippedInstance,
+					},
+				},
+			},
+		},
 	}
-	if got := mod.Free["map"]; got.Source != TierUserOverride {
-		t.Fatalf("expected Source=TierUserOverride; got %v", got.Source)
-	}
-	if got := mod.Free["filter"]; got == nil || got.Type != fnShipped {
-		t.Fatalf("shipped-only entry should survive; got %#v", got)
-	}
-	if got := mod.Free["filter"]; got.Source != TierShippedOverride {
-		t.Fatalf("expected Source=TierShippedOverride; got %v", got.Source)
-	}
+	out := Collapse(
+		[]map[string]*ModuleScope{userProject, shipped},
+		[]OverrideTier{OverrideTierUserProject, OverrideTierShipped},
+	)
+	mod := out["m"]
+	require.NotNil(t, mod)
+	child := mod.Children["C"]
+	require.NotNil(t, child)
+	require.NotNil(t, child.Instance, "Instance should be allocated when a later tier introduces members")
+	require.NotNil(t, child.Instance.Methods["m"])
+	require.Same(t, fnMethod, child.Instance.Methods["m"].Type)
+	require.Equal(t, TierShippedOverride, child.Instance.Methods["m"].Source)
 }
 
 func TestMergeOverrideReplacesOriginal(t *testing.T) {
@@ -80,13 +129,10 @@ func TestMergeOverrideReplacesOriginal(t *testing.T) {
 		},
 	}
 	store, errs := Merge(original, override)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected merge errors: %v", errs)
-	}
+	require.Empty(t, errs)
 	got := store.Modules[""].Free["identity"]
-	if got == nil || got.Type != overFn {
-		t.Fatalf("override should replace original; got %#v", got)
-	}
+	require.NotNil(t, got)
+	require.Same(t, overFn, got.Type)
 }
 
 func TestMergePassesThroughOriginalWithoutOverride(t *testing.T) {
@@ -102,17 +148,12 @@ func TestMergePassesThroughOriginalWithoutOverride(t *testing.T) {
 		},
 	}
 	store, errs := Merge(original, nil)
-	if len(errs) > 0 {
-		t.Fatalf("unexpected errors: %v", errs)
-	}
+	require.Empty(t, errs)
 	got := store.Modules[""].Free["identity"]
-	if got == nil || got.Type != origFn {
-		t.Fatalf("original should pass through; got %#v", got)
-	}
+	require.NotNil(t, got)
+	require.Same(t, origFn, got.Type)
 	// TierUserSource is the zero value of ResolutionTier, used here as
 	// the "unstamped" sentinel for original-only leaves — Classify's
 	// lower tiers then decide the final tier.
-	if got.Source != TierUserSource {
-		t.Fatalf("expected unstamped Source (TierUserSource sentinel); got %v", got.Source)
-	}
+	require.Equal(t, TierUserSource, got.Source)
 }
