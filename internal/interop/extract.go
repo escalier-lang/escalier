@@ -116,18 +116,12 @@ func extractIntoContainer(
 			if decl.Name == nil {
 				continue
 			}
-			child := buildClassChild(decl, ns, filePath, tier)
-			if child != nil {
-				container.Children[decl.Name.Name] = child
-			}
+			container.Children[decl.Name.Name] = buildClassChild(decl, ns, filePath, tier)
 		case *ast.InterfaceDecl:
 			if decl.Name == nil {
 				continue
 			}
-			child := buildInterfaceChild(decl, ns, filePath, tier)
-			if child != nil {
-				container.Children[decl.Name.Name] = child
-			}
+			container.Children[decl.Name.Name] = buildInterfaceChild(decl, ns, filePath, tier)
 		case *ast.NamespaceDecl:
 			if decl.Name == nil {
 				continue
@@ -261,7 +255,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Properties[name] = &Effective{
-				Type:       lookupPropertyType(classType, name, false),
+				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -337,7 +331,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Properties[name] = &Effective{
-				Type:       lookupPropertyType(classType, name, false),
+				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -420,10 +414,6 @@ func lookupMethodType(obj *type_system.ObjectType, name string, static bool) typ
 		}
 	}
 	return nil
-}
-
-func lookupPropertyType(obj *type_system.ObjectType, name string, static bool) type_system.Type {
-	return lookupMethodType(obj, name, static)
 }
 
 func lookupCtorType(obj *type_system.ObjectType) type_system.Type {

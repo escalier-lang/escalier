@@ -2,6 +2,7 @@ package interop
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -17,8 +18,8 @@ func CheckSet(override, original []*type_system.FuncType, path Path, origin Orig
 		return &ErrSignatureMismatch{
 			Path:           path,
 			Field:          "overload count",
-			Override:       fmt.Sprintf("%d", len(override)),
-			Original:       fmt.Sprintf("%d", len(original)),
+			Override:       strconv.Itoa(len(override)),
+			Original:       strconv.Itoa(len(original)),
 			OverrideOrigin: origin,
 		}
 	}

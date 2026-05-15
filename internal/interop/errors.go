@@ -82,6 +82,9 @@ func (e *ErrGenericArityMismatch) Error() string {
 // as `module "name"::owner.member`; global paths drop the module prefix.
 func pathString(p Path) string {
 	var b strings.Builder
+	if p.Module == "" && p.Owner == nil && p.Name == nil {
+		return "<unknown>"
+	}
 	if p.Module != "" {
 		b.WriteString(`module "`)
 		b.WriteString(p.Module)

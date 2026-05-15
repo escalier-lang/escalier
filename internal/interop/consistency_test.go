@@ -37,7 +37,7 @@ var (
 // text rather than just the Field axis.
 func expectedSigMismatch(field, override, original string) string {
 	return fmt.Sprintf(
-		"override of  changes signature shape (%s): override=%s, original=%s\n  override at :0",
+		"override of <unknown> changes signature shape (%s): override=%s, original=%s\n  override at :0",
 		field, override, original,
 	)
 }
