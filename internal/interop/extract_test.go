@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/stretchr/testify/require"
 )
 
 // These tests drive Extract directly with hand-built AST + Namespace
@@ -33,20 +34,11 @@ func TestExtractFreeFunctionFromDeclareGlobal(t *testing.T) {
 		"shipped:/test.esc",
 		OverrideTierShipped,
 	)
-	ms, ok := out[""]
-	if !ok {
-		t.Fatalf("expected entry under \"\" (global); got %#v", out)
-	}
-	eff := ms.Free["foo"]
-	if eff == nil {
-		t.Fatalf("expected Free[foo] to be set; got nil")
-	}
-	if eff.Type != fn {
-		t.Fatalf("expected eff.Type to be the func from the namespace; got %#v", eff.Type)
-	}
-	if eff.Tier != OverrideTierShipped {
-		t.Fatalf("expected Tier=Shipped; got %v", eff.Tier)
-	}
+	require.Contains(t, out, "", "expected entry under \"\" (global)")
+	eff := out[""].Free["foo"]
+	require.NotNil(t, eff, "expected Free[foo] to be set")
+	require.Same(t, fn, eff.Type, "expected eff.Type to be the func from the namespace")
+	require.Equal(t, OverrideTierShipped, eff.Tier)
 }
 
 func TestExtractFreeFunctionFromDeclareModule(t *testing.T) {
@@ -75,13 +67,10 @@ func TestExtractFreeFunctionFromDeclareModule(t *testing.T) {
 		"shipped:/lodash.esc",
 		OverrideTierShipped,
 	)
-	ms, ok := out["lodash"]
-	if !ok {
-		t.Fatalf("expected entry under \"lodash\"; got %#v", out)
-	}
-	if eff := ms.Free["map"]; eff == nil || eff.Type != fn {
-		t.Fatalf("expected Free[map] to carry func type; got %#v", eff)
-	}
+	require.Contains(t, out, "lodash")
+	eff := out["lodash"].Free["map"]
+	require.NotNil(t, eff)
+	require.Same(t, fn, eff.Type)
 }
 
 func TestExtractSkipsNonOverrideBlocks(t *testing.T) {
@@ -103,9 +92,7 @@ func TestExtractSkipsNonOverrideBlocks(t *testing.T) {
 		"test.esc",
 		OverrideTierUserProject,
 	)
-	if len(out) != 0 {
-		t.Fatalf("non-override blocks must produce no scope contributions; got %#v", out)
-	}
+	require.Empty(t, out, "non-override blocks must produce no scope contributions")
 }
 
 func TestExtractTypeAlias(t *testing.T) {
@@ -129,13 +116,10 @@ func TestExtractTypeAlias(t *testing.T) {
 		OverrideTierUserProject,
 	)
 	ms := out[""]
-	if ms == nil {
-		t.Fatalf("expected global scope contribution")
-	}
+	require.NotNil(t, ms, "expected global scope contribution")
 	eff := ms.Free["MyNum"]
-	if eff == nil || eff.Type != alias.Type {
-		t.Fatalf("expected MyNum leaf carrying the alias type; got %#v", eff)
-	}
+	require.NotNil(t, eff)
+	require.Same(t, alias.Type, eff.Type, "expected MyNum leaf carrying the alias type")
 }
 
 func TestExtractInterfaceInstanceMethod(t *testing.T) {
@@ -166,20 +150,13 @@ func TestExtractInterfaceInstanceMethod(t *testing.T) {
 		OverrideTierShipped,
 	)
 	ms := out[""]
-	if ms == nil {
-		t.Fatalf("expected global contribution")
-	}
+	require.NotNil(t, ms, "expected global contribution")
 	child := ms.Children["Pinger"]
-	if child == nil {
-		t.Fatalf("expected Children[Pinger]; got %#v", ms.Children)
-	}
-	if child.Instance == nil {
-		t.Fatalf("expected Instance MemberSet populated on interface child")
-	}
+	require.NotNil(t, child, "expected Children[Pinger]")
+	require.NotNil(t, child.Instance, "expected Instance MemberSet populated on interface child")
 	eff := child.Instance.Methods["ping"]
-	if eff == nil || eff.Type != methodFn {
-		t.Fatalf("expected ping method to carry its FuncType from the namespace; got %#v", eff)
-	}
+	require.NotNil(t, eff)
+	require.Same(t, methodFn, eff.Type, "expected ping method to carry its FuncType from the namespace")
 }
 
 func TestExtractNamespaceNesting(t *testing.T) {
@@ -209,19 +186,14 @@ func TestExtractNamespaceNesting(t *testing.T) {
 		OverrideTierUserProject,
 	)
 	ms := out[""]
-	if ms == nil {
-		t.Fatalf("expected global contribution")
-	}
+	require.NotNil(t, ms, "expected global contribution")
 	child := ms.Children["Util"]
-	if child == nil {
-		t.Fatalf("expected Children[Util] for nested namespace")
-	}
-	if child.Instance != nil || child.Static != nil {
-		t.Fatalf("namespace child should not have Instance/Static populated")
-	}
-	if eff := child.Free["inner"]; eff == nil || eff.Type != fn {
-		t.Fatalf("expected nested namespace fn; got %#v", eff)
-	}
+	require.NotNil(t, child, "expected Children[Util] for nested namespace")
+	require.Nil(t, child.Instance, "namespace child should not have Instance populated")
+	require.Nil(t, child.Static, "namespace child should not have Static populated")
+	eff := child.Free["inner"]
+	require.NotNil(t, eff, "expected nested namespace fn")
+	require.Same(t, fn, eff.Type)
 }
 
 func TestExtractDestructuredVarDecl(t *testing.T) {
@@ -252,15 +224,11 @@ func TestExtractDestructuredVarDecl(t *testing.T) {
 		OverrideTierShipped,
 	)
 	ms := out[""]
-	if ms == nil {
-		t.Fatalf("expected global contribution")
-	}
-	if eff := ms.Free["a"]; eff == nil || eff.Type != fnA {
-		t.Fatalf("expected Free[a] to carry fnA; got %#v", eff)
-	}
-	if eff := ms.Free["b"]; eff == nil || eff.Type != fnB {
-		t.Fatalf("expected Free[b] to carry fnB; got %#v", eff)
-	}
+	require.NotNil(t, ms, "expected global contribution")
+	require.NotNil(t, ms.Free["a"])
+	require.Same(t, fnA, ms.Free["a"].Type, "expected Free[a] to carry fnA")
+	require.NotNil(t, ms.Free["b"])
+	require.Same(t, fnB, ms.Free["b"].Type, "expected Free[b] to carry fnB")
 }
 
 func TestExtractClassDropsStaticMembers(t *testing.T) {
@@ -304,19 +272,13 @@ func TestExtractClassDropsStaticMembers(t *testing.T) {
 		OverrideTierShipped,
 	)
 	ms := out[""]
+	require.NotNil(t, ms)
 	child := ms.Children["Widget"]
-	if child == nil {
-		t.Fatalf("expected Children[Widget]")
-	}
-	if child.Instance == nil || child.Instance.Methods["inst"] == nil {
-		t.Fatalf("expected instance method inst recorded; got %#v", child.Instance)
-	}
-	if child.Static == nil {
-		t.Fatalf("expected Static MemberSet allocated (class shape signal)")
-	}
-	if _, present := child.Static.Methods["doStatic"]; present {
-		t.Fatalf("expected static methods to be dropped during extraction; got %#v", child.Static.Methods)
-	}
+	require.NotNil(t, child, "expected Children[Widget]")
+	require.NotNil(t, child.Instance)
+	require.NotNil(t, child.Instance.Methods["inst"], "expected instance method inst recorded")
+	require.NotNil(t, child.Static, "expected Static MemberSet allocated (class shape signal)")
+	require.NotContains(t, child.Static.Methods, "doStatic", "expected static methods to be dropped during extraction")
 }
 
 func TestExtractMissingNamespaceEntryProducesNilType(t *testing.T) {
@@ -340,10 +302,6 @@ func TestExtractMissingNamespaceEntryProducesNilType(t *testing.T) {
 		OverrideTierShipped,
 	)
 	ms := out[""]
-	if ms == nil {
-		t.Fatalf("expected module scope created even when bindings missing")
-	}
-	if _, present := ms.Free["orphan"]; present {
-		t.Fatalf("expected no leaf for binding the checker didn't produce")
-	}
+	require.NotNil(t, ms, "expected module scope created even when bindings missing")
+	require.NotContains(t, ms.Free, "orphan", "expected no leaf for binding the checker didn't produce")
 }

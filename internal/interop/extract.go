@@ -20,6 +20,11 @@ import (
 // `namedNs` maps module-specifier string → namespace, populated by the
 // checker from each `override declare module "name" { ... }` block.
 //
+// `filePath` is the locator for the override file being extracted. It
+// is stamped on every Origin produced by this call (always with
+// Kind=OverrideFile) and surfaced in diagnostics. See Origin.FilePath
+// for the locator-string convention.
+//
 // Top-level sugar (`override declare class Foo { ... }` etc.) is
 // expected to have been desugared by the parser per
 // implementation_plan.md §2.2, so each top-level decl in `decls` is
@@ -98,7 +103,7 @@ func extractIntoContainer(
 				container.Free[decl.Name.Name] = eff
 			}
 		case *ast.VarDecl:
-			for _, name := range patternNames(decl.Pattern) {
+			for name := range ast.FindBindings(decl.Pattern) {
 				eff := buildLeafFromValue(ns, name, filePath, decl.Span(), tier)
 				if eff != nil {
 					container.Free[name] = eff
@@ -108,6 +113,12 @@ func extractIntoContainer(
 			if decl.Name == nil {
 				continue
 			}
+			// TODO(#interop-type-value-namespace): types and values live
+			// in separate namespaces, so a module may legitimately declare
+			// both `type Foo = …` and `val Foo = …` (or `class Foo { … }`)
+			// with the same identifier. Container.Free keys by string,
+			// which collapses the two into one slot — whichever loses the
+			// race is silently dropped. Tracked in §5.13.
 			eff := buildLeafFromTypeAlias(ns, decl.Name.Name, filePath, decl.Span(), tier)
 			if eff != nil {
 				container.Free[decl.Name.Name] = eff
@@ -177,11 +188,14 @@ func buildLeafFromTypeAlias(ns *type_system.Namespace, name, filePath string, sp
 // into the appropriate MemberSet slot; their types come from the class
 // type recorded in `ns`.
 //
-// The class type lookup is best-effort: when the checker hasn't
-// produced a typed object/class for the override (e.g. the override
-// references a TypeScript symbol that wasn't pre-loaded), the leaf
-// types fall back to nil and the merge will skip the consistency check
-// for that slot.
+// The class type lookup is best-effort: if the checker couldn't
+// produce a typed binding for the class itself (e.g. a member body
+// references an unresolvable type, an annotation is malformed, or the
+// enclosing module's inference failed wholesale), the leaf types fall
+// back to nil and the merge will skip the consistency check for that
+// slot. References to upstream base classes in `extends` clauses are
+// not a concern — those resolve through the checker's outer scope,
+// which already contains the .d.ts symbols (§5.2 sequencing).
 func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath string, tier OverrideTier) *ChildScope {
 	origin := Origin{Kind: OverrideFile, FilePath: filePath, Span: decl.Span()}
 	child := &ChildScope{
@@ -213,7 +227,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Methods[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -227,7 +241,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Getters[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -241,7 +255,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Setters[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -255,7 +269,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Properties[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -298,7 +312,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Methods[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -309,7 +323,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Getters[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -320,7 +334,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Setters[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -331,7 +345,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Properties[name] = &Effective{
-				Type:       lookupMethodType(classType, name, false),
+				Type:       lookupObjElemType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
@@ -392,15 +406,16 @@ func unwrapToObject(t type_system.Type) *type_system.ObjectType {
 	}
 }
 
-// lookupMethodType finds a method/getter/setter type on an ObjectType
-// by canonical name. Returns nil if no matching element is present.
+// lookupObjElemType finds a method, getter, setter, or property type on
+// an ObjectType by canonical name. Returns nil if no matching element
+// is present.
 //
 // TODO(#interop-static): static lookup is not yet wired — the class
 // statics aren't reachable from the instance ObjectType, and the
 // checker has no separate static-object representation here. Static
 // callers receive nil and the consistency check is skipped on the
 // static side until that gap is filled.
-func lookupMethodType(obj *type_system.ObjectType, name string, static bool) type_system.Type {
+func lookupObjElemType(obj *type_system.ObjectType, name string, static bool) type_system.Type {
 	if obj == nil || static {
 		return nil
 	}
@@ -432,7 +447,7 @@ func lookupCtorType(obj *type_system.ObjectType) type_system.Type {
 // Names come from the ObjTypeKey carried on each element kind. Returns
 // ok=false when the element has no addressable name (e.g.
 // callable/constructor/index signature). All members on ObjectType are
-// instance-side; static-side lookup is handled by lookupMethodType
+// instance-side; static-side lookup is handled by lookupObjElemType
 // returning nil up front (see its TODO).
 func objElemMatch(elem type_system.ObjTypeElem) (type_system.Type, string, bool) {
 	switch e := elem.(type) {
@@ -448,42 +463,3 @@ func objElemMatch(elem type_system.ObjTypeElem) (type_system.Type, string, bool)
 	return nil, "", false
 }
 
-// patternNames returns the surface identifier names a VarDecl pattern
-// binds — the keys used to look up checker-produced bindings in `ns`.
-// Recurses into destructuring patterns (object/tuple/rest) so nested
-// IdentPat bindings aren't silently dropped.
-//
-// TODO: ExtractorPat and InstancePat aren't handled — they bind names
-// from arbitrary class extractor signatures and aren't currently used
-// at module scope in interop override files. LitPat and WildcardPat
-// bind no names and are intentionally skipped.
-func patternNames(p ast.Pat) []string {
-	switch x := p.(type) {
-	case *ast.IdentPat:
-		return []string{x.Name}
-	case *ast.ObjectPat:
-		var names []string
-		for _, elem := range x.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjKeyValuePat:
-				names = append(names, patternNames(e.Value)...)
-			case *ast.ObjShorthandPat:
-				if e.Key != nil {
-					names = append(names, e.Key.Name)
-				}
-			case *ast.ObjRestPat:
-				names = append(names, patternNames(e.Pattern)...)
-			}
-		}
-		return names
-	case *ast.TuplePat:
-		var names []string
-		for _, elem := range x.Elems {
-			names = append(names, patternNames(elem)...)
-		}
-		return names
-	case *ast.RestPat:
-		return patternNames(x.Pattern)
-	}
-	return nil
-}

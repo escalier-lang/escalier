@@ -33,6 +33,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Assert the full error message, not a substring.
 - Write test inputs as Escalier source. Assert inferred types using Escalier type-annotation syntax in strings. See [internal/checker/tests/class_test.go](internal/checker/tests/class_test.go) for the canonical pattern.
 - Prefer table-driven tests.
+- Use `github.com/stretchr/testify` for assertions instead of hand-rolled `if x != y { t.Fatalf(...) }` blocks. Prefer `require.*` (stops on first failure, matching the `t.Fatalf` pattern) over `assert.*`. Common conversions: `require.Equal(t, expected, actual)`, `require.Same(t, expected, actual)` for pointer identity, `require.NotNil(t, x)`, `require.Contains(t, m, k)`, `require.NotContains(t, m, k)`, `require.Empty(t, s)`, `require.Error(t, err)`, `require.NoError(t, err)`. Split compound conditions (`x == nil || x.Type != fn`) into separate `require` calls so failures point at the actual problem.
 
 ## Ephemeral scripts
 

@@ -917,16 +917,62 @@ threads were left for a follow-up to keep that PR
 reviewable:
 
 - **Static-side method/property types.** `extract.go`
-  `lookupMethodType` and `lookupPropertyType` short-circuit
-  to `nil` when `static == true` because the static side of
-  a class isn't reachable from the instance `ObjectType`
-  exposed by the checker. As a result, static overrides
-  flow through the pipeline structurally but with
-  `Effective.Type == nil`, and the consistency check is
-  silently skipped on the static side. Fix is to surface a
-  separate static-side `ObjectType` (or equivalent
-  member-keyed map) from the checker and have the
-  extractor consult it.
+  `lookupObjElemType` short-circuits to `nil` when
+  `static == true`, and `buildClassChild` currently drops
+  static-side override entries entirely to avoid corrupting
+  the merge store with nil-typed slots. The user-visible
+  effect is that static overrides are silently no-ops.
+
+  The static-side ObjectType is *already in the namespace*
+  — no checker change is needed. Both Escalier's own
+  `class Foo { … static bar() }` and the TS trio
+  (`interface Foo + interface FooConstructor +
+  declare var Foo: FooConstructor`) park the static
+  ObjectType under `ns.Values["Foo"].Type`:
+  - Escalier class: `Values["Foo"].Type` is the static
+    `ObjectType` directly (containing `ConstructorElem`
+    + statics).
+  - TS trio: `Values["Foo"].Type` is
+    `TypeRef("FooConstructor")` whose alias resolves to
+    the same shape.
+
+  Fix: teach `lookupObjElemType` (when `static == true`)
+  to look up `ns.Values[name]`, peel any `TypeRefType`
+  layer via `unwrapToObject`, and search the resulting
+  ObjectType's non-`ConstructorElem` members. Then lift
+  the `buildClassChild` skip so static overrides flow
+  through the pipeline like instance ones. The
+  `ArrayConstructor` exception encoded in
+  `UpdateMethodMutability` (prelude.go) should be carried
+  over.
+
+- **Original-side ModuleScope must fuse the TS
+  class-via-trio pattern.** TypeScript's lib files declare
+  what is conceptually a class as a trio:
+  `interface Foo { … }`,
+  `interface FooConstructor { new (…); /* statics */ }`,
+  `declare var Foo: FooConstructor`. An override author
+  writing `override declare class Foo { … }` expresses one
+  unit of intent — overriding "the Foo class." For that
+  override to land on all three original-side slots, the
+  `.d.ts` → `ModuleScope` builder must recognise the trio
+  pattern and emit a single class-shaped
+  `Children["Foo"]` populated from `Types["Foo"]`
+  (instance), `Types["FooConstructor"]` (statics +
+  constructor), and `Values["Foo"]` (the value binding).
+  Without trio-fusion the user would need three
+  separate override declarations to cover one
+  conceptual class, which defeats the ergonomic goal.
+
+  Recommended approach: a name-based heuristic. A
+  `Types["X"]` with a sibling `Types["XConstructor"]` and
+  a `Values["X"]: TypeRef("XConstructor")` collapses to
+  one class-shaped Child; otherwise fall back to literal
+  mapping. Mirror the `ArrayConstructor` exception from
+  prelude.go. Note that the override side already
+  produces this shape uniformly (Escalier's own
+  `class Foo { … }` does the same), so once the original
+  side fuses, the merge is symmetric.
 
 - **Lifetime-erased signature equivalence.** §5.7's
   `funcSignatureEquivalent` uses the strict
@@ -945,11 +991,39 @@ reviewable:
   original. Add a structural-equivalence check on
   non-function leaves.
 
+  Note: property type overrides are a first-class use case,
+  not a forgotten corner of the merge. Per requirements
+  principle #7, a property has three independent axes — slot
+  reassignability (`readonly`), referent mutability (the type's
+  `Mut[…]` wrapping), and borrow scope (property-level
+  lifetimes) — and overrides legitimately need to change any
+  combination of them. The most common drivers are:
+  *Mut wrapping* (recording that `Container<T>.items: T[]`
+  is actually `Mut[Array[T]]`); *precision tightening*
+  (refining a TS-side `any`/`object`/sloppy union to the
+  runtime shape); and *brand narrowing* (`id: string` →
+  `id: UserId`). The structural-equivalence check should
+  permit these directions of refinement while still catching
+  outright shape mismatches; the exact rule (full equality
+  vs. subtype-on-`Mut`-axis vs. opt-in via a `@checked` tag)
+  is open and worth resolving as part of this item.
+
 - **Namespace-vs-class shape conflict.** `mergeChild`
   decides namespace-vs-class via `hasMembers` on either
   side. If the original is a namespace and an override is
   a class (or vice versa), the merge silently mixes the
   two shapes instead of reporting an `ErrShapeConflict`.
+
+- **Type and value namespace collision in `Container.Free`.**
+  `extract.go` routes type aliases and values (var/func/class)
+  into the same `Container.Free` map keyed by string. Escalier
+  keeps types and values in separate namespaces, so a module
+  may legitimately declare `type Foo = …` alongside
+  `val Foo = …` or `class Foo { … }`. Today the second-seen
+  entry silently overwrites the first. Split `Container.Free`
+  into `FreeValues` and `FreeTypes` (or wrap each `Effective`
+  with a namespace tag) and update the resolver/merge to
+  route lookups accordingly.
 
 - **Destructuring `VarDecl` patterns in override files.**
   `extract.go` `patternNames` only handles `*ast.IdentPat`;

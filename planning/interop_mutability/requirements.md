@@ -49,6 +49,40 @@ We bias toward soundness: when in doubt, assume mutating.
    `foo`. (Mutable references can still call mutating methods that modify
    non-`readonly` fields.)
 
+7. **Property type, slot, and lifetime are independent axes.** A class
+   or interface property has three orthogonal aspects, each addressed
+   by a different mechanism:
+
+   - **Slot reassignability** — whether `obj.foo = …` is legal. Carried
+     by the `readonly` modifier on the field (principle #6).
+   - **Referent mutability** — whether mutation *through* `obj.foo` is
+     legal (e.g. `obj.foo.push(x)` on an array-valued field). Carried
+     by the property's type itself: `Mut[Array[T]]` permits in-place
+     mutation; `Array[T]` does not. TypeScript has no direct equivalent;
+     the type `T[]` in `.d.ts` is silent on this question and the
+     override mechanism is the canonical way to record it.
+   - **Borrow scope** — how long the referent is valid relative to the
+     host. Carried by property-level lifetime annotations
+     (`foo: &'self T`, etc.) for properties that expose internal
+     references rather than independently-owned values.
+
+   These three axes do not subsume each other. `readonly` does not
+   imply non-`Mut` of the referent; `Mut` wrapping does not imply
+   anything about lifetimes; and a lifetime annotation does not decide
+   mutability. An override may need to change one, two, or all three on
+   a single property.
+
+   Property type overrides are therefore a first-class use case for the
+   override mechanism — not only for toggling `Mut` wrapping but also
+   for:
+   - **Precision tightening** — narrowing a TS-side `any`, `object`,
+     `unknown`, or sloppy union to the actual runtime shape.
+   - **Generic substitution** — recording that a class's own methods
+     mutate its `T[]` field by exposing it as `Mut[Array[T]]`.
+   - **Brand narrowing** — refining `id: string` in `.d.ts` to
+     `id: UserId` where `UserId` is a branded type declared in
+     user code.
+
 ## Round-tripping via `@esctype`
 
 When Escalier emits `.d.ts` for `.esc` source, the compiler embeds the

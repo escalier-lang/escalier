@@ -127,7 +127,20 @@ const (
 // Origin is the declaring location of an entry (or the source-side of a
 // merge participant).
 type Origin struct {
-	Kind     OriginKind
+	Kind OriginKind
+	// FilePath is an opaque, human-readable locator surfaced in
+	// diagnostics as "<FilePath>:<line>". It is never opened, parsed,
+	// or matched against — purely a label.
+	//
+	// Conventions used by the loader (and expected by any caller):
+	//   - Real on-disk files: an absolute path (so diagnostics don't
+	//     depend on the compiler's CWD). Use the path the user typed
+	//     where possible; don't normalize or symlink-resolve.
+	//   - Sources with no real path (embedded FS, synthetic input):
+	//     a "scheme:/path" form, e.g. "shipped:/data/libs/lodash.esc".
+	//     The colon-prefix disambiguates from a real path.
+	//   - Empty string is legal but renders as ":<line>" in diagnostics
+	//     and should be avoided outside tests.
 	FilePath string
 	Span     ast.Span
 }
