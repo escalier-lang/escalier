@@ -224,6 +224,101 @@ func TestExtractNamespaceNesting(t *testing.T) {
 	}
 }
 
+func TestExtractDestructuredVarDecl(t *testing.T) {
+	// Object-pattern destructuring binds two names; each should be
+	// resolved against the checker-produced namespace and surface as
+	// Free leaves.
+	fnA := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
+	fnB := type_system.NewFuncType(nil, nil, nil, type_system.NewStrPrimType(nil), nil)
+
+	objPat := ast.NewObjectPat(
+		[]ast.ObjPatElem{
+			ast.NewObjShorthandPat(ast.NewIdentifier("a", emptySpan()), false, nil, nil, emptySpan()),
+			ast.NewObjShorthandPat(ast.NewIdentifier("b", emptySpan()), false, nil, nil, emptySpan()),
+		},
+		emptySpan(),
+	)
+	varDecl := ast.NewVarDecl(ast.ValKind, objPat, nil, nil, false, true, emptySpan())
+	declareGlobal := ast.NewDeclareGlobalDecl([]ast.Decl{varDecl}, true, emptySpan())
+
+	globalNs := type_system.NewNamespace()
+	globalNs.Values["a"] = &type_system.Binding{Type: fnA}
+	globalNs.Values["b"] = &type_system.Binding{Type: fnB}
+
+	out := Extract(
+		[]ast.Decl{declareGlobal},
+		globalNs, nil,
+		"test.esc",
+		OverrideTierShipped,
+	)
+	ms := out[""]
+	if ms == nil {
+		t.Fatalf("expected global contribution")
+	}
+	if eff := ms.Free["a"]; eff == nil || eff.Type != fnA {
+		t.Fatalf("expected Free[a] to carry fnA; got %#v", eff)
+	}
+	if eff := ms.Free["b"]; eff == nil || eff.Type != fnB {
+		t.Fatalf("expected Free[b] to carry fnB; got %#v", eff)
+	}
+}
+
+func TestExtractClassDropsStaticMembers(t *testing.T) {
+	// Static-side overrides are intentionally dropped until static
+	// lookup is wired (see comment in buildClassChild). Without the
+	// skip, Extract would record a static method with Type=nil and the
+	// merge step's "override wins" branch would clobber the original's
+	// typed static slot. This test pins the drop behavior.
+	instanceFn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
+	cls := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewMethodElem(type_system.NewStrKey("inst"), instanceFn),
+	})
+
+	instMethod := &ast.MethodElem{
+		Name:   ast.NewIdent("inst", emptySpan()),
+		Fn:     nil,
+		Static: false,
+		Span_:  emptySpan(),
+	}
+	staticMethod := &ast.MethodElem{
+		Name:   ast.NewIdent("doStatic", emptySpan()),
+		Fn:     nil,
+		Static: true,
+		Span_:  emptySpan(),
+	}
+	classDecl := ast.NewClassDecl(
+		ast.NewIdentifier("Widget", emptySpan()),
+		nil, nil, nil, nil,
+		[]ast.ClassElem{instMethod, staticMethod},
+		false, true, emptySpan(),
+	)
+	declareGlobal := ast.NewDeclareGlobalDecl([]ast.Decl{classDecl}, true, emptySpan())
+
+	globalNs := type_system.NewNamespace()
+	globalNs.Types["Widget"] = &type_system.TypeAlias{Type: cls}
+
+	out := Extract(
+		[]ast.Decl{declareGlobal},
+		globalNs, nil,
+		"test.esc",
+		OverrideTierShipped,
+	)
+	ms := out[""]
+	child := ms.Children["Widget"]
+	if child == nil {
+		t.Fatalf("expected Children[Widget]")
+	}
+	if child.Instance == nil || child.Instance.Methods["inst"] == nil {
+		t.Fatalf("expected instance method inst recorded; got %#v", child.Instance)
+	}
+	if child.Static == nil {
+		t.Fatalf("expected Static MemberSet allocated (class shape signal)")
+	}
+	if _, present := child.Static.Methods["doStatic"]; present {
+		t.Fatalf("expected static methods to be dropped during extraction; got %#v", child.Static.Methods)
+	}
+}
+
 func TestExtractMissingNamespaceEntryProducesNilType(t *testing.T) {
 	// When the checker hasn't populated a binding for a declared name
 	// (e.g. a typo override), the extractor should not insert a Free

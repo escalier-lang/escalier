@@ -56,6 +56,12 @@ func Extract(
 	return out
 }
 
+// ensureModule returns the ModuleScope for `name`, creating it on first
+// touch. When the module already exists, `origin` is ignored — the
+// first-seen file's origin wins for Container.Origin. This is fine for
+// diagnostics because each leaf carries its own Provenance; the
+// Container.Origin is only used as a fallback when no leaf-level origin
+// is available.
 func ensureModule(out map[string]*ModuleScope, name string, origin Origin) *ModuleScope {
 	if ms, ok := out[name]; ok {
 		return ms
@@ -196,73 +202,70 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 
 	classType := lookupClassObject(ns, decl.Name.Name)
 
+	// Static-side members are intentionally dropped until #interop-static
+	// wires up static lookup. Recording them with Type=nil here would let
+	// the merge step's "override wins" branch clobber the original's
+	// typed static slot with a nil-typed entry, corrupting the store.
+	// Dropping is silent for now — surfacing as a diagnostic is tracked
+	// alongside the static-lookup work.
 	for _, elem := range decl.Body {
 		switch e := elem.(type) {
 		case *ast.MethodElem:
+			if e.Static {
+				continue
+			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			t := lookupMethodType(classType, name, e.Static)
-			eff := &Effective{
-				Type:       t,
+			child.Instance.Methods[name] = &Effective{
+				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
-			set := child.Instance
-			if e.Static {
-				set = child.Static
-			}
-			set.Methods[name] = eff
 		case *ast.GetterElem:
+			if e.Static {
+				continue
+			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			eff := &Effective{
-				Type:       lookupMethodType(classType, name, e.Static),
+			child.Instance.Getters[name] = &Effective{
+				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
-			set := child.Instance
-			if e.Static {
-				set = child.Static
-			}
-			set.Getters[name] = eff
 		case *ast.SetterElem:
+			if e.Static {
+				continue
+			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			eff := &Effective{
-				Type:       lookupMethodType(classType, name, e.Static),
+			child.Instance.Setters[name] = &Effective{
+				Type:       lookupMethodType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
-			set := child.Instance
-			if e.Static {
-				set = child.Static
-			}
-			set.Setters[name] = eff
 		case *ast.FieldElem:
+			if e.Static {
+				continue
+			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			eff := &Effective{
-				Type:       lookupPropertyType(classType, name, e.Static),
+			child.Instance.Properties[name] = &Effective{
+				Type:       lookupPropertyType(classType, name, false),
 				Source:     tier.ResolutionTierFor(),
 				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:       tier,
 			}
-			set := child.Instance
-			if e.Static {
-				set = child.Static
-			}
-			set.Properties[name] = eff
 		case *ast.ConstructorElem:
 			eff := &Effective{
 				Type:       lookupCtorType(classType),
