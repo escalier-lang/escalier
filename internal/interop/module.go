@@ -9,6 +9,40 @@ import (
 	"github.com/tidwall/btree"
 )
 
+// convertCtx carries override-related state through the conversion
+// pipeline. nil store / empty modulePath mean "no overrides registered"
+// — Classify falls through to its built-in heuristics.
+type convertCtx struct {
+	// store is the merged override store consulted by Classify; nil
+	// means no overrides are registered.
+	store *OverrideStore
+
+	// modulePath is the store key for the module being converted: ""
+	// for globals/prelude lib files, the import specifier for an
+	// imported package (e.g. "lodash/fp"), or the module name from a
+	// `declare module "X"` wrapper.
+	modulePath string
+
+	// namespacePath is the dotted name of the enclosing `namespace`
+	// chain (e.g. "Outer.Inner"); empty at the module root. It is
+	// threaded into ClassifyContext so pathForMember can build a
+	// Member-chain Owner that walkChild can descend through nested
+	// NamespaceScopes.
+	namespacePath string
+}
+
+// classifyMember runs Classify for a member of the given enclosing class,
+// threading the convertCtx's module/namespace/store fields through.
+func (c *convertCtx) classifyMember(member dts_parser.ClassMember, className string) ClassifyResult {
+	return Classify(ClassifyContext{
+		Member:        member,
+		ClassName:     className,
+		ModulePath:    c.modulePath,
+		NamespacePath: c.namespacePath,
+		Store:         c.store,
+	})
+}
+
 // qualifiedName constructs a qualified namespace name by appending a child name to a parent name.
 // If parent is empty (root namespace), returns just the child name.
 // Otherwise, returns "parent.child".
@@ -26,6 +60,7 @@ func qualifiedName(parent, child string) string {
 // all declarations inside an ambient namespace are implicitly exported.
 // The isExported parameter indicates whether this namespace was declared with 'export' keyword.
 func processNamespace(
+	cctx *convertCtx,
 	name string,
 	stmts []dts_parser.Statement,
 	namespaces *btree.Map[string, *ast.Namespace],
@@ -43,7 +78,12 @@ func processNamespace(
 			nestedName := qualifiedName(name, s.Name.Name)
 			nestedAmbient := inAmbientNamespace || s.Declare()
 			nestedExported := s.Export()
-			if err := processNamespace(nestedName, s.Statements, namespaces, nestedAmbient, nestedExported); err != nil {
+			nestedCctx := &convertCtx{
+				store:         cctx.store,
+				modulePath:    cctx.modulePath,
+				namespacePath: nestedName,
+			}
+			if err := processNamespace(nestedCctx, nestedName, s.Statements, namespaces, nestedAmbient, nestedExported); err != nil {
 				return fmt.Errorf("processing namespace %s: %w", s.Name.Name, err)
 			}
 
@@ -75,7 +115,7 @@ func processNamespace(
 		default:
 			// Convert regular declarations
 			// Skip declarations that fail to convert (e.g., due to unsupported features)
-			decl, err := convertStatement(s)
+			decl, err := convertStatement(cctx, s)
 			if err != nil {
 				// Log the error but continue processing other declarations
 				fmt.Fprintf(os.Stderr, "Warning: skipping statement due to conversion error: %v\n", err)
@@ -131,15 +171,29 @@ func mergeNamespace(
 	}
 }
 
-// ConvertModule converts dts_parser.Module to ast.Module.
+// ConvertModule converts dts_parser.Module to ast.Module with no
+// override store; tier-1 and tier-4 will miss for every member.
 func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
+	return ConvertModuleWithOverrides(dtsModule, nil, "")
+}
+
+// ConvertModuleWithOverrides converts dts_parser.Module to ast.Module,
+// consulting `store` for tier-1 (user) and tier-4 (builtin) overrides
+// during member mutability classification. `modulePath` is the path the
+// store was keyed under for these declarations — "" for globals and
+// prelude lib files; the package import specifier for an imported
+// package's package decls (e.g. "lodash/fp"); the module name for
+// `declare module "X" { ... }` blocks (passed by the caller, since the
+// classifier strips that wrapper before getting here).
+func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store *OverrideStore, modulePath string) (*ast.Module, error) {
+	cctx := &convertCtx{store: store, modulePath: modulePath}
 	var namespaces btree.Map[string, *ast.Namespace]
 
 	// Process all statements, organizing them into namespaces
 	// Use empty string "" as the root/global namespace name
 	// Pass false for inAmbientNamespace since we're at the top level
 	// Pass false for isExported since the root namespace is not exported
-	if err := processNamespace("", dtsModule.Statements, &namespaces, false, false); err != nil {
+	if err := processNamespace(cctx, "", dtsModule.Statements, &namespaces, false, false); err != nil {
 		return nil, fmt.Errorf("converting module: %w", err)
 	}
 

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/tidwall/btree"
@@ -402,6 +403,7 @@ var cachedGlobalScope *Scope
 var cachedSymbolIDCounter int
 var cachedCustomMatcherSymbolID int
 var cachedPackageRegistry *PackageRegistry
+var cachedOverrideStore *interop.OverrideStore
 
 // initializeGlobalScope creates the global scope containing TypeScript built-in types
 // (Array, Promise, etc. from lib.es5.d.ts and lib.dom.d.ts), operator bindings, and
@@ -526,7 +528,7 @@ func (c *Checker) loadGlobalDefinitions(globalScope *Scope) {
 
 	for _, filename := range allLibFiles {
 		libPath := filepath.Join(libDir, filename)
-		parsedTypeDef, loadErr := parseTypeDef(libPath)
+		parsedTypeDef, loadErr := parseTypeDef(libPath, c.OverrideStore, "")
 		if loadErr != nil {
 			panic(fmt.Sprintf("Failed to load TypeScript lib file: %s: %v", libPath, loadErr))
 		}
@@ -733,6 +735,19 @@ func (c *Checker) addGlobalThisBinding(ns *type_system.Namespace) {
 // We assume that a new Checker instance is being passed in every time Prelude is called.
 // TODO(#256): Report all errors to the caller.
 func Prelude(c *Checker) *Scope {
+	// The cached global scope encodes mutability decisions that depend on
+	// c.OverrideStore (see parseTypeDef → ConvertModuleWithOverrides). If a
+	// different store is in play, the cache is stale — invalidate it.
+	//
+	// Identity comparison is intentional: OverrideStore is constructed by
+	// Merge and is read-only thereafter (Resolve never writes), so equal
+	// pointers imply equal contents. In-place mutation of a store after
+	// caching would defeat this — callers must not mutate.
+	if cachedGlobalScope != nil && cachedOverrideStore != c.OverrideStore {
+		cachedGlobalScope = nil
+		cachedPackageRegistry = nil
+		cachedOverrideStore = nil
+	}
 	if cachedGlobalScope != nil {
 		c.SymbolID = cachedSymbolIDCounter
 		c.CustomMatcherSymbolID = cachedCustomMatcherSymbolID
@@ -759,6 +774,7 @@ func Prelude(c *Checker) *Scope {
 	cachedSymbolIDCounter = c.SymbolID
 	cachedCustomMatcherSymbolID = c.CustomMatcherSymbolID
 	cachedPackageRegistry = c.PackageRegistry.Copy() // copy to prevent test pollution
+	cachedOverrideStore = c.OverrideStore
 
 	return c.GlobalScope.WithNewScope()
 }

@@ -2,6 +2,7 @@ package interop
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -443,6 +444,32 @@ func identNameFromAst(n *ast.Ident) string {
 	return n.Name
 }
 
+// buildOwnerQualIdent constructs the QualIdent that names the
+// enclosing class in the override store, walking outward from the
+// nearest namespace segment. For "Outer.Inner" + "Cls" it returns
+// Member{Member{Ident("Outer"), "Inner"}, "Cls"} so walkChild can
+// descend through nested NamespaceScope children. Returns nil when
+// className is empty (free-function lookups).
+func buildOwnerQualIdent(namespacePath, className string) dts_parser.QualIdent {
+	if className == "" {
+		return nil
+	}
+	var cur dts_parser.QualIdent
+	if namespacePath != "" {
+		for seg := range strings.SplitSeq(namespacePath, ".") {
+			if cur == nil {
+				cur = dts_parser.NewIdent(seg, ast.Span{})
+			} else {
+				cur = &dts_parser.Member{Left: cur, Right: dts_parser.NewIdent(seg, ast.Span{})}
+			}
+		}
+	}
+	if cur == nil {
+		return dts_parser.NewIdent(className, ast.Span{})
+	}
+	return &dts_parser.Member{Left: cur, Right: dts_parser.NewIdent(className, ast.Span{})}
+}
+
 // pathForMember constructs a Path for the member in a ClassifyContext.
 // Returns a zero Path if the member shape is one Classify doesn't query
 // the store for (e.g. unsupported member type).
@@ -450,10 +477,7 @@ func pathForMember(ctx ClassifyContext) Path {
 	if ctx.Member == nil {
 		return Path{}
 	}
-	var owner dts_parser.QualIdent
-	if ctx.ClassName != "" {
-		owner = dts_parser.NewIdent(ctx.ClassName, ast.Span{})
-	}
+	owner := buildOwnerQualIdent(ctx.NamespacePath, ctx.ClassName)
 	p := Path{
 		Module: ctx.ModulePath,
 		Owner:  owner,

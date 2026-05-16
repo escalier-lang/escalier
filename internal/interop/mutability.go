@@ -48,6 +48,18 @@ type ClassifyContext struct {
 	ClassName  string                 // enclosing class name (empty if none)
 	ModulePath string                 // module path (empty if none)
 
+	// NamespacePath is the dotted name of the enclosing `namespace`
+	// chain (e.g. "Outer.Inner"); empty when the class lives at the
+	// module root. pathForMember combines it with ClassName to build a
+	// Member-chain Owner that OverrideStore.walkChild can descend
+	// through nested NamespaceScopes.
+	NamespacePath string
+
+	// Store, if non-nil, is the merged override store consulted by tiers
+	// 1 and 4 (user overrides and built-in overrides). nil is permitted
+	// and means "no overrides registered".
+	Store *OverrideStore
+
 	// Base, if non-nil, is the inheritance fallthrough context: if all
 	// per-class tiers (1–6) miss on `Member`, `Classify` recurses on
 	// *Base. The caller is responsible for resolving the same-named
@@ -59,7 +71,18 @@ type ClassifyContext struct {
 // seven-tier resolution order defined in
 // planning/interop_mutability/requirements.md.
 func Classify(ctx ClassifyContext) ClassifyResult {
+	// Consult the override store once. Its Source field tells us whether
+	// this is a tier-1 (user) hit or a tier-4 (built-in) hit — applied at
+	// the correct rung below.
+	var override *Effective
+	if ctx.Store != nil {
+		override = ctx.Store.Resolve(pathForMember(ctx))
+	}
+
 	// Tier 1: user override files — §5.
+	if override != nil && override.Source == TierUserOverride {
+		return overrideToResult(override)
+	}
 
 	// Tier 2: @esctype tag — §9.
 
@@ -69,6 +92,9 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 	}
 
 	// Tier 4: builtin overrides (stdlib, FP libraries) — §6.
+	if override != nil && override.Source == TierBuiltinOverride {
+		return overrideToResult(override)
+	}
 
 	// Tier 5: get* prefix rule.
 	if result, ok := classifyGetPrefix(ctx); ok {

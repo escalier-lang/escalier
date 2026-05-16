@@ -110,7 +110,7 @@ itself cannot represent.
   information directly in their `.d.ts`. (Round-trip emission from
   `.esc` is the same path.) This makes Escalier-to-Escalier interop
   lossless across the `.d.ts` boundary.
-- **Precedence.** `@esctype` outranks core principles, shipped
+- **Precedence.** `@esctype` outranks core principles, built-in
   overrides, and all heuristics, but **user overrides win over
   `@esctype`**. This gives the consuming project a way to correct a
   vendored `.d.ts` whose `@esctype` tag is wrong, stale, or
@@ -137,7 +137,7 @@ stop at the first match:
 3. **Explicit author signals** — `readonly this`, getters/setters,
    `Readonly<T>` collection variant, `readonly` properties (principle
    #6), well-known symbol methods.
-4. **Shipped overrides** — built-ins (principle covers `Array`/`Map`/`Set`
+4. **Built-in overrides** — built-ins (principle covers `Array`/`Map`/`Set`
    readonly variants by shape; explicit override entries cover `Date`,
    `RegExp`, `Promise`, etc.) and known FP libraries (principle #5).
 5. **Primitive wrapper classes** (principle #3) — `Number`, `BigInt`,
@@ -255,7 +255,7 @@ classifier for any library where the compiler ships explicit knowledge
 (built-ins, well-known FP / immutability libraries per principle #5).
 The same machinery serves user-supplied corrections for third-party APIs.
 
-- **Shipped overrides** — bundled with the compiler. Cover built-in
+- **Built-in overrides** — bundled with the compiler. Cover built-in
   classes that don't have a `Readonly*` variant in TS's lib
   files (`Date`, `RegExp`, `Promise`, `Error`, typed arrays, `URL`,
   `URLSearchParams`, `WeakRef`/`WeakMap`/`WeakSet`, etc.) plus
@@ -265,7 +265,7 @@ The same machinery serves user-supplied corrections for third-party APIs.
   `Readonly*` / mutable interface split that TypeScript ships.
 - **User override files** — checked into the consuming project,
   declaring per-module corrections for third-party APIs. Loaded
-  through the same machinery as the shipped overrides.
+  through the same machinery as the built-in overrides.
 
 Inline overrides on a TS symbol are expressed via `@esctype` (see
 Round-tripping section) — that mechanism subsumes any narrower
@@ -321,16 +321,16 @@ divergence. This keeps overrides honest: an override can refine
 *mutability* (and, later, lifetimes / throws) but cannot quietly
 fork the shape of a built-in API.
 
-To keep shipped overrides in sync as upstream `.d.ts` files evolve,
+To keep built-in overrides in sync as upstream `.d.ts` files evolve,
 the compiler test suite includes a **consistency test** that runs
-over every shipped override entry:
+over every built-in override entry:
 
 - For TS built-in symbols, the upstream is the bundled TS lib
   `.d.ts` set pinned to the compiler's TS lib version.
-- For shipped third-party overrides (Ramda, fp-ts, Effect,
+- For built-in third-party overrides (Ramda, fp-ts, Effect,
   Immutable.js, lodash/fp, etc.), the upstream is the corresponding
   `@types/*` package (or the library's own bundled types) at a
-  pinned version recorded alongside the shipped override.
+  pinned version recorded alongside the built-in override.
 
 Every overridden symbol has an upstream `.d.ts` counterpart: even
 Escalier-authored libraries ship `.d.ts` for TypeScript
@@ -356,7 +356,7 @@ drift as a deliberate fix-up step rather than letting it accumulate.
   directory at the root of a package — i.e. the directory containing
   the package's `package.json`. The compiler walks the following
   locations in order, with later locations winning on conflict:
-  1. Shipped overrides bundled with the compiler (resolution-order
+  1. Built-in overrides bundled with the compiler (resolution-order
      tier 4).
   2. `node_modules/<dep>/overrides/**/*.esc` — overrides shipped by
      a dependency for itself or its own deps (resolution-order

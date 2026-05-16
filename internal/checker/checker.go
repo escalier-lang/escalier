@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -32,6 +33,12 @@ type Checker struct {
 	// AmbiguousLifetimeElisionError on those signatures — Phase 12 (TS
 	// interop) will replace this with per-source-file policy.
 	loadingExternalTypes bool
+
+	// OverrideStore holds the merged tier-1 (user) and tier-4 (builtin)
+	// mutability overrides consulted while converting TypeScript
+	// declarations. nil means "no overrides registered"; Classify falls
+	// through to its built-in heuristics.
+	OverrideStore *interop.OverrideStore
 }
 
 func NewChecker(ctx context.Context) *Checker {

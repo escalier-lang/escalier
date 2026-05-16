@@ -93,7 +93,7 @@ func TestConvertStatement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stmt := parseStatement(t, tt.input)
-			result, err := convertStatement(stmt)
+			result, err := convertStatement(&convertCtx{}, stmt)
 
 			if tt.wantError {
 				if err == nil {
@@ -525,7 +525,7 @@ func TestConvertClassDecl(t *testing.T) {
 				t.Fatalf("expected ClassDecl, got %T", stmt)
 			}
 
-			result, err := convertClassDecl(dc)
+			result, err := convertClassDecl(&convertCtx{}, dc)
 
 			if tt.wantError {
 				if err == nil {

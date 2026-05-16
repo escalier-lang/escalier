@@ -17,10 +17,10 @@ table below makes both explicit. Status legend: ✅ done,
 | 1   | Existing surface area                  | ✅      | —           | Descriptive only.                                                                                                                                                                                                                                                                              |
 | 2.1 | Spec scaffolding                       | ✅      | —           | `override` keyword, fixtures, merge-semantics doc, `@esctype` grammar.                                                                                                                                                                                                                         |
 | 2.2 | Parser sub-task                        | ✅      | 2.1         | `declare module/global/namespace` and `override` prefix accepted by [internal/parser/decl.go](../../internal/parser/decl.go); `fixtures/interop_mutability/overrides/example.esc` is no longer `.future`.                                                                                       |
-| 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/interop/mutability.go](../../internal/interop/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierShippedOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
+| 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/interop/mutability.go](../../internal/interop/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
 | 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/interop/mutability.go](../../internal/interop/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
 | 5   | Override file format, loader, merge    | ⬜      | 2.2, 3      | Largest single chunk. No code yet.                                                                                                                                                                                                                                                             |
-| 6   | Shipped overrides                      | ⬜      | 5           | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`).                                                                                                                                       |
+| 6   | Built-in overrides                      | ⬜      | 5           | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`).                                                                                                                                       |
 | 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/interop/mutability.go](../../internal/interop/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
 | 8   | Type-printer round-trip audit          | ⬜      | —           | Independent; prerequisite for §9 emit. Can be done at any time.                                                                                                                                                                                                                                |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
@@ -41,7 +41,7 @@ is finished first):
 2. **§4 cleanup.** Rename `classifyTier2` → `classifyTier3`,
    finish remaining tier-3 cases.
 3. **§5 (override system).** Largest chunk; unblocks §6, §9, §11.
-4. **§6 (shipped overrides).** Author the stdlib + FP data,
+4. **§6 (built-in overrides).** Author the stdlib + FP data,
    including the always-immutable built-ins.
 5. **§7 (heuristics).** Add `classifyTier5` (get-prefix) and
    `classifyTier6` (name-based) plus inheritance fallthrough.
@@ -86,7 +86,7 @@ writing code that depends on either.
   [expect.go](../../internal/parser/expect.go)). Tests pass; no
   conflicts with existing identifiers.
 - **`overrides/` discovery rule** specified in
-  [requirements.md](requirements.md) — three-location walk (shipped
+  [requirements.md](requirements.md) — three-location walk (built-in
   tier 4 → dep `node_modules/*/overrides/` tier 1a → consuming
   project tier 1b), recursive within each, subdirectory layout has
   no semantic effect. "Root of a package" means the directory
@@ -189,7 +189,7 @@ behavior (so output is unchanged).
       TierUserOverride                            // 1: requirements tier 1
       TierEsctype                                 // 2
       TierExplicitSignal                          // 3
-      TierShippedOverride                         // 4
+      TierBuiltinOverride                         // 4
       TierGetPrefix                               // 5
       TierNameHeuristic                           // 6
       TierDefault                                 // 7
@@ -247,7 +247,7 @@ fixture classifies correctly, with `Source = TierExplicitSignal`.
 ## 5. Override file format, loader & merge
 
 Goal: build the eager-merge pipeline (Approach A, per requirements
-§"Implementation decision") that §6 (shipped overrides) and the
+§"Implementation decision") that §6 (built-in overrides) and the
 user override file feature both depend on.
 
 ### 5.1 Merge model
@@ -280,7 +280,7 @@ There are two layers of competition:
 
 1. **Within the override system** — three internal tiers
    (`OverrideTierUserProject` > `OverrideTierUserDep` >
-   `OverrideTierShipped`). The loader builds one module map per
+   `OverrideTierBuiltin`). The loader builds one module map per
    tier (a `map[string]*ModuleScope`).
    The merge collapses them into a single override scope by walking
    slot-by-slot and keeping the highest-precedence non-empty entry.
@@ -302,7 +302,7 @@ leaf.
 After merge, `Effective.Source` records which tier of the broader
 7-tier resolution ladder produced the value: `TierUserOverride`
 (ladder tier 1) when a user-project or user-dep entry won, or
-`TierShippedOverride` (ladder tier 4) when only a shipped entry was
+`TierBuiltinOverride` (ladder tier 4) when only a built-in entry was
 present. `Classify` reads this value to decide where in the ladder
 the override fits, and §11's warning predicate reads it to
 suppress warnings on override-backed classifications.
@@ -319,7 +319,7 @@ suppress warnings on override-backed classifications.
   merging (legacy TS) is not supported.
 - *Across `OverrideTier`s:* the lower-precedence entry is silently
   dropped. This is the whole point of the tier system — user
-  overrides shadow shipped ones without complaint.
+  overrides shadow built-in ones without complaint.
 
 The same shadowing applies to `@all_pure`: a module pragma at a
 higher tier wins over the same pragma at a lower tier, but does
@@ -472,14 +472,14 @@ type MemberSet struct {
 // Effective.Source.
 //
 // Lower integer = higher precedence (UserProject beats UserDep
-// beats Shipped). This matches the convention used by
+// beats Built-in). This matches the convention used by
 // ResolutionTier where TierUserOverride = 1 outranks
-// TierShippedOverride = 4.
+// TierBuiltinOverride = 4.
 type OverrideTier int
 const (
     OverrideTierUserProject OverrideTier = iota // requirements tier 1b
     OverrideTierUserDep                         // requirements tier 1a
-    OverrideTierShipped                         // requirements tier 4
+    OverrideTierBuiltin                         // requirements tier 4
 )
 
 // Effective is the merged result for a single member. It carries
@@ -550,13 +550,13 @@ func Build(
     tc TypeChecker,
     root string,
     deps []DepInfo,
-    shipped fs.FS,
+    builtin fs.FS,
     originals map[string]*ModuleScope,
 ) (*OverrideStore, []error)
 ```
 
-1. Walk `shipped` (embedded `fs.FS` populated in §6) — emit
-   `Entry`s with `OverrideTier = OverrideTierShipped`.
+1. Walk `builtin` (embedded `fs.FS` populated in §6) — emit
+   `Entry`s with `OverrideTier = OverrideTierBuiltin`.
 2. For each dep in `deps`, walk `<dep.Dir>/overrides/**/*.esc` — emit
    with `OverrideTier = OverrideTierUserDep`. `dep.Dir` is the
    directory containing that dep's `package.json`.
@@ -593,7 +593,7 @@ func Build(
    collapsed[slot] := first non-nil of (
        userProject[slot],
        userDep[slot],
-       shipped[slot])
+       builtin[slot])
    ```
 
    Concretely, the walk descends `Modules` → `Container` (`Free`
@@ -664,7 +664,7 @@ wins when present, original otherwise), and produce a fresh
     wrapper stripped from `SelfParam.Type` (so `ReceiverIsMut`
     reports false), and `Source` set per the contributing
     `OverrideTier` — `TierUserOverride` for UserProject/UserDep,
-    `TierShippedOverride` for Shipped. Free functions and static
+    `TierBuiltinOverride` for Built-in. Free functions and static
     methods (`SelfParam == nil`) are unaffected by `@all_pure`.
 
 Generics arity is checked at two places:
@@ -849,18 +849,18 @@ Extend `ClassifyContext` with `Store *OverrideStore` (nil
 is allowed and means "no overrides registered"). `Classify` calls
 `Store.Resolve(path)` exactly once at the very top of the cascade.
 The merge has already decided whether a user-project, user-dep, or
-shipped entry won, and stamped that decision on `Effective.Source`
-as either `TierUserOverride` or `TierShippedOverride`. So:
+built-in entry won, and stamped that decision on `Effective.Source`
+as either `TierUserOverride` or `TierBuiltinOverride`. So:
 
 - If `Resolve` returns nil: fall through to tier 2 (`@esctype`).
 - If `Resolve` returns an `Effective` with `Source =
   TierUserOverride`: the result lands at ladder tier 1.
 - If `Resolve` returns an `Effective` with `Source =
-  TierShippedOverride`: the result lands at ladder tier 4 — but
+  TierBuiltinOverride`: the result lands at ladder tier 4 — but
   *only* if no earlier tier (2 or 3) supersedes it. Concretely:
   `Classify` evaluates tier 1 (the `TierUserOverride` case), then
   tier 2 (`@esctype`), then tier 3 (strong signals), and only
-  then accepts a `TierShippedOverride` hit. The override store
+  then accepts a `TierBuiltinOverride` hit. The override store
   thus contributes to two non-adjacent ladder rungs; in code,
   consult the store once at the top, save the result, and apply
   it at the right tier.
@@ -905,7 +905,7 @@ All tests live in `internal/interop/`:
   parse → check → extract → merge → resolve pipeline.
 
 Exit criteria: loader + merge covered by unit tests; `Classify`
-consults the merged store but no overrides are shipped yet
+consults the merged store but no built-in overrides exist yet
 (§6 ships them).
 
 ### 5.13 Deferred to a follow-up PR
@@ -1032,28 +1032,28 @@ reviewable:
   destructured patterns in override files with a clear
   error.
 
-## 6. Shipped overrides
+## 6. Built-in overrides
 
 Goal: author the data tables that the resolver loads at startup.
 
 ### 6.1 Bundling mechanism
 
-Shipped override `.esc` files live under
+Built-in override `.esc` files live under
 `internal/interop/data/` and are embedded into the binary with
 `//go:embed data/builtins/* data/libs/*` declared in
 `interop/data.go`:
 
 ```go
 //go:embed data
-var ShippedFS embed.FS
+var BuiltinFS embed.FS
 ```
 
-`loader.Load` accepts `ShippedFS` as its `shipped` argument so tests
+`loader.Load` accepts `BuiltinFS` as its `builtin` argument so tests
 can substitute a synthetic FS without touching disk.
 
 ### 6.2 Module-name mapping
 
-A shipped override file declares which TS module(s) it applies to
+A built-in override file declares which TS module(s) it applies to
 with a header pragma (defined in §2's grammar):
 
 ```escalier
@@ -1078,7 +1078,7 @@ Three sub-tasks, the first two parallelizable:
     (`Number`, `BigInt`, `String`, `Boolean`), plus `Symbol` and
     `Promise`. Every method declares `self` (non-mutating
     receiver). These are written out explicitly rather than
-    special-cased in `Classify` — over time we want shipped
+    special-cased in `Classify` — over time we want built-in
     overrides to be the primary source of mutability / lifetime /
     throws information, independent of any one version of
     TypeScript's lib declarations.
@@ -1123,7 +1123,7 @@ Three sub-tasks, the first two parallelizable:
   than per-method.
 
 - **Consistency test against original `.d.ts`.** Test in the
-  compiler suite that runs over every shipped override entry. Every
+  compiler suite that runs over every built-in override entry. Every
   override has a corresponding original `.d.ts` — Escalier-authored
   libraries also ship `.d.ts` for TypeScript back-compat, so there
   is no "no original types" case:
@@ -1134,7 +1134,7 @@ Three sub-tasks, the first two parallelizable:
     consistency baseline.
   - FP / immutability libraries → corresponding `@types/*` package
     (or the library's own bundled types), also pinned via
-    `package.json` alongside the shipped override.
+    `package.json` alongside the built-in override.
   For each entry, look up the original declaration, compare
   non-receiver arity / parameter types / return type under the
   same mapping the merge uses, and fail the build on divergence.
@@ -1149,8 +1149,8 @@ Three sub-tasks, the first two parallelizable:
   change the version in `package.json`, run the consistency test,
   resolve any reported drift.
 
-  The consistency test (`shipped_consistency_test.go`) iterates
-  every entry in `ShippedFS`, parses the corresponding original
+  The consistency test (`builtin_consistency_test.go`) iterates
+  every entry in `BuiltinFS`, parses the corresponding original
   declaration from the installed `node_modules/typescript/lib/`
   or `node_modules/@types/<lib>/` path (per the **Sourcing**
   paragraph above), and calls `consistency.CheckSet` — the same
@@ -1159,10 +1159,10 @@ Three sub-tasks, the first two parallelizable:
 Tests:
 
 - Fixture per library under
-  `fixtures/interop_mutability/shipped_<lib>/` that imports a
+  `fixtures/interop_mutability/builtin_<lib>/` that imports a
   representative subset and asserts the receiver mutability via
   call-site type errors (mutate through immutable binding fails).
-- `shipped_consistency_test.go` as described above.
+- `builtin_consistency_test.go` as described above.
 - A regression test asserting that the embedded FS is non-empty
   and every embedded file parses.
 
@@ -1183,14 +1183,14 @@ existing `classifyTier2`.
 Note: built-in classes whose instances have no mutable surface
 (the primitive wrappers `Number`/`BigInt`/`String`/`Boolean`,
 plus `Symbol` and `Promise`) are **not** modelled here. They are
-authored as explicit per-method shipped overrides in §6 alongside
+authored as explicit per-method built-in overrides in §6 alongside
 the rest of the stdlib. The rationale is the longer-term goal of
 decoupling Escalier from any one version of TypeScript's lib
 declarations: mutability, lifetimes, and throws information
 should ultimately come from primary sources (ECMAScript spec,
 MDN, library docs), with TypeScript's `.d.ts` being just one
 input. Special-casing these classes inside `Classify` would
-short-circuit that pipeline; routing them through shipped
+short-circuit that pipeline; routing them through built-in
 overrides keeps the same authoritative path the rest of the
 stdlib uses.
 
@@ -1506,7 +1506,7 @@ type ClassifyResult struct {
     Source      ResolutionTier
     // Replacement is non-nil for tiers that supply a full type
     // (tier 1 / TierUserOverride, tier 2 / TierEsctype, tier 4 /
-    // TierShippedOverride). When set, decl.go uses it wholesale
+    // TierBuiltinOverride). When set, decl.go uses it wholesale
     // and ignores SelfMut — the receiver shape lives on
     // Replacement.(*FuncType).SelfParam.
     Replacement *type_system.Type
@@ -1529,8 +1529,8 @@ store's `TierUserOverride` path *before* `classifyTier2`. If both
 apply, the store wins and the symbol's `Source` is
 `TierUserOverride` — never `TierEsctype` — which is what the "user
 override beats `@esctype`" fixture verifies. The store's
-`TierShippedOverride` path is evaluated *after* `classifyTier2`
-(see §5.11), so `@esctype` outranks shipped overrides.
+`TierBuiltinOverride` path is evaluated *after* `classifyTier2`
+(see §5.11), so `@esctype` outranks built-in overrides.
 
 ### 9.4 TSDoc tooling
 
@@ -1717,7 +1717,7 @@ the diagnostic includes the "add an explicit signal" suggestion —
 this is the one place a heuristic produces a hard error rather
 than the §11 warning. `TierUserSource` and the
 explicit tiers (`TierUserOverride`, `TierEsctype`,
-`TierExplicitSignal`, `TierShippedOverride`) do not trigger the
+`TierExplicitSignal`, `TierBuiltinOverride`) do not trigger the
 suggestion.
 
 **Import direction.** `checker` already depends on `interop` for
@@ -1861,7 +1861,7 @@ rather than the bare number.
 The warning must **not** fire when:
 
 - `Source ∈ {TierUserSource, TierUserOverride, TierEsctype,
-  TierExplicitSignal, TierShippedOverride, TierDefault}`. (The
+  TierExplicitSignal, TierBuiltinOverride, TierDefault}`. (The
   `TierDefault` case is "assume mutating"; non-mutating calls
   can't reach that tier, so it can't trigger the warning in
   practice — listed for completeness.)
@@ -1876,7 +1876,7 @@ The warning must **not** fire when:
 - `heuristic_warns/` — non-mutating call resolved by tier 6;
   flag on → warning, flag off → silent. Compare diagnostic
   snapshots for both runs.
-- `override_silent/` — same call but a shipped override pins the
+- `override_silent/` — same call but a built-in override pins the
   classification; flag on → silent.
 - `esctype_silent/` — `@esctype` provides the type; flag on → silent.
 - `strong_signal_silent/` — `readonly this` on the method; flag on
@@ -1926,7 +1926,7 @@ Resolved:
 - Override-file location precedence — see requirements
   §"Override file format". Tier 1b consuming-project wins over
   tier 1a `node_modules/<dep>/overrides/`; both win over tier 4
-  shipped.
+  built-in.
 - `@esctype` `*/`-in-strings escape — `*\/` on emit, unescape on
   consume (see §2).
 - Type printer reparseability — covered by §8.
