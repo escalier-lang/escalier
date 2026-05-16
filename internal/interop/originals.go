@@ -3,6 +3,7 @@ package interop
 import (
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -62,14 +63,16 @@ func BuildOriginal(ns *type_system.Namespace) *ModuleScope {
 // fillContainer populates `c` from the namespace, applying trio
 // fusion before falling back to the literal mapping.
 func fillContainer(c *Container, ns *type_system.Namespace) {
-	// First pass: detect trios. `consumedTypes` records type-side
-	// names already absorbed into a fused ClassScope so the
-	// fall-through loop doesn't re-emit them as Free entries.
-	consumedTypes := make(map[string]bool)
-	consumedValues := make(map[string]bool)
+	// `consumedTypes` records type-side *sibling* names absorbed by a
+	// fused ClassScope (e.g. `FooConstructor` when fusing `Foo`). The
+	// primary name doesn't need to appear here — the fall-through skips
+	// it via the `c.Children` check below. `consumedValues` records
+	// value-side names absorbed by either fusion path.
+	consumedTypes := set.NewSet[string]()
+	consumedValues := set.NewSet[string]()
 
 	for name, ta := range ns.Types {
-		if consumedTypes[name] {
+		if consumedTypes.Contains(name) {
 			continue
 		}
 		if cs := tryFuseTrio(ns, name, ta, consumedTypes, consumedValues); cs != nil {
@@ -81,7 +84,7 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 	// a ConstructorElem. (Skip names already consumed by trio fusion
 	// or by an earlier value-only Escalier-class pass.)
 	for name, b := range ns.Values {
-		if consumedValues[name] {
+		if consumedValues.Contains(name) {
 			continue
 		}
 		if b == nil || b.Type == nil {
@@ -112,7 +115,7 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 	// consumed by class fusion. Values win on name collision (see
 	// the type/value namespace caveat in BuildOriginal's doc).
 	for name, b := range ns.Values {
-		if consumedValues[name] {
+		if consumedValues.Contains(name) {
 			continue
 		}
 		if _, classed := c.Children[name]; classed {
@@ -127,7 +130,7 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 		}
 	}
 	for name, ta := range ns.Types {
-		if consumedTypes[name] {
+		if consumedTypes.Contains(name) {
 			continue
 		}
 		if _, present := c.Free[name]; present {
@@ -155,8 +158,8 @@ func tryFuseTrio(
 	ns *type_system.Namespace,
 	name string,
 	instTA *type_system.TypeAlias,
-	consumedTypes map[string]bool,
-	consumedValues map[string]bool,
+	consumedTypes set.Set[string],
+	consumedValues set.Set[string],
 ) *ClassScope {
 	if instTA == nil {
 		return nil
@@ -191,8 +194,8 @@ func tryFuseTrio(
 		return nil
 	}
 
-	consumedTypes[ctorName] = true
-	consumedValues[name] = true
+	consumedTypes.Add(ctorName)
+	consumedValues.Add(name)
 	return classScopeFromObjects(instObj, staticObj)
 }
 
@@ -206,8 +209,8 @@ func tryFuseEscalierClass(
 	ns *type_system.Namespace,
 	name string,
 	valType type_system.Type,
-	consumedTypes map[string]bool,
-	consumedValues map[string]bool,
+	consumedTypes set.Set[string],
+	consumedValues set.Set[string],
 ) *ClassScope {
 	staticObj, ok := valType.(*type_system.ObjectType)
 	if !ok {
@@ -227,10 +230,10 @@ func tryFuseEscalierClass(
 	if ta, present := ns.Types[name]; present && ta != nil {
 		instObj = unwrapToObject(ta.Type)
 		if instObj != nil {
-			consumedTypes[name] = true
+			consumedTypes.Add(name)
 		}
 	}
-	consumedValues[name] = true
+	consumedValues.Add(name)
 	return classScopeFromObjects(instObj, staticObj)
 }
 
