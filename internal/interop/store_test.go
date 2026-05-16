@@ -6,6 +6,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/stretchr/testify/require"
 )
 
 func ident(name string) *dts_parser.Ident {
@@ -18,9 +19,9 @@ func TestResolveFreeFunctionAtModuleTop(t *testing.T) {
 	store.Modules["lodash"] = &ModuleScope{
 		Container: Container{
 			Free: map[string]*Effective{
-				"map": {Type: fn, Source: TierShippedOverride},
+				"map": {Type: fn, Source: TierBuiltinOverride},
 			},
-			Children: map[string]*ChildScope{},
+			Children: map[string]ChildScope{},
 		},
 	}
 	got := store.Resolve(Path{
@@ -28,9 +29,8 @@ func TestResolveFreeFunctionAtModuleTop(t *testing.T) {
 		Name:   ident("map"),
 		Kind:   KindFree,
 	})
-	if got == nil || got.Type != fn {
-		t.Fatalf("expected free fn lookup to return fn; got %#v", got)
-	}
+	require.NotNil(t, got)
+	require.Same(t, fn, got.Type)
 }
 
 func TestResolveInstanceMethod(t *testing.T) {
@@ -39,15 +39,11 @@ func TestResolveInstanceMethod(t *testing.T) {
 	store.Modules[""] = &ModuleScope{
 		Container: Container{
 			Free: map[string]*Effective{},
-			Children: map[string]*ChildScope{
-				"Array": {
-					Container: Container{
-						Free:     map[string]*Effective{},
-						Children: map[string]*ChildScope{},
-					},
+			Children: map[string]ChildScope{
+				"Array": &ClassScope{
 					Instance: &MemberSet{
 						Methods: map[string]*Effective{
-							"map": {Type: fn, Source: TierShippedOverride},
+							"map": {Type: fn, Source: TierBuiltinOverride},
 						},
 						Getters:    map[string]*Effective{},
 						Setters:    map[string]*Effective{},
@@ -64,25 +60,20 @@ func TestResolveInstanceMethod(t *testing.T) {
 		Kind:   KindMethod,
 		Static: false,
 	})
-	if eff == nil || eff.Type != fn {
-		t.Fatalf("expected instance method lookup to return fn; got %#v", eff)
-	}
+	require.NotNil(t, eff)
+	require.Same(t, fn, eff.Type)
 	// Static lookup misses.
-	if got := store.Resolve(Path{
+	require.Nil(t, store.Resolve(Path{
 		Owner:  ident("Array"),
 		Name:   ident("map"),
 		Kind:   KindMethod,
 		Static: true,
-	}); got != nil {
-		t.Fatalf("expected static lookup to miss; got %#v", got)
-	}
+	}))
 }
 
 func TestResolveNilStoreReturnsNil(t *testing.T) {
 	var store *OverrideStore
-	if got := store.Resolve(Path{Module: "anything"}); got != nil {
-		t.Fatalf("nil store should resolve to nil; got %#v", got)
-	}
+	require.Nil(t, store.Resolve(Path{Module: "anything"}))
 }
 
 func TestCanonicalNameFromPK(t *testing.T) {
@@ -96,9 +87,7 @@ func TestCanonicalNameFromPK(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := canonicalNameFromPK(c.in); got != c.want {
-				t.Fatalf("canonicalNameFromPK = %q; want %q", got, c.want)
-			}
+			require.Equal(t, c.want, canonicalNameFromPK(c.in))
 		})
 	}
 }

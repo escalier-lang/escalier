@@ -22,6 +22,25 @@ func (e *ErrDuplicateMember) Error() string {
 	)
 }
 
+// ErrShapeConflict reports two declarations at the same Path with
+// incompatible variants — e.g. one declares `Foo` as a namespace and
+// the other as a class. Distinct from ErrDuplicateMember (which is for
+// same-shape collisions within a tier) so callers can render a more
+// specific diagnostic.
+type ErrShapeConflict struct {
+	Path          Path
+	First, Second Origin
+}
+
+func (e *ErrShapeConflict) Error() string {
+	return fmt.Sprintf(
+		"shape conflict for %s\n  first defined at %s:%d\n  redefined at %s:%d",
+		pathString(e.Path),
+		e.First.FilePath, e.First.Span.Start.Line,
+		e.Second.FilePath, e.Second.Span.Start.Line,
+	)
+}
+
 // ErrUnknownMember reports an override entry whose target does not
 // exist on the original declaration. `Available` is the list of
 // sibling names on the original's matching MemberSet for did-you-mean

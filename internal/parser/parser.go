@@ -110,6 +110,18 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	return ast.NewScript(*stmts, span), p.errors
 }
 
+// ParseDecls parses `source` as a stream of top-level declarations and
+// returns them. Unlike ParseLibFiles it does no namespace grouping by
+// path, and unlike ParseScript it admits decl productions directly
+// rather than wrapping them in DeclStmt. Intended for callers (e.g.
+// the interop override loader) that consume a single file's decl list
+// without the module/script scaffolding.
+func ParseDecls(ctx context.Context, source *ast.Source) ([]ast.Decl, []*Error) {
+	p := NewParser(ctx, source)
+	decls := p.decls()
+	return decls, p.errors
+}
+
 func (p *Parser) decls() []ast.Decl {
 	decls := []ast.Decl{}
 

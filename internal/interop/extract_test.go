@@ -31,14 +31,14 @@ func TestExtractFreeFunctionFromDeclareGlobal(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"shipped:/test.esc",
-		OverrideTierShipped,
+		"builtin:/test.esc",
+		OverrideTierBuiltin,
 	)
 	require.Contains(t, out, "", "expected entry under \"\" (global)")
 	eff := out[""].Free["foo"]
 	require.NotNil(t, eff, "expected Free[foo] to be set")
 	require.Same(t, fn, eff.Type, "expected eff.Type to be the func from the namespace")
-	require.Equal(t, OverrideTierShipped, eff.Tier)
+	require.Equal(t, OverrideTierBuiltin, eff.Tier)
 }
 
 func TestExtractFreeFunctionFromDeclareModule(t *testing.T) {
@@ -64,8 +64,8 @@ func TestExtractFreeFunctionFromDeclareModule(t *testing.T) {
 		[]ast.Decl{declareModule},
 		nil,
 		map[string]*type_system.Namespace{"lodash": modNs},
-		"shipped:/lodash.esc",
-		OverrideTierShipped,
+		"builtin:/lodash.esc",
+		OverrideTierBuiltin,
 	)
 	require.Contains(t, out, "lodash")
 	eff := out["lodash"].Free["map"]
@@ -147,12 +147,12 @@ func TestExtractInterfaceInstanceMethod(t *testing.T) {
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
 		"test.esc",
-		OverrideTierShipped,
+		OverrideTierBuiltin,
 	)
 	ms := out[""]
 	require.NotNil(t, ms, "expected global contribution")
-	child := ms.Children["Pinger"]
-	require.NotNil(t, child, "expected Children[Pinger]")
+	child, ok := ms.Children["Pinger"].(*InterfaceScope)
+	require.True(t, ok, "expected Children[Pinger] to be *InterfaceScope")
 	require.NotNil(t, child.Instance, "expected Instance MemberSet populated on interface child")
 	eff := child.Instance.Methods["ping"]
 	require.NotNil(t, eff)
@@ -187,11 +187,9 @@ func TestExtractNamespaceNesting(t *testing.T) {
 	)
 	ms := out[""]
 	require.NotNil(t, ms, "expected global contribution")
-	child := ms.Children["Util"]
-	require.NotNil(t, child, "expected Children[Util] for nested namespace")
-	require.Nil(t, child.Instance, "namespace child should not have Instance populated")
-	require.Nil(t, child.Static, "namespace child should not have Static populated")
-	eff := child.Free["inner"]
+	child, ok := ms.Children["Util"].(*NamespaceScope)
+	require.True(t, ok, "expected Children[Util] to be *NamespaceScope")
+	eff := child.Container.Free["inner"]
 	require.NotNil(t, eff, "expected nested namespace fn")
 	require.Same(t, fn, eff.Type)
 }
@@ -221,7 +219,7 @@ func TestExtractDestructuredVarDecl(t *testing.T) {
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
 		"test.esc",
-		OverrideTierShipped,
+		OverrideTierBuiltin,
 	)
 	ms := out[""]
 	require.NotNil(t, ms, "expected global contribution")
@@ -269,12 +267,12 @@ func TestExtractClassDropsStaticMembers(t *testing.T) {
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
 		"test.esc",
-		OverrideTierShipped,
+		OverrideTierBuiltin,
 	)
 	ms := out[""]
 	require.NotNil(t, ms)
-	child := ms.Children["Widget"]
-	require.NotNil(t, child, "expected Children[Widget]")
+	child, ok := ms.Children["Widget"].(*ClassScope)
+	require.True(t, ok, "expected Children[Widget] to be *ClassScope")
 	require.NotNil(t, child.Instance)
 	require.NotNil(t, child.Instance.Methods["inst"], "expected instance method inst recorded")
 	require.NotNil(t, child.Static, "expected Static MemberSet allocated (class shape signal)")
@@ -299,7 +297,7 @@ func TestExtractMissingNamespaceEntryProducesNilType(t *testing.T) {
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
 		"test.esc",
-		OverrideTierShipped,
+		OverrideTierBuiltin,
 	)
 	ms := out[""]
 	require.NotNil(t, ms, "expected module scope created even when bindings missing")

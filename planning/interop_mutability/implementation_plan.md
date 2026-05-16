@@ -1123,8 +1123,10 @@ Three sub-tasks, the first two parallelizable:
   than per-method.
 
 - **Consistency test against original `.d.ts`.** Test in the
-  compiler suite that runs over every shipped override entry where
-  a corresponding original `.d.ts` exists:
+  compiler suite that runs over every shipped override entry. Every
+  override has a corresponding original `.d.ts` — Escalier-authored
+  libraries also ship `.d.ts` for TypeScript back-compat, so there
+  is no "no original types" case:
   - Built-in symbols → TS lib `.d.ts` set bundled with the
     `typescript` version pinned in the repo's root
     [package.json](../../package.json) (currently `^5.7.2`).
@@ -1136,7 +1138,6 @@ Three sub-tasks, the first two parallelizable:
   For each entry, look up the original declaration, compare
   non-receiver arity / parameter types / return type under the
   same mapping the merge uses, and fail the build on divergence.
-  Libraries that ship no original types are exempt by definition.
   Bumping any pinned version surfaces drift as a deliberate
   fix-up step.
 

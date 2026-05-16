@@ -10,7 +10,7 @@ import (
 
 // OverrideStore holds the post-merge module map. Per-tier pre-merge
 // module maps exist only inside Build and are not retained — every
-// diagnostic that needs provenance reads Effective.Provenance, which
+// diagnostic that needs provenance reads Effective.Origins, which
 // already carries the contributing Origins.
 //
 // See planning/interop_mutability/implementation_plan.md §5.
@@ -29,9 +29,9 @@ func NewOverrideStore() *OverrideStore {
 // both ModuleScope and ChildScope so namespace-nested functions land in
 // the same slot as module-top-level functions.
 type Container struct {
-	Free     map[string]*Effective  // free functions, vals, type aliases
-	Children map[string]*ChildScope // nested namespaces / classes / interfaces
-	Origin   Origin                 // declaring file for diagnostics
+	Free     map[string]*Effective // free functions, vals, type aliases
+	Children map[string]ChildScope // nested namespaces / classes / interfaces
+	Origin   Origin                // declaring file for diagnostics
 }
 
 // ModuleScope is the per-module root.
@@ -43,14 +43,75 @@ type ModuleScope struct {
 	AllPureTier OverrideTier
 }
 
-// ChildScope is a namespace, class, or interface. Namespaces use only
-// Container.Free and Container.Children; classes/interfaces use Instance
-// and Static. A ChildScope with both shapes populated is an upstream
-// ErrDuplicateMember — namespace+class declaration merging is not supported.
-type ChildScope struct {
-	Container
-	Instance *MemberSet // nil for namespaces
-	Static   *MemberSet // nil for namespaces
+//sumtype:decl
+
+// ChildScope is one of {NamespaceScope, ClassScope, InterfaceScope} —
+// the three shapes a Container.Children entry can take. Class/namespace
+// declaration merging is not supported, so only NamespaceScope carries
+// nested Free/Children; class and interface scopes carry only their
+// MemberSet(s) and an Origin.
+type ChildScope interface {
+	isChildScope()
+	// ChildOrigin is the declaration site used for diagnostics.
+	ChildOrigin() Origin
+	// MembersFor returns Instance (static=false) or Static (static=true)
+	// for the variants that carry them: ClassScope has both; InterfaceScope
+	// has only Instance; NamespaceScope has neither. Returns nil when the
+	// requested side doesn't apply to the variant.
+	MembersFor(static bool) *MemberSet
+}
+
+// NamespaceScope is a `namespace Foo { ... }` block. Its Container
+// holds nested namespaces and free declarations; it has no instance
+// or static members.
+type NamespaceScope struct {
+	Container Container
+}
+
+// ClassScope is a `class Foo { ... }` declaration. Instance carries
+// non-static methods/getters/setters/properties + Ctor; Static carries
+// the static side. Class+namespace declaration merging is not
+// supported, so a ClassScope has no Free/Children — only an Origin.
+type ClassScope struct {
+	Origin   Origin
+	Instance *MemberSet
+	Static   *MemberSet
+}
+
+// InterfaceScope is an `interface Foo { ... }` declaration. Interfaces
+// have no static side, so only Instance is populated. Like ClassScope,
+// no namespace-merge side — just an Origin.
+type InterfaceScope struct {
+	Origin   Origin
+	Instance *MemberSet
+}
+
+func (*NamespaceScope) isChildScope() {}
+func (*ClassScope) isChildScope()     {}
+func (*InterfaceScope) isChildScope() {}
+
+func (s *NamespaceScope) ChildOrigin() Origin { return s.Container.Origin }
+func (s *ClassScope) ChildOrigin() Origin     { return s.Origin }
+func (s *InterfaceScope) ChildOrigin() Origin { return s.Origin }
+
+// MembersFor: NamespaceScope has no instance or static side.
+func (*NamespaceScope) MembersFor(bool) *MemberSet { return nil }
+
+// MembersFor: ClassScope returns Instance (static=false) or Static (static=true).
+func (s *ClassScope) MembersFor(static bool) *MemberSet {
+	if static {
+		return s.Static
+	}
+	return s.Instance
+}
+
+// MembersFor: InterfaceScope returns Instance for the instance side
+// and nil for static (interfaces have no static).
+func (s *InterfaceScope) MembersFor(static bool) *MemberSet {
+	if static {
+		return nil
+	}
+	return s.Instance
 }
 
 // MemberSet groups the four independent slots that share a name space
@@ -86,17 +147,17 @@ type OverrideTier int
 const (
 	OverrideTierUserProject OverrideTier = iota // requirements tier 1b
 	OverrideTierUserDep                         // requirements tier 1a
-	OverrideTierShipped                         // requirements tier 4
+	OverrideTierBuiltin                         // requirements tier 4
 )
 
 // ResolutionTierFor maps an OverrideTier to the broader ResolutionTier
-// the merge stamps on Effective.Source.
+// the merge sets on Effective.Source.
 func (t OverrideTier) ResolutionTierFor() ResolutionTier {
 	switch t {
 	case OverrideTierUserProject, OverrideTierUserDep:
 		return TierUserOverride
-	case OverrideTierShipped:
-		return TierShippedOverride
+	case OverrideTierBuiltin:
+		return TierBuiltinOverride
 	}
 	return TierDefault
 }
@@ -105,15 +166,28 @@ func (t OverrideTier) ResolutionTierFor() ResolutionTier {
 // (no receiver / self / mut self) is encoded structurally on Type's
 // *FuncType.SelfParam — callers use type_system.ReceiverIsMut.
 type Effective struct {
-	Type       type_system.Type
-	Source     ResolutionTier
-	Provenance []Origin
+	Type    type_system.Type
+	Source  ResolutionTier
+	Origins []Origin
 
 	// Tier records the OverrideTier that produced this leaf in the
-	// collapsed per-tier scope. Set by extract; consumed by merge when
-	// stamping Source. Not meaningful on Effectives after merge — merge
-	// derives Source from this field once and may then clear it.
+	// collapsed per-tier scope. Set by extract; consumed by merge to
+	// derive Source. Not meaningful on Effectives after merge.
 	Tier OverrideTier
+}
+
+// withTier returns a copy of e with Tier set to `ot` and Source derived
+// from it. Returns nil when called on a nil receiver. Copies rather
+// than mutating so the per-tier Effective produced by Extract is not
+// shared across collapse runs.
+func (e *Effective) withTier(tier OverrideTier) *Effective {
+	if e == nil {
+		return nil
+	}
+	cp := *e
+	cp.Tier = tier
+	cp.Source = tier.ResolutionTierFor()
+	return &cp
 }
 
 // OriginKind discriminates the kind of source location.
@@ -137,7 +211,7 @@ type Origin struct {
 	//     depend on the compiler's CWD). Use the path the user typed
 	//     where possible; don't normalize or symlink-resolve.
 	//   - Sources with no real path (embedded FS, synthetic input):
-	//     a "scheme:/path" form, e.g. "shipped:/data/libs/lodash.esc".
+	//     a "scheme:/path" form, e.g. "builtin:/data/libs/lodash.esc".
 	//     The colon-prefix disambiguates from a real path.
 	//   - Empty string is legal but renders as ":<line>" in diagnostics
 	//     and should be avoided outside tests.
@@ -167,6 +241,36 @@ type Path struct {
 	Static bool
 }
 
+// withMember returns a copy of p with the member-addressing trio
+// (Name, Kind, Static) set. Module and Owner — the navigation half of
+// the Path — are unchanged. An empty `name` clears Name (used for
+// Ctor, which has no name of its own).
+func (p Path) withMember(name string, kind MemberKind, static bool) Path {
+	if name != "" {
+		p.Name = dts_parser.NewIdent(name, ast.Span{})
+	} else {
+		p.Name = nil
+	}
+	p.Kind = kind
+	p.Static = static
+	return p
+}
+
+// withChild returns a copy of p with `name` appended to the Owner
+// chain — the breadcrumb of nested class/interface/namespace segments
+// the merge recursion has descended through. Used when the merge enters
+// a Container.Children[name] so leaves emitted beneath get a fully-
+// qualified Path for diagnostics.
+func (p Path) withChild(name string) Path {
+	right := dts_parser.NewIdent(name, ast.Span{})
+	if p.Owner == nil {
+		p.Owner = right
+	} else {
+		p.Owner = &dts_parser.Member{Left: p.Owner, Right: right}
+	}
+	return p
+}
+
 // Resolve walks Modules by Path. Returns nil if no override applies.
 func (s *OverrideStore) Resolve(p Path) *Effective {
 	if s == nil {
@@ -177,31 +281,36 @@ func (s *OverrideStore) Resolve(p Path) *Effective {
 		return nil
 	}
 
-	container := &mod.Container
-	var child *ChildScope
-	if p.Owner != nil {
-		child = walkChild(mod.Children, p.Owner)
-		if child == nil {
-			return nil
-		}
-		container = &child.Container
-	}
-
 	name := canonicalNameFromPK(p.Name)
-	if p.Kind == KindFree {
-		if container.Free == nil {
-			return nil
+
+	// Top-level of module: only KindFree is meaningful (member kinds
+	// require a class/interface owner).
+	if p.Owner == nil {
+		if p.Kind == KindFree {
+			return mod.Container.Free[name]
 		}
-		return container.Free[name]
+		return nil
 	}
 
+	child := walkChild(mod.Children, p.Owner)
 	if child == nil {
 		return nil
 	}
-	set := child.Instance
-	if p.Static {
-		set = child.Static
+
+	if p.Kind == KindFree {
+		// Free lookups can only land in a NamespaceScope — class and
+		// interface scopes don't carry a Free side.
+		ns, ok := child.(*NamespaceScope)
+		if !ok {
+			return nil
+		}
+		return ns.Container.Free[name]
 	}
+
+	// Member access (method/getter/setter/property/ctor): only class
+	// and interface variants carry MemberSets; NamespaceScope returns
+	// nil from MembersFor and falls through.
+	set := child.MembersFor(p.Static)
 	if set == nil {
 		return nil
 	}
@@ -221,21 +330,23 @@ func (s *OverrideStore) Resolve(p Path) *Effective {
 }
 
 // walkChild descends a Member chain through Container.Children. Returns
-// nil if any segment doesn't resolve.
-func walkChild(children map[string]*ChildScope, qi dts_parser.QualIdent) *ChildScope {
+// nil if any segment doesn't resolve. Only NamespaceScope can host
+// nested children — descent through a class/interface mid-chain fails.
+func walkChild(children map[string]ChildScope, qi dts_parser.QualIdent) ChildScope {
 	segs := qualIdentSegments(qi)
 	if len(segs) == 0 {
 		return nil
 	}
-	var cur *ChildScope
+	var cur ChildScope
 	for i, seg := range segs {
 		if i == 0 {
 			cur = children[seg]
 		} else {
-			if cur == nil || cur.Children == nil {
+			ns, ok := cur.(*NamespaceScope)
+			if !ok {
 				return nil
 			}
-			cur = cur.Children[seg]
+			cur = ns.Container.Children[seg]
 		}
 		if cur == nil {
 			return nil
