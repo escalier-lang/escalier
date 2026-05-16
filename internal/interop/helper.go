@@ -655,10 +655,11 @@ func convertMethodDecl(cctx *convertCtx, md *dts_parser.MethodDecl, className st
 	var receiver *ast.MethodReceiver
 	if !md.Modifiers.Static {
 		result := Classify(ClassifyContext{
-			Member:     md,
-			ClassName:  className,
-			ModulePath: cctx.modulePath,
-			Store:      cctx.store,
+			Member:        md,
+			ClassName:     className,
+			ModulePath:    cctx.modulePath,
+			NamespacePath: cctx.namespacePath,
+			Store:         cctx.store,
 		})
 		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: md.Span()}
 	}
@@ -726,10 +727,11 @@ func convertGetterDecl(cctx *convertCtx, gd *dts_parser.GetterDecl, className st
 	var receiver *ast.MethodReceiver
 	if !gd.Modifiers.Static {
 		result := Classify(ClassifyContext{
-			Member:     gd,
-			ClassName:  className,
-			ModulePath: cctx.modulePath,
-			Store:      cctx.store,
+			Member:        gd,
+			ClassName:     className,
+			ModulePath:    cctx.modulePath,
+			NamespacePath: cctx.namespacePath,
+			Store:         cctx.store,
 		})
 		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: gd.Span()}
 	}
@@ -767,10 +769,11 @@ func convertSetterDecl(cctx *convertCtx, sd *dts_parser.SetterDecl, className st
 	var receiver *ast.MethodReceiver
 	if !sd.Modifiers.Static {
 		result := Classify(ClassifyContext{
-			Member:     sd,
-			ClassName:  className,
-			ModulePath: cctx.modulePath,
-			Store:      cctx.store,
+			Member:        sd,
+			ClassName:     className,
+			ModulePath:    cctx.modulePath,
+			NamespacePath: cctx.namespacePath,
+			Store:         cctx.store,
 		})
 		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: sd.Span()}
 	}

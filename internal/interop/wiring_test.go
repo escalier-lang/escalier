@@ -67,6 +67,99 @@ declare class Foo {
 		"tier-4 override should flip findItem's receiver to mut self")
 }
 
+// TestConvertModuleWithOverrides_FlipsReceiverMut_NestedNamespace mirrors
+// the root-namespace wiring test but for a class nested inside a
+// `namespace` block. The override store keys the class by the qualified
+// path "Outer.Inner.findItem"; pathForMember must build a Member-chain
+// Owner (not a bare Ident) so OverrideStore.Resolve can walkChild
+// through the NamespaceScope down to the ClassScope.
+func TestConvertModuleWithOverrides_FlipsReceiverMut_NestedNamespace(t *testing.T) {
+	input := `
+declare namespace Outer {
+	class Inner {
+		findItem(): number;
+	}
+}
+`
+	dtsModule := parseModule(t, input)
+
+	// Baseline: no override → name heuristic → non-mut.
+	noOverride, err := ConvertModule(dtsModule)
+	require.NoError(t, err)
+	require.False(t, namespacedMethodReceiverMut(t, noOverride, "Outer", "Inner", "findItem"),
+		"baseline: findItem should default to immutable receiver")
+
+	receiver := type_system.NewNumPrimType(nil)
+	mutReceiver := type_system.NewMutType(nil, receiver)
+	fn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
+	fn.SelfParam = &type_system.FuncParam{Type: mutReceiver}
+
+	store := &OverrideStore{
+		Modules: map[string]*ModuleScope{
+			"": {
+				Container: Container{
+					Free: map[string]*Effective{},
+					Children: map[string]ChildScope{
+						"Outer": &NamespaceScope{
+							Container: Container{
+								Free: map[string]*Effective{},
+								Children: map[string]ChildScope{
+									"Inner": &ClassScope{
+										Instance: &MemberSet{
+											Methods: map[string]*Effective{
+												"findItem": {Type: fn, Source: TierBuiltinOverride},
+											},
+											Getters:    map[string]*Effective{},
+											Setters:    map[string]*Effective{},
+											Properties: map[string]*Effective{},
+										},
+										Static: NewMemberSet(),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	withOverride, err := ConvertModuleWithOverrides(dtsModule, store, "")
+	require.NoError(t, err)
+	require.True(t, namespacedMethodReceiverMut(t, withOverride, "Outer", "Inner", "findItem"),
+		"tier-4 override on Outer.Inner.findItem should flip the receiver to mut self")
+}
+
+// namespacedMethodReceiverMut walks the qualified-name namespace
+// (processNamespace flattens nested namespaces into "Outer.Inner"-keyed
+// AST namespaces) and returns the Mut flag of the named method.
+func namespacedMethodReceiverMut(t *testing.T, m *ast.Module, nsName, className, methodName string) bool {
+	t.Helper()
+	ns, ok := m.Namespaces.Get(nsName)
+	require.True(t, ok, "namespace %s missing", nsName)
+	for _, decl := range ns.Decls {
+		cd, ok := decl.(*ast.ClassDecl)
+		if !ok || cd.Name.Name != className {
+			continue
+		}
+		for _, elem := range cd.Body {
+			me, ok := elem.(*ast.MethodElem)
+			if !ok {
+				continue
+			}
+			keyIdent, ok := me.Name.(*ast.IdentExpr)
+			if !ok || keyIdent.Name != methodName {
+				continue
+			}
+			require.NotNil(t, me.Receiver, "method %s has no receiver", methodName)
+			return me.Receiver.Mut
+		}
+		t.Fatalf("class %s has no method %s", className, methodName)
+	}
+	t.Fatalf("class %s.%s not found", nsName, className)
+	return false
+}
+
 // methodReceiverMut pulls the named class out of the root namespace,
 // finds the named method, and returns its receiver's Mut flag.
 func methodReceiverMut(t *testing.T, m *ast.Module, className, methodName string) bool {

@@ -34,6 +34,16 @@ func TestPrelude_InvalidatesCacheOnOverrideStoreChange(t *testing.T) {
 	Prelude(c3)
 	require.NotSame(t, primed, cachedGlobalScope, "cache should be rebuilt when OverrideStore differs")
 	require.Same(t, c3.OverrideStore, cachedOverrideStore, "cached store pointer should track current Checker")
+	primedC3 := cachedGlobalScope
+
+	// Non-nil A → non-nil B: a second distinct store must also invalidate.
+	// Guards against regressions that only catch the nil→non-nil transition.
+	c4 := NewChecker(context.Background())
+	c4.OverrideStore = interop.NewOverrideStore()
+	require.NotSame(t, c3.OverrideStore, c4.OverrideStore, "test precondition: distinct store pointers")
+	Prelude(c4)
+	require.NotSame(t, primedC3, cachedGlobalScope, "cache should be rebuilt when transitioning between distinct non-nil stores")
+	require.Same(t, c4.OverrideStore, cachedOverrideStore)
 
 	// Reset so subsequent tests see a clean cache.
 	t.Cleanup(func() {

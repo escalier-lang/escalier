@@ -12,9 +12,15 @@ import (
 // convertCtx carries override-related state through the conversion
 // pipeline. nil store / empty modulePath mean "no overrides registered"
 // — Classify falls through to its built-in heuristics.
+//
+// namespacePath is the dotted name of the enclosing `namespace` chain
+// (e.g. "Outer.Inner") and is empty at the module root. It is threaded
+// into ClassifyContext so pathForMember can build a Member-chain Owner
+// that walkChild can descend through nested NamespaceScopes.
 type convertCtx struct {
-	store      *OverrideStore
-	modulePath string
+	store         *OverrideStore
+	modulePath    string
+	namespacePath string
 }
 
 // qualifiedName constructs a qualified namespace name by appending a child name to a parent name.
@@ -52,7 +58,12 @@ func processNamespace(
 			nestedName := qualifiedName(name, s.Name.Name)
 			nestedAmbient := inAmbientNamespace || s.Declare()
 			nestedExported := s.Export()
-			if err := processNamespace(cctx, nestedName, s.Statements, namespaces, nestedAmbient, nestedExported); err != nil {
+			nestedCctx := &convertCtx{
+				store:         cctx.store,
+				modulePath:    cctx.modulePath,
+				namespacePath: nestedName,
+			}
+			if err := processNamespace(nestedCctx, nestedName, s.Statements, namespaces, nestedAmbient, nestedExported); err != nil {
 				return fmt.Errorf("processing namespace %s: %w", s.Name.Name, err)
 			}
 

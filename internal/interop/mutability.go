@@ -48,6 +48,13 @@ type ClassifyContext struct {
 	ClassName  string                 // enclosing class name (empty if none)
 	ModulePath string                 // module path (empty if none)
 
+	// NamespacePath is the dotted name of the enclosing `namespace`
+	// chain (e.g. "Outer.Inner"); empty when the class lives at the
+	// module root. pathForMember combines it with ClassName to build a
+	// Member-chain Owner that OverrideStore.walkChild can descend
+	// through nested NamespaceScopes.
+	NamespacePath string
+
 	// Store, if non-nil, is the merged override store consulted by tiers
 	// 1 and 4 (user overrides and shipped overrides). nil is permitted
 	// and means "no overrides registered".

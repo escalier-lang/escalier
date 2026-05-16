@@ -172,10 +172,11 @@ func convertClassDecl(cctx *convertCtx, dc *dts_parser.ClassDecl) (*ast.ClassDec
 			allParams := append([]*ast.Param{selfParam}, params...)
 			fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, convertSpan(m.Span()))
 			ctorResult := Classify(ClassifyContext{
-				Member:     m,
-				ClassName:  dc.Name.Name,
-				ModulePath: cctx.modulePath,
-				Store:      cctx.store,
+				Member:        m,
+				ClassName:     dc.Name.Name,
+				ModulePath:    cctx.modulePath,
+				NamespacePath: cctx.namespacePath,
+				Store:         cctx.store,
 			})
 			bodyElems = append(bodyElems, &ast.ConstructorElem{
 				Fn:       fn,

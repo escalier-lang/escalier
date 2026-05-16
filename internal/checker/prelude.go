@@ -738,6 +738,11 @@ func Prelude(c *Checker) *Scope {
 	// The cached global scope encodes mutability decisions that depend on
 	// c.OverrideStore (see parseTypeDef → ConvertModuleWithOverrides). If a
 	// different store is in play, the cache is stale — invalidate it.
+	//
+	// Identity comparison is intentional: OverrideStore is constructed by
+	// Merge and is read-only thereafter (Resolve never writes), so equal
+	// pointers imply equal contents. In-place mutation of a store after
+	// caching would defeat this — callers must not mutate.
 	if cachedGlobalScope != nil && cachedOverrideStore != c.OverrideStore {
 		cachedGlobalScope = nil
 		cachedPackageRegistry = nil
