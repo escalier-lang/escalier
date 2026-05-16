@@ -1,11 +1,47 @@
 package checker
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/escalier-lang/escalier/internal/interop"
+	"github.com/stretchr/testify/require"
 )
+
+// TestPrelude_InvalidatesCacheOnOverrideStoreChange ensures the
+// process-wide Prelude cache is keyed by c.OverrideStore: a second
+// Checker with a different (non-nil) store must not reuse a global
+// scope built against a different store, because that scope encodes
+// override-dependent mutability decisions from parseTypeDef.
+func TestPrelude_InvalidatesCacheOnOverrideStoreChange(t *testing.T) {
+	// Prime the cache with no overrides.
+	c1 := NewChecker(context.Background())
+	Prelude(c1)
+	require.NotNil(t, cachedGlobalScope, "cache should populate after first Prelude")
+	primed := cachedGlobalScope
+
+	// Same nil store: cache reused.
+	c2 := NewChecker(context.Background())
+	Prelude(c2)
+	require.Same(t, primed, cachedGlobalScope, "cache should be reused when OverrideStore is unchanged")
+
+	// Different store: cache must be invalidated and rebuilt.
+	c3 := NewChecker(context.Background())
+	c3.OverrideStore = interop.NewOverrideStore()
+	Prelude(c3)
+	require.NotSame(t, primed, cachedGlobalScope, "cache should be rebuilt when OverrideStore differs")
+	require.Same(t, c3.OverrideStore, cachedOverrideStore, "cached store pointer should track current Checker")
+
+	// Reset so subsequent tests see a clean cache.
+	t.Cleanup(func() {
+		cachedGlobalScope = nil
+		cachedPackageRegistry = nil
+		cachedOverrideStore = nil
+	})
+}
 
 func TestIsESNextFile(t *testing.T) {
 	tests := []struct {
