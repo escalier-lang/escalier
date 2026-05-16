@@ -19,7 +19,14 @@ const declareFooFile = `override declare global {
 `
 
 func TestDiscoverGroupsByTier(t *testing.T) {
-	shipped := fstest.MapFS{
+	// Mirror the on-disk layout an Escalier package + its installed deps
+	// would actually have:
+	//
+	//   userRoot/
+	//     overrides/user.esc
+	//     node_modules/lib/
+	//       overrides/dep.esc
+	builtin := fstest.MapFS{
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
 
@@ -30,7 +37,7 @@ func TestDiscoverGroupsByTier(t *testing.T) {
 		[]byte(declareFooFile), 0o644,
 	))
 
-	depDir := t.TempDir()
+	depDir := filepath.Join(userRoot, "node_modules", "lib")
 	require.NoError(t, os.MkdirAll(filepath.Join(depDir, "overrides"), 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(depDir, "overrides", "dep.esc"),
@@ -40,8 +47,8 @@ func TestDiscoverGroupsByTier(t *testing.T) {
 	files, errs := Discover(
 		context.Background(),
 		userRoot,
-		[]DepInfo{{Name: "lib", Dir: depDir}},
-		shipped,
+		[]DepInfo{{Name: "lib", PkgDir: depDir}},
+		builtin,
 	)
 	require.Empty(t, errs)
 
@@ -50,7 +57,7 @@ func TestDiscoverGroupsByTier(t *testing.T) {
 		base := filepath.Base(f.FilePath)
 		tierByName[base] = f.Tier
 	}
-	require.Equal(t, OverrideTierShipped, tierByName["core.esc"])
+	require.Equal(t, OverrideTierBuiltin, tierByName["core.esc"])
 	require.Equal(t, OverrideTierUserDep, tierByName["dep.esc"])
 	require.Equal(t, OverrideTierUserProject, tierByName["user.esc"])
 }
@@ -65,53 +72,72 @@ func TestDiscoverMissingOverrideDirsIsNotAnError(t *testing.T) {
 }
 
 func TestDiscoverReportsParseErrors(t *testing.T) {
-	// Source with a clear syntax error.
-	shipped := fstest.MapFS{
+	// Source with a clear syntax error: three `@` tokens the parser
+	// can't recognise, at columns 18, 19, 20 of the only line.
+	builtin := fstest.MapFS{
 		"broken.esc": &fstest.MapFile{Data: []byte("declare global { @@@ }\n")},
 	}
-	files, errs := Discover(context.Background(), "", nil, shipped)
-	require.NotEmpty(t, errs, "expected parse error to surface")
-	for _, f := range files {
-		require.NotContains(t, f.FilePath, "broken.esc",
-			"the broken file should not be in the parsed set")
-	}
+	files, errs := Discover(context.Background(), "", nil, builtin)
+	require.Empty(t, files, "the broken file must not produce a ParsedOverride")
+	require.Len(t, errs, 3)
+	require.Equal(t, "parsing builtin:/broken.esc: 1:18-1:19: Unexpected token", errs[0].Error())
+	require.Equal(t, "parsing builtin:/broken.esc: 1:19-1:20: Unexpected token", errs[1].Error())
+	require.Equal(t, "parsing builtin:/broken.esc: 1:20-1:21: Unexpected token", errs[2].Error())
 }
 
 func TestBuildPipelineWithStubChecker(t *testing.T) {
 	// Drive Build end-to-end with a stub TypeChecker that returns a
 	// pre-built namespace. We assert that the final OverrideStore
 	// reflects the contribution.
-	shipped := fstest.MapFS{
+	builtin := fstest.MapFS{
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
 
+	// Override-side type for global `foo`: fn() -> number. The stub
+	// checker hands this pointer back for every parsed override, so it
+	// is what should land in the store and what require.Same verifies.
 	fn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
-	tc := func(p *ParsedOverride) (*type_system.Namespace, map[string]*type_system.Namespace, []error) {
+	checker := func(p *ParsedOverride) (*type_system.Namespace, map[string]*type_system.Namespace, []error) {
 		globalNs := type_system.NewNamespace()
 		globalNs.Values["foo"] = &type_system.Binding{Type: fn}
 		return globalNs, nil, nil
 	}
 
-	store, errs := Build(context.Background(), tc, "", nil, shipped, nil)
+	// Pre-load an original-side "foo" matching the override; without
+	// one Merge would (correctly) flag the override as unknown.
+	originals := map[string]*ModuleScope{
+		"": {
+			Container: Container{
+				Free: map[string]*Effective{
+					// Original-side type for global `foo`: fn() -> number.
+					// Same shape as the override so the consistency check
+					// passes; pointer identity is unimportant here.
+					"foo": {Type: type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)},
+				},
+				Children: map[string]ChildScope{},
+			},
+		},
+	}
+	store, errs := Build(context.Background(), checker, "", nil, builtin, originals)
 	require.Empty(t, errs)
 	mod := store.Modules[""]
 	require.NotNil(t, mod, "expected global module scope")
 	eff := mod.Free["foo"]
 	require.NotNil(t, eff)
 	require.Same(t, fn, eff.Type)
-	require.Equal(t, TierShippedOverride, eff.Source)
+	require.Equal(t, TierBuiltinOverride, eff.Source)
 }
 
 func TestBuildWithoutTypeCheckerErrorsWhenFilesPresent(t *testing.T) {
-	shipped := fstest.MapFS{
+	builtin := fstest.MapFS{
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
-	_, errs := Build(context.Background(), nil, "", nil, shipped, nil)
+	_, errs := Build(context.Background(), nil, "", nil, builtin, nil)
 	require.NotEmpty(t, errs, "expected an error when TypeChecker is nil and files exist")
 }
 
-func TestBuildPrecedenceUserProjectBeatsShipped(t *testing.T) {
-	shipped := fstest.MapFS{
+func TestBuildPrecedenceUserProjectBeatsBuiltin(t *testing.T) {
+	builtin := fstest.MapFS{
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
 	userRoot := t.TempDir()
@@ -121,11 +147,21 @@ func TestBuildPrecedenceUserProjectBeatsShipped(t *testing.T) {
 		[]byte(declareFooFile), 0o644,
 	))
 
-	fnShipped := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
-	fnUser := type_system.NewFuncType(nil, nil, nil, type_system.NewStrPrimType(nil), nil)
+	// All three FuncTypes share the same shape — `fn() -> number` —
+	// so the merge's signature-consistency check passes. Precedence is
+	// asserted via pointer identity, not signature content.
+	//
+	// Original-side type for global `foo`.
+	fnOrig := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
+	// Builtin-tier override type, returned by the stub checker when it
+	// sees core.esc.
+	fnBuiltin := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
+	// User-project-tier override type — expected winner since
+	// UserProject outranks Builtin.
+	fnUser := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
 	tc := func(p *ParsedOverride) (*type_system.Namespace, map[string]*type_system.Namespace, []error) {
 		ns := type_system.NewNamespace()
-		fn := fnShipped
+		fn := fnBuiltin
 		if p.Tier == OverrideTierUserProject {
 			fn = fnUser
 		}
@@ -133,7 +169,18 @@ func TestBuildPrecedenceUserProjectBeatsShipped(t *testing.T) {
 		return ns, nil, nil
 	}
 
-	store, errs := Build(context.Background(), tc, userRoot, nil, shipped, nil)
+	// Pre-load an original-side "foo" so the override targets a known
+	// symbol; the test's focus is tier precedence, not the unknown-
+	// member behavior.
+	originals := map[string]*ModuleScope{
+		"": {
+			Container: Container{
+				Free:     map[string]*Effective{"foo": {Type: fnOrig}},
+				Children: map[string]ChildScope{},
+			},
+		},
+	}
+	store, errs := Build(context.Background(), tc, userRoot, nil, builtin, originals)
 	require.Empty(t, errs)
 	eff := store.Modules[""].Free["foo"]
 	require.NotNil(t, eff)
@@ -144,17 +191,20 @@ func TestBuildPrecedenceUserProjectBeatsShipped(t *testing.T) {
 func TestBuildDuplicateWithinTierIsAnError(t *testing.T) {
 	// Two files at the same tier that contribute the same name to the
 	// same module slot → ErrDuplicateMember.
-	shipped := fstest.MapFS{
+	builtin := fstest.MapFS{
 		"a.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 		"b.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
+	// Shared override type returned for both a.esc and b.esc, both
+	// claiming the same global `foo : fn() -> number` slot — the
+	// collision is what the test exercises.
 	fn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
 	tc := func(p *ParsedOverride) (*type_system.Namespace, map[string]*type_system.Namespace, []error) {
 		ns := type_system.NewNamespace()
 		ns.Values["foo"] = &type_system.Binding{Type: fn}
 		return ns, nil, nil
 	}
-	_, errs := Build(context.Background(), tc, "", nil, shipped, nil)
+	_, errs := Build(context.Background(), tc, "", nil, builtin, nil)
 	sawDup := false
 	for _, e := range errs {
 		if _, ok := e.(*ErrDuplicateMember); ok {
@@ -170,13 +220,13 @@ func TestBuildDuplicateWithinTierIsAnError(t *testing.T) {
 // observe the cancellation error without per-file synthesis, but the
 // returned file set should be empty (cancellation short-circuits).
 func TestDiscoverHonorsCanceledContext(t *testing.T) {
-	shipped := fstest.MapFS{
+	builtin := fstest.MapFS{
 		"a.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 		"b.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	files, errs := Discover(ctx, "", nil, shipped)
+	files, errs := Discover(ctx, "", nil, builtin)
 	require.Empty(t, files, "canceled context must not yield parsed files")
 	require.NotEmpty(t, errs, "canceled context should surface ctx.Err()")
 	sawCanceled := false
@@ -193,10 +243,10 @@ func TestDiscoverHonorsCanceledContext(t *testing.T) {
 // returning an empty Decls slice that the rest of the test would also
 // pass on).
 func TestDiscoverActuallyParsesDecls(t *testing.T) {
-	shipped := fstest.MapFS{
+	builtin := fstest.MapFS{
 		"core.esc": &fstest.MapFile{Data: []byte(declareFooFile)},
 	}
-	files, errs := Discover(context.Background(), "", nil, shipped)
+	files, errs := Discover(context.Background(), "", nil, builtin)
 	require.Empty(t, errs)
 	require.Len(t, files, 1)
 	require.NotEmpty(t, files[0].Decls)

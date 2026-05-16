@@ -18,9 +18,9 @@ func TestResolveFreeFunctionAtModuleTop(t *testing.T) {
 	store.Modules["lodash"] = &ModuleScope{
 		Container: Container{
 			Free: map[string]*Effective{
-				"map": {Type: fn, Source: TierShippedOverride},
+				"map": {Type: fn, Source: TierBuiltinOverride},
 			},
-			Children: map[string]*ChildScope{},
+			Children: map[string]ChildScope{},
 		},
 	}
 	got := store.Resolve(Path{
@@ -39,15 +39,11 @@ func TestResolveInstanceMethod(t *testing.T) {
 	store.Modules[""] = &ModuleScope{
 		Container: Container{
 			Free: map[string]*Effective{},
-			Children: map[string]*ChildScope{
-				"Array": {
-					Container: Container{
-						Free:     map[string]*Effective{},
-						Children: map[string]*ChildScope{},
-					},
+			Children: map[string]ChildScope{
+				"Array": &ClassScope{
 					Instance: &MemberSet{
 						Methods: map[string]*Effective{
-							"map": {Type: fn, Source: TierShippedOverride},
+							"map": {Type: fn, Source: TierBuiltinOverride},
 						},
 						Getters:    map[string]*Effective{},
 						Setters:    map[string]*Effective{},

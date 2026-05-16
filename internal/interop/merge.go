@@ -13,56 +13,48 @@
 package interop
 
 import (
-	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-func appendOwner(owner dts_parser.QualIdent, child string) dts_parser.QualIdent {
-	right := dts_parser.NewIdent(child, ast.Span{})
-	if owner == nil {
-		return right
-	}
-	return &dts_parser.Member{Left: owner, Right: right}
-}
-
 // Collapse performs the three-tier shadowing collapse described in
 // §5.5 step 7: for each (module, container path, slot) triple, take
-// the highest-precedence non-nil entry across the three input maps
-// (UserProject > UserDep > Shipped).
+// the highest-precedence non-nil entry across the three tiers
+// (UserProject > UserDep > Builtin). Any tier map may be nil, in which
+// case it contributes nothing.
 //
-// `tiers` is expected to be ordered by precedence (highest first); the
-// caller is responsible for that ordering. Passing fewer than three
-// maps is allowed (missing tiers are skipped).
-//
-// Each surviving Effective has its Tier field stamped with the tier it
-// won from; the merge pass reads that field when populating Source.
-func Collapse(tiers []map[string]*ModuleScope, tierOrder []OverrideTier) map[string]*ModuleScope {
+// Each surviving Effective is returned with its Tier set to the tier
+// it won from; the merge pass reads that field when populating Source.
+func Collapse(
+	userProject, userDep, builtin map[string]*ModuleScope,
+) map[string]*ModuleScope {
 	out := make(map[string]*ModuleScope)
-	n := min(len(tiers), len(tierOrder))
-	for i := range n {
-		t := tiers[i]
-		ot := tierOrder[i]
-		for modName, ms := range t {
-			if ms == nil {
-				continue
-			}
-			dst := out[modName]
-			if dst == nil {
-				dst = &ModuleScope{
-					Container: newContainer(ms.Container.Origin),
-				}
-				out[modName] = dst
-			}
-			if ms.AllPure && !dst.AllPure {
-				dst.AllPure = true
-				dst.AllPureTier = ot
-			}
-			collapseContainer(&dst.Container, &ms.Container, ot)
-		}
-	}
+	// Iterated highest-precedence first; collapseContainer's "skip if
+	// already present" rule then guarantees the highest tier wins.
+	collapseTier(out, userProject, OverrideTierUserProject)
+	collapseTier(out, userDep, OverrideTierUserDep)
+	collapseTier(out, builtin, OverrideTierBuiltin)
 	return out
+}
+
+func collapseTier(out, moduleMap map[string]*ModuleScope, tier OverrideTier) {
+	for name, srcScope := range moduleMap {
+		if srcScope == nil {
+			continue
+		}
+		dstScope := out[name]
+		if dstScope == nil {
+			dstScope = &ModuleScope{
+				Container: newContainer(srcScope.Container.Origin),
+			}
+			out[name] = dstScope
+		}
+		if srcScope.AllPure && !dstScope.AllPure {
+			dstScope.AllPure = true
+			dstScope.AllPureTier = tier
+		}
+		collapseContainer(&dstScope.Container, &srcScope.Container, tier)
+	}
 }
 
 func collapseContainer(dst, src *Container, ot OverrideTier) {
@@ -70,94 +62,121 @@ func collapseContainer(dst, src *Container, ot OverrideTier) {
 		if _, present := dst.Free[name]; present {
 			continue
 		}
-		dst.Free[name] = stampedCopy(eff, ot)
+		dst.Free[name] = eff.withTier(ot)
 	}
 	for name, child := range src.Children {
-		dstChild := dst.Children[name]
-		if dstChild == nil {
-			dstChild = &ChildScope{
-				Container: newContainer(child.Container.Origin),
-			}
-			if child.Instance != nil {
-				dstChild.Instance = NewMemberSet()
-			}
-			if child.Static != nil {
-				dstChild.Static = NewMemberSet()
-			}
-			dst.Children[name] = dstChild
-		}
-		collapseContainer(&dstChild.Container, &child.Container, ot)
-		// If an earlier (higher-precedence) tier introduced this child
-		// as a namespace, Instance/Static may still be nil here; allocate
-		// on demand so a later tier's members aren't silently dropped.
-		if child.Instance != nil && dstChild.Instance == nil {
-			dstChild.Instance = NewMemberSet()
-		}
-		if child.Static != nil && dstChild.Static == nil {
-			dstChild.Static = NewMemberSet()
-		}
-		collapseMemberSet(dstChild.Instance, child.Instance, ot)
-		collapseMemberSet(dstChild.Static, child.Static, ot)
+		dst.Children[name] = collapseChild(dst.Children[name], child, ot)
 	}
 }
 
-func collapseMemberSet(dst, src *MemberSet, ot OverrideTier) {
+// collapseChild folds `src` into `existing` for one Container.Children
+// slot during the three-tier collapse. When existing is nil we build a
+// fresh ChildScope of the same variant as src. When the variants match
+// we recurse. When they mismatch the higher tier (already in existing)
+// wins wholesale — src is dropped.
+func collapseChild(existing, src ChildScope, tier OverrideTier) ChildScope {
+	if existing == nil {
+		return cloneChildWithTier(src, tier)
+	}
+	switch e := existing.(type) {
+	case *NamespaceScope:
+		s, ok := src.(*NamespaceScope)
+		if !ok {
+			return existing
+		}
+		collapseContainer(&e.Container, &s.Container, tier)
+	case *ClassScope:
+		s, ok := src.(*ClassScope)
+		if !ok {
+			return existing
+		}
+		collapseMemberSet(e.Instance, s.Instance, tier)
+		collapseMemberSet(e.Static, s.Static, tier)
+	case *InterfaceScope:
+		s, ok := src.(*InterfaceScope)
+		if !ok {
+			return existing
+		}
+		collapseMemberSet(e.Instance, s.Instance, tier)
+	}
+	return existing
+}
+
+// cloneChildWithTier produces a fresh ChildScope of the same variant as
+// src, populated by collapsing src's contents with `tier` stamped on
+// every leaf.
+func cloneChildWithTier(src ChildScope, tier OverrideTier) ChildScope {
+	switch s := src.(type) {
+	case *NamespaceScope:
+		c := &NamespaceScope{Container: newContainer(s.Container.Origin)}
+		collapseContainer(&c.Container, &s.Container, tier)
+		return c
+	case *ClassScope:
+		c := &ClassScope{
+			Origin:   s.Origin,
+			Instance: NewMemberSet(),
+			Static:   NewMemberSet(),
+		}
+		collapseMemberSet(c.Instance, s.Instance, tier)
+		collapseMemberSet(c.Static, s.Static, tier)
+		return c
+	case *InterfaceScope:
+		c := &InterfaceScope{
+			Origin:   s.Origin,
+			Instance: NewMemberSet(),
+		}
+		collapseMemberSet(c.Instance, s.Instance, tier)
+		return c
+	}
+	return nil
+}
+
+func collapseMemberSet(dst, src *MemberSet, tier OverrideTier) {
 	if src == nil {
 		return
 	}
 	if dst == nil {
 		return
 	}
-	copyIfAbsent(dst.Methods, src.Methods, ot)
-	copyIfAbsent(dst.Getters, src.Getters, ot)
-	copyIfAbsent(dst.Setters, src.Setters, ot)
-	copyIfAbsent(dst.Properties, src.Properties, ot)
+	copyIfAbsent(dst.Methods, src.Methods, tier)
+	copyIfAbsent(dst.Getters, src.Getters, tier)
+	copyIfAbsent(dst.Setters, src.Setters, tier)
+	copyIfAbsent(dst.Properties, src.Properties, tier)
 	if dst.Ctor == nil && src.Ctor != nil {
-		dst.Ctor = stampedCopy(src.Ctor, ot)
+		dst.Ctor = src.Ctor.withTier(tier)
 	}
 }
 
-func copyIfAbsent(dst, src map[string]*Effective, ot OverrideTier) {
+func copyIfAbsent(dst, src map[string]*Effective, tier OverrideTier) {
 	for name, eff := range src {
 		if _, present := dst[name]; present {
 			continue
 		}
-		dst[name] = stampedCopy(eff, ot)
+		dst[name] = eff.withTier(tier)
 	}
-}
-
-// stampedCopy returns a copy of eff with Tier/Source stamped. We copy
-// rather than mutate so the per-tier Effective produced by Extract is
-// not shared across collapse runs.
-func stampedCopy(eff *Effective, ot OverrideTier) *Effective {
-	if eff == nil {
-		return nil
-	}
-	cp := *eff
-	cp.Tier = ot
-	cp.Source = ot.ResolutionTierFor()
-	return &cp
 }
 
 func newContainer(origin Origin) Container {
 	return Container{
 		Free:     make(map[string]*Effective),
-		Children: make(map[string]*ChildScope),
+		Children: make(map[string]ChildScope),
 		Origin:   origin,
 	}
 }
 
 // Merge applies the collapsed override scope on top of the original
 // per-module scopes and returns a fresh OverrideStore. The original
-// side passes through with no Source stamped (Classify's lower tiers
+// side passes through with Source left at its zero value (Classify's lower tiers
 // determine its classification); the override side replaces matching
 // slots entirely and runs consistency.CheckSet on each method/free-fn
 // slot that pairs with an original.
 //
-// `original` may be nil for any module that wasn't pre-loaded — in
-// that case only override-side entries are reported (the consistency
-// check is skipped) and ErrUnknownMember is suppressed since there's
-// nothing to compare against.
+// Every Escalier library ships .d.ts for TypeScript back-compat
+// (requirements.md §F), so an override-only leaf — with no matching
+// original — is always either a typo or caller misuse (originals not
+// pre-loaded). Such leaves still land in the store, but ErrUnknownMember
+// is reported. If `original` is nil for a module that has overrides,
+// every override leaf in that module produces an ErrUnknownMember.
 func Merge(original, override map[string]*ModuleScope) (*OverrideStore, []error) {
 	store := NewOverrideStore()
 	var errs []error
@@ -172,24 +191,34 @@ func Merge(original, override map[string]*ModuleScope) (*OverrideStore, []error)
 	}
 
 	for modName := range seen {
-		orig := original[modName]
-		over := override[modName]
+		origScope := original[modName]
+		overScope := override[modName]
 
-		ms := &ModuleScope{
-			Container: newContainer(originOf(orig, over)),
+		mergedScope := &ModuleScope{
+			Container: newContainer(originOf(origScope, overScope)),
 		}
-		if over != nil {
-			ms.AllPure = over.AllPure
-			ms.AllPureTier = over.AllPureTier
+		if overScope != nil {
+			mergedScope.AllPure = overScope.AllPure
+			mergedScope.AllPureTier = overScope.AllPureTier
 		}
-		store.Modules[modName] = ms
+		store.Modules[modName] = mergedScope
 
 		modPath := Path{Module: modName}
-		mergeContainer(&ms.Container, containerOf(orig), containerOf(over), modPath, ms.AllPure, ms.AllPureTier, &errs)
+		mergeContainer(
+			&mergedScope.Container,
+			containerOf(origScope), containerOf(overScope),
+			modPath, mergedScope.AllPure, mergedScope.AllPureTier, &errs,
+		)
 	}
 	return store, errs
 }
 
+// originOf picks the Container.Origin to attach to the merged
+// ModuleScope. The override side wins when present (it's the file a
+// module-level diagnostic most likely wants to point at after merge);
+// otherwise we fall back to the original side, then to a zero Origin.
+//
+// Mirrors childOrigin, which applies the same rule to ChildScope.
 func originOf(orig, over *ModuleScope) Origin {
 	if over != nil {
 		return over.Container.Origin
@@ -209,7 +238,7 @@ func containerOf(ms *ModuleScope) *Container {
 
 func mergeContainer(
 	dst, orig, over *Container,
-	owner Path,
+	ownerPath Path,
 	allPure bool,
 	allPureTier OverrideTier,
 	errs *[]error,
@@ -227,14 +256,17 @@ func mergeContainer(
 		}
 	}
 	for n := range names {
-		var oEff, vEff *Effective
+		var origEff, overEff *Effective
 		if orig != nil {
-			oEff = orig.Free[n]
+			origEff = orig.Free[n]
 		}
 		if over != nil {
-			vEff = over.Free[n]
+			overEff = over.Free[n]
 		}
-		leaf, err := mergeLeaf(oEff, vEff, withName(owner, n, KindFree, false), false /*allPure n/a for free*/, allPureTier, orig != nil)
+		leaf, err := mergeLeaf(
+			origEff, overEff, ownerPath.withMember(n, KindFree, false),
+			false /*allPure n/a for free*/, allPureTier,
+		)
 		if err != nil {
 			*errs = append(*errs, err)
 		}
@@ -256,78 +288,165 @@ func mergeContainer(
 		}
 	}
 	for n := range childNames {
-		var oCh, vCh *ChildScope
+		var origCh, overCh ChildScope
 		if orig != nil {
-			oCh = orig.Children[n]
+			origCh = orig.Children[n]
 		}
 		if over != nil {
-			vCh = over.Children[n]
+			overCh = over.Children[n]
 		}
-		mergedChild := mergeChild(oCh, vCh, withChildOwner(owner, n), allPure, allPureTier, errs)
+		mergedChild := mergeChild(
+			origCh, overCh, ownerPath.withChild(n),
+			allPure, allPureTier, errs,
+		)
 		if mergedChild != nil {
 			dst.Children[n] = mergedChild
 		}
 	}
 }
 
+// mergeChild merges one Container.Children entry across original and
+// override sides. The variant of the result follows whichever side is
+// present; if both sides have a value with the same variant we recurse
+// per slot. A shape mismatch between the two sides (e.g. namespace vs
+// class at the same name) is upstream ErrDuplicateMember — we emit the
+// error and proceed with the override side's variant.
 func mergeChild(
-	orig, over *ChildScope,
-	owner Path,
+	orig, over ChildScope,
+	ownerPath Path,
 	allPure bool,
 	allPureTier OverrideTier,
 	errs *[]error,
-) *ChildScope {
-	dst := &ChildScope{
-		Container: newContainer(childOrigin(orig, over)),
-	}
-	// Decide shape: namespace (no Instance/Static on either side) or
-	// class/interface (Instance/Static populated).
-	hasMembers := (orig != nil && (orig.Instance != nil || orig.Static != nil)) ||
-		(over != nil && (over.Instance != nil || over.Static != nil))
-	if hasMembers {
-		dst.Instance = NewMemberSet()
-		dst.Static = NewMemberSet()
+) ChildScope {
+	if orig == nil && over == nil {
+		return nil
 	}
 
-	mergeContainer(&dst.Container, containerFromChild(orig), containerFromChild(over), owner, allPure, allPureTier, errs)
-
-	if hasMembers {
-		mergeMemberSet(dst.Instance, msFromChild(orig, false), msFromChild(over, false), owner, false, allPure, allPureTier, errs)
-		mergeMemberSet(dst.Static, msFromChild(orig, true), msFromChild(over, true), owner, true, allPure, allPureTier, errs)
+	// Resolve the variant of the result and obtain its (possibly nil)
+	// orig/over MemberSet pairs.
+	if orig != nil && over != nil && !sameChildKind(orig, over) {
+		*errs = append(*errs, &ErrDuplicateMember{
+			Path:   ownerPath,
+			First:  orig.ChildOrigin(),
+			Second: over.ChildOrigin(),
+		})
+		orig = nil // proceed with override side only
 	}
-	return dst
+
+	return mergeSameKindChild(orig, over, ownerPath, allPure, allPureTier, errs)
 }
 
-func childOrigin(orig, over *ChildScope) Origin {
+func sameChildKind(a, b ChildScope) bool {
+	switch a.(type) {
+	case *NamespaceScope:
+		_, ok := b.(*NamespaceScope)
+		return ok
+	case *ClassScope:
+		_, ok := b.(*ClassScope)
+		return ok
+	case *InterfaceScope:
+		_, ok := b.(*InterfaceScope)
+		return ok
+	}
+	return false
+}
+
+// mergeSameKindChild assumes orig and over are either nil or the same
+// variant. It picks a shape, recurses on Container, and merges any
+// MemberSets the variant carries.
+func mergeSameKindChild(
+	orig, over ChildScope,
+	ownerPath Path,
+	allPure bool,
+	allPureTier OverrideTier,
+	errs *[]error,
+) ChildScope {
+	origin := childOrigin(orig, over)
+
+	// Pick the shape based on whichever side is present (over wins).
+	probe := over
+	if probe == nil {
+		probe = orig
+	}
+
+	switch probe.(type) {
+	case *NamespaceScope:
+		dst := &NamespaceScope{Container: newContainer(origin)}
+		var origCont, overCont *Container
+		if ns, ok := orig.(*NamespaceScope); ok {
+			origCont = &ns.Container
+		}
+		if ns, ok := over.(*NamespaceScope); ok {
+			overCont = &ns.Container
+		}
+		mergeContainer(&dst.Container, origCont, overCont,
+			ownerPath, allPure, allPureTier, errs)
+		return dst
+	case *ClassScope:
+		dst := &ClassScope{
+			Origin:   origin,
+			Instance: NewMemberSet(),
+			Static:   NewMemberSet(),
+		}
+		origInstMembs := memberSetFromChild(orig, false)
+		overInstMembs := memberSetFromChild(over, false)
+		mergeMemberSet(
+			dst.Instance, origInstMembs, overInstMembs,
+			ownerPath, false, allPure, allPureTier, errs,
+		)
+		origStatMembs := memberSetFromChild(orig, true)
+		overStatMembs := memberSetFromChild(over, true)
+		mergeMemberSet(
+			dst.Static, origStatMembs, overStatMembs,
+			ownerPath, true, allPure, allPureTier, errs,
+		)
+		return dst
+	case *InterfaceScope:
+		dst := &InterfaceScope{
+			Origin:   origin,
+			Instance: NewMemberSet(),
+		}
+		origInstMembs := memberSetFromChild(orig, false)
+		overInstMembs := memberSetFromChild(over, false)
+		mergeMemberSet(
+			dst.Instance, origInstMembs, overInstMembs,
+			ownerPath, false, allPure, allPureTier, errs,
+		)
+		return dst
+	}
+	return nil
+}
+
+// childOrigin picks the Origin to attach to the merged ChildScope. The
+// override side wins when present (it's the file a child-level
+// diagnostic most likely wants to point at after merge); otherwise we
+// fall back to the original side, then to a zero Origin.
+//
+// Mirrors originOf, which applies the same rule to ModuleScope.
+func childOrigin(orig, over ChildScope) Origin {
 	if over != nil {
-		return over.Container.Origin
+		return over.ChildOrigin()
 	}
 	if orig != nil {
-		return orig.Container.Origin
+		return orig.ChildOrigin()
 	}
 	return Origin{}
 }
 
-func containerFromChild(c *ChildScope) *Container {
+// memberSetFromChild is a nil-safe wrapper around ChildScope.MembersFor. The
+// method itself can't be called on a nil interface value (Go panics on
+// nil-interface dispatch), so callers that may pass a nil ChildScope
+// go through this helper.
+func memberSetFromChild(c ChildScope, static bool) *MemberSet {
 	if c == nil {
 		return nil
 	}
-	return &c.Container
-}
-
-func msFromChild(c *ChildScope, static bool) *MemberSet {
-	if c == nil {
-		return nil
-	}
-	if static {
-		return c.Static
-	}
-	return c.Instance
+	return c.MembersFor(static)
 }
 
 func mergeMemberSet(
 	dst, orig, over *MemberSet,
-	owner Path,
+	ownerPath Path,
 	static bool,
 	allPure bool,
 	allPureTier OverrideTier,
@@ -335,20 +454,20 @@ func mergeMemberSet(
 ) {
 	// @all_pure only strips mut from instance-method receivers; static
 	// methods have no receiver, so the flag is silenced on the static side.
-	mergeKind(orig, over, dst, owner, KindMethod, static, allPure && !static, allPureTier, errs)
-	mergeKind(orig, over, dst, owner, KindGetter, static, false, allPureTier, errs)
-	mergeKind(orig, over, dst, owner, KindSetter, static, false, allPureTier, errs)
-	mergeKind(orig, over, dst, owner, KindProperty, static, false, allPureTier, errs)
+	mergeKind(orig, over, dst, ownerPath, KindMethod, static, allPure && !static, allPureTier, errs)
+	mergeKind(orig, over, dst, ownerPath, KindGetter, static, false, allPureTier, errs)
+	mergeKind(orig, over, dst, ownerPath, KindSetter, static, false, allPureTier, errs)
+	mergeKind(orig, over, dst, ownerPath, KindProperty, static, false, allPureTier, errs)
 
 	// Ctor is a single slot.
-	var oCtor, vCtor *Effective
+	var origCtor, overCtor *Effective
 	if orig != nil {
-		oCtor = orig.Ctor
+		origCtor = orig.Ctor
 	}
 	if over != nil {
-		vCtor = over.Ctor
+		overCtor = over.Ctor
 	}
-	leaf, err := mergeLeaf(oCtor, vCtor, withName(owner, "", KindCtor, static), false, allPureTier, orig != nil)
+	leaf, err := mergeLeaf(origCtor, overCtor, ownerPath.withMember("", KindCtor, static), false, allPureTier)
 	if err != nil {
 		*errs = append(*errs, err)
 	}
@@ -359,26 +478,29 @@ func mergeMemberSet(
 
 func mergeKind(
 	orig, over, dst *MemberSet,
-	owner Path,
+	ownerPath Path,
 	kind MemberKind,
 	static bool,
 	allPureForThisKind bool,
 	allPureTier OverrideTier,
 	errs *[]error,
 ) {
-	oMap := kindMap(orig, kind)
-	vMap := kindMap(over, kind)
+	origMap := kindMap(orig, kind)
+	overMap := kindMap(over, kind)
 	dMap := kindMap(dst, kind)
 	names := set.NewSet[string]()
-	for n := range oMap {
+	for n := range origMap {
 		names.Add(n)
 	}
-	for n := range vMap {
+	for n := range overMap {
 		names.Add(n)
 	}
-	origParentExists := orig != nil
 	for n := range names {
-		leaf, err := mergeLeaf(oMap[n], vMap[n], withName(owner, n, kind, static), allPureForThisKind, allPureTier, origParentExists)
+		leaf, err := mergeLeaf(
+			origMap[n], overMap[n],
+			ownerPath.withMember(n, kind, static),
+			allPureForThisKind, allPureTier,
+		)
 		if err != nil {
 			*errs = append(*errs, err)
 		}
@@ -388,30 +510,33 @@ func mergeKind(
 	}
 }
 
-func kindMap(ms *MemberSet, kind MemberKind) map[string]*Effective {
-	if ms == nil {
+func kindMap(memberSet *MemberSet, kind MemberKind) map[string]*Effective {
+	if memberSet == nil {
 		return nil
 	}
 	switch kind {
 	case KindMethod:
-		return ms.Methods
+		return memberSet.Methods
 	case KindGetter:
-		return ms.Getters
+		return memberSet.Getters
 	case KindSetter:
-		return ms.Setters
+		return memberSet.Setters
 	case KindProperty:
-		return ms.Properties
+		return memberSet.Properties
 	}
 	return nil
 }
 
 // mergeLeaf produces the merged Effective for a single slot:
 //   - both nil: returns nil (caller does not set).
-//   - only orig: return a fresh Effective with Source unstamped.
-//   - only over: ErrUnknownMember when the parent original scope was
-//     present (origParentExists==true) — the override targets a
-//     non-existent sibling. When the parent was absent
-//     (origParentExists==false) the override is emitted as-is per §5.7.
+//   - only orig: return a fresh Effective with Source left unset.
+//   - only over: ErrUnknownMember — the override targets a name that
+//     doesn't exist on the original side. Every Escalier library ships
+//     .d.ts for TS back-compat (requirements.md §F), so there is no
+//     "no original types" case; an override-only leaf is always either
+//     a typo or caller misuse (originals not pre-loaded). The leaf is
+//     still returned so the caller can populate the store, but the
+//     error is reported.
 //   - both: replace with override; run consistency check when both
 //     are *FuncType.
 //
@@ -423,7 +548,6 @@ func mergeLeaf(
 	p Path,
 	allPureForKind bool,
 	allPureTier OverrideTier,
-	origParentExists bool,
 ) (*Effective, error) {
 	switch {
 	case orig == nil && over == nil:
@@ -432,21 +556,16 @@ func mergeLeaf(
 		if allPureForKind {
 			return synthesiseAllPure(orig, allPureTier), nil
 		}
-		// Leave Source unstamped — Classify's lower tiers decide.
+		// Leave Source unset — Classify's lower tiers decide.
 		return &Effective{
-			Type:       orig.Type,
-			Provenance: orig.Provenance,
+			Type:    orig.Type,
+			Origins: orig.Origins,
 		}, nil
 	case orig == nil && over != nil:
-		if origParentExists {
-			return over, &ErrUnknownMember{
-				Path:     p,
-				Override: lastOrigin(over.Provenance),
-			}
+		return over, &ErrUnknownMember{
+			Path:     p,
+			Override: lastOrigin(over.Origins),
 		}
-		// Parent original wasn't pre-loaded — accept the override
-		// silently (no original to compare against).
-		return over, nil
 	default:
 		// Both: override replaces original. Consistency check on
 		// FuncType pairs (single-signature for now; CheckSet handles
@@ -454,7 +573,7 @@ func mergeLeaf(
 		// for follow-up).
 		if oFn, ok := orig.Type.(*type_system.FuncType); ok {
 			if vFn, ok2 := over.Type.(*type_system.FuncType); ok2 {
-				origin := lastOrigin(over.Provenance)
+				origin := lastOrigin(over.Origins)
 				if err := Check(vFn, oFn, p, origin); err != nil {
 					return over, err
 				}
@@ -469,15 +588,15 @@ func synthesiseAllPure(orig *Effective, tier OverrideTier) *Effective {
 	if !ok || fn.SelfParam == nil {
 		// Not a receiver-bearing method; @all_pure doesn't apply.
 		return &Effective{
-			Type:       orig.Type,
-			Provenance: orig.Provenance,
+			Type:    orig.Type,
+			Origins: orig.Origins,
 		}
 	}
 	stripped := stripMutSelf(fn)
 	return &Effective{
-		Type:       stripped,
-		Source:     tier.ResolutionTierFor(),
-		Provenance: orig.Provenance,
+		Type:    stripped,
+		Source:  tier.ResolutionTierFor(),
+		Origins: orig.Origins,
 	}
 }
 
@@ -500,30 +619,9 @@ func stripMutSelf(fn *type_system.FuncType) *type_system.FuncType {
 	return &cp
 }
 
-func lastOrigin(ps []Origin) Origin {
-	if len(ps) == 0 {
+func lastOrigin(origins []Origin) Origin {
+	if len(origins) == 0 {
 		return Origin{}
 	}
-	return ps[len(ps)-1]
-}
-
-// withName returns owner with Name/Kind/Static set.
-func withName(owner Path, name string, kind MemberKind, static bool) Path {
-	if name != "" {
-		owner.Name = dts_parser.NewIdent(name, ast.Span{})
-	} else {
-		owner.Name = nil
-	}
-	owner.Kind = kind
-	owner.Static = static
-	return owner
-}
-
-func withChildOwner(owner Path, child string) Path {
-	// Append the child segment onto Owner via dts_parser.Member chain.
-	// For now we use a synthetic identifier wrapper since the merge
-	// only consumes Owner for diagnostics.
-	cp := owner
-	cp.Owner = appendOwner(owner.Owner, child)
-	return cp
+	return origins[len(origins)-1]
 }

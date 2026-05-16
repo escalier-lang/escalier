@@ -15,15 +15,26 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// DepInfo describes one dependency that may carry overrides. `Dir` is
-// the directory containing that dep's package.json — `Dir`/overrides
+// DepInfo describes one dependency that may carry overrides. `PkgDir`
+// is the directory containing that dep's package.json — `PkgDir`/overrides
 // is scanned recursively for .esc files.
 type DepInfo struct {
-	Name string
-	Dir  string
+	Name   string
+	PkgDir string
 }
 
 // ParsedOverride is a single override .esc file after parsing.
+//
+// Decls is the list of top-level declarations as produced by
+// parser.ParseDecls. Per the override grammar
+// (planning/interop_mutability/implementation_plan.md §2.2), each entry
+// is either a *ast.DeclareGlobalDecl (`override declare global { ... }`)
+// or a *ast.DeclareModuleDecl (`override declare module "name" { ... }`),
+// in both cases with Override() == true. A single file may contain any
+// number of these blocks in any order; Extract routes each into its own
+// scope bucket keyed by module name ("" for global). Lexical
+// `namespace Foo { ... }` nesting inside a block is preserved by
+// Extract — it is not flattened here.
 type ParsedOverride struct {
 	Tier     OverrideTier
 	FilePath string
@@ -47,7 +58,7 @@ type TypeChecker func(p *ParsedOverride) (
 	errs []error,
 )
 
-// Discover walks the three override locations (shipped FS, deps, user
+// Discover walks the three override locations (builtin FS, deps, user
 // project) and returns the parsed override files grouped by tier.
 //
 // Parse errors are returned alongside any successfully-parsed files —
@@ -56,21 +67,21 @@ func Discover(
 	ctx context.Context,
 	root string,
 	deps []DepInfo,
-	shipped fs.FS,
+	builtin fs.FS,
 ) ([]*ParsedOverride, []error) {
 	var (
 		out  []*ParsedOverride
 		errs []error
 	)
 
-	if shipped != nil {
-		shippedFiles, sErrs := parseFromFS(ctx, shipped, ".", "shipped:/", OverrideTierShipped)
-		out = append(out, shippedFiles...)
+	if builtin != nil {
+		builtinFiles, sErrs := parseFromFS(ctx, builtin, ".", "builtin:/", OverrideTierBuiltin)
+		out = append(out, builtinFiles...)
 		errs = append(errs, sErrs...)
 	}
 
 	for _, dep := range deps {
-		depRoot := filepath.Join(dep.Dir, "overrides")
+		depRoot := filepath.Join(dep.PkgDir, "overrides")
 		if !dirExists(depRoot) {
 			continue
 		}
@@ -133,14 +144,13 @@ func parseFromFS(
 		}
 		fullPath := pathPrefix + p
 		src := &ast.Source{Path: fullPath, Contents: string(contents)}
-		mod, pErrs := parser.ParseLibFiles(ctx, []*ast.Source{src})
+		decls, pErrs := parser.ParseDecls(ctx, src)
 		if len(pErrs) > 0 {
 			for _, pe := range pErrs {
 				errs = append(errs, fmt.Errorf("parsing %s: %s", fullPath, pe.String()))
 			}
 			return nil
 		}
-		decls := collectDecls(mod)
 		out = append(out, &ParsedOverride{
 			Tier:     tier,
 			FilePath: fullPath,
@@ -156,7 +166,7 @@ func parseFromFS(
 }
 
 // Build is the full §5.5 pipeline: discover override files, run the
-// provided `tc` over each to obtain typed namespaces, extract scope
+// provided `checker` over each to obtain typed namespaces, extract scope
 // contributions, collapse three tiers, and merge against `originals`.
 //
 // `originals` is the post-inference original-side scope keyed by
@@ -167,44 +177,37 @@ func parseFromFS(
 // type-checking, or merge.
 func Build(
 	ctx context.Context,
-	tc TypeChecker,
+	checker TypeChecker,
 	root string,
 	deps []DepInfo,
-	shipped fs.FS,
+	builtin fs.FS,
 	originals map[string]*ModuleScope,
 ) (*OverrideStore, []error) {
-	files, errs := Discover(ctx, root, deps, shipped)
+	files, errs := Discover(ctx, root, deps, builtin)
 
 	// Per-tier per-file extraction → one scope map per tier.
 	tierMaps := map[OverrideTier]map[string]*ModuleScope{
 		OverrideTierUserProject: {},
 		OverrideTierUserDep:     {},
-		OverrideTierShipped:     {},
+		OverrideTierBuiltin:     {},
 	}
 
-	if tc == nil && len(files) > 0 {
+	if checker == nil && len(files) > 0 {
 		errs = append(errs, fmt.Errorf("interop.Build: nil TypeChecker, cannot type-check %d override file(s)", len(files)))
 		return NewOverrideStore(), errs
 	}
 
 	for _, f := range files {
-		globalNs, namedNs, tcErrs := tc(f)
+		globalNs, namedNs, tcErrs := checker(f)
 		errs = append(errs, tcErrs...)
 		contributions := Extract(f.Decls, globalNs, namedNs, f.FilePath, f.Tier)
 		mergeWithinTier(tierMaps[f.Tier], contributions, &errs)
 	}
 
 	collapsed := Collapse(
-		[]map[string]*ModuleScope{
-			tierMaps[OverrideTierUserProject],
-			tierMaps[OverrideTierUserDep],
-			tierMaps[OverrideTierShipped],
-		},
-		[]OverrideTier{
-			OverrideTierUserProject,
-			OverrideTierUserDep,
-			OverrideTierShipped,
-		},
+		tierMaps[OverrideTierUserProject],
+		tierMaps[OverrideTierUserDep],
+		tierMaps[OverrideTierBuiltin],
 	)
 	store, mErrs := Merge(originals, collapsed)
 	errs = append(errs, mErrs...)
@@ -242,8 +245,8 @@ func mergeWithinContainer(
 		if existing, present := dst.Free[name]; present {
 			*errs = append(*errs, &ErrDuplicateMember{
 				Path:   withFreeName(owner, name),
-				First:  firstOrigin(existing.Provenance),
-				Second: firstOrigin(eff.Provenance),
+				First:  headOrigin(existing.Origins),
+				Second: headOrigin(eff.Origins),
 			})
 			continue
 		}
@@ -255,20 +258,72 @@ func mergeWithinContainer(
 			dst.Children[name] = child
 			continue
 		}
-		mergeWithinContainer(&existing.Container, &child.Container, appendChild(owner, name), errs)
-		// Adoption happens after the merge: when existing's shape is
-		// nil, mergeWithinMemberSet no-ops and we then take child's set
-		// wholesale. Hoisting the adoption would alias existing and
-		// child onto the same map and trigger spurious duplicate-member
-		// errors in the call below.
-		mergeWithinMemberSet(existing.Instance, child.Instance, appendChild(owner, name), false, errs)
-		mergeWithinMemberSet(existing.Static, child.Static, appendChild(owner, name), true, errs)
-		if existing.Instance == nil && child.Instance != nil {
-			existing.Instance = child.Instance
+		mergeWithinChildScope(existing, child, owner.withChild(name), errs)
+	}
+}
+
+// mergeWithinChildScope folds `incoming` into `existing` for the
+// within-tier accumulator. Same-variant merges are recursive; a
+// shape mismatch (e.g. namespace + class at the same name) is reported
+// as ErrDuplicateMember and the first-seen variant is kept.
+func mergeWithinChildScope(existing, incoming ChildScope, childOwner Path, errs *[]error) {
+	switch e := existing.(type) {
+	case *NamespaceScope:
+		i, ok := incoming.(*NamespaceScope)
+		if !ok {
+			reportChildShapeConflict(existing, incoming, childOwner, errs)
+			return
 		}
-		if existing.Static == nil && child.Static != nil {
-			existing.Static = child.Static
+		mergeWithinContainer(&e.Container, &i.Container, childOwner, errs)
+	case *ClassScope:
+		i, ok := incoming.(*ClassScope)
+		if !ok {
+			reportChildShapeConflict(existing, incoming, childOwner, errs)
+			return
 		}
+		mergeWithinMemberSet(e.Instance, i.Instance, childOwner, false, errs)
+		mergeWithinMemberSet(e.Static, i.Static, childOwner, true, errs)
+	case *InterfaceScope:
+		i, ok := incoming.(*InterfaceScope)
+		if !ok {
+			reportChildShapeConflict(existing, incoming, childOwner, errs)
+			return
+		}
+		mergeWithinMemberSet(e.Instance, i.Instance, childOwner, false, errs)
+	}
+}
+
+func reportChildShapeConflict(existing, incoming ChildScope, childOwner Path, errs *[]error) {
+	*errs = append(*errs, &ErrDuplicateMember{
+		Path:   childOwner,
+		First:  existing.ChildOrigin(),
+		Second: incoming.ChildOrigin(),
+	})
+}
+
+// mergeWithinKind folds src's entries for one MemberKind slot into dst.
+// Same-name collisions are reported as ErrDuplicateMember; new entries
+// move over by reference.
+func mergeWithinKind(
+	dst, src map[string]*Effective,
+	owner Path,
+	kind MemberKind,
+	static bool,
+	errs *[]error,
+) {
+	for name, eff := range src {
+		if existing, present := dst[name]; present {
+			p := owner
+			p.Kind = kind
+			p.Static = static
+			*errs = append(*errs, &ErrDuplicateMember{
+				Path:   p,
+				First:  headOrigin(existing.Origins),
+				Second: headOrigin(eff.Origins),
+			})
+			continue
+		}
+		dst[name] = eff
 	}
 }
 
@@ -276,30 +331,10 @@ func mergeWithinMemberSet(dst, src *MemberSet, owner Path, static bool, errs *[]
 	if src == nil || dst == nil {
 		return
 	}
-	for _, pair := range []struct {
-		dst, src map[string]*Effective
-		kind     MemberKind
-	}{
-		{dst.Methods, src.Methods, KindMethod},
-		{dst.Getters, src.Getters, KindGetter},
-		{dst.Setters, src.Setters, KindSetter},
-		{dst.Properties, src.Properties, KindProperty},
-	} {
-		for name, eff := range pair.src {
-			if existing, present := pair.dst[name]; present {
-				p := owner
-				p.Kind = pair.kind
-				p.Static = static
-				*errs = append(*errs, &ErrDuplicateMember{
-					Path:   p,
-					First:  firstOrigin(existing.Provenance),
-					Second: firstOrigin(eff.Provenance),
-				})
-				continue
-			}
-			pair.dst[name] = eff
-		}
-	}
+	mergeWithinKind(dst.Methods, src.Methods, owner, KindMethod, static, errs)
+	mergeWithinKind(dst.Getters, src.Getters, owner, KindGetter, static, errs)
+	mergeWithinKind(dst.Setters, src.Setters, owner, KindSetter, static, errs)
+	mergeWithinKind(dst.Properties, src.Properties, owner, KindProperty, static, errs)
 	if dst.Ctor == nil && src.Ctor != nil {
 		dst.Ctor = src.Ctor
 	} else if src.Ctor != nil {
@@ -308,8 +343,8 @@ func mergeWithinMemberSet(dst, src *MemberSet, owner Path, static bool, errs *[]
 		p.Static = static
 		*errs = append(*errs, &ErrDuplicateMember{
 			Path:   p,
-			First:  firstOrigin(dst.Ctor.Provenance),
-			Second: firstOrigin(src.Ctor.Provenance),
+			First:  headOrigin(dst.Ctor.Origins),
+			Second: headOrigin(src.Ctor.Origins),
 		})
 	}
 }
@@ -323,33 +358,7 @@ func withFreeName(owner Path, name string) Path {
 	return cp
 }
 
-func appendChild(owner Path, name string) Path {
-	cp := owner
-	cp.Owner = appendOwner(owner.Owner, name)
-	return cp
-}
-
-// collectDecls flattens all declarations across all namespaces of a
-// parsed module. Override files are single-file modules, so namespace
-// grouping (by directory) is incidental — the override format treats
-// the file's top-level decls as a flat list.
-func collectDecls(m *ast.Module) []ast.Decl {
-	if m == nil {
-		return nil
-	}
-	var out []ast.Decl
-	iter := m.Namespaces.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		ns := iter.Value()
-		if ns == nil {
-			continue
-		}
-		out = append(out, ns.Decls...)
-	}
-	return out
-}
-
-func firstOrigin(ps []Origin) Origin {
+func headOrigin(ps []Origin) Origin {
 	if len(ps) == 0 {
 		return Origin{}
 	}

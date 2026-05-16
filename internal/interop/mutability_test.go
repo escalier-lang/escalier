@@ -346,7 +346,7 @@ func TestClassifyTier6_NameHeuristics(t *testing.T) {
 		{"cloneDeep", "cloneDeep", false, TierNameHeuristic},
 		// copyWithin matches the `copy` non-mutating prefix at tier 6.
 		// Array.prototype.copyWithin is actually mutating in JS, but
-		// that's the job of tier 4 (shipped overrides) — tier 6 only
+		// that's the job of tier 4 (builtin overrides) — tier 6 only
 		// reflects the name-based heuristic.
 		{"copyWithin", "copyWithin", false, TierNameHeuristic},
 		// Non-mutating exact.

@@ -323,8 +323,7 @@ fork the shape of a built-in API.
 
 To keep shipped overrides in sync as upstream `.d.ts` files evolve,
 the compiler test suite includes a **consistency test** that runs
-over every shipped override entry where a corresponding upstream
-`.d.ts` exists:
+over every shipped override entry:
 
 - For TS built-in symbols, the upstream is the bundled TS lib
   `.d.ts` set pinned to the compiler's TS lib version.
@@ -333,7 +332,11 @@ over every shipped override entry where a corresponding upstream
   `@types/*` package (or the library's own bundled types) at a
   pinned version recorded alongside the shipped override.
 
-For each such entry, the test:
+Every overridden symbol has an upstream `.d.ts` counterpart: even
+Escalier-authored libraries ship `.d.ts` for TypeScript
+back-compat, so "no upstream types" is not a case that arises.
+
+For each entry, the test:
 
 1. Looks up the corresponding declaration in the pinned upstream
    `.d.ts`.
@@ -342,10 +345,8 @@ For each such entry, the test:
 3. Fails the build on any divergence, reporting the specific member
    and which field disagrees.
 
-Shipped overrides for libraries that ship no upstream types (purely
-Escalier-authored) are exempt from the test by definition. Bumping
-any pinned upstream version is expected to surface override drift
-as a deliberate fix-up step rather than letting it accumulate.
+Bumping any pinned upstream version is expected to surface override
+drift as a deliberate fix-up step rather than letting it accumulate.
 
 ### Override file format
 

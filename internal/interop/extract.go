@@ -21,7 +21,7 @@ import (
 // checker from each `override declare module "name" { ... }` block.
 //
 // `filePath` is the locator for the override file being extracted. It
-// is stamped on every Origin produced by this call (always with
+// is set on every Origin produced by this call (always with
 // Kind=OverrideFile) and surfaced in diagnostics. See Origin.FilePath
 // for the locator-string convention.
 //
@@ -64,7 +64,7 @@ func Extract(
 // ensureModule returns the ModuleScope for `name`, creating it on first
 // touch. When the module already exists, `origin` is ignored — the
 // first-seen file's origin wins for Container.Origin. This is fine for
-// diagnostics because each leaf carries its own Provenance; the
+// diagnostics because each leaf carries its own Origins; the
 // Container.Origin is only used as a fallback when no leaf-level origin
 // is available.
 func ensureModule(out map[string]*ModuleScope, name string, origin Origin) *ModuleScope {
@@ -74,7 +74,7 @@ func ensureModule(out map[string]*ModuleScope, name string, origin Origin) *Modu
 	ms := &ModuleScope{
 		Container: Container{
 			Free:     make(map[string]*Effective),
-			Children: make(map[string]*ChildScope),
+			Children: make(map[string]ChildScope),
 			Origin:   origin,
 		},
 	}
@@ -138,10 +138,10 @@ func extractIntoContainer(
 				continue
 			}
 			subNs, _ := nsLookupNamespace(ns, decl.Name.Name)
-			child := &ChildScope{
+			child := &NamespaceScope{
 				Container: Container{
 					Free:     make(map[string]*Effective),
-					Children: make(map[string]*ChildScope),
+					Children: make(map[string]ChildScope),
 					Origin:   Origin{Kind: OverrideFile, FilePath: filePath, Span: decl.Span()},
 				},
 			}
@@ -160,10 +160,10 @@ func buildLeafFromValue(ns *type_system.Namespace, name, filePath string, span a
 		return nil
 	}
 	return &Effective{
-		Type:       b.Type,
-		Source:     tier.ResolutionTierFor(),
-		Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
-		Tier:       tier,
+		Type:    b.Type,
+		Source:  tier.ResolutionTierFor(),
+		Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+		Tier:    tier,
 	}
 }
 
@@ -176,10 +176,10 @@ func buildLeafFromTypeAlias(ns *type_system.Namespace, name, filePath string, sp
 		return nil
 	}
 	return &Effective{
-		Type:       ta.Type,
-		Source:     tier.ResolutionTierFor(),
-		Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
-		Tier:       tier,
+		Type:    ta.Type,
+		Source:  tier.ResolutionTierFor(),
+		Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+		Tier:    tier,
 	}
 }
 
@@ -196,14 +196,10 @@ func buildLeafFromTypeAlias(ns *type_system.Namespace, name, filePath string, sp
 // slot. References to upstream base classes in `extends` clauses are
 // not a concern — those resolve through the checker's outer scope,
 // which already contains the .d.ts symbols (§5.2 sequencing).
-func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath string, tier OverrideTier) *ChildScope {
+func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath string, tier OverrideTier) *ClassScope {
 	origin := Origin{Kind: OverrideFile, FilePath: filePath, Span: decl.Span()}
-	child := &ChildScope{
-		Container: Container{
-			Free:     make(map[string]*Effective),
-			Children: make(map[string]*ChildScope),
-			Origin:   origin,
-		},
+	child := &ClassScope{
+		Origin:   origin,
 		Instance: NewMemberSet(),
 		Static:   NewMemberSet(),
 	}
@@ -227,10 +223,10 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Methods[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		case *ast.GetterElem:
 			if e.Static {
@@ -241,10 +237,10 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Getters[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		case *ast.SetterElem:
 			if e.Static {
@@ -255,10 +251,10 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Setters[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		case *ast.FieldElem:
 			if e.Static {
@@ -269,17 +265,17 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 				continue
 			}
 			child.Instance.Properties[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		case *ast.ConstructorElem:
 			eff := &Effective{
-				Type:       lookupCtorType(classType),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupCtorType(classType),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 			child.Instance.Ctor = eff
 		}
@@ -290,14 +286,10 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 // buildInterfaceChild mirrors buildClassChild for interfaces. Same
 // slot routing; types come from the interface's object type in `ns`.
 // Interfaces have no static side — only Instance is populated.
-func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, filePath string, tier OverrideTier) *ChildScope {
+func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, filePath string, tier OverrideTier) *InterfaceScope {
 	origin := Origin{Kind: OverrideFile, FilePath: filePath, Span: decl.Span()}
-	child := &ChildScope{
-		Container: Container{
-			Free:     make(map[string]*Effective),
-			Children: make(map[string]*ChildScope),
-			Origin:   origin,
-		},
+	child := &InterfaceScope{
+		Origin:   origin,
 		Instance: NewMemberSet(),
 	}
 	if decl.TypeAnn == nil {
@@ -312,10 +304,10 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Methods[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		case *ast.GetterTypeAnn:
 			name := CanonicalNameFromObjKey(e.Name)
@@ -323,10 +315,10 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Getters[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		case *ast.SetterTypeAnn:
 			name := CanonicalNameFromObjKey(e.Name)
@@ -334,10 +326,10 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Setters[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		case *ast.PropertyTypeAnn:
 			name := CanonicalNameFromObjKey(e.Name)
@@ -345,10 +337,10 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Properties[name] = &Effective{
-				Type:       lookupObjElemType(classType, name, false),
-				Source:     tier.ResolutionTierFor(),
-				Provenance: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
-				Tier:       tier,
+				Type:    lookupObjElemType(classType, name, false),
+				Source:  tier.ResolutionTierFor(),
+				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Tier:    tier,
 			}
 		}
 	}
@@ -462,4 +454,3 @@ func objElemMatch(elem type_system.ObjTypeElem) (type_system.Type, string, bool)
 	}
 	return nil, "", false
 }
-

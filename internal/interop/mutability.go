@@ -17,7 +17,7 @@ import (
 //  1. User override files
 //  2. @esctype tag (round-trip from Escalier source)
 //  3. Explicit author signals (this: Readonly<T>, getters/setters, Readonly<T>, readonly props)
-//  4. Shipped overrides (stdlib, FP libraries)
+//  4. Builtin overrides (stdlib, FP libraries)
 //  5. get* prefix rule (with documented exceptions)
 //  6. Name-based heuristics
 //  7. Default: mutating
@@ -28,7 +28,7 @@ const (
 	TierUserOverride                          // 1
 	TierEsctype                               // 2
 	TierExplicitSignal                        // 3
-	TierShippedOverride                       // 4
+	TierBuiltinOverride                       // 4
 	TierGetPrefix                             // 5
 	TierNameHeuristic                         // 6
 	TierDefault                               // 7
@@ -68,7 +68,7 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return result
 	}
 
-	// Tier 4: shipped overrides (stdlib, FP libraries) — §6.
+	// Tier 4: builtin overrides (stdlib, FP libraries) — §6.
 
 	// Tier 5: get* prefix rule.
 	if result, ok := classifyGetPrefix(ctx); ok {
