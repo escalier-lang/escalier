@@ -200,6 +200,10 @@ func Build(
 	for _, f := range files {
 		globalNs, namedNs, tcErrs := checker(f)
 		errs = append(errs, tcErrs...)
+		// Checker errors do not short-circuit extraction: any namespaces
+		// the checker did populate still contribute to the store, with
+		// the errors flowing back alongside. Extract is nil-safe per
+		// name, so partial namespaces just produce partial overrides.
 		contributions := Extract(f.Decls, globalNs, namedNs, f.FilePath, f.Tier)
 		mergeWithinTier(tierMaps[f.Tier], contributions, &errs)
 	}
@@ -230,8 +234,9 @@ func mergeWithinTier(
 		// Module-level @all_pure: if either side claims it, the
 		// merged scope claims it. Same-tier duplicate isn't reported —
 		// the pragma is module-level metadata, not a slot.
-		if srcMod.AllPure {
+		if srcMod.AllPure && !dstMod.AllPure {
 			dstMod.AllPure = true
+			dstMod.AllPureTier = srcMod.AllPureTier
 		}
 	}
 }
@@ -265,7 +270,7 @@ func mergeWithinContainer(
 // mergeWithinChildScope folds `incoming` into `existing` for the
 // within-tier accumulator. Same-variant merges are recursive; a
 // shape mismatch (e.g. namespace + class at the same name) is reported
-// as ErrDuplicateMember and the first-seen variant is kept.
+// as ErrShapeConflict and the first-seen variant is kept.
 func mergeWithinChildScope(existing, incoming ChildScope, childOwner Path, errs *[]error) {
 	switch e := existing.(type) {
 	case *NamespaceScope:
@@ -294,7 +299,7 @@ func mergeWithinChildScope(existing, incoming ChildScope, childOwner Path, errs 
 }
 
 func reportChildShapeConflict(existing, incoming ChildScope, childOwner Path, errs *[]error) {
-	*errs = append(*errs, &ErrDuplicateMember{
+	*errs = append(*errs, &ErrShapeConflict{
 		Path:   childOwner,
 		First:  existing.ChildOrigin(),
 		Second: incoming.ChildOrigin(),

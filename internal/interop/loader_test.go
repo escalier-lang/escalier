@@ -239,6 +239,72 @@ func TestDiscoverHonorsCanceledContext(t *testing.T) {
 	require.True(t, sawCanceled, "expected a context.Canceled error; got %v", errs)
 }
 
+// TestMergeWithinTierPropagatesAllPureTier: when one file in a tier
+// brings AllPure=true to a module another file already contributed,
+// the merged ModuleScope must carry the incoming AllPureTier — not
+// leave it at the zero value, which happens to alias the highest tier
+// and would mis-attribute provenance later.
+func TestMergeWithinTierPropagatesAllPureTier(t *testing.T) {
+	dst := map[string]*ModuleScope{
+		"m": {
+			Container: Container{
+				Free:     map[string]*Effective{},
+				Children: map[string]ChildScope{},
+			},
+		},
+	}
+	src := map[string]*ModuleScope{
+		"m": {
+			Container: Container{
+				Free:     map[string]*Effective{},
+				Children: map[string]ChildScope{},
+			},
+			AllPure:     true,
+			AllPureTier: OverrideTierUserDep,
+		},
+	}
+	var errs []error
+	mergeWithinTier(dst, src, &errs)
+	require.Empty(t, errs)
+	require.True(t, dst["m"].AllPure)
+	require.Equal(t, OverrideTierUserDep, dst["m"].AllPureTier)
+}
+
+// TestMergeWithinTierShapeConflictReportsShapeConflict: two files in
+// the same tier declare the same name as different child variants
+// (namespace vs. class). That's a shape conflict, not a duplicate-member
+// collision, and should surface as *ErrShapeConflict.
+func TestMergeWithinTierShapeConflictReportsShapeConflict(t *testing.T) {
+	dst := map[string]*ModuleScope{
+		"m": {
+			Container: Container{
+				Free: map[string]*Effective{},
+				Children: map[string]ChildScope{
+					"C": &NamespaceScope{Container: Container{
+						Free:     map[string]*Effective{},
+						Children: map[string]ChildScope{},
+					}},
+				},
+			},
+		},
+	}
+	src := map[string]*ModuleScope{
+		"m": {
+			Container: Container{
+				Free: map[string]*Effective{},
+				Children: map[string]ChildScope{
+					"C": &ClassScope{Instance: NewMemberSet(), Static: NewMemberSet()},
+				},
+			},
+		},
+	}
+	var errs []error
+	mergeWithinTier(dst, src, &errs)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrShapeConflict)
+	require.True(t, ok, "expected *ErrShapeConflict; got %T", errs[0])
+}
+
 // Ensure the parser is actually reading our content (vs silently
 // returning an empty Decls slice that the rest of the test would also
 // pass on).

@@ -309,7 +309,7 @@ func mergeContainer(
 // override sides. The variant of the result follows whichever side is
 // present; if both sides have a value with the same variant we recurse
 // per slot. A shape mismatch between the two sides (e.g. namespace vs
-// class at the same name) is upstream ErrDuplicateMember — we emit the
+// class at the same name) is upstream ErrShapeConflict — we emit the
 // error and proceed with the override side's variant.
 func mergeChild(
 	orig, over ChildScope,
@@ -325,7 +325,7 @@ func mergeChild(
 	// Resolve the variant of the result and obtain its (possibly nil)
 	// orig/over MemberSet pairs.
 	if orig != nil && over != nil && !sameChildKind(orig, over) {
-		*errs = append(*errs, &ErrDuplicateMember{
+		*errs = append(*errs, &ErrShapeConflict{
 			Path:   ownerPath,
 			First:  orig.ChildOrigin(),
 			Second: over.ChildOrigin(),

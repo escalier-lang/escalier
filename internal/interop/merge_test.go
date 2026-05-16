@@ -452,6 +452,37 @@ func TestMergeExplicitMutSelfOverrideWins(t *testing.T) {
 	require.Same(t, receiver, fn.SelfParam.Type)
 }
 
+// TestMergeShapeConflictBetweenOriginalAndOverride: when the original
+// has a child as one variant (namespace) and the override has the same
+// child as a different variant (class), the merge proceeds with the
+// override's variant but reports *ErrShapeConflict so the caller can
+// distinguish a shape clash from a duplicate-member collision.
+func TestMergeShapeConflictBetweenOriginalAndOverride(t *testing.T) {
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free: map[string]*Effective{},
+			Children: map[string]ChildScope{
+				"C": &NamespaceScope{Container: Container{
+					Free:     map[string]*Effective{},
+					Children: map[string]ChildScope{},
+				}},
+			},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free: map[string]*Effective{},
+			Children: map[string]ChildScope{
+				"C": &ClassScope{Instance: NewMemberSet(), Static: NewMemberSet()},
+			},
+		}},
+	}
+	_, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrShapeConflict)
+	require.True(t, ok, "expected *ErrShapeConflict; got %T", errs[0])
+}
+
 // TestMergeNamespaceNestedOverrideMatchesOriginal: an override targets
 // a function inside a nested namespace (e.g. `lodash.fp.map`). The
 // merger must descend through Container.Children to the matching
