@@ -44,12 +44,12 @@ func (c *Checker) inferStmt(ctx Context, stmt ast.Stmt) []Error {
 // `declare module "..."`, `declare global`, or `declare namespace`
 // block, inferring each into the surrounding namespace. The block
 // itself is a parser-recognized grouping; for override files the inner
-// decls are what carry the actual types consumed by §5's shape
-// extractor.
+// decls are what carry the actual types consumed by the override
+// system's shape extractor.
 //
-// Non-override ambient blocks are still no-ops — when the legacy .d.ts
-// ingestion path needs them, this helper can be reused from those
-// branches as well.
+// Non-override ambient blocks are no-ops: `.d.ts` ingestion has its
+// own pipeline (dts_parser → interop.ConvertModule) that never routes
+// through inferDecl, and there is no plan to unify the two.
 func (c *Checker) inferDeclareBlock(ctx Context, decls []ast.Decl, enclosingStmt ast.Stmt) []Error {
 	var errors []Error
 	for _, d := range decls {
@@ -85,9 +85,9 @@ func (c *Checker) inferDecl(ctx Context, decl ast.Decl, enclosingStmt ast.Stmt) 
 	case *ast.EnumDecl:
 		return c.inferEnumDecl(ctx, decl)
 	case *ast.DeclareModuleDecl:
-		// Override blocks descend into their contained declarations;
-		// non-override `declare module` blocks remain a no-op until the
-		// .d.ts ingestion path needs them.
+		// Override blocks descend into their contained declarations.
+		// Non-override `declare module` blocks are a no-op here —
+		// `.d.ts` ingestion uses a separate pipeline.
 		if decl.Override() {
 			return c.inferDeclareBlock(ctx, decl.Decls, enclosingStmt)
 		}

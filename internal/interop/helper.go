@@ -654,13 +654,7 @@ func convertMethodDecl(cctx *convertCtx, md *dts_parser.MethodDecl, className st
 	// Classify receiver mutability. Static methods have no receiver.
 	var receiver *ast.MethodReceiver
 	if !md.Modifiers.Static {
-		result := Classify(ClassifyContext{
-			Member:        md,
-			ClassName:     className,
-			ModulePath:    cctx.modulePath,
-			NamespacePath: cctx.namespacePath,
-			Store:         cctx.store,
-		})
+		result := cctx.classifyMember(md, className)
 		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: md.Span()}
 	}
 
@@ -726,13 +720,7 @@ func convertGetterDecl(cctx *convertCtx, gd *dts_parser.GetterDecl, className st
 	// Classify receiver mutability. Static getters have no receiver.
 	var receiver *ast.MethodReceiver
 	if !gd.Modifiers.Static {
-		result := Classify(ClassifyContext{
-			Member:        gd,
-			ClassName:     className,
-			ModulePath:    cctx.modulePath,
-			NamespacePath: cctx.namespacePath,
-			Store:         cctx.store,
-		})
+		result := cctx.classifyMember(gd, className)
 		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: gd.Span()}
 	}
 
@@ -768,13 +756,7 @@ func convertSetterDecl(cctx *convertCtx, sd *dts_parser.SetterDecl, className st
 	// Classify receiver mutability. Static setters have no receiver.
 	var receiver *ast.MethodReceiver
 	if !sd.Modifiers.Static {
-		result := Classify(ClassifyContext{
-			Member:        sd,
-			ClassName:     className,
-			ModulePath:    cctx.modulePath,
-			NamespacePath: cctx.namespacePath,
-			Store:         cctx.store,
-		})
+		result := cctx.classifyMember(sd, className)
 		receiver = &ast.MethodReceiver{Mut: result.Mut, Span_: sd.Span()}
 	}
 

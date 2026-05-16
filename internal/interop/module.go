@@ -12,15 +12,35 @@ import (
 // convertCtx carries override-related state through the conversion
 // pipeline. nil store / empty modulePath mean "no overrides registered"
 // — Classify falls through to its built-in heuristics.
-//
-// namespacePath is the dotted name of the enclosing `namespace` chain
-// (e.g. "Outer.Inner") and is empty at the module root. It is threaded
-// into ClassifyContext so pathForMember can build a Member-chain Owner
-// that walkChild can descend through nested NamespaceScopes.
 type convertCtx struct {
-	store         *OverrideStore
-	modulePath    string
+	// store is the merged override store consulted by Classify; nil
+	// means no overrides are registered.
+	store *OverrideStore
+
+	// modulePath is the store key for the module being converted: ""
+	// for globals/prelude lib files, the import specifier for an
+	// imported package (e.g. "lodash/fp"), or the module name from a
+	// `declare module "X"` wrapper.
+	modulePath string
+
+	// namespacePath is the dotted name of the enclosing `namespace`
+	// chain (e.g. "Outer.Inner"); empty at the module root. It is
+	// threaded into ClassifyContext so pathForMember can build a
+	// Member-chain Owner that walkChild can descend through nested
+	// NamespaceScopes.
 	namespacePath string
+}
+
+// classifyMember runs Classify for a member of the given enclosing class,
+// threading the convertCtx's module/namespace/store fields through.
+func (c *convertCtx) classifyMember(member dts_parser.ClassMember, className string) ClassifyResult {
+	return Classify(ClassifyContext{
+		Member:        member,
+		ClassName:     className,
+		ModulePath:    c.modulePath,
+		NamespacePath: c.namespacePath,
+		Store:         c.store,
+	})
 }
 
 // qualifiedName constructs a qualified namespace name by appending a child name to a parent name.

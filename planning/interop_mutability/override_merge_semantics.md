@@ -212,10 +212,10 @@ Multiple files may declare overrides for the same module:
   the union of all member declarations across files. Each individual
   member must still appear in only one file.
 
-Shipped overrides and user overrides cannot collide because they
+Built-in overrides and user overrides cannot collide because they
 load at different precedence tiers (resolution-order tiers 4 and 3
 respectively); the user's wins. The diagnostic for the silent override
-suggests the user verify the shipped override is wrong rather than
+suggests the user verify the built-in override is wrong rather than
 out-of-date.
 
 ## Order independence

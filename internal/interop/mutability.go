@@ -56,7 +56,7 @@ type ClassifyContext struct {
 	NamespacePath string
 
 	// Store, if non-nil, is the merged override store consulted by tiers
-	// 1 and 4 (user overrides and shipped overrides). nil is permitted
+	// 1 and 4 (user overrides and built-in overrides). nil is permitted
 	// and means "no overrides registered".
 	Store *OverrideStore
 
@@ -72,7 +72,7 @@ type ClassifyContext struct {
 // planning/interop_mutability/requirements.md.
 func Classify(ctx ClassifyContext) ClassifyResult {
 	// Consult the override store once. Its Source field tells us whether
-	// this is a tier-1 (user) hit or a tier-4 (shipped) hit — applied at
+	// this is a tier-1 (user) hit or a tier-4 (built-in) hit — applied at
 	// the correct rung below.
 	var override *Effective
 	if ctx.Store != nil {
