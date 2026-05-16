@@ -55,7 +55,7 @@ func (c *Checker) LoadReactTypes(ctx Context, sourceDir string) []Error {
 	}
 
 	// 4. Load and classify the main entry point using existing infrastructure
-	parsedTypeDef, loadErr := parseTypeDef(entryPoint)
+	parsedTypeDef, loadErr := parseTypeDef(entryPoint, c.OverrideStore, "react")
 	if loadErr != nil {
 		return []Error{&GenericError{
 			message: "Could not load @types/react: " + loadErr.Error(),

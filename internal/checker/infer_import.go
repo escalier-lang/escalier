@@ -194,7 +194,17 @@ type ParsedTypeDef struct {
 
 // parseTypeDef parses a .d.ts file and classifies its contents
 // using the FileClassification system from dts_parser/classifier.go.
-func parseTypeDef(filename string) (*ParsedTypeDef, error) {
+//
+// packageModulePath is the module key under which any package-level
+// declarations from this file should look up overrides — typically the
+// package import specifier (e.g. "lodash/fp"). Globals and prelude lib
+// files pass "" since their declarations are stored at module="" in the
+// override store. Named `declare module "X" { ... }` blocks always use
+// their own quoted name, regardless of packageModulePath.
+//
+// store is the merged override store consulted while converting class
+// members; nil disables tier-1 and tier-4 lookups.
+func parseTypeDef(filename string, store *interop.OverrideStore, packageModulePath string) (*ParsedTypeDef, error) {
 	// Read the file
 	contents, err := os.ReadFile(filename)
 	if err != nil {
@@ -240,7 +250,7 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 		pkgDtsModule := &dts_parser.Module{
 			Statements: classification.PackageDecls,
 		}
-		pkgAstModule, err := interop.ConvertModule(pkgDtsModule)
+		pkgAstModule, err := interop.ConvertModuleWithOverrides(pkgDtsModule, store, packageModulePath)
 		if err != nil {
 			return nil, fmt.Errorf("converting package declarations: %w", err)
 		}
@@ -253,7 +263,7 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 		globalDtsModule := &dts_parser.Module{
 			Statements: classification.GlobalDecls,
 		}
-		globalAstModule, err := interop.ConvertModule(globalDtsModule)
+		globalAstModule, err := interop.ConvertModuleWithOverrides(globalDtsModule, store, "")
 		if err != nil {
 			return nil, fmt.Errorf("converting global declarations: %w", err)
 		}
@@ -266,7 +276,7 @@ func parseTypeDef(filename string) (*ParsedTypeDef, error) {
 		namedDtsModule := &dts_parser.Module{
 			Statements: namedMod.Decls,
 		}
-		namedAstModule, err := interop.ConvertModule(namedDtsModule)
+		namedAstModule, err := interop.ConvertModuleWithOverrides(namedDtsModule, store, namedMod.ModuleName)
 		if err != nil {
 			return nil, fmt.Errorf("converting named module %s: %w", namedMod.ModuleName, err)
 		}
@@ -734,7 +744,8 @@ func resolveRelativeDtsPath(sourceFilePath string, relativePath string) string {
 func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 	var errors []Error
 
-	parsedTypeDef, loadErr := parseTypeDef(filePath)
+	// Path-referenced files define globals — store-keyed by module="".
+	parsedTypeDef, loadErr := parseTypeDef(filePath, c.OverrideStore, "")
 	if loadErr != nil {
 		// Remove the in-progress entry so later loads can retry and report the real failure.
 		delete(c.PackageRegistry.packages, filePath)
@@ -824,8 +835,9 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 	// The sentinel will be replaced with the real namespace after loading via Update()
 	c.PackageRegistry.MarkInProgress(dtsFilePath)
 
-	// Step 3: Load and classify the .d.ts file
-	parsedTypeDef, loadErr := parseTypeDef(dtsFilePath)
+	// Step 3: Load and classify the .d.ts file. Use the package import
+	// specifier as the override-store key for the file's package decls.
+	parsedTypeDef, loadErr := parseTypeDef(dtsFilePath, c.OverrideStore, packageName)
 	if loadErr != nil {
 		// Clean up sentinel so the package can be retried
 		delete(c.PackageRegistry.packages, dtsFilePath) // Need to expose a Remove method

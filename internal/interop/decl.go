@@ -9,7 +9,7 @@ import (
 
 // convertStatement attempts to convert a dts_parser.Statement to an ast.Decl.
 // Returns nil for statements that can't be represented as Decl (like imports).
-func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
+func convertStatement(cctx *convertCtx, stmt dts_parser.Statement) (ast.Decl, error) {
 	switch s := stmt.(type) {
 	case *dts_parser.VarDecl:
 		return convertVarDecl(s)
@@ -20,7 +20,7 @@ func convertStatement(stmt dts_parser.Statement) (ast.Decl, error) {
 	case *dts_parser.EnumDecl:
 		return convertEnumDecl(s)
 	case *dts_parser.ClassDecl:
-		return convertClassDecl(s)
+		return convertClassDecl(cctx, s)
 	case *dts_parser.InterfaceDecl:
 		return convertInterfaceDecl(s)
 	case *dts_parser.ImportDecl,
@@ -147,7 +147,7 @@ func convertEnumDecl(de *dts_parser.EnumDecl) (ast.Decl, error) {
 }
 
 // convertClassDecl converts a dts_parser.ClassDecl to an ast.ClassDecl.
-func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
+func convertClassDecl(cctx *convertCtx, dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 	// Convert type parameters
 	typeParams, err := convertTypeParams(dc.TypeParams)
 	if err != nil {
@@ -171,7 +171,12 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
 			allParams := append([]*ast.Param{selfParam}, params...)
 			fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, convertSpan(m.Span()))
-			ctorResult := Classify(ClassifyContext{Member: m, ClassName: dc.Name.Name})
+			ctorResult := Classify(ClassifyContext{
+				Member:     m,
+				ClassName:  dc.Name.Name,
+				ModulePath: cctx.modulePath,
+				Store:      cctx.store,
+			})
 			bodyElems = append(bodyElems, &ast.ConstructorElem{
 				Fn:       fn,
 				Receiver: &ast.MethodReceiver{Mut: ctorResult.Mut, Span_: selfSpan},
@@ -180,7 +185,7 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			})
 
 		case *dts_parser.MethodDecl:
-			elem, err := convertMethodDecl(m, dc.Name.Name)
+			elem, err := convertMethodDecl(cctx, m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting method for class %s: %w", dc.Name.Name, err)
 			}
@@ -194,14 +199,14 @@ func convertClassDecl(dc *dts_parser.ClassDecl) (*ast.ClassDecl, error) {
 			bodyElems = append(bodyElems, elem)
 
 		case *dts_parser.GetterDecl:
-			elem, err := convertGetterDecl(m, dc.Name.Name)
+			elem, err := convertGetterDecl(cctx, m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting getter for class %s: %w", dc.Name.Name, err)
 			}
 			bodyElems = append(bodyElems, elem)
 
 		case *dts_parser.SetterDecl:
-			elem, err := convertSetterDecl(m, dc.Name.Name)
+			elem, err := convertSetterDecl(cctx, m, dc.Name.Name)
 			if err != nil {
 				return nil, fmt.Errorf("converting setter for class %s: %w", dc.Name.Name, err)
 			}
