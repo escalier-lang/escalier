@@ -47,14 +47,18 @@ func Extract(
 			if !decl.Override() {
 				continue
 			}
-			ms := ensureModule(out, "", origin)
+			declOrigin := origin
+			declOrigin.Span = decl.Span()
+			ms := ensureModule(out, "", declOrigin)
 			extractIntoContainer(decl.Decls, globalNs, &ms.Container, filePath, tier)
 		case *ast.DeclareModuleDecl:
 			if !decl.Override() || decl.Name == nil {
 				continue
 			}
 			modName := decl.Name.Value
-			ms := ensureModule(out, modName, origin)
+			declOrigin := origin
+			declOrigin.Span = decl.Span()
+			ms := ensureModule(out, modName, declOrigin)
 			extractIntoContainer(decl.Decls, namedNs[modName], &ms.Container, filePath, tier)
 		}
 	}
