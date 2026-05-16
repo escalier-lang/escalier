@@ -19,8 +19,8 @@ table below makes both explicit. Status legend: ✅ done,
 | 2.2 | Parser sub-task                        | ✅      | 2.1         | `declare module/global/namespace` and `override` prefix accepted by [internal/parser/decl.go](../../internal/parser/decl.go); `fixtures/interop_mutability/overrides/example.esc` is no longer `.future`.                                                                                       |
 | 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/interop/mutability.go](../../internal/interop/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
 | 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/interop/mutability.go](../../internal/interop/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
-| 5   | Override file format, loader, merge    | ⬜      | 2.2, 3      | Largest single chunk. No code yet.                                                                                                                                                                                                                                                             |
-| 6   | Built-in overrides                      | ⬜      | 5           | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`).                                                                                                                                       |
+| 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit: data types, extract, merge & loader, checker wiring, and the trio-fusion / static-side lookup prerequisites for §6 are all in. Remaining: §5.13 Group B (property-type consistency on non-function leaves) and Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
+| 6   | Built-in overrides                      | ⬜      | 5 (Group B optional) | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`). §5.13 Group A prerequisites are done; Group B (property-type consistency) is recommended alongside but not strictly blocking.                                                                                                  |
 | 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/interop/mutability.go](../../internal/interop/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
 | 8   | Type-printer round-trip audit          | ⬜      | —           | Independent; prerequisite for §9 emit. Can be done at any time.                                                                                                                                                                                                                                |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
@@ -40,7 +40,7 @@ is finished first):
    Drop `TierPrimitiveWrapper`. Small, fast.
 2. **§4 cleanup.** Rename `classifyTier2` → `classifyTier3`,
    finish remaining tier-3 cases.
-3. **§5 (override system).** Largest chunk; unblocks §6, §9, §11.
+3. **§5 (override system).** Largest chunk; unblocks §6, §9, §11. Core pipeline + §6 prerequisites are landed (PRs #606–#609 and the 5.A blockers commit); remaining work is §5.13 Group B/C follow-ups.
 4. **§6 (built-in overrides).** Author the stdlib + FP data,
    including the always-immutable built-ins.
 5. **§7 (heuristics).** Add `classifyTier5` (get-prefix) and
@@ -1077,8 +1077,8 @@ static-side member lookup in `extract.go`. Both landed in
 [internal/interop/originals.go](../../internal/interop/originals.go)
 (`BuildOriginal`) and the refactored
 [internal/interop/extract.go](../../internal/interop/extract.go)
-(`buildClassChild` reads instance vs. static side from
-`lookupClassObject` / `lookupStaticObject` respectively).
+(`buildClassChild` reads the instance side via `lookupInstanceObject`
+and the static side via `lookupStaticObject`).
 
 Concretely, this means a built-in override file can write:
 
