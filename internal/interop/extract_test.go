@@ -229,15 +229,20 @@ func TestExtractDestructuredVarDecl(t *testing.T) {
 	require.Same(t, fnB, ms.Free["b"].Type, "expected Free[b] to carry fnB")
 }
 
-func TestExtractClassDropsStaticMembers(t *testing.T) {
-	// Static-side overrides are intentionally dropped until static
-	// lookup is wired (see comment in buildClassChild). Without the
-	// skip, Extract would record a static method with Type=nil and the
-	// merge step's "override wins" branch would clobber the original's
-	// typed static slot. This test pins the drop behavior.
+func TestExtractClassRecordsStaticMembers(t *testing.T) {
+	// Static-side overrides flow through extract: the static-side
+	// ObjectType lives under ns.Values[name].Type (Escalier classes
+	// park it there directly; TS trios use a TypeRef("FooConstructor")
+	// indirection that unwrapToObject peels). buildClassChild reads
+	// types from there for static elems and from ns.Types[name] for
+	// instance elems.
 	instanceFn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
-	cls := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+	staticFn := type_system.NewFuncType(nil, nil, nil, type_system.NewBoolPrimType(nil), nil)
+	instObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
 		type_system.NewMethodElem(type_system.NewStrKey("inst"), instanceFn),
+	})
+	statObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewMethodElem(type_system.NewStrKey("doStatic"), staticFn),
 	})
 
 	instMethod := &ast.MethodElem{
@@ -261,7 +266,8 @@ func TestExtractClassDropsStaticMembers(t *testing.T) {
 	declareGlobal := ast.NewDeclareGlobalDecl([]ast.Decl{classDecl}, true, emptySpan())
 
 	globalNs := type_system.NewNamespace()
-	globalNs.Types["Widget"] = &type_system.TypeAlias{Type: cls}
+	globalNs.Types["Widget"] = &type_system.TypeAlias{Type: instObj}
+	globalNs.Values["Widget"] = &type_system.Binding{Type: statObj}
 
 	out := Extract(
 		[]ast.Decl{declareGlobal},
@@ -275,8 +281,54 @@ func TestExtractClassDropsStaticMembers(t *testing.T) {
 	require.True(t, ok, "expected Children[Widget] to be *ClassScope")
 	require.NotNil(t, child.Instance)
 	require.NotNil(t, child.Instance.Methods["inst"], "expected instance method inst recorded")
+	require.Same(t, instanceFn, child.Instance.Methods["inst"].Type, "expected instance method type from ns.Types[name]")
 	require.NotNil(t, child.Static, "expected Static MemberSet allocated (class shape signal)")
-	require.NotContains(t, child.Static.Methods, "doStatic", "expected static methods to be dropped during extraction")
+	require.NotNil(t, child.Static.Methods["doStatic"], "expected static method doStatic recorded")
+	require.Same(t, staticFn, child.Static.Methods["doStatic"].Type, "expected static method type from ns.Values[name]")
+}
+
+func TestExtractClassResolvesStaticViaTypeRef(t *testing.T) {
+	// TS trio pattern: Values["Foo"] binds to TypeRef("FooConstructor")
+	// whose alias resolves to the static ObjectType. unwrapToObject
+	// must peel the TypeRef and find the static elem.
+	staticFn := type_system.NewFuncType(nil, nil, nil, type_system.NewBoolPrimType(nil), nil)
+	statObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewMethodElem(type_system.NewStrKey("isFoo"), staticFn),
+	})
+	ctorAlias := &type_system.TypeAlias{Type: statObj}
+	tref := type_system.NewTypeRefType(nil, "FooConstructor", ctorAlias)
+
+	staticMethod := &ast.MethodElem{
+		Name:   ast.NewIdent("isFoo", emptySpan()),
+		Fn:     nil,
+		Static: true,
+		Span_:  emptySpan(),
+	}
+	classDecl := ast.NewClassDecl(
+		ast.NewIdentifier("Foo", emptySpan()),
+		nil, nil, nil, nil,
+		[]ast.ClassElem{staticMethod},
+		false, true, emptySpan(),
+	)
+	declareGlobal := ast.NewDeclareGlobalDecl([]ast.Decl{classDecl}, true, emptySpan())
+
+	globalNs := type_system.NewNamespace()
+	globalNs.Values["Foo"] = &type_system.Binding{Type: tref}
+	// Types["FooConstructor"] aliased through tref above; Types["Foo"] absent
+	// for this test — only the static path matters.
+
+	out := Extract(
+		[]ast.Decl{declareGlobal},
+		globalNs, nil,
+		"test.esc",
+		OverrideTierBuiltin,
+	)
+	ms := out[""]
+	require.NotNil(t, ms)
+	child, ok := ms.Children["Foo"].(*ClassScope)
+	require.True(t, ok)
+	require.NotNil(t, child.Static.Methods["isFoo"])
+	require.Same(t, staticFn, child.Static.Methods["isFoo"].Type)
 }
 
 func TestExtractMissingNamespaceEntryProducesNilType(t *testing.T) {
