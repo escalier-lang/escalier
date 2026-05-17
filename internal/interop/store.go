@@ -195,7 +195,7 @@ func (e *Effective) withTier(tier OverrideTier) *Effective {
 type OriginKind int
 
 const (
-	OriginalDTS OriginKind = iota
+	DTSNamespace OriginKind = iota
 	OverrideFile
 )
 

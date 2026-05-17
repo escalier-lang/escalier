@@ -208,75 +208,75 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 		Static:   NewMemberSet(),
 	}
 
-	classType := lookupClassObject(ns, decl.Name.Name)
+	instanceType := lookupInstanceObject(ns, decl.Name.Name)
+	staticType := lookupStaticObject(ns, decl.Name.Name)
 
-	// Static-side members are intentionally dropped until #interop-static
-	// wires up static lookup. Recording them with Type=nil here would let
-	// the merge step's "override wins" branch clobber the original's
-	// typed static slot with a nil-typed entry, corrupting the store.
-	// Dropping is silent for now — surfacing as a diagnostic is tracked
-	// alongside the static-lookup work.
+	// Pick the ObjectType to read element types from based on the
+	// elem's static modifier. Static lookup uses the Constructor-side
+	// ObjectType (TS trio `FooConstructor` or an Escalier static
+	// ObjectType under Values[name]).
+	objFor := func(static bool) *type_system.ObjectType {
+		if static {
+			return staticType
+		}
+		return instanceType
+	}
+	setFor := func(static bool) *MemberSet {
+		if static {
+			return child.Static
+		}
+		return child.Instance
+	}
+
 	for _, elem := range decl.Body {
 		switch e := elem.(type) {
 		case *ast.MethodElem:
-			if e.Static {
-				continue
-			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			child.Instance.Methods[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+			setFor(e.Static).Methods[name] = &Effective{
+				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
 			}
 		case *ast.GetterElem:
-			if e.Static {
-				continue
-			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			child.Instance.Getters[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+			setFor(e.Static).Getters[name] = &Effective{
+				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
 			}
 		case *ast.SetterElem:
-			if e.Static {
-				continue
-			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			child.Instance.Setters[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+			setFor(e.Static).Setters[name] = &Effective{
+				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
 			}
 		case *ast.FieldElem:
-			if e.Static {
-				continue
-			}
 			name := CanonicalNameFromObjKey(e.Name)
 			if name == "" {
 				continue
 			}
-			child.Instance.Properties[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+			setFor(e.Static).Properties[name] = &Effective{
+				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
 			}
 		case *ast.ConstructorElem:
 			eff := &Effective{
-				Type:    lookupCtorType(classType),
+				Type:    lookupCtorType(staticType),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
@@ -299,7 +299,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 	if decl.TypeAnn == nil {
 		return child
 	}
-	classType := lookupClassObject(ns, decl.Name.Name)
+	interfaceType := lookupInstanceObject(ns, decl.Name.Name)
 	for _, elem := range decl.TypeAnn.Elems {
 		switch e := elem.(type) {
 		case *ast.MethodTypeAnn:
@@ -308,7 +308,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Methods[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
@@ -319,7 +319,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Getters[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
@@ -330,7 +330,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Setters[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
@@ -341,7 +341,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 				continue
 			}
 			child.Instance.Properties[name] = &Effective{
-				Type:    lookupObjElemType(classType, name, false),
+				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
 				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
 				Tier:    tier,
@@ -361,13 +361,14 @@ func nsLookupNamespace(ns *type_system.Namespace, name string) (*type_system.Nam
 	return sub, ok
 }
 
-// lookupClassObject returns the *type_system.ObjectType corresponding
-// to the class/interface named `name` in `ns`, or nil if not found.
-// Classes typically land in `ns.Types[name].Type` (the TypeAlias points
-// at the instance shape) or in `ns.Values[name].Type` (the constructor
-// function whose Return is the instance type). The shape used by
-// downstream interop is implementation-specific; we try both.
-func lookupClassObject(ns *type_system.Namespace, name string) *type_system.ObjectType {
+// lookupInstanceObject returns the *type_system.ObjectType for the
+// instance side of the class/interface named `name` in `ns`, or nil
+// if not found. Instance shapes typically land in `ns.Types[name].Type`
+// (TypeAlias pointing at the instance ObjectType); as a fallback we
+// also peel a constructor function under `ns.Values[name].Type` whose
+// Return is the instance type. Static-side lookup lives in
+// lookupStaticObject.
+func lookupInstanceObject(ns *type_system.Namespace, name string) *type_system.ObjectType {
 	if ns == nil {
 		return nil
 	}
@@ -406,13 +407,11 @@ func unwrapToObject(t type_system.Type) *type_system.ObjectType {
 // an ObjectType by canonical name. Returns nil if no matching element
 // is present.
 //
-// TODO(#interop-static): static lookup is not yet wired — the class
-// statics aren't reachable from the instance ObjectType, and the
-// checker has no separate static-object representation here. Static
-// callers receive nil and the consistency check is skipped on the
-// static side until that gap is filled.
-func lookupObjElemType(obj *type_system.ObjectType, name string, static bool) type_system.Type {
-	if obj == nil || static {
+// Callers pass the instance-side or static-side ObjectType explicitly;
+// instance shapes come from lookupInstanceObject (via Types[name]) and
+// static shapes come from lookupStaticObject (via Values[name]).
+func lookupObjElemType(obj *type_system.ObjectType, name string) type_system.Type {
+	if obj == nil {
 		return nil
 	}
 	for _, elem := range obj.Elems {
@@ -439,12 +438,35 @@ func lookupCtorType(obj *type_system.ObjectType) type_system.Type {
 	return nil
 }
 
+// lookupStaticObject returns the *ObjectType carrying the class's
+// static side. The static ObjectType lives in `ns.Values[name].Type`
+// in two shapes:
+//
+//   - Escalier `class Foo { … static bar() }`: Values["Foo"].Type is
+//     the static ObjectType directly (also carries ConstructorElem).
+//   - TS trio (`interface Foo` + `interface FooConstructor` +
+//     `declare var Foo: FooConstructor`): Values["Foo"].Type is
+//     TypeRef("FooConstructor") whose alias resolves to the same
+//     shape.
+//
+// unwrapToObject handles both — peeling TypeRefType layers until it
+// hits an ObjectType. Returns nil if the binding is absent or doesn't
+// resolve to an object.
+func lookupStaticObject(ns *type_system.Namespace, name string) *type_system.ObjectType {
+	if ns == nil {
+		return nil
+	}
+	b, ok := ns.Values[name]
+	if !ok || b == nil {
+		return nil
+	}
+	return unwrapToObject(b.Type)
+}
+
 // objElemMatch extracts (type, name, ok) from an object-type element.
 // Names come from the ObjTypeKey carried on each element kind. Returns
 // ok=false when the element has no addressable name (e.g.
-// callable/constructor/index signature). All members on ObjectType are
-// instance-side; static-side lookup is handled by lookupObjElemType
-// returning nil up front (see its TODO).
+// callable/constructor/index signature).
 func objElemMatch(elem type_system.ObjTypeElem) (type_system.Type, string, bool) {
 	switch e := elem.(type) {
 	case *type_system.MethodElem:

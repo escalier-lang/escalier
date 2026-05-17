@@ -19,8 +19,8 @@ table below makes both explicit. Status legend: ✅ done,
 | 2.2 | Parser sub-task                        | ✅      | 2.1         | `declare module/global/namespace` and `override` prefix accepted by [internal/parser/decl.go](../../internal/parser/decl.go); `fixtures/interop_mutability/overrides/example.esc` is no longer `.future`.                                                                                       |
 | 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/interop/mutability.go](../../internal/interop/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
 | 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/interop/mutability.go](../../internal/interop/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
-| 5   | Override file format, loader, merge    | ⬜      | 2.2, 3      | Largest single chunk. No code yet.                                                                                                                                                                                                                                                             |
-| 6   | Built-in overrides                      | ⬜      | 5           | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`).                                                                                                                                       |
+| 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit: data types, extract, merge & loader, checker wiring, and the trio-fusion / static-side lookup prerequisites for §6 are all in. Remaining: §5.13 Group B (property-type consistency on non-function leaves) and Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
+| 6   | Built-in overrides                      | ⬜      | 5 (Group B optional) | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`). §5.13 Group A prerequisites are done; Group B (property-type consistency) is recommended alongside but not strictly blocking.                                                                                                  |
 | 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/interop/mutability.go](../../internal/interop/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
 | 8   | Type-printer round-trip audit          | ⬜      | —           | Independent; prerequisite for §9 emit. Can be done at any time.                                                                                                                                                                                                                                |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
@@ -40,7 +40,7 @@ is finished first):
    Drop `TierPrimitiveWrapper`. Small, fast.
 2. **§4 cleanup.** Rename `classifyTier2` → `classifyTier3`,
    finish remaining tier-3 cases.
-3. **§5 (override system).** Largest chunk; unblocks §6, §9, §11.
+3. **§5 (override system).** Largest chunk; unblocks §6, §9, §11. Core pipeline + §6 prerequisites are landed (PRs #606–#609 and the 5.A blockers commit); remaining work is §5.13 Group B/C follow-ups.
 4. **§6 (built-in overrides).** Author the stdlib + FP data,
    including the always-immutable built-ins.
 5. **§7 (heuristics).** Add `classifyTier5` (get-prefix) and
@@ -914,7 +914,69 @@ The initial landing of §5 (PR #603) plumbs the
 discover → check → extract → merge → resolve pipeline end to
 end and wires `Classify` into the merged store, but several
 threads were left for a follow-up to keep that PR
-reviewable:
+reviewable. The remaining items are grouped below by when
+they need to land relative to §6.
+
+**Already resolved during 5.5–5.9 (struck from this list):**
+
+- *Namespace-vs-class shape conflict.* `mergeChild` now
+  routes through `sameChildKind` and emits
+  `ErrShapeConflict` when the two sides disagree
+  ([merge.go:327-334](../../internal/interop/merge.go#L327-L334)).
+- *Destructuring `VarDecl` patterns in override files.*
+  `extractIntoContainer` walks patterns via
+  `ast.FindBindings` ([extract.go:110](../../internal/interop/extract.go#L110)),
+  which traverses every binding node, so destructured
+  override bindings already produce scope entries.
+
+#### Group A — Blocks §6 (land first, in a single PR)
+
+These two items are tightly coupled: trio fusion builds the
+static-side `ObjectType` that the static-lookup change reads
+from. Without both, §6 (built-in overrides) cannot be
+authored — every TS stdlib class is a trio and most carry
+statics.
+
+- **Original-side `ModuleScope` must fuse the TS
+  class-via-trio pattern.** TypeScript's lib files declare
+  what is conceptually a class as a trio:
+  `interface Foo { … }`,
+  `interface FooConstructor { new (…); /* statics */ }`,
+  `declare var Foo: FooConstructor`. An override author
+  writing `override declare class Foo { … }` expresses one
+  unit of intent — overriding "the Foo class." For that
+  override to land on all three original-side slots, the
+  `.d.ts` → `ModuleScope` builder must recognise the trio
+  pattern and emit a single class-shaped
+  `Children["Foo"]` populated from `Types["Foo"]`
+  (instance), `Types["FooConstructor"]` (statics +
+  constructor), and `Values["Foo"]` (the value binding).
+  Without trio-fusion the user would need three
+  separate override declarations to cover one
+  conceptual class, which defeats the ergonomic goal.
+
+  Recommended approach: a name-based heuristic. A
+  `Types["X"]` with a sibling `Types["XConstructor"]` and
+  a `Values["X"]: TypeRef("XConstructor")` collapses to
+  one class-shaped Child; otherwise fall back to literal
+  mapping. Mirror the `ArrayConstructor` exception from
+  prelude.go. Note that the override side already
+  produces this shape uniformly (Escalier's own
+  `class Foo { … }` does the same), so once the original
+  side fuses, the merge is symmetric.
+
+  Ordering constraint: fusion must run on the
+  post-inference `Namespace`, *after* TypeScript-style
+  interface declaration merging has folded every
+  `interface Foo { … }` (and every
+  `interface FooConstructor { … }`) sibling into a single
+  `Types["Foo"]` / `Types["FooConstructor"]`. Fusion then
+  snapshots the merged shapes, so same-module interface
+  augmentations (the common `.d.ts` augmentation pattern,
+  including `class Foo` augmented by a later
+  `interface Foo`) are carried through automatically. If
+  fusion ran incrementally per file, later augmentations
+  would be lost — don't do that.
 
 - **Static-side method/property types.** `extract.go`
   `lookupObjElemType` short-circuits to `nil` when
@@ -946,50 +1008,18 @@ reviewable:
   `UpdateMethodMutability` (prelude.go) should be carried
   over.
 
-- **Original-side ModuleScope must fuse the TS
-  class-via-trio pattern.** TypeScript's lib files declare
-  what is conceptually a class as a trio:
-  `interface Foo { … }`,
-  `interface FooConstructor { new (…); /* statics */ }`,
-  `declare var Foo: FooConstructor`. An override author
-  writing `override declare class Foo { … }` expresses one
-  unit of intent — overriding "the Foo class." For that
-  override to land on all three original-side slots, the
-  `.d.ts` → `ModuleScope` builder must recognise the trio
-  pattern and emit a single class-shaped
-  `Children["Foo"]` populated from `Types["Foo"]`
-  (instance), `Types["FooConstructor"]` (statics +
-  constructor), and `Values["Foo"]` (the value binding).
-  Without trio-fusion the user would need three
-  separate override declarations to cover one
-  conceptual class, which defeats the ergonomic goal.
+#### Group B — Correctness multiplier for §6 (land alongside A)
 
-  Recommended approach: a name-based heuristic. A
-  `Types["X"]` with a sibling `Types["XConstructor"]` and
-  a `Values["X"]: TypeRef("XConstructor")` collapses to
-  one class-shaped Child; otherwise fall back to literal
-  mapping. Mirror the `ArrayConstructor` exception from
-  prelude.go. Note that the override side already
-  produces this shape uniformly (Escalier's own
-  `class Foo { … }` does the same), so once the original
-  side fuses, the merge is symmetric.
-
-- **Lifetime-erased signature equivalence.** §5.7's
-  `funcSignatureEquivalent` uses the strict
-  `Type.Equals`, which is sensitive to `LifetimeParams`
-  arity on nested `FuncType`-valued parameters. TS-derived
-  originals never carry lifetimes, so overrides that add
-  lifetimes to a nested function-type param will trip the
-  consistency check spuriously. Introduce a
-  lifetime-erased equivalence routine (or a flag on
-  `Equals`) and use it only on the consistency-check path.
+Independent of Group A and can run in parallel. Land before
+§6 authoring picks up steam, otherwise mistakes in property
+overrides go silent and only surface at use sites.
 
 - **Property-type consistency.** `mergeLeaf` only runs the
   consistency check when both `orig` and `over` carry
-  `*FuncType`. Property slots (and any other non-function
-  leaf) can silently diverge in type between override and
-  original. Add a structural-equivalence check on
-  non-function leaves.
+  `*FuncType` ([merge.go:574-581](../../internal/interop/merge.go#L574-L581)).
+  Property slots (and any other non-function leaf) can
+  silently diverge in type between override and original.
+  Add a structural-equivalence check on non-function leaves.
 
   Note: property type overrides are a first-class use case,
   not a forgotten corner of the merge. Per requirements
@@ -1008,11 +1038,21 @@ reviewable:
   vs. subtype-on-`Mut`-axis vs. opt-in via a `@checked` tag)
   is open and worth resolving as part of this item.
 
-- **Namespace-vs-class shape conflict.** `mergeChild`
-  decides namespace-vs-class via `hasMembers` on either
-  side. If the original is a namespace and an override is
-  a class (or vice versa), the merge silently mixes the
-  two shapes instead of reporting an `ErrShapeConflict`.
+#### Group C — Defer until a concrete case appears
+
+Both gaps surface only in narrow scenarios and don't block
+§6, §9, or §11. Track them here; land when an override
+actually trips them.
+
+- **Lifetime-erased signature equivalence.** §5.7's
+  `funcSignatureEquivalent` uses the strict
+  `Type.Equals`, which is sensitive to `LifetimeParams`
+  arity on nested `FuncType`-valued parameters. TS-derived
+  originals never carry lifetimes, so overrides that add
+  lifetimes to a nested function-type param will trip the
+  consistency check spuriously. Introduce a
+  lifetime-erased equivalence routine (or a flag on
+  `Equals`) and use it only on the consistency-check path.
 
 - **Type and value namespace collision in `Container.Free`.**
   `extract.go` routes type aliases and values (var/func/class)
@@ -1025,16 +1065,52 @@ reviewable:
   with a namespace tag) and update the resolver/merge to
   route lookups accordingly.
 
-- **Destructuring `VarDecl` patterns in override files.**
-  `extract.go` `patternNames` only handles `*ast.IdentPat`;
-  destructured bindings in an override file produce no
-  scope entries. Either extend the walk or reject
-  destructured patterns in override files with a clear
-  error.
-
 ## 6. Built-in overrides
 
 Goal: author the data tables that the resolver loads at startup.
+
+### 6.0 Prerequisite: §5.13 Group A
+
+§6 authoring depends on the two §5.13 Group A items being in place:
+trio fusion on the original-side `ModuleScope` builder, and
+static-side member lookup in `extract.go`. Both landed in
+[internal/interop/class_shapes.go](../../internal/interop/class_shapes.go)
+(`RecoverClassShapes`) and the refactored
+[internal/interop/extract.go](../../internal/interop/extract.go)
+(`buildClassChild` reads the instance side via `lookupInstanceObject`
+and the static side via `lookupStaticObject`).
+
+Concretely, this means a built-in override file can write:
+
+```escalier
+override declare class Promise<T> {
+  then<U>(self, onFulfilled: (T) => U): Promise<U>
+  static all<T>(promises: Promise<T>[]): Promise<T[]>
+}
+```
+
+…and it merges correctly against the TS-side trio
+(`interface Promise` + `interface PromiseConstructor` +
+`declare var Promise: PromiseConstructor`) without the author
+having to write three matching `override` declarations.
+
+**Deviation from the plan as originally written.** The plan text
+recommended "mirror the `ArrayConstructor` exception from
+[prelude.go](../../internal/checker/prelude.go)" — i.e., skip trio
+fusion for `Array`. That exception was **not** implemented. The
+prelude exception is about *receiver-mutability flipping*
+(Array's mutability is handled by `UpdateCollectionMutability`,
+not by the generic `*Constructor` walk); the trio-fusion question
+is purely structural — `interface Array` + `interface ArrayConstructor` +
+`declare var Array: ArrayConstructor` is conceptually one class,
+and §6 (or a user override) must be able to write
+`override declare class Array { … }` against it. Skipping fusion
+for `Array` would defeat that.
+
+Compatible with the rest of §6 anyway: `Array` is **not** in the
+built-in override list below (tier 3 / `ReadonlyArray` covers it).
+The fusion change just keeps the door open for user overrides on
+`Array` without forcing a special case.
 
 ### 6.1 Bundling mechanism
 
