@@ -7,14 +7,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// BuildOriginal walks a namespace and produces an "original-side"
-// ModuleScope suitable for handing to Merge as a value in the
-// `originals` map.
+// RecoverClassShapes walks a namespace and produces a ModuleScope that
+// reassembles class declarations whose pieces were spread across
+// multiple namespace slots back into single ClassScope entries. It is
+// the inverse of the declaration-splitting that surfaces in a
+// post-inference Namespace, where a class can appear as a pair (or
+// trio) of unrelated-looking type/value entries.
 //
-// Class shapes are recovered via name-based heuristics so that an
-// override author writing `override declare class Foo { … }` lines up
-// with one ClassScope on the original side regardless of how the
-// original was declared:
+// Two split shapes are recognised and fused:
 //
 //   - TS class-via-trio: `interface Foo { … }`,
 //     `interface FooConstructor { new (…); /* statics */ }`,
@@ -37,20 +37,30 @@ import (
 // shapes consume both sides so this only matters for non-class
 // name-collisions.
 //
-// Origins carry Kind=OriginalDTS with no FilePath/Span — namespace
-// entries don't retain their source location. Per-leaf provenance is
-// recovered on the override side, which is what diagnostics surface.
+// Leaf Origins carry no FilePath/Span — namespace entries don't retain
+// their source location. Per-leaf provenance is recovered from the
+// override side of the merge, which is what diagnostics surface.
 //
-// Trio fusion must run on the post-inference, post-merge namespace —
-// after every `interface Foo { … }` sibling in the same module has
-// been folded into a single `Types["Foo"]`. Running this incrementally
-// per file would miss later augmentations.
-func BuildOriginal(ns *type_system.Namespace) *ModuleScope {
+// Fusion must run on the post-inference, post-merge namespace — after
+// every `interface Foo { … }` sibling in the same module has been
+// folded into a single `Types["Foo"]`. Running this incrementally per
+// file would miss later augmentations.
+//
+// Method `SelfParam` wiring is *not* done here. By the time this runs,
+// checker/prelude.go's `populateSelfParams` has already mutated every
+// method `*FuncType` in the namespace in place to attach a default
+// (non-mut) SelfParam, and `UpdateMethodMutability` /
+// `UpdateCollectionMutability` have flipped individual receivers to
+// `mut self`. RecoverClassShapes stores those `*FuncType` pointers
+// verbatim — it neither sets SelfParam nor clones the FuncType, so any
+// downstream consumer that mutates a method's SelfParam will be
+// observed through the resulting ClassScope as well.
+func RecoverClassShapes(ns *type_system.Namespace) *ModuleScope {
 	ms := &ModuleScope{
 		Container: Container{
 			Free:     make(map[string]*Effective),
 			Children: make(map[string]ChildScope),
-			Origin:   Origin{Kind: OriginalDTS},
+			Origin:   Origin{Kind: DTSNamespace},
 		},
 	}
 	if ns == nil {
@@ -104,7 +114,7 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 			Container: Container{
 				Free:     make(map[string]*Effective),
 				Children: make(map[string]ChildScope),
-				Origin:   Origin{Kind: OriginalDTS},
+				Origin:   Origin{Kind: DTSNamespace},
 			},
 		}
 		fillContainer(&nsChild.Container, sub)
@@ -113,7 +123,7 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 
 	// Fall-through: emit literal Free entries for everything not
 	// consumed by class fusion. Values win on name collision (see
-	// the type/value namespace caveat in BuildOriginal's doc).
+	// the type/value namespace caveat in RecoverClassShapes's doc).
 	for name, b := range ns.Values {
 		if consumedValues.Contains(name) {
 			continue
@@ -126,7 +136,7 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 		}
 		c.Free[name] = &Effective{
 			Type:    b.Type,
-			Origins: []Origin{{Kind: OriginalDTS}},
+			Origins: []Origin{{Kind: DTSNamespace}},
 		}
 	}
 	for name, ta := range ns.Types {
@@ -144,7 +154,7 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 		}
 		c.Free[name] = &Effective{
 			Type:    ta.Type,
-			Origins: []Origin{{Kind: OriginalDTS}},
+			Origins: []Origin{{Kind: DTSNamespace}},
 		}
 	}
 }
@@ -243,7 +253,7 @@ func tryFuseEscalierClass(
 // may be nil; the corresponding MemberSet is left empty.
 func classScopeFromObjects(inst, static *type_system.ObjectType) *ClassScope {
 	cs := &ClassScope{
-		Origin:   Origin{Kind: OriginalDTS},
+		Origin:   Origin{Kind: DTSNamespace},
 		Instance: NewMemberSet(),
 		Static:   NewMemberSet(),
 	}
@@ -253,7 +263,7 @@ func classScopeFromObjects(inst, static *type_system.ObjectType) *ClassScope {
 		if t := lookupCtorType(static); t != nil {
 			cs.Instance.Ctor = &Effective{
 				Type:    t,
-				Origins: []Origin{{Kind: OriginalDTS}},
+				Origins: []Origin{{Kind: DTSNamespace}},
 			}
 		}
 	}
@@ -283,7 +293,7 @@ func fillMemberSet(set *MemberSet, obj *type_system.ObjectType) {
 func leafEffective(t type_system.Type) *Effective {
 	return &Effective{
 		Type:    t,
-		Origins: []Origin{{Kind: OriginalDTS}},
+		Origins: []Origin{{Kind: DTSNamespace}},
 	}
 }
 

@@ -1074,8 +1074,8 @@ Goal: author the data tables that the resolver loads at startup.
 §6 authoring depends on the two §5.13 Group A items being in place:
 trio fusion on the original-side `ModuleScope` builder, and
 static-side member lookup in `extract.go`. Both landed in
-[internal/interop/originals.go](../../internal/interop/originals.go)
-(`BuildOriginal`) and the refactored
+[internal/interop/class_shapes.go](../../internal/interop/class_shapes.go)
+(`RecoverClassShapes`) and the refactored
 [internal/interop/extract.go](../../internal/interop/extract.go)
 (`buildClassChild` reads the instance side via `lookupInstanceObject`
 and the static side via `lookupStaticObject`).

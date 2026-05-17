@@ -7,14 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildOriginalNil(t *testing.T) {
-	ms := BuildOriginal(nil)
+func TestRecoverClassShapesNil(t *testing.T) {
+	ms := RecoverClassShapes(nil)
 	require.NotNil(t, ms)
 	require.Empty(t, ms.Free)
 	require.Empty(t, ms.Children)
 }
 
-func TestBuildOriginalLiteralFreeEntries(t *testing.T) {
+func TestRecoverClassShapesLiteralFreeEntries(t *testing.T) {
 	// Plain type alias and plain value with different names: each
 	// lands in Free.
 	aliasT := type_system.NewNumPrimType(nil)
@@ -24,14 +24,14 @@ func TestBuildOriginalLiteralFreeEntries(t *testing.T) {
 	ns.Types["MyNum"] = &type_system.TypeAlias{Type: aliasT}
 	ns.Values["doIt"] = &type_system.Binding{Type: valT}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	require.NotNil(t, ms.Free["MyNum"])
 	require.Same(t, aliasT, ms.Free["MyNum"].Type)
 	require.NotNil(t, ms.Free["doIt"])
 	require.Same(t, valT, ms.Free["doIt"].Type)
 }
 
-func TestBuildOriginalFusesTSTrio(t *testing.T) {
+func TestRecoverClassShapesFusesTSTrio(t *testing.T) {
 	// interface Foo { bar(): number }
 	instFn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
 	instObj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
@@ -54,7 +54,7 @@ func TestBuildOriginalFusesTSTrio(t *testing.T) {
 		Type: type_system.NewTypeRefType(nil, "FooConstructor", ctorAlias),
 	}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 
 	// Trio fused into one class child; FooConstructor not surfaced as Free.
 	require.NotContains(t, ms.Children, "FooConstructor")
@@ -71,7 +71,7 @@ func TestBuildOriginalFusesTSTrio(t *testing.T) {
 	require.Same(t, ctorElem.Fn, cs.Instance.Ctor.Type)
 }
 
-func TestBuildOriginalNoTrioWhenValueIsNotTypeRef(t *testing.T) {
+func TestRecoverClassShapesNoTrioWhenValueIsNotTypeRef(t *testing.T) {
 	// Types["Foo"] + Types["FooConstructor"] but Values["Foo"] is
 	// some unrelated type: not a trio. Foo falls back to Free
 	// (instance) and FooConstructor to Free (constructor side).
@@ -85,7 +85,7 @@ func TestBuildOriginalNoTrioWhenValueIsNotTypeRef(t *testing.T) {
 	ns.Types["FooConstructor"] = &type_system.TypeAlias{Type: staticObj}
 	ns.Values["Foo"] = &type_system.Binding{Type: type_system.NewNumPrimType(nil)}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	_, classed := ms.Children["Foo"]
 	require.False(t, classed, "expected no fusion when Values[Foo] is not a TypeRef")
 	// Value wins on Free collision, so Free[Foo] is the value's type.
@@ -93,7 +93,7 @@ func TestBuildOriginalNoTrioWhenValueIsNotTypeRef(t *testing.T) {
 	require.NotNil(t, ms.Free["FooConstructor"])
 }
 
-func TestBuildOriginalEscalierStyleClass(t *testing.T) {
+func TestRecoverClassShapesEscalierStyleClass(t *testing.T) {
 	// Escalier `class Bar { static doStatic(); inst() }`:
 	// Types["Bar"] = instance ObjectType; Values["Bar"] = static
 	// ObjectType containing ConstructorElem + statics. No
@@ -113,7 +113,7 @@ func TestBuildOriginalEscalierStyleClass(t *testing.T) {
 	ns.Types["Bar"] = &type_system.TypeAlias{Type: instObj}
 	ns.Values["Bar"] = &type_system.Binding{Type: staticObj}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	cs, ok := ms.Children["Bar"].(*ClassScope)
 	require.True(t, ok)
 	require.Same(t, instFn, cs.Instance.Methods["inst"].Type)
@@ -123,7 +123,7 @@ func TestBuildOriginalEscalierStyleClass(t *testing.T) {
 	require.NotContains(t, ms.Free, "Bar")
 }
 
-func TestBuildOriginalNoTrioWhenTypeRefAliasDiffers(t *testing.T) {
+func TestRecoverClassShapesNoTrioWhenTypeRefAliasDiffers(t *testing.T) {
 	// Types["Foo"], Types["FooConstructor"], and Values["Foo"] all
 	// exist; the value side is a TypeRef whose Name matches
 	// "FooConstructor" but whose TypeAlias points to an unrelated
@@ -143,12 +143,12 @@ func TestBuildOriginalNoTrioWhenTypeRefAliasDiffers(t *testing.T) {
 		Type: type_system.NewTypeRefType(nil, "FooConstructor", otherAlias),
 	}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	_, classed := ms.Children["Foo"].(*ClassScope)
 	require.False(t, classed, "expected no fusion when TypeRef.TypeAlias differs from Types[FooConstructor]")
 }
 
-func TestBuildOriginalSkipsNilTypedValueBinding(t *testing.T) {
+func TestRecoverClassShapesSkipsNilTypedValueBinding(t *testing.T) {
 	// A Binding with Type=nil must not produce a Free entry with
 	// Type=nil. Downstream merge has an "override wins" branch that
 	// would clobber typed slots with nil-typed entries, so originals
@@ -156,11 +156,11 @@ func TestBuildOriginalSkipsNilTypedValueBinding(t *testing.T) {
 	ns := type_system.NewNamespace()
 	ns.Values["broken"] = &type_system.Binding{Type: nil}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	require.NotContains(t, ms.Free, "broken", "expected nil-typed binding to be skipped")
 }
 
-func TestBuildOriginalNestedNamespace(t *testing.T) {
+func TestRecoverClassShapesNestedNamespace(t *testing.T) {
 	innerFn := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
 	inner := type_system.NewNamespace()
 	inner.Values["leaf"] = &type_system.Binding{Type: innerFn}
@@ -168,13 +168,13 @@ func TestBuildOriginalNestedNamespace(t *testing.T) {
 	ns := type_system.NewNamespace()
 	ns.Namespaces["Inner"] = inner
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	nsc, ok := ms.Children["Inner"].(*NamespaceScope)
 	require.True(t, ok, "expected nested namespace to land as *NamespaceScope")
 	require.Same(t, innerFn, nsc.Container.Free["leaf"].Type)
 }
 
-func TestBuildOriginalNamespaceVsClassCoexist(t *testing.T) {
+func TestRecoverClassShapesNamespaceVsClassCoexist(t *testing.T) {
 	// A class trio and a sub-namespace at sibling names should both
 	// land in Children without interfering.
 	instObj := type_system.NewObjectType(nil, nil)
@@ -191,14 +191,14 @@ func TestBuildOriginalNamespaceVsClassCoexist(t *testing.T) {
 	}
 	ns.Namespaces["NS"] = type_system.NewNamespace()
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	_, isClass := ms.Children["C"].(*ClassScope)
 	require.True(t, isClass)
 	_, isNs := ms.Children["NS"].(*NamespaceScope)
 	require.True(t, isNs)
 }
 
-func TestBuildOriginalNoTrioWhenValueBindingMissing(t *testing.T) {
+func TestRecoverClassShapesNoTrioWhenValueBindingMissing(t *testing.T) {
 	// Types["Foo"] and Types["FooConstructor"] exist but Values["Foo"]
 	// is absent. Trio fusion needs all three slots; without the value
 	// binding the pair must fall back to literal Free entries rather
@@ -212,14 +212,14 @@ func TestBuildOriginalNoTrioWhenValueBindingMissing(t *testing.T) {
 	ns.Types["Foo"] = &type_system.TypeAlias{Type: instObj}
 	ns.Types["FooConstructor"] = &type_system.TypeAlias{Type: staticObj}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	_, classed := ms.Children["Foo"].(*ClassScope)
 	require.False(t, classed, "expected no fusion when Values[Foo] is absent")
 	require.NotNil(t, ms.Free["Foo"], "expected Foo to fall through to Free")
 	require.NotNil(t, ms.Free["FooConstructor"], "expected FooConstructor to fall through to Free")
 }
 
-func TestBuildOriginalNoTrioWhenBothObjectsUnwrapToNil(t *testing.T) {
+func TestRecoverClassShapesNoTrioWhenBothObjectsUnwrapToNil(t *testing.T) {
 	// Trio name-shape is present but neither type alias resolves to an
 	// ObjectType (both are primitive aliases). Fusing would produce an
 	// empty ClassScope and silently consume the bindings; the code
@@ -233,17 +233,17 @@ func TestBuildOriginalNoTrioWhenBothObjectsUnwrapToNil(t *testing.T) {
 		Type: type_system.NewTypeRefType(nil, "FooConstructor", ctorAlias),
 	}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	_, classed := ms.Children["Foo"].(*ClassScope)
 	require.False(t, classed, "expected no fusion when neither side unwraps to an ObjectType")
 	require.NotNil(t, ms.Free["Foo"], "expected Foo to fall through to Free (value side wins)")
 	require.NotNil(t, ms.Free["FooConstructor"], "expected FooConstructor to fall through to Free")
 }
 
-func TestBuildOriginalEscalierClassWithNonObjectTypeAlias(t *testing.T) {
+func TestRecoverClassShapesEscalierClassWithNonObjectTypeAlias(t *testing.T) {
 	// Escalier-style class fusion runs even when Types[name] exists but
 	// aliases a non-object type (the alias can't be the instance shape).
-	// Per BuildOriginal's documented behavior, class shapes consume both
+	// Per RecoverClassShapes's documented behavior, class shapes consume both
 	// the type and value side at the shared name — the unrelated type
 	// alias is intentionally not surfaced as a Free entry. This pins
 	// that invariant so future "preserve the type entry" changes can't
@@ -259,7 +259,7 @@ func TestBuildOriginalEscalierClassWithNonObjectTypeAlias(t *testing.T) {
 	ns.Types["Bar"] = &type_system.TypeAlias{Type: type_system.NewNumPrimType(nil)}
 	ns.Values["Bar"] = &type_system.Binding{Type: staticObj}
 
-	ms := BuildOriginal(ns)
+	ms := RecoverClassShapes(ns)
 	cs, ok := ms.Children["Bar"].(*ClassScope)
 	require.True(t, ok, "expected ClassScope when Values side carries a ConstructorElem")
 	require.Empty(t, cs.Instance.Methods, "expected empty Instance when Types side doesn't unwrap to ObjectType")
