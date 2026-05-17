@@ -688,3 +688,55 @@ func TestMergePropertyAnyToUnknownRejected(t *testing.T) {
 	_, ok := errs[0].(*ErrPropertyTypeMismatch)
 	require.True(t, ok, "any→unknown swap should not pass the tightening rule; got %T", errs[0])
 }
+
+// TestMergePropertyMutWrapOverAnyPermitted: the Mut-wrap rule
+// (over = Mut[orig]) and the any-tightening rule overlap at
+// `Mut[any]` over plain `any`. The Mut-wrap rule applies and the
+// override is permitted — locking this avoids a regression if the
+// rule ordering in propertyTypeEquivalent ever shifts.
+func TestMergePropertyMutWrapOverAnyPermitted(t *testing.T) {
+	anyT := type_system.NewAnyType(nil)
+	mutAny := type_system.NewMutType(nil, type_system.NewAnyType(nil))
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: anyT}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: mutAny, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	store, errs := Merge(original, override)
+	require.Empty(t, errs, "Mut[any] over any should be permitted by the Mut-wrap rule")
+	require.Same(t, mutAny, store.Modules[""].Free["x"].Type)
+}
+
+// TestMergePropertyMutStrippingRejected: the Mut-wrap rule is
+// one-way — the override may add Mut over a plain original, but
+// stripping Mut from an original (orig = Mut[T], over = T) is a
+// silent weakening of referent mutability and must surface as
+// ErrPropertyTypeMismatch. Locks the contract asserted in the
+// propertyTypeEquivalent docstring.
+func TestMergePropertyMutStrippingRejected(t *testing.T) {
+	num := type_system.NewNumPrimType(nil)
+	mutNum := type_system.NewMutType(nil, type_system.NewNumPrimType(nil))
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: mutNum}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: num, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	_, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrPropertyTypeMismatch)
+	require.True(t, ok, "stripping Mut from an original should not pass property-consistency; got %T", errs[0])
+}
