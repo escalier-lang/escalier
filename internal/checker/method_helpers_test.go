@@ -3,6 +3,7 @@ package checker
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
@@ -95,14 +96,14 @@ func TestPopulateSelfParamsGetterSetterDefaults(t *testing.T) {
 	require.Truef(t, setterIsMut, "setter should default to mut self")
 }
 
-// TestApplyOverridesToObjectType pins the second-pass behaviour that
+// TestStripMutSelfFromMethods pins the second-pass behaviour that
 // strips `mut self` from methods classified as non-mutating in the
 // per-interface overrides table. The post-#612 default for MethodElem
 // is `mut self`; without this pass any non-mutating method on a
 // non-constructor-shaped class (Date, Function, Console, Body,
 // Request, Response) would stay hidden by isMemberVisible on non-mut
 // receivers.
-func TestApplyOverridesToObjectType(t *testing.T) {
+func TestStripMutSelfFromMethods(t *testing.T) {
 	t.Parallel()
 
 	build := func(names ...string) (*type_system.ObjectType, map[string]*type_system.FuncType) {
@@ -124,37 +125,23 @@ func TestApplyOverridesToObjectType(t *testing.T) {
 	tests := []struct {
 		name      string
 		methods   []string
-		overrides Overrides
+		overrides []string
 		// expectedMut[name] = whether the receiver should be mut after the pass
 		expectedMut map[string]bool
 	}{
 		{
-			name:    "false-valued override strips mut",
-			methods: []string{"getHours", "setHours"},
-			overrides: Overrides{
-				"getHours": false,
-			},
+			name:      "listed method has mut stripped, unlisted retains mut",
+			methods:   []string{"getHours", "setHours"},
+			overrides: []string{"getHours"},
 			expectedMut: map[string]bool{
 				"getHours": false,
 				"setHours": true,
 			},
 		},
 		{
-			name:    "true-valued override is a no-op",
-			methods: []string{"compile"},
-			overrides: Overrides{
-				"compile": true,
-			},
-			expectedMut: map[string]bool{
-				"compile": true,
-			},
-		},
-		{
-			name:    "missing override leaves receiver mut",
-			methods: []string{"unclassified"},
-			overrides: Overrides{
-				"other": false,
-			},
+			name:      "method absent from the type is harmless",
+			methods:   []string{"unclassified"},
+			overrides: []string{"other"},
 			expectedMut: map[string]bool{
 				"unclassified": true,
 			},
@@ -165,7 +152,7 @@ func TestApplyOverridesToObjectType(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			obj, fns := build(tc.methods...)
-			applyOverridesToObjectType(obj, tc.overrides)
+			stripMutSelfFromMethods(obj, set.FromSlice(tc.overrides))
 			for name, wantMut := range tc.expectedMut {
 				fn := fns[name]
 				_, isMut := fn.SelfParam.Type.(*type_system.MutType)

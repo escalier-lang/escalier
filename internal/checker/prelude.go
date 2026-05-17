@@ -211,186 +211,186 @@ func mergeModules(target, source *ast.Module) {
 	}
 }
 
-// the key is the method name
-type Overrides map[string]bool
+// MethodNames names the methods of a single class whose receiver should
+// be stripped of its default `mut self` polarity. Membership = "strip
+// mut". The set form is intentional: there is no use for a "set mut on
+// this method" rung because `mut self` is already the post-#612 default
+// from populateSelfParams.
+type MethodNames = set.Set[string]
 
-// TODO(#500): extend mutabilityOverrides for Date, Promise, Error, and
-// other classes whose non-mutating methods (e.g. `Date.getHours`,
-// `Promise.then`) should be callable on non-mut receivers. Methods on
-// classes not listed here default to `mut self` (set by
-// populateSelfParams), which means they are hidden by isMemberVisible
-// on non-mut receivers. Adding an entry like
-// `"Date": {"getHours": false, ...}` strips the default `mut` for those
-// non-mutating methods. Entries with `value == true` are no-ops under
-// the current default and exist only as documentation.
+// TODO(#500): extend mutabilityOverrides for Promise, Error, and other
+// classes whose non-mutating methods should be callable on non-mut
+// receivers. Methods on classes not listed here default to `mut self`
+// (set by populateSelfParams), which means they are hidden by
+// isMemberVisible on non-mut receivers. Adding an entry like
+// `"Date": set.FromSlice([]string{"getHours", ...})` strips the default
+// `mut` for those non-mutating methods.
 //
 // the key is the interface name
-var mutabilityOverrides = map[string]Overrides{
-	"String": {
-		"at":                false,
-		"charAt":            false,
-		"charCodeAt":        false,
-		"codePointAt":       false,
-		"concat":            false,
-		"endsWith":          false,
-		"includes":          false,
-		"indexOf":           false,
-		"lastIndexOf":       false,
-		"localeCompare":     false,
-		"match":             false,
-		"matchAll":          false,
-		"normalize":         false,
-		"padEnd":            false,
-		"padStart":          false,
-		"repeat":            false,
-		"replace":           false,
-		"replaceAll":        false,
-		"search":            false,
-		"slice":             false,
-		"split":             false,
-		"startsWith":        false,
-		"substr":            false,
-		"substring":         false,
-		"toLocaleLowerCase": false,
-		"toLocaleUpperCase": false,
-		"toLowerCase":       false,
-		"toUpperCase":       false,
-		"trim":              false,
-		"trimEnd":           false,
-		"trimStart":         false,
-		"valueOf":           false,
+var mutabilityOverrides = map[string]MethodNames{
+	"String": set.FromSlice([]string{
+		"at",
+		"charAt",
+		"charCodeAt",
+		"codePointAt",
+		"concat",
+		"endsWith",
+		"includes",
+		"indexOf",
+		"lastIndexOf",
+		"localeCompare",
+		"match",
+		"matchAll",
+		"normalize",
+		"padEnd",
+		"padStart",
+		"repeat",
+		"replace",
+		"replaceAll",
+		"search",
+		"slice",
+		"split",
+		"startsWith",
+		"substr",
+		"substring",
+		"toLocaleLowerCase",
+		"toLocaleUpperCase",
+		"toLowerCase",
+		"toUpperCase",
+		"trim",
+		"trimEnd",
+		"trimStart",
+		"valueOf",
 		// TODO: handle Symbol.iterator as key
-	},
-	"RegExp": {
+	}),
+	"RegExp": set.FromSlice([]string{
 		// `compile`, `exec` (with global/sticky), and `test` (with
 		// global/sticky) are mutating and inherit the default `mut self`.
-		"toString": false,
+		"toString",
 		// TODO: handle Symbol.match, Symbol.replace, Symbol.search, Symbol.split as keys
-	},
-	"Number": {
-		"toExponential":  false,
-		"toFixed":        false,
-		"toLocaleString": false,
-		"toPrecision":    false,
-		"toString":       false,
-		"valueOf":        false,
-	},
-	"Boolean": {
-		"valueOf": false,
-	},
-	"Object": {
+	}),
+	"Number": set.FromSlice([]string{
+		"toExponential",
+		"toFixed",
+		"toLocaleString",
+		"toPrecision",
+		"toString",
+		"valueOf",
+	}),
+	"Boolean": set.FromSlice([]string{
+		"valueOf",
+	}),
+	"Object": set.FromSlice([]string{
 		// All Object.prototype methods are non-mutating. Without this
 		// entry, derived types that inherit toString/valueOf/etc. from
 		// Object (e.g. RegExp.toString) become invisible on non-mut
 		// receivers after the polarity flip.
-		"hasOwnProperty":       false,
-		"isPrototypeOf":        false,
-		"propertyIsEnumerable": false,
-		"toLocaleString":       false,
-		"toString":             false,
-		"valueOf":              false,
-	},
-	"Function": {
-		"apply":    false,
-		"bind":     false,
-		"call":     false,
-		"toString": false,
-	},
-	"Date": {
+		"hasOwnProperty",
+		"isPrototypeOf",
+		"propertyIsEnumerable",
+		"toLocaleString",
+		"toString",
+		"valueOf",
+	}),
+	"Function": set.FromSlice([]string{
+		"apply",
+		"bind",
+		"call",
+		"toString",
+	}),
+	"Date": set.FromSlice([]string{
 		// `get*` accessors are non-mutating; `set*` accessors mutate and
 		// inherit the default `mut self`. `toISOString`, `toJSON`,
 		// `toLocaleDateString`, `toLocaleTimeString`, `toDateString`,
 		// `toTimeString`, and `toUTCString` are all stringifiers and
 		// non-mutating.
-		"getDate":              false,
-		"getDay":               false,
-		"getFullYear":          false,
-		"getHours":             false,
-		"getMilliseconds":      false,
-		"getMinutes":           false,
-		"getMonth":             false,
-		"getSeconds":           false,
-		"getTime":              false,
-		"getTimezoneOffset":    false,
-		"getUTCDate":           false,
-		"getUTCDay":            false,
-		"getUTCFullYear":       false,
-		"getUTCHours":          false,
-		"getUTCMilliseconds":   false,
-		"getUTCMinutes":        false,
-		"getUTCMonth":          false,
-		"getUTCSeconds":        false,
-		"toDateString":         false,
-		"toISOString":          false,
-		"toJSON":               false,
-		"toLocaleDateString":   false,
-		"toLocaleString":       false,
-		"toLocaleTimeString":   false,
-		"toString":             false,
-		"toTimeString":         false,
-		"toUTCString":          false,
-		"valueOf":              false,
-	},
-	"Console": {
-		"assert":         false,
-		"clear":          false,
-		"count":          false,
-		"countReset":     false,
-		"debug":          false,
-		"dir":            false,
-		"dirxml":         false,
-		"error":          false,
-		"group":          false,
-		"groupCollapsed": false,
-		"groupEnd":       false,
-		"info":           false,
-		"log":            false,
-		"table":          false,
-		"time":           false,
-		"timeEnd":        false,
-		"timeLog":        false,
-		"timeStamp":      false,
-		"trace":          false,
-		"warn":           false,
-	},
-	"Body": {
-		"arrayBuffer": false,
-		"blob":        false,
-		"bytes":       false,
-		"formData":    false,
-		"json":        false,
-		"text":        false,
-	},
-	"Response": {
-		"arrayBuffer": false,
-		"blob":        false,
-		"bytes":       false,
-		"clone":       false,
-		"formData":    false,
-		"json":        false,
-		"text":        false,
-	},
-	"Request": {
-		"arrayBuffer": false,
-		"blob":        false,
-		"bytes":       false,
-		"clone":       false,
-		"formData":    false,
-		"json":        false,
-		"text":        false,
-	},
+		"getDate",
+		"getDay",
+		"getFullYear",
+		"getHours",
+		"getMilliseconds",
+		"getMinutes",
+		"getMonth",
+		"getSeconds",
+		"getTime",
+		"getTimezoneOffset",
+		"getUTCDate",
+		"getUTCDay",
+		"getUTCFullYear",
+		"getUTCHours",
+		"getUTCMilliseconds",
+		"getUTCMinutes",
+		"getUTCMonth",
+		"getUTCSeconds",
+		"toDateString",
+		"toISOString",
+		"toJSON",
+		"toLocaleDateString",
+		"toLocaleString",
+		"toLocaleTimeString",
+		"toString",
+		"toTimeString",
+		"toUTCString",
+		"valueOf",
+	}),
+	"Console": set.FromSlice([]string{
+		"assert",
+		"clear",
+		"count",
+		"countReset",
+		"debug",
+		"dir",
+		"dirxml",
+		"error",
+		"group",
+		"groupCollapsed",
+		"groupEnd",
+		"info",
+		"log",
+		"table",
+		"time",
+		"timeEnd",
+		"timeLog",
+		"timeStamp",
+		"trace",
+		"warn",
+	}),
+	"Body": set.FromSlice([]string{
+		"arrayBuffer",
+		"blob",
+		"bytes",
+		"formData",
+		"json",
+		"text",
+	}),
+	"Response": set.FromSlice([]string{
+		"arrayBuffer",
+		"blob",
+		"bytes",
+		"clone",
+		"formData",
+		"json",
+		"text",
+	}),
+	"Request": set.FromSlice([]string{
+		"arrayBuffer",
+		"blob",
+		"bytes",
+		"clone",
+		"formData",
+		"json",
+		"text",
+	}),
 }
 
-// applyOverridesToObjectType strips `mut self` from any method in objType
-// whose name appears with `false` in overrides. Entries with `true` are
-// no-ops (the receiver already arrives as `mut` under the default set by
-// populateSelfParams) and exist for documentation only.
+// stripMutSelfFromMethods strips `mut self` from any method in objType
+// whose name appears in names.
 //
 // Only MethodElem is consulted. GetterElem / SetterElem polarity is
-// fixed by populateSelfParams (getters non-mut, setters mut) — adding a
-// name-keyed override for an accessor would silently miss here. If an
-// accessor ever needs an override, extend the type switch below.
-func applyOverridesToObjectType(objType *type_system.ObjectType, overrides Overrides) {
+// fixed by populateSelfParams (getters non-mut, setters mut) — passing
+// an accessor name in `names` would silently miss here. If an accessor
+// ever needs its polarity overridden, extend the type switch below.
+func stripMutSelfFromMethods(objType *type_system.ObjectType, names MethodNames) {
 	for _, elem := range objType.Elems {
 		me, ok := elem.(*type_system.MethodElem)
 		if !ok {
@@ -399,8 +399,8 @@ func applyOverridesToObjectType(objType *type_system.ObjectType, overrides Overr
 		if me.Name.Kind != type_system.StrObjTypeKeyKind {
 			continue
 		}
-		if value, exists := overrides[me.Name.Str]; exists {
-			setReceiverMut(me.Fn, value)
+		if names.Contains(me.Name.Str) {
+			setReceiverMut(me.Fn, false)
 		}
 	}
 }
@@ -449,20 +449,17 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 				overrides := mutabilityOverrides[instName]
 
 				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
+					// TypeScript .d.ts has no mut-self annotation, so
+					// methods default to `mut self` (set by
+					// populateSelfParams). We strip `mut` for methods
+					// listed in the per-interface overrides set.
 					for _, elem := range it.Elems {
 						if me, ok := elem.(*type_system.MethodElem); ok {
-							// TypeScript .d.ts has no mut-self annotation, so
-							// methods default to `mut self` (set by
-							// populateSelfParams). We strip `mut` for methods
-							// the per-interface overrides table positively
-							// classifies as non-mutating (value == false).
-							// Entries with `value == true` are no-ops — the
-							// receiver already arrives as `mut`.
 							if me.Name.Kind != type_system.StrObjTypeKeyKind {
 								continue
 							}
-							if value, exists := overrides[me.Name.Str]; exists {
-								setReceiverMut(me.Fn, value)
+							if overrides.Contains(me.Name.Str) {
+								setReceiverMut(me.Fn, false)
 							}
 						}
 					}
@@ -496,7 +493,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 		if !ok {
 			continue
 		}
-		applyOverridesToObjectType(objType, mutabilityOverrides[overrideName])
+		stripMutSelfFromMethods(objType, mutabilityOverrides[overrideName])
 	}
 }
 
