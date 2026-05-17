@@ -617,6 +617,7 @@ func (c *Checker) initializeGlobalScope() {
 	populateSelfParams(globalNs)
 	UpdateMethodMutability(inferCtx, globalNs)
 	UpdateCollectionMutability(globalNs)
+	fixupIteratorProtocolMethods(globalNs)
 
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)

@@ -2761,7 +2761,7 @@ func TestObjectSpread(t *testing.T) {
 				val iter = obj[Symbol.iterator]
 			`,
 			expectedTypes: map[string]string{
-				"iter": "fn () -> ArrayIterator<number>",
+				"iter": "fn () -> mut ArrayIterator<number>",
 			},
 		},
 		"SymbolKeyedGetterAccessViaSpread": {

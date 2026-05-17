@@ -249,27 +249,44 @@ fixture classifies correctly, with `Source = TierExplicitSignal`.
 The polarity flip in #612 defaults every `.d.ts`-loaded method's
 receiver to `mut self`. `classifyExplicitSignal` (tier 3) is the
 right home for "iterator-protocol methods are non-mutating on the
-source" classification — both the well-known-symbol methods
-(`[Symbol.iterator]`, `[Symbol.asyncIterator]`) and the protocol's
-own `.next` / `.return` / `.throw` calls — but the checker's
-iterator entry points (`getMemberType` lookups in
-`GetIterableElementType`, `GetIteratorReturnType`,
-`GetAsyncIterableElementType`, and `unifyIteratorNextReturn`) run
-before tier-3 classification is wired into the prelude. Without a
-workaround the polarity flip would break the iterator protocol for
-every non-mut iterable (Generator, String, user types without a
-`Readonly*` pair, etc.).
+source" classification, but tier-3 classification isn't yet wired
+into the prelude (#614). Without a workaround the polarity flip
+would break the iterator protocol for every non-mut iterable
+(Generator, String, user types without a `Readonly*` pair, etc.).
 
-Current stop-gap (`internal/checker/iterable.go`): an
-`asMutReceiver` helper wraps the source type in `MutType` before
-each iterator-protocol member lookup. This bypasses
-`isMemberVisible`'s mutability gate for the protocol calls only,
-preserving the rest of the polarity flip's loud-failure behaviour.
+**Targeted fix landed in #613 follow-up:** the
+`fixupIteratorProtocolMethods` pass in
+`internal/checker/iterable.go` runs after `populateSelfParams` in
+`initializeGlobalScope` and walks every namespace's `MethodElem`s
+keyed by `Symbol.iterator` or `Symbol.asyncIterator`, performing
+two adjustments per method:
 
-The proper fix lives in this section: once `classifyExplicitSignal`
-results flow into the prelude's `SelfParam` assignment, the wrap can
-be removed and `iterable.go` can do the lookups with their natural
-receiver mutability.
+1. **Strips `mut` from the receiver.** Invoking `[Symbol.iterator]()`
+   doesn't mutate the source — it produces a fresh iterator — so
+   the receiver should be non-mut.
+
+2. **Wraps the return type in `MutType`.** The produced iterator is
+   freshly owned by the caller, and its `.next` / `.return` /
+   `.throw` methods *do* mutate the cursor (`mut self`). Wrapping
+   the return in `mut` makes the iterator value arrive mut to the
+   caller — mirroring Rust's `IntoIterator::into_iter` model: the
+   iterator is owned, the source is borrowed. With this in place
+   the `unifyIteratorNextReturn` lookup on `.next` works with the
+   natural receiver mutability — no call-site wrap needed.
+
+The four iterator entry points in `iterable.go`
+(`GetIterableElementType`, `GetIteratorReturnType`,
+`GetAsyncIterableElementType`, `unifyIteratorNextReturn`) now do
+their `getMemberType` lookups with the natural receiver type.
+
+**Subsumption by #614.** Adjustment (1) is already produced by
+`classifyExplicitSignal` (tier 3) for these symbol-keyed methods —
+once `interop.Classify` is wired into `UpdateMethodMutability`,
+that half of `fixupIteratorProtocolMethods` becomes redundant.
+Adjustment (2) is independent: it encodes the "iterator is owned"
+ownership rule, which has no tier-3 equivalent yet. The cleanest
+long-term home is a `mut return` annotation in the .d.ts loader
+path; until then this pass keeps the rule in one place.
 
 ## 5. Override file format, loader & merge
 

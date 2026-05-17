@@ -25,6 +25,19 @@ func TestPreludeOverridesCallableOnNonMutReceiver(t *testing.T) {
 			declare val o: Object
 			val s = o.toString()
 		`,
+		// stripIteratorReceiverPolarity pins these: [Symbol.iterator]
+		// and [Symbol.asyncIterator] are non-mutating on the source, so
+		// they must be visible on a non-mut receiver. Pre-fix, these
+		// were only callable via the asMutReceiver wrap inside
+		// iterable.go.
+		"Symbol.iterator on non-mut Array": `
+			declare val xs: Array<number>
+			val iter = xs[Symbol.iterator]()
+		`,
+		"Symbol.iterator on non-mut string": `
+			declare val s: string
+			val iter = s[Symbol.iterator]()
+		`,
 	}
 
 	for name, input := range tests {
