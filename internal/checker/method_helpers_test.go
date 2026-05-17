@@ -163,46 +163,48 @@ func TestStripMutSelfFromMethods(t *testing.T) {
 	}
 }
 
-// TestUpdateMethodMutability_HeuristicFallthrough pins the issue #614
+// TestUpdateMethodMutability_HeuristicFallthrough pins the fall-through
 // behaviour: a .d.ts-loaded method on a class with no entry in
 // mutabilityOverrides still gets the name-only interop heuristics
-// applied. Before #614 the second pass only iterated the override map's
-// keys, so `getFoo` on an unlisted class stayed `mut self` and was
-// hidden on non-mut receivers despite tier 5 unambiguously classifying
-// it non-mutating.
+// applied, so `getFoo` on an unlisted class is classified non-mutating
+// by tier 5 rather than being left at the default `mut self` and hidden
+// on non-mut receivers.
 func TestUpdateMethodMutability_HeuristicFallthrough(t *testing.T) {
 	t.Parallel()
 
-	makeMethod := func(name string) (*type_system.MethodElem, *type_system.FuncType) {
-		fn := type_system.NewFuncType(nil, nil, nil,
-			type_system.NewNeverType(nil), type_system.NewNeverType(nil))
-		return type_system.NewMethodElem(type_system.NewStrKey(name), fn), fn
+	tests := []struct {
+		name    string
+		method  string
+		wantMut bool
+	}{
+		// Tier 5 `get*` prefix → non-mut self.
+		{"tier 5 get* prefix", "getFoo", false},
+		// Tier 6 mutating prefix `push` → stays at default mut self.
+		{"tier 6 mutating prefix", "push", true},
+		// No heuristic match → stays at default mut self.
+		{"no heuristic match", "frobnicate", true},
 	}
 
-	getFoo, getFooFn := makeMethod("getFoo")
-	push, pushFn := makeMethod("push")
-	frobnicate, frobnicateFn := makeMethod("frobnicate")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{getFoo, push, frobnicate})
+			fn := type_system.NewFuncType(nil, nil, nil,
+				type_system.NewNeverType(nil), type_system.NewNeverType(nil))
+			method := type_system.NewMethodElem(type_system.NewStrKey(tc.method), fn)
+			obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{method})
 
-	ns := type_system.NewNamespace()
-	// "Widget" is intentionally NOT a key in mutabilityOverrides — the
-	// whole point is heuristics must run even with no override entry.
-	ns.Types["Widget"] = &type_system.TypeAlias{Type: obj}
+			ns := type_system.NewNamespace()
+			// "Widget" is intentionally NOT a key in mutabilityOverrides — the
+			// whole point is heuristics must run even with no override entry.
+			ns.Types["Widget"] = &type_system.TypeAlias{Type: obj}
 
-	populateSelfParams(ns)
-	UpdateMethodMutability(Context{}, ns)
+			populateSelfParams(ns)
+			UpdateMethodMutability(Context{}, ns)
 
-	checkMut := func(fn *type_system.FuncType, wantMut bool, label string) {
-		require.NotNil(t, fn.SelfParam, label)
-		_, isMut := fn.SelfParam.Type.(*type_system.MutType)
-		require.Equalf(t, wantMut, isMut, "%s: want mut=%v, got mut=%v", label, wantMut, isMut)
+			require.NotNil(t, fn.SelfParam)
+			_, isMut := fn.SelfParam.Type.(*type_system.MutType)
+			require.Equal(t, tc.wantMut, isMut)
+		})
 	}
-
-	// Tier 5 `get*` prefix → non-mut self.
-	checkMut(getFooFn, false, "getFoo")
-	// Tier 6 mutating prefix `push` → stays at default mut self.
-	checkMut(pushFn, true, "push")
-	// No heuristic match → stays at default mut self.
-	checkMut(frobnicateFn, true, "frobnicate")
 }
