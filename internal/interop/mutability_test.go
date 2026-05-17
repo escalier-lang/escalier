@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/stretchr/testify/require"
 )
 
 // span is a zero-value span used throughout these tests.
@@ -510,4 +511,55 @@ func TestClassifyInheritance(t *testing.T) {
 			t.Errorf("got Mut=%v Source=%d, want Mut=false Source=TierExplicitSignal", result.Mut, result.Source)
 		}
 	})
+}
+
+// TestClassifyMethodByName covers the name-only entry point used by the
+// checker prelude pass on .d.ts-loaded lib types (issue #614). The
+// classification must match the corresponding tiers in Classify when
+// called with the same name, even without a dts_parser.ClassMember.
+func TestClassifyMethodByName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		method  string
+		wantMut bool
+		wantOK  bool
+	}{
+		// Tier 3 well-known non-mutating allow-list.
+		{"toString well-known", "toString", false, true},
+		{"valueOf well-known", "valueOf", false, true},
+		{"toJSON well-known", "toJSON", false, true},
+		{"toLocaleString well-known", "toLocaleString", false, true},
+
+		// Tier 5 get* prefix.
+		{"bare get", "get", false, true},
+		{"getFoo", "getFoo", false, true},
+		{"getter falls through", "getter", false, false},
+		{"getOrInsertFoo mutating fall-through", "getOrInsertFoo", true, true},
+		{"getOrInsert exact mutating fall-through", "getOrInsert", true, true},
+		{"getOrInserter stays non-mut", "getOrInserter", false, true},
+
+		// Tier 6 mutating prefixes / exacts.
+		{"push", "push", true, true},
+		{"setName", "setName", true, true},
+		{"sort exact", "sort", true, true},
+
+		// Tier 6 non-mutating prefixes / exacts.
+		{"toUpperCase", "toUpperCase", false, true},
+		{"isEmpty", "isEmpty", false, true},
+		{"includes exact", "includes", false, true},
+
+		// No classification.
+		{"unknown", "frobnicate", false, false},
+		{"empty", "", false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mut, ok := ClassifyMethodByName(tc.method)
+			require.Equal(t, tc.wantOK, ok)
+			require.Equal(t, tc.wantMut, mut)
+		})
+	}
 }

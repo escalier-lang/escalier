@@ -152,7 +152,7 @@ func TestStripMutSelfFromMethods(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			obj, fns := build(tc.methods...)
-			stripMutSelfFromMethods(obj, set.FromSlice(tc.overrides))
+			applyMethodMutability(obj, set.FromSlice(tc.overrides))
 			for name, wantMut := range tc.expectedMut {
 				fn := fns[name]
 				_, isMut := fn.SelfParam.Type.(*type_system.MutType)
@@ -161,4 +161,48 @@ func TestStripMutSelfFromMethods(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestUpdateMethodMutability_HeuristicFallthrough pins the issue #614
+// behaviour: a .d.ts-loaded method on a class with no entry in
+// mutabilityOverrides still gets the name-only interop heuristics
+// applied. Before #614 the second pass only iterated the override map's
+// keys, so `getFoo` on an unlisted class stayed `mut self` and was
+// hidden on non-mut receivers despite tier 5 unambiguously classifying
+// it non-mutating.
+func TestUpdateMethodMutability_HeuristicFallthrough(t *testing.T) {
+	t.Parallel()
+
+	makeMethod := func(name string) (*type_system.MethodElem, *type_system.FuncType) {
+		fn := type_system.NewFuncType(nil, nil, nil,
+			type_system.NewNeverType(nil), type_system.NewNeverType(nil))
+		return type_system.NewMethodElem(type_system.NewStrKey(name), fn), fn
+	}
+
+	getFoo, getFooFn := makeMethod("getFoo")
+	push, pushFn := makeMethod("push")
+	frobnicate, frobnicateFn := makeMethod("frobnicate")
+
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{getFoo, push, frobnicate})
+
+	ns := type_system.NewNamespace()
+	// "Widget" is intentionally NOT a key in mutabilityOverrides — the
+	// whole point is heuristics must run even with no override entry.
+	ns.Types["Widget"] = &type_system.TypeAlias{Type: obj}
+
+	populateSelfParams(ns)
+	UpdateMethodMutability(Context{}, ns)
+
+	checkMut := func(fn *type_system.FuncType, wantMut bool, label string) {
+		require.NotNil(t, fn.SelfParam, label)
+		_, isMut := fn.SelfParam.Type.(*type_system.MutType)
+		require.Equalf(t, wantMut, isMut, "%s: want mut=%v, got mut=%v", label, wantMut, isMut)
+	}
+
+	// Tier 5 `get*` prefix → non-mut self.
+	checkMut(getFooFn, false, "getFoo")
+	// Tier 6 mutating prefix `push` → stays at default mut self.
+	checkMut(pushFn, true, "push")
+	// No heuristic match → stays at default mut self.
+	checkMut(frobnicateFn, true, "frobnicate")
 }

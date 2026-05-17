@@ -124,6 +124,66 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 	return ClassifyResult{Mut: true, Source: TierDefault}
 }
 
+// ClassifyMethodByName runs the name-only tiers of Classify against a bare
+// method name and returns the resulting receiver-mutability classification.
+// It covers the well-known non-mutating method allow-list (from tier 3),
+// the tier-5 `get*` prefix rule, and the tier-6 name-based heuristics —
+// i.e. every tier whose decision depends only on the method's name.
+//
+// Used by the checker prelude pass on .d.ts-loaded lib types, where the
+// caller has a type_system.MethodElem and a string name but no
+// dts_parser.ClassMember to feed the full Classify entry point.
+//
+// Returns (mut, true) when a tier classifies the name; (false, false)
+// when no tier matches and the caller should keep its own default.
+func ClassifyMethodByName(name string) (mut bool, ok bool) {
+	if name == "" {
+		return false, false
+	}
+	// Tier 3 (name-only subset): well-known non-mutating method names
+	// that apply regardless of the containing type.
+	if wellKnownNonMutatingMethods.Contains(name) {
+		return false, true
+	}
+	// Tier 5: `get*` prefix with documented mutate-on-miss fall-throughs.
+	if classifyGetPrefixByName(name) {
+		return false, true
+	}
+	// Tier 6: name-based heuristics. Mutating wins when both match.
+	isMut := matchesAnyPrefix(name, mutatingPrefixes) || mutatingExact.Contains(name)
+	isNonMut := matchesAnyPrefix(name, nonMutatingPrefixes) || nonMutatingExact.Contains(name)
+	switch {
+	case isMut:
+		return true, true
+	case isNonMut:
+		return false, true
+	}
+	return false, false
+}
+
+// classifyGetPrefixByName is the name-only counterpart to
+// classifyGetPrefix. Returns true iff `name` should be classified
+// non-mutating under the tier-5 rule (bare `get` or `get` + uppercase
+// continuation, excluding the `getOr*` mutate-on-miss prefixes).
+func classifyGetPrefixByName(name string) bool {
+	if name != "get" && !hasPrefixWithUpperContinuation(name, "get") {
+		return false
+	}
+	for _, p := range getOrMutatingPrefixes {
+		if !strings.HasPrefix(name, p) {
+			continue
+		}
+		if len(name) == len(p) {
+			return false
+		}
+		r, _ := utf8.DecodeRuneInString(name[len(p):])
+		if !unicode.IsLower(r) {
+			return false
+		}
+	}
+	return true
+}
+
 // classifyGetPrefix implements tier 5: `get*` methods are non-mutating,
 // except for the documented mutate-on-miss prefixes (`getOrInsert`,
 // `getOrUpdate`, `getOrCreate`), which fall through to tier 6 and get
