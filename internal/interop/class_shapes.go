@@ -49,12 +49,13 @@ import (
 // Method `SelfParam` wiring is *not* done here. By the time this runs,
 // checker/prelude.go's `populateSelfParams` has already mutated every
 // method `*FuncType` in the namespace in place to attach a default
-// (non-mut) SelfParam, and `UpdateMethodMutability` /
-// `UpdateCollectionMutability` have flipped individual receivers to
-// `mut self`. RecoverClassShapes stores those `*FuncType` pointers
-// verbatim — it neither sets SelfParam nor clones the FuncType, so any
-// downstream consumer that mutates a method's SelfParam will be
-// observed through the resulting ClassScope as well.
+// `mut self` SelfParam, and `UpdateMethodMutability` /
+// `UpdateCollectionMutability` have stripped `mut` from individual
+// receivers positively classified as non-mutating. RecoverClassShapes
+// stores those `*FuncType` pointers verbatim — it neither sets
+// SelfParam nor clones the FuncType, so any downstream consumer that
+// mutates a method's SelfParam will be observed through the resulting
+// ClassScope as well.
 func RecoverClassShapes(ns *type_system.Namespace) *ModuleScope {
 	ms := &ModuleScope{
 		Container: Container{

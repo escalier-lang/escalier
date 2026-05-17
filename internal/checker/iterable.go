@@ -5,6 +5,22 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// asMutReceiver wraps t in MutType if it isn't already, so receiver-
+// mutability gating doesn't hide `mut self` methods during iterator-
+// protocol lookups (`[Symbol.iterator]`, `[Symbol.asyncIterator]`,
+// `.next`). Iterator protocol calls are logically non-mutating on the
+// source — TypeScript's lib types don't carry receiver-mutability
+// annotations and tier-3 classification (#612 follow-up) hasn't yet
+// landed an "iterator-protocol method is non-mutating" rule, so the
+// checker treats them as mutating by default. This helper papers over
+// that gap for protocol-internal use only.
+func asMutReceiver(t type_system.Type) type_system.Type {
+	if _, isMut := type_system.Prune(t).(*type_system.MutType); isMut {
+		return t
+	}
+	return type_system.NewMutType(nil, t)
+}
+
 // getSymbolID retrieves the unique symbol ID for a named property on SymbolConstructor
 // (e.g. "iterator" for Symbol.iterator, "asyncIterator" for Symbol.asyncIterator).
 func (c *Checker) getSymbolID(name string) (int, bool) {
@@ -103,7 +119,7 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		span: ast.Span{},
 	}
 
-	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey, AccessRead)
+	iteratorMethod, errors := c.getMemberType(ctx, asMutReceiver(t), indexKey, AccessRead)
 	if len(errors) > 0 {
 		return nil
 	}
@@ -136,9 +152,14 @@ func (c *Checker) unifyIteratorNextReturn(ctx Context, t type_system.Type) (type
 		return nil, nil
 	}
 
-	// Look up the `next` method on the candidate type
+	// Look up the `next` method on the candidate type. We wrap `t` in
+	// MutType because the iterator value is freshly produced by
+	// [Symbol.iterator]() and owned by the caller, so its `mut self`
+	// `next` method should be callable even when the source collection
+	// is non-mut. Without this wrap the polarity flip (#612) would
+	// break the iterator protocol for every non-mut iterable.
 	nextKey := PropertyKey{Name: "next", span: ast.Span{}}
-	nextMethod, errors := c.getMemberType(ctx, t, nextKey, AccessRead)
+	nextMethod, errors := c.getMemberType(ctx, asMutReceiver(t), nextKey, AccessRead)
 	if len(errors) > 0 {
 		return nil, nil
 	}
@@ -217,7 +238,7 @@ func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_sy
 		span: ast.Span{},
 	}
 
-	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey, AccessRead)
+	iteratorMethod, errors := c.getMemberType(ctx, asMutReceiver(t), indexKey, AccessRead)
 	if len(errors) > 0 {
 		return nil
 	}
@@ -255,7 +276,7 @@ func (c *Checker) GetAsyncIterableElementType(ctx Context, t type_system.Type) t
 		span: ast.Span{},
 	}
 
-	iteratorMethod, errors := c.getMemberType(ctx, t, indexKey, AccessRead)
+	iteratorMethod, errors := c.getMemberType(ctx, asMutReceiver(t), indexKey, AccessRead)
 	if len(errors) > 0 {
 		return nil
 	}

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/type_system"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,10 +55,123 @@ func TestPopulateSelfParamsRecursesIntoNestedNamespaces(t *testing.T) {
 		require.NotNilf(t, fn, "method %q not found", methodName)
 		require.NotNilf(t, fn.SelfParam, "SelfParam missing for %q", methodName)
 		_, isMut := fn.SelfParam.Type.(*type_system.MutType)
-		assert.Falsef(t, isMut, "default non-mut for %q", methodName)
+		require.Truef(t, isMut, "expected default mut self for %q", methodName)
 	}
 
 	check(root.Types["Top"], "topMethod")
 	check(child.Types["Mid"], "midMethod")
 	check(grandchild.Types["Leaf"], "leafMethod")
+}
+
+// TestPopulateSelfParamsGetterSetterDefaults pins the polarity for
+// accessor elements: getters default to non-mut self (reading state
+// doesn't mutate) and setters default to mut self (assignment
+// mutates). Defaulting getters to mut would hide every .d.ts getter
+// not in mutabilityOverrides on a non-mut receiver, because
+// isMemberVisible gates GetterElem on receiver mutability the same
+// way it gates MethodElem.
+func TestPopulateSelfParamsGetterSetterDefaults(t *testing.T) {
+	t.Parallel()
+
+	getterFn := type_system.NewFuncType(nil, nil, nil,
+		type_system.NewNeverType(nil), type_system.NewNeverType(nil))
+	setterFn := type_system.NewFuncType(nil, nil, nil,
+		type_system.NewNeverType(nil), type_system.NewNeverType(nil))
+	getter := type_system.NewGetterElem(type_system.NewStrKey("g"), getterFn)
+	setter := type_system.NewSetterElem(type_system.NewStrKey("s"), setterFn)
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{getter, setter})
+
+	root := type_system.NewNamespace()
+	root.Types["T"] = &type_system.TypeAlias{Type: obj}
+
+	populateSelfParams(root)
+
+	require.NotNil(t, getterFn.SelfParam)
+	_, getterIsMut := getterFn.SelfParam.Type.(*type_system.MutType)
+	require.Falsef(t, getterIsMut, "getter should default to non-mut self")
+
+	require.NotNil(t, setterFn.SelfParam)
+	_, setterIsMut := setterFn.SelfParam.Type.(*type_system.MutType)
+	require.Truef(t, setterIsMut, "setter should default to mut self")
+}
+
+// TestApplyOverridesToObjectType pins the second-pass behaviour that
+// strips `mut self` from methods classified as non-mutating in the
+// per-interface overrides table. The post-#612 default for MethodElem
+// is `mut self`; without this pass any non-mutating method on a
+// non-constructor-shaped class (Date, Function, Console, Body,
+// Request, Response) would stay hidden by isMemberVisible on non-mut
+// receivers.
+func TestApplyOverridesToObjectType(t *testing.T) {
+	t.Parallel()
+
+	build := func(names ...string) (*type_system.ObjectType, map[string]*type_system.FuncType) {
+		fns := make(map[string]*type_system.FuncType, len(names))
+		elems := make([]type_system.ObjTypeElem, 0, len(names))
+		for _, n := range names {
+			fn := type_system.NewFuncType(nil, nil, nil,
+				type_system.NewNeverType(nil), type_system.NewNeverType(nil))
+			fn.SelfParam = type_system.NewSelfParam(
+				type_system.NewTypeRefType(nil, "T", nil),
+				true,
+			)
+			fns[n] = fn
+			elems = append(elems, type_system.NewMethodElem(type_system.NewStrKey(n), fn))
+		}
+		return type_system.NewObjectType(nil, elems), fns
+	}
+
+	tests := []struct {
+		name      string
+		methods   []string
+		overrides Overrides
+		// expectedMut[name] = whether the receiver should be mut after the pass
+		expectedMut map[string]bool
+	}{
+		{
+			name:    "false-valued override strips mut",
+			methods: []string{"getHours", "setHours"},
+			overrides: Overrides{
+				"getHours": false,
+			},
+			expectedMut: map[string]bool{
+				"getHours": false,
+				"setHours": true,
+			},
+		},
+		{
+			name:    "true-valued override is a no-op",
+			methods: []string{"compile"},
+			overrides: Overrides{
+				"compile": true,
+			},
+			expectedMut: map[string]bool{
+				"compile": true,
+			},
+		},
+		{
+			name:    "missing override leaves receiver mut",
+			methods: []string{"unclassified"},
+			overrides: Overrides{
+				"other": false,
+			},
+			expectedMut: map[string]bool{
+				"unclassified": true,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			obj, fns := build(tc.methods...)
+			applyOverridesToObjectType(obj, tc.overrides)
+			for name, wantMut := range tc.expectedMut {
+				fn := fns[name]
+				_, isMut := fn.SelfParam.Type.(*type_system.MutType)
+				require.Equalf(t, wantMut, isMut,
+					"method %q: want mut=%v, got mut=%v", name, wantMut, isMut)
+			}
+		})
+	}
 }

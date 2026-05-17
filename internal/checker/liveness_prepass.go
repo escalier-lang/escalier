@@ -1,6 +1,8 @@
 package checker
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -110,6 +112,11 @@ func seedParamLeafAliases(
 // names, assigning each a unique negative VarID. These are used by the
 // rename pass to distinguish non-local references from unresolved names.
 //
+// Names within each scope are sorted before being assigned VarIDs so that
+// the resulting IDs are deterministic across runs (Go map iteration order
+// is randomized) — otherwise downstream snapshot tests that capture VarIDs
+// see spurious churn.
+//
 // TODO(Phase 15.1): This re-walks the entire scope chain (including the
 // prelude) on every call. Cache the flattened bindings at the parent scope
 // level so that only the current scope's bindings need to be added each time.
@@ -122,7 +129,12 @@ func collectOuterBindings(scope *Scope) map[string]liveness.VarID {
 	// define() overwrites the negative VarID with a positive one when it
 	// processes the parameter, so the shadowing is handled correctly.
 	for s := scope; s != nil; s = s.Parent {
+		names := make([]string, 0, len(s.Namespace.Values))
 		for name := range s.Namespace.Values {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
 			if _, exists := bindings[name]; !exists {
 				bindings[name] = nextID
 				nextID--

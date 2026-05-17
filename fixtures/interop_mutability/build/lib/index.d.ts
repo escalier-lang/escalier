@@ -5,7 +5,7 @@ declare const Point: {new (x: number, y: number): Point};
 declare type Widget = {name: string, isReady(): true, toJSON(): string, clone(): Widget, render(): void};
 declare const Widget: {new (name: string): Widget};
 declare function cannot_get_or_insert_on_immutable(c: Cache): never;
-declare function cannot_mutate_immutable_date(d: Date): void;
+declare function cannot_mutate_immutable_date(d: Date): never;
 declare function cannot_push_to_immutable(xs: Array<number>): never;
 declare function cannot_render_immutable(w: Widget): never;
 declare function cannot_sort_immutable(xs: Array<number>): never;

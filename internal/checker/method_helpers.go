@@ -103,10 +103,25 @@ func setReceiverMut(fn *type_system.FuncType, mut bool) {
 // time (see infer_module.go, infer_stmt.go, infer_expr.go); this pass
 // covers the .d.ts-loaded TypeScript lib types — Array, Map, Set,
 // Promise, etc. — which arrive without a receiver representation.
-// The default mutability is non-mut self; UpdateMethodMutability and
-// mergeReadonlyVariant run afterwards and flip individual receivers to
-// `mut self` via setReceiverMut. Recurses into nested namespaces so
-// namespaced lib types (e.g. `Intl.Collator`) are covered too.
+//
+// MethodElem defaults to `mut self`. TypeScript .d.ts carries no
+// receiver-mutability annotation, so for any method we haven't
+// positively classified, we don't know whether it mutates. Defaulting
+// to mut is the conservative choice: an under-classified mutating
+// method gates correctly behind `Mut[T]`, where defaulting to non-mut
+// would silently launder mutation past the `val` boundary.
+// UpdateMethodMutability and mergeReadonlyVariant run afterwards and
+// strip `mut` from individual receivers via setReceiverMut when
+// positively classified as non-mutating.
+//
+// GetterElem defaults to non-mut self and SetterElem defaults to
+// `mut self`: accessor shape itself is the tier-3 strong signal
+// (reading state doesn't mutate; assignment does). Without this
+// asymmetry every .d.ts-loaded getter not in mutabilityOverrides
+// would be hidden by isMemberVisible on a non-mut receiver.
+//
+// Recurses into nested namespaces so namespaced lib types (e.g.
+// `Intl.Collator`) are covered too.
 func populateSelfParams(ns *type_system.Namespace) {
 	for _, child := range ns.Namespaces {
 		populateSelfParams(child)
@@ -128,7 +143,7 @@ func populateSelfParams(ns *type_system.Namespace) {
 			switch e := elem.(type) {
 			case *type_system.MethodElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, false)
+					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, true)
 				}
 			case *type_system.GetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
@@ -136,7 +151,7 @@ func populateSelfParams(ns *type_system.Namespace) {
 				}
 			case *type_system.SetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, false)
+					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, true)
 				}
 			}
 		}

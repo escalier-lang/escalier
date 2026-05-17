@@ -3,6 +3,11 @@ lib/index.esc:95:5: Callee is not callable: undefined
 95:     c.getOrInsert("k", 0)   // EXPECTED-ERROR (tier 6 exception)
         ^^^^^^^^^^^^^
 
+lib/index.esc:55:5: Callee is not callable: undefined
+
+55:     d.setHours(12)          // EXPECTED-ERROR (tier 4: Date.setHours mutates)
+        ^^^^^^^^^^
+
 lib/index.esc:20:5: Callee is not callable: undefined
 
 20:     xs.push(1)  // EXPECTED-ERROR (tier 2)
