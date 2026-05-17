@@ -560,25 +560,33 @@ func TestMergePropertyTypeEqualNoError(t *testing.T) {
 // mutable container being given its real Mut[…] type). Permitted by
 // propertyTypeEquivalent.
 func TestMergePropertyMutWrappingPermitted(t *testing.T) {
-	num := type_system.NewNumPrimType(nil)
-	mutNum := type_system.NewMutType(nil, type_system.NewNumPrimType(nil))
+	// Use an object type `{ x: number }` rather than a primitive: the
+	// Mut wrap on a primitive is vacuous (`Number.prototype` has no
+	// mutating methods), so `Mut[number]` would not exercise the rule
+	// meaningfully even though the structural equivalence check passes.
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	})
+	mutObj := type_system.NewMutType(nil, type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	}))
 	original := map[string]*ModuleScope{
 		"": {Container: Container{
 			Free:     map[string]*Effective{},
-			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: num})},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: obj})},
 		}},
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
 			Free:     map[string]*Effective{},
-			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: mutNum, Source: TierUserOverride})},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: mutObj, Source: TierUserOverride})},
 		}},
 	}
 	store, errs := Merge(original, override)
 	require.Empty(t, errs, "override may add a Mut wrapper over the original property type")
 	cls, ok := store.Modules[""].Children["C"].(*ClassScope)
 	require.True(t, ok)
-	require.Same(t, mutNum, cls.Instance.Properties["p"].Type)
+	require.Same(t, mutObj, cls.Instance.Properties["p"].Type)
 }
 
 // TestMergePropertyTighteningAnyPermitted: a TS-side `any` original is
@@ -721,17 +729,25 @@ func TestMergePropertyMutWrapOverAnyPermitted(t *testing.T) {
 // ErrPropertyTypeMismatch. Locks the contract asserted in the
 // propertyTypeEquivalent docstring.
 func TestMergePropertyMutStrippingRejected(t *testing.T) {
-	num := type_system.NewNumPrimType(nil)
-	mutNum := type_system.NewMutType(nil, type_system.NewNumPrimType(nil))
+	// Use an object type so the Mut wrap is non-vacuous (a primitive
+	// like `number` has no mutating methods, so stripping its Mut
+	// wouldn't exercise the silent-weakening case the rule is meant
+	// to catch).
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	})
+	mutObj := type_system.NewMutType(nil, type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	}))
 	original := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"x": {Type: mutNum}},
+			Free:     map[string]*Effective{"x": {Type: mutObj}},
 			Children: map[string]ChildScope{},
 		}},
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"x": {Type: num, Source: TierUserOverride}},
+			Free:     map[string]*Effective{"x": {Type: obj, Source: TierUserOverride}},
 			Children: map[string]ChildScope{},
 		}},
 	}
