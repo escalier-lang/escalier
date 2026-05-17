@@ -220,24 +220,24 @@ type MethodNames = set.Set[string]
 
 // TODO(#500): extend mutabilityOverrides for Promise, Error, and other
 // classes whose non-mutating methods should be callable on non-mut
-// receivers. Methods on classes not listed here default to `mut self`
-// (set by populateSelfParams), which means they are hidden by
-// isMemberVisible on non-mut receivers. Adding an entry like
-// `"Date": set.FromSlice([]string{"getHours", ...})` strips the default
-// `mut` for those non-mutating methods.
+// receivers. Entries here are exceptions the name-only heuristics in
+// interop.ClassifyMethodByName (issue #614) either miss (e.g.
+// String.charAt — no prefix match) or actively mis-classify (e.g.
+// String.replace — `replace` is a mutating-prefix). Method names
+// already covered by the heuristics — `get*`, `to*`, `is*`, `has*`,
+// well-known `toString`/`valueOf`, and so on — are redundant and must
+// not be re-listed here; the prelude pass applies the heuristics as a
+// fall-through whenever a method has no override entry.
 //
 // the key is the interface name
 var mutabilityOverrides = map[string]MethodNames{
 	"String": set.FromSlice([]string{
-		"at",
+		// Heuristic misses (no prefix/exact match) and active
+		// mis-classifications (`replace`/`replaceAll` look mutating).
 		"charAt",
 		"charCodeAt",
 		"codePointAt",
-		"concat",
 		"endsWith",
-		"includes",
-		"indexOf",
-		"lastIndexOf",
 		"localeCompare",
 		"match",
 		"matchAll",
@@ -248,96 +248,41 @@ var mutabilityOverrides = map[string]MethodNames{
 		"replace",
 		"replaceAll",
 		"search",
-		"slice",
 		"split",
 		"startsWith",
 		"substr",
 		"substring",
-		"toLocaleLowerCase",
-		"toLocaleUpperCase",
-		"toLowerCase",
-		"toUpperCase",
 		"trim",
 		"trimEnd",
 		"trimStart",
-		"valueOf",
 	}),
-	"RegExp": set.FromSlice([]string{
-		// `compile`, `exec` (with global/sticky), and `test` (with
-		// global/sticky) are mutating and inherit the default `mut self`.
-		// `Symbol.search` / `Symbol.split` are non-mutating per spec but
-		// can't be expressed in this string-keyed map — see #620.
-		"toString",
-	}),
-	"Number": set.FromSlice([]string{
-		"toExponential",
-		"toFixed",
-		"toLocaleString",
-		"toPrecision",
-		"toString",
-		"valueOf",
-	}),
-	"Boolean": set.FromSlice([]string{
-		"valueOf",
-	}),
+	// RegExp.toString is covered by the well-known allow-list in
+	// ClassifyMethodByName. `compile`, `exec` (with global/sticky), and
+	// `test` (with global/sticky) are mutating and inherit the default
+	// `mut self`. `Symbol.search` / `Symbol.split` are non-mutating per
+	// spec but can't be expressed in this string-keyed map — see #620.
 	"Object": set.FromSlice([]string{
-		// All Object.prototype methods are non-mutating. Without this
-		// entry, derived types that inherit toString/valueOf/etc. from
-		// Object (e.g. RegExp.toString) become invisible on non-mut
-		// receivers after the polarity flip.
-		"hasOwnProperty",
-		"isPrototypeOf",
+		// Heuristic miss: `propertyIsEnumerable` doesn't start with any
+		// known non-mutating prefix. The rest of Object.prototype
+		// (hasOwnProperty, isPrototypeOf, toLocaleString, toString,
+		// valueOf) is covered by the heuristics.
 		"propertyIsEnumerable",
-		"toLocaleString",
-		"toString",
-		"valueOf",
 	}),
 	"Function": set.FromSlice([]string{
+		// Heuristic misses; `toString` is covered by the well-known list.
 		"apply",
 		"bind",
 		"call",
-		"toString",
 	}),
-	"Date": set.FromSlice([]string{
-		// `get*` accessors are non-mutating; `set*` accessors mutate and
-		// inherit the default `mut self`. `toISOString`, `toJSON`,
-		// `toLocaleDateString`, `toLocaleTimeString`, `toDateString`,
-		// `toTimeString`, and `toUTCString` are all stringifiers and
-		// non-mutating.
-		"getDate",
-		"getDay",
-		"getFullYear",
-		"getHours",
-		"getMilliseconds",
-		"getMinutes",
-		"getMonth",
-		"getSeconds",
-		"getTime",
-		"getTimezoneOffset",
-		"getUTCDate",
-		"getUTCDay",
-		"getUTCFullYear",
-		"getUTCHours",
-		"getUTCMilliseconds",
-		"getUTCMinutes",
-		"getUTCMonth",
-		"getUTCSeconds",
-		"toDateString",
-		"toISOString",
-		"toJSON",
-		"toLocaleDateString",
-		"toLocaleString",
-		"toLocaleTimeString",
-		"toString",
-		"toTimeString",
-		"toUTCString",
-		"valueOf",
-	}),
+	// `Number`, `Boolean`, and `Date` had every entry covered by the
+	// name-only heuristics (`get*`, `to*`, well-known `toString`/`valueOf`)
+	// — issue #614 removed the redundant bootstrap blocks.
 	"Console": set.FromSlice([]string{
+		// Heuristic misses (most Console methods are bare nouns) plus
+		// `clear` (mis-classified as mutating by the `clear` prefix —
+		// Console.clear is non-mutating on the Console object itself).
 		"assert",
 		"clear",
-		"count",
-		"countReset",
 		"debug",
 		"dir",
 		"dirxml",
@@ -356,6 +301,7 @@ var mutabilityOverrides = map[string]MethodNames{
 		"warn",
 	}),
 	"Body": set.FromSlice([]string{
+		// Heuristic misses — every Body method is a bare noun.
 		"arrayBuffer",
 		"blob",
 		"bytes",
@@ -364,33 +310,38 @@ var mutabilityOverrides = map[string]MethodNames{
 		"text",
 	}),
 	"Response": set.FromSlice([]string{
+		// Heuristic misses; `clone` is covered by the `clone` prefix.
 		"arrayBuffer",
 		"blob",
 		"bytes",
-		"clone",
 		"formData",
 		"json",
 		"text",
 	}),
 	"Request": set.FromSlice([]string{
+		// Heuristic misses; `clone` is covered by the `clone` prefix.
 		"arrayBuffer",
 		"blob",
 		"bytes",
-		"clone",
 		"formData",
 		"json",
 		"text",
 	}),
 }
 
-// stripMutSelfFromMethods strips `mut self` from any method in objType
-// whose name appears in names.
+// applyMethodMutability classifies each MethodElem on objType using the
+// per-class override set first and the name-only interop heuristics as
+// the fall-through (issue #614). When neither source positively
+// classifies the method as non-mutating it keeps the default `mut self`
+// set by populateSelfParams. The override entries always win — they
+// encode known exceptions that the heuristics either miss or
+// mis-classify (e.g. String.replace, Console.clear).
 //
 // Only MethodElem is consulted. GetterElem / SetterElem polarity is
 // fixed by populateSelfParams (getters non-mut, setters mut) — passing
 // an accessor name in `names` would silently miss here. If an accessor
 // ever needs its polarity overridden, extend the type switch below.
-func stripMutSelfFromMethods(objType *type_system.ObjectType, names MethodNames) {
+func applyMethodMutability(objType *type_system.ObjectType, names MethodNames) {
 	for _, elem := range objType.Elems {
 		me, ok := elem.(*type_system.MethodElem)
 		if !ok {
@@ -399,7 +350,12 @@ func stripMutSelfFromMethods(objType *type_system.ObjectType, names MethodNames)
 		if me.Name.Kind != type_system.StrObjTypeKeyKind {
 			continue
 		}
-		if names.Contains(me.Name.Str) {
+		name := me.Name.Str
+		if names.Contains(name) {
+			setReceiverMut(me.Fn, false)
+			continue
+		}
+		if mut, classified := interop.ClassifyMethodByName(name); classified && !mut {
 			setReceiverMut(me.Fn, false)
 		}
 	}
@@ -451,18 +407,10 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
 					// TypeScript .d.ts has no mut-self annotation, so
 					// methods default to `mut self` (set by
-					// populateSelfParams). We strip `mut` for methods
-					// listed in the per-interface overrides set.
-					for _, elem := range it.Elems {
-						if me, ok := elem.(*type_system.MethodElem); ok {
-							if me.Name.Kind != type_system.StrObjTypeKeyKind {
-								continue
-							}
-							if overrides.Contains(me.Name.Str) {
-								setReceiverMut(me.Fn, false)
-							}
-						}
-					}
+					// populateSelfParams). Apply per-interface overrides
+					// and, as a fall-through for any unlisted method,
+					// the name-only interop heuristics (#614).
+					applyMethodMutability(it, overrides)
 				} else {
 					panic("Instance type is not an ObjectType: " + instTypeAlias.Type.String())
 				}
@@ -470,30 +418,35 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 		}
 	}
 
-	// Second pass: types declared via `declare var X: {...}` (e.g. Response,
-	// Request) or as bare interfaces (e.g. Function, Body) — apply overrides
-	// by direct name lookup. The trio pass above already handled the
-	// constructor-shaped classes; for the rest we look up the instance type
-	// alias directly. Duplicate work is harmless because setReceiverMut is
-	// idempotent.
+	// Second pass: every named ObjectType in the namespace, including
+	// types declared via `declare var X: {...}` (e.g. Response, Request)
+	// or as bare interfaces (e.g. Function, Body), and any class with no
+	// override entry at all. Without the per-class entry the override
+	// set is empty and only the name-only interop heuristics fire — that
+	// fall-through is the point of #614, so a `.d.ts` getFoo on a class
+	// the override map never heard of still ends up non-mut.
+	//
+	// The trio pass above already touched constructor-shaped classes
+	// (via their resolved instance types); duplicate work on those is
+	// harmless because setReceiverMut is idempotent. This pass also
+	// visits the `*Constructor` types themselves, so heuristic-only
+	// classifications now reach static methods like Array.isArray and
+	// Object.keys/values/entries.
 	//
 	// Iterate in a deterministic order so snapshot tests downstream don't
 	// pick up map iteration randomness.
-	names := make([]string, 0, len(mutabilityOverrides))
-	for name := range mutabilityOverrides {
-		names = append(names, name)
+	typeNames = typeNames[:0]
+	for name := range namespace.Types {
+		typeNames = append(typeNames, name)
 	}
-	slices.Sort(names)
-	for _, overrideName := range names {
-		typeAlias, ok := namespace.Types[overrideName]
-		if !ok {
-			continue
-		}
+	slices.Sort(typeNames)
+	for _, name := range typeNames {
+		typeAlias := namespace.Types[name]
 		objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
 		if !ok {
 			continue
 		}
-		stripMutSelfFromMethods(objType, mutabilityOverrides[overrideName])
+		applyMethodMutability(objType, mutabilityOverrides[name])
 	}
 }
 

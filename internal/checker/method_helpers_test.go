@@ -152,13 +152,59 @@ func TestStripMutSelfFromMethods(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			obj, fns := build(tc.methods...)
-			stripMutSelfFromMethods(obj, set.FromSlice(tc.overrides))
+			applyMethodMutability(obj, set.FromSlice(tc.overrides))
 			for name, wantMut := range tc.expectedMut {
 				fn := fns[name]
 				_, isMut := fn.SelfParam.Type.(*type_system.MutType)
 				require.Equalf(t, wantMut, isMut,
 					"method %q: want mut=%v, got mut=%v", name, wantMut, isMut)
 			}
+		})
+	}
+}
+
+// TestUpdateMethodMutability_HeuristicFallthrough pins the fall-through
+// behaviour: a .d.ts-loaded method on a class with no entry in
+// mutabilityOverrides still gets the name-only interop heuristics
+// applied, so `getFoo` on an unlisted class is classified non-mutating
+// by tier 5 rather than being left at the default `mut self` and hidden
+// on non-mut receivers.
+func TestUpdateMethodMutability_HeuristicFallthrough(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		method  string
+		wantMut bool
+	}{
+		// Tier 5 `get*` prefix → non-mut self.
+		{"tier 5 get* prefix", "getFoo", false},
+		// Tier 6 mutating prefix `push` → stays at default mut self.
+		{"tier 6 mutating prefix", "push", true},
+		// No heuristic match → stays at default mut self.
+		{"no heuristic match", "frobnicate", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fn := type_system.NewFuncType(nil, nil, nil,
+				type_system.NewNeverType(nil), type_system.NewNeverType(nil))
+			method := type_system.NewMethodElem(type_system.NewStrKey(tc.method), fn)
+			obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{method})
+
+			ns := type_system.NewNamespace()
+			// "Widget" is intentionally NOT a key in mutabilityOverrides — the
+			// whole point is heuristics must run even with no override entry.
+			ns.Types["Widget"] = &type_system.TypeAlias{Type: obj}
+
+			populateSelfParams(ns)
+			UpdateMethodMutability(Context{}, ns)
+
+			require.NotNil(t, fn.SelfParam)
+			_, isMut := fn.SelfParam.Type.(*type_system.MutType)
+			require.Equal(t, tc.wantMut, isMut)
 		})
 	}
 }
