@@ -567,15 +567,40 @@ func mergeLeaf(
 			Override: lastOrigin(over.Origins),
 		}
 	default:
-		// Both: override replaces original. Consistency check on
-		// FuncType pairs (single-signature for now; CheckSet handles
-		// overload sets when packed under a union/intersection — left
-		// for follow-up).
-		if oFn, ok := orig.Type.(*type_system.FuncType); ok {
-			if vFn, ok2 := over.Type.(*type_system.FuncType); ok2 {
-				origin := lastOrigin(over.Origins)
-				if err := Check(vFn, oFn, p, origin); err != nil {
-					return over, err
+		// Both: override replaces original. Consistency check is split
+		// by leaf kind:
+		//   - FuncType on both sides: Check (single-signature for now;
+		//     CheckSet handles overload sets when packed under a union/
+		//     intersection — left for follow-up).
+		//   - Function on one side and not the other: report kind
+		//     mismatch as ErrPropertyTypeMismatch — the override is
+		//     declaring something fundamentally different from what the
+		//     original carries.
+		//   - Neither side a FuncType: propertyTypeEquivalent enforces
+		//     structural equivalence (with Mut-wrap refinement and
+		//     any/unknown tightening permitted).
+		origin := lastOrigin(over.Origins)
+		oFn, oIsFn := orig.Type.(*type_system.FuncType)
+		vFn, vIsFn := over.Type.(*type_system.FuncType)
+		switch {
+		case oIsFn && vIsFn:
+			if err := Check(vFn, oFn, p, origin); err != nil {
+				return over, err
+			}
+		case oIsFn != vIsFn:
+			return over, &ErrPropertyTypeMismatch{
+				Path:           p,
+				Override:       typeString(over.Type),
+				Original:       typeString(orig.Type),
+				OverrideOrigin: origin,
+			}
+		default:
+			if !propertyTypeEquivalent(over.Type, orig.Type) {
+				return over, &ErrPropertyTypeMismatch{
+					Path:           p,
+					Override:       typeString(over.Type),
+					Original:       typeString(orig.Type),
+					OverrideOrigin: origin,
 				}
 			}
 		}

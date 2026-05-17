@@ -82,6 +82,33 @@ func (e *ErrSignatureMismatch) Error() string {
 	)
 }
 
+// ErrPropertyTypeMismatch reports that a non-function leaf (a property,
+// a free type-alias or value binding, etc.) has an override type that
+// is not equivalent to the original under the property-consistency
+// rule. The rule permits three directions of refinement:
+//
+//   - exact structural equality (Type.Equals)
+//   - Mut-wrapping the original (override = Mut[orig])
+//   - tightening a sloppy TS-side any/unknown to a concrete shape
+//
+// Anything else — brand narrowing, unrelated shapes, function-vs-value
+// kind mismatch — surfaces as this error. The merge still installs the
+// override side so downstream consumers see one consistent answer.
+type ErrPropertyTypeMismatch struct {
+	Path           Path
+	Override       string
+	Original       string
+	OverrideOrigin Origin
+}
+
+func (e *ErrPropertyTypeMismatch) Error() string {
+	return fmt.Sprintf(
+		"override of %s changes property type incompatibly: override=%s, original=%s\n  override at %s:%d",
+		pathString(e.Path), e.Override, e.Original,
+		e.OverrideOrigin.FilePath, e.OverrideOrigin.Span.Start.Line,
+	)
+}
+
 // ErrGenericArityMismatch reports that an override class/interface
 // declares a different number of type parameters than the original.
 type ErrGenericArityMismatch struct {

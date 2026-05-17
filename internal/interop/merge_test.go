@@ -524,3 +524,235 @@ func TestMergeNamespaceNestedOverrideMatchesOriginal(t *testing.T) {
 	require.NotNil(t, got)
 	require.Same(t, overFn, got.Type, "override should replace original at the nested path")
 }
+
+// mkPropClass returns a single-class ModuleScope with the given Effective
+// installed as an instance property named `p`. Used by the property-type
+// consistency tests below.
+func mkPropClass(prop *Effective) *ClassScope {
+	inst := NewMemberSet()
+	inst.Properties["p"] = prop
+	return &ClassScope{Instance: inst, Static: NewMemberSet()}
+}
+
+// TestMergePropertyTypeEqualNoError: identical property types on both
+// sides merge cleanly (the dominant case — an override merely confirms
+// what the .d.ts already says).
+func TestMergePropertyTypeEqualNoError(t *testing.T) {
+	num := type_system.NewNumPrimType(nil)
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: num})},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: type_system.NewNumPrimType(nil), Source: TierUserOverride})},
+		}},
+	}
+	_, errs := Merge(original, override)
+	require.Empty(t, errs)
+}
+
+// TestMergePropertyMutWrappingPermitted: an override that wraps the
+// original type in Mut[…] is the canonical Group-B use case (a TS-side
+// mutable container being given its real Mut[…] type). Permitted by
+// propertyTypeEquivalent.
+func TestMergePropertyMutWrappingPermitted(t *testing.T) {
+	// Use an object type `{ x: number }` rather than a primitive: the
+	// Mut wrap on a primitive is vacuous (`Number.prototype` has no
+	// mutating methods), so `Mut[number]` would not exercise the rule
+	// meaningfully even though the structural equivalence check passes.
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	})
+	mutObj := type_system.NewMutType(nil, type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	}))
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: obj})},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: mutObj, Source: TierUserOverride})},
+		}},
+	}
+	store, errs := Merge(original, override)
+	require.Empty(t, errs, "override may add a Mut wrapper over the original property type")
+	cls, ok := store.Modules[""].Children["C"].(*ClassScope)
+	require.True(t, ok)
+	require.Same(t, mutObj, cls.Instance.Properties["p"].Type)
+}
+
+// TestMergePropertyTighteningAnyPermitted: a TS-side `any` original is
+// the precision-tightening case — overrides legitimately refine an
+// `any` slot to a concrete shape. Permitted by propertyTypeEquivalent.
+func TestMergePropertyTighteningAnyPermitted(t *testing.T) {
+	anyT := type_system.NewAnyType(nil)
+	num := type_system.NewNumPrimType(nil)
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: anyT})},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: num, Source: TierUserOverride})},
+		}},
+	}
+	_, errs := Merge(original, override)
+	require.Empty(t, errs, "override may tighten a TS-side `any` property to a concrete type")
+}
+
+// TestMergePropertyTypeMismatchSurfacesError: unrelated property shapes
+// (brand narrowing string→UserId would land here too) trip the
+// property-consistency rule. The override still wins in the store.
+func TestMergePropertyTypeMismatchSurfacesError(t *testing.T) {
+	num := type_system.NewNumPrimType(nil)
+	str := type_system.NewStrPrimType(nil)
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: num}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: str, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	store, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrPropertyTypeMismatch)
+	require.True(t, ok, "expected *ErrPropertyTypeMismatch; got %T", errs[0])
+	require.Equal(t,
+		"override of x changes property type incompatibly: override=string, original=number\n  override at :0",
+		errs[0].Error(),
+	)
+	require.Same(t, str, store.Modules[""].Free["x"].Type)
+}
+
+// TestMergePropertyKindMismatchSurfacesError: function on one side and
+// non-function on the other is a kind mismatch — the override is
+// declaring something fundamentally different from the original.
+// Reported as ErrPropertyTypeMismatch (not ErrSignatureMismatch — there
+// is no signature shape to compare on the non-function side).
+func TestMergePropertyKindMismatchSurfacesError(t *testing.T) {
+	num := type_system.NewNumPrimType(nil)
+	fn := mkFn()
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: fn}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: num, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	store, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrPropertyTypeMismatch)
+	require.True(t, ok, "function-vs-property kind mismatch should be *ErrPropertyTypeMismatch; got %T", errs[0])
+	require.Equal(t,
+		"override of x changes property type incompatibly: override=number, original="+fn.String()+"\n  override at :0",
+		errs[0].Error(),
+	)
+	require.Same(t, num, store.Modules[""].Free["x"].Type)
+	require.Equal(t, TierUserOverride, store.Modules[""].Free["x"].Source)
+}
+
+// TestMergePropertyAnyToUnknownRejected: tightening permits a concrete
+// override over a sloppy any/unknown original, but swapping one vague
+// type for another (any↔unknown) is not a refinement and must surface
+// as ErrPropertyTypeMismatch.
+func TestMergePropertyAnyToUnknownRejected(t *testing.T) {
+	anyT := type_system.NewAnyType(nil)
+	unkT := type_system.NewUnknownType(nil)
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: anyT}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: unkT, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	_, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrPropertyTypeMismatch)
+	require.True(t, ok, "any→unknown swap should not pass the tightening rule; got %T", errs[0])
+}
+
+// TestMergePropertyMutWrapOverAnyPermitted: the Mut-wrap rule
+// (over = Mut[orig]) and the any-tightening rule overlap at
+// `Mut[any]` over plain `any`. The Mut-wrap rule applies and the
+// override is permitted — locking this avoids a regression if the
+// rule ordering in propertyTypeEquivalent ever shifts.
+func TestMergePropertyMutWrapOverAnyPermitted(t *testing.T) {
+	anyT := type_system.NewAnyType(nil)
+	mutAny := type_system.NewMutType(nil, type_system.NewAnyType(nil))
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: anyT}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: mutAny, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	store, errs := Merge(original, override)
+	require.Empty(t, errs, "Mut[any] over any should be permitted by the Mut-wrap rule")
+	require.Same(t, mutAny, store.Modules[""].Free["x"].Type)
+}
+
+// TestMergePropertyMutStrippingRejected: the Mut-wrap rule is
+// one-way — the override may add Mut over a plain original, but
+// stripping Mut from an original (orig = Mut[T], over = T) is a
+// silent weakening of referent mutability and must surface as
+// ErrPropertyTypeMismatch. Locks the contract asserted in the
+// propertyTypeEquivalent docstring.
+func TestMergePropertyMutStrippingRejected(t *testing.T) {
+	// Use an object type so the Mut wrap is non-vacuous (a primitive
+	// like `number` has no mutating methods, so stripping its Mut
+	// wouldn't exercise the silent-weakening case the rule is meant
+	// to catch).
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	})
+	mutObj := type_system.NewMutType(nil, type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		type_system.NewPropertyElem(type_system.NewStrKey("x"), type_system.NewNumPrimType(nil)),
+	}))
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: mutObj}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: obj, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	_, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrPropertyTypeMismatch)
+	require.True(t, ok, "stripping Mut from an original should not pass property-consistency; got %T", errs[0])
+}

@@ -27,6 +27,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 
 - When traversing tree-like structures, use the existing visitor for that tree — see [internal/ast/visitor.go](internal/ast/visitor.go) for AST and [internal/type_system/visitor.go](internal/type_system/visitor.go) for types. Don't hand-roll a new traversal.
 - Use the `Set` ADT from [internal/set/](internal/set/) (`set.NewSet[T]()`, `set.FromSlice(...)`) instead of `map[T]struct{}` or `map[T]bool`.
+- Don't shadow Go builtins (`any`, `error`, `new`, `len`, etc.) or imported type/package aliases with local identifiers. Pick a distinct name (e.g. `anyT`, `errVal`).
 
 ## Writing tests
 
