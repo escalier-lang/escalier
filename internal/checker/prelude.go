@@ -278,6 +278,18 @@ var mutabilityOverrides = map[string]Overrides{
 	"Boolean": {
 		"valueOf": false,
 	},
+	"Object": {
+		// All Object.prototype methods are non-mutating. Without this
+		// entry, derived types that inherit toString/valueOf/etc. from
+		// Object (e.g. RegExp.toString) become invisible on non-mut
+		// receivers after the polarity flip.
+		"hasOwnProperty":       false,
+		"isPrototypeOf":        false,
+		"propertyIsEnumerable": false,
+		"toLocaleString":       false,
+		"toString":             false,
+		"valueOf":              false,
+	},
 	"Function": {
 		"apply":    false,
 		"bind":     false,
@@ -373,6 +385,11 @@ var mutabilityOverrides = map[string]Overrides{
 // whose name appears with `false` in overrides. Entries with `true` are
 // no-ops (the receiver already arrives as `mut` under the default set by
 // populateSelfParams) and exist for documentation only.
+//
+// Only MethodElem is consulted. GetterElem / SetterElem polarity is
+// fixed by populateSelfParams (getters non-mut, setters mut) — adding a
+// name-keyed override for an accessor would silently miss here. If an
+// accessor ever needs an override, extend the type switch below.
 func applyOverridesToObjectType(objType *type_system.ObjectType, overrides Overrides) {
 	for _, elem := range objType.Elems {
 		me, ok := elem.(*type_system.MethodElem)
@@ -391,8 +408,16 @@ func applyOverridesToObjectType(objType *type_system.ObjectType, overrides Overr
 func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 	// First pass: trio-shaped classes (interface X + interface XConstructor +
 	// declare var X: XConstructor) — look up the instance type via the
-	// constructor's return type.
+	// constructor's return type. Iterate in sorted order so the
+	// stderr warnings emitted on instance-type-resolution failure
+	// (see `Warning: could not resolve instance type alias`) come
+	// out in a stable order across runs.
+	typeNames := make([]string, 0, len(namespace.Types))
 	for name := range namespace.Types {
+		typeNames = append(typeNames, name)
+	}
+	slices.Sort(typeNames)
+	for _, name := range typeNames {
 		if strings.HasSuffix(name, "Constructor") && name != "ArrayConstructor" {
 			classTypeAlias := namespace.Types[name]
 
