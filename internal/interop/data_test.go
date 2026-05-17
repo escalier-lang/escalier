@@ -42,8 +42,12 @@ func TestBuildBuiltinStore_Memoized(t *testing.T) {
 	resetBuiltinStoreCache()
 	t.Cleanup(resetBuiltinStoreCache)
 
-	first, _ := BuildBuiltinStore(context.Background(), nil)
-	second, _ := BuildBuiltinStore(context.Background(), nil)
+	first, err1 := BuildBuiltinStore(context.Background(), nil)
+	require.Empty(t, err1)
+	require.NotNil(t, first)
+	second, err2 := BuildBuiltinStore(context.Background(), nil)
+	require.Empty(t, err2)
+	require.NotNil(t, second)
 	require.Same(t, first, second, "BuildBuiltinStore must return the same store on repeated calls")
 }
 
@@ -69,7 +73,8 @@ func TestBuildBuiltinStore_DoesNotMemoizeErrors(t *testing.T) {
 	}
 
 	_, errs := BuildBuiltinStore(context.Background(), nil)
-	require.NotEmpty(t, errs, "first call should surface the synthetic error")
+	require.Len(t, errs, 1, "first call should surface the synthetic error")
+	require.EqualError(t, errs[0], "synthetic build failure")
 
 	store, errs := BuildBuiltinStore(context.Background(), nil)
 	require.Empty(t, errs, "second call must retry instead of replaying memoized errors")

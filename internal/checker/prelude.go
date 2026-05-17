@@ -168,9 +168,9 @@ func isESNextFile(name string) bool {
 // InvalidObjectKeyError can occur for computed keys like [Symbol.iterator] when
 // the symbol property isn't available yet during processing. These are expected
 // and should not cause lib file loading to fail.
-func filterLibFileErrors(errors []Error) []Error {
+func filterLibFileErrors(errs []Error) []Error {
 	var fatalErrors []Error
-	for _, err := range errors {
+	for _, err := range errs {
 		switch err.(type) {
 		case *InvalidObjectKeyError:
 			// Skip - this is expected during ES2015+ lib loading
