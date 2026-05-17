@@ -52,6 +52,15 @@ func funcString(f *type_system.FuncType) string {
 	return f.String()
 }
 
+// typeString renders any Type for diagnostics, returning "nilType"
+// when the interface is nil so error construction never panics.
+func typeString(t type_system.Type) string {
+	if t == nil {
+		return "nilType"
+	}
+	return t.String()
+}
+
 // Check is the per-signature helper used by CheckSet and exposed
 // directly for the §10 implements check.
 func Check(override, original *type_system.FuncType, path Path, origin Origin) error {
@@ -66,6 +75,38 @@ func Check(override, original *type_system.FuncType, path Path, origin Origin) e
 		Original:       funcString(original),
 		OverrideOrigin: origin,
 	}
+}
+
+// propertyTypeEquivalent compares two non-function leaf types under the
+// property-consistency rule. It accepts:
+//
+//   - strict structural equality (Type.Equals);
+//   - Mut-wrapping the original — i.e. override = Mut[orig] — which is
+//     the dominant override use case (recording that a TS-side mutable
+//     container is actually `Mut[…]`);
+//   - tightening a sloppy TS-side `any`/`unknown` original to any
+//     concrete override shape.
+//
+// Brand narrowing (e.g. `string` → `UserId`) is intentionally rejected:
+// it requires opt-in and is tracked separately. The Mut-wrap direction
+// is one-way — the override may add Mut over a plain original, but
+// stripping Mut from an original would be a silent weakening and is
+// not accepted here.
+func propertyTypeEquivalent(over, orig type_system.Type) bool {
+	if over == nil || orig == nil {
+		return over == orig
+	}
+	if over.Equals(orig) {
+		return true
+	}
+	if mt, ok := over.(*type_system.MutType); ok && mt.Type != nil && mt.Type.Equals(orig) {
+		return true
+	}
+	switch orig.(type) {
+	case *type_system.AnyType, *type_system.UnknownType:
+		return true
+	}
+	return false
 }
 
 // funcSignatureEquivalent compares two FuncTypes for the consistency

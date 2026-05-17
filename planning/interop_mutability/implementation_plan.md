@@ -19,8 +19,8 @@ table below makes both explicit. Status legend: ✅ done,
 | 2.2 | Parser sub-task                        | ✅      | 2.1         | `declare module/global/namespace` and `override` prefix accepted by [internal/parser/decl.go](../../internal/parser/decl.go); `fixtures/interop_mutability/overrides/example.esc` is no longer `.future`.                                                                                       |
 | 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/interop/mutability.go](../../internal/interop/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
 | 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/interop/mutability.go](../../internal/interop/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
-| 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit: data types, extract, merge & loader, checker wiring, and the trio-fusion / static-side lookup prerequisites for §6 are all in. Remaining: §5.13 Group B (property-type consistency on non-function leaves) and Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
-| 6   | Built-in overrides                      | 🚧     | 5 (Group B optional) | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`). §5.13 Group A prerequisites are done; Group B (property-type consistency) is recommended alongside but not strictly blocking. **Stop-gap landed with #612**: `prelude.go`'s legacy `mutabilityOverrides` Go map has been extended with bootstrap entries for `Date`, `Function`, `Console`, `Body`, `Response`, `Request` (in addition to the pre-existing `String`/`Number`/`Boolean`/`RegExp`) so that the polarity flip didn't render their methods invisible. These are bootstrap stop-gaps that the §6 `.esc` override pipeline should formally supersede. |
+| 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit and §5.13 Group B (property-type consistency, `ErrPropertyTypeMismatch`): data types, extract, merge & loader, checker wiring, trio-fusion / static-side lookup, and property/leaf-kind consistency are all in. Remaining: §5.13 Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
+| 6   | Built-in overrides                      | 🚧     | 5           | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`). §5.13 Group A and Group B prerequisites are done. **Stop-gap landed with #612**: `prelude.go`'s legacy `mutabilityOverrides` Go map has been extended with bootstrap entries for `Date`, `Function`, `Console`, `Body`, `Response`, `Request` (in addition to the pre-existing `String`/`Number`/`Boolean`/`RegExp`) so that the polarity flip didn't render their methods invisible. These are bootstrap stop-gaps that the §6 `.esc` override pipeline should formally supersede. |
 | 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/interop/mutability.go](../../internal/interop/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
 | 8   | Type-printer round-trip audit          | ⬜      | —           | Independent; prerequisite for §9 emit. Can be done at any time.                                                                                                                                                                                                                                |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
@@ -40,7 +40,7 @@ is finished first):
    Drop `TierPrimitiveWrapper`. Small, fast.
 2. **§4 cleanup.** Rename `classifyTier2` → `classifyTier3`,
    finish remaining tier-3 cases.
-3. **§5 (override system).** Largest chunk; unblocks §6, §9, §11. Core pipeline + §6 prerequisites are landed (PRs #606–#609 and the 5.A blockers commit); remaining work is §5.13 Group B/C follow-ups.
+3. **§5 (override system).** Largest chunk; unblocks §6, §9, §11. Core pipeline + §6 prerequisites are landed (PRs #606–#609, the 5.A blockers commit, and Group B property-type consistency); remaining work is §5.13 Group C only.
 4. **§6 (built-in overrides).** Author the stdlib + FP data,
    including the always-immutable built-ins.
 5. **§7 (heuristics).** Add `classifyTier5` (get-prefix) and
@@ -1056,33 +1056,40 @@ statics.
 
 #### Group B — Correctness multiplier for §6 (land alongside A)
 
-Independent of Group A and can run in parallel. Land before
-§6 authoring picks up steam, otherwise mistakes in property
-overrides go silent and only surface at use sites.
+Independent of Group A and ran in parallel. Landed before
+§6 authoring picked up steam, so mistakes in property
+overrides no longer go silent.
 
-- **Property-type consistency.** `mergeLeaf` only runs the
-  consistency check when both `orig` and `over` carry
-  `*FuncType` ([merge.go:574-581](../../internal/interop/merge.go#L574-L581)).
-  Property slots (and any other non-function leaf) can
-  silently diverge in type between override and original.
-  Add a structural-equivalence check on non-function leaves.
+- **Property-type consistency.** ✅ Landed. `mergeLeaf` now
+  splits by leaf kind: FuncType-on-both runs `Check` as before;
+  function-vs-non-function is reported as `ErrPropertyTypeMismatch`
+  (kind mismatch); two non-function leaves go through
+  `propertyTypeEquivalent` ([consistency.go](../../internal/interop/consistency.go)),
+  which accepts three directions of refinement:
 
-  Note: property type overrides are a first-class use case,
-  not a forgotten corner of the merge. Per requirements
-  principle #7, a property has three independent axes — slot
-  reassignability (`readonly`), referent mutability (the type's
-  `Mut[…]` wrapping), and borrow scope (property-level
-  lifetimes) — and overrides legitimately need to change any
-  combination of them. The most common drivers are:
-  *Mut wrapping* (recording that `Container<T>.items: T[]`
-  is actually `Mut[Array[T]]`); *precision tightening*
-  (refining a TS-side `any`/`object`/sloppy union to the
-  runtime shape); and *brand narrowing* (`id: string` →
-  `id: UserId`). The structural-equivalence check should
-  permit these directions of refinement while still catching
-  outright shape mismatches; the exact rule (full equality
-  vs. subtype-on-`Mut`-axis vs. opt-in via a `@checked` tag)
-  is open and worth resolving as part of this item.
+  1. strict structural equality (`Type.Equals`);
+  2. Mut-wrapping the original (`over = Mut[orig]`) — the
+     dominant override use case;
+  3. tightening a TS-side `any`/`unknown` original to any
+     concrete override shape.
+
+  Brand narrowing (`string` → `UserId`) and structural
+  refinements that fall outside the three axes above are
+  intentionally rejected for now — they require an opt-in
+  mechanism (e.g. a `@checked` tag) that we'll add only when
+  a concrete override needs it. The Mut-wrap direction is
+  one-way: an override may add `Mut[…]` over a plain original,
+  but stripping `Mut` from an original would silently weaken
+  the contract and is not accepted.
+
+  Context for why this matters: per requirements principle #7
+  a property has three independent axes — slot reassignability
+  (`readonly`), referent mutability (the type's `Mut[…]`
+  wrapping), and borrow scope (property-level lifetimes) — and
+  overrides legitimately need to change any combination of
+  them. The rule above covers the Mut axis and the
+  precision-tightening axis; the reassignability and lifetime
+  axes are handled at other layers.
 
 #### Group C — Defer until a concrete case appears
 
