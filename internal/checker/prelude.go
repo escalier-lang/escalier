@@ -261,13 +261,13 @@ var mutabilityOverrides = map[string]MethodNames{
 		"trimEnd",
 		"trimStart",
 		"valueOf",
-		// TODO: handle Symbol.iterator as key
 	}),
 	"RegExp": set.FromSlice([]string{
 		// `compile`, `exec` (with global/sticky), and `test` (with
 		// global/sticky) are mutating and inherit the default `mut self`.
+		// `Symbol.search` / `Symbol.split` are non-mutating per spec but
+		// can't be expressed in this string-keyed map — see #620.
 		"toString",
-		// TODO: handle Symbol.match, Symbol.replace, Symbol.search, Symbol.split as keys
 	}),
 	"Number": set.FromSlice([]string{
 		"toExponential",
@@ -510,10 +510,10 @@ func UpdateCollectionMutability(namespace *type_system.Namespace) {
 }
 
 // mergeReadonlyVariant merges a TypeScript Readonly* interface into its
-// mutable counterpart. Presence on the readonly variant is positive
-// evidence that a method does not mutate, so methods that appear on the
-// readonly type get their receiver stripped of `mut` (overriding the
-// default `mut self` set by populateSelfParams). Methods unique to the
+// mutable counterpart, e.g. ReadonlyArray and Array. Presence on the Readonly
+// variant is positive evidence that a method does not mutate, so methods that
+// appear on the readonly type get their receiver stripped of `mut` (overriding
+// the default `mut self` set by populateSelfParams). Methods unique to the
 // mutable type inherit the default `mut self` — the setReceiverMut call
 // in that branch is a no-op left for clarity. The merged element list is
 // shared between both type aliases so that lookups against either name
@@ -608,13 +608,12 @@ func (c *Checker) initializeGlobalScope() {
 	}
 
 	// Wire SelfParam onto every .d.ts-loaded method first (default
-	// `mut self`), then let the override passes strip `mut` from
-	// receivers positively classified as non-mutating by mutating
-	// SelfParam.Type in place.
+	// `mut self`, plus iterator-protocol fixups; see populateSelfParams),
+	// then let the override passes strip `mut` from receivers positively
+	// classified as non-mutating by mutating SelfParam.Type in place.
 	populateSelfParams(globalNs)
 	UpdateMethodMutability(inferCtx, globalNs)
 	UpdateCollectionMutability(globalNs)
-	fixupIteratorProtocolMethods(globalNs)
 
 	// Add built-in operator bindings
 	c.addOperatorBindings(globalNs)

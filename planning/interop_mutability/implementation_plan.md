@@ -254,12 +254,12 @@ into the prelude (#614). Without a workaround the polarity flip
 would break the iterator protocol for every non-mut iterable
 (Generator, String, user types without a `Readonly*` pair, etc.).
 
-**Targeted fix landed in #613 follow-up:** the
-`fixupIteratorProtocolMethods` pass in
-`internal/checker/iterable.go` runs after `populateSelfParams` in
-`initializeGlobalScope` and walks every namespace's `MethodElem`s
-keyed by `Symbol.iterator` or `Symbol.asyncIterator`, performing
-two adjustments per method:
+**Targeted fix landed in #613 follow-up:** `populateSelfParams` in
+`internal/checker/method_helpers.go` does an additional adjustment
+per method during its existing recursive walk over the namespace.
+For `MethodElem`s keyed by `Symbol.iterator` or
+`Symbol.asyncIterator` it performs two extra steps after backfilling
+SelfParam:
 
 1. **Strips `mut` from the receiver.** Invoking `[Symbol.iterator]()`
    doesn't mutate the source — it produces a fresh iterator — so
@@ -277,16 +277,18 @@ two adjustments per method:
 The four iterator entry points in `iterable.go`
 (`GetIterableElementType`, `GetIteratorReturnType`,
 `GetAsyncIterableElementType`, `unifyIteratorNextReturn`) now do
-their `getMemberType` lookups with the natural receiver type.
+their `getMemberType` lookups with the natural receiver type. The
+adjustments live in `populateSelfParams` rather than a separate
+pass to avoid a redundant full walk of the namespace.
 
 **Subsumption by #614.** Adjustment (1) is already produced by
 `classifyExplicitSignal` (tier 3) for these symbol-keyed methods —
 once `interop.Classify` is wired into `UpdateMethodMutability`,
-that half of `fixupIteratorProtocolMethods` becomes redundant.
+that half of the iterator-protocol fixup becomes redundant.
 Adjustment (2) is independent: it encodes the "iterator is owned"
 ownership rule, which has no tier-3 equivalent yet. The cleanest
 long-term home is a `mut return` annotation in the .d.ts loader
-path; until then this pass keeps the rule in one place.
+path; until then the rule lives inline in `populateSelfParams`.
 
 ## 5. Override file format, loader & merge
 
