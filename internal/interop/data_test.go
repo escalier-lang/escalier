@@ -4,33 +4,47 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// TestBuiltinFS_EmbedsExpectedSubtrees verifies the //go:embed directive
-// in data.go captures the two subdirectories §6 expects.
-func TestBuiltinFS_EmbedsExpectedSubtrees(t *testing.T) {
-	for _, dir := range []string{"data/builtins", "data/libs"} {
-		entries, err := fs.ReadDir(BuiltinFS, dir)
-		require.NoError(t, err, "embed must include %s", dir)
-		require.NotEmpty(t, entries, "%s must contain at least a placeholder entry", dir)
+// TestBuiltinsDir_HasExpectedSubtrees verifies the on-disk builtins
+// directory contains the two subdirectories §6 expects.
+func TestBuiltinsDir_HasExpectedSubtrees(t *testing.T) {
+	root, err := BuiltinsDir()
+	require.NoError(t, err)
+	for _, sub := range []string{"builtins", "libs"} {
+		entries, err := os.ReadDir(filepath.Join(root, sub))
+		require.NoError(t, err, "builtins dir must include %s", sub)
+		require.NotEmpty(t, entries, "%s must contain at least a placeholder entry", sub)
 	}
 }
 
+// TestBuiltinsDir_EnvOverride verifies that ESCALIER_BUILTINS_DIR
+// short-circuits the repo-root walk. This is the seam tests and
+// power users rely on to point at an alternate checkout.
+func TestBuiltinsDir_EnvOverride(t *testing.T) {
+	t.Setenv("ESCALIER_BUILTINS_DIR", "/some/explicit/path")
+	root, err := BuiltinsDir()
+	require.NoError(t, err)
+	require.Equal(t, "/some/explicit/path", root)
+}
+
 // TestBuildBuiltinStore_EmptyAtPhase6A verifies the §6.A
-// infrastructure-only state: BuiltinFS holds no .esc files yet, so
-// BuildBuiltinStore returns a non-nil empty store with no errors,
-// even when the TypeChecker callback is nil. From §6.B onward this
-// test will need adjustment once content lands.
+// infrastructure-only state: the builtins directory holds no .esc
+// files yet, so BuildBuiltinStore returns a non-nil empty store with
+// no errors, even when the TypeChecker callback is nil. From §6.B
+// onward this test will need adjustment once content lands.
 func TestBuildBuiltinStore_EmptyAtPhase6A(t *testing.T) {
 	resetBuiltinStoreCache()
 	t.Cleanup(resetBuiltinStoreCache)
 
 	store, errs := BuildBuiltinStore(context.Background(), nil)
-	require.Empty(t, errs, "Build must not error on empty BuiltinFS")
+	require.Empty(t, errs, "Build must not error on empty builtins dir")
 	require.NotNil(t, store)
 	require.Empty(t, store.Modules, "no modules expected at §6.A")
 }
@@ -83,12 +97,15 @@ func TestBuildBuiltinStore_DoesNotMemoizeErrors(t *testing.T) {
 	require.Equal(t, 2, calls, "build function must be re-invoked after an erroring call")
 }
 
-// TestBuiltinFS_HasNoEscFilesYet pins the §6.A invariant. Once §6.B
+// TestBuiltinsDir_HasNoEscFilesYet pins the §6.A invariant. Once §6.B
 // starts adding override `.esc` files this test should be deleted (or
 // inverted to assert non-empty coverage).
-func TestBuiltinFS_HasNoEscFilesYet(t *testing.T) {
+func TestBuiltinsDir_HasNoEscFilesYet(t *testing.T) {
+	root, err := BuiltinsDir()
+	require.NoError(t, err)
+
 	var escFiles []string
-	walkErr := fs.WalkDir(BuiltinFS, "data", func(p string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

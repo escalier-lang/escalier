@@ -11,14 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPrelude_PopulatesOverrideStoreFromBuiltinFS verifies the §6.A
+// TestPrelude_PopulatesOverrideStoreFromBuiltins verifies the §6.A
 // wiring: a freshly constructed Checker reaches Prelude with no
-// OverrideStore set, and Prelude populates it from BuiltinFS via
-// interop.BuildBuiltinStore. The store is empty at §6.A (no .esc
-// files authored yet) but the pointer must be non-nil so downstream
-// code paths that check `c.OverrideStore != nil` see the production
-// store rather than skipping the override path.
-func TestPrelude_PopulatesOverrideStoreFromBuiltinFS(t *testing.T) {
+// OverrideStore set, and Prelude populates it from the on-disk
+// builtins directory via interop.BuildBuiltinStore. The store is
+// empty at §6.A (no .esc files authored yet) but the pointer must
+// be non-nil so downstream code paths that check
+// `c.OverrideStore != nil` see the production store rather than
+// skipping the override path.
+func TestPrelude_PopulatesOverrideStoreFromBuiltins(t *testing.T) {
 	// Register cleanup before Prelude runs so that if Prelude panics
 	// — e.g. once §6.B content can fail to build — the package-level
 	// cache is still cleared for the next test.

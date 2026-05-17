@@ -857,11 +857,11 @@ func Prelude(c *Checker) *Scope {
 	// used as the cache key is the one parseTypeDef will actually
 	// consult during loadGlobalDefinitions.
 	//
-	// §6.A: BuiltinFS contains no .esc files yet, so BuildBuiltinStore
-	// returns a memoized empty store and never invokes a TypeChecker
-	// callback — nil here is safe. §6.B onwards will need a real
-	// callback that resolves override-file references against lib
-	// globals.
+	// §6.A: the builtins directory holds no .esc files yet, so
+	// BuildBuiltinStore returns a memoized empty store and never
+	// invokes a TypeChecker callback — nil here is safe. §6.B onwards
+	// will need a real callback that resolves override-file references
+	// against lib globals.
 	if c.OverrideStore == nil {
 		store, errs := interop.BuildBuiltinStore(c.ctx, nil)
 		if len(errs) > 0 {

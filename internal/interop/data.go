@@ -2,30 +2,83 @@ package interop
 
 import (
 	"context"
-	"embed"
+	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
-// BuiltinFS embeds the built-in override `.esc` files that ship with
-// the compiler. The two subtrees are:
+// BuiltinsDir resolves the on-disk directory that holds the built-in
+// override `.esc` files shipped with the compiler. The two subtrees are:
 //
 //   - data/builtins/ — stdlib classes (per ECMAScript spec revision)
 //   - data/libs/     — third-party FP / immutability libraries
 //
-// See planning/interop_mutability/implementation_plan.md §6 for the
-// authoring policy and per-class checklist. BuildBuiltinStore is
-// hardcoded to read BuiltinFS; tests that need a synthetic fs.FS
-// should invoke Build directly (or swap buildBuiltinStoreFn).
+// Resolution order:
 //
-//go:embed data
-var BuiltinFS embed.FS
+//  1. The ESCALIER_BUILTINS_DIR environment variable, if set. Useful
+//     for tests and for power users who want to point at a checkout.
+//  2. Walking up from the executable's directory, looking for an
+//     `escalier.toml` marker. This covers both the in-repo build
+//     (`./bin/escalier`) and any distribution that ships the binary
+//     next to the repo layout.
+//  3. Walking up from the current working directory, same marker.
+//     This is the path that `go test ./internal/interop/...` takes.
+//
+// On success the returned path is the `<root>/internal/interop/data`
+// directory; the loader takes an `fs.FS` rooted there.
+//
+// See planning/interop_mutability/implementation_plan.md §6 for the
+// authoring policy and per-class checklist.
+func BuiltinsDir() (string, error) {
+	if env := os.Getenv("ESCALIER_BUILTINS_DIR"); env != "" {
+		return env, nil
+	}
+	var starts []string
+	if exe, err := os.Executable(); err == nil {
+		starts = append(starts, filepath.Dir(exe))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		starts = append(starts, cwd)
+	}
+	for _, start := range starts {
+		if root := findEscalierRoot(start); root != "" {
+			return filepath.Join(root, "internal", "interop", "data"), nil
+		}
+	}
+	return "", fmt.Errorf("could not locate Escalier builtin overrides directory (set ESCALIER_BUILTINS_DIR to override)")
+}
 
-// BuildBuiltinStore is the production entry point that turns BuiltinFS
-// into a merged OverrideStore. It is a thin wrapper around Build that
-// fixes `root=""`, `deps=nil`, and `originals=nil`: at startup the
-// builtin tier stands on its own without user/project overrides or
-// pre-loaded original-side module shapes.
+// findEscalierRoot walks up from start looking for a directory that
+// has BOTH an `escalier.toml` marker AND an `internal/interop/data`
+// directory. The two-key marker matters because fixture packages
+// under `fixtures/<name>/` carry their own `escalier.toml` — the
+// loader must walk past those and reach the actual compiler repo
+// root, where the shipped overrides live. Returns "" if no such
+// directory is found before reaching the filesystem root.
+func findEscalierRoot(start string) string {
+	dir := start
+	for {
+		_, tomlErr := os.Stat(filepath.Join(dir, "escalier.toml"))
+		dataInfo, dataErr := os.Stat(filepath.Join(dir, "internal", "interop", "data"))
+		if tomlErr == nil && dataErr == nil && dataInfo.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// BuildBuiltinStore is the production entry point that turns the
+// on-disk builtins directory into a merged OverrideStore. It is a
+// thin wrapper around Build that fixes `root=""`, `deps=nil`, and
+// `originals=nil`: at startup the builtin tier stands on its own
+// without user/project overrides or pre-loaded original-side module
+// shapes.
 //
 // Successful builds are memoized — repeated calls return the same
 // *OverrideStore pointer. The prelude's global-scope cache is keyed
@@ -38,17 +91,22 @@ var BuiltinFS embed.FS
 // nil — Build's partial store is discarded so callers get either a
 // usable store or just the errors, never both.
 //
-// `checker` may be nil while BuiltinFS contains no `.esc` files (§6.A
-// infrastructure-only state); Build only requires a TypeChecker when
-// there are files to type-check. From §6.B onwards the caller must
-// supply a checker that can resolve references to lib globals.
+// `checker` may be nil while the builtins directory contains no
+// `.esc` files (§6.A infrastructure-only state); Build only requires
+// a TypeChecker when there are files to type-check. From §6.B onwards
+// the caller must supply a checker that can resolve references to
+// lib globals.
 func BuildBuiltinStore(ctx context.Context, checker TypeChecker) (*OverrideStore, []error) {
 	builtinStoreMu.Lock()
 	defer builtinStoreMu.Unlock()
 	if builtinStore != nil {
 		return builtinStore, nil
 	}
-	store, errs := buildBuiltinStoreFn(ctx, checker, "", nil, BuiltinFS, nil)
+	dir, err := BuiltinsDir()
+	if err != nil {
+		return nil, []error{err}
+	}
+	store, errs := buildBuiltinStoreFn(ctx, checker, "", nil, os.DirFS(dir), nil)
 	if len(errs) > 0 {
 		return nil, errs
 	}
