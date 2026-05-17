@@ -97,19 +97,52 @@ func setReceiverMut(fn *type_system.FuncType, mut bool) {
 	}
 }
 
-// populateSelfParams backfills FuncType.SelfParam on every instance
-// method/getter/setter in the namespace whose owning type is an
-// ObjectType. Source-inferred types already get SelfParam at inference
-// time (see infer_module.go, infer_stmt.go, infer_expr.go); this pass
-// covers the .d.ts-loaded TypeScript lib types — Array, Map, Set,
-// Promise, etc. — which arrive without a receiver representation.
-// The default mutability is non-mut self; UpdateMethodMutability and
-// mergeReadonlyVariant run afterwards and flip individual receivers to
-// `mut self` via setReceiverMut. Recurses into nested namespaces so
-// namespaced lib types (e.g. `Intl.Collator`) are covered too.
+// populateSelfParams does two structural per-method adjustments in a
+// single recursive walk over ns.
+//
+// 1. Backfills FuncType.SelfParam on every instance method / getter /
+//    setter whose owning type is an ObjectType. Source-inferred types
+//    already get SelfParam at inference time (see infer_module.go,
+//    infer_stmt.go, infer_expr.go); this pass covers the .d.ts-loaded
+//    TypeScript lib types — Array, Map, Set, Promise, etc. — which
+//    arrive without a receiver representation.
+//
+//    Defaults:
+//      - MethodElem → `mut self`. TS .d.ts carries no receiver-mut
+//        annotation, so for any method we haven't positively classified
+//        we don't know whether it mutates. Defaulting to mut is the
+//        conservative choice (UpdateMethodMutability and
+//        mergeReadonlyVariant strip `mut` afterwards where the method
+//        is positively classified as non-mutating).
+//      - GetterElem → non-mut self.
+//      - SetterElem → `mut self`.
+//    Accessor shape is the tier-3 strong signal — reading state doesn't
+//    mutate; assignment does — so getters and setters get opposite
+//    defaults rather than both defaulting to mut.
+//
+// 2. For symbol-keyed MethodElems whose name is `Symbol.iterator` or
+//    `Symbol.asyncIterator`, strips `mut` from the receiver and wraps
+//    the return type in `MutType`. This bakes the structural rule
+//    "iterator producers don't mutate the source; the iterator they
+//    produce is owned by the caller and is mut" into the receiver and
+//    return-type representations. See iterable.go for why both
+//    adjustments are needed (and which is subsumed by #614).
+//
+// Recurses into nested namespaces so namespaced lib types (e.g.
+// `Intl.Collator`) are covered too.
 func populateSelfParams(ns *type_system.Namespace) {
+	iterID, hasIter := lookupSymbolID(ns, "iterator")
+	asyncIterID, hasAsync := lookupSymbolID(ns, "asyncIterator")
+	walkPopulateSelfParams(ns, iterID, hasIter, asyncIterID, hasAsync)
+}
+
+func walkPopulateSelfParams(
+	ns *type_system.Namespace,
+	iterID int, hasIter bool,
+	asyncIterID int, hasAsync bool,
+) {
 	for _, child := range ns.Namespaces {
-		populateSelfParams(child)
+		walkPopulateSelfParams(child, iterID, hasIter, asyncIterID, hasAsync)
 	}
 	for name, typeAlias := range ns.Types {
 		objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
@@ -127,8 +160,20 @@ func populateSelfParams(ns *type_system.Namespace) {
 		for _, elem := range objType.Elems {
 			switch e := elem.(type) {
 			case *type_system.MethodElem:
-				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, false)
+				if e.Fn == nil {
+					continue
+				}
+				if e.Fn.SelfParam == nil {
+					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, true)
+				}
+				// Iterator-protocol fixup: `[Symbol.iterator]()` /
+				// `[Symbol.asyncIterator]()` are non-mutating on the
+				// source and return a freshly-owned (mut) iterator.
+				if e.Name.Kind == type_system.SymObjTypeKeyKind &&
+					((hasIter && e.Name.Sym == iterID) ||
+						(hasAsync && e.Name.Sym == asyncIterID)) {
+					setReceiverMut(e.Fn, false)
+					wrapReturnMut(e.Fn)
 				}
 			case *type_system.GetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
@@ -136,9 +181,21 @@ func populateSelfParams(ns *type_system.Namespace) {
 				}
 			case *type_system.SetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, false)
+					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, true)
 				}
 			}
 		}
 	}
+}
+
+// wrapReturnMut wraps fn.Return in MutType if it isn't already.
+// No-op when fn or fn.Return is nil.
+func wrapReturnMut(fn *type_system.FuncType) {
+	if fn == nil || fn.Return == nil {
+		return
+	}
+	if _, isMut := type_system.Prune(fn.Return).(*type_system.MutType); isMut {
+		return
+	}
+	fn.Return = type_system.NewMutType(nil, fn.Return)
 }

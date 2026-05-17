@@ -5,34 +5,39 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// getSymbolID retrieves the unique symbol ID for a named property on SymbolConstructor
-// (e.g. "iterator" for Symbol.iterator, "asyncIterator" for Symbol.asyncIterator).
-func (c *Checker) getSymbolID(name string) (int, bool) {
-	if c.GlobalScope == nil {
+// lookupSymbolID retrieves the unique symbol ID for a named property on
+// SymbolConstructor (e.g. "iterator" for Symbol.iterator). Works against
+// any namespace — used both at prelude-init time (before c.GlobalScope is
+// set) and at use sites via the Checker method below.
+func lookupSymbolID(ns *type_system.Namespace, name string) (int, bool) {
+	symbolConstructor, ok := ns.Types["SymbolConstructor"]
+	if !ok {
 		return 0, false
 	}
-
-	symbolConstructor := c.GlobalScope.Namespace.Types["SymbolConstructor"]
-	if symbolConstructor == nil {
-		return 0, false
-	}
-
 	objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
 	if !ok {
 		return 0, false
 	}
-
 	for _, elem := range objType.Elems {
-		if prop, ok := elem.(*type_system.PropertyElem); ok {
-			if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == name {
-				if sym, ok := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType); ok {
-					return sym.Value, true
-				}
-			}
+		prop, ok := elem.(*type_system.PropertyElem)
+		if !ok || prop.Name.Kind != type_system.StrObjTypeKeyKind || prop.Name.Str != name {
+			continue
+		}
+		if sym, ok := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType); ok {
+			return sym.Value, true
 		}
 	}
-
 	return 0, false
+}
+
+// getSymbolID retrieves the unique symbol ID for a named property on
+// SymbolConstructor (e.g. "iterator" for Symbol.iterator,
+// "asyncIterator" for Symbol.asyncIterator).
+func (c *Checker) getSymbolID(name string) (int, bool) {
+	if c.GlobalScope == nil {
+		return 0, false
+	}
+	return lookupSymbolID(c.GlobalScope.Namespace, name)
 }
 
 // GetIterableElementType extracts the element type T from an Iterable<T> type.
@@ -136,7 +141,11 @@ func (c *Checker) unifyIteratorNextReturn(ctx Context, t type_system.Type) (type
 		return nil, nil
 	}
 
-	// Look up the `next` method on the candidate type
+	// `.next()` is `mut self` (advancing the iterator mutates its
+	// cursor). The receiver `t` already arrives mut because
+	// stripIteratorReceiverPolarity wraps every [Symbol.iterator]()
+	// method's return type in MutType, so the iterator value
+	// produced upstream is mut by construction.
 	nextKey := PropertyKey{Name: "next", span: ast.Span{}}
 	nextMethod, errors := c.getMemberType(ctx, t, nextKey, AccessRead)
 	if len(errors) > 0 {
