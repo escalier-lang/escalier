@@ -14,8 +14,9 @@ import (
 //   - data/libs/     — third-party FP / immutability libraries
 //
 // See planning/interop_mutability/implementation_plan.md §6 for the
-// authoring policy and per-class checklist. Tests can substitute a
-// synthetic fs.FS when invoking Build directly.
+// authoring policy and per-class checklist. BuildBuiltinStore is
+// hardcoded to read BuiltinFS; tests that need a synthetic fs.FS
+// should invoke Build directly (or swap buildBuiltinStoreFn).
 //
 //go:embed data
 var BuiltinFS embed.FS
@@ -33,7 +34,9 @@ var BuiltinFS embed.FS
 // Erroring builds are NOT memoized: a later call (e.g. with a real
 // TypeChecker, or after an upstream fix) is free to retry. This
 // prevents a one-time failure from poisoning every subsequent call
-// for the lifetime of the process.
+// for the lifetime of the process. On error the returned store is
+// nil — Build's partial store is discarded so callers get either a
+// usable store or just the errors, never both.
 //
 // `checker` may be nil while BuiltinFS contains no `.esc` files (§6.A
 // infrastructure-only state); Build only requires a TypeChecker when
@@ -47,7 +50,7 @@ func BuildBuiltinStore(ctx context.Context, checker TypeChecker) (*OverrideStore
 	}
 	store, errs := buildBuiltinStoreFn(ctx, checker, "", nil, BuiltinFS, nil)
 	if len(errs) > 0 {
-		return store, errs
+		return nil, errs
 	}
 	builtinStore = store
 	return store, nil
@@ -55,7 +58,11 @@ func BuildBuiltinStore(ctx context.Context, checker TypeChecker) (*OverrideStore
 
 // buildBuiltinStoreFn is the build-function indirection. Production
 // code points it at Build; tests can swap it to inject synthetic
-// failures or short-circuit work.
+// failures or short-circuit work. Callers swapping this in tests
+// must do so while holding builtinStoreMu if any other goroutine
+// could be calling BuildBuiltinStore concurrently. The interop
+// package tests are sequential, so the in-package swap is
+// unsynchronized by design.
 var buildBuiltinStoreFn func(
 	ctx context.Context,
 	checker TypeChecker,

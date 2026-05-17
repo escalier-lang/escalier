@@ -34,6 +34,29 @@ func TestPrelude_PopulatesOverrideStoreFromBuiltinFS(t *testing.T) {
 	require.NotNil(t, c.OverrideStore, "Prelude must populate OverrideStore from BuiltinFS")
 }
 
+// TestPrelude_SharesBuiltinStoreAcrossCheckers verifies that two
+// freshly constructed Checkers see the same memoized *OverrideStore
+// pointer from BuildBuiltinStore — that's what keeps the global-scope
+// cache (keyed by store identity at prelude.go:881) warm across
+// Checker instances.
+func TestPrelude_SharesBuiltinStoreAcrossCheckers(t *testing.T) {
+	t.Cleanup(func() {
+		cachedGlobalScope = nil
+		cachedPackageRegistry = nil
+		cachedOverrideStore = nil
+	})
+
+	c1 := NewChecker(context.Background())
+	Prelude(c1)
+	c2 := NewChecker(context.Background())
+	Prelude(c2)
+
+	require.Same(t, c1.OverrideStore, c2.OverrideStore,
+		"BuildBuiltinStore must hand both Checkers the same memoized store")
+	require.Same(t, c1.OverrideStore, cachedOverrideStore,
+		"cached store key must match the production memoized store")
+}
+
 // TestPrelude_InvalidatesCacheOnOverrideStoreChange ensures the
 // process-wide Prelude cache is keyed by c.OverrideStore: a second
 // Checker with a different (non-nil) store must not reuse a global

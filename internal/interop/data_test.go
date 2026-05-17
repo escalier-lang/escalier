@@ -72,9 +72,10 @@ func TestBuildBuiltinStore_DoesNotMemoizeErrors(t *testing.T) {
 		return NewOverrideStore(), nil
 	}
 
-	_, errs := BuildBuiltinStore(context.Background(), nil)
+	failingStore, errs := BuildBuiltinStore(context.Background(), nil)
 	require.Len(t, errs, 1, "first call should surface the synthetic error")
 	require.EqualError(t, errs[0], "synthetic build failure")
+	require.Nil(t, failingStore, "errored build must not return a partial store")
 
 	store, errs := BuildBuiltinStore(context.Background(), nil)
 	require.Empty(t, errs, "second call must retry instead of replaying memoized errors")
