@@ -13,6 +13,7 @@ export interface Manifest {
     types: string[];
     templates: Record<string, string[]>;
     examples: Record<string, string[]>;
+    builtins: string[];
 }
 
 export function volumeToDir(volume: Volume): FSDir {
@@ -54,6 +55,16 @@ export function createVolume(manifest: Manifest, baseUrl: string): Volume {
     for (const filename of manifest.types) {
         vol[`/node_modules/typescript/lib/${filename}`] = {
             url: `${baseUrl}types/${filename}`,
+            content: null,
+        };
+    }
+
+    // Place under /node_modules/ so that BrowserFS.clear() (which only
+    // preserves entries beneath /node_modules/) doesn't nuke the
+    // builtins when a project loads.
+    for (const relPath of manifest.builtins ?? []) {
+        vol[`/node_modules/escalier-builtins/${relPath}`] = {
+            url: `${baseUrl}escalier-builtins/${relPath}`,
             content: null,
         };
     }

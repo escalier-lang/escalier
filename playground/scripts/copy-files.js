@@ -57,7 +57,9 @@ function copyCategory(fs, srcDir) {
     return result;
 }
 
-export function main(fs = nodeFs) {
+export function main(fs = nodeFs, options = {}) {
+    const { builtinsSrc = '../internal/interop/data' } = options;
+
     // --- Type definitions ---
 
     fs.mkdirSync('public/types', { recursive: true });
@@ -85,12 +87,26 @@ export function main(fs = nodeFs) {
     const templates = copyCategory(fs, 'templates');
     const examples = copyCategory(fs, 'examples');
 
+    // --- Built-in interop overrides ---
+    // Ship the compiler's on-disk override directory into the WASM
+    // playground's virtual filesystem. The interop loader walks this
+    // dir at startup; ESCALIER_BUILTINS_DIR points the WASM Go runtime
+    // at the copied path (see lsp-client/client.ts).
+
+    const builtinsDest = 'public/escalier-builtins';
+    let builtins = [];
+    if (fs.existsSync(builtinsSrc)) {
+        copyDirRecursive(fs, builtinsSrc, builtinsDest);
+        builtins = listFilesRecursive(fs, builtinsSrc);
+    }
+
     // --- Write manifest ---
 
     const manifest = {
         types: ['lib.es5.d.ts', 'lib.dom.d.ts', ...es2015Files],
         templates,
         examples,
+        builtins,
     };
     fs.writeFileSync(
         'public/types/manifest.json',

@@ -114,7 +114,12 @@ export class BrowserFS implements FSAPI {
             return undefined; // ELOOP — circular symlink
         }
 
-        const parts = pathStr.split('/').filter((p) => p.length > 0);
+        // Normalize `.` and `..` segments so callers can pass paths like
+        // `/foo/.` (Go's `os.DirFS(/foo).Stat(".")` produces these) and
+        // still resolve correctly.
+        const parts = this.resolvePath(pathStr)
+            .split('/')
+            .filter((p) => p.length > 0);
         let node: FSNode | undefined = this.rootDir;
         // Track the current absolute path for resolving relative symlink targets
         const currentParts: string[] = [];

@@ -77,7 +77,13 @@ async function main() {
 
     // Create a new client for the language server and
     // initialize it with the process ID and root URI.
-    const client = new Client(wasmBuffer, '/', fs);
+    const client = new Client(wasmBuffer, '/', fs, {
+        // The interop loader walks for `escalier.toml`+`internal/interop/data`
+        // to find its built-in override files; that walk can't succeed in
+        // the playground's virtual filesystem, so point it at the path
+        // where copy-files.js mirrors the data dir (see volume.ts).
+        ESCALIER_BUILTINS_DIR: '/node_modules/escalier-builtins',
+    });
     client.run();
     const initResponse = await client.initialize({
         processId: process.pid,
