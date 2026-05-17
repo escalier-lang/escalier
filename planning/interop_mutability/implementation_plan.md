@@ -20,7 +20,7 @@ table below makes both explicit. Status legend: ✅ done,
 | 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/interop/mutability.go](../../internal/interop/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
 | 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/interop/mutability.go](../../internal/interop/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
 | 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit and §5.13 Group B (property-type consistency, `ErrPropertyTypeMismatch`): data types, extract, merge & loader, checker wiring, trio-fusion / static-side lookup, and property/leaf-kind consistency are all in. Remaining: §5.13 Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
-| 6   | Built-in overrides                      | 🚧     | 5           | Per-class authoring of stdlib + FP-library overrides. Includes the always-immutable built-ins (`Number`/`BigInt`/`String`/`Boolean`/`Symbol`/`Promise`). §5.13 Group A and Group B prerequisites are done. **Stop-gap landed with #612**: `prelude.go`'s legacy `mutabilityOverrides` Go map has been extended with bootstrap entries for `Date`, `Function`, `Console`, `Body`, `Response`, `Request` (in addition to the pre-existing `String`/`Number`/`Boolean`/`RegExp`) so that the polarity flip didn't render their methods invisible. These are bootstrap stop-gaps that the §6 `.esc` override pipeline should formally supersede. |
+| 6   | Built-in overrides                      | 🚧     | 5           | Per-class authoring of stdlib + FP-library overrides. Phased as §6.A–§6.F (see [§6 Phasing](#phasing)): infra → always-immutable → mixed-mutability by ES revision → consistency test → FP libs → drop bootstrap entries. §5.13 Group A and Group B prerequisites are done. **Stop-gap landed with #612, trimmed by #614**: `prelude.go`'s legacy `mutabilityOverrides` Go map currently holds entries for `String`, `Object`, `Function`, `Console`, `Body`, `Response`, `Request`. #614 wired `interop.ClassifyMethodByName` in as a fall-through inside `applyMethodMutability`, so the redundant `Date`/`Number`/`Boolean`/`RegExp` blocks were removed; what remains is the heuristic misses (bare nouns like `Console.log`, `Body.json`, `Object.propertyIsEnumerable`) and active mis-classifications (`String.replace`/`replaceAll`, `Console.clear`). §6.F drops these once §6.B/§6.C supersede them. |
 | 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/interop/mutability.go](../../internal/interop/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
 | 8   | Type-printer round-trip audit          | ⬜      | —           | Independent; prerequisite for §9 emit. Can be done at any time.                                                                                                                                                                                                                                |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
@@ -1122,6 +1122,41 @@ actually trips them.
 
 Goal: author the data tables that the resolver loads at startup.
 
+### Phasing
+
+§6 is a multi-PR authoring effort, not a single change. Sub-tasks
+land as a sequence of small, independently reviewable PRs so each
+batch of method signatures can be cross-checked against the
+ECMAScript spec / MDN without ballooning review surface. Order
+chosen so each phase produces a runnable, testable system on its
+own:
+
+Size estimates count authored `.esc` method signatures plus Go
+code (loader wiring, test harness). They're rough — actual line
+counts depend on how much TS-lib overload collapsing each class
+needs.
+
+| Phase  | Content                                                                                                                                                       | Size                                                                                                  | Status |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------ |
+| §6.A   | **Infrastructure.** `internal/interop/data.go` with `//go:embed data` exposing `BuiltinFS`; empty `data/builtins/` and `data/libs/` directories; wire `interop.Build` into the checker prelude so `c.OverrideStore` is populated from `BuiltinFS` at startup; smoke fixture proving the loader reaches the prelude. No authored content. | ~50–100 LOC Go + 1 fixture                                                                            | ⬜      |
+| §6.B   | **Always-immutable stdlib.** Per-class `.esc` files for `Number`, `BigInt`, `String`, `Boolean`, `Symbol`, `Promise` under `data/builtins/`. Every instance method declares `self`. Drop the matching `String` entry from `prelude.go`'s `mutabilityOverrides` once the override covers it. Fixture per class asserting non-mut receiver. | 6 classes, ~150–250 method signatures, 6 fixtures                                                     | ⬜      |
+| §6.C   | **Mixed-mutability stdlib, grouped by ES revision.** One sub-PR per `data/builtins/{es5,es2015,es2017,es2021,dom}.esc` covering the per-revision class list in §6.2. Each method annotated per ECMAScript spec / MDN. Drop the matching `prelude.go` bootstrap entries (`Object`, `Function`, `Console`, `Body`, `Request`, `Response`) as each class's override lands. | ~17 classes (incl. 9 typed arrays as a template), ~500–800 method signatures, ~15 fixtures, 5 sub-PRs | ⬜      |
+| §6.D   | **Consistency test.** `builtin_consistency_test.go` parses each entry in `BuiltinFS` against the corresponding declaration from the installed `node_modules/typescript/lib/lib.*.d.ts` (or `node_modules/@types/<lib>/...`) and calls `consistency.CheckSet`. Bumping `typescript` / `@types/*` in `package.json` is what bumps the baseline. | ~200–400 LOC Go + `package.json` pins                                                                 | ⬜      |
+| §6.E   | **FP / immutability libraries.** `.esc` file per library under `data/libs/` (Ramda, fp-ts, Effect, Immutable.js, lodash/fp) carrying a module-level `@all_pure` pragma. Confirm during §6.E whether `@all_pure` strips mut from originals without re-declaration; if not, authoring per-method entries falls back to the §6.C pattern. Fixture per library. | 5 libs × ~5–10 LOC each if `@all_pure` is enough; otherwise scales to §6.C size. 5 fixtures.          | ⬜      |
+| §6.F   | **Drop remaining bootstrap entries.** After §6.B/C cover the same classes, delete the remaining entries from `prelude.go`'s `mutabilityOverrides` Go map and the `applyMethodMutability` second pass on non-`*Constructor` classes that has become dead code. | ~50–100 LOC net deletion                                                                              | ⬜      |
+
+**Authoring policy for §6.B/§6.C.** Mirror TS lib signatures
+method-for-method, not just the methods we expect users to call.
+The §6.D consistency test enforces this — it iterates *every* entry
+in `BuiltinFS` against the pinned `.d.ts`, so partial coverage
+surfaces as a test failure rather than silently degrading to
+tier-5/6 heuristic fallback. Treating heuristic fallback as the
+backstop for omitted methods is fine in principle, but it makes the
+override file ambiguous (did the author skip the method because
+the heuristic was right, or because they didn't get to it?) and
+the consistency test loses purchase. Full mirroring keeps every
+method's classification grounded in a primary source.
+
 ### 6.0 Prerequisite: §5.13 Group A
 
 §6 authoring depends on the two §5.13 Group A items being in place:
@@ -1219,15 +1254,22 @@ Three sub-tasks, the first two parallelizable:
     sources (ECMAScript spec, MDN). Coverage tracked in a checklist
     in this file as entries are added.
 
-  **Bootstrap state (post-#612).** A subset of these — `Date`,
-  `Function`, `Console`, `Body`, `Request`, `Response` (and the
-  pre-existing `String`/`Number`/`Boolean`/`RegExp`) — are
-  currently shipped as hardcoded entries in `prelude.go`'s legacy
-  `mutabilityOverrides` Go map (see `UpdateMethodMutability`'s
-  second pass for non-`*Constructor`-shaped classes). They were
-  added inline as stop-gaps to keep the test suite green after the
-  #612 polarity flip exposed under-classification. The §6 `.esc`
-  override pipeline, once authored, should supersede those
+  **Bootstrap state (post-#612, post-#614).** A subset of these —
+  `String`, `Object`, `Function`, `Console`, `Body`, `Request`,
+  `Response` — are currently shipped as hardcoded entries in
+  `prelude.go`'s legacy `mutabilityOverrides` Go map (see
+  `UpdateMethodMutability`'s second pass for non-`*Constructor`-shaped
+  classes). They were added inline as stop-gaps to keep the test suite
+  green after the #612 polarity flip exposed under-classification.
+  Issue #614 then wired `interop.ClassifyMethodByName` in as a
+  fall-through inside `applyMethodMutability`, which let the
+  redundant `Date`/`Number`/`Boolean`/`RegExp` blocks (whose entries
+  were all covered by `get*` / `to*` / well-known `toString` /
+  `valueOf` heuristics) be deleted; the remaining entries are the
+  heuristic misses (bare nouns like `Console.log`, `Body.json`,
+  `Object.propertyIsEnumerable`) and active mis-classifications
+  (`String.replace`/`replaceAll`, `Console.clear`). The §6 `.esc`
+  override pipeline, once authored, should supersede the remaining
   hardcoded entries.
 
   `Array` / `Map` / `Set` are **not** in this list — TypeScript

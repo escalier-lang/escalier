@@ -11,6 +11,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestPrelude_PopulatesOverrideStoreFromBuiltinFS verifies the §6.A
+// wiring: a freshly constructed Checker reaches Prelude with no
+// OverrideStore set, and Prelude populates it from BuiltinFS via
+// interop.BuildBuiltinStore. The store is empty at §6.A (no .esc
+// files authored yet) but the pointer must be non-nil so downstream
+// code paths that check `c.OverrideStore != nil` see the production
+// store rather than skipping the override path.
+func TestPrelude_PopulatesOverrideStoreFromBuiltinFS(t *testing.T) {
+	// Register cleanup before Prelude runs so that if Prelude panics
+	// — e.g. once §6.B content can fail to build — the package-level
+	// cache is still cleared for the next test.
+	t.Cleanup(func() {
+		cachedGlobalScope = nil
+		cachedPackageRegistry = nil
+		cachedOverrideStore = nil
+	})
+
+	c := NewChecker(context.Background())
+	require.Nil(t, c.OverrideStore, "NewChecker must not pre-populate the store")
+	Prelude(c)
+	require.NotNil(t, c.OverrideStore, "Prelude must populate OverrideStore from BuiltinFS")
+}
+
 // TestPrelude_InvalidatesCacheOnOverrideStoreChange ensures the
 // process-wide Prelude cache is keyed by c.OverrideStore: a second
 // Checker with a different (non-nil) store must not reuse a global

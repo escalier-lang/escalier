@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -850,6 +851,25 @@ func (c *Checker) addGlobalThisBinding(ns *type_system.Namespace) {
 // We assume that a new Checker instance is being passed in every time Prelude is called.
 // TODO(#256): Report all errors to the caller.
 func Prelude(c *Checker) *Scope {
+	// Populate c.OverrideStore from the embedded BuiltinFS unless a
+	// caller (typically a test) has already injected one. This must
+	// happen before the cache check below so that the store pointer
+	// used as the cache key is the one parseTypeDef will actually
+	// consult during loadGlobalDefinitions.
+	//
+	// §6.A: BuiltinFS contains no .esc files yet, so BuildBuiltinStore
+	// returns a memoized empty store and never invokes a TypeChecker
+	// callback — nil here is safe. §6.B onwards will need a real
+	// callback that resolves override-file references against lib
+	// globals.
+	if c.OverrideStore == nil {
+		store, errs := interop.BuildBuiltinStore(c.ctx, nil)
+		if len(errs) > 0 {
+			panic(fmt.Sprintf("interop.BuildBuiltinStore returned %d error(s) during prelude initialization: %v", len(errs), errors.Join(errs...)))
+		}
+		c.OverrideStore = store
+	}
+
 	// The cached global scope encodes mutability decisions that depend on
 	// c.OverrideStore (see parseTypeDef → ConvertModuleWithOverrides). If a
 	// different store is in play, the cache is stale — invalidate it.
