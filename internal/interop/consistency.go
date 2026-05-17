@@ -104,6 +104,14 @@ func propertyTypeEquivalent(over, orig type_system.Type) bool {
 	}
 	switch orig.(type) {
 	case *type_system.AnyType, *type_system.UnknownType:
+		// Tightening permits a concrete override only. Swapping
+		// any↔unknown (in either direction) is not a refinement —
+		// both are still sloppy and would silently launder one
+		// vague leaf for another.
+		switch over.(type) {
+		case *type_system.AnyType, *type_system.UnknownType:
+			return false
+		}
 		return true
 	}
 	return false

@@ -625,6 +625,10 @@ func TestMergePropertyTypeMismatchSurfacesError(t *testing.T) {
 	require.Len(t, errs, 1)
 	_, ok := errs[0].(*ErrPropertyTypeMismatch)
 	require.True(t, ok, "expected *ErrPropertyTypeMismatch; got %T", errs[0])
+	require.Equal(t,
+		"override of x changes property type incompatibly: override=string, original=number\n  override at :0",
+		errs[0].Error(),
+	)
 	require.Same(t, str, store.Modules[""].Free["x"].Type)
 }
 
@@ -648,8 +652,39 @@ func TestMergePropertyKindMismatchSurfacesError(t *testing.T) {
 			Children: map[string]ChildScope{},
 		}},
 	}
-	_, errs := Merge(original, override)
+	store, errs := Merge(original, override)
 	require.Len(t, errs, 1)
 	_, ok := errs[0].(*ErrPropertyTypeMismatch)
 	require.True(t, ok, "function-vs-property kind mismatch should be *ErrPropertyTypeMismatch; got %T", errs[0])
+	require.Equal(t,
+		"override of x changes property type incompatibly: override=number, original="+fn.String()+"\n  override at :0",
+		errs[0].Error(),
+	)
+	require.Same(t, num, store.Modules[""].Free["x"].Type)
+	require.Equal(t, TierUserOverride, store.Modules[""].Free["x"].Source)
+}
+
+// TestMergePropertyAnyToUnknownRejected: tightening permits a concrete
+// override over a sloppy any/unknown original, but swapping one vague
+// type for another (any↔unknown) is not a refinement and must surface
+// as ErrPropertyTypeMismatch.
+func TestMergePropertyAnyToUnknownRejected(t *testing.T) {
+	anyT := type_system.NewAnyType(nil)
+	unkT := type_system.NewUnknownType(nil)
+	original := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: anyT}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	override := map[string]*ModuleScope{
+		"": {Container: Container{
+			Free:     map[string]*Effective{"x": {Type: unkT, Source: TierUserOverride}},
+			Children: map[string]ChildScope{},
+		}},
+	}
+	_, errs := Merge(original, override)
+	require.Len(t, errs, 1)
+	_, ok := errs[0].(*ErrPropertyTypeMismatch)
+	require.True(t, ok, "any→unknown swap should not pass the tightening rule; got %T", errs[0])
 }
