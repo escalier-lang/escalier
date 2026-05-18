@@ -49,7 +49,11 @@ export class BrowserFS implements FSAPI {
     }
 
     private ensureContent(pathStr: string, node: FSFile): void {
-        const entry = this.volume[pathStr];
+        // Volume keys are canonical absolute paths (no `.`/`..`). Callers
+        // may pass paths that include those segments — `_findNode` will
+        // still locate the node, but volume lookup needs the normalized
+        // form to match.
+        const entry = this.volume[this.resolvePath(pathStr)];
         if (entry && entry.content === null && entry.url) {
             // Synchronous XHR doesn't support responseType = 'arraybuffer',
             // so we use charset=x-user-defined to get raw binary data as a
