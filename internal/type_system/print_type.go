@@ -528,8 +528,34 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 				}
 				result += ": " + pt(elem.Value)
 			case *MappedElem:
-				result += "[" + elem.TypeParam.Name + " in " + pt(elem.TypeParam.Constraint) + "]"
+				if elem.Readonly != nil {
+					switch *elem.Readonly {
+					case MMAdd:
+						result += "readonly "
+					case MMRemove:
+						result += "-readonly "
+					}
+				}
+				result += "["
+				if elem.Name != nil {
+					result += pt(elem.Name)
+				} else {
+					result += elem.TypeParam.Name
+				}
+				result += "]"
+				if elem.Optional != nil {
+					switch *elem.Optional {
+					case MMAdd:
+						result += "+?"
+					case MMRemove:
+						result += "-?"
+					}
+				}
 				result += ": " + pt(elem.Value)
+				result += " for " + elem.TypeParam.Name + " in " + pt(elem.TypeParam.Constraint)
+				if elem.Check != nil && elem.Extends != nil {
+					result += " if " + pt(elem.Check) + " : " + pt(elem.Extends)
+				}
 			case *IndexSignatureElem:
 				if elem.Readonly {
 					result += "readonly "
