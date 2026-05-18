@@ -55,7 +55,12 @@ export class Client {
     private contentLength: number;
     private messageBuffer: string;
 
-    constructor(wasmBuf: ArrayBuffer, cwd: string, fs: FSAPI) {
+    constructor(
+        wasmBuf: ArrayBuffer,
+        cwd: string,
+        fs: FSAPI,
+        env: Record<string, string> = {},
+    ) {
         this.stdin = new SimpleStream();
         this.stdout = new SimpleStream();
         this.emitter = new EventEmitter();
@@ -400,6 +405,12 @@ export class Client {
         // };
 
         this.go = new Go();
+        // Forward caller-supplied env vars to the Go runtime so
+        // `os.Getenv` sees them. The playground passes
+        // ESCALIER_BUILTINS_DIR to point the interop loader at the
+        // virtual-filesystem path where the compiler's
+        // `internal/interop/data` directory has been mirrored.
+        this.go.env = { ...(this.go.env ?? {}), ...env };
     }
 
     async run() {

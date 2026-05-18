@@ -74,6 +74,7 @@ const manifest: Manifest = {
         'no-lib-index': ['escalier.toml', 'package.json', 'bin/main.esc'],
         'no-esc': ['escalier.toml', 'package.json'],
     },
+    builtins: [],
 };
 
 const fileContents: Record<string, string> = {
@@ -241,6 +242,7 @@ describe('loadProject', () => {
             types: [],
             templates: {},
             examples: { broken: ['missing-file.txt'] },
+            builtins: [],
         };
 
         await expect(

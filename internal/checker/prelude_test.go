@@ -11,6 +11,53 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestPrelude_PopulatesOverrideStoreFromBuiltins verifies the §6.A
+// wiring: a freshly constructed Checker reaches Prelude with no
+// OverrideStore set, and Prelude populates it from the on-disk
+// builtins directory via interop.BuildBuiltinStore. The store is
+// empty at §6.A (no .esc files authored yet) but the pointer must
+// be non-nil so downstream code paths that check
+// `c.OverrideStore != nil` see the production store rather than
+// skipping the override path.
+func TestPrelude_PopulatesOverrideStoreFromBuiltins(t *testing.T) {
+	// Register cleanup before Prelude runs so that if Prelude panics
+	// — e.g. once §6.B content can fail to build — the package-level
+	// cache is still cleared for the next test.
+	t.Cleanup(func() {
+		cachedGlobalScope = nil
+		cachedPackageRegistry = nil
+		cachedOverrideStore = nil
+	})
+
+	c := NewChecker(context.Background())
+	require.Nil(t, c.OverrideStore, "NewChecker must not pre-populate the store")
+	Prelude(c)
+	require.NotNil(t, c.OverrideStore, "Prelude must populate OverrideStore from BuiltinFS")
+}
+
+// TestPrelude_SharesBuiltinStoreAcrossCheckers verifies that two
+// freshly constructed Checkers see the same memoized *OverrideStore
+// pointer from BuildBuiltinStore — that's what keeps the global-scope
+// cache (keyed by store identity at prelude.go:881) warm across
+// Checker instances.
+func TestPrelude_SharesBuiltinStoreAcrossCheckers(t *testing.T) {
+	t.Cleanup(func() {
+		cachedGlobalScope = nil
+		cachedPackageRegistry = nil
+		cachedOverrideStore = nil
+	})
+
+	c1 := NewChecker(context.Background())
+	Prelude(c1)
+	c2 := NewChecker(context.Background())
+	Prelude(c2)
+
+	require.Same(t, c1.OverrideStore, c2.OverrideStore,
+		"BuildBuiltinStore must hand both Checkers the same memoized store")
+	require.Same(t, c1.OverrideStore, cachedOverrideStore,
+		"cached store key must match the production memoized store")
+}
+
 // TestPrelude_InvalidatesCacheOnOverrideStoreChange ensures the
 // process-wide Prelude cache is keyed by c.OverrideStore: a second
 // Checker with a different (non-nil) store must not reuse a global

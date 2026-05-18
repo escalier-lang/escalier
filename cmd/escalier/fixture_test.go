@@ -106,6 +106,12 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 		require.NoError(t, err, "failed to create escalier.toml symlink")
 	}
 
+	// Point the interop loader at the repo's builtins data dir.
+	// The fixture's tmpDir has only a symlinked escalier.toml — it does
+	// not contain `internal/interop/data`, so the loader's repo-root
+	// walk would otherwise fail to find the overrides.
+	t.Setenv("ESCALIER_BUILTINS_DIR", filepath.Join(repoRoot, "internal", "interop", "data"))
+
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
