@@ -142,8 +142,71 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		return NewMutType(provenance, targetType)
 	case *ast.WildcardTypeAnn:
 		return NewWildcardType(provenance)
+	case *ast.SymbolTypeAnn:
+		return NewSymPrimType(provenance)
+	case *ast.BigintTypeAnn:
+		return NewBigIntPrimType(provenance)
+	case *ast.UniqueSymbolTypeAnn:
+		// The source syntax `unique symbol` does not carry a value
+		// identifier — that is a synthesized integer assigned by the
+		// checker. For test conversion we pick a sentinel zero; the
+		// printer-audit test treats UniqueSymbolType as a no-syntax
+		// variant for that reason.
+		return NewUniqueSymbolType(provenance, 0)
+	case *ast.TypeOfTypeAnn:
+		return NewTypeOfType(provenance, convertQualIdent(ta.Value))
+	case *ast.TemplateLitTypeAnn:
+		quasis := make([]*Quasi, len(ta.Quasis))
+		for i, q := range ta.Quasis {
+			quasis[i] = &Quasi{Value: q.Value}
+		}
+		types := make([]Type, len(ta.TypeAnns))
+		for i, t := range ta.TypeAnns {
+			types[i] = typeAnnToType(t)
+		}
+		return NewTemplateLitType(provenance, quasis, types)
+	case *ast.RestSpreadTypeAnn:
+		return NewRestSpreadType(provenance, typeAnnToType(ta.Value))
+	case *ast.IntrinsicTypeAnn:
+		// Source-form `intrinsic` carries no name; assigned by the
+		// declaration that wraps it (e.g. `type Uppercase = intrinsic`).
+		// Audit test skips IntrinsicType for round-trip.
+		return &IntrinsicType{Name: ""}
 	default:
 		panic(fmt.Sprintf("ConvertTypeAnnToType: unsupported type annotation: %T", typeAnn))
+	}
+}
+
+// applyMethodReceiver sets the SelfParam on a method/getter/setter's
+// FuncType based on the parsed receiver. A nil receiver leaves SelfParam
+// unset, matching the no-receiver shape.
+func applyMethodReceiver(fn *FuncType, recv *ast.MethodReceiver) {
+	if recv == nil {
+		return
+	}
+	// The receiver type itself is implicit (the enclosing class /
+	// interface). For the audit round-trip we just need a stable type
+	// here so ReceiverIsMut reads the right polarity; use a placeholder
+	// AnyType wrapped in MutType when the source said `mut self`.
+	var recvType Type = NewAnyType(nil)
+	if recv.Mut {
+		recvType = NewMutType(nil, recvType)
+	}
+	fn.SelfParam = &FuncParam{Type: recvType}
+}
+
+// convertQualIdent converts an ast.QualIdent to its type_system equivalent.
+func convertQualIdent(qi ast.QualIdent) QualIdent {
+	switch q := qi.(type) {
+	case *ast.Ident:
+		return NewIdent(q.Name)
+	case *ast.Member:
+		return &Member{
+			Left:  convertQualIdent(q.Left),
+			Right: NewIdent(q.Right.Name),
+		}
+	default:
+		panic(fmt.Sprintf("convertQualIdent: unsupported qual ident: %T", qi))
 	}
 }
 
@@ -230,6 +293,7 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 	case *ast.MethodTypeAnn:
 		key := convertObjKey(e.Name)
 		funcType := typeAnnToType(e.Fn).(*FuncType)
+		applyMethodReceiver(funcType, e.Receiver)
 		return &MethodElem{
 			Name: key,
 			Fn:   funcType,
@@ -237,6 +301,7 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 	case *ast.GetterTypeAnn:
 		key := convertObjKey(e.Name)
 		funcType := typeAnnToType(e.Fn).(*FuncType)
+		applyMethodReceiver(funcType, e.Receiver)
 		return &GetterElem{
 			Name: key,
 			Fn:   funcType,
@@ -244,6 +309,7 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 	case *ast.SetterTypeAnn:
 		key := convertObjKey(e.Name)
 		funcType := typeAnnToType(e.Fn).(*FuncType)
+		applyMethodReceiver(funcType, e.Receiver)
 		return &SetterElem{
 			Name: key,
 			Fn:   funcType,
@@ -281,6 +347,15 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 			nameType = typeAnnToType(e.Name)
 		}
 
+		var checkType Type
+		if e.Check != nil {
+			checkType = typeAnnToType(e.Check)
+		}
+		var extendsType Type
+		if e.Extends != nil {
+			extendsType = typeAnnToType(e.Extends)
+		}
+
 		// Create the MappedElemType directly since the name field is unexported
 		mapped := &MappedElem{
 			TypeParam: typeParam,
@@ -288,6 +363,8 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 			Value:     valueType,
 			Optional:  convertMappedModifier(e.Optional),
 			Readonly:  convertMappedModifier(e.ReadOnly),
+			Check:     checkType,
+			Extends:   extendsType,
 		}
 
 		return mapped

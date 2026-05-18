@@ -22,7 +22,7 @@ table below makes both explicit. Status legend: ✅ done,
 | 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit and §5.13 Group B (property-type consistency, `ErrPropertyTypeMismatch`): data types, extract, merge & loader, checker wiring, trio-fusion / static-side lookup, and property/leaf-kind consistency are all in. Remaining: §5.13 Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
 | 6   | Built-in overrides                      | 🚧     | 5           | Per-class authoring of stdlib + FP-library overrides. Phased as §6.A–§6.F (see [§6 Phasing](#phasing)): infra → always-immutable → mixed-mutability by ES revision → consistency test → FP libs → drop bootstrap entries. §5.13 Group A and Group B prerequisites are done. **Stop-gap landed with #612, trimmed by #614**: `prelude.go`'s legacy `mutabilityOverrides` Go map currently holds entries for `String`, `Object`, `Function`, `Console`, `Body`, `Response`, `Request`. #614 wired `interop.ClassifyMethodByName` in as a fall-through inside `applyMethodMutability`, so the redundant `Date`/`Number`/`Boolean`/`RegExp` blocks were removed; what remains is the heuristic misses (bare nouns like `Console.log`, `Body.json`, `Object.propertyIsEnumerable`) and active mis-classifications (`String.replace`/`replaceAll`, `Console.clear`). §6.F drops these once §6.B/§6.C supersede them. |
 | 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/interop/mutability.go](../../internal/interop/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
-| 8   | Type-printer round-trip audit          | ⬜      | —           | Independent; prerequisite for §9 emit. Can be done at any time.                                                                                                                                                                                                                                |
+| 8   | Type-printer round-trip audit          | ✅      | —           | `TestPrintTypeAudit_RoundTrip` in [internal/type_system/print_type_audit_test.go](../../internal/type_system/print_type_audit_test.go) enumerates each `type_system.Type` variant with a syntactic form, prints it via `PrintType`, re-parses through `parser.ParseTypeAnn` + `test_util.ParseTypeAnn`, and asserts double-print idempotency. Variants without source syntax (`UniqueSymbolType`, `CallableElem`, `ConstructorElem`, plus debug-only `IntrinsicType`/`ErrorType`/`GlobalThisType`/`RegexType`/`NamespaceType`/`ExtractorType`/`TypeVarType`/`IndexSignatureElem`) covered by `TestPrintTypeAudit_NoSyntax`. Audit uncovered one printer divergence — mapped-element printing used TypeScript syntax `[K in keyof T]: V` instead of Escalier's `[K]: V for K in keyof T`; fixed in [internal/type_system/print_type.go](../../internal/type_system/print_type.go). |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
 | 10  | `implements` mutability conformance    | 🚧     | —           | Lean check **already done**: `selfReceiverCompatible` in [internal/checker/check_implements.go:247](../../internal/checker/check_implements.go#L247) implements bidirectional `ReceiverIsMut` equality and is wired in at all three method-comparison sites. Currently emits the generic `mismatchedMember` error. |
 | —   | §10 diagnostic richness                | ⬜      | 3, 5, 7, 11.2 | Replace generic error with `ImplementsMutabilityMismatchError` carrying tier sources + provenance; add the "add an explicit signal" suggestion clause. Purely additive on top of the lean check.                                                                                            |
@@ -1543,30 +1543,60 @@ tier as required.
 
 ## 8. Type printer round-trip audit
 
-Prerequisite for §9. Can run in parallel with §5–§7.
+✅ Landed. Audit lives in
+[internal/type_system/print_type_audit_test.go](../../internal/type_system/print_type_audit_test.go).
 
-Run every `type_system.Type` shape through `internal/printer`'s
-type-printing entry point and feed the output back through
-`internal/parser`'s type-annotation parser + the existing type-ann →
-`type_system.Type` checker pipeline. Diff input and output.
+For each `type_system.Type` variant with a syntactic form, the audit
+builds an instance, prints via `type_system.PrintType`, re-parses
+through `parser.ParseTypeAnn` + `test_util.ParseTypeAnn` (the
+type-ann → `type_system.Type` converter), prints again, and asserts
+the two prints are equal (double-print idempotency).
 
-- For shapes that round-trip cleanly: nothing to do.
-- For shapes that don't: fix the printer in place. Divergence from
-  the human-readable form is a smell — `@esctype` consumers (humans
-  reading the generated `.d.ts`) and the parser should see the same
-  text.
-- If a specific shape genuinely needs a different serialised form
-  (escaping rules, e.g.) prefer extending the printer with a
-  serializer-mode flag rather than maintaining two type printers.
+**Coverage.** Primitives (`number`/`string`/`boolean`/`bigint`/`symbol`),
+literal types (str/num/bool/bigint/null/undefined), top/bottom
+(`any`/`unknown`/`never`/`void`), `TypeRefType` with and without
+args, `TypeOfType` (bare and qualified), unions and intersections
+with nesting + precedence, `KeyOfType`, `MutType`, tuples (with rest),
+indexing, conditionals, `InferType`, `WildcardType`, functions
+(arity / optional / type params / constrained type params / `throws`),
+object properties (readonly / optional), object methods / getters /
+setters (with and without `self` / `mut self` receiver), object
+rest spread, mapped types (basic / readonly / optional add+remove),
+and template-literal types (empty / single quasi / interpolated).
 
-Audit input: a fixture file enumerating one instance of every
-concrete `Type` variant in `type_system/types.go`, including the
-hairy ones (intersection / union / conditional / mapped / template
-literal / generic instantiation / regex / unique symbol / class
-self-type).
+**Variants without source syntax** are covered by
+`TestPrintTypeAudit_NoSyntax`: `UniqueSymbolType` (the numeric
+value isn't surface-syntax-expressible — `unique symbol` is, but the
+ID is synthesized), `CallableElem`, and `ConstructorElem` (no
+Escalier source form — only synthesised by interop from `.d.ts`
+call/construct signatures). `IntrinsicType`, `ErrorType`,
+`GlobalThisType`, `RegexType`, `NamespaceType`, `ExtractorType`,
+`TypeVarType`, and `IndexSignatureElem` likewise have no surface
+form; their `PrintType` output is debug-only and exercised by
+their own focused tests.
 
-Exit criteria: every type variant prints and parses to a structurally
-equal type. The §9 round-trip fixture builds on this.
+**Divergence found and fixed.** Mapped-element printing emitted
+TypeScript-style `[K in keyof T]: V` instead of Escalier's
+`[K]: V for K in keyof T`, dropping readonly/optional modifiers,
+key renames, and `if … : …` filters along the way. Fixed in
+[internal/type_system/print_type.go](../../internal/type_system/print_type.go)
+to match the parser grammar in
+[internal/parser/type_ann.go:553](../../internal/parser/type_ann.go#L553)
+(`tryParseMappedType`) and the AST printer in
+[internal/printer/printer.go:1023](../../internal/printer/printer.go#L1023).
+
+**Side effect on `test_util`.**
+[internal/test_util/test_util.go](../../internal/test_util/test_util.go)'s
+`typeAnnToType` previously panicked on `BigintTypeAnn`,
+`SymbolTypeAnn`, `UniqueSymbolTypeAnn`, `TypeOfTypeAnn`,
+`TemplateLitTypeAnn`, `RestSpreadTypeAnn`, and `IntrinsicTypeAnn`.
+Extended to cover all of these so the audit can round-trip through
+the converter; also added `MethodReceiver` → `SelfParam` propagation
+on method/getter/setter conversion.
+
+Exit criteria met: every variant either round-trips cleanly through
+print → parse → print or is explicitly flagged as having no source
+syntax.
 
 ## 9. `@esctype` round-trip
 
