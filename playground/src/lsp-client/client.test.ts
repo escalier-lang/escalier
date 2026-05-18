@@ -24,7 +24,15 @@ beforeEach(() => {
     rootUri = `file://${tmpDir}`;
 
     const cwd = process.cwd();
-    client = new Client(buffer, cwd, fs);
+    client = new Client(buffer, cwd, fs, {
+        // The WASM Go runtime needs ESCALIER_BUILTINS_DIR to find the
+        // interop override directory; in production this is set by
+        // main.tsx, but here we point directly at the on-disk source.
+        ESCALIER_BUILTINS_DIR: path.join(
+            __dirname,
+            '../../../internal/interop/data',
+        ),
+    });
     client.run();
 });
 
