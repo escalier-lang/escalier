@@ -17,17 +17,14 @@ import (
 //
 // Resolution order:
 //
-//  1. The ESCALIER_BUILTINS_DIR environment variable, if set. Useful
-//     for tests and for power users who want to point at a checkout.
-//  2. Walking up from the executable's directory, looking for an
-//     `escalier.toml` marker. This covers both the in-repo build
-//     (`./bin/escalier`) and any distribution that ships the binary
-//     next to the repo layout.
-//  3. Walking up from the current working directory, same marker.
-//     This is the path that `go test ./internal/interop/...` takes.
+//  1. The ESCALIER_BUILTINS_DIR environment variable, if set. This is
+//     the production override for atypical distributions, and the
+//     mechanism tests use (via SetBuiltinsDirForTest).
+//  2. Walking up from the executable's directory, looking for the
+//     `internal/interop/data` directory. This covers the in-repo
+//     build (`./bin/escalier`).
 //
-// On success the returned path is the `<root>/internal/interop/data`
-// directory; the loader takes an `fs.FS` rooted there.
+// Returns an error if neither succeeds.
 //
 // See planning/interop_mutability/implementation_plan.md §6 for the
 // authoring policy and per-class checklist.
@@ -35,34 +32,43 @@ func BuiltinsDir() (string, error) {
 	if env := os.Getenv("ESCALIER_BUILTINS_DIR"); env != "" {
 		return env, nil
 	}
-	var starts []string
 	if exe, err := os.Executable(); err == nil {
-		starts = append(starts, filepath.Dir(exe))
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		starts = append(starts, cwd)
-	}
-	for _, start := range starts {
-		if root := findEscalierRoot(start); root != "" {
+		if root := findEscalierRoot(filepath.Dir(exe)); root != "" {
 			return filepath.Join(root, "internal", "interop", "data"), nil
 		}
 	}
-	return "", fmt.Errorf("could not locate Escalier builtin overrides directory (set ESCALIER_BUILTINS_DIR to override)")
+	return "", fmt.Errorf("could not locate Escalier builtin overrides directory (set ESCALIER_BUILTINS_DIR)")
+}
+
+// SetBuiltinsDirForTest configures ESCALIER_BUILTINS_DIR so that
+// BuildBuiltinStore can resolve overrides during tests. The
+// production lookup (executable-relative walk) doesn't work in tests
+// because the test binary lives in a tmp dir; this helper walks up
+// from the current working directory, which `go test` sets to the
+// package source dir, to find the repo root.
+//
+// Call from TestMain in each test package that transitively reaches
+// Prelude / BuildBuiltinStore.
+func SetBuiltinsDirForTest() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root := findEscalierRoot(cwd)
+	if root == "" {
+		return fmt.Errorf("could not locate Escalier repo root from %s", cwd)
+	}
+	return os.Setenv("ESCALIER_BUILTINS_DIR", filepath.Join(root, "internal", "interop", "data"))
 }
 
 // findEscalierRoot walks up from start looking for a directory that
-// has BOTH an `escalier.toml` marker AND an `internal/interop/data`
-// directory. The two-key marker matters because fixture packages
-// under `fixtures/<name>/` carry their own `escalier.toml` — the
-// loader must walk past those and reach the actual compiler repo
-// root, where the shipped overrides live. Returns "" if no such
-// directory is found before reaching the filesystem root.
+// contains `internal/interop/data`. Returns "" if no such directory
+// is found before reaching the filesystem root.
 func findEscalierRoot(start string) string {
 	dir := start
 	for {
-		_, tomlErr := os.Stat(filepath.Join(dir, "escalier.toml"))
-		dataInfo, dataErr := os.Stat(filepath.Join(dir, "internal", "interop", "data"))
-		if tomlErr == nil && dataErr == nil && dataInfo.IsDir() {
+		info, err := os.Stat(filepath.Join(dir, "internal", "interop", "data"))
+		if err == nil && info.IsDir() {
 			return dir
 		}
 		parent := filepath.Dir(dir)

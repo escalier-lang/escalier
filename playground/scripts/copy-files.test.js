@@ -41,12 +41,8 @@ describe('copy-files main', () => {
         });
     });
 
-    function run() {
-        return main(fs, { builtinsSrc: 'interop-data' });
-    }
-
     test('copies TypeScript lib files to public/types', () => {
-        run();
+        main(fs, { builtinsSrc: 'interop-data' });
 
         expect(fs.readFileSync('public/types/lib.es5.d.ts', 'utf8')).toBe(
             '// es5 types',
@@ -63,7 +59,7 @@ describe('copy-files main', () => {
     });
 
     test('copies templates to public/templates', () => {
-        run();
+        main(fs, { builtinsSrc: 'interop-data' });
 
         expect(
             fs.readFileSync(
@@ -86,7 +82,7 @@ describe('copy-files main', () => {
     });
 
     test('copies examples to public/examples', () => {
-        run();
+        main(fs, { builtinsSrc: 'interop-data' });
 
         expect(
             fs.readFileSync(
@@ -103,7 +99,7 @@ describe('copy-files main', () => {
     });
 
     test('writes manifest.json with types, templates, and examples', () => {
-        const manifest = run();
+        const manifest = main(fs, { builtinsSrc: 'interop-data' });
 
         expect(manifest.types).toEqual([
             'lib.es5.d.ts',
@@ -143,7 +139,7 @@ describe('copy-files main', () => {
             'examples/hello-world/package.json': '{"name":"hw"}',
         });
 
-        const manifest = run();
+        const manifest = main(fs, { builtinsSrc: 'interop-data' });
 
         expect(manifest.templates).toEqual({});
         expect(manifest.examples['hello-world'].sort()).toEqual([
@@ -161,7 +157,7 @@ describe('copy-files main', () => {
             'templates/single-package/package.json': '{"name":"proj"}',
         });
 
-        const manifest = run();
+        const manifest = main(fs, { builtinsSrc: 'interop-data' });
 
         expect(manifest.examples).toEqual({});
         expect(manifest.templates['single-package'].sort()).toEqual([
@@ -176,7 +172,7 @@ describe('copy-files main', () => {
             'node_modules/typescript/lib/lib.dom.d.ts': '// dom',
         });
 
-        const manifest = run();
+        const manifest = main(fs, { builtinsSrc: 'interop-data' });
 
         expect(manifest.types).toEqual(['lib.es5.d.ts', 'lib.dom.d.ts']);
     });
@@ -190,7 +186,7 @@ describe('copy-files main', () => {
             'templates/single-package/package.json': '{"name":"p"}',
         });
 
-        const manifest = run();
+        const manifest = main(fs, { builtinsSrc: 'interop-data' });
 
         expect(Object.keys(manifest.templates)).toEqual(['single-package']);
         // README.md should not have been copied
