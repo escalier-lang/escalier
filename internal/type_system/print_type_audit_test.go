@@ -10,6 +10,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/test_util"
 	"github.com/escalier-lang/escalier/internal/type_system"
+	"github.com/stretchr/testify/require"
 )
 
 // TestPrintTypeAudit_RoundTrip is the §8 audit: build one instance of
@@ -350,21 +351,15 @@ func TestPrintTypeAudit_RoundTrip(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			ast, parseErrs := parser.ParseTypeAnn(ctx, printed)
-			if len(parseErrs) > 0 {
-				t.Fatalf("PrintType(%s) produced %q which fails to parse: %s",
-					tt.name, printed, parseErrs[0].Message)
-			}
-			if ast == nil {
-				t.Fatalf("PrintType(%s) produced %q which parses to nil",
-					tt.name, printed)
-			}
+			require.Empty(t, parseErrs,
+				"PrintType(%s) produced %q which fails to parse", tt.name, printed)
+			require.NotNil(t, ast,
+				"PrintType(%s) produced %q which parses to nil", tt.name, printed)
 
 			reparsed := test_util.ParseTypeAnn(printed)
 			reprinted := type_system.PrintType(reparsed, type_system.PrintConfig{})
-			if reprinted != printed {
-				t.Errorf("round-trip mismatch for %s:\n  printed:   %q\n  reprinted: %q",
-					tt.name, printed, reprinted)
-			}
+			require.Equal(t, printed, reprinted,
+				"round-trip mismatch for %s", tt.name)
 		})
 	}
 }
@@ -428,9 +423,7 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			out := type_system.PrintType(tt.typ, type_system.PrintConfig{})
-			if out == "" {
-				t.Fatalf("PrintType(%s) returned empty string", tt.name)
-			}
+			require.NotEmpty(t, out, "PrintType(%s) returned empty string", tt.name)
 		})
 	}
 }
