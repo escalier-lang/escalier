@@ -265,9 +265,11 @@ path is `resolveImport` / `resolveExportModulePath` in
 `node_modules/<pkg>` and `node_modules/@types/<pkg>` for `.d.ts`
 discovery). The scheme-resolution logic must be added there (or
 factored out of there as appropriate) and route scheme-prefixed
-specifiers to the embedded `internal/interop/data/` tree. Mapping
-is mechanical: `std:math` → `internal/interop/data/std/math.esc`,
-`dom:http` → `internal/interop/data/dom/http.esc`. The `?flag`
+specifiers to the resolved stdlib data directory (see
+"Filesystem-resident stdlib data" in non-functional requirements
+for the discovery scheme). Mapping is mechanical:
+`std:math` → `<stdlib>/std/math.esc`,
+`dom:http` → `<stdlib>/dom/http.esc`. The `?flag`
 portion of the URI (see FR4) is stripped before path resolution.
 
 **Grammar updates.** The parser must be extended to accept two
@@ -924,8 +926,10 @@ falls on the user and adoption suffers.
 The implementation depends on:
 
 - An index of "name → owning pseudo-package" derived from the
-  embedded `internal/interop/data/` tree. Built at LSP startup;
-  refreshed when packages change (rare in practice).
+  resolved stdlib data directory. Built at LSP startup;
+  refreshed via filesystem watch on the data directory, so users
+  editing their stdlib copy see the index update without LSP
+  restart.
 - A binding-shape preference per file (default `?local`; user-
   configurable). The quick-fix uses the file's existing convention
   if any of its imports already pick a flag.
@@ -940,9 +944,18 @@ The implementation depends on:
   spooky action from a sibling module.
 - **Zero runtime cost.** Pseudo-package imports erase entirely at
   codegen.
-- **Embedded data.** All `.esc` files under `internal/interop/data/`
-  are embedded into the compiler binary so the toolchain has no
-  external file dependencies for pseudo-package declarations.
+- **Filesystem-resident stdlib data.** `.esc` files under
+  `internal/interop/data/` ship alongside the compiler binary and
+  are loaded from disk at compile time. They are **not** embedded
+  into the binary via `//go:embed`. Editability is the priority:
+  compiler users tweak builtin types or add new packages by
+  editing files in the install tree (or a copy pointed at by
+  `ESCALIER_STDLIB_DIR`), with no recompile of the compiler.
+  Discovery order: `ESCALIER_STDLIB_DIR` env var → `--stdlib-dir`
+  CLI flag → sibling-to-executable (`<exe-dir>/../share/escalier/data/`)
+  → repo-relative when running from a build tree. The toolchain
+  has no `node_modules` or network dependency for pseudo-package
+  declarations; the stdlib tree is a fixed install artifact.
 - **`--explain-type` diagnostic.** When a tag-keyed return is wider
   than expected (e.g. `createElement` returning the union element
   type instead of `HTMLCanvasElement`), the diagnostic suggests
@@ -962,8 +975,8 @@ omitted; they belong to the third-party workstream.
    Riskiest gate; do this first.
 2. **URI-scheme import support.** Extend the parser and module
    resolver to accept `import "scheme:name"` and route `std:`,
-   `dom:` (and reserved `node:`) prefixes to the embedded
-   `internal/interop/data/` tree. Default `?local`
+   `dom:` (and reserved `node:`) prefixes to the resolved stdlib
+   data directory. Default `?local`
    namespace-binding semantics. Parse the `?flag` /
    `?flag1&flag2` suffix on the URI; strip it before path
    resolution; apply per-flag binding rules at scope-insertion
@@ -1121,7 +1134,7 @@ diagnostic:
 - **Unknown package within a known scheme.** `import "std:nope"`
   where the scheme is valid but no package file exists. Message
   names the scheme, the requested package, and (if cheap) suggests
-  near-spelling matches from the embedded package list.
+  near-spelling matches from the resolved stdlib package list.
 - **Invalid flag combination.** Two of `?local`, `?nested`,
   `?flat` on the same URI. Message names the specific pair and
   explains they are mutually exclusive binding shapes.
@@ -1143,29 +1156,35 @@ Each diagnostic ties back to a span on the offending `import`
 statement, ideally pointing at the URI string literal (and within
 it, the flag portion when the failure is flag-shaped).
 
-## Source-map and diagnostic provenance for embedded pseudo-packages
+## Source-map and diagnostic provenance for stdlib pseudo-packages
 
 All pseudo-package declarations live in real `.esc` source under
-`internal/interop/data/`. Diagnostics that reference these
-declarations (e.g. "expected `string`, got `number`" pointing at a
-parameter of `String.prototype.charAt`) need a source location
-that is meaningful to the user.
+the resolved stdlib data directory (see "Filesystem-resident
+stdlib data" in non-functional requirements). Diagnostics that
+reference these declarations (e.g. "expected `string`, got
+`number`" pointing at a parameter of `String.prototype.charAt`)
+need a source location that is meaningful to the user.
 
 Requirements:
 
-- Spans on declarations parsed from embedded `.esc` files must
-  resolve to a stable, user-visible path. The path should make it
-  obvious the declaration came from the embedded stdlib (e.g.
-  `<stdlib>/std/string.esc` or
-  `escalier://internal/interop/data/std/string.esc`), not a
-  filesystem path inside the user's machine.
+- Spans on declarations parsed from stdlib `.esc` files carry the
+  **resolved filesystem path** to the file (e.g.
+  `/usr/local/share/escalier/data/std/string.esc`). The file
+  exists on disk and the user can open it directly. When the
+  resolved path lies under a well-known install prefix, the
+  diagnostic renderer may abbreviate it as `<stdlib>/std/string.esc`
+  for compactness, but the underlying span still carries the real
+  path so editor click-through works.
 - Line/column information from the parser must be preserved so
-  diagnostics point at the right line of the embedded file.
+  diagnostics point at the right line of the file. This is the
+  same `Span` shape used for ordinary source files; no virtual
+  source-map machinery is needed.
 - When the user clicks through (LSP "go to definition") on a
-  pseudo-package symbol, the editor must be able to display the
-  embedded file's content. This implies either materializing
-  embedded files on demand at a virtual path or having the LSP
-  serve them directly.
+  pseudo-package symbol, the editor opens the resolved file
+  directly. If the install location is read-only (system
+  install), the editor opens it in read-only mode; users who
+  want to edit point `ESCALIER_STDLIB_DIR` at a writable copy
+  per the discovery rules above.
 
 ## Testing strategy
 
@@ -1250,7 +1269,7 @@ mechanical. The mitigation strategy leans heavily on tooling:
   the unbound-name diagnostic includes a suggestion ("did you mean
   to `import \"std:async\"`?") whenever the unbound name matches a
   known pseudo-package export. The suggestion list is derived
-  mechanically from the embedded `internal/interop/data/` tree.
+  mechanically from the resolved stdlib data directory.
 - **Auto-import quick-fix (FR16).** The LSP turns each unbound-
   name diagnostic into a one-keystroke fix that adds the namespace
   import and rewrites the bare reference to the qualified form.
