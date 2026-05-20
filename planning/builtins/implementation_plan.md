@@ -20,7 +20,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 5   | Converter productionization                          | FR10        | ⬜      | §4         | Partition table; full output paths under `internal/interop/data/{std,dom}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
 | 6   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §5         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit.                                                                                                                                                        |
 | 7   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §3, §6 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. |
-| 8   | Internal-fixture migration; intrinsics; LSP support  | FR13, FR15, FR16 | ⬜  | §7         | Migrate Escalier's own fixtures to `import "std:*"`. Implement adaptive diagnostic rendering and the auto-import quick-fix; verify `Awaited<T>` source-level fallback. Confirm intrinsic handlers stay checker-resident.                             |
+| 8   | Internal-fixture migration; intrinsics; LSP support  | FR13, FR15, FR16 | ⬜  | §8.5 ⇒ §3; rest of §8 ⇒ §7 | Migrate Escalier's own fixtures to `import "std:*"`. Implement adaptive diagnostic rendering and the auto-import quick-fix; verify `Awaited<T>` source-level fallback. Confirm intrinsic handlers stay checker-resident. **§8.5 lands *before* §7** so the prelude switchover doesn't break the test suite; the rest of §8 lands after §7. |
 
 **Step ordering rationale.** §1 is first because a failed audit
 forces parser work that gates everything else. §2 and §4 can run
@@ -227,11 +227,12 @@ and the generated JS has no scheme-prefixed import statements.
   - `?flat`: merges directly into the per-scheme namespace.
     Multiple `?flat` imports from the same scheme merge; package
     names are dropped. Collision risk is real.
-- **`?flat` name collision is a warning, not an error.** Per
-  FR4: deterministic last-import-wins (or equivalent) binds the
-  colliding name; the diagnostic surfaces the conflict so the
-  user can resolve it by switching one of the imports off
-  `?flat`. See "Error taxonomy" cross-cutting section.
+- **`?flat` name collision is a hard error** at the second
+  import statement, per FR4. The diagnostic points at the URI
+  literal of the second import and names the prior package that
+  contributed the colliding identifier. No last-import-wins
+  fallback; the colliding name has no binding. See "Error
+  taxonomy" cross-cutting section.
 - Internal bookkeeping (whether a file has loaded a package's
   augmentations / declarations) keys on the package's full URI
   (`dom:canvas`), independent of binding-shape flag. This
@@ -294,8 +295,9 @@ work, including cycles.
 
 ### 3.1 Confirm the augmentation mechanism
 
-The §5 (interop_mutability) override-merge code already does
-interface merging at a fixed merge point. Cross-package
+The [§5 (interop_mutability)](../interop_mutability/implementation_plan.md#5-override-file-format-loader--merge)
+override-merge code already does interface merging at a fixed
+merge point. Cross-package
 augmentation needs the same primitive applied **per importing
 file**: the same `interface HTMLElementTagNameMap` is merged
 with different augmentation sets depending on which packages the
@@ -343,8 +345,9 @@ Touch points:
 §3.1's investigation must confirm both:
 
 1. **Open interfaces / cross-package interface merging** — the
-   §5 (interop_mutability) merge code can be applied per
-   importing file, or a new loader path is built.
+   [§5 (interop_mutability)](../interop_mutability/implementation_plan.md#5-override-file-format-loader--merge)
+   merge code can be applied per importing file, or a new
+   loader path is built.
 2. **Indexed access over open registries** refreshes correctly
    when the registry is augmented:
    `HTMLElementTagNameMap[K]` where
@@ -483,26 +486,26 @@ declaration is in the AST shape or needs attaching.
    `tryFuseEscalierClass` is not expected in `lib.*.d.ts` and
    does not need handling. Trios that do not satisfy the
    predicates pass through unchanged.
-3a. **Flatten `declare namespace` blocks.** Per FR10 step 2,
-    TS `declare namespace Foo { … }` becomes top-level
-    declarations in the output file (each pseudo-package file
-    is itself a namespace). The converter does not emit nested
-    namespace syntax; the FR14 audit (§1) excludes
-    `declare namespace` from the supported declaration forms.
-4. **Receiver mutability seeding.** Run `interop.Classify`
+4. **Flatten `declare namespace` blocks.** Per FR10 step 2,
+   TS `declare namespace Foo { … }` becomes top-level
+   declarations in the output file (each pseudo-package file
+   is itself a namespace). The converter does not emit nested
+   namespace syntax; the FR14 audit (§1) excludes
+   `declare namespace` from the supported declaration forms.
+5. **Receiver mutability seeding.** Run `interop.Classify`
    (tiers 3/5/6 from the interop_mutability workstream) at
    conversion time to seed `self` vs `mut self` on each method.
-5. **JSDoc pass-through.** Leading JSDoc on a TS declaration
+6. **JSDoc pass-through.** Leading JSDoc on a TS declaration
    carries through to the emitted Escalier declaration as a
    doc comment. Strip TS-specific tags (`@override` dropped;
    `@param` syntax adjusted where Escalier differs); pass the
    rest verbatim. Precursor: §4.0 above. The JSDoc tag
    stripping/rewriting table is a small in-tree config inside
    `tools/dts_to_esc/`, easy to extend as cases surface.
-6. **Intrinsic stripping.** `intrinsic`-typed declarations are
+7. **Intrinsic stripping.** `intrinsic`-typed declarations are
    skipped (FR13). The parser does not learn the `intrinsic`
    keyword.
-7. Emit via the (now-audited) declaration printer and
+8. Emit via the (now-audited) declaration printer and
    [internal/type_system/print_type.go](../../internal/type_system/print_type.go).
    Emit to stdout. No file layout, no partition table yet.
 
@@ -547,6 +550,7 @@ output and the LSP name-index (§8.3). Driven by the
 | `std:iterator`    | bundled             | `Iterator<T>`, `Iterable<T>`, `IterableIterator<T>`, `IteratorResult<T>`, `Generator<T,R,N>`; augments `Symbol.iterator`         |
 | `std:async`       | bundled             | `AsyncIterator<T>`, `AsyncIterable<T>`, `AsyncGenerator<T,R,N>`, `AggregateError`; augments `Symbol.asyncIterator`; depends on `std:iterator` |
 | `std:error`       | bundled             | `Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`. `URIError` → `std:url`; `AggregateError` → `std:async`. `EvalError` dropped |
+| `std:url`         | bundled             | `URIError`, `encodeURI`, `decodeURI`, `encodeURIComponent`, `decodeURIComponent`                                                 |
 | `std:math`        | namespace           | unchanged from existing layout                                                                                                   |
 | `std:json`        | namespace           | unchanged                                                                                                                        |
 | `std:console`     | namespace           | unchanged                                                                                                                        |
@@ -625,11 +629,47 @@ Release packaging (`make`, install scripts, distro packages)
 copies the tree alongside the binary; CI verifies the
 post-install layout discovers correctly.
 
-### 5.4 `--check` mode
+### 5.4 Re-run semantics and `--check` mode
 
-Re-run the converter, diff against the committed files, fail CI
-on mismatch. Print a unified diff. This is the TS-version-bump
-review tool — **never auto-applied**.
+Re-running the converter against committed files is **additive
+and signature-checked**, not a wholesale overwrite. The hand-edits
+under [§6](#6-stdlib-bootstrap) (`throws`, lifetimes, mutability
+refinements) must survive a re-run.
+
+**Default re-run (write mode):**
+
+- **Add** declarations present in the `.d.ts` but missing from the
+  committed `.esc` (new TS-lib symbols since last bump).
+- **Add** members on existing classes / interfaces that the `.d.ts`
+  has but the `.esc` is missing.
+- **Never overwrite** an existing declaration's body, signature, or
+  hand-added annotations. Hand-edits are sticky.
+- **Report** declarations present in the `.esc` but absent from the
+  `.d.ts` (likely TS-side removal) — informational, no automatic
+  deletion.
+
+**`--check` mode (CI):** read-only verification that fails CI on
+any of:
+
+1. **Missing declarations.** A `.d.ts` declaration with no
+   corresponding `.esc` declaration in the partition's target file.
+2. **Incompatible signature drift.** An `.esc` function / method
+   signature whose param or return types are not assignable to /
+   from the `.d.ts` original (per the checker's assignability
+   rules, applied to the converted-from-TS form). Catches
+   accidental hand-edits that change the meaning of a signature
+   rather than refining it.
+3. **Incompatible property-type drift.** Same check for properties
+   on classes / interfaces.
+
+Adding `throws`, lifetimes, mutability, or narrowing a parameter /
+return type within the `.d.ts` shape is **not** incompatible and
+does not trip `--check`. The compatibility check is one-directional
+in the obvious sense (Escalier-side may be stricter than TS-side,
+not looser).
+
+This is the TS-version-bump review tool — **never auto-applies**
+deletions or signature changes.
 
 ### 5.5 `throws` annotations (bootstrap policy)
 
@@ -647,7 +687,10 @@ deferred.
 Document the bump workflow in `tools/dts_to_esc/README.md`:
 
 1. Bump the pinned TS dependency.
-2. Run `tools/dts_to_esc/regenerate --check`.
+2. Run `tools/dts_to_esc/ --check`. (Single binary; if future
+   workflows need different modes, add subcommands behind the
+   same entry point — `tools/dts_to_esc/ check`,
+   `tools/dts_to_esc/ regenerate`, etc.)
 3. The `--check` output is a unified diff against current
    committed files showing TS-side adds / removes / changes.
 4. Contributor decides which changes to port by hand and
@@ -980,9 +1023,11 @@ portion when the failure is flag-shaped):
 - **Unknown flag** — names the flag; lists recognized set.
 - **Named import from a pseudo-package URI** — explains
   namespace-only; suggests the rewrite.
-- **`?flat` name collision** — **warning, not error.** Names the
-  collision; names the two source packages; names which won
-  under last-import-wins.
+- **`?flat` name collision** — **hard error** at the second
+  import. Names the colliding identifier and the two source
+  packages; points at the URI literal of the second import;
+  instructs the user to rename upstream or drop one import's
+  `?flat` flag.
 
 Fixtures under [fixtures/](../../fixtures/) exercise each with
 full message-text assertions per CLAUDE.md test conventions.
@@ -1060,12 +1105,10 @@ because they are first-class ergonomics features under the new
 model (FR15 / FR16 are hard requirements). No automatic codemod
 for user code is included.
 
-(The requirements doc's "Backwards-compatibility and deprecation
-policy" section describes a single deprecation cycle with a
-build flag and a one-release parallel-paths window. Pre-1.0 lets
-us skip that — when the requirements doc is next revised, the
-section can be reframed as the FR15/FR16 ergonomics story rather
-than as a migration plan.)
+(The requirements doc's "Backwards-compatibility" section has
+been updated in step with this plan: no deprecation cycle, no
+build flag. FR15/FR16 ergonomics are framed as first-class
+features, not as migration aids.)
 
 ---
 

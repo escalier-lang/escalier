@@ -185,6 +185,9 @@ Bundled packages — multiple types, no single-class shortcut:
   `ReferenceError`. The five ubiquitous ones. Domain-specific
   errors live with their domain: `URIError` in `std:url`,
   `AggregateError` in `std:async`. `EvalError` is dropped.
+- `std:url` — `URIError`, plus the global URI-encoding functions
+  `encodeURI`, `decodeURI`, `encodeURIComponent`,
+  `decodeURIComponent`. Bundled; no single-class shortcut.
 
 Other `std:*` packages from the existing layout (`math`, `json`,
 `console`, `date`, `map`, `set`, `weak_ref`, `typed_arrays`,
@@ -220,7 +223,7 @@ internal/interop/data/
         date.esc, map.esc, set.esc, weak_ref.esc,
 
         # bundled packages
-        iterator.esc, async.esc, error.esc,
+        iterator.esc, async.esc, error.esc, url.esc,
 
         # other std:* packages
         math.esc, json.esc, console.esc,
@@ -323,11 +326,14 @@ they are mutually exclusive and exactly one is in effect per import
     `dom.HTMLCanvasElement`, `dom.WebGLRenderingContext`.
   - Collision risk is real (two packages exporting the same name
     under one scheme conflict). Opt-in for that reason. **When
-    `?flat` produces a name collision, the compiler emits a
-    warning** (not a hard error): the colliding name still binds
-    under deterministic last-import-wins (or equivalent) rules, but
-    the diagnostic surfaces the conflict so the user can resolve it
-    by switching one of the imports off `?flat`.
+    `?flat` produces a name collision, the compiler reports a
+    hard error** at the second import statement, pointing at the
+    URI literal and naming the prior import that contributed the
+    colliding identifier. The user resolves it by renaming
+    upstream or switching one of the imports off `?flat`. No
+    last-import-wins fallback: a colliding name has no binding,
+    so any reference to it is its own unbound-name diagnostic at
+    use site.
 
 **Combining any two of `?local`, `?nested`, `?flat` in one URI is a
 compile error**; the resolver reports which flag pair is invalid.
@@ -731,7 +737,7 @@ The realistic sources of `throws` data are:
   infrastructure. This is the approach for the initial bootstrap.
 
 **TS version bump workflow.** Run
-`tools/dts_to_esc/regenerate --check` against the bumped TS. The
+`tools/dts_to_esc/ --check` against the bumped TS. The
 output is a diff against the current files showing what TS added /
 removed / changed. A contributor decides which changes to port by
 hand. An optional CI nudge can annotate a PR with "TS lib changed
@@ -1025,32 +1031,25 @@ omitted; they belong to the third-party workstream.
    annotations across the generated `std/` and `dom/` packages,
    commit.
    - **Gate:** humans review the committed files.
-7. **Prelude switchover.** Replace the lib-walking path in
-   `internal/checker/prelude.go` with the lazy per-file shape
-   loader (FR11). Old path stays behind a build flag for one
-   release; run both side-by-side in CI; assert that programs
-   type-check equivalently — the previously-ambient surface now
-   resolves through shape-loading and/or explicit imports, and
-   diagnostics for *unimported* references should appear under the
-   new path (with the FR16 quick-fix offering the import).
-8. **Existing code migration.** Update Escalier's own fixtures and
-   tests that relied on previously-ambient symbols (`Math`, `JSON`,
-   `console`, `Promise`, `Error`, `Array.from`, `parseInt`, …) to
-   import the corresponding pseudo-package. This is the user-
-   visible breaking change. The auto-import quick-fix (FR16) is
-   expected to be available before this step lands so internal
-   migration exercises the same tooling external users will rely on.
-9. **Delete builtin overrides infrastructure.** Any builtin-tier
-   override store / `data/builtins/overrides/` subtree contemplated
-   by the current §6 plan goes away. `BuildBuiltinStore` returns an
-   empty store; eventually the function deletes. Pseudo-package
-   refinements live inline in the `.esc` files and are maintained
-   as source (no merge layer). **Depends on steps 7 and 8** — the
-   prelude must have switched to lazy shape loading (step 7), and
-   fixtures relying on previously-ambient symbols must have
-   migrated to `import "std:*"` (step 8), otherwise removing the
-   override path regresses them.
-10. **Flip the default.** Remove the build flag from step 7.
+7. **Internal fixture migration.** Update Escalier's own fixtures
+   and tests that relied on previously-ambient symbols (`Math`,
+   `JSON`, `console`, `Promise`, `Error`, `Array.from`,
+   `parseInt`, …) to import the corresponding pseudo-package. The
+   auto-import quick-fix (FR16) is expected to be available before
+   this step lands so internal migration exercises the same
+   tooling external users will rely on. This step must precede
+   step 8: the next step deletes the legacy lib-walking path, and
+   un-migrated fixtures would regress.
+8. **Prelude switchover + legacy deletion (single PR).** Replace
+   the lib-walking path in `internal/checker/prelude.go` with the
+   lazy per-file shape loader (FR11), and delete the legacy
+   builtin / override machinery in the same change:
+   `BuildBuiltinStore`, `loadGlobalDefinitions`,
+   `populateSelfParams`, `UpdateMethodMutability`,
+   `mergeReadonlyVariant`, the `mutabilityOverrides` map, and any
+   `internal/interop/data/builtins/` overrides subtree. No build
+   flag, no parallel paths, no deprecation cycle — Escalier is
+   pre-1.0.
 
 (Steps 10 and 11 from the original proposal's migration path —
 third-party lazy cache and deletion of the runtime interop
@@ -1059,11 +1058,11 @@ third-party workstream. The steps above have been renumbered
 sequentially within this workstream; the original step numbering
 no longer applies.)
 
-Steps 6–8 are authoring + migration paced by human review of
-generated files. Steps 9 and 10 add a small amount of cleanup
-work. This document deliberately avoids time-based effort
-estimates; complexity (PR-sized vs needs-splitting) is the only
-estimate that matters per step.
+Steps 6–7 are authoring + migration paced by human review of
+generated files. Step 8 is the cut-over. This document
+deliberately avoids time-based effort estimates; complexity
+(PR-sized vs needs-splitting) is the only estimate that matters
+per step.
 
 ## Risks
 
@@ -1147,10 +1146,11 @@ diagnostic:
   use a namespace form (`import "std:math"` or
   `import "std:math?flat"`) and suggests the rewrite.
 - **`?flat` name collision.** Two `?flat` imports under the same
-  scheme contributing the same identifier. **Warning, not error**
-  (per FR4): message names the colliding identifier, the two
-  source packages, and which import won under the
-  collision-resolution rule.
+  scheme contributing the same identifier. **Hard error** at the
+  second import (per FR4): message names the colliding identifier
+  and the two source packages, points at the URI literal of the
+  second import, and instructs the user to rename upstream or
+  switch one of the imports off `?flat`.
 
 Each diagnostic ties back to a span on the offending `import`
 statement, ideally pointing at the URI string literal (and within
@@ -1196,7 +1196,7 @@ Requirements:
   scheme + unknown package; `?flag` stripping before path lookup.
 - **Binding-shape tests** (per FR4). Fixture per shape (`?local`,
   `?nested`, `?flat`), per single- and multi-package case,
-  including `?flat` collision warning.
+  including `?flat` collision error.
 - **Registry augmentation tests** (per FR7). Two-file fixture
   where one file imports the augmenting package and the other does
   not; assert the augmented-vs-base type at each site (e.g.
@@ -1214,16 +1214,11 @@ Requirements:
   augmentations; bare `import "dom:canvas"` (no re-export) does
   not. Flag independence: augmentation visibility is identical
   under `?local`, `?nested`, and `?flat`.
-- **Prelude switchover parity.** While the old `lib.*.d.ts`-walking
-  path remains behind a build flag (migration step 7), CI runs
-  both side-by-side on a fixture suite. The parity check asserts
-  that programs which *did* type-check under the ambient model
-  still type-check under the new model after their previously-
-  ambient references are rewritten through `import "std:*"`
-  statements (the auto-import quick-fix is exercised as part of
-  the parity check). Diagnostic equivalence is *not* expected —
-  the new path reports unbound-name errors for unimported
-  references, which is the intended user-visible difference.
+- **Prelude switchover.** Internal fixtures are migrated to
+  `import "std:*"` (migration step 7) before the legacy path is
+  deleted (step 8); the test suite passes on the new path alone
+  after step 8. No parity check against the legacy path: it is
+  deleted in the same PR rather than kept behind a flag (pre-1.0).
 - **Adaptive diagnostic rendering** (per FR15). Fixture per
   rendering case: `?local` with single-class shortcut → lowercase;
   `?local` without shortcut → dotted; `?nested` →
@@ -1244,43 +1239,30 @@ Requirements:
   mode listed in the error-message taxonomy with full
   message-text assertions (per CLAUDE.md test conventions).
 
-## Backwards-compatibility and deprecation policy
+## Backwards-compatibility
 
-The switch from "TS `lib.*.d.ts` walked at startup" to "every name
-lives in a pseudo-package; nothing is ambient" is a **broad
-user-visible breaking change**. Under the previous model only
-namespace-shaped globals (`Math`, `JSON`, `console`, `Map`, `Date`)
-required attention; under the new model essentially every program
-needs imports, because **`Promise`, `Error`, `TypeError`,
-`Array.from`, `Object.keys`, `parseInt`, `Partial`, `Pick`,
-`Symbol`, etc. all become package-bound names**. Most JS-style
-files will need 3–5 new imports.
+**Not applicable — Escalier is pre-1.0.** There are no released
+versions and no external users to migrate, so this workstream
+does not need a deprecation cycle, a build flag, or a parallel-
+paths window. Migration step 8 swaps the prelude and deletes the
+legacy builtin / override machinery in one PR; migration step 7
+(internal fixture migration) lands immediately before so the
+test suite stays green across the cut.
 
-The migration cost is real but each individual addition is
-mechanical. The mitigation strategy leans heavily on tooling:
+The ergonomics features below are still hard requirements — not
+as migration aids, but because the new model genuinely needs
+them for day-to-day use:
 
-- **Deprecation flag.** Migration step 7 introduces a build flag
-  that keeps the old `lib.*.d.ts`-walking path live alongside the
-  new lazy-shape-load path for **one release cycle**. Users opt
-  into the new behavior; the next release flips the default
-  (migration step 10); the release after that removes the flag.
-- **Diagnostic-assisted migration.** When a name that used to be
-  ambient is referenced without an import under the new default,
-  the unbound-name diagnostic includes a suggestion ("did you mean
-  to `import \"std:async\"`?") whenever the unbound name matches a
-  known pseudo-package export. The suggestion list is derived
-  mechanically from the resolved stdlib data directory.
+- **Diagnostic-assisted unbound-name suggestions.** When a name
+  matching a known pseudo-package export is referenced without
+  an import, the unbound-name diagnostic suggests "did you mean
+  to `import \"std:async\"`?". The suggestion list is derived
+  mechanically from the resolved stdlib data directory. This is
+  the fallback for command-line use; users in a supported editor
+  get the FR16 quick-fix instead.
 - **Auto-import quick-fix (FR16).** The LSP turns each unbound-
-  name diagnostic into a one-keystroke fix that adds the namespace
-  import and rewrites the bare reference to the qualified form.
-  This is the primary migration aid for users editing in a
-  supported editor; the diagnostic suggestion above is the
-  fallback for command-line use.
-- **No automatic codemod for user code in this workstream.** A
-  separate codemod that rewrites every previously-ambient
-  reference is desirable but out-of-scope here. The auto-import
-  quick-fix and the diagnostic suggestion are the supported
-  migration aids.
-- **Internal fixtures and tests** migrate as part of migration
-  step 8 in the same release that introduces the new default,
-  serving as the canary for the user-facing change.
+  name diagnostic into a one-keystroke fix that adds the
+  namespace import and rewrites the bare reference to the
+  qualified form.
+
+No automatic codemod for user code ships with this workstream.
