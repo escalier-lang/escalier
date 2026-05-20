@@ -184,7 +184,13 @@ Bundled packages — multiple types, no single-class shortcut:
 - `std:error` — `Error`, `TypeError`, `RangeError`, `SyntaxError`,
   `ReferenceError`. The five ubiquitous ones. Domain-specific
   errors live with their domain: `URIError` in `std:url`,
-  `AggregateError` in `std:async`. `EvalError` is dropped.
+  `AggregateError` in `std:async`. `EvalError` is dropped:
+  it is a legacy class tightly coupled to `eval`, `eval` itself
+  is dropped from the surface (see "What `globalThis` and `eval`
+  do" below), and no modern engine throws `EvalError` from
+  language semantics. Consumers that previously named `EvalError`
+  (extremely rare) can fall back to `Error` or define a
+  user-level error class — no shim is provided.
 - `std:url` — `URIError`, plus the global URI-encoding functions
   `encodeURI`, `decodeURI`, `encodeURIComponent`,
   `decodeURIComponent`. Bundled; no single-class shortcut.
@@ -327,13 +333,14 @@ they are mutually exclusive and exactly one is in effect per import
   - Collision risk is real (two packages exporting the same name
     under one scheme conflict). Opt-in for that reason. **When
     `?flat` produces a name collision, the compiler reports a
-    hard error** at the second import statement, pointing at the
-    URI literal and naming the prior import that contributed the
-    colliding identifier. The user resolves it by renaming
-    upstream or switching one of the imports off `?flat`. No
-    last-import-wins fallback: a colliding name has no binding,
-    so any reference to it is its own unbound-name diagnostic at
-    use site.
+    hard error at the second `import` statement and aborts
+    compilation.** The diagnostic points at the URI literal of
+    the second import and names the prior package that
+    contributed the colliding identifier. No use-site
+    unbound-name diagnostics are emitted for the colliding name;
+    compilation does not proceed past the resolver. The user
+    resolves it by renaming upstream or switching one of the
+    imports off `?flat`.
 
 **Combining any two of `?local`, `?nested`, `?flat` in one URI is a
 compile error**; the resolver reports which flag pair is invalid.
@@ -630,6 +637,19 @@ deliberately departs from TypeScript's `declare module` behavior,
 where any module-augmenting import becomes global. The type a
 file sees is fully determined by that file's own imports.
 
+**Note for library authors.** Per-importing-file scoping means a
+library function that calls `document.createElement("canvas")`
+must itself include `import "dom:canvas"` — relying on the
+application to import the package is not enough. Each file that
+*uses* the augmented shape needs the import; importing only in
+the application's entry point gives the entry-point file the
+narrow type but leaves the library file with the pre-augmentation
+shape. The same applies to every other augmentation entry point
+(SVG element families, Symbol well-known keys, etc.). When in
+doubt, import the augmenting package in every file that consumes
+the augmented type. This is the inverse of the TypeScript habit
+of relying on a global side-effect import.
+
 **Transitive propagation via explicit re-export.** Augmentations
 propagate only through **explicit re-exports** of the pseudo-package.
 If file A writes `export * from "dom:canvas"` (or an equivalent
@@ -686,6 +706,18 @@ A one-time seeding tool. A Go binary that:
    `std/promise.esc`; `Error` family → `std/error.esc`; etc.). The
    partition is driven by a hand-maintained mapping table in the
    converter, not by anything in the `.d.ts`.
+
+   **Unmapped-symbol fail-safe.** Any top-level TS-lib
+   declaration name absent from both the partition table and
+   the explicit drop list (`globalThis`, `eval`, `intrinsic`-
+   typed declarations) is a **converter error**: the run aborts
+   with a diagnostic naming the symbol, its source `.d.ts`
+   file, and the partition-table file the contributor must
+   edit. No "unmapped" catch-all package and no silent drop —
+   contributor intent is required for every TS-lib symbol. The
+   error is exercised by the routing code that emits per-package
+   `.esc` output: the partition-table lookup is the choke point,
+   and a missing entry surfaces there, not somewhere downstream.
 5. Detects which TS-lib symbols belong to registries
    (`HTMLElementTagNameMap`, `HTMLElementEventMap`, …) and which
    well-known symbols belong to which `std:*` package (e.g.
@@ -766,9 +798,15 @@ Instead, the checker drives two new loading paths:
      file uses async iteration).
    - `for x of xs` / generators → `std:iterator`.
    - `for await x of xs` → `std:async`.
-   - `try` / `catch` / `throw` / `throws` clauses on functions
-     that use error-class names → `std:error` (only when error
-     classes are explicitly referenced by name).
+   - An explicit reference to a `std:error` class name
+     (`Error`, `TypeError`, `RangeError`, `SyntaxError`,
+     `ReferenceError`) inside a `try` / `catch` / `throw`
+     expression or a function's `throws` clause →
+     `std:error`. A bare `try` / `catch` / `throw` /
+     `throws` with no error-class name does **not** trigger
+     shape-loading — `throw "string"` and `throws` clauses
+     listing only user-defined errors leave `std:error`
+     un-loaded.
 
    Multiple files in a compilation share one parsed copy of each
    package; shape-loading is idempotent and additive.

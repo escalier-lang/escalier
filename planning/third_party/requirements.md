@@ -82,7 +82,7 @@ Out of scope (owned by the builtins workstream or other efforts):
 - Always-current API surface plus codegen polyfill insertion.
 - Intrinsic type handling in the checker.
 - The declaration-printer audit itself (builtins FR13,
-  [link](../builtins/requirements.md)) —
+  [builtins/requirements.md](../builtins/requirements.md)) —
   consumed here as a precondition.
 - The home of `interop.Classify`. The builtins workstream owns this
   decision; the current expectation is that `Classify` continues to
@@ -173,13 +173,15 @@ path.
 ### FR3. Cache layout and invalidation
 
 The merged `.esc` shall be written to
-`node_modules/.cache/escalier/<pkg>@<version>.esc`.
+`node_modules/.cache/escalier/<pkg>@<version>+<escalier-version>.esc`.
 
 The cache key is the tuple:
 
 ```
-(pkg-name, pkg-version-of-the-.d.ts-files-being-converted,
- content-hash of any applicable .esc override fragments)
+(pkg-name,
+ pkg-version-of-the-.d.ts-files-being-converted,
+ content-hash of any applicable .esc override fragments,
+ escalier-compiler-version)
 ```
 
 The package name and version come from `package.json`. The override
@@ -199,17 +201,20 @@ changes:
   (i.e. the override-content-hash portion of the key changes). This
   closes the gap where editing an override would otherwise reuse a
   stale merged result.
-- The Escalier compiler version. This captures converter
-  improvements and bug fixes without requiring users to wipe the
-  cache manually.
+- The Escalier compiler version (the fourth component of the key
+  tuple). Captures converter improvements and bug fixes without
+  requiring users to wipe the cache manually.
 
 Patch releases that quietly re-emit `.d.ts` without bumping a
 version are rare and remain a known soft spot — `escalier cache
 clean` covers the case if it happens. Aligning with the parent
-proposal at
-[dts_to_esc_proposal.md lines ~577 and ~834](../interop_mutability/dts_to_esc_proposal.md):
-the `<hash>` referenced there is this composite key (version +
-override-fragment content hashes), not a full `.d.ts` content hash.
+proposal's
+[Third-party deps: lazy convert + baseline-plus-override](../interop_mutability/dts_to_esc_proposal.md#third-party-deps-lazy-convert--baseline-plus-override)
+and
+[Risks](../interop_mutability/dts_to_esc_proposal.md#risks)
+sections: the `<hash>` referenced there is this composite key
+(version + override-fragment content hashes + compiler version),
+not a full `.d.ts` content hash.
 
 Placing the cache under `node_modules/.cache/escalier/` means
 `npm ci` and other clean-install workflows reset it for free.
@@ -390,7 +395,7 @@ implementation-plan stage that follows this requirements document.
 Each FR above is expected to grow a concrete acceptance-criteria
 subsection in that follow-up doc (e.g. for FR1: "given a fresh
 checkout with `@types/node` installed, the first `escalier build`
-produces `node_modules/.cache/escalier/@types/node@<version>.esc`
+produces `node_modules/.cache/escalier/@types/node@<version>+<escalier-version>.esc`
 and subsequent builds do not re-invoke the converter").
 
 ## Telemetry and observability

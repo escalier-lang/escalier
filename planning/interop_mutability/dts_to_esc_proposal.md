@@ -1,9 +1,18 @@
 # Proposal: Small ambient builtins, pseudo-package imports, converter-fed third-party deps
 
-**Status:** Draft for discussion. Not adopted; the current
-[implementation_plan.md](implementation_plan.md) §6 (override-based
-authoring) remains the working plan until this proposal is accepted
-or rejected.
+**Status:** Historical draft, **superseded**. The builtins
+workstream split out into [planning/builtins/](../builtins/),
+and that workstream's [requirements.md](../builtins/requirements.md)
+is authoritative for the builtins side. In particular,
+**[FR1 (no ambient set)](../builtins/requirements.md#fr1-no-ambient-set-shape-loaded-vs-named-bindings)**
+of the builtins requirements rejects the "small ambient builtins"
+section of this proposal: there is no ambient tier in the adopted
+design — `Symbol`, `RegExp`, `Object`, `Function`, error classes,
+etc. all live in `std:*` pseudo-packages and are either
+shape-loaded (invisible, language-feature-driven) or named via
+explicit `import "std:*"`. The pseudo-package model from this
+proposal carried forward; the ambient-set proposal did not. This
+file is retained for historical rationale only.
 
 **Companion to:** [implementation_plan.md](implementation_plan.md),
 [requirements.md](requirements.md),

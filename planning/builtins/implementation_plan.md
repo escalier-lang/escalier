@@ -152,14 +152,15 @@ the compiler.
 
 Discovery order, first hit wins:
 
-1. **`ESCALIER_STDLIB_DIR` environment variable.** Absolute
+1. **`--stdlib-dir <path>` CLI flag** on `escalier check` /
+   `escalier build` / `lsp-server`. Highest precedence
+   (standard CLI convention: explicit flags beat ambient
+   configuration).
+2. **`ESCALIER_STDLIB_DIR` environment variable.** Absolute
    path to a directory containing `std/` and `dom/`
-   subdirectories. Overrides everything else; intended for
-   contributors testing alternative stdlibs and for tooling
-   that ships its own.
-2. **`--stdlib-dir <path>` CLI flag** on `escalier check` /
-   `escalier build` / `lsp-server`. Same shape; flag wins over
-   env var if both are present (standard CLI convention).
+   subdirectories. Used only when `--stdlib-dir` is not
+   supplied. Intended for contributors testing alternative
+   stdlibs and for tooling that ships its own.
 3. **Sibling to the executable.** `<exe-dir>/../share/escalier/data/`
    (Unix convention; resolves on the typical
    `bin/`+`share/` install layout). Falls back to
@@ -227,12 +228,13 @@ and the generated JS has no scheme-prefixed import statements.
   - `?flat`: merges directly into the per-scheme namespace.
     Multiple `?flat` imports from the same scheme merge; package
     names are dropped. Collision risk is real.
-- **`?flat` name collision is a hard error** at the second
-  import statement, per FR4. The diagnostic points at the URI
-  literal of the second import and names the prior package that
-  contributed the colliding identifier. No last-import-wins
-  fallback; the colliding name has no binding. See "Error
-  taxonomy" cross-cutting section.
+- **`?flat` name collision is a hard error at the second
+  `import` statement and aborts compilation**, per FR4. The
+  diagnostic points at the URI literal of the second import
+  and names the prior package that contributed the colliding
+  identifier. No use-site unbound-name diagnostics are emitted
+  for the colliding name; compilation does not proceed past
+  the resolver. See "Error taxonomy" cross-cutting section.
 - Internal bookkeeping (whether a file has loaded a package's
   augmentations / declarations) keys on the package's full URI
   (`dom:canvas`), independent of binding-shape flag. This
@@ -593,6 +595,15 @@ in the new model. The converter recognizes both and skips
 emission with a logged note. `intrinsic`-typed declarations
 (FR13) skip the same way.
 
+**Unmapped-symbol fail-safe.** Per FR10 step 4: any top-level
+TS-lib declaration name absent from both this partition table
+and the explicit drop list above causes the converter to abort
+with a diagnostic naming the symbol, its source `.d.ts` file,
+and this partition-table file. No catch-all "unmapped" package
+and no silent drop. The check lives at the partition-table
+lookup site so misses surface where the routing decision is
+actually made.
+
 **`node:*`.** Partition deferred until Node support lands. The
 `internal/interop/data/node/` directory is created empty.
 
@@ -770,7 +781,7 @@ bindings added to scope). Trigger map per FR11:
 | `async fn` / `await`                                               | `std:promise` (+ `std:async` if async iteration) |
 | `for x of xs` / generator                                          | `std:iterator`                       |
 | `for await x of xs`                                                | `std:async`                          |
-| `try` / `catch` / `throw` / `throws` clause naming an error class  | `std:error`                          |
+| `try` / `catch` / `throw` / `throws` clause **naming** a `std:error` class (`Error`, `TypeError`, …) | `std:error` — bare `throw "x"` or a `throws` listing only user-defined errors does not trigger |
 
 Multiple files share one parsed copy of each package.
 Shape-loading is idempotent and additive.
@@ -1122,7 +1133,7 @@ or more phases above.
 | FR1   | No ambient set; two-mode loading           | §5.1 (partition), §7 (lazy shape-load + legacy-path deletion), Drops subsection in §5.1 (`globalThis`/`eval`/`EvalError`) |
 | FR2   | Pseudo-package layout                      | §2.2 (resolver mapping + underscore convention), §2.2a (stdlib data directory discovery), §5.1 (full enumeration), §5.3 (output layout + distribution) |
 | FR3   | URI-scheme import grammar                  | §2.1 (parser), §2.2 (resolver), §2.2b (runtime erasure)                                                          |
-| FR4   | Binding-shape flags                        | §2.3 (all three shapes, mutual exclusion, extensibility, collision warning, URI-keyed bookkeeping)               |
+| FR4   | Binding-shape flags                        | §2.3 (all three shapes, mutual exclusion, extensibility, hard-error on `?flat` collision, URI-keyed bookkeeping) |
 | FR5   | Single-class shortcut                      | §2.4; eligibility list in §5.1                                                                                   |
 | FR6   | Inter-package imports                      | §3.4 (cycles permitted within pseudo-package layer)                                                              |
 | FR7   | Cross-package augmentation (registries)    | §3.1 (mechanism investigation), §3.2 (registry pattern), §3.2a (no `override declare`), §3.2b (per-API fallback) |
