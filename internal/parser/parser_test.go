@@ -401,6 +401,10 @@ func TestParseDeclareBlockErrors(t *testing.T) {
 			input:         `declare global { namespace 42 { } }`,
 			expectedError: "Expected identifier after 'namespace'",
 		},
+		"DecoratorOnEnum": {
+			input:         `@js("E") enum E { A, B }`,
+			expectedError: "decorators are not allowed on enum declarations",
+		},
 	}
 
 	for name, test := range tests {

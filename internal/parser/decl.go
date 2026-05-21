@@ -183,7 +183,12 @@ func (p *Parser) Decl() ast.Decl {
 		decl.SetOverride(true)
 	}
 	if decl != nil && len(decorators) > 0 {
-		attachDecorators(decl, decorators)
+		if _, isEnum := decl.(*ast.EnumDecl); isEnum {
+			p.reportError(decorators[0].Span_,
+				"decorators are not allowed on enum declarations")
+		} else {
+			attachDecorators(decl, decorators)
+		}
 	}
 	return decl
 }

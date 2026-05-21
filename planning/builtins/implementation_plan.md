@@ -136,7 +136,7 @@ landed alongside the audit to close those gaps:
 
 - **`<T: U>` constraint printing.** `printTypeParams` in
   [internal/printer/printer.go](../../internal/printer/printer.go)
-  now emits `: U` instead of the TypeScript ` extends U`.
+  now emits `: U` instead of the TypeScript `extends U`.
 - **`declare class` printer.** Added `printClassDecl` and
   `printClassElem` in
   [internal/printer/printer.go](../../internal/printer/printer.go);

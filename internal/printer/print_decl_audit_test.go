@@ -137,6 +137,24 @@ declare interface I {y: string}`
 	require.Equal(t, firstPrint, secondPrint)
 }
 
+// TestPrintConstructor_NoDuplicateReceiver guards against a regression
+// where printMethodSig prints both the explicit receiver and the
+// synthesized `self` that the parser stamps into Fn.Params[0].
+func TestPrintConstructor_NoDuplicateReceiver(t *testing.T) {
+	src := `class C {
+    constructor(mut self, x: number) {}
+}`
+	script := parseScript(t, src)
+	require.Len(t, script.Stmts, 1)
+	ds, ok := script.Stmts[0].(*ast.DeclStmt)
+	require.True(t, ok)
+	out, err := Print(ds.Decl, DefaultOptions())
+	require.NoError(t, err)
+	require.NotContains(t, out, "mut self, self",
+		"constructor receiver and synthesized Params[0] both printed:\n%s", out)
+	require.Contains(t, out, "constructor(mut self, x: number)")
+}
+
 // TestPrintDeclAudit_KnownGaps documents declaration forms in the §1
 // scope that are intentionally not exercised by the round-trip suite.
 // Each entry pins the contract so a future change that accidentally
@@ -150,10 +168,11 @@ func TestPrintDeclAudit_KnownGaps(t *testing.T) {
 		src := `declare namespace N {
 		declare val x: number
 		}`
-		_, errs := parseDeclMaybe(src)
+		decl, errs := parseDeclMaybe(src)
 		require.Empty(t, errs,
 			"declare namespace failed to parse, contradicting the "+
 				"parser supporting it")
+		require.NotNil(t, decl, "parser returned no decl for declare namespace")
 	})
 
 	t.Run("declare module intentionally out of scope", func(t *testing.T) {
@@ -164,8 +183,9 @@ func TestPrintDeclAudit_KnownGaps(t *testing.T) {
 		src := `declare module "foo" {
 		declare val x: number
 		}`
-		_, errs := parseDeclMaybe(src)
+		decl, errs := parseDeclMaybe(src)
 		require.Empty(t, errs)
+		require.NotNil(t, decl, "parser returned no decl for declare module")
 	})
 }
 

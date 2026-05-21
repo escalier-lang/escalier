@@ -315,6 +315,7 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 	}
 	p.writeString("(")
 	first := true
+	params := sig.Params
 	if recv != nil {
 		if recv.Mut {
 			p.writeString("mut self")
@@ -322,8 +323,16 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 			p.writeString("self")
 		}
 		first = false
+		// Constructors materialize the receiver as Params[0] so the body
+		// checker can read it uniformly. Skip it here so we don't print
+		// `self` twice.
+		if len(params) > 0 {
+			if ip, ok := params[0].Pattern.(*ast.IdentPat); ok && ip.Name == "self" {
+				params = params[1:]
+			}
+		}
 	}
-	for _, param := range sig.Params {
+	for _, param := range params {
 		if !first {
 			p.writeString(", ")
 		}
