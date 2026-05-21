@@ -80,9 +80,8 @@ In scope:
   and type position.
 - Cross-package augmentation via open registry interfaces
   (`HTMLElementTagNameMap`, `HTMLElementEventMap`,
-  `SVGElementTagNameMap`, …) and the analogous augmentation of
-  `Symbol`'s static side with well-known symbols from sibling
-  packages, with activation scoped to the importing file.
+  `SVGElementTagNameMap`, …), with activation scoped to the
+  importing file.
 - Inter-package imports between pseudo-packages.
 - A one-time bootstrap converter `tools/dts_to_esc/` that
   AST-to-AST translates the pinned TypeScript `.d.ts` set into the
@@ -156,11 +155,12 @@ shortcut defined in FR5:
   `isFinite` live in `std:number` since their domain is numeric
   parsing.
 - `std:regexp` — `RegExp`
-- `std:promise` — `Promise<T>`
-- `std:symbol` — `Symbol`. The well-known symbols (`Symbol.iterator`,
-  `Symbol.asyncIterator`, `Symbol.toPrimitive`, …) are *not*
-  declared here; sibling packages augment `Symbol`'s static side
-  with the symbols they own (see FR8).
+- `std:symbol` — `Symbol`, including **all** well-known symbols
+  (`Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.toPrimitive`,
+  `Symbol.match`, `Symbol.replace`, …) declared directly on
+  `Symbol`'s static side. Domain packages re-export the symbols
+  they own as package-local aliases for ergonomics (see FR8) but
+  the canonical declaration lives here.
 - `std:object` — `Object`. Also hosts object-shaped utility types:
   `Partial`, `Required`, `Readonly`, `Pick`, `Omit`, `Record`,
   `Exclude`, `Extract`, `NonNullable`. The last three operate on
@@ -175,12 +175,16 @@ Bundled packages — multiple types, no single-class shortcut:
 
 - `std:iterator` — `Iterator<T>`, `Iterable<T>`,
   `IterableIterator<T>`, `IteratorResult<T>`,
-  `Generator<T, R, N>`; augments `Symbol` with `iterator`.
-- `std:async` — `AsyncIterator<T>`, `AsyncIterable<T>`,
-  `AsyncGenerator<T, R, N>`, `AggregateError`; augments `Symbol`
-  with `asyncIterator`. (`Promise<T>` itself lives in `std:promise`,
-  not here.) Depends on `std:iterator` for the iteration-protocol
-  base.
+  `Generator<T, R, N>`; re-exports `Symbol.iterator` as `key`
+  (FR8).
+- `std:async` — `Promise<T>`, `Awaited<T>`, `AsyncIterator<T>`,
+  `AsyncIterable<T>`, `AsyncGenerator<T, R, N>`, `AggregateError`;
+  re-exports `Symbol.asyncIterator` as `key` (FR8). Depends on
+  `std:iterator` for the iteration-protocol base. `Promise` lives
+  here rather than in a dedicated `std:promise` because the
+  surface (Promise + async iteration + async errors) is small
+  enough to share one package; users write `async.Promise.all(…)`
+  under the default `?local` binding shape.
 - `std:error` — `Error`, `TypeError`, `RangeError`, `SyntaxError`,
   `ReferenceError`. The five ubiquitous ones. Domain-specific
   errors live with their domain: `URIError` in `std:url`,
@@ -209,7 +213,7 @@ union over.
 **Intrinsics, unchanged.** `Uppercase`, `Lowercase`, `Capitalize`,
 `Uncapitalize`, `NoInfer` remain checker-resident handlers; they
 have no source file (see FR13). `Awaited<T>` is source-expressible
-and lives in `std:promise` (consumed shape-only by `await`); we
+and lives in `std:async` (consumed shape-only by `await`); we
 fall back to an intrinsic only if a concrete blocker surfaces.
 
 ### FR2. Pseudo-package layout
@@ -302,6 +306,33 @@ Imports are **type-system-only, runtime-erased.** At runtime
 environment; the import statement adds type information to the
 compile-time scope and codegen erases the import line. Zero runtime
 cost. The "package" is a type-checking grouping mechanism only.
+
+**Lowering via `@js` decorators.** Pseudo-package binding names
+are not generally identical to their JS-runtime names
+(`math.sin(x)` lowers to `Math.sin(x)`; `parseInt` from
+`std:number` lowers to bare `parseInt(...)`, not
+`Number.parseInt(...)`; `iterator.key` re-export lowers to
+`Symbol.iterator`). Every **exported** top-level declaration in
+a pseudo-package `.esc` file therefore carries a per-declaration
+`@js("...")` decorator naming the JS expression it lowers to.
+The decorator is the single source of truth for codegen; there is
+no package-level default. The Escalier parser learns decorator
+syntax as part of this workstream (the only decorator defined here
+is `@js`, but the grammar leaves room for future ones). Class
+construction with `new` is **not** carried by `@js` — the codegen
+inserts `new` at the call site based on the callee's type, so
+`Date()` in Escalier lowers to `new Date()` even though the
+class's decorator is just `@js("Date")`.
+
+**`export` is required for package members.** Pseudo-package
+`.esc` files follow the regular Escalier module visibility rule:
+only `export`-prefixed declarations are visible outside the file
+and participate in the package's namespace. The canonical shape
+is `<decorators> export declare <kind> ...` (decorators outermost,
+then `export`, then `declare`). Internal helper declarations
+(used only inside the file) are not exported and carry no `@js`.
+This parallels how user packages work and makes
+package-private declarations expressible.
 
 ### FR4. Binding-shape flags
 
@@ -400,11 +431,14 @@ dominant class; no shortcut, binding stays lowercase `iterator`.
 **Eligible packages from the FR1 partition.** `std:array` (→
 `Array`), `std:string` (→ `String`), `std:number` (→ `Number`),
 `std:boolean` (→ `Boolean`), `std:bigint` (→ `BigInt`),
-`std:regexp` (→ `RegExp`), `std:promise` (→ `Promise`),
-`std:symbol` (→ `Symbol`), `std:object` (→ `Object`),
-`std:function` (→ `Function`), `std:date` (→ `Date`), `std:map`
-(→ `Map`), `std:set` (→ `Set`), `std:weak_ref` (→ `WeakRef`).
-Each per-class package's `?local` binding is its class.
+`std:regexp` (→ `RegExp`), `std:symbol` (→ `Symbol`),
+`std:object` (→ `Object`), `std:function` (→ `Function`),
+`std:date` (→ `Date`), `std:map` (→ `Map`), `std:set` (→
+`Set`), `std:weak_ref` (→ `WeakRef`). Each per-class package's
+`?local` binding is its class. `Promise` is **not** in this
+list — it lives in `std:async` (bundled, multiple top-level
+classes), so under `?local` the access is `async.Promise.all(…)`
+rather than bare `Promise.all(…)`.
 
 **Disambiguation.** Under `?local` the binding `Array` resolves
 both as a namespace member (`Array.someOtherExport`) and as the
@@ -446,9 +480,9 @@ still require an explicit import of the owning package.
 ordinary cycle-detection rule for user packages does **not** apply
 to imports between `std:*`, `dom:*`, and (reserved) `node:*`
 packages. The pseudo-package layer naturally contains cycles:
-`std:promise` references `Iterable<T>` from `std:iterator`;
-`std:iterator` may reference `Promise<T>` (or types from
-`std:async`) for protocol overlap; `Error` subclasses in
+`std:async` (which owns `Promise<T>`) references `Iterable<T>`
+from `std:iterator`; `std:iterator` may reference `Promise<T>`
+from `std:async` for protocol overlap; `Error` subclasses in
 `std:error` may reference types declared in `std:array` or
 `std:string`; etc. These cycles are purely **type-level** and
 **runtime-erased** — the JavaScript runtime exposes all of these
@@ -553,28 +587,27 @@ Activation semantics for these augmentations — per-importing-file
 scoping, transitive propagation rules, independence from the
 binding-shape flag — are specified in FR9.
 
-### FR8. Symbol augmentation and well-known symbol re-exports
+### FR8. Well-known symbol re-exports
 
-The registry mechanism from FR7 applies to `Symbol`'s static side
-as well. `std:symbol` declares `Symbol` with no well-known symbols
-on its static side. Sibling packages augment `Symbol` with the
-symbols they own: `std:iterator` adds `iterator: unique symbol`,
-`std:async` adds `asyncIterator: unique symbol`, and so on.
+All well-known symbols (`Symbol.iterator`, `Symbol.asyncIterator`,
+`Symbol.match`, `Symbol.toPrimitive`, …) are declared directly on
+`Symbol`'s static side in `std:symbol`. There is **no Symbol
+augmentation mechanism**; the registry-based augmentation in FR7
+does not extend to Symbol.
 
 **Shape-loaded language-level use vs. explicit references.**
 Language-level use of well-known symbols (the `for-of` desugaring
 referencing `Symbol.iterator`, etc.) goes through the checker's
 **shape knowledge** and does not require any import. Explicit
-references via `Symbol.<name>` require importing both `std:symbol`
-(for the `Symbol` name) and the domain package that owns the
-augmentation entry.
+references via `Symbol.<name>` require importing `std:symbol`.
 
-**Each domain package also re-exports its owned symbol(s) under a
-short package-local name**, so a file that needs the well-known
-symbol does not have to import `std:symbol` separately. The same
-runtime value is exposed twice — once as the namespace member from
-the domain package, once as a static on `Symbol` — and a file
-picks whichever reads better:
+**Domain-package aliases.** Each domain package re-exports the
+well-known symbol(s) it cares about under a short package-local
+name, so a file that needs the symbol does not have to import
+`std:symbol` separately. The re-export is a plain
+`export declare val` whose `@js` decorator points at the
+canonical `Symbol.<name>` expression — same runtime value, two
+spellings; a file picks whichever reads better:
 
 ```escalier
 import "std:iterator"
@@ -590,7 +623,6 @@ vs. the dual-import form:
 
 ```escalier
 import "std:symbol"
-import "std:iterator"
 
 class Range {
     [Symbol.iterator]() {
@@ -611,22 +643,23 @@ multi-symbol packages; the bare `key` form avoids stuttering for
 singletons.
 
 The name on the `Symbol` static side keeps its standard ECMAScript
-spelling (`Symbol.iterator`, `Symbol.match`, …) regardless of how
-the domain package re-exports it. Having the same value exported
-by more than one pseudo-package is fine — the package-local name
-is an alias for the canonical `Symbol`-side name, not a separate
+spelling (`Symbol.iterator`, `Symbol.match`, …); the package-local
+alias is a re-export with a different binding name, not a separate
 symbol.
 
-Symbol augmentations share the activation semantics specified in
-FR9 (per-importing-file scoping, explicit-re-export propagation,
-flag independence).
+The re-export aliases are visible only when the importing file
+imports the domain package; this is plain Escalier import scoping,
+not the FR9 augmentation-activation rule (which no longer applies
+to Symbol).
 
 ### FR9. Augmentation activation semantics
 
-The scoping rules below apply uniformly to both DOM-style registry
-augmentation (FR7) and Symbol augmentation (FR8). Any future
-augmentation mechanism added under this workstream inherits the
-same rules.
+The scoping rules below apply to DOM-style registry augmentation
+(FR7). Any future augmentation mechanism added under this
+workstream inherits the same rules. (FR8's domain-package
+re-exports of well-known symbols are **not** augmentations —
+they are plain Escalier exports governed by ordinary import
+scoping, not by these rules.)
 
 **Per-importing-file scoping.** Augmentation activation is
 **scoped to the importing module**, not the whole compilation
@@ -645,10 +678,10 @@ application to import the package is not enough. Each file that
 the application's entry point gives the entry-point file the
 narrow type but leaves the library file with the pre-augmentation
 shape. The same applies to every other augmentation entry point
-(SVG element families, Symbol well-known keys, etc.). When in
-doubt, import the augmenting package in every file that consumes
-the augmented type. This is the inverse of the TypeScript habit
-of relying on a global side-effect import.
+(SVG element families, etc.). When in doubt, import the augmenting
+package in every file that consumes the augmented type. This is
+the inverse of the TypeScript habit of relying on a global
+side-effect import.
 
 **Transitive propagation via explicit re-export.** Augmentations
 propagate only through **explicit re-exports** of the pseudo-package.
@@ -703,7 +736,7 @@ A one-time seeding tool. A Go binary that:
 4. Partitions the resulting declarations into pseudo-package `.esc`
    files under `std/` or `dom/`, per the partition specified in
    FR1 (e.g. `Array<T>` → `std/array.esc`; `Promise<T>` →
-   `std/promise.esc`; `Error` family → `std/error.esc`; etc.). The
+   `std/async.esc`; `Error` family → `std/error.esc`; etc.). The
    partition is driven by a hand-maintained mapping table in the
    converter, not by anything in the `.d.ts`.
 
@@ -719,12 +752,14 @@ A one-time seeding tool. A Go binary that:
    `.esc` output: the partition-table lookup is the choke point,
    and a missing entry surfaces there, not somewhere downstream.
 5. Detects which TS-lib symbols belong to registries
-   (`HTMLElementTagNameMap`, `HTMLElementEventMap`, …) and which
-   well-known symbols belong to which `std:*` package (e.g.
-   `Symbol.iterator` → `std/iterator.esc` augmentation;
-   `Symbol.asyncIterator` → `std/async.esc` augmentation), routing
-   their per-feature entries into the appropriate package's
-   augmentation block.
+   (`HTMLElementTagNameMap`, `HTMLElementEventMap`, …) and routes
+   their per-feature entries into the appropriate feature
+   package's augmentation block. Well-known symbols
+   (`Symbol.iterator`, `Symbol.asyncIterator`, …) are **not**
+   routed — they stay on `Symbol`'s static side in
+   `std/symbol.esc` (FR8). Domain-package re-export aliases
+   (`iterator.key`, `async.key`, …) are hand-authored at
+   bootstrap, not emitted by the converter.
 6. **Preserves JSDoc.** Leading JSDoc comments attached to TS-side
    declarations carry through to the emitted Escalier declaration
    as doc comments. This is a pass-through, not a transform — most
@@ -735,10 +770,43 @@ A one-time seeding tool. A Go binary that:
    `@param` syntax touched up where Escalier differs); the rest
    pass through verbatim. `internal/dts_parser/` must attach
    leading JSDoc to declaration AST nodes if it does not already.
-7. Renders each output file via the (now-validated) declaration
+7. **Emits `export` and an `@js` decorator on every top-level
+   declaration.** Pseudo-package members must be exported (FR3
+   `export` rule), and exported declarations carry an `@js`
+   decorator whose argument is the JS expression the declaration
+   lowers to (see FR3 lowering paragraph): class declarations get
+   `@js("<ClassName>")`; free functions inside a `declare namespace`
+   block get `@js("<Namespace>.<fn>")` after the namespace
+   flattening of step 2; declarations hoisted from the global
+   scope into a partition package (e.g. `parseInt` →
+   `std:number`) get `@js("<bare name>")`. The canonical emitted
+   shape is `@js("...") export declare <kind> ...`.
+   Hand-authored declarations not present in any `.d.ts` (Symbol
+   re-exports, `Symbol.customMatcher`) are written with explicit
+   `export` and `@js` at bootstrap.
+8. Renders each output file via the (now-validated) declaration
    printer and `internal/type_system/print_type.go`.
-8. Supports a `--check` mode that diffs generated output against
-   committed files without overwriting.
+9. Supports two re-run modes against a committed `.esc` tree:
+   - **Write mode (additive).** Adds declarations present in the
+     `.d.ts` but missing from the committed `.esc` (new TS-lib
+     symbols since the last bump), and adds members on existing
+     classes / interfaces that the `.d.ts` has but the `.esc` is
+     missing. **Never overwrites** an existing declaration's body,
+     signature, or hand-added annotations — hand-edits are sticky.
+     Reports declarations present in the `.esc` but absent from the
+     `.d.ts` (likely TS-side removal) as informational; no automatic
+     deletion.
+   - **`--check` mode (read-only).** Verifies that the committed
+     `.esc` is compatible with the `.d.ts`: fails on missing
+     declarations, on function/method signatures whose param or
+     return types are not assignable to/from the `.d.ts` original
+     (per the checker's assignability rules), and on the same
+     incompatibility for properties on classes/interfaces. Adding
+     `throws`, lifetimes, mutability, or narrowing a parameter /
+     return type within the `.d.ts` shape is **not** incompatible
+     and does not trip `--check`; the compatibility check is
+     one-directional (Escalier-side may be stricter than TS-side,
+     not looser). Intended for CI on TS-version bumps.
 
 **One-time seeding.** After the initial bootstrap commit, the
 pseudo-package `.esc` files are first-class Escalier source. Hand-edits add `throws`, lifetimes, and any
@@ -747,8 +815,10 @@ no merge layer. JSDoc is *not* in the hand-edit list because it is
 carried through automatically by step 6 above; manual editing of
 JSDoc is only for places where the upstream comment is wrong,
 incomplete, or Escalier-specific behavior diverges. Re-running the
-converter is a **review tool** (`--check`), never a build step;
-its output is never auto-applied.
+converter is **never a wholesale regeneration**: write mode is
+strictly additive (new declarations / new members only) and
+`--check` is read-only. Existing declaration bodies, signatures, and
+hand-added annotations are never overwritten.
 
 **`throws` annotations are hand-curated for now.** Scraping MDN is
 tempting but the failure modes (prose-not-data extraction,
@@ -794,10 +864,9 @@ Instead, the checker drives two new loading paths:
      / `std:bigint`.
    - Array literals → `std:array`.
    - Regex literals → `std:regexp`.
-   - `async fn` / `await` → `std:promise` (and `std:async` if the
-     file uses async iteration).
+   - `async fn` / `await` / `for await x of xs` → `std:async`
+     (one package covers Promise, Awaited, and async iteration).
    - `for x of xs` / generators → `std:iterator`.
-   - `for await x of xs` → `std:async`.
    - An explicit reference to a `std:error` class name
      (`Error`, `TypeError`, `RangeError`, `SyntaxError`,
      `ReferenceError`) inside a `try` / `catch` / `throw`
@@ -846,8 +915,10 @@ merge layer. After the one-time bootstrap conversion of
 `lib.*.d.ts`, the generated `.esc` files are **manually edited** to
 add receiver mutability, lifetimes, thrown-exception annotations,
 and any other Escalier-specific refinements, and then **maintained
-as source going forward** (re-running the converter is only a
-`--check` review tool; its output is never auto-applied). JSDoc is
+as source going forward** (re-running the converter is additive
+only — write mode adds new declarations / members from upstream TS,
+`--check` verifies compatibility, and neither mode overwrites
+existing bodies, signatures, or hand-added annotations). JSDoc is
 carried through automatically by the converter (FR10 step 6); it
 appears in the hand-edit list only when upstream comments need
 correction.
@@ -874,7 +945,7 @@ hook (see escalier-lang/escalier#631).
 
 `Awaited<T>` is **not** in this list. Before resorting to an
 intrinsic implementation, we verify the source-level definition:
-write `Awaited<T>` in `std:promise` as the recursive conditional
+write `Awaited<T>` in `std:async` as the recursive conditional
 type (the same shape as TypeScript's definition, per
 escalier-lang/escalier#630), exercise it against a representative
 fixture (nested promises, thenables, mixed `T | Promise<T>`,
@@ -944,17 +1015,20 @@ in a file that has not imported the owning package, the LSP offers
 a quick-fix that:
 
 1. Adds the appropriate namespace import statement
-   (`import "std:promise"`, `import "std:math"`, …).
+   (`import "std:async"`, `import "std:math"`, …).
 2. For single-class shortcut packages (FR5): leaves the bare
    reference unchanged, since the import binding *is* the class
-   name in its capitalized form. `Promise.all([...])` typed
-   without an import → quick-fix adds `import "std:promise"` and
-   leaves the reference as-is; same for `Array.isArray`,
-   `Date.now`, `Error(...)`, etc.
+   name in its capitalized form. `Array.isArray(...)` typed
+   without an import → quick-fix adds `import "std:array"` and
+   leaves the reference as-is; same for `Date.now`,
+   `Error(...)`, etc.
 3. For non-shortcut packages: rewrites the bare reference to
-   qualify it through the resulting namespace binding (e.g. a
-   bare `sin(x)` triggers `import "std:math"` and rewrites the
-   call to `math.sin(x)`).
+   qualify it through the resulting namespace binding. A bare
+   `sin(x)` triggers `import "std:math"` and rewrites the call
+   to `math.sin(x)`. A bare `Promise.all([...])` triggers
+   `import "std:async"` and rewrites to `async.Promise.all([...])`
+   (Promise lives in `std:async` and is not eligible for the
+   single-class shortcut — see FR5).
 
 Named imports from pseudo-packages are out of scope (see
 Non-goals), so the quick-fix only adds a namespace import. There
@@ -1153,7 +1227,7 @@ per step.
   Babel and swc demonstrate it is tractable, but it is its own work
   item that this workstream depends on.
 - **Cross-package references between `std:*` files.** `Promise<T>`
-  in `std:promise` references `Iterable<T>` from `std:iterator`;
+  in `std:async` references `Iterable<T>` from `std:iterator`;
   `Array<T>` in `std:array` references the iteration protocol; etc.
   The existing module
   loader handles this for user code; just need to confirm it works
@@ -1240,12 +1314,13 @@ Requirements:
   not; assert the augmented-vs-base type at each site (e.g.
   `createElement("canvas")` narrows in the importing file,
   returns the base element type in the sibling).
-- **Symbol augmentation tests** (per FR8). Verify that domain
-  packages augment `Symbol`'s static side correctly; verify the
-  package-local re-export convention (`iterator.key`,
-  `regexp.matchKey`, …) aliases to the same runtime value as
-  `Symbol.<name>`; verify that a class implementing
-  `[iterator.key]()` is recognized as iterable by `for-of`.
+- **Symbol re-export tests** (per FR8). Verify that
+  domain-package aliases (`iterator.key`, `regexp.matchKey`, …)
+  refer to the same runtime value as `Symbol.<name>` via the
+  `@js("Symbol.<name>")` decorator; verify that a class
+  implementing `[iterator.key]()` is recognized as iterable by
+  `for-of` (importing `std:iterator` alone, without
+  `std:symbol`).
 - **Augmentation activation tests** (per FR9). Per-file scoping:
   sibling file without the import does not see augmentations.
   Transitive propagation: `export * from "dom:canvas"` propagates
