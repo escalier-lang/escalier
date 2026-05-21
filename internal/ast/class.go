@@ -9,6 +9,7 @@ type ClassDecl struct {
 	Extends        *TypeRefTypeAnn   // optional superclass (can be a simple identifier or a generic type reference)
 	Implements     []*TypeRefTypeAnn // interfaces this class implements (may be nil/empty)
 	Body           []ClassElem       // fields, methods, etc.
+	Decorators     []*Decorator
 	export         bool
 	declare        bool
 	override       bool

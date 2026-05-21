@@ -77,18 +77,31 @@ func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypePa
 	return lifetimeParams, typeParams
 }
 
-// Decl = 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)
+// Decl = decorator* 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)
 //
 //	| 'override'? 'declare' 'module' StrLit '{' decl* '}'
 //	| 'override'? 'declare' 'global' '{' decl* '}'
+//
+// Decorators (`@name(args...)`) sit above any modifier keywords; an
+// `@js` between `export` and `declare` is a parse error. See
+// planning/builtins/implementation_plan.md §3.3.
 func (p *Parser) Decl() ast.Decl {
 	export := false
 	override := false
 	declare := false
 	async := false
 
+	decorators := p.parseDecorators()
+
 	token := p.lexer.next()
 	start := token.Span.Start
+	if len(decorators) > 0 {
+		start = decorators[0].Span_.Start
+	}
+	if token.Type == AtSign {
+		p.reportError(token.Span,
+			"decorators must appear before 'export'/'declare', not between them")
+	}
 	var exportSpan ast.Span
 	if token.Type == Export {
 		export = true
@@ -169,7 +182,65 @@ func (p *Parser) Decl() ast.Decl {
 	if decl != nil && override {
 		decl.SetOverride(true)
 	}
+	if decl != nil && len(decorators) > 0 {
+		attachDecorators(decl, decorators)
+	}
 	return decl
+}
+
+// parseDecorators consumes any leading `@name(arg, ...)` decorators
+// from the input and returns them in source order. Per §3.3, the
+// argument for `@js` is a single string literal; the parser accepts
+// any positional expression list to leave room for future decorators.
+func (p *Parser) parseDecorators() []*ast.Decorator {
+	var decorators []*ast.Decorator
+	for p.lexer.peek().Type == AtSign {
+		atTok := p.lexer.next() // consume '@'
+		nameTok := p.lexer.peek()
+		var name *ast.Ident
+		if nameTok.Type != Identifier {
+			p.reportError(nameTok.Span, "Expected identifier after '@'")
+			name = ast.NewIdentifier("",
+				ast.Span{Start: atTok.Span.End, End: atTok.Span.End, SourceID: p.lexer.source.ID})
+		} else {
+			p.lexer.consume()
+			name = ast.NewIdentifier(nameTok.Value, nameTok.Span)
+		}
+
+		var args []ast.Expr
+		end := name.Span().End
+		if p.lexer.peek().Type == OpenParen {
+			p.lexer.consume() // consume '('
+			args = parseDelimSeq(p, CloseParen, Comma, p.expr)
+			closeEnd := p.expect(CloseParen, AlwaysConsume)
+			end = closeEnd
+		}
+		decorators = append(decorators, &ast.Decorator{
+			Name:  name,
+			Args:  args,
+			Span_: ast.NewSpan(atTok.Span.Start, end, p.lexer.source.ID),
+		})
+	}
+	return decorators
+}
+
+// attachDecorators stamps the decorator list onto a parsed declaration.
+// Decorators on unsupported decl kinds (namespace, declare module /
+// global) are silently dropped — the parser already rejects the
+// placement upstream, so this is a defensive no-op.
+func attachDecorators(decl ast.Decl, decorators []*ast.Decorator) {
+	switch d := decl.(type) {
+	case *ast.VarDecl:
+		d.Decorators = decorators
+	case *ast.FuncDecl:
+		d.Decorators = decorators
+	case *ast.TypeDecl:
+		d.Decorators = decorators
+	case *ast.InterfaceDecl:
+		d.Decorators = decorators
+	case *ast.ClassDecl:
+		d.Decorators = decorators
+	}
 }
 
 // namespaceDecl parses `namespace Name { <decl>* }` after the `namespace`

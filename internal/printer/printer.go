@@ -167,12 +167,212 @@ func (p *Printer) printDecl(decl ast.Decl) {
 		p.printInterfaceDecl(d)
 	case *ast.EnumDecl:
 		p.printEnumDecl(d)
+	case *ast.ClassDecl:
+		p.printClassDecl(d)
 	default:
 		p.writeString("/* unknown declaration */")
 	}
 }
 
+func (p *Printer) printClassDecl(decl *ast.ClassDecl) {
+	p.printDecorators(decl.Decorators)
+	if decl.Export() {
+		p.writeString("export ")
+	}
+	if decl.Declare() {
+		p.writeString("declare ")
+	}
+
+	p.writeString("class ")
+	p.writeString(decl.Name.Name)
+
+	if len(decl.TypeParams) > 0 {
+		p.printTypeParams(decl.TypeParams)
+	}
+
+	if decl.Extends != nil {
+		p.writeString(" extends ")
+		p.printTypeAnn(decl.Extends)
+	}
+
+	if len(decl.Implements) > 0 {
+		p.writeString(" implements ")
+		for i, impl := range decl.Implements {
+			if i > 0 {
+				p.writeString(", ")
+			}
+			p.printTypeAnn(impl)
+		}
+	}
+
+	if len(decl.Body) == 0 {
+		p.writeString(" {}")
+		return
+	}
+
+	p.writeString(" {")
+	p.newline()
+	p.indent()
+	for i, elem := range decl.Body {
+		p.printClassElem(elem)
+		if i < len(decl.Body)-1 {
+			p.writeString(",")
+		}
+		p.newline()
+	}
+	p.dedent()
+	p.writeString("}")
+}
+
+func (p *Printer) printClassElem(elem ast.ClassElem) {
+	switch e := elem.(type) {
+	case *ast.FieldElem:
+		if e.Static {
+			p.writeString("static ")
+		}
+		if e.Private {
+			p.writeString("private ")
+		}
+		if e.Readonly {
+			p.writeString("readonly ")
+		}
+		p.printObjKey(e.Name)
+		if e.Optional {
+			p.writeString("?")
+		}
+		if e.Type != nil {
+			p.writeString(": ")
+			p.printTypeAnn(e.Type)
+		}
+		if e.Value != nil {
+			p.writeString(" = ")
+			p.printExpr(e.Value)
+		}
+	case *ast.MethodElem:
+		if e.Static {
+			p.writeString("static ")
+		}
+		if e.Private {
+			p.writeString("private ")
+		}
+		if e.Fn.Async {
+			p.writeString("async ")
+		}
+		p.printObjKey(e.Name)
+		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
+		if e.Fn.Body != nil {
+			p.space()
+			p.printBlock(e.Fn.Body)
+		}
+	case *ast.GetterElem:
+		if e.Static {
+			p.writeString("static ")
+		}
+		if e.Private {
+			p.writeString("private ")
+		}
+		p.writeString("get ")
+		p.printObjKey(e.Name)
+		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
+		if e.Fn.Body != nil {
+			p.space()
+			p.printBlock(e.Fn.Body)
+		}
+	case *ast.SetterElem:
+		if e.Static {
+			p.writeString("static ")
+		}
+		if e.Private {
+			p.writeString("private ")
+		}
+		p.writeString("set ")
+		p.printObjKey(e.Name)
+		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
+		if e.Fn.Body != nil {
+			p.space()
+			p.printBlock(e.Fn.Body)
+		}
+	case *ast.ConstructorElem:
+		if e.Private {
+			p.writeString("private ")
+		}
+		p.writeString("constructor")
+		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
+		if e.Fn.Body != nil {
+			p.space()
+			p.printBlock(e.Fn.Body)
+		}
+	}
+}
+
+// printMethodSig prints a method/getter/setter/constructor signature
+// including an optional `self` / `mut self` receiver. It is parallel
+// to printFuncSig but injects the receiver as the first parameter
+// inside the parentheses so the round-trip preserves it.
+func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
+	if len(sig.TypeParams) > 0 {
+		p.printTypeParams(sig.TypeParams)
+	}
+	p.writeString("(")
+	first := true
+	if recv != nil {
+		if recv.Mut {
+			p.writeString("mut self")
+		} else {
+			p.writeString("self")
+		}
+		first = false
+	}
+	for _, param := range sig.Params {
+		if !first {
+			p.writeString(", ")
+		}
+		first = false
+		p.printPattern(param.Pattern)
+		if param.Optional {
+			p.writeString("?")
+		}
+		if param.TypeAnn != nil {
+			p.writeString(": ")
+			p.printTypeAnn(param.TypeAnn)
+		}
+	}
+	p.writeString(")")
+	if sig.Return != nil {
+		p.writeString(" -> ")
+		p.printTypeAnn(sig.Return)
+	}
+	if sig.Throws != nil {
+		p.writeString(" throws ")
+		p.printTypeAnn(sig.Throws)
+	}
+}
+
+// printDecorators emits each decorator on its own line, preserving
+// source order. Called by every decoratable decl's print method
+// (VarDecl, FuncDecl, TypeDecl, InterfaceDecl, ClassDecl) before any
+// modifier keywords. Per planning/builtins/implementation_plan.md
+// §3.3, decorators sit above `export` / `declare`.
+func (p *Printer) printDecorators(decorators []*ast.Decorator) {
+	for _, dec := range decorators {
+		p.writeString("@")
+		p.writeString(dec.Name.Name)
+		if dec.Args != nil {
+			p.writeString("(")
+			for i, arg := range dec.Args {
+				if i > 0 {
+					p.writeString(", ")
+				}
+				p.printExpr(arg)
+			}
+			p.writeString(")")
+		}
+		p.newline()
+	}
+}
+
 func (p *Printer) printVarDecl(decl *ast.VarDecl) {
+	p.printDecorators(decl.Decorators)
 	if decl.Export() {
 		p.writeString("export ")
 	}
@@ -200,6 +400,7 @@ func (p *Printer) printVarDecl(decl *ast.VarDecl) {
 }
 
 func (p *Printer) printFuncDecl(decl *ast.FuncDecl) {
+	p.printDecorators(decl.Decorators)
 	if decl.Export() {
 		p.writeString("export ")
 	}
@@ -222,6 +423,7 @@ func (p *Printer) printFuncDecl(decl *ast.FuncDecl) {
 }
 
 func (p *Printer) printTypeDecl(decl *ast.TypeDecl) {
+	p.printDecorators(decl.Decorators)
 	if decl.Export() {
 		p.writeString("export ")
 	}
@@ -241,6 +443,7 @@ func (p *Printer) printTypeDecl(decl *ast.TypeDecl) {
 }
 
 func (p *Printer) printInterfaceDecl(decl *ast.InterfaceDecl) {
+	p.printDecorators(decl.Decorators)
 	if decl.Export() {
 		p.writeString("export ")
 	}
@@ -1210,7 +1413,7 @@ func (p *Printer) printTypeParams(params []*ast.TypeParam) {
 	for i, param := range params {
 		p.writeString(param.Name)
 		if param.Constraint != nil {
-			p.writeString(" extends ")
+			p.writeString(": ")
 			p.printTypeAnn(param.Constraint)
 		}
 		if param.Default != nil {

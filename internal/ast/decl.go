@@ -42,6 +42,7 @@ type VarDecl struct {
 	Pattern      Pat
 	TypeAnn      TypeAnn // optional
 	Init         Expr    // optional
+	Decorators   []*Decorator
 	export       bool
 	declare      bool
 	override     bool
@@ -111,6 +112,7 @@ type FuncDecl struct {
 	VarID int // Set by the rename pass (liveness Phase 2)
 	FuncSig
 	Body       *Block // optional
+	Decorators []*Decorator
 	export     bool
 	declare    bool
 	override   bool
@@ -179,6 +181,7 @@ type TypeDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	TypeAnn    TypeAnn
+	Decorators []*Decorator
 	export     bool
 	declare    bool
 	override   bool
@@ -225,6 +228,7 @@ type InterfaceDecl struct {
 	TypeParams     []*TypeParam
 	Extends        []*TypeRefTypeAnn
 	TypeAnn        *ObjectTypeAnn
+	Decorators     []*Decorator
 	export         bool
 	declare        bool
 	override       bool
