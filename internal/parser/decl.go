@@ -183,10 +183,14 @@ func (p *Parser) Decl() ast.Decl {
 		decl.SetOverride(true)
 	}
 	if decl != nil && len(decorators) > 0 {
-		if _, isEnum := decl.(*ast.EnumDecl); isEnum {
+		switch decl.(type) {
+		case *ast.EnumDecl:
 			p.reportError(decorators[0].Span_,
 				"decorators are not allowed on enum declarations")
-		} else {
+		case *ast.NamespaceDecl:
+			p.reportError(decorators[0].Span_,
+				"decorators are not allowed on namespace declarations")
+		default:
 			attachDecorators(decl, decorators)
 		}
 	}
@@ -230,9 +234,10 @@ func (p *Parser) parseDecorators() []*ast.Decorator {
 }
 
 // attachDecorators stamps the decorator list onto a parsed declaration.
-// Decorators on unsupported decl kinds (namespace, declare module /
-// global) are silently dropped — the parser already rejects the
-// placement upstream, so this is a defensive no-op.
+// Decl() rejects decorators on enum and namespace declarations before
+// reaching here; declare module / global never reach this path because
+// Decl() returns early for those. Any other unsupported decl kind is a
+// defensive no-op.
 func attachDecorators(decl ast.Decl, decorators []*ast.Decorator) {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
@@ -522,6 +527,8 @@ func (p *Parser) parseConstructorElem(
 		// this when no `self` token was found (receiver == nil); the error
 		// has already been reported, and inserting a phantom param here
 		// would mask the absence in the AST.
+		// TODO(#635): once FuncSig has SelfParam, store the receiver there
+		// instead of synthesizing it into Fn.Params[0].
 		if receiver != nil {
 			selfPat := ast.NewIdentPat("self", receiver.Mut, nil, nil, receiver.Span_)
 			params = append(params, &ast.Param{

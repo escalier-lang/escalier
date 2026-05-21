@@ -405,6 +405,10 @@ func TestParseDeclareBlockErrors(t *testing.T) {
 			input:         `@js("E") enum E { A, B }`,
 			expectedError: "decorators are not allowed on enum declarations",
 		},
+		"DecoratorOnNamespace": {
+			input:         `@js("N") namespace N { declare val x: number }`,
+			expectedError: "decorators are not allowed on namespace declarations",
+		},
 	}
 
 	for name, test := range tests {

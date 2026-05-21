@@ -326,6 +326,8 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 		// Constructors materialize the receiver as Params[0] so the body
 		// checker can read it uniformly. Skip it here so we don't print
 		// `self` twice.
+		// TODO(#635): once FuncSig carries SelfParam, drop this
+		// structural name check and skip the receiver via that field.
 		if len(params) > 0 {
 			if ip, ok := params[0].Pattern.(*ast.IdentPat); ok && ip.Name == "self" {
 				params = params[1:]

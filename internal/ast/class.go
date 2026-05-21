@@ -65,6 +65,7 @@ func (d *ClassDecl) Override() bool    { return d.override }
 func (d *ClassDecl) SetOverride(o bool) { d.override = o }
 func (d *ClassDecl) Span() Span        { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
+	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
 		if d.Extends != nil {
 			d.Extends.Accept(v)

@@ -105,6 +105,14 @@ export declare type T = number`},
 		{"multiple decorators stacked", `@js("Math.PI")
 @js("Math.PI")
 export declare val PI: number`},
+		// `@foo` (no parens) and `@foo()` (empty parens) round-trip as
+		// distinct forms; the printer uses `Args == nil` vs an empty
+		// slice to tell them apart. Pin both shapes so a future change
+		// that conflates them is forced to update the audit.
+		{"decorator no args", `@foo
+declare val x: number`},
+		{"decorator empty args", `@foo()
+declare val x: number`},
 	}
 
 	for _, tt := range tests {
