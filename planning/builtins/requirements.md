@@ -144,10 +144,18 @@ parsed copy of each `std:*` package. The user-visible model is
 "the checker just knows" what methods strings/arrays/promises have;
 the lazy-load detail is an implementation concern.
 
-**Package partition (full list).** Per-class packages — each
-contains exactly one top-level class (and possibly related type
-aliases or interfaces), and is eligible for the single-class
-shortcut defined in FR5:
+**Package partition.** The canonical, full enumeration of
+every `std:*` and `dom:*` package — names, contents, single-
+class shortcut eligibility, drops — lives in the partition
+table at [implementation_plan.md §6.1](implementation_plan.md#61-partition-table).
+That table is the single source of truth and the input to the
+converter's routing logic; this section sketches the *shape* of
+the partition (per-class vs bundled, the rationale for a few
+non-obvious placements) without re-enumerating every package.
+
+Per-class packages — each contains exactly one top-level class
+(and possibly related type aliases or interfaces), and is
+eligible for the single-class shortcut defined in FR5:
 
 - `std:array` — `Array<T>`
 - `std:string`, `std:number`, `std:boolean`, `std:bigint` —
@@ -175,11 +183,11 @@ Bundled packages — multiple types, no single-class shortcut:
 
 - `std:iterator` — `Iterator<T>`, `Iterable<T>`,
   `IterableIterator<T>`, `IteratorResult<T>`,
-  `Generator<T, R, N>`; re-exports `Symbol.iterator` as `key`
+  `Generator<T, R, N>`; re-exports `Symbol.iterator` as `iteratorKey`
   (FR8).
 - `std:async` — `Promise<T>`, `Awaited<T>`, `AsyncIterator<T>`,
   `AsyncIterable<T>`, `AsyncGenerator<T, R, N>`, `AggregateError`;
-  re-exports `Symbol.asyncIterator` as `key` (FR8). Depends on
+  re-exports `Symbol.asyncIterator` as `asyncIteratorKey` (FR8). Depends on
   `std:iterator` for the iteration-protocol base. `Promise` lives
   here rather than in a dedicated `std:promise` because the
   surface (Promise + async iteration + async errors) is small
@@ -311,7 +319,7 @@ cost. The "package" is a type-checking grouping mechanism only.
 are not generally identical to their JS-runtime names
 (`math.sin(x)` lowers to `Math.sin(x)`; `parseInt` from
 `std:number` lowers to bare `parseInt(...)`, not
-`Number.parseInt(...)`; `iterator.key` re-export lowers to
+`Number.parseInt(...)`; `iterator.iteratorKey` re-export lowers to
 `Symbol.iterator`). Every **exported** top-level declaration in
 a pseudo-package `.esc` file therefore carries a per-declaration
 `@js("...")` decorator naming the JS expression it lowers to.
@@ -613,7 +621,7 @@ spellings; a file picks whichever reads better:
 import "std:iterator"
 
 class Range {
-    [iterator.key]() {
+    [iterator.iteratorKey]() {
         // ... implement the iterator protocol
     }
 }
@@ -631,16 +639,16 @@ class Range {
 }
 ```
 
-**Naming convention.** A domain package owning **one** well-known
-symbol exposes it as `<package>.key`: `iterator.key`, `async.key`.
-A package owning **multiple** well-known symbols exposes each as
-`<package>.<name>Key`, using the symbol's ECMAScript spelling for
-`<name>`: for example, if `std:regexp` ends up owning the
-regex-related symbols, it exposes them as `regexp.matchKey`,
-`regexp.replaceKey`, `regexp.searchKey`, `regexp.splitKey`,
-`regexp.matchAllKey`. The `<name>Key` form is consistent for
-multi-symbol packages; the bare `key` form avoids stuttering for
-singletons.
+**Naming convention.** Every domain-package re-export uses the
+verbose `<package>.<name>Key` form, where `<name>` is the
+symbol's ECMAScript spelling. `iterator.iteratorKey`,
+`async.asyncIteratorKey`, `regexp.matchKey`, `regexp.replaceKey`,
+`regexp.searchKey`, `regexp.splitKey`, `regexp.matchAllKey`. No
+abbreviated `<package>.key` form for singletons: future
+spec additions that add a second well-known symbol to a
+currently-single-symbol package would otherwise force a rename
+of `key` → `<name>Key`, breaking every importer. Verbose
+uniformly costs a few characters; the rename cliff is real.
 
 The name on the `Symbol` static side keeps its standard ECMAScript
 spelling (`Symbol.iterator`, `Symbol.match`, …); the package-local
@@ -758,7 +766,7 @@ A one-time seeding tool. A Go binary that:
    (`Symbol.iterator`, `Symbol.asyncIterator`, …) are **not**
    routed — they stay on `Symbol`'s static side in
    `std/symbol.esc` (FR8). Domain-package re-export aliases
-   (`iterator.key`, `async.key`, …) are hand-authored at
+   (`iterator.iteratorKey`, `async.asyncIteratorKey`, …) are hand-authored at
    bootstrap, not emitted by the converter.
 6. **Preserves JSDoc.** Leading JSDoc comments attached to TS-side
    declarations carry through to the emitted Escalier declaration
@@ -1315,10 +1323,10 @@ Requirements:
   `createElement("canvas")` narrows in the importing file,
   returns the base element type in the sibling).
 - **Symbol re-export tests** (per FR8). Verify that
-  domain-package aliases (`iterator.key`, `regexp.matchKey`, …)
+  domain-package aliases (`iterator.iteratorKey`, `regexp.matchKey`, …)
   refer to the same runtime value as `Symbol.<name>` via the
   `@js("Symbol.<name>")` decorator; verify that a class
-  implementing `[iterator.key]()` is recognized as iterable by
+  implementing `[iterator.iteratorKey]()` is recognized as iterable by
   `for-of` (importing `std:iterator` alone, without
   `std:symbol`).
 - **Augmentation activation tests** (per FR9). Per-file scoping:

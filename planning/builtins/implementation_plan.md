@@ -44,8 +44,10 @@ the prelude; §10 adds LSP/diagnostic tooling on top.
 **Step ordering rationale.** §1 is first because a failed audit
 forces parser work that gates everything else. §2 (resolver),
 §3 (decorator parser + codegen lowering), and §5 (converter MVP)
-can run in parallel after §1 — they share no internal dependency
-beyond the audit. §3 must land before §5 lands its decorator
+have no ordering dependency on each other after §1 — they share
+no internal dependency beyond the audit, so the implementer is
+free to land them in any order (or interleave). §3 must land
+before §5 lands its decorator
 emission step; §3 must also land before any fixture exercises
 codegen end-to-end. §4 lands after §2 because augmentation tests
 need real `import` statements. §7 produces the source-of-truth
@@ -315,7 +317,7 @@ References to pseudo-package members must still lower to the
 correct JS runtime expression, and the Escalier-side binding name
 is not generally the JS-side name (`math.sin(x)` → `Math.sin(x)`;
 `parseInt(s)` from `std:number` → bare `parseInt(s)`;
-`iterator.key` re-export → `Symbol.iterator`; etc.). The mapping
+`iterator.iteratorKey` re-export → `Symbol.iterator`; etc.). The mapping
 is carried by **per-declaration `@js` decorators** authored
 inline in the pseudo-package `.esc` source.
 
@@ -347,7 +349,7 @@ export declare class Number { … }
 
 // std/iterator.esc — Symbol re-export
 @js("Symbol.iterator")
-export declare val key: unique symbol
+export declare val iteratorKey: unique symbol
 
 // std/array.esc — single-class shortcut package
 @js("Array")
@@ -448,15 +450,32 @@ type-check):
 1. Every **exported** top-level declaration in a pseudo-package
    file must carry an `@js` decorator. Missing `@js` is an
    internal-compiler-error naming the file and declaration.
-2. An **unexported** top-level declaration in a pseudo-package
-   file must **not** carry an `@js` decorator. The decorator
-   only matters at codegen sites, which reference exported
-   names; an unexported `@js` declaration is dead and almost
-   certainly a typo (someone forgot `export`). Error message
-   tells the user to add `export` or drop `@js`.
+2. An **unexported** top-level **value-level** declaration
+   (`declare val`, `declare var`, `declare fn`, `declare class`)
+   in a pseudo-package file is **rejected**. Pseudo-package
+   files exist to expose runtime-visible JS surface; an
+   unexported value-level declaration has no runtime mapping
+   and is invisible to importers — almost certainly a typo
+   (someone forgot `export`). Error message tells the user to
+   add `export` (and `@js`).
+3. An unexported **type-level** declaration (`declare type`,
+   unexported `interface`) is allowed and must not carry `@js`
+   — purely a checker-internal helper, no runtime presence.
+4. **`@js` target validation.** The argument of every `@js`
+   decorator is checked against the set of known JS globals
+   extracted from the pinned TypeScript `lib.*.d.ts`. A typo
+   like `@js("Mat.sin")` errors at load time with the file,
+   declaration, and the decorator's argument named in the
+   diagnostic. The extraction is mechanical: walk
+   `internal/dts_parser/` output for top-level names + their
+   members, materialize the dotted-path set once at compiler
+   startup, and check decorator arguments against it.
+   Hand-authored Escalier-specific names not in TS lib
+   (`Symbol.customMatcher`) are listed in a small allow-list
+   alongside the loader.
 
-Both rules apply only to files under the resolved stdlib data
-directory (§2.2a). User code is free of these constraints.
+All four rules apply only to files under the resolved stdlib
+data directory (§2.2a). User code is free of these constraints.
 
 ### 3.5 Gates
 
@@ -467,7 +486,7 @@ directory (§2.2a). User code is free of these constraints.
 - Codegen fixture under [fixtures/](../../fixtures/) covers:
   - Namespace member: `math.sin(x)` → `Math.sin(x)`.
   - Hoisted global: `parseInt(s)` → `parseInt(s)`.
-  - Symbol re-export: `iterator.key` → `Symbol.iterator`.
+  - Symbol re-export: `iterator.iteratorKey` → `Symbol.iterator`.
   - Single-class shortcut: `Array.isArray(xs)` →
     `Array.isArray(xs)`; `Date()` (construct) → `new Date()`.
   - Binding-shape independence: the same call lowers identically
@@ -506,6 +525,32 @@ Decision required up-front (before writing more code): does the
 existing merge code support per-file scoping, or does
 augmentation need its own loader path? Output of this
 investigation lives in a short note appended to this section.
+
+**Pre-§4 spike (gates the rest of §4).** Before committing to
+the §4 implementation shape, run a time-boxed spike (≤3 days)
+that answers two questions concretely:
+
+1. Can the existing `internal/interop/` merge primitive be
+   parameterized by an "active augmentation set" derived from
+   the importing file's resolved imports? Build a throwaway
+   two-file fixture (`dom/dom.esc` with empty
+   `HTMLElementTagNameMap`; `dom/canvas.esc` augmenting it) and
+   wire just enough to make `createElement("canvas")` narrow
+   in the importing file and not in a sibling.
+2. Does indexed access (`HTMLElementTagNameMap[K]`) re-resolve
+   against the per-file augmentation set, or does it snapshot
+   at registry-declaration time?
+
+If question 1's answer is "no", the spike output documents the
+shape of the new loader path needed (rough Go interface +
+estimated PR count) so §4's scope is sized realistically before
+work starts. If question 2's answer is "snapshot", the indexed-
+access machinery is added to §4's work items.
+
+The spike's deliverable is a short note appended to this
+section (committed before §4 implementation begins) — yes/no on
+each question, with the prototype code linked if it's worth
+keeping.
 
 Touch points:
 - [internal/interop/](../../internal/interop/) — existing merge.
@@ -610,7 +655,7 @@ bootstrap review.
   resolver accepts the cycle; the same shape between two user
   packages errors.
 
-(Symbol re-export aliasing — `iterator.key` as an alias of
+(Symbol re-export aliasing — `iterator.iteratorKey` as an alias of
 `Symbol.iterator` via the `@js` decorator — is covered by §3.5's
 codegen fixtures and the §7 bootstrap review; no separate
 augmentation test is needed because Symbol no longer uses the
@@ -772,8 +817,8 @@ output and the LSP name-index (§10.3). Driven by the
 | `std:map`         | per-class           | `Map`                                                                                                                            |
 | `std:set`         | per-class           | `Set`                                                                                                                            |
 | `std:weak_ref`    | per-class           | `WeakRef`                                                                                                                        |
-| `std:iterator`    | bundled             | `Iterator<T>`, `Iterable<T>`, `IterableIterator<T>`, `IteratorResult<T>`, `Generator<T,R,N>`; re-exports `Symbol.iterator` as `key`         |
-| `std:async`       | bundled             | `Promise<T>`, source-level `Awaited<T>`, `AsyncIterator<T>`, `AsyncIterable<T>`, `AsyncGenerator<T,R,N>`, `AggregateError`; re-exports `Symbol.asyncIterator` as `key`; depends on `std:iterator`. `Promise` lives here (not in a dedicated `std:promise`); under `?local` access is `async.Promise.all(…)`. |
+| `std:iterator`    | bundled             | `Iterator<T>`, `Iterable<T>`, `IterableIterator<T>`, `IteratorResult<T>`, `Generator<T,R,N>`; re-exports `Symbol.iterator` as `iteratorKey`         |
+| `std:async`       | bundled             | `Promise<T>`, source-level `Awaited<T>`, `AsyncIterator<T>`, `AsyncIterable<T>`, `AsyncGenerator<T,R,N>`, `AggregateError`; re-exports `Symbol.asyncIterator` as `asyncIteratorKey`; depends on `std:iterator`. `Promise` lives here (not in a dedicated `std:promise`); under `?local` access is `async.Promise.all(…)`. |
 | `std:error`       | bundled             | `Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`. `URIError` → `std:url`; `AggregateError` → `std:async`. `EvalError` dropped |
 | `std:url`         | bundled             | `URIError`, `encodeURI`, `decodeURI`, `encodeURIComponent`, `decodeURIComponent`                                                 |
 | `std:math`        | namespace           | unchanged from existing layout                                                                                                   |
@@ -841,7 +886,7 @@ actually made.
   augmentation block.
 - Well-known symbol declarations on `SymbolConstructor` stay
   in `std/symbol.esc` — they are **not** rerouted (FR8). The
-  domain-package re-export aliases (`iterator.key`, `async.key`,
+  domain-package re-export aliases (`iterator.iteratorKey`, `async.asyncIteratorKey`,
   `regexp.matchKey`, …) are hand-authored at §7 bootstrap, not
   emitted by the converter.
 
@@ -973,10 +1018,10 @@ files as the source of truth.
    - `Symbol.customMatcher` (Escalier-specific, not in
      `lib.*.d.ts`) hand-authored in `std:symbol`, written as
      `@js("Symbol.customMatcher") export declare …` per §3.
-   - **Symbol re-exports** per FR8 (`iterator.key`, `async.key`,
+   - **Symbol re-exports** per FR8 (`iterator.iteratorKey`, `async.asyncIteratorKey`,
      `regexp.matchKey`, …) hand-authored in their owning
      packages, written as
-     `@js("Symbol.<name>") export declare val <name>: unique symbol`.
+     `@js("Symbol.<name>") export declare val <name>Key: unique symbol`.
      The converter does not emit these because they are not part
      of any `lib.*.d.ts`.
    - **`export` + `@js` decorator review.** Verify every
@@ -1095,22 +1140,38 @@ shape-loader memoizes by package URI. No bootstrap cycle: each
 `std:*` package contains only declarations (no value-level
 expressions needing their own prelude).
 
-### 9.2a Cross-package shape-load verification
+### 9.2a Cross-package references between pseudo-packages
 
-The risk callout from requirements §"Risks" — "cross-package
-references between `std:*` files" — needs explicit
-verification here. `Promise<T>` in `std:async` references
-`Iterable<T>` from `std:iterator`; `Array<T>` in `std:array`
-references the iteration protocol; etc. The existing module
-loader handles cross-package references for user code; this
-phase confirms it works for shape-loaded `std:*` packages
-under the per-file shape-loader.
+**All cross-package references inside `std:*` / `dom:*`
+packages require explicit `import` statements** — the same
+rule as user code. `std/async.esc` writes
+`import "std:iterator"` if it references `Iterable<T>`;
+`std/array.esc` writes `import "std:iterator"` for the
+iteration protocol; `dom/canvas.esc` writes
+`import "dom:dom"` to extend `HTMLElement`. There is no
+implicit "all sibling packages visible" rule and no shape-load
+side effect that pulls in another package's names. The
+shape-loader's only job at the F-level is to decide which
+packages F's *user-level* syntax depends on; inside each
+loaded package, name resolution is ordinary.
 
-Test: a fixture that uses only an `async fn` + a `for of`
-loop should trigger shape-loading of both `std:async` and
-`std:iterator`, and `Promise<T>` should resolve `Iterable<T>`
-references successfully without explicit imports being present
-in user code. If this fails, the loader needs adjustment.
+**Cycles between `std:*` / `dom:*` packages are permitted**
+because everything in these schemes is, at runtime, a
+pre-existing builtin — the cycle is purely type-level and
+runtime-erased, so there is no initialization-order concern.
+The resolver / `internal/dep_graph/` special-cases the `std:`,
+`dom:`, and `node:` schemes to skip cycle reporting when both
+endpoints of an edge live under these schemes (already
+specified in §4.3). Cycles among user packages, and any cycle
+that touches a user package, remain disallowed.
+
+Test: a fixture using only an `async fn` + a `for of` loop
+triggers shape-loading of `std:async`; resolving `Promise<T>`'s
+internal reference to `Iterable<T>` succeeds because
+`std/async.esc` itself imports `std:iterator` — not because
+shape-loading magically pulled `std:iterator` into F's scope.
+A mutual-import fixture between two `std:*` packages confirms
+the cycle-allowance rule.
 
 ### 9.3 Delete the legacy paths (same PR)
 
@@ -1356,12 +1417,9 @@ Per requirements §"Testing strategy":
 - **Filesystem-resident stdlib data.** `.esc` files under
   `internal/interop/data/` ship alongside the compiler binary
   and are loaded from disk at compile time, **not** embedded
-  via `//go:embed`. Discovery per §2.2a. This is a deliberate
-  divergence from the requirements doc's "embedded data" line:
-  user-editability of builtins (tweaking a type, adding a
-  package) without recompiling the compiler is a higher
-  priority than the single-binary distribution win that
-  embedding would provide.
+  via `//go:embed`. Discovery per §2.2a. Editability of
+  builtins (tweaking a type, adding a package) without
+  recompiling the compiler is the priority.
 - **Zero runtime cost.** Pseudo-package imports erase at
   codegen.
 - **Soundness of activation.** A file's view of cross-package
