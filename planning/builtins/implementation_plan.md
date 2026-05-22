@@ -13,7 +13,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 
 | §   | Phase                                                | FRs         | Status | Depends on | Notes                                                                                                                                                                                                                                                |
 | --- | ---------------------------------------------------- | ----------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Declaration-printer audit                            | FR14        | ⬜      | —          | Riskiest gate; if the existing parser can't round-trip some `lib.*.d.ts` declaration form, the converter is blocked on parser work.                                                                                                                  |
+| 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
 | 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ⬜      | §1         | Parser change (bare-string imports, `?flag` suffix), resolver routes to a stdlib data directory on disk, scope-insertion applies `?local`/`?nested`/`?flat`. Placeholder `std:math` stub is the gate.                                              |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ⬜      | §1         | Decorator parser support (new grammar); per-declaration `@js("...")` carries the JS-runtime expression each pseudo-package member lowers to; codegen drops scheme-prefixed `import` lines and emits the decorator's argument at each reference. |
 | 4   | Cross-package augmentation + inter-package imports   | FR6–FR9     | ⬜      | §2         | Confirm §6 interface-merge can be reused for cross-package augmentation (registry interfaces only) with per-importing-file activation. Pseudo-package import cycles are permitted. Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). |
@@ -123,8 +123,63 @@ does not need to emit nested namespace syntax.
 - [internal/type_system/print_type.go](../../internal/type_system/print_type.go)
 
 **Gate.** All `TestPrintDeclAudit_*` tests pass; the audit
-section in this doc lists any unsupported forms with their
-follow-up issues.
+section below lists any unsupported forms with their
+follow-up work.
+
+**Audit results.** The audit lives in
+[internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go).
+`TestPrintDeclAudit_RoundTrip` covers every form in the §1 scope
+including `declare class`, constrained type parameters (`<T: U>`),
+and `@js(...)` decorators on every decoratable decl kind, all of
+which the initial pass identified as gaps. Three follow-ups
+landed alongside the audit to close those gaps:
+
+- **`<T: U>` constraint printing.** `printTypeParams` in
+  [internal/printer/printer.go](../../internal/printer/printer.go)
+  now emits `: U` instead of the TypeScript `extends U`.
+- **`declare class` printer.** Added `printClassDecl` and
+  `printClassElem` in
+  [internal/printer/printer.go](../../internal/printer/printer.go);
+  emits fields, methods (with `self`/`mut self` receivers),
+  getters/setters, and constructors.
+- **`@js(...)` decorator parsing and printing.** New `AtSign`
+  token in
+  [internal/parser/token.go](../../internal/parser/token.go) and
+  [internal/parser/lexer.go](../../internal/parser/lexer.go); new
+  `ast.Decorator` node
+  ([internal/ast/decorator.go](../../internal/ast/decorator.go))
+  with a `Decorators []*Decorator` field added to `VarDecl`,
+  `FuncDecl`, `TypeDecl`, `InterfaceDecl`, and `ClassDecl`;
+  parsing in
+  [internal/parser/decl.go](../../internal/parser/decl.go) `Decl()`
+  collects leading `@name(args...)` decorators and attaches them to
+  the parsed decl (decorators between `export` and `declare` are a
+  parse error per §3.3); printer emits each decorator on its own
+  line above the modifiers.
+
+Intentionally out of scope (no follow-up):
+
+- **`declare namespace`.** Per work-item scope, the converter
+  flattens TS `declare namespace` blocks into top-level
+  declarations; the printer never needs to emit nested namespace
+  syntax.
+- **`declare module "..."`.** Pseudo-packages are files, not
+  ambient nested modules. The parser accepts the form; the audit
+  does not require print round-trip.
+
+Converter-side decisions taken during the audit (these constrain
+the §5 / §6 converter implementation):
+
+- TS `T extends U ? A : B` maps to Escalier `if T : U { A } else { B }`.
+- TS `T extends Array<infer U> ? U : never` maps to
+  `if T : Array<infer U> { U } else { never }`.
+- TS `{ [K in keyof T]: T[K] }` maps to
+  `{[K]: T[K] for K in keyof T}` (Escalier's `for ... in` form);
+  rename clauses use the bracket-name slot, e.g.
+  `` {[`prefix_${K}`]: T[K] for K in keyof T} ``.
+- Interface methods print as `name(self, ...) -> R` (and
+  `name(mut self, ...)` for mutating methods); getters/setters
+  use the leading `get`/`set` modifier with a `self` receiver.
 
 ---
 
@@ -413,14 +468,19 @@ syntax. This phase adds it:
   Decorators between `export` and `declare` are a parse error.
   Multiple decorators on one declaration stack top-to-bottom;
   ordering preserved for printer round-trip.
-- Decorators are allowed on `declare fn`, `declare class`,
-  `declare val`/`declare var`, `declare type`, and interface
-  declarations — in both exported and unexported positions, but
-  see the loader rule in §3.4: unexported declarations carrying
-  `@js` are rejected for pseudo-package files. Decorators are
-  disallowed on inner declarations (members, parameters) — out
-  of scope for this workstream; revisit if a concrete need
-  surfaces.
+- Decorators are allowed on the **value-introducing** decl kinds
+  — `declare fn`, `declare class`, `declare val` / `declare var`
+  — in both exported and unexported positions, with the loader
+  rule in §3.4 catching unexported declarations carrying `@js`
+  in pseudo-package files. Decorators are **rejected at parse
+  time** on `declare type` and `declare interface` because those
+  forms erase at codegen and have no runtime reference for `@js`
+  to lower; the parser reports the error at the decorator's span
+  ("decorators are not allowed on type/interface declarations
+  (type aliases / interfaces have no runtime form)"). Decorators
+  are also disallowed on inner declarations (members,
+  parameters) — out of scope for this workstream; revisit if a
+  concrete need surfaces.
 - Printer round-trips decorators (FR14 audit must cover them,
   in combination with the `export` modifier).
 

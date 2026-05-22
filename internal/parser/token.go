@@ -9,6 +9,7 @@ const (
 	AmpersandAmpersand
 	Any
 	Arrow
+	AtSign
 	Asterisk
 	Async
 	Await

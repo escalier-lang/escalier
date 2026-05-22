@@ -279,6 +279,8 @@ func (lexer *Lexer) next() *Token {
 		}
 	case ',':
 		token = NewToken(Comma, ",", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+	case '@':
+		token = NewToken(AtSign, "@", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '(':
 		token = NewToken(OpenParen, "(", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case ')':

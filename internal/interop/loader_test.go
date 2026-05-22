@@ -72,10 +72,12 @@ func TestDiscoverMissingOverrideDirsIsNotAnError(t *testing.T) {
 }
 
 func TestDiscoverReportsParseErrors(t *testing.T) {
-	// Source with a clear syntax error: three `@` tokens the parser
+	// Source with a clear syntax error: three `#` tokens the parser
 	// can't recognise, at columns 18, 19, 20 of the only line.
+	// (`@` is reserved for decorators since #builtins-§3.3, so use
+	// a character with no syntactic role.)
 	builtin := fstest.MapFS{
-		"broken.esc": &fstest.MapFile{Data: []byte("declare global { @@@ }\n")},
+		"broken.esc": &fstest.MapFile{Data: []byte("declare global { ### }\n")},
 	}
 	files, errs := Discover(context.Background(), "", nil, builtin)
 	require.Empty(t, files, "the broken file must not produce a ParsedOverride")

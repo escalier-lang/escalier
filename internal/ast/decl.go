@@ -42,6 +42,7 @@ type VarDecl struct {
 	Pattern      Pat
 	TypeAnn      TypeAnn // optional
 	Init         Expr    // optional
+	Decorators   []*Decorator
 	export       bool
 	declare      bool
 	override     bool
@@ -78,6 +79,7 @@ func (d *VarDecl) Override() bool     { return d.override }
 func (d *VarDecl) SetOverride(o bool) { d.override = o }
 func (d *VarDecl) Span() Span         { return d.span }
 func (d *VarDecl) Accept(v Visitor) {
+	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
 		d.Pattern.Accept(v)
 		if d.TypeAnn != nil {
@@ -111,6 +113,7 @@ type FuncDecl struct {
 	VarID int // Set by the rename pass (liveness Phase 2)
 	FuncSig
 	Body       *Block // optional
+	Decorators []*Decorator
 	export     bool
 	declare    bool
 	override   bool
@@ -155,6 +158,8 @@ func (d *FuncDecl) Override() bool     { return d.override }
 func (d *FuncDecl) SetOverride(o bool) { d.override = o }
 func (d *FuncDecl) Span() Span         { return d.span }
 func (d *FuncDecl) Accept(v Visitor) {
+	// TODO(#634): traverse d.Decorators once Decorator has Accept.
+	// TODO(#635): once FuncSig has SelfParam, visit it before d.Params.
 	if v.EnterDecl(d) {
 		for _, param := range d.Params {
 			param.Pattern.Accept(v)
