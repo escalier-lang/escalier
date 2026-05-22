@@ -55,6 +55,14 @@ type Checker struct {
 	// Lives in a high range so it doesn't collide with user source IDs
 	// (which start at 0 and grow with the file count).
 	stdlibNextSourceID int
+
+	// Per-file, per-scheme tracking of which URI contributed each
+	// identifier merged via `?flat`. Used to produce taxonomy-aligned
+	// "?flat name collision" diagnostics that name the prior package.
+	// Outer key is the file scope, middle key is the scheme
+	// (`std`/`dom`), inner key is the identifier; value is the
+	// contributing URI (e.g. `dom:canvas`).
+	flatContributors map[*Scope]map[string]map[string]string
 }
 
 func NewChecker(ctx context.Context) *Checker {

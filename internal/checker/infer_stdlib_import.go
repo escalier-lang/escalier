@@ -133,20 +133,19 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 		return nil // in-progress / cycle sentinel; cycles are permitted per §4
 	}
 
-	// Bind per shape. Only ?local is implemented in this slice; ?nested
-	// and ?flat will be wired up in the follow-up alongside the
-	// single-class shortcut.
-	if shape.local {
+	// Bind per shape. Single-class shortcut applies only to ?local
+	// (per §2.4 last bullet).
+	switch {
+	case shape.local:
 		return c.bindStdlibLocal(ctx, pkg, pkgNs, span)
+	case shape.nested:
+		return c.bindStdlibNested(ctx, scheme, pkg, pkgNs, span)
+	case shape.flat:
+		return c.bindStdlibFlat(ctx, scheme, importStmt.PackageName, pkgNs, span)
+	default:
+		// Unreachable: resolveStdlibFlags always sets exactly one shape.
+		return nil
 	}
-	flag := "nested"
-	if shape.flat {
-		flag = "flat"
-	}
-	return []Error{&GenericError{
-		message: fmt.Sprintf("?%s binding-shape is not yet implemented; use ?local", flag),
-		span:    span,
-	}}
 }
 
 // splitScheme cracks `scheme:pkg` into its parts. Returns ok=false if
@@ -352,11 +351,32 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 	return pkgNs, inferErrs
 }
 
-// bindStdlibLocal binds the package namespace under the lowercased
-// last URI segment in the importing file's scope.
+// bindStdlibLocal binds the package under the lowercased last URI
+// segment in the importing file's scope. If the package declares a
+// top-level class whose name matches the package name
+// case-insensitively (FR5 single-class shortcut), bind that class
+// directly with its original capitalization instead.
 func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Namespace, span ast.Span) []Error {
-	bindingName := lastSegmentLower(pkg)
 	filtered := filterExportedNamespace(pkgNs)
+
+	// Single-class shortcut: look for a class whose name matches the
+	// package name case-insensitively. Activation requires the package
+	// to expose both a value (the constructor) and a type alias under
+	// the same identifier — which is exactly the shape a class
+	// declaration produces.
+	if className, ok := findSingleClassShortcut(filtered, pkg); ok {
+		ns := ctx.Scope.Namespace
+		ns.Values[className] = filtered.Values[className]
+		ns.Types[className] = filtered.Types[className]
+		// TODO (§2.4): also expose other package exports as namespace
+		// members on the same binding, with static methods winning on
+		// collision. Deferred until a stdlib package actually has both
+		// a class and non-class exports — the current `std:array` stub
+		// has only the class.
+		return nil
+	}
+
+	bindingName := lastSegmentLower(pkg)
 	if err := ctx.Scope.Namespace.SetNamespace(bindingName, filtered); err != nil {
 		return []Error{&GenericError{
 			message: fmt.Sprintf("cannot bind stdlib namespace %q: %s", bindingName, err.Error()),
@@ -364,6 +384,145 @@ func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Na
 		}}
 	}
 	return nil
+}
+
+// findSingleClassShortcut returns the original-capitalization class
+// name when ns exposes a value+type pair whose identifier matches pkg
+// case-insensitively. Returns ("", false) otherwise.
+func findSingleClassShortcut(ns *type_system.Namespace, pkg string) (string, bool) {
+	for name := range ns.Values {
+		if !strings.EqualFold(name, pkg) {
+			continue
+		}
+		if _, hasType := ns.Types[name]; hasType {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// bindStdlibNested binds the package under <scheme>.<pkg> in the file
+// scope, lazily creating the per-scheme namespace. Duplicate ?nested
+// imports of the same package within a single file are silently
+// idempotent — bookkeeping keys on the URI (per §2.3) so the first
+// import "won" and any subsequent ones add nothing.
+func (c *Checker) bindStdlibNested(ctx Context, scheme, pkg string, pkgNs *type_system.Namespace, span ast.Span) []Error {
+	schemeNs, err := getOrCreateSchemeNamespace(ctx.Scope.Namespace, scheme)
+	if err != nil {
+		return []Error{&GenericError{message: err.Error(), span: span}}
+	}
+	if _, exists := schemeNs.GetNamespace(pkg); exists {
+		// Already bound from an earlier ?nested import of the same URI.
+		return nil
+	}
+	filtered := filterExportedNamespace(pkgNs)
+	if err := schemeNs.SetNamespace(pkg, filtered); err != nil {
+		return []Error{&GenericError{
+			message: fmt.Sprintf("cannot bind %s.%s: %s", scheme, pkg, err.Error()),
+			span:    span,
+		}}
+	}
+	return nil
+}
+
+// bindStdlibFlat merges exported package members directly into the
+// per-scheme namespace. Name collisions across two ?flat-imported
+// packages in the same file are hard errors per FR4 — the second
+// import is rejected and the diagnostic names the prior contributing
+// package.
+func (c *Checker) bindStdlibFlat(ctx Context, scheme, uri string, pkgNs *type_system.Namespace, span ast.Span) []Error {
+	schemeNs, err := getOrCreateSchemeNamespace(ctx.Scope.Namespace, scheme)
+	if err != nil {
+		return []Error{&GenericError{message: err.Error(), span: span}}
+	}
+	filtered := filterExportedNamespace(pkgNs)
+	contributors := c.flatContributorsFor(ctx.Scope, scheme)
+
+	// Iterate identifiers in a deterministic order so the diagnostic
+	// chosen on a multi-name collision is stable across runs.
+	names := flatMergeNames(filtered)
+	for _, name := range names {
+		if prior, ok := contributors[name]; ok && prior != uri {
+			return []Error{&GenericError{
+				message: fmt.Sprintf(
+					"?flat name collision: %q is contributed by both %q and %q; "+
+						"rename upstream or drop one import's ?flat flag",
+					name, prior, uri),
+				span: span,
+			}}
+		}
+	}
+	for _, name := range names {
+		if binding, ok := filtered.Values[name]; ok {
+			schemeNs.Values[name] = binding
+		}
+		if alias, ok := filtered.Types[name]; ok {
+			schemeNs.Types[name] = alias
+		}
+		if subNs, ok := filtered.Namespaces[name]; ok {
+			if _, exists := schemeNs.Namespaces[name]; !exists {
+				schemeNs.Namespaces[name] = subNs
+			}
+		}
+		contributors[name] = uri
+	}
+	return nil
+}
+
+// flatMergeNames returns the union of identifier names in a filtered
+// package namespace (values + types + sub-namespaces), sorted for
+// deterministic iteration.
+func flatMergeNames(ns *type_system.Namespace) []string {
+	set := make(map[string]struct{}, len(ns.Values)+len(ns.Types)+len(ns.Namespaces))
+	for name := range ns.Values {
+		set[name] = struct{}{}
+	}
+	for name := range ns.Types {
+		set[name] = struct{}{}
+	}
+	for name := range ns.Namespaces {
+		set[name] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for name := range set {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// getOrCreateSchemeNamespace returns the `<scheme>` sub-namespace on
+// ns, creating it on first access. Returns an error if a non-namespace
+// binding (value/type) already occupies that name in ns.
+func getOrCreateSchemeNamespace(ns *type_system.Namespace, scheme string) (*type_system.Namespace, error) {
+	if existing, ok := ns.GetNamespace(scheme); ok {
+		return existing, nil
+	}
+	schemeNs := type_system.NewNamespace()
+	if err := ns.SetNamespace(scheme, schemeNs); err != nil {
+		return nil, fmt.Errorf("cannot create per-scheme namespace %q: %w", scheme, err)
+	}
+	return schemeNs, nil
+}
+
+// flatContributorsFor returns the per-file, per-scheme map tracking
+// which URI contributed each ?flat-merged identifier. The map is
+// lazily created so files that never use ?flat pay no cost.
+func (c *Checker) flatContributorsFor(fileScope *Scope, scheme string) map[string]string {
+	if c.flatContributors == nil {
+		c.flatContributors = make(map[*Scope]map[string]map[string]string)
+	}
+	perFile, ok := c.flatContributors[fileScope]
+	if !ok {
+		perFile = make(map[string]map[string]string)
+		c.flatContributors[fileScope] = perFile
+	}
+	perScheme, ok := perFile[scheme]
+	if !ok {
+		perScheme = make(map[string]string)
+		perFile[scheme] = perScheme
+	}
+	return perScheme
 }
 
 // lastSegmentLower returns the last `_`-separated segment of pkg,
