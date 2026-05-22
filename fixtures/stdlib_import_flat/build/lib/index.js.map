@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"std:math?flat\"\n\nexport val pi: number = std.PI\n"],"names":[],"mappings":"aAEW,AAAA,KAAa,AAAA,IAAI"}

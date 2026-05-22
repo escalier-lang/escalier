@@ -241,7 +241,6 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 	if len(libSources) > 0 {
 		inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
-		depGraph := dep_graph.BuildDepGraph(inMod)
 
 		c := checker.NewChecker(ctx)
 		inferCtx := checker.Context{
@@ -250,7 +249,13 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		typeErrors := c.InferDepGraph(inferCtx, depGraph)
+		// InferModule (rather than the lower-level InferDepGraph) so
+		// per-file imports — including pseudo-package `import "std:*"`
+		// statements — are processed before declarations are checked.
+		// Codegen below still wants the dep_graph; we rebuild it
+		// (deterministic from the parsed module).
+		typeErrors := c.InferModule(inferCtx, inMod)
+		depGraph := dep_graph.BuildDepGraph(inMod)
 
 		// No longer need MergeOverloadedFunctions - overloads are already grouped by BindingKey
 

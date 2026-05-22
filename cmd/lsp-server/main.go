@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/url"
 	"os"
@@ -23,6 +24,16 @@ var (
 )
 
 func main() {
+	// Mirror cmd/escalier's `--stdlib-dir` plumbing so the LSP server
+	// can be launched with a non-default stdlib data dir (per
+	// planning/builtins §2.2a). Editors that don't know how to pass
+	// flags can still use the ESCALIER_STDLIB_DIR env var.
+	stdlibDir := flag.String("stdlib-dir", "", "directory containing the stdlib `.esc` files (std/, dom/, node/)")
+	flag.Parse()
+	if *stdlibDir != "" {
+		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
+	}
+
 	fmt.Fprintf(os.Stderr, "Hello, from lsp-server\n")
 
 	server := glsp_server.NewServer(NewServer(), lsName, false)
