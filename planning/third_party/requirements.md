@@ -110,6 +110,20 @@ This section defines terms used throughout this document.
   proposal; see Open Questions for the canonical definition.
 - **Converter** — `tools/dts_to_esc/`, the AST-to-AST translator
   owned by the builtins workstream and reused here.
+- **Builtin registry** — the mapping from TypeScript lib
+  identifiers (e.g. `Array`, `ReadonlyArray`, `Promise`,
+  `HTMLElement`) to a `(escalier module, escalier type
+  expression)` pair, derived by inverting the `@js(...)`
+  decorators on `export declare` items in the committed `std:*`
+  and `dom:*` `.esc` files. The converter consults this registry
+  to generate import headers and rewrite type references in the
+  converted baseline. The registry is owned by the builtins
+  workstream; this workstream is purely a consumer.
+- **Origin annotation** — an AST-level field populated by the
+  converter that records the original TypeScript syntax for a
+  rewritten type reference (e.g. `ReadonlyArray<T>` for an
+  emitted Escalier `Array<T>`). Used only by diagnostics; ignored
+  by the checker and by hand-authored `.esc` source.
 
 ## Functional requirements
 
@@ -283,6 +297,92 @@ partition table (that machinery is specific to the builtins
 ambient-vs-pseudo-package split) and no on-disk regeneration of
 checked-in source.
 
+### FR7. Import-header generation and type-reference rewriting
+
+The baseline `.esc` produced by the converter shall be
+self-contained: every type or value identifier it references must
+resolve either to a declaration in the same file or to an explicit
+`import` from a `std:*` / `dom:*` pseudo-package. The converter
+shall not rely on ambient globals.
+
+To achieve this, the converter shall:
+
+1. While translating each declaration, look up every referenced
+   TypeScript lib identifier in the **builtin registry** (see
+   Terminology). Identifiers that resolve to nothing locally and
+   are absent from the registry are a conversion error (see FM6).
+2. Replace the TypeScript identifier with the registry's
+   Escalier type expression. The expression encodes shape and
+   mutability only (e.g. `mut Array<T>`, `Array<T>`) and is
+   **module-unqualified** — the import that brings the name into
+   scope is emitted separately in step 3. The registry entry
+   itself still carries the `(module, name)` pair so step 3 can
+   look it up; only the substituted expression is unqualified.
+   This is a **semantic** rewrite, not a rename. Examples that
+   drive the requirement:
+   - TS `Array<T>` (mutable) → Escalier `mut Array<T>`.
+   - TS `ReadonlyArray<T>` → Escalier `Array<T>` (immutable by
+     default).
+   - TS `Map<K,V>` (mutable) → Escalier `mut Map<K, V>`.
+   - TS `ReadonlyMap<K,V>` → Escalier `Map<K,V>`.
+   - TS `Record<K,V>` → corresponding Escalier shape.
+
+   Aliased imports (e.g. `import { ImmutableArray as
+   ReadonlyArray }`) are explicitly rejected as the rewriting
+   strategy. Rationale: Escalier users should see Escalier types,
+   not TypeScript types lightly disguised. Diagnostics carry the
+   original TS spelling via FR8 for users debugging interop
+   issues.
+3. Emit grouped `import` statements at the top of the file
+   covering every distinct `(module, name)` pair referenced by the
+   converted declarations. Imports are deduplicated and sorted
+   for deterministic output.
+
+The rewriting rule for mutability is load-bearing: TypeScript
+treats `Array<T>` as mutable by convention, so every unwrapped
+`Array<T>` in a third-party `.d.ts` must convert to Escalier's
+mutable form. The Readonly* variants convert to Escalier's
+immutable defaults. Getting this rule wrong silently strips
+mutability from third-party APIs; correctness here is a soundness
+concern, not a stylistic one.
+
+The examples above are all type-position rewrites. Value-position
+rewriting — constructors invoked as values (`new Array(0)`),
+constant references (`Math.PI`), and any other place where a
+registry identifier appears as a value rather than a type — has
+the same shape (lookup, replace, emit import) but separate
+correctness concerns (e.g. a constructor's value-position
+mutability binding may differ from its type-position one). The
+registry must carry both sides for identifiers that appear in
+both positions; whether that's one entry with two fields or two
+parallel entries is tracked in Open Questions ("Type-vs-value
+rewriting parity"). Implementers should treat type-position and
+value-position rewriting as independent passes that share the
+same registry, not as a single fused pass.
+
+### FR8. Preserve original TS source for diagnostics
+
+For every type reference the converter rewrites under FR7, the
+emitted AST node shall carry an **origin annotation** recording
+the original TypeScript spelling (e.g. `ReadonlyArray<T>`).
+Diagnostics that mention such a type shall include the original
+spelling alongside the Escalier rendering when the annotation is
+present. Concrete rendering (suffix, parenthetical, structured
+field) is deferred to the diagnostic-formatting design; the
+contract here is that the information is retained on the AST and
+survives serialization to the cached `.esc` file.
+
+The annotation field shall be ignored by the parser when the
+checker loads hand-authored `.esc` source — it has no effect on
+type identity, equivalence, or assignability. The converter is
+the only producer.
+
+The annotation shall round-trip through the textual cache format
+(see FR2). A natural encoding is a decorator on the converted
+declaration (e.g. `@ts("ReadonlyArray<T>")`); whether per-decl,
+per-reference, or per-line is the right granularity is deferred
+to the implementation plan.
+
 ## Failure modes and error reporting
 
 This section enumerates the failure modes the third-party pipeline
@@ -362,6 +462,30 @@ incompatible ways that §5's `Merge` cannot reconcile.
 A future precedence policy (e.g. "Tier 1b wins over Tier 1a") may
 be considered, but is out of scope for Phase 1.
 
+### FM6. Unknown TypeScript identifier with no registry entry
+
+A `.d.ts` references a TypeScript lib identifier that is not
+declared locally and is absent from the builtin registry (see
+FR7). This typically means the stdlib is missing a declaration
+that the third-party API depends on.
+
+- **Observable:** error diagnostic naming the dep, the
+  identifier, and the file/span of the reference. Form: `cannot
+  convert "<pkg>@<version>": unknown TypeScript identifier
+  <name> at <path>:<line>:<col> — no entry in std:/dom: registry`.
+  The message should list the likely causes so users can
+  triage before filing an issue: (a) the stdlib is missing a
+  declaration for a standard TypeScript lib type — file an issue
+  so it can be added with an `@js(...)` decorator; (b) the
+  `.d.ts` was produced by a newer TypeScript version that
+  introduced a lib symbol the stdlib does not yet cover; (c) the
+  `.d.ts` is malformed or references a symbol that was never part
+  of any TS lib; (d) the symbol is intentionally excluded from
+  the stdlib. Encourage users to check the source package or its
+  maintainer before filing against the stdlib.
+- **Cache:** no cache entry written.
+- **Exit:** non-zero.
+
 ## Non-functional requirements
 
 ### NFR1. First-build latency is acceptable and amortized
@@ -422,6 +546,42 @@ runtime interop pipeline. During Phase 1:
 - Existing fixtures and user projects shall continue to compile
   with no source changes. The two pipelines coexist; the new path
   is authoritative for deps that go through it.
+
+### Tests broken by the builtins → third-party gap
+
+The builtins workstream replaces the prelude lib-walking with
+`builtins.esc` plus the `std:*` / `dom:*` pseudo-packages. The
+runtime interop pipeline that processes third-party `.d.ts`
+today relies on TypeScript lib names (`Array`, `Promise`,
+`HTMLElement`, …) being ambient. Once builtins removes lib-walking
+those names are no longer ambient, and the runtime pipeline (which
+still exists during Phase 1) can no longer resolve them.
+
+The cheapest remediation is a bounded skip. The mechanics
+(helper location, audit pass, CI guard, lifecycle) live in the
+builtins implementation plan, since that is where they are
+introduced: see
+[../builtins/implementation_plan.md § 8.1 Third-party `.d.ts` fixture carve-out](../builtins/implementation_plan.md#81-third-party-dts-fixture-carve-out).
+Summary of the contract:
+
+- Tests that exercise third-party `.d.ts` content shall be marked
+  via a single helper (e.g. `testutil.SkipUntilFR7(t, reason)`)
+  when builtins lands. The helper is the only call site, so
+  re-enabling is one grep + one deletion.
+- FR7's definition-of-done shall include "no remaining
+  `SkipUntilFR7` markers in the test tree." Phase 1 cannot be
+  declared complete while any survive.
+- A CI guard shall fail the build if `SkipUntilFR7` is still
+  referenced after FR7's tracking issue is closed. This prevents
+  the skip from rotting silently.
+
+Rationale: a compatibility shim that lets the runtime pipeline
+keep resolving TS lib names through `builtins.esc` was
+considered. It works, but it is throwaway code with a narrow
+window of utility (deleted by Phase 2 anyway), and main is not
+expected to be an external-facing branch during the gap. Skipping
+preserves the obligation to fix without adding throwaway shim
+code.
 - The cache layout (`node_modules/.cache/escalier/<key>.esc`) is
   considered a public-ish surface for the duration of Phase 1, in
   the sense that `escalier cache clean` must keep working against
@@ -535,6 +695,30 @@ the converter output is hand-reviewed and committed once. Here
 the output is regenerated continuously on every fresh checkout
 of every project, with no human in the loop except via overrides.
 
+### R4. Semantic-rewriting correctness (mutability)
+
+FR7 rewrites TypeScript type references to their Escalier
+equivalents using a registry that encodes semantic mappings, not
+just renames. The most load-bearing rule is the mutability split:
+TS `Array<T>` (mutable by convention) becomes Escalier mutable
+array; TS `ReadonlyArray<T>` becomes Escalier `Array<T>`. The
+same pattern applies to `Map`/`ReadonlyMap`, `Set`/`ReadonlySet`,
+and similar pairs.
+
+Getting any of these mappings wrong silently strips or invents
+mutability on every method of every third-party API that
+references the affected type. This is a soundness failure with no
+local symptom: the user sees a plausible-looking Escalier
+signature, the checker accepts mutation that wasn't permitted
+upstream (or rejects it where upstream allowed it), and the bug
+surfaces far from the converter.
+
+Mitigations: the registry is small and centrally owned by the
+builtins workstream; the converter must reject any unmapped
+identifier (FM6) rather than emit a guess; FR8's origin
+annotation gives users a way to spot a wrong rewrite when a
+diagnostic appears.
+
 ## Open questions
 
 - **Converter API contract.** The third-party workstream calls
@@ -570,6 +754,31 @@ of every project, with no human in the loop except via overrides.
   maintainer pain, not a measured threshold. Open question is
   purely mechanical: how does a project opt a specific dep out of
   conversion and point at a hand-authored `.esc` file instead?
+- **Origin annotation storage and encoding.** FR8 requires that
+  the original TypeScript spelling for each rewritten type
+  reference survives on the AST and through the textual cache.
+  Open: (a) does the annotation live on the `TypeRef` AST node as
+  a dedicated field, or as a sidecar decorator like
+  `@ts("ReadonlyArray<T>")`? (b) granularity — per declaration,
+  per type reference, or per line? (c) how do diagnostics render
+  it (trailing parenthetical vs. structured "from TypeScript:"
+  field)? Decision needed before FR8 lands.
+- **Builtin registry collision rules.** The `@js`-derived
+  registry must resolve ambiguities when the same identifier is
+  declared in both `std:*` and `dom:*` (rare) or in both `dom:*`
+  and `webworker` equivalents (common: `fetch`, `Request`,
+  `Response`, `URL`, `TextEncoder`). Open: does the third-party
+  converter pick by file context (e.g. "this `.d.ts` triple-slash
+  references `lib="dom"`"), by a per-package hint, or by a fixed
+  precedence order? Owned by the builtins workstream but
+  consumed here; pin before Phase 1.
+- **Type-vs-value rewriting parity.** Some TS identifiers (e.g.
+  `Array`, `Promise`, `Map`, `Error`) are both a type and a
+  value. The registry must specify both the type-position and
+  value-position rewrite, and the converter must apply the right
+  one based on syntactic position in the `.d.ts`. Open whether
+  the registry stores these as a single entry with both sides or
+  as two parallel entries.
 - **Per-dep override authoring story.** Tier 1a expects library
   authors to ship `overrides/*.esc` in their npm package. What
   does the publishing / discovery workflow look like in practice,
