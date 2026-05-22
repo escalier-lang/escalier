@@ -92,16 +92,16 @@ func TestPrintDeclAudit_RoundTrip(t *testing.T) {
 		{"export declare class", `export declare class C {}`},
 
 		// --- decorator syntax @js("...") (§3.3) ---
+		// @js attaches only to value-introducing decls (val/var, fn,
+		// class). Type aliases and interfaces erase at codegen so
+		// `@js` has nothing to lower — the parser rejects decorators
+		// on those forms (see TestPrintDeclAudit_DecoratorRejection).
 		{"@js on declare val", `@js("Math.PI")
 export declare val PI: number`},
 		{"@js on declare fn", `@js("Math.max")
 export declare fn max(a: number, b: number) -> number`},
 		{"@js on declare class", `@js("Date")
 export declare class Date {}`},
-		{"@js on declare interface", `@js("Date")
-export declare interface Date {x: number}`},
-		{"@js on declare type", `@js("Whatever")
-export declare type T = number`},
 		{"multiple decorators stacked", `@js("Math.PI")
 @js("Math.PI")
 export declare val PI: number`},
@@ -161,6 +161,55 @@ func TestPrintConstructor_NoDuplicateReceiver(t *testing.T) {
 	require.NotContains(t, out, "mut self, self",
 		"constructor receiver and synthesized Params[0] both printed:\n%s", out)
 	require.Contains(t, out, "constructor(mut self, x: number)")
+}
+
+// TestPrintDeclAudit_DecoratorRejection pins the parser's rejection
+// of decorators on decl kinds that have no runtime form. `@js` lowers
+// a *value*-binding reference; type aliases and interfaces don't
+// introduce value bindings, so attaching `@js` to them is
+// semantically meaningless and the parser surfaces it at the
+// decorator span. Enum and namespace decls are also rejected (they
+// existed before §3.3 landed); included here for completeness.
+func TestPrintDeclAudit_DecoratorRejection(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			"decorator on type alias",
+			`@js("X")
+declare type T = number`,
+			"decorators are not allowed on type declarations (type aliases have no runtime form)",
+		},
+		{
+			"decorator on interface",
+			`@js("X")
+declare interface I {x: number}`,
+			"decorators are not allowed on interface declarations (interfaces have no runtime form)",
+		},
+		{
+			"decorator on enum",
+			`@js("X")
+enum E { A, B }`,
+			"decorators are not allowed on enum declarations",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := parseDeclMaybe(tt.src)
+			require.NotEmpty(t, errs, "expected parse error for %q", tt.src)
+			found := false
+			for _, e := range errs {
+				if strings.Contains(e.Message, tt.want) {
+					found = true
+					break
+				}
+			}
+			require.True(t, found,
+				"expected error containing %q, got %v", tt.want, errs)
+		})
+	}
 }
 
 // TestPrintDeclAudit_KnownGaps documents declaration forms in the §1

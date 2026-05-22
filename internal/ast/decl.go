@@ -184,7 +184,6 @@ type TypeDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	TypeAnn    TypeAnn
-	Decorators []*Decorator
 	export     bool
 	declare    bool
 	override   bool
@@ -211,7 +210,6 @@ func (d *TypeDecl) SetOverride(o bool) { d.override = o }
 func (d *TypeDecl) Span() Span         { return d.span }
 func (d *TypeDecl) Accept(v Visitor) {
 	// TODO: visit type params
-	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
 		if d.TypeAnn != nil {
 			d.TypeAnn.Accept(v)
@@ -232,7 +230,6 @@ type InterfaceDecl struct {
 	TypeParams     []*TypeParam
 	Extends        []*TypeRefTypeAnn
 	TypeAnn        *ObjectTypeAnn
-	Decorators     []*Decorator
 	export         bool
 	declare        bool
 	override       bool
@@ -260,7 +257,6 @@ func (d *InterfaceDecl) Override() bool     { return d.override }
 func (d *InterfaceDecl) SetOverride(o bool) { d.override = o }
 func (d *InterfaceDecl) Span() Span         { return d.span }
 func (d *InterfaceDecl) Accept(v Visitor) {
-	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
 		for _, tp := range d.TypeParams {
 			if tp.Constraint != nil {

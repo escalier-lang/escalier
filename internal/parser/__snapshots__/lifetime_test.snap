@@ -1410,11 +1410,10 @@
             },
             inferredType: nil,
         },
-        Decorators: nil,
-        export:     false,
-        declare:    false,
-        override:   false,
-        span:       ast.Span{
+        export:   false,
+        declare:  false,
+        override: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:65},
             SourceID: 0,
@@ -1790,11 +1789,10 @@
             },
             inferredType: nil,
         },
-        Decorators: nil,
-        export:     false,
-        declare:    false,
-        override:   false,
-        span:       ast.Span{
+        export:   false,
+        declare:  false,
+        override: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:37},
             SourceID: 0,
@@ -2832,11 +2830,10 @@
             },
             inferredType: nil,
         },
-        Decorators: nil,
-        export:     false,
-        declare:    false,
-        override:   false,
-        span:       ast.Span{
+        export:   false,
+        declare:  false,
+        override: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:51},
             SourceID: 0,
@@ -2986,11 +2983,10 @@
             },
             inferredType: nil,
         },
-        Decorators: nil,
-        export:     false,
-        declare:    false,
-        override:   false,
-        span:       ast.Span{
+        export:   false,
+        declare:  false,
+        override: false,
+        span:     ast.Span{
             Start:    ast.Location{Line:1, Column:1},
             End:      ast.Location{Line:1, Column:72},
             SourceID: 0,

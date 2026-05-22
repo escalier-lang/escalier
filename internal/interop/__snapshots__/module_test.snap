@@ -111,11 +111,10 @@
                                     },
                                     inferredType: nil,
                                 },
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
+                                export:   false,
+                                declare:  true,
+                                override: false,
+                                span:     ast.Span{
                                     Start:    ast.Location{Line:4, Column:1},
                                     End:      ast.Location{Line:4, Column:22},
                                     SourceID: 0,
@@ -1274,11 +1273,10 @@
                                     },
                                     inferredType: nil,
                                 },
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
+                                export:   true,
+                                declare:  true,
+                                override: false,
+                                span:     ast.Span{
                                     Start:    ast.Location{Line:6, Column:3},
                                     End:      ast.Location{Line:6, Column:27},
                                     SourceID: 0,
@@ -1304,11 +1302,10 @@
                                     },
                                     inferredType: nil,
                                 },
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
+                                export:   true,
+                                declare:  true,
+                                override: false,
+                                span:     ast.Span{
                                     Start:    ast.Location{Line:7, Column:3},
                                     End:      ast.Location{Line:7, Column:24},
                                     SourceID: 0,

@@ -468,14 +468,19 @@ syntax. This phase adds it:
   Decorators between `export` and `declare` are a parse error.
   Multiple decorators on one declaration stack top-to-bottom;
   ordering preserved for printer round-trip.
-- Decorators are allowed on `declare fn`, `declare class`,
-  `declare val`/`declare var`, `declare type`, and interface
-  declarations — in both exported and unexported positions, but
-  see the loader rule in §3.4: unexported declarations carrying
-  `@js` are rejected for pseudo-package files. Decorators are
-  disallowed on inner declarations (members, parameters) — out
-  of scope for this workstream; revisit if a concrete need
-  surfaces.
+- Decorators are allowed on the **value-introducing** decl kinds
+  — `declare fn`, `declare class`, `declare val` / `declare var`
+  — in both exported and unexported positions, with the loader
+  rule in §3.4 catching unexported declarations carrying `@js`
+  in pseudo-package files. Decorators are **rejected at parse
+  time** on `declare type` and `declare interface` because those
+  forms erase at codegen and have no runtime reference for `@js`
+  to lower; the parser reports the error at the decorator's span
+  ("decorators are not allowed on type/interface declarations
+  (type aliases / interfaces have no runtime form)"). Decorators
+  are also disallowed on inner declarations (members,
+  parameters) — out of scope for this workstream; revisit if a
+  concrete need surfaces.
 - Printer round-trips decorators (FR14 audit must cover them,
   in combination with the `export` modifier).
 

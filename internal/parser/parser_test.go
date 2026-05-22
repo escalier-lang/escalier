@@ -73,6 +73,43 @@ func TestParseModuleNoErrors(t *testing.T) {
 				declare async fn fetch(url: string) -> Promise<Response>
 			`,
 		},
+		"DecoratorOnDeclareVal": {
+			input: `
+				@js("Math.PI")
+				export declare val PI: number
+			`,
+		},
+		"DecoratorOnDeclareFn": {
+			input: `
+				@js("Math.max")
+				export declare fn max(a: number, b: number) -> number
+			`,
+		},
+		"DecoratorOnDeclareClass": {
+			input: `
+				@js("Date")
+				export declare class Date {}
+			`,
+		},
+		"MultipleDecoratorsStacked": {
+			input: `
+				@js("Math.PI")
+				@deprecated
+				export declare val PI: number
+			`,
+		},
+		"DecoratorEmptyArgs": {
+			input: `
+				@marker()
+				declare val x: number
+			`,
+		},
+		"DecoratorNoArgs": {
+			input: `
+				@marker
+				declare val x: number
+			`,
+		},
 		"ExprStmts": {
 			input: `
 				foo()
@@ -408,6 +445,14 @@ func TestParseDeclareBlockErrors(t *testing.T) {
 		"DecoratorOnNamespace": {
 			input:         `@js("N") namespace N { declare val x: number }`,
 			expectedError: "decorators are not allowed on namespace declarations",
+		},
+		"DecoratorOnTypeAlias": {
+			input:         `@js("T") declare type T = number`,
+			expectedError: "decorators are not allowed on type declarations (type aliases have no runtime form)",
+		},
+		"DecoratorOnInterface": {
+			input:         `@js("I") declare interface I {x: number}`,
+			expectedError: "decorators are not allowed on interface declarations (interfaces have no runtime form)",
 		},
 	}
 

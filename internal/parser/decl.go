@@ -190,6 +190,18 @@ func (p *Parser) Decl() ast.Decl {
 		case *ast.NamespaceDecl:
 			p.reportError(decorators[0].Span_,
 				"decorators are not allowed on namespace declarations")
+		case *ast.TypeDecl:
+			// Type aliases are erased at codegen — `@js` has nothing
+			// to lower. Reject the decorator at parse time so the
+			// user sees the mistake immediately rather than at the
+			// loader. See planning/builtins/implementation_plan.md §3.3.
+			p.reportError(decorators[0].Span_,
+				"decorators are not allowed on type declarations (type aliases have no runtime form)")
+		case *ast.InterfaceDecl:
+			// Interfaces are erased at codegen — same reasoning as
+			// TypeDecl above.
+			p.reportError(decorators[0].Span_,
+				"decorators are not allowed on interface declarations (interfaces have no runtime form)")
 		default:
 			attachDecorators(decl, decorators)
 		}
@@ -234,19 +246,15 @@ func (p *Parser) parseDecorators() []*ast.Decorator {
 }
 
 // attachDecorators stamps the decorator list onto a parsed declaration.
-// Decl() rejects decorators on enum and namespace declarations before
-// reaching here; declare module / global never reach this path because
-// Decl() returns early for those. Any other unsupported decl kind is a
-// defensive no-op.
+// Decl() rejects decorators on enum, namespace, type, and interface
+// declarations before reaching here; declare module / global never
+// reach this path because Decl() returns early for those. Any other
+// unsupported decl kind is a defensive no-op.
 func attachDecorators(decl ast.Decl, decorators []*ast.Decorator) {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		d.Decorators = decorators
 	case *ast.FuncDecl:
-		d.Decorators = decorators
-	case *ast.TypeDecl:
-		d.Decorators = decorators
-	case *ast.InterfaceDecl:
 		d.Decorators = decorators
 	case *ast.ClassDecl:
 		d.Decorators = decorators

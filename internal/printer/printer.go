@@ -434,7 +434,6 @@ func (p *Printer) printFuncDecl(decl *ast.FuncDecl) {
 }
 
 func (p *Printer) printTypeDecl(decl *ast.TypeDecl) {
-	p.printDecorators(decl.Decorators)
 	if decl.Export() {
 		p.writeString("export ")
 	}
@@ -454,7 +453,6 @@ func (p *Printer) printTypeDecl(decl *ast.TypeDecl) {
 }
 
 func (p *Printer) printInterfaceDecl(decl *ast.InterfaceDecl) {
-	p.printDecorators(decl.Decorators)
 	if decl.Export() {
 		p.writeString("export ")
 	}
