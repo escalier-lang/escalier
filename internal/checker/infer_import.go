@@ -941,6 +941,15 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 // For type 2, we can use the name of the module declaration to determine the package
 // name.  For type 3, we need to know what npm package the .d.ts file belongs to.
 func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
+	// Route scheme-prefixed imports (`std:`, `dom:`, `node:`, and any
+	// other lowercase-scheme URI) to the stdlib loader. The dispatch
+	// happens here — at the highest level — so the npm-style resolver
+	// never sees these specifiers and the user gets taxonomy-aligned
+	// diagnostics for unknown schemes / packages.
+	if isSchemePrefixedImport(importStmt.PackageName) {
+		return c.inferStdlibImport(ctx, importStmt)
+	}
+
 	errors := []Error{}
 
 	// First, check if the package is already registered in the PackageRegistry.

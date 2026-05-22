@@ -112,6 +112,37 @@ func SetStdlibDirForTest() error {
 	return os.Setenv("ESCALIER_STDLIB_DIR", filepath.Join(root, "internal", "interop", "data"))
 }
 
+// isStdlibSchemeSubtree reports whether p, relative to root, names a
+// top-level scheme subdirectory (`std`, `dom`, `node`) that belongs to
+// the builtins workstream rather than the override system. The
+// override loader uses this to skip those subtrees while walking the
+// shared `internal/interop/data/` directory.
+func isStdlibSchemeSubtree(p, root string) bool {
+	rel := p
+	if root != "" && root != "." {
+		// fs.WalkDir paths are joined under root; strip the prefix so
+		// "<root>/std" becomes "std".
+		if r, ok := stripDirPrefix(rel, root); ok {
+			rel = r
+		}
+	}
+	switch rel {
+	case "std", "dom", "node":
+		return true
+	}
+	return false
+}
+
+func stripDirPrefix(p, prefix string) (string, bool) {
+	if p == prefix {
+		return "", true
+	}
+	if len(p) > len(prefix) && p[:len(prefix)] == prefix && p[len(prefix)] == '/' {
+		return p[len(prefix)+1:], true
+	}
+	return "", false
+}
+
 // looksLikeStdlibDir reports whether path looks like a stdlib data
 // directory — i.e. contains a `std/` subdirectory. The `dom/` and
 // `node/` subtrees are not required; either may be absent in a stripped

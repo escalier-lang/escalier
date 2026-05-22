@@ -110,6 +110,12 @@ func TestBuiltinsDir_HasNoEscFilesYet(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
+			// Skip the stdlib scheme subtrees — those belong to the
+			// builtins (FR1-FR16) workstream, not the override system
+			// this invariant pins.
+			if p != root && isStdlibSchemeSubtree(filepath.Base(p), "") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if strings.HasSuffix(p, ".esc") {
