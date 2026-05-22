@@ -210,9 +210,13 @@ func (p *Parser) parseForInStmt() ast.Stmt {
 		ast.MergeSpans(startSpan, body.Span))
 }
 
-// importStmt = 'import' importSpecifiers 'from' string
+// importStmt = 'import' (importSpecifiers 'from')? string
 // importSpecifiers = '{' namedImport (',' namedImport)* '}' | '*' 'as' identifier
 // namedImport = identifier ('as' identifier)?
+//
+// A bare-string form (`import "std:math"`) has no binding clause and no
+// `from`. The module specifier may carry a `?flag1&flag2` suffix that the
+// parser splits off and stores in ImportStmt.Flags.
 func (p *Parser) importStmt() ast.Stmt {
 	importToken := p.lexer.next()
 	if importToken.Type != Import {
@@ -222,6 +226,14 @@ func (p *Parser) importStmt() ast.Stmt {
 
 	var specifiers []*ast.ImportSpecifier
 	token := p.lexer.peek()
+
+	// Bare-string import: `import "uri"` with no binding clause.
+	if token.Type == StrLit {
+		moduleToken := p.lexer.next()
+		pkg, flags := splitImportFlags(moduleToken.Value)
+		span := ast.MergeSpans(importToken.Span, moduleToken.Span)
+		return ast.NewImportStmt(nil, pkg, flags, span)
+	}
 
 	// Parse import specifiers
 	if token.Type == Asterisk {
@@ -306,5 +318,34 @@ func (p *Parser) importStmt() ast.Stmt {
 	}
 
 	span := ast.MergeSpans(importToken.Span, moduleToken.Span)
-	return ast.NewImportStmt(specifiers, moduleToken.Value, span)
+	pkg, flags := splitImportFlags(moduleToken.Value)
+	return ast.NewImportStmt(specifiers, pkg, flags, span)
+}
+
+// splitImportFlags splits a module specifier into the package portion and a
+// list of `?flag1&flag2` flags. Returns (specifier, nil) if no `?` is present.
+// An empty flag (e.g. trailing `&` or `?&foo`) is preserved as ""; semantic
+// validation lives in the resolver.
+func splitImportFlags(spec string) (string, []string) {
+	idx := -1
+	for i := 0; i < len(spec); i++ {
+		if spec[i] == '?' {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return spec, nil
+	}
+	pkg := spec[:idx]
+	rest := spec[idx+1:]
+	flags := []string{}
+	start := 0
+	for i := 0; i <= len(rest); i++ {
+		if i == len(rest) || rest[i] == '&' {
+			flags = append(flags, rest[start:i])
+			start = i + 1
+		}
+	}
+	return pkg, flags
 }

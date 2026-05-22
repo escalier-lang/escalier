@@ -1518,6 +1518,37 @@ func collectMutLeaves(script *ast.Script) map[string]bool {
 	return out
 }
 
+func TestPrintImportStmt(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"named single", `import { foo } from "module"`},
+		{"named multiple", `import { foo, bar, baz } from "module"`},
+		{"named with alias", `import { foo as bar } from "module"`},
+		{"named mixed", `import { foo, bar as baz, qux } from "module"`},
+		{"namespace", `import * as ns from "module"`},
+		{"bare", `import "std:math"`},
+		{"bare with flag", `import "std:math?nested"`},
+		{"bare with flags", `import "std:math?flag1&flag2"`},
+		{"named with flag", `import { foo } from "std:math?local"`},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script := parseScript(t, tt.input)
+			result, err := Print(script, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.input {
+				t.Errorf("Expected %q, got %q", tt.input, result)
+			}
+		})
+	}
+}
+
 // TODO: Add support MatchTypeAnn in the parser
 // func TestPrintMatchTypeAnn(t *testing.T) {
 // 	tests := []struct {

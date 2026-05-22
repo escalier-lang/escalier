@@ -75,12 +75,17 @@ func (i *ImportSpecifier) Span() Span { return i.span }
 
 type ImportStmt struct {
 	Specifiers  []*ImportSpecifier
-	PackageName string // e.g., "lodash", "@types/node", "lodash/fp"
+	PackageName string   // module specifier without the `?flag` suffix, e.g. "lodash", "std:math"
+	Flags       []string // `?flag1&flag2` suffix parsed into a list, preserving order; nil if none
 	span        Span
 }
 
-func NewImportStmt(specifiers []*ImportSpecifier, packageName string, span Span) *ImportStmt {
-	return &ImportStmt{Specifiers: specifiers, PackageName: packageName, span: span}
+// Bare reports whether this import has no binding clause (no specifiers and no
+// namespace alias), as in `import "std:math"`.
+func (s *ImportStmt) Bare() bool { return len(s.Specifiers) == 0 }
+
+func NewImportStmt(specifiers []*ImportSpecifier, packageName string, flags []string, span Span) *ImportStmt {
+	return &ImportStmt{Specifiers: specifiers, PackageName: packageName, Flags: flags, span: span}
 }
 func (*ImportStmt) isStmt()      {}
 func (s *ImportStmt) Span() Span { return s.span }

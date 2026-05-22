@@ -146,11 +146,51 @@ func (p *Printer) printStmt(stmt ast.Stmt) {
 			p.space()
 			p.printExpr(s.Expr)
 		}
+	case *ast.ImportStmt:
+		p.printImportStmt(s)
 	case *ast.ErrorStmt:
 		// Skip error recovery nodes
 	default:
 		p.writeString("/* unknown statement */")
 	}
+}
+
+func (p *Printer) printImportStmt(s *ast.ImportStmt) {
+	p.writeString("import")
+	if !s.Bare() {
+		p.space()
+		// Namespace import is a single specifier with Name == "*".
+		if len(s.Specifiers) == 1 && s.Specifiers[0].Name == "*" {
+			p.writeString("* as ")
+			p.writeString(s.Specifiers[0].Alias)
+		} else {
+			p.writeString("{ ")
+			for i, spec := range s.Specifiers {
+				if i > 0 {
+					p.writeString(", ")
+				}
+				p.writeString(spec.Name)
+				if spec.Alias != "" {
+					p.writeString(" as ")
+					p.writeString(spec.Alias)
+				}
+			}
+			p.writeString(" }")
+		}
+		p.writeString(" from")
+	}
+	p.space()
+	p.writeString("\"")
+	p.writeString(s.PackageName)
+	for i, flag := range s.Flags {
+		if i == 0 {
+			p.writeString("?")
+		} else {
+			p.writeString("&")
+		}
+		p.writeString(flag)
+	}
+	p.writeString("\"")
 }
 
 // Declaration printing
