@@ -1143,7 +1143,50 @@ rely on.
 
 **Gate.** `go test ./...` passes with every fixture using
 explicit `import "std:*"` statements; no fixture relies on
-ambient resolution.
+ambient resolution — except for the third-party carve-out below.
+
+### 8.1 Third-party `.d.ts` fixture carve-out
+
+A small set of fixtures and tests exercises **third-party
+`.d.ts`** content (vendored or stub `node_modules` packages).
+These cannot be migrated to explicit `import "std:*"` in §8: the
+migration mechanism is the third-party converter's import-header
+injection (third-party FR7), which is gated behind the entire
+builtins workstream and therefore not yet available.
+
+See [../third_party/requirements.md § Tests broken by the builtins → third-party gap](../third_party/requirements.md#tests-broken-by-the-builtins--third-party-gap)
+for the authoritative statement. The mechanics required here:
+
+- **Skip helper.** Add a single `testutil.SkipUntilFR7(t, reason
+  string)` helper (concrete package path TBD; likely
+  [internal/testutil/](../../internal/testutil/) or a new
+  `internal/testskip/`). It is the **only** sanctioned skip call
+  site for this gap — every affected test calls it, no scattered
+  `t.Skip(...)` strings. Re-enabling is one grep + one deletion.
+- **Audit pass.** Before §9 lands, walk every fixture and test
+  that loads a third-party `.d.ts` (the existing runtime interop
+  pipeline's consumers — `interop.ConvertModule` call sites and
+  fixtures with `.d.ts` payloads). Anything that would fail with
+  the legacy prelude removed gets `SkipUntilFR7`. Do not try to
+  rewrite these to `import "std:*"`; the right migration path
+  for them lives in third-party Phase 1.
+- **CI guard.** Add a one-line CI check (a `grep -r
+  SkipUntilFR7` in the pre-merge job) that fails the build if
+  the helper is still referenced after third-party FR7's
+  tracking issue is closed. The closed-issue check can be
+  hard-coded against the issue number at the time the guard
+  lands. Prevents the skip from rotting silently.
+- **Helper lifecycle.** The helper and the CI guard are deleted
+  together as part of third-party FR7's definition-of-done. The
+  helper exists purely to bridge the builtins → third-party gap;
+  it has no permanent home in the test infrastructure.
+
+The audit is not zero-cost — somebody has to enumerate the
+affected tests — but it is strictly cheaper than building a
+compatibility shim in the prelude that keeps the legacy lib-walking
+alive solely for the runtime interop pipeline. The skip approach
+also keeps §9's cut-over PR clean: any remaining ambient-resolution
+failures in CI are genuine §8 misses, not third-party fallout.
 
 ---
 
@@ -1168,6 +1211,12 @@ cut-over: the PR that opens §9 must have a green test suite on
 green *without* it once the legacy paths come out. If a fixture
 slipped past §8, the §9 PR will fail CI on the unbound-name
 diagnostics for the previously-ambient symbols.
+
+Note: fixtures that load **third-party `.d.ts`** content are
+intentionally not migrated in §8 — they are marked
+`SkipUntilFR7` per §8.1 and stay skipped through §9. The §9 PR
+should not attempt to un-skip or migrate them; that work belongs
+to third-party FR7. See §8.1 for the helper and CI guard.
 
 ### 9.1 Lazy shape-loader
 

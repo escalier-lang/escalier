@@ -312,8 +312,14 @@ To achieve this, the converter shall:
    Terminology). Identifiers that resolve to nothing locally and
    are absent from the registry are a conversion error (see FM6).
 2. Replace the TypeScript identifier with the registry's
-   Escalier type expression. This is a **semantic** rewrite, not a
-   rename. Examples that drive the requirement:
+   Escalier type expression. The expression encodes shape and
+   mutability only (e.g. `mut Array<T>`, `Array<T>`) and is
+   **module-unqualified** — the import that brings the name into
+   scope is emitted separately in step 3. The registry entry
+   itself still carries the `(module, name)` pair so step 3 can
+   look it up; only the substituted expression is unqualified.
+   This is a **semantic** rewrite, not a rename. Examples that
+   drive the requirement:
    - TS `Array<T>` (mutable) → Escalier `mut Array<T>`.
    - TS `ReadonlyArray<T>` → Escalier `Array<T>` (immutable by
      default).
@@ -339,6 +345,20 @@ mutable form. The Readonly* variants convert to Escalier's
 immutable defaults. Getting this rule wrong silently strips
 mutability from third-party APIs; correctness here is a soundness
 concern, not a stylistic one.
+
+The examples above are all type-position rewrites. Value-position
+rewriting — constructors invoked as values (`new Array(0)`),
+constant references (`Math.PI`), and any other place where a
+registry identifier appears as a value rather than a type — has
+the same shape (lookup, replace, emit import) but separate
+correctness concerns (e.g. a constructor's value-position
+mutability binding may differ from its type-position one). The
+registry must carry both sides for identifiers that appear in
+both positions; whether that's one entry with two fields or two
+parallel entries is tracked in Open Questions ("Type-vs-value
+rewriting parity"). Implementers should treat type-position and
+value-position rewriting as independent passes that share the
+same registry, not as a single fused pass.
 
 ### FR8. Preserve original TS source for diagnostics
 
@@ -453,9 +473,16 @@ that the third-party API depends on.
   identifier, and the file/span of the reference. Form: `cannot
   convert "<pkg>@<version>": unknown TypeScript identifier
   <name> at <path>:<line>:<col> — no entry in std:/dom: registry`.
-  The message should encourage filing an issue against the
-  stdlib, since the remediation is to add the missing declaration
-  with an `@js(...)` decorator.
+  The message should list the likely causes so users can
+  triage before filing an issue: (a) the stdlib is missing a
+  declaration for a standard TypeScript lib type — file an issue
+  so it can be added with an `@js(...)` decorator; (b) the
+  `.d.ts` was produced by a newer TypeScript version that
+  introduced a lib symbol the stdlib does not yet cover; (c) the
+  `.d.ts` is malformed or references a symbol that was never part
+  of any TS lib; (d) the symbol is intentionally excluded from
+  the stdlib. Encourage users to check the source package or its
+  maintainer before filing against the stdlib.
 - **Cache:** no cache entry written.
 - **Exit:** non-zero.
 
@@ -519,6 +546,42 @@ runtime interop pipeline. During Phase 1:
 - Existing fixtures and user projects shall continue to compile
   with no source changes. The two pipelines coexist; the new path
   is authoritative for deps that go through it.
+
+### Tests broken by the builtins → third-party gap
+
+The builtins workstream replaces the prelude lib-walking with
+`builtins.esc` plus the `std:*` / `dom:*` pseudo-packages. The
+runtime interop pipeline that processes third-party `.d.ts`
+today relies on TypeScript lib names (`Array`, `Promise`,
+`HTMLElement`, …) being ambient. Once builtins removes lib-walking
+those names are no longer ambient, and the runtime pipeline (which
+still exists during Phase 1) can no longer resolve them.
+
+The cheapest remediation is a bounded skip. The mechanics
+(helper location, audit pass, CI guard, lifecycle) live in the
+builtins implementation plan, since that is where they are
+introduced: see
+[../builtins/implementation_plan.md § 8.1 Third-party `.d.ts` fixture carve-out](../builtins/implementation_plan.md#81-third-party-dts-fixture-carve-out).
+Summary of the contract:
+
+- Tests that exercise third-party `.d.ts` content shall be marked
+  via a single helper (e.g. `testutil.SkipUntilFR7(t, reason)`)
+  when builtins lands. The helper is the only call site, so
+  re-enabling is one grep + one deletion.
+- FR7's definition-of-done shall include "no remaining
+  `SkipUntilFR7` markers in the test tree." Phase 1 cannot be
+  declared complete while any survive.
+- A CI guard shall fail the build if `SkipUntilFR7` is still
+  referenced after FR7's tracking issue is closed. This prevents
+  the skip from rotting silently.
+
+Rationale: a compatibility shim that lets the runtime pipeline
+keep resolving TS lib names through `builtins.esc` was
+considered. It works, but it is throwaway code with a narrow
+window of utility (deleted by Phase 2 anyway), and main is not
+expected to be an external-facing branch during the gap. Skipping
+preserves the obligation to fix without adding throwaway shim
+code.
 - The cache layout (`node_modules/.cache/escalier/<key>.esc`) is
   considered a public-ish surface for the duration of Phase 1, in
   the sense that `escalier cache clean` must keep working against
