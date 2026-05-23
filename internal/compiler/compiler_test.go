@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -14,7 +15,7 @@ func TestVarDecls(t *testing.T) {
 		Contents: "val foo = 5\nvar bar = \"hello\"\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestFuncDecls(t *testing.T) {
@@ -24,7 +25,7 @@ func TestFuncDecls(t *testing.T) {
 		Contents: "fn add(a: number, b: number) {\n  return a + b\n}\nfn sub(a: number, b: number) { return a - b }\nval sum = add(1, 2)\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestArrays(t *testing.T) {
@@ -34,7 +35,7 @@ func TestArrays(t *testing.T) {
 		Contents: "val nums = [1, 2, 3]\nval first = nums[0]\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestMemberAccess(t *testing.T) {
@@ -44,7 +45,7 @@ func TestMemberAccess(t *testing.T) {
 		Contents: "console.log(\"hello, world\")\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestTypeCast(t *testing.T) {
@@ -54,7 +55,7 @@ func TestTypeCast(t *testing.T) {
 		Contents: "val x = 5 : number\nval y = \"hello\" : string\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestGeneratorFunction(t *testing.T) {
@@ -64,7 +65,7 @@ func TestGeneratorFunction(t *testing.T) {
 		Contents: "fn count() {\n  yield 1\n  yield 2\n  yield 3\n}\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestGeneratorWithReturn(t *testing.T) {
@@ -74,7 +75,7 @@ func TestGeneratorWithReturn(t *testing.T) {
 		Contents: "fn myGen() {\n  yield 1\n  return 42\n}\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestYieldFrom(t *testing.T) {
@@ -84,7 +85,7 @@ func TestYieldFrom(t *testing.T) {
 		Contents: "fn delegating() {\n  declare val nums: Array<number>\n  yield from nums\n}\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestForIn(t *testing.T) {
@@ -94,7 +95,7 @@ func TestForIn(t *testing.T) {
 		Contents: "declare val items: Array<number>\nfor x in items {\n  val y = x\n}\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestForInIterator(t *testing.T) {
@@ -104,7 +105,7 @@ func TestForInIterator(t *testing.T) {
 		Contents: "declare val items: Iterator<number>\nfor x in items {\n  val y = x\n}\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestForAwaitIn(t *testing.T) {
@@ -114,7 +115,7 @@ func TestForAwaitIn(t *testing.T) {
 		Contents: "async fn processItems() {\n  declare val items: Array<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }
 
 func TestForAwaitInAsyncIterator(t *testing.T) {
@@ -124,5 +125,5 @@ func TestForAwaitInAsyncIterator(t *testing.T) {
 		Contents: "async fn processItems() {\n  declare val items: AsyncIterator<number>\n  for await x in items {\n    val y = x\n  }\n}\n",
 	}
 	output := Compile(source)
-	snaps.MatchSnapshot(t, output)
+	snaps.MatchSnapshot(t, snapshot.String(output))
 }

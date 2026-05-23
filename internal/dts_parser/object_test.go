@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -69,7 +70,7 @@ func TestObjectTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -105,7 +106,7 @@ func TestObjectTypesWithTypeParams(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -142,7 +143,7 @@ func TestPropertyKeys(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -182,7 +183,7 @@ func TestCallAndConstructSignatures(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -219,7 +220,7 @@ func TestIndexSignatures(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -263,7 +264,7 @@ func TestGetterSetterSignatures(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -303,7 +304,7 @@ func TestComplexObjectTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -340,7 +341,7 @@ func TestComputedKeys(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -377,7 +378,7 @@ func TestCatchAsMethodName(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -419,7 +420,7 @@ func TestGetSetAsPropertyNames(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -471,7 +472,7 @@ func TestMethodWithFromParameter(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }

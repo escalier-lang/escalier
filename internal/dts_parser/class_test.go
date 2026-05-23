@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -60,7 +61,7 @@ func TestConstructorDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -142,7 +143,7 @@ func TestPropertyDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -240,7 +241,7 @@ func TestMethodDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -326,7 +327,7 @@ func TestGetterAndSetterDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -372,7 +373,7 @@ func TestClassIndexSignatures(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -430,7 +431,7 @@ func TestCombinedModifiers(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -513,7 +514,7 @@ func TestComplexClasses(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }

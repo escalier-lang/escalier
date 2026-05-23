@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -41,7 +42,7 @@ func TestPrimitiveTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -79,7 +80,7 @@ func TestLiteralTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -115,7 +116,7 @@ func TestTypeReferences(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -150,7 +151,7 @@ func TestUnionTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -182,7 +183,7 @@ func TestIntersectionTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -215,7 +216,7 @@ func TestParenthesizedTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -290,7 +291,7 @@ func TestComplexUnionIntersectionCombinations(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -326,7 +327,7 @@ func TestTypeReferenceEdgeCases(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -360,7 +361,7 @@ func TestParseModule(t *testing.T) {
 				t.Logf("Got errors (may be expected): %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -477,10 +478,10 @@ func TestNegativeLiterals(t *testing.T) {
 
 			// Negative numbers might not be supported yet,
 			// but we should test behavior
-			snaps.MatchSnapshot(t, map[string]interface{}{
+			snaps.MatchSnapshot(t, snapshot.String(map[string]interface{}{
 				"typeAnn": typeAnn,
 				"errors":  parser.errors,
-			})
+			}))
 		})
 	}
 }
@@ -510,10 +511,10 @@ func TestWhitespaceHandling(t *testing.T) {
 
 			// Some whitespace handling might cause parsing to fail
 			// We want to document this behavior
-			snaps.MatchSnapshot(t, map[string]interface{}{
+			snaps.MatchSnapshot(t, snapshot.String(map[string]interface{}{
 				"typeAnn": typeAnn,
 				"errors":  parser.errors,
-			})
+			}))
 		})
 	}
 }
@@ -566,7 +567,7 @@ func TestMixedOperatorPrecedence(t *testing.T) {
 
 			// Log the expected structure for documentation
 			t.Logf("Expected: %s", tt.expected)
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -617,7 +618,7 @@ func TestSingleCharacterTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -644,10 +645,10 @@ func TestQualifiedIdentifierBoundaries(t *testing.T) {
 			typeAnn := parser.ParseTypeAnn()
 
 			// Some of these should fail (like .A or A.)
-			snaps.MatchSnapshot(t, map[string]interface{}{
+			snaps.MatchSnapshot(t, snapshot.String(map[string]interface{}{
 				"typeAnn": typeAnn,
 				"errors":  parser.errors,
-			})
+			}))
 		})
 	}
 }
@@ -683,7 +684,7 @@ func TestTypeArgumentsBoundaries(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -717,7 +718,7 @@ func TestStringLiteralVariations(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -748,10 +749,10 @@ func TestModuleWithUnexpectedTokens(t *testing.T) {
 				t.Logf("Warning: Expected errors but got none for: %s", tt.input)
 			}
 
-			snaps.MatchSnapshot(t, map[string]interface{}{
+			snaps.MatchSnapshot(t, snapshot.String(map[string]interface{}{
 				"module": module,
 				"errors": len(errors), // Just count, not full errors
-			})
+			}))
 		})
 	}
 }

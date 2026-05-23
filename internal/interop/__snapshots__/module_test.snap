@@ -2,143 +2,59 @@
 [TestConvertModule_Simple - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:13},
-                                        End:      ast.Location{Line:2, Column:14},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 2:13-2:14,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:2, Column:16},
-                                        End:      ast.Location{Line:2, Column:22},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 2:16-2:22,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:2, Column:9},
-                                    End:      ast.Location{Line:2, Column:23},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                declare: true,
+                                span: 2:9-2:23,
                             },
                             &ast.FuncDecl{
                                 Name: &ast.Ident{
                                     Name: "foo",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:18},
-                                        End:      ast.Location{Line:3, Column:21},
-                                        SourceID: 0,
-                                    },
+                                    span: 3:18-3:21,
                                 },
-                                VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    LifetimeParams: nil,
-                                    TypeParams:     {
-                                    },
-                                    Params: {
-                                    },
                                     Return: &ast.VoidTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:3, Column:25},
-                                            End:      ast.Location{Line:3, Column:29},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 3:25-3:29,
                                     },
                                     Throws: &ast.NeverTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:3, Column:9},
-                                            End:      ast.Location{Line:3, Column:30},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 3:9-3:30,
                                     },
-                                    Async: false,
                                 },
-                                Body:       (*ast.Block)(nil),
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:9},
-                                    End:      ast.Location{Line:3, Column:30},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                declare: true,
+                                span: 3:9-3:30,
                             },
                             &ast.TypeDecl{
                                 Name: &ast.Ident{
                                     Name: "MyType",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:6},
-                                        End:      ast.Location{Line:4, Column:12},
-                                        SourceID: 0,
-                                    },
-                                },
-                                TypeParams: {
+                                    span: 4:6-4:12,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:15},
-                                        End:      ast.Location{Line:4, Column:21},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 4:15-4:21,
                                 },
-                                export:   false,
-                                declare:  true,
-                                override: false,
-                                span:     ast.Span{
-                                    Start:    ast.Location{Line:4, Column:1},
-                                    End:      ast.Location{Line:4, Column:22},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                declare: true,
+                                span: 4:1-4:22,
                             },
                         },
-                        Exported: false,
                     },
-                    key: "",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -146,114 +62,51 @@
 [TestConvertModule_SingleNamespace - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:7},
-                                        End:      ast.Location{Line:3, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 3:7-3:8,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:10},
-                                        End:      ast.Location{Line:3, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 3:10-3:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:3},
-                                    End:      ast.Location{Line:3, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 3:3-3:17,
                             },
                             &ast.FuncDecl{
                                 Name: &ast.Ident{
                                     Name: "foo",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:12},
-                                        End:      ast.Location{Line:4, Column:15},
-                                        SourceID: 0,
-                                    },
+                                    span: 4:12-4:15,
                                 },
-                                VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    LifetimeParams: nil,
-                                    TypeParams:     {
-                                    },
-                                    Params: {
-                                    },
                                     Return: &ast.VoidTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:4, Column:19},
-                                            End:      ast.Location{Line:4, Column:23},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 4:19-4:23,
                                     },
                                     Throws: &ast.NeverTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:4, Column:3},
-                                            End:      ast.Location{Line:4, Column:24},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 4:3-4:24,
                                     },
-                                    Async: false,
                                 },
-                                Body:       (*ast.Block)(nil),
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:4, Column:3},
-                                    End:      ast.Location{Line:4, Column:24},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                export: true,
+                                declare: true,
+                                span: 4:3-4:24,
                             },
                         },
-                        Exported: false,
                     },
                     key: "MyNamespace",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -261,112 +114,54 @@
 [TestConvertModule_NestedNamespaces - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 2,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "y",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:6, Column:7},
-                                        End:      ast.Location{Line:6, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "y",
+                                    span: 6:7-6:8,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:6, Column:10},
-                                        End:      ast.Location{Line:6, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 6:10-6:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:6, Column:3},
-                                    End:      ast.Location{Line:6, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 6:3-6:17,
                             },
                         },
-                        Exported: false,
                     },
                     key: "Outer",
                 },
-                {
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:4, Column:9},
-                                        End:      ast.Location{Line:4, Column:10},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 4:9-4:10,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:12},
-                                        End:      ast.Location{Line:4, Column:18},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 4:12-4:18,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:4, Column:5},
-                                    End:      ast.Location{Line:4, Column:19},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 4:5-4:19,
                             },
                         },
-                        Exported: false,
                     },
                     key: "Outer.Inner",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         2,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 2,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -374,158 +169,68 @@
 [TestConvertModule_MixedGlobalAndNamespace - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 2,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "globalVar",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:13},
-                                        End:      ast.Location{Line:2, Column:22},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "globalVar",
+                                    span: 2:13-2:22,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:2, Column:24},
-                                        End:      ast.Location{Line:2, Column:30},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 2:24-2:30,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:2, Column:9},
-                                    End:      ast.Location{Line:2, Column:31},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                declare: true,
+                                span: 2:9-2:31,
                             },
                             &ast.FuncDecl{
                                 Name: &ast.Ident{
                                     Name: "globalFunc",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:8, Column:18},
-                                        End:      ast.Location{Line:8, Column:28},
-                                        SourceID: 0,
-                                    },
+                                    span: 8:18-8:28,
                                 },
-                                VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    LifetimeParams: nil,
-                                    TypeParams:     {
-                                    },
-                                    Params: {
-                                    },
                                     Return: &ast.VoidTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:8, Column:32},
-                                            End:      ast.Location{Line:8, Column:36},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 8:32-8:36,
                                     },
                                     Throws: &ast.NeverTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:8, Column:9},
-                                            End:      ast.Location{Line:8, Column:37},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 8:9-8:37,
                                     },
-                                    Async: false,
                                 },
-                                Body:       (*ast.Block)(nil),
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:8, Column:9},
-                                    End:      ast.Location{Line:8, Column:37},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                declare: true,
+                                span: 8:9-8:37,
                             },
                         },
-                        Exported: false,
                     },
-                    key: "",
                 },
-                {
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "nsVar",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:5, Column:7},
-                                        End:      ast.Location{Line:5, Column:12},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "nsVar",
+                                    span: 5:7-5:12,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:5, Column:14},
-                                        End:      ast.Location{Line:5, Column:20},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 5:14-5:20,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:5, Column:3},
-                                    End:      ast.Location{Line:5, Column:21},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 5:3-5:21,
                             },
                         },
-                        Exported: false,
                     },
                     key: "MyNamespace",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         2,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 2,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -533,112 +238,54 @@
 [TestConvertModule_MultipleNamespaces - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 2,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:7},
-                                        End:      ast.Location{Line:3, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 3:7-3:8,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:10},
-                                        End:      ast.Location{Line:3, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 3:10-3:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:3},
-                                    End:      ast.Location{Line:3, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 3:3-3:17,
                             },
                         },
-                        Exported: false,
                     },
                     key: "NS1",
                 },
-                {
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "y",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:7, Column:7},
-                                        End:      ast.Location{Line:7, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "y",
+                                    span: 7:7-7:8,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:7, Column:10},
-                                        End:      ast.Location{Line:7, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 7:10-7:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:7, Column:3},
-                                    End:      ast.Location{Line:7, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 7:3-7:17,
                             },
                         },
-                        Exported: false,
                     },
                     key: "NS2",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         2,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 2,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -646,104 +293,47 @@
 [TestConvertModule_NamespaceMerging - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:7},
-                                        End:      ast.Location{Line:3, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 3:7-3:8,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:10},
-                                        End:      ast.Location{Line:3, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 3:10-3:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:3},
-                                    End:      ast.Location{Line:3, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 3:3-3:17,
                             },
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "y",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:7, Column:7},
-                                        End:      ast.Location{Line:7, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "y",
+                                    span: 7:7-7:8,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:7, Column:10},
-                                        End:      ast.Location{Line:7, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 7:10-7:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:7, Column:3},
-                                    End:      ast.Location{Line:7, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 7:3-7:17,
                             },
                         },
-                        Exported: false,
                     },
                     key: "MyNamespace",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -751,140 +341,56 @@
 [TestConvertModule_AmbientDeclarations - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:13},
-                                        End:      ast.Location{Line:2, Column:14},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 2:13-2:14,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:2, Column:16},
-                                        End:      ast.Location{Line:2, Column:22},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 2:16-2:22,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:2, Column:9},
-                                    End:      ast.Location{Line:2, Column:23},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                declare: true,
+                                span: 2:9-2:23,
                             },
                             &ast.FuncDecl{
                                 Name: &ast.Ident{
                                     Name: "foo",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:18},
-                                        End:      ast.Location{Line:3, Column:21},
-                                        SourceID: 0,
-                                    },
+                                    span: 3:18-3:21,
                                 },
-                                VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    LifetimeParams: nil,
-                                    TypeParams:     {
-                                    },
-                                    Params: {
-                                    },
                                     Return: &ast.VoidTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:3, Column:25},
-                                            End:      ast.Location{Line:3, Column:29},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 3:25-3:29,
                                     },
                                     Throws: &ast.NeverTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:3, Column:9},
-                                            End:      ast.Location{Line:3, Column:30},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 3:9-3:30,
                                     },
-                                    Async: false,
                                 },
-                                Body:       (*ast.Block)(nil),
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:9},
-                                    End:      ast.Location{Line:3, Column:30},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                declare: true,
+                                span: 3:9-3:30,
                             },
                             &ast.ClassDecl{
                                 Name: &ast.Ident{
                                     Name: "MyClass",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:15},
-                                        End:      ast.Location{Line:4, Column:22},
-                                        SourceID: 0,
-                                    },
+                                    span: 4:15-4:22,
                                 },
-                                LifetimeParams: nil,
-                                TypeParams:     {
-                                },
-                                Extends:    (*ast.TypeRefTypeAnn)(nil),
-                                Implements: nil,
-                                Body:       nil,
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:4, Column:9},
-                                    End:      ast.Location{Line:4, Column:25},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                declare: true,
+                                span: 4:9-4:25,
                             },
                         },
-                        Exported: false,
                     },
-                    key: "",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -892,68 +398,34 @@
 [TestConvertModule_AmbientNamespace - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:7},
-                                        End:      ast.Location{Line:3, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 3:7-3:8,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:10},
-                                        End:      ast.Location{Line:3, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 3:10-3:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:3},
-                                    End:      ast.Location{Line:3, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 3:3-3:17,
                             },
                         },
-                        Exported: false,
                     },
                     key: "MyNamespace",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -961,68 +433,34 @@
 [TestConvertModule_DeeplyNestedNamespaces - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:5, Column:11},
-                                        End:      ast.Location{Line:5, Column:12},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 5:11-5:12,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:5, Column:14},
-                                        End:      ast.Location{Line:5, Column:20},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 5:14-5:20,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:5, Column:7},
-                                    End:      ast.Location{Line:5, Column:21},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 5:7-5:21,
                             },
                         },
-                        Exported: false,
                     },
                     key: "A.B.C",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -1135,201 +573,84 @@
 [TestConvertModule_AmbientNamespaceAutoExport - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:7},
-                                        End:      ast.Location{Line:3, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 3:7-3:8,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:10},
-                                        End:      ast.Location{Line:3, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 3:10-3:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:3},
-                                    End:      ast.Location{Line:3, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 3:3-3:17,
                             },
                             &ast.FuncDecl{
                                 Name: &ast.Ident{
                                     Name: "foo",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:12},
-                                        End:      ast.Location{Line:4, Column:15},
-                                        SourceID: 0,
-                                    },
+                                    span: 4:12-4:15,
                                 },
-                                VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    LifetimeParams: nil,
-                                    TypeParams:     {
-                                    },
-                                    Params: {
-                                    },
                                     Return: &ast.VoidTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:4, Column:19},
-                                            End:      ast.Location{Line:4, Column:23},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 4:19-4:23,
                                     },
                                     Throws: &ast.NeverTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:4, Column:3},
-                                            End:      ast.Location{Line:4, Column:24},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 4:3-4:24,
                                     },
-                                    Async: false,
                                 },
-                                Body:       (*ast.Block)(nil),
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:4, Column:3},
-                                    End:      ast.Location{Line:4, Column:24},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                export: true,
+                                declare: true,
+                                span: 4:3-4:24,
                             },
                             &ast.ClassDecl{
                                 Name: &ast.Ident{
                                     Name: "MyClass",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:5, Column:9},
-                                        End:      ast.Location{Line:5, Column:16},
-                                        SourceID: 0,
-                                    },
+                                    span: 5:9-5:16,
                                 },
-                                LifetimeParams: nil,
-                                TypeParams:     {
-                                },
-                                Extends:    (*ast.TypeRefTypeAnn)(nil),
-                                Implements: nil,
-                                Body:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:5, Column:3},
-                                    End:      ast.Location{Line:5, Column:19},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                export: true,
+                                declare: true,
+                                span: 5:3-5:19,
                             },
                             &ast.InterfaceDecl{
                                 Name: &ast.Ident{
                                     Name: "MyInterface",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:6, Column:13},
-                                        End:      ast.Location{Line:6, Column:24},
-                                        SourceID: 0,
-                                    },
+                                    span: 6:13-6:24,
                                 },
-                                LifetimeParams: nil,
-                                TypeParams:     {
-                                },
-                                Extends: nil,
                                 TypeAnn: &ast.ObjectTypeAnn{
-                                    Elems: nil,
-                                    span:  ast.Span{
-                                        Start:    ast.Location{Line:6, Column:3},
-                                        End:      ast.Location{Line:6, Column:27},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 6:3-6:27,
                                 },
-                                export:   true,
-                                declare:  true,
-                                override: false,
-                                span:     ast.Span{
-                                    Start:    ast.Location{Line:6, Column:3},
-                                    End:      ast.Location{Line:6, Column:27},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                export: true,
+                                declare: true,
+                                span: 6:3-6:27,
                             },
                             &ast.TypeDecl{
                                 Name: &ast.Ident{
                                     Name: "MyType",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:7, Column:8},
-                                        End:      ast.Location{Line:7, Column:14},
-                                        SourceID: 0,
-                                    },
-                                },
-                                TypeParams: {
+                                    span: 7:8-7:14,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:7, Column:17},
-                                        End:      ast.Location{Line:7, Column:23},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 7:17-7:23,
                                 },
-                                export:   true,
-                                declare:  true,
-                                override: false,
-                                span:     ast.Span{
-                                    Start:    ast.Location{Line:7, Column:3},
-                                    End:      ast.Location{Line:7, Column:24},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                export: true,
+                                declare: true,
+                                span: 7:3-7:24,
                             },
                         },
-                        Exported: false,
                     },
                     key: "MyNamespace",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -1337,158 +658,71 @@
 [TestConvertModule_AmbientNamespaceNestedAutoExport - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 2,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "y",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:7, Column:7},
-                                        End:      ast.Location{Line:7, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "y",
+                                    span: 7:7-7:8,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:7, Column:10},
-                                        End:      ast.Location{Line:7, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 7:10-7:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:7, Column:3},
-                                    End:      ast.Location{Line:7, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 7:3-7:17,
                             },
                         },
-                        Exported: false,
                     },
                     key: "Outer",
                 },
-                {
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:4, Column:9},
-                                        End:      ast.Location{Line:4, Column:10},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 4:9-4:10,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:12},
-                                        End:      ast.Location{Line:4, Column:18},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 4:12-4:18,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:4, Column:5},
-                                    End:      ast.Location{Line:4, Column:19},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 4:5-4:19,
                             },
                             &ast.FuncDecl{
                                 Name: &ast.Ident{
                                     Name: "foo",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:5, Column:14},
-                                        End:      ast.Location{Line:5, Column:17},
-                                        SourceID: 0,
-                                    },
+                                    span: 5:14-5:17,
                                 },
-                                VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    LifetimeParams: nil,
-                                    TypeParams:     {
-                                    },
-                                    Params: {
-                                    },
                                     Return: &ast.VoidTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:5, Column:21},
-                                            End:      ast.Location{Line:5, Column:25},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 5:21-5:25,
                                     },
                                     Throws: &ast.NeverTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:5, Column:5},
-                                            End:      ast.Location{Line:5, Column:26},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 5:5-5:26,
                                     },
-                                    Async: false,
                                 },
-                                Body:       (*ast.Block)(nil),
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:5, Column:5},
-                                    End:      ast.Location{Line:5, Column:26},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                export: true,
+                                declare: true,
+                                span: 5:5-5:26,
                             },
                         },
-                        Exported: false,
                     },
                     key: "Outer.Inner",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         2,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 2,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -1496,114 +730,48 @@
 [TestConvertModule_TopLevelDeclareNotAutoExported - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:2, Column:13},
-                                        End:      ast.Location{Line:2, Column:14},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 2:13-2:14,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:2, Column:16},
-                                        End:      ast.Location{Line:2, Column:22},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 2:16-2:22,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:2, Column:9},
-                                    End:      ast.Location{Line:2, Column:23},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                declare: true,
+                                span: 2:9-2:23,
                             },
                             &ast.FuncDecl{
                                 Name: &ast.Ident{
                                     Name: "foo",
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:18},
-                                        End:      ast.Location{Line:3, Column:21},
-                                        SourceID: 0,
-                                    },
+                                    span: 3:18-3:21,
                                 },
-                                VarID:   0,
                                 FuncSig: ast.FuncSig{
-                                    LifetimeParams: nil,
-                                    TypeParams:     {
-                                    },
-                                    Params: {
-                                    },
                                     Return: &ast.VoidTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:3, Column:25},
-                                            End:      ast.Location{Line:3, Column:29},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 3:25-3:29,
                                     },
                                     Throws: &ast.NeverTypeAnn{
-                                        span: ast.Span{
-                                            Start:    ast.Location{Line:3, Column:9},
-                                            End:      ast.Location{Line:3, Column:30},
-                                            SourceID: 0,
-                                        },
-                                        inferredType: nil,
+                                        span: 3:9-3:30,
                                     },
-                                    Async: false,
                                 },
-                                Body:       (*ast.Block)(nil),
-                                Decorators: nil,
-                                export:     false,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:9},
-                                    End:      ast.Location{Line:3, Column:30},
-                                    SourceID: 0,
-                                },
-                                provenance: nil,
+                                declare: true,
+                                span: 3:9-3:30,
                             },
                         },
-                        Exported: false,
                     },
-                    key: "",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---
@@ -1611,104 +779,47 @@
 [TestConvertModule_ExplicitExportInAmbientNamespace - 1]
 &ast.Module{
     Namespaces: btree.Map[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-        isoid: 0x0,
-        root:  &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
-            isoid: 0x0,
+        root: &btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
             count: 1,
-            items: {
-                {
+            items: []btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
+                btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{
                     value: &ast.Namespace{
-                        Decls: {
+                        Decls: []ast.Decl{
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "x",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:3, Column:14},
-                                        End:      ast.Location{Line:3, Column:15},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "x",
+                                    span: 3:14-3:15,
                                 },
                                 TypeAnn: &ast.NumberTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:3, Column:17},
-                                        End:      ast.Location{Line:3, Column:23},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 3:17-3:23,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:3, Column:10},
-                                    End:      ast.Location{Line:3, Column:24},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 3:10-3:24,
                             },
                             &ast.VarDecl{
-                                Kind:    1,
+                                Kind: 1,
                                 Pattern: &ast.IdentPat{
-                                    Name:    "y",
-                                    VarID:   0,
-                                    Mutable: false,
-                                    TypeAnn: nil,
-                                    Default: nil,
-                                    span:    ast.Span{
-                                        Start:    ast.Location{Line:4, Column:7},
-                                        End:      ast.Location{Line:4, Column:8},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    Name: "y",
+                                    span: 4:7-4:8,
                                 },
                                 TypeAnn: &ast.StringTypeAnn{
-                                    span: ast.Span{
-                                        Start:    ast.Location{Line:4, Column:10},
-                                        End:      ast.Location{Line:4, Column:16},
-                                        SourceID: 0,
-                                    },
-                                    inferredType: nil,
+                                    span: 4:10-4:16,
                                 },
-                                Init:       nil,
-                                Decorators: nil,
-                                export:     true,
-                                declare:    true,
-                                override:   false,
-                                span:       ast.Span{
-                                    Start:    ast.Location{Line:4, Column:3},
-                                    End:      ast.Location{Line:4, Column:17},
-                                    SourceID: 0,
-                                },
-                                InferredType: nil,
-                                provenance:   nil,
+                                export: true,
+                                declare: true,
+                                span: 4:3-4:17,
                             },
                         },
-                        Exported: false,
                     },
                     key: "MyNamespace",
                 },
             },
-            children: (*[]*btree.mapNode[string,*github.com/escalier-lang/escalier/internal/ast.Namespace])(nil),
         },
-        count:         1,
-        empty:         btree.mapPair[string,*github.com/escalier-lang/escalier/internal/ast.Namespace]{},
-        min:           31,
-        max:           63,
-        copyValues:    false,
-        isoCopyValues: false,
-    },
-    Files: {
-    },
-    Sources: {
+        count: 1,
+        min: 31,
+        max: 63,
     },
 }
 ---

@@ -7,6 +7,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -26,7 +27,7 @@ func TestPrintExpr(t *testing.T) {
 	if got := printer.Output; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	snaps.MatchSnapshot(t, sum)
+	snaps.MatchSnapshot(t, snapshot.String(sum))
 }
 
 func TestPrintModule(t *testing.T) {

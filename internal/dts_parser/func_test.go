@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -44,7 +45,7 @@ func TestFunctionTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -80,7 +81,7 @@ func TestFunctionTypesWithTypeParams(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -118,7 +119,7 @@ func TestConstructorTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -155,7 +156,7 @@ func TestTypePredicates(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -198,7 +199,7 @@ func TestMethodSignatureWithTypePredicate(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -234,7 +235,7 @@ func TestParenthesizedVsFunctionType(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -273,7 +274,7 @@ func TestTypeKeywordsAsIdentifiers(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }

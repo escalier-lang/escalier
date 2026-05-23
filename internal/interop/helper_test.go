@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -452,7 +453,7 @@ func TestConvertTypeAnn(t *testing.T) {
 				t.Fatalf("Failed to convert type annotation (nil result): %s", tt.input)
 			}
 
-			snaps.MatchSnapshot(t, escalierTypeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(escalierTypeAnn))
 		})
 	}
 }
@@ -528,7 +529,7 @@ func TestConvertMethodDecl(t *testing.T) {
 				t.Fatalf("convertMethodDecl failed: %v", err)
 			}
 
-			snaps.MatchSnapshot(t, result)
+			snaps.MatchSnapshot(t, snapshot.String(result))
 		})
 	}
 }
@@ -609,7 +610,7 @@ func TestConvertPropertyDecl(t *testing.T) {
 				t.Fatalf("convertPropertyDecl failed: %v", err)
 			}
 
-			snaps.MatchSnapshot(t, result)
+			snaps.MatchSnapshot(t, snapshot.String(result))
 		})
 	}
 }
@@ -675,7 +676,7 @@ func TestConvertGetterDecl(t *testing.T) {
 				t.Fatalf("convertGetterDecl failed: %v", err)
 			}
 
-			snaps.MatchSnapshot(t, result)
+			snaps.MatchSnapshot(t, snapshot.String(result))
 		})
 	}
 }
@@ -741,7 +742,7 @@ func TestConvertSetterDecl(t *testing.T) {
 				t.Fatalf("convertSetterDecl failed: %v", err)
 			}
 
-			snaps.MatchSnapshot(t, result)
+			snaps.MatchSnapshot(t, snapshot.String(result))
 		})
 	}
 }

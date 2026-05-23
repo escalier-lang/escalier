@@ -1,178 +1,157 @@
 
 [TestVarDecls - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;IACN,AAAA,MAAM\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "const foo = 5;\nlet bar = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val foo = 5\\nvar bar = \\\"hello\\\"\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,MAAM;IACN,AAAA,MAAM\"}",
+        },
     },
 }
 ---
 
 [TestFuncDecls - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "function add(temp1, temp2) {\n  const a = temp1;\n  const b = temp2;\n  return a + b;\n}\nfunction sub(temp3, temp4) {\n  const a = temp3;\n  const b = temp4;\n  return a - b;\n}\nconst sum = add(1, 2);\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn add(a: number, b: number) {\\n  return a + b\\n}\\nfn sub(a: number, b: number) { return a - b }\\nval sum = add(1, 2)\\n\"],\"names\":[],\"mappings\":\"AAAA,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAChB,OAAO,AAAA,IAAI;;AAEb,aAAO,OAAW;QAAX,AAAA;QAAW,AAAA;EAAa,OAAO,AAAA,IAAI;;MACtC,AAAA,MAAM,AAAA,IAAI,GAAG\"}",
+        },
     },
 }
 ---
 
 [TestArrays - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,OAAO,CAAC,GAAG,GAAG;MACd,AAAA,QAAQ,AAAA,KAAK\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "const nums = [1, 2, 3];\nconst first = nums[0];\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val nums = [1, 2, 3]\\nval first = nums[0]\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,OAAO,CAAC,GAAG,GAAG;MACd,AAAA,QAAQ,AAAA,KAAK\"}",
+        },
     },
 }
 ---
 
 [TestMemberAccess - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"console.log(\"hello, world\");\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"console.log(\\\"hello, world\\\")\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "console.log(\"hello, world\");\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"console.log(\\\"hello, world\\\")\\n\"],\"names\":[],\"mappings\":\"AAAA,AAAA,AAAA,QAAQ,IAAI\"}",
+        },
     },
 }
 ---
 
 [TestTypeCast - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"const x = 5;\nconst y = \"hello\";\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val x = 5 : number\\nval y = \\\"hello\\\" : string\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,IAAI;MACJ,AAAA,IAAI\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "const x = 5;\nconst y = \"hello\";\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"val x = 5 : number\\nval y = \\\"hello\\\" : string\\n\"],\"names\":[],\"mappings\":\"MAAI,AAAA,IAAI;MACJ,AAAA,IAAI\"}",
+        },
     },
 }
 ---
 
 [TestGeneratorFunction - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"function* count() {\n  yield 1;\n  yield 2;\n  yield 3;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn count() {\\n  yield 1\\n  yield 2\\n  yield 3\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,MAAM;EACN,MAAM\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "function* count() {\n  yield 1;\n  yield 2;\n  yield 3;\n}\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn count() {\\n  yield 1\\n  yield 2\\n  yield 3\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,MAAM;EACN,MAAM\"}",
+        },
     },
 }
 ---
 
 [TestGeneratorWithReturn - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"function* myGen() {\n  yield 1;\n  return 42;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn myGen() {\\n  yield 1\\n  return 42\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,OAAO\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "function* myGen() {\n  yield 1;\n  return 42;\n}\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn myGen() {\\n  yield 1\\n  return 42\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EACE,MAAM;EACN,OAAO\"}",
+        },
     },
 }
 ---
 
 [TestYieldFrom - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"function* delegating() {\n  yield* nums;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn delegating() {\\n  declare val nums: Array\\u003cnumber\\u003e\\n  yield from nums\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,OAAW\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "function* delegating() {\n  yield* nums;\n}\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"fn delegating() {\\n  declare val nums: Array\\u003cnumber\\u003e\\n  yield from nums\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,OAAW\"}",
+        },
     },
 }
 ---
 
 [TestForIn - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Array\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Array\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}",
+        },
     },
 }
 ---
 
 [TestForAwaitIn - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: nil,
-    CompUnits:  {
-        "index": {JS:"async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: Array\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: Array\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}",
+        },
     },
 }
 ---
 
 [TestForInIterator - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: {
+    TypeErrors: []checker.Error{
         &checker.UnimplementedError{
             message: "Type 'Iterator<number>' is not iterable",
-            span:    ast.Span{
-                Start:    ast.Location{Line:2, Column:10},
-                End:      ast.Location{Line:2, Column:15},
-                SourceID: 0,
-            },
+            span: 2:10-2:15,
         },
     },
-    CompUnits: {
-        "index": {JS:"for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Iterator\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "for (const temp1 of items) {\n  const x = temp1;\n  const y = x;\n}\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"declare val items: Iterator\\u003cnumber\\u003e\\nfor x in items {\\n  val y = x\\n}\\n\"],\"names\":[],\"mappings\":\"AACA,WAAI,AAAA,SAAK;QAAL,AAAA;QACE,AAAA,IAAI\"}",
+        },
     },
 }
 ---
 
 [TestForAwaitInAsyncIterator - 1]
 compiler.CompilerOutput{
-    ParseErrors: {
-    },
-    TypeErrors: {
+    TypeErrors: []checker.Error{
         &checker.UnknownTypeError{
             TypeName: "AsyncIterator",
-            TypeRef:  &type_system.TypeRefType{
-                Name:     &type_system.Ident{Name:"AsyncIterator"},
-                TypeArgs: {
+            TypeRef: &type_system.TypeRefType{
+                Name: &type_system.Ident{
+                    Name: "AsyncIterator",
+                },
+                TypeArgs: []type_system.Type{
                     nil,
                 },
-                TypeAlias:    (*type_system.TypeAlias)(nil),
-                Lifetime:     nil,
-                LifetimeArgs: nil,
-                provenance:   &ast.NodeProvenance{
+                provenance: &ast.NodeProvenance{
                     Node: &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "AsyncIterator",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:2, Column:22},
-                                End:      ast.Location{Line:2, Column:35},
-                                SourceID: 0,
-                            },
+                            span: 2:22-2:35,
                         },
-                        TypeArgs: {
+                        TypeArgs: []ast.TypeAnn{
                             &ast.NumberTypeAnn{
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:2, Column:36},
-                                    End:      ast.Location{Line:2, Column:42},
-                                    SourceID: 0,
-                                },
-                                inferredType: nil,
+                                span: 2:36-2:42,
                             },
                         },
-                        LifetimeArgs: nil,
-                        Lifetime:     nil,
-                        span:         ast.Span{
-                            Start:    ast.Location{Line:2, Column:22},
-                            End:      ast.Location{Line:2, Column:43},
-                            SourceID: 0,
-                        },
+                        span: 2:22-2:43,
                         inferredType: &type_system.NeverType{
-                            provenance: &ast.NodeProvenance{(CYCLIC REFERENCE)},
+                            provenance: <cycle *ast.NodeProvenance>,
                         },
                     },
                 },
@@ -180,15 +159,14 @@ compiler.CompilerOutput{
         },
         &checker.UnimplementedError{
             message: "Type 'never' is not iterable",
-            span:    ast.Span{
-                Start:    ast.Location{Line:3, Column:18},
-                End:      ast.Location{Line:3, Column:23},
-                SourceID: 0,
-            },
+            span: 3:18-3:23,
         },
     },
-    CompUnits: {
-        "index": {JS:"async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n", SourceMap:"{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: AsyncIterator\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}", DTS:""},
+    CompUnits: map[string]compiler.CompUnitOutput{
+        "index": compiler.CompUnitOutput{
+            JS: "async function processItems() {\n  for await (const temp1 of items) {\n    const x = temp1;\n    const y = x;\n  }\n}\n//# sourceMappingURL=./index.js.map\n",
+            SourceMap: "{\"version\":3,\"file\":\"./index.js\",\"sources\":[\"../../input.esc\"],\"sourcesContent\":[\"async fn processItems() {\\n  declare val items: AsyncIterator\\u003cnumber\\u003e\\n  for await x in items {\\n    val y = x\\n  }\\n}\\n\"],\"names\":[],\"mappings\":\"AAAA;EAEE,iBAAU,AAAA,SAAK;UAAL,AAAA;UACJ,AAAA,IAAI\"}",
+        },
     },
 }
 ---
