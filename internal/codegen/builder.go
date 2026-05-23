@@ -1408,6 +1408,9 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		argExpr, argStmts := b.buildExpr(expr.Arg, expr)
 		return NewUnaryExpr(UnaryOp(expr.Op), argExpr, expr), argStmts
 	case *ast.IdentExpr:
+		if lowered, ok := b.jsLoweringFor(expr); ok {
+			return lowered, []Stmt{}
+		}
 		var namespaceStr string
 		if b.depGraph != nil {
 			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
@@ -1445,6 +1448,13 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		stmts := slices.Concat(objStmts, indexStmts)
 		return NewIndexExpr(objExpr, indexExpr, expr.OptChain, expr), stmts
 	case *ast.MemberExpr:
+		if lowered, ok := b.jsLoweringFor(expr); ok {
+			// `math.sin` collapses to the @js-decorated declaration's
+			// argument (e.g. `Math.sin`). The original receiver doesn't
+			// participate in the lowered output, so we drop the
+			// receiver-binding / temp-var logic below.
+			return lowered, []Stmt{}
+		}
 		objExpr, objStmts := b.buildExpr(expr.Object, expr)
 		propExpr := buildIdent(expr.Prop)
 

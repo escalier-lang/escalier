@@ -342,6 +342,14 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 		return nil, errs
 	}
 
+	// Loader rules §3.4 (1-3): every exported value-level decl must
+	// carry `@js`; unexported value-level decls are rejected. Rule 4
+	// (`@js` target validation against TS lib globals) lands separately.
+	if decErrs := validateStdlibDecorators(filePath, mod, span); len(decErrs) > 0 {
+		delete(c.PackageRegistry.packages, uri)
+		return nil, decErrs
+	}
+
 	pkgNs := type_system.NewNamespace()
 	pkgScope := &Scope{Parent: c.GlobalScope, Namespace: pkgNs}
 	pkgCtx := Context{Scope: pkgScope, IsAsync: false, IsPatMatch: false}

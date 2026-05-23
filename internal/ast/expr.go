@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
 // NamespaceID represents a unique identifier for a namespace
@@ -283,10 +284,19 @@ func NewLitExpr(lit Lit) *LiteralExpr {
 }
 
 type IdentExpr struct {
-	Name         string
-	Namespace    NamespaceID
-	VarID        int // set by the rename pass (liveness.VarID); 0 = unset
-	Source       provenance.Provenance
+	Name      string
+	Namespace NamespaceID
+	VarID     int // set by the rename pass (liveness.VarID); 0 = unset
+	Source    provenance.Provenance
+	// Owner is the resolved binding's owning top-level declaration —
+	// the `FuncDecl` / `VarDecl` / `ClassDecl` that introduced the
+	// name. Stamped by inference when this identifier resolves to a
+	// top-level value binding; nil for unbound references, params,
+	// locals, or references that resolve to a namespace rather than a
+	// value. Carried so codegen can walk back to the declaration's
+	// decorators (e.g. `@js("Math.sin")`) without a re-lookup. See
+	// planning/builtins/implementation_plan.md §3.
+	Owner        type_system.BindingOwner
 	span         Span
 	inferredType Type
 }
@@ -398,7 +408,7 @@ func NewCall(callee Expr, args []Expr, optChain bool, span Span) *CallExpr {
 //
 //   - nil           → no dispatch was resolved (error paths)
 //   - NeverType     → resolved to a non-throwing arm (sentinel: the
-//                     callee declared no throws clause)
+//     callee declared no throws clause)
 //   - any other Type → the resolved throws type
 //
 // Callers that just want "what does this call throw" should treat

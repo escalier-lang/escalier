@@ -328,6 +328,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	classBinding := &type_system.Binding{
 		Source:     provenance,
+		Owner:      decl,
 		Type:       classObjType,
 		Assignable: false,
 		Mutable:    false,

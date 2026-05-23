@@ -1,2 +1,2 @@
-export const pi = math.PI;
+export const pi = Math.PI;
 //# sourceMappingURL=./index.js.map

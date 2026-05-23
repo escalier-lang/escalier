@@ -404,6 +404,7 @@
                 Namespace: 0,
                 VarID:     0,
                 Source:    nil,
+                Owner:     nil,
                 span:      ast.Span{
                     Start:    ast.Location{Line:1, Column:14},
                     End:      ast.Location{Line:1, Column:17},
@@ -505,6 +506,7 @@
                             Namespace: 0,
                             VarID:     0,
                             Source:    nil,
+                            Owner:     nil,
                             span:      ast.Span{
                                 Start:    ast.Location{Line:1, Column:14},
                                 End:      ast.Location{Line:1, Column:17},
@@ -942,6 +944,7 @@
                     Namespace: 0,
                     VarID:     0,
                     Source:    nil,
+                    Owner:     nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
                         End:      ast.Location{Line:1, Column:16},
@@ -961,6 +964,7 @@
                     Namespace: 0,
                     VarID:     0,
                     Source:    nil,
+                    Owner:     nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:22},
                         End:      ast.Location{Line:1, Column:28},
@@ -1053,6 +1057,7 @@
                     Namespace: 0,
                     VarID:     0,
                     Source:    nil,
+                    Owner:     nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
                         End:      ast.Location{Line:1, Column:15},
@@ -1104,6 +1109,7 @@
                     Namespace: 0,
                     VarID:     0,
                     Source:    nil,
+                    Owner:     nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:10},
                         End:      ast.Location{Line:1, Column:15},
@@ -1217,6 +1223,7 @@
                     Namespace: 0,
                     VarID:     0,
                     Source:    nil,
+                    Owner:     nil,
                     span:      ast.Span{
                         Start:    ast.Location{Line:1, Column:18},
                         End:      ast.Location{Line:1, Column:23},

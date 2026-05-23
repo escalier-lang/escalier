@@ -310,6 +310,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				exprType.SetProvenance(&ast.NodeProvenance{Node: expr})
 			}
 			expr.Source = binding.Source
+			expr.Owner = binding.Owner
 			errors = nil
 		} else if namespace := ctx.Scope.getNamespace(expr.Name); namespace != nil {
 			t := type_system.NewNamespaceType(provenance, namespace)

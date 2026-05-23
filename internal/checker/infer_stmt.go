@@ -124,6 +124,7 @@ func (c *Checker) inferVarDecl(
 	assignable := decl.Kind == ast.VarKind
 	for _, binding := range bindings {
 		binding.Assignable = assignable
+		binding.Owner = decl
 	}
 
 	if decl.TypeAnn == nil && decl.Init == nil {
@@ -261,6 +262,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 
 	binding := type_system.Binding{
 		Source:     &ast.NodeProvenance{Node: decl},
+		Owner:      decl,
 		Type:       funcType,
 		Assignable: false,
 		Mutable:    false,
