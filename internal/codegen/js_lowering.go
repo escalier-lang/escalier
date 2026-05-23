@@ -101,6 +101,10 @@ func jsExprFromOwner(owner type_system.BindingOwner) (string, bool) {
 // Single identifiers (no dot) become a bare IdentExpr. The whole chain
 // shares the same source AST node so source maps still point back at
 // the original Escalier expression.
+//
+// jsArg comes from a string literal in an `@js(...)` decorator authored
+// in a stdlib `.esc` file, so empty segments (".foo", "Math..PI") would
+// be a stdlib authoring bug — not validated here.
 func buildDottedJSExpr(jsArg string, source ast.Node) Expr {
 	parts := strings.Split(jsArg, ".")
 	var out Expr = NewIdentExpr(parts[0], "", source)

@@ -273,10 +273,10 @@ func TestStdlibImport_LoaderRule_MissingJSDecorator(t *testing.T) {
 
 	_, errs := inferStdlibImportSource(t, `import "js:example"`)
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Message(),
-		`exported value "PI"`)
-	require.Contains(t, errs[0].Message(),
-		"is missing an `@js(\"...\")` decorator")
+	require.Equal(t,
+		fmt.Sprintf("exported value %q in pseudo-package file %s is missing an `@js(\"...\")` decorator",
+			"PI", filepath.Join(dir, "js/example.esc")),
+		errs[0].Message())
 }
 
 // TestStdlibImport_LoaderRule_UnexportedValueLevelRejected pins loader
@@ -292,10 +292,11 @@ func TestStdlibImport_LoaderRule_UnexportedValueLevelRejected(t *testing.T) {
 
 	_, errs := inferStdlibImportSource(t, `import "js:example"`)
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Message(),
-		`unexported value "helper"`)
-	require.Contains(t, errs[0].Message(),
-		"has no runtime mapping")
+	require.Equal(t,
+		fmt.Sprintf("unexported value %q in pseudo-package file %s has no runtime mapping; "+
+			"add `export` (and an `@js(...)` decorator) or remove the declaration",
+			"helper", filepath.Join(dir, "js/example.esc")),
+		errs[0].Message())
 }
 
 // TestStdlibImport_LoaderRule_AcceptsValidPackage confirms the loader

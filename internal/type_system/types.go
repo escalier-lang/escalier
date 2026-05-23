@@ -2573,6 +2573,7 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 			changed = true
 			newValues[name] = &Binding{
 				Source:     binding.Source,
+				Owner:      binding.Owner,
 				Type:       newType,
 				Assignable: binding.Assignable,
 				Mutable:    binding.Mutable,
