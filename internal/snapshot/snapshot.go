@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 const indent = "    "
@@ -32,14 +33,14 @@ func String(v any) string {
 	// Make the root addressable so we can read unexported fields below.
 	root := reflect.New(rv.Type()).Elem()
 	root.Set(rv)
-	s := &state{sb: &sb, seen: map[uintptr]bool{}}
+	s := &state{sb: &sb, seen: set.NewSet[uintptr]()}
 	s.writeValue(root, 0)
 	return sb.String()
 }
 
 type state struct {
 	sb   *strings.Builder
-	seen map[uintptr]bool
+	seen set.Set[uintptr]
 }
 
 func pad(depth int) string {
@@ -58,14 +59,14 @@ func (s *state) writeValue(v reflect.Value, depth int) {
 			return
 		}
 		addr := v.Pointer()
-		if s.seen[addr] {
+		if s.seen.Contains(addr) {
 			fmt.Fprintf(s.sb, "<cycle %s>", v.Type().String())
 			return
 		}
-		s.seen[addr] = true
+		s.seen.Add(addr)
 		s.sb.WriteString("&")
 		s.writeValue(v.Elem(), depth)
-		delete(s.seen, addr)
+		s.seen.Remove(addr)
 	case reflect.Interface:
 		if v.IsNil() {
 			s.sb.WriteString("nil")
@@ -196,7 +197,7 @@ func fieldValue(v reflect.Value, i int) reflect.Value {
 	}
 	if !f.CanAddr() {
 		cp := reflect.New(f.Type()).Elem()
-		cp.Set(reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem())
+		cp.Set(f)
 		return cp
 	}
 	return reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()

@@ -7,7 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type cycNode struct {
+	Next *cycNode
+}
+
 func TestString(t *testing.T) {
+	cyc := &cycNode{}
+	cyc.Next = cyc
+
 	span := ast.Span{
 		Start: ast.Location{Line: 1, Column: 1},
 		End:   ast.Location{Line: 1, Column: 4},
@@ -74,6 +81,13 @@ func TestString(t *testing.T) {
 				"        1,\n" +
 				"        2,\n" +
 				"    },\n" +
+				"}",
+		},
+		{
+			name: "cycle",
+			in:   cyc,
+			want: "&snapshot.cycNode{\n" +
+				"    Next: <cycle *snapshot.cycNode>,\n" +
 				"}",
 		},
 		{
