@@ -131,7 +131,7 @@ func TestCrossFileDeclarationVisibility(t *testing.T) {
 	}
 
 	// Infer the module - this should succeed because UserId should be visible to utils.esc
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	// Check that inference completed without errors
 	for i, err := range inferErrors {
@@ -254,7 +254,7 @@ func TestFileScopedImportsBasic(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -319,7 +319,7 @@ func TestFileScopedImportsIsolation(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	// We expect an error because file2.esc cannot see 'pkg' which was imported in file1.esc
 	assert.NotEmpty(t, inferErrors, "Should have errors - pkg should not be visible in file2.esc")
@@ -381,7 +381,7 @@ func TestFileScopedImportsSamePackageDifferentFiles(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -442,7 +442,7 @@ func TestFileScopedImportsDifferentAliases(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -508,7 +508,7 @@ func TestNamedImportsFromPackage(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -565,7 +565,7 @@ func TestScopeChainTraversal(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -617,7 +617,7 @@ func TestGlobalNamespaceIsolation(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -682,7 +682,7 @@ func TestCrossFileCyclicDependencies(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -752,7 +752,7 @@ func TestCrossFileCyclesWithImports(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -825,7 +825,7 @@ func TestCrossFileCyclesImportIsolation(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	// We expect an error because file_b.esc uses pkg.SomeType without importing pkg
 	assert.NotEmpty(t, inferErrors, "Should have errors - file_b cannot use pkg from file_a's import")

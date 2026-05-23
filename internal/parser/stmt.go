@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
@@ -327,25 +329,9 @@ func (p *Parser) importStmt() ast.Stmt {
 // An empty flag (e.g. trailing `&` or `?&foo`) is preserved as ""; semantic
 // validation lives in the resolver.
 func splitImportFlags(spec string) (string, []string) {
-	idx := -1
-	for i := 0; i < len(spec); i++ {
-		if spec[i] == '?' {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
+	pkg, rest, ok := strings.Cut(spec, "?")
+	if !ok {
 		return spec, nil
 	}
-	pkg := spec[:idx]
-	rest := spec[idx+1:]
-	flags := []string{}
-	start := 0
-	for i := 0; i <= len(rest); i++ {
-		if i == len(rest) || rest[i] == '&' {
-			flags = append(flags, rest[start:i])
-			start = i + 1
-		}
-	}
-	return pkg, flags
+	return pkg, strings.Split(rest, "&")
 }

@@ -410,13 +410,13 @@ func (c *Checker) inferParsedTypeDef(
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		globalErrors := c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
+		_, globalErrors := c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
 		errors = append(errors, globalErrors...)
 	}
 
 	// 5. Infer PackageModule into the package namespace (if present)
 	if parsedTypeDef.PackageModule != nil {
-		pkgErrors := c.InferModule(pkgCtx, parsedTypeDef.PackageModule)
+		_, pkgErrors := c.InferModule(pkgCtx, parsedTypeDef.PackageModule)
 		errors = append(errors, pkgErrors...)
 	}
 
@@ -779,7 +779,7 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		globalErrors := c.InferModule(globalCtx, parsedTypeDef.PackageModule)
+		_, globalErrors := c.InferModule(globalCtx, parsedTypeDef.PackageModule)
 		errors = append(errors, globalErrors...)
 	}
 
@@ -868,7 +868,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 			IsPatMatch: false,
 		}
 
-		moduleErrors := c.InferModule(moduleCtx, namedModule)
+		_, moduleErrors := c.InferModule(moduleCtx, namedModule)
 		if len(moduleErrors) > 0 {
 			errors = append(errors, moduleErrors...)
 			continue

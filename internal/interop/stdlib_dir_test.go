@@ -1,6 +1,7 @@
 package interop
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,8 +28,8 @@ func TestResolveStdlibDir_CLIOverride(t *testing.T) {
 func TestResolveStdlibDir_CLIOverrideRejectsBadPath(t *testing.T) {
 	bad := t.TempDir() // empty dir — no std/ subtree
 	_, err := resolveStdlibDir(stdlibDirInputs{cliOverride: bad})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "--stdlib-dir")
+	require.EqualError(t, err,
+		fmt.Sprintf("--stdlib-dir %q does not contain a std/ subdirectory", bad))
 }
 
 func TestResolveStdlibDir_CLIOverrideBeatsEnv(t *testing.T) {
@@ -49,8 +50,8 @@ func TestResolveStdlibDir_EnvVar(t *testing.T) {
 func TestResolveStdlibDir_EnvVarRejectsBadPath(t *testing.T) {
 	bad := t.TempDir()
 	_, err := resolveStdlibDir(stdlibDirInputs{envVar: bad})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "ESCALIER_STDLIB_DIR")
+	require.EqualError(t, err,
+		fmt.Sprintf("ESCALIER_STDLIB_DIR=%q does not contain a std/ subdirectory", bad))
 }
 
 func TestResolveStdlibDir_SiblingShareLayout(t *testing.T) {
@@ -105,9 +106,10 @@ func TestResolveStdlibDir_NoneResolveFatalError(t *testing.T) {
 	require.NoError(t, os.WriteFile(fakeExe, []byte{}, 0o755))
 
 	_, err := resolveStdlibDir(stdlibDirInputs{exePath: fakeExe})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "could not locate Escalier stdlib data directory")
-	require.Contains(t, err.Error(), "ESCALIER_STDLIB_DIR")
+	require.EqualError(t, err,
+		"could not locate Escalier stdlib data directory; pass --stdlib-dir, "+
+			"set ESCALIER_STDLIB_DIR, or install share/escalier/data/ next to "+
+			"the escalier binary")
 }
 
 func TestSetStdlibDirForTest_ResolvesRealRepoData(t *testing.T) {

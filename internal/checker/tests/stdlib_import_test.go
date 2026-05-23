@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,7 +47,7 @@ func inferStdlibImportSource(t *testing.T, input string) (fileNs map[int]*Scope,
 
 	c := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(c)}
-	errs = c.InferModule(inferCtx, module)
+	_, errs = c.InferModule(inferCtx, module)
 	return c.FileScopes, errs
 }
 
@@ -91,7 +92,13 @@ func TestStdlibImport_UnknownScheme(t *testing.T) {
 func TestStdlibImport_UnknownPackageInKnownScheme(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "std:nonexistent"`)
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Message(), `unknown package "nonexistent" in std: scheme`)
+	// Stdlib dir is set by TestMain via SetStdlibDirForTest; interpolate
+	// it so the full message matches across machines.
+	stdlibDir := os.Getenv("ESCALIER_STDLIB_DIR")
+	require.Equal(t,
+		fmt.Sprintf(`unknown package "nonexistent" in std: scheme (no std/nonexistent.esc under %s)`, stdlibDir),
+		errs[0].Message(),
+	)
 }
 
 func TestStdlibImport_NodeSchemeReserved(t *testing.T) {
@@ -106,13 +113,21 @@ func TestStdlibImport_NodeSchemeReserved(t *testing.T) {
 func TestStdlibImport_NamedImportFromSchemeURIRejected(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import { PI } from "std:math"`)
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Message(), `named imports from pseudo-package "std:math" are not supported`)
+	require.Equal(t,
+		"named imports from pseudo-package \"std:math\" are not supported; "+
+			"use a bare-string import (`import \"std:math\"`) and access members through the namespace",
+		errs[0].Message(),
+	)
 }
 
 func TestStdlibImport_NamespaceImportFromSchemeURIRejected(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import * as M from "std:math"`)
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Message(), `named imports from pseudo-package "std:math" are not supported`)
+	require.Equal(t,
+		"named imports from pseudo-package \"std:math\" are not supported; "+
+			"use a bare-string import (`import \"std:math\"`) and access members through the namespace",
+		errs[0].Message(),
+	)
 }
 
 func TestStdlibImport_UnknownFlag(t *testing.T) {
@@ -194,9 +209,11 @@ func TestStdlibImport_FlatNameCollision(t *testing.T) {
 		import "std:beta?flat"
 	`)
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Message(), `?flat name collision: "Common"`)
-	require.Contains(t, errs[0].Message(), `"std:alpha"`)
-	require.Contains(t, errs[0].Message(), `"std:beta"`)
+	require.Equal(t,
+		`?flat name collision: "Common" is contributed by both "std:alpha" and "std:beta"; `+
+			`rename upstream or drop one import's ?flat flag`,
+		errs[0].Message(),
+	)
 }
 
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {
@@ -238,5 +255,8 @@ func TestStdlibImport_SingleClassShortcutDoesNotApplyToNested(t *testing.T) {
 func TestStdlibImport_InvalidPackageName(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "std:Math"`)
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Message(), `invalid package name "Math"`)
+	require.Equal(t,
+		`invalid package name "Math" in std:Math; expected lowercase letters, digits, and underscores`,
+		errs[0].Message(),
+	)
 }

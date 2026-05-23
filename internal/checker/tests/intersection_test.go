@@ -756,7 +756,7 @@ func TestIntersectionMemberAccess(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 
 			if tc.wantErr {
@@ -987,7 +987,7 @@ func TestFunctionOverloads(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 
 			if tc.wantErr {

@@ -34,7 +34,8 @@ func inferWithTimeout(t *testing.T, source string, timeout time.Duration) []Erro
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	return c.InferModule(inferCtx, module)
+	_, errs := c.InferModule(inferCtx, module)
+	return errs
 }
 
 // ============================================================================

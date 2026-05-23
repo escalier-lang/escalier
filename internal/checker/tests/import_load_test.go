@@ -91,7 +91,7 @@ func TestPackageReloadFromRegistry(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 	assert.Empty(t, inferErrors, "Should infer without errors")
 }
 
@@ -142,7 +142,7 @@ func TestNamedImportFromRegisteredPackage(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for _, err := range inferErrors {
 		t.Logf("Error: %s", err.Message())
@@ -187,7 +187,7 @@ func TestNamedImportWithAlias(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for _, err := range inferErrors {
 		t.Logf("Error: %s", err.Message())
@@ -231,7 +231,7 @@ func TestNamedImportNotFound(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	// Should have an error about the missing export
 	require.Len(t, inferErrors, 1, "Should have exactly one error")
@@ -288,7 +288,7 @@ func TestSubpathImportSeparateEntries(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for _, err := range inferErrors {
 		t.Logf("Error: %s", err.Message())
@@ -355,7 +355,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, moduleGood)
+	_, inferErrors := c.InferModule(inferCtx, moduleGood)
 	assert.Empty(t, inferErrors, "Exported items should be accessible via namespace import")
 
 	// Test that non-exported items cause errors when accessed
@@ -382,7 +382,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrorsBadValue := c2.InferModule(inferCtx2, moduleBadValue)
+	_, inferErrorsBadValue := c2.InferModule(inferCtx2, moduleBadValue)
 	require.NotEmpty(t, inferErrorsBadValue, "Non-exported value should not be accessible via namespace import")
 	assert.Contains(t, inferErrorsBadValue[0].Message(), "internalHelper",
 		"Error should mention the non-exported value")
@@ -411,7 +411,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrorsBadType := c3.InferModule(inferCtx3, moduleBadType)
+	_, inferErrorsBadType := c3.InferModule(inferCtx3, moduleBadType)
 	require.NotEmpty(t, inferErrorsBadType, "Non-exported type should not be accessible via namespace import")
 	assert.Contains(t, inferErrorsBadType[0].Message(), "InternalType",
 		"Error should mention the non-exported type")
@@ -457,7 +457,7 @@ func TestNamespaceImportFromSubNamespace(t *testing.T) {
 		IsAsync: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for _, err := range inferErrors {
 		t.Logf("Error: %s", err.Message())

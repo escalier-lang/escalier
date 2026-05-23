@@ -10,22 +10,23 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// stdlibSchemes lists the URI schemes the resolver recognizes for
-// pseudo-package imports. Ordering matters only for "unknown scheme"
-// diagnostic text — display recognized schemes in a stable order.
+// stdlibSchemes is the display-ordered list of URI schemes the
+// resolver recognizes for pseudo-package imports. The slice form is
+// used only for the "unknown scheme" diagnostic; membership tests go
+// through stdlibSchemesSet.
 var stdlibSchemes = []string{"std", "dom", "node"}
+
+// stdlibSchemesSet is the membership view of stdlibSchemes.
+var stdlibSchemesSet = set.FromSlice(stdlibSchemes)
 
 // stdlibKnownFlags is the recognized set of binding-shape flags.
 // Per §2.3 the slot is extensible (future `?type-only`, `?lazy`, …); the
 // table-driven check means new entries slot in without restructuring.
-var stdlibKnownFlags = map[string]bool{
-	"local":  true,
-	"nested": true,
-	"flat":   true,
-}
+var stdlibKnownFlags = set.FromSlice([]string{"local", "nested", "flat"})
 
 // stdlibBindingShape captures the resolved binding-shape for a single
 // import statement. Exactly one of the three booleans is true.
@@ -34,27 +35,18 @@ type stdlibBindingShape struct {
 }
 
 // isSchemePrefixedImport reports whether spec begins with one of the
-// recognized scheme prefixes (`std:`, `dom:`, `node:`). Used by
-// inferImport to dispatch between the npm-style loader and the stdlib
-// loader before path resolution.
+// recognized scheme prefixes (`std:`, `dom:`, `node:`) or any other
+// lowercase `<word>:` shape. Anything matching the second branch but
+// not the first is routed to the stdlib loader so the user gets the
+// taxonomy-aligned "unknown scheme" diagnostic rather than the npm
+// loader's "could not find package.json".
 func isSchemePrefixedImport(spec string) bool {
-	for _, scheme := range stdlibSchemes {
-		if strings.HasPrefix(spec, scheme+":") {
-			return true
-		}
+	colon := strings.IndexByte(spec, ':')
+	if colon <= 0 {
+		return false
 	}
-	// Any other `<word>:` shape is also a scheme — treated as an
-	// unknown-scheme diagnostic by the resolver. Detecting that here
-	// instead of bailing to the npm loader means the user gets the
-	// taxonomy-aligned message ("unknown scheme") rather than a
-	// confusing "could not find package.json".
-	if colon := strings.IndexByte(spec, ':'); colon > 0 {
-		scheme := spec[:colon]
-		if isASCIILower(scheme) {
-			return true
-		}
-	}
-	return false
+	scheme := spec[:colon]
+	return stdlibSchemesSet.Contains(scheme) || isASCIILower(scheme)
 }
 
 func isASCIILower(s string) bool {
@@ -75,77 +67,95 @@ func isASCIILower(s string) bool {
 // the import statement, side-effecting bindings into ctx.Scope.
 func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 	span := importStmt.Span()
+	var errs []Error
 
-	scheme, pkg, ok := splitScheme(importStmt.PackageName)
-	if !ok || !isRecognizedScheme(scheme) {
-		return []Error{&GenericError{
+	// --- Validation phase. Each check is independent and accumulates,
+	// so a malformed import surfaces every problem at once rather than
+	// forcing the user through fix-recompile-repeat.
+
+	scheme, pkg, hasColon := splitScheme(importStmt.PackageName)
+	schemeKnown := hasColon && isRecognizedScheme(scheme)
+	switch {
+	case !schemeKnown:
+		errs = append(errs, &GenericError{
 			message: fmt.Sprintf("unknown import scheme %q; recognized schemes: %s",
 				scheme, strings.Join(stdlibSchemes, ", ")),
 			span: span,
-		}}
-	}
-	if pkg == "" {
-		return []Error{&GenericError{
+		})
+	case pkg == "":
+		errs = append(errs, &GenericError{
 			message: fmt.Sprintf("missing package name after %q scheme", scheme),
 			span:    span,
-		}}
+		})
 	}
 
 	// Named imports from scheme-prefixed URIs are rejected per FR4 /
 	// "Named import from a pseudo-package URI" in the error taxonomy.
 	if !importStmt.Bare() {
-		return []Error{&GenericError{
+		errs = append(errs, &GenericError{
 			message: fmt.Sprintf(
 				"named imports from pseudo-package %q are not supported; "+
 					"use a bare-string import (`import %q`) and access members through the namespace",
 				importStmt.PackageName, importStmt.PackageName),
 			span: span,
-		}}
+		})
 	}
 
-	// Validate flags and resolve the binding shape.
 	shape, flagErrs := resolveStdlibFlags(importStmt.Flags, span)
-	if len(flagErrs) > 0 {
-		return flagErrs
-	}
+	errs = append(errs, flagErrs...)
 
 	// node:* is reserved; the resolver rejects every package until Node
-	// support lands.
-	if scheme == "node" {
-		return []Error{&GenericError{
+	// support lands. Gated on schemeKnown so an unknown-scheme URI
+	// doesn't also pretend to be a "node:* reserved" case.
+	if schemeKnown && scheme == "node" {
+		errs = append(errs, &GenericError{
 			message: fmt.Sprintf("%q: node:* is reserved; not yet populated", importStmt.PackageName),
 			span:    span,
-		}}
+		})
 	}
 
-	// Resolve to a file path under the stdlib data directory.
+	// Load+bind require a clean validation pass: we need a usable
+	// scheme/pkg pair, a non-rejected import form, and a resolved
+	// binding shape.
+	if len(errs) > 0 {
+		return errs
+	}
+
+	// --- Resolution + load phase. ---
+
 	filePath, resolveErrs := c.resolveStdlibPath(scheme, pkg, span)
 	if len(resolveErrs) > 0 {
-		return resolveErrs
+		errs = append(errs, resolveErrs...)
+		return errs
 	}
 
-	// Load the package's namespace, with PackageRegistry as the cache.
 	pkgNs, loadErrs := c.loadStdlibPackage(importStmt.PackageName, filePath, span)
-	if len(loadErrs) > 0 {
-		return loadErrs
-	}
+	errs = append(errs, loadErrs...)
 	if pkgNs == nil {
-		return nil // in-progress / cycle sentinel; cycles are permitted per §4
+		// Either a load error already accumulated above, or an
+		// in-progress sentinel (cycle); cycles are permitted per §4.
+		return errs
 	}
 
-	// Bind per shape. Single-class shortcut applies only to ?local
+	// --- Bind phase. Single-class shortcut applies only to ?local
 	// (per §2.4 last bullet).
+
+	var bindErrs []Error
+
 	switch {
 	case shape.local:
-		return c.bindStdlibLocal(ctx, pkg, pkgNs, span)
+		bindErrs = c.bindStdlibLocal(ctx, pkg, pkgNs, span)
 	case shape.nested:
-		return c.bindStdlibNested(ctx, scheme, pkg, pkgNs, span)
+		bindErrs = c.bindStdlibNested(ctx, scheme, pkg, pkgNs, span)
 	case shape.flat:
-		return c.bindStdlibFlat(ctx, scheme, importStmt.PackageName, pkgNs, span)
-	default:
-		// Unreachable: resolveStdlibFlags always sets exactly one shape.
-		return nil
+		bindErrs = c.bindStdlibFlat(ctx, scheme, importStmt.PackageName, pkgNs, span)
+		// default: unreachable — resolveStdlibFlags always sets exactly
+		// one shape.
 	}
+
+	errs = append(errs, bindErrs...)
+
+	return errs
 }
 
 // splitScheme cracks `scheme:pkg` into its parts. Returns ok=false if
@@ -160,12 +170,7 @@ func splitScheme(spec string) (scheme, pkg string, ok bool) {
 }
 
 func isRecognizedScheme(scheme string) bool {
-	for _, s := range stdlibSchemes {
-		if s == scheme {
-			return true
-		}
-	}
-	return false
+	return stdlibSchemesSet.Contains(scheme)
 }
 
 // resolveStdlibFlags inspects the parsed flag list and returns the
@@ -178,7 +183,7 @@ func resolveStdlibFlags(flags []string, span ast.Span) (stdlibBindingShape, []Er
 		return shape, nil
 	}
 
-	seen := map[string]bool{}
+	seen := set.NewSet[string]()
 	shapeFlags := []string{}
 	var errs []Error
 	for _, f := range flags {
@@ -188,11 +193,8 @@ func resolveStdlibFlags(flags []string, span ast.Span) (stdlibBindingShape, []Er
 			})
 			continue
 		}
-		if !stdlibKnownFlags[f] {
-			recognized := []string{}
-			for k := range stdlibKnownFlags {
-				recognized = append(recognized, k)
-			}
+		if !stdlibKnownFlags.Contains(f) {
+			recognized := stdlibKnownFlags.ToSlice()
 			sort.Strings(recognized)
 			errs = append(errs, &GenericError{
 				message: fmt.Sprintf("unknown import flag %q; recognized flags: %s",
@@ -201,13 +203,13 @@ func resolveStdlibFlags(flags []string, span ast.Span) (stdlibBindingShape, []Er
 			})
 			continue
 		}
-		if seen[f] {
+		if seen.Contains(f) {
 			errs = append(errs, &GenericError{
 				message: fmt.Sprintf("duplicate import flag %q", f), span: span,
 			})
 			continue
 		}
-		seen[f] = true
+		seen.Add(f)
 		if f == "local" || f == "nested" || f == "flat" {
 			shapeFlags = append(shapeFlags, f)
 		}
@@ -324,9 +326,12 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 	mod, parseErrs := parser.ParseLibFiles(c.ctx, []*ast.Source{source})
 	if len(parseErrs) > 0 {
 		delete(c.PackageRegistry.packages, uri)
-		// Surface parse errors with the importing-file span so the user
-		// sees the diagnostic at the import statement, not in a file
-		// they didn't write.
+		// Re-anchor each parse error to the importing-file `span` so the
+		// IDE underlines the user's `import` statement, not a location
+		// inside the stdlib file (which the user did not write and
+		// cannot navigate to without leaving their project). The
+		// original file:line:col is kept in the message body for
+		// compiler contributors debugging the stub.
 		errs := make([]Error, 0, len(parseErrs))
 		for _, pe := range parseErrs {
 			errs = append(errs, &GenericError{
@@ -340,7 +345,7 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 	pkgNs := type_system.NewNamespace()
 	pkgScope := &Scope{Parent: c.GlobalScope, Namespace: pkgNs}
 	pkgCtx := Context{Scope: pkgScope, IsAsync: false, IsPatMatch: false}
-	inferErrs := c.InferModule(pkgCtx, mod)
+	_, inferErrs := c.InferModule(pkgCtx, mod)
 
 	if updateErr := c.PackageRegistry.Update(uri, pkgNs); updateErr != nil {
 		inferErrs = append(inferErrs, &GenericError{
@@ -440,7 +445,7 @@ func (c *Checker) bindStdlibFlat(ctx Context, scheme, uri string, pkgNs *type_sy
 
 	// Iterate identifiers in a deterministic order so the diagnostic
 	// chosen on a multi-name collision is stable across runs.
-	names := flatMergeNames(filtered)
+	names := flatIdentifiers(filtered)
 	for _, name := range names {
 		if prior, ok := contributors[name]; ok && prior != uri {
 			return []Error{&GenericError{
@@ -453,26 +458,56 @@ func (c *Checker) bindStdlibFlat(ctx Context, scheme, uri string, pkgNs *type_sy
 		}
 	}
 	for _, name := range names {
+		// Sub-namespaces go through SetNamespace so the
+		// "namespace-vs-value/type at the same name" invariant is
+		// enforced locally. Values/Types use a manual cross-check
+		// against schemeNs.Namespaces for the symmetric case (the
+		// type_system package has no setter for those slots).
+		// Belt-and-suspenders: the contributors check above should
+		// already have caught any of these cases, but the local
+		// invariant check protects against future drift.
+		if subNs, ok := filtered.Namespaces[name]; ok {
+			if _, exists := schemeNs.Namespaces[name]; !exists {
+				if setErr := schemeNs.SetNamespace(name, subNs); setErr != nil {
+					return []Error{&GenericError{message: setErr.Error(), span: span}}
+				}
+			}
+		}
 		if binding, ok := filtered.Values[name]; ok {
+			if _, conflict := schemeNs.Namespaces[name]; conflict {
+				return []Error{&GenericError{
+					message: fmt.Sprintf(
+						"cannot merge value %q from %q: name already occupied by a sub-namespace in `%s`",
+						name, uri, scheme),
+					span: span,
+				}}
+			}
 			schemeNs.Values[name] = binding
 		}
 		if alias, ok := filtered.Types[name]; ok {
-			schemeNs.Types[name] = alias
-		}
-		if subNs, ok := filtered.Namespaces[name]; ok {
-			if _, exists := schemeNs.Namespaces[name]; !exists {
-				schemeNs.Namespaces[name] = subNs
+			if _, conflict := schemeNs.Namespaces[name]; conflict {
+				return []Error{&GenericError{
+					message: fmt.Sprintf(
+						"cannot merge type %q from %q: name already occupied by a sub-namespace in `%s`",
+						name, uri, scheme),
+					span: span,
+				}}
 			}
+			schemeNs.Types[name] = alias
 		}
 		contributors[name] = uri
 	}
 	return nil
 }
 
-// flatMergeNames returns the union of identifier names in a filtered
-// package namespace (values + types + sub-namespaces), sorted for
-// deterministic iteration.
-func flatMergeNames(ns *type_system.Namespace) []string {
+// flatIdentifiers returns the union of identifier names exposed by ns
+// across values, types, and sub-namespaces, sorted for deterministic
+// iteration. Unioning is correct here because Namespace's invariants
+// treat the three slots as a single identifier space (with the
+// value+type carve-out for the class pattern) — see
+// type_system.Namespace.SetNamespace. ?flat collision detection works
+// on identifiers, not slots, per FR4.
+func flatIdentifiers(ns *type_system.Namespace) []string {
 	set := make(map[string]struct{}, len(ns.Values)+len(ns.Types)+len(ns.Namespaces))
 	for name := range ns.Values {
 		set[name] = struct{}{}

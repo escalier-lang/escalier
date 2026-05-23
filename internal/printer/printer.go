@@ -179,18 +179,23 @@ func (p *Printer) printImportStmt(s *ast.ImportStmt) {
 		}
 		p.writeString(" from")
 	}
-	p.space()
-	p.writeString("\"")
-	p.writeString(s.PackageName)
+	// Reassemble the module specifier (URI + `?flag1&flag2` suffix) and
+	// emit it as a properly escaped string literal — matches the
+	// strconv.Quote treatment used for `*ast.StrLit` elsewhere in this
+	// printer, so a PackageName or flag containing quotes/backslashes
+	// round-trips correctly.
+	var spec strings.Builder
+	spec.WriteString(s.PackageName)
 	for i, flag := range s.Flags {
 		if i == 0 {
-			p.writeString("?")
+			spec.WriteByte('?')
 		} else {
-			p.writeString("&")
+			spec.WriteByte('&')
 		}
-		p.writeString(flag)
+		spec.WriteString(flag)
 	}
-	p.writeString("\"")
+	p.space()
+	p.writeString(strconv.Quote(spec.String()))
 }
 
 // Declaration printing

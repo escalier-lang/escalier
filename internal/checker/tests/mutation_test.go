@@ -290,7 +290,7 @@ func TestClassMutation(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			if test.expectErrors {
 				assert.NotEmpty(t, inferErrors, "Expected inference errors for %s", name)

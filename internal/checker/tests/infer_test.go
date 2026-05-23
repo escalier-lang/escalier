@@ -1766,7 +1766,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
@@ -1924,7 +1924,7 @@ func TestIfLetExprInference(t *testing.T) {
 			}
 			schema := loadSchema(t)
 			c.Schema = schema
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
@@ -2069,7 +2069,7 @@ func TestCheckModuleWithErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			// Verify we got the expected number of errors
 			assert.Len(t, inferErrors, len(test.expectedErrors), "Expected %d errors but got %d", len(test.expectedErrors), len(inferErrors))
@@ -2130,7 +2130,7 @@ func TestIssue371(t *testing.T) {
 	}
 	schema := loadSchema(t)
 	c.Schema = schema
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	assert.Len(t, inferErrors, 3, "Expected 3 errors (all in add function)")
 
@@ -2447,7 +2447,7 @@ func TestCheckModuleTypeAliases(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
@@ -2500,7 +2500,7 @@ func TestExpandingTypeAliasMultipleTimes(t *testing.T) {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 	scope := inferCtx.Scope.Namespace
 	if len(inferErrors) > 0 {
 		assert.Equal(t, inferErrors, []*Error{})
@@ -2620,7 +2620,7 @@ func TestCheckMultifileModuleNoErrors(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				assert.Equal(t, inferErrors, []*Error{})
@@ -4545,7 +4545,7 @@ func TestMutableTypes(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
@@ -4801,7 +4801,7 @@ func TestMatchExprInference(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 
 			if len(inferErrors) > 0 {
@@ -5307,7 +5307,7 @@ func TestInterfaceMergingModule(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 
 			if len(inferErrors) > 0 {
@@ -5530,7 +5530,7 @@ func TestInterfaceMergingModuleErrors(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			// Verify we got the expected number of errors
 			assert.Len(t, inferErrors, test.expectedErrorCount, "Expected %d errors, got %d", test.expectedErrorCount, len(inferErrors))

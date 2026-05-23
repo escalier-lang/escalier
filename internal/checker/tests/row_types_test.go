@@ -46,7 +46,7 @@ func inferModuleTypesAndErrors(t *testing.T, input string) (map[string]string, [
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 	scope := inferCtx.Scope.Namespace
 
 	actualTypes := make(map[string]string)
@@ -395,7 +395,7 @@ func TestRowTypesErrors(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			require.Len(t, inferErrors, len(test.expectedErrs), "expected %d errors, got %d", len(test.expectedErrs), len(inferErrors))
 			for i, expectedErr := range test.expectedErrs {
@@ -1038,7 +1038,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 					IsAsync:    false,
 					IsPatMatch: false,
 				}
-				inferErrors := c.InferModule(inferCtx, module)
+				_, inferErrors := c.InferModule(inferCtx, module)
 				require.NotEmpty(t, inferErrors, "Expected type error")
 				if test.expectedError != "" {
 					found := false

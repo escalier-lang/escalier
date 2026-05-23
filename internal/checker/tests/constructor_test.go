@@ -27,7 +27,8 @@ func inferModuleErrors(t *testing.T, input string) []Error {
 
 	c := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(c)}
-	return c.InferModule(inferCtx, module)
+	_, errs := c.InferModule(inferCtx, module)
+	return errs
 }
 
 // TestInBodyConstructorBasic checks that a class with a single in-body

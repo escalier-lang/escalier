@@ -2848,7 +2848,7 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
 
 		// InferModule should attempt to load React types and return an error
 		// because @types/react is not installed in tempDir
-		errors := c.InferModule(checkerCtx, module)
+		_, errors := c.InferModule(checkerCtx, module)
 
 		// Should return an error about @types/react not being found
 		found := false
@@ -2888,7 +2888,7 @@ func TestAutoLoadReactTypesForJSX(t *testing.T) {
 		}
 
 		// InferModule should NOT attempt to load React types for non-JSX modules
-		errors := c.InferModule(checkerCtx, module)
+		_, errors := c.InferModule(checkerCtx, module)
 
 		// Should NOT have any errors about @types/react
 		found := false

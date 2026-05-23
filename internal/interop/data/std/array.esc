@@ -1,7 +1,7 @@
 // Stub for §2's single-class shortcut gate. The real Array surface is
 // authored by the converter (§7); this minimal declaration exists so
 // the resolver's FR5 path has something to bind.
-export class Array<T> {
-    constructor(mut self, length: number) {},
-    static isArray(value: unknown) -> boolean { return true },
+export declare class Array<T> {
+    constructor(mut self, length: number),
+    static isArray(value: unknown) -> boolean,
 }

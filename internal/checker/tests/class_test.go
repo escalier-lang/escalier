@@ -451,7 +451,7 @@ func TestClassImplementsConformance(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			conformanceErrs := filterConformanceErrors(inferErrors)
 			otherErrs := otherInferErrors(inferErrors)
@@ -605,7 +605,7 @@ func TestClassImplementsLifetimeConformance(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			var lifetimeErrs []Error
 			var otherErrs []Error
@@ -849,7 +849,7 @@ func TestConstructorRejectsSelfLifetime(t *testing.T) {
 
 	c := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(c)}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	count := 0
 	for _, e := range inferErrors {
@@ -911,7 +911,7 @@ func TestInstanceMethodMissingSelfReceiver(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			count := 0
 			for _, e := range inferErrors {
@@ -948,7 +948,7 @@ func TestObjectTypeAnnRejectsReceiverLifetime(t *testing.T) {
 
 	c := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(c)}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	count := 0
 	for _, e := range inferErrors {
@@ -1039,7 +1039,7 @@ func TestLifetimeArgArityMismatch(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			var arityErrs []Error
 			var otherErrs []Error
@@ -1147,7 +1147,7 @@ func TestInterfaceMergeLifetimeParamMismatch(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			var paramErrs []Error
 			var otherErrs []Error

@@ -676,7 +676,7 @@ func TestCheckClassDeclNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
@@ -750,7 +750,7 @@ func TestNominalClassUnificationTerminates(t *testing.T) {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 	assert.Len(t, inferErrors, 1)
 	assert.Equal(t, "Node cannot be assigned to Leaf", inferErrors[0].Message())
 }
@@ -847,7 +847,7 @@ func TestCheckBodyLevelClassDeclNoErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
@@ -915,7 +915,7 @@ func TestCheckBodyLevelClassDeclErrors(t *testing.T) {
 				IsPatMatch: false,
 			}
 			c.Schema = schema
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			actualMsgs := make([]string, 0, len(inferErrors))
 			for _, err := range inferErrors {
@@ -1128,7 +1128,7 @@ func TestGetterSetterPreservesSignatureContext(t *testing.T) {
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
 			c.Schema = schema
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())

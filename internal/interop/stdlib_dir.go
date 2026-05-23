@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // StdlibDir resolves the on-disk directory containing the stdlib `.esc`
@@ -99,7 +100,15 @@ func resolveStdlibDir(in stdlibDirInputs) (string, error) {
 // dir — to find the repo root.
 //
 // Call from TestMain in each test package that transitively resolves
-// `std:`/`dom:`/`node:` imports.
+// `std:`/`dom:`/`node:` imports. Current call sites include
+// `internal/interop`, `internal/checker/tests`, and any future test
+// package whose checker reaches the stdlib resolver.
+//
+// This helper lives in a non-test file (despite its `ForTest` name)
+// because symbols defined in `*_test.go` files are visible only within
+// the same package's test binary; cross-package test callers require a
+// regular .go file. The same constraint applies to
+// `SetBuiltinsDirForTest`.
 func SetStdlibDirForTest() error {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -120,27 +129,17 @@ func SetStdlibDirForTest() error {
 func isStdlibSchemeSubtree(p, root string) bool {
 	rel := p
 	if root != "" && root != "." {
-		// fs.WalkDir paths are joined under root; strip the prefix so
-		// "<root>/std" becomes "std".
-		if r, ok := stripDirPrefix(rel, root); ok {
-			rel = r
-		}
+		// fs.WalkDir paths are joined under root with `/`; strip the
+		// `<root>/` prefix so "<root>/std" becomes "std". TrimPrefix is
+		// a no-op when there's no match, which leaves `rel == p` for
+		// callers that pass an already-relative path.
+		rel = strings.TrimPrefix(rel, root+"/")
 	}
 	switch rel {
 	case "std", "dom", "node":
 		return true
 	}
 	return false
-}
-
-func stripDirPrefix(p, prefix string) (string, bool) {
-	if p == prefix {
-		return "", true
-	}
-	if len(p) > len(prefix) && p[:len(prefix)] == prefix && p[len(prefix)] == '/' {
-		return p[len(prefix)+1:], true
-	}
-	return "", false
 }
 
 // looksLikeStdlibDir reports whether path looks like a stdlib data

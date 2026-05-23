@@ -164,7 +164,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := checker.InferModule(inferCtx, module)
+			_, inferErrors := checker.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
@@ -253,7 +253,7 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			_ = checker.InferModule(inferCtx, module)
+			_, _ = checker.InferModule(inferCtx, module)
 
 			if test.shouldSucceed {
 				// For cyclic references, we should still be able to parse and check
@@ -336,7 +336,7 @@ func TestTypeParamSortingWithUsage(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := checker.InferModule(inferCtx, module)
+			_, inferErrors := checker.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)

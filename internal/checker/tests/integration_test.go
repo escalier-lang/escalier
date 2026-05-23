@@ -137,7 +137,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 	require.NoError(t, c.PackageRegistry.Register("lodash", lodashNs))
 	require.NoError(t, c.PackageRegistry.Register("ramda", ramdaNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	// Log any errors for debugging
 	for i, err := range inferErrors {
@@ -233,7 +233,7 @@ func TestE2E_FileImportIsolation(t *testing.T) {
 	)
 	require.NoError(t, c.PackageRegistry.Register("my-utils", utilsNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	// Should have an error because non_importer.esc cannot use 'utils' namespace
 	require.NotEmpty(t, inferErrors, "Should have errors - file-scoped import isolation violated")
@@ -316,7 +316,7 @@ func TestE2E_MultiplePackagesWithSameSymbols(t *testing.T) {
 	require.NoError(t, c.PackageRegistry.Register("lodash", lodashNs))
 	require.NoError(t, c.PackageRegistry.Register("ramda", ramdaNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -382,7 +382,7 @@ func TestE2E_GlobalThisBypassesShadowing(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -489,7 +489,7 @@ func TestE2E_CrossFileCyclicTypesWithImports(t *testing.T) {
 	)
 	require.NoError(t, c.PackageRegistry.Register("tree-utils", treeUtilsNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -567,7 +567,7 @@ func TestE2E_NamedImportsWithAliases(t *testing.T) {
 	)
 	require.NoError(t, c.PackageRegistry.Register("my-pkg", mockNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -661,7 +661,7 @@ func TestE2E_SubpathImportsIsolation(t *testing.T) {
 	require.NoError(t, c.PackageRegistry.Register("lodash", mainNs))
 	require.NoError(t, c.PackageRegistry.Register("lodash/fp", fpNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -874,7 +874,7 @@ func TestE2E_ComplexProjectSimulation(t *testing.T) {
 	require.NoError(t, c.PackageRegistry.Register("database", dbNs))
 	require.NoError(t, c.PackageRegistry.Register("config", configNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -1009,7 +1009,7 @@ func TestE2E_RealisticMonorepoStructure(t *testing.T) {
 
 	require.NoError(t, c.PackageRegistry.Register("lodash", lodashNs))
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())
@@ -1063,7 +1063,7 @@ func TestE2E_GlobalAugmentation(t *testing.T) {
 		IsPatMatch: false,
 	}
 
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for i, err := range inferErrors {
 		t.Logf("Error[%d]: %s", i, err.Message())

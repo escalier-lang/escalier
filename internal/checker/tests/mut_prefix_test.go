@@ -185,7 +185,7 @@ func TestMutPrefixMutationBehavior(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			assertExpectedErrors(t, test.expectedErrors, inferErrors)
 		})

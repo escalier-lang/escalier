@@ -870,7 +870,7 @@ func parseModuleAndInferWithPackages(
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	typeErrors := c.InferModule(inferCtx, module)
+	_, typeErrors := c.InferModule(inferCtx, module)
 	for _, err := range typeErrors {
 		t.Logf("type error: %s", err.Message())
 	}

@@ -174,7 +174,7 @@ func BenchmarkModuleWithImports(b *testing.B) {
 			Scope:   Prelude(c),
 			IsAsync: false,
 		}
-		_ = c.InferModule(inferCtx, module)
+		_, _ = c.InferModule(inferCtx, module)
 	}
 }
 
@@ -225,7 +225,7 @@ func BenchmarkMultiFileModule(b *testing.B) {
 			Scope:   Prelude(c),
 			IsAsync: false,
 		}
-		_ = c.InferModule(inferCtx, module)
+		_, _ = c.InferModule(inferCtx, module)
 	}
 }
 
@@ -260,7 +260,7 @@ func BenchmarkCrossFileCyclicTypes(b *testing.B) {
 			Scope:   Prelude(c),
 			IsAsync: false,
 		}
-		_ = c.InferModule(inferCtx, module)
+		_, _ = c.InferModule(inferCtx, module)
 	}
 }
 
@@ -309,7 +309,7 @@ func BenchmarkFileScopedImports(b *testing.B) {
 			Scope:   Prelude(c),
 			IsAsync: false,
 		}
-		_ = c.InferModule(inferCtx, module)
+		_, _ = c.InferModule(inferCtx, module)
 	}
 }
 
@@ -594,7 +594,7 @@ func BenchmarkGenericPropertyAccessModule(b *testing.B) {
 			Scope:   Prelude(c),
 			IsAsync: false,
 		}
-		_ = c.InferModule(inferCtx, module)
+		_, _ = c.InferModule(inferCtx, module)
 	}
 }
 
@@ -684,7 +684,7 @@ func BenchmarkComplexProject(b *testing.B) {
 			Scope:   Prelude(c),
 			IsAsync: false,
 		}
-		_ = c.InferModule(inferCtx, module)
+		_, _ = c.InferModule(inferCtx, module)
 	}
 }
 

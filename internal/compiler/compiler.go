@@ -13,7 +13,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
 	"github.com/escalier-lang/escalier/internal/codegen"
-	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -75,7 +74,7 @@ func CheckLib(ctx context.Context, libSources []*ast.Source) CheckLibOutput {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	typeErrors := c.InferModule(inferCtx, module)
+	_, typeErrors := c.InferModule(inferCtx, module)
 
 	return CheckLibOutput{
 		Module:      module,
@@ -252,10 +251,9 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		// InferModule (rather than the lower-level InferDepGraph) so
 		// per-file imports — including pseudo-package `import "std:*"`
 		// statements — are processed before declarations are checked.
-		// Codegen below still wants the dep_graph; we rebuild it
-		// (deterministic from the parsed module).
-		typeErrors := c.InferModule(inferCtx, inMod)
-		depGraph := dep_graph.BuildDepGraph(inMod)
+		// It returns the dep_graph it builds in Phase 2; we reuse that
+		// here for codegen instead of rebuilding from scratch.
+		depGraph, typeErrors := c.InferModule(inferCtx, inMod)
 
 		// No longer need MergeOverloadedFunctions - overloads are already grouped by BindingKey
 
