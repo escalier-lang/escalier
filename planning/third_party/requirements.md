@@ -73,9 +73,9 @@ In scope:
 
 Out of scope (owned by the builtins workstream or other efforts):
 
-- The ambient `builtins.esc` file and the `js:*` / `web:*`
+- The ambient `builtins.esc` file and the `std:*` / `web:*`
   pseudo-package layout.
-- URI-scheme imports (`import "js:math"`) and the `?local` /
+- URI-scheme imports (`import "std:math"`) and the `?local` /
   `?nested` / `?flat` flag modifiers.
 - Cross-package augmentation via registry interfaces.
 - Prelude changes that swap lib-walking for `builtins.esc`.
