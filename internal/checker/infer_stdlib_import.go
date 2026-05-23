@@ -508,20 +508,17 @@ func (c *Checker) bindStdlibFlat(ctx Context, scheme, uri string, pkgNs *type_sy
 // type_system.Namespace.SetNamespace. ?flat collision detection works
 // on identifiers, not slots, per FR4.
 func flatIdentifiers(ns *type_system.Namespace) []string {
-	set := make(map[string]struct{}, len(ns.Values)+len(ns.Types)+len(ns.Namespaces))
+	ids := set.NewSet[string]()
 	for name := range ns.Values {
-		set[name] = struct{}{}
+		ids.Add(name)
 	}
 	for name := range ns.Types {
-		set[name] = struct{}{}
+		ids.Add(name)
 	}
 	for name := range ns.Namespaces {
-		set[name] = struct{}{}
+		ids.Add(name)
 	}
-	out := make([]string, 0, len(set))
-	for name := range set {
-		out = append(out, name)
-	}
+	out := ids.ToSlice()
 	sort.Strings(out)
 	return out
 }
