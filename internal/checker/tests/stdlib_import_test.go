@@ -199,8 +199,8 @@ func TestStdlibImport_FlatNameCollision(t *testing.T) {
 	// Both packages export the same identifier; the second ?flat
 	// import must fail with the taxonomy-aligned collision message.
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/alpha.esc": `export val Common: number = 1`,
-		"js/beta.esc":  `export val Common: number = 2`,
+		"js/alpha.esc": "@js(\"Common\")\nexport val Common: number = 1",
+		"js/beta.esc":  "@js(\"Common\")\nexport val Common: number = 2",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
@@ -259,4 +259,85 @@ func TestStdlibImport_InvalidPackageName(t *testing.T) {
 		`invalid package name "Math" in js:Math; expected lowercase letters, digits, and underscores`,
 		errs[0].Message(),
 	)
+}
+
+// TestStdlibImport_LoaderRule_MissingJSDecorator pins loader rule §3.4(1):
+// every exported value-level decl in a pseudo-package file must carry
+// an `@js("...")` decorator. The error is anchored to the importing
+// `import` statement, not a location inside the stdlib file.
+func TestStdlibImport_LoaderRule_MissingJSDecorator(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"js/example.esc": "export val PI: number = 3.14",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		fmt.Sprintf("exported value %q in pseudo-package file %s is missing an `@js(\"...\")` decorator",
+			"PI", filepath.Join(dir, "js/example.esc")),
+		errs[0].Message())
+}
+
+// TestStdlibImport_LoaderRule_UnexportedValueLevelRejected pins loader
+// rule §3.4(2): unexported value-level decls in pseudo-package files
+// are rejected (no runtime mapping, invisible to importers — almost
+// certainly a missing `export`). The diagnostic tells the user how to
+// fix it.
+func TestStdlibImport_LoaderRule_UnexportedValueLevelRejected(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"js/example.esc": "@js(\"helper\")\ndeclare val helper: number",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		fmt.Sprintf("unexported value %q in pseudo-package file %s has no runtime mapping; "+
+			"add `export` (and an `@js(...)` decorator) or remove the declaration",
+			"helper", filepath.Join(dir, "js/example.esc")),
+		errs[0].Message())
+}
+
+// TestStdlibImport_LoaderRule_AcceptsValidPackage confirms the loader
+// rules don't false-positive on a correctly-authored pseudo-package
+// (every exported value-level decl has `@js("...")`; type-level decls
+// have no decorator).
+func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"js/example.esc": "@js(\"Foo\")\nexport declare fn foo() -> number\n" +
+			"declare type Helper = number",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_LoaderRule_MalformedJSDecorator pins the loader's
+// shape check on `@js(...)`: the argument must be a single string
+// literal. Non-string args and zero/multi-arg forms are rejected
+// uniformly. The parser accepts any positional expression list to leave
+// room for future decorators, so this rule lives in the loader.
+func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
+	cases := map[string]string{
+		"NonStringArg":  "@js(123)\nexport declare val PI: number",
+		"MultipleArgs":  "@js(\"a\", \"b\")\nexport declare val PI: number",
+		"NoArgs":        "@js()\nexport declare val PI: number",
+	}
+	for name, source := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := makeCustomStdlibDir(t, map[string]string{
+				"js/example.esc": source,
+			})
+			t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+			_, errs := inferStdlibImportSource(t, `import "js:example"`)
+			require.Len(t, errs, 1)
+			require.Equal(t,
+				fmt.Sprintf("`@js` decorator on value %q in pseudo-package file %s must take a single string-literal argument",
+					"PI", filepath.Join(dir, "js/example.esc")),
+				errs[0].Message())
+		})
+	}
 }

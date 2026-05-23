@@ -288,6 +288,7 @@ func (c *Checker) InferComponent(
 				if binding == nil {
 					nsCtx.Scope.setValue(decl.Name.Name, &type_system.Binding{
 						Source:     &ast.NodeProvenance{Node: decl},
+						Owner:      decl,
 						Type:       funcType,
 						Assignable: false,
 						Mutable:    false,
@@ -335,6 +336,7 @@ func (c *Checker) InferComponent(
 				for name, binding := range bindings {
 					binding.Exported = decl.Export()
 					binding.Assignable = assignable
+					binding.Owner = decl
 					nsCtx.Scope.setValue(name, binding)
 					names = append(names, name)
 				}
@@ -792,6 +794,7 @@ func (c *Checker) InferComponent(
 
 				ctor := &type_system.Binding{
 					Source:     &ast.NodeProvenance{Node: decl},
+					Owner:      decl,
 					Type:       classObjType,
 					Assignable: false,
 					Mutable:    false,
@@ -1162,6 +1165,9 @@ func (c *Checker) InferComponent(
 						classObjType := type_system.NewObjectType(provenance, classObjTypeElems)
 						classObjType.SymbolKeyMap = symbolKeyMap
 
+						// Enum variants get no Owner — EnumDecl can't carry
+						// `@js` decorators (parser rejects them on enum decls),
+						// so there's nothing useful for codegen to find here.
 						ctor := &type_system.Binding{
 							Source:     provenance,
 							Type:       classObjType,
@@ -2143,6 +2149,7 @@ func (c *Checker) processExportAssignment(stmt *ast.ExportAssignmentStmt, ctx Co
 	// Create default export
 	ctx.Scope.setValue("default", &type_system.Binding{
 		Source:     &ast.NodeProvenance{Node: stmt},
+		Owner:      binding.Owner,
 		Type:       binding.Type,
 		Assignable: binding.Assignable,
 		Mutable:    binding.Mutable,

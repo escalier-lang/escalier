@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"js:math?nested\"\n\nexport val pi: number = js.math.PI\n"],"names":[],"mappings":"aAEW,AAAA,KAAa,AAAA,AAAA,GAAG,KAAK"}
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"js:math?nested\"\n\nexport val pi: number = js.math.PI\n"],"names":[],"mappings":"aAEW,AAAA,KAAa,AAAA,KAAA"}

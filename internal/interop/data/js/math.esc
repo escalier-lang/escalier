@@ -1,1 +1,2 @@
+@js("Math.PI")
 export val PI: number = 3.14

@@ -1094,6 +1094,7 @@ func NewSelfParam(receiverType Type, mut bool) *FuncParam {
 		Type:    t,
 	}
 }
+
 type PropertyElem struct {
 	Name       ObjTypeKey
 	Optional   bool
@@ -2454,9 +2455,32 @@ func (t *IntrinsicType) String() string {
 	return PrintType(t, PrintConfig{})
 }
 
+// BindingOwner is the AST-declaration sumtype that introduces a value
+// binding (VarDecl, FuncDecl, ClassDecl — every kind that can carry
+// decorators per §3.3). Defined here rather than in `ast` because
+// `Binding` needs to name it, and the cycle `type_system → ast` would
+// otherwise close (ast already imports type_system for Type). AST
+// nodes opt in via an `IsBindingOwner()` marker method on their side
+// — exported because Go requires marker methods on cross-package
+// implementers to be exported.
+type BindingOwner interface {
+	IsBindingOwner()
+}
+
 // We want to model both `let x = 5` as well as `fn (x: number) => x`
 type Binding struct {
-	Source     provenance.Provenance // optional
+	// Source points at the AST node that *introduced* this name — for a
+	// destructuring `val {a, b} = …` that's the IdentPat for `a` or
+	// `b`, not the enclosing VarDecl. Used for diagnostics so error
+	// arrows point at the offending name, not the whole decl.
+	Source provenance.Provenance // optional
+	// Owner is the enclosing top-level declaration that produced this
+	// binding (the VarDecl, FuncDecl, or ClassDecl). Only set on
+	// top-level value-introducing bindings — param/local/match-arm
+	// bindings leave it nil. Carried so codegen can walk back to the
+	// declaration's decorators (e.g. `@js("Math.sin")`) without a
+	// re-lookup. See planning/builtins/implementation_plan.md §3.
+	Owner      BindingOwner
 	Type       Type
 	Assignable bool // can the binding name be rebound? (var = true, val = false)
 	Mutable    bool // can the underlying value be mutated through this name? (mut = true)
@@ -2549,6 +2573,7 @@ func (t *NamespaceType) Accept(v TypeVisitor) Type {
 			changed = true
 			newValues[name] = &Binding{
 				Source:     binding.Source,
+				Owner:      binding.Owner,
 				Type:       newType,
 				Assignable: binding.Assignable,
 				Mutable:    binding.Mutable,
