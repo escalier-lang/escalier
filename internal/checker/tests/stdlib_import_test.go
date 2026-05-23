@@ -313,3 +313,31 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "js:example"`)
 	require.Empty(t, errorMessages(errs))
 }
+
+// TestStdlibImport_LoaderRule_MalformedJSDecorator pins the loader's
+// shape check on `@js(...)`: the argument must be a single string
+// literal. Non-string args and zero/multi-arg forms are rejected
+// uniformly. The parser accepts any positional expression list to leave
+// room for future decorators, so this rule lives in the loader.
+func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
+	cases := map[string]string{
+		"NonStringArg":  "@js(123)\nexport declare val PI: number",
+		"MultipleArgs":  "@js(\"a\", \"b\")\nexport declare val PI: number",
+		"NoArgs":        "@js()\nexport declare val PI: number",
+	}
+	for name, source := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := makeCustomStdlibDir(t, map[string]string{
+				"js/example.esc": source,
+			})
+			t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+			_, errs := inferStdlibImportSource(t, `import "js:example"`)
+			require.Len(t, errs, 1)
+			require.Equal(t,
+				fmt.Sprintf("`@js` decorator on value %q in pseudo-package file %s must take a single string-literal argument",
+					"PI", filepath.Join(dir, "js/example.esc")),
+				errs[0].Message())
+		})
+	}
+}

@@ -64,36 +64,20 @@ func memberJSExpr(m *ast.MemberExpr) (string, bool) {
 
 // jsExprFromOwner reads the `@js("...")` decorator argument off a
 // binding's owning declaration. Returns ("", false) when the owner is
-// nil or carries no `@js` decorator. The owner is guaranteed (by the
-// `BindingOwner` sumtype) to be one of the three decl kinds switched
-// on below.
+// nil, isn't a decorator-carrying decl, or carries no well-formed `@js`
+// decorator. Loader rules §3.4 already reject malformed `@js` on
+// pseudo-package decls, so reaching this from production code means
+// well-formed or absent — both handled by ast.FindJSDecorator.
 func jsExprFromOwner(owner type_system.BindingOwner) (string, bool) {
-	var decorators []*ast.Decorator
-	switch d := owner.(type) {
-	case *ast.VarDecl:
-		decorators = d.Decorators
-	case *ast.FuncDecl:
-		decorators = d.Decorators
-	case *ast.ClassDecl:
-		decorators = d.Decorators
-	default:
+	decl, ok := owner.(ast.Decl)
+	if !ok {
 		return "", false
 	}
-	for _, dec := range decorators {
-		if dec.Name == nil || dec.Name.Name != "js" || len(dec.Args) != 1 {
-			continue
-		}
-		lit, ok := dec.Args[0].(*ast.LiteralExpr)
-		if !ok {
-			continue
-		}
-		s, ok := lit.Lit.(*ast.StrLit)
-		if !ok {
-			continue
-		}
-		return s.Value, true
+	_, arg, ok := ast.FindJsDecorator(decl)
+	if !ok {
+		return "", false
 	}
-	return "", false
+	return arg, true
 }
 
 // buildDottedJSExpr parses a dotted JS expression like "Math.sin" or

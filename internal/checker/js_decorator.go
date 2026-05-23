@@ -6,28 +6,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-// jsDecoratorName is the decorator that carries the JS-runtime expression
-// each pseudo-package member lowers to at codegen. See
-// planning/builtins/implementation_plan.md §3.
-const jsDecoratorName = "js"
-
-// declDecorators returns the decorator list attached to decl, or nil if
-// decl is a kind that cannot carry decorators (the parser rejects
-// decorators on those kinds at parse time; the nil return lets callers
-// treat "no decorators" and "cannot carry" uniformly).
-func declDecorators(decl ast.Decl) []*ast.Decorator {
-	switch d := decl.(type) {
-	case *ast.VarDecl:
-		return d.Decorators
-	case *ast.FuncDecl:
-		return d.Decorators
-	case *ast.ClassDecl:
-		return d.Decorators
-	default:
-		return nil
-	}
-}
-
 // declName returns a printable name for decl used in loader diagnostics.
 // Returns "" if decl has no obvious single-identifier name (e.g. a
 // VarDecl with a destructuring pattern); diagnostics fall back to the
@@ -68,32 +46,7 @@ func declKindLabel(decl ast.Decl) string {
 	}
 }
 
-// findJSDecorator returns the first `@js("...")` decorator on decl and
-// its argument string. Returns (nil, "", false) if no `@js` decorator is
-// present, and (dec, "", false) if `@js` is present but the argument
-// isn't a single string literal (reported as a loader error).
-func findJSDecorator(decl ast.Decl) (*ast.Decorator, string, bool) {
-	for _, dec := range declDecorators(decl) {
-		if dec.Name == nil || dec.Name.Name != jsDecoratorName {
-			continue
-		}
-		if len(dec.Args) != 1 {
-			return dec, "", false
-		}
-		lit, ok := dec.Args[0].(*ast.LiteralExpr)
-		if !ok {
-			return dec, "", false
-		}
-		s, ok := lit.Lit.(*ast.StrLit)
-		if !ok {
-			return dec, "", false
-		}
-		return dec, s.Value, true
-	}
-	return nil, "", false
-}
-
-// validateStdlibDecorators enforces the §3.4 loader rules on the
+// validateJsDecorators enforces the §3.4 loader rules on the
 // declarations of a parsed pseudo-package module (rules 1-3; rule 4
 // lives in a separate PR):
 //
@@ -107,18 +60,18 @@ func findJSDecorator(decl ast.Decl) (*ast.Decorator, string, bool) {
 // Each diagnostic names the file (via the importing-file `span`), the
 // declaration, and the rule that fired so the user can act on it
 // without leaving their project.
-func validateStdlibDecorators(filePath string, mod *ast.Module, importSpan ast.Span) []Error {
+func validateJsDecorators(filePath string, mod *ast.Module, importSpan ast.Span) []Error {
 	var errs []Error
 	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
-			errs = append(errs, validateStdlibDecl(filePath, decl, importSpan)...)
+			errs = append(errs, validateJsDecorator(filePath, decl, importSpan)...)
 		}
 		return true
 	})
 	return errs
 }
 
-func validateStdlibDecl(filePath string, decl ast.Decl, importSpan ast.Span) []Error {
+func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span) []Error {
 	switch decl.(type) {
 	case *ast.VarDecl, *ast.FuncDecl, *ast.ClassDecl:
 		// fall through — value-level decl handled below
@@ -126,7 +79,7 @@ func validateStdlibDecl(filePath string, decl ast.Decl, importSpan ast.Span) []E
 		return nil
 	}
 
-	jsDec, jsArg, jsOK := findJSDecorator(decl)
+	jsDec, jsArg, jsOK := ast.FindJsDecorator(decl)
 	name := declName(decl)
 	if name == "" {
 		name = "<unnamed>"

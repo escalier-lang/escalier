@@ -121,10 +121,12 @@ func (c *Checker) inferVarDecl(
 
 	// `var x` rebinds; `val x` does not. `Mutable` (value-mutation through
 	// the name) was already populated by inferPattern from the pattern flag.
+	// Owner is intentionally not set here: this path runs for locals inside
+	// function bodies, and `Binding.Owner` is reserved for top-level decls
+	// (the file-scope path in InferComponent stamps it).
 	assignable := decl.Kind == ast.VarKind
 	for _, binding := range bindings {
 		binding.Assignable = assignable
-		binding.Owner = decl
 	}
 
 	if decl.TypeAnn == nil && decl.Init == nil {
