@@ -1528,10 +1528,10 @@ func TestPrintImportStmt(t *testing.T) {
 		{"named with alias", `import { foo as bar } from "module"`},
 		{"named mixed", `import { foo, bar as baz, qux } from "module"`},
 		{"namespace", `import * as ns from "module"`},
-		{"bare", `import "std:math"`},
-		{"bare with flag", `import "std:math?nested"`},
-		{"bare with flags", `import "std:math?flag1&flag2"`},
-		{"named with flag", `import { foo } from "std:math?local"`},
+		{"bare", `import "js:math"`},
+		{"bare with flag", `import "js:math?nested"`},
+		{"bare with flags", `import "js:math?flag1&flag2"`},
+		{"named with flag", `import { foo } from "js:math?local"`},
 	}
 
 	opts := DefaultOptions()
