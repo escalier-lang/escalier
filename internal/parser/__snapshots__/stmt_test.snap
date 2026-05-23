@@ -10114,11 +10114,11 @@
 [TestParseStmtNoErrors/ImportBareWithFlags - 1]
 &ast.ImportStmt{
     Specifiers:  nil,
-    PackageName: "std:math",
+    PackageName: "js:math",
     Flags:       {"flag1", "flag2"},
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:30},
+        End:      ast.Location{Line:1, Column:29},
         SourceID: 0,
     },
 }
@@ -10127,11 +10127,11 @@
 [TestParseStmtNoErrors/ImportBare - 1]
 &ast.ImportStmt{
     Specifiers:  nil,
-    PackageName: "std:math",
+    PackageName: "js:math",
     Flags:       nil,
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:18},
+        End:      ast.Location{Line:1, Column:17},
         SourceID: 0,
     },
 }
@@ -10140,11 +10140,11 @@
 [TestParseStmtNoErrors/ImportBareWithFlag - 1]
 &ast.ImportStmt{
     Specifiers:  nil,
-    PackageName: "std:math",
+    PackageName: "js:math",
     Flags:       {"nested"},
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:25},
+        End:      ast.Location{Line:1, Column:24},
         SourceID: 0,
     },
 }
@@ -10163,11 +10163,11 @@
             },
         },
     },
-    PackageName: "std:math",
+    PackageName: "js:math",
     Flags:       {"local"},
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:37},
+        End:      ast.Location{Line:1, Column:36},
         SourceID: 0,
     },
 }

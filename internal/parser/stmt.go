@@ -216,7 +216,7 @@ func (p *Parser) parseForInStmt() ast.Stmt {
 // importSpecifiers = '{' namedImport (',' namedImport)* '}' | '*' 'as' identifier
 // namedImport = identifier ('as' identifier)?
 //
-// A bare-string form (`import "std:math"`) has no binding clause and no
+// A bare-string form (`import "js:math"`) has no binding clause and no
 // `from`. The module specifier may carry a `?flag1&flag2` suffix that the
 // parser splits off and stores in ImportStmt.Flags.
 func (p *Parser) importStmt() ast.Stmt {

@@ -73,9 +73,9 @@ In scope:
 
 Out of scope (owned by the builtins workstream or other efforts):
 
-- The ambient `builtins.esc` file and the `std:*` / `dom:*`
+- The ambient `builtins.esc` file and the `js:*` / `web:*`
   pseudo-package layout.
-- URI-scheme imports (`import "std:math"`) and the `?local` /
+- URI-scheme imports (`import "js:math"`) and the `?local` /
   `?nested` / `?flat` flag modifiers.
 - Cross-package augmentation via registry interfaces.
 - Prelude changes that swap lib-walking for `builtins.esc`.
@@ -114,8 +114,8 @@ This section defines terms used throughout this document.
   identifiers (e.g. `Array`, `ReadonlyArray`, `Promise`,
   `HTMLElement`) to a `(escalier module, escalier type
   expression)` pair, derived by inverting the `@js(...)`
-  decorators on `export declare` items in the committed `std:*`
-  and `dom:*` `.esc` files. The converter consults this registry
+  decorators on `export declare` items in the committed `js:*`
+  and `web:*` `.esc` files. The converter consults this registry
   to generate import headers and rewrite type references in the
   converted baseline. The registry is owned by the builtins
   workstream; this workstream is purely a consumer.
@@ -302,7 +302,7 @@ checked-in source.
 The baseline `.esc` produced by the converter shall be
 self-contained: every type or value identifier it references must
 resolve either to a declaration in the same file or to an explicit
-`import` from a `std:*` / `dom:*` pseudo-package. The converter
+`import` from a `js:*` / `web:*` pseudo-package. The converter
 shall not rely on ambient globals.
 
 To achieve this, the converter shall:
@@ -472,7 +472,7 @@ that the third-party API depends on.
 - **Observable:** error diagnostic naming the dep, the
   identifier, and the file/span of the reference. Form: `cannot
   convert "<pkg>@<version>": unknown TypeScript identifier
-  <name> at <path>:<line>:<col> — no entry in std:/dom: registry`.
+  <name> at <path>:<line>:<col> — no entry in js:/web: registry`.
   The message should list the likely causes so users can
   triage before filing an issue: (a) the stdlib is missing a
   declaration for a standard TypeScript lib type — file an issue
@@ -550,7 +550,7 @@ runtime interop pipeline. During Phase 1:
 ### Tests broken by the builtins → third-party gap
 
 The builtins workstream replaces the prelude lib-walking with
-`builtins.esc` plus the `std:*` / `dom:*` pseudo-packages. The
+`builtins.esc` plus the `js:*` / `web:*` pseudo-packages. The
 runtime interop pipeline that processes third-party `.d.ts`
 today relies on TypeScript lib names (`Array`, `Promise`,
 `HTMLElement`, …) being ambient. Once builtins removes lib-walking
@@ -765,7 +765,7 @@ diagnostic appears.
   field)? Decision needed before FR8 lands.
 - **Builtin registry collision rules.** The `@js`-derived
   registry must resolve ambiguities when the same identifier is
-  declared in both `std:*` and `dom:*` (rare) or in both `dom:*`
+  declared in both `js:*` and `web:*` (rare) or in both `web:*`
   and `webworker` equivalents (common: `fetch`, `Request`,
   `Response`, `URL`, `TextEncoder`). Open: does the third-party
   converter pick by file context (e.g. "this `.d.ts` triple-slash

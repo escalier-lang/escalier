@@ -8,9 +8,9 @@ is authoritative for the builtins side. In particular,
 of the builtins requirements rejects the "small ambient builtins"
 section of this proposal: there is no ambient tier in the adopted
 design — `Symbol`, `RegExp`, `Object`, `Function`, error classes,
-etc. all live in `std:*` pseudo-packages and are either
+etc. all live in `js:*` pseudo-packages and are either
 shape-loaded (invisible, language-feature-driven) or named via
-explicit `import "std:*"`. The pseudo-package model from this
+explicit `import "js:*"`. The pseudo-package model from this
 proposal carried forward; the ambient-set proposal did not. This
 file is retained for historical rationale only.
 
@@ -72,8 +72,8 @@ types like `Array`/`Promise`/`RegExp`, `Error` family, iterators,
 utility types) lives in one `.esc` file under `internal/interop/data/`
 and is always loaded. **Everything else** — `Math`, `JSON`, `console`,
 typed arrays, `Date`, `Map`, `Intl`, DOM APIs, etc. — lives in
-**pseudo-packages** under `std/` and `dom/` and is brought in with
-URI-scheme imports like `import "std:math"`, which by default adds
+**pseudo-packages** under `js/` and `web/` and is brought in with
+URI-scheme imports like `import "js:math"`, which by default adds
 `math` to the local scope as a namespace binding. Optional `?flag`
 modifiers on the URI (e.g. `?flat` to merge a package's contents into
 a shared scheme namespace) tweak the binding shape per import.
@@ -88,13 +88,13 @@ cached under `node_modules/.cache/escalier/`.
 The grammar grows a new module specifier shape:
 
 ```escalier
-import "std:math"        // binds `math`
-import "std:json"        // binds `json`
-import "std:console"     // binds `console`
-import "std:date"        // binds `date`
-import "std:intl"        // binds `intl`
-import "dom:canvas"      // binds `canvas`
-import "dom:http"        // binds `http`
+import "js:math"        // binds `math`
+import "js:json"        // binds `json`
+import "js:console"     // binds `console`
+import "js:date"        // binds `date`
+import "js:intl"        // binds `intl`
+import "web:canvas"      // binds `canvas`
+import "web:http"        // binds `http`
 ```
 
 The default `import "scheme:name"` form is a **local namespace
@@ -104,9 +104,9 @@ as fields — both values and types. Access is `math.sin(x)`,
 `canvas.HTMLCanvasElement`, etc.
 
 This default is deliberate. Each import introduces its own local
-binding, so two imports from the same scheme (`import "dom:canvas"`
-and `import "dom:webgl"`) don't risk name-collisions in any shared
-namespace, and most `std:*` / `node:*` use cases want the terse local
+binding, so two imports from the same scheme (`import "web:canvas"`
+and `import "web:webgl"`) don't risk name-collisions in any shared
+namespace, and most `js:*` / `node:*` use cases want the terse local
 form anyway. Cross-scheme, cross-package naming conflicts are isolated
 to the importing module's local scope.
 
@@ -115,11 +115,11 @@ modifiers, mimicking the query-string convention from Vite/Parcel
 build systems (`?raw`, `?url`, `?worker`):
 
 ```escalier
-import "dom:canvas?flat"           // merges contents into shared `dom` namespace
-import "std:math?nested"           // binds `std.math` (scheme.package qualified)
-import "dom:canvas?local"          // explicit form of the default (redundant; equivalent
+import "web:canvas?flat"           // merges contents into shared `web` namespace
+import "js:math?nested"           // binds `js.math` (scheme.package qualified)
+import "web:canvas?local"          // explicit form of the default (redundant; equivalent
                                    // to no flag)
-import "dom:canvas?flag1&flag2"    // multiple flags separated by `&`
+import "web:canvas?flag1&flag2"    // multiple flags separated by `&`
 ```
 
 Three flags govern the **binding shape**; they are mutually exclusive
@@ -129,14 +129,14 @@ and exactly one is in effect per import (with no flag treated as
 - `?local` (default) — bind the package's contents under a local
   identifier equal to the last URI segment. Each import is its own
   binding; no cross-import merging.
-  - `import "std:math"` → `math.sin(x)`
-  - `import "dom:canvas"` → `canvas.HTMLCanvasElement`
+  - `import "js:math"` → `math.sin(x)`
+  - `import "web:canvas"` → `canvas.HTMLCanvasElement`
 - `?nested` — bind under a scheme-named namespace, with the package
   as a sub-namespace. Multiple `?nested` imports from the same scheme
   merge under disjoint sub-namespaces (one per package URI), so
   there's no collision risk.
-  - `import "std:math?nested"` → `std.math.sin(x)`
-  - `import "std:json?nested"` adds `std.json` alongside
+  - `import "js:math?nested"` → `js.math.sin(x)`
+  - `import "js:json?nested"` adds `js.json` alongside
   - Useful when a file imports several packages from one scheme and
     wants origins visible at every call site.
 - `?flat` — merge the package's contents directly into a shared
@@ -144,9 +144,9 @@ and exactly one is in effect per import (with no flag treated as
   scheme merge; package names are dropped from the access path. The
   natural fit for the DOM, where the feature-package split is more
   organizational than conceptual.
-  - `import "dom:canvas?flat"` + `import "dom:webgl?flat"` contribute
-    to a single `dom` binding, accessed as `dom.HTMLCanvasElement`
-    and `dom.WebGLRenderingContext`.
+  - `import "web:canvas?flat"` + `import "web:webgl?flat"` contribute
+    to a single `web` binding, accessed as `web.HTMLCanvasElement`
+    and `web.WebGLRenderingContext`.
   - Collision risk is real: two packages exporting the same name
     under the same scheme would conflict. Opt-in for that reason.
 
@@ -163,17 +163,17 @@ the separator (URL-query convention).
 
 Recognized schemes:
 
-- `std:` — ECMAScript standard library and proposed-but-shipping APIs
+- `js:` — ECMAScript standard library and proposed-but-shipping APIs
   (Temporal, WebAssembly). Available in every JS runtime.
-- `dom:` — Web platform APIs. Available only in browser-like
+- `web:` — Web platform APIs. Available only in browser-like
   environments.
 - `node:` — Node.js standard library. Already a real Node.js scheme;
   Escalier just adopts it. (Deferred: actual `.esc` content for
   `node:*` packages comes later.)
 
-Mapping is mechanical: `std:math` → `internal/interop/data/std/math.esc`
-(content embedded into the compiler binary), `dom:http` →
-`internal/interop/data/dom/http.esc`. The compiler's module
+Mapping is mechanical: `js:math` → `internal/interop/data/js/math.esc`
+(content embedded into the compiler binary), `web:http` →
+`internal/interop/data/web/http.esc`. The compiler's module
 resolver recognizes the scheme prefixes and routes accordingly. The
 `?flag` portion of the URI is stripped before path resolution; it
 affects only how the loaded module's exports land in the importing
@@ -181,7 +181,7 @@ scope.
 
 **Type-system-only, runtime-erased.** At runtime, `Math.sin`,
 `console.log`, etc. are globally available in every JS environment.
-The `import "std:math"` statement adds *type information* to the
+The `import "js:math"` statement adds *type information* to the
 compile-time scope; codegen erases the import line entirely.
 Zero runtime cost. The "package" concept is purely a type-checking
 grouping mechanism.
@@ -203,19 +203,19 @@ Concretely (one file, `internal/interop/data/builtins.esc`):
 - **Primitive instance interfaces:** `String`, `Number`, `Boolean`,
   `BigInt` — instance methods only (so `"hello".charAt(0)`
   type-checks). The constructor / static side lives in
-  `std:string`, `std:number`, etc.
+  `js:string`, `js:number`, etc.
 - **Symbol (full).** Both the instance interface *and* the constructor
   with all well-known symbols (`Symbol.iterator`, `Symbol.asyncIterator`,
   `Symbol.toPrimitive`, …) are ambient. The ambient iterator protocol
   below references `[Symbol.iterator]` / `[Symbol.asyncIterator]` in
   its method signatures, so the well-known symbols can't be deferred
   to a pseudo-package without a bootstrap cycle. There is no
-  `std:symbol` package.
+  `js:symbol` package.
 - **Syntax-produced classes:** `Array<T>` (array literals),
   `Promise<T>` (async functions), `RegExp` (regex literals). Both
   interface and constructor stay ambient for these — the literal
   desugars to the constructor and the prototype is referenced
-  directly. There is no `std:regexp` package; `RegExp` lives entirely
+  directly. There is no `js:regexp` package; `RegExp` lives entirely
   in `builtins.esc`.
 - **Iterator protocol:** `Iterator<T>`, `Iterable<T>`,
   `IteratorResult<T>`, `AsyncIterator<T>`, `AsyncIterable<T>`,
@@ -227,7 +227,7 @@ Concretely (one file, `internal/interop/data/builtins.esc`):
 - **Prototype roots (full):** `Object` and `Function`, including
   their static sides (`Object.keys`, `Object.assign`, `Object.entries`,
   `Object.freeze`, `Function.prototype.bind`, etc.). Keeping these
-  ambient avoids forcing `import "std:object"` for code as routine as
+  ambient avoids forcing `import "js:object"` for code as routine as
   `Object.keys(o)`.
 - **Error family:** `Error`, `TypeError`, `RangeError`,
   `SyntaxError`, `ReferenceError`, `EvalError`, `URIError`,
@@ -254,7 +254,7 @@ conceptual unit:
 internal/interop/data/
     builtins.esc            # the ambient set above
 
-    std/
+    js/
         math.esc             # Math
         json.esc             # JSON
         console.esc          # console + Console interface
@@ -275,7 +275,7 @@ internal/interop/data/
         temporal.esc         # Temporal (stage-3 proposal, shipping)
         wasm.esc             # WebAssembly
 
-    dom/
+    web/
         core.esc             # Document, Element, Node, Window, basic events
         http.esc             # fetch, Request, Response, Headers, URL,
                              # URLSearchParams, Body
@@ -287,18 +287,18 @@ internal/interop/data/
                              # MessageChannel
         media.esc            # HTMLMediaElement, MediaStream, MediaSource
         forms.esc            # HTMLFormElement, FormData
-        # ... more dom:* packages as needed
+        # ... more web:* packages as needed
 ```
 
-DOM splits are finer than `std/` because the DOM surface is so
-much larger; a typical browser program touches maybe 2–3 `dom:*`
+DOM splits are finer than `js/` because the DOM surface is so
+much larger; a typical browser program touches maybe 2–3 `web:*`
 packages out of dozens.
 
 **Inter-package references.** Pseudo-packages that reference types
 declared in other pseudo-packages must `import` them explicitly,
-exactly like ordinary user code. `dom/canvas.esc` needs
-`import "dom:core"` (in some binding shape) to extend `HTMLElement`;
-`std/intl.esc` needs `import "std:date"` to reference `Date`. There
+exactly like ordinary user code. `web/canvas.esc` needs
+`import "web:core"` (in some binding shape) to extend `HTMLElement`;
+`js/intl.esc` needs `import "js:date"` to reference `Date`. There
 is no implicit "all sibling packages visible" rule. Ambient
 declarations from `builtins.esc` (iterators, primitives, Symbol,
 Promise, Array, the Error family, well-known symbols) are visible
@@ -315,19 +315,19 @@ namespace identifier:
 
 | Import statement | Default binding | Example access |
 |---|---|---|
-| `import "std:math"` | `math` | `math.sin(x)`, `math.PI` |
-| `import "std:json"` | `json` | `json.parse(s)`, `json.stringify(v)` |
-| `import "std:console"` | `console` | `console.log("hi")` |
-| `import "std:date"` | `date` | `date.Date.now()`, `new date.Date()` |
-| `import "std:intl"` | `intl` | `intl.NumberFormat(...)` |
-| `import "dom:canvas"` | `canvas` | `canvas.HTMLCanvasElement` |
-| `import "dom:http"` | `http` | `http.fetch(url)`, `http.Request` |
+| `import "js:math"` | `math` | `math.sin(x)`, `math.PI` |
+| `import "js:json"` | `json` | `json.parse(s)`, `json.stringify(v)` |
+| `import "js:console"` | `console` | `console.log("hi")` |
+| `import "js:date"` | `date` | `date.Date.now()`, `new date.Date()` |
+| `import "js:intl"` | `intl` | `intl.NumberFormat(...)` |
+| `import "web:canvas"` | `canvas` | `canvas.HTMLCanvasElement` |
+| `import "web:http"` | `http` | `http.fetch(url)`, `http.Request` |
 
 Package names may contain hyphens but identifiers can't — the
 resolver substitutes `-` → `_` when computing the binding name. So
-a hypothetical `dom:web-rtc` would bind `web_rtc`. Same rule applies
-to the per-package slot under `?nested`: `import "dom:web-rtc?nested"`
-would bind `dom.web_rtc`. The `?flat` form drops the package name
+a hypothetical `web:web-rtc` would bind `web_rtc`. Same rule applies
+to the per-package slot under `?nested`: `import "web:web-rtc?nested"`
+would bind `web.web_rtc`. The `?flat` form drops the package name
 entirely so the question doesn't arise at the user-visible binding
 level. (Note: `?flat` will still need *some* internal bookkeeping
 handle per package to deduplicate registry augmentations across
@@ -336,16 +336,16 @@ handle will become clearer once augmentation activation is
 implemented in step 3 of the migration.)
 
 The default keeps each import in its own local namespace — no
-collisions across imports, terse access, and it's what `std:*` and
+collisions across imports, terse access, and it's what `js:*` and
 `node:*` use cases want almost all the time. Departures from JS
 casing (e.g. `math` instead of `Math`) are intentional — Escalier
 idiom is lowercase namespace identifiers; primitive type names
 (`string`, `number`) and the value-namespace package binding
-(`string` from `std:string`) live in separate namespaces, so there's
+(`string` from `js:string`) live in separate namespaces, so there's
 no conflict.
 
 **No "promoted-class" shortcut.** A package containing a single
-dominant class (`std:date` → `Date`, `std:regexp` would have been
+dominant class (`js:date` → `Date`, `js:regexp` would have been
 `RegExp` had it not been kept ambient, etc.) does *not* re-export
 that class's members at the namespace root. `date.now()` is **not**
 valid; you write `date.Date.now()` for the static and
@@ -360,12 +360,12 @@ under disjoint sub-namespaces, with no collision risk because each
 package keeps its own slot:
 
 ```escalier
-import "std:math?nested"
-import "std:json?nested"
+import "js:math?nested"
+import "js:json?nested"
 
-// Both available under one `std` binding, origins visible at every call site:
-std.math.sin(x)
-std.json.parse(s)
+// Both available under one `js` binding, origins visible at every call site:
+js.math.sin(x)
+js.json.parse(s)
 ```
 
 This is useful when a file pulls in several packages from one scheme
@@ -376,18 +376,18 @@ some extra typing.
 the binding shape further: contents land directly under a scheme-named
 namespace, with package names dropped from the access path. Multiple
 `?flat` imports from the same scheme merge. The DOM uses this
-heavily — most browser-targeted programs want `dom.HTMLCanvasElement`-
+heavily — most browser-targeted programs want `web.HTMLCanvasElement`-
 style access rather than per-package locals:
 
 ```escalier
-import "dom:canvas?flat"
-import "dom:webgl?flat"
-import "dom:http?flat"
+import "web:canvas?flat"
+import "web:webgl?flat"
+import "web:http?flat"
 
-// All merged into one `dom` binding:
-dom.HTMLCanvasElement
-dom.WebGLRenderingContext
-dom.fetch(url)
+// All merged into one `web` binding:
+web.HTMLCanvasElement
+web.WebGLRenderingContext
+web.fetch(url)
 ```
 
 `?flat` is opt-in precisely because the merged namespace is the only
@@ -396,15 +396,15 @@ under the same scheme would conflict). `?local` and `?nested` are
 both collision-safe; `?flat` trades that safety for an ergonomic
 flatter access path.
 
-**Named imports** (`import { sin, PI } from "std:math"`) are supported
+**Named imports** (`import { sin, PI } from "js:math"`) are supported
 as a syntactic convenience — they bind the named symbols directly
 into the local scope, no namespace wrapping. Useful for pulling
 specific symbols out of a package without bringing in the full
-namespace, especially for packages like `dom:http` where the natural
+namespace, especially for packages like `web:http` where the natural
 access pattern is bare names (`fetch(url)`).
 
 **Named imports may not carry binding-shape flags.** Writing
-`import { fetch } from "dom:http?flat"` (or `?nested`, or `?local`)
+`import { fetch } from "web:http?flat"` (or `?nested`, or `?local`)
 is a compile error. The binding-shape flags govern how a package's
 *namespace* lands in the importing scope; named imports bypass that
 namespace entirely, so the flag has nothing to act on. If a file
@@ -414,15 +414,15 @@ must write two separate `import` statements.
 ### Cross-package DOM type references
 
 Splitting the DOM into feature packages surfaces a real problem:
-many `dom:core` APIs return or reference types that live in feature
+many `web:core` APIs return or reference types that live in feature
 packages. The canonical example is `document.createElement`:
 
 ```typescript
 document.createElement("canvas")  // should return HTMLCanvasElement
 ```
 
-`document` lives in `dom:core` but `HTMLCanvasElement` lives in
-`dom:canvas`. If `dom:canvas?flat` isn't imported somewhere in the
+`document` lives in `web:core` but `HTMLCanvasElement` lives in
+`web:canvas`. If `web:canvas?flat` isn't imported somewhere in the
 compilation unit, the return type falls back to a coarser base
 (`HTMLElement`); if it is, the return type narrows to
 `HTMLCanvasElement`. The same pattern applies to `querySelector`,
@@ -440,8 +440,8 @@ fn createElement<K: keyof HTMLElementTagNameMap>(
 ) -> HTMLElementTagNameMap[K]
 ```
 
-`dom:core` declares the registry with a minimal baseline (or empty).
-Each feature package augments only the registry — `dom:canvas` adds
+`web:core` declares the registry with a minimal baseline (or empty).
+Each feature package augments only the registry — `web:canvas` adds
 exactly one line:
 
 ```escalier
@@ -457,12 +457,12 @@ registries (`HTMLElementEventMap`, `WindowEventMap`, etc.) and the
 SVG tag registry (`SVGElementTagNameMap`).
 
 **Fallback: per-API augmentation.** Some cross-package APIs don't
-fit a registry pattern — e.g. a `dom:core` function that takes an
+fit a registry pattern — e.g. a `web:core` function that takes an
 `HTMLCanvasElement` as a parameter rather than narrowing on a tag
 string. Two cases here:
 
 1. The API takes the type as a *parameter* (not a return type): the
-   feature package just exports the type, `dom:core` references it
+   feature package just exports the type, `web:core` references it
    via the type's qualified name, no augmentation needed. This is
    ordinary cross-package type referencing — the same way any module
    uses types declared in another module.
@@ -472,17 +472,17 @@ string. Two cases here:
 
 **Activation semantics.** Augmentation activation is **scoped to the
 importing module**, not the whole compilation unit. A file that
-imports `dom:canvas` sees the augmented `HTMLElementTagNameMap`
+imports `web:canvas` sees the augmented `HTMLElementTagNameMap`
 entry for `canvas`; a sibling file in the same program that does not
-import `dom:canvas` does not. This deliberately departs from
+import `web:canvas` does not. This deliberately departs from
 TypeScript's `declare module` behavior, where any module-augmentation
 import becomes global. The Escalier rule keeps the type a file sees
 fully determined by that file's own imports — no spooky action from
 a sibling — at the cost that each file using `createElement("canvas")`
-must import `dom:canvas` itself.
+must import `web:canvas` itself.
 
 Augmentation activation is independent of the binding-shape flag.
-Importing `dom:canvas` (whether as the default `?local`, as
+Importing `web:canvas` (whether as the default `?local`, as
 `?nested`, or as `?flat`) adds canvas's contributions to that file's
 view of `HTMLElementTagNameMap` so `createElement("canvas")` narrows
 correctly. The flag only affects how canvas's *direct exports* land
@@ -529,7 +529,7 @@ Add a `tools/dts_to_esc/` directory with a Go binary that:
 4. **Partitions** the resulting declarations into:
    - The ambient set (per the list above) → `builtins.esc`.
    - Each pseudo-package's surface → that package's `.esc` file
-     under `std/` or `dom/`.
+     under `js/` or `web/`.
    The partition is driven by a hand-maintained mapping table in the
    converter ("here's where each TS lib symbol lives in our layout"),
    not by anything in the `.d.ts` itself.
@@ -715,8 +715,8 @@ Phased so we can back out if it doesn't work:
    `.esc` for the constructs `lib.*.d.ts` actually uses. Riskiest
    gate; do this first.
 2. **URI-scheme import support.** Extend the parser and module
-   resolver to accept `import "scheme:name"` and route `std:`,
-   `dom:` (and the deferred `node:`) prefixes to the embedded
+   resolver to accept `import "scheme:name"` and route `js:`,
+   `web:` (and the deferred `node:`) prefixes to the embedded
    `internal/interop/data/` tree. Default *local* namespace-binding
    semantics per the convention above. Parse the `?flag` /
    `?flag1&flag2` suffix on the URI; strip it before path resolution;
@@ -724,20 +724,20 @@ Phased so we can back out if it doesn't work:
    set covers all three binding shapes: `?local` (default-equivalent
    no-op), `?nested` (scheme.package qualified binding), `?flat`
    (merge into shared scheme namespace). Combining any two of those
-   three reports a clear error. Gate: a placeholder `std:math`
+   three reports a clear error. Gate: a placeholder `js:math`
    package with a stub `math.PI = 3.14` imports and resolves
    end-to-end; a three-fixture test confirms each flag binds correctly
-   (`?local` → `math.PI`, `?nested` → `std.math.PI`, `?flat` →
-   `std.PI`); a two-package fixture (`dom:a?flat` + `dom:b?flat`)
-   merges into one `dom` binding; mutually-exclusive flag combos error.
+   (`?local` → `math.PI`, `?nested` → `js.math.PI`, `?flat` →
+   `js.PI`); a two-package fixture (`web:a?flat` + `web:b?flat`)
+   merges into one `web` binding; mutually-exclusive flag combos error.
 3. **Cross-package augmentation support.** Confirm that the existing
    §5 interface-merging mechanism (or a small extension of it) lets
    a package augment an open interface declared in another package,
    with augmentation scoped to files that import the augmenting
-   package. Test with a hand-authored two-file pair: `dom/core.esc`
-   declares an empty `HTMLElementTagNameMap`; `dom/canvas.esc`
+   package. Test with a hand-authored two-file pair: `web/core.esc`
+   declares an empty `HTMLElementTagNameMap`; `web/canvas.esc`
    augments it with `canvas: HTMLCanvasElement`; importing
-   `dom:canvas` under any binding-shape flag (`?local`, `?nested`,
+   `web:canvas` under any binding-shape flag (`?local`, `?nested`,
    `?flat`) makes `createElement("canvas")` narrow correctly in the
    importing file, and a sibling file *without* the import sees only
    the pre-augmentation shape. Gate: that test passes.
@@ -754,12 +754,12 @@ Phased so we can back out if it doesn't work:
    `lib.*.d.ts` set as input. The converter must also detect which
    TS-lib symbols belong to registries (`HTMLElementTagNameMap`,
    `HTMLElementEventMap`, …) and route their per-feature entries
-   into the appropriate `dom:*` package's augmentation block. Gate:
+   into the appropriate `web:*` package's augmentation block. Gate:
    every output file parses; running the converter twice produces
    byte-identical output.
 6. **Builtin bootstrap.** Run the converter, review the output,
    hand-edit obvious mis-classifications and high-value `throws`
-   annotations across `builtins.esc` and the `std/`/`dom/` packages,
+   annotations across `builtins.esc` and the `js/`/`web/` packages,
    commit. Gate: humans review the committed files.
 7. **Prelude switchover.** Replace the lib-walking path in
    [prelude.go](../../internal/checker/prelude.go) with a load of
@@ -776,7 +776,7 @@ Phased so we can back out if it doesn't work:
    introduces goes away. `BuildBuiltinStore` returns an empty store;
    eventually the function deletes. **Depends on step 8** — fixtures
    relying on previously-ambient symbols must have been migrated to
-   `import "std:*"` first, otherwise removing the override path
+   `import "js:*"` first, otherwise removing the override path
    regresses them before step 11 removes the underlying runtime
    interop pipeline.
 10. **Third-party lazy cache.** Wire the converter into the compile
@@ -802,12 +802,12 @@ deletion pass.
   approach is gated on extending the parser. Hard to estimate
   without doing the audit.
 - **Ergonomic cost of imports.** Today `console.log` Just Works
-  ambient. Under this model the program needs `import "std:console"`
+  ambient. Under this model the program needs `import "js:console"`
   first. Defensible — Rust, Go, Python all require imports — but
   it's friction relative to JS/TS. Mitigations: editor auto-import
   suggestions (standard for modern language tooling), descriptive
   error messages on unbound globals ("did you mean to
-  `import \"std:console\"`?").
+  `import \"js:console\"`?").
 - **Initial bootstrap quality.** The committed files start from
   heuristic output. Bad classifications that slip past review ship
   to users. Mitigation: the files are editable, so corrections are
@@ -828,11 +828,11 @@ deletion pass.
 - **Non-local reasoning from augmentation activation.** A function
   using `document.createElement("canvas")` gets `HTMLCanvasElement`
   only if some module in the same compilation unit imported
-  `dom:canvas`. This is type-only (runtime behavior is unchanged) but
+  `web:canvas`. This is type-only (runtime behavior is unchanged) but
   users encountering an unexpectedly-coarse type will need to learn
   to look for missing imports. Mitigation: an `--explain-type`
   diagnostic that, when a tag-keyed return is wider than expected,
-  suggests likely `dom:*` imports.
+  suggests likely `web:*` imports.
 - **Hand-edits drift from upstream TS.** If TS adds a method to
   `Array.prototype` in a minor TS version bump, someone has to
   notice (via `--check`) and port it by hand. Mostly a feature —
