@@ -15,13 +15,13 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | --- | ---------------------------------------------------- | ----------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
 | 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, all three binding shapes, single-class shortcut, `?flat` collisions, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `js:math` and `js:array` stubs; unit + fixture coverage in place. Two follow-ups deferred to later sections — see §8 for the two-package `?flat` `web` fixture, §7 for the FR5 "non-class package exports as namespace members on the same binding" surface. |
-| 3   | Codegen lowering and `@js` decorators                | FR3         | ⬜      | §1         | Decorator parser support (new grammar); per-declaration `@js("...")` carries the JS-runtime expression each pseudo-package member lowers to; codegen drops scheme-prefixed `import` lines and emits the decorator's argument at each reference. |
+| 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `js:number` / `js:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Cross-package augmentation + inter-package imports   | FR6–FR9     | ⬜      | §2         | Confirm §6 interface-merge can be reused for cross-package augmentation (registry interfaces only) with per-importing-file activation. Pseudo-package import cycles are permitted. Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ⬜      | §1, §3     | Two tiny slices: a trio-idiom class (`Boolean`) and a small `declare namespace` block (e.g. `JSON`). AST-to-AST translation; emit to stdout; no partition logic. Exercises trio recognition + namespace flattening; emits `@js` decorators per §3. |
 | 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{js,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
 | 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit.                                                                                                                                                        |
 | 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "js:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches DOM-style augmentation. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
-| 9   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §4, §7, §8 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. |
+| 9   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §4, §7, §8 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. Also migrate loader rule §3.4(4) (`@js` arg validation): move it out of the loader (currently reads `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go)) into a CI-only test under [internal/checker/tests/](../../internal/checker/tests/) that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Delete `js_globals.go` and the rule-4 branch in [js_decorator.go](../../internal/checker/js_decorator.go) in the same PR. Same CI-only test should add **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` (or `get`), never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable (today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime). Rule 5 shares the lib parser with rule 4, so doing them separately would duplicate the parse. |
 | 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | §9      | Implement adaptive diagnostic rendering (FR15) and the auto-import quick-fix (FR16); verify `Awaited<T>` source-level definition with documented-fallback policy; confirm intrinsic handlers stay checker-resident (FR13).                                                                                                          |
 
 **Dependency graph** (edges are "must land before"; only direct
@@ -563,15 +563,14 @@ data directory (§2.2a). User code is free of these constraints.
   `declare` is a parse error.
 - Codegen fixture under [fixtures/](../../fixtures/) covers:
   - Namespace member: `math.sin(x)` → `Math.sin(x)`.
-  - Hoisted global: `parseInt(s)` → `parseInt(s)`.
-  - Symbol re-export: `iterator.iteratorKey` → `Symbol.iterator`.
   - Single-class shortcut: `Array.isArray(xs)` →
     `Array.isArray(xs)`; `Date()` (construct) → `new Date()`.
   - Binding-shape independence: the same call lowers identically
     under `?local`, `?nested`, and `?flat`.
-  - Package-private declaration (unexported, no `@js`) is
-    invisible to importers — referencing it from outside the
-    pseudo-package errors as unbound.
+  - The `parseInt`, `Symbol.iterator`, and package-private
+    invisibility fixtures need hand-authored `js:number` /
+    `js:iterator` stubs; they live with §7's stdlib bootstrap
+    rather than blocking §3.
 - Loader checks fire on (a) an exported pseudo-package
   declaration missing `@js`, and (b) an unexported pseudo-package
   declaration carrying `@js`. Both are negative tests.
@@ -1135,6 +1134,14 @@ files as the source of truth.
 4. Commit. After this point, the converter persists only as
    `--check` review tool; ongoing edits are direct to the
    committed `.esc` files.
+5. **§3.5 codegen fixtures deferred from §3.** Once `js:number`
+   and `js:iterator` exist as committed packages, add the
+   fixtures §3 couldn't author without them:
+   - Hoisted global: `parseInt(s)` → `parseInt(s)`.
+   - Symbol re-export: `iterator.iteratorKey` → `Symbol.iterator`.
+   - Package-private declaration (unexported, no `@js`) is
+     invisible to importers — referencing it from outside the
+     pseudo-package errors as unbound.
 
 **Gate.** Humans review the committed files; `go test ./...`
 passes — the existing checker still resolves these declarations
