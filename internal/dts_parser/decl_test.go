@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -39,7 +40,7 @@ func TestVariableDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -77,7 +78,7 @@ func TestAmbientVariableDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -120,7 +121,7 @@ func TestFunctionDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -172,7 +173,7 @@ func TestTypeAliasDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -274,7 +275,7 @@ func TestInterfaceDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -314,7 +315,7 @@ func TestEnumDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -404,7 +405,7 @@ func TestClassDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -462,7 +463,7 @@ func TestNamespaceDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -520,7 +521,7 @@ func TestGlobalDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -614,7 +615,7 @@ func TestAmbientNamespaceVariableDeclarations(t *testing.T) {
 				t.Errorf("Unexpected errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -684,5 +685,5 @@ namespace Utils { export const PI: number }
 		t.Logf("Errors: %v", errors)
 	}
 
-	snaps.MatchSnapshot(t, module)
+	snaps.MatchSnapshot(t, snapshot.String(module))
 }

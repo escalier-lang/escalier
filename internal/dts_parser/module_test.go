@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -47,7 +48,7 @@ func TestImportDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -101,7 +102,7 @@ func TestExportDeclarations(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -158,7 +159,7 @@ func TestComplexImportExportScenarios(t *testing.T) {
 				t.Logf("Errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -192,10 +193,10 @@ func TestModuleErrorCases(t *testing.T) {
 				t.Error("Expected errors but got none")
 			}
 
-			snaps.MatchSnapshot(t, map[string]interface{}{
+			snaps.MatchSnapshot(t, snapshot.String(map[string]interface{}{
 				"module": module,
 				"errors": errors,
-			})
+			}))
 		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -122,7 +123,7 @@ func TestParsePatternNoErrors(t *testing.T) {
 			parser := NewParser(ctx, source)
 			expr := parser.pattern(true, true)
 
-			snaps.MatchSnapshot(t, expr)
+			snaps.MatchSnapshot(t, snapshot.String(expr))
 			assert.Equal(t, parser.errors, []*Error{})
 		})
 	}

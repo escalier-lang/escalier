@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -65,7 +66,7 @@ type MyType = string;
 		t.Errorf("Third declaration should be TypeDecl, got %T", rootNS.Decls[2])
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_SingleNamespace(t *testing.T) {
@@ -100,7 +101,7 @@ declare namespace MyNamespace {
 		t.Errorf("Expected root namespace to be empty, got %d declarations", len(rootNS.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_NestedNamespaces(t *testing.T) {
@@ -141,7 +142,7 @@ declare namespace Outer {
 		t.Errorf("Expected 1 declaration in Outer.Inner namespace, got %d", len(innerNS.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_MixedGlobalAndNamespace(t *testing.T) {
@@ -180,7 +181,7 @@ declare function globalFunc(): void;
 		t.Errorf("Expected 1 declaration in MyNamespace, got %d", len(ns.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_MultipleNamespaces(t *testing.T) {
@@ -219,7 +220,7 @@ declare namespace NS2 {
 		t.Errorf("Expected 1 declaration in NS2, got %d", len(ns2.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_NamespaceMerging(t *testing.T) {
@@ -249,7 +250,7 @@ declare namespace MyNamespace {
 		t.Errorf("Expected 2 declarations in MyNamespace (merged), got %d", len(ns.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_AmbientDeclarations(t *testing.T) {
@@ -275,7 +276,7 @@ declare class MyClass {}
 		t.Errorf("Expected 3 declarations in root namespace, got %d", len(rootNS.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_AmbientNamespace(t *testing.T) {
@@ -301,7 +302,7 @@ declare namespace MyNamespace {
 		t.Errorf("Expected 1 declaration in MyNamespace, got %d", len(ns.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_ModuleDeclaration(t *testing.T) {
@@ -354,7 +355,7 @@ declare namespace A {
 		t.Errorf("Expected 1 declaration in A.B.C, got %d", len(nestedNS.Decls))
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 // findRepoRoot walks up the directory tree to find the repository root
@@ -413,7 +414,7 @@ declare namespace MyNamespace {
 		}
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_AmbientNamespaceNestedAutoExport(t *testing.T) {
@@ -456,7 +457,7 @@ declare namespace Outer {
 		}
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_TopLevelDeclareNotAutoExported(t *testing.T) {
@@ -486,7 +487,7 @@ declare function foo(): void;
 		}
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_ExplicitExportInAmbientNamespace(t *testing.T) {
@@ -517,7 +518,7 @@ declare namespace MyNamespace {
 		}
 	}
 
-	snaps.MatchSnapshot(t, astModule)
+	snaps.MatchSnapshot(t, snapshot.String(astModule))
 }
 
 func TestConvertModule_ExportedNamespace(t *testing.T) {

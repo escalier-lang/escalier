@@ -3,18 +3,9 @@
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
+        span: 1:1-1:7,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:9},
-        SourceID: 0,
-    },
+    span: 1:1-1:9,
 }
 ---
 
@@ -22,18 +13,9 @@
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 7,
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
+        span: 1:1-1:7,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:9},
-        SourceID: 0,
-    },
+    span: 1:1-1:9,
 }
 ---
 
@@ -42,25 +24,11 @@
     ElementType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:7},
-                SourceID: 0,
-            },
+            span: 1:1-1:7,
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:9},
-            SourceID: 0,
-        },
+        span: 1:1-1:9,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:11},
-        SourceID: 0,
-    },
+    span: 1:1-1:11,
 }
 ---
 
@@ -70,32 +38,13 @@
         ElementType: &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:1},
-                    End:      ast.Location{Line:1, Column:7},
-                    SourceID: 0,
-                },
+                span: 1:1-1:7,
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:9},
-                SourceID: 0,
-            },
+            span: 1:1-1:9,
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:11},
-            SourceID: 0,
-        },
+        span: 1:1-1:11,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:13},
-        SourceID: 0,
-    },
+    span: 1:1-1:13,
 }
 ---
 
@@ -104,25 +53,11 @@
     ElementType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Foo",
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:4},
-                SourceID: 0,
-            },
+            span: 1:1-1:4,
         },
-        TypeArgs: nil,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:4},
-            SourceID: 0,
-        },
+        span: 1:1-1:4,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:6},
-        SourceID: 0,
-    },
+    span: 1:1-1:6,
 }
 ---
 
@@ -130,42 +65,21 @@
 &dts_parser.ArrayType{
     ElementType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.UnionType{
-            Types: {
+            Types: []dts_parser.TypeAnn{
                 &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
                 &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:11},
-                        End:      ast.Location{Line:1, Column:17},
-                        SourceID: 0,
-                    },
+                    span: 1:11-1:17,
                 },
             },
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:17},
-                SourceID: 0,
-            },
+            span: 1:2-1:17,
         },
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
+        span: 1:1-1:18,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:20},
-        SourceID: 0,
-    },
+    span: 1:1-1:20,
 }
 ---
 
@@ -173,58 +87,27 @@
 &dts_parser.ArrayType{
     ElementType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.IntersectionType{
-            Types: {
+            Types: []dts_parser.TypeAnn{
                 &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "Foo",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:2},
-                            End:      ast.Location{Line:1, Column:5},
-                            SourceID: 0,
-                        },
+                        span: 1:2-1:5,
                     },
-                    TypeArgs: nil,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:5},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:5,
                 },
                 &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "Bar",
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:8},
-                            End:      ast.Location{Line:1, Column:11},
-                            SourceID: 0,
-                        },
+                        span: 1:8-1:11,
                     },
-                    TypeArgs: nil,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:8},
-                        End:      ast.Location{Line:1, Column:11},
-                        SourceID: 0,
-                    },
+                    span: 1:8-1:11,
                 },
             },
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
+            span: 1:2-1:11,
         },
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:12},
-            SourceID: 0,
-        },
+        span: 1:1-1:12,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:14},
-        SourceID: 0,
-    },
+    span: 1:1-1:14,
 }
 ---
 
@@ -233,34 +116,17 @@
     ElementType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Array",
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:6},
-                SourceID: 0,
-            },
+            span: 1:1-1:6,
         },
-        TypeArgs: {
+        TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:7},
-                    End:      ast.Location{Line:1, Column:13},
-                    SourceID: 0,
-                },
+                span: 1:7-1:13,
             },
         },
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:14},
-            SourceID: 0,
-        },
+        span: 1:1-1:14,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:16},
-        SourceID: 0,
-    },
+    span: 1:1-1:16,
 }
 ---
 
@@ -270,1782 +136,813 @@
         Name: &dts_parser.Member{
             Left: &dts_parser.Ident{
                 Name: "Foo",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:1},
-                    End:      ast.Location{Line:1, Column:4},
-                    SourceID: 0,
-                },
+                span: 1:1-1:4,
             },
             Right: &dts_parser.Ident{
                 Name: "Bar",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:5},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:5-1:8,
             },
         },
-        TypeArgs: nil,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:8},
-            SourceID: 0,
-        },
+        span: 1:1-1:8,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:10},
-        SourceID: 0,
-    },
+    span: 1:1-1:10,
 }
 ---
 
 [TestTupleTypes/empty_tuple - 1]
 &dts_parser.TupleType{
-    Elements: {
-    },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:3},
-        SourceID: 0,
-    },
+    span: 1:1-1:3,
 }
 ---
 
 [TestTupleTypes/single_element - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:9},
-        SourceID: 0,
-    },
+    span: 1:1-1:9,
 }
 ---
 
 [TestTupleTypes/two_elements - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:10-1:16,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
+            span: 1:10-1:16,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:17},
-        SourceID: 0,
-    },
+    span: 1:1-1:17,
 }
 ---
 
 [TestTupleTypes/three_elements - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:10-1:16,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
+            span: 1:10-1:16,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:18},
-                    End:      ast.Location{Line:1, Column:25},
-                    SourceID: 0,
-                },
+                span: 1:18-1:25,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:18},
-                End:      ast.Location{Line:1, Column:25},
-                SourceID: 0,
-            },
+            span: 1:18-1:25,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:26},
-        SourceID: 0,
-    },
+    span: 1:1-1:26,
 }
 ---
 
 [TestTupleTypes/with_primitives - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
-                Kind: 0,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:5},
-                    SourceID: 0,
-                },
+                span: 1:2-1:5,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:5},
-                SourceID: 0,
-            },
+            span: 1:2-1:5,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 1,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:7},
-                    End:      ast.Location{Line:1, Column:14},
-                    SourceID: 0,
-                },
+                span: 1:7-1:14,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:7},
-                End:      ast.Location{Line:1, Column:14},
-                SourceID: 0,
-            },
+            span: 1:7-1:14,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 5,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
-                    End:      ast.Location{Line:1, Column:21},
-                    SourceID: 0,
-                },
+                span: 1:16-1:21,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:16},
-                End:      ast.Location{Line:1, Column:21},
-                SourceID: 0,
-            },
+            span: 1:16-1:21,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:22},
-        SourceID: 0,
-    },
+    span: 1:1-1:22,
 }
 ---
 
 [TestTupleTypes/with_type_references - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:5},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:5,
                 },
-                TypeArgs: nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:5},
-                    SourceID: 0,
-                },
+                span: 1:2-1:5,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:5},
-                SourceID: 0,
-            },
+            span: 1:2-1:5,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Bar",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:7},
-                        End:      ast.Location{Line:1, Column:10},
-                        SourceID: 0,
-                    },
+                    span: 1:7-1:10,
                 },
-                TypeArgs: nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:7},
-                    End:      ast.Location{Line:1, Column:10},
-                    SourceID: 0,
-                },
+                span: 1:7-1:10,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:7},
-                End:      ast.Location{Line:1, Column:10},
-                SourceID: 0,
-            },
+            span: 1:7-1:10,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Baz",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:12},
-                        End:      ast.Location{Line:1, Column:15},
-                        SourceID: 0,
-                    },
+                    span: 1:12-1:15,
                 },
-                TypeArgs: nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
-                    End:      ast.Location{Line:1, Column:15},
-                    SourceID: 0,
-                },
+                span: 1:12-1:15,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:12},
-                End:      ast.Location{Line:1, Column:15},
-                SourceID: 0,
-            },
+            span: 1:12-1:15,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:16},
-        SourceID: 0,
-    },
+    span: 1:1-1:16,
 }
 ---
 
 [TestTupleTypes/mixed_types - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:13},
-                        SourceID: 0,
-                    },
+                    span: 1:10-1:13,
                 },
-                TypeArgs: nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:13},
-                    SourceID: 0,
-                },
+                span: 1:10-1:13,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:13},
-                SourceID: 0,
-            },
+            span: 1:10-1:13,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:15},
-                    End:      ast.Location{Line:1, Column:21},
-                    SourceID: 0,
-                },
+                span: 1:15-1:21,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:15},
-                End:      ast.Location{Line:1, Column:21},
-                SourceID: 0,
-            },
+            span: 1:15-1:21,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:22},
-        SourceID: 0,
-    },
+    span: 1:1-1:22,
 }
 ---
 
 [TestTupleTypes/with_union_elements - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.UnionType{
-                Types: {
+                Types: []dts_parser.TypeAnn{
                     &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:2},
-                            End:      ast.Location{Line:1, Column:8},
-                            SourceID: 0,
-                        },
+                        span: 1:2-1:8,
                     },
                     &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:11},
-                            End:      ast.Location{Line:1, Column:17},
-                            SourceID: 0,
-                        },
+                        span: 1:11-1:17,
                     },
                 },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:17},
-                    SourceID: 0,
-                },
+                span: 1:2-1:17,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:17},
-                SourceID: 0,
-            },
+            span: 1:2-1:17,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:19},
-                    End:      ast.Location{Line:1, Column:26},
-                    SourceID: 0,
-                },
+                span: 1:19-1:26,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:19},
-                End:      ast.Location{Line:1, Column:26},
-                SourceID: 0,
-            },
+            span: 1:19-1:26,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:27},
-        SourceID: 0,
-    },
+    span: 1:1-1:27,
 }
 ---
 
 [TestTupleTypes/with_intersection_elements - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.IntersectionType{
-                Types: {
+                Types: []dts_parser.TypeAnn{
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "Foo",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:2},
-                                End:      ast.Location{Line:1, Column:5},
-                                SourceID: 0,
-                            },
+                            span: 1:2-1:5,
                         },
-                        TypeArgs: nil,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:2},
-                            End:      ast.Location{Line:1, Column:5},
-                            SourceID: 0,
-                        },
+                        span: 1:2-1:5,
                     },
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "Bar",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:8},
-                                End:      ast.Location{Line:1, Column:11},
-                                SourceID: 0,
-                            },
+                            span: 1:8-1:11,
                         },
-                        TypeArgs: nil,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:8},
-                            End:      ast.Location{Line:1, Column:11},
-                            SourceID: 0,
-                        },
+                        span: 1:8-1:11,
                     },
                 },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:11},
-                    SourceID: 0,
-                },
+                span: 1:2-1:11,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
+            span: 1:2-1:11,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Baz",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:13},
-                        End:      ast.Location{Line:1, Column:16},
-                        SourceID: 0,
-                    },
+                    span: 1:13-1:16,
                 },
-                TypeArgs: nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:13-1:16,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:13},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
+            span: 1:13-1:16,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:17},
-        SourceID: 0,
-    },
+    span: 1:1-1:17,
 }
 ---
 
 [TestTupleTypes/nested_tuples - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.TupleType{
-                Elements: {
-                    {
-                        Name: (*dts_parser.Ident)(nil),
+                Elements: []dts_parser.TupleElement{
+                    dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 6,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:3},
-                                End:      ast.Location{Line:1, Column:9},
-                                SourceID: 0,
-                            },
+                            span: 1:3-1:9,
                         },
-                        Optional: false,
-                        Rest:     false,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:3},
-                            End:      ast.Location{Line:1, Column:9},
-                            SourceID: 0,
-                        },
+                        span: 1:3-1:9,
                     },
-                    {
-                        Name: (*dts_parser.Ident)(nil),
+                    dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 7,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:11},
-                                End:      ast.Location{Line:1, Column:17},
-                                SourceID: 0,
-                            },
+                            span: 1:11-1:17,
                         },
-                        Optional: false,
-                        Rest:     false,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:11},
-                            End:      ast.Location{Line:1, Column:17},
-                            SourceID: 0,
-                        },
+                        span: 1:11-1:17,
                     },
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:18},
-                    SourceID: 0,
-                },
+                span: 1:2-1:18,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:18},
-                SourceID: 0,
-            },
+            span: 1:2-1:18,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.TupleType{
-                Elements: {
-                    {
-                        Name: (*dts_parser.Ident)(nil),
+                Elements: []dts_parser.TupleElement{
+                    dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 8,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:21},
-                                End:      ast.Location{Line:1, Column:28},
-                                SourceID: 0,
-                            },
+                            span: 1:21-1:28,
                         },
-                        Optional: false,
-                        Rest:     false,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:21},
-                            End:      ast.Location{Line:1, Column:28},
-                            SourceID: 0,
-                        },
+                        span: 1:21-1:28,
                     },
-                    {
-                        Name: (*dts_parser.Ident)(nil),
+                    dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
-                            Kind: 0,
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:30},
-                                End:      ast.Location{Line:1, Column:33},
-                                SourceID: 0,
-                            },
+                            span: 1:30-1:33,
                         },
-                        Optional: false,
-                        Rest:     false,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:30},
-                            End:      ast.Location{Line:1, Column:33},
-                            SourceID: 0,
-                        },
+                        span: 1:30-1:33,
                     },
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:20},
-                    End:      ast.Location{Line:1, Column:34},
-                    SourceID: 0,
-                },
+                span: 1:20-1:34,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:20},
-                End:      ast.Location{Line:1, Column:34},
-                SourceID: 0,
-            },
+            span: 1:20-1:34,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:35},
-        SourceID: 0,
-    },
+    span: 1:1-1:35,
 }
 ---
 
 [TestTupleTypes/tuple_of_arrays - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:10},
-                    SourceID: 0,
-                },
+                span: 1:2-1:10,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:10},
-                SourceID: 0,
-            },
+            span: 1:2-1:10,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:12},
-                        End:      ast.Location{Line:1, Column:18},
-                        SourceID: 0,
-                    },
+                    span: 1:12-1:18,
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
-                    End:      ast.Location{Line:1, Column:20},
-                    SourceID: 0,
-                },
+                span: 1:12-1:20,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:12},
-                End:      ast.Location{Line:1, Column:20},
-                SourceID: 0,
-            },
+            span: 1:12-1:20,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:21},
-        SourceID: 0,
-    },
+    span: 1:1-1:21,
 }
 ---
 
 [TestTupleTypes/array_of_tuples - 1]
 &dts_parser.ArrayType{
     ElementType: &dts_parser.TupleType{
-        Elements: {
-            {
-                Name: (*dts_parser.Ident)(nil),
+        Elements: []dts_parser.TupleElement{
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            {
-                Name: (*dts_parser.Ident)(nil),
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:16},
-                        SourceID: 0,
-                    },
+                    span: 1:10-1:16,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:10-1:16,
             },
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:17},
-            SourceID: 0,
-        },
+        span: 1:1-1:17,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:19},
-        SourceID: 0,
-    },
+    span: 1:1-1:19,
 }
 ---
 
 [TestTupleWithOptionalElements/single_optional - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
             Optional: true,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:10},
-        SourceID: 0,
-    },
+    span: 1:1-1:10,
 }
 ---
 
 [TestTupleWithOptionalElements/optional_at_end - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:10-1:16,
             },
             Optional: true,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
+            span: 1:10-1:16,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:18},
-        SourceID: 0,
-    },
+    span: 1:1-1:18,
 }
 ---
 
 [TestTupleWithOptionalElements/multiple_optional - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
             Optional: true,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:11},
-                    End:      ast.Location{Line:1, Column:17},
-                    SourceID: 0,
-                },
+                span: 1:11-1:17,
             },
             Optional: true,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:11},
-                End:      ast.Location{Line:1, Column:17},
-                SourceID: 0,
-            },
+            span: 1:11-1:17,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:19},
-        SourceID: 0,
-    },
+    span: 1:1-1:19,
 }
 ---
 
 [TestTupleWithOptionalElements/mixed_optional_required - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:10-1:16,
             },
             Optional: true,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
+            span: 1:10-1:16,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:19},
-                    End:      ast.Location{Line:1, Column:26},
-                    SourceID: 0,
-                },
+                span: 1:19-1:26,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:19},
-                End:      ast.Location{Line:1, Column:26},
-                SourceID: 0,
-            },
+            span: 1:19-1:26,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:27},
-        SourceID: 0,
-    },
+    span: 1:1-1:27,
 }
 ---
 
 [TestTupleWithRestElements/rest_at_end - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:13},
-                        End:      ast.Location{Line:1, Column:19},
-                        SourceID: 0,
-                    },
+                    span: 1:13-1:19,
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
-                    End:      ast.Location{Line:1, Column:21},
-                    SourceID: 0,
-                },
+                span: 1:13-1:21,
             },
-            Optional: false,
-            Rest:     true,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:21},
-                SourceID: 0,
-            },
+            Rest: true,
+            span: 1:10-1:21,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:22},
-        SourceID: 0,
-    },
+    span: 1:1-1:22,
 }
 ---
 
 [TestTupleWithRestElements/rest_only - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:5},
-                        End:      ast.Location{Line:1, Column:11},
-                        SourceID: 0,
-                    },
+                    span: 1:5-1:11,
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:5},
-                    End:      ast.Location{Line:1, Column:13},
-                    SourceID: 0,
-                },
+                span: 1:5-1:13,
             },
-            Optional: false,
-            Rest:     true,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:13},
-                SourceID: 0,
-            },
+            Rest: true,
+            span: 1:2-1:13,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:14},
-        SourceID: 0,
-    },
+    span: 1:1-1:14,
 }
 ---
 
 [TestTupleWithRestElements/multiple_before_rest - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:10-1:16,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
+            span: 1:10-1:16,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 8,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:21},
-                        End:      ast.Location{Line:1, Column:28},
-                        SourceID: 0,
-                    },
+                    span: 1:21-1:28,
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:21},
-                    End:      ast.Location{Line:1, Column:30},
-                    SourceID: 0,
-                },
+                span: 1:21-1:30,
             },
-            Optional: false,
-            Rest:     true,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:18},
-                End:      ast.Location{Line:1, Column:30},
-                SourceID: 0,
-            },
+            Rest: true,
+            span: 1:18-1:30,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:31},
-        SourceID: 0,
-    },
+    span: 1:1-1:31,
 }
 ---
 
 [TestTupleWithRestElements/rest_with_union - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.ParenthesizedType{
                     Type: &dts_parser.UnionType{
-                        Types: {
+                        Types: []dts_parser.TypeAnn{
                             &dts_parser.PrimitiveType{
                                 Kind: 7,
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:14},
-                                    End:      ast.Location{Line:1, Column:20},
-                                    SourceID: 0,
-                                },
+                                span: 1:14-1:20,
                             },
                             &dts_parser.PrimitiveType{
                                 Kind: 8,
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:23},
-                                    End:      ast.Location{Line:1, Column:30},
-                                    SourceID: 0,
-                                },
+                                span: 1:23-1:30,
                             },
                         },
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:14},
-                            End:      ast.Location{Line:1, Column:30},
-                            SourceID: 0,
-                        },
+                        span: 1:14-1:30,
                     },
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:13},
-                        End:      ast.Location{Line:1, Column:31},
-                        SourceID: 0,
-                    },
+                    span: 1:13-1:31,
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
-                    End:      ast.Location{Line:1, Column:33},
-                    SourceID: 0,
-                },
+                span: 1:13-1:33,
             },
-            Optional: false,
-            Rest:     true,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:33},
-                SourceID: 0,
-            },
+            Rest: true,
+            span: 1:10-1:33,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:34},
-        SourceID: 0,
-    },
+    span: 1:1-1:34,
 }
 ---
 
 [TestTupleWithLabels/single_labeled - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:3},
-                    SourceID: 0,
-                },
+                span: 1:2-1:3,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:5},
-                    End:      ast.Location{Line:1, Column:11},
-                    SourceID: 0,
-                },
+                span: 1:5-1:11,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
+            span: 1:2-1:11,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:12},
-        SourceID: 0,
-    },
+    span: 1:1-1:12,
 }
 ---
 
 [TestTupleWithLabels/multiple_labeled - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:3},
-                    SourceID: 0,
-                },
+                span: 1:2-1:3,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:5},
-                    End:      ast.Location{Line:1, Column:11},
-                    SourceID: 0,
-                },
+                span: 1:5-1:11,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
+            span: 1:2-1:11,
         },
-        {
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
-                    End:      ast.Location{Line:1, Column:14},
-                    SourceID: 0,
-                },
+                span: 1:13-1:14,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
-                    End:      ast.Location{Line:1, Column:22},
-                    SourceID: 0,
-                },
+                span: 1:16-1:22,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:13},
-                End:      ast.Location{Line:1, Column:22},
-                SourceID: 0,
-            },
+            span: 1:13-1:22,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:23},
-        SourceID: 0,
-    },
+    span: 1:1-1:23,
 }
 ---
 
 [TestTupleWithLabels/mixed_labeled_unlabeled - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        {
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:11},
-                    SourceID: 0,
-                },
+                span: 1:10-1:11,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
-                    End:      ast.Location{Line:1, Column:19},
-                    SourceID: 0,
-                },
+                span: 1:13-1:19,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:19},
-                SourceID: 0,
-            },
+            span: 1:10-1:19,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:20},
-        SourceID: 0,
-    },
+    span: 1:1-1:20,
 }
 ---
 
 [TestTupleWithLabels/labeled_optional - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:3},
-                    SourceID: 0,
-                },
+                span: 1:2-1:3,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:6},
-                    End:      ast.Location{Line:1, Column:12},
-                    SourceID: 0,
-                },
+                span: 1:6-1:12,
             },
             Optional: true,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:12},
-                SourceID: 0,
-            },
+            span: 1:2-1:12,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:13},
-        SourceID: 0,
-    },
+    span: 1:1-1:13,
 }
 ---
 
 [TestTupleWithLabels/labeled_with_colon_and_optional - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:3},
-                    SourceID: 0,
-                },
+                span: 1:2-1:3,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:6},
-                    End:      ast.Location{Line:1, Column:12},
-                    SourceID: 0,
-                },
+                span: 1:6-1:12,
             },
             Optional: true,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:12},
-                SourceID: 0,
-            },
+            span: 1:2-1:12,
         },
-        {
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:14},
-                    End:      ast.Location{Line:1, Column:15},
-                    SourceID: 0,
-                },
+                span: 1:14-1:15,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:17},
-                    End:      ast.Location{Line:1, Column:23},
-                    SourceID: 0,
-                },
+                span: 1:17-1:23,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:14},
-                End:      ast.Location{Line:1, Column:23},
-                SourceID: 0,
-            },
+            span: 1:14-1:23,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:24},
-        SourceID: 0,
-    },
+    span: 1:1-1:24,
 }
 ---
 
 [TestTupleWithLabels/labeled_rest - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:3},
-                    SourceID: 0,
-                },
+                span: 1:2-1:3,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:5},
-                    End:      ast.Location{Line:1, Column:11},
-                    SourceID: 0,
-                },
+                span: 1:5-1:11,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
+            span: 1:2-1:11,
         },
-        {
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "rest",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
-                    End:      ast.Location{Line:1, Column:20},
-                    SourceID: 0,
-                },
+                span: 1:16-1:20,
             },
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:22},
-                        End:      ast.Location{Line:1, Column:28},
-                        SourceID: 0,
-                    },
+                    span: 1:22-1:28,
                 },
-                Readonly: false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:22},
-                    End:      ast.Location{Line:1, Column:30},
-                    SourceID: 0,
-                },
+                span: 1:22-1:30,
             },
-            Optional: false,
-            Rest:     true,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:13},
-                End:      ast.Location{Line:1, Column:30},
-                SourceID: 0,
-            },
+            Rest: true,
+            span: 1:13-1:30,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:31},
-        SourceID: 0,
-    },
+    span: 1:1-1:31,
 }
 ---
 
 [TestTupleWithLabels/all_labeled - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:3},
-                    SourceID: 0,
-                },
+                span: 1:2-1:3,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:5},
-                    End:      ast.Location{Line:1, Column:11},
-                    SourceID: 0,
-                },
+                span: 1:5-1:11,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
+            span: 1:2-1:11,
         },
-        {
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
-                    End:      ast.Location{Line:1, Column:14},
-                    SourceID: 0,
-                },
+                span: 1:13-1:14,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:16},
-                    End:      ast.Location{Line:1, Column:22},
-                    SourceID: 0,
-                },
+                span: 1:16-1:22,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:13},
-                End:      ast.Location{Line:1, Column:22},
-                SourceID: 0,
-            },
+            span: 1:13-1:22,
         },
-        {
+        dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "z",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:24},
-                    End:      ast.Location{Line:1, Column:25},
-                    SourceID: 0,
-                },
+                span: 1:24-1:25,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:27},
-                    End:      ast.Location{Line:1, Column:34},
-                    SourceID: 0,
-                },
+                span: 1:27-1:34,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:24},
-                End:      ast.Location{Line:1, Column:34},
-                SourceID: 0,
-            },
+            span: 1:24-1:34,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:35},
-        SourceID: 0,
-    },
+    span: 1:1-1:35,
 }
 ---
 
 [TestTupleEdgeCases/trailing_comma - 1]
 map[string]interface {}{
-    "errors": []*dts_parser.Error{
-    },
+    "errors": []*dts_parser.Error{},
     "typeAnn": &dts_parser.TupleType{
-        Elements: {
-            {
-                Name: (*dts_parser.Ident)(nil),
+        Elements: []dts_parser.TupleElement{
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            {
-                Name: (*dts_parser.Ident)(nil),
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:16},
-                        SourceID: 0,
-                    },
+                    span: 1:10-1:16,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:10},
-                    End:      ast.Location{Line:1, Column:16},
-                    SourceID: 0,
-                },
+                span: 1:10-1:16,
             },
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
+        span: 1:1-1:18,
     },
 }
 ---
 
 [TestTupleEdgeCases/single_trailing_comma - 1]
 map[string]interface {}{
-    "errors": []*dts_parser.Error{
-    },
+    "errors": []*dts_parser.Error{},
     "typeAnn": &dts_parser.TupleType{
-        Elements: {
-            {
-                Name: (*dts_parser.Ident)(nil),
+        Elements: []dts_parser.TupleElement{
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:10},
-            SourceID: 0,
-        },
+        span: 1:1-1:10,
     },
 }
 ---
@@ -2054,346 +951,165 @@ map[string]interface {}{
 map[string]interface {}{
     "errors": []*dts_parser.Error{
         &dts_parser.Error{
-            Span: ast.Span{
-                Start:    ast.Location{Line:1, Column:9},
-                End:      ast.Location{Line:1, Column:10},
-                SourceID: 0,
-            },
+            Span: 1:9-1:10,
             Message: "Expected tuple element",
         },
         &dts_parser.Error{
-            Span: ast.Span{
-                Start:    ast.Location{Line:1, Column:9},
-                End:      ast.Location{Line:1, Column:10},
-                SourceID: 0,
-            },
+            Span: 1:9-1:10,
             Message: "Expected 13 but got 16",
         },
     },
     "typeAnn": &dts_parser.TupleType{
-        Elements: {
-            {
-                Name: (*dts_parser.Ident)(nil),
+        Elements: []dts_parser.TupleElement{
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:8},
-            SourceID: 0,
-        },
+        span: 1:1-1:8,
     },
 }
 ---
 
 [TestTupleEdgeCases/spaces - 1]
 map[string]interface {}{
-    "errors": []*dts_parser.Error{
-    },
+    "errors": []*dts_parser.Error{},
     "typeAnn": &dts_parser.TupleType{
-        Elements: {
-            {
-                Name: (*dts_parser.Ident)(nil),
+        Elements: []dts_parser.TupleElement{
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:3},
-                        End:      ast.Location{Line:1, Column:9},
-                        SourceID: 0,
-                    },
+                    span: 1:3-1:9,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:3},
-                    End:      ast.Location{Line:1, Column:9},
-                    SourceID: 0,
-                },
+                span: 1:3-1:9,
             },
-            {
-                Name: (*dts_parser.Ident)(nil),
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:12},
-                        End:      ast.Location{Line:1, Column:18},
-                        SourceID: 0,
-                    },
+                    span: 1:12-1:18,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
-                    End:      ast.Location{Line:1, Column:18},
-                    SourceID: 0,
-                },
+                span: 1:12-1:18,
             },
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:20},
-            SourceID: 0,
-        },
+        span: 1:1-1:20,
     },
 }
 ---
 
 [TestTupleEdgeCases/newlines - 1]
 map[string]interface {}{
-    "errors": []*dts_parser.Error{
-    },
+    "errors": []*dts_parser.Error{},
     "typeAnn": &dts_parser.TupleType{
-        Elements: {
-            {
-                Name: (*dts_parser.Ident)(nil),
+        Elements: []dts_parser.TupleElement{
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:2, Column:3},
-                        End:      ast.Location{Line:2, Column:9},
-                        SourceID: 0,
-                    },
+                    span: 2:3-2:9,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:2, Column:3},
-                    End:      ast.Location{Line:2, Column:9},
-                    SourceID: 0,
-                },
+                span: 2:3-2:9,
             },
-            {
-                Name: (*dts_parser.Ident)(nil),
+            dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:3, Column:3},
-                        End:      ast.Location{Line:3, Column:9},
-                        SourceID: 0,
-                    },
+                    span: 3:3-3:9,
                 },
-                Optional: false,
-                Rest:     false,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:3, Column:3},
-                    End:      ast.Location{Line:3, Column:9},
-                    SourceID: 0,
-                },
+                span: 3:3-3:9,
             },
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:4, Column:2},
-            SourceID: 0,
-        },
+        span: 1:1-4:2,
     },
 }
 ---
 
 [TestArrayAndTupleCombinations/union_with_array - 1]
 &dts_parser.UnionType{
-    Types: {
+    Types: []dts_parser.TypeAnn{
         &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:1},
-                    End:      ast.Location{Line:1, Column:7},
-                    SourceID: 0,
-                },
+                span: 1:1-1:7,
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:9},
-                SourceID: 0,
-            },
+            span: 1:1-1:9,
         },
         &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:12},
-                    End:      ast.Location{Line:1, Column:18},
-                    SourceID: 0,
-                },
+                span: 1:12-1:18,
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:12},
-                End:      ast.Location{Line:1, Column:20},
-                SourceID: 0,
-            },
+            span: 1:12-1:20,
         },
     },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:20},
-        SourceID: 0,
-    },
+    span: 1:1-1:20,
 }
 ---
 
 [TestArrayAndTupleCombinations/union_with_tuple - 1]
 &dts_parser.UnionType{
-    Types: {
+    Types: []dts_parser.TypeAnn{
         &dts_parser.TupleType{
-            Elements: {
-                {
-                    Name: (*dts_parser.Ident)(nil),
+            Elements: []dts_parser.TupleElement{
+                dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:2},
-                            End:      ast.Location{Line:1, Column:8},
-                            SourceID: 0,
-                        },
+                        span: 1:2-1:8,
                     },
-                    Optional: false,
-                    Rest:     false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
-                {
-                    Name: (*dts_parser.Ident)(nil),
+                dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:10},
-                            End:      ast.Location{Line:1, Column:16},
-                            SourceID: 0,
-                        },
+                        span: 1:10-1:16,
                     },
-                    Optional: false,
-                    Rest:     false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:10},
-                        End:      ast.Location{Line:1, Column:16},
-                        SourceID: 0,
-                    },
+                    span: 1:10-1:16,
                 },
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:17},
-                SourceID: 0,
-            },
+            span: 1:1-1:17,
         },
         &dts_parser.TupleType{
-            Elements: {
-                {
-                    Name: (*dts_parser.Ident)(nil),
+            Elements: []dts_parser.TupleElement{
+                dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 8,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:21},
-                            End:      ast.Location{Line:1, Column:28},
-                            SourceID: 0,
-                        },
+                        span: 1:21-1:28,
                     },
-                    Optional: false,
-                    Rest:     false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:21},
-                        End:      ast.Location{Line:1, Column:28},
-                        SourceID: 0,
-                    },
+                    span: 1:21-1:28,
                 },
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:20},
-                End:      ast.Location{Line:1, Column:29},
-                SourceID: 0,
-            },
+            span: 1:20-1:29,
         },
     },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:29},
-        SourceID: 0,
-    },
+    span: 1:1-1:29,
 }
 ---
 
 [TestArrayAndTupleCombinations/intersection_with_array - 1]
 &dts_parser.IntersectionType{
-    Types: {
+    Types: []dts_parser.TypeAnn{
         &dts_parser.ArrayType{
             ElementType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:1},
-                        End:      ast.Location{Line:1, Column:4},
-                        SourceID: 0,
-                    },
+                    span: 1:1-1:4,
                 },
-                TypeArgs: nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:1},
-                    End:      ast.Location{Line:1, Column:4},
-                    SourceID: 0,
-                },
+                span: 1:1-1:4,
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:6},
-                SourceID: 0,
-            },
+            span: 1:1-1:6,
         },
         &dts_parser.ArrayType{
             ElementType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Bar",
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:9},
-                        End:      ast.Location{Line:1, Column:12},
-                        SourceID: 0,
-                    },
+                    span: 1:9-1:12,
                 },
-                TypeArgs: nil,
-                span:     ast.Span{
-                    Start:    ast.Location{Line:1, Column:9},
-                    End:      ast.Location{Line:1, Column:12},
-                    SourceID: 0,
-                },
+                span: 1:9-1:12,
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:9},
-                End:      ast.Location{Line:1, Column:14},
-                SourceID: 0,
-            },
+            span: 1:9-1:14,
         },
     },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:14},
-        SourceID: 0,
-    },
+    span: 1:1-1:14,
 }
 ---
 
@@ -2401,270 +1117,124 @@ map[string]interface {}{
 &dts_parser.ArrayType{
     ElementType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.UnionType{
-            Types: {
+            Types: []dts_parser.TypeAnn{
                 &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:2},
-                        End:      ast.Location{Line:1, Column:8},
-                        SourceID: 0,
-                    },
+                    span: 1:2-1:8,
                 },
                 &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: ast.Span{
-                        Start:    ast.Location{Line:1, Column:11},
-                        End:      ast.Location{Line:1, Column:17},
-                        SourceID: 0,
-                    },
+                    span: 1:11-1:17,
                 },
             },
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:17},
-                SourceID: 0,
-            },
+            span: 1:2-1:17,
         },
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
+        span: 1:1-1:18,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:20},
-        SourceID: 0,
-    },
+    span: 1:1-1:20,
 }
 ---
 
 [TestArrayAndTupleCombinations/tuple_of_unions - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.UnionType{
-                Types: {
+                Types: []dts_parser.TypeAnn{
                     &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:2},
-                            End:      ast.Location{Line:1, Column:8},
-                            SourceID: 0,
-                        },
+                        span: 1:2-1:8,
                     },
                     &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:11},
-                            End:      ast.Location{Line:1, Column:17},
-                            SourceID: 0,
-                        },
+                        span: 1:11-1:17,
                     },
                 },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:17},
-                    SourceID: 0,
-                },
+                span: 1:2-1:17,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:17},
-                SourceID: 0,
-            },
+            span: 1:2-1:17,
         },
-        {
-            Name: (*dts_parser.Ident)(nil),
+        dts_parser.TupleElement{
             Type: &dts_parser.UnionType{
-                Types: {
+                Types: []dts_parser.TypeAnn{
                     &dts_parser.PrimitiveType{
                         Kind: 8,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:19},
-                            End:      ast.Location{Line:1, Column:26},
-                            SourceID: 0,
-                        },
+                        span: 1:19-1:26,
                     },
                     &dts_parser.PrimitiveType{
-                        Kind: 0,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:29},
-                            End:      ast.Location{Line:1, Column:32},
-                            SourceID: 0,
-                        },
+                        span: 1:29-1:32,
                     },
                 },
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:19},
-                    End:      ast.Location{Line:1, Column:32},
-                    SourceID: 0,
-                },
+                span: 1:19-1:32,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:19},
-                End:      ast.Location{Line:1, Column:32},
-                SourceID: 0,
-            },
+            span: 1:19-1:32,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:33},
-        SourceID: 0,
-    },
+    span: 1:1-1:33,
 }
 ---
 
 [TestArrayAndTupleCombinations/complex_nested - 1]
 &dts_parser.UnionType{
-    Types: {
+    Types: []dts_parser.TypeAnn{
         &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "Array",
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:1},
-                    End:      ast.Location{Line:1, Column:6},
-                    SourceID: 0,
-                },
+                span: 1:1-1:6,
             },
-            TypeArgs: {
+            TypeArgs: []dts_parser.TypeAnn{
                 &dts_parser.TupleType{
-                    Elements: {
-                        {
-                            Name: (*dts_parser.Ident)(nil),
+                    Elements: []dts_parser.TupleElement{
+                        dts_parser.TupleElement{
                             Type: &dts_parser.PrimitiveType{
                                 Kind: 6,
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:8},
-                                    End:      ast.Location{Line:1, Column:14},
-                                    SourceID: 0,
-                                },
+                                span: 1:8-1:14,
                             },
-                            Optional: false,
-                            Rest:     false,
-                            span:     ast.Span{
-                                Start:    ast.Location{Line:1, Column:8},
-                                End:      ast.Location{Line:1, Column:14},
-                                SourceID: 0,
-                            },
+                            span: 1:8-1:14,
                         },
-                        {
-                            Name: (*dts_parser.Ident)(nil),
+                        dts_parser.TupleElement{
                             Type: &dts_parser.PrimitiveType{
                                 Kind: 7,
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:16},
-                                    End:      ast.Location{Line:1, Column:22},
-                                    SourceID: 0,
-                                },
+                                span: 1:16-1:22,
                             },
-                            Optional: false,
-                            Rest:     false,
-                            span:     ast.Span{
-                                Start:    ast.Location{Line:1, Column:16},
-                                End:      ast.Location{Line:1, Column:22},
-                                SourceID: 0,
-                            },
+                            span: 1:16-1:22,
                         },
                     },
-                    Readonly: false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:7},
-                        End:      ast.Location{Line:1, Column:23},
-                        SourceID: 0,
-                    },
+                    span: 1:7-1:23,
                 },
             },
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:24},
-                SourceID: 0,
-            },
+            span: 1:1-1:24,
         },
         &dts_parser.TupleType{
-            Elements: {
-                {
-                    Name: (*dts_parser.Ident)(nil),
+            Elements: []dts_parser.TupleElement{
+                dts_parser.TupleElement{
                     Type: &dts_parser.ArrayType{
                         ElementType: &dts_parser.TypeReference{
                             Name: &dts_parser.Ident{
                                 Name: "Foo",
-                                span: ast.Span{
-                                    Start:    ast.Location{Line:1, Column:28},
-                                    End:      ast.Location{Line:1, Column:31},
-                                    SourceID: 0,
-                                },
+                                span: 1:28-1:31,
                             },
-                            TypeArgs: nil,
-                            span:     ast.Span{
-                                Start:    ast.Location{Line:1, Column:28},
-                                End:      ast.Location{Line:1, Column:31},
-                                SourceID: 0,
-                            },
+                            span: 1:28-1:31,
                         },
-                        Readonly: false,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:28},
-                            End:      ast.Location{Line:1, Column:33},
-                            SourceID: 0,
-                        },
+                        span: 1:28-1:33,
                     },
-                    Optional: false,
-                    Rest:     false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:28},
-                        End:      ast.Location{Line:1, Column:33},
-                        SourceID: 0,
-                    },
+                    span: 1:28-1:33,
                 },
-                {
-                    Name: (*dts_parser.Ident)(nil),
+                dts_parser.TupleElement{
                     Type: &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "Bar",
-                            span: ast.Span{
-                                Start:    ast.Location{Line:1, Column:35},
-                                End:      ast.Location{Line:1, Column:38},
-                                SourceID: 0,
-                            },
+                            span: 1:35-1:38,
                         },
-                        TypeArgs: nil,
-                        span:     ast.Span{
-                            Start:    ast.Location{Line:1, Column:35},
-                            End:      ast.Location{Line:1, Column:38},
-                            SourceID: 0,
-                        },
+                        span: 1:35-1:38,
                     },
-                    Optional: false,
-                    Rest:     false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:35},
-                        End:      ast.Location{Line:1, Column:38},
-                        SourceID: 0,
-                    },
+                    span: 1:35-1:38,
                 },
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:27},
-                End:      ast.Location{Line:1, Column:39},
-                SourceID: 0,
-            },
+            span: 1:27-1:39,
         },
     },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:39},
-        SourceID: 0,
-    },
+    span: 1:1-1:39,
 }
 ---
 
@@ -2673,24 +1243,11 @@ map[string]interface {}{
     ElementType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:9},
-            SourceID: 0,
-        },
+        span: 1:1-1:9,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:11},
-        SourceID: 0,
-    },
+    span: 1:1-1:11,
 }
 ---
 
@@ -2698,43 +1255,22 @@ map[string]interface {}{
 &dts_parser.TypeReference{
     Name: &dts_parser.Ident{
         Name: "Map",
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:4},
-            SourceID: 0,
-        },
+        span: 1:1-1:4,
     },
-    TypeArgs: {
+    TypeArgs: []dts_parser.TypeAnn{
         &dts_parser.PrimitiveType{
             Kind: 6,
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:5},
-                End:      ast.Location{Line:1, Column:11},
-                SourceID: 0,
-            },
+            span: 1:5-1:11,
         },
         &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:13},
-                    End:      ast.Location{Line:1, Column:19},
-                    SourceID: 0,
-                },
+                span: 1:13-1:19,
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:13},
-                End:      ast.Location{Line:1, Column:21},
-                SourceID: 0,
-            },
+            span: 1:13-1:21,
         },
     },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:22},
-        SourceID: 0,
-    },
+    span: 1:1-1:22,
 }
 ---
 
@@ -2742,65 +1278,30 @@ map[string]interface {}{
 &dts_parser.TypeReference{
     Name: &dts_parser.Ident{
         Name: "Result",
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
+        span: 1:1-1:7,
     },
-    TypeArgs: {
+    TypeArgs: []dts_parser.TypeAnn{
         &dts_parser.TupleType{
-            Elements: {
-                {
-                    Name: (*dts_parser.Ident)(nil),
+            Elements: []dts_parser.TupleElement{
+                dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:9},
-                            End:      ast.Location{Line:1, Column:15},
-                            SourceID: 0,
-                        },
+                        span: 1:9-1:15,
                     },
-                    Optional: false,
-                    Rest:     false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:9},
-                        End:      ast.Location{Line:1, Column:15},
-                        SourceID: 0,
-                    },
+                    span: 1:9-1:15,
                 },
-                {
-                    Name: (*dts_parser.Ident)(nil),
+                dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: ast.Span{
-                            Start:    ast.Location{Line:1, Column:17},
-                            End:      ast.Location{Line:1, Column:23},
-                            SourceID: 0,
-                        },
+                        span: 1:17-1:23,
                     },
-                    Optional: false,
-                    Rest:     false,
-                    span:     ast.Span{
-                        Start:    ast.Location{Line:1, Column:17},
-                        End:      ast.Location{Line:1, Column:23},
-                        SourceID: 0,
-                    },
+                    span: 1:17-1:23,
                 },
             },
-            Readonly: false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:8},
-                End:      ast.Location{Line:1, Column:24},
-                SourceID: 0,
-            },
+            span: 1:8-1:24,
         },
     },
-    span: ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:25},
-        SourceID: 0,
-    },
+    span: 1:1-1:25,
 }
 ---
 
@@ -2808,18 +1309,9 @@ map[string]interface {}{
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:7},
-            SourceID: 0,
-        },
+        span: 1:1-1:7,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:9},
-        SourceID: 0,
-    },
+    span: 1:1-1:9,
 }
 ---
 
@@ -2828,25 +1320,11 @@ map[string]interface {}{
     ElementType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Foo",
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:4},
-                SourceID: 0,
-            },
+            span: 1:1-1:4,
         },
-        TypeArgs: nil,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:4},
-            SourceID: 0,
-        },
+        span: 1:1-1:4,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:6},
-        SourceID: 0,
-    },
+    span: 1:1-1:6,
 }
 ---
 
@@ -2855,69 +1333,32 @@ map[string]interface {}{
     ElementType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:1},
-                End:      ast.Location{Line:1, Column:7},
-                SourceID: 0,
-            },
+            span: 1:1-1:7,
         },
-        Readonly: false,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:9},
-            SourceID: 0,
-        },
+        span: 1:1-1:9,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:11},
-        SourceID: 0,
-    },
+    span: 1:1-1:11,
 }
 ---
 
 [TestArrayVsIndexAccess/tuple - 1]
 &dts_parser.TupleType{
-    Elements: {
-        {
-            Name: (*dts_parser.Ident)(nil),
+    Elements: []dts_parser.TupleElement{
+        dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: ast.Span{
-                    Start:    ast.Location{Line:1, Column:2},
-                    End:      ast.Location{Line:1, Column:8},
-                    SourceID: 0,
-                },
+                span: 1:2-1:8,
             },
-            Optional: false,
-            Rest:     false,
-            span:     ast.Span{
-                Start:    ast.Location{Line:1, Column:2},
-                End:      ast.Location{Line:1, Column:8},
-                SourceID: 0,
-            },
+            span: 1:2-1:8,
         },
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:9},
-        SourceID: 0,
-    },
+    span: 1:1-1:9,
 }
 ---
 
 [TestArrayVsIndexAccess/empty_tuple - 1]
 &dts_parser.TupleType{
-    Elements: {
-    },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:3},
-        SourceID: 0,
-    },
+    span: 1:1-1:3,
 }
 ---
 
@@ -2925,18 +1366,10 @@ map[string]interface {}{
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:10},
-            End:      ast.Location{Line:1, Column:16},
-            SourceID: 0,
-        },
+        span: 1:10-1:16,
     },
     Readonly: true,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:18},
-        SourceID: 0,
-    },
+    span: 1:1-1:18,
 }
 ---
 
@@ -2944,18 +1377,10 @@ map[string]interface {}{
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 7,
-        span: ast.Span{
-            Start:    ast.Location{Line:1, Column:10},
-            End:      ast.Location{Line:1, Column:16},
-            SourceID: 0,
-        },
+        span: 1:10-1:16,
     },
     Readonly: true,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:18},
-        SourceID: 0,
-    },
+    span: 1:1-1:18,
 }
 ---
 
@@ -2964,24 +1389,11 @@ map[string]interface {}{
     ElementType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: ast.Span{
-                Start:    ast.Location{Line:1, Column:10},
-                End:      ast.Location{Line:1, Column:16},
-                SourceID: 0,
-            },
+            span: 1:10-1:16,
         },
         Readonly: true,
-        span:     ast.Span{
-            Start:    ast.Location{Line:1, Column:1},
-            End:      ast.Location{Line:1, Column:18},
-            SourceID: 0,
-        },
+        span: 1:1-1:18,
     },
-    Readonly: false,
-    span:     ast.Span{
-        Start:    ast.Location{Line:1, Column:1},
-        End:      ast.Location{Line:1, Column:20},
-        SourceID: 0,
-    },
+    span: 1:1-1:20,
 }
 ---

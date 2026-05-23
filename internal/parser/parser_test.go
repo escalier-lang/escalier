@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -389,7 +390,7 @@ func TestParseModuleNoErrors(t *testing.T) {
 			module, errors := parser.ParseScript()
 
 			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+				snaps.MatchSnapshot(t, snapshot.String(stmt))
 			}
 			if len(errors) > 0 {
 				for i, err := range errors {
@@ -623,12 +624,12 @@ func TestParseEnumErrorHandling(t *testing.T) {
 
 			// Snapshot the parsed result (may be partial or nil)
 			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+				snaps.MatchSnapshot(t, snapshot.String(stmt))
 			}
 
 			// Verify that errors were reported
 			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
-			snaps.MatchSnapshot(t, errors)
+			snaps.MatchSnapshot(t, snapshot.String(errors))
 		})
 	}
 }
@@ -685,7 +686,7 @@ func TestParseTypeKeywordsAsIdentifiers(t *testing.T) {
 
 			// Snapshot the parsed result
 			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+				snaps.MatchSnapshot(t, snapshot.String(stmt))
 			}
 		})
 	}
@@ -872,7 +873,7 @@ func TestClassDeclarations(t *testing.T) {
 			module, errors := parser.ParseScript()
 
 			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+				snaps.MatchSnapshot(t, snapshot.String(stmt))
 			}
 			if len(errors) > 0 {
 				for i, err := range errors {
@@ -979,10 +980,10 @@ func TestClassConstructorErrors(t *testing.T) {
 			module, errors := parser.ParseScript()
 
 			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+				snaps.MatchSnapshot(t, snapshot.String(stmt))
 			}
 			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
-			snaps.MatchSnapshot(t, errors)
+			snaps.MatchSnapshot(t, snapshot.String(errors))
 		})
 	}
 }
@@ -1029,11 +1030,11 @@ func TestStatementRecovery(t *testing.T) {
 			module, errors := parser.ParseScript()
 
 			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+				snaps.MatchSnapshot(t, snapshot.String(stmt))
 			}
 
 			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
-			snaps.MatchSnapshot(t, errors)
+			snaps.MatchSnapshot(t, snapshot.String(errors))
 		})
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
 )
@@ -261,7 +262,7 @@ func TestParseExprNoErrors(t *testing.T) {
 				}
 			}
 			assert.Equal(t, []*Error{}, parser.errors)
-			snaps.MatchSnapshot(t, expr)
+			snaps.MatchSnapshot(t, snapshot.String(expr))
 		})
 	}
 }
@@ -412,9 +413,9 @@ func TestParseExprErrorHandling(t *testing.T) {
 			parser := NewParser(ctx, source)
 			expr := parser.expr()
 
-			snaps.MatchSnapshot(t, expr)
+			snaps.MatchSnapshot(t, snapshot.String(expr))
 			assert.Greater(t, len(parser.errors), 0)
-			snaps.MatchSnapshot(t, parser.errors)
+			snaps.MatchSnapshot(t, snapshot.String(parser.errors))
 		})
 	}
 }

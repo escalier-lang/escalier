@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
 )
@@ -90,7 +91,7 @@ func TestParseJSXNoErrors(t *testing.T) {
 			parser := NewParser(ctx, source)
 			jsx := parser.jsxElementOrFragment()
 
-			snaps.MatchSnapshot(t, jsx)
+			snaps.MatchSnapshot(t, snapshot.String(jsx))
 			assert.Len(t, parser.errors, 0)
 		})
 	}
@@ -122,9 +123,9 @@ func TestParseJSXErrors(t *testing.T) {
 			parser := NewParser(ctx, source)
 			jsx := parser.jsxElementOrFragment()
 
-			snaps.MatchSnapshot(t, jsx)
+			snaps.MatchSnapshot(t, snapshot.String(jsx))
 			assert.Greater(t, len(parser.errors), 0)
-			snaps.MatchSnapshot(t, parser.errors)
+			snaps.MatchSnapshot(t, snapshot.String(parser.errors))
 		})
 	}
 }

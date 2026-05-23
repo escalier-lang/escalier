@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
 )
@@ -201,7 +202,7 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			parser := NewParser(ctx, source)
 			typeAnn := parser.typeAnn()
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 			assert.Equal(t, []*Error{}, parser.errors)
 		})
 	}
@@ -252,9 +253,9 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 			typeAnn := parser.typeAnn()
 
 			assert.NotNil(t, typeAnn, "Expected non-nil type annotation from recovery")
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 			assert.Greater(t, len(parser.errors), 0, "Expected parsing errors but got none")
-			snaps.MatchSnapshot(t, parser.errors)
+			snaps.MatchSnapshot(t, snapshot.String(parser.errors))
 		})
 	}
 }

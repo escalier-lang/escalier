@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
 )
@@ -29,7 +30,7 @@ func TestLexLifetimeTokens(t *testing.T) {
 			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
 			lexer := NewLexer(source)
 			tokens := lexer.Lex()
-			snaps.MatchSnapshot(t, tokens)
+			snaps.MatchSnapshot(t, snapshot.String(tokens))
 		})
 	}
 }
@@ -116,7 +117,7 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 			module, errors := parser.ParseScript()
 
 			for _, stmt := range module.Stmts {
-				snaps.MatchSnapshot(t, stmt)
+				snaps.MatchSnapshot(t, snapshot.String(stmt))
 			}
 			assert.Empty(t, errors, "unexpected errors: %#v", errors)
 		})

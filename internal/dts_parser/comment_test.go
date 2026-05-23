@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -37,7 +38,7 @@ func TestRealWorldSymbolInterface(t *testing.T) {
 		t.Fatalf("Expected 1 statement, got %d", len(module.Statements))
 	}
 
-	snaps.MatchSnapshot(t, module)
+	snaps.MatchSnapshot(t, snapshot.String(module))
 }
 
 // Test comments in various positions
@@ -100,7 +101,7 @@ func TestCommentsInObjectTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", errors)
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }
@@ -168,7 +169,7 @@ func TestInlineCommentsInConditionalTypes(t *testing.T) {
 				t.Fatalf("Expected 1 statement, got %d", len(module.Statements))
 			}
 
-			snaps.MatchSnapshot(t, module)
+			snaps.MatchSnapshot(t, snapshot.String(module))
 		})
 	}
 }

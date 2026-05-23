@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 )
 
@@ -48,7 +49,7 @@ func TestArrayTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -90,7 +91,7 @@ func TestTupleTypes(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -124,7 +125,7 @@ func TestTupleWithOptionalElements(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -158,7 +159,7 @@ func TestTupleWithRestElements(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -195,7 +196,7 @@ func TestTupleWithLabels(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -223,10 +224,10 @@ func TestTupleEdgeCases(t *testing.T) {
 			typeAnn := parser.ParseTypeAnn()
 
 			// Some edge cases might fail
-			snaps.MatchSnapshot(t, map[string]interface{}{
+			snaps.MatchSnapshot(t, snapshot.String(map[string]interface{}{
 				"typeAnn": typeAnn,
 				"errors":  parser.errors,
-			})
+			}))
 		})
 	}
 }
@@ -265,7 +266,7 @@ func TestArrayAndTupleCombinations(t *testing.T) {
 				t.Fatalf("Unexpected errors: %v", parser.errors)
 			}
 
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
@@ -302,7 +303,7 @@ func TestArrayVsIndexAccess(t *testing.T) {
 			}
 
 			t.Logf("Description: %s", tt.description)
-			snaps.MatchSnapshot(t, typeAnn)
+			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 		})
 	}
 }
