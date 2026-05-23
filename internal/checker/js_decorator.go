@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -130,10 +131,21 @@ func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span, gl
 	// no prelude); skip the check rather than false-positive in that
 	// case.
 	if globals != nil && !globals.Contains(jsArg) {
+		// For a dotted arg, point at whichever side is unknown — the
+		// prefix or the member — so the user doesn't have to guess
+		// which segment they typo'd.
+		detail := ""
+		if prefix, member, ok := strings.Cut(jsArg, "."); ok {
+			if !globals.Contains(prefix) {
+				detail = fmt.Sprintf(" (prefix %q is not a known top-level global)", prefix)
+			} else {
+				detail = fmt.Sprintf(" (%q has no known runtime member %q)", prefix, member)
+			}
+		}
 		return []Error{&GenericError{
 			message: fmt.Sprintf(
-				"`@js(%q)` on %s %q in pseudo-package file %s does not name a known JS runtime global",
-				jsArg, kindLabel, name, filePath),
+				"`@js(%q)` on %s %q in pseudo-package file %s does not name a known JS runtime global%s",
+				jsArg, kindLabel, name, filePath, detail),
 			span: importSpan,
 		}}
 	}

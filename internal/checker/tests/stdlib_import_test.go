@@ -345,7 +345,10 @@ func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 // TestStdlibImport_LoaderRule_UnknownJSGlobal pins loader rule §3.4(4):
 // the `@js("...")` argument must name a known JS runtime path. A typo
 // like `@js("Mat.sin")` is caught at load time with the file,
-// declaration, and decorator argument named in the diagnostic.
+// declaration, and decorator argument named in the diagnostic. When
+// the arg is dotted, the diagnostic identifies whether the prefix or
+// the member is the unknown part so the user can act on it without
+// guessing.
 func TestStdlibImport_LoaderRule_UnknownJSGlobal(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"js/example.esc": "@js(\"Mat.sin\")\nexport declare fn sin(x: number) -> number",
@@ -355,8 +358,26 @@ func TestStdlibImport_LoaderRule_UnknownJSGlobal(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "js:example"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global",
-			"Mat.sin", "sin", filepath.Join(dir, "js/example.esc")),
+		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global (prefix %q is not a known top-level global)",
+			"Mat.sin", "sin", filepath.Join(dir, "js/example.esc"), "Mat"),
+		errs[0].Message())
+}
+
+// TestStdlibImport_LoaderRule_UnknownJSGlobalMember pins the
+// member-typo flavour of rule 4: when the prefix IS a known top-level
+// global but the dotted member is not on it, the diagnostic says so —
+// so the user knows `Math` is fine and `sni` is the typo.
+func TestStdlibImport_LoaderRule_UnknownJSGlobalMember(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"js/example.esc": "@js(\"Math.sni\")\nexport declare fn sin(x: number) -> number",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global (%q has no known runtime member %q)",
+			"Math.sni", "sin", filepath.Join(dir, "js/example.esc"), "Math", "sni"),
 		errs[0].Message())
 }
 

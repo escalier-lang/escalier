@@ -9,6 +9,10 @@ import (
 // legal `@js("...")` targets but do not appear in lib.*.d.ts.
 // Currently only Escalier's custom-matcher Symbol; grows as future
 // stdlib bootstrap (§7) adds new well-known re-exports.
+//
+// Treat as immutable after init: knownJSGlobals returns Clone()s of
+// this set, so the package-level value must never be mutated through
+// the underlying map. Add new entries via the literal above.
 var jsGlobalsAllowList = set.FromSlice([]string{
 	"Symbol.customMatcher",
 })
