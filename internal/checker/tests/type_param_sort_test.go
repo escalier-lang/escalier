@@ -164,7 +164,7 @@ func TestTypeParamTopologicalSort(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := checker.InferModule(inferCtx, module)
+			_, inferErrors := checker.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)
@@ -253,11 +253,16 @@ func TestTypeParamCyclicDependency(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			_ = checker.InferModule(inferCtx, module)
+			// shouldSucceed here means "the topological sort detects the
+			// cycle and preserves original order without panicking" — not
+			// "inference is error-free". Cyclic constraints (e.g. `T<T: T>`)
+			// are inherently meaningless and inference does produce
+			// diagnostics; the contract this test pins is that the sort and
+			// module construction survive the cycle. We intentionally
+			// discard inferErrors here.
+			_, _ = checker.InferModule(inferCtx, module)
 
 			if test.shouldSucceed {
-				// For cyclic references, we should still be able to parse and check
-				// The topological sort should detect the cycle and preserve original order
 				assert.NotNil(t, module, "Module should not be nil even with cyclic type params")
 			}
 		})
@@ -336,7 +341,7 @@ func TestTypeParamSortingWithUsage(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := checker.InferModule(inferCtx, module)
+			_, inferErrors := checker.InferModule(inferCtx, module)
 			if len(inferErrors) > 0 {
 				for i, err := range inferErrors {
 					fmt.Printf("Infer Error[%d]: %#v\n", i, err)

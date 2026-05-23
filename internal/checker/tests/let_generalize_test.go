@@ -213,7 +213,7 @@ func TestBodyLetGeneralization(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			for i, err := range inferErrors {
 				fmt.Printf("Infer Error[%d]: %s\n", i, err.Message())
@@ -338,7 +338,7 @@ func TestBodyLetGeneralizationNegatives(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			actualMessages := make([]string, len(inferErrors))
 			for i, e := range inferErrors {
 				actualMessages[i] = e.Message()

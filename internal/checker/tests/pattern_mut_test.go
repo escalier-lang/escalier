@@ -201,7 +201,7 @@ func TestPatternLevelMut_MutationBehavior(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			assertExpectedErrors(t, test.expectedErrors, inferErrors)
 		})
@@ -295,7 +295,7 @@ func TestPatternLevelMut_ForInPreservesMut(t *testing.T) {
 
 	c := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(c)}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 	if len(inferErrors) > 0 {
 		for i, err := range inferErrors {
 			t.Logf("Unexpected Error[%d]: %s", i, err.Message())
@@ -382,7 +382,7 @@ func TestPatternLevelMut_NoLeakIntoParentContainer(t *testing.T) {
 			require.Empty(t, parseErrors, "expected no parse errors")
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			_ = c.InferModule(inferCtx, module)
+			_, _ = c.InferModule(inferCtx, module)
 
 			pat := findDestructurePattern(module, test.patternKind)
 			require.NotNil(t, pat, "expected to find destructure pattern in module")

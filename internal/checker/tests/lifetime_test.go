@@ -1477,7 +1477,7 @@ func mustInferAsModule(t *testing.T, input string) *type_system.Namespace {
 
 	c := NewChecker(ctx)
 	inferCtx := Context{Scope: Prelude(c)}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	for _, err := range inferErrors {
 		if _, ok := err.(*MutabilityTransitionError); ok {

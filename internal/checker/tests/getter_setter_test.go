@@ -288,7 +288,7 @@ func TestGetterSetterAccess(t *testing.T) {
 				IsAsync:    false,
 				IsPatMatch: false,
 			}
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 
 			var errorMessages []string
 			for _, err := range inferErrors {

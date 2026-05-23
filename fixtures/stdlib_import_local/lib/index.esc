@@ -1,0 +1,3 @@
+import "std:math"
+
+export val pi: number = math.PI

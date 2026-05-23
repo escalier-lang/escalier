@@ -296,7 +296,7 @@ func TestAsyncFunctionInferenceModule(t *testing.T) {
 				IsPatMatch: false,
 			}
 
-			inferErrors := c.InferModule(inferCtx, module)
+			_, inferErrors := c.InferModule(inferCtx, module)
 			scope := inferCtx.Scope.Namespace
 			if testCase.expectedErr {
 				assert.NotEmpty(t, inferErrors, "Should have inference errors")

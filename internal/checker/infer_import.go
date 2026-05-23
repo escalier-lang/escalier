@@ -410,13 +410,13 @@ func (c *Checker) inferParsedTypeDef(
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		globalErrors := c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
+		_, globalErrors := c.InferModule(globalCtx, parsedTypeDef.GlobalModule)
 		errors = append(errors, globalErrors...)
 	}
 
 	// 5. Infer PackageModule into the package namespace (if present)
 	if parsedTypeDef.PackageModule != nil {
-		pkgErrors := c.InferModule(pkgCtx, parsedTypeDef.PackageModule)
+		_, pkgErrors := c.InferModule(pkgCtx, parsedTypeDef.PackageModule)
 		errors = append(errors, pkgErrors...)
 	}
 
@@ -779,7 +779,7 @@ func (c *Checker) loadPathReferencedFile(filePath string) []Error {
 			IsAsync:    false,
 			IsPatMatch: false,
 		}
-		globalErrors := c.InferModule(globalCtx, parsedTypeDef.PackageModule)
+		_, globalErrors := c.InferModule(globalCtx, parsedTypeDef.PackageModule)
 		errors = append(errors, globalErrors...)
 	}
 
@@ -868,7 +868,7 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 			IsPatMatch: false,
 		}
 
-		moduleErrors := c.InferModule(moduleCtx, namedModule)
+		_, moduleErrors := c.InferModule(moduleCtx, namedModule)
 		if len(moduleErrors) > 0 {
 			errors = append(errors, moduleErrors...)
 			continue
@@ -941,6 +941,15 @@ func (c *Checker) loadPackageFromPath(ctx Context, dtsFilePath string, packageNa
 // For type 2, we can use the name of the module declaration to determine the package
 // name.  For type 3, we need to know what npm package the .d.ts file belongs to.
 func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
+	// Route scheme-prefixed imports (`std:`, `dom:`, `node:`, and any
+	// other lowercase-scheme URI) to the stdlib loader. The dispatch
+	// happens here — at the highest level — so the npm-style resolver
+	// never sees these specifiers and the user gets taxonomy-aligned
+	// diagnostics for unknown schemes / packages.
+	if isSchemePrefixedImport(importStmt.PackageName) {
+		return c.inferStdlibImport(ctx, importStmt)
+	}
+
 	errors := []Error{}
 
 	// First, check if the package is already registered in the PackageRegistry.

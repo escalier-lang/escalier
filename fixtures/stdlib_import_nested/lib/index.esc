@@ -1,0 +1,3 @@
+import "std:math?nested"
+
+export val pi: number = std.math.PI

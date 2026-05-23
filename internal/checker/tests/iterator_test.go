@@ -124,7 +124,7 @@ func inferModule(t *testing.T, input string) (map[string]string, []Error) {
 		IsAsync:    false,
 		IsPatMatch: false,
 	}
-	inferErrors := c.InferModule(inferCtx, module)
+	_, inferErrors := c.InferModule(inferCtx, module)
 
 	actualTypes := make(map[string]string)
 	for name, binding := range inferCtx.Scope.Namespace.Values {

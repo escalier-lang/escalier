@@ -8469,6 +8469,7 @@
         },
     },
     PackageName: "module",
+    Flags:       nil,
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:36},
@@ -8509,6 +8510,7 @@
         },
     },
     PackageName: "module",
+    Flags:       nil,
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:39},
@@ -8531,6 +8533,7 @@
         },
     },
     PackageName: "module",
+    Flags:       nil,
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:29},
@@ -8553,6 +8556,7 @@
         },
     },
     PackageName: "module",
+    Flags:       nil,
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:29},
@@ -8593,6 +8597,7 @@
         },
     },
     PackageName: "module",
+    Flags:       nil,
     span:        ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:46},
@@ -10101,6 +10106,68 @@
     span: ast.Span{
         Start:    ast.Location{Line:1, Column:1},
         End:      ast.Location{Line:1, Column:46},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportBareWithFlags - 1]
+&ast.ImportStmt{
+    Specifiers:  nil,
+    PackageName: "std:math",
+    Flags:       {"flag1", "flag2"},
+    span:        ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:30},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportBare - 1]
+&ast.ImportStmt{
+    Specifiers:  nil,
+    PackageName: "std:math",
+    Flags:       nil,
+    span:        ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:18},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportBareWithFlag - 1]
+&ast.ImportStmt{
+    Specifiers:  nil,
+    PackageName: "std:math",
+    Flags:       {"nested"},
+    span:        ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:25},
+        SourceID: 0,
+    },
+}
+---
+
+[TestParseStmtNoErrors/ImportNamedWithFlag - 1]
+&ast.ImportStmt{
+    Specifiers: {
+        &ast.ImportSpecifier{
+            Name:  "foo",
+            Alias: "",
+            span:  ast.Span{
+                Start:    ast.Location{Line:1, Column:10},
+                End:      ast.Location{Line:1, Column:13},
+                SourceID: 0,
+            },
+        },
+    },
+    PackageName: "std:math",
+    Flags:       {"local"},
+    span:        ast.Span{
+        Start:    ast.Location{Line:1, Column:1},
+        End:      ast.Location{Line:1, Column:37},
         SourceID: 0,
     },
 }

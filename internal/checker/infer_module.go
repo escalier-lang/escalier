@@ -1309,6 +1309,14 @@ func (c *Checker) InferComponent(
 						}
 
 					case *ast.MethodElem:
+						// `declare class` methods are ambient — they have a
+						// signature but no body. Skip the body-inference path
+						// entirely; the method type was already built from the
+						// signature when the class type was constructed.
+						if decl.Declare() || bodyElem.Fn.Body == nil {
+							continue
+						}
+
 						var methodType *type_system.MethodElem
 						var isStatic bool = bodyElem.Static
 
@@ -1883,7 +1891,12 @@ const DEBUG = false
 // graph and codegen will ensure that the declarations are emitted in the correct
 // order.
 // TODO: all interface declarations in a namespace to shadow previous ones.
-func (c *Checker) InferModule(ctx Context, m *ast.Module) (errors []Error) {
+//
+// Returns the dep graph built during Phase 2 alongside the diagnostics.
+// Callers that need the dep graph for downstream work (e.g. codegen)
+// can reuse it instead of rebuilding from the module; callers that
+// don't care discard it with `_`.
+func (c *Checker) InferModule(ctx Context, m *ast.Module) (depGraph *dep_graph.DepGraph, errors []Error) {
 	defer recoverTimeout(&errors)
 	clear(c.expandCache) // Reset cross-call expansion cache for this inference pass
 	clear(c.substCache)  // Reset substitution cache for this inference pass
@@ -1933,13 +1946,13 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (errors []Error) {
 			// If there were errors loading React types, we can stop here since
 			// JSX code won't type-check without them.
 			if len(loadErrors) > 0 {
-				return errors
+				return depGraph, errors
 			}
 		}
 	}
 
 	// Phase 2: Build unified DepGraph for ALL declarations across all files.
-	depGraph := dep_graph.BuildDepGraph(m)
+	depGraph = dep_graph.BuildDepGraph(m)
 
 	// print out all of the dependencies in depGraph for debugging
 	if DEBUG {
@@ -1970,7 +1983,7 @@ func (c *Checker) InferModule(ctx Context, m *ast.Module) (errors []Error) {
 	exportErrors := c.processModuleExportAssignments(ctx, m)
 	errors = append(errors, exportErrors...)
 
-	return errors
+	return depGraph, errors
 }
 
 // inferTypeParams infers type parameters from AST type parameters by creating

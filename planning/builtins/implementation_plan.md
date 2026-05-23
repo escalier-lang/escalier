@@ -14,7 +14,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | §   | Phase                                                | FRs         | Status | Depends on | Notes                                                                                                                                                                                                                                                |
 | --- | ---------------------------------------------------- | ----------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
-| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ⬜      | §1         | Parser change (bare-string imports, `?flag` suffix), resolver routes to a stdlib data directory on disk, scope-insertion applies `?local`/`?nested`/`?flat`. Placeholder `std:math` stub is the gate.                                              |
+| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, all three binding shapes, single-class shortcut, `?flat` collisions, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. Two follow-ups deferred to later sections — see §8 for the two-package `?flat` `dom` fixture, §7 for the FR5 "non-class package exports as namespace members on the same binding" surface. |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ⬜      | §1         | Decorator parser support (new grammar); per-declaration `@js("...")` carries the JS-runtime expression each pseudo-package member lowers to; codegen drops scheme-prefixed `import` lines and emits the decorator's argument at each reference. |
 | 4   | Cross-package augmentation + inter-package imports   | FR6–FR9     | ⬜      | §2         | Confirm §6 interface-merge can be reused for cross-package augmentation (registry interfaces only) with per-importing-file activation. Pseudo-package import cycles are permitted. Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ⬜      | §1, §3     | Two tiny slices: a trio-idiom class (`Boolean`) and a small `declare namespace` block (e.g. `JSON`). AST-to-AST translation; emit to stdout; no partition logic. Exercises trio recognition + namespace flattening; emits `@js` decorators per §3. |
@@ -352,6 +352,24 @@ it lazily on first scheme-prefixed import.
 binding-shape flags; two-package `?flat` fixture merges; flag
 collision errors. Single-class shortcut works for the `std:array`
 stub.
+
+**Deferred to later sections.** Two items from §2.5 require
+material that does not yet exist:
+
+- The **two-package `?flat` merge into a `dom` binding** fixture
+  needs `dom:*` stubs. Deferred to §8 (fixture migration) where
+  the §7 bootstrap has produced the real DOM tree. Note that the
+  `?flat` merge mechanic and collision diagnostic are already
+  exercised by unit tests and by the `stdlib_import_flat` /
+  `stdlib_import_flag_conflict` fixtures landed here; §8's
+  fixture pins the cross-scheme `dom` case specifically.
+- The **FR5 "non-class package exports as namespace members on
+  the same binding"** surface is not implemented yet — the
+  current `std:array` stub has only the class. The shortcut
+  itself works; merging companion exports onto the class binding
+  is wired up in §7 once real packages pair a class with helpers.
+  A TODO marker lives in
+  [bindStdlibLocal](../../internal/checker/infer_stdlib_import.go).
 
 ---
 
@@ -1100,6 +1118,20 @@ files as the source of truth.
    `T | Promise<T>`, generic propagation). If a concrete
    blocker surfaces, fall back to a checker-resident intrinsic
    and document the specific failure.
+4. **FR5 finalization — non-class package exports as namespace
+   members.** §2's single-class shortcut binds the class itself
+   when activated; the FR5 spec also calls for other package
+   exports to remain accessible *as namespace members on the
+   same binding*, with static methods winning on name collision.
+   The §2 implementation left this as a TODO in
+   [bindStdlibLocal](../../internal/checker/infer_stdlib_import.go)
+   because the §2-era stubs (`std:math`, `std:array`) have only
+   a single export. Once the §7 bootstrap produces real packages
+   that pair a class with non-class exports (e.g. `std:array`
+   gaining helper functions or constants alongside `Array`),
+   wire the merge: copy `pkgNs.Values` and `pkgNs.Types` onto
+   the class binding's static surface, and add a unit test pinning
+   the static-method-wins tiebreaker.
 4. Commit. After this point, the converter persists only as
    `--check` review tool; ongoing edits are direct to the
    committed `.esc` files.
@@ -1144,6 +1176,27 @@ rely on.
 **Gate.** `go test ./...` passes with every fixture using
 explicit `import "std:*"` statements; no fixture relies on
 ambient resolution — except for the third-party carve-out below.
+
+**Carries-over from §2.** §2 landed five binding-shape fixtures
+under [fixtures/](../../fixtures/) (`stdlib_import_local`,
+`stdlib_import_nested`, `stdlib_import_flat`,
+`stdlib_import_single_class`, `stdlib_import_flag_conflict`).
+Two §2.5 fixtures were deferred to this phase because they need
+material that does not exist until §7:
+
+- A **two-package `?flat` merge into a `dom` binding**. Requires
+  at least two `dom:*` stubs; §7 produces the full DOM tree. Add
+  the fixture here, asserting that non-colliding members from
+  two `?flat`-imported `dom:*` packages co-exist in the same
+  `dom` namespace.
+- A **single-class shortcut fixture with non-class package exports**
+  on the same binding. §2's `std:array` stub has only the class;
+  once §7 populates `std:array` with companion helpers (or another
+  package mixes a class with constants/functions), add a fixture
+  that exercises both the class and a non-class export through the
+  same shortcut binding, including the static-method-wins
+  tiebreaker (the work itself lives in §7 — this fixture is the
+  end-to-end gate).
 
 ### 8.1 Third-party `.d.ts` fixture carve-out
 

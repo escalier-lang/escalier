@@ -2,6 +2,7 @@ package checker
 
 import (
 	"context"
+	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/interop"
@@ -39,6 +40,29 @@ type Checker struct {
 	// declarations. nil means "no overrides registered"; Classify falls
 	// through to its built-in heuristics.
 	OverrideStore *interop.OverrideStore
+
+	// Stdlib data directory (resolved lazily on first scheme-prefixed
+	// import). Holds the path that contains the `std/`, `dom/`, and
+	// `node/` subtrees. stdlibDirOnce gates the resolution so the
+	// fatal-on-missing diagnostic fires at most once per Checker; the
+	// error is reported as a regular import error at the offending
+	// import statement.
+	stdlibDir     string
+	stdlibDirErr  error
+	stdlibDirOnce sync.Once
+
+	// Next SourceID to allocate when loading a stdlib `.esc` file.
+	// Lives in a high range so it doesn't collide with user source IDs
+	// (which start at 0 and grow with the file count).
+	stdlibNextSourceID int
+
+	// Per-file, per-scheme tracking of which URI contributed each
+	// identifier merged via `?flat`. Used to produce taxonomy-aligned
+	// "?flat name collision" diagnostics that name the prior package.
+	// Outer key is the file scope, middle key is the scheme
+	// (`std`/`dom`), inner key is the identifier; value is the
+	// contributing URI (e.g. `dom:canvas`).
+	flatContributors map[*Scope]map[string]map[string]string
 }
 
 func NewChecker(ctx context.Context) *Checker {
@@ -57,6 +81,7 @@ func NewChecker(ctx context.Context) *Checker {
 		expandCache:           make(expandSeen),
 		substCache:            make(expandSeen),
 		memberCache:           make(memberCache),
+		stdlibNextSourceID:    1 << 20, // 1,048,576 — well above any plausible user source ID
 	}
 }
 

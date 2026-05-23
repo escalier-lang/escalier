@@ -401,7 +401,7 @@ func TestCallSiteThrowsInference(t *testing.T) {
 
 			c := NewChecker(ctx)
 			inferCtx := Context{Scope: Prelude(c)}
-			errors := c.InferModule(inferCtx, module)
+			_, errors := c.InferModule(inferCtx, module)
 			assert.Empty(t, errors, "Expected no type errors, got: %v", errors)
 
 			binding, ok := inferCtx.Scope.Namespace.Values["testFunc"]

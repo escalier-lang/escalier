@@ -1,0 +1,5 @@
+lib/index.esc:1:1: binding-shape flags "flat" and "local" are mutually exclusive; pick one
+
+1:  import "std:math?local&flat"
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
