@@ -43,11 +43,17 @@ var jsGlobalsAllowList = set.FromSlice([]string{
 // from later `.d.ts` loads keep mutating Namespace.Values, so a
 // memoised set would go stale. The walk is shallow enough to redo
 // cheaply on each pseudo-package load.
+//
+// Returns nil if GlobalScope hasn't been initialised. Callers use this
+// as the signal to skip rule 4 entirely — an allow-list-only set would
+// false-positive every legitimate lib global (`parseInt`, `Math.PI`,
+// …) while still accepting hand-authored entries, which is worse than
+// not checking at all.
 func (c *Checker) knownJSGlobals() set.Set[string] {
-	result := jsGlobalsAllowList.Clone()
 	if c.GlobalScope == nil || c.GlobalScope.Namespace == nil {
-		return result
+		return nil
 	}
+	result := jsGlobalsAllowList.Clone()
 	for name, binding := range c.GlobalScope.Namespace.Values {
 		result.Add(name)
 		if binding == nil {
