@@ -7,37 +7,17 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// jsLoweringFor returns the lowered JS expression for an AST identifier
-// or member-access node that resolves to a pseudo-package declaration
-// carrying an `@js("...")` decorator. Returns (nil, false) when no
-// lowering applies — callers fall through to ordinary codegen.
+// This file implements the `@js("...")` codegen lowering described in
+// planning/builtins/implementation_plan.md §3.1-§3.2:
 //
-// See planning/builtins/implementation_plan.md §3.1-§3.2:
 //   - IdentExpr `parseInt` / `Array` whose owning decl has
 //     `@js("parseInt")` / `@js("Array")` lowers to the parsed JS
-//     expression.
+//     expression. The caller in builder.go reads `expr.Owner` directly.
 //   - MemberExpr `math.sin` / `iterator.iteratorKey` whose property's
 //     binding owns a decl with `@js("Math.sin")` /
 //     `@js("Symbol.iterator")` lowers to the parsed JS expression (the
 //     receiver vanishes because @js carries the complete JS-runtime
 //     expression).
-func (b *Builder) jsLoweringFor(expr ast.Expr) (Expr, bool) {
-	switch e := expr.(type) {
-	case *ast.IdentExpr:
-		jsExpr, ok := jsExprFromOwner(e.Owner)
-		if !ok {
-			return nil, false
-		}
-		return buildDottedJSExpr(jsExpr, e), true
-	case *ast.MemberExpr:
-		jsExpr, ok := memberJSExpr(e)
-		if !ok {
-			return nil, false
-		}
-		return buildDottedJSExpr(jsExpr, e), true
-	}
-	return nil, false
-}
 
 // memberJSExpr returns the JS lowering for a MemberExpr whose receiver
 // resolves to a NamespaceType (the package binding under ?local /
@@ -67,7 +47,7 @@ func memberJSExpr(m *ast.MemberExpr) (string, bool) {
 // nil, isn't a decorator-carrying decl, or carries no well-formed `@js`
 // decorator. Loader rules §3.4 already reject malformed `@js` on
 // pseudo-package decls, so reaching this from production code means
-// well-formed or absent — both handled by ast.FindJSDecorator.
+// well-formed or absent — both handled by ast.FindJsDecorator.
 func jsExprFromOwner(owner type_system.BindingOwner) (string, bool) {
 	decl, ok := owner.(ast.Decl)
 	if !ok {
