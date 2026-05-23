@@ -199,8 +199,8 @@ func TestStdlibImport_FlatNameCollision(t *testing.T) {
 	// Both packages export the same identifier; the second ?flat
 	// import must fail with the taxonomy-aligned collision message.
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/alpha.esc": "@js(\"Common\")\nexport val Common: number = 1",
-		"js/beta.esc":  "@js(\"Common\")\nexport val Common: number = 2",
+		"js/alpha.esc": "@js(\"Math.PI\")\nexport val Common: number = 1",
+		"js/beta.esc":  "@js(\"Math.E\")\nexport val Common: number = 2",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
@@ -305,7 +305,7 @@ func TestStdlibImport_LoaderRule_UnexportedValueLevelRejected(t *testing.T) {
 // have no decorator).
 func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "@js(\"Foo\")\nexport declare fn foo() -> number\n" +
+		"js/example.esc": "@js(\"parseInt\")\nexport declare fn foo() -> number\n" +
 			"declare type Helper = number",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
@@ -338,6 +338,81 @@ func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 				fmt.Sprintf("`@js` decorator on value %q in pseudo-package file %s must take a single string-literal argument",
 					"PI", filepath.Join(dir, "js/example.esc")),
 				errs[0].Message())
+		})
+	}
+}
+
+// TestStdlibImport_LoaderRule_UnknownJSGlobal pins loader rule §3.4(4):
+// the `@js("...")` argument must name a known JS runtime path. A typo
+// like `@js("Mat.sin")` is caught at load time with the file,
+// declaration, and decorator argument named in the diagnostic.
+func TestStdlibImport_LoaderRule_UnknownJSGlobal(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"js/example.esc": "@js(\"Mat.sin\")\nexport declare fn sin(x: number) -> number",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global",
+			"Mat.sin", "sin", filepath.Join(dir, "js/example.esc")),
+		errs[0].Message())
+}
+
+// TestStdlibImport_LoaderRule_AllowList pins that hand-authored
+// Escalier-specific names (currently `Symbol.customMatcher`) bypass
+// rule 4 even though they don't appear in lib.*.d.ts.
+func TestStdlibImport_LoaderRule_AllowList(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"js/example.esc": "@js(\"Symbol.customMatcher\")\nexport declare val customMatcher: symbol",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_LoaderRule_TypeOnlyGlobalRejected pins that a name
+// that exists only at the type level in the prelude (no runtime value
+// counterpart) does NOT satisfy rule 4 — `@js("PromiseLike")` would
+// produce a `ReferenceError` at runtime, which is exactly the failure
+// mode rule 4 exists to catch.
+func TestStdlibImport_LoaderRule_TypeOnlyGlobalRejected(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"js/example.esc": "@js(\"PromiseLike\")\nexport declare fn p() -> number",
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global",
+			"PromiseLike", "p", filepath.Join(dir, "js/example.esc")),
+		errs[0].Message())
+}
+
+// TestStdlibImport_LoaderRule_KnownGlobals confirms that representative
+// JS runtime paths used by current and near-future stubs validate
+// against the lib-extracted globals set: a top-level function
+// (`parseInt`), a namespace member (`Math.PI`), a class constructor
+// (`Date`), and a class static method (`Array.isArray`).
+func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
+	cases := map[string]string{
+		"TopLevelFn":     "@js(\"parseInt\")\nexport declare fn parseInt(s: string) -> number",
+		"NamespaceMem":   "@js(\"Math.PI\")\nexport declare val PI: number",
+		"ClassCtor":      "@js(\"Date\")\nexport declare class Date { constructor(mut self) }",
+		"ClassStaticMem": "@js(\"Array.isArray\")\nexport declare fn isArray(v: unknown) -> boolean",
+	}
+	for name, source := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := makeCustomStdlibDir(t, map[string]string{
+				"js/example.esc": source,
+			})
+			t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+			_, errs := inferStdlibImportSource(t, `import "js:example"`)
+			require.Empty(t, errorMessages(errs))
 		})
 	}
 }

@@ -342,10 +342,10 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 		return nil, errs
 	}
 
-	// Loader rules §3.4 (1-3): every exported value-level decl must
-	// carry `@js`; unexported value-level decls are rejected. Rule 4
-	// (`@js` target validation against TS lib globals) lands separately.
-	if decErrs := validateJsDecorators(filePath, mod, span); len(decErrs) > 0 {
+	// Loader rules §3.4 (1-4): every exported value-level decl must
+	// carry `@js`; unexported value-level decls are rejected; the `@js`
+	// argument must name a known JS runtime path.
+	if decErrs := c.validateJsDecorators(filePath, mod, span); len(decErrs) > 0 {
 		delete(c.PackageRegistry.packages, uri)
 		return nil, decErrs
 	}
