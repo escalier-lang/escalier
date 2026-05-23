@@ -14,13 +14,13 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | §   | Phase                                                | FRs         | Status | Depends on | Notes                                                                                                                                                                                                                                                |
 | --- | ---------------------------------------------------- | ----------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
-| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, all three binding shapes, single-class shortcut, `?flat` collisions, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `js:math` and `js:array` stubs; unit + fixture coverage in place. Two follow-ups deferred to later sections — see §8 for the two-package `?flat` `web` fixture, §7 for the FR5 "non-class package exports as namespace members on the same binding" surface. |
-| 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `js:number` / `js:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
+| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, all three binding shapes, single-class shortcut, `?flat` collisions, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. Two follow-ups deferred to later sections — see §8 for the two-package `?flat` `web` fixture, §7 for the FR5 "non-class package exports as namespace members on the same binding" surface. |
+| 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Cross-package augmentation + inter-package imports   | FR6–FR9     | ⬜      | §2         | Confirm §6 interface-merge can be reused for cross-package augmentation (registry interfaces only) with per-importing-file activation. Pseudo-package import cycles are permitted. Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ⬜      | §1, §3     | Two tiny slices: a trio-idiom class (`Boolean`) and a small `declare namespace` block (e.g. `JSON`). AST-to-AST translation; emit to stdout; no partition logic. Exercises trio recognition + namespace flattening; emits `@js` decorators per §3. |
-| 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{js,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
+| 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{std,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
 | 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit.                                                                                                                                                        |
-| 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "js:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches DOM-style augmentation. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
+| 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "std:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches DOM-style augmentation. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
 | 9   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §4, §7, §8 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. Also migrate loader rule §3.4(4) (`@js` arg validation): move it out of the loader (currently reads `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go)) into a CI-only test under [internal/checker/tests/](../../internal/checker/tests/) that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Delete `js_globals.go` and the rule-4 branch in [js_decorator.go](../../internal/checker/js_decorator.go) in the same PR. Same CI-only test should add **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` (or `get`), never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable (today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime). Rule 5 shares the lib parser with rule 4, so doing them separately would duplicate the parse. |
 | 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | §9      | Implement adaptive diagnostic rendering (FR15) and the auto-import quick-fix (FR16); verify `Awaited<T>` source-level definition with documented-fallback policy; confirm intrinsic handlers stay checker-resident (FR13).                                                                                                          |
 
@@ -51,14 +51,14 @@ before §5 lands its decorator
 emission step; §3 must also land before any fixture exercises
 codegen end-to-end. §4 lands after §2 because augmentation tests
 need real `import` statements. §7 produces the source-of-truth
-`.esc` files. §8 migrates internal fixtures to `import "js:*"`
+`.esc` files. §8 migrates internal fixtures to `import "std:*"`
 while the legacy prelude is still live; §9 then swaps the prelude
 and deletes the legacy paths in a single cut (pre-1.0, no
 deprecation cycle); §10 adds the LSP / diagnostic tooling on top.
 
 **Why §8 precedes §9.** §9 deletes the legacy path in the same
 change that swaps the prelude, so existing fixtures must already
-be migrated to `import "js:*"`. §8 is feasible once §7 has
+be migrated to `import "std:*"`. §8 is feasible once §7 has
 committed the `.esc` files (so imports actually resolve) and §4
 has landed (so any DOM-touching fixture can use augmentation);
 the resolver from §2 is in place transitively via §7. The legacy
@@ -186,13 +186,13 @@ the §5 / §6 converter implementation):
 ## §2. URI-scheme imports + binding-shape flags (FR2–FR5)
 
 **Goal.** End-to-end resolution and scope-binding for
-`import "js:math"`, including the three binding-shape flags and
+`import "std:math"`, including the three binding-shape flags and
 the single-class shortcut.
 
 ### 2.1 Parser change
 
 - Accept **bare-string imports** with no binding clause:
-  `import "js:math"`. Currently
+  `import "std:math"`. Currently
   [internal/parser/decl.go](../../internal/parser/decl.go) (look
   for `parseImport` / equivalent) requires either a namespace
   alias or a `{ ... }` clause.
@@ -212,13 +212,13 @@ Touch point:
 [internal/checker/infer_import.go](../../internal/checker/infer_import.go)
 (`resolveImport`, `resolveExportModulePath`).
 
-- Detect `js:`, `web:`, `node:` schemes before the
+- Detect `std:`, `web:`, `node:` schemes before the
   `node_modules/<pkg>` walk. Route them to the **stdlib data
   directory** on disk (resolution scheme below).
-- Mapping: `js:math` → `<stdlib>/js/math.esc`;
+- Mapping: `std:math` → `<stdlib>/std/math.esc`;
   `web:http` → `<stdlib>/web/http.esc`. Multi-word packages use
   underscores in both URI and filename
-  (`js:typed_arrays` → `js/typed_arrays.esc`,
+  (`std:typed_arrays` → `std/typed_arrays.esc`,
   `web:web_rtc` → `web/web_rtc.esc`). Hyphens never appear in
   pseudo-package URIs or filenames; there is no `-` → `_`
   substitution at this layer (that rule belongs to the
@@ -243,7 +243,7 @@ Discovery order, first hit wins:
    (standard CLI convention: explicit flags beat ambient
    configuration).
 2. **`ESCALIER_STDLIB_DIR` environment variable.** Absolute
-   path to a directory containing `js/` and `web/`
+   path to a directory containing `std/` and `web/`
    subdirectories. Used only when `--stdlib-dir` is not
    supplied. Intended for contributors testing alternative
    stdlibs and for tooling that ships its own.
@@ -289,8 +289,8 @@ it lazily on first scheme-prefixed import.
     segment (or capitalized class name when the single-class
     shortcut FR5 fires).
   - `?nested`: contributes to a per-scheme namespace
-    (`js`, `web`); the package sits under it as
-    `js.<package>`. Multiple `?nested` imports from the same
+    (`std`, `web`); the package sits under it as
+    `std.<package>`. Multiple `?nested` imports from the same
     scheme merge under disjoint sub-namespaces — no collision
     risk.
   - `?flat`: merges directly into the per-scheme namespace.
@@ -336,7 +336,7 @@ it lazily on first scheme-prefixed import.
   including `?flag1&flag2`. Round-trip via the printer.
 - **Resolver tests.** Each scheme; unknown scheme; known scheme +
   unknown package; `?flag` stripping. Place the
-  `internal/interop/data/js/math.esc` stub with
+  `internal/interop/data/std/math.esc` stub with
   `let PI: number = 3.14` so end-to-end resolution has something
   to find. Stdlib-discovery tests cover all four discovery
   paths from §2.2a (env var, `--stdlib-dir`, sibling-to-exe,
@@ -344,13 +344,13 @@ it lazily on first scheme-prefixed import.
 - **Binding-shape fixtures** under [fixtures/](../../fixtures/):
   one per shape, plus two `?flat` packages merging into a single
   `web` binding, plus the mutually-exclusive error case.
-- **Single-class shortcut fixture:** `js:array` stub declaring
+- **Single-class shortcut fixture:** `std:array` stub declaring
   `Array<T>`; assert `Array.isArray`, `Array<number>` type
   position, and `Array(5)` construct all bind correctly.
 
-**Gate.** Stub `js:math` resolves end-to-end with all three
+**Gate.** Stub `std:math` resolves end-to-end with all three
 binding-shape flags; two-package `?flat` fixture merges; flag
-collision errors. Single-class shortcut works for the `js:array`
+collision errors. Single-class shortcut works for the `std:array`
 stub.
 
 **Deferred to later sections.** Two items from §2.5 require
@@ -365,7 +365,7 @@ material that does not yet exist:
   fixture pins the cross-scheme `web` case specifically.
 - The **FR5 "non-class package exports as namespace members on
   the same binding"** surface is not implemented yet — the
-  current `js:array` stub has only the class. The shortcut
+  current `std:array` stub has only the class. The shortcut
   itself works; merging companion exports onto the class binding
   is wired up in §7 once real packages pair a class with helpers.
   A TODO marker lives in
@@ -383,13 +383,13 @@ per-declaration `@js` decorators inline in the pseudo-package
 
 Pseudo-package imports are **type-system-only, runtime-erased**.
 The codegen drops `import` statements whose specifier carries a
-`js:`, `web:`, or `node:` scheme before emitting JS. Zero
+`std:`, `web:`, or `node:` scheme before emitting JS. Zero
 import-line artifact.
 
 References to pseudo-package members must still lower to the
 correct JS runtime expression, and the Escalier-side binding name
 is not generally the JS-side name (`math.sin(x)` → `Math.sin(x)`;
-`parseInt(s)` from `js:number` → bare `parseInt(s)`;
+`parseInt(s)` from `std:number` → bare `parseInt(s)`;
 `iterator.iteratorKey` re-export → `Symbol.iterator`; etc.). The mapping
 is carried by **per-declaration `@js` decorators** authored
 inline in the pseudo-package `.esc` source.
@@ -406,29 +406,29 @@ declarations (used only inside the file) are not exported and
 carry no `@js`. Examples:
 
 ```escalier
-// js/math.esc
+// std/math.esc
 @js("Math.sin")
 export declare fn sin(x: number) -> number
 
 @js("Math.PI")
 export declare val PI: number
 
-// js/number.esc — hoisted globals share a package with Number
+// std/number.esc — hoisted globals share a package with Number
 @js("parseInt")
 export declare fn parseInt(s: string, radix?: number) -> number
 
 @js("Number")
 export declare class Number { … }
 
-// js/iterator.esc — Symbol re-export
+// std/iterator.esc — Symbol re-export
 @js("Symbol.iterator")
 export declare val iteratorKey: unique symbol
 
-// js/array.esc — single-class shortcut package
+// std/array.esc — single-class shortcut package
 @js("Array")
 export declare class Array<T> { … }
 
-// js/async.esc — package-private helper, no export, no @js
+// std/async.esc — package-private helper, no export, no @js
 declare type Thenable<T> = { then(onfulfilled: (v: T) => void): void }
 ```
 
@@ -445,7 +445,7 @@ exported names).
 ### 3.2 Lowering rules
 
 - **Member access through a package binding** (`math.sin(x)`,
-  `js.math.sin(x)` under `?nested`, `js.sin(x)` under `?flat`)
+  `std.math.sin(x)` under `?nested`, `std.sin(x)` under `?flat`)
   collapses to the underlying declaration's `(package, name)`
   identity and lowers to that declaration's `@js` expression
   applied to the call's arguments. Binding shape is purely an
@@ -519,7 +519,7 @@ Touch point:
 pseudo-package symbol reference, resolve the binding to the
 underlying declaration, read its `@js` decorator, and emit the
 decorator's argument as the JS expression. Import statements
-carrying a `js:`/`web:`/`node:` scheme are dropped (no JS
+carrying a `std:`/`web:`/`node:` scheme are dropped (no JS
 output).
 
 **Loader rules** (enforced after `.esc` parse, before
@@ -568,8 +568,8 @@ data directory (§2.2a). User code is free of these constraints.
   - Binding-shape independence: the same call lowers identically
     under `?local`, `?nested`, and `?flat`.
   - The `parseInt`, `Symbol.iterator`, and package-private
-    invisibility fixtures need hand-authored `js:number` /
-    `js:iterator` stubs; they live with §7's stdlib bootstrap
+    invisibility fixtures need hand-authored `std:number` /
+    `std:iterator` stubs; they live with §7's stdlib bootstrap
     rather than blocking §3.
 - Loader checks fire on (a) an exported pseudo-package
   declaration missing `@js`, and (b) an unexported pseudo-package
@@ -585,7 +585,7 @@ data directory (§2.2a). User code is free of these constraints.
 without the import does not. Inter-package imports between
 pseudo-packages work, including cycles. (Well-known symbols are
 **not** augmented — all of them live on `Symbol`'s static side
-in `js:symbol`; domain packages re-export them as plain
+in `std:symbol`; domain packages re-export them as plain
 aliases per FR8, no augmentation machinery involved.)
 
 ### 4.1 Confirm the augmentation mechanism
@@ -714,7 +714,7 @@ bootstrap review.
   (e.g. `web/canvas.esc` does `import "web:dom"` to extend
   `HTMLElement`).
 - **Cycles between pseudo-packages are permitted.** The
-  resolver / `internal/dep_graph/` must special-case `js:`,
+  resolver / `internal/dep_graph/` must special-case `std:`,
   `web:`, `node:` schemes to skip cycle reporting when both
   endpoints of an edge live under these schemes.
 - Cycles among user packages, and user-package-to-pseudo-package
@@ -728,7 +728,7 @@ bootstrap review.
   return; sibling file gets `never` / base shape.
 - Run the fixture under each of `?local`, `?nested`, `?flat` —
   binding shape must not affect augmentation visibility.
-- Cycle fixture: two `js:*` packages with a mutual import; the
+- Cycle fixture: two `std:*` packages with a mutual import; the
   resolver accepts the cycle; the same shape between two user
   packages errors.
 
@@ -840,7 +840,7 @@ declaration is in the AST shape or needs attaching.
      `@js("JSON.parse") export declare fn parse(…) -> …`).
    The general `@js` rule also covers declarations hoisted from
    the global scope into a partition package (e.g. `parseInt` →
-   `js:number`), which get `@js("<bare name>")` — exercised in
+   `std:number`), which get `@js("<bare name>")` — exercised in
    §6 against the full lib set, not in the MVP. The converter
    does not emit unexported declarations — every TS-side
    top-level declaration that the partition table maps to a
@@ -877,38 +877,38 @@ declaration name → target pseudo-package. Drives both file
 output and the LSP name-index (§10.3). Driven by the
 [FR1 partition list](requirements.md#fr1-no-ambient-set-shape-loaded-vs-named-bindings).
 
-**`js/` (full enumeration).**
+**`std/` (full enumeration).**
 
 | Package           | Type                | Members / notes                                                                                                                  |
 | ----------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `js:array`       | per-class           | `Array<T>`                                                                                                                       |
-| `js:string`      | per-class           | `String`                                                                                                                         |
-| `js:number`      | per-class           | `Number`; also `parseInt`, `parseFloat`, `isNaN`, `isFinite` (numeric-parsing domain)                                            |
-| `js:boolean`     | per-class           | `Boolean`                                                                                                                        |
-| `js:bigint`      | per-class           | `BigInt`                                                                                                                         |
-| `js:regexp`      | per-class           | `RegExp`; re-exports the regex-related well-known symbols (`Symbol.match`, `replace`, `search`, `split`, `matchAll`) as `regexp.matchKey`, `regexp.replaceKey`, etc.        |
-| `js:symbol`      | per-class           | `Symbol`, including **all** well-known symbols (`Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.match`, `Symbol.toPrimitive`, …) declared directly on `Symbol`'s static side |
-| `js:object`      | per-class + utility | `Object`; `Partial`, `Required`, `Readonly`, `Pick`, `Omit`, `Record`, `Exclude`, `Extract`, `NonNullable`                       |
-| `js:function`    | per-class + utility | `Function`; `Parameters`, `ConstructorParameters`, `ReturnType`, `InstanceType`, `ThisParameterType`, `OmitThisParameter`, `ThisType` |
-| `js:date`        | per-class           | `Date`                                                                                                                           |
-| `js:map`         | per-class           | `Map`                                                                                                                            |
-| `js:set`         | per-class           | `Set`                                                                                                                            |
-| `js:weak_ref`    | per-class           | `WeakRef`                                                                                                                        |
-| `js:iterator`    | bundled             | `Iterator<T>`, `Iterable<T>`, `IterableIterator<T>`, `IteratorResult<T>`, `Generator<T,R,N>`; re-exports `Symbol.iterator` as `iteratorKey`         |
-| `js:async`       | bundled             | `Promise<T>`, source-level `Awaited<T>`, `AsyncIterator<T>`, `AsyncIterable<T>`, `AsyncGenerator<T,R,N>`, `AggregateError`; re-exports `Symbol.asyncIterator` as `asyncIteratorKey`; depends on `js:iterator`. `Promise` lives here (not in a dedicated `js:promise`); under `?local` access is `async.Promise.all(…)`. |
-| `js:error`       | bundled             | `Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`. `URIError` → `js:url`; `AggregateError` → `js:async`. `EvalError` dropped |
-| `js:url`         | bundled             | `URIError`, `encodeURI`, `decodeURI`, `encodeURIComponent`, `decodeURIComponent`                                                 |
-| `js:math`        | namespace           | unchanged from existing layout                                                                                                   |
-| `js:json`        | namespace           | unchanged                                                                                                                        |
-| `js:console`     | namespace           | unchanged                                                                                                                        |
-| `js:typed_arrays`| bundled             | unchanged                                                                                                                        |
-| `js:reflect`     | namespace           | unchanged                                                                                                                        |
-| `js:proxy`       | per-class           | unchanged                                                                                                                        |
-| `js:intl`        | bundled             | unchanged; needs `import "js:date"`                                                                                             |
-| `js:temporal`    | bundled             | unchanged                                                                                                                        |
-| `js:wasm`        | bundled             | unchanged                                                                                                                        |
+| `std:array`       | per-class           | `Array<T>`                                                                                                                       |
+| `std:string`      | per-class           | `String`                                                                                                                         |
+| `std:number`      | per-class           | `Number`; also `parseInt`, `parseFloat`, `isNaN`, `isFinite` (numeric-parsing domain)                                            |
+| `std:boolean`     | per-class           | `Boolean`                                                                                                                        |
+| `std:bigint`      | per-class           | `BigInt`                                                                                                                         |
+| `std:regexp`      | per-class           | `RegExp`; re-exports the regex-related well-known symbols (`Symbol.match`, `replace`, `search`, `split`, `matchAll`) as `regexp.matchKey`, `regexp.replaceKey`, etc.        |
+| `std:symbol`      | per-class           | `Symbol`, including **all** well-known symbols (`Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.match`, `Symbol.toPrimitive`, …) declared directly on `Symbol`'s static side |
+| `std:object`      | per-class + utility | `Object`; `Partial`, `Required`, `Readonly`, `Pick`, `Omit`, `Record`, `Exclude`, `Extract`, `NonNullable`                       |
+| `std:function`    | per-class + utility | `Function`; `Parameters`, `ConstructorParameters`, `ReturnType`, `InstanceType`, `ThisParameterType`, `OmitThisParameter`, `ThisType` |
+| `std:date`        | per-class           | `Date`                                                                                                                           |
+| `std:map`         | per-class           | `Map`                                                                                                                            |
+| `std:set`         | per-class           | `Set`                                                                                                                            |
+| `std:weak_ref`    | per-class           | `WeakRef`                                                                                                                        |
+| `std:iterator`    | bundled             | `Iterator<T>`, `Iterable<T>`, `IterableIterator<T>`, `IteratorResult<T>`, `Generator<T,R,N>`; re-exports `Symbol.iterator` as `iteratorKey`         |
+| `std:async`       | bundled             | `Promise<T>`, source-level `Awaited<T>`, `AsyncIterator<T>`, `AsyncIterable<T>`, `AsyncGenerator<T,R,N>`, `AggregateError`; re-exports `Symbol.asyncIterator` as `asyncIteratorKey`; depends on `std:iterator`. `Promise` lives here (not in a dedicated `std:promise`); under `?local` access is `async.Promise.all(…)`. |
+| `std:error`       | bundled             | `Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`. `URIError` → `std:url`; `AggregateError` → `std:async`. `EvalError` dropped |
+| `std:url`         | bundled             | `URIError`, `encodeURI`, `decodeURI`, `encodeURIComponent`, `decodeURIComponent`                                                 |
+| `std:math`        | namespace           | unchanged from existing layout                                                                                                   |
+| `std:json`        | namespace           | unchanged                                                                                                                        |
+| `std:console`     | namespace           | unchanged                                                                                                                        |
+| `std:typed_arrays`| bundled             | unchanged                                                                                                                        |
+| `std:reflect`     | namespace           | unchanged                                                                                                                        |
+| `std:proxy`       | per-class           | unchanged                                                                                                                        |
+| `std:intl`        | bundled             | unchanged; needs `import "std:date"`                                                                                             |
+| `std:temporal`    | bundled             | unchanged                                                                                                                        |
+| `std:wasm`        | bundled             | unchanged                                                                                                                        |
 
-**`web/` partition.** DOM splits more finely than `js/` because
+**`web/` partition.** DOM splits more finely than `std/` because
 the surface is larger; a typical browser program touches 2–3
 `web:*` packages. Initial set:
 
@@ -922,15 +922,15 @@ input.
 **Single-class shortcut eligibility (FR5).** Per FR5, the
 single-class shortcut applies to:
 
-`js:array → Array`, `js:string → String`,
-`js:number → Number`, `js:boolean → Boolean`,
-`js:bigint → BigInt`, `js:regexp → RegExp`,
-`js:symbol → Symbol`, `js:object → Object`,
-`js:function → Function`, `js:date → Date`, `js:map → Map`,
-`js:set → Set`, `js:weak_ref → WeakRef`. The converter does
+`std:array → Array`, `std:string → String`,
+`std:number → Number`, `std:boolean → Boolean`,
+`std:bigint → BigInt`, `std:regexp → RegExp`,
+`std:symbol → Symbol`, `std:object → Object`,
+`std:function → Function`, `std:date → Date`, `std:map → Map`,
+`std:set → Set`, `std:weak_ref → WeakRef`. The converter does
 not mark this explicitly — the shortcut activates structurally
 when the package's lowercased URI segment matches a top-level
-class name case-insensitively. `js:async` does **not**
+class name case-insensitively. `std:async` does **not**
 qualify (multiple top-level classes including `Promise`,
 `AsyncIterator`, …; no class named `Async`), so `Promise.all`
 is accessed as `async.Promise.all` under `?local`.
@@ -962,7 +962,7 @@ actually made.
   route each entry into the corresponding feature package's
   augmentation block.
 - Well-known symbol declarations on `SymbolConstructor` stay
-  in `js/symbol.esc` — they are **not** rerouted (FR8). The
+  in `std/symbol.esc` — they are **not** rerouted (FR8). The
   domain-package re-export aliases (`iterator.iteratorKey`, `async.asyncIteratorKey`,
   `regexp.matchKey`, …) are hand-authored at §7 bootstrap, not
   emitted by the converter.
@@ -972,7 +972,7 @@ actually made.
 Per [FR2](requirements.md#fr2-pseudo-package-layout):
 
 ```
-internal/interop/data/js/  — js/*.esc
+internal/interop/data/std/  — std/*.esc
 internal/interop/data/web/  — web/*.esc
 internal/interop/data/node/ — reserved, empty
 ```
@@ -1036,7 +1036,7 @@ hand-curate the high-value ~50 entries (`JSON.parse`,
 MDN is rejected (prose-not-data, brittle, copyleft).
 WebIDL `[Throws]` extraction (`@webref/idl`) is a plausible
 future automation lever for `web:*` but is **out of scope for
-the bootstrap**. ECMARKUP extraction for `js:*` is similarly
+the bootstrap**. ECMARKUP extraction for `std:*` is similarly
 deferred.
 
 ### 6.6 TS-version-bump workflow
@@ -1069,7 +1069,7 @@ hook point is identified in this doc so it can be added later
 without re-architecture.
 
 **Gate.** Every output `.esc` file under
-`internal/interop/data/{js,web}/` parses; the converter is
+`internal/interop/data/{std,web}/` parses; the converter is
 idempotent (byte-identical on re-run); the partition matches
 [FR1](requirements.md#fr1-no-ambient-set-shape-loaded-vs-named-bindings)
 member-for-member.
@@ -1084,7 +1084,7 @@ files as the source of truth.
 **Work items.**
 
 1. Run the converter (§6) once, producing the full tree under
-   `internal/interop/data/{js,web}/`.
+   `internal/interop/data/{std,web}/`.
 2. Human review of every file. Hand-edit:
    - Obvious mis-classifications.
    - High-value `throws` annotations (the ~50 from §6.5).
@@ -1093,7 +1093,7 @@ files as the source of truth.
    - Mutability refinements not captured by the
      `interop.Classify` seeding.
    - `Symbol.customMatcher` (Escalier-specific, not in
-     `lib.*.d.ts`) hand-authored in `js:symbol`, written as
+     `lib.*.d.ts`) hand-authored in `std:symbol`, written as
      `@js("Symbol.customMatcher") export declare …` per §3.
    - **Symbol re-exports** per FR8 (`iterator.iteratorKey`, `async.asyncIteratorKey`,
      `regexp.matchKey`, …) hand-authored in their owning
@@ -1111,7 +1111,7 @@ files as the source of truth.
      check catches them at compile time but humans should catch
      obvious cases here.
 3. **`Awaited<T>` source-level definition.** Write `Awaited<T>`
-   in `js:async` as the recursive conditional type (the same
+   in `std:async` as the recursive conditional type (the same
    shape as TypeScript's definition). Exercise against a
    representative fixture (nested promises, thenables, mixed
    `T | Promise<T>`, generic propagation). If a concrete
@@ -1124,9 +1124,9 @@ files as the source of truth.
    same binding*, with static methods winning on name collision.
    The §2 implementation left this as a TODO in
    [bindStdlibLocal](../../internal/checker/infer_stdlib_import.go)
-   because the §2-era stubs (`js:math`, `js:array`) have only
+   because the §2-era stubs (`std:math`, `std:array`) have only
    a single export. Once the §7 bootstrap produces real packages
-   that pair a class with non-class exports (e.g. `js:array`
+   that pair a class with non-class exports (e.g. `std:array`
    gaining helper functions or constants alongside `Array`),
    wire the merge: copy `pkgNs.Values` and `pkgNs.Types` onto
    the class binding's static surface, and add a unit test pinning
@@ -1134,8 +1134,8 @@ files as the source of truth.
 4. Commit. After this point, the converter persists only as
    `--check` review tool; ongoing edits are direct to the
    committed `.esc` files.
-5. **§3.5 codegen fixtures deferred from §3.** Once `js:number`
-   and `js:iterator` exist as committed packages, add the
+5. **§3.5 codegen fixtures deferred from §3.** Once `std:number`
+   and `std:iterator` exist as committed packages, add the
    fixtures §3 couldn't author without them:
    - Hoisted global: `parseInt(s)` → `parseInt(s)`.
    - Symbol re-export: `iterator.iteratorKey` → `Symbol.iterator`.
@@ -1146,7 +1146,7 @@ files as the source of truth.
 **Gate.** Humans review the committed files; `go test ./...`
 passes — the existing checker still resolves these declarations
 through the legacy `lib.*.d.ts`-walking prelude. §8 then
-migrates fixtures and tests to `import "js:*"` while both
+migrates fixtures and tests to `import "std:*"` while both
 resolution paths are live, and §9 deletes the legacy path in a
 single PR. The §7 commit on its own changes no checker
 behavior; it just lands the source-of-truth `.esc` files.
@@ -1156,7 +1156,7 @@ behavior; it just lands the source-of-truth `.esc` files.
 ## §8. Internal fixture migration
 
 **Goal.** Migrate Escalier's own fixtures and tests to
-`import "js:*"` so that §9 can delete the legacy lib-walking
+`import "std:*"` so that §9 can delete the legacy lib-walking
 prelude without breaking the suite.
 
 **Prerequisites.** §7 (the `.esc` files must be committed for
@@ -1169,7 +1169,7 @@ Update every fixture and test under
 [internal/checker/tests/](../../internal/checker/tests/) that
 relied on previously-ambient symbols (`Math`, `JSON`, `console`,
 `Promise`, `Error`, `Array.from`, `parseInt`, …) to use
-`import "js:*"` statements. The legacy prelude is still live
+`import "std:*"` statements. The legacy prelude is still live
 during this phase, so the migrated and not-yet-migrated files
 type-check side-by-side until §9 removes the legacy path.
 
@@ -1181,7 +1181,7 @@ fixture rewrite exercise the same tooling external users will
 rely on.
 
 **Gate.** `go test ./...` passes with every fixture using
-explicit `import "js:*"` statements; no fixture relies on
+explicit `import "std:*"` statements; no fixture relies on
 ambient resolution — except for the third-party carve-out below.
 
 **Carries-over from §2.** §2 landed five binding-shape fixtures
@@ -1197,8 +1197,8 @@ material that does not exist until §7:
   two `?flat`-imported `web:*` packages co-exist in the same
   `web` namespace.
 - A **single-class shortcut fixture with non-class package exports**
-  on the same binding. §2's `js:array` stub has only the class;
-  once §7 populates `js:array` with companion helpers (or another
+  on the same binding. §2's `std:array` stub has only the class;
+  once §7 populates `std:array` with companion helpers (or another
   package mixes a class with constants/functions), add a fixture
   that exercises both the class and a non-class export through the
   same shortcut binding, including the static-method-wins
@@ -1209,7 +1209,7 @@ material that does not exist until §7:
 
 A small set of fixtures and tests exercises **third-party
 `.d.ts`** content (vendored or stub `node_modules` packages).
-These cannot be migrated to explicit `import "js:*"` in §8: the
+These cannot be migrated to explicit `import "std:*"` in §8: the
 migration mechanism is the third-party converter's import-header
 injection (third-party FR7), which is gated behind the entire
 builtins workstream and therefore not yet available.
@@ -1228,7 +1228,7 @@ for the authoritative statement. The mechanics required here:
   pipeline's consumers — `interop.ConvertModule` call sites and
   fixtures with `.d.ts` payloads). Anything that would fail with
   the legacy prelude removed gets `SkipUntilFR7`. Do not try to
-  rewrite these to `import "js:*"`; the right migration path
+  rewrite these to `import "std:*"`; the right migration path
   for them lives in third-party Phase 1.
 - **CI guard.** Add a one-line CI check (a `grep -r
   SkipUntilFR7` in the pre-merge job) that fails the build if
@@ -1262,7 +1262,7 @@ prelude removes the resolution path that previously made `Math`,
 `JSON`, `console`, `Promise`, `Error`, `Array.from`, `parseInt`,
 … visible without imports. Every fixture and test that names
 those symbols must already be rewritten to use
-`import "js:*"` — that is §8's job. §8 is feasible after §3 and
+`import "std:*"` — that is §8's job. §8 is feasible after §3 and
 §4 land (resolver + augmentation in place) and runs while the
 legacy prelude is still live, so migrated and not-yet-migrated
 files type-check side-by-side throughout the §8 work. §9 is the
@@ -1284,17 +1284,17 @@ Touch point:
 [internal/checker/prelude.go](../../internal/checker/prelude.go).
 
 For each file F being checked, the checker inspects F's syntax
-and shape-loads only the needed `js:*` packages (no name
+and shape-loads only the needed `std:*` packages (no name
 bindings added to scope). Trigger map per FR11:
 
 | Trigger                                                            | Shape-loaded package(s)              |
 | ------------------------------------------------------------------ | ------------------------------------ |
-| String/number/boolean/bigint literal or operator on a primitive    | `js:string`/`number`/`boolean`/`bigint` |
-| Array literal                                                      | `js:array`                          |
-| Regex literal                                                      | `js:regexp`                         |
-| `async fn` / `await` / `for await x of xs`                         | `js:async` (covers Promise, Awaited, and async iteration) |
-| `for x of xs` / generator                                          | `js:iterator`                       |
-| `try` / `catch` / `throw` / `throws` clause **naming** a `js:error` class (`Error`, `TypeError`, …) | `js:error` — bare `throw "x"` or a `throws` listing only user-defined errors does not trigger |
+| String/number/boolean/bigint literal or operator on a primitive    | `std:string`/`number`/`boolean`/`bigint` |
+| Array literal                                                      | `std:array`                          |
+| Regex literal                                                      | `std:regexp`                         |
+| `async fn` / `await` / `for await x of xs`                         | `std:async` (covers Promise, Awaited, and async iteration) |
+| `for x of xs` / generator                                          | `std:iterator`                       |
+| `try` / `catch` / `throw` / `throws` clause **naming** a `std:error` class (`Error`, `TypeError`, …) | `std:error` — bare `throw "x"` or a `throws` listing only user-defined errors does not trigger |
 
 Multiple files share one parsed copy of each package.
 Shape-loading is idempotent and additive.
@@ -1304,18 +1304,18 @@ Shape-loading is idempotent and additive.
 Reuses §2's resolver path. The shape-load and named-import paths
 share the same parsed declarations; they differ only in whether
 identifiers land in F's scope. Multiple files in a compilation
-share **one parsed copy** of each `js:*` package; the
+share **one parsed copy** of each `std:*` package; the
 shape-loader memoizes by package URI. No bootstrap cycle: each
-`js:*` package contains only declarations (no value-level
+`std:*` package contains only declarations (no value-level
 expressions needing their own prelude).
 
 ### 9.2a Cross-package references between pseudo-packages
 
-**All cross-package references inside `js:*` / `web:*`
+**All cross-package references inside `std:*` / `web:*`
 packages require explicit `import` statements** — the same
-rule as user code. `js/async.esc` writes
-`import "js:iterator"` if it references `Iterable<T>`;
-`js/array.esc` writes `import "js:iterator"` for the
+rule as user code. `std/async.esc` writes
+`import "std:iterator"` if it references `Iterable<T>`;
+`std/array.esc` writes `import "std:iterator"` for the
 iteration protocol; `web/canvas.esc` writes
 `import "web:dom"` to extend `HTMLElement`. There is no
 implicit "all sibling packages visible" rule and no shape-load
@@ -1324,22 +1324,22 @@ shape-loader's only job at the F-level is to decide which
 packages F's *user-level* syntax depends on; inside each
 loaded package, name resolution is ordinary.
 
-**Cycles between `js:*` / `web:*` packages are permitted**
+**Cycles between `std:*` / `web:*` packages are permitted**
 because everything in these schemes is, at runtime, a
 pre-existing builtin — the cycle is purely type-level and
 runtime-erased, so there is no initialization-order concern.
-The resolver / `internal/dep_graph/` special-cases the `js:`,
+The resolver / `internal/dep_graph/` special-cases the `std:`,
 `web:`, and `node:` schemes to skip cycle reporting when both
 endpoints of an edge live under these schemes (already
 specified in §4.3). Cycles among user packages, and any cycle
 that touches a user package, remain disallowed.
 
 Test: a fixture using only an `async fn` + a `for of` loop
-triggers shape-loading of `js:async`; resolving `Promise<T>`'s
+triggers shape-loading of `std:async`; resolving `Promise<T>`'s
 internal reference to `Iterable<T>` succeeds because
-`js/async.esc` itself imports `js:iterator` — not because
-shape-loading magically pulled `js:iterator` into F's scope.
-A mutual-import fixture between two `js:*` packages confirms
+`std/async.esc` itself imports `std:iterator` — not because
+shape-loading magically pulled `std:iterator` into F's scope.
+A mutual-import fixture between two `std:*` packages confirms
 the cycle-allowance rule.
 
 ### 9.3 Delete the legacy paths (same PR)
@@ -1347,7 +1347,7 @@ the cycle-allowance rule.
 Delete in the same change that swaps the prelude — no flag, no
 parallel paths, no waiting. The compiler is pre-1.0; the
 breaking change lands cleanly. Internal fixtures must already
-have been migrated to `import "js:*"` (§8) before this PR
+have been migrated to `import "std:*"` (§8) before this PR
 opens, otherwise the test suite breaks.
 
 Touch points to delete or empty out:
@@ -1365,7 +1365,7 @@ Touch points to delete or empty out:
 - The Escalier-specific
   `SymbolConstructor.customMatcher` injection at
   [prelude.go:804–836](../../internal/checker/prelude.go#L804-L836)
-  (now sourced from `js:symbol` per §7 step 2)
+  (now sourced from `std:symbol` per §7 step 2)
 
 **No `override declare` for builtins.** That syntax stays
 reserved for the third-party workstream's override mechanism;
@@ -1389,7 +1389,7 @@ source file under `internal/interop/data/`. The four string-case
 utilities are pure `Type → Type` resolvers; `NoInfer` is an
 inference-machinery hook. Tracked in escalier-lang/escalier#631.
 
-`Awaited<T>` source-level definition lives in `js:async` per
+`Awaited<T>` source-level definition lives in `std:async` per
 §7 step 3 (the recursive conditional type matching TS's
 definition; tracked in escalier-lang/escalier#630). Fallback to
 a checker-resident intrinsic only on documented blocker —
@@ -1420,14 +1420,14 @@ the diagnostic's source location:
    render as the capitalized class binding (`Array<number>`,
    `Date.now()`) — matching what the user would write.
 2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `js.math.Foo`; `?flat` → `js.Foo`.
+   `?nested` → `std.math.Foo`; `?flat` → `std.Foo`.
 3. **Not imported.** Fully-qualified canonical name
-   (`js:array.Array`) plus a "did you mean to
-   `import "js:array"`?" hint pointing at the FR16 quick-fix.
+   (`std:array.Array`) plus a "did you mean to
+   `import "std:array"`?" hint pointing at the FR16 quick-fix.
 
 **Tie-breaking.** When multiple forms are simultaneously in
-scope (e.g. the file has both `import "js:array"` and
-`import "js:array?nested"`), the renderer picks the shortest;
+scope (e.g. the file has both `import "std:array"` and
+`import "std:array?nested"`), the renderer picks the shortest;
 ties break in the order 1 → 2 → 3 above. The rendering is
 per-diagnostic, not per-compilation — same type can render
 differently in two files.
@@ -1443,7 +1443,7 @@ diagnostic pipeline.
 
 When a name that used to be ambient is referenced without an
 import under the new default, the **unbound-name diagnostic**
-includes a suggestion ("did you mean to `import "js:async"`?")
+includes a suggestion ("did you mean to `import "std:async"`?")
 whenever the unbound name matches a known pseudo-package export.
 The suggestion list is derived mechanically from the LSP
 name-index (§10.3); the diagnostic path reuses the same index.
@@ -1457,14 +1457,14 @@ point at the bare reference, not the surrounding statement.
 LSP first-class. Quick-fix on an unbound-name diagnostic that:
 
 1. Adds the appropriate namespace import statement
-   (`import "js:async"`, `import "js:math"`, …).
+   (`import "std:async"`, `import "std:math"`, …).
 2. **Single-class shortcut packages:** leaves the bare reference
    unchanged (`Array.isArray`, `Date.now`, `Error(...)` already
    match the imported binding name).
 3. **Other packages:** rewrites the bare reference to qualify
    through the resulting namespace (`sin(x)` → `math.sin(x)`;
    `Promise.all([...])` → `async.Promise.all([...])` since
-   `Promise` lives in `js:async`, which is not a single-class
+   `Promise` lives in `std:async`, which is not a single-class
    shortcut package).
 
 Named imports are out of scope. Quick-fix only adds namespace
@@ -1488,7 +1488,7 @@ Implementation:
   exported by more than one pseudo-package (rare but possible
   for `Error` subclasses, etc.), the quick-fix offers each
   candidate as a separate fix; ranking by canonical
-  alphabetical order, with `js:*` ranked before `web:*`.
+  alphabetical order, with `std:*` ranked before `web:*`.
 
 Touch points: [cmd/lsp-server/](../../cmd/lsp-server/),
 [internal/lsp/](../../internal/lsp/) (or wherever the LSP code
@@ -1509,11 +1509,11 @@ stdlib pseudo-packages":
 
 - **Real filesystem path.** Spans on declarations parsed from
   stdlib `.esc` files carry the **actual resolved path**
-  (e.g. `/usr/local/share/escalier/data/js/string.esc`), since
+  (e.g. `/usr/local/share/escalier/data/std/string.esc`), since
   the file is on disk and the user can open it directly. No
   virtual URI scheme is needed. When the resolved path lies
   under a well-known install prefix, diagnostics may render it
-  as `<stdlib>/js/string.esc` for compactness, but the
+  as `<stdlib>/std/string.esc` for compactness, but the
   underlying span still carries the real path so editor
   click-through works.
 - **Preserved line/column.** Line/column information from the
@@ -1571,7 +1571,7 @@ Per requirements §"Testing strategy":
   re-export aliases via `@js` (§3.5 codegen fixtures + §7
   bootstrap review).
 - Prelude switchover (§9) — internal fixtures, migrated to
-  `import "js:*"` ahead of the switchover commit (§8), keep
+  `import "std:*"` ahead of the switchover commit (§8), keep
   type-checking under the new resolver. No parity check against
   the legacy path: the legacy path is deleted in the same PR
   rather than kept behind a flag (pre-1.0).

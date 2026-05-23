@@ -22,7 +22,7 @@ import (
 func makeCustomStdlibDir(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "js"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "std"), 0o755))
 	for rel, contents := range files {
 		full := filepath.Join(dir, rel)
 		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
@@ -61,7 +61,7 @@ func errorMessages(errs []Error) []string {
 
 func TestStdlibImport_BareLocalBindsByLastSegment(t *testing.T) {
 	fileScopes, errs := inferStdlibImportSource(t, `
-		import "js:math"
+		import "std:math"
 		val x: number = math.PI
 	`)
 	require.Empty(t, errorMessages(errs))
@@ -74,7 +74,7 @@ func TestStdlibImport_BareLocalBindsByLastSegment(t *testing.T) {
 
 func TestStdlibImport_ExplicitLocalFlag(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `
-		import "js:math?local"
+		import "std:math?local"
 		val x: number = math.PI
 	`)
 	require.Empty(t, errorMessages(errs))
@@ -84,19 +84,19 @@ func TestStdlibImport_UnknownScheme(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "foo:bar"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		`unknown import scheme "foo"; recognized schemes: js, web, node`,
+		`unknown import scheme "foo"; recognized schemes: std, web, node`,
 		errs[0].Message(),
 	)
 }
 
 func TestStdlibImport_UnknownPackageInKnownScheme(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import "js:nonexistent"`)
+	_, errs := inferStdlibImportSource(t, `import "std:nonexistent"`)
 	require.Len(t, errs, 1)
 	// Stdlib dir is set by TestMain via SetStdlibDirForTest; interpolate
 	// it so the full message matches across machines.
 	stdlibDir := os.Getenv("ESCALIER_STDLIB_DIR")
 	require.Equal(t,
-		fmt.Sprintf(`unknown package "nonexistent" in js: scheme (no js/nonexistent.esc under %s)`, stdlibDir),
+		fmt.Sprintf(`unknown package "nonexistent" in std: scheme (no std/nonexistent.esc under %s)`, stdlibDir),
 		errs[0].Message(),
 	)
 }
@@ -111,27 +111,27 @@ func TestStdlibImport_NodeSchemeReserved(t *testing.T) {
 }
 
 func TestStdlibImport_NamedImportFromSchemeURIRejected(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import { PI } from "js:math"`)
+	_, errs := inferStdlibImportSource(t, `import { PI } from "std:math"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"named imports from pseudo-package \"js:math\" are not supported; "+
-			"use a bare-string import (`import \"js:math\"`) and access members through the namespace",
+		"named imports from pseudo-package \"std:math\" are not supported; "+
+			"use a bare-string import (`import \"std:math\"`) and access members through the namespace",
 		errs[0].Message(),
 	)
 }
 
 func TestStdlibImport_NamespaceImportFromSchemeURIRejected(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import * as M from "js:math"`)
+	_, errs := inferStdlibImportSource(t, `import * as M from "std:math"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"named imports from pseudo-package \"js:math\" are not supported; "+
-			"use a bare-string import (`import \"js:math\"`) and access members through the namespace",
+		"named imports from pseudo-package \"std:math\" are not supported; "+
+			"use a bare-string import (`import \"std:math\"`) and access members through the namespace",
 		errs[0].Message(),
 	)
 }
 
 func TestStdlibImport_UnknownFlag(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import "js:math?wat"`)
+	_, errs := inferStdlibImportSource(t, `import "std:math?wat"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		`unknown import flag "wat"; recognized flags: flat, local, nested`,
@@ -140,7 +140,7 @@ func TestStdlibImport_UnknownFlag(t *testing.T) {
 }
 
 func TestStdlibImport_MutuallyExclusiveFlags(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import "js:math?local&flat"`)
+	_, errs := inferStdlibImportSource(t, `import "std:math?local&flat"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		`binding-shape flags "flat" and "local" are mutually exclusive; pick one`,
@@ -150,30 +150,30 @@ func TestStdlibImport_MutuallyExclusiveFlags(t *testing.T) {
 
 func TestStdlibImport_NestedBindsUnderSchemeNamespace(t *testing.T) {
 	fileScopes, errs := inferStdlibImportSource(t, `
-		import "js:math?nested"
-		val x: number = js.math.PI
+		import "std:math?nested"
+		val x: number = std.math.PI
 	`)
 	require.Empty(t, errorMessages(errs))
 
 	fileScope, ok := fileScopes[0]
 	require.True(t, ok)
-	schemeNs, ok := fileScope.Namespace.GetNamespace("js")
-	require.True(t, ok, "expected `js` namespace bound in file scope")
+	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
+	require.True(t, ok, "expected `std` namespace bound in file scope")
 	_, ok = schemeNs.GetNamespace("math")
-	require.True(t, ok, "expected `js.math` sub-namespace")
+	require.True(t, ok, "expected `std.math` sub-namespace")
 }
 
 func TestStdlibImport_MultipleNestedSharesSchemeNamespace(t *testing.T) {
 	fileScopes, errs := inferStdlibImportSource(t, `
-		import "js:math?nested"
-		import "js:array?nested"
-		val x: number = js.math.PI
-		val isArr: boolean = js.array.Array.isArray(0)
+		import "std:math?nested"
+		import "std:array?nested"
+		val x: number = std.math.PI
+		val isArr: boolean = std.array.Array.isArray(0)
 	`)
 	require.Empty(t, errorMessages(errs))
 
 	fileScope := fileScopes[0]
-	schemeNs, ok := fileScope.Namespace.GetNamespace("js")
+	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
 	require.True(t, ok)
 	_, ok = schemeNs.GetNamespace("math")
 	require.True(t, ok)
@@ -183,45 +183,45 @@ func TestStdlibImport_MultipleNestedSharesSchemeNamespace(t *testing.T) {
 
 func TestStdlibImport_FlatMergesIntoSchemeNamespace(t *testing.T) {
 	fileScopes, errs := inferStdlibImportSource(t, `
-		import "js:math?flat"
-		val x: number = js.PI
+		import "std:math?flat"
+		val x: number = std.PI
 	`)
 	require.Empty(t, errorMessages(errs))
 
 	fileScope := fileScopes[0]
-	schemeNs, ok := fileScope.Namespace.GetNamespace("js")
+	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
 	require.True(t, ok)
 	_, ok = schemeNs.Values["PI"]
-	require.True(t, ok, "expected PI merged directly into `js` namespace")
+	require.True(t, ok, "expected PI merged directly into `std` namespace")
 }
 
 func TestStdlibImport_FlatNameCollision(t *testing.T) {
 	// Both packages export the same identifier; the second ?flat
 	// import must fail with the taxonomy-aligned collision message.
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/alpha.esc": "@js(\"Math.PI\")\nexport val Common: number = 1",
-		"js/beta.esc":  "@js(\"Math.E\")\nexport val Common: number = 2",
+		"std/alpha.esc": "@js(\"Math.PI\")\nexport val Common: number = 1",
+		"std/beta.esc":  "@js(\"Math.E\")\nexport val Common: number = 2",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
 	_, errs := inferStdlibImportSource(t, `
-		import "js:alpha?flat"
-		import "js:beta?flat"
+		import "std:alpha?flat"
+		import "std:beta?flat"
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		`?flat name collision: "Common" is contributed by both "js:alpha" and "js:beta"; `+
+		`?flat name collision: "Common" is contributed by both "std:alpha" and "std:beta"; `+
 			`rename upstream or drop one import's ?flat flag`,
 		errs[0].Message(),
 	)
 }
 
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {
-	// js:array stub exposes `class Array<T>` — FR5 binds the class
+	// std:array stub exposes `class Array<T>` — FR5 binds the class
 	// with its original capitalization (not lowercased "array") when
 	// imported as ?local.
 	fileScopes, errs := inferStdlibImportSource(t, `
-		import "js:array"
+		import "std:array"
 		val isArr: boolean = Array.isArray(0)
 		val arr: Array<number> = Array(5)
 	`)
@@ -240,23 +240,23 @@ func TestStdlibImport_SingleClassShortcut(t *testing.T) {
 }
 
 func TestStdlibImport_SingleClassShortcutDoesNotApplyToNested(t *testing.T) {
-	fileScopes, errs := inferStdlibImportSource(t, `import "js:array?nested"`)
+	fileScopes, errs := inferStdlibImportSource(t, `import "std:array?nested"`)
 	require.Empty(t, errorMessages(errs))
 
 	fileScope := fileScopes[0]
-	schemeNs, ok := fileScope.Namespace.GetNamespace("js")
+	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
 	require.True(t, ok)
 	pkgNs, ok := schemeNs.GetNamespace("array")
 	require.True(t, ok, "?nested must bind the package as a sub-namespace, not the class")
 	_, hasArray := pkgNs.Values["Array"]
-	require.True(t, hasArray, "Array class should be reachable via js.array.Array")
+	require.True(t, hasArray, "Array class should be reachable via std.array.Array")
 }
 
 func TestStdlibImport_InvalidPackageName(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import "js:Math"`)
+	_, errs := inferStdlibImportSource(t, `import "std:Math"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		`invalid package name "Math" in js:Math; expected lowercase letters, digits, and underscores`,
+		`invalid package name "Math" in std:Math; expected lowercase letters, digits, and underscores`,
 		errs[0].Message(),
 	)
 }
@@ -267,15 +267,15 @@ func TestStdlibImport_InvalidPackageName(t *testing.T) {
 // `import` statement, not a location inside the stdlib file.
 func TestStdlibImport_LoaderRule_MissingJSDecorator(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "export val PI: number = 3.14",
+		"std/example.esc": "export val PI: number = 3.14",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		fmt.Sprintf("exported value %q in pseudo-package file %s is missing an `@js(\"...\")` decorator",
-			"PI", filepath.Join(dir, "js/example.esc")),
+			"PI", filepath.Join(dir, "std/example.esc")),
 		errs[0].Message())
 }
 
@@ -286,16 +286,16 @@ func TestStdlibImport_LoaderRule_MissingJSDecorator(t *testing.T) {
 // fix it.
 func TestStdlibImport_LoaderRule_UnexportedValueLevelRejected(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "@js(\"helper\")\ndeclare val helper: number",
+		"std/example.esc": "@js(\"helper\")\ndeclare val helper: number",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		fmt.Sprintf("unexported value %q in pseudo-package file %s has no runtime mapping; "+
 			"add `export` (and an `@js(...)` decorator) or remove the declaration",
-			"helper", filepath.Join(dir, "js/example.esc")),
+			"helper", filepath.Join(dir, "std/example.esc")),
 		errs[0].Message())
 }
 
@@ -305,12 +305,12 @@ func TestStdlibImport_LoaderRule_UnexportedValueLevelRejected(t *testing.T) {
 // have no decorator).
 func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "@js(\"parseInt\")\nexport declare fn foo() -> number\n" +
+		"std/example.esc": "@js(\"parseInt\")\nexport declare fn foo() -> number\n" +
 			"declare type Helper = number",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Empty(t, errorMessages(errs))
 }
 
@@ -328,15 +328,15 @@ func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 	for name, source := range cases {
 		t.Run(name, func(t *testing.T) {
 			dir := makeCustomStdlibDir(t, map[string]string{
-				"js/example.esc": source,
+				"std/example.esc": source,
 			})
 			t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-			_, errs := inferStdlibImportSource(t, `import "js:example"`)
+			_, errs := inferStdlibImportSource(t, `import "std:example"`)
 			require.Len(t, errs, 1)
 			require.Equal(t,
 				fmt.Sprintf("`@js` decorator on value %q in pseudo-package file %s must take a single string-literal argument",
-					"PI", filepath.Join(dir, "js/example.esc")),
+					"PI", filepath.Join(dir, "std/example.esc")),
 				errs[0].Message())
 		})
 	}
@@ -351,15 +351,15 @@ func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 // guessing.
 func TestStdlibImport_LoaderRule_UnknownJSGlobal(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "@js(\"Mat.sin\")\nexport declare fn sin(x: number) -> number",
+		"std/example.esc": "@js(\"Mat.sin\")\nexport declare fn sin(x: number) -> number",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global (prefix %q is not a known top-level global)",
-			"Mat.sin", "sin", filepath.Join(dir, "js/example.esc"), "Mat"),
+			"Mat.sin", "sin", filepath.Join(dir, "std/example.esc"), "Mat"),
 		errs[0].Message())
 }
 
@@ -369,15 +369,15 @@ func TestStdlibImport_LoaderRule_UnknownJSGlobal(t *testing.T) {
 // so the user knows `Math` is fine and `sni` is the typo.
 func TestStdlibImport_LoaderRule_UnknownJSGlobalMember(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "@js(\"Math.sni\")\nexport declare fn sin(x: number) -> number",
+		"std/example.esc": "@js(\"Math.sni\")\nexport declare fn sin(x: number) -> number",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global (%q has no known runtime member %q)",
-			"Math.sni", "sin", filepath.Join(dir, "js/example.esc"), "Math", "sni"),
+			"Math.sni", "sin", filepath.Join(dir, "std/example.esc"), "Math", "sni"),
 		errs[0].Message())
 }
 
@@ -386,11 +386,11 @@ func TestStdlibImport_LoaderRule_UnknownJSGlobalMember(t *testing.T) {
 // rule 4 even though they don't appear in lib.*.d.ts.
 func TestStdlibImport_LoaderRule_AllowList(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "@js(\"Symbol.customMatcher\")\nexport declare val customMatcher: symbol",
+		"std/example.esc": "@js(\"Symbol.customMatcher\")\nexport declare val customMatcher: symbol",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Empty(t, errorMessages(errs))
 }
 
@@ -401,15 +401,15 @@ func TestStdlibImport_LoaderRule_AllowList(t *testing.T) {
 // mode rule 4 exists to catch.
 func TestStdlibImport_LoaderRule_TypeOnlyGlobalRejected(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
-		"js/example.esc": "@js(\"PromiseLike\")\nexport declare fn p() -> number",
+		"std/example.esc": "@js(\"PromiseLike\")\nexport declare fn p() -> number",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "js:example"`)
+	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global",
-			"PromiseLike", "p", filepath.Join(dir, "js/example.esc")),
+			"PromiseLike", "p", filepath.Join(dir, "std/example.esc")),
 		errs[0].Message())
 }
 
@@ -433,11 +433,11 @@ func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
 	for name, source := range cases {
 		t.Run(name, func(t *testing.T) {
 			dir := makeCustomStdlibDir(t, map[string]string{
-				"js/example.esc": source,
+				"std/example.esc": source,
 			})
 			t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-			_, errs := inferStdlibImportSource(t, `import "js:example"`)
+			_, errs := inferStdlibImportSource(t, `import "std:example"`)
 			require.Empty(t, errorMessages(errs))
 		})
 	}

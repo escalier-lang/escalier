@@ -10,11 +10,11 @@ import (
 )
 
 // makeFakeStdlib creates a directory tree that looksLikeStdlibDir
-// accepts (contains a `js/` subdirectory). Returns the root path.
+// accepts (contains a `std/` subdirectory). Returns the root path.
 func makeFakeStdlib(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "js"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "std"), 0o755))
 	return root
 }
 
@@ -26,10 +26,10 @@ func TestResolveStdlibDir_CLIOverride(t *testing.T) {
 }
 
 func TestResolveStdlibDir_CLIOverrideRejectsBadPath(t *testing.T) {
-	bad := t.TempDir() // empty dir — no js/ subtree
+	bad := t.TempDir() // empty dir — no std/ subtree
 	_, err := resolveStdlibDir(stdlibDirInputs{cliOverride: bad})
 	require.EqualError(t, err,
-		fmt.Sprintf("--stdlib-dir %q does not contain a js/ subdirectory", bad))
+		fmt.Sprintf("--stdlib-dir %q does not contain a std/ subdirectory", bad))
 }
 
 func TestResolveStdlibDir_CLIOverrideBeatsEnv(t *testing.T) {
@@ -51,7 +51,7 @@ func TestResolveStdlibDir_EnvVarRejectsBadPath(t *testing.T) {
 	bad := t.TempDir()
 	_, err := resolveStdlibDir(stdlibDirInputs{envVar: bad})
 	require.EqualError(t, err,
-		fmt.Sprintf("ESCALIER_STDLIB_DIR=%q does not contain a js/ subdirectory", bad))
+		fmt.Sprintf("ESCALIER_STDLIB_DIR=%q does not contain a std/ subdirectory", bad))
 }
 
 func TestResolveStdlibDir_SiblingShareLayout(t *testing.T) {
@@ -60,7 +60,7 @@ func TestResolveStdlibDir_SiblingShareLayout(t *testing.T) {
 	binDir := filepath.Join(install, "bin")
 	share := filepath.Join(install, "share", "escalier", "data")
 	require.NoError(t, os.MkdirAll(binDir, 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(share, "js"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(share, "std"), 0o755))
 	fakeExe := filepath.Join(binDir, "escalier")
 	require.NoError(t, os.WriteFile(fakeExe, []byte{}, 0o755))
 
@@ -73,7 +73,7 @@ func TestResolveStdlibDir_SiblingSingleDirLayout(t *testing.T) {
 	// `<exe-dir>/data/` fallback for single-directory installs.
 	install := t.TempDir()
 	data := filepath.Join(install, "data")
-	require.NoError(t, os.MkdirAll(filepath.Join(data, "js"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(data, "std"), 0o755))
 	fakeExe := filepath.Join(install, "escalier")
 	require.NoError(t, os.WriteFile(fakeExe, []byte{}, 0o755))
 
@@ -84,11 +84,11 @@ func TestResolveStdlibDir_SiblingSingleDirLayout(t *testing.T) {
 
 func TestResolveStdlibDir_RepoRelative(t *testing.T) {
 	// Simulate the build-tree layout: a fake repo root containing
-	// `internal/interop/data/js/`, with the executable nested
+	// `internal/interop/data/std/`, with the executable nested
 	// somewhere inside (mimicking `go run`'s tmp-built binary).
 	root := t.TempDir()
 	data := filepath.Join(root, "internal", "interop", "data")
-	require.NoError(t, os.MkdirAll(filepath.Join(data, "js"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(data, "std"), 0o755))
 	exeDir := filepath.Join(root, "some", "nested", "tmp")
 	require.NoError(t, os.MkdirAll(exeDir, 0o755))
 	fakeExe := filepath.Join(exeDir, "escalier")
@@ -115,13 +115,13 @@ func TestResolveStdlibDir_NoneResolveFatalError(t *testing.T) {
 func TestSetStdlibDirForTest_ResolvesRealRepoData(t *testing.T) {
 	// SetStdlibDirForTest is what other test packages call from TestMain
 	// to point ESCALIER_STDLIB_DIR at the in-repo `internal/interop/data/`
-	// tree. Verify it lands on a directory containing js/.
+	// tree. Verify it lands on a directory containing std/.
 	t.Setenv("ESCALIER_STDLIB_DIR", "")
 	require.NoError(t, SetStdlibDirForTest())
 	dir := os.Getenv("ESCALIER_STDLIB_DIR")
 	require.NotEmpty(t, dir)
 	require.Contains(t, dir, filepath.Join("internal", "interop", "data"))
-	info, err := os.Stat(filepath.Join(dir, "js"))
+	info, err := os.Stat(filepath.Join(dir, "std"))
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
 

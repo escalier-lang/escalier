@@ -4156,29 +4156,29 @@
 
 [TestParseStmtNoErrors/ImportBareWithFlags - 1]
 &ast.ImportStmt{
-    PackageName: "js:math",
+    PackageName: "std:math",
     Flags: []string{
         "flag1",
         "flag2",
     },
-    span: 1:1-1:29,
+    span: 1:1-1:30,
 }
 ---
 
 [TestParseStmtNoErrors/ImportBare - 1]
 &ast.ImportStmt{
-    PackageName: "js:math",
-    span: 1:1-1:17,
+    PackageName: "std:math",
+    span: 1:1-1:18,
 }
 ---
 
 [TestParseStmtNoErrors/ImportBareWithFlag - 1]
 &ast.ImportStmt{
-    PackageName: "js:math",
+    PackageName: "std:math",
     Flags: []string{
         "nested",
     },
-    span: 1:1-1:24,
+    span: 1:1-1:25,
 }
 ---
 
@@ -4190,10 +4190,10 @@
             span: 1:10-1:13,
         },
     },
-    PackageName: "js:math",
+    PackageName: "std:math",
     Flags: []string{
         "local",
     },
-    span: 1:1-1:36,
+    span: 1:1-1:37,
 }
 ---

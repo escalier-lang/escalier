@@ -5,7 +5,7 @@
 Extracted from
 [../interop_mutability/dts_to_esc_proposal.md](../interop_mutability/dts_to_esc_proposal.md).
 That proposal bundles two distinct workstreams: (1) building `.esc`
-files for the JavaScript and Web platform surface as `js:*` and
+files for the JavaScript and Web platform surface as `std:*` and
 `web:*` pseudo-packages, and (2) lazy on-first-compile conversion
 of third-party npm dependencies. This document covers only the
 first workstream. The third-party workstream is explicitly out of
@@ -20,11 +20,11 @@ scope here and will be tracked separately.
 - Eliminate the implicit-globals model entirely. TypeScript exposes
   the whole `lib.dom` surface ambient in every browser program and
   the whole `lib.es*` surface ambient everywhere; Escalier instead
-  puts every name behind an explicit `import "js:*"` /
+  puts every name behind an explicit `import "std:*"` /
   `import "web:*"`, while still letting the checker reason about
   primitive method dispatch, iteration, and `await` from
   language-level shape knowledge.
-- Provide a uniform import model (`import "js:math"`,
+- Provide a uniform import model (`import "std:math"`,
   `import "web:canvas"`) for accessing standard-library and Web
   platform APIs, with per-import flags for choosing the binding
   shape.
@@ -48,13 +48,13 @@ scope here and will be tracked separately.
   assumes polyfilling is tractable (see §"Always-current API"); the
   implementation is a separate effort.
 - **Named imports** from pseudo-packages
-  (`import { x } from "js:..."`). All pseudo-package imports go
+  (`import { x } from "std:..."`). All pseudo-package imports go
   through the namespace forms in FR4. Named imports can be added
   in a follow-up workstream if a concrete need surfaces.
   Qualified-only is the Go convention: reading `math.sin(x)` makes
   the origin of `sin` visible at every call site, which improves
   readability and gives editor tooling an unambiguous target.
-  Encountering a named-import clause on a `js:*` or `web:*` URI
+  Encountering a named-import clause on a `std:*` or `web:*` URI
   is a compile error with a diagnostic that points to the
   namespace-import alternatives.
 
@@ -62,12 +62,12 @@ scope here and will be tracked separately.
 
 In scope:
 
-- A pseudo-package model with `js:*` and `web:*` (and reserved
-  `node:*`) URI-scheme imports under `internal/interop/data/js/`
+- A pseudo-package model with `std:*` and `web:*` (and reserved
+  `node:*`) URI-scheme imports under `internal/interop/data/std/`
   and `internal/interop/data/web/`. **No ambient set** —
   everything lives in a package; nothing is unconditionally visible
   by name.
-- Two-mode loading per `js:*` package: **shape-loaded** invisibly
+- Two-mode loading per `std:*` package: **shape-loaded** invisibly
   per-file based on language-feature usage (primitive method
   dispatch, `await`, iteration, …), and **named** when the file
   explicitly imports the package.
@@ -90,7 +90,7 @@ In scope:
   review tool (`--check`) for TypeScript version bumps, never as a
   build step.
 - Prelude changes: stop walking `lib.*.d.ts`; replace with lazy
-  per-file shape loading of `js:*` packages.
+  per-file shape loading of `std:*` packages.
 - **Adaptive diagnostic rendering** — type names in diagnostics
   use the shortest unambiguous form given the bindings in the file
   where the diagnostic originates.
@@ -118,7 +118,7 @@ In scope:
 There is **no `builtins.esc` ambient set.** Every declaration lives
 in a pseudo-package; nothing is unconditionally visible by name.
 The previous "ambient builtins" tier is gone — replaced by a
-two-mode loading model for `js:*` packages.
+two-mode loading model for `std:*` packages.
 
 The checker treats each pseudo-package's `.esc` file in two modes:
 
@@ -131,7 +131,7 @@ The checker treats each pseudo-package's `.esc` file in two modes:
   well-known symbols referenced by desugarings. No identifier is
   added to user scope; this is purely the checker knowing what the
   language guarantees about its own values.
-- **Named (visible after `import "js:X"`).** Naming a class, type,
+- **Named (visible after `import "std:X"`).** Naming a class, type,
   or value (`Array`, `Promise`, `Error`, `parseInt`, `Partial`,
   `Symbol`, …) requires an explicit import. The bindings exposed
   are exactly the package's top-level declarations.
@@ -140,12 +140,12 @@ The shapes are loaded lazily and per-file: when checking file F,
 the checker inspects which language features F uses and shape-loads
 only the packages those features depend on. Shape-loading is
 purely additive — multiple files in a compilation share a single
-parsed copy of each `js:*` package. The user-visible model is
+parsed copy of each `std:*` package. The user-visible model is
 "the checker just knows" what methods strings/arrays/promises have;
 the lazy-load detail is an implementation concern.
 
 **Package partition.** The canonical, full enumeration of
-every `js:*` and `web:*` package — names, contents, single-
+every `std:*` and `web:*` package — names, contents, single-
 class shortcut eligibility, drops — lives in the partition
 table at [implementation_plan.md §6.1](implementation_plan.md#61-partition-table).
 That table is the single source of truth and the input to the
@@ -157,61 +157,61 @@ Per-class packages — each contains exactly one top-level class
 (and possibly related type aliases or interfaces), and is
 eligible for the single-class shortcut defined in FR5:
 
-- `js:array` — `Array<T>`
-- `js:string`, `js:number`, `js:boolean`, `js:bigint` —
+- `std:array` — `Array<T>`
+- `std:string`, `std:number`, `std:boolean`, `std:bigint` —
   primitive wrapper classes. `parseInt`, `parseFloat`, `isNaN`,
-  `isFinite` live in `js:number` since their domain is numeric
+  `isFinite` live in `std:number` since their domain is numeric
   parsing.
-- `js:regexp` — `RegExp`
-- `js:symbol` — `Symbol`, including **all** well-known symbols
+- `std:regexp` — `RegExp`
+- `std:symbol` — `Symbol`, including **all** well-known symbols
   (`Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.toPrimitive`,
   `Symbol.match`, `Symbol.replace`, …) declared directly on
   `Symbol`'s static side. Domain packages re-export the symbols
   they own as package-local aliases for ergonomics (see FR8) but
   the canonical declaration lives here.
-- `js:object` — `Object`. Also hosts object-shaped utility types:
+- `std:object` — `Object`. Also hosts object-shaped utility types:
   `Partial`, `Required`, `Readonly`, `Pick`, `Omit`, `Record`,
   `Exclude`, `Extract`, `NonNullable`. The last three operate on
-  union types but `js:object` is the pragmatic catch-all for
+  union types but `std:object` is the pragmatic catch-all for
   type-manipulation utilities.
-- `js:function` — `Function`. Also hosts function-shaped utility
+- `std:function` — `Function`. Also hosts function-shaped utility
   types: `Parameters`, `ConstructorParameters`, `ReturnType`,
   `InstanceType`, `ThisParameterType`, `OmitThisParameter`,
   `ThisType`.
 
 Bundled packages — multiple types, no single-class shortcut:
 
-- `js:iterator` — `Iterator<T>`, `Iterable<T>`,
+- `std:iterator` — `Iterator<T>`, `Iterable<T>`,
   `IterableIterator<T>`, `IteratorResult<T>`,
   `Generator<T, R, N>`; re-exports `Symbol.iterator` as `iteratorKey`
   (FR8).
-- `js:async` — `Promise<T>`, `Awaited<T>`, `AsyncIterator<T>`,
+- `std:async` — `Promise<T>`, `Awaited<T>`, `AsyncIterator<T>`,
   `AsyncIterable<T>`, `AsyncGenerator<T, R, N>`, `AggregateError`;
   re-exports `Symbol.asyncIterator` as `asyncIteratorKey` (FR8). Depends on
-  `js:iterator` for the iteration-protocol base. `Promise` lives
-  here rather than in a dedicated `js:promise` because the
+  `std:iterator` for the iteration-protocol base. `Promise` lives
+  here rather than in a dedicated `std:promise` because the
   surface (Promise + async iteration + async errors) is small
   enough to share one package; users write `async.Promise.all(…)`
   under the default `?local` binding shape.
-- `js:error` — `Error`, `TypeError`, `RangeError`, `SyntaxError`,
+- `std:error` — `Error`, `TypeError`, `RangeError`, `SyntaxError`,
   `ReferenceError`. The five ubiquitous ones. Domain-specific
-  errors live with their domain: `URIError` in `js:url`,
-  `AggregateError` in `js:async`. `EvalError` is dropped:
+  errors live with their domain: `URIError` in `std:url`,
+  `AggregateError` in `std:async`. `EvalError` is dropped:
   it is a legacy class tightly coupled to `eval`, `eval` itself
   is dropped from the surface (see "What `globalThis` and `eval`
   do" below), and no modern engine throws `EvalError` from
   language semantics. Consumers that previously named `EvalError`
   (extremely rare) can fall back to `Error` or define a
   user-level error class — no shim is provided.
-- `js:url` — `URIError`, plus the global URI-encoding functions
+- `std:url` — `URIError`, plus the global URI-encoding functions
   `encodeURI`, `decodeURI`, `encodeURIComponent`,
   `decodeURIComponent`. Bundled; no single-class shortcut.
 
-Other `js:*` packages from the existing layout (`math`, `json`,
+Other `std:*` packages from the existing layout (`math`, `json`,
 `console`, `date`, `map`, `set`, `weak_ref`, `typed_arrays`,
 `reflect`, `proxy`, `intl`, `temporal`, `wasm`) are unchanged in
-structure; per-class packages (`js:date`, `js:map`, `js:set`,
-`js:weak_ref`) participate in the single-class shortcut.
+structure; per-class packages (`std:date`, `std:map`, `std:set`,
+`std:weak_ref`) participate in the single-class shortcut.
 
 **What `globalThis` and `eval` do.** Both drop entirely. `eval` has
 no good use case; `globalThis` was the union of every previously-
@@ -221,19 +221,19 @@ union over.
 **Intrinsics, unchanged.** `Uppercase`, `Lowercase`, `Capitalize`,
 `Uncapitalize`, `NoInfer` remain checker-resident handlers; they
 have no source file (see FR13). `Awaited<T>` is source-expressible
-and lives in `js:async` (consumed shape-only by `await`); we
+and lives in `std:async` (consumed shape-only by `await`); we
 fall back to an intrinsic only if a concrete blocker surfaces.
 
 ### FR2. Pseudo-package layout
 
 Every declaration lives in a pseudo-package under
-`internal/interop/data/js/` or `internal/interop/data/web/`. There
+`internal/interop/data/std/` or `internal/interop/data/web/`. There
 is no `builtins.esc` at the data root — the ambient tier is gone
 (see FR1). File layout:
 
 ```
 internal/interop/data/
-    js/
+    std/
         # per-class packages (eligible for single-class shortcut)
         array.esc, string.esc, number.esc, boolean.esc, bigint.esc,
         regexp.esc, promise.esc, symbol.esc, object.esc,
@@ -243,7 +243,7 @@ internal/interop/data/
         # bundled packages
         iterator.esc, async.esc, error.esc, url.esc,
 
-        # other js:* packages
+        # other std:* packages
         math.esc, json.esc, console.esc,
         typed_arrays.esc, reflect.esc, proxy.esc,
         intl.esc, temporal.esc, wasm.esc
@@ -255,12 +255,12 @@ internal/interop/data/
         # additional web:* packages as needed
 ```
 
-DOM packages split more finely than `js/` because the surface is
+DOM packages split more finely than `std/` because the surface is
 larger; a typical browser program touches 2–3 `web:*` packages.
 
 **File-naming convention.** Multi-word package names use underscores
 in both the file name and the user-visible binding so the two
-match: `js/weak_ref.esc` binds as `weak_ref`,
+match: `std/weak_ref.esc` binds as `weak_ref`,
 `web/web_rtc.esc` binds as `web_rtc`. Hyphens do not appear in
 file names.
 
@@ -272,13 +272,13 @@ populating `internal/interop/data/node/` follows the same model.
 The module-specifier grammar accepts a new shape:
 
 ```escalier
-import "js:math"
-import "js:json"
+import "std:math"
+import "std:json"
 import "web:canvas"
 import "web:http"
 ```
 
-We need to **add** support for resolving modules with the `js:`,
+We need to **add** support for resolving modules with the `std:`,
 `web:`, and (reserved) `node:` schemes; nothing in the existing
 resolver recognizes them today. The current module-resolution code
 path is `resolveImport` / `resolveExportModulePath` in
@@ -289,7 +289,7 @@ factored out of there as appropriate) and route scheme-prefixed
 specifiers to the resolved stdlib data directory (see
 "Filesystem-resident stdlib data" in non-functional requirements
 for the discovery scheme). Mapping is mechanical:
-`js:math` → `<stdlib>/js/math.esc`,
+`std:math` → `<stdlib>/std/math.esc`,
 `web:http` → `<stdlib>/web/http.esc`. The `?flag`
 portion of the URI (see FR4) is stripped before path resolution.
 
@@ -297,7 +297,7 @@ portion of the URI (see FR4) is stripped before path resolution.
 forms it does not currently support:
 
 1. **Bare-string imports** with no binding clause:
-   `import "js:math"`. Today the parser requires a named-bindings
+   `import "std:math"`. Today the parser requires a named-bindings
    clause (`import { x } from "..."`) or a namespace alias. The new
    form binds the package per the binding-shape flag in effect (see
    FR4); no `from` keyword is involved.
@@ -318,7 +318,7 @@ cost. The "package" is a type-checking grouping mechanism only.
 **Lowering via `@js` decorators.** Pseudo-package binding names
 are not generally identical to their JS-runtime names
 (`math.sin(x)` lowers to `Math.sin(x)`; `parseInt` from
-`js:number` lowers to bare `parseInt(...)`, not
+`std:number` lowers to bare `parseInt(...)`, not
 `Number.parseInt(...)`; `iterator.iteratorKey` re-export lowers to
 `Symbol.iterator`). Every **exported** top-level declaration in
 a pseudo-package `.esc` file therefore carries a per-declaration
@@ -352,7 +352,7 @@ they are mutually exclusive and exactly one is in effect per import
 - **`?local` (default).** Bind the package's contents under a local
   identifier equal to the lowercased last URI segment. Each import
   is its own binding; no cross-import merging.
-  - `import "js:math"` → `math.sin(x)`, `math.PI`
+  - `import "std:math"` → `math.sin(x)`, `math.PI`
   - `import "web:canvas"` → `canvas.HTMLCanvasElement`
   - **Exception:** when the package qualifies for the single-class
     shortcut (FR5), the `?local` binding is the class name with its
@@ -362,8 +362,8 @@ they are mutually exclusive and exactly one is in effect per import
   package as a sub-namespace. Multiple `?nested` imports from the
   same scheme merge under disjoint sub-namespaces (one per package
   URI). No collision risk.
-  - `import "js:math?nested"` → `js.math.sin(x)`
-  - `import "js:json?nested"` adds `js.json` alongside.
+  - `import "std:math?nested"` → `std.math.sin(x)`
+  - `import "std:json?nested"` adds `std.json` alongside.
 - **`?flat`.** Merge the package's contents directly into a shared
   scheme-named namespace. Multiple `?flat` imports from the same
   scheme merge; package names are dropped from the access path.
@@ -385,9 +385,9 @@ they are mutually exclusive and exactly one is in effect per import
 compile error**; the resolver reports which flag pair is invalid.
 
 **Identifier hygiene.** Package names use underscores, matching
-the file naming convention (FR2): `import "js:typed_arrays"` binds
-as `typed_arrays`, `import "js:typed_arrays?nested"` binds as
-`js.typed_arrays`. For `js:*` and `web:*` pseudo-packages there
+the file naming convention (FR2): `import "std:typed_arrays"` binds
+as `typed_arrays`, `import "std:typed_arrays?nested"` binds as
+`std.typed_arrays`. For `std:*` and `web:*` pseudo-packages there
 is no `-` → `_` substitution because hyphens never appear in their
 URIs. (Third-party npm package names *can* contain hyphens and will
 need a `-` → `_` substitution when computing the binding name; that
@@ -414,8 +414,8 @@ exports of the package are still accessible as namespace members
 on the same binding.
 
 ```escalier
-import "js:array"
-import "js:date"
+import "std:array"
+import "std:date"
 
 let nums = [1, 2, 3]
 Array.isArray(nums)         // class statics
@@ -429,22 +429,22 @@ let d: Date = Date()        // type and constructor
 **Activation rule.** The shortcut applies iff, after lowercasing
 the package's last URI segment, the package declares a top-level
 class whose name matches that lowercased segment case-insensitively.
-`js:array` declares `Array<T>`; the shortcut applies and the
-binding is `Array`. `js:math` declares no `Math` class (it's a
+`std:array` declares `Array<T>`; the shortcut applies and the
+binding is `Array`. `std:math` declares no `Math` class (it's a
 namespace of free functions); no shortcut — the binding stays
 lowercase `math` and `math.sin(x)` works as a plain namespace
-access. `js:iterator` exports several types and no single
+access. `std:iterator` exports several types and no single
 dominant class; no shortcut, binding stays lowercase `iterator`.
 
-**Eligible packages from the FR1 partition.** `js:array` (→
-`Array`), `js:string` (→ `String`), `js:number` (→ `Number`),
-`js:boolean` (→ `Boolean`), `js:bigint` (→ `BigInt`),
-`js:regexp` (→ `RegExp`), `js:symbol` (→ `Symbol`),
-`js:object` (→ `Object`), `js:function` (→ `Function`),
-`js:date` (→ `Date`), `js:map` (→ `Map`), `js:set` (→
-`Set`), `js:weak_ref` (→ `WeakRef`). Each per-class package's
+**Eligible packages from the FR1 partition.** `std:array` (→
+`Array`), `std:string` (→ `String`), `std:number` (→ `Number`),
+`std:boolean` (→ `Boolean`), `std:bigint` (→ `BigInt`),
+`std:regexp` (→ `RegExp`), `std:symbol` (→ `Symbol`),
+`std:object` (→ `Object`), `std:function` (→ `Function`),
+`std:date` (→ `Date`), `std:map` (→ `Map`), `std:set` (→
+`Set`), `std:weak_ref` (→ `WeakRef`). Each per-class package's
 `?local` binding is its class. `Promise` is **not** in this
-list — it lives in `js:async` (bundled, multiple top-level
+list — it lives in `std:async` (bundled, multiple top-level
 classes), so under `?local` the access is `async.Promise.all(…)`
 rather than bare `Promise.all(…)`.
 
@@ -460,10 +460,10 @@ predictable.
 **Not applicable to `?nested` or `?flat`.** Those binding shapes
 do not use the capitalized shortcut form; they follow the
 URI-segment-based rules in FR4. `?nested` binds under
-`scheme.package`, so writes look like `js.array.Array.isArray(nums)`
+`scheme.package`, so writes look like `std.array.Array.isArray(nums)`
 — the package and class names are both explicit. `?flat` drops
 the package name entirely; the class is accessed as
-`js.Array.isArray(nums)`. In both cases the shortcut adds no
+`std.Array.isArray(nums)`. In both cases the shortcut adds no
 value because the class is already directly nameable.
 
 ### FR6. Inter-package imports
@@ -474,7 +474,7 @@ user code. Examples:
 
 - `web/canvas.esc` needs `import "web:dom"` (in some binding shape)
   to extend `HTMLElement`.
-- `js/intl.esc` needs `import "js:date"` to reference `Date`.
+- `std/intl.esc` needs `import "std:date"` to reference `Date`.
 
 There is no implicit "all sibling packages visible" rule, and
 there is no ambient tier (see FR1). The checker shape-loads
@@ -486,18 +486,18 @@ still require an explicit import of the owning package.
 
 **Import cycles between pseudo-packages are permitted.** The
 ordinary cycle-detection rule for user packages does **not** apply
-to imports between `js:*`, `web:*`, and (reserved) `node:*`
+to imports between `std:*`, `web:*`, and (reserved) `node:*`
 packages. The pseudo-package layer naturally contains cycles:
-`js:async` (which owns `Promise<T>`) references `Iterable<T>`
-from `js:iterator`; `js:iterator` may reference `Promise<T>`
-from `js:async` for protocol overlap; `Error` subclasses in
-`js:error` may reference types declared in `js:array` or
-`js:string`; etc. These cycles are purely **type-level** and
+`std:async` (which owns `Promise<T>`) references `Iterable<T>`
+from `std:iterator`; `std:iterator` may reference `Promise<T>`
+from `std:async` for protocol overlap; `Error` subclasses in
+`std:error` may reference types declared in `std:array` or
+`std:string`; etc. These cycles are purely **type-level** and
 **runtime-erased** — the JavaScript runtime exposes all of these
 as pre-existing globals (`Promise`, `Symbol`, `Error`, …), so
 there is no runtime initialization order to worry about. The
 checker accepts cycles within the pseudo-package layer; the
-resolver/dep-graph code must special-case the `js:`, `web:`, and
+resolver/dep-graph code must special-case the `std:`, `web:`, and
 `node:` schemes to skip cycle reporting for imports whose source
 *and* target both live under these schemes.
 
@@ -599,7 +599,7 @@ binding-shape flag — are specified in FR9.
 
 All well-known symbols (`Symbol.iterator`, `Symbol.asyncIterator`,
 `Symbol.match`, `Symbol.toPrimitive`, …) are declared directly on
-`Symbol`'s static side in `js:symbol`. There is **no Symbol
+`Symbol`'s static side in `std:symbol`. There is **no Symbol
 augmentation mechanism**; the registry-based augmentation in FR7
 does not extend to Symbol.
 
@@ -607,18 +607,18 @@ does not extend to Symbol.
 Language-level use of well-known symbols (the `for-of` desugaring
 referencing `Symbol.iterator`, etc.) goes through the checker's
 **shape knowledge** and does not require any import. Explicit
-references via `Symbol.<name>` require importing `js:symbol`.
+references via `Symbol.<name>` require importing `std:symbol`.
 
 **Domain-package aliases.** Each domain package re-exports the
 well-known symbol(s) it cares about under a short package-local
 name, so a file that needs the symbol does not have to import
-`js:symbol` separately. The re-export is a plain
+`std:symbol` separately. The re-export is a plain
 `export declare val` whose `@js` decorator points at the
 canonical `Symbol.<name>` expression — same runtime value, two
 spellings; a file picks whichever reads better:
 
 ```escalier
-import "js:iterator"
+import "std:iterator"
 
 class Range {
     [iterator.iteratorKey]() {
@@ -630,7 +630,7 @@ class Range {
 vs. the dual-import form:
 
 ```escalier
-import "js:symbol"
+import "std:symbol"
 
 class Range {
     [Symbol.iterator]() {
@@ -742,9 +742,9 @@ A one-time seeding tool. A Go binary that:
    receiver mutability into the emitted AST (`self` vs `mut self` on
    each method).
 4. Partitions the resulting declarations into pseudo-package `.esc`
-   files under `js/` or `web/`, per the partition specified in
-   FR1 (e.g. `Array<T>` → `js/array.esc`; `Promise<T>` →
-   `js/async.esc`; `Error` family → `js/error.esc`; etc.). The
+   files under `std/` or `web/`, per the partition specified in
+   FR1 (e.g. `Array<T>` → `std/array.esc`; `Promise<T>` →
+   `std/async.esc`; `Error` family → `std/error.esc`; etc.). The
    partition is driven by a hand-maintained mapping table in the
    converter, not by anything in the `.d.ts`.
 
@@ -765,7 +765,7 @@ A one-time seeding tool. A Go binary that:
    package's augmentation block. Well-known symbols
    (`Symbol.iterator`, `Symbol.asyncIterator`, …) are **not**
    routed — they stay on `Symbol`'s static side in
-   `js/symbol.esc` (FR8). Domain-package re-export aliases
+   `std/symbol.esc` (FR8). Domain-package re-export aliases
    (`iterator.iteratorKey`, `async.asyncIteratorKey`, …) are hand-authored at
    bootstrap, not emitted by the converter.
 6. **Preserves JSDoc.** Leading JSDoc comments attached to TS-side
@@ -787,7 +787,7 @@ A one-time seeding tool. A Go binary that:
    block get `@js("<Namespace>.<fn>")` after the namespace
    flattening of step 2; declarations hoisted from the global
    scope into a partition package (e.g. `parseInt` →
-   `js:number`) get `@js("<bare name>")`. The canonical emitted
+   `std:number`) get `@js("<bare name>")`. The canonical emitted
    shape is `@js("...") export declare <kind> ...`.
    Hand-authored declarations not present in any `.d.ts` (Symbol
    re-exports, `Symbol.customMatcher`) are written with explicit
@@ -837,7 +837,7 @@ The realistic sources of `throws` data are:
   specs publish machine-readable IDL; `@webref/idl` ships curated
   extracts). Plausible future automation lever for `web:*`
   packages; out of scope for the initial bootstrap.
-- **ECMAScript spec (ECMARKUP) annotations** for `js:*` builtins.
+- **ECMAScript spec (ECMARKUP) annotations** for `std:*` builtins.
   No off-the-shelf extractor; a one-shot script could harvest a
   starting set if needed.
 - **Hand-curation of the high-value ~50 entries.** `JSON.parse`,
@@ -864,37 +864,37 @@ Instead, the checker drives two new loading paths:
 
 1. **Lazy shape loading, per file.** Before/while checking file F,
    the checker inspects which language features F uses and parses
-   the corresponding `js:*` packages in shape-only mode (no name
+   the corresponding `std:*` packages in shape-only mode (no name
    bindings added to scope). The trigger map:
 
    - String/number/boolean/bigint literals or operator dispatch on
-     primitive values → `js:string` / `js:number` / `js:boolean`
-     / `js:bigint`.
-   - Array literals → `js:array`.
-   - Regex literals → `js:regexp`.
-   - `async fn` / `await` / `for await x of xs` → `js:async`
+     primitive values → `std:string` / `std:number` / `std:boolean`
+     / `std:bigint`.
+   - Array literals → `std:array`.
+   - Regex literals → `std:regexp`.
+   - `async fn` / `await` / `for await x of xs` → `std:async`
      (one package covers Promise, Awaited, and async iteration).
-   - `for x of xs` / generators → `js:iterator`.
-   - An explicit reference to a `js:error` class name
+   - `for x of xs` / generators → `std:iterator`.
+   - An explicit reference to a `std:error` class name
      (`Error`, `TypeError`, `RangeError`, `SyntaxError`,
      `ReferenceError`) inside a `try` / `catch` / `throw`
      expression or a function's `throws` clause →
-     `js:error`. A bare `try` / `catch` / `throw` /
+     `std:error`. A bare `try` / `catch` / `throw` /
      `throws` with no error-class name does **not** trigger
      shape-loading — `throw "string"` and `throws` clauses
-     listing only user-defined errors leave `js:error`
+     listing only user-defined errors leave `std:error`
      un-loaded.
 
    Multiple files in a compilation share one parsed copy of each
    package; shape-loading is idempotent and additive.
 
-2. **Explicit import loading, named.** `import "js:array"` (or
+2. **Explicit import loading, named.** `import "std:array"` (or
    any binding-shape variant) goes through the standard module
    resolver (FR3) and binds names into F's scope per FR4 / FR5.
 
 The shape-load and named-import paths reuse the same parsed
 declarations; they differ only in whether identifiers are added
-to user scope. There is no bootstrap cycle because each `js:*`
+to user scope. There is no bootstrap cycle because each `std:*`
 package contains only declarations (no value-level expressions
 needing their own prelude).
 
@@ -912,7 +912,7 @@ Escalier-specific extras currently injected via prelude code (e.g.
 `SymbolConstructor.customMatcher` at
 `internal/checker/prelude.go:804–836`) move into the appropriate
 pseudo-package as ordinary source. `Symbol.customMatcher` lives in
-`js:symbol` (or wherever pattern matching's runtime support lands)
+`std:symbol` (or wherever pattern matching's runtime support lands)
 and is hand-authored — the bootstrap converter will not emit it
 because it is not part of any `lib.*.d.ts`.
 
@@ -953,7 +953,7 @@ hook (see escalier-lang/escalier#631).
 
 `Awaited<T>` is **not** in this list. Before resorting to an
 intrinsic implementation, we verify the source-level definition:
-write `Awaited<T>` in `js:async` as the recursive conditional
+write `Awaited<T>` in `std:async` as the recursive conditional
 type (the same shape as TypeScript's definition, per
 escalier-lang/escalier#630), exercise it against a representative
 fixture (nested promises, thenables, mixed `T | Promise<T>`,
@@ -999,10 +999,10 @@ file's scope and picks among:
    render as the capitalized class binding — `Array<number>`,
    `Date.now()` — matching what the user would write.
 2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `js.math.Foo`; `?flat` → `js.Foo`.
+   `?nested` → `std.math.Foo`; `?flat` → `std.Foo`.
 3. **Not imported.** Render as the fully-qualified canonical name
-   (`js:array.Array`) and pair the diagnostic with a "did you mean
-   to `import \"js:array\"`?" hint (see FR16).
+   (`std:array.Array`) and pair the diagnostic with a "did you mean
+   to `import \"std:array\"`?" hint (see FR16).
 
 (Named imports from pseudo-packages are out of scope per Non-goals,
 so the renderer has no "bare name" case to handle.)
@@ -1023,19 +1023,19 @@ in a file that has not imported the owning package, the LSP offers
 a quick-fix that:
 
 1. Adds the appropriate namespace import statement
-   (`import "js:async"`, `import "js:math"`, …).
+   (`import "std:async"`, `import "std:math"`, …).
 2. For single-class shortcut packages (FR5): leaves the bare
    reference unchanged, since the import binding *is* the class
    name in its capitalized form. `Array.isArray(...)` typed
-   without an import → quick-fix adds `import "js:array"` and
+   without an import → quick-fix adds `import "std:array"` and
    leaves the reference as-is; same for `Date.now`,
    `Error(...)`, etc.
 3. For non-shortcut packages: rewrites the bare reference to
    qualify it through the resulting namespace binding. A bare
-   `sin(x)` triggers `import "js:math"` and rewrites the call
+   `sin(x)` triggers `import "std:math"` and rewrites the call
    to `math.sin(x)`. A bare `Promise.all([...])` triggers
-   `import "js:async"` and rewrites to `async.Promise.all([...])`
-   (Promise lives in `js:async` and is not eligible for the
+   `import "std:async"` and rewrites to `async.Promise.all([...])`
+   (Promise lives in `std:async` and is not eligible for the
    single-class shortcut — see FR5).
 
 Named imports from pseudo-packages are out of scope (see
@@ -1100,7 +1100,7 @@ omitted; they belong to the third-party workstream.
    can emit `.esc` for the constructs `lib.*.d.ts` actually uses.
    Riskiest gate; do this first.
 2. **URI-scheme import support.** Extend the parser and module
-   resolver to accept `import "scheme:name"` and route `js:`,
+   resolver to accept `import "scheme:name"` and route `std:`,
    `web:` (and reserved `node:`) prefixes to the resolved stdlib
    data directory. Default `?local`
    namespace-binding semantics. Parse the `?flag` /
@@ -1109,11 +1109,11 @@ omitted; they belong to the third-party workstream.
    time. Initial flag set covers all three binding shapes: `?local`
    (no-op default), `?nested`, `?flat`. Combining any two of these
    three reports a clear error.
-   - **Gate:** a placeholder `js:math` package with a stub
+   - **Gate:** a placeholder `std:math` package with a stub
      `math.PI = 3.14` imports and resolves end-to-end; a
      three-fixture test confirms each flag binds correctly
-     (`?local` → `math.PI`, `?nested` → `js.math.PI`, `?flat` →
-     `js.PI`); a two-package fixture
+     (`?local` → `math.PI`, `?nested` → `std.math.PI`, `?flat` →
+     `std.PI`); a two-package fixture
      (`web:a?flat` + `web:b?flat`) merges into one `web` binding;
      mutually-exclusive flag combos error.
 3. **Cross-package augmentation support.** Confirm that the
@@ -1137,7 +1137,7 @@ omitted; they belong to the third-party workstream.
    - **Gate:** output round-trips through the parser and reads
      naturally to a human.
 5. **Converter productionization.** Add the package-partition
-   table (which TS-lib declaration goes into which `js:*` / `web:*`
+   table (which TS-lib declaration goes into which `std:*` / `web:*`
    package per FR1/FR2), full output paths under
    `internal/interop/data/`, `--check` mode, and the full
    `lib.*.d.ts` set as input. The converter must also detect which
@@ -1148,7 +1148,7 @@ omitted; they belong to the third-party workstream.
      twice produces byte-identical output.
 6. **Stdlib bootstrap.** Run the converter, review the output,
    hand-edit obvious mis-classifications and high-value `throws`
-   annotations across the generated `js/` and `web/` packages,
+   annotations across the generated `std/` and `web/` packages,
    commit.
    - **Gate:** humans review the committed files.
 7. **Internal fixture migration.** Update Escalier's own fixtures
@@ -1199,7 +1199,7 @@ per step.
   — `Promise`, `Error`, and the utility types are now also affected.
   Mitigations: the FR16 auto-import quick-fix (hard requirement,
   not deferred); descriptive error messages on unbound names ("did
-  you mean to `import \"js:async\"`?"); the single-class shortcut
+  you mean to `import \"std:async\"`?"); the single-class shortcut
   (FR5) keeping per-class access terse (`Array.isArray(xs)`,
   `Date.now()`).
 - **Initial bootstrap quality.** The committed files start from
@@ -1234,12 +1234,12 @@ per step.
   only work if codegen can lower modern features to older targets.
   Babel and swc demonstrate it is tractable, but it is its own work
   item that this workstream depends on.
-- **Cross-package references between `js:*` files.** `Promise<T>`
-  in `js:async` references `Iterable<T>` from `js:iterator`;
-  `Array<T>` in `js:array` references the iteration protocol; etc.
+- **Cross-package references between `std:*` files.** `Promise<T>`
+  in `std:async` references `Iterable<T>` from `std:iterator`;
+  `Array<T>` in `std:array` references the iteration protocol; etc.
   The existing module
   loader handles this for user code; just need to confirm it works
-  for shape-loaded `js:*` packages. Probably not an issue.
+  for shape-loaded `std:*` packages. Probably not an issue.
 
 ## Error-message taxonomy
 
@@ -1248,9 +1248,9 @@ resolver / parser boundary. Each gets a distinct, actionable
 diagnostic:
 
 - **Unknown scheme.** `import "foo:bar"` where `foo` is not one
-  of the recognized schemes (`js`, `web`, reserved `node`).
+  of the recognized schemes (`std`, `web`, reserved `node`).
   Message names the scheme and lists the recognized set.
-- **Unknown package within a known scheme.** `import "js:nope"`
+- **Unknown package within a known scheme.** `import "std:nope"`
   where the scheme is valid but no package file exists. Message
   names the scheme, the requested package, and (if cheap) suggests
   near-spelling matches from the resolved stdlib package list.
@@ -1260,11 +1260,11 @@ diagnostic:
 - **Unknown flag.** `?something` that is not a recognized flag.
   Message names the flag and lists the currently-recognized set.
 - **Named import from a pseudo-package URI.** `import { sin } from
-  "js:math"` (named imports from pseudo-packages are out of scope
+  "std:math"` (named imports from pseudo-packages are out of scope
   for this
   workstream). Message explains that pseudo-package imports must
-  use a namespace form (`import "js:math"` or
-  `import "js:math?flat"`) and suggests the rewrite.
+  use a namespace form (`import "std:math"` or
+  `import "std:math?flat"`) and suggests the rewrite.
 - **`?flat` name collision.** Two `?flat` imports under the same
   scheme contributing the same identifier. **Hard error** at the
   second import (per FR4): message names the colliding identifier
@@ -1289,10 +1289,10 @@ Requirements:
 
 - Spans on declarations parsed from stdlib `.esc` files carry the
   **resolved filesystem path** to the file (e.g.
-  `/usr/local/share/escalier/data/js/string.esc`). The file
+  `/usr/local/share/escalier/data/std/string.esc`). The file
   exists on disk and the user can open it directly. When the
   resolved path lies under a well-known install prefix, the
-  diagnostic renderer may abbreviate it as `<stdlib>/js/string.esc`
+  diagnostic renderer may abbreviate it as `<stdlib>/std/string.esc`
   for compactness, but the underlying span still carries the real
   path so editor click-through works.
 - Line/column information from the parser must be preserved so
@@ -1308,10 +1308,10 @@ Requirements:
 
 ## Testing strategy
 
-- **Parser tests.** Bare-string imports (`import "js:math"`),
+- **Parser tests.** Bare-string imports (`import "std:math"`),
   `?flag` and `?flag1&flag2` suffix parsing. Round-trip via the
   printer.
-- **Resolver tests.** End-to-end resolution of `js:`, `web:`,
+- **Resolver tests.** End-to-end resolution of `std:`, `web:`,
   `node:` (reserved → clear error) schemes; unknown scheme; known
   scheme + unknown package; `?flag` stripping before path lookup.
 - **Binding-shape tests** (per FR4). Fixture per shape (`?local`,
@@ -1327,8 +1327,8 @@ Requirements:
   refer to the same runtime value as `Symbol.<name>` via the
   `@js("Symbol.<name>")` decorator; verify that a class
   implementing `[iterator.iteratorKey]()` is recognized as iterable by
-  `for-of` (importing `js:iterator` alone, without
-  `js:symbol`).
+  `for-of` (importing `std:iterator` alone, without
+  `std:symbol`).
 - **Augmentation activation tests** (per FR9). Per-file scoping:
   sibling file without the import does not see augmentations.
   Transitive propagation: `export * from "web:canvas"` propagates
@@ -1336,7 +1336,7 @@ Requirements:
   not. Flag independence: augmentation visibility is identical
   under `?local`, `?nested`, and `?flat`.
 - **Prelude switchover.** Internal fixtures are migrated to
-  `import "js:*"` (migration step 7) before the legacy path is
+  `import "std:*"` (migration step 7) before the legacy path is
   deleted (step 8); the test suite passes on the new path alone
   after step 8. No parity check against the legacy path: it is
   deleted in the same PR rather than kept behind a flag (pre-1.0).
@@ -1350,7 +1350,7 @@ Requirements:
   test: unimported reference produces a diagnostic; quick-fix
   applies the namespace import and the resulting source compiles.
 - **Named-import rejection** (per Non-goals). Fixture where a file
-  writes `import { x } from "js:math"`; assert the diagnostic
+  writes `import { x } from "std:math"`; assert the diagnostic
   fires with the message from the error-message taxonomy.
 - **Snapshot tests via `go-snaps`.** Generated `.esc` output from
   the bootstrap converter has snapshots; `tools/dts_to_esc/
@@ -1377,7 +1377,7 @@ them for day-to-day use:
 - **Diagnostic-assisted unbound-name suggestions.** When a name
   matching a known pseudo-package export is referenced without
   an import, the unbound-name diagnostic suggests "did you mean
-  to `import \"js:async\"`?". The suggestion list is derived
+  to `import \"std:async\"`?". The suggestion list is derived
   mechanically from the resolved stdlib data directory. This is
   the fallback for command-line use; users in a supported editor
   get the FR16 quick-fix instead.

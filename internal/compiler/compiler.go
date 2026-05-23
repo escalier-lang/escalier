@@ -249,7 +249,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			IsPatMatch: false,
 		}
 		// InferModule (rather than the lower-level InferDepGraph) so
-		// per-file imports — including pseudo-package `import "js:*"`
+		// per-file imports — including pseudo-package `import "std:*"`
 		// statements — are processed before declarations are checked.
 		// It returns the dep_graph it builds in Phase 2; we reuse that
 		// here for codegen instead of rebuilding from scratch.

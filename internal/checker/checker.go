@@ -60,7 +60,7 @@ type Checker struct {
 	// identifier merged via `?flat`. Used to produce taxonomy-aligned
 	// "?flat name collision" diagnostics that name the prior package.
 	// Outer key is the file scope, middle key is the scheme
-	// (`js`/`web`), inner key is the identifier; value is the
+	// (`std`/`web`), inner key is the identifier; value is the
 	// contributing URI (e.g. `web:canvas`).
 	flatContributors map[*Scope]map[string]map[string]string
 }

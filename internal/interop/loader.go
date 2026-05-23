@@ -134,7 +134,7 @@ func parseFromFS(
 		if d.IsDir() {
 			// The shared `internal/interop/data/` parent holds both
 			// override subtrees (builtins/, libs/) and the new stdlib
-			// scheme subtrees (js/, web/, node/) introduced by the
+			// scheme subtrees (std/, web/, node/) introduced by the
 			// builtins workstream. The override loader has no business
 			// in the scheme subtrees, so skip them at the top level.
 			if p != root && isStdlibSchemeSubtree(p, root) {

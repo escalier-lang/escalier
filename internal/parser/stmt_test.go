@@ -315,16 +315,16 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: `import * as ns from "module"`,
 		},
 		"ImportBare": {
-			input: `import "js:math"`,
+			input: `import "std:math"`,
 		},
 		"ImportBareWithFlag": {
-			input: `import "js:math?nested"`,
+			input: `import "std:math?nested"`,
 		},
 		"ImportBareWithFlags": {
-			input: `import "js:math?flag1&flag2"`,
+			input: `import "std:math?flag1&flag2"`,
 		},
 		"ImportNamedWithFlag": {
-			input: `import { foo } from "js:math?local"`,
+			input: `import { foo } from "std:math?local"`,
 		},
 		"ForInBasic": {
 			input: `for item in items { console.log(item) }`,

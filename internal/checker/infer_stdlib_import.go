@@ -18,7 +18,7 @@ import (
 // resolver recognizes for pseudo-package imports. The slice form is
 // used only for the "unknown scheme" diagnostic; membership tests go
 // through stdlibSchemesSet.
-var stdlibSchemes = []string{"js", "web", "node"}
+var stdlibSchemes = []string{"std", "web", "node"}
 
 // stdlibSchemesSet is the membership view of stdlibSchemes.
 var stdlibSchemesSet = set.FromSlice(stdlibSchemes)
@@ -35,7 +35,7 @@ type stdlibBindingShape struct {
 }
 
 // isSchemePrefixedImport reports whether spec begins with one of the
-// recognized scheme prefixes (`js:`, `web:`, `node:`) or any other
+// recognized scheme prefixes (`std:`, `web:`, `node:`) or any other
 // lowercase `<word>:` shape. Anything matching the second branch but
 // not the first is routed to the stdlib loader so the user gets the
 // taxonomy-aligned "unknown scheme" diagnostic rather than the npm
@@ -384,7 +384,7 @@ func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Na
 		// TODO (§2.4): also expose other package exports as namespace
 		// members on the same binding, with static methods winning on
 		// collision. Deferred until a stdlib package actually has both
-		// a class and non-class exports — the current `js:array` stub
+		// a class and non-class exports — the current `std:array` stub
 		// has only the class.
 		return nil
 	}
