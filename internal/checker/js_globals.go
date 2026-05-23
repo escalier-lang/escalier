@@ -33,6 +33,12 @@ var jsGlobalsAllowList = set.FromSlice([]string{
 //     to the aliased interface, so type-only constructor interfaces
 //     (MathConstructor, ArrayConstructor, …) still surface their
 //     members via the value-side binding;
+//   - every top-level name in GlobalScope.Namespace.Namespaces and,
+//     for each such namespace N, "N.<key>" for every value-level
+//     binding in that sub-namespace — covering `declare namespace`
+//     globals (`Intl`, `Reflect`, `WebAssembly`) and their members
+//     (`Intl.Collator`, …) which the type system represents as
+//     sub-Namespaces rather than object-typed Values;
 //   - jsGlobalsAllowList entries (hand-authored Escalier additions).
 //
 // Symbol-keyed and numeric-keyed members are skipped — no current or
@@ -64,6 +70,15 @@ func (c *Checker) knownJSGlobals() set.Set[string] {
 			continue
 		}
 		for _, member := range objectMemberNames(binding.Type) {
+			result.Add(name + "." + member)
+		}
+	}
+	for name, ns := range c.GlobalScope.Namespace.Namespaces {
+		result.Add(name)
+		if ns == nil {
+			continue
+		}
+		for member := range ns.Values {
 			result.Add(name + "." + member)
 		}
 	}

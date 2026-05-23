@@ -424,6 +424,11 @@ func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
 		"NamespaceMem":   "@js(\"Math.PI\")\nexport declare val PI: number",
 		"ClassCtor":      "@js(\"Date\")\nexport declare class Date { constructor(mut self) }",
 		"ClassStaticMem": "@js(\"Array.isArray\")\nexport declare fn isArray(v: unknown) -> boolean",
+		// `Intl` lands in GlobalScope.Namespace.Namespaces (a
+		// sub-Namespace), not .Values — `declare namespace Intl { ... }`
+		// in lib.es5. Rule 4 must walk sub-namespaces too.
+		"DeclaredNs":       "@js(\"Intl\")\nexport declare val Intl: unknown",
+		"DeclaredNsMember": "@js(\"Intl.Collator\")\nexport declare val Collator: unknown",
 	}
 	for name, source := range cases {
 		t.Run(name, func(t *testing.T) {
