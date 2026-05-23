@@ -42,7 +42,7 @@ type Checker struct {
 	OverrideStore *interop.OverrideStore
 
 	// Stdlib data directory (resolved lazily on first scheme-prefixed
-	// import). Holds the path that contains the `js/`, `web/`, and
+	// import). Holds the path that contains the `std/`, `web/`, and
 	// `node/` subtrees. stdlibDirOnce gates the resolution so the
 	// fatal-on-missing diagnostic fires at most once per Checker; the
 	// error is reported as a regular import error at the offending
@@ -60,7 +60,7 @@ type Checker struct {
 	// identifier merged via `?flat`. Used to produce taxonomy-aligned
 	// "?flat name collision" diagnostics that name the prior package.
 	// Outer key is the file scope, middle key is the scheme
-	// (`js`/`web`), inner key is the identifier; value is the
+	// (`std`/`web`), inner key is the identifier; value is the
 	// contributing URI (e.g. `web:canvas`).
 	flatContributors map[*Scope]map[string]map[string]string
 }

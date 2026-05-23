@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"js:math\"\n\nexport val pi: number = math.PI\n"],"names":[],"mappings":"aAEW,AAAA,KAAa,AAAA,KAAA"}
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"std:math\"\n\nexport val pi: number = math.PI\n"],"names":[],"mappings":"aAEW,AAAA,KAAa,AAAA,KAAA"}

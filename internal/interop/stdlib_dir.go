@@ -8,7 +8,7 @@ import (
 )
 
 // StdlibDir resolves the on-disk directory containing the stdlib `.esc`
-// files (`js/`, `web/`, `node/` subtrees) shipped with the compiler.
+// files (`std/`, `web/`, `node/` subtrees) shipped with the compiler.
 // The path returned is the directory that contains those subtrees, not
 // one of the subtrees themselves.
 //
@@ -26,7 +26,7 @@ import (
 //     work without setup.
 //
 // Both `cliOverride` and the env var must point at a directory that
-// contains a `js/` subdirectory; otherwise the call errors without
+// contains a `std/` subdirectory; otherwise the call errors without
 // falling through. The sibling and repo-relative paths silently skip
 // when the candidate doesn't exist. If nothing resolves, the returned
 // error names every discovery channel so the caller can surface a
@@ -53,7 +53,7 @@ func resolveStdlibDir(in stdlibDirInputs) (string, error) {
 	if in.cliOverride != "" {
 		if !looksLikeStdlibDir(in.cliOverride) {
 			return "", fmt.Errorf(
-				"--stdlib-dir %q does not contain a js/ subdirectory",
+				"--stdlib-dir %q does not contain a std/ subdirectory",
 				in.cliOverride,
 			)
 		}
@@ -62,7 +62,7 @@ func resolveStdlibDir(in stdlibDirInputs) (string, error) {
 	if in.envVar != "" {
 		if !looksLikeStdlibDir(in.envVar) {
 			return "", fmt.Errorf(
-				"ESCALIER_STDLIB_DIR=%q does not contain a js/ subdirectory",
+				"ESCALIER_STDLIB_DIR=%q does not contain a std/ subdirectory",
 				in.envVar,
 			)
 		}
@@ -100,7 +100,7 @@ func resolveStdlibDir(in stdlibDirInputs) (string, error) {
 // dir — to find the repo root.
 //
 // Call from TestMain in each test package that transitively resolves
-// `js:`/`web:`/`node:` imports. Current call sites include
+// `std:`/`web:`/`node:` imports. Current call sites include
 // `internal/interop`, `internal/checker/tests`, and any future test
 // package whose checker reaches the stdlib resolver.
 //
@@ -122,7 +122,7 @@ func SetStdlibDirForTest() error {
 }
 
 // isStdlibSchemeSubtree reports whether p, relative to root, names a
-// top-level scheme subdirectory (`js`, `web`, `node`) that belongs to
+// top-level scheme subdirectory (`std`, `web`, `node`) that belongs to
 // the builtins workstream rather than the override system. The
 // override loader uses this to skip those subtrees while walking the
 // shared `internal/interop/data/` directory.
@@ -130,23 +130,23 @@ func isStdlibSchemeSubtree(p, root string) bool {
 	rel := p
 	if root != "" && root != "." {
 		// fs.WalkDir paths are joined under root with `/`; strip the
-		// `<root>/` prefix so "<root>/js" becomes "js". TrimPrefix is
+		// `<root>/` prefix so "<root>/std" becomes "std". TrimPrefix is
 		// a no-op when there's no match, which leaves `rel == p` for
 		// callers that pass an already-relative path.
 		rel = strings.TrimPrefix(rel, root+"/")
 	}
 	switch rel {
-	case "js", "web", "node":
+	case "std", "web", "node":
 		return true
 	}
 	return false
 }
 
 // looksLikeStdlibDir reports whether path looks like a stdlib data
-// directory — i.e. contains a `js/` subdirectory. The `web/` and
+// directory — i.e. contains a `std/` subdirectory. The `web/` and
 // `node/` subtrees are not required; either may be absent in a stripped
 // distribution.
 func looksLikeStdlibDir(path string) bool {
-	info, err := os.Stat(filepath.Join(path, "js"))
+	info, err := os.Stat(filepath.Join(path, "std"))
 	return err == nil && info.IsDir()
 }

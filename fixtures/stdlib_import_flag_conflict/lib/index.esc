@@ -1,1 +1,1 @@
-import "js:math?local&flat"
+import "std:math?local&flat"
