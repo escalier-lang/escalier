@@ -167,12 +167,8 @@ func isRecognizedScheme(scheme string) bool {
 	return stdlibSchemesSet.Contains(scheme)
 }
 
-// resolveStdlibFlags validates the parsed flag list. `?local` is
-// currently the only shape flag; reports unknown-flag and
-// duplicate-flag diagnostics per the taxonomy. There is no
-// "mutually exclusive" case to surface (only one shape exists), but
-// the table-driven check leaves room for future flags
-// (`?type-only`, `?lazy`, …) to slot in without restructuring.
+// resolveStdlibFlags validates the parsed flag list against
+// stdlibKnownFlags, reporting unknown- and duplicate-flag diagnostics.
 func resolveStdlibFlags(flags []string, span ast.Span) []Error {
 	if len(flags) == 0 {
 		return nil

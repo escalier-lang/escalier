@@ -139,6 +139,15 @@ func TestStdlibImport_UnknownFlag(t *testing.T) {
 	)
 }
 
+func TestStdlibImport_DuplicateFlag(t *testing.T) {
+	_, errs := inferStdlibImportSource(t, `import "std:math?local&local"`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		`duplicate import flag "local"`,
+		errs[0].Message(),
+	)
+}
+
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {
 	// std:array stub exposes `class Array<T>` — FR5 binds the class
 	// with its original capitalization (not lowercased "array").
