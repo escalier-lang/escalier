@@ -322,9 +322,9 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 // room for future decorators, so this rule lives in the loader.
 func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 	cases := map[string]string{
-		"NonStringArg":  "@js(123)\nexport declare val PI: number",
-		"MultipleArgs":  "@js(\"a\", \"b\")\nexport declare val PI: number",
-		"NoArgs":        "@js()\nexport declare val PI: number",
+		"NonStringArg": "@js(123)\nexport declare val PI: number",
+		"MultipleArgs": "@js(\"a\", \"b\")\nexport declare val PI: number",
+		"NoArgs":       "@js()\nexport declare val PI: number",
 	}
 	for name, source := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -450,6 +450,12 @@ func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
 // .getContext("webgl") -> WebGLRenderingContext` ↔ `WebGLRenderingContext
 // .canvas: HTMLCanvasElement` pair — load as a single merged module
 // so each side's qualified type references into the other resolve.
+//
+// The user-side import uses the default binding shape (no flag →
+// ?local), exercising the singleton-namespace binding path on top of
+// a cyclic load. Intra-SCC imports still use ?nested because the
+// cross-package type references inside the merged module are written
+// with `web.<pkg>` qualified paths.
 func TestStdlibImport_PseudoPackageCycle(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/dom.esc": `
@@ -472,19 +478,17 @@ export declare class WebGLRenderingContext {
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
 	fileScopes, errs := inferStdlibImportSource(t, `
-import "web:dom?nested"
+import "web:dom"
 
-export declare fn make() -> web.dom.HTMLCanvasElement
+export declare fn make() -> dom.HTMLCanvasElement
 `)
 	require.Empty(t, errorMessages(errs))
 
 	fileScope := fileScopes[0]
-	webNs, ok := fileScope.Namespace.GetNamespace("web")
-	require.True(t, ok, "expected web namespace bound in importing file")
-	domNs, ok := webNs.GetNamespace("dom")
-	require.True(t, ok, "expected web.dom sub-namespace")
+	domNs, ok := fileScope.Namespace.GetNamespace("dom")
+	require.True(t, ok, "expected dom namespace bound at file scope (default ?local)")
 	_, hasCanvas := domNs.Types["HTMLCanvasElement"]
-	require.True(t, hasCanvas, "HTMLCanvasElement should be exposed via web.dom")
+	require.True(t, hasCanvas, "HTMLCanvasElement should be exposed via dom")
 }
 
 // TestStdlibImport_PseudoPackageCycleThreeWay verifies SCC handling
@@ -525,10 +529,67 @@ export declare class ClassC {
 	require.Empty(t, errorMessages(errs))
 }
 
+// TestStdlibImport_PseudoPackageCycle_NonCyclicImporter pins that a
+// pseudo-package which imports into a cycle but isn't itself part of
+// the cycle is loaded via the normal singleton path, not absorbed
+// into the merged SCC load. `web:app → web:dom ↔ web:webgl`: app is a
+// one-way importer of the cycle and must remain its own SCC.
+func TestStdlibImport_PseudoPackageCycle_NonCyclicImporter(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("WebGLRenderingContext")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+		"web/app.esc": `
+import "web:dom?nested"
+
+@js("Map")
+export declare class App {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "web:app?nested"
+import "web:dom?nested"
+import "web:webgl?nested"
+`)
+	require.Empty(t, errorMessages(errs))
+
+	webNs, ok := fileScopes[0].Namespace.GetNamespace("web")
+	require.True(t, ok)
+	for _, pkg := range []string{"app", "dom", "webgl"} {
+		_, ok := webNs.GetNamespace(pkg)
+		require.True(t, ok, "expected web.%s sub-namespace", pkg)
+	}
+}
+
 // TestStdlibImport_PseudoPackageCycleMixedSchemes verifies the SCC
 // loader handles cross-scheme cycles (a `std:*` package importing a
 // `web:*` package and vice versa) as a single merged load, not just
 // cycles confined to a single scheme.
+//
+// The user-side imports use the default binding shape (no flag →
+// ?local). Both packages expose a single class whose name matches the
+// pkg name case-insensitively (`Host`/`host`, `Client`/`client`), so
+// the §FR5 single-class shortcut fires: the class names bind directly
+// at file scope rather than under a `host`/`client` namespace. This
+// proves the shortcut path stacks correctly on top of the cyclic
+// merged load.
 func TestStdlibImport_PseudoPackageCycleMixedSchemes(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"std/host.esc": `
@@ -550,11 +611,20 @@ export declare class Client {
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `
-import "std:host?nested"
-import "web:client?nested"
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "std:host"
+import "web:client"
+
+export declare fn makeHost() -> Host
+export declare fn makeClient() -> Client
 `)
 	require.Empty(t, errorMessages(errs))
+
+	fileScope := fileScopes[0]
+	_, hasHostType := fileScope.Namespace.Types["Host"]
+	require.True(t, hasHostType, "single-class shortcut should bind Host directly at file scope")
+	_, hasClientType := fileScope.Namespace.Types["Client"]
+	require.True(t, hasClientType, "single-class shortcut should bind Client directly at file scope")
 }
 
 // TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI pins the
