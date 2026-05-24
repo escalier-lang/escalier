@@ -121,6 +121,17 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 		return errs
 	}
 
+	// Intra-SCC short-circuit. When we're inside a merged-SCC load and
+	// the import targets another member of the same SCC, the merged
+	// module's namespace tree already exposes that member at its
+	// derived `<scheme>.<pkg>` path through the module-scope namespace.
+	// A file-scope bind here would just shadow that live, populating
+	// namespace with an empty filtered copy because the target package
+	// hasn't gone through its placeholder phase yet.
+	if c.activeSCC[importStmt.PackageName] {
+		return errs
+	}
+
 	// --- Resolution + load phase. ---
 
 	filePath, resolveErrs := c.resolveStdlibPath(scheme, pkg, span)
@@ -301,6 +312,22 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 		// are permitted" note.
 		return pkgNs, nil
 	}
+
+	// Cycle-aware path: if this URI is part of an SCC of size > 1,
+	// load every member as a single merged module so cross-package type
+	// references resolve through the dep_graph's own SCC handling.
+	scc, sccErr := c.stdlibSCCFor(uri)
+	if sccErr != nil {
+		return nil, []Error{&GenericError{message: sccErr.Error(), span: span}}
+	}
+	if len(scc) > 1 {
+		if errs := c.loadStdlibSCC(scc, span); len(errs) > 0 {
+			return nil, errs
+		}
+		pkgNs, _ := c.PackageRegistry.Lookup(uri)
+		return pkgNs, nil
+	}
+
 	c.PackageRegistry.MarkInProgress(uri)
 
 	contents, err := os.ReadFile(filePath)

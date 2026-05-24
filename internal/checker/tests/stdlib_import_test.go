@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -441,4 +442,198 @@ func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
 			require.Empty(t, errorMessages(errs))
 		})
 	}
+}
+
+// TestStdlibImport_PseudoPackageCycle pins §4.3's "cycles between
+// pseudo-packages are permitted" rule. Two `web:*` packages with a
+// mutual import — modeled on the canonical `HTMLCanvasElement
+// .getContext("webgl") -> WebGLRenderingContext` ↔ `WebGLRenderingContext
+// .canvas: HTMLCanvasElement` pair — load as a single merged module
+// so each side's qualified type references into the other resolve.
+func TestStdlibImport_PseudoPackageCycle(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("WebGLRenderingContext")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "web:dom?nested"
+
+export declare fn make() -> web.dom.HTMLCanvasElement
+`)
+	require.Empty(t, errorMessages(errs))
+
+	fileScope := fileScopes[0]
+	webNs, ok := fileScope.Namespace.GetNamespace("web")
+	require.True(t, ok, "expected web namespace bound in importing file")
+	domNs, ok := webNs.GetNamespace("dom")
+	require.True(t, ok, "expected web.dom sub-namespace")
+	_, hasCanvas := domNs.Types["HTMLCanvasElement"]
+	require.True(t, hasCanvas, "HTMLCanvasElement should be exposed via web.dom")
+}
+
+// TestStdlibImport_PseudoPackageCycleThreeWay verifies SCC handling
+// generalizes beyond pairs: three packages in a 3-cycle still resolve
+// each other's qualified references.
+func TestStdlibImport_PseudoPackageCycleThreeWay(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/a.esc": `
+import "web:b?nested"
+
+@js("Map")
+export declare class ClassA {
+    refB: web.b.ClassB,
+}
+`,
+		"web/b.esc": `
+import "web:c?nested"
+
+@js("Set")
+export declare class ClassB {
+    refC: web.c.ClassC,
+}
+`,
+		"web/c.esc": `
+import "web:a?nested"
+
+@js("WeakMap")
+export declare class ClassC {
+    refA: web.a.ClassA,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "web:a?nested"`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_PseudoPackageCycleMixedSchemes verifies the SCC
+// loader handles cross-scheme cycles (a `std:*` package importing a
+// `web:*` package and vice versa) as a single merged load, not just
+// cycles confined to a single scheme.
+func TestStdlibImport_PseudoPackageCycleMixedSchemes(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"std/host.esc": `
+import "web:client?nested"
+
+@js("Map")
+export declare class Host {
+    client: web.client.Client,
+}
+`,
+		"web/client.esc": `
+import "std:host?nested"
+
+@js("Set")
+export declare class Client {
+    host: std.host.Host,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "std:host?nested"
+import "web:client?nested"
+`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI pins the
+// diagnostic-label fix: when an SCC member fails the §3.4 `@js` rules,
+// the error message must identify the offending member by URI
+// (e.g. `web:webgl`) rather than by an opaque synthetic SCC label.
+func TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("ThisGlobalDoesNotExist")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "web:dom?nested"`)
+	msgs := errorMessages(errs)
+	require.NotEmpty(t, msgs, "expected an @js validation error")
+
+	joined := strings.Join(msgs, "\n")
+	require.Contains(t, joined, "web:webgl",
+		"diagnostic should name the offending member URI, got: %s", joined)
+	require.NotContains(t, joined, "SCC{",
+		"diagnostic should not leak the synthetic SCC label, got: %s", joined)
+}
+
+// TestStdlibImport_PseudoPackageCycle_RollbackOnFailure verifies that
+// when an SCC load fails (decorator-rule violation in one member), the
+// PackageRegistry is rolled back so a subsequent import of any member
+// re-attempts the load and surfaces the same diagnostic. Without
+// rollback, the second import would silently succeed against an empty
+// staged namespace.
+func TestStdlibImport_PseudoPackageCycle_RollbackOnFailure(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("ThisGlobalDoesNotExist")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	// Two imports in the same file share one Checker. The first triggers
+	// the SCC load (and fails); the second targets the *other* member.
+	// With rollback, both report the same underlying decorator error.
+	// Without rollback, the second silently binds an empty namespace and
+	// produces no diagnostic.
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom?nested"
+import "web:webgl?nested"
+`)
+	msgs := errorMessages(errs)
+	hits := 0
+	for _, m := range msgs {
+		if strings.Contains(m, "ThisGlobalDoesNotExist") {
+			hits++
+		}
+	}
+	require.GreaterOrEqual(t, hits, 2,
+		"expected the decorator error to surface for both imports (rollback should re-attempt the load); got msgs: %v", msgs)
 }

@@ -1,0 +1,346 @@
+package checker
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/type_system"
+)
+
+// schemesWithSCCSupport lists the URI schemes whose pseudo-packages
+// participate in cycle-aware loading. node:* is reserved and skipped
+// until the node loader lands; mixing schemes is allowed by the graph
+// (e.g. a web:* package importing std:*), but cycles always stay
+// confined to these schemes — user packages don't appear in this graph.
+var schemesWithSCCSupport = []string{"std", "web"}
+
+// stdlibSCCFor returns the SCC containing uri. The returned slice
+// always contains uri itself; length > 1 means the package is part
+// of a real cycle and must be loaded via loadStdlibSCC.
+func (c *Checker) stdlibSCCFor(uri string) ([]string, error) {
+	c.stdlibSCCOnce.Do(func() {
+		c.stdlibSCCByURI, c.stdlibSCCErr = c.buildStdlibPkgGraph()
+	})
+	if c.stdlibSCCErr != nil {
+		return nil, c.stdlibSCCErr
+	}
+	if scc, ok := c.stdlibSCCByURI[uri]; ok {
+		return scc, nil
+	}
+	// URI isn't in the discovered graph (e.g. a not-yet-existing pkg);
+	// treat as a singleton so the normal load path runs and reports the
+	// not-found diagnostic.
+	return []string{uri}, nil
+}
+
+// buildStdlibPkgGraph scans every `.esc` file under the stdlib data
+// directory's recognized scheme subdirectories, parses just its
+// imports, and computes the SCC each URI belongs to.
+func (c *Checker) buildStdlibPkgGraph() (map[string][]string, error) {
+	dir, err := c.getStdlibDir()
+	if err != nil {
+		return nil, err
+	}
+
+	edges := map[string][]string{}
+	for _, scheme := range schemesWithSCCSupport {
+		schemeDir := filepath.Join(dir, scheme)
+		entries, err := os.ReadDir(schemeDir)
+		if err != nil {
+			// Missing scheme subdir is fine — just no packages there.
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("cannot scan %s/: %w", schemeDir, err)
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".esc") {
+				continue
+			}
+			pkg := strings.TrimSuffix(e.Name(), ".esc")
+			uri := scheme + ":" + pkg
+			path := filepath.Join(schemeDir, e.Name())
+			imports, ierr := c.extractPseudoPackageImports(path)
+			if ierr != nil {
+				return nil, ierr
+			}
+			edges[uri] = imports
+		}
+	}
+
+	sccs := tarjanSCCs(edges)
+	out := map[string][]string{}
+	for _, scc := range sccs {
+		// Deterministic order so tests and diagnostics are stable.
+		sort.Strings(scc)
+		for _, uri := range scc {
+			out[uri] = scc
+		}
+	}
+	return out, nil
+}
+
+// extractPseudoPackageImports parses path and returns the package
+// names of every `import "<scheme>:..."` statement whose scheme is in
+// schemesWithSCCSupport.
+func (c *Checker) extractPseudoPackageImports(path string) ([]string, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	src := &ast.Source{ID: 0, Path: filepath.Base(path), Contents: string(contents)}
+	mod, _ := parser.ParseLibFiles(c.ctx, []*ast.Source{src})
+	// Parse errors are intentionally ignored here: the SCC scan only
+	// cares about import statements. The same file is parsed again at
+	// real-load time, and any parse errors surface there with the
+	// proper diagnostic plumbing.
+
+	var out []string
+	for _, file := range mod.Files {
+		for _, imp := range file.Imports {
+			scheme, _, ok := splitScheme(imp.PackageName)
+			if !ok {
+				continue
+			}
+			if slices.Contains(schemesWithSCCSupport, scheme) {
+				out = append(out, imp.PackageName)
+			}
+		}
+	}
+	return out, nil
+}
+
+// tarjanSCCs runs Tarjan's strongly-connected-components algorithm
+// over the adjacency list `edges`. Nodes referenced only as targets
+// (not present as keys) are included as singletons. Returns one slice
+// per SCC.
+func tarjanSCCs(edges map[string][]string) [][]string {
+	index := 0
+	indices := map[string]int{}
+	lowlink := map[string]int{}
+	onStack := map[string]bool{}
+	stack := []string{}
+	var sccs [][]string
+
+	// Gather all nodes (sources + targets) so isolated importees are
+	// represented even if they have no outgoing edges.
+	nodeSet := map[string]bool{}
+	for n, succs := range edges {
+		nodeSet[n] = true
+		for _, s := range succs {
+			nodeSet[s] = true
+		}
+	}
+	nodes := make([]string, 0, len(nodeSet))
+	for n := range nodeSet {
+		nodes = append(nodes, n)
+	}
+	sort.Strings(nodes) // deterministic traversal
+
+	var strongconnect func(v string)
+	strongconnect = func(v string) {
+		indices[v] = index
+		lowlink[v] = index
+		index++
+		stack = append(stack, v)
+		onStack[v] = true
+
+		for _, w := range edges[v] {
+			if _, seen := indices[w]; !seen {
+				strongconnect(w)
+				if lowlink[w] < lowlink[v] {
+					lowlink[v] = lowlink[w]
+				}
+			} else if onStack[w] {
+				if indices[w] < lowlink[v] {
+					lowlink[v] = indices[w]
+				}
+			}
+		}
+
+		if lowlink[v] == indices[v] {
+			var scc []string
+			for {
+				w := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				onStack[w] = false
+				scc = append(scc, w)
+				if w == v {
+					break
+				}
+			}
+			sccs = append(sccs, scc)
+		}
+	}
+
+	for _, n := range nodes {
+		if _, seen := indices[n]; !seen {
+			strongconnect(n)
+		}
+	}
+	return sccs
+}
+
+// loadStdlibSCC parses and infers every URI in sccURIs as a single
+// merged module so cross-package type references resolve through the
+// dep_graph's own SCC handling. After this returns successfully, every
+// URI in sccURIs has a populated namespace in PackageRegistry. If any
+// step fails, all members are removed from PackageRegistry so a
+// subsequent import re-attempts the load (matching the single-package
+// path's rollback behavior in loadStdlibPackage).
+//
+// `span` is the original importing-file span; surfaces as the anchor
+// on any diagnostics that arise during the merged load.
+func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
+	// Invariant: SCC members are always loaded together (either all
+	// registered or all absent), so checking the first is equivalent to
+	// checking every member. The lazy stdlibSCCOnce ensures the SCC
+	// graph is computed before any singleton load runs, so a member can
+	// never have been loaded via the singleton path.
+	if c.PackageRegistry.Has(sccURIs[0]) {
+		return nil
+	}
+
+	// Stage every member as in-progress so that any non-SCC Lookup that
+	// fires during the merged load sees the sentinel (and treats the
+	// URI as cyclic) rather than an empty namespace. Intra-SCC imports
+	// are short-circuited earlier via activeSCC and never reach Lookup.
+	mergedNs := type_system.NewNamespace()
+	pkgNsByURI := map[string]*type_system.Namespace{}
+	pathByURI := map[string]string{}
+
+	// Rollback helper: drop every registry entry for this SCC. Called
+	// on any error return after staging so a subsequent import re-tries
+	// the load instead of finding a half-baked entry.
+	rollback := func() {
+		for _, uri := range sccURIs {
+			delete(c.PackageRegistry.packages, uri)
+		}
+	}
+
+	for _, uri := range sccURIs {
+		scheme, pkg, _ := splitScheme(uri)
+		path, resolveErrs := c.resolveStdlibPath(scheme, pkg, span)
+		if len(resolveErrs) > 0 {
+			rollback()
+			return resolveErrs
+		}
+		pkgNs := type_system.NewNamespace()
+		pkgNsByURI[uri] = pkgNs
+		pathByURI[uri] = path
+
+		// Pre-create scheme/pkg sub-namespaces on mergedNs so that when
+		// InferModule walks `<scheme>.<pkg>` paths it lands declarations
+		// into the same Namespace pointer we publish below.
+		schemeNs, ok := mergedNs.GetNamespace(scheme)
+		if !ok {
+			schemeNs = type_system.NewNamespace()
+			if err := mergedNs.SetNamespace(scheme, schemeNs); err != nil {
+				rollback()
+				return []Error{&GenericError{message: err.Error(), span: span}}
+			}
+		}
+		if err := schemeNs.SetNamespace(pkg, pkgNs); err != nil {
+			rollback()
+			return []Error{&GenericError{message: err.Error(), span: span}}
+		}
+
+		c.PackageRegistry.MarkInProgress(uri)
+	}
+
+	// Activate the intra-SCC skip so file-scope imports don't shadow
+	// the live module-scope bindings. SCCs are disjoint by construction
+	// (Tarjan output), so a nested loadStdlibSCC cannot share URIs with
+	// an outer one; replacing the map is safe under save/restore.
+	prev := c.activeSCC
+	c.activeSCC = map[string]bool{}
+	for _, uri := range sccURIs {
+		c.activeSCC[uri] = true
+	}
+	defer func() { c.activeSCC = prev }()
+
+	var sources []*ast.Source
+	for _, uri := range sccURIs {
+		scheme, pkg, _ := splitScheme(uri)
+		contents, readErr := os.ReadFile(pathByURI[uri])
+		if readErr != nil {
+			rollback()
+			return []Error{&GenericError{
+				message: fmt.Sprintf("failed to read stdlib file %s: %s", pathByURI[uri], readErr.Error()),
+				span:    span,
+			}}
+		}
+		sourceID := c.stdlibNextSourceID
+		c.stdlibNextSourceID++
+		// Path is `<scheme>/<pkg>/index.esc` so deriveNamespaceFromPath
+		// yields `<scheme>.<pkg>` — the dotted namespace key declarations
+		// from this file land under in mod.Namespaces. The actual on-disk
+		// `.esc` file is flat (`<scheme>/<pkg>.esc`); this synthetic
+		// path just steers ParseLibFiles' namespace inference.
+		sources = append(sources, &ast.Source{
+			ID:       sourceID,
+			Path:     scheme + "/" + pkg + "/index.esc",
+			Contents: string(contents),
+		})
+	}
+
+	mod, parseErrs := parser.ParseLibFiles(c.ctx, sources)
+	if len(parseErrs) > 0 {
+		rollback()
+		errs := make([]Error, 0, len(parseErrs))
+		for _, pe := range parseErrs {
+			errs = append(errs, &GenericError{
+				message: fmt.Sprintf("parse error in stdlib SCC: %s", pe.String()),
+				span:    span,
+			})
+		}
+		return errs
+	}
+
+	// §3.4 loader rules per member, so diagnostic messages name the
+	// originating URI (e.g. `web:dom`) instead of an opaque SCC label.
+	globals := c.knownJSGlobals()
+	var decErrs []Error
+	for _, uri := range sccURIs {
+		scheme, pkg, _ := splitScheme(uri)
+		nsKey := scheme + "." + pkg
+		ns, ok := mod.Namespaces.Get(nsKey)
+		if !ok {
+			continue
+		}
+		for _, decl := range ns.Decls {
+			decErrs = append(decErrs, validateJsDecorator(uri, decl, span, globals)...)
+		}
+	}
+	if len(decErrs) > 0 {
+		rollback()
+		return decErrs
+	}
+
+	pkgScope := &Scope{Parent: c.GlobalScope, Namespace: mergedNs}
+	pkgCtx := Context{Scope: pkgScope, IsAsync: false, IsPatMatch: false}
+	_, inferErrs := c.InferModule(pkgCtx, mod)
+	if len(inferErrs) > 0 {
+		rollback()
+		return inferErrs
+	}
+
+	// Publish the populated namespaces, swapping each sentinel for its
+	// real pointer.
+	for _, uri := range sccURIs {
+		if updateErr := c.PackageRegistry.Update(uri, pkgNsByURI[uri]); updateErr != nil {
+			rollback()
+			return []Error{&GenericError{
+				message: fmt.Sprintf("cannot publish stdlib SCC member %s: %s", uri, updateErr.Error()),
+				span:    span,
+			}}
+		}
+	}
+	return nil
+}
