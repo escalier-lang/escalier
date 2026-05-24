@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -321,9 +322,9 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 // room for future decorators, so this rule lives in the loader.
 func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 	cases := map[string]string{
-		"NonStringArg":  "@js(123)\nexport declare val PI: number",
-		"MultipleArgs":  "@js(\"a\", \"b\")\nexport declare val PI: number",
-		"NoArgs":        "@js()\nexport declare val PI: number",
+		"NonStringArg": "@js(123)\nexport declare val PI: number",
+		"MultipleArgs": "@js(\"a\", \"b\")\nexport declare val PI: number",
+		"NoArgs":       "@js()\nexport declare val PI: number",
 	}
 	for name, source := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -441,4 +442,313 @@ func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
 			require.Empty(t, errorMessages(errs))
 		})
 	}
+}
+
+// TestStdlibImport_PseudoPackageCycle pins §4.3's "cycles between
+// pseudo-packages are permitted" rule. Two `web:*` packages with a
+// mutual import — modeled on the canonical `HTMLCanvasElement
+// .getContext("webgl") -> WebGLRenderingContext` ↔ `WebGLRenderingContext
+// .canvas: HTMLCanvasElement` pair — load as a single merged module
+// so each side's qualified type references into the other resolve.
+//
+// The user-side import uses the default binding shape (no flag →
+// ?local), exercising the singleton-namespace binding path on top of
+// a cyclic load. Intra-SCC imports still use ?nested because the
+// cross-package type references inside the merged module are written
+// with `web.<pkg>` qualified paths.
+func TestStdlibImport_PseudoPackageCycle(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("WebGLRenderingContext")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "web:dom"
+
+export declare fn make() -> dom.HTMLCanvasElement
+`)
+	require.Empty(t, errorMessages(errs))
+
+	fileScope := fileScopes[0]
+	domNs, ok := fileScope.Namespace.GetNamespace("dom")
+	require.True(t, ok, "expected dom namespace bound at file scope (default ?local)")
+	_, hasCanvas := domNs.Types["HTMLCanvasElement"]
+	require.True(t, hasCanvas, "HTMLCanvasElement should be exposed via dom")
+}
+
+// TestStdlibImport_PseudoPackageCycleThreeWay verifies SCC handling
+// generalizes beyond pairs: three packages in a 3-cycle still resolve
+// each other's qualified references. The `@js("Map"/"Set"/"WeakMap")`
+// targets are arbitrary placeholders chosen because they're on the
+// known-globals allow-list; they bear no relationship to ClassA/B/C.
+func TestStdlibImport_PseudoPackageCycleThreeWay(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/a.esc": `
+import "web:b?nested"
+
+@js("Map")
+export declare class ClassA {
+    refB: web.b.ClassB,
+}
+`,
+		"web/b.esc": `
+import "web:c?nested"
+
+@js("Set")
+export declare class ClassB {
+    refC: web.c.ClassC,
+}
+`,
+		"web/c.esc": `
+import "web:a?nested"
+
+@js("WeakMap")
+export declare class ClassC {
+    refA: web.a.ClassA,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "web:a?nested"`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_PseudoPackageCycle_NonCyclicImporter pins that a
+// pseudo-package which imports into a cycle but isn't itself part of
+// the cycle is loaded via the normal singleton path, not absorbed
+// into the merged SCC load. `web:app → web:dom ↔ web:webgl`: app is a
+// one-way importer of the cycle and must remain its own SCC.
+func TestStdlibImport_PseudoPackageCycle_NonCyclicImporter(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("WebGLRenderingContext")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+		"web/app.esc": `
+import "web:dom?nested"
+
+@js("Map")
+export declare class App {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "web:app?nested"
+import "web:dom?nested"
+import "web:webgl?nested"
+`)
+	require.Empty(t, errorMessages(errs))
+
+	webNs, ok := fileScopes[0].Namespace.GetNamespace("web")
+	require.True(t, ok)
+	for _, pkg := range []string{"app", "dom", "webgl"} {
+		_, ok := webNs.GetNamespace(pkg)
+		require.True(t, ok, "expected web.%s sub-namespace", pkg)
+	}
+}
+
+// TestStdlibImport_PseudoPackageCycleMixedSchemes verifies the SCC
+// loader handles cross-scheme cycles (a `std:*` package importing a
+// `web:*` package and vice versa) as a single merged load, not just
+// cycles confined to a single scheme.
+//
+// The user-side imports use the default binding shape (no flag →
+// ?local). Both packages expose a single class whose name matches the
+// pkg name case-insensitively (`Host`/`host`, `Client`/`client`), so
+// the §FR5 single-class shortcut fires: the class names bind directly
+// at file scope rather than under a `host`/`client` namespace. This
+// proves the shortcut path stacks correctly on top of the cyclic
+// merged load.
+func TestStdlibImport_PseudoPackageCycleMixedSchemes(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"std/host.esc": `
+import "web:client?nested"
+
+@js("Map")
+export declare class Host {
+    client: web.client.Client,
+}
+`,
+		"web/client.esc": `
+import "std:host?nested"
+
+@js("Set")
+export declare class Client {
+    host: std.host.Host,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "std:host"
+import "web:client"
+
+export declare fn makeHost() -> Host
+export declare fn makeClient() -> Client
+`)
+	require.Empty(t, errorMessages(errs))
+
+	fileScope := fileScopes[0]
+	_, hasHostType := fileScope.Namespace.Types["Host"]
+	require.True(t, hasHostType, "single-class shortcut should bind Host directly at file scope")
+	_, hasClientType := fileScope.Namespace.Types["Client"]
+	require.True(t, hasClientType, "single-class shortcut should bind Client directly at file scope")
+}
+
+// TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI pins the
+// diagnostic-label fix: when an SCC member fails the §3.4 `@js` rules,
+// the error message must identify the offending member by URI
+// (e.g. `web:webgl`) rather than by an opaque synthetic SCC label.
+func TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("ThisGlobalDoesNotExist")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `import "web:dom?nested"`)
+	expected := []string{
+		"`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global",
+	}
+	require.Equal(t, expected, errorMessages(errs))
+}
+
+// TestStdlibImport_PseudoPackageCycle_RollbackOnFailure verifies that
+// when an SCC load fails (decorator-rule violation in one member), the
+// PackageRegistry is rolled back so a subsequent import of any member
+// re-attempts the load and surfaces the same diagnostic. Without
+// rollback, the second import would silently succeed against an empty
+// staged namespace.
+func TestStdlibImport_PseudoPackageCycle_RollbackOnFailure(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("ThisGlobalDoesNotExist")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	// Two imports in the same file share one Checker. The first triggers
+	// the SCC load (and fails); the second targets the *other* member.
+	// With rollback, both report the same underlying decorator error.
+	// Without rollback, the second silently binds an empty namespace and
+	// produces no diagnostic.
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom?nested"
+import "web:webgl?nested"
+`)
+	msg := "`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global"
+	require.Equal(t, []string{msg, msg}, errorMessages(errs))
+}
+
+// TestStdlibImport_PseudoPackageCycle_RollbackOnParseError exercises
+// the same rollback contract as RollbackOnFailure but via a different
+// error branch in loadStdlibSCC: when one SCC member has a parse
+// error, the merged-module ParseLibFiles fails. A second import of any
+// member must re-attempt the load (and produce the same diagnostic),
+// not silently bind an empty namespace.
+func TestStdlibImport_PseudoPackageCycle_RollbackOnParseError(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		// dom.esc imports webgl cleanly so the SCC scanner sees the cycle.
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		// webgl.esc parses its import line, then fails on the trailing
+		// garbage — that error surfaces during the SCC's real-load parse,
+		// not during the graph scan.
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("WebGLRenderingContext")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+
+@@@ this is not valid escalier
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom?nested"
+import "web:webgl?nested"
+`)
+	msgs := errorMessages(errs)
+	require.NotEmpty(t, msgs, "expected parse-error diagnostics from both imports")
+	// Each error is anchored to the importing statement's span. With
+	// rollback, both imports re-attempt the load, so the parse-error
+	// diagnostics surface at *both* import spans. Without rollback, the
+	// second import finds a sentinel in the registry and silently skips
+	// reloading, so all parse errors come from a single span.
+	parseSpans := map[ast.Span]int{}
+	for _, e := range errs {
+		if strings.HasPrefix(e.Message(), "parse error in stdlib SCC:") {
+			parseSpans[e.Span()]++
+		}
+	}
+	require.Len(t, parseSpans, 2,
+		"expected parse-error diagnostics anchored to both import spans (rollback should re-attempt the load); got spans=%v, msgs=%v", parseSpans, msgs)
 }
