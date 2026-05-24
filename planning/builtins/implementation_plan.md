@@ -14,9 +14,9 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | §   | Phase                                                | FRs         | Status | Depends on | Notes                                                                                                                                                                                                                                                |
 | --- | ---------------------------------------------------- | ----------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
-| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, all three binding shapes, single-class shortcut, `?flat` collisions, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. Two follow-ups deferred to later sections — see §8 for the two-package `?flat` `web` fixture, §7 for the FR5 "non-class package exports as namespace members on the same binding" surface. |
+| 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, both binding shapes, single-class shortcut, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. One follow-up deferred to §7 — the FR5 "non-class package exports as namespace members on the same binding" surface. |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
-| 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ⬜ | §2 | MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/...) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). `createElementNS` stays one overloaded method on `Document`, matching WebIDL. Pseudo-package import cycles permitted (§4.3). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; the §4.1 spike scaffolding under [internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go) is kept as a regression harness. |
+| 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ⬜ | §2 | MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/...) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). `createElementNS` stays one overloaded method on `Document`, matching WebIDL. Pseudo-package import cycles permitted (§4.3). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 below records the spike conclusions. |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ⬜      | §1, §3     | Two tiny slices: a trio-idiom class (`Boolean`) and a small `declare namespace` block (e.g. `JSON`). AST-to-AST translation; emit to stdout; no partition logic. Exercises trio recognition + namespace flattening; emits `@js` decorators per §3. |
 | 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{std,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
 | 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit.                                                                                                                                                        |
@@ -287,9 +287,8 @@ it lazily on first scheme-prefixed import.
 
 ### 2.3 Binding-shape application
 
-- Implement the three flag rules from FR4. Each pseudo-package
-  import contributes a binding entry whose shape depends on the
-  flag:
+- Implement the flag rules from FR4. Each pseudo-package import
+  contributes a binding entry whose shape depends on the flag:
   - `?local` (default): binding name = lowercased last URI
     segment (or capitalized class name when the single-class
     shortcut FR5 fires).
@@ -298,23 +297,13 @@ it lazily on first scheme-prefixed import.
     `std.<package>`. Multiple `?nested` imports from the same
     scheme merge under disjoint sub-namespaces — no collision
     risk.
-  - `?flat`: merges directly into the per-scheme namespace.
-    Multiple `?flat` imports from the same scheme merge; package
-    names are dropped. Collision risk is real.
-- **`?flat` name collision is a hard error at the second
-  `import` statement and aborts compilation**, per FR4. The
-  diagnostic points at the URI literal of the second import
-  and names the prior package that contributed the colliding
-  identifier. No use-site unbound-name diagnostics are emitted
-  for the colliding name; compilation does not proceed past
-  the resolver. See "Error taxonomy" cross-cutting section.
 - Internal bookkeeping (whether a file has loaded a package's
   declarations) keys on the package's full URI (`web:fetch`),
   independent of binding-shape flag. This applies uniformly
-  across `?local`, `?nested`, and `?flat`.
-- **Mutually exclusive:** combining any two of `?local`,
-  `?nested`, `?flat` on one URI is a compile error; the
-  resolver reports which flag pair is invalid.
+  across `?local` and `?nested`.
+- **Mutually exclusive:** combining `?local` and `?nested` on
+  one URI is a compile error; the resolver reports which flag
+  pair is invalid.
 - **Extensible flag slot.** The grammar reserves the `?flag` /
   `?flag1&flag2` shape for future flags (`?type-only`, `?lazy`,
   …). Unknown flags currently error per the taxonomy; the
@@ -333,7 +322,7 @@ it lazily on first scheme-prefixed import.
   `Array(5)` (construct, no `new`).
 - Static methods on the class take precedence over namespace
   members on name collision.
-- Not applicable to `?nested` or `?flat`.
+- Not applicable to `?nested`.
 
 ### 2.5 Tests and gates
 
@@ -347,27 +336,18 @@ it lazily on first scheme-prefixed import.
   paths from §2.2a (env var, `--stdlib-dir`, sibling-to-exe,
   repo-relative) plus the "no stdlib found" fatal error.
 - **Binding-shape fixtures** under [fixtures/](../../fixtures/):
-  one per shape, plus two `?flat` packages merging into a single
-  `web` binding, plus the mutually-exclusive error case.
+  one per shape, plus the mutually-exclusive error case.
 - **Single-class shortcut fixture:** `std:array` stub declaring
   `Array<T>`; assert `Array.isArray`, `Array<number>` type
   position, and `Array(5)` construct all bind correctly.
 
-**Gate.** Stub `std:math` resolves end-to-end with all three
-binding-shape flags; two-package `?flat` fixture merges; flag
-collision errors. Single-class shortcut works for the `std:array`
-stub.
+**Gate.** Stub `std:math` resolves end-to-end with both
+binding-shape flags; flag collision errors. Single-class
+shortcut works for the `std:array` stub.
 
-**Deferred to later sections.** Two items from §2.5 require
+**Deferred to later sections.** One item from §2.5 requires
 material that does not yet exist:
 
-- The **two-package `?flat` merge into a `web` binding** fixture
-  needs `web:*` stubs. Deferred to §8 (fixture migration) where
-  the §7 bootstrap has produced the real DOM tree. Note that the
-  `?flat` merge mechanic and collision diagnostic are already
-  exercised by unit tests and by the `stdlib_import_flat` /
-  `stdlib_import_flag_conflict` fixtures landed here; §8's
-  fixture pins the cross-scheme `web` case specifically.
 - The **FR5 "non-class package exports as namespace members on
   the same binding"** surface is not implemented yet — the
   current `std:array` stub has only the class. The shortcut
@@ -450,8 +430,8 @@ exported names).
 ### 3.2 Lowering rules
 
 - **Member access through a package binding** (`math.sin(x)`,
-  `std.math.sin(x)` under `?nested`, `std.sin(x)` under `?flat`)
-  collapses to the underlying declaration's `(package, name)`
+  `std.math.sin(x)` under `?nested`) collapses to the underlying
+  declaration's `(package, name)`
   identity and lowers to that declaration's `@js` expression
   applied to the call's arguments. Binding shape is purely an
   Escalier-side concern; codegen never sees it.
@@ -571,7 +551,7 @@ data directory (§2.2a). User code is free of these constraints.
   - Single-class shortcut: `Array.isArray(xs)` →
     `Array.isArray(xs)`; `Date()` (construct) → `new Date()`.
   - Binding-shape independence: the same call lowers identically
-    under `?local`, `?nested`, and `?flat`.
+    under `?local` and `?nested`.
   - The `parseInt`, `Symbol.iterator`, and package-private
     invisibility fixtures need hand-authored `std:number` /
     `std:iterator` stubs; they live with §7's stdlib bootstrap
@@ -615,10 +595,7 @@ wrapper around existing code. Rather than build those subsystems,
 the partition is restructured so cross-package augmentation is
 not needed at all: the DOM is one cohesive package, and the only
 cross-package coupling is the standalone-web-API edge cases that
-qualified type references handle cleanly. The spike scaffolding
-remains under
-[internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go)
-as documentation for the deferred custom-elements work.
+qualified type references handle cleanly.
 
 ### 4.1 Spike findings (informing the MVP punt)
 
@@ -629,11 +606,16 @@ findings below remain the authoritative reference for what true
 cross-package augmentation would require if a future workstream
 (custom elements; third-party DOM extensions) needs it.
 
-Prototype landed in
-[internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go).
-Stages a two-file stdlib (`web/dom.esc` + `web/canvas.esc`) under a
-temp `ESCALIER_STDLIB_DIR` and runs scenarios encoded as
-assertions so future drift breaks the build.
+The prototype staged a two-file stdlib (`web/dom.esc` +
+`web/canvas.esc`) under a temp `ESCALIER_STDLIB_DIR`: `web:dom`
+declared an empty `HTMLElementTagNameMap` registry and a generic
+`createElement<K: keyof HTMLElementTagNameMap>(tag: K) ->
+HTMLElementTagNameMap[K]`; `web:canvas` declared
+`HTMLCanvasElement` and a same-named `HTMLElementTagNameMap`
+with a `canvas: HTMLCanvasElement` member, intending to augment
+the registry. The scenarios below were run against that staging.
+The spike code has since been removed; the conclusions are what
+matter.
 
 **Q1: Can the existing `internal/interop/` merge primitive be
 parameterized by a per-importing-file active augmentation set?**
@@ -648,36 +630,9 @@ parameterized by a per-importing-file active augmentation set?**
    merges only *within the same namespace* (mutates a shared
    `ObjectType.Elems`). Two `interface HTMLElementTagNameMap { … }`
    declarations in two different `.esc` packages produce two
-   **distinct, unrelated** type aliases today —
-   `TestSpikeAugmentation_NestedNoMerge` pins this:
-   `web.dom.HTMLElementTagNameMap["canvas"]` and
+   **distinct, unrelated** type aliases today — under `?nested`
+   imports, `web.dom.HTMLElementTagNameMap["canvas"]` and
    `web.canvas.HTMLElementTagNameMap["canvas"]` are separate types.
-
-   Under `?flat`, the same-name re-export hits the existing FR4
-   collision (`TestSpikeAugmentation_FlatCollision`) — the ?flat path
-   doesn't silently merge either, it errors. So no existing channel
-   composes the two declarations.
-
-3. Variant tried: have `web/canvas.esc` do `import "web:dom?flat"`
-   *first*, then declare `interface HTMLElementTagNameMap { … }`,
-   hoping the in-namespace merge would mutate dom's shared
-   `ObjectType.Elems`
-   (`TestSpikeAugmentation_FlatThenDeclareMergesIntoDom`). The merge
-   does **not** fire: `?flat` lands the import into the per-scheme
-   sub-namespace
-   (`pkgNs.Namespaces["web"].Types["HTMLElementTagNameMap"]`, see
-   `bindStdlibFlat` in
-   [infer_stdlib_import.go](../../internal/checker/infer_stdlib_import.go)),
-   while canvas's own `interface` lands at
-   `pkgNs.Types["HTMLElementTagNameMap"]`. The existing-alias check
-   only reads the current namespace, finds nothing, and creates a
-   fresh `ObjectType` at a different pointer. Even if we rewired
-   ?flat to deposit into `pkgNs.Types` directly so the merge *would*
-   fire, the result would be **global** augmentation — the mutation
-   sits in the PackageRegistry-cached namespace and every later
-   importer of `web:dom` would see the canvas member regardless of
-   whether they imported canvas. That's the TS DOM-lib model, not
-   FR9. Dead end for per-file activation either way.
 
 If we wanted the per-element-family split, §4.2 would need
 **new** machinery (not a reuse of interop's merge): a
@@ -690,15 +645,14 @@ single `web:dom` package — see §4.2.
 **Q2: Does indexed access (`HTMLElementTagNameMap[K]`) re-resolve
 against the per-file augmentation set, or snapshot at
 registry-declaration time?**
-**Snapshot.** `TestSpikeAugmentation_CallSiteSnapshot` and
-`TestSpikeAugmentation_SiblingMatchesImporter` together show that
-`createElement<K: keyof HTMLElementTagNameMap>(tag: K) -> …` resolves
-its bound `keyof HTMLElementTagNameMap` at *declaration time inside
-`web:dom`*, against the empty registry — yielding `K: never`. The
-caller's import set has no effect: both the importer-with-canvas
-scenario and the sibling-without-canvas scenario reject
-`createElement("canvas")` with the identical
-`"canvas" cannot be assigned to never`.
+**Snapshot.** With both packages imported,
+`createElement<K: keyof HTMLElementTagNameMap>(tag: K) -> …`
+resolves its bound `keyof HTMLElementTagNameMap` at *declaration
+time inside `web:dom`*, against the empty registry — yielding
+`K: never`. The caller's import set has no effect: both the
+importer-with-canvas scenario and a sibling file that imports
+only `web:dom` reject `createElement("canvas")` with the
+identical `"canvas" cannot be assigned to never`.
 
 Even if Q1's per-file merge machinery existed, `createElement`'s
 constraint would still be the snapshot. The deferred augmentation
@@ -1444,18 +1398,12 @@ rely on.
 explicit `import "std:*"` statements; no fixture relies on
 ambient resolution — except for the third-party carve-out below.
 
-**Carries-over from §2.** §2 landed five binding-shape fixtures
+**Carries-over from §2.** §2 landed three binding-shape fixtures
 under [fixtures/](../../fixtures/) (`stdlib_import_local`,
-`stdlib_import_nested`, `stdlib_import_flat`,
-`stdlib_import_single_class`, `stdlib_import_flag_conflict`).
-Two §2.5 fixtures were deferred to this phase because they need
-material that does not exist until §7:
+`stdlib_import_nested`, `stdlib_import_single_class`). One §2.5
+fixture was deferred to this phase because it needs material
+that does not exist until §7:
 
-- A **two-package `?flat` merge into a `web` binding**. Requires
-  at least two `web:*` stubs; §7 produces the full DOM tree. Add
-  the fixture here, asserting that non-colliding members from
-  two `?flat`-imported `web:*` packages co-exist in the same
-  `web` namespace.
 - A **single-class shortcut fixture with non-class package exports**
   on the same binding. §2's `std:array` stub has only the class;
   once §7 populates `std:array` with companion helpers (or another
@@ -1681,7 +1629,7 @@ the diagnostic's source location:
    render as the capitalized class binding (`Array<number>`,
    `Date.now()`) — matching what the user would write.
 2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `std.math.Foo`; `?flat` → `std.Foo`.
+   `?nested` → `std.math.Foo`.
 3. **Not imported.** Fully-qualified canonical name
    (`std:array.Array`) plus a "did you mean to
    `import "std:array"`?" hint pointing at the FR16 quick-fix.
@@ -1793,7 +1741,7 @@ path through unchanged.
 
 **Gate.** LSP quick-fix integration test green; renderer fixture
 per case (`?local` shortcut, `?local` non-shortcut, `?nested`,
-`?flat`, no-import) passes; parser still rejects `intrinsic`.
+no-import) passes; parser still rejects `intrinsic`.
 
 ---
 
@@ -1814,12 +1762,6 @@ portion when the failure is flag-shaped):
 - **Unknown flag** — names the flag; lists recognized set.
 - **Named import from a pseudo-package URI** — explains
   namespace-only; suggests the rewrite.
-- **`?flat` name collision** — **hard error** at the second
-  import. Names the colliding identifier and the two source
-  packages; points at the URI literal of the second import;
-  instructs the user to rename upstream or drop one import's
-  `?flat` flag.
-
 Fixtures under [fixtures/](../../fixtures/) exercise each with
 full message-text assertions per CLAUDE.md test conventions.
 
@@ -1913,7 +1855,7 @@ or more phases above.
 | FR1   | No ambient set; two-mode loading           | §6.1 (partition), §9 (lazy shape-load + legacy-path deletion), Drops subsection in §6.1 (`globalThis`/`eval`/`EvalError`) |
 | FR2   | Pseudo-package layout                      | §2.2 (resolver mapping + underscore convention), §2.2a (stdlib data directory discovery), §6.1 (full enumeration), §6.3 (output layout + distribution) |
 | FR3   | URI-scheme import grammar; runtime erasure | §2.1 (parser), §2.2 (resolver), §3 (decorator-based lowering + import erasure)                                |
-| FR4   | Binding-shape flags                        | §2.3 (all three shapes, mutual exclusion, extensibility, hard-error on `?flat` collision, URI-keyed bookkeeping) |
+| FR4   | Binding-shape flags                        | §2.3 (both shapes, mutual exclusion, extensibility, URI-keyed bookkeeping) |
 | FR5   | Single-class shortcut                      | §2.4; eligibility list in §6.1                                                                                   |
 | FR6   | Inter-package imports                      | §4.3 (cycles permitted within pseudo-package layer)                                                              |
 | FR7   | DOM packaging; cross-package type references; open augmentation deferred | §4.2 (single `web:dom` package + standalone web siblings; closed registries; `createElementNS` stays one overloaded method on `Document`), §4.2b (qualified cross-package type references), §4.5 (deferred augmentation work scoped for the future custom-elements workstream). Spike (§4.1) showed achieving the old per-file-activation design needs two new checker subsystems; MVP sidesteps by collapsing the DOM tree into one package. |

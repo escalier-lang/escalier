@@ -71,7 +71,7 @@ In scope:
   per-file based on language-feature usage (primitive method
   dispatch, `await`, iteration, …), and **named** when the file
   explicitly imports the package.
-- Per-import binding-shape flags (`?local`, `?nested`, `?flat`)
+- Per-import binding-shape flags (`?local`, `?nested`)
   governing how a pseudo-package's namespace lands in the importing
   file.
 - The **single-class shortcut** for per-class packages: when the
@@ -377,7 +377,7 @@ package-private declarations expressible.
 ### FR4. Binding-shape flags
 
 The URI may carry one or more `?flag` modifiers separated by `&`
-(URL-query convention). Three flags govern the **binding shape**;
+(URL-query convention). Two flags govern the **binding shape**;
 they are mutually exclusive and exactly one is in effect per import
 (absent flag is treated as `?local`):
 
@@ -396,25 +396,9 @@ they are mutually exclusive and exactly one is in effect per import
   URI). No collision risk.
   - `import "std:math?nested"` → `std.math.sin(x)`
   - `import "std:json?nested"` adds `std.json` alongside.
-- **`?flat`.** Merge the package's contents directly into a shared
-  scheme-named namespace. Multiple `?flat` imports from the same
-  scheme merge; package names are dropped from the access path.
-  - `import "web:webgl?flat"` + `import "web:fetch?flat"` →
-    `web.WebGLRenderingContext`, `web.Response`.
-  - Collision risk is real (two packages exporting the same name
-    under one scheme conflict). Opt-in for that reason. **When
-    `?flat` produces a name collision, the compiler reports a
-    hard error at the second `import` statement and aborts
-    compilation.** The diagnostic points at the URI literal of
-    the second import and names the prior package that
-    contributed the colliding identifier. No use-site
-    unbound-name diagnostics are emitted for the colliding name;
-    compilation does not proceed past the resolver. The user
-    resolves it by renaming upstream or switching one of the
-    imports off `?flat`.
 
-**Combining any two of `?local`, `?nested`, `?flat` in one URI is a
-compile error**; the resolver reports which flag pair is invalid.
+**Combining `?local` and `?nested` on one URI is a compile error**;
+the resolver reports which flag pair is invalid.
 
 **Identifier hygiene.** Package names use underscores, matching
 the file naming convention (FR2): `import "std:typed_arrays"` binds
@@ -424,13 +408,11 @@ is no `-` → `_` substitution because hyphens never appear in their
 URIs. (Third-party npm package names *can* contain hyphens and will
 need a `-` → `_` substitution when computing the binding name; that
 substitution rule is part of the third-party workstream and is out
-of scope here.) `?flat` drops the package name from the user-visible
-binding, but internal bookkeeping (tracking whether a given file's
-imports have already pulled in a package's declarations) uses the
-pseudo-package's full URI as the key — e.g. `web:fetch` —
-regardless of which binding-shape flag the
-import carried. This applies uniformly across `?local`, `?nested`,
-and `?flat`.
+of scope here.) Internal bookkeeping (tracking whether a given
+file's imports have already pulled in a package's declarations)
+uses the pseudo-package's full URI as the key — e.g. `web:fetch` —
+regardless of which binding-shape flag the import carried. This
+applies uniformly across `?local` and `?nested`.
 
 The flag slot is extensible: future flags (e.g. `?type-only`,
 `?lazy`) compose with the binding-shape flags subject to their own
@@ -489,14 +471,12 @@ practice given the small surface of per-class packages, but the
 rule is "class statics win" so the shortcut behavior remains
 predictable.
 
-**Not applicable to `?nested` or `?flat`.** Those binding shapes
-do not use the capitalized shortcut form; they follow the
-URI-segment-based rules in FR4. `?nested` binds under
-`scheme.package`, so writes look like `std.array.Array.isArray(nums)`
-— the package and class names are both explicit. `?flat` drops
-the package name entirely; the class is accessed as
-`std.Array.isArray(nums)`. In both cases the shortcut adds no
-value because the class is already directly nameable.
+**Not applicable to `?nested`.** That binding shape does not use
+the capitalized shortcut form; it follows the URI-segment-based
+rules in FR4. `?nested` binds under `scheme.package`, so writes
+look like `std.array.Array.isArray(nums)` — the package and class
+names are both explicit. The shortcut adds no value there because
+the class is already directly nameable.
 
 ### FR6. Inter-package imports
 
@@ -1051,7 +1031,7 @@ file's scope and picks among:
    render as the capitalized class binding — `Array<number>`,
    `Date.now()` — matching what the user would write.
 2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `std.math.Foo`; `?flat` → `std.Foo`.
+   `?nested` → `std.math.Foo`.
 3. **Not imported.** Render as the fully-qualified canonical name
    (`std:array.Array`) and pair the diagnostic with a "did you mean
    to `import \"std:array\"`?" hint (see FR16).
@@ -1167,15 +1147,13 @@ omitted; they belong to the third-party workstream.
    namespace-binding semantics. Parse the `?flag` /
    `?flag1&flag2` suffix on the URI; strip it before path
    resolution; apply per-flag binding rules at scope-insertion
-   time. Initial flag set covers all three binding shapes: `?local`
-   (no-op default), `?nested`, `?flat`. Combining any two of these
-   three reports a clear error.
+   time. Initial flag set covers both binding shapes: `?local`
+   (no-op default) and `?nested`. Combining the two reports a
+   clear error.
    - **Gate:** a placeholder `std:math` package with a stub
      `math.PI = 3.14` imports and resolves end-to-end; a
-     three-fixture test confirms each flag binds correctly
-     (`?local` → `math.PI`, `?nested` → `std.math.PI`, `?flat` →
-     `std.PI`); a two-package fixture
-     (`web:a?flat` + `web:b?flat`) merges into one `web` binding;
+     two-fixture test confirms each flag binds correctly
+     (`?local` → `math.PI`, `?nested` → `std.math.PI`);
      mutually-exclusive flag combos error.
 3. **Single `web:dom` partition + inter-package imports.** Build
    the FR7 MVP: the entire DOM tree lives in `web:dom` with all
@@ -1184,14 +1162,11 @@ omitted; they belong to the third-party workstream.
    package; standalone web APIs occupy sibling `web:*` packages
    that reference `web:dom` types via qualified names. Two
    pre-step deliverables inform this step:
-   - The §4.1 augmentation spike (already landed under
-     [internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go))
-     answered "can existing checker machinery support per-file
-     activation?" with **no/snapshot**, which is what motivated
-     the single-`web:dom` partition. The scaffolding is kept as
-     a regression harness — if a future change quietly enables
-     cross-package augmentation, those assertions fail loudly
-     and the FR7-defer decision can be revisited.
+   - The §4.1 augmentation spike answered "can existing checker
+     machinery support per-file activation?" with **no/snapshot**,
+     which is what motivated the single-`web:dom` partition. See
+     [planning/builtins/implementation_plan.md §4.1](implementation_plan.md)
+     for the recorded findings.
    - **Gate:** a hand-authored fixture declares
      `HTMLElementTagNameMap` populated with at least two
      entries in `web/dom.esc`; `createElement("canvas")`
@@ -1339,9 +1314,9 @@ diagnostic:
   where the scheme is valid but no package file exists. Message
   names the scheme, the requested package, and (if cheap) suggests
   near-spelling matches from the resolved stdlib package list.
-- **Invalid flag combination.** Two of `?local`, `?nested`,
-  `?flat` on the same URI. Message names the specific pair and
-  explains they are mutually exclusive binding shapes.
+- **Invalid flag combination.** `?local` and `?nested` on the
+  same URI. Message names the specific pair and explains they
+  are mutually exclusive binding shapes.
 - **Unknown flag.** `?something` that is not a recognized flag.
   Message names the flag and lists the currently-recognized set.
 - **Named import from a pseudo-package URI.** `import { sin } from
@@ -1349,13 +1324,7 @@ diagnostic:
   for this
   workstream). Message explains that pseudo-package imports must
   use a namespace form (`import "std:math"` or
-  `import "std:math?flat"`) and suggests the rewrite.
-- **`?flat` name collision.** Two `?flat` imports under the same
-  scheme contributing the same identifier. **Hard error** at the
-  second import (per FR4): message names the colliding identifier
-  and the two source packages, points at the URI literal of the
-  second import, and instructs the user to rename upstream or
-  switch one of the imports off `?flat`.
+  `import "std:math?nested"`) and suggests the rewrite.
 
 Each diagnostic ties back to a span on the offending `import`
 statement, ideally pointing at the URI string literal (and within
@@ -1400,8 +1369,7 @@ Requirements:
   `node:` (reserved → clear error) schemes; unknown scheme; known
   scheme + unknown package; `?flag` stripping before path lookup.
 - **Binding-shape tests** (per FR4). Fixture per shape (`?local`,
-  `?nested`, `?flat`), per single- and multi-package case,
-  including `?flat` collision error.
+  `?nested`), per single- and multi-package case.
 - **Closed-registry tests** (per FR7 MVP). Fixture where
   `web/dom.esc` declares `HTMLElementTagNameMap` with at least
   two entries (`canvas: HTMLCanvasElement`,
@@ -1425,14 +1393,12 @@ Requirements:
 - **Inter-package cycle tests** (per FR6). Two `std:*` packages
   with a mutual import are accepted by the resolver; the same
   shape between two user packages errors.
-- **Spike regression harness** (per FR7's deferred portion).
-  [internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go)
-  pins the observed current behavior (interfaces in two
-  separate packages do not merge; `?flat` collisions error;
-  call-site `keyof T` snapshots at declaration time). If a
-  future change quietly enables cross-package augmentation,
-  these assertions fail loudly so the FR7-defer decision can
-  be revisited.
+- **Spike findings** (per FR7's deferred portion). The §4.1
+  augmentation spike conclusions (interfaces in two separate
+  packages do not merge; call-site `keyof T` snapshots at
+  declaration time) are recorded in
+  [planning/builtins/implementation_plan.md §4.1](implementation_plan.md);
+  no live regression harness ships with the MVP.
 - **Symbol re-export tests** (per FR8). Verify that
   domain-package aliases (`iterator.iteratorKey`, `regexp.matchKey`, …)
   refer to the same runtime value as `Symbol.<name>` via the
@@ -1448,9 +1414,8 @@ Requirements:
 - **Adaptive diagnostic rendering** (per FR15). Fixture per
   rendering case: `?local` with single-class shortcut → lowercase;
   `?local` without shortcut → dotted; `?nested` →
-  scheme.package.name; `?flat` → scheme.name; no import →
-  fully-qualified canonical name plus "did you mean to import"
-  hint.
+  scheme.package.name; no import → fully-qualified canonical
+  name plus "did you mean to import" hint.
 - **Auto-import quick-fix** (per FR16). LSP-level integration
   test: unimported reference produces a diagnostic; quick-fix
   applies the namespace import and the resulting source compiles.
@@ -1541,7 +1506,7 @@ canvas does *not* leak the augmentation to A's importers. Simply
 importing a package never magically re-exports it.
 
 **Independent of the binding-shape flag.** Importing `web:canvas`
-under any of `?local`, `?nested`, or `?flat` adds canvas's
-contributions to that file's view of `HTMLElementTagNameMap`. The
-flag only affects how canvas's *direct exports* land in the
-importing scope, not which augmentations are activated.
+under either `?local` or `?nested` adds canvas's contributions to
+that file's view of `HTMLElementTagNameMap`. The flag only affects
+how canvas's *direct exports* land in the importing scope, not
+which augmentations are activated.

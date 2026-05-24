@@ -75,8 +75,8 @@ typed arrays, `Date`, `Map`, `Intl`, DOM APIs, etc. — lives in
 **pseudo-packages** under `std/` and `web/` and is brought in with
 URI-scheme imports like `import "std:math"`, which by default adds
 `math` to the local scope as a namespace binding. Optional `?flag`
-modifiers on the URI (e.g. `?flat` to merge a package's contents into
-a shared scheme namespace) tweak the binding shape per import.
+modifiers on the URI (e.g. `?nested` to bind under a scheme-named
+namespace) tweak the binding shape per import.
 **Third-party deps** still go through lazy on-first-compile
 `.d.ts` → `.esc` conversion with the §5 baseline + override merge,
 cached under `node_modules/.cache/escalier/`.
@@ -115,14 +115,13 @@ modifiers, mimicking the query-string convention from Vite/Parcel
 build systems (`?raw`, `?url`, `?worker`):
 
 ```escalier
-import "web:canvas?flat"           // merges contents into shared `web` namespace
 import "std:math?nested"           // binds `std.math` (scheme.package qualified)
 import "web:canvas?local"          // explicit form of the default (redundant; equivalent
                                    // to no flag)
 import "web:canvas?flag1&flag2"    // multiple flags separated by `&`
 ```
 
-Three flags govern the **binding shape**; they are mutually exclusive
+Two flags govern the **binding shape**; they are mutually exclusive
 and exactly one is in effect per import (with no flag treated as
 `?local`):
 
@@ -139,22 +138,11 @@ and exactly one is in effect per import (with no flag treated as
   - `import "std:json?nested"` adds `std.json` alongside
   - Useful when a file imports several packages from one scheme and
     wants origins visible at every call site.
-- `?flat` — merge the package's contents directly into a shared
-  scheme-named namespace. Multiple `?flat` imports from the same
-  scheme merge; package names are dropped from the access path. The
-  natural fit for the DOM, where the feature-package split is more
-  organizational than conceptual.
-  - `import "web:canvas?flat"` + `import "web:webgl?flat"` contribute
-    to a single `web` binding, accessed as `web.HTMLCanvasElement`
-    and `web.WebGLRenderingContext`.
-  - Collision risk is real: two packages exporting the same name
-    under the same scheme would conflict. Opt-in for that reason.
 
-Combining any two of `?local`, `?nested`, `?flat` in one URI is a
-compile error — the resolver reports which flag pair is invalid.
-Future flags (e.g. `?type-only`, `?lazy`) compose with the binding-
-shape flags as appropriate but require their own per-flag
-compatibility rules.
+Combining `?local` and `?nested` in one URI is a compile error —
+the resolver reports which flag pair is invalid. Future flags
+(e.g. `?type-only`, `?lazy`) compose with the binding-shape flags
+as appropriate but require their own per-flag compatibility rules.
 
 The flag-syntax slot is intentionally extensible: new variants can be
 added in future without grammar changes, only resolver work and new
@@ -327,13 +315,7 @@ Package names may contain hyphens but identifiers can't — the
 resolver substitutes `-` → `_` when computing the binding name. So
 a hypothetical `web:web-rtc` would bind `web_rtc`. Same rule applies
 to the per-package slot under `?nested`: `import "web:web-rtc?nested"`
-would bind `web.web_rtc`. The `?flat` form drops the package name
-entirely so the question doesn't arise at the user-visible binding
-level. (Note: `?flat` will still need *some* internal bookkeeping
-handle per package to deduplicate registry augmentations across
-multiple `?flat` imports of the same package; the form of that
-handle will become clearer once augmentation activation is
-implemented in step 3 of the migration.)
+would bind `web.web_rtc`.
 
 The default keeps each import in its own local namespace — no
 collisions across imports, terse access, and it's what `std:*` and
@@ -372,30 +354,6 @@ This is useful when a file pulls in several packages from one scheme
 and wants the origin spelled out at every call site, at the cost of
 some extra typing.
 
-**Opting into shared-namespace merging.** The `?flat` flag changes
-the binding shape further: contents land directly under a scheme-named
-namespace, with package names dropped from the access path. Multiple
-`?flat` imports from the same scheme merge. The DOM uses this
-heavily — most browser-targeted programs want `web.HTMLCanvasElement`-
-style access rather than per-package locals:
-
-```escalier
-import "web:canvas?flat"
-import "web:webgl?flat"
-import "web:http?flat"
-
-// All merged into one `web` binding:
-web.HTMLCanvasElement
-web.WebGLRenderingContext
-web.fetch(url)
-```
-
-`?flat` is opt-in precisely because the merged namespace is the only
-form prone to silent collisions (two packages exporting the same name
-under the same scheme would conflict). `?local` and `?nested` are
-both collision-safe; `?flat` trades that safety for an ergonomic
-flatter access path.
-
 **Named imports** (`import { sin, PI } from "std:math"`) are supported
 as a syntactic convenience — they bind the named symbols directly
 into the local scope, no namespace wrapping. Useful for pulling
@@ -404,12 +362,12 @@ namespace, especially for packages like `web:http` where the natural
 access pattern is bare names (`fetch(url)`).
 
 **Named imports may not carry binding-shape flags.** Writing
-`import { fetch } from "web:http?flat"` (or `?nested`, or `?local`)
-is a compile error. The binding-shape flags govern how a package's
+`import { fetch } from "web:http?nested"` (or `?local`) is a
+compile error. The binding-shape flags govern how a package's
 *namespace* lands in the importing scope; named imports bypass that
 namespace entirely, so the flag has nothing to act on. If a file
-needs both named bindings and a shared-namespace contribution, it
-must write two separate `import` statements.
+needs both named bindings and a namespace contribution, it must
+write two separate `import` statements.
 
 ### Cross-package DOM type references
 
@@ -422,7 +380,7 @@ document.createElement("canvas")  // should return HTMLCanvasElement
 ```
 
 `document` lives in `web:core` but `HTMLCanvasElement` lives in
-`web:canvas`. If `web:canvas?flat` isn't imported somewhere in the
+`web:canvas`. If `web:canvas` isn't imported somewhere in the
 compilation unit, the return type falls back to a coarser base
 (`HTMLElement`); if it is, the return type narrows to
 `HTMLCanvasElement`. The same pattern applies to `querySelector`,
@@ -482,9 +440,9 @@ a sibling — at the cost that each file using `createElement("canvas")`
 must import `web:canvas` itself.
 
 Augmentation activation is independent of the binding-shape flag.
-Importing `web:canvas` (whether as the default `?local`, as
-`?nested`, or as `?flat`) adds canvas's contributions to that file's
-view of `HTMLElementTagNameMap` so `createElement("canvas")` narrows
+Importing `web:canvas` (whether as the default `?local` or as
+`?nested`) adds canvas's contributions to that file's view of
+`HTMLElementTagNameMap` so `createElement("canvas")` narrows
 correctly. The flag only affects how canvas's *direct exports* land
 in the importing module's scope.
 
@@ -721,15 +679,13 @@ Phased so we can back out if it doesn't work:
    semantics per the convention above. Parse the `?flag` /
    `?flag1&flag2` suffix on the URI; strip it before path resolution;
    apply per-flag binding rules at scope-insertion time. Initial flag
-   set covers all three binding shapes: `?local` (default-equivalent
-   no-op), `?nested` (scheme.package qualified binding), `?flat`
-   (merge into shared scheme namespace). Combining any two of those
-   three reports a clear error. Gate: a placeholder `std:math`
-   package with a stub `math.PI = 3.14` imports and resolves
-   end-to-end; a three-fixture test confirms each flag binds correctly
-   (`?local` → `math.PI`, `?nested` → `std.math.PI`, `?flat` →
-   `std.PI`); a two-package fixture (`web:a?flat` + `web:b?flat`)
-   merges into one `web` binding; mutually-exclusive flag combos error.
+   set covers both binding shapes: `?local` (default-equivalent
+   no-op) and `?nested` (scheme.package qualified binding).
+   Combining the two reports a clear error. Gate: a placeholder
+   `std:math` package with a stub `math.PI = 3.14` imports and
+   resolves end-to-end; a two-fixture test confirms each flag binds
+   correctly (`?local` → `math.PI`, `?nested` → `std.math.PI`);
+   mutually-exclusive flag combos error.
 3. **Cross-package augmentation support.** Confirm that the existing
    §5 interface-merging mechanism (or a small extension of it) lets
    a package augment an open interface declared in another package,
@@ -737,10 +693,10 @@ Phased so we can back out if it doesn't work:
    package. Test with a hand-authored two-file pair: `web/core.esc`
    declares an empty `HTMLElementTagNameMap`; `web/canvas.esc`
    augments it with `canvas: HTMLCanvasElement`; importing
-   `web:canvas` under any binding-shape flag (`?local`, `?nested`,
-   `?flat`) makes `createElement("canvas")` narrow correctly in the
-   importing file, and a sibling file *without* the import sees only
-   the pre-augmentation shape. Gate: that test passes.
+   `web:canvas` under either binding-shape flag (`?local` or
+   `?nested`) makes `createElement("canvas")` narrow correctly in
+   the importing file, and a sibling file *without* the import
+   sees only the pre-augmentation shape. Gate: that test passes.
    Indexed-access over the augmented registry resolves to the right
    element type. Registry-augmentation activation is shown to be
    orthogonal to the binding-shape flag.
