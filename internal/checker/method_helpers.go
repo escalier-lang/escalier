@@ -166,6 +166,9 @@ func walkPopulateSelfParams(
 				// mutability uniformity is enforced at merge time so each
 				// arm sees the same fixup.
 				for _, fn := range e.Signatures {
+					if fn == nil {
+						continue
+					}
 					if fn.SelfParam == nil {
 						fn.SelfParam = type_system.NewSelfParam(selfRef, true)
 					}

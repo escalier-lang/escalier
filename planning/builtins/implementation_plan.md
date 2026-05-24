@@ -1315,6 +1315,15 @@ review surface manageable. (The original PR-D — inheritance and
    IntersectionType path automatically (because `getObjectAccess`
    now returns the intersection). Gate fixtures (below) flip
    to method-shape in this PR.
+   - **Printer separator fix.** [print_type.go:454](../../internal/type_system/print_type.go#L454)
+     emits overload arms with `", "`, the same separator
+     `printObjectType` uses between top-level elements. Once
+     methods can have multiple arms, the output
+     `{ foo(x: A), foo(x: B), bar: number }` is ambiguous —
+     `bar` reads as a third arm. Switch the arm separator to
+     `"; "` (or restructure to emit one arm-line per arm) when
+     `len(Signatures) > 1`. Add a print snapshot for an
+     overloaded method as part of this PR.
 PR-A and PR-B are independent and can land in either order.
 PR-C depends on both. The deferred inheritance work
 ([#651](https://github.com/escalier-lang/escalier/issues/651))

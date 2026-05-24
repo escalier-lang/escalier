@@ -1248,13 +1248,16 @@ func (c *ConstructorElem) Accept(v TypeVisitor) ObjTypeElem {
 	return c
 }
 func (m *MethodElem) Accept(v TypeVisitor) ObjTypeElem {
+	newSigs := m.Signatures
 	changed := false
-	newSigs := make([]*FuncType, len(m.Signatures))
 	for i, fn := range m.Signatures {
 		newFn := fn.Accept(v).(*FuncType)
-		newSigs[i] = newFn
 		if newFn != fn {
-			changed = true
+			if !changed {
+				newSigs = append([]*FuncType(nil), m.Signatures...)
+				changed = true
+			}
+			newSigs[i] = newFn
 		}
 	}
 	if !changed {

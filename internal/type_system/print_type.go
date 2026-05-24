@@ -457,6 +457,16 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 				// output exactly; overloads — once §4.6 PR-C lands —
 				// render as comma-separated arms sharing nothing but
 				// the method name on each line.
+				//
+				// PR-C TODO: the arm separator below (", ") collides
+				// with the outer element separator on line 447, making
+				// overloaded arms visually indistinguishable from
+				// sibling elements (e.g. `{ foo(x: A), foo(x: B), bar:
+				// number }` — is `bar` a third arm or a property?).
+				// Pick a distinct separator for arms (e.g. "; ") when
+				// len(Signatures) > 1, or restructure to emit one
+				// arm-line per arm. Harmless today since every method
+				// is single-arm.
 				for armIdx, fn := range elem.Signatures {
 					if armIdx > 0 {
 						result += ", "
