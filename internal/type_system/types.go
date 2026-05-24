@@ -2737,6 +2737,11 @@ func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
 		}
 	case *MethodElem:
 		if e2, ok := e2.(*MethodElem); ok {
+			// Arm order is significant: Signatures is ordered
+			// most-specific-first, and dispatch picks the first
+			// matching arm. Two methods with the same arms in a
+			// different order dispatch differently and are not
+			// structurally equal.
 			if e1.Name != e2.Name || len(e1.Signatures) != len(e2.Signatures) {
 				return false
 			}
