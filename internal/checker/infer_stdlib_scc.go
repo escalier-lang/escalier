@@ -1,12 +1,14 @@
 package checker
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
@@ -21,17 +23,38 @@ import (
 // confined to these schemes — user packages don't appear in this graph.
 var schemesWithSCCSupport = []string{"std", "web"}
 
+// stdlibSCCCache memoizes the per-stdlib-dir SCC graph for the process
+// lifetime. The scan is the same for every Checker that resolves to
+// the same on-disk directory, so we only pay the parse cost once per
+// dir per process (instead of once per Checker). Tests that point at a
+// fresh tempdir via ESCALIER_STDLIB_DIR get their own cache entry.
+var (
+	stdlibSCCCacheMu sync.Mutex
+	stdlibSCCCache   = map[string]*stdlibSCCEntry{}
+)
+
+type stdlibSCCEntry struct {
+	once  sync.Once
+	byURI map[string][]string
+	err   error
+}
+
 // stdlibSCCFor returns the SCC containing uri. The returned slice
 // always contains uri itself; length > 1 means the package is part
 // of a real cycle and must be loaded via loadStdlibSCC.
 func (c *Checker) stdlibSCCFor(uri string) ([]string, error) {
-	c.stdlibSCCOnce.Do(func() {
-		c.stdlibSCCByURI, c.stdlibSCCErr = c.buildStdlibPkgGraph()
-	})
-	if c.stdlibSCCErr != nil {
-		return nil, c.stdlibSCCErr
+	dir, err := c.getStdlibDir()
+	if err != nil {
+		return nil, err
 	}
-	if scc, ok := c.stdlibSCCByURI[uri]; ok {
+	entry := getStdlibSCCEntry(dir)
+	entry.once.Do(func() {
+		entry.byURI, entry.err = buildStdlibPkgGraph(c.ctx, dir)
+	})
+	if entry.err != nil {
+		return nil, entry.err
+	}
+	if scc, ok := entry.byURI[uri]; ok {
 		return scc, nil
 	}
 	// URI isn't in the discovered graph (e.g. a not-yet-existing pkg);
@@ -40,14 +63,21 @@ func (c *Checker) stdlibSCCFor(uri string) ([]string, error) {
 	return []string{uri}, nil
 }
 
+func getStdlibSCCEntry(dir string) *stdlibSCCEntry {
+	stdlibSCCCacheMu.Lock()
+	defer stdlibSCCCacheMu.Unlock()
+	if e, ok := stdlibSCCCache[dir]; ok {
+		return e
+	}
+	e := &stdlibSCCEntry{}
+	stdlibSCCCache[dir] = e
+	return e
+}
+
 // buildStdlibPkgGraph scans every `.esc` file under the stdlib data
 // directory's recognized scheme subdirectories, parses just its
 // imports, and computes the SCC each URI belongs to.
-func (c *Checker) buildStdlibPkgGraph() (map[string][]string, error) {
-	dir, err := c.getStdlibDir()
-	if err != nil {
-		return nil, err
-	}
+func buildStdlibPkgGraph(ctx context.Context, dir string) (map[string][]string, error) {
 
 	edges := map[string][]string{}
 	for _, scheme := range schemesWithSCCSupport {
@@ -67,7 +97,7 @@ func (c *Checker) buildStdlibPkgGraph() (map[string][]string, error) {
 			pkg := strings.TrimSuffix(e.Name(), ".esc")
 			uri := scheme + ":" + pkg
 			path := filepath.Join(schemeDir, e.Name())
-			imports, ierr := c.extractPseudoPackageImports(path)
+			imports, ierr := extractPseudoPackageImports(ctx, path)
 			if ierr != nil {
 				return nil, ierr
 			}
@@ -90,17 +120,25 @@ func (c *Checker) buildStdlibPkgGraph() (map[string][]string, error) {
 // extractPseudoPackageImports parses path and returns the package
 // names of every `import "<scheme>:..."` statement whose scheme is in
 // schemesWithSCCSupport.
-func (c *Checker) extractPseudoPackageImports(path string) ([]string, error) {
+func extractPseudoPackageImports(ctx context.Context, path string) ([]string, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
 	src := &ast.Source{ID: 0, Path: filepath.Base(path), Contents: string(contents)}
-	mod, _ := parser.ParseLibFiles(c.ctx, []*ast.Source{src})
+	mod, _ := parser.ParseLibFiles(ctx, []*ast.Source{src})
 	// Parse errors are intentionally ignored here: the SCC scan only
 	// cares about import statements. The same file is parsed again at
 	// real-load time, and any parse errors surface there with the
 	// proper diagnostic plumbing.
+	//
+	// Edge case: imports live at the top of `.esc` files, so any parse
+	// error before the last import statement may truncate parsed.Imports
+	// — the file could be misclassified into a smaller SCC than it
+	// actually belongs to. The real-load parse re-reports the same error
+	// with the proper anchor, so the user is never silently mis-served:
+	// the worst outcome is a slightly different shape of failure
+	// diagnostic. The file isn't compiling either way.
 
 	var out []string
 	for _, file := range mod.Files {
@@ -121,6 +159,10 @@ func (c *Checker) extractPseudoPackageImports(path string) ([]string, error) {
 // over the adjacency list `edges`. Nodes referenced only as targets
 // (not present as keys) are included as singletons. Returns one slice
 // per SCC.
+//
+// The DFS is implemented recursively; Go grows goroutine stacks
+// dynamically (8KB → many MB), so depth is bounded only by available
+// memory and is far beyond any realistic stdlib graph size.
 func tarjanSCCs(edges map[string][]string) [][]string {
 	index := 0
 	indices := map[string]int{}
@@ -210,8 +252,11 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 	// URI as cyclic) rather than an empty namespace. Intra-SCC imports
 	// are short-circuited earlier via activeSCC and never reach Lookup.
 	mergedNs := type_system.NewNamespace()
-	pkgNsByURI := map[string]*type_system.Namespace{}
-	pathByURI := map[string]string{}
+	type sccMember struct {
+		uri, scheme, pkg, path string
+		ns                     *type_system.Namespace
+	}
+	members := make([]sccMember, 0, len(sccURIs))
 
 	// Rollback helper: drop every registry entry for this SCC. Called
 	// on any error return after staging so a subsequent import re-tries
@@ -230,8 +275,7 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 			return resolveErrs
 		}
 		pkgNs := type_system.NewNamespace()
-		pkgNsByURI[uri] = pkgNs
-		pathByURI[uri] = path
+		members = append(members, sccMember{uri: uri, scheme: scheme, pkg: pkg, path: path, ns: pkgNs})
 
 		// Pre-create scheme/pkg sub-namespaces on mergedNs so that when
 		// InferModule walks `<scheme>.<pkg>` paths it lands declarations
@@ -260,14 +304,13 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 	c.activeSCC = set.FromSlice(sccURIs)
 	defer func() { c.activeSCC = prev }()
 
-	var sources []*ast.Source
-	for _, uri := range sccURIs {
-		scheme, pkg, _ := splitScheme(uri)
-		contents, readErr := os.ReadFile(pathByURI[uri])
+	sources := make([]*ast.Source, 0, len(members))
+	for _, m := range members {
+		contents, readErr := os.ReadFile(m.path)
 		if readErr != nil {
 			rollback()
 			return []Error{&GenericError{
-				message: fmt.Sprintf("failed to read stdlib file %s: %s", pathByURI[uri], readErr.Error()),
+				message: fmt.Sprintf("failed to read stdlib file %s: %s", m.path, readErr.Error()),
 				span:    span,
 			}}
 		}
@@ -280,7 +323,7 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 		// path just steers ParseLibFiles' namespace inference.
 		sources = append(sources, &ast.Source{
 			ID:       sourceID,
-			Path:     scheme + "/" + pkg + "/index.esc",
+			Path:     m.scheme + "/" + m.pkg + "/index.esc",
 			Contents: string(contents),
 		})
 	}
@@ -302,15 +345,13 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 	// originating URI (e.g. `web:dom`) instead of an opaque SCC label.
 	globals := c.knownJSGlobals()
 	var decErrs []Error
-	for _, uri := range sccURIs {
-		scheme, pkg, _ := splitScheme(uri)
-		nsKey := scheme + "." + pkg
-		ns, ok := mod.Namespaces.Get(nsKey)
+	for _, m := range members {
+		ns, ok := mod.Namespaces.Get(m.scheme + "." + m.pkg)
 		if !ok {
 			continue
 		}
 		for _, decl := range ns.Decls {
-			decErrs = append(decErrs, validateJsDecorator(uri, decl, span, globals)...)
+			decErrs = append(decErrs, validateJsDecorator(m.uri, decl, span, globals)...)
 		}
 	}
 	if len(decErrs) > 0 {
@@ -328,11 +369,11 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 
 	// Publish the populated namespaces, swapping each sentinel for its
 	// real pointer.
-	for _, uri := range sccURIs {
-		if updateErr := c.PackageRegistry.Update(uri, pkgNsByURI[uri]); updateErr != nil {
+	for _, m := range members {
+		if updateErr := c.PackageRegistry.Update(m.uri, m.ns); updateErr != nil {
 			rollback()
 			return []Error{&GenericError{
-				message: fmt.Sprintf("cannot publish stdlib SCC member %s: %s", uri, updateErr.Error()),
+				message: fmt.Sprintf("cannot publish stdlib SCC member %s: %s", m.uri, updateErr.Error()),
 				span:    span,
 			}}
 		}

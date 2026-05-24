@@ -1038,3 +1038,30 @@ func TestStatementRecovery(t *testing.T) {
 		})
 	}
 }
+
+// TestDeriveNamespaceFromPath locks the path → dotted-namespace
+// contract that several callers depend on. The stdlib SCC loader
+// constructs synthetic source paths of the form `<scheme>/<pkg>/index.esc`
+// expecting them to derive to `<scheme>.<pkg>`; if that mapping ever
+// drifts, the SCC merged-module load silently lands declarations in
+// the wrong namespace.
+func TestDeriveNamespaceFromPath(t *testing.T) {
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"main.esc", ""},
+		{"lib/main.esc", ""},
+		{"foo/math.esc", "foo"},
+		{"bar/string.esc", "bar"},
+		{"core/utils/helpers.esc", "core.utils"},
+		// stdlib SCC loader's synthetic paths.
+		{"web/dom/index.esc", "web.dom"},
+		{"std/host/index.esc", "std.host"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			require.Equal(t, tc.want, deriveNamespaceFromPath(tc.path))
+		})
+	}
+}

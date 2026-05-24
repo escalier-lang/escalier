@@ -65,16 +65,6 @@ type Checker struct {
 	// contributing URI (e.g. `web:canvas`).
 	flatContributors map[*Scope]map[string]map[string]string
 
-	// stdlibSCCByURI maps each pseudo-package URI to the slice of URIs
-	// in its SCC (size 1 for non-cyclic packages, including self).
-	// Computed lazily on first stdlib import via stdlibSCCOnce.
-	// Pseudo-package cycles within `std:`/`web:` are loaded as a single
-	// merged module so cross-package type references resolve through
-	// the dep_graph's own SCC handling.
-	stdlibSCCByURI  map[string][]string
-	stdlibSCCErr    error
-	stdlibSCCOnce   sync.Once
-
 	// activeSCC names the URIs currently being loaded as a single
 	// merged module (set during loadStdlibSCC, cleared after).
 	// Intra-SCC imports skip file-scope binding so the merged module's

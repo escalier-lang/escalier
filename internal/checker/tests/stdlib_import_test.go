@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -488,7 +489,9 @@ export declare fn make() -> web.dom.HTMLCanvasElement
 
 // TestStdlibImport_PseudoPackageCycleThreeWay verifies SCC handling
 // generalizes beyond pairs: three packages in a 3-cycle still resolve
-// each other's qualified references.
+// each other's qualified references. The `@js("Map"/"Set"/"WeakMap")`
+// targets are arbitrary placeholders chosen because they're on the
+// known-globals allow-list; they bear no relationship to ClassA/B/C.
 func TestStdlibImport_PseudoPackageCycleThreeWay(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/a.esc": `
@@ -624,4 +627,58 @@ import "web:webgl?nested"
 `)
 	msg := "`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global"
 	require.Equal(t, []string{msg, msg}, errorMessages(errs))
+}
+
+// TestStdlibImport_PseudoPackageCycle_RollbackOnParseError exercises
+// the same rollback contract as RollbackOnFailure but via a different
+// error branch in loadStdlibSCC: when one SCC member has a parse
+// error, the merged-module ParseLibFiles fails. A second import of any
+// member must re-attempt the load (and produce the same diagnostic),
+// not silently bind an empty namespace.
+func TestStdlibImport_PseudoPackageCycle_RollbackOnParseError(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		// dom.esc imports webgl cleanly so the SCC scanner sees the cycle.
+		"web/dom.esc": `
+import "web:webgl?nested"
+
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {
+    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+}
+`,
+		// webgl.esc parses its import line, then fails on the trailing
+		// garbage — that error surfaces during the SCC's real-load parse,
+		// not during the graph scan.
+		"web/webgl.esc": `
+import "web:dom?nested"
+
+@js("WebGLRenderingContext")
+export declare class WebGLRenderingContext {
+    canvas: web.dom.HTMLCanvasElement,
+}
+
+@@@ this is not valid escalier
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom?nested"
+import "web:webgl?nested"
+`)
+	msgs := errorMessages(errs)
+	require.NotEmpty(t, msgs, "expected parse-error diagnostics from both imports")
+	// Each error is anchored to the importing statement's span. With
+	// rollback, both imports re-attempt the load, so the parse-error
+	// diagnostics surface at *both* import spans. Without rollback, the
+	// second import finds a sentinel in the registry and silently skips
+	// reloading, so all parse errors come from a single span.
+	parseSpans := map[ast.Span]int{}
+	for _, e := range errs {
+		if strings.HasPrefix(e.Message(), "parse error in stdlib SCC:") {
+			parseSpans[e.Span()]++
+		}
+	}
+	require.Len(t, parseSpans, 2,
+		"expected parse-error diagnostics anchored to both import spans (rollback should re-attempt the load); got spans=%v, msgs=%v", parseSpans, msgs)
 }
