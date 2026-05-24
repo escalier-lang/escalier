@@ -172,11 +172,11 @@ func TestPrintTypeAudit_RoundTrip(t *testing.T) {
 		{"object method", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
 			&type_system.MethodElem{
 				Name: type_system.NewStrKey("foo"),
-				Fn: type_system.NewFuncType(nil, nil,
+				Signatures: []*type_system.FuncType{type_system.NewFuncType(nil, nil,
 					[]*type_system.FuncParam{
 						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewNumPrimType(nil)},
 					},
-					type_system.NewBoolPrimType(nil), nil),
+					type_system.NewBoolPrimType(nil), nil)},
 			},
 		})},
 		{"object getter", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
@@ -332,14 +332,14 @@ func TestPrintTypeAudit_RoundTrip(t *testing.T) {
 		// --- method with self receiver ---
 		{"method with self", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
 			&type_system.MethodElem{
-				Name: type_system.NewStrKey("foo"),
-				Fn:   funcWithSelf(false),
+				Name:       type_system.NewStrKey("foo"),
+				Signatures: []*type_system.FuncType{funcWithSelf(false)},
 			},
 		})},
 		{"method with mut self", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
 			&type_system.MethodElem{
-				Name: type_system.NewStrKey("foo"),
-				Fn:   funcWithSelf(true),
+				Name:       type_system.NewStrKey("foo"),
+				Signatures: []*type_system.FuncType{funcWithSelf(true)},
 			},
 		})},
 	}

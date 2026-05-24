@@ -695,7 +695,7 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 						Kind: type_system.SymObjTypeKeyKind,
 						Sym:  customMatcher.Value,
 					},
-					Fn: type_system.NewFuncType(
+					Signatures: []*type_system.FuncType{type_system.NewFuncType(
 						nil,
 						typeParams,
 						[]*type_system.FuncParam{{
@@ -704,7 +704,7 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 						}},
 						returnType,
 						type_system.NewNeverType(nil),
-					),
+					)},
 				}
 				classObjTypeElems = append(classObjTypeElems, methodElem)
 

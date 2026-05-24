@@ -280,7 +280,7 @@ func fillMemberSet(set *MemberSet, obj *type_system.ObjectType) {
 	for _, elem := range obj.Elems {
 		switch e := elem.(type) {
 		case *type_system.MethodElem:
-			set.Methods[e.Name.String()] = leafEffective(e.Fn)
+			set.Methods[e.Name.String()] = leafEffective(e.AsType())
 		case *type_system.GetterElem:
 			set.Getters[e.Name.String()] = leafEffective(e.Fn)
 		case *type_system.SetterElem:

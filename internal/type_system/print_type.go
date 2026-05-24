@@ -452,54 +452,64 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 			case *ConstructorElem:
 				result += "new " + printFuncType(elem.Fn, pt)
 			case *MethodElem:
-				result += elem.Name.String()
-				if len(elem.Fn.LifetimeParams) > 0 || len(elem.Fn.TypeParams) > 0 {
-					result += "<"
-					first := true
-					for _, lp := range elem.Fn.LifetimeParams {
-						if !first {
-							result += ", "
-						}
-						first = false
-						result += "'" + lp.Name
+				// Print one entry per overload arm. For a single-arm
+				// (non-overloaded) method this matches the historical
+				// output exactly; overloads — once §4.6 PR-C lands —
+				// render as comma-separated arms sharing nothing but
+				// the method name on each line.
+				for armIdx, fn := range elem.Signatures {
+					if armIdx > 0 {
+						result += ", "
 					}
-					for _, param := range elem.Fn.TypeParams {
-						if !first {
-							result += ", "
+					result += elem.Name.String()
+					if len(fn.LifetimeParams) > 0 || len(fn.TypeParams) > 0 {
+						result += "<"
+						first := true
+						for _, lp := range fn.LifetimeParams {
+							if !first {
+								result += ", "
+							}
+							first = false
+							result += "'" + lp.Name
 						}
-						first = false
-						result += param.Name
-						if param.Constraint != nil {
-							result += ": " + pt(param.Constraint)
+						for _, param := range fn.TypeParams {
+							if !first {
+								result += ", "
+							}
+							first = false
+							result += param.Name
+							if param.Constraint != nil {
+								result += ": " + pt(param.Constraint)
+							}
+							if param.Default != nil {
+								result += " = " + pt(param.Default)
+							}
 						}
-						if param.Default != nil {
-							result += " = " + pt(param.Default)
+						result += ">"
+					}
+					result += "("
+					hasSelf := fn.SelfParam != nil
+					if hasSelf {
+						if ReceiverIsMut(fn) {
+							result += "mut "
+						}
+						result += "self"
+					}
+					if len(fn.Params) > 0 {
+						for i, param := range fn.Params {
+							if i > 0 || hasSelf {
+								result += ", "
+							}
+							result += printFuncParam(param, pt)
 						}
 					}
-					result += ">"
-				}
-				result += "("
-				hasSelf := elem.Fn != nil && elem.Fn.SelfParam != nil
-				if hasSelf {
-					if ReceiverIsMut(elem.Fn) {
-						result += "mut "
+					result += ")"
+					if fn.Return != nil {
+						result += " -> " + pt(fn.Return)
 					}
-					result += "self"
-				}
-				if len(elem.Fn.Params) > 0 {
-					for i, param := range elem.Fn.Params {
-						if i > 0 || hasSelf {
-							result += ", "
-						}
-						result += printFuncParam(param, pt)
+					if !IsNeverType(fn.Throws) {
+						result += " throws " + pt(fn.Throws)
 					}
-				}
-				result += ")"
-				if elem.Fn.Return != nil {
-					result += " -> " + pt(elem.Fn.Return)
-				}
-				if !IsNeverType(elem.Fn.Throws) {
-					result += " throws " + pt(elem.Fn.Throws)
 				}
 			case *GetterElem:
 				result += "get " + elem.Name.String() + "(" + printSelfReceiver(elem.Fn) + ") -> " + pt(elem.Fn.Return)

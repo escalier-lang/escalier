@@ -1530,10 +1530,11 @@ func (c *Checker) unifyExtractor(
 			ObjectType: extObj,
 		}}
 	}
-	if len(methodElem.Fn.Params) != 1 {
+	customMatcherSig := methodElem.SingleSig()
+	if len(customMatcherSig.Params) != 1 {
 		return []Error{&IncorrectParamCountForCustomMatcherError{
-			Method:    methodElem.Fn,
-			NumParams: len(methodElem.Fn.Params),
+			Method:    customMatcherSig,
+			NumParams: len(customMatcherSig.Params),
 		}}
 	}
 
@@ -1545,7 +1546,7 @@ func (c *Checker) unifyExtractor(
 	//
 	// Note: instantiateGenericFunc preserves the param count, so the
 	// single-param validation on line 1243 is still satisfied after this.
-	fn := methodElem.Fn
+	fn := customMatcherSig
 	if len(fn.TypeParams) > 0 || len(fn.LifetimeParams) > 0 {
 		fn = c.instantiateGenericFunc(fn)
 	}
@@ -1734,7 +1735,7 @@ func (c *Checker) unifyClosedWithRests(
 		case *type_system.PropertyElem:
 			addEffective(elem.Name, elem.Value)
 		case *type_system.MethodElem:
-			addEffective(elem.Name, elem.Fn)
+			addEffective(elem.Name, elem.AsType())
 		case *type_system.GetterElem:
 			addEffective(elem.Name, elem.Fn.Return)
 		case *type_system.SetterElem:
@@ -1755,7 +1756,7 @@ func (c *Checker) unifyClosedWithRests(
 					case *type_system.PropertyElem:
 						addEffective(re.Name, re.Value)
 					case *type_system.MethodElem:
-						addEffective(re.Name, re.Fn)
+						addEffective(re.Name, re.AsType())
 					case *type_system.GetterElem:
 						addEffective(re.Name, re.Fn.Return)
 					case *type_system.SetterElem:
@@ -2605,9 +2606,26 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 				newElems[i] = elem
 			}
 		case *type_system.MethodElem:
-			if fn := widenFuncType(e.Fn); fn != e.Fn {
+			// Widen each arm. Reuses the existing slice when no arm
+			// changed to avoid unnecessary allocation; PR-A still has
+			// at most one arm per method, but the loop is forward-
+			// compatible with PR-C overloads.
+			newSigs := e.Signatures
+			armChanged := false
+			for j, fn := range e.Signatures {
+				widened := widenFuncType(fn)
+				if widened != fn {
+					if !armChanged {
+						newSigs = make([]*type_system.FuncType, len(e.Signatures))
+						copy(newSigs, e.Signatures)
+						armChanged = true
+					}
+					newSigs[j] = widened
+				}
+			}
+			if armChanged {
 				changed = true
-				newElems[i] = &type_system.MethodElem{Name: e.Name, Fn: fn}
+				newElems[i] = &type_system.MethodElem{Name: e.Name, Signatures: newSigs}
 			} else {
 				newElems[i] = elem
 			}
@@ -3077,7 +3095,7 @@ func collectObjElemTypes(obj *type_system.ObjectType, collectOrigElems bool) col
 				result.OrigWrite[elem.Name] = elem
 			}
 		case *type_system.MethodElem:
-			result.Read[elem.Name] = elem.Fn
+			result.Read[elem.Name] = elem.AsType()
 			if !seen[elem.Name] {
 				result.Keys = append(result.Keys, elem.Name)
 				seen[elem.Name] = true

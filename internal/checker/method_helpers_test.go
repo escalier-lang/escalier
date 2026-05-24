@@ -49,7 +49,7 @@ func TestPopulateSelfParamsRecursesIntoNestedNamespaces(t *testing.T) {
 		var fn *type_system.FuncType
 		for _, elem := range obj.Elems {
 			if me, ok := elem.(*type_system.MethodElem); ok && me.Name.Str == methodName {
-				fn = me.Fn
+				fn = me.SingleSig()
 				break
 			}
 		}

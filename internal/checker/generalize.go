@@ -82,7 +82,9 @@ func collectUnresolvedTypeVarsImpl(
 			case *type_system.PropertyElem:
 				collectUnresolvedTypeVarsImpl(e.Value, vars, order, visited)
 			case *type_system.MethodElem:
-				collectUnresolvedTypeVarsImpl(e.Fn, vars, order, visited)
+				for _, fn := range e.Signatures {
+					collectUnresolvedTypeVarsImpl(fn, vars, order, visited)
+				}
 			case *type_system.GetterElem:
 				collectUnresolvedTypeVarsImpl(e.Fn, vars, order, visited)
 			case *type_system.SetterElem:
@@ -246,9 +248,13 @@ func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_sys
 					Value:    c.deepCloneType(e.Value, varMapping),
 				}
 			case *type_system.MethodElem:
+				clonedSigs := make([]*type_system.FuncType, len(e.Signatures))
+				for j, fn := range e.Signatures {
+					clonedSigs[j] = c.deepCloneType(fn, varMapping).(*type_system.FuncType)
+				}
 				elems[i] = &type_system.MethodElem{
-					Name: e.Name,
-					Fn:   c.deepCloneType(e.Fn, varMapping).(*type_system.FuncType),
+					Name:       e.Name,
+					Signatures: clonedSigs,
 				}
 			case *type_system.GetterElem:
 				elems[i] = &type_system.GetterElem{

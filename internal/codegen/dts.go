@@ -897,9 +897,11 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Fn: b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.MethodElem:
+		// PR-A: methods are single-signature here. PR-C will fan out
+		// one MethodTypeAnn per overload arm in specificity order.
 		return &MethodTypeAnn{
 			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
-			Fn:   b.buildFuncTypeAnn(elem.Fn),
+			Fn:   b.buildFuncTypeAnn(elem.SingleSig()),
 		}
 	case *type_sys.GetterElem:
 		return &GetterTypeAnn{

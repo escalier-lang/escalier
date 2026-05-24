@@ -366,8 +366,8 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	methodFunc := test_util.ParseTypeAnn("fn (x: T) -> U").(*type_system.FuncType)
 	methodFunc.SelfParam = type_system.NewSelfParam(selfRef, false)
 	method := &type_system.MethodElem{
-		Name: type_system.NewStrKey("method"),
-		Fn:   methodFunc,
+		Name:       type_system.NewStrKey("method"),
+		Signatures: []*type_system.FuncType{methodFunc},
 	}
 
 	getterFunc := test_util.ParseTypeAnn("fn () -> T").(*type_system.FuncType)

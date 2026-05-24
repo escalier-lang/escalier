@@ -470,7 +470,7 @@ func lookupStaticObject(ns *type_system.Namespace, name string) *type_system.Obj
 func objElemMatch(elem type_system.ObjTypeElem) (type_system.Type, string, bool) {
 	switch e := elem.(type) {
 	case *type_system.MethodElem:
-		return e.Fn, e.Name.String(), true
+		return e.AsType(), e.Name.String(), true
 	case *type_system.GetterElem:
 		return e.Fn, e.Name.String(), true
 	case *type_system.SetterElem:

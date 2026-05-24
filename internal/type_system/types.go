@@ -1050,9 +1050,56 @@ type ObjTypeElem interface {
 
 type CallableElem struct{ Fn *FuncType }
 type ConstructorElem struct{ Fn *FuncType }
+// MethodElem is a method member of an object type.
+//
+// Signatures carries the method's callable arms. A non-
+// overloaded method has exactly one arm; an overloaded method
+// (multiple same-named arms in one class/interface body) has
+// the arms ordered most-specific-first. Until §4.6 PR-C lands,
+// every MethodElem produced by elaboration still has exactly
+// one arm. The merge pass that produces multi-arm methods runs
+// at the elaboration boundary, so all downstream readers must
+// be overload-aware via the Signatures slice; SingleSig() exists
+// for the small number of call sites that genuinely cannot
+// handle overloads (Symbol.iterator, custom matchers, etc.).
 type MethodElem struct {
-	Name ObjTypeKey
-	Fn   *FuncType
+	Name       ObjTypeKey
+	Signatures []*FuncType
+}
+
+// SingleSig returns the sole signature for a method that is
+// known to be single-signature. Panics if the method has been
+// overloaded — callers that genuinely cannot handle overloads
+// should use this so the misuse surfaces immediately. Returns
+// nil if Signatures is empty.
+func (m *MethodElem) SingleSig() *FuncType {
+	if len(m.Signatures) == 0 {
+		return nil
+	}
+	if len(m.Signatures) > 1 {
+		panic(fmt.Sprintf("MethodElem.SingleSig called on overloaded method %v (%d arms)", m.Name, len(m.Signatures)))
+	}
+	return m.Signatures[0]
+}
+
+// AsType returns a Type view of the method's callable shape:
+// the lone FuncType for single-sig methods, an IntersectionType
+// of FuncType arms for overloaded methods. Used by member-access
+// resolution and any other site that needs to plug the method
+// into a Type-valued slot. Returns nil if Signatures is empty.
+func (m *MethodElem) AsType() Type {
+	switch len(m.Signatures) {
+	case 0:
+		return nil
+	case 1:
+		return m.Signatures[0]
+	default:
+		arms := make([]Type, len(m.Signatures))
+		for i, fn := range m.Signatures {
+			arms[i] = fn
+		}
+		return NewIntersectionType(nil, arms...)
+	}
 }
 type GetterElem struct {
 	Name ObjTypeKey
@@ -1105,7 +1152,7 @@ type PropertyElem struct {
 }
 
 func NewMethodElem(name ObjTypeKey, fn *FuncType) *MethodElem {
-	return &MethodElem{Name: name, Fn: fn}
+	return &MethodElem{Name: name, Signatures: []*FuncType{fn}}
 }
 func NewGetterElem(name ObjTypeKey, fn *FuncType) *GetterElem {
 	return &GetterElem{Name: name, Fn: fn}
@@ -1201,11 +1248,19 @@ func (c *ConstructorElem) Accept(v TypeVisitor) ObjTypeElem {
 	return c
 }
 func (m *MethodElem) Accept(v TypeVisitor) ObjTypeElem {
-	newFn := m.Fn.Accept(v).(*FuncType)
-	if newFn != m.Fn {
-		return &MethodElem{Name: m.Name, Fn: newFn}
+	changed := false
+	newSigs := make([]*FuncType, len(m.Signatures))
+	for i, fn := range m.Signatures {
+		newFn := fn.Accept(v).(*FuncType)
+		newSigs[i] = newFn
+		if newFn != fn {
+			changed = true
+		}
 	}
-	return m
+	if !changed {
+		return m
+	}
+	return &MethodElem{Name: m.Name, Signatures: newSigs}
 }
 func (g *GetterElem) Accept(v TypeVisitor) ObjTypeElem {
 	newFn := g.Fn.Accept(v).(*FuncType)
@@ -2679,7 +2734,15 @@ func objTypeElemEquals(e1, e2 ObjTypeElem) bool {
 		}
 	case *MethodElem:
 		if e2, ok := e2.(*MethodElem); ok {
-			return e1.Name == e2.Name && equals(e1.Fn, e2.Fn)
+			if e1.Name != e2.Name || len(e1.Signatures) != len(e2.Signatures) {
+				return false
+			}
+			for i := range e1.Signatures {
+				if !equals(e1.Signatures[i], e2.Signatures[i]) {
+					return false
+				}
+			}
+			return true
 		}
 	case *GetterElem:
 		if e2, ok := e2.(*GetterElem); ok {
