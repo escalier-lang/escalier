@@ -288,27 +288,21 @@ it lazily on first scheme-prefixed import.
 ### 2.3 Binding-shape application
 
 - Implement the flag rules from FR4. Each pseudo-package import
-  contributes a binding entry whose shape depends on the flag:
-  - `?local` (default): binding name = lowercased last URI
-    segment (or capitalized class name when the single-class
-    shortcut FR5 fires).
-  - `?nested`: contributes to a per-scheme namespace
-    (`std`, `web`); the package sits under it as
-    `std.<package>`. Multiple `?nested` imports from the same
-    scheme merge under disjoint sub-namespaces — no collision
-    risk.
+  contributes a binding entry under `?local` (the only shape today):
+  binding name = lowercased last URI segment (or capitalized class
+  name when the single-class shortcut FR5 fires).
 - Internal bookkeeping (whether a file has loaded a package's
   declarations) keys on the package's full URI (`web:fetch`),
-  independent of binding-shape flag. This applies uniformly
-  across `?local` and `?nested`.
-- **Mutually exclusive:** combining `?local` and `?nested` on
-  one URI is a compile error; the resolver reports which flag
-  pair is invalid.
+  independent of binding-shape flag.
 - **Extensible flag slot.** The grammar reserves the `?flag` /
   `?flag1&flag2` shape for future flags (`?type-only`, `?lazy`,
   …). Unknown flags currently error per the taxonomy; the
   resolver factors flag recognition into a per-flag table so
-  future flags slot in without restructuring.
+  future flags slot in without restructuring. **Note:** the
+  earlier `?nested` shape (bound under `<scheme>.<package>`) was
+  removed once it became clear the dep_graph's cycle detection
+  only matched canonical `<pkg>.<name>` binding keys; cross-stdlib
+  collisions can be addressed later via file-local renaming.
 
 ### 2.4 Single-class shortcut (FR5)
 
@@ -322,7 +316,6 @@ it lazily on first scheme-prefixed import.
   `Array(5)` (construct, no `new`).
 - Static methods on the class take precedence over namespace
   members on name collision.
-- Not applicable to `?nested`.
 
 ### 2.5 Tests and gates
 

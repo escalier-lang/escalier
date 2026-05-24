@@ -277,18 +277,12 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 		pkgNs := type_system.NewNamespace()
 		members = append(members, sccMember{uri: uri, scheme: scheme, pkg: pkg, path: path, ns: pkgNs})
 
-		// Pre-create scheme/pkg sub-namespaces on mergedNs so that when
-		// InferModule walks `<scheme>.<pkg>` paths it lands declarations
-		// into the same Namespace pointer we publish below.
-		schemeNs, ok := mergedNs.GetNamespace(scheme)
-		if !ok {
-			schemeNs = type_system.NewNamespace()
-			if err := mergedNs.SetNamespace(scheme, schemeNs); err != nil {
-				rollback()
-				return []Error{&GenericError{message: err.Error(), span: span}}
-			}
-		}
-		if err := schemeNs.SetNamespace(pkg, pkgNs); err != nil {
+		// Pre-create the <pkg> sub-namespace on mergedNs so InferModule
+		// lands `<pkg>.<name>` declarations into the same Namespace
+		// pointer we publish below — and so the dep_graph sees the
+		// member's binding keys at the same flat `<pkg>.<name>` path
+		// source files reference them under.
+		if err := mergedNs.SetNamespace(pkg, pkgNs); err != nil {
 			rollback()
 			return []Error{&GenericError{message: err.Error(), span: span}}
 		}
@@ -316,14 +310,17 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 		}
 		sourceID := c.stdlibNextSourceID
 		c.stdlibNextSourceID++
-		// Path is `<scheme>/<pkg>/index.esc` so deriveNamespaceFromPath
-		// yields `<scheme>.<pkg>` — the dotted namespace key declarations
-		// from this file land under in mod.Namespaces. The actual on-disk
-		// `.esc` file is flat (`<scheme>/<pkg>.esc`); this synthetic
-		// path just steers ParseLibFiles' namespace inference.
+		// Path is `<pkg>/index.esc` so deriveNamespaceFromPath yields
+		// `<pkg>` — that's the namespace key declarations from this file
+		// land under in mod.Namespaces, and also the binding-key prefix
+		// the dep_graph uses for cycle detection. Source files reference
+		// SCC siblings as `<pkg>.<name>`, so the dep_graph's qualified
+		// lookup hits the canonical key directly. The actual on-disk
+		// `.esc` file is flat (`<scheme>/<pkg>.esc`); this synthetic path
+		// only steers ParseLibFiles' namespace inference.
 		sources = append(sources, &ast.Source{
 			ID:       sourceID,
-			Path:     m.scheme + "/" + m.pkg + "/index.esc",
+			Path:     m.pkg + "/index.esc",
 			Contents: string(contents),
 		})
 	}
@@ -346,7 +343,7 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 	globals := c.knownJSGlobals()
 	var decErrs []Error
 	for _, m := range members {
-		ns, ok := mod.Namespaces.Get(m.scheme + "." + m.pkg)
+		ns, ok := mod.Namespaces.Get(m.pkg)
 		if !ok {
 			continue
 		}

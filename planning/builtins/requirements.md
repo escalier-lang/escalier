@@ -71,9 +71,10 @@ In scope:
   per-file based on language-feature usage (primitive method
   dispatch, `await`, iteration, …), and **named** when the file
   explicitly imports the package.
-- Per-import binding-shape flags (`?local`, `?nested`)
-  governing how a pseudo-package's namespace lands in the importing
-  file.
+- Per-import binding-shape flag (`?local`) governing how a
+  pseudo-package's namespace lands in the importing file. The
+  earlier `?nested` shape was removed; see [implementation_plan.md](implementation_plan.md)
+  §2.3 for context.
 - The **single-class shortcut** for per-class packages: when the
   package's lowercased name matches a class declared in it, the
   `?local` binding *is* the class for member access, construction,
