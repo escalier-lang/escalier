@@ -29,12 +29,36 @@ func declName(decl ast.Decl) string {
 			return d.Name.Name
 		}
 		return ""
+	case *ast.TypeDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+		return ""
+	case *ast.InterfaceDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+		return ""
+	case *ast.EnumDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+		return ""
 	}
 	return ""
 }
 
+// declNameOrPlaceholder is declName with a "<unnamed>" fallback for
+// diagnostics that need a non-empty string.
+func declNameOrPlaceholder(decl ast.Decl) string {
+	if n := declName(decl); n != "" {
+		return n
+	}
+	return "<unnamed>"
+}
+
 // declKindLabel returns a short label for decl used in diagnostics
-// ("function", "class", "value"). Matches the §3.3 grammar terms.
+// ("function", "class", "value", …). Matches the §3.3 grammar terms.
 func declKindLabel(decl ast.Decl) string {
 	switch decl.(type) {
 	case *ast.FuncDecl:
@@ -43,6 +67,12 @@ func declKindLabel(decl ast.Decl) string {
 		return "class"
 	case *ast.VarDecl:
 		return "value"
+	case *ast.TypeDecl:
+		return "type"
+	case *ast.InterfaceDecl:
+		return "interface"
+	case *ast.EnumDecl:
+		return "enum"
 	default:
 		return "declaration"
 	}
@@ -55,8 +85,14 @@ func declKindLabel(decl ast.Decl) string {
 //  2. An unexported value-level top-level decl is rejected (no runtime
 //     mapping; invisible to importers — almost certainly a missing
 //     `export`).
-//  3. An unexported type-level decl is allowed and must not carry `@js`
-//     (already enforced at parse time, so nothing to check here).
+//  3. An unexported type-level decl is rejected too. Importers'
+//     file-scope bindings share the canonical pkgNs pointer (see
+//     bindStdlibLocal / bindStdlibNested), so any member in pkgNs is
+//     potentially reachable through qualified refs — unexported types
+//     would leak. Forbidding them at the loader keeps the
+//     share-by-pointer model safe; the `@js` decorator is forbidden
+//     on type-level decls at parse time, so we don't need to check it
+//     here.
 //  4. The `@js` argument names a known JS runtime path — a top-level
 //     global from the pinned TS lib (e.g. `Math.sin`, `parseInt`) or
 //     an entry in the hand-authored allow-list
@@ -82,15 +118,26 @@ func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span, gl
 	switch decl.(type) {
 	case *ast.VarDecl, *ast.FuncDecl, *ast.ClassDecl:
 		// fall through — value-level decl handled below
+	case *ast.TypeDecl, *ast.InterfaceDecl, *ast.EnumDecl:
+		// Rule 3: type-level decls must be exported. No `@js` checks
+		// apply (parser forbids `@js` on type-level decls).
+		if !decl.Export() {
+			return []Error{&GenericError{
+				message: fmt.Sprintf(
+					"unexported %s %q in pseudo-package file %s would leak to importers "+
+						"through the shared package namespace; "+
+						"add `export` or remove the declaration",
+					declKindLabel(decl), declNameOrPlaceholder(decl), filePath),
+				span: importSpan,
+			}}
+		}
+		return nil
 	default:
 		return nil
 	}
 
 	jsDec, jsArg, jsOK := ast.FindJsDecorator(decl)
-	name := declName(decl)
-	if name == "" {
-		name = "<unnamed>"
-	}
+	name := declNameOrPlaceholder(decl)
 	kindLabel := declKindLabel(decl)
 
 	if !decl.Export() {
