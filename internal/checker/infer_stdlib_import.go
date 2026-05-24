@@ -128,7 +128,7 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 	// A file-scope bind here would just shadow that live, populating
 	// namespace with an empty filtered copy because the target package
 	// hasn't gone through its placeholder phase yet.
-	if c.activeSCC[importStmt.PackageName] {
+	if c.activeSCC.Contains(importStmt.PackageName) {
 		return errs
 	}
 

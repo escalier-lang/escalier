@@ -10,6 +10,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -124,23 +125,20 @@ func tarjanSCCs(edges map[string][]string) [][]string {
 	index := 0
 	indices := map[string]int{}
 	lowlink := map[string]int{}
-	onStack := map[string]bool{}
+	onStack := set.NewSet[string]()
 	stack := []string{}
 	var sccs [][]string
 
 	// Gather all nodes (sources + targets) so isolated importees are
 	// represented even if they have no outgoing edges.
-	nodeSet := map[string]bool{}
+	nodeSet := set.NewSet[string]()
 	for n, succs := range edges {
-		nodeSet[n] = true
+		nodeSet.Add(n)
 		for _, s := range succs {
-			nodeSet[s] = true
+			nodeSet.Add(s)
 		}
 	}
-	nodes := make([]string, 0, len(nodeSet))
-	for n := range nodeSet {
-		nodes = append(nodes, n)
-	}
+	nodes := nodeSet.ToSlice()
 	sort.Strings(nodes) // deterministic traversal
 
 	var strongconnect func(v string)
@@ -149,7 +147,7 @@ func tarjanSCCs(edges map[string][]string) [][]string {
 		lowlink[v] = index
 		index++
 		stack = append(stack, v)
-		onStack[v] = true
+		onStack.Add(v)
 
 		for _, w := range edges[v] {
 			if _, seen := indices[w]; !seen {
@@ -157,7 +155,7 @@ func tarjanSCCs(edges map[string][]string) [][]string {
 				if lowlink[w] < lowlink[v] {
 					lowlink[v] = lowlink[w]
 				}
-			} else if onStack[w] {
+			} else if onStack.Contains(w) {
 				if indices[w] < lowlink[v] {
 					lowlink[v] = indices[w]
 				}
@@ -169,7 +167,7 @@ func tarjanSCCs(edges map[string][]string) [][]string {
 			for {
 				w := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
-				onStack[w] = false
+				onStack.Remove(w)
 				scc = append(scc, w)
 				if w == v {
 					break
@@ -259,10 +257,7 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 	// (Tarjan output), so a nested loadStdlibSCC cannot share URIs with
 	// an outer one; replacing the map is safe under save/restore.
 	prev := c.activeSCC
-	c.activeSCC = map[string]bool{}
-	for _, uri := range sccURIs {
-		c.activeSCC[uri] = true
-	}
+	c.activeSCC = set.FromSlice(sccURIs)
 	defer func() { c.activeSCC = prev }()
 
 	var sources []*ast.Source

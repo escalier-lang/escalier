@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -581,14 +580,10 @@ export declare class WebGLRenderingContext {
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
 	_, errs := inferStdlibImportSource(t, `import "web:dom?nested"`)
-	msgs := errorMessages(errs)
-	require.NotEmpty(t, msgs, "expected an @js validation error")
-
-	joined := strings.Join(msgs, "\n")
-	require.Contains(t, joined, "web:webgl",
-		"diagnostic should name the offending member URI, got: %s", joined)
-	require.NotContains(t, joined, "SCC{",
-		"diagnostic should not leak the synthetic SCC label, got: %s", joined)
+	expected := []string{
+		"`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global",
+	}
+	require.Equal(t, expected, errorMessages(errs))
 }
 
 // TestStdlibImport_PseudoPackageCycle_RollbackOnFailure verifies that
@@ -627,13 +622,6 @@ export declare class WebGLRenderingContext {
 import "web:dom?nested"
 import "web:webgl?nested"
 `)
-	msgs := errorMessages(errs)
-	hits := 0
-	for _, m := range msgs {
-		if strings.Contains(m, "ThisGlobalDoesNotExist") {
-			hits++
-		}
-	}
-	require.GreaterOrEqual(t, hits, 2,
-		"expected the decorator error to surface for both imports (rollback should re-attempt the load); got msgs: %v", msgs)
+	msg := "`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global"
+	require.Equal(t, []string{msg, msg}, errorMessages(errs))
 }

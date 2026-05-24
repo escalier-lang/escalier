@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	gqlast "github.com/vektah/gqlparser/v2/ast"
 )
@@ -79,7 +80,7 @@ type Checker struct {
 	// Intra-SCC imports skip file-scope binding so the merged module's
 	// namespace tree — which already exposes each member at its derived
 	// path — isn't shadowed by an empty filtered copy.
-	activeSCC map[string]bool
+	activeSCC set.Set[string]
 }
 
 func NewChecker(ctx context.Context) *Checker {
