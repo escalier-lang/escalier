@@ -25,7 +25,7 @@ scope here and will be tracked separately.
   primitive method dispatch, iteration, and `await` from
   language-level shape knowledge.
 - Provide a uniform import model (`import "std:math"`,
-  `import "web:canvas"`) for accessing standard-library and Web
+  `import "web:dom"`) for accessing standard-library and Web
   platform APIs, with per-import flags for choosing the binding
   shape.
 - Make `throws`, lifetimes, mutability, and any other Escalier-specific
@@ -78,11 +78,30 @@ In scope:
   package's lowercased name matches a class declared in it, the
   `?local` binding *is* the class for member access, construction,
   and type position.
-- Cross-package augmentation via open registry interfaces
-  (`HTMLElementTagNameMap`, `HTMLElementEventMap`,
-  `SVGElementTagNameMap`, …), with activation scoped to the
-  importing file.
-- Inter-package imports between pseudo-packages.
+- **The entire DOM tree lives in one package, `web:dom`** —
+  core DOM, SVG, MathML, CSSOM, XML/XPath/parsing, selection,
+  history, input events, observers, animations, custom elements,
+  etc. All `lib.dom.d.ts` interfaces that meaningfully depend on
+  `Document` / `Element` / `Event` are co-located. String-overload
+  APIs (`createElement`, `createElementNS`) and their registries
+  (`HTMLElementTagNameMap`, `SVGElementTagNameMap`,
+  `MathMLElementTagNameMap`) live entirely inside `web:dom`,
+  closed and not augmentable across packages.
+- **Standalone web APIs split into sibling `web:*` packages** —
+  the families that happen to ship in `lib.dom.d.ts` but have no
+  DOM coupling: `web:fetch`, `web:streams`, `web:crypto`,
+  `web:workers`, `web:webgl`, `web:web_audio`, `web:web_rtc`,
+  `web:web_codecs`, `web:indexeddb`, `web:service_worker`,
+  `web:websocket`, `web:storage`, `web:url`, `web:encoding`,
+  `web:file`, `web:performance`, `web:webauthn`, `web:payments`.
+- (True per-file cross-package augmentation — FR7/FR9 in earlier
+  drafts — is **deferred** to a future workstream; the closed
+  `web:dom` partition makes it unnecessary for MVP.)
+- Inter-package imports between pseudo-packages, with
+  cross-package type references via qualified names for APIs
+  in sibling `web:*` packages that need to mention `web:dom`
+  types (e.g. `web:fetch`'s `Response.body` returning a
+  `web.streams.ReadableStream`).
 - A one-time bootstrap converter `tools/dts_to_esc/` that
   AST-to-AST translates the pinned TypeScript `.d.ts` set into the
   initial `.esc` files. Output is hand-edited and committed; ongoing
@@ -249,14 +268,27 @@ internal/interop/data/
         intl.esc, temporal.esc, wasm.esc
 
     web/
-        web.esc, html.esc, svg.esc, mathml.esc,
-        http.esc, canvas.esc, webgl.esc, webrtc.esc,
-        storage.esc, workers.esc, media.esc, forms.esc,
-        # additional web:* packages as needed
+        # the entire DOM tree, including SVG/MathML/CSSOM/XML/
+        # selection/history/input events/observers/animations/
+        # custom elements/etc. Anything coupled to Document,
+        # Element, or Event lives here.
+        dom.esc,
+
+        # standalone web APIs (no DOM coupling) that ship in
+        # lib.dom.d.ts only by historical accident
+        fetch.esc, streams.esc, crypto.esc, workers.esc,
+        webgl.esc, web_audio.esc, web_rtc.esc, web_codecs.esc,
+        indexeddb.esc, service_worker.esc, websocket.esc,
+        storage.esc, url.esc, encoding.esc, file.esc,
+        performance.esc, webauthn.esc, payments.esc
+        # additional standalone web:* packages as needed
 ```
 
-DOM packages split more finely than `std/` because the surface is
-larger; a typical browser program touches 2–3 `web:*` packages.
+DOM-coupled APIs are deliberately bundled into a single
+`web:dom` package: splitting along HTML/SVG/MathML lines turned
+out to require cross-package augmentation primitives that are
+not in scope for MVP (see FR7). A typical browser program imports
+`web:dom` plus 1–2 standalone web packages (`web:fetch` etc.).
 
 **File-naming convention.** Multi-word package names use underscores
 in both the file name and the user-visible binding so the two
@@ -274,8 +306,8 @@ The module-specifier grammar accepts a new shape:
 ```escalier
 import "std:math"
 import "std:json"
-import "web:canvas"
-import "web:http"
+import "web:dom"
+import "web:fetch"
 ```
 
 We need to **add** support for resolving modules with the `std:`,
@@ -290,7 +322,7 @@ specifiers to the resolved stdlib data directory (see
 "Filesystem-resident stdlib data" in non-functional requirements
 for the discovery scheme). Mapping is mechanical:
 `std:math` → `<stdlib>/std/math.esc`,
-`web:http` → `<stdlib>/web/http.esc`. The `?flag`
+`web:fetch` → `<stdlib>/web/fetch.esc`. The `?flag`
 portion of the URI (see FR4) is stripped before path resolution.
 
 **Grammar updates.** The parser must be extended to accept two
@@ -353,7 +385,7 @@ they are mutually exclusive and exactly one is in effect per import
   identifier equal to the lowercased last URI segment. Each import
   is its own binding; no cross-import merging.
   - `import "std:math"` → `math.sin(x)`, `math.PI`
-  - `import "web:canvas"` → `canvas.HTMLCanvasElement`
+  - `import "web:webgl"` → `webgl.WebGLRenderingContext`
   - **Exception:** when the package qualifies for the single-class
     shortcut (FR5), the `?local` binding is the class name with its
     original capitalization (e.g. `Array`, `Date`), not the
@@ -367,8 +399,8 @@ they are mutually exclusive and exactly one is in effect per import
 - **`?flat`.** Merge the package's contents directly into a shared
   scheme-named namespace. Multiple `?flat` imports from the same
   scheme merge; package names are dropped from the access path.
-  - `import "web:canvas?flat"` + `import "web:webgl?flat"` →
-    `web.HTMLCanvasElement`, `web.WebGLRenderingContext`.
+  - `import "web:webgl?flat"` + `import "web:fetch?flat"` →
+    `web.WebGLRenderingContext`, `web.Response`.
   - Collision risk is real (two packages exporting the same name
     under one scheme conflict). Opt-in for that reason. **When
     `?flat` produces a name collision, the compiler reports a
@@ -394,9 +426,9 @@ need a `-` → `_` substitution when computing the binding name; that
 substitution rule is part of the third-party workstream and is out
 of scope here.) `?flat` drops the package name from the user-visible
 binding, but internal bookkeeping (tracking whether a given file's
-imports have already pulled in a package's declarations / registry
-augmentations) uses the pseudo-package's full URI as the key —
-e.g. `web:canvas` — regardless of which binding-shape flag the
+imports have already pulled in a package's declarations) uses the
+pseudo-package's full URI as the key — e.g. `web:fetch` —
+regardless of which binding-shape flag the
 import carried. This applies uniformly across `?local`, `?nested`,
 and `?flat`.
 
@@ -506,20 +538,65 @@ depend on pseudo-packages but pseudo-packages do not depend on
 user code), and cycles among user packages remain disallowed as
 before.
 
-### FR7. Cross-package augmentation via open registries
+### FR7. DOM packaging; cross-package type references (open augmentation deferred)
 
-Splitting the DOM into feature packages requires that `web:dom`
-APIs return or reference types that live in feature packages, e.g.
-`document.createElement("canvas")` should return
-`HTMLCanvasElement`.
+The pseudo-package partition needs to handle two distinct
+shapes of cross-package coupling: **DOM-internal coupling** (the
+tight web of `Document`, `Element`, `Event`, HTML/SVG/MathML
+element classes, CSSOM, observers, …) and **standalone web APIs
+coupled to DOM only at the edges** (`web:fetch` returns a
+`Response.body` of type `ReadableStream`; `web:webgl`'s context
+is obtained from an `HTMLCanvasElement`; etc.).
 
-**Primary mechanism: open registry interfaces, augmented per
-package.** `web:dom` declares the registry (`HTMLElementTagNameMap`,
-`HTMLElementEventMap`, `SVGElementTagNameMap`,
-`MathMLElementTagNameMap`, etc.) with a minimal baseline or empty
-body. Core APIs are written once against the registry:
+**MVP design — single `web:dom` package + standalone web siblings.**
+
+- The **entire DOM tree** — Document, Element, Node, Window,
+  Navigator, every HTML element class, SVG, MathML, CSSOM,
+  XML/XPath/parsing, selection, range, history, navigation,
+  input/pointer/keyboard/touch events, drag-and-drop,
+  observers (Intersection/Resize/Mutation), Web Animations,
+  custom elements, fullscreen, picture-in-picture, view
+  transitions — lives in a **single `web:dom` package**. All
+  the registry interfaces (`HTMLElementTagNameMap`,
+  `SVGElementTagNameMap`, `MathMLElementTagNameMap`,
+  `HTMLElementEventMap`, `SVGElementEventMap`,
+  `MathMLElementEventMap`, …) are closed and declared in
+  `web:dom` alongside the methods that key on them
+  (`createElement`, `createElementNS`, `addEventListener`).
+- **Standalone web APIs** — families that ship in
+  `lib.dom.d.ts` but have no DOM coupling — split into sibling
+  `web:*` packages: `web:fetch`, `web:streams`, `web:crypto`,
+  `web:workers`, `web:webgl`, `web:web_audio`, `web:web_rtc`,
+  `web:web_codecs`, `web:indexeddb`, `web:service_worker`,
+  `web:websocket`, `web:storage`, `web:url`, `web:encoding`,
+  `web:file`, `web:performance`, `web:webauthn`,
+  `web:payments`. (Final list in [implementation_plan.md §6.1](implementation_plan.md#61-partition-table).)
+
+**Why a single `web:dom` package.** Earlier drafts split DOM
+into per-element-family packages (`web:svg`, `web:mathml`,
+`web:canvas`, etc.) with cross-package augmentation activated
+per-importing-file (the original FR7 + FR9). The
+implementation-plan §4.1 spike
+([internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go))
+showed that achieving per-file activation would require two new
+checker subsystems: per-file composition of contributing
+interface fragments + call-site re-resolution of `keyof T` /
+`T[K]` over the merged view. Neither is a small extension of
+existing code.
+
+Collapsing the DOM tree into one package sidesteps the problem
+entirely. `createElementNS` stays a single overloaded method on
+`Document` with its NS-keyed signatures declared once, exactly
+matching WebIDL. `SVGElement` etc. are reachable from
+`HTMLElement` via `Element.parentNode` and event-target shared
+behavior, so the cohesion is real — the DOM is not a clean
+partition along element-family lines. Per-element-class
+discoverability is preserved by the FR16 auto-import quick-fix
+and adaptive diagnostic rendering (FR15), which surface the
+owning package on demand.
 
 ```escalier
+// In web:dom — registries declared closed, alongside the methods
 fn createElement<K: keyof HTMLElementTagNameMap>(
     self, tag: K
 ) -> HTMLElementTagNameMap[K]
@@ -527,81 +604,75 @@ fn createElement<K: keyof HTMLElementTagNameMap>(
 fn createElementNS<K: keyof SVGElementTagNameMap>(
     self, ns: "http://www.w3.org/2000/svg", qualifiedName: K
 ) -> SVGElementTagNameMap[K]
-```
+// ... plus MathML, XHTML, and the generic fallback overload
 
-Each feature package augments only the registry by declaring its
-own contribution to the open interface in its `.esc` source, e.g.
-`web:canvas`:
-
-```escalier
-declare interface HTMLElementTagNameMap {
+interface HTMLElementTagNameMap {
     canvas: HTMLCanvasElement,
+    div: HTMLDivElement,
+    // ... every HTML tag
+}
+
+interface SVGElementTagNameMap {
+    circle: SVGCircleElement,
+    path: SVGPathElement,
+    // ... every SVG tag
 }
 ```
 
-Every registry-keyed API (`createElement`, `querySelector`,
-`getElementsByTagName`, `createElementNS`, …) picks up the new
-entry automatically.
+**Cross-package type references via qualified names.** Sibling
+`web:*` packages that need to mention `web:dom` types do so by
+qualified name through their imported namespace. No augmentation
+machinery involved:
 
-**Registries live in `web:dom`; the element families they index
-live in their feature packages.** `SVGElement` and its subclasses
-live in `web:svg`; `MathMLElement` and its subclasses live in
-`web:mathml`; specialized HTML element classes
-(`HTMLCanvasElement`, `HTMLVideoElement`, …) live in their
-respective feature packages. `web:dom` declares each registry
-interface with an empty body — no reference to the element classes
-themselves — and writes the keyed APIs purely against the registry.
-Feature packages augment the registry with their entries (e.g.
-`web:svg` adds `{ circle: SVGCircleElement, path: SVGPathElement,
-… }` to `SVGElementTagNameMap`). The registry interface is more a
-contract slot than a real type; the value types it indexes need
-not be visible to `web:dom` at all.
+```escalier
+// In web:webgl
+import "web:dom"
 
-A file that imports `web:svg` gets `createElementNS(svgNS, "circle")
-→ SVGCircleElement`; a file without the import gets `never` from
-the indexed access, which loudly surfaces the missing import. This
-keeps the augmentation pattern uniform across all element families
-and avoids needing the per-API augmentation fallback for the SVG
-and MathML cases.
+declare fn getContext(
+    canvas: web.dom.HTMLCanvasElement,
+    contextId: "webgl"
+) -> WebGLRenderingContext
+```
 
-**No `override declare`.** Builtins are declared directly in their
-own `.esc` files. The `override declare` syntax is **not** used for
-pseudo-package augmentation — that syntax is reserved for the
-third-party workstream's override mechanism and does not apply to
-builtins or pseudo-packages.
+The same shape works between any two pseudo-packages: `web:fetch`
+references `web.streams.ReadableStream` for `Response.body`;
+`web:service_worker` references `web.fetch.Request` /
+`web.fetch.Response`. Inter-package import cycles between
+pseudo-packages are permitted (FR6) when needed for these
+references.
 
-**Fallback: per-API augmentation** for the rare cross-package APIs
-that do not fit a registry pattern. Two cases:
+**No `override declare`.** Builtins are declared directly in
+their own `.esc` files. The `override declare` syntax is **not**
+used for any builtin `.esc` file — that syntax is reserved for
+the third-party workstream's override mechanism and does not
+apply to builtins or pseudo-packages.
 
-1. The API takes the type as a *parameter* (not a return type): the
-   feature package exports the type; `web:dom` references it via
-   the type's qualified name; no augmentation needed.
-2. The API is overload-keyed on a string but lacks a registry: the
-   feature package augments the API's overload set directly. Rare;
-   treat as one-off when it arises.
+**What's deferred until a follow-up workstream un-punts FR7.**
+With the single-`web:dom` partition no augmentation primitive
+is needed for MVP. The augmentation work resurfaces only for:
 
-**Language requirements this depends on:**
+1. **User-side custom-element registration** — TS-style
+   `declare module "web:dom" { interface
+   HTMLElementTagNameMap { "my-widget": MyWidget } }`. Users
+   must type custom-element results manually until this work
+   resumes.
+2. **Third-party packages extending DOM/event maps.** Out of
+   scope for the builtins workstream regardless; would be a
+   third-party concern.
 
-- Open interfaces / cross-package interface merging. The §5
-  override-merge code already does interface merging for type
-  refinement; whether the same mechanism can be repurposed for
-  cross-package augmentation, or whether augmentation needs its own
-  loader path, must be confirmed during the resolver-extension step.
-- Indexed access over open registries: `HTMLElementTagNameMap[K]`
-  where `K extends keyof HTMLElementTagNameMap` must refresh
-  correctly when the registry is augmented.
-
-Activation semantics for these augmentations — per-importing-file
-scoping, transitive propagation rules, independence from the
-binding-shape flag — are specified in FR9.
+When the un-punt happens, the §4.1 spike findings size the
+work: per-file composition layer + call-site re-resolution of
+`keyof T` / `T[K]` over the merged view. The spike scaffolding
+stays committed as a regression harness so future drift
+breaks the build.
 
 ### FR8. Well-known symbol re-exports
 
 All well-known symbols (`Symbol.iterator`, `Symbol.asyncIterator`,
 `Symbol.match`, `Symbol.toPrimitive`, …) are declared directly on
 `Symbol`'s static side in `std:symbol`. There is **no Symbol
-augmentation mechanism**; the registry-based augmentation in FR7
-does not extend to Symbol.
+augmentation mechanism**; domain-package aliases (below) are
+plain re-exports, not augmentations.
 
 **Shape-loaded language-level use vs. explicit references.**
 Language-level use of well-known symbols (the `for-of` desugaring
@@ -656,55 +727,24 @@ alias is a re-export with a different binding name, not a separate
 symbol.
 
 The re-export aliases are visible only when the importing file
-imports the domain package; this is plain Escalier import scoping,
-not the FR9 augmentation-activation rule (which no longer applies
-to Symbol).
+imports the domain package; this is plain Escalier import scoping.
 
-### FR9. Augmentation activation semantics
+### FR9. Augmentation activation semantics (deferred with FR7)
 
-The scoping rules below apply to DOM-style registry augmentation
-(FR7). Any future augmentation mechanism added under this
-workstream inherits the same rules. (FR8's domain-package
-re-exports of well-known symbols are **not** augmentations —
-they are plain Escalier exports governed by ordinary import
-scoping, not by these rules.)
+**MVP: N/A.** FR9 specified per-importing-file activation rules
+for cross-package augmentation. With FR7 deferred (single
+`web:dom` package + standalone web siblings adopted instead),
+there is no augmentation mechanism to scope — a file sees a name
+iff it imported the package that owns it, which is plain
+Escalier import scoping covered by FR3 / FR4.
 
-**Per-importing-file scoping.** Augmentation activation is
-**scoped to the importing module**, not the whole compilation
-unit. A file that imports `web:canvas` sees the augmented
-`HTMLElementTagNameMap` entry for `canvas`; a sibling file in the
-same program that does not import `web:canvas` does not. This
-deliberately departs from TypeScript's `declare module` behavior,
-where any module-augmenting import becomes global. The type a
-file sees is fully determined by that file's own imports.
-
-**Note for library authors.** Per-importing-file scoping means a
-library function that calls `document.createElement("canvas")`
-must itself include `import "web:canvas"` — relying on the
-application to import the package is not enough. Each file that
-*uses* the augmented shape needs the import; importing only in
-the application's entry point gives the entry-point file the
-narrow type but leaves the library file with the pre-augmentation
-shape. The same applies to every other augmentation entry point
-(SVG element families, etc.). When in doubt, import the augmenting
-package in every file that consumes the augmented type. This is
-the inverse of the TypeScript habit of relying on a global
-side-effect import.
-
-**Transitive propagation via explicit re-export.** Augmentations
-propagate only through **explicit re-exports** of the pseudo-package.
-If file A writes `export * from "web:canvas"` (or an equivalent
-named re-export of canvas's bindings), then a file importing A
-sees canvas's augmentations as part of importing A. A plain
-`import "web:canvas"` in A that does not re-export anything from
-canvas does *not* leak the augmentation to A's importers. Simply
-importing a package never magically re-exports it.
-
-**Independent of the binding-shape flag.** Importing `web:canvas`
-under any of `?local`, `?nested`, or `?flat` adds canvas's
-contributions to that file's view of `HTMLElementTagNameMap`. The
-flag only affects how canvas's *direct exports* land in the
-importing scope, not which augmentations are activated.
+The original FR9 rules — per-importing-file scoping, transitive
+propagation via explicit re-export, independence from the
+binding-shape flag — are preserved verbatim in the [appendix](#appendix-deferred-fr9-spec)
+at the end of this document as the spec for the deferred work.
+When/if FR7 is un-punted (custom-element support; third-party
+DOM extension), those rules are what the augmentation mechanism
+must satisfy.
 
 ### FR10. Bootstrap converter (`tools/dts_to_esc/`)
 
@@ -759,10 +799,22 @@ A one-time seeding tool. A Go binary that:
    error is exercised by the routing code that emits per-package
    `.esc` output: the partition-table lookup is the choke point,
    and a missing entry surfaces there, not somewhere downstream.
-5. Detects which TS-lib symbols belong to registries
-   (`HTMLElementTagNameMap`, `HTMLElementEventMap`, …) and routes
-   their per-feature entries into the appropriate feature
-   package's augmentation block. Well-known symbols
+5. Routes every DOM-coupled declaration — Document, Element,
+   Node, Window, every HTML/SVG/MathML element class, every
+   registry interface (`HTMLElementTagNameMap`,
+   `SVGElementTagNameMap`, `MathMLElementTagNameMap`,
+   `HTMLElementEventMap`, `SVGElementEventMap`,
+   `MathMLElementEventMap`, …), CSSOM, observers, animations,
+   custom elements, input events, etc. — into the single
+   `web:dom` package per FR7. Standalone web APIs that ship in
+   `lib.dom.d.ts` but have no DOM coupling (Fetch, Streams,
+   Crypto, Workers, WebGL, Web Audio, WebRTC, WebCodecs,
+   IndexedDB, Service Workers, WebSocket, Storage, URL,
+   Encoding, File, Performance, WebAuthn, Payments, …) route
+   to their own sibling `web:*` packages — the partition table
+   in [implementation_plan.md §6.1](implementation_plan.md#61-partition-table)
+   has the full mapping. No cross-package augmentation block
+   is emitted. Well-known symbols
    (`Symbol.iterator`, `Symbol.asyncIterator`, …) are **not**
    routed — they stay on `Symbol`'s static side in
    `std/symbol.esc` (FR8). Domain-package re-export aliases
@@ -1065,9 +1117,12 @@ The implementation depends on:
 - **Ergonomics.** Default `?local` binding gives terse access
   (`math.sin(x)`, `console.log(...)`). The binding choice per
   import is the file author's; no global configuration.
-- **Soundness of activation.** A file's view of cross-package
-  augmentations is fully determined by that file's own imports — no
-  spooky action from a sibling module.
+- **Soundness of activation.** Under the single-`web:dom`
+  partition (FR7), this reduces to "a file sees a name iff it
+  imported the package that owns it" — plain Escalier import
+  scoping, no spooky action from a sibling module. (If FR7 is
+  later un-punted for custom-element support, the per-file
+  augmentation rules in the deferred-FR9 appendix govern.)
 - **Zero runtime cost.** Pseudo-package imports erase entirely at
   codegen.
 - **Filesystem-resident stdlib data.** `.esc` files under
@@ -1082,11 +1137,17 @@ The implementation depends on:
   → repo-relative when running from a build tree. The toolchain
   has no `node_modules` or network dependency for pseudo-package
   declarations; the stdlib tree is a fixed install artifact.
-- **`--explain-type` diagnostic.** When a tag-keyed return is wider
-  than expected (e.g. `createElement` returning the union element
-  type instead of `HTMLCanvasElement`), the diagnostic suggests
-  likely `web:*` imports to widen the file's view. Complements the
-  FR16 auto-import quick-fix for the type-narrowing case.
+- **`--explain-type` diagnostic.** When a tag-keyed return is
+  unexpected (e.g. `createElement("does-not-exist")` rejects
+  because the tag isn't a key of `HTMLElementTagNameMap`), the
+  diagnostic surfaces the closed registry contents and suggests
+  the closest valid tag — and, when an HTML tag is misused with
+  `createElement` instead of an SVG-specific `createElementNS`
+  call, points at the corresponding `createElementNS(svgNS, …)`
+  signature (also in `web:dom`). For names that resolve in a
+  sibling `web:*` package the user has not imported, suggests
+  the missing `import "web:<pkg>"`. Complements the FR16
+  auto-import quick-fix.
 
 ## Migration phases
 
@@ -1116,21 +1177,34 @@ omitted; they belong to the third-party workstream.
      `std.PI`); a two-package fixture
      (`web:a?flat` + `web:b?flat`) merges into one `web` binding;
      mutually-exclusive flag combos error.
-3. **Cross-package augmentation support.** Confirm that the
-   existing §5 interface-merging mechanism (or a small extension of
-   it) lets a package augment an open interface declared in another
-   package, with augmentation scoped to files that import the
-   augmenting package. Test with a hand-authored two-file pair:
-   `web/web.esc` declares an empty `HTMLElementTagNameMap`;
-   `web/canvas.esc` augments it with `canvas: HTMLCanvasElement`;
-   importing `web:canvas` under any binding-shape flag (`?local`,
-   `?nested`, `?flat`) makes `createElement("canvas")` narrow
-   correctly in the importing file, and a sibling file *without*
-   the import sees only the pre-augmentation shape.
-   - **Gate:** that test passes; indexed-access over the augmented
-     registry resolves to the right element type;
-     registry-augmentation activation is shown to be orthogonal to
-     the binding-shape flag.
+3. **Single `web:dom` partition + inter-package imports.** Build
+   the FR7 MVP: the entire DOM tree lives in `web:dom` with all
+   its registries (`HTMLElementTagNameMap`,
+   `SVGElementTagNameMap`, …) declared closed inside the same
+   package; standalone web APIs occupy sibling `web:*` packages
+   that reference `web:dom` types via qualified names. Two
+   pre-step deliverables inform this step:
+   - The §4.1 augmentation spike (already landed under
+     [internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go))
+     answered "can existing checker machinery support per-file
+     activation?" with **no/snapshot**, which is what motivated
+     the single-`web:dom` partition. The scaffolding is kept as
+     a regression harness — if a future change quietly enables
+     cross-package augmentation, those assertions fail loudly
+     and the FR7-defer decision can be revisited.
+   - **Gate:** a hand-authored fixture declares
+     `HTMLElementTagNameMap` populated with at least two
+     entries in `web/dom.esc`; `createElement("canvas")`
+     narrows to `HTMLCanvasElement`,
+     `createElement("does-not-exist")` errors. A second
+     fixture exercises an SVG overload of `createElementNS`
+     on the same Document (verifying that NS-keyed overloads
+     of one method co-located in `web:dom` resolve correctly).
+     A third fixture exercises a cross-package type reference
+     (`web:fetch` API parameter typed as
+     `web.streams.ReadableStream`). Inter-package import
+     cycles between two `std:*` packages are accepted by the
+     resolver.
 4. **Converter MVP.** Build `tools/dts_to_esc/` against a tiny
    slice (`Boolean` alone, ~10 lines of `.d.ts`). Emit to stdout.
    No file layout, no partition logic.
@@ -1140,10 +1214,15 @@ omitted; they belong to the third-party workstream.
    table (which TS-lib declaration goes into which `std:*` / `web:*`
    package per FR1/FR2), full output paths under
    `internal/interop/data/`, `--check` mode, and the full
-   `lib.*.d.ts` set as input. The converter must also detect which
-   TS-lib symbols belong to registries (and to `Symbol`'s well-known
-   symbol set) and route their per-feature entries into the
-   appropriate package's augmentation block.
+   `lib.*.d.ts` set as input. The converter must route every
+   DOM-coupled declaration (Document/Element/Node and the
+   HTML/SVG/MathML/CSSOM/event/observer/animation/custom-element
+   surfaces hanging off them) into `web:dom`, and route the
+   standalone web families (Fetch, Streams, Crypto, Workers,
+   WebGL, Web Audio, WebRTC, WebCodecs, IndexedDB, Service
+   Workers, WebSocket, Storage, URL, Encoding, File,
+   Performance, WebAuthn, Payments) into their sibling
+   `web:*` packages (per FR7 MVP).
    - **Gate:** every output file parses; running the converter
      twice produces byte-identical output.
 6. **Stdlib bootstrap.** Run the converter, review the output,
@@ -1211,20 +1290,26 @@ per step.
   the partition table needs an entry — manual decision per
   addition. Not large in practice (TS lib additions are rare in
   minor versions) but not zero.
-- **Cross-package augmentation mechanism.** The registry pattern
-  depends on a package being able to augment an open interface
-  declared in another package. Escalier's §5 interface-merge code
-  is *probably* reusable, but it was designed for type-refinement at
-  a fixed merge point, not for arbitrary cross-package activation.
-  If the existing mechanism does not fit, augmentation needs its own
-  loader path — adds work to migration step 3.
-- **Non-local reasoning from augmentation activation.** A function
-  using `document.createElement("canvas")` gets `HTMLCanvasElement`
-  only if that file imported `web:canvas`. Type-only (runtime
-  behavior unchanged) but users encountering an unexpectedly-coarse
-  type will need to learn to look for missing imports. Mitigation:
-  an `--explain-type` diagnostic that suggests likely `web:*`
-  imports.
+- **Cross-package augmentation mechanism.** *Resolved by MVP
+  punt.* The §4.1 spike confirmed that per-file augmentation
+  with FR9 semantics would need two new checker subsystems
+  (per-file composition + call-site `keyof T` / `T[K]`
+  re-resolution); MVP adopts closed registries (FR7) instead.
+  Risk re-emerges only when custom-element support is added.
+- **`web:dom` is one large package.** Under the MVP partition,
+  every DOM-coupled declaration (Document, every HTML / SVG /
+  MathML element class, CSSOM, observers, events, etc.) lives
+  in `web:dom`. The committed `.esc` file is large — tens of
+  thousands of lines. Mitigations: (a) one `import "web:dom"`
+  gets the whole DOM surface, so users do not face per-feature
+  import churn; (b) FR15 adaptive diagnostic rendering surfaces
+  the owning package name on demand; (c) FR16 auto-import
+  quick-fix points at `web:dom` for any unresolved DOM-coupled
+  reference. Editor performance against a single large `.esc`
+  file is the realistic risk; if it becomes a problem the file
+  can be split into multiple `.esc` files under
+  `internal/interop/data/web/dom/` that the loader concatenates
+  into one package namespace (no language-level change).
 - **Hand-edits drift from upstream TS.** If TS adds a method to
   `Array.prototype` in a minor version bump, someone has to notice
   (via `--check`) and port it by hand. Mostly a feature — gives us
@@ -1317,11 +1402,37 @@ Requirements:
 - **Binding-shape tests** (per FR4). Fixture per shape (`?local`,
   `?nested`, `?flat`), per single- and multi-package case,
   including `?flat` collision error.
-- **Registry augmentation tests** (per FR7). Two-file fixture
-  where one file imports the augmenting package and the other does
-  not; assert the augmented-vs-base type at each site (e.g.
-  `createElement("canvas")` narrows in the importing file,
-  returns the base element type in the sibling).
+- **Closed-registry tests** (per FR7 MVP). Fixture where
+  `web/dom.esc` declares `HTMLElementTagNameMap` with at least
+  two entries (`canvas: HTMLCanvasElement`,
+  `div: HTMLDivElement`) plus `createElement(tag)`.
+  `createElement("canvas")` narrows to `HTMLCanvasElement`;
+  `createElement("does-not-exist")` errors with a typed-key
+  diagnostic.
+- **`createElementNS` NS-keyed overload tests** (per FR7 MVP).
+  Same `web/dom.esc` fixture also declares
+  `SVGElementTagNameMap` with `circle: SVGCircleElement` and
+  the `createElementNS<K: keyof SVGElementTagNameMap>(ns:
+  "http://www.w3.org/2000/svg", qualifiedName: K)` overload.
+  `document.createElementNS(svgNS, "circle")` narrows to
+  `SVGCircleElement`; verifies that NS-keyed overloads of a
+  single method co-located in `web:dom` resolve correctly
+  against the literal NS string.
+- **Cross-package type reference tests** (per FR7 MVP). A
+  package `web:fetch` declares `Response.body` returning
+  `web.streams.ReadableStream` via qualified type reference.
+  Importing file uses the returned stream; type-checks.
+- **Inter-package cycle tests** (per FR6). Two `std:*` packages
+  with a mutual import are accepted by the resolver; the same
+  shape between two user packages errors.
+- **Spike regression harness** (per FR7's deferred portion).
+  [internal/checker/tests/spike_aug_test.go](../../internal/checker/tests/spike_aug_test.go)
+  pins the observed current behavior (interfaces in two
+  separate packages do not merge; `?flat` collisions error;
+  call-site `keyof T` snapshots at declaration time). If a
+  future change quietly enables cross-package augmentation,
+  these assertions fail loudly so the FR7-defer decision can
+  be revisited.
 - **Symbol re-export tests** (per FR8). Verify that
   domain-package aliases (`iterator.iteratorKey`, `regexp.matchKey`, …)
   refer to the same runtime value as `Symbol.<name>` via the
@@ -1329,12 +1440,6 @@ Requirements:
   implementing `[iterator.iteratorKey]()` is recognized as iterable by
   `for-of` (importing `std:iterator` alone, without
   `std:symbol`).
-- **Augmentation activation tests** (per FR9). Per-file scoping:
-  sibling file without the import does not see augmentations.
-  Transitive propagation: `export * from "web:canvas"` propagates
-  augmentations; bare `import "web:canvas"` (no re-export) does
-  not. Flag independence: augmentation visibility is identical
-  under `?local`, `?nested`, and `?flat`.
 - **Prelude switchover.** Internal fixtures are migrated to
   `import "std:*"` (migration step 7) before the legacy path is
   deleted (step 8); the test suite passes on the new path alone
@@ -1387,3 +1492,56 @@ them for day-to-day use:
   qualified form.
 
 No automatic codemod for user code ships with this workstream.
+
+## Appendix: deferred FR9 spec
+
+Preserved verbatim from the pre-MVP-punt version. Not in force
+under the current single-`web:dom` partition (no augmentation
+mechanism exists to scope). Reactivates if/when FR7 is un-punted
+for custom-element support or third-party DOM extension —
+whatever augmentation mechanism lands at that point must satisfy
+these rules.
+
+The scoping rules below applied to DOM-style registry
+augmentation (FR7). Any future augmentation mechanism added under
+this workstream inherits the same rules. (FR8's domain-package
+re-exports of well-known symbols are **not** augmentations —
+they are plain Escalier exports governed by ordinary import
+scoping, not by these rules.)
+
+**Per-importing-file scoping.** Augmentation activation is
+**scoped to the importing module**, not the whole compilation
+unit. A file that imports `web:canvas` sees the augmented
+`HTMLElementTagNameMap` entry for `canvas`; a sibling file in the
+same program that does not import `web:canvas` does not. This
+deliberately departs from TypeScript's `declare module` behavior,
+where any module-augmenting import becomes global. The type a
+file sees is fully determined by that file's own imports.
+
+**Note for library authors.** Per-importing-file scoping means a
+library function that calls `document.createElement("canvas")`
+must itself include `import "web:canvas"` — relying on the
+application to import the package is not enough. Each file that
+*uses* the augmented shape needs the import; importing only in
+the application's entry point gives the entry-point file the
+narrow type but leaves the library file with the pre-augmentation
+shape. The same applies to every other augmentation entry point
+(SVG element families, etc.). When in doubt, import the augmenting
+package in every file that consumes the augmented type. This is
+the inverse of the TypeScript habit of relying on a global
+side-effect import.
+
+**Transitive propagation via explicit re-export.** Augmentations
+propagate only through **explicit re-exports** of the pseudo-package.
+If file A writes `export * from "web:canvas"` (or an equivalent
+named re-export of canvas's bindings), then a file importing A
+sees canvas's augmentations as part of importing A. A plain
+`import "web:canvas"` in A that does not re-export anything from
+canvas does *not* leak the augmentation to A's importers. Simply
+importing a package never magically re-exports it.
+
+**Independent of the binding-shape flag.** Importing `web:canvas`
+under any of `?local`, `?nested`, or `?flat` adds canvas's
+contributions to that file's view of `HTMLElementTagNameMap`. The
+flag only affects how canvas's *direct exports* land in the
+importing scope, not which augmentations are activated.
