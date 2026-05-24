@@ -757,3 +757,218 @@ import "web:webgl"
 	require.Len(t, parseSpans, 2,
 		"expected parse-error diagnostics anchored to both import spans (rollback should re-attempt the load); got spans=%v, msgs=%v", parseSpans, msgs)
 }
+
+// TestStdlibImport_ClosedRegistryNarrowing pins §4.4's closed-registry
+// fixture: a `web:dom` package declares `HTMLElementTagNameMap`
+// populated with two concrete entries and a generic `createElement`
+// whose type parameter is bound by `keyof HTMLElementTagNameMap`. The
+// importing file calls `createElement("canvas")` and gets back exactly
+// `HTMLCanvasElement` via the indexed-access lookup at the call site.
+// This is the type-system mechanism the single-`web:dom` design (§4.2)
+// relies on for tag-keyed narrowing.
+func TestStdlibImport_ClosedRegistryNarrowing(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {}
+
+@js("HTMLDivElement")
+export declare class HTMLDivElement {}
+
+export type HTMLElementTagNameMap = {
+    canvas: HTMLCanvasElement,
+    div: HTMLDivElement,
+}
+
+@js("Document")
+export declare class Document {
+    createElement<K: keyof HTMLElementTagNameMap>(self, tag: K) -> HTMLElementTagNameMap[K],
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom"
+
+declare val doc: dom.Document
+val c: dom.HTMLCanvasElement = doc.createElement("canvas")
+val d: dom.HTMLDivElement = doc.createElement("div")
+`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_ClosedRegistryUnknownTag is the negative half of the
+// §4.4 closed-registry fixture: passing a tag that isn't a key of
+// `HTMLElementTagNameMap` is rejected by the `K: keyof
+// HTMLElementTagNameMap` bound. The diagnostic identifies the offending
+// string literal so the user can see which tag was unrecognized.
+func TestStdlibImport_ClosedRegistryUnknownTag(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {}
+
+@js("HTMLDivElement")
+export declare class HTMLDivElement {}
+
+export type HTMLElementTagNameMap = {
+    canvas: HTMLCanvasElement,
+    div: HTMLDivElement,
+}
+
+@js("Document")
+export declare class Document {
+    createElement<K: keyof HTMLElementTagNameMap>(self, tag: K) -> HTMLElementTagNameMap[K],
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom"
+
+declare val doc: dom.Document
+val bogus = doc.createElement("does-not-exist")
+`)
+	require.Equal(t,
+		[]string{`"does-not-exist" cannot be assigned to "canvas" | "div"`},
+		errorMessages(errs),
+	)
+}
+
+// TestStdlibImport_NSKeyedOverloads pins §4.4's `createElementNS`
+// fixture: a single name has two overloads keyed on a namespace-URI
+// literal type. Each overload binds its type parameter against a
+// different registry; the call site picks the correct overload via
+// literal narrowing on the namespace argument, and the indexed-access
+// return type resolves to the concrete element class for the selected
+// registry.
+//
+// The plan §4.2 wants these overloads to live as methods on a single
+// `Document` class/interface. Method-elem overload resolution by
+// literal-narrowing is currently incomplete — two same-named
+// MethodElems in one interface declaration leave only the last one
+// callable (the first is silently discarded). Tracked alongside the
+// existing overload-merging work; until that closes, this fixture
+// expresses the same shape as free-fn overloads (which the FuncOverloads
+// path resolves correctly), exercising the type-system mechanism that
+// §4 actually depends on: `keyof T` / `T[K]` over closed registries
+// declared in a pseudo-package, with literal-narrowed overload pick.
+func TestStdlibImport_NSKeyedOverloads(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+@js("SVGCircleElement")
+export declare class SVGCircleElement {}
+
+@js("SVGPathElement")
+export declare class SVGPathElement {}
+
+@js("MathMLElement")
+export declare class MathMLElement {}
+
+export type SVGElementTagNameMap = {
+    circle: SVGCircleElement,
+    path: SVGPathElement,
+}
+
+export type MathMLElementTagNameMap = {
+    mfrac: MathMLElement,
+}
+
+// The @js targets here are arbitrary known-global function names;
+// the test only exercises type-system overload resolution, not codegen.
+@js("parseInt")
+export declare fn createElementNS<K: keyof SVGElementTagNameMap>(ns: "http://www.w3.org/2000/svg", qualifiedName: K) -> SVGElementTagNameMap[K]
+
+@js("parseFloat")
+export declare fn createElementNS<K: keyof MathMLElementTagNameMap>(ns: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K]
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom"
+
+val circ: dom.SVGCircleElement = dom.createElementNS("http://www.w3.org/2000/svg", "circle")
+val frac: dom.MathMLElement = dom.createElementNS("http://www.w3.org/1998/Math/MathML", "mfrac")
+`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_CrossPackageTypeReference pins §4.4's cross-package
+// type-reference fixture (§4.2b). A sibling `web:fetch` package
+// references a type defined in `web:streams` via a qualified name. No
+// cycle, no augmentation — `web:fetch` imports `web:streams`, and the
+// imported namespace is reachable from the field type annotation.
+func TestStdlibImport_CrossPackageTypeReference(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/streams.esc": `
+@js("ReadableStream")
+export declare class ReadableStream {}
+`,
+		"web/fetch.esc": `
+import "web:streams"
+
+@js("Response")
+export declare class Response {
+    body: streams.ReadableStream | null,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "web:fetch"
+import "web:streams"
+
+declare val r: fetch.Response
+val b: streams.ReadableStream | null = r.body
+`)
+	require.Empty(t, errorMessages(errs))
+
+	fileNs := fileScopes[0].Namespace
+	for _, pkg := range []string{"fetch", "streams"} {
+		_, ok := fileNs.GetNamespace(pkg)
+		require.True(t, ok, "expected %s namespace bound at file scope", pkg)
+	}
+}
+
+// TestStdlibImport_PseudoPackageCycleStdStd pins §4.4's std↔std cycle
+// fixture: cycle handling isn't web-only. Two `std:*` packages with a
+// mutual import load as a single merged SCC, mirroring the web↔web
+// case in TestStdlibImport_PseudoPackageCycle.
+func TestStdlibImport_PseudoPackageCycleStdStd(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"std/alpha.esc": `
+import "std:beta"
+
+@js("Map")
+export declare class Alpha {
+    beta: beta.Beta,
+}
+`,
+		"std/beta.esc": `
+import "std:alpha"
+
+@js("Set")
+export declare class Beta {
+    alpha: alpha.Alpha,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	fileScopes, errs := inferStdlibImportSource(t, `
+import "std:alpha"
+import "std:beta"
+`)
+	require.Empty(t, errorMessages(errs))
+
+	fileNs := fileScopes[0].Namespace
+	// Single-class shortcut fires for both (class Alpha ↔ pkg alpha, Beta ↔ beta).
+	for _, name := range []string{"Alpha", "Beta"} {
+		_, ok := fileNs.Types[name]
+		require.True(t, ok, "expected %s type bound at file scope via single-class shortcut", name)
+	}
+}
