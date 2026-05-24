@@ -352,6 +352,11 @@ func TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected(t *testing.T) {
 			src:  "declare interface Helper {}",
 			decl: `interface "Helper"`,
 		},
+		{
+			name: "Enum",
+			src:  "declare enum Helper {}",
+			decl: `enum "Helper"`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -363,7 +368,8 @@ func TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected(t *testing.T) {
 			_, errs := inferStdlibImportSource(t, `import "std:example"`)
 			require.Len(t, errs, 1)
 			require.Equal(t,
-				fmt.Sprintf("unexported %s in pseudo-package file %s has no runtime mapping; "+
+				fmt.Sprintf("unexported %s in pseudo-package file %s would leak to importers "+
+					"through the shared package namespace; "+
 					"add `export` or remove the declaration",
 					tc.decl, filepath.Join(dir, "std/example.esc")),
 				errs[0].Message())

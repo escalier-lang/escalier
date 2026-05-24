@@ -397,6 +397,10 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 // already "filtered" by construction, and sharing it means qualified
 // refs through the binding see the same types as refs through the
 // registry-cached namespace tree.
+//
+// Invariant: callers must not mutate pkgNs (or the namespace tree it
+// stores) after binding — every importer of this package, plus the
+// PackageRegistry entry, observes the same `*Namespace`.
 func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Namespace, span ast.Span) []Error {
 	// Single-class shortcut: look for a class whose name matches the
 	// package name case-insensitively. Activation requires the package

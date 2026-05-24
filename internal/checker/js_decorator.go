@@ -124,7 +124,8 @@ func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span, gl
 		if !decl.Export() {
 			return []Error{&GenericError{
 				message: fmt.Sprintf(
-					"unexported %s %q in pseudo-package file %s has no runtime mapping; "+
+					"unexported %s %q in pseudo-package file %s would leak to importers "+
+						"through the shared package namespace; "+
 						"add `export` or remove the declaration",
 					declKindLabel(decl), declNameOrPlaceholder(decl), filePath),
 				span: importSpan,
