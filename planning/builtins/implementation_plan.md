@@ -16,10 +16,10 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
 | 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, both binding shapes, single-class shortcut, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. One follow-up deferred to §7 — the FR5 "non-class package exports as namespace members on the same binding" surface. |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
-| 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. Follow-up: the NS-keyed-overloads fixture currently uses free-fn overloads because two same-named MethodElems in one interface/class declaration leave only the last one callable — the real `web:dom` will need that gap closed before §7 lands `createElementNS` as a single overloaded method on `Document` per §4.2. |
+| 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | 🚧 | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. **Open:** §4.6 — method-elem overload resolution on class/interface declarations. Must close before §7 so converted `web:dom` methods (`createElement`, `createElementNS`, `addEventListener`, `getContext`, `querySelector`, …) dispatch correctly; until then §4.4's NS-keyed-overloads fixture is forced into a free-fn shape that the real DOM can't match. |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ⬜      | §1, §3     | Two tiny slices: a trio-idiom class (`Boolean`) and a small `declare namespace` block (e.g. `JSON`). AST-to-AST translation; emit to stdout; no partition logic. Exercises trio recognition + namespace flattening; emits `@js` decorators per §3. |
 | 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{std,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
-| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit.                                                                                                                                                        |
+| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6, §4.6   | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. §4.6 must land first — the converted DOM/lib output is dense with same-named methods (`createElement`, `addEventListener`, `getContext`, …) that won't dispatch correctly until method-elem overload resolution works on class/interface declarations.                                                                                                                                                        |
 | 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "std:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
 | 9   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §4, §7, §8 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. Also migrate loader rule §3.4(4) (`@js` arg validation): move it out of the loader (currently reads `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go)) into a CI-only test under [internal/checker/tests/](../../internal/checker/tests/) that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Delete `js_globals.go` and the rule-4 branch in [js_decorator.go](../../internal/checker/js_decorator.go) in the same PR. Same CI-only test should add **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` (or `get`), never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable (today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime). Rule 5 shares the lib parser with rule 4, so doing them separately would duplicate the parse. |
 | 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | §9      | Implement adaptive diagnostic rendering (FR15) and the auto-import quick-fix (FR16); verify `Awaited<T>` source-level definition with documented-fallback policy; confirm intrinsic handlers stay checker-resident (FR13).                                                                                                          |
@@ -59,6 +59,16 @@ the source-of-truth
 while the legacy prelude is still live; §9 then swaps the prelude
 and deletes the legacy paths in a single cut (pre-1.0, no
 deprecation cycle); §10 adds the LSP / diagnostic tooling on top.
+
+**Why §7 also depends on §4.6.** §4.6 (method-elem overload
+resolution on class/interface declarations) is currently the
+only open piece of §4. The converter output from §6 will
+include classes with same-named methods on day one
+(`createElement`, `addEventListener`, `getContext`, …); landing
+those `.esc` files in §7 before §4.6 closes would commit
+declarations that don't dispatch correctly. §4.6 is therefore a
+direct prerequisite of §7, not just a transitive one through
+§8.
 
 **Why §8 precedes §9.** §9 deletes the legacy path in the same
 change that swaps the prelude, so existing fixtures must already
@@ -915,6 +925,198 @@ the work: per-file composition layer + call-site re-resolution
 of `keyof T` / `T[K]` over the merged view. The spike
 scaffolding stays committed as a regression harness for any
 future implementation.
+
+### 4.6 Method-elem overload resolution on class/interface declarations
+
+The `FuncOverloads` path that resolves same-named free
+`declare fn`s by literal-narrowed arg types has no MethodElem
+analogue: two same-named methods inside a single class/interface
+declaration collapse to the last one, with the earlier elem
+silently discarded on insertion. Verified by direct probe — a
+`Document` class declared as
+
+```escalier
+@js("Document")
+export declare class Document {
+    createElement(self, tag: "canvas") -> HTMLCanvasElement,
+    createElement(self, tag: "div") -> HTMLDivElement,
+}
+```
+
+dispatches every `doc.createElement(...)` call to the `"div"`
+variant, surfacing as `"canvas" cannot be assigned to "div"` /
+`HTMLDivElement cannot be assigned to HTMLCanvasElement`.
+
+**Scope clarification — methods only, not free fns.** Free
+top-level `declare fn` overloads already work, both in user
+code and inside pseudo-package files: the `OverloadDecls`
+collection path runs the same way for `web/*.esc` / `std/*.esc`
+as for user files, and the resulting `IntersectionType` of
+`FuncType`s dispatches correctly via
+[infer_expr.go:1059](../../internal/checker/infer_expr.go#L1059).
+`TestStdlibImport_NSKeyedOverloads` proves this for a pseudo-
+package — it declares two `export declare fn createElementNS<K:
+…>` arms in `web/dom.esc` and they dispatch by NS literal
+without §4.6. §4.6 is **only** about the method-elem case
+(same-named methods inside a single `class` / `interface` /
+`declare class` / `declare interface` body). The cleavage line
+is free-fn vs. method-elem, not user-code vs. pseudo-package.
+
+Two free-fn-in-pseudo-package edge cases that are *not* covered
+by today's tests but are also not §4.6's problem: (1) overload
+arms split across multiple files inside one pseudo-package —
+doesn't apply, each `std:*` / `web:*` URI resolves to one
+`.esc` file; (2) an overloaded free fn re-exported through
+another pseudo-package — should propagate naturally via the
+§4.2b cross-package qualified-reference path, but no fixture
+yet proves the intersection survives the re-export boundary.
+Add the fixture if/when a real `web:*` re-export shows up.
+
+**Why this gates §7.** A converted `web:dom` (and a fair amount
+of `std:*`) is dense with overloaded methods: `createElement`,
+`createElementNS`, `getElementsByTagName`, `addEventListener` /
+`removeEventListener` (per-event-name overloads via the event
+maps), `HTMLCanvasElement.getContext` (`"2d"` / `"webgl"` /
+`"webgl2"` / `"bitmaprenderer"`), `Document.createEvent`,
+`querySelector` / `querySelectorAll` (tag-keyed overloads),
+`URLSearchParams.append`, `Headers.set`, and the
+`String.prototype.replace` / `replaceAll` pairs in `std:string`.
+§4.4's `createElementNS` gate fixture had to be rewritten as
+free `declare fn` overloads (see
+[stdlib_import_test.go:858](../../internal/checker/tests/stdlib_import_test.go#L858))
+to express the shape §4.2 actually wants on a `Document`
+method; that workaround can't survive §7's converter output.
+
+**Representation: intersection-of-FuncTypes, mirroring free-fn
+overloads.** Free `declare fn` overloads are already represented
+as an `IntersectionType` of `FuncType` arms
+([generalize.go:473-478](../../internal/checker/generalize.go#L473)),
+and call-site dispatch at
+[infer_expr.go:1059](../../internal/checker/infer_expr.go#L1059)
+already iterates the intersection's arms, tries each, and falls
+back to `NoMatchingOverloadError`. Method overloads collapse to
+the same shape: a single `MethodElem` per name whose `Fn` field
+is widened from `*FuncType` to a callable `Type` that may carry
+an intersection of per-overload signatures. This matches TS's
+own surface semantics — in TS, `interface Foo { bar(x: A): A;
+bar(x: B): B }` is *one* property `bar` typed as an intersection
+of two call signatures — and means dispatch, printer, hover,
+`keyof T` / `T[K]` lookup all see one member with one
+(intersected) type. Inheritance / `implements` becomes
+"intersect the parent's `Fn` with the new signature"; the
+existing `check_implements.go` MethodElem path
+([:109](../../internal/checker/check_implements.go#L109),
+[:285](../../internal/checker/check_implements.go#L285)) checks
+assignability of intersected callables on both sides — the same
+machinery used anywhere else.
+
+**Scope of the work.**
+
+1. Detect same-named MethodElems at class/interface elaboration
+   time. The current insertion path keys by method name and
+   overwrites; replace with an overload-aware insertion that
+   merges the new signature into an intersection-typed `Fn` on
+   the existing elem.
+2. Widen `MethodElem.Fn` from `*FuncType` to `Type` (carrying
+   either a single `FuncType` for the common case or an
+   `IntersectionType` of `FuncType` arms for overloads). Add a
+   helper `(*MethodElem).Signatures() []*FuncType` that returns
+   `[fn]` for the single-arm case and the arms for intersections,
+   so every site that currently pattern-matches `method.Fn` as
+   `*FuncType` can switch to a uniform iteration without each
+   caller re-doing the intersection unwrap. Audit and update:
+   `ReceiverIsMut`, the array-mutating-method scan
+   ([expand_type.go:1734,1756](../../internal/checker/expand_type.go#L1734)),
+   mutability checks, `findCustomMatcherMethod`
+   ([checker.go:133](../../internal/checker/checker.go#L133)),
+   codegen.
+3. Make `getObjectAccess` / method-call resolution route the
+   intersection-typed callable through the existing free-fn
+   overload path at
+   [infer_expr.go:1059](../../internal/checker/infer_expr.go#L1059)
+   (no parallel implementation). Must cover both literal-typed
+   dispatch (`createElement("canvas") → HTMLCanvasElement`) and
+   bounded-generic dispatch (`<K: keyof T>(tag: K) -> T[K]`
+   chosen over a `string` fallback).
+4. Inheritance / `implements`: a subclass adding overloads
+   produces a new intersection that intersects the parent's
+   `Fn` with the subclass's new arm(s); `check_implements.go`
+   walks both sides as intersected callables. Same machinery for
+   `interface` `extends`.
+
+**Design decisions pinned for the implementation (not open
+questions — these are the chosen behaviours):**
+
+- **Receiver mutability must be identical across all arms.**
+  Reject at class-elaboration time if a class declares both
+  `foo(self, …)` and `foo(mut self, …)` for the same name. The
+  diagnostic should point at the first mismatching arm and name
+  the receiver shape of the earlier arm. Rationale: overload
+  resolution is about argument shape, not receiver mutability;
+  splitting receiver-mutability across arms would force callers
+  to know the dispatch outcome before they know whether the
+  call requires a `mut` binding, which defeats the whole point
+  of letting `mut` propagate naturally.
+- **Arm ordering: most-specific first.** When constructing the
+  intersection from the source-declared arms, sort (or require
+  source order to already satisfy) most-specific-first so the
+  resolver at infer_expr.go:1059 picks the most specific match
+  on its first hit. Concretely: literal-typed parameter arms
+  before string/number-typed arms before fully generic arms;
+  bounded-generic arms (`<K: keyof T>(tag: K)`) before unbounded
+  generics or `string` fallbacks. The §4.6 spike must pin the
+  exact specificity ordering — start from TS's "more specific
+  overload wins" rule and codify the comparator. The intersection
+  construction path must preserve this order (verify
+  `NewIntersectionType` / `NormalizeIntersectionType` at
+  [expand_type.go:2235](../../internal/checker/expand_type.go#L2235)
+  don't sort or dedupe arms behind our back; thread a
+  preserve-order flag if they do).
+- **Generalization is deferred, not in scope for §4.6.** Free-fn
+  overloads collect call-site `FuncType`s during generalization
+  and merge post-hoc. That path has known gaps for both free-fn
+  and (future) inferred-method overloads — tracked in
+  [#650](https://github.com/escalier-lang/escalier/issues/650).
+  §4.6 only handles **statically-declared** overloads in
+  `declare class` / `declare interface` / `class` / `interface`
+  bodies, where the arms are visible at elaboration time and the
+  intersection can be constructed directly from the AST without
+  going through call-site collection.
+
+**Gate fixtures (live in `internal/checker/tests/`).**
+
+- Rewrite `TestStdlibImport_NSKeyedOverloads` so the two
+  `createElementNS<K: …>` overloads are declared as **methods on
+  a single `Document` class** (per §4.2 lines 694–700), not as
+  free `declare fn`s. The fixture currently uses free fns only
+  because method-elem overload resolution doesn't work yet
+  ([stdlib_import_test.go:840-887](../../internal/checker/tests/stdlib_import_test.go#L840));
+  flipping it to the method shape is the canary that §4.6 is
+  actually done. Call sites become `doc.createElementNS(svgNS,
+  "circle")` / `doc.createElementNS(mathNS, "mfrac")` against a
+  `declare val doc: dom.Document`. The placeholder
+  `@js("parseInt")` / `@js("parseFloat")` decorators drop —
+  methods on a `@js("Document")` class don't need their own
+  per-arm `@js` targets.
+- Add a `Document.createElement` fixture mirroring
+  `TestStdlibImport_ClosedRegistryNarrowing` /
+  `TestStdlibImport_ClosedRegistryUnknownTag` but with two
+  literal-keyed `createElement` methods (no generic) — pins the
+  simplest literal-narrowed method overload case end-to-end.
+- Add an `addEventListener` fixture: a small event-map type plus
+  per-event-name overloads of `addEventListener` on a single
+  class, verifying the handler param narrows to the
+  event-specific type for each literal name.
+- Add an inheritance fixture: a subclass adding a new overload
+  to a method already overloaded on its parent; both old and
+  new overloads must remain callable, with dispatch picking the
+  most-specific arm regardless of which body declared it.
+- Add a receiver-mutability mismatch fixture: a class declaring
+  the same method with both `self` and `mut self` receivers
+  should produce an elaboration-time error naming both arms.
+
+Once these pass, the §4.4 fixtures move back to the method
+shape and the §4 row's "Open" note clears.
 
 ---
 
@@ -1855,7 +2057,7 @@ or more phases above.
 | FR4   | Binding-shape flags                        | §2.3 (both shapes, mutual exclusion, extensibility, URI-keyed bookkeeping) |
 | FR5   | Single-class shortcut                      | §2.4; eligibility list in §6.1                                                                                   |
 | FR6   | Inter-package imports                      | §4.3 (cycles permitted within pseudo-package layer)                                                              |
-| FR7   | DOM packaging; cross-package type references; open augmentation deferred | §4.2 (single `web:dom` package + standalone web siblings; closed registries; `createElementNS` stays one overloaded method on `Document`), §4.2b (qualified cross-package type references), §4.5 (deferred augmentation work scoped for the future custom-elements workstream). Spike (§4.1) showed achieving the old per-file-activation design needs two new checker subsystems; MVP sidesteps by collapsing the DOM tree into one package. |
+| FR7   | DOM packaging; cross-package type references; open augmentation deferred | §4.2 (single `web:dom` package + standalone web siblings; closed registries; `createElementNS` stays one overloaded method on `Document`), §4.2b (qualified cross-package type references), §4.5 (deferred augmentation work scoped for the future custom-elements workstream), §4.6 (method-elem overload resolution on class/interface declarations — open prerequisite for §7 so converted DOM methods dispatch correctly). Spike (§4.1) showed achieving the old per-file-activation design needs two new checker subsystems; MVP sidesteps by collapsing the DOM tree into one package. |
 | FR8   | Well-known symbol re-exports               | §7 step 2 (hand-authored re-export aliases with `@js("Symbol.<name>")`), §3 (decorator semantics carry the alias) |
 | FR9   | Augmentation activation semantics          | N/A for MVP — single-`web:dom` partition (§4.2) requires no activation semantics. Original spec preserved in [requirements.md appendix](requirements.md#appendix-deferred-fr9-spec) for the deferred custom-elements work. |
 | FR10  | Bootstrap converter                        | §5 (MVP, trio idiom, namespace flattening), §5.0 (JSDoc precursor), §6.1 (partition), §6.2 (routing), §6.4 (`--check`), §6.5 (`throws`), §6.6 (TS-bump workflow) |
