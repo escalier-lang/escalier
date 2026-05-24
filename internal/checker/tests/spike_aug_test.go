@@ -122,8 +122,9 @@ export val el = createElement("canvas")
 `
 	_, errs := inferSpike(t, src)
 	require.NotEmpty(t, errs)
-	require.Contains(t, errs[0].Message(),
-		`?flat name collision: "HTMLElementTagNameMap"`)
+	require.Equal(t,
+		`?flat name collision: "HTMLElementTagNameMap" is contributed by both "web:dom" and "web:canvas"; rename upstream or drop one import's ?flat flag`,
+		errs[0].Message())
 }
 
 // TestSpikeAugmentation_NestedNoMerge confirms that two ?nested
@@ -278,9 +279,15 @@ export val el = web.dom.createElement("canvas")
 	// If the leak occurred, errs is empty and el: HTMLCanvasElement.
 	// If FR9 is respected (current behavior), errs contains the
 	// "canvas" cannot be assigned to never rejection.
+	require.NotEmpty(t, errs)
+	var foundNever bool
 	for _, e := range errs {
-		t.Logf("err: %s", e.Message())
+		if e.Message() == `"canvas" cannot be assigned to never` {
+			foundNever = true
+		}
 	}
+	require.True(t, foundNever,
+		"expected sibling-leak rejection; got: %v", errs)
 }
 
 // TestSpikeAugmentation_SiblingMatchesImporter shows the corollary:

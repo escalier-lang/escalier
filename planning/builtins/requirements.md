@@ -90,8 +90,8 @@ In scope:
 - **Standalone web APIs split into sibling `web:*` packages** —
   the families that happen to ship in `lib.dom.d.ts` but have no
   DOM coupling: `web:fetch`, `web:streams`, `web:crypto`,
-  `web:workers`, `web:webgl`, `web:webaudio`, `web:webrtc`,
-  `web:webcodecs`, `web:indexeddb`, `web:service_worker`,
+  `web:workers`, `web:webgl`, `web:web_audio`, `web:web_rtc`,
+  `web:web_codecs`, `web:indexeddb`, `web:service_worker`,
   `web:websocket`, `web:storage`, `web:url`, `web:encoding`,
   `web:file`, `web:performance`, `web:webauthn`, `web:payments`.
 - (True per-file cross-package augmentation — FR7/FR9 in earlier
@@ -566,8 +566,8 @@ is obtained from an `HTMLCanvasElement`; etc.).
 - **Standalone web APIs** — families that ship in
   `lib.dom.d.ts` but have no DOM coupling — split into sibling
   `web:*` packages: `web:fetch`, `web:streams`, `web:crypto`,
-  `web:workers`, `web:webgl`, `web:webaudio`, `web:webrtc`,
-  `web:webcodecs`, `web:indexeddb`, `web:service_worker`,
+  `web:workers`, `web:webgl`, `web:web_audio`, `web:web_rtc`,
+  `web:web_codecs`, `web:indexeddb`, `web:service_worker`,
   `web:websocket`, `web:storage`, `web:url`, `web:encoding`,
   `web:file`, `web:performance`, `web:webauthn`,
   `web:payments`. (Final list in [implementation_plan.md §6.1](implementation_plan.md#61-partition-table).)
