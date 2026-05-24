@@ -1,3 +1,0 @@
-import "std:math?flat"
-
-export val pi: number = std.PI

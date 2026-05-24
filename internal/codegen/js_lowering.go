@@ -21,7 +21,7 @@ import (
 
 // memberJSExpr returns the JS lowering for a MemberExpr whose receiver
 // resolves to a NamespaceType (the package binding under ?local /
-// ?nested / ?flat). The property's Binding in that namespace owns a
+// ?nested). The property's Binding in that namespace owns a
 // decl whose `@js("...")` decorator carries the lowering.
 func memberJSExpr(m *ast.MemberExpr) (string, bool) {
 	if m.Prop == nil {

@@ -17,9 +17,8 @@ import (
 
 // makeCustomStdlibDir builds a t.TempDir-rooted stdlib data layout
 // from a {relative-path → contents} map and returns the directory.
-// Used by tests that need synthetic packages (e.g. the ?flat collision
-// case) without polluting the committed `internal/interop/data/`
-// tree.
+// Used by tests that need synthetic packages without polluting the
+// committed `internal/interop/data/` tree.
 func makeCustomStdlibDir(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -135,16 +134,16 @@ func TestStdlibImport_UnknownFlag(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "std:math?wat"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		`unknown import flag "wat"; recognized flags: flat, local, nested`,
+		`unknown import flag "wat"; recognized flags: local, nested`,
 		errs[0].Message(),
 	)
 }
 
 func TestStdlibImport_MutuallyExclusiveFlags(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import "std:math?local&flat"`)
+	_, errs := inferStdlibImportSource(t, `import "std:math?local&nested"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		`binding-shape flags "flat" and "local" are mutually exclusive; pick one`,
+		`binding-shape flags "local" and "nested" are mutually exclusive; pick one`,
 		errs[0].Message(),
 	)
 }
@@ -180,41 +179,6 @@ func TestStdlibImport_MultipleNestedSharesSchemeNamespace(t *testing.T) {
 	require.True(t, ok)
 	_, ok = schemeNs.GetNamespace("array")
 	require.True(t, ok)
-}
-
-func TestStdlibImport_FlatMergesIntoSchemeNamespace(t *testing.T) {
-	fileScopes, errs := inferStdlibImportSource(t, `
-		import "std:math?flat"
-		val x: number = std.PI
-	`)
-	require.Empty(t, errorMessages(errs))
-
-	fileScope := fileScopes[0]
-	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
-	require.True(t, ok)
-	_, ok = schemeNs.Values["PI"]
-	require.True(t, ok, "expected PI merged directly into `std` namespace")
-}
-
-func TestStdlibImport_FlatNameCollision(t *testing.T) {
-	// Both packages export the same identifier; the second ?flat
-	// import must fail with the taxonomy-aligned collision message.
-	dir := makeCustomStdlibDir(t, map[string]string{
-		"std/alpha.esc": "@js(\"Math.PI\")\nexport val Common: number = 1",
-		"std/beta.esc":  "@js(\"Math.E\")\nexport val Common: number = 2",
-	})
-	t.Setenv("ESCALIER_STDLIB_DIR", dir)
-
-	_, errs := inferStdlibImportSource(t, `
-		import "std:alpha?flat"
-		import "std:beta?flat"
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		`?flat name collision: "Common" is contributed by both "std:alpha" and "std:beta"; `+
-			`rename upstream or drop one import's ?flat flag`,
-		errs[0].Message(),
-	)
 }
 
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {

@@ -26,12 +26,12 @@ var stdlibSchemesSet = set.FromSlice(stdlibSchemes)
 // stdlibKnownFlags is the recognized set of binding-shape flags.
 // Per §2.3 the slot is extensible (future `?type-only`, `?lazy`, …); the
 // table-driven check means new entries slot in without restructuring.
-var stdlibKnownFlags = set.FromSlice([]string{"local", "nested", "flat"})
+var stdlibKnownFlags = set.FromSlice([]string{"local", "nested"})
 
 // stdlibBindingShape captures the resolved binding-shape for a single
-// import statement. Exactly one of the three booleans is true.
+// import statement. Exactly one of the two booleans is true.
 type stdlibBindingShape struct {
-	local, nested, flat bool
+	local, nested bool
 }
 
 // isSchemePrefixedImport reports whether spec begins with one of the
@@ -153,15 +153,12 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 
 	var bindErrs []Error
 
+	// resolveStdlibFlags guarantees exactly one shape is set.
 	switch {
 	case shape.local:
 		bindErrs = c.bindStdlibLocal(ctx, pkg, pkgNs, span)
 	case shape.nested:
 		bindErrs = c.bindStdlibNested(ctx, scheme, pkg, pkgNs, span)
-	case shape.flat:
-		bindErrs = c.bindStdlibFlat(ctx, scheme, importStmt.PackageName, pkgNs, span)
-		// default: unreachable — resolveStdlibFlags always sets exactly
-		// one shape.
 	}
 
 	errs = append(errs, bindErrs...)
@@ -221,7 +218,7 @@ func resolveStdlibFlags(flags []string, span ast.Span) (stdlibBindingShape, []Er
 			continue
 		}
 		seen.Add(f)
-		if f == "local" || f == "nested" || f == "flat" {
+		if f == "local" || f == "nested" {
 			shapeFlags = append(shapeFlags, f)
 		}
 	}
@@ -242,8 +239,6 @@ func resolveStdlibFlags(flags []string, span ast.Span) (stdlibBindingShape, []Er
 		shape.local = true
 	case "nested":
 		shape.nested = true
-	case "flat":
-		shape.flat = true
 	}
 	return shape, nil
 }
@@ -465,99 +460,6 @@ func (c *Checker) bindStdlibNested(ctx Context, scheme, pkg string, pkgNs *type_
 	return nil
 }
 
-// bindStdlibFlat merges exported package members directly into the
-// per-scheme namespace. Name collisions across two ?flat-imported
-// packages in the same file are hard errors per FR4 — the second
-// import is rejected and the diagnostic names the prior contributing
-// package.
-func (c *Checker) bindStdlibFlat(ctx Context, scheme, uri string, pkgNs *type_system.Namespace, span ast.Span) []Error {
-	schemeNs, err := getOrCreateSchemeNamespace(ctx.Scope.Namespace, scheme)
-	if err != nil {
-		return []Error{&GenericError{message: err.Error(), span: span}}
-	}
-	filtered := filterExportedNamespace(pkgNs)
-	contributors := c.flatContributorsFor(ctx.Scope, scheme)
-
-	// Iterate identifiers in a deterministic order so the diagnostic
-	// chosen on a multi-name collision is stable across runs.
-	names := flatIdentifiers(filtered)
-	for _, name := range names {
-		if prior, ok := contributors[name]; ok && prior != uri {
-			return []Error{&GenericError{
-				message: fmt.Sprintf(
-					"?flat name collision: %q is contributed by both %q and %q; "+
-						"rename upstream or drop one import's ?flat flag",
-					name, prior, uri),
-				span: span,
-			}}
-		}
-	}
-	for _, name := range names {
-		// Sub-namespaces go through SetNamespace so the
-		// "namespace-vs-value/type at the same name" invariant is
-		// enforced locally. Values/Types use a manual cross-check
-		// against schemeNs.Namespaces for the symmetric case (the
-		// type_system package has no setter for those slots).
-		// Belt-and-suspenders: the contributors check above should
-		// already have caught any of these cases, but the local
-		// invariant check protects against future drift.
-		if subNs, ok := filtered.Namespaces[name]; ok {
-			if _, exists := schemeNs.Namespaces[name]; !exists {
-				if setErr := schemeNs.SetNamespace(name, subNs); setErr != nil {
-					return []Error{&GenericError{message: setErr.Error(), span: span}}
-				}
-			}
-		}
-		if binding, ok := filtered.Values[name]; ok {
-			if _, conflict := schemeNs.Namespaces[name]; conflict {
-				return []Error{&GenericError{
-					message: fmt.Sprintf(
-						"cannot merge value %q from %q: name already occupied by a sub-namespace in `%s`",
-						name, uri, scheme),
-					span: span,
-				}}
-			}
-			schemeNs.Values[name] = binding
-		}
-		if alias, ok := filtered.Types[name]; ok {
-			if _, conflict := schemeNs.Namespaces[name]; conflict {
-				return []Error{&GenericError{
-					message: fmt.Sprintf(
-						"cannot merge type %q from %q: name already occupied by a sub-namespace in `%s`",
-						name, uri, scheme),
-					span: span,
-				}}
-			}
-			schemeNs.Types[name] = alias
-		}
-		contributors[name] = uri
-	}
-	return nil
-}
-
-// flatIdentifiers returns the union of identifier names exposed by ns
-// across values, types, and sub-namespaces, sorted for deterministic
-// iteration. Unioning is correct here because Namespace's invariants
-// treat the three slots as a single identifier space (with the
-// value+type carve-out for the class pattern) — see
-// type_system.Namespace.SetNamespace. ?flat collision detection works
-// on identifiers, not slots, per FR4.
-func flatIdentifiers(ns *type_system.Namespace) []string {
-	ids := set.NewSet[string]()
-	for name := range ns.Values {
-		ids.Add(name)
-	}
-	for name := range ns.Types {
-		ids.Add(name)
-	}
-	for name := range ns.Namespaces {
-		ids.Add(name)
-	}
-	out := ids.ToSlice()
-	sort.Strings(out)
-	return out
-}
-
 // getOrCreateSchemeNamespace returns the `<scheme>` sub-namespace on
 // ns, creating it on first access. Returns an error if a non-namespace
 // binding (value/type) already occupies that name in ns.
@@ -570,26 +472,6 @@ func getOrCreateSchemeNamespace(ns *type_system.Namespace, scheme string) (*type
 		return nil, fmt.Errorf("cannot create per-scheme namespace %q: %w", scheme, err)
 	}
 	return schemeNs, nil
-}
-
-// flatContributorsFor returns the per-file, per-scheme map tracking
-// which URI contributed each ?flat-merged identifier. The map is
-// lazily created so files that never use ?flat pay no cost.
-func (c *Checker) flatContributorsFor(fileScope *Scope, scheme string) map[string]string {
-	if c.flatContributors == nil {
-		c.flatContributors = make(map[*Scope]map[string]map[string]string)
-	}
-	perFile, ok := c.flatContributors[fileScope]
-	if !ok {
-		perFile = make(map[string]map[string]string)
-		c.flatContributors[fileScope] = perFile
-	}
-	perScheme, ok := perFile[scheme]
-	if !ok {
-		perScheme = make(map[string]string)
-		perFile[scheme] = perScheme
-	}
-	return perScheme
 }
 
 // lastSegmentLower returns the last `_`-separated segment of pkg,
