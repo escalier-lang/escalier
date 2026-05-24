@@ -266,17 +266,109 @@ func TestStdlibImport_LoaderRule_UnexportedValueLevelRejected(t *testing.T) {
 
 // TestStdlibImport_LoaderRule_AcceptsValidPackage confirms the loader
 // rules don't false-positive on a correctly-authored pseudo-package
-// (every exported value-level decl has `@js("...")`; type-level decls
-// have no decorator).
+// (every exported value-level decl has `@js("...")`; every type-level
+// decl is exported).
 func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"std/example.esc": "@js(\"parseInt\")\nexport declare fn foo() -> number\n" +
-			"declare type Helper = number",
+			"export declare type Helper = number",
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
 	_, errs := inferStdlibImportSource(t, `import "std:example"`)
 	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_LocalBindingSharesPkgNsPointer pins the
+// share-by-pointer model: a `?local` file-scope binding for a stdlib
+// pkg holds the *same* `*type_system.Namespace` instance that the
+// PackageRegistry caches. This (combined with the §3.4 rule
+// extension that forbids unexported types in stdlib pkgs) lets
+// importers see the canonical declarations without an intervening
+// filtered copy — necessary for late-population scenarios (e.g.
+// intra-SCC bindings under PR C) to work.
+//
+// `?nested` likewise binds the same pointer under `<scheme>.<pkg>`,
+// so a file that imports the same package both ways sees one shared
+// namespace under two file-scope paths.
+func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
+	// std:math has no class whose name matches the pkg name, so the
+	// single-class shortcut doesn't fire and `?local` binds the pkg as
+	// a namespace under `math` — the right shape for the pointer
+	// comparison. std:array would route through the shortcut and bind
+	// the class directly.
+	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
+		import "std:math"
+		import "std:math?nested"
+	`}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	require.Empty(t, parseErrs)
+
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	_, errs := c.InferModule(inferCtx, module)
+	require.Empty(t, errorMessages(errs))
+
+	canonical, ok := c.PackageRegistry.Lookup("std:math")
+	require.True(t, ok, "expected std:math in PackageRegistry")
+	require.NotNil(t, canonical)
+
+	fileScope := c.FileScopes[0]
+	localBind, ok := fileScope.Namespace.GetNamespace("math")
+	require.True(t, ok, "expected `math` namespace from ?local import")
+	require.Same(t, canonical, localBind,
+		"?local binding should share the canonical pkgNs pointer, not a filtered copy")
+
+	stdNs, ok := fileScope.Namespace.GetNamespace("std")
+	require.True(t, ok)
+	nestedBind, ok := stdNs.GetNamespace("math")
+	require.True(t, ok, "expected `std.math` namespace from ?nested import")
+	require.Same(t, canonical, nestedBind,
+		"?nested binding should share the canonical pkgNs pointer")
+}
+
+// TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected pins the
+// extended §3.4 rule: unexported type-level decls in pseudo-package
+// files are rejected. The canonical pkgNs is shared by reference into
+// importers' file scopes (so they can resolve qualified refs through
+// the registry-cached namespace tree), which means leaving unexported
+// members in pkgNs would leak them to importers. Forbidding them at
+// the loader makes the share-by-pointer model safe.
+func TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		decl string // human-readable kind+name for the expected diagnostic
+	}{
+		{
+			name: "TypeAlias",
+			src:  "declare type Helper = number",
+			decl: `type "Helper"`,
+		},
+		{
+			name: "Interface",
+			src:  "declare interface Helper {}",
+			decl: `interface "Helper"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := makeCustomStdlibDir(t, map[string]string{
+				"std/example.esc": tc.src,
+			})
+			t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+			_, errs := inferStdlibImportSource(t, `import "std:example"`)
+			require.Len(t, errs, 1)
+			require.Equal(t,
+				fmt.Sprintf("unexported %s in pseudo-package file %s has no runtime mapping; "+
+					"add `export` or remove the declaration",
+					tc.decl, filepath.Join(dir, "std/example.esc")),
+				errs[0].Message())
+		})
+	}
 }
 
 // TestStdlibImport_LoaderRule_MalformedJSDecorator pins the loader's

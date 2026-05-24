@@ -391,18 +391,22 @@ func (c *Checker) loadStdlibPackage(uri, filePath string, span ast.Span) (*type_
 // top-level class whose name matches the package name
 // case-insensitively (FR5 single-class shortcut), bind that class
 // directly with its original capitalization instead.
+//
+// The binding shares the canonical pkgNs pointer (no filtered copy):
+// stdlib pkgs by §3.4 contain only exported decls, so the pointer is
+// already "filtered" by construction, and sharing it means qualified
+// refs through the binding see the same types as refs through the
+// registry-cached namespace tree.
 func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Namespace, span ast.Span) []Error {
-	filtered := filterExportedNamespace(pkgNs)
-
 	// Single-class shortcut: look for a class whose name matches the
 	// package name case-insensitively. Activation requires the package
 	// to expose both a value (the constructor) and a type alias under
 	// the same identifier — which is exactly the shape a class
 	// declaration produces.
-	if className, ok := findSingleClassShortcut(filtered, pkg); ok {
+	if className, ok := findSingleClassShortcut(pkgNs, pkg); ok {
 		ns := ctx.Scope.Namespace
-		ns.Values[className] = filtered.Values[className]
-		ns.Types[className] = filtered.Types[className]
+		ns.Values[className] = pkgNs.Values[className]
+		ns.Types[className] = pkgNs.Types[className]
 		// TODO (§2.4): also expose other package exports as namespace
 		// members on the same binding, with static methods winning on
 		// collision. Deferred until a stdlib package actually has both
@@ -412,7 +416,7 @@ func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Na
 	}
 
 	bindingName := lastSegmentLower(pkg)
-	if err := ctx.Scope.Namespace.SetNamespace(bindingName, filtered); err != nil {
+	if err := ctx.Scope.Namespace.SetNamespace(bindingName, pkgNs); err != nil {
 		return []Error{&GenericError{
 			message: fmt.Sprintf("cannot bind stdlib namespace %q: %s", bindingName, err.Error()),
 			span:    span,
@@ -440,7 +444,8 @@ func findSingleClassShortcut(ns *type_system.Namespace, pkg string) (string, boo
 // scope, lazily creating the per-scheme namespace. Duplicate ?nested
 // imports of the same package within a single file are silently
 // idempotent — bookkeeping keys on the URI (per §2.3) so the first
-// import "won" and any subsequent ones add nothing.
+// import "won" and any subsequent ones add nothing. Like bindStdlibLocal,
+// the binding shares the canonical pkgNs pointer.
 func (c *Checker) bindStdlibNested(ctx Context, scheme, pkg string, pkgNs *type_system.Namespace, span ast.Span) []Error {
 	schemeNs, err := getOrCreateSchemeNamespace(ctx.Scope.Namespace, scheme)
 	if err != nil {
@@ -450,8 +455,7 @@ func (c *Checker) bindStdlibNested(ctx Context, scheme, pkg string, pkgNs *type_
 		// Already bound from an earlier ?nested import of the same URI.
 		return nil
 	}
-	filtered := filterExportedNamespace(pkgNs)
-	if err := schemeNs.SetNamespace(pkg, filtered); err != nil {
+	if err := schemeNs.SetNamespace(pkg, pkgNs); err != nil {
 		return []Error{&GenericError{
 			message: fmt.Sprintf("cannot bind %s.%s: %s", scheme, pkg, err.Error()),
 			span:    span,
