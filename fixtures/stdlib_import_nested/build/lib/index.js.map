@@ -1,1 +1,0 @@
-{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"std:math?nested\"\n\nexport val pi: number = std.math.PI\n"],"names":[],"mappings":"aAEW,AAAA,KAAa,AAAA,KAAA"}

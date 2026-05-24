@@ -134,57 +134,14 @@ func TestStdlibImport_UnknownFlag(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "std:math?wat"`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		`unknown import flag "wat"; recognized flags: local, nested`,
+		`unknown import flag "wat"; recognized flags: local`,
 		errs[0].Message(),
 	)
-}
-
-func TestStdlibImport_MutuallyExclusiveFlags(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import "std:math?local&nested"`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		`binding-shape flags "local" and "nested" are mutually exclusive; pick one`,
-		errs[0].Message(),
-	)
-}
-
-func TestStdlibImport_NestedBindsUnderSchemeNamespace(t *testing.T) {
-	fileScopes, errs := inferStdlibImportSource(t, `
-		import "std:math?nested"
-		val x: number = std.math.PI
-	`)
-	require.Empty(t, errorMessages(errs))
-
-	fileScope, ok := fileScopes[0]
-	require.True(t, ok)
-	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
-	require.True(t, ok, "expected `std` namespace bound in file scope")
-	_, ok = schemeNs.GetNamespace("math")
-	require.True(t, ok, "expected `std.math` sub-namespace")
-}
-
-func TestStdlibImport_MultipleNestedSharesSchemeNamespace(t *testing.T) {
-	fileScopes, errs := inferStdlibImportSource(t, `
-		import "std:math?nested"
-		import "std:array?nested"
-		val x: number = std.math.PI
-		val isArr: boolean = std.array.Array.isArray(0)
-	`)
-	require.Empty(t, errorMessages(errs))
-
-	fileScope := fileScopes[0]
-	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
-	require.True(t, ok)
-	_, ok = schemeNs.GetNamespace("math")
-	require.True(t, ok)
-	_, ok = schemeNs.GetNamespace("array")
-	require.True(t, ok)
 }
 
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {
 	// std:array stub exposes `class Array<T>` — FR5 binds the class
-	// with its original capitalization (not lowercased "array") when
-	// imported as ?local.
+	// with its original capitalization (not lowercased "array").
 	fileScopes, errs := inferStdlibImportSource(t, `
 		import "std:array"
 		val isArr: boolean = Array.isArray(0)
@@ -202,19 +159,6 @@ func TestStdlibImport_SingleClassShortcut(t *testing.T) {
 	// shortcut fires.
 	_, hasNs := fileScope.Namespace.GetNamespace("array")
 	require.False(t, hasNs, "single-class shortcut should suppress lowercased namespace")
-}
-
-func TestStdlibImport_SingleClassShortcutDoesNotApplyToNested(t *testing.T) {
-	fileScopes, errs := inferStdlibImportSource(t, `import "std:array?nested"`)
-	require.Empty(t, errorMessages(errs))
-
-	fileScope := fileScopes[0]
-	schemeNs, ok := fileScope.Namespace.GetNamespace("std")
-	require.True(t, ok)
-	pkgNs, ok := schemeNs.GetNamespace("array")
-	require.True(t, ok, "?nested must bind the package as a sub-namespace, not the class")
-	_, hasArray := pkgNs.Values["Array"]
-	require.True(t, hasArray, "Array class should be reachable via std.array.Array")
 }
 
 func TestStdlibImport_InvalidPackageName(t *testing.T) {
@@ -282,15 +226,9 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 // TestStdlibImport_LocalBindingSharesPkgNsPointer pins the
 // share-by-pointer model: a `?local` file-scope binding for a stdlib
 // pkg holds the *same* `*type_system.Namespace` instance that the
-// PackageRegistry caches. This (combined with the §3.4 rule
-// extension that forbids unexported types in stdlib pkgs) lets
-// importers see the canonical declarations without an intervening
-// filtered copy — necessary for late-population scenarios (e.g.
-// intra-SCC bindings under PR C) to work.
-//
-// `?nested` likewise binds the same pointer under `<scheme>.<pkg>`,
-// so a file that imports the same package both ways sees one shared
-// namespace under two file-scope paths.
+// PackageRegistry caches. Combined with the §3.4 rule that forbids
+// unexported decls in stdlib pkgs, this lets importers see the
+// canonical declarations without an intervening filtered copy.
 func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
 	// std:math has no class whose name matches the pkg name, so the
 	// single-class shortcut doesn't fire and `?local` binds the pkg as
@@ -299,7 +237,6 @@ func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
 	// the class directly.
 	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
 		import "std:math"
-		import "std:math?nested"
 	`}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -316,17 +253,10 @@ func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
 	require.NotNil(t, canonical)
 
 	fileScope := c.FileScopes[0]
-	localBind, ok := fileScope.Namespace.GetNamespace("math")
-	require.True(t, ok, "expected `math` namespace from ?local import")
-	require.Same(t, canonical, localBind,
+	bound, ok := fileScope.Namespace.GetNamespace("math")
+	require.True(t, ok, "expected `math` namespace from import")
+	require.Same(t, canonical, bound,
 		"?local binding should share the canonical pkgNs pointer, not a filtered copy")
-
-	stdNs, ok := fileScope.Namespace.GetNamespace("std")
-	require.True(t, ok)
-	nestedBind, ok := stdNs.GetNamespace("math")
-	require.True(t, ok, "expected `std.math` namespace from ?nested import")
-	require.Same(t, canonical, nestedBind,
-		"?nested binding should share the canonical pkgNs pointer")
 }
 
 // TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected pins the
@@ -513,27 +443,26 @@ func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
 // .canvas: HTMLCanvasElement` pair — load as a single merged module
 // so each side's qualified type references into the other resolve.
 //
-// The user-side import uses the default binding shape (no flag →
-// ?local), exercising the singleton-namespace binding path on top of
-// a cyclic load. Intra-SCC imports still use ?nested because the
-// cross-package type references inside the merged module are written
-// with `web.<pkg>` qualified paths.
+// All imports use the default binding shape (?local) and the
+// cross-package type references inside the merged module use the
+// flat `<pkg>.<name>` shape that matches both the file-scope binding
+// and the dep_graph's canonical binding keys.
 func TestStdlibImport_PseudoPackageCycle(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/dom.esc": `
-import "web:webgl?nested"
+import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
-import "web:dom?nested"
+import "web:dom"
 
 @js("WebGLRenderingContext")
 export declare class WebGLRenderingContext {
-    canvas: web.dom.HTMLCanvasElement,
+    canvas: dom.HTMLCanvasElement,
 }
 `,
 	})
@@ -561,33 +490,33 @@ export declare fn make() -> dom.HTMLCanvasElement
 func TestStdlibImport_PseudoPackageCycleThreeWay(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/a.esc": `
-import "web:b?nested"
+import "web:b"
 
 @js("Map")
 export declare class ClassA {
-    refB: web.b.ClassB,
+    refB: b.ClassB,
 }
 `,
 		"web/b.esc": `
-import "web:c?nested"
+import "web:c"
 
 @js("Set")
 export declare class ClassB {
-    refC: web.c.ClassC,
+    refC: c.ClassC,
 }
 `,
 		"web/c.esc": `
-import "web:a?nested"
+import "web:a"
 
 @js("WeakMap")
 export declare class ClassC {
-    refA: web.a.ClassA,
+    refA: a.ClassA,
 }
 `,
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "web:a?nested"`)
+	_, errs := inferStdlibImportSource(t, `import "web:a"`)
 	require.Empty(t, errorMessages(errs))
 }
 
@@ -599,45 +528,50 @@ export declare class ClassC {
 func TestStdlibImport_PseudoPackageCycle_NonCyclicImporter(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/dom.esc": `
-import "web:webgl?nested"
+import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
-import "web:dom?nested"
+import "web:dom"
 
 @js("WebGLRenderingContext")
 export declare class WebGLRenderingContext {
-    canvas: web.dom.HTMLCanvasElement,
+    canvas: dom.HTMLCanvasElement,
 }
 `,
 		"web/app.esc": `
-import "web:dom?nested"
+import "web:dom"
 
 @js("Map")
 export declare class App {
-    canvas: web.dom.HTMLCanvasElement,
+    canvas: dom.HTMLCanvasElement,
 }
 `,
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
 	fileScopes, errs := inferStdlibImportSource(t, `
-import "web:app?nested"
-import "web:dom?nested"
-import "web:webgl?nested"
+import "web:app"
+import "web:dom"
+import "web:webgl"
 `)
 	require.Empty(t, errorMessages(errs))
 
-	webNs, ok := fileScopes[0].Namespace.GetNamespace("web")
-	require.True(t, ok)
-	for _, pkg := range []string{"app", "dom", "webgl"} {
-		_, ok := webNs.GetNamespace(pkg)
-		require.True(t, ok, "expected web.%s sub-namespace", pkg)
+	fileNs := fileScopes[0].Namespace
+	// dom and webgl don't trigger the single-class shortcut (class
+	// names don't match pkg names), so they bind under lowercased pkg
+	// namespaces. app does trigger the shortcut (class App ↔ pkg app),
+	// so the App class binds directly at file scope.
+	for _, pkg := range []string{"dom", "webgl"} {
+		_, ok := fileNs.GetNamespace(pkg)
+		require.True(t, ok, "expected %s namespace bound at file scope", pkg)
 	}
+	_, hasAppType := fileNs.Types["App"]
+	require.True(t, hasAppType, "expected App class type bound at file scope (single-class shortcut)")
 }
 
 // TestStdlibImport_PseudoPackageCycleMixedSchemes verifies the SCC
@@ -655,19 +589,19 @@ import "web:webgl?nested"
 func TestStdlibImport_PseudoPackageCycleMixedSchemes(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"std/host.esc": `
-import "web:client?nested"
+import "web:client"
 
 @js("Map")
 export declare class Host {
-    client: web.client.Client,
+    client: client.Client,
 }
 `,
 		"web/client.esc": `
-import "std:host?nested"
+import "std:host"
 
 @js("Set")
 export declare class Client {
-    host: std.host.Host,
+    host: host.Host,
 }
 `,
 	})
@@ -696,25 +630,25 @@ export declare fn makeClient() -> Client
 func TestStdlibImport_PseudoPackageCycle_DecoratorErrorNamesURI(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/dom.esc": `
-import "web:webgl?nested"
+import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
-import "web:dom?nested"
+import "web:dom"
 
 @js("ThisGlobalDoesNotExist")
 export declare class WebGLRenderingContext {
-    canvas: web.dom.HTMLCanvasElement,
+    canvas: dom.HTMLCanvasElement,
 }
 `,
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
-	_, errs := inferStdlibImportSource(t, `import "web:dom?nested"`)
+	_, errs := inferStdlibImportSource(t, `import "web:dom"`)
 	expected := []string{
 		"`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global",
 	}
@@ -730,19 +664,19 @@ export declare class WebGLRenderingContext {
 func TestStdlibImport_PseudoPackageCycle_RollbackOnFailure(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/dom.esc": `
-import "web:webgl?nested"
+import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		"web/webgl.esc": `
-import "web:dom?nested"
+import "web:dom"
 
 @js("ThisGlobalDoesNotExist")
 export declare class WebGLRenderingContext {
-    canvas: web.dom.HTMLCanvasElement,
+    canvas: dom.HTMLCanvasElement,
 }
 `,
 	})
@@ -754,8 +688,8 @@ export declare class WebGLRenderingContext {
 	// Without rollback, the second silently binds an empty namespace and
 	// produces no diagnostic.
 	_, errs := inferStdlibImportSource(t, `
-import "web:dom?nested"
-import "web:webgl?nested"
+import "web:dom"
+import "web:webgl"
 `)
 	msg := "`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global"
 	require.Equal(t, []string{msg, msg}, errorMessages(errs))
@@ -771,22 +705,22 @@ func TestStdlibImport_PseudoPackageCycle_RollbackOnParseError(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		// dom.esc imports webgl cleanly so the SCC scanner sees the cycle.
 		"web/dom.esc": `
-import "web:webgl?nested"
+import "web:webgl"
 
 @js("HTMLCanvasElement")
 export declare class HTMLCanvasElement {
-    getContext(self, id: "webgl") -> web.webgl.WebGLRenderingContext,
+    getContext(self, id: "webgl") -> webgl.WebGLRenderingContext,
 }
 `,
 		// webgl.esc parses its import line, then fails on the trailing
 		// garbage — that error surfaces during the SCC's real-load parse,
 		// not during the graph scan.
 		"web/webgl.esc": `
-import "web:dom?nested"
+import "web:dom"
 
 @js("WebGLRenderingContext")
 export declare class WebGLRenderingContext {
-    canvas: web.dom.HTMLCanvasElement,
+    canvas: dom.HTMLCanvasElement,
 }
 
 @@@ this is not valid escalier
@@ -795,8 +729,8 @@ export declare class WebGLRenderingContext {
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
 
 	_, errs := inferStdlibImportSource(t, `
-import "web:dom?nested"
-import "web:webgl?nested"
+import "web:dom"
+import "web:webgl"
 `)
 	msgs := errorMessages(errs)
 	require.NotEmpty(t, msgs, "expected parse-error diagnostics from both imports")

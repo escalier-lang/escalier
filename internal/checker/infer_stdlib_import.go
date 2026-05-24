@@ -26,13 +26,11 @@ var stdlibSchemesSet = set.FromSlice(stdlibSchemes)
 // stdlibKnownFlags is the recognized set of binding-shape flags.
 // Per §2.3 the slot is extensible (future `?type-only`, `?lazy`, …); the
 // table-driven check means new entries slot in without restructuring.
-var stdlibKnownFlags = set.FromSlice([]string{"local", "nested"})
-
-// stdlibBindingShape captures the resolved binding-shape for a single
-// import statement. Exactly one of the two booleans is true.
-type stdlibBindingShape struct {
-	local, nested bool
-}
+// `?local` is currently the only shape flag — historical `?nested` was
+// removed because the dep_graph cycle detection only matched canonical
+// `<scheme>.<pkg>.<name>` keys, defeating the point of an alternate
+// binding path for sources that mostly need flat `<pkg>.<name>` access.
+var stdlibKnownFlags = set.FromSlice([]string{"local"})
 
 // isSchemePrefixedImport reports whether spec begins with one of the
 // recognized scheme prefixes (`std:`, `web:`, `node:`) or any other
@@ -101,8 +99,7 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 		})
 	}
 
-	shape, flagErrs := resolveStdlibFlags(importStmt.Flags, span)
-	errs = append(errs, flagErrs...)
+	errs = append(errs, resolveStdlibFlags(importStmt.Flags, span)...)
 
 	// node:* is reserved; the resolver rejects every package until Node
 	// support lands. Gated on schemeKnown so an unknown-scheme URI
@@ -148,21 +145,10 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 		return errs
 	}
 
-	// --- Bind phase. Single-class shortcut applies only to ?local
-	// (per §2.4 last bullet).
-
-	var bindErrs []Error
-
-	// resolveStdlibFlags guarantees exactly one shape is set.
-	switch {
-	case shape.local:
-		bindErrs = c.bindStdlibLocal(ctx, pkg, pkgNs, span)
-	case shape.nested:
-		bindErrs = c.bindStdlibNested(ctx, scheme, pkg, pkgNs, span)
-	}
-
-	errs = append(errs, bindErrs...)
-
+	// --- Bind phase. `?local` is the only binding shape; the
+	// single-class shortcut may bind a class directly when the pkg name
+	// matches the class name case-insensitively (FR5).
+	errs = append(errs, c.bindStdlibLocal(ctx, pkg, pkgNs, span)...)
 	return errs
 }
 
@@ -181,18 +167,18 @@ func isRecognizedScheme(scheme string) bool {
 	return stdlibSchemesSet.Contains(scheme)
 }
 
-// resolveStdlibFlags inspects the parsed flag list and returns the
-// binding shape, defaulting to ?local. Reports unknown-flag,
-// mutually-exclusive, and duplicate-flag diagnostics per the taxonomy.
-func resolveStdlibFlags(flags []string, span ast.Span) (stdlibBindingShape, []Error) {
-	shape := stdlibBindingShape{}
+// resolveStdlibFlags validates the parsed flag list. `?local` is
+// currently the only shape flag; reports unknown-flag and
+// duplicate-flag diagnostics per the taxonomy. There is no
+// "mutually exclusive" case to surface (only one shape exists), but
+// the table-driven check leaves room for future flags
+// (`?type-only`, `?lazy`, …) to slot in without restructuring.
+func resolveStdlibFlags(flags []string, span ast.Span) []Error {
 	if len(flags) == 0 {
-		shape.local = true
-		return shape, nil
+		return nil
 	}
 
 	seen := set.NewSet[string]()
-	shapeFlags := []string{}
 	var errs []Error
 	for _, f := range flags {
 		if f == "" {
@@ -218,29 +204,8 @@ func resolveStdlibFlags(flags []string, span ast.Span) (stdlibBindingShape, []Er
 			continue
 		}
 		seen.Add(f)
-		if f == "local" || f == "nested" {
-			shapeFlags = append(shapeFlags, f)
-		}
 	}
-	if len(errs) > 0 {
-		return shape, errs
-	}
-
-	if len(shapeFlags) > 1 {
-		sort.Strings(shapeFlags)
-		return shape, []Error{&GenericError{
-			message: fmt.Sprintf("binding-shape flags %q and %q are mutually exclusive; pick one",
-				shapeFlags[0], shapeFlags[1]),
-			span: span,
-		}}
-	}
-	switch shapeFlags[0] {
-	case "local":
-		shape.local = true
-	case "nested":
-		shape.nested = true
-	}
-	return shape, nil
+	return errs
 }
 
 // resolveStdlibPath maps a `scheme:pkg` URI to an on-disk `.esc` file
@@ -442,44 +407,6 @@ func findSingleClassShortcut(ns *type_system.Namespace, pkg string) (string, boo
 		}
 	}
 	return "", false
-}
-
-// bindStdlibNested binds the package under <scheme>.<pkg> in the file
-// scope, lazily creating the per-scheme namespace. Duplicate ?nested
-// imports of the same package within a single file are silently
-// idempotent — bookkeeping keys on the URI (per §2.3) so the first
-// import "won" and any subsequent ones add nothing. Like bindStdlibLocal,
-// the binding shares the canonical pkgNs pointer.
-func (c *Checker) bindStdlibNested(ctx Context, scheme, pkg string, pkgNs *type_system.Namespace, span ast.Span) []Error {
-	schemeNs, err := getOrCreateSchemeNamespace(ctx.Scope.Namespace, scheme)
-	if err != nil {
-		return []Error{&GenericError{message: err.Error(), span: span}}
-	}
-	if _, exists := schemeNs.GetNamespace(pkg); exists {
-		// Already bound from an earlier ?nested import of the same URI.
-		return nil
-	}
-	if err := schemeNs.SetNamespace(pkg, pkgNs); err != nil {
-		return []Error{&GenericError{
-			message: fmt.Sprintf("cannot bind %s.%s: %s", scheme, pkg, err.Error()),
-			span:    span,
-		}}
-	}
-	return nil
-}
-
-// getOrCreateSchemeNamespace returns the `<scheme>` sub-namespace on
-// ns, creating it on first access. Returns an error if a non-namespace
-// binding (value/type) already occupies that name in ns.
-func getOrCreateSchemeNamespace(ns *type_system.Namespace, scheme string) (*type_system.Namespace, error) {
-	if existing, ok := ns.GetNamespace(scheme); ok {
-		return existing, nil
-	}
-	schemeNs := type_system.NewNamespace()
-	if err := ns.SetNamespace(scheme, schemeNs); err != nil {
-		return nil, fmt.Errorf("cannot create per-scheme namespace %q: %w", scheme, err)
-	}
-	return schemeNs, nil
 }
 
 // lastSegmentLower returns the last `_`-separated segment of pkg,
