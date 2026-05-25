@@ -3,6 +3,7 @@ package checker
 import (
 	"sort"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -119,73 +120,101 @@ func sortOverloadArms(arms []*type_system.FuncType) []*type_system.FuncType {
 // symmetrically. tie otherwise — including when arities differ or
 // the relation is incomparable.
 //
-// Param positions where either side is a TypeRefType naming one of
-// the arm's own type params are skipped: the universal quantifier
-// makes them effectively top-typed for specificity, and rule 3
-// orders concrete-vs-generic separately. Without the skip, both
-// directions of subtype would tie at such positions and rule 1
-// could not fire even when other positions discriminate.
+// Owned type-param references are resolved to their upper bound:
+// `<K: C>` substitutes C, `<T>` (unbounded or constrained to never)
+// is treated as top. This makes bounded generics rank ahead of
+// unbounded ones at the same position — `<K: string>(x: K)` beats
+// `<T>(x: T)` because `string <: top` — while two unbounded TP refs
+// at the same position simply skip (no information). Rule 3 still
+// runs separately to order concrete-vs-generic at positions where
+// rule 1 ties.
 func compareBySubtype(a, b *type_system.FuncType) specificity {
 	if len(a.Params) != len(b.Params) || len(a.Params) == 0 {
 		return tie
 	}
-	aTP := typeParamNames(a)
-	bTP := typeParamNames(b)
+	aTP := typeParamBounds(a)
+	bTP := typeParamBounds(b)
 
-	allAToB := true
-	allBToA := true
+	allAIsSubtypeOfB := true
+	allBIsSubtypeOfA := true
 	sawComparable := false
 	for i := range a.Params {
 		ap := type_system.Prune(a.Params[i].Type)
 		bp := type_system.Prune(b.Params[i].Type)
-		if isOwnedTypeParamRef(ap, aTP) || isOwnedTypeParamRef(bp, bTP) {
+		aTop, aEff := effectiveParamType(ap, aTP)
+		bTop, bEff := effectiveParamType(bp, bTP)
+		if aTop && bTop {
+			// Both unbounded TP refs at this position — universal on
+			// both sides, no specificity signal. Skip without changing
+			// the running AND state.
 			continue
 		}
-		aToB := structuralSubtype(ap, bp, make(structuralSeen))
-		bToA := structuralSubtype(bp, ap, make(structuralSeen))
-		// If neither direction succeeds, the shape is one
-		// structuralSubtype doesn't recognize (FuncType, intersection,
-		// nominal object, …) or the two types are simply disjoint
-		// (e.g. different literal tags). Skip the position rather
-		// than AND-poisoning both directions to false — otherwise an
-		// unrelated unrecognized position would mask a real subtype
-		// discrimination at another position.
-		if !aToB && !bToA {
-			continue
+		// Both true → equivalent shapes; exactly one true → that side
+		// is strictly narrower; both false → incomparable (disjoint or
+		// unrecognized shape).
+		var aIsSubtypeOfB, bIsSubtypeOfA bool
+		switch {
+		case aTop:
+			// a ranges over all types, b is something narrower:
+			// b <: a holds, a <: b does not.
+			aIsSubtypeOfB, bIsSubtypeOfA = false, true
+		case bTop:
+			aIsSubtypeOfB, bIsSubtypeOfA = true, false
+		default:
+			aIsSubtypeOfB = structuralSubtype(aEff, bEff, make(structuralSeen))
+			bIsSubtypeOfA = structuralSubtype(bEff, aEff, make(structuralSeen))
+		}
+		// Any position where neither direction holds — an unrecognized
+		// shape (FuncType, intersection, nominal object, …) or genuinely
+		// disjoint shapes (e.g. different literal tags) — makes the arms
+		// pointwise-incomparable as a whole. Bail out to the source-order
+		// tiebreaker rather than letting later positions falsely decide.
+		if !aIsSubtypeOfB && !bIsSubtypeOfA {
+			return tie
 		}
 		sawComparable = true
-		if !aToB {
-			allAToB = false
+		if !aIsSubtypeOfB {
+			allAIsSubtypeOfB = false
 		}
-		if !bToA {
-			allBToA = false
+		if !bIsSubtypeOfA {
+			allBIsSubtypeOfA = false
 		}
 	}
 	if !sawComparable {
 		return tie
 	}
-	if allAToB && !allBToA {
+	if allAIsSubtypeOfB && !allBIsSubtypeOfA {
 		return aMoreSpecific
 	}
-	if allBToA && !allAToB {
+	if allBIsSubtypeOfA && !allAIsSubtypeOfB {
 		return bMoreSpecific
 	}
 	return tie
 }
 
-func typeParamNames(fn *type_system.FuncType) map[string]struct{} {
+// typeParamBounds returns a name→constraint map for fn's own type
+// params. A nil value means the param is unbounded — either no
+// constraint or a NeverType constraint (which the old comparator
+// treated as equivalent to unbounded). Non-nil values are pruned.
+func typeParamBounds(fn *type_system.FuncType) map[string]type_system.Type {
 	if len(fn.TypeParams) == 0 {
 		return nil
 	}
-	out := make(map[string]struct{}, len(fn.TypeParams))
+	out := make(map[string]type_system.Type, len(fn.TypeParams))
 	for _, tp := range fn.TypeParams {
-		out[tp.Name] = struct{}{}
+		var bound type_system.Type
+		if tp.Constraint != nil {
+			if _, isNever := type_system.Prune(tp.Constraint).(*type_system.NeverType); !isNever {
+				bound = type_system.Prune(tp.Constraint)
+			}
+		}
+		out[tp.Name] = bound
 	}
 	return out
 }
 
-func isOwnedTypeParamRef(t type_system.Type, ownTP map[string]struct{}) bool {
-	if len(ownTP) == 0 {
+func isOwnedTypeParamRef(t type_system.Type, ownTP set.Set[string]) bool {
+	if ownTP.Len() == 0 {
 		return false
 	}
 	ref, ok := t.(*type_system.TypeRefType)
@@ -196,8 +225,36 @@ func isOwnedTypeParamRef(t type_system.Type, ownTP map[string]struct{}) bool {
 	if !ok {
 		return false
 	}
-	_, ok = ownTP[ident.Name]
-	return ok
+	return ownTP.Contains(ident.Name)
+}
+
+// effectiveParamType resolves an owned type-param reference to its
+// upper bound for specificity comparison. Returns isTop=true when
+// the referenced param is unbounded (so the position ranges over all
+// types). For a bounded `<K: C>`, returns (false, C) — substituting
+// the constraint lets `<K: string>(x: K)` rank ahead of `<T>(x: T)`
+// just as `(x: string)` would. For any non-owned-TP type, returns
+// the input unchanged.
+func effectiveParamType(
+	t type_system.Type,
+	ownTP map[string]type_system.Type,
+) (isTop bool, eff type_system.Type) {
+	ref, ok := t.(*type_system.TypeRefType)
+	if !ok {
+		return false, t
+	}
+	ident, ok := ref.Name.(*type_system.Ident)
+	if !ok {
+		return false, t
+	}
+	bound, owned := ownTP[ident.Name]
+	if !owned {
+		return false, t
+	}
+	if bound == nil {
+		return true, nil
+	}
+	return false, bound
 }
 
 // structuralSeen guards against unbounded recursion on cyclic types
@@ -215,6 +272,11 @@ type structuralSeen map[[2]type_system.Type]bool
 // syntactic tiebreakers.
 //
 // Both arguments must already be pruned.
+//
+// TODO(#658): replace with the pure `Check` predicate once that
+// lands — it would subsume this hand-rolled traversal and handle
+// FuncType, intersections, nominal objects, and mapped types
+// without us having to grow the cases here.
 func structuralSubtype(sub, sup type_system.Type, seen structuralSeen) bool {
 	if sub == sup {
 		return true
@@ -363,10 +425,13 @@ func countTypeParamRefParams(fn *type_system.FuncType) int {
 	if len(fn.TypeParams) == 0 {
 		return 0
 	}
-	tpNames := typeParamNames(fn)
+	names := set.NewSet[string]()
+	for _, tp := range fn.TypeParams {
+		names.Add(tp.Name)
+	}
 	n := 0
 	for _, p := range fn.Params {
-		if isOwnedTypeParamRef(type_system.Prune(p.Type), tpNames) {
+		if isOwnedTypeParamRef(type_system.Prune(p.Type), names) {
 			n++
 		}
 	}
