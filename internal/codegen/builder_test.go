@@ -975,6 +975,58 @@ func TestBuildIndexSignatureKeyName(t *testing.T) {
 	}
 }
 
+// TestBuildTypeAnn_MultiMappedWithOverloadedMethod pins that the
+// dts.go intersection branch (≥2 MappedElems) still fans an
+// overloaded MethodElem out to one MethodTypeAnn per arm. Before
+// this path went through buildObjTypeAnnElems all but the first arm
+// were silently dropped.
+func TestBuildTypeAnn_MultiMappedWithOverloadedMethod(t *testing.T) {
+	builder := &Builder{tempId: 0, depGraph: nil}
+
+	mapped := func(name string) *type_system.MappedElem {
+		return &type_system.MappedElem{
+			TypeParam: &type_system.IndexParam{
+				Name:       "K",
+				Constraint: type_system.NewKeyOfType(nil, type_system.NewTypeRefType(nil, name, nil)),
+			},
+			Value: type_system.NewIndexType(nil,
+				type_system.NewTypeRefType(nil, name, nil),
+				type_system.NewTypeRefType(nil, "K", nil)),
+		}
+	}
+
+	method := &type_system.MethodElem{
+		Name: type_system.NewStrKey("foo"),
+		Signatures: []*type_system.FuncType{
+			type_system.NewFuncType(nil, nil,
+				[]*type_system.FuncParam{
+					{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "a")},
+				},
+				type_system.NewNumPrimType(nil), nil),
+			type_system.NewFuncType(nil, nil,
+				[]*type_system.FuncParam{
+					{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "b")},
+				},
+				type_system.NewStrPrimType(nil), nil),
+		},
+	}
+
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		mapped("T1"),
+		mapped("T2"),
+		method,
+	})
+
+	ann := builder.buildTypeAnn(obj)
+	printer := NewPrinter()
+	printer.PrintTypeAnn(ann)
+	out := printer.Output
+
+	// Both overload arms must render — distinguishable by return type.
+	assert.Contains(t, out, `foo(x: "a"): number`)
+	assert.Contains(t, out, `foo(x: "b"): string`)
+}
+
 // Helper function to parse a declaration from a source string
 func parseDecl(t *testing.T, source string) ast.Decl {
 	astSource := &ast.Source{
