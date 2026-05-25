@@ -353,11 +353,15 @@ func applyMethodMutability(objType *type_system.ObjectType, names MethodNames) {
 		}
 		name := me.Name.Str
 		if names.Contains(name) {
-			setReceiverMut(me.SingleSig(), false)
+			for _, sig := range me.Signatures {
+				setReceiverMut(sig, false)
+			}
 			continue
 		}
 		if mut, classified := interop.ClassifyMethodByName(name); classified && !mut {
-			setReceiverMut(me.SingleSig(), false)
+			for _, sig := range me.Signatures {
+				setReceiverMut(sig, false)
+			}
 		}
 	}
 }
@@ -499,7 +503,9 @@ func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonl
 			readonlyElems.Add(me.Name)
 
 			// Methods on the Readonly* variant are non-mutating.
-			setReceiverMut(me.SingleSig(), false)
+			for _, sig := range me.Signatures {
+				setReceiverMut(sig, false)
+			}
 		}
 	}
 
@@ -510,7 +516,9 @@ func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonl
 			continue
 		}
 		mut := !readonlyElems.Contains(me.Name)
-		setReceiverMut(me.SingleSig(), mut)
+		for _, sig := range me.Signatures {
+			setReceiverMut(sig, mut)
+		}
 	}
 }
 

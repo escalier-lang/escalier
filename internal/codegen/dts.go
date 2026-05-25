@@ -801,8 +801,10 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 					mappedAnn := b.buildObjTypeAnnElem(mappedElem, t.SymbolKeyMap)
 					intersectionTypes = append(intersectionTypes, NewObjectTypeAnn([]ObjTypeAnnElem{mappedAnn}))
 				} else {
-					// Accumulate non-mapped elements to group them together
-					nonMappedElems = append(nonMappedElems, b.buildObjTypeAnnElem(elem, t.SymbolKeyMap))
+					// Accumulate non-mapped elements to group them together.
+					// Use the plural builder so overloaded MethodElems fan
+					// out to one MethodTypeAnn per arm here too.
+					nonMappedElems = append(nonMappedElems, b.buildObjTypeAnnElems(elem, t.SymbolKeyMap)...)
 				}
 			}
 
@@ -815,9 +817,9 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 		}
 
 		// Single mapped element or no mapped elements - use regular object type
-		elems := make([]ObjTypeAnnElem, len(t.Elems))
-		for i, elem := range t.Elems {
-			elems[i] = b.buildObjTypeAnnElem(elem, t.SymbolKeyMap)
+		elems := make([]ObjTypeAnnElem, 0, len(t.Elems))
+		for _, elem := range t.Elems {
+			elems = append(elems, b.buildObjTypeAnnElems(elem, t.SymbolKeyMap)...)
 		}
 		return NewObjectTypeAnn(elems)
 	case *type_sys.TupleType:
@@ -886,6 +888,24 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 	}
 }
 
+// buildObjTypeAnnElems lowers a single type-system ObjTypeElem to one
+// or more .d.ts ObjTypeAnnElems. Overloaded MethodElems fan out to one
+// MethodTypeAnn per arm (TS overload sets are one declaration per arm);
+// every other element kind returns a single ObjTypeAnnElem.
+func (b *Builder) buildObjTypeAnnElems(elem type_sys.ObjTypeElem, symbolExprMap map[int]any) []ObjTypeAnnElem {
+	if me, ok := elem.(*type_sys.MethodElem); ok && len(me.Signatures) > 1 {
+		out := make([]ObjTypeAnnElem, len(me.Signatures))
+		for i, fn := range me.Signatures {
+			out[i] = &MethodTypeAnn{
+				Name: b.buildTypeAnnObjKey(me.Name, symbolExprMap),
+				Fn:   b.buildFuncTypeAnn(fn),
+			}
+		}
+		return out
+	}
+	return []ObjTypeAnnElem{b.buildObjTypeAnnElem(elem, symbolExprMap)}
+}
+
 func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap map[int]any) ObjTypeAnnElem {
 	switch elem := elem.(type) {
 	case *type_sys.CallableElem:
@@ -897,11 +917,16 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Fn: b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.MethodElem:
-		// PR-A: methods are single-signature here. PR-C will fan out
-		// one MethodTypeAnn per overload arm in specificity order.
+		// Reached only for single-arm MethodElems: buildObjTypeAnnElems
+		// intercepts overloaded methods (len(Signatures) > 1) before
+		// they reach here and fans them out to one MethodTypeAnn per
+		// arm. A single ObjTypeAnnElem cannot carry multiple arms —
+		// .d.ts overload sets are one sibling declaration per arm —
+		// so the plural builder owns the fan-out and this case only
+		// sees the degenerate single-arm shape.
 		return &MethodTypeAnn{
 			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
-			Fn:   b.buildFuncTypeAnn(elem.SingleSig()),
+			Fn:   b.buildFuncTypeAnn(elem.Signatures[0]),
 		}
 	case *type_sys.GetterElem:
 		return &GetterTypeAnn{

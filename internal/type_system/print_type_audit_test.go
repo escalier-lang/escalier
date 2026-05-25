@@ -415,6 +415,33 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 		{"extractor", type_system.NewExtractorType(nil,
 			type_system.NewTypeRefType(nil, "Some", nil),
 			type_system.NewTypeRefType(nil, "T", nil))},
+		// Overloaded MethodElems print arms joined with "; " (vs. the
+		// outer ", " element separator) so siblings are unambiguous.
+		// The parser does not consume the "; " form for object type
+		// annotations — overload sets enter the type system through
+		// class/interface elaboration and the printer output is for
+		// debug / hover only.
+		{"object overloaded method", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			&type_system.MethodElem{
+				Name: type_system.NewStrKey("foo"),
+				Signatures: []*type_system.FuncType{
+					type_system.NewFuncType(nil, nil,
+						[]*type_system.FuncParam{
+							{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "a")},
+						},
+						type_system.NewNumPrimType(nil), nil),
+					type_system.NewFuncType(nil, nil,
+						[]*type_system.FuncParam{
+							{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "b")},
+						},
+						type_system.NewStrPrimType(nil), nil),
+				},
+			},
+			&type_system.PropertyElem{
+				Name:  type_system.NewStrKey("bar"),
+				Value: type_system.NewNumPrimType(nil),
+			},
+		})},
 		// IntrinsicType, ErrorType, TypeVarType, and IndexSignatureElem
 		// all have no source-level syntax. They are exercised by their
 		// own *_test.go files; the printer's job for them is debug-only.
@@ -426,4 +453,54 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 			require.NotEmpty(t, out, "PrintType(%s) returned empty string", tt.name)
 		})
 	}
+}
+
+// TestPrintType_OverloadedMethodSeparators pins the two separators used
+// when printing an object with an overloaded method alongside a sibling
+// element: arms are joined with "; " and outer elements with ", ", so a
+// reader can tell where one method's overload set ends and the next
+// sibling begins.
+func TestPrintType_OverloadedMethodSeparators(t *testing.T) {
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		&type_system.MethodElem{
+			Name: type_system.NewStrKey("foo"),
+			Signatures: []*type_system.FuncType{
+				type_system.NewFuncType(nil, nil,
+					[]*type_system.FuncParam{
+						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "a")},
+					},
+					type_system.NewNumPrimType(nil), nil),
+				type_system.NewFuncType(nil, nil,
+					[]*type_system.FuncParam{
+						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "b")},
+					},
+					type_system.NewStrPrimType(nil), nil),
+			},
+		},
+		&type_system.PropertyElem{
+			Name:  type_system.NewStrKey("bar"),
+			Value: type_system.NewNumPrimType(nil),
+		},
+	})
+	out := type_system.PrintType(obj, type_system.PrintConfig{})
+
+	// Arm separator: the two foo arms are joined by "; ".
+	require.Regexp(t, `foo\([^)]*\)\s*->\s*number;\s*foo\([^)]*\)\s*->\s*string`, out)
+	// Outer separator: the trailing arm and `bar` are joined by ", ".
+	require.Regexp(t, `->\s*string,\s*bar:`, out)
+}
+
+// TestParseObjectTypeAnn_OverloadedMethod probes whether two
+// same-named methods inside an object type annotation parse without
+// error. The parser sees them as two sibling object-type elements
+// (the merge into a multi-arm MethodElem happens later in elaboration,
+// not in the parser).
+func TestParseObjectTypeAnn_OverloadedMethod(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	src := `{foo(x: "a") -> number, foo(x: "b") -> string}`
+	ann, errs := parser.ParseTypeAnn(ctx, src)
+	require.Empty(t, errs)
+	require.NotNil(t, ann)
 }

@@ -471,22 +471,17 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 			case *MethodElem:
 				// Print one entry per overload arm. For a single-arm
 				// (non-overloaded) method this matches the historical
-				// output exactly; overloads — once §4.6 PR-C lands —
-				// render as comma-separated arms sharing nothing but
-				// the method name on each line.
-				//
-				// PR-C TODO: the arm separator below (", ") collides
-				// with the outer element separator on line 447, making
-				// overloaded arms visually indistinguishable from
-				// sibling elements (e.g. `{ foo(x: A), foo(x: B), bar:
-				// number }` — is `bar` a third arm or a property?).
-				// Pick a distinct separator for arms (e.g. "; ") when
-				// len(Signatures) > 1, or restructure to emit one
-				// arm-line per arm. Harmless today since every method
-				// is single-arm.
+				// output exactly. For overloaded methods, arms are
+				// joined with "; " (distinct from the outer ", "
+				// element separator) so the boundary between
+				// sibling-element and arm-vs-arm is unambiguous.
+				armSep := ", "
+				if len(elem.Signatures) > 1 {
+					armSep = "; "
+				}
 				for armIdx, fn := range elem.Signatures {
 					if armIdx > 0 {
-						result += ", "
+						result += armSep
 					}
 					result += printMethodSig(elem.Name, fn, pt)
 				}

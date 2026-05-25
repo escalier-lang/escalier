@@ -81,6 +81,7 @@ func (e LoopInConstructorNotSupportedError) isError()       {}
 func (e TryInConstructorNotSupportedError) isError()        {}
 func (e ClassDoesNotImplementInterfaceError) isError()      {}
 func (e ReceiverLifetimeOutsideMemberError) isError()       {}
+func (e OverloadReceiverMutMismatchError) isError()         {}
 
 func (e TypeCheckTimeoutError) IsWarning() bool                    { return false }
 func (e UnimplementedError) IsWarning() bool                       { return false }
@@ -141,6 +142,7 @@ func (e LoopInConstructorNotSupportedError) IsWarning() bool       { return fals
 func (e TryInConstructorNotSupportedError) IsWarning() bool        { return false }
 func (e ClassDoesNotImplementInterfaceError) IsWarning() bool      { return false }
 func (e ReceiverLifetimeOutsideMemberError) IsWarning() bool       { return false }
+func (e OverloadReceiverMutMismatchError) IsWarning() bool         { return false }
 
 // ClassDoesNotImplementInterfaceError is reported when a class declares
 // `implements I` but fails to structurally satisfy `I` — either by missing

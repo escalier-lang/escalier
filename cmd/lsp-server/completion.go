@@ -513,10 +513,9 @@ func completionsFromObjectType(obj *type_system.ObjectType, receiverMut bool) []
 				continue
 			}
 			// Hide `mut self` methods on non-mut receivers.
-			// All arms share receiver mutability (enforced at merge time
-			// in PR-C); inspecting any arm is sufficient.
-			sig := elem.SingleSig()
-			if !receiverMutForElems && type_system.ReceiverIsMut(sig) {
+			// All arms share receiver mutability (enforced by
+			// MergeMethodOverloads); inspecting arm 0 is sufficient.
+			if !receiverMutForElems && type_system.ReceiverIsMut(elem.Signatures[0]) {
 				continue
 			}
 			kind := protocol.CompletionItemKindMethod

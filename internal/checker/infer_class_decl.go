@@ -115,6 +115,13 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 	// module-level path keys by (decl, index); for a single body-level class
 	// the index alone suffices.
 	methodCtxForElem := make(map[int]Context)
+	// methodSigForElem stores each method's inferred FuncType keyed by
+	// body-element index. Body inference reads this map directly
+	// instead of looking up the elem in the post-merge ObjectType:
+	// once same-named methods collapse into a multi-arm MethodElem,
+	// the by-name lookup can no longer disambiguate which AST body
+	// corresponds to which arm.
+	methodSigForElem := make(map[int]*type_system.FuncType)
 
 	for i, elem := range decl.Body {
 		switch elem := elem.(type) {
@@ -177,6 +184,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			}
 
 			methodCtxForElem[i] = methodCtx
+			methodSigForElem[i] = methodType
 			if elem.Static {
 				staticElems = append(staticElems,
 					type_system.NewMethodElem(*key, methodType))
@@ -264,7 +272,9 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 	}
 
 	provenance := &ast.NodeProvenance{Node: decl}
-	objType := type_system.NewNominalObjectType(provenance, objTypeElems)
+	mergedInstanceElems, instanceMergeErrors := c.MergeMethodOverloads(objTypeElems, decl.Span())
+	errors = slices.Concat(errors, instanceMergeErrors)
+	objType := type_system.NewNominalObjectType(provenance, mergedInstanceElems)
 	objType.SymbolKeyMap = instanceSymbolKeyMap
 
 	if decl.Extends != nil {
@@ -319,9 +329,11 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 		)
 	}
 
+	mergedStaticElems, staticMergeErrors := c.MergeMethodOverloads(staticElems, decl.Span())
+	errors = slices.Concat(errors, staticMergeErrors)
 	constructorElem := &type_system.ConstructorElem{Fn: ctorFuncType}
 	classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
-	classObjTypeElems = append(classObjTypeElems, staticElems...)
+	classObjTypeElems = append(classObjTypeElems, mergedStaticElems...)
 
 	classObjType := type_system.NewObjectType(provenance, classObjTypeElems)
 	classObjType.SymbolKeyMap = staticSymbolKeyMap
@@ -427,7 +439,14 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				continue
 			}
 
-			methodSig := methodType.SingleSig()
+			// Body inference resolves the method's signature via the
+			// per-AST-elem map so it remains correct after overload
+			// merging collapses same-named methods into a multi-arm
+			// MethodElem (where SingleSig would panic).
+			methodSig := methodSigForElem[i]
+			if methodSig == nil {
+				continue
+			}
 			paramBindings := make(map[string]*type_system.Binding)
 			if !isStatic {
 				isMutableSelf := type_system.ReceiverIsMut(methodSig)
