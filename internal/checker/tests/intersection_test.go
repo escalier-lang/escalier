@@ -872,7 +872,9 @@ func TestFunctionOverloads(t *testing.T) {
 				val str = identity("hello")
 			`,
 			expectedVars: map[string]string{
-				"str": "\"hello\"",
+				// Rule 3 picks the concrete (value: string) arm over the
+				// generic <T>(value: T) arm.
+				"str": "string",
 			},
 			wantErr: false,
 		},
@@ -962,6 +964,47 @@ func TestFunctionOverloads(t *testing.T) {
 			`,
 			expectedVars: map[string]string{},
 			wantErr:      true,
+		},
+		// Body-defined overload with a generic arm — exercises the
+		// generalize path on an IntersectionType binding (declared-overload
+		// tests above use `declare fn`, which skips body inference and
+		// generalization). With the current specificity heuristic, the
+		// unbounded `<T>` arm and the `string` arm tie on every rule
+		// (0 literal params, 0 bounded type params, 1 required param), so
+		// stable sort preserves declared order — the generic arm matches
+		// first and returns the argument's narrow type unchanged.
+		"body-defined overload with generic arm": {
+			input: `
+				fn pick<T>(value: T) -> T { return value }
+				fn pick(value: string) -> number { return value.length }
+				val s = pick("hi")
+				val n = pick(42)
+			`,
+			expectedVars: map[string]string{
+				"s": "number",
+				"n": "42",
+			},
+			wantErr: false,
+		},
+		// Call-site synthesis (generalize.go:479): when an unannotated
+		// param is called with incompatible signatures inside the body,
+		// resolveCallSites synthesizes an IntersectionType for its TV
+		// before generalization runs. Each call site becomes an arm,
+		// sorted by specificity (both arms tie under the current rules,
+		// so declared/call order is preserved), and the call-site return
+		// TVs become the generalized type params on the outer fn.
+		"call-site synthesized overload from incompatible arg uses": {
+			input: `
+				fn apply(f) {
+					val a = f(1)
+					val b = f("hi")
+					return [a, b]
+				}
+			`,
+			expectedVars: map[string]string{
+				"apply": "fn <T0, T1>(f: (fn (arg0: 1) -> T0) & (fn (arg0: \"hi\") -> T1)) -> [T0, T1]",
+			},
+			wantErr: false,
 		},
 	}
 

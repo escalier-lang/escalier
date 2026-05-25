@@ -1,6 +1,6 @@
 declare const arr1: Array<number>;
 declare const arr2: Array<number>;
-declare const genResult: "world";
+declare const genResult: string;
 declare const r1: string;
 declare const r2: number;
 declare const r3: void;

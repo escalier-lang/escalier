@@ -51,32 +51,32 @@ func TestCompareOverloadArms(t *testing.T) {
 		name string
 		a    *type_system.FuncType
 		b    *type_system.FuncType
-		want int // -1 a more specific; 1 b more specific; 0 tie
+		want specificity
 	}{
 		// Rule 1: literal-typed params before non-literal.
 		{
 			name: "literal vs string param: literal wins",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(canvasLit)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
-			want: -1,
+			want: aMoreSpecific,
 		},
 		{
 			name: "string vs literal param: literal wins (swapped)",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(canvasLit)}),
-			want: 1,
+			want: bMoreSpecific,
 		},
 		{
 			name: "two literals beats one literal",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(canvasLit), mkParam(divLit)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(canvasLit), mkParam(str)}),
-			want: -1,
+			want: aMoreSpecific,
 		},
 		{
 			name: "two literal arms compare equal under rule 1 (same count)",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(canvasLit)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(divLit)}),
-			want: 0,
+			want: tie,
 		},
 
 		// Rule 2: bounded generics before unbounded.
@@ -90,7 +90,7 @@ func TestCompareOverloadArms(t *testing.T) {
 				[]*type_system.TypeParam{{Name: "T"}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "T", nil))},
 			),
-			want: -1,
+			want: aMoreSpecific,
 		},
 		{
 			name: "bounded type param with NeverType constraint counts as unbounded",
@@ -102,7 +102,7 @@ func TestCompareOverloadArms(t *testing.T) {
 				[]*type_system.TypeParam{{Name: "K", Constraint: type_system.NewNeverType(nil)}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},
 			),
-			want: -1,
+			want: aMoreSpecific,
 		},
 		{
 			name: "rule 2 only applies when rule 1 ties",
@@ -116,7 +116,7 @@ func TestCompareOverloadArms(t *testing.T) {
 				[]*type_system.TypeParam{{Name: "K", Constraint: str}},
 				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "K", nil))},
 			),
-			want: -1,
+			want: aMoreSpecific,
 		},
 
 		// Rule 3: fewer required params is more specific.
@@ -124,28 +124,52 @@ func TestCompareOverloadArms(t *testing.T) {
 			name: "one required param beats two required params",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(str), mkParam(num)}),
-			want: -1,
+			want: aMoreSpecific,
 		},
 		{
 			name: "optional params do not count toward required",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(str), mkOptParam(num)}),
-			want: 0,
+			want: tie,
 		},
 		{
 			name: "rest params do not count toward required",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(str), mkRestParam(num)}),
-			want: 0,
+			want: tie,
 		},
 
-		// Rule 4: source order tiebreaker — comparator returns 0,
+		// Rule 4: concrete-typed params beat type-param-typed params.
+		{
+			name: "concrete (value: string) beats generic <T>(value: T)",
+			a:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
+			b: mkFn(
+				[]*type_system.TypeParam{{Name: "T"}},
+				[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "T", nil))},
+			),
+			want: aMoreSpecific,
+		},
+		{
+			name: "rule 4 ignores type params that aren't referenced by any param",
+			a: mkFn(
+				[]*type_system.TypeParam{{Name: "T"}},
+				[]*type_system.FuncParam{mkParam(str)},
+			),
+			b:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
+			want: tie,
+		},
+
+		// Rule 5: source order tiebreaker — comparator returns 0,
 		// stable sort handles the rest.
 		{
+			// Duplicate-decl detection (#654) will reject identical signatures
+			// at the merge site, so this input won't reach the comparator
+			// from there. It remains valid coverage for sortOverloadArms,
+			// which can be handed arbitrary FuncType slices.
 			name: "identical arms tie (source order tiebreaker)",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
-			want: 0,
+			want: tie,
 		},
 
 		// Nil defensiveness.
@@ -153,19 +177,19 @@ func TestCompareOverloadArms(t *testing.T) {
 			name: "nil sorts last (a nil)",
 			a:    nil,
 			b:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
-			want: 1,
+			want: bMoreSpecific,
 		},
 		{
 			name: "nil sorts last (b nil)",
 			a:    mkFn(nil, []*type_system.FuncParam{mkParam(str)}),
 			b:    nil,
-			want: -1,
+			want: aMoreSpecific,
 		},
 		{
 			name: "two nils tie",
 			a:    nil,
 			b:    nil,
-			want: 0,
+			want: tie,
 		},
 	}
 
@@ -220,9 +244,9 @@ func TestSortOverloadArms_AcrossAllRules(t *testing.T) {
 	// Expected most-specific-first order:
 	//   1. literalArm        (rule 1 wins)
 	//   2. boundedGeneric    (rule 2 wins among the rest)
-	//   3. oneRequiredStr    (rule 3: 1 required, declared before unboundedGeneric)
-	//   4. unboundedGeneric  (rule 3: 1 required, ties with above → source order)
-	//   5. twoRequired       (rule 3: 2 required)
+	//   3. oneRequiredStr    (rule 3: 1 required beats twoRequired; rule 4: 0 TP refs beats unboundedGeneric)
+	//   4. unboundedGeneric  (rule 3: 1 required beats twoRequired; rule 4 loses to oneRequiredStr)
+	//   5. twoRequired       (rule 3: 2 required, least specific)
 	require.Same(t, literalArm, sorted[0])
 	require.Same(t, boundedGeneric, sorted[1])
 	require.Same(t, oneRequiredStr, sorted[2])

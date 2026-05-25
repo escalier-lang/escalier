@@ -6,11 +6,22 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// specificity is the result of comparing two overload arms. Its
+// underlying int values match the sort.Interface convention so it
+// can be compared with `< 0` / `> 0` directly.
+type specificity int
+
+const (
+	aMoreSpecific specificity = -1
+	tie           specificity = 0
+	bMoreSpecific specificity = 1
+)
+
 // compareOverloadArms compares two overload arms by specificity.
-// Returns -1 when a is strictly more specific than b, +1 when b is
-// strictly more specific than a, and 0 when the two arms are
-// considered equally specific (callers should use a stable sort so
-// declared source order is preserved on ties).
+// Returns aMoreSpecific when a is strictly more specific than b,
+// bMoreSpecific when b is strictly more specific than a, and tie
+// when the two arms are considered equally specific (callers should
+// use a stable sort so declared source order is preserved on ties).
 //
 // Rules in descending priority — checked in order, the first
 // discriminating rule wins:
@@ -31,7 +42,13 @@ import (
 //     not count as required. Matches TS's "more required args
 //     before fewer" rule.
 //
-//  4. Source order tiebreaker. Returns 0 here; the caller's stable
+//  4. **Fewer type-param-typed params is more specific.** Count
+//     params whose top-level type is a `TypeRefType` to one of
+//     the fn's own type params. A concrete `(value: string)` ranks
+//     ahead of a generic `<T>(value: T)` because `T` provides no
+//     constraint on what the caller may pass.
+//
+//  5. Source order tiebreaker. Returns 0 here; the caller's stable
 //     sort preserves declared order.
 //
 // This comparator is used both for free-fn overload arms (sorted
@@ -39,44 +56,56 @@ import (
 // generalize.go) and for the PR-C method-elem merge pass. Keeping
 // a single comparator means free-fn and method overload dispatch
 // have identical semantics.
-func compareOverloadArms(a, b *type_system.FuncType) int {
+//
+// TODO(#655): rules 1–2 are a top-level literal-count heuristic and
+// miss unions, object fields, and other nested narrowing. Replace
+// with a subtype-based comparison once §4.6 lands.
+func compareOverloadArms(a, b *type_system.FuncType) specificity {
 	if a == nil || b == nil {
 		// Nil sorts last — should never happen with well-formed
 		// intersections, but defensive against malformed input.
 		if a == nil && b == nil {
-			return 0
+			return tie
 		}
 		if a == nil {
-			return 1
+			return bMoreSpecific
 		}
-		return -1
+		return aMoreSpecific
 	}
 
 	aLits, bLits := countLiteralParams(a), countLiteralParams(b)
 	if aLits != bLits {
 		if aLits > bLits {
-			return -1
+			return aMoreSpecific
 		}
-		return 1
+		return bMoreSpecific
 	}
 
 	aBounded, bBounded := countBoundedTypeParams(a), countBoundedTypeParams(b)
 	if aBounded != bBounded {
 		if aBounded > bBounded {
-			return -1
+			return aMoreSpecific
 		}
-		return 1
+		return bMoreSpecific
 	}
 
 	aReq, bReq := countRequiredParams(a), countRequiredParams(b)
 	if aReq != bReq {
 		if aReq < bReq {
-			return -1
+			return aMoreSpecific
 		}
-		return 1
+		return bMoreSpecific
 	}
 
-	return 0
+	aTPRefs, bTPRefs := countTypeParamRefParams(a), countTypeParamRefParams(b)
+	if aTPRefs != bTPRefs {
+		if aTPRefs < bTPRefs {
+			return aMoreSpecific
+		}
+		return bMoreSpecific
+	}
+
+	return tie
 }
 
 // sortOverloadArms returns the arms ordered most-specific-first
@@ -112,6 +141,34 @@ func countBoundedTypeParams(fn *type_system.FuncType) int {
 			continue
 		}
 		n++
+	}
+	return n
+}
+
+// countTypeParamRefParams counts params whose top-level type (after Prune)
+// is a TypeRefType naming one of fn's own type params. Used by rule 3 to
+// rank concrete-typed params ahead of generic ones.
+func countTypeParamRefParams(fn *type_system.FuncType) int {
+	if len(fn.TypeParams) == 0 {
+		return 0
+	}
+	tpNames := make(map[string]struct{}, len(fn.TypeParams))
+	for _, tp := range fn.TypeParams {
+		tpNames[tp.Name] = struct{}{}
+	}
+	n := 0
+	for _, p := range fn.Params {
+		ref, ok := type_system.Prune(p.Type).(*type_system.TypeRefType)
+		if !ok {
+			continue
+		}
+		ident, ok := ref.Name.(*type_system.Ident)
+		if !ok {
+			continue
+		}
+		if _, ok := tpNames[ident.Name]; ok {
+			n++
+		}
 	}
 	return n
 }

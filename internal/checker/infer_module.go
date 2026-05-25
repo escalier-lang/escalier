@@ -198,6 +198,26 @@ func sortKeysForDefinitions(depGraph *dep_graph.DepGraph, keys []dep_graph.Bindi
 	return sorted
 }
 
+// collectFuncArms recursively walks t, appending any FuncType arms to *arms.
+// Nested intersections are flattened. Returns the count of non-FuncType arms
+// encountered (skipped), so callers can emit a diagnostic for name collisions
+// between a function overload and a non-function binding.
+func collectFuncArms(t type_system.Type, arms *[]*type_system.FuncType) int {
+	switch t := type_system.Prune(t).(type) {
+	case *type_system.IntersectionType:
+		nonFunc := 0
+		for _, arm := range t.Types {
+			nonFunc += collectFuncArms(arm, arms)
+		}
+		return nonFunc
+	case *type_system.FuncType:
+		*arms = append(*arms, t)
+		return 0
+	default:
+		return 1
+	}
+}
+
 func (c *Checker) InferComponent(
 	ctx Context,
 	depGraph *dep_graph.DepGraph,
@@ -211,8 +231,7 @@ func (c *Checker) InferComponent(
 	// instance type uses computed keys that reference values defined in the constructor.
 	sortedComponent := sortKeysForPlaceholders(depGraph, component)
 
-	// TODO:
-	// - ensure there are no duplicate declarations in the module
+	// TODO(#654): ensure there are no duplicate declarations in the module
 
 	// We use ast.Decl as the key since each declaration needs its own state,
 	// even when multiple declarations share the same binding key (overloads, interface merging)
@@ -302,15 +321,12 @@ func (c *Checker) InferComponent(
 					// first means the first matching arm wins. Stable sort
 					// preserves declared source order on ties.
 					var arms []*type_system.FuncType
-					switch existing := binding.Type.(type) {
-					case *type_system.IntersectionType:
-						for _, t := range existing.Types {
-							if fn, ok := type_system.Prune(t).(*type_system.FuncType); ok {
-								arms = append(arms, fn)
-							}
-						}
-					case *type_system.FuncType:
-						arms = append(arms, existing)
+					nonFuncArms := collectFuncArms(binding.Type, &arms)
+					if nonFuncArms > 0 {
+						errors = append(errors, NewGenericError(
+							fmt.Sprintf("cannot overload %q: existing binding contains %d non-function type(s)",
+								decl.Name.Name, nonFuncArms),
+							decl.Span()))
 					}
 					arms = append(arms, funcType)
 					sortOverloadArms(arms)
@@ -318,6 +334,8 @@ func (c *Checker) InferComponent(
 					for i, fn := range arms {
 						armTypes[i] = fn
 					}
+					// If there's only a single arm, the original function will
+					// be returned by NewIntersectionType.
 					binding.Type = type_system.NewIntersectionType(nil, armTypes...)
 				}
 
