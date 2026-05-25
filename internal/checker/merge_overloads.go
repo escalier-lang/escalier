@@ -82,7 +82,14 @@ func (c *Checker) MergeMethodOverloads(elems []type_system.ObjTypeElem, span ast
 	}
 
 	var errors []Error
+	// mergedAt records, for each "first occurrence" index in `elems`,
+	// the multi-arm MethodElem that should replace it in the output.
 	mergedAt := map[int]*type_system.MethodElem{}
+	// dropIdx records the trailing same-named MethodElem indices whose
+	// signatures have been folded into the merged elem at the first
+	// occurrence (or rejected by the receiver-mutability check). The
+	// output pass at the bottom of the function skips these indices so
+	// each name appears once.
 	dropIdx := set.NewSet[int]()
 
 	// Drive the merge by elem order rather than ranging over the map so
@@ -103,7 +110,7 @@ func (c *Checker) MergeMethodOverloads(elems []type_system.ObjTypeElem, span ast
 			continue
 		}
 		firstMe := elems[idxs[0]].(*type_system.MethodElem)
-		// PR-C operates pre-merge: every input MethodElem has exactly
+		// This pass runs pre-merge: every input MethodElem has exactly
 		// one arm. Inspecting Signatures[0] is always safe here.
 		firstSig := firstMe.Signatures[0]
 		firstMut := type_system.ReceiverIsMut(firstSig)
@@ -113,6 +120,7 @@ func (c *Checker) MergeMethodOverloads(elems []type_system.ObjTypeElem, span ast
 			me := elems[j].(*type_system.MethodElem)
 			sig := me.Signatures[0]
 			armMut := type_system.ReceiverIsMut(sig)
+			dropIdx.Add(j)
 			if armMut != firstMut {
 				errors = append(errors, OverloadReceiverMutMismatchError{
 					Name:          firstMe.Name.String(),
@@ -120,11 +128,9 @@ func (c *Checker) MergeMethodOverloads(elems []type_system.ObjTypeElem, span ast
 					OtherReceiver: receiverShapeLabel(armMut),
 					span:          armSpanOr(sig, span),
 				})
-				dropIdx.Add(j)
 				continue
 			}
 			arms = append(arms, sig)
-			dropIdx.Add(j)
 		}
 
 		sortOverloadArms(arms)

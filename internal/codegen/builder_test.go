@@ -1022,9 +1022,10 @@ func TestBuildTypeAnn_MultiMappedWithOverloadedMethod(t *testing.T) {
 	printer.PrintTypeAnn(ann)
 	out := printer.Output
 
-	// Both overload arms must render — distinguishable by return type.
-	assert.Contains(t, out, `foo(x: "a"): number`)
-	assert.Contains(t, out, `foo(x: "b"): string`)
+	assert.Equal(t,
+		`{[K in keyof T1]: T1[K]} & {[K in keyof T2]: T2[K]} & {foo(x: "a"): number, foo(x: "b"): string}`,
+		out,
+	)
 }
 
 // Helper function to parse a declaration from a source string

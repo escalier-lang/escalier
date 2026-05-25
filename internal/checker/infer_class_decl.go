@@ -117,10 +117,10 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 	methodCtxForElem := make(map[int]Context)
 	// methodSigForElem stores each method's inferred FuncType keyed by
 	// body-element index. Body inference reads this map directly
-	// instead of looking up the elem in the post-merge ObjectType —
-	// once §4.6 PR-C collapses same-named methods into a multi-arm
-	// MethodElem, the by-name lookup can no longer disambiguate which
-	// AST body corresponds to which arm.
+	// instead of looking up the elem in the post-merge ObjectType:
+	// once same-named methods collapse into a multi-arm MethodElem,
+	// the by-name lookup can no longer disambiguate which AST body
+	// corresponds to which arm.
 	methodSigForElem := make(map[int]*type_system.FuncType)
 
 	for i, elem := range decl.Body {
@@ -440,9 +440,9 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			}
 
 			// Body inference resolves the method's signature via the
-			// per-AST-elem map so it remains correct after PR-C
-			// collapses same-named methods into a multi-arm MethodElem
-			// (where SingleSig would panic).
+			// per-AST-elem map so it remains correct after overload
+			// merging collapses same-named methods into a multi-arm
+			// MethodElem (where SingleSig would panic).
 			methodSig := methodSigForElem[i]
 			if methodSig == nil {
 				continue

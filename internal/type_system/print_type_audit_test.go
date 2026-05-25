@@ -419,8 +419,8 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 		// outer ", " element separator) so siblings are unambiguous.
 		// The parser does not consume the "; " form for object type
 		// annotations — overload sets enter the type system through
-		// class/interface elaboration (§4.6 PR-C) and the printer
-		// output is for debug / hover only.
+		// class/interface elaboration and the printer output is for
+		// debug / hover only.
 		{"object overloaded method", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
 			&type_system.MethodElem{
 				Name: type_system.NewStrKey("foo"),
@@ -488,4 +488,19 @@ func TestPrintType_OverloadedMethodSeparators(t *testing.T) {
 	require.Regexp(t, `foo\([^)]*\)\s*->\s*number;\s*foo\([^)]*\)\s*->\s*string`, out)
 	// Outer separator: the trailing arm and `bar` are joined by ", ".
 	require.Regexp(t, `->\s*string,\s*bar:`, out)
+}
+
+// TestParseObjectTypeAnn_OverloadedMethod probes whether two
+// same-named methods inside an object type annotation parse without
+// error. The parser sees them as two sibling object-type elements
+// (the merge into a multi-arm MethodElem happens later in elaboration,
+// not in the parser).
+func TestParseObjectTypeAnn_OverloadedMethod(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	src := `{foo(x: "a") -> number, foo(x: "b") -> string}`
+	ann, errs := parser.ParseTypeAnn(ctx, src)
+	require.Empty(t, errs)
+	require.NotNil(t, ann)
 }

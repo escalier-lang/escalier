@@ -253,9 +253,9 @@ func (c *Checker) InferComponent(
 	// methodSigForElem stores each method/getter/setter's inferred
 	// FuncType keyed by (decl, AST-body elemIndex). Body inference
 	// reads this map directly instead of looking up the elem in the
-	// post-merge ObjectType — once §4.6 PR-C collapses same-named
-	// methods into a multi-arm MethodElem, the by-name lookup can no
-	// longer disambiguate which AST body corresponds to which arm.
+	// post-merge ObjectType: once same-named methods collapse into
+	// a multi-arm MethodElem, the by-name lookup can no longer
+	// disambiguate which AST body corresponds to which arm.
 	methodSigForElem := make(map[classMethodCtxKey]*type_system.FuncType)
 
 	// Track which class declarations have a single in-body ConstructorElem
@@ -1392,8 +1392,9 @@ func (c *Checker) InferComponent(
 
 						// Body inference resolves the method's signature
 						// via the per-AST-elem map so it remains correct
-						// after PR-C collapses same-named methods into a
-						// multi-arm MethodElem (where SingleSig would panic).
+						// after overload merging collapses same-named
+						// methods into a multi-arm MethodElem (where
+						// SingleSig would panic).
 						methodSig := methodSigForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
 						if methodType != nil && methodSig != nil {
 							paramBindings := make(map[string]*type_system.Binding)

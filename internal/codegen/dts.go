@@ -917,10 +917,13 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 			Fn: b.buildFuncTypeAnn(elem.Fn),
 		}
 	case *type_sys.MethodElem:
-		// Single-signature methods: emit one MethodTypeAnn. Overloaded
-		// methods are fanned out via buildMethodArmTypeAnns at the
-		// call site (a single ObjTypeAnnElem cannot carry multiple
-		// arms; .d.ts overload sets are one declaration per arm).
+		// Reached only for single-arm MethodElems: buildObjTypeAnnElems
+		// intercepts overloaded methods (len(Signatures) > 1) before
+		// they reach here and fans them out to one MethodTypeAnn per
+		// arm. A single ObjTypeAnnElem cannot carry multiple arms —
+		// .d.ts overload sets are one sibling declaration per arm —
+		// so the plural builder owns the fan-out and this case only
+		// sees the degenerate single-arm shape.
 		return &MethodTypeAnn{
 			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
 			Fn:   b.buildFuncTypeAnn(elem.Signatures[0]),
