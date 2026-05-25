@@ -476,9 +476,15 @@ func (c *Checker) resolveCallSites(ctx Context) {
 			} else if merged := c.tryMergeCallSitesWithOptionalParams(ctx, sites); merged != nil {
 				tv.Instance = merged
 			} else {
-				// Create an intersection of all call site FuncTypes (overloaded function).
-				types := make([]type_system.Type, len(sites))
-				for i, s := range sites {
+				// Create an intersection of all call site FuncTypes (overloaded
+				// function). Sort by specificity so dispatch at
+				// infer_expr.go:1058 picks the most-specific matching arm on
+				// the first hit — same semantics as free-fn declared overloads.
+				sortedSites := make([]*type_system.FuncType, len(sites))
+				copy(sortedSites, sites)
+				sortOverloadArms(sortedSites)
+				types := make([]type_system.Type, len(sortedSites))
+				for i, s := range sortedSites {
 					types[i] = s
 				}
 				tv.Instance = type_system.NewIntersectionType(nil, types...)
