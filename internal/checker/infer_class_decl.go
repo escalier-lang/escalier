@@ -427,9 +427,10 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				continue
 			}
 
+			methodSig := methodType.SingleSig()
 			paramBindings := make(map[string]*type_system.Binding)
 			if !isStatic {
-				isMutableSelf := type_system.ReceiverIsMut(methodType.Fn)
+				isMutableSelf := type_system.ReceiverIsMut(methodSig)
 				var t type_system.Type = classSelfRef
 				if isMutableSelf {
 					t = type_system.NewMutType(nil, t)
@@ -442,7 +443,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				}
 			}
 
-			for paramIdx, param := range methodType.Fn.Params {
+			for paramIdx, param := range methodSig.Params {
 				if param.Pattern == nil {
 					continue
 				}
@@ -463,7 +464,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 			methodCtx := methodCtxForElem[i]
 			bodyErrors := c.inferFuncBodyWithFuncSigType(
-				methodCtx, methodType.Fn, paramBindings,
+				methodCtx, methodSig, paramBindings,
 				bodyElem.Fn.Params, bodyElem.Fn.Body,
 				asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
 			)

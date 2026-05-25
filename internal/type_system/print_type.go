@@ -384,19 +384,31 @@ func printPatternWithInlineTypesContext(pattern Pat, paramType Type, pt func(Typ
 	return pattern.String()
 }
 
-func printFuncType(t *FuncType, pt func(Type) string) string {
-	result := "fn "
-	if len(t.LifetimeParams) > 0 || len(t.TypeParams) > 0 {
+// printFuncSig prints a function signature body — generic params,
+// parameter list (optionally with a leading `self` / `mut self`),
+// return type, and throws clause — after the caller-supplied
+// `header` (e.g. `"fn "` for bare function types, or a method name
+// for method-elem arms).
+//
+// includeSelf controls whether fn.SelfParam is rendered. Bare
+// function values pass false: even when the FuncType originated
+// from a method, the receiver is already bound at the use site
+// (`val f = obj.method`) and shouldn't resurface. Method-elem
+// arms pass true so that `self` / `mut self` appears in the
+// printed signature.
+func printFuncSig(header string, fn *FuncType, includeSelf bool, pt func(Type) string) string {
+	result := header
+	if len(fn.LifetimeParams) > 0 || len(fn.TypeParams) > 0 {
 		result += "<"
 		first := true
-		for _, lp := range t.LifetimeParams {
+		for _, lp := range fn.LifetimeParams {
 			if !first {
 				result += ", "
 			}
 			first = false
 			result += "'" + lp.Name
 		}
-		for _, param := range t.TypeParams {
+		for _, param := range fn.TypeParams {
 			if !first {
 				result += ", "
 			}
@@ -412,30 +424,35 @@ func printFuncType(t *FuncType, pt func(Type) string) string {
 		result += ">"
 	}
 	result += "("
-	// Note: SelfParam is intentionally NOT printed here. printFuncType
-	// is shared between (a) bare function values and (b) the inner
-	// signature of method elements. Method elements emit `self` /
-	// `mut self` themselves at the printObjectType level; printing
-	// SelfParam here would duplicate it for methods AND, more
-	// problematically, attach a phantom `self` to function values
-	// extracted from a method (`val f = obj.method`), where the
-	// receiver is already bound and shouldn't surface.
-	if len(t.Params) > 0 {
-		for i, param := range t.Params {
-			if i > 0 {
-				result += ", "
-			}
-			result += printFuncParam(param, pt)
+	hasSelf := includeSelf && fn.SelfParam != nil
+	if hasSelf {
+		if ReceiverIsMut(fn) {
+			result += "mut "
 		}
+		result += "self"
+	}
+	for i, param := range fn.Params {
+		if i > 0 || hasSelf {
+			result += ", "
+		}
+		result += printFuncParam(param, pt)
 	}
 	result += ")"
-	if t.Return != nil {
-		result += " -> " + pt(t.Return)
+	if fn.Return != nil {
+		result += " -> " + pt(fn.Return)
 	}
-	if !IsNeverType(t.Throws) {
-		result += " throws " + pt(t.Throws)
+	if !IsNeverType(fn.Throws) {
+		result += " throws " + pt(fn.Throws)
 	}
 	return result
+}
+
+func printFuncType(t *FuncType, pt func(Type) string) string {
+	return printFuncSig("fn ", t, false, pt)
+}
+
+func printMethodSig(name ObjTypeKey, fn *FuncType, pt func(Type) string) string {
+	return printFuncSig(name.String(), fn, true, pt)
 }
 
 func printObjectType(t *ObjectType, pt func(Type) string) string {
@@ -452,54 +469,26 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 			case *ConstructorElem:
 				result += "new " + printFuncType(elem.Fn, pt)
 			case *MethodElem:
-				result += elem.Name.String()
-				if len(elem.Fn.LifetimeParams) > 0 || len(elem.Fn.TypeParams) > 0 {
-					result += "<"
-					first := true
-					for _, lp := range elem.Fn.LifetimeParams {
-						if !first {
-							result += ", "
-						}
-						first = false
-						result += "'" + lp.Name
+				// Print one entry per overload arm. For a single-arm
+				// (non-overloaded) method this matches the historical
+				// output exactly; overloads — once §4.6 PR-C lands —
+				// render as comma-separated arms sharing nothing but
+				// the method name on each line.
+				//
+				// PR-C TODO: the arm separator below (", ") collides
+				// with the outer element separator on line 447, making
+				// overloaded arms visually indistinguishable from
+				// sibling elements (e.g. `{ foo(x: A), foo(x: B), bar:
+				// number }` — is `bar` a third arm or a property?).
+				// Pick a distinct separator for arms (e.g. "; ") when
+				// len(Signatures) > 1, or restructure to emit one
+				// arm-line per arm. Harmless today since every method
+				// is single-arm.
+				for armIdx, fn := range elem.Signatures {
+					if armIdx > 0 {
+						result += ", "
 					}
-					for _, param := range elem.Fn.TypeParams {
-						if !first {
-							result += ", "
-						}
-						first = false
-						result += param.Name
-						if param.Constraint != nil {
-							result += ": " + pt(param.Constraint)
-						}
-						if param.Default != nil {
-							result += " = " + pt(param.Default)
-						}
-					}
-					result += ">"
-				}
-				result += "("
-				hasSelf := elem.Fn != nil && elem.Fn.SelfParam != nil
-				if hasSelf {
-					if ReceiverIsMut(elem.Fn) {
-						result += "mut "
-					}
-					result += "self"
-				}
-				if len(elem.Fn.Params) > 0 {
-					for i, param := range elem.Fn.Params {
-						if i > 0 || hasSelf {
-							result += ", "
-						}
-						result += printFuncParam(param, pt)
-					}
-				}
-				result += ")"
-				if elem.Fn.Return != nil {
-					result += " -> " + pt(elem.Fn.Return)
-				}
-				if !IsNeverType(elem.Fn.Throws) {
-					result += " throws " + pt(elem.Fn.Throws)
+					result += printMethodSig(elem.Name, fn, pt)
 				}
 			case *GetterElem:
 				result += "get " + elem.Name.String() + "(" + printSelfReceiver(elem.Fn) + ") -> " + pt(elem.Fn.Return)

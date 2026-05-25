@@ -295,8 +295,8 @@ func convertObjTypeAnnElem(elem ast.ObjTypeAnnElem) ObjTypeElem {
 		funcType := typeAnnToType(e.Fn).(*FuncType)
 		applyMethodReceiver(funcType, e.Receiver)
 		return &MethodElem{
-			Name: key,
-			Fn:   funcType,
+			Name:       key,
+			Signatures: []*FuncType{funcType},
 		}
 	case *ast.GetterTypeAnn:
 		key := convertObjKey(e.Name)

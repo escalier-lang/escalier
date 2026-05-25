@@ -451,8 +451,11 @@ func (c *Checker) computePatternCoverage(
 // variant the extractor matches.
 func (c *Checker) getCustomMatcherParamType(ext *type_system.ExtractorType) type_system.Type {
 	methodElem, _ := c.findCustomMatcherMethod(ext)
-	if methodElem != nil && len(methodElem.Fn.Params) == 1 {
-		return type_system.Prune(methodElem.Fn.Params[0].Type)
+	if methodElem != nil {
+		fn := methodElem.SingleSig()
+		if fn != nil && len(fn.Params) == 1 {
+			return type_system.Prune(fn.Params[0].Type)
+		}
 	}
 	return nil
 }
@@ -464,7 +467,9 @@ func (c *Checker) getCustomMatcherParamType(ext *type_system.ExtractorType) type
 func (c *Checker) getCustomMatcherReturnType(ext *type_system.ExtractorType) type_system.Type {
 	methodElem, _ := c.findCustomMatcherMethod(ext)
 	if methodElem != nil {
-		return type_system.Prune(methodElem.Fn.Return)
+		if fn := methodElem.SingleSig(); fn != nil {
+			return type_system.Prune(fn.Return)
+		}
 	}
 	return nil
 }

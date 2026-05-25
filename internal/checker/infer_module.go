@@ -1136,7 +1136,7 @@ func (c *Checker) InferComponent(
 									Kind: type_system.SymObjTypeKeyKind,
 									Sym:  customMatcher.Value,
 								},
-								Fn: type_system.NewFuncType(
+								Signatures: []*type_system.FuncType{type_system.NewFuncType(
 									nil,
 									typeParams,
 									[]*type_system.FuncParam{{
@@ -1145,7 +1145,7 @@ func (c *Checker) InferComponent(
 									}},
 									returnType,
 									type_system.NewNeverType(nil),
-								),
+								)},
 							}
 							classObjTypeElems = append(classObjTypeElems, methodElem)
 
@@ -1348,6 +1348,7 @@ func (c *Checker) InferComponent(
 						}
 
 						if methodType != nil {
+							methodSig := methodType.SingleSig()
 							paramBindings := make(map[string]*type_system.Binding)
 
 							// For instance methods, add 'self' parameter and the
@@ -1374,7 +1375,7 @@ func (c *Checker) InferComponent(
 								// args. Reusing methodType.Fn.SelfParam.Type would
 								// be more correct but requires fixing that
 								// classifier first.
-								isMutableSelf := type_system.ReceiverIsMut(methodType.Fn)
+								isMutableSelf := type_system.ReceiverIsMut(methodSig)
 								var t type_system.Type = type_system.NewTypeRefType(nil, decl.Name.Name, typeAlias)
 								if isMutableSelf {
 									t = type_system.NewMutType(nil, t)
@@ -1396,7 +1397,7 @@ func (c *Checker) InferComponent(
 							// sees a mut value; checking both is defense-in-depth
 							// in case one source is ever set without the other.
 							// Mirrors the same OR'd computation in inferPattern.
-							for paramIdx, param := range methodType.Fn.Params {
+							for paramIdx, param := range methodSig.Params {
 								if param.Pattern == nil {
 									continue
 								}
@@ -1417,7 +1418,7 @@ func (c *Checker) InferComponent(
 
 							methodCtx := methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
 							bodyErrors := c.inferFuncBodyWithFuncSigType(
-								methodCtx, methodType.Fn, paramBindings,
+								methodCtx, methodSig, paramBindings,
 								bodyElem.Fn.Params, bodyElem.Fn.Body,
 								asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
 							)
@@ -2178,7 +2179,7 @@ func (c *Checker) validateInterfaceMerge(
 		case *type_system.PropertyElem:
 			existingProps[elem.Name] = elem.Value
 		case *type_system.MethodElem:
-			existingProps[elem.Name] = elem.Fn
+			existingProps[elem.Name] = elem.AsType()
 			existingMethods[elem.Name] = true
 		case *type_system.GetterElem:
 			existingProps[elem.Name] = elem.Fn.Return
@@ -2199,7 +2200,7 @@ func (c *Checker) validateInterfaceMerge(
 			newType = elem.Value
 		case *type_system.MethodElem:
 			name = elem.Name
-			newType = elem.Fn
+			newType = elem.AsType()
 			isMethod = true
 		case *type_system.GetterElem:
 			name = elem.Name

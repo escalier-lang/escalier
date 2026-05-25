@@ -740,7 +740,7 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 				switch e := elem.(type) {
 				case *type_system.MethodElem:
 					if matchKey(e.Name) {
-						methodFn = e.Fn
+						methodFn = e.SingleSig()
 					}
 				case *type_system.GetterElem:
 					if matchKey(e.Name) {
@@ -796,7 +796,7 @@ func TestClassMethodSelfLifetime(t *testing.T) {
 		for _, e := range objType.Elems {
 			if m, ok := e.(*type_system.MethodElem); ok &&
 				m.Name.Kind == type_system.StrObjTypeKeyKind && m.Name.Str == name {
-				return m.Fn
+				return m.SingleSig()
 			}
 		}
 		return nil

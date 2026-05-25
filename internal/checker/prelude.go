@@ -353,11 +353,11 @@ func applyMethodMutability(objType *type_system.ObjectType, names MethodNames) {
 		}
 		name := me.Name.Str
 		if names.Contains(name) {
-			setReceiverMut(me.Fn, false)
+			setReceiverMut(me.SingleSig(), false)
 			continue
 		}
 		if mut, classified := interop.ClassifyMethodByName(name); classified && !mut {
-			setReceiverMut(me.Fn, false)
+			setReceiverMut(me.SingleSig(), false)
 		}
 	}
 }
@@ -499,7 +499,7 @@ func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonl
 			readonlyElems.Add(me.Name)
 
 			// Methods on the Readonly* variant are non-mutating.
-			setReceiverMut(me.Fn, false)
+			setReceiverMut(me.SingleSig(), false)
 		}
 	}
 
@@ -510,7 +510,7 @@ func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonl
 			continue
 		}
 		mut := !readonlyElems.Contains(me.Name)
-		setReceiverMut(me.Fn, mut)
+		setReceiverMut(me.SingleSig(), mut)
 	}
 }
 

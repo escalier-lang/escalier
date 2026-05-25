@@ -160,20 +160,27 @@ func walkPopulateSelfParams(
 		for _, elem := range objType.Elems {
 			switch e := elem.(type) {
 			case *type_system.MethodElem:
-				if e.Fn == nil {
-					continue
-				}
-				if e.Fn.SelfParam == nil {
-					e.Fn.SelfParam = type_system.NewSelfParam(selfRef, true)
-				}
-				// Iterator-protocol fixup: `[Symbol.iterator]()` /
-				// `[Symbol.asyncIterator]()` are non-mutating on the
-				// source and return a freshly-owned (mut) iterator.
-				if e.Name.Kind == type_system.SymObjTypeKeyKind &&
-					((hasIter && e.Name.Sym == iterID) ||
-						(hasAsync && e.Name.Sym == asyncIterID)) {
-					setReceiverMut(e.Fn, false)
-					wrapReturnMut(e.Fn)
+				// Apply fixups to every arm. At PR-A there is at most one
+				// arm per method (no merge pass yet); the loop is forward-
+				// compatible with overloaded methods, where receiver-
+				// mutability uniformity is enforced at merge time so each
+				// arm sees the same fixup.
+				for _, fn := range e.Signatures {
+					if fn == nil {
+						continue
+					}
+					if fn.SelfParam == nil {
+						fn.SelfParam = type_system.NewSelfParam(selfRef, true)
+					}
+					// Iterator-protocol fixup: `[Symbol.iterator]()` /
+					// `[Symbol.asyncIterator]()` are non-mutating on the
+					// source and return a freshly-owned (mut) iterator.
+					if e.Name.Kind == type_system.SymObjTypeKeyKind &&
+						((hasIter && e.Name.Sym == iterID) ||
+							(hasAsync && e.Name.Sym == asyncIterID)) {
+						setReceiverMut(fn, false)
+						wrapReturnMut(fn)
+					}
 				}
 			case *type_system.GetterElem:
 				if e.Fn != nil && e.Fn.SelfParam == nil {

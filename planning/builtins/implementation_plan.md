@@ -1017,15 +1017,16 @@ machinery used anywhere else.
    overwrites; replace with an overload-aware insertion that
    merges the new signature into an intersection-typed `Fn` on
    the existing elem.
-2. Widen `MethodElem.Fn` from `*FuncType` to `Type` (carrying
-   either a single `FuncType` for the common case or an
-   `IntersectionType` of `FuncType` arms for overloads). Add a
-   helper `(*MethodElem).Signatures() []*FuncType` that returns
-   `[fn]` for the single-arm case and the arms for intersections,
-   so every site that currently pattern-matches `method.Fn` as
-   `*FuncType` can switch to a uniform iteration without each
-   caller re-doing the intersection unwrap. Audit and update:
-   `ReceiverIsMut`, the array-mutating-method scan
+2. Replace `MethodElem.Fn *FuncType` with `MethodElem.Signatures
+   []*FuncType` (length 1 for non-overloaded, length > 1 for
+   overloads, ordered most-specific-first). The slice-of-FuncType
+   shape makes the "arms are FuncTypes" invariant a compile-time
+   guarantee — there's no `Type`-typed field that could hold an
+   arbitrary intersection or anything else. Add `SingleSig()` for
+   call sites that genuinely cannot handle overloads (panics on
+   misuse) and `AsType()` for sites that need a Type view (returns
+   the lone arm or `NewIntersectionType(arms...)`). Audit and
+   update: `ReceiverIsMut`, the array-mutating-method scan
    ([expand_type.go:1734,1756](../../internal/checker/expand_type.go#L1734)),
    mutability checks, `findCustomMatcherMethod`
    ([checker.go:133](../../internal/checker/checker.go#L133)),
@@ -1083,6 +1084,251 @@ questions — these are the chosen behaviours):**
   intersection can be constructed directly from the AST without
   going through call-site collection.
 
+**Where "last wins" actually happens.** Insertion is *not* the
+overwrite point — every site that builds class/interface object
+types just `append`s `MethodElem`s
+([infer_module.go:591,599](../../internal/checker/infer_module.go#L591),
+[infer_class_decl.go:182,185](../../internal/checker/infer_class_decl.go#L182),
+[infer_type_ann.go:408](../../internal/checker/infer_type_ann.go#L408),
+[infer_stmt.go:693](../../internal/checker/infer_stmt.go#L693)).
+The "last wins" surfacing is the reverse-iteration lookup in
+[expand_type.go:1195](../../internal/checker/expand_type.go#L1195):
+`getObjectAccess` scans `objType.Elems` in reverse, returns at
+the first name match, and stops. With two same-named MethodElems
+both present, the later one shadows the earlier one at every
+read site — but both arms are still in the type, so a merge pass
+that runs at the class-elaboration boundary (between elem build
+and the `NewObjectType` call that wraps them) is enough to fix
+this; we don't need to rewrite the insertion path.
+
+**The merge helper.** Add `MergeMethodOverloads(elems
+[]ObjTypeElem, reportErr func(...)) []ObjTypeElem` in
+`internal/type_system/` (alongside object-type construction
+helpers). Algorithm:
+
+1. Walk `elems` once, building `byName map[ObjTypeKey][]int` of
+   MethodElem indices. PropertyElem / GetterElem / SetterElem /
+   ConstructorElem / CallableElem / IndexSignatureElem /
+   RestSpreadElem / MappedElem pass through unchanged. A
+   PropertyElem and a MethodElem sharing a name is a separate
+   pre-existing error, not §4.6's concern; leave it alone here.
+2. For each name with `len(indices) > 1`:
+   - Verify all arms agree on receiver mutability via
+     `ReceiverIsMut`. On mismatch, emit
+     `OverloadReceiverMutMismatchError{Name, FirstArm, MismatchedArm}`
+     and drop the mismatched arm (keep the first arm's shape so
+     downstream code still type-checks).
+   - Sort arms by the specificity comparator (below); preserve
+     source order as the tiebreaker.
+   - Collect the arm `*FuncType`s into a slice, build
+     `NewIntersectionType(nil, arms...)`. The intersection
+     constructor at
+     [expand_type.go:2235](../../internal/checker/expand_type.go#L2235)
+     currently dedupes / flattens — add a `preserveOrder bool`
+     param (or a sibling `NewOrderedIntersectionType`) so the
+     specificity-sorted order survives, since dispatch at
+     [infer_expr.go:1059](../../internal/checker/infer_expr.go#L1059)
+     relies on iteration order being most-specific-first.
+   - Replace the first occurrence's `MethodElem` with one whose
+     `Fn` is the intersection. Remove the other occurrences.
+3. Return the rewritten slice. Idempotent: a slice with no
+   duplicates round-trips unchanged.
+
+Call this from every MethodElem-collection site listed above,
+immediately before the `NewObjectType` call that consumes the
+elems. Also from `unify.go:2610` (which reconstructs a MethodElem
+during unification — verify whether the surrounding context
+already guarantees uniqueness; if so, a debug `require` instead
+of a merge call is enough).
+
+**Specificity comparator.** Implement
+`compareOverloadArms(a, b *FuncType) int` in the checker
+(alongside [infer_expr.go:1059](../../internal/checker/infer_expr.go#L1059)).
+Returns -1 when `a` is more specific than `b`. Rules in
+descending priority:
+
+1. **Literal-typed params before non-literal.** Count the
+   number of `*LitType` params (after `Prune`) in each arm; the
+   arm with more literal params is more specific. This handles
+   `createElement(tag: "canvas")` vs.
+   `createElement(tag: "div")` (tied) vs.
+   `createElement(tag: string)` (less specific).
+2. **Bounded generics before unbounded / `string` / `number`
+   fallbacks.** For type-param-bearing arms, the arm whose
+   bound is a `keyof T` / `T[K]` / union of literals is more
+   specific than an unbounded `<T>` or a `string` param. Probe
+   each type param's `Constraint`: a non-nil bound that isn't
+   `NeverType` ranks ahead of a missing or `NeverType` bound.
+3. **Param count.** Fewer required params is more specific
+   (matches TS's "more required args before fewer / optional");
+   optional params (`Optional: true` or those with default) and
+   `...rest` params don't count as required.
+4. **Source order tiebreaker.** When the above don't
+   discriminate, keep declared order. Stable sort.
+
+Pin these rules with a table-driven test in
+`internal/checker/tests/overload_specificity_test.go` before
+wiring the comparator into `MergeMethodOverloads` — the test
+should cover each rule and a tie that falls through to source
+order. The free-fn overload path at infer_expr.go:1059 should
+*also* sort its intersection arms with this comparator (today
+the order is just whatever the generalize-time intersection
+construction yielded); doing both in the same PR avoids
+divergent semantics between free-fn and method overloads.
+
+**MethodElem widening: a `Signatures []*FuncType` field.**
+Replace the `Fn *FuncType` field with a slice of FuncType arms.
+A non-overloaded method has exactly one arm; an overloaded
+method has the arms ordered most-specific-first. The invariant
+"arms are FuncTypes" is a compile-time guarantee, not a
+documented one — there is no way to store a non-FuncType in
+this slot.
+
+```go
+type MethodElem struct {
+    Name       ObjTypeKey
+    Signatures []*FuncType
+}
+
+// SingleSig returns the sole signature; panics on overload. Used
+// at call sites that genuinely cannot handle overloads (e.g.
+// Symbol.iterator, custom matchers). Returns nil if Signatures
+// is empty.
+func (m *MethodElem) SingleSig() *FuncType { /* asserts len==1 */ }
+
+// AsType returns the lone FuncType for single-sig methods,
+// or NewIntersectionType(arms...) for overloaded methods.
+// Used by member-access resolution (e.g. getObjectAccess) and
+// anywhere a Type-valued view of the method shape is needed.
+func (m *MethodElem) AsType() Type { /* returns FuncType or IntersectionType */ }
+```
+
+Sites that just want to walk the arms call `m.Signatures`
+directly (no method call). Sites that need a Type for downstream
+plumbing call `m.AsType()`. The deprecated `Fn` field is gone.
+
+Sites to audit and update (all in `internal/checker/`):
+
+| File:line | Today | After |
+|---|---|---|
+| `getObjectAccess` MethodElem branch in `expand_type.go` | `return elem.Fn, errors` | `return elem.AsType(), errors` — call-site dispatch at infer_expr.go:1058 picks up the IntersectionType case automatically |
+| array-mutating-method scan in `expand_type.go` | `ReceiverIsMut(method.Fn)` | `ReceiverIsMut(method.SingleSig())` — mutability must be uniform across arms (enforced at merge time in PR-C) |
+| `findCustomMatcherMethod` in `checker.go` | reads `methodElem.Fn` | use `SingleSig()` — custom matcher is single-signature by convention |
+| `Symbol.iterator` shape check in `unify.go` | `methodElem.Fn.Params` | use `SingleSig()` — iterator/asyncIterator are single-sig by spec |
+| MethodElem reconstruction during ObjectType unification in `unify.go` | builds new MethodElem with widened `Fn` | walk `Signatures` and widen each arm; only allocate a new slice if any arm changed |
+| pattern-match custom-matcher lookup in `exhaustiveness.go` | `methodElem.Fn.Params[0]` | `SingleSig()` — custom-matcher is single-sig |
+| self-param + iterator-protocol fixup in `method_helpers.go` | mutates `e.Fn.SelfParam` directly | iterate `e.Signatures` and mutate each arm in place (PR-A: one arm; PR-C: all arms share receiver mutability so the per-arm fixup is uniform) |
+| method-body inference in `infer_module.go` / `infer_class_decl.go` | reads `methodType.Fn.Params` etc. | hoist `methodSig := methodType.SingleSig()` once per method — body inference runs per AST elem **before** the merge pass collapses arms, so single-sig is the right shape |
+| deep-clone MethodElem in `generalize.go` | clones `.Fn` as `*FuncType` | walk `Signatures` and deep-clone each arm |
+| `collectUnresolvedTypeVarsImpl` MethodElem branch in `generalize.go` | walks `.Fn` | walk each arm in `Signatures` |
+| spread / read-set collection in `unify.go` | adds `elem.Fn` to the effective-values map | use `elem.AsType()` so overloaded methods spread as their IntersectionType |
+| interface-merging in `infer_module.go` (`existingProps`, `newType`) | stores `elem.Fn` as the property's type | use `elem.AsType()` |
+| printing MethodElem in `print_type.go` | prints one signature | iterate `Signatures` and print each arm; single-arm output identical to before |
+| `objElemMatch` and `fillMemberSet` in `internal/interop` | reads `e.Fn` as a Type | `e.AsType()` |
+| completion item detail in `cmd/lsp-server/completion.go` | `elem.Fn.String()` | `elem.AsType().String()` |
+| `.d.ts` emitter in `codegen/dts.go` | `b.buildFuncTypeAnn(elem.Fn)` | `b.buildFuncTypeAnn(elem.SingleSig())` at PR-A; PR-C fans out one `MethodTypeAnn` per arm |
+
+Construction sites (currently `&MethodElem{Name: k, Fn: fn}`)
+must be updated to `&MethodElem{Name: k, Signatures: []*FuncType{fn}}`;
+`NewMethodElem(name, fn)` continues to wrap a single arm, so any
+caller that goes through the helper is unaffected.
+
+The `codegen/builder.go:2279-2382` `e.Fn` references are
+unrelated — those read AST `FuncExpr.Fn`, not type-system
+`MethodElem`. JS codegen for class bodies doesn't see
+overload arms (TS doesn't either — overload arms are
+declaration-only and collapse to one runtime method).
+
+**Inheritance + `implements` — deferred to
+[#651](https://github.com/escalier-lang/escalier/issues/651).**
+The §4.6 scope below covers same-class method overloads only.
+Cross-hierarchy overload merging (subclass adding arms to a
+parent's overloaded method, `interface extends`, and `implements`
+arm-vs-arm assignability) lands in a follow-up. Sketch retained
+here for reference:
+
+For `class B extends A` where
+`A` declares `foo(x: A1) -> R1` and `B` adds `foo(x: A2) -> R2`:
+
+- During B's elaboration, after the local merge, walk B's
+  parent chain to find any inherited MethodElem with the same
+  name. If found, build an intersection
+  `[B's arms..., A's arms...]` (subclass arms first so they
+  win the specificity sort when equally specific, matching TS).
+- Sort the combined intersection with the specificity
+  comparator and re-emit B's MethodElem with the merged `Fn`.
+- For `interface` `extends`: identical, but operate on the
+  declared `Extends` chain instead of class hierarchy.
+- For `implements`: `check_implements.go`
+  ([:109](../../internal/checker/check_implements.go#L109),
+  [:285](../../internal/checker/check_implements.go#L285))
+  walks elem-by-elem. Switch the MethodElem branch to call
+  `Signatures()` on both sides and require that **every arm
+  on the interface side has at least one assignable arm on
+  the class side** (TS rule: the implementer must provide a
+  signature for each declared overload, but may add more).
+  Reuse the existing pairwise `Unify` call for the
+  arm-vs-arm check.
+
+A subtle case: `extends` brings in arms whose `SelfParam` is
+typed to the *parent* class. After merging into B, those arms
+must have `SelfParam` retyped to B (or the comparator and
+dispatch will see incompatible receiver types across arms,
+which contradicts the receiver-mutability-uniform invariant
+even if mutability matches). Add a `retargetSelfParam(arm,
+newSelf)` helper and apply it during the inheritance merge.
+
+**Error types.** New diagnostics (add to `internal/checker/errors.go`):
+
+- `OverloadReceiverMutMismatchError{Name, FirstArm, MismatchedArm, span}` — for the receiver-mutability uniformity check.
+- `OverloadArmShapeMismatchError{Name, Side, OtherSide}` — for `unify.go:2610` when two `MethodElem`s being unified disagree on arm count or specificity ordering in a way the unifier can't reconcile. (Soft error path: pick the first side and continue, but report.)
+
+`NoMatchingOverloadError` is reused as-is for call-site
+dispatch failure — the existing intersection-arm path at
+infer_expr.go:1082 already constructs it.
+
+**PR phasing.** Suggest splitting §4.6 into three PRs to keep
+review surface manageable. (The original PR-D — inheritance and
+`implements` — is deferred to
+[#651](https://github.com/escalier-lang/escalier/issues/651).)
+
+1. **PR-A — Replace `MethodElem.Fn *FuncType` with
+   `Signatures []*FuncType`, add `SingleSig()` and `AsType()`,
+   audit all consumer sites.** Zero behavior change: the merge
+   pass is not yet introduced, so every `MethodElem` has exactly
+   one arm at runtime. This PR exists purely to make the type-
+   system shape ready and to prove the audit table above is
+   complete (CI green with no panics is the gate). Includes the
+   print_type / codegen printer updates with snapshot churn
+   limited to printing one-arm methods identically.
+2. **PR-B — Specificity comparator + free-fn intersection
+   sort.** Adds `compareOverloadArms`, the
+   `overload_specificity_test.go` table tests, and applies
+   the comparator to free-fn overload intersections at
+   generalize.go:478 / infer_expr.go:1058 iteration. Catches
+   any drift in existing free-fn overload behavior before
+   methods enter the picture.
+3. **PR-C — `MergeMethodOverloads` + class/interface
+   elaboration call.** Wires the merge into every MethodElem
+   collection site listed above. Receiver-mut mismatch
+   diagnostic. Method-call dispatch starts going through the
+   IntersectionType path automatically (because `getObjectAccess`
+   now returns the intersection). Gate fixtures (below) flip
+   to method-shape in this PR.
+   - **Printer separator fix.** [print_type.go:454](../../internal/type_system/print_type.go#L454)
+     emits overload arms with `", "`, the same separator
+     `printObjectType` uses between top-level elements. Once
+     methods can have multiple arms, the output
+     `{ foo(x: A), foo(x: B), bar: number }` is ambiguous —
+     `bar` reads as a third arm. Switch the arm separator to
+     `"; "` (or restructure to emit one arm-line per arm) when
+     `len(Signatures) > 1`. Add a print snapshot for an
+     overloaded method as part of this PR.
+PR-A and PR-B are independent and can land in either order.
+PR-C depends on both. The deferred inheritance work
+([#651](https://github.com/escalier-lang/escalier/issues/651))
+depends on PR-C.
+
 **Gate fixtures (live in `internal/checker/tests/`).**
 
 - Rewrite `TestStdlibImport_NSKeyedOverloads` so the two
@@ -1107,10 +1353,6 @@ questions — these are the chosen behaviours):**
   per-event-name overloads of `addEventListener` on a single
   class, verifying the handler param narrows to the
   event-specific type for each literal name.
-- Add an inheritance fixture: a subclass adding a new overload
-  to a method already overloaded on its parent; both old and
-  new overloads must remain callable, with dispatch picking the
-  most-specific arm regardless of which body declared it.
 - Add a receiver-mutability mismatch fixture: a class declaring
   the same method with both `self` and `mut self` receivers
   should produce an elaboration-time error naming both arms.

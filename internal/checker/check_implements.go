@@ -111,14 +111,18 @@ func (c *Checker) checkInterfaceElem(
 		if ce == nil {
 			return missingMember(span, className, ifaceName, ie.Name.String())
 		}
-		ifaceFn := SubstituteTypeParams(ie.Fn, sub)
+		// PR-A: methods are single-signature here; overload arm-vs-arm
+		// assignability is deferred to #651.
+		ieSig := ie.SingleSig()
+		ifaceFn := SubstituteTypeParams(ieSig, sub)
 		switch m := ce.(type) {
 		case *type_system.MethodElem:
-			if !selfReceiverCompatible(ie.Fn, m.Fn) {
+			mSig := m.SingleSig()
+			if !selfReceiverCompatible(ieSig, mSig) {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"self receiver does not match")
 			}
-			if errs := c.unifyFuncTypes(ctx, m.Fn, ifaceFn, make(unifySeen)); len(errs) > 0 {
+			if errs := c.unifyFuncTypes(ctx, mSig, ifaceFn, make(unifySeen)); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),
 					"signature does not match")
 			}
@@ -136,7 +140,7 @@ func (c *Checker) checkInterfaceElem(
 			// circuits to nil. When the structures differ enough that
 			// only one side has lifetimes, `unifyFuncTypes` above will
 			// already have failed and we won't reach this line.
-			return c.VerifyLifetimeCompatibility(ifaceFn, m.Fn, span)
+			return c.VerifyLifetimeCompatibility(ifaceFn, mSig, span)
 		case *type_system.PropertyElem:
 			if errs := c.Unify(ctx, m.Value, ifaceFn); len(errs) > 0 {
 				return mismatchedMember(span, className, ifaceName, ie.Name.String(),

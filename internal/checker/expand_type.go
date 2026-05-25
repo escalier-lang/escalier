@@ -1053,7 +1053,7 @@ func isMemberVisible(elem type_system.ObjTypeElem, mode AccessMode, receiverMut 
 			if receiverMut {
 				return true
 			}
-			return !type_system.ReceiverIsMut(e.Fn)
+			return !type_system.ReceiverIsMut(e.SingleSig())
 		case *type_system.GetterElem:
 			if receiverMut {
 				return true
@@ -1130,7 +1130,7 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 			}
 		case *type_system.MethodElem:
 			if elem.Name == targetKey {
-				memberType = elem.Fn
+				memberType = elem.AsType()
 			}
 		case *type_system.GetterElem:
 			if elem.Name == targetKey && mode == AccessRead {
@@ -1207,7 +1207,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 				}
 			case *type_system.MethodElem:
 				if elem.Name == targetKey {
-					return elem.Fn, errors
+					return elem.AsType(), errors
 				}
 			case *type_system.GetterElem:
 				if elem.Name == targetKey && mode == AccessRead {
@@ -1309,7 +1309,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 						}
 					case *type_system.MethodElem:
 						if elem.Name == targetKey {
-							return elem.Fn, errors
+							return elem.AsType(), errors
 						}
 					case *type_system.GetterElem:
 						if elem.Name == targetKey && mode == AccessRead {
@@ -1446,7 +1446,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 					}
 				case *type_system.MethodElem:
 					if elem.Name == symKey {
-						return elem.Fn, errors
+						return elem.AsType(), errors
 					}
 				case *type_system.GetterElem:
 					if elem.Name == symKey && mode == AccessRead {
@@ -1753,7 +1753,7 @@ func (c *Checker) isArrayMutatingMethod(methodName string) bool {
 	for _, elem := range objType.Elems {
 		if method, ok := elem.(*type_system.MethodElem); ok {
 			if method.Name == type_system.NewStrKey(methodName) {
-				return type_system.ReceiverIsMut(method.Fn)
+				return type_system.ReceiverIsMut(method.SingleSig())
 			}
 		}
 	}
