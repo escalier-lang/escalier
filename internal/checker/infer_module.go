@@ -250,6 +250,13 @@ func (c *Checker) InferComponent(
 		elemIndex int
 	}
 	methodCtxForElem := make(map[classMethodCtxKey]Context)
+	// methodSigForElem stores each method/getter/setter's inferred
+	// FuncType keyed by (decl, AST-body elemIndex). Body inference
+	// reads this map directly instead of looking up the elem in the
+	// post-merge ObjectType — once §4.6 PR-C collapses same-named
+	// methods into a multi-arm MethodElem, the by-name lookup can no
+	// longer disambiguate which AST body corresponds to which arm.
+	methodSigForElem := make(map[classMethodCtxKey]*type_system.FuncType)
 
 	// Track which class declarations have a single in-body ConstructorElem
 	// whose body should be type-checked in the definition phase. `FuncType`
@@ -615,6 +622,7 @@ func (c *Checker) InferComponent(
 						}
 
 						methodCtxForElem[classMethodCtxKey{decl: decl, elemIndex: i}] = methodCtx
+						methodSigForElem[classMethodCtxKey{decl: decl, elemIndex: i}] = methodType
 						if elem.Static {
 							// Static methods go to the class object type
 							staticElems = append(
@@ -730,7 +738,9 @@ func (c *Checker) InferComponent(
 				}
 
 				provenance := &ast.NodeProvenance{Node: decl}
-				objType := type_system.NewNominalObjectType(provenance, objTypeElems)
+				mergedInstanceElems, instanceMergeErrors := c.MergeMethodOverloads(objTypeElems, decl.Span())
+				errors = slices.Concat(errors, instanceMergeErrors)
+				objType := type_system.NewNominalObjectType(provenance, mergedInstanceElems)
 				objType.SymbolKeyMap = instanceSymbolKeyMap
 
 				// Infer the Extends clause if present
@@ -816,9 +826,11 @@ func (c *Checker) InferComponent(
 				}
 
 				// Create an object type with a constructor element and static methods/properties
+				mergedStaticElems, staticMergeErrors := c.MergeMethodOverloads(staticElems, decl.Span())
+				errors = slices.Concat(errors, staticMergeErrors)
 				constructorElem := &type_system.ConstructorElem{Fn: funcType}
 				classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
-				classObjTypeElems = append(classObjTypeElems, staticElems...)
+				classObjTypeElems = append(classObjTypeElems, mergedStaticElems...)
 
 				classObjType := type_system.NewObjectType(provenance, classObjTypeElems)
 				classObjType.SymbolKeyMap = staticSymbolKeyMap
@@ -1378,8 +1390,12 @@ func (c *Checker) InferComponent(
 							}
 						}
 
-						if methodType != nil {
-							methodSig := methodType.SingleSig()
+						// Body inference resolves the method's signature
+						// via the per-AST-elem map so it remains correct
+						// after PR-C collapses same-named methods into a
+						// multi-arm MethodElem (where SingleSig would panic).
+						methodSig := methodSigForElem[classMethodCtxKey{decl: decl, elemIndex: i}]
+						if methodType != nil && methodSig != nil {
 							paramBindings := make(map[string]*type_system.Binding)
 
 							// For instance methods, add 'self' parameter and the

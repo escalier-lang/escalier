@@ -547,5 +547,7 @@ func (c *Checker) inferObjectTypeAnn(
 		}
 	}
 
-	return type_system.NewObjectType(provenance, elems), errors
+	mergedElems, mergeErrors := c.MergeMethodOverloads(elems, declSpan(provenance))
+	errors = slices.Concat(errors, mergeErrors)
+	return type_system.NewObjectType(provenance, mergedElems), errors
 }

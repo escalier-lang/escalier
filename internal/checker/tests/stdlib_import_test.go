@@ -837,24 +837,128 @@ val bogus = doc.createElement("does-not-exist")
 	)
 }
 
+// TestStdlibImport_LiteralKeyedMethodOverloads pins the simplest
+// literal-narrowed method overload case: two `createElement` arms
+// keyed on a string literal, no generic. Mirrors
+// TestStdlibImport_ClosedRegistryNarrowing but with the registry
+// inlined as explicit overloads, exercising §4.6 PR-C's merge pass on
+// purely literal-typed param arms.
+func TestStdlibImport_LiteralKeyedMethodOverloads(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+@js("HTMLCanvasElement")
+export declare class HTMLCanvasElement {}
+
+@js("HTMLDivElement")
+export declare class HTMLDivElement {}
+
+@js("Document")
+export declare class Document {
+    createElement(self, tag: "canvas") -> HTMLCanvasElement,
+    createElement(self, tag: "div") -> HTMLDivElement,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom"
+
+declare val doc: dom.Document
+val c: dom.HTMLCanvasElement = doc.createElement("canvas")
+val d: dom.HTMLDivElement = doc.createElement("div")
+`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_AddEventListenerOverloads pins the event-map idiom:
+// a small `HTMLElementEventMap` keyed by event name, plus per-event
+// `addEventListener` overloads on a single class. Each overload narrows
+// the handler's event parameter to the event-specific type, so a `click`
+// handler sees `MouseEvent` and a `keydown` handler sees `KeyboardEvent`.
+func TestStdlibImport_AddEventListenerOverloads(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+@js("Event")
+export declare class Event {}
+
+@js("MouseEvent")
+export declare class MouseEvent {
+    clientX: number,
+}
+
+@js("KeyboardEvent")
+export declare class KeyboardEvent {
+    key: string,
+}
+
+export type HTMLElementEventMap = {
+    click: MouseEvent,
+    keydown: KeyboardEvent,
+}
+
+@js("HTMLElement")
+export declare class HTMLElement {
+    addEventListener<K: keyof HTMLElementEventMap>(self, kind:K, listener: fn(ev:HTMLElementEventMap[K]) -> undefined) -> undefined,
+    addEventListener(self, kind:string, listener: fn(ev:Event) -> undefined) -> undefined,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom"
+
+declare val el: dom.HTMLElement
+val _a = el.addEventListener("click", fn (ev) { val x: number = ev.clientX })
+val _b = el.addEventListener("keydown", fn (ev) { val k: string = ev.key })
+val _c = el.addEventListener("custom-anything", fn (ev) {})
+`)
+	require.Empty(t, errorMessages(errs))
+}
+
+// TestStdlibImport_OverloadReceiverMutMismatch pins the receiver-
+// mutability uniformity check: two arms on the same method that
+// disagree on `self` vs `mut self` produce an elaboration-time error
+// naming both shapes. The merged signature keeps the first arm's
+// receiver shape so downstream type-checking still proceeds.
+func TestStdlibImport_OverloadReceiverMutMismatch(t *testing.T) {
+	dir := makeCustomStdlibDir(t, map[string]string{
+		"web/dom.esc": `
+@js("Document")
+export declare class Document {
+    swap(self, tag: "a") -> number,
+    swap(mut self, tag: "b") -> number,
+}
+`,
+	})
+	t.Setenv("ESCALIER_STDLIB_DIR", dir)
+
+	_, errs := inferStdlibImportSource(t, `
+import "web:dom"
+`)
+	require.Equal(t,
+		[]string{
+			"Method 'swap' overload arms disagree on receiver shape: " +
+				"first arm declares `self`, but a later arm declares `mut self`. " +
+				"All overload arms must share the same receiver shape.",
+		},
+		errorMessages(errs),
+	)
+}
+
 // TestStdlibImport_NSKeyedOverloads pins §4.4's `createElementNS`
-// fixture: a single name has two overloads keyed on a namespace-URI
-// literal type. Each overload binds its type parameter against a
-// different registry; the call site picks the correct overload via
-// literal narrowing on the namespace argument, and the indexed-access
-// return type resolves to the concrete element class for the selected
-// registry.
+// fixture in the method shape §4.2 actually wants: two overloads of a
+// single `createElementNS` method on a `Document` class, each keyed on
+// a namespace-URI literal and bound to a different registry. The call
+// site picks the correct overload via literal narrowing on the
+// namespace argument, and the indexed-access return type resolves to
+// the concrete element class for the selected registry.
 //
-// The plan §4.2 wants these overloads to live as methods on a single
-// `Document` class/interface. Method-elem overload resolution by
-// literal-narrowing is currently incomplete — two same-named
-// MethodElems in one interface declaration leave only the last one
-// callable (the first is silently discarded). Tracked alongside the
-// existing overload-merging work; until that closes, this fixture
-// expresses the same shape as free-fn overloads (which the FuncOverloads
-// path resolves correctly), exercising the type-system mechanism that
-// §4 actually depends on: `keyof T` / `T[K]` over closed registries
-// declared in a pseudo-package, with literal-narrowed overload pick.
+// This is the canary for §4.6 PR-C — before the method-elem merge pass
+// landed the two same-named MethodElems collapsed to the last one and
+// every call dispatched against the MathML arm. Methods on a
+// `@js("Document")` class don't need per-arm `@js` targets.
 func TestStdlibImport_NSKeyedOverloads(t *testing.T) {
 	dir := makeCustomStdlibDir(t, map[string]string{
 		"web/dom.esc": `
@@ -876,13 +980,11 @@ export type MathMLElementTagNameMap = {
     mfrac: MathMLElement,
 }
 
-// The @js targets here are arbitrary known-global function names;
-// the test only exercises type-system overload resolution, not codegen.
-@js("parseInt")
-export declare fn createElementNS<K: keyof SVGElementTagNameMap>(ns: "http://www.w3.org/2000/svg", qualifiedName: K) -> SVGElementTagNameMap[K]
-
-@js("parseFloat")
-export declare fn createElementNS<K: keyof MathMLElementTagNameMap>(ns: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K]
+@js("Document")
+export declare class Document {
+    createElementNS<K: keyof SVGElementTagNameMap>(self, ns: "http://www.w3.org/2000/svg", qualifiedName: K) -> SVGElementTagNameMap[K],
+    createElementNS<K: keyof MathMLElementTagNameMap>(self, ns: "http://www.w3.org/1998/Math/MathML", qualifiedName: K) -> MathMLElementTagNameMap[K],
+}
 `,
 	})
 	t.Setenv("ESCALIER_STDLIB_DIR", dir)
@@ -890,8 +992,9 @@ export declare fn createElementNS<K: keyof MathMLElementTagNameMap>(ns: "http://
 	_, errs := inferStdlibImportSource(t, `
 import "web:dom"
 
-val circ: dom.SVGCircleElement = dom.createElementNS("http://www.w3.org/2000/svg", "circle")
-val frac: dom.MathMLElement = dom.createElementNS("http://www.w3.org/1998/Math/MathML", "mfrac")
+declare val doc: dom.Document
+val circ: dom.SVGCircleElement = doc.createElementNS("http://www.w3.org/2000/svg", "circle")
+val frac: dom.MathMLElement = doc.createElementNS("http://www.w3.org/1998/Math/MathML", "mfrac")
 `)
 	require.Empty(t, errorMessages(errs))
 }

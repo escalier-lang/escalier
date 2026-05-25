@@ -1053,7 +1053,9 @@ func isMemberVisible(elem type_system.ObjTypeElem, mode AccessMode, receiverMut 
 			if receiverMut {
 				return true
 			}
-			return !type_system.ReceiverIsMut(e.SingleSig())
+			// All overload arms share receiver mutability (enforced by
+			// MergeMethodOverloads); inspecting arm 0 is sufficient.
+			return !type_system.ReceiverIsMut(e.Signatures[0])
 		case *type_system.GetterElem:
 			if receiverMut {
 				return true
@@ -1753,7 +1755,9 @@ func (c *Checker) isArrayMutatingMethod(methodName string) bool {
 	for _, elem := range objType.Elems {
 		if method, ok := elem.(*type_system.MethodElem); ok {
 			if method.Name == type_system.NewStrKey(methodName) {
-				return type_system.ReceiverIsMut(method.SingleSig())
+				// Receiver mutability is uniform across overload arms
+				// (enforced by MergeMethodOverloads); arm 0 is enough.
+				return type_system.ReceiverIsMut(method.Signatures[0])
 			}
 		}
 	}

@@ -415,6 +415,33 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 		{"extractor", type_system.NewExtractorType(nil,
 			type_system.NewTypeRefType(nil, "Some", nil),
 			type_system.NewTypeRefType(nil, "T", nil))},
+		// Overloaded MethodElems print arms joined with "; " (vs. the
+		// outer ", " element separator) so siblings are unambiguous.
+		// The parser does not consume the "; " form for object type
+		// annotations — overload sets enter the type system through
+		// class/interface elaboration (§4.6 PR-C) and the printer
+		// output is for debug / hover only.
+		{"object overloaded method", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			&type_system.MethodElem{
+				Name: type_system.NewStrKey("foo"),
+				Signatures: []*type_system.FuncType{
+					type_system.NewFuncType(nil, nil,
+						[]*type_system.FuncParam{
+							{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "a")},
+						},
+						type_system.NewNumPrimType(nil), nil),
+					type_system.NewFuncType(nil, nil,
+						[]*type_system.FuncParam{
+							{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "b")},
+						},
+						type_system.NewStrPrimType(nil), nil),
+				},
+			},
+			&type_system.PropertyElem{
+				Name:  type_system.NewStrKey("bar"),
+				Value: type_system.NewNumPrimType(nil),
+			},
+		})},
 		// IntrinsicType, ErrorType, TypeVarType, and IndexSignatureElem
 		// all have no source-level syntax. They are exercised by their
 		// own *_test.go files; the printer's job for them is debug-only.
