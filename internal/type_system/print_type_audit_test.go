@@ -454,3 +454,38 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 		})
 	}
 }
+
+// TestPrintType_OverloadedMethodSeparators pins the two separators used
+// when printing an object with an overloaded method alongside a sibling
+// element: arms are joined with "; " and outer elements with ", ", so a
+// reader can tell where one method's overload set ends and the next
+// sibling begins.
+func TestPrintType_OverloadedMethodSeparators(t *testing.T) {
+	obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+		&type_system.MethodElem{
+			Name: type_system.NewStrKey("foo"),
+			Signatures: []*type_system.FuncType{
+				type_system.NewFuncType(nil, nil,
+					[]*type_system.FuncParam{
+						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "a")},
+					},
+					type_system.NewNumPrimType(nil), nil),
+				type_system.NewFuncType(nil, nil,
+					[]*type_system.FuncParam{
+						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewStrLitType(nil, "b")},
+					},
+					type_system.NewStrPrimType(nil), nil),
+			},
+		},
+		&type_system.PropertyElem{
+			Name:  type_system.NewStrKey("bar"),
+			Value: type_system.NewNumPrimType(nil),
+		},
+	})
+	out := type_system.PrintType(obj, type_system.PrintConfig{})
+
+	// Arm separator: the two foo arms are joined by "; ".
+	require.Regexp(t, `foo\([^)]*\)\s*->\s*number;\s*foo\([^)]*\)\s*->\s*string`, out)
+	// Outer separator: the trailing arm and `bar` are joined by ", ".
+	require.Regexp(t, `->\s*string,\s*bar:`, out)
+}

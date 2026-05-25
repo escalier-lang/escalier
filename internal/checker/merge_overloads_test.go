@@ -105,6 +105,29 @@ func TestMergeMethodOverloads_ReceiverMutMismatch_ReverseDirection(t *testing.T)
 	require.True(t, type_system.ReceiverIsMut(merged.Signatures[0]))
 }
 
+// TestMergeMethodOverloads_StableErrorOrder pins the ordering of
+// OverloadReceiverMutMismatchErrors when more than one method name
+// has a mismatch. Go map iteration is randomized per-run, so iterating
+// indicesByName directly would expose this test to flakes.
+func TestMergeMethodOverloads_StableErrorOrder(t *testing.T) {
+	c := &Checker{}
+	elems := []type_system.ObjTypeElem{
+		methodElemArm("alpha", false, "a"),
+		methodElemArm("alpha", true, "b"),
+		methodElemArm("beta", true, "a"),
+		methodElemArm("beta", false, "b"),
+		methodElemArm("gamma", false, "a"),
+		methodElemArm("gamma", true, "b"),
+	}
+	for i := 0; i < 20; i++ {
+		_, errs := c.MergeMethodOverloads(elems, ast.Span{})
+		require.Len(t, errs, 3)
+		require.Equal(t, "alpha", errs[0].(OverloadReceiverMutMismatchError).Name)
+		require.Equal(t, "beta", errs[1].(OverloadReceiverMutMismatchError).Name)
+		require.Equal(t, "gamma", errs[2].(OverloadReceiverMutMismatchError).Name)
+	}
+}
+
 func TestMergeMethodOverloads_Idempotent(t *testing.T) {
 	c := &Checker{}
 	elems := []type_system.ObjTypeElem{

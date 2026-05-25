@@ -85,7 +85,20 @@ func (c *Checker) MergeMethodOverloads(elems []type_system.ObjTypeElem, span ast
 	mergedAt := map[int]*type_system.MethodElem{}
 	dropIdx := set.NewSet[int]()
 
-	for _, idxs := range indicesByName {
+	// Drive the merge by elem order rather than ranging over the map so
+	// errors and merged-elem placement are deterministic (Go map
+	// iteration order is randomized).
+	seen := set.NewSet[type_system.ObjTypeKey]()
+	for _, e := range elems {
+		me, ok := e.(*type_system.MethodElem)
+		if !ok {
+			continue
+		}
+		if seen.Contains(me.Name) {
+			continue
+		}
+		seen.Add(me.Name)
+		idxs := indicesByName[me.Name]
 		if len(idxs) < 2 {
 			continue
 		}
