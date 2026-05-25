@@ -45,7 +45,15 @@ func TestImportInferenceScript(t *testing.T) {
 				val useState = React.useState
 			`,
 			expectedValues: map[string]string{
-				"useState": "(fn <S>(initialState: S | (fn () -> S)) -> [S, Dispatch<SetStateAction<S>>]) & (fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>])",
+				// Order reflects the §4.6 PR-B specificity sort: the no-arg
+			// arm has 0 required params and so ranks ahead of the
+			// 1-required-param arm under rule 3 ("fewer required params
+			// is more specific"). Dispatch is unaffected — for a call
+			// like `useState("x")` the no-arg arm fails fast and the
+			// 1-arg arm matches; for `useState()` the no-arg arm matches
+			// first. React declares them in the opposite order in the
+			// source .d.ts.
+			"useState": "(fn <S = undefined>() -> [S | undefined, Dispatch<SetStateAction<S | undefined>>]) & (fn <S>(initialState: S | (fn () -> S)) -> [S, Dispatch<SetStateAction<S>>])",
 			},
 		},
 	}
