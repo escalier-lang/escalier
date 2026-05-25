@@ -26,7 +26,7 @@ func methodElemArm(name string, mut bool, litTag string) *type_system.MethodElem
 }
 
 func TestMergeMethodOverloads_NoDuplicates_RoundTrip(t *testing.T) {
-	c := &Checker{}
+	c := NewChecker(nil)
 	elems := []type_system.ObjTypeElem{
 		methodElemArm("foo", false, "a"),
 		methodElemArm("bar", false, "b"),
@@ -41,7 +41,7 @@ func TestMergeMethodOverloads_NoDuplicates_RoundTrip(t *testing.T) {
 }
 
 func TestMergeMethodOverloads_CollapsesSameName(t *testing.T) {
-	c := &Checker{}
+	c := NewChecker(nil)
 	a := methodElemArm("foo", false, "a")
 	b := methodElemArm("foo", false, "b")
 	other := methodElemArm("bar", false, "x")
@@ -63,7 +63,7 @@ func TestMergeMethodOverloads_CollapsesSameName(t *testing.T) {
 }
 
 func TestMergeMethodOverloads_ReceiverMutMismatch(t *testing.T) {
-	c := &Checker{}
+	c := NewChecker(nil)
 	a := methodElemArm("swap", false, "a")
 	b := methodElemArm("swap", true, "b")
 	elems := []type_system.ObjTypeElem{a, b}
@@ -84,7 +84,7 @@ func TestMergeMethodOverloads_ReceiverMutMismatch(t *testing.T) {
 }
 
 func TestMergeMethodOverloads_ReceiverMutMismatch_ReverseDirection(t *testing.T) {
-	c := &Checker{}
+	c := NewChecker(nil)
 	a := methodElemArm("swap", true, "a")
 	b := methodElemArm("swap", false, "b")
 	elems := []type_system.ObjTypeElem{a, b}
@@ -110,7 +110,7 @@ func TestMergeMethodOverloads_ReceiverMutMismatch_ReverseDirection(t *testing.T)
 // has a mismatch. Go map iteration is randomized per-run, so iterating
 // indicesByName directly would expose this test to flakes.
 func TestMergeMethodOverloads_StableErrorOrder(t *testing.T) {
-	c := &Checker{}
+	c := NewChecker(nil)
 	elems := []type_system.ObjTypeElem{
 		methodElemArm("alpha", false, "a"),
 		methodElemArm("alpha", true, "b"),
@@ -129,7 +129,7 @@ func TestMergeMethodOverloads_StableErrorOrder(t *testing.T) {
 }
 
 func TestMergeMethodOverloads_Idempotent(t *testing.T) {
-	c := &Checker{}
+	c := NewChecker(nil)
 	elems := []type_system.ObjTypeElem{
 		methodElemArm("foo", false, "a"),
 		methodElemArm("foo", false, "b"),
