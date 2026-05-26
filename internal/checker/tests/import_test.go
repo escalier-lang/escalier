@@ -47,7 +47,7 @@ func TestImportInferenceScript(t *testing.T) {
 			expectedValues: map[string]string{
 				// Order reflects the §4.6 PR-B specificity sort: the no-arg
 				// arm has 0 required params and so ranks ahead of the
-				// 1-required-param arm under rule 3 ("fewer required params
+				// 1-required-param arm under rule 2 ("fewer required params
 				// is more specific"). Dispatch is unaffected — for a call
 				// like `useState("x")` the no-arg arm fails fast and the
 				// 1-arg arm matches; for `useState()` the no-arg arm matches

@@ -30,15 +30,16 @@ const (
 //  1. **Pointwise param subtype.** When arities match, arm a is more
 //     specific than b iff `a.Params[i]` is a structural subtype of
 //     `b.Params[i]` for every i and at least one position is a strict
-//     subtype (i.e. the reverse direction fails). The check is a
-//     pure, side-effect-free traversal of the pruned type shapes —
-//     it never invokes the unifier and never resolves a TypeRefType
-//     to its underlying alias definition (though it does recurse
-//     into the type arguments of same-alias references), so it's
-//     safe to call during placeholder phases where unifying
-//     against unrelated overload arms would be unsound. Subsumes the
-//     old literal-count heuristic and naturally handles unions,
-//     object fields, and nested literals.
+//     subtype (i.e. the reverse direction fails). The check delegates
+//     to `c.Check(...)` (the query-mode unifier), so it runs the full
+//     structural recursion — including expansion of `TypeRefType` when
+//     a scope is available. `compareBySubtype` passes a zero `Context`
+//     so unresolvable refs fail closed and no scope-based expansion
+//     fires, but the call still drives `unifyInner`; query mode refuses
+//     TypeVar binding, Widenable widening, and lifetime reconciliation
+//     so no inference state is committed. Subsumes the old literal-count
+//     heuristic and naturally handles unions, object fields, and nested
+//     literals.
 //
 //  2. **Fewer required params is more specific.** Optional params
 //     (FuncParam.Optional) and rest params (*RestSpreadType) do

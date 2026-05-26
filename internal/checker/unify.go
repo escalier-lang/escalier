@@ -671,9 +671,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			// so this check applies on both branches below.
 			ltErrors := []Error{}
 			if len(ref1.LifetimeArgs) == len(ref2.LifetimeArgs) {
-				for i := 0; i < len(ref1.LifetimeArgs); i++ {
-					ltErrors = slices.Concat(ltErrors,
-						c.UnifyLifetimes(ctx, ref1.LifetimeArgs[i], ref2.LifetimeArgs[i]))
+				// UnifyLifetimes binds LifetimeVars — skip in query mode
+				// so Check stays side-effect-free. Structural subtype
+				// queries don't depend on lifetime equality.
+				if !c.queryUnify {
+					for i := 0; i < len(ref1.LifetimeArgs); i++ {
+						ltErrors = slices.Concat(ltErrors,
+							c.UnifyLifetimes(ctx, ref1.LifetimeArgs[i], ref2.LifetimeArgs[i]))
+					}
 				}
 			} else if len(ref1.LifetimeArgs) > 0 && len(ref2.LifetimeArgs) > 0 {
 				// Mismatched lifetime-arg arity is a structural error.
@@ -958,32 +963,39 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				// "x" already present in obj1 and skip the merge, losing obj2's
 				// setter. By checking read and write separately, the setter is
 				// correctly appended so obj1 ends up with both get x and set x.
-				for _, key := range keys2 {
-					re := collected2.OrigRead[key]
-					we := collected2.OrigWrite[key]
-					if re != nil {
-						if _, has := namedElems1[key]; !has {
-							obj1.Elems = append(obj1.Elems, re)
+				//
+				// Skip the cross-side elem merge in query mode: it mutates
+				// obj1/obj2.Elems, which Check must not do. Shared-property
+				// unification above is read-only (it recurses through
+				// unifyInner, which honors queryUnify).
+				if !c.queryUnify {
+					for _, key := range keys2 {
+						re := collected2.OrigRead[key]
+						we := collected2.OrigWrite[key]
+						if re != nil {
+							if _, has := namedElems1[key]; !has {
+								obj1.Elems = append(obj1.Elems, re)
+							}
+						}
+						if we != nil && we != re {
+							if _, has := collected1.Write[key]; !has {
+								obj1.Elems = append(obj1.Elems, we)
+							}
 						}
 					}
-					if we != nil && we != re {
-						if _, has := collected1.Write[key]; !has {
-							obj1.Elems = append(obj1.Elems, we)
+					// Add elems from obj1 not in obj2 to obj2.
+					for _, key := range keys1 {
+						re := collected1.OrigRead[key]
+						we := collected1.OrigWrite[key]
+						if re != nil {
+							if _, has := namedElems2[key]; !has {
+								obj2.Elems = append(obj2.Elems, re)
+							}
 						}
-					}
-				}
-				// Add elems from obj1 not in obj2 to obj2.
-				for _, key := range keys1 {
-					re := collected1.OrigRead[key]
-					we := collected1.OrigWrite[key]
-					if re != nil {
-						if _, has := namedElems2[key]; !has {
-							obj2.Elems = append(obj2.Elems, re)
-						}
-					}
-					if we != nil && we != re {
-						if _, has := collected2.Write[key]; !has {
-							obj2.Elems = append(obj2.Elems, we)
+						if we != nil && we != re {
+							if _, has := collected2.Write[key]; !has {
+								obj2.Elems = append(obj2.Elems, we)
+							}
 						}
 					}
 				}
@@ -998,6 +1010,10 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			// Open(t1)-vs-closed(t2): unify shared properties preserving
 			// t1/t2 directionality, add closed-only properties to the open type.
 			// Open-only properties are allowed (structural subtyping).
+			// Closed-to-open elem copies in the asymmetric branches below
+			// also mutate, so they're gated on !c.queryUnify too. Shared-
+			// property unification still runs in both modes — that's
+			// recursive structural checking via unifyInner.
 			if obj1.Open && !obj2.Open {
 				for _, key := range keys2 {
 					value1, has1 := namedElems1[key]
@@ -1005,6 +1021,9 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if has1 && has2 {
 						unifyErrors := c.unifyInner(ctx, value1, value2, seen)
 						errors = slices.Concat(errors, unifyErrors)
+					}
+					if c.queryUnify {
+						continue
 					}
 					re := collected2.OrigRead[key]
 					we := collected2.OrigWrite[key]
@@ -1025,7 +1044,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						// Both sides have the same key-kind — unify their value types.
 						unifyErrors := c.unifyInner(ctx, existing.Value, sig.Value, seen)
 						errors = slices.Concat(errors, unifyErrors)
-					} else {
+					} else if !c.queryUnify {
 						obj1.Elems = append(obj1.Elems, copyObjTypeElem(sig))
 					}
 				}
@@ -1040,6 +1059,9 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if has1 && has2 {
 						unifyErrors := c.unifyInner(ctx, value1, value2, seen)
 						errors = slices.Concat(errors, unifyErrors)
+					}
+					if c.queryUnify {
+						continue
 					}
 					re := collected1.OrigRead[key]
 					we := collected1.OrigWrite[key]
@@ -1059,7 +1081,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if existing := findMatchingIndexSignature(sig, collected2.IndexSignatures); existing != nil {
 						unifyErrors := c.unifyInner(ctx, existing.Value, sig.Value, seen)
 						errors = slices.Concat(errors, unifyErrors)
-					} else {
+					} else if !c.queryUnify {
 						obj2.Elems = append(obj2.Elems, copyObjTypeElem(sig))
 					}
 				}
