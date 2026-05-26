@@ -2,12 +2,11 @@ package checker
 
 import "github.com/escalier-lang/escalier/internal/type_system"
 
-// queryUnify reports whether the checker is currently in query mode —
-// i.e. unifyInner is running as a pure structural-subtype predicate
-// and must refuse every side effect. `Unify` runs with this false
-// (the default — TypeVars bind, Widenable TypeVars widen, lifetimes
-// reconcile). `Check` swaps it to true for the duration of a single
-// query.
+// Context.QueryUnify reports whether the checker is currently in query
+// mode — i.e. unifyInner is running as a pure structural-subtype
+// predicate and must refuse every side effect. `Unify` runs with this
+// false (the default — TypeVars bind, Widenable TypeVars widen, lifetimes
+// reconcile). `Check` sets it to true for the duration of a single query.
 //
 // The mutation surface inside unifyInner / unifyMatched / bind that
 // query mode disables:
@@ -24,10 +23,10 @@ import "github.com/escalier-lang/escalier/internal/type_system"
 //     LifetimeVars). Structural subtyping doesn't depend on lifetime
 //     equality.
 //
-// The flag lives on *Checker rather than threading through every
-// recursive call because the recursion has ~80+ internal call sites
-// and the mode is invariant across the whole traversal. The Checker
-// is single-threaded so a per-call field swap is safe.
+// The flag lives on Context (not Checker) so a value-copied ctx with
+// QueryUnify=true auto-propagates through every recursive unifyInner
+// call without a save/restore dance, and so the flag's scope is
+// structurally tied to the query that set it.
 //
 // Prune's path compression is intentionally permitted in query mode:
 // it rewrites Instance chains that are already aliased, so it can't
@@ -47,8 +46,14 @@ import "github.com/escalier-lang/escalier/internal/type_system"
 // ranking, simplification, and any other context that needs a
 // side-effect-free subtype query.
 func (c *Checker) Check(ctx Context, t1, t2 type_system.Type) bool {
-	prev := c.queryUnify
-	c.queryUnify = true
-	defer func() { c.queryUnify = prev }()
+	ctx.QueryUnify = true
 	return len(c.unifyInner(ctx, t1, t2, make(unifySeen))) == 0
+}
+
+// MutuallyAssignable reports whether t1 and t2 are structural subtypes
+// of each other (i.e. equivalent modulo aliasing). Equivalent to
+// Check(t1, t2) && Check(t2, t1); exposed as a sibling so callers
+// don't forget the second direction.
+func (c *Checker) MutuallyAssignable(ctx Context, t1, t2 type_system.Type) bool {
+	return c.Check(ctx, t1, t2) && c.Check(ctx, t2, t1)
 }

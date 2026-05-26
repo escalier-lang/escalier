@@ -222,7 +222,7 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 		// Lifetime reconciliation binds LifetimeVars — a side effect, so
 		// queryMode skips it. Structural subtype queries don't depend on
 		// lifetime equality.
-		if !c.queryUnify {
+		if !ctx.QueryUnify {
 			lt1 := type_system.GetLifetime(t1)
 			lt2 := type_system.GetLifetime(t2)
 			if lt1 != nil || lt2 != nil {
@@ -248,7 +248,7 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 	// path-compresses the chain but records it in tvA.InstanceChain. We use
 	// that chain to update ALL aliased TypeVars so reads through any alias
 	// observe the widened type.
-	if widenableChain := widenableInstanceChain(tv2); !c.queryUnify && len(widenableChain) > 0 {
+	if widenableChain := widenableInstanceChain(tv2); !ctx.QueryUnify && len(widenableChain) > 0 {
 		oldType := t2
 		// If oldType is still a TypeVarType (e.g. the chain ended at an unbound
 		// TypeVar and bind failed due to an occurs check), we must not build a
@@ -674,7 +674,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				// UnifyLifetimes binds LifetimeVars — skip in query mode
 				// so Check stays side-effect-free. Structural subtype
 				// queries don't depend on lifetime equality.
-				if !c.queryUnify {
+				if !ctx.QueryUnify {
 					for i := 0; i < len(ref1.LifetimeArgs); i++ {
 						ltErrors = slices.Concat(ltErrors,
 							c.UnifyLifetimes(ctx, ref1.LifetimeArgs[i], ref2.LifetimeArgs[i]))
@@ -968,7 +968,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				// obj1/obj2.Elems, which Check must not do. Shared-property
 				// unification above is read-only (it recurses through
 				// unifyInner, which honors queryUnify).
-				if !c.queryUnify {
+				if !ctx.QueryUnify {
 					for _, key := range keys2 {
 						re := collected2.OrigRead[key]
 						we := collected2.OrigWrite[key]
@@ -1011,7 +1011,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			// t1/t2 directionality, add closed-only properties to the open type.
 			// Open-only properties are allowed (structural subtyping).
 			// Closed-to-open elem copies in the asymmetric branches below
-			// also mutate, so they're gated on !c.queryUnify too. Shared-
+			// also mutate, so they're gated on !ctx.QueryUnify too. Shared-
 			// property unification still runs in both modes — that's
 			// recursive structural checking via unifyInner.
 			if obj1.Open && !obj2.Open {
@@ -1022,7 +1022,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						unifyErrors := c.unifyInner(ctx, value1, value2, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					}
-					if c.queryUnify {
+					if ctx.QueryUnify {
 						continue
 					}
 					re := collected2.OrigRead[key]
@@ -1044,7 +1044,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						// Both sides have the same key-kind — unify their value types.
 						unifyErrors := c.unifyInner(ctx, existing.Value, sig.Value, seen)
 						errors = slices.Concat(errors, unifyErrors)
-					} else if !c.queryUnify {
+					} else if !ctx.QueryUnify {
 						obj1.Elems = append(obj1.Elems, copyObjTypeElem(sig))
 					}
 				}
@@ -1060,7 +1060,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 						unifyErrors := c.unifyInner(ctx, value1, value2, seen)
 						errors = slices.Concat(errors, unifyErrors)
 					}
-					if c.queryUnify {
+					if ctx.QueryUnify {
 						continue
 					}
 					re := collected1.OrigRead[key]
@@ -1081,7 +1081,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 					if existing := findMatchingIndexSignature(sig, collected2.IndexSignatures); existing != nil {
 						unifyErrors := c.unifyInner(ctx, existing.Value, sig.Value, seen)
 						errors = slices.Concat(errors, unifyErrors)
-					} else if !c.queryUnify {
+					} else if !ctx.QueryUnify {
 						obj2.Elems = append(obj2.Elems, copyObjTypeElem(sig))
 					}
 				}
@@ -2139,7 +2139,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 	// succeed via the Equals fast-path below; only the cases that would
 	// commit a TypeVar.Instance write report failure. The caller treats
 	// the resulting CannotUnifyTypesError like any other mismatch.
-	if c.queryUnify && !type_system.Equals(t1, t2) {
+	if ctx.QueryUnify && !type_system.Equals(t1, t2) {
 		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
 

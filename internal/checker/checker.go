@@ -63,12 +63,6 @@ type Checker struct {
 	// namespace tree — which already exposes each member at its derived
 	// path — isn't shadowed by an empty filtered copy.
 	activeSCC set.Set[string]
-
-	// queryUnify, when true, makes unifyInner / bind behave as a pure
-	// structural-subtype predicate: TypeVar binding, Widenable widening,
-	// and lifetime reconciliation are all refused. Check swaps this on
-	// for the duration of a single query; see unify_mode.go.
-	queryUnify bool
 }
 
 func NewChecker(ctx context.Context) *Checker {
@@ -163,6 +157,16 @@ type Context struct {
 	IsAsync                bool
 	IsPatMatch             bool
 	AllowUndefinedTypeRefs bool
+	// QueryUnify, when true, makes unifyInner / bind behave as a pure
+	// structural-subtype predicate: TypeVar binding, Widenable widening,
+	// and lifetime reconciliation are all refused. Check sets this for
+	// the duration of a single query; see unify_mode.go.
+	//
+	// Lives on Context (not Checker) so the auto-propagation through
+	// value-copy keeps nested unifyInner calls in the same mode without
+	// any save/restore dance, and so that the field is structurally
+	// scoped to the query that turned it on.
+	QueryUnify bool
 	TypeRefsToUpdate       *Ref[[]*type_system.TypeRefType]
 	// FileScopes maps SourceID to file-specific scope.
 	// Used for file-scoped imports in modules.
