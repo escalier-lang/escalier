@@ -152,13 +152,14 @@ func isJSDoc(value string) bool {
 	return len(value) > 4 && strings.HasPrefix(value, "/**")
 }
 
-// attachDoc sets doc on stmt if stmt implements Documented and doc is
-// non-empty.
-func attachDoc(stmt Statement, doc string) {
+// attachDoc sets doc on n if n implements Documented and doc is
+// non-empty. n is any AST node — typically a Statement, ClassMember,
+// or InterfaceMember.
+func attachDoc(n any, doc string) {
 	if doc == "" {
 		return
 	}
-	if d, ok := stmt.(Documented); ok {
+	if d, ok := n.(Documented); ok {
 		d.SetDoc(doc)
 	}
 }

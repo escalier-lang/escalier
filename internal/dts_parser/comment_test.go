@@ -218,6 +218,38 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Equal(t, "", c.Doc)
 			},
 		},
+		{
+			name:  "JSDoc on class constructor",
+			input: "declare class Foo {\n    /** Ctor doc. */\n    constructor(x: number);\n}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c := m.Statements[0].(*ClassDecl)
+				require.Len(t, c.Members, 1)
+				ctor, ok := c.Members[0].(*ConstructorDecl)
+				require.True(t, ok, "expected ConstructorDecl, got %T", c.Members[0])
+				require.Equal(t, "/** Ctor doc. */", ctor.Doc)
+			},
+		},
+		{
+			name:  "JSDoc on ambient module",
+			input: "/** Module doc. */\ndeclare module \"foo\" {\n    export const x: number;\n}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				md, ok := m.Statements[0].(*ModuleDecl)
+				require.True(t, ok, "expected ModuleDecl, got %T", m.Statements[0])
+				require.Equal(t, "/** Module doc. */", md.Doc)
+			},
+		},
+		{
+			name:  "JSDoc on declare global",
+			input: "/** Global doc. */\ndeclare global {\n    interface Foo {}\n}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				gd, ok := m.Statements[0].(*GlobalDecl)
+				require.True(t, ok, "expected GlobalDecl, got %T", m.Statements[0])
+				require.Equal(t, "/** Global doc. */", gd.Doc)
+			},
+		},
 	}
 
 	for _, tt := range tests {

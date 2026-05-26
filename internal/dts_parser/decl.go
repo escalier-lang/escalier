@@ -407,11 +407,7 @@ func (p *DtsParser) parseInterfaceDeclaration() Statement {
 
 		member := p.parseInterfaceMember()
 		if member != nil {
-			if doc != "" {
-				if d, ok := member.(Documented); ok {
-					d.SetDoc(doc)
-				}
-			}
+			attachDoc(member, doc)
 			members = append(members, member)
 		} else {
 			// Skip to next member or closing brace on error
@@ -662,11 +658,7 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 
 		member := p.parseClassMember()
 		if member != nil {
-			if doc != "" {
-				if d, ok := member.(Documented); ok {
-					d.SetDoc(doc)
-				}
-			}
+			attachDoc(member, doc)
 			members = append(members, member)
 		} else {
 			// If parsing failed, consume at least one token to avoid infinite loop

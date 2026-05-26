@@ -31,11 +31,7 @@ func (p *DtsParser) parseObjectType() TypeAnn {
 
 		member := p.parseInterfaceMember()
 		if member != nil {
-			if doc != "" {
-				if d, ok := member.(Documented); ok {
-					d.SetDoc(doc)
-				}
-			}
+			attachDoc(member, doc)
 			members = append(members, member)
 		} else {
 			// Skip to next member or closing brace on error
