@@ -772,7 +772,6 @@ func (e InnerNonExhaustiveMatchError) Message() string {
 	return "Non-exhaustive match: " + memberStr + " is missing inner cases for " + strings.Join(names, ", ")
 }
 
-
 // MissingMutSelfParameterError is reported when a constructor's `mut self`
 // parameter is missing, not declared `mut`, or has a type annotation.
 //
@@ -897,7 +896,6 @@ func (e FieldInitializerNotAllowedError) Message() string {
 	return "Field '" + e.FieldName + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
 }
 
-
 // StaticFieldMissingInitializerError is reported when a static field
 // has no `= expr` initializer and no literal-typed annotation that
 // codegen can materialize. Without one of those, the emitted JS
@@ -913,7 +911,6 @@ func (e StaticFieldMissingInitializerError) Span() ast.Span {
 func (e StaticFieldMissingInitializerError) Message() string {
 	return "Static field '" + e.FieldName + "' must have an initializer (e.g. `static " + e.FieldName + ": number = 0`)."
 }
-
 
 // SubclassConstructorRequiredError is reported when a class with an
 // `extends` clause has no explicit `constructor` block. Synthesizing a

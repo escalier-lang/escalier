@@ -253,4 +253,3 @@ func TestVerifyLifetimeCompatibility(t *testing.T) {
 		assert.NotEmpty(t, errs)
 	})
 }
-

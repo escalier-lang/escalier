@@ -92,6 +92,14 @@ func isSymbolIndexKey(key MemberAccessKey) bool {
 func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool {
 	typeAlias := t.TypeAlias
 	if typeAlias == nil {
+		// Scope is required to resolve an unbound qualified name.
+		// Callers without a scope (e.g. the structural Check predicate
+		// invoked from overload specificity) pass a zero Context — in
+		// that case the ref simply isn't expandable, and the caller
+		// falls through to its tiebreaker.
+		if ctx.Scope == nil {
+			return false
+		}
 		typeAlias = resolveQualifiedTypeAlias(ctx, t.Name)
 	}
 	if typeAlias == nil {
@@ -499,6 +507,13 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		// First, check if TypeAlias is already set on the TypeRefType
 		typeAlias := t.TypeAlias
 		if typeAlias == nil {
+			// Scope-less callers (e.g. the structural Check predicate
+			// invoked from overload specificity) pass a zero Context.
+			// Treat unresolvable refs as non-expandable rather than
+			// dereferencing a nil scope.
+			if v.ctx.Scope == nil {
+				return nil
+			}
 			typeAlias = resolveQualifiedTypeAlias(v.ctx, t.Name)
 		}
 		// TODO: Check if the qualifier is a type.  If it is, we can treat this

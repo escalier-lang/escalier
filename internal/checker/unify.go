@@ -219,11 +219,16 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 		// unifyMatched, which call back into unifyInner per element —
 		// each of those nested calls will also hit this hook for the
 		// per-element lifetime.
-		lt1 := type_system.GetLifetime(t1)
-		lt2 := type_system.GetLifetime(t2)
-		if lt1 != nil || lt2 != nil {
-			if ltErrors := c.UnifyLifetimes(ctx, lt1, lt2); len(ltErrors) > 0 {
-				return ltErrors
+		// Lifetime reconciliation binds LifetimeVars — a side effect, so
+		// queryMode skips it. Structural subtype queries don't depend on
+		// lifetime equality.
+		if !c.queryUnify {
+			lt1 := type_system.GetLifetime(t1)
+			lt2 := type_system.GetLifetime(t2)
+			if lt1 != nil || lt2 != nil {
+				if ltErrors := c.UnifyLifetimes(ctx, lt1, lt2); len(ltErrors) > 0 {
+					return ltErrors
+				}
 			}
 		}
 		return nil
@@ -243,7 +248,7 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 	// path-compresses the chain but records it in tvA.InstanceChain. We use
 	// that chain to update ALL aliased TypeVars so reads through any alias
 	// observe the widened type.
-	if widenableChain := widenableInstanceChain(tv2); len(widenableChain) > 0 {
+	if widenableChain := widenableInstanceChain(tv2); !c.queryUnify && len(widenableChain) > 0 {
 		oldType := t2
 		// If oldType is still a TypeVarType (e.g. the chain ended at an unbound
 		// TypeVar and bind failed due to an occurs check), we must not build a
@@ -291,6 +296,16 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, seen unifySe
 		// `type Point = {x: number, y: number}; val p: Point = {x: 1, y: 2}`
 		// would corrupt Point's alias if unification mutated the shared pointer),
 		// and unifyInner provides Prune + widening on the expanded result.
+		// All three expansion paths below need a real Scope to resolve
+		// qualified type names and run mapped-type elaboration. Scope-less
+		// callers (the structural Check predicate invoked from overload
+		// specificity) pass a zero Context — skip expansion in that case
+		// so the unifier falls through to CannotUnifyTypesError and the
+		// caller treats the pair as incomparable.
+		if ctx.Scope == nil {
+			return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
+		}
+
 		refCanExpand := false
 		if isRef1 && c.canExpandTypeRef(ctx, ref1) {
 			refCanExpand = true
@@ -2096,6 +2111,14 @@ func (c *Checker) unifyFuncTypes(ctx Context, func1, func2 *type_system.FuncType
 func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, seen unifySeen) []Error {
 	if t1 == nil || t2 == nil {
 		panic("Cannot bind nil types") // this should never happen
+	}
+
+	// In queryMode (Check), refuse to bind. Equal types still trivially
+	// succeed via the Equals fast-path below; only the cases that would
+	// commit a TypeVar.Instance write report failure. The caller treats
+	// the resulting CannotUnifyTypesError like any other mismatch.
+	if c.queryUnify && !type_system.Equals(t1, t2) {
+		return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 	}
 
 	errors := []Error{}
