@@ -482,7 +482,7 @@ func (c *Checker) resolveCallSites(ctx Context) {
 				// the first hit — same semantics as free-fn declared overloads.
 				sortedSites := make([]*type_system.FuncType, len(sites))
 				copy(sortedSites, sites)
-				sortOverloadArms(sortedSites)
+				c.sortOverloadArms(sortedSites)
 				types := make([]type_system.Type, len(sortedSites))
 				for i, s := range sortedSites {
 					types[i] = s

@@ -336,7 +336,7 @@ func (c *Checker) InferComponent(
 							decl.Span()))
 					}
 					arms = append(arms, funcType)
-					sortOverloadArms(arms)
+					c.sortOverloadArms(arms)
 					armTypes := make([]type_system.Type, len(arms))
 					for i, fn := range arms {
 						armTypes[i] = fn

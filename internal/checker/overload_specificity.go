@@ -30,15 +30,16 @@ const (
 //  1. **Pointwise param subtype.** When arities match, arm a is more
 //     specific than b iff `a.Params[i]` is a structural subtype of
 //     `b.Params[i]` for every i and at least one position is a strict
-//     subtype (i.e. the reverse direction fails). The check is a
-//     pure, side-effect-free traversal of the pruned type shapes —
-//     it never invokes the unifier and never resolves a TypeRefType
-//     to its underlying alias definition (though it does recurse
-//     into the type arguments of same-alias references), so it's
-//     safe to call during placeholder phases where unifying
-//     against unrelated overload arms would be unsound. Subsumes the
-//     old literal-count heuristic and naturally handles unions,
-//     object fields, and nested literals.
+//     subtype (i.e. the reverse direction fails). The check delegates
+//     to `c.Check(...)` (the query-mode unifier), so it runs the full
+//     structural recursion — including expansion of `TypeRefType` when
+//     a scope is available. `compareBySubtype` passes a zero `Context`
+//     so unresolvable refs fail closed and no scope-based expansion
+//     fires, but the call still drives `unifyInner`; query mode refuses
+//     TypeVar binding, Widenable widening, and lifetime reconciliation
+//     so no inference state is committed. Subsumes the old literal-count
+//     heuristic and naturally handles unions, object fields, and nested
+//     literals.
 //
 //  2. **Fewer required params is more specific.** Optional params
 //     (FuncParam.Optional) and rest params (*RestSpreadType) do
@@ -62,7 +63,7 @@ const (
 // generalize.go) and for the method-elem merge pass. Keeping
 // a single comparator means free-fn and method overload dispatch
 // have identical semantics.
-func compareOverloadArms(a, b *type_system.FuncType) specificity {
+func (c *Checker) compareOverloadArms(a, b *type_system.FuncType) specificity {
 	if a == nil || b == nil {
 		// Nil sorts last — should never happen with well-formed
 		// intersections, but defensive against malformed input.
@@ -75,7 +76,7 @@ func compareOverloadArms(a, b *type_system.FuncType) specificity {
 		return aMoreSpecific
 	}
 
-	if cmp := compareBySubtype(a, b); cmp != tie {
+	if cmp := c.compareBySubtype(a, b); cmp != tie {
 		return cmp
 	}
 
@@ -104,9 +105,9 @@ func compareOverloadArms(a, b *type_system.FuncType) specificity {
 // tiebreaker. Returns the input slice (sorted in place); callers
 // that need to preserve the original slice should clone before
 // calling.
-func sortOverloadArms(arms []*type_system.FuncType) []*type_system.FuncType {
+func (c *Checker) sortOverloadArms(arms []*type_system.FuncType) []*type_system.FuncType {
 	sort.SliceStable(arms, func(i, j int) bool {
-		return compareOverloadArms(arms[i], arms[j]) < 0
+		return c.compareOverloadArms(arms[i], arms[j]) < 0
 	})
 	return arms
 }
@@ -128,12 +129,21 @@ func sortOverloadArms(arms []*type_system.FuncType) []*type_system.FuncType {
 // at the same position simply skip (no information). Rule 3 still
 // runs separately to order concrete-vs-generic at positions where
 // rule 1 ties.
-func compareBySubtype(a, b *type_system.FuncType) specificity {
+func (c *Checker) compareBySubtype(a, b *type_system.FuncType) specificity {
 	if len(a.Params) != len(b.Params) || len(a.Params) == 0 {
 		return tie
 	}
 	aTP := typeParamBounds(a)
 	bTP := typeParamBounds(b)
+
+	// Check is a structural subtype query and doesn't depend on the
+	// caller's lexical scope for the kinds of types overload arms
+	// carry here (pruned concrete shapes plus owned-TP refs already
+	// resolved to bounds above). A zero Context is sufficient — if
+	// some recursion needs scope-based TypeRef expansion it will fail
+	// closed, matching the old structuralSubtype's "unrecognized →
+	// false" behavior.
+	var ctx Context
 
 	allAIsSubtypeOfB := true
 	allBIsSubtypeOfA := true
@@ -161,8 +171,8 @@ func compareBySubtype(a, b *type_system.FuncType) specificity {
 		case bTop:
 			aIsSubtypeOfB, bIsSubtypeOfA = true, false
 		default:
-			aIsSubtypeOfB = structuralSubtype(aEff, bEff, make(structuralSeen))
-			bIsSubtypeOfA = structuralSubtype(bEff, aEff, make(structuralSeen))
+			aIsSubtypeOfB = c.Check(ctx, aEff, bEff)
+			bIsSubtypeOfA = c.Check(ctx, bEff, aEff)
 		}
 		// Any position where neither direction holds — an unrecognized
 		// shape (FuncType, intersection, nominal object, …) or genuinely
@@ -255,167 +265,6 @@ func effectiveParamType(
 		return true, nil
 	}
 	return false, bound
-}
-
-// structuralSeen guards against unbounded recursion on cyclic types
-// (e.g. recursive object types). Keyed by the (sub, sup) pointer
-// pair; revisiting a pair returns true co-inductively, matching
-// `unifyInner`'s seen-set discipline.
-type structuralSeen map[[2]type_system.Type]bool
-
-// structuralSubtype reports whether sub is a structural subtype of
-// sup. The check is intentionally narrow: it covers the kinds the
-// issue calls out (literals vs prims, narrowing unions, object
-// fields, tuples) plus enough identity/equality cases to handle the
-// "same shape on both sides" path that other rules rely on. Anything
-// unrecognized returns false so the caller falls through to the
-// syntactic tiebreakers.
-//
-// Both arguments must already be pruned.
-//
-// TODO(#658): replace with the pure `Check` predicate once that
-// lands — it would subsume this hand-rolled traversal and handle
-// FuncType, intersections, nominal objects, and mapped types
-// without us having to grow the cases here.
-func structuralSubtype(sub, sup type_system.Type, seen structuralSeen) bool {
-	if sub == sup {
-		return true
-	}
-	key := [2]type_system.Type{sub, sup}
-	if seen[key] {
-		return true
-	}
-	seen[key] = true
-
-	// Union on sub: every member must be subtype of sup.
-	if subU, ok := sub.(*type_system.UnionType); ok {
-		for _, m := range subU.Types {
-			if !structuralSubtype(type_system.Prune(m), sup, seen) {
-				return false
-			}
-		}
-		return true
-	}
-	// Union on sup: sub must be subtype of some member.
-	if supU, ok := sup.(*type_system.UnionType); ok {
-		for _, m := range supU.Types {
-			if structuralSubtype(sub, type_system.Prune(m), seen) {
-				return true
-			}
-		}
-		return false
-	}
-
-	// Same identical primitive.
-	if subP, ok := sub.(*type_system.PrimType); ok {
-		if supP, ok := sup.(*type_system.PrimType); ok {
-			return subP.Prim == supP.Prim
-		}
-		return false
-	}
-
-	// Literal on sub.
-	if subL, ok := sub.(*type_system.LitType); ok {
-		if supL, ok := sup.(*type_system.LitType); ok {
-			return subL.Lit.Equal(supL.Lit)
-		}
-		if supP, ok := sup.(*type_system.PrimType); ok {
-			return litMatchesPrim(subL, supP)
-		}
-		return false
-	}
-
-	// Tuple: pointwise equal-arity subtype.
-	if subT, ok := sub.(*type_system.TupleType); ok {
-		supT, ok := sup.(*type_system.TupleType)
-		if !ok || len(subT.Elems) != len(supT.Elems) {
-			return false
-		}
-		for i := range subT.Elems {
-			if !structuralSubtype(type_system.Prune(subT.Elems[i]),
-				type_system.Prune(supT.Elems[i]), seen) {
-				return false
-			}
-		}
-		return true
-	}
-
-	// Object: every property in sup must appear in sub with a subtype
-	// value. Extra fields in sub are fine (width subtyping). Anything
-	// other than plain PropertyElem makes us bail out — the issue's
-	// motivating case is `{kind: "click"}` vs `{kind: string}`, not
-	// methods / index signatures, so this is sufficient.
-	if subO, ok := sub.(*type_system.ObjectType); ok {
-		supO, ok := sup.(*type_system.ObjectType)
-		if !ok {
-			return false
-		}
-		subProps := plainProps(subO)
-		supProps := plainProps(supO)
-		if subProps == nil || supProps == nil {
-			return false
-		}
-		for name, supV := range supProps {
-			subV, ok := subProps[name]
-			if !ok {
-				return false
-			}
-			if !structuralSubtype(type_system.Prune(subV),
-				type_system.Prune(supV), seen) {
-				return false
-			}
-		}
-		return true
-	}
-
-	// TypeRefType on both sides referring to the same alias.
-	if subR, ok := sub.(*type_system.TypeRefType); ok {
-		if supR, ok := sup.(*type_system.TypeRefType); ok {
-			if subR.TypeAlias != nil && subR.TypeAlias == supR.TypeAlias &&
-				len(subR.TypeArgs) == len(supR.TypeArgs) {
-				for i := range subR.TypeArgs {
-					if !structuralSubtype(type_system.Prune(subR.TypeArgs[i]),
-						type_system.Prune(supR.TypeArgs[i]), seen) {
-						return false
-					}
-				}
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-func litMatchesPrim(lit *type_system.LitType, prim *type_system.PrimType) bool {
-	switch lit.Lit.(type) {
-	case *type_system.StrLit:
-		return prim.Prim == type_system.StrPrim
-	case *type_system.NumLit:
-		return prim.Prim == type_system.NumPrim
-	case *type_system.BoolLit:
-		return prim.Prim == type_system.BoolPrim
-	case *type_system.BigIntLit:
-		return prim.Prim == type_system.BigIntPrim
-	}
-	return false
-}
-
-// plainProps collects PropertyElems into a name→value map. Returns
-// nil if the object carries any non-PropertyElem (method, index sig,
-// mapped, etc.) so the caller bails on the subtype check rather than
-// silently ignoring those elems and producing a misleading answer.
-func plainProps(o *type_system.ObjectType) map[string]type_system.Type {
-	out := make(map[string]type_system.Type, len(o.Elems))
-	for _, e := range o.Elems {
-		switch e := e.(type) {
-		case *type_system.PropertyElem:
-			out[e.Name.String()] = e.Value
-		default:
-			return nil
-		}
-	}
-	return out
 }
 
 // countTypeParamRefParams counts params whose top-level type (after Prune)

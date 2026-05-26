@@ -100,33 +100,33 @@ func setReceiverMut(fn *type_system.FuncType, mut bool) {
 // populateSelfParams does two structural per-method adjustments in a
 // single recursive walk over ns.
 //
-// 1. Backfills FuncType.SelfParam on every instance method / getter /
-//    setter whose owning type is an ObjectType. Source-inferred types
-//    already get SelfParam at inference time (see infer_module.go,
-//    infer_stmt.go, infer_expr.go); this pass covers the .d.ts-loaded
-//    TypeScript lib types — Array, Map, Set, Promise, etc. — which
-//    arrive without a receiver representation.
+//  1. Backfills FuncType.SelfParam on every instance method / getter /
+//     setter whose owning type is an ObjectType. Source-inferred types
+//     already get SelfParam at inference time (see infer_module.go,
+//     infer_stmt.go, infer_expr.go); this pass covers the .d.ts-loaded
+//     TypeScript lib types — Array, Map, Set, Promise, etc. — which
+//     arrive without a receiver representation.
 //
-//    Defaults:
-//      - MethodElem → `mut self`. TS .d.ts carries no receiver-mut
-//        annotation, so for any method we haven't positively classified
-//        we don't know whether it mutates. Defaulting to mut is the
-//        conservative choice (UpdateMethodMutability and
-//        mergeReadonlyVariant strip `mut` afterwards where the method
-//        is positively classified as non-mutating).
-//      - GetterElem → non-mut self.
-//      - SetterElem → `mut self`.
-//    Accessor shape is the tier-3 strong signal — reading state doesn't
-//    mutate; assignment does — so getters and setters get opposite
-//    defaults rather than both defaulting to mut.
+//     Defaults:
+//     - MethodElem → `mut self`. TS .d.ts carries no receiver-mut
+//     annotation, so for any method we haven't positively classified
+//     we don't know whether it mutates. Defaulting to mut is the
+//     conservative choice (UpdateMethodMutability and
+//     mergeReadonlyVariant strip `mut` afterwards where the method
+//     is positively classified as non-mutating).
+//     - GetterElem → non-mut self.
+//     - SetterElem → `mut self`.
+//     Accessor shape is the tier-3 strong signal — reading state doesn't
+//     mutate; assignment does — so getters and setters get opposite
+//     defaults rather than both defaulting to mut.
 //
-// 2. For symbol-keyed MethodElems whose name is `Symbol.iterator` or
-//    `Symbol.asyncIterator`, strips `mut` from the receiver and wraps
-//    the return type in `MutType`. This bakes the structural rule
-//    "iterator producers don't mutate the source; the iterator they
-//    produce is owned by the caller and is mut" into the receiver and
-//    return-type representations. See iterable.go for why both
-//    adjustments are needed (and which is subsumed by #614).
+//  2. For symbol-keyed MethodElems whose name is `Symbol.iterator` or
+//     `Symbol.asyncIterator`, strips `mut` from the receiver and wraps
+//     the return type in `MutType`. This bakes the structural rule
+//     "iterator producers don't mutate the source; the iterator they
+//     produce is owned by the caller and is mut" into the receiver and
+//     return-type representations. See iterable.go for why both
+//     adjustments are needed (and which is subsumed by #614).
 //
 // Recurses into nested namespaces so namespaced lib types (e.g.
 // `Intl.Collator`) are covered too.

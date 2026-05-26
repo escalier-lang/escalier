@@ -14,11 +14,11 @@ import (
 )
 
 type Checker struct {
-	ctx                   context.Context            // Context for timeout/cancellation support (#457)
+	ctx                   context.Context // Context for timeout/cancellation support (#457)
 	TypeVarID             int
 	LifetimeVarID         int
 	SymbolID              int
-	CustomMatcherSymbolID int                        // Symbol ID for Symbol.customMatcher (used for enum destructuring)
+	CustomMatcherSymbolID int // Symbol ID for Symbol.customMatcher (used for enum destructuring)
 	Schema                *gqlast.Schema
 	OverloadDecls         map[string][]*ast.FuncDecl // Tracks overloaded function declarations for codegen
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
@@ -157,6 +157,16 @@ type Context struct {
 	IsAsync                bool
 	IsPatMatch             bool
 	AllowUndefinedTypeRefs bool
+	// QueryUnify, when true, makes unifyInner / bind behave as a pure
+	// structural-subtype predicate: TypeVar binding, Widenable widening,
+	// and lifetime reconciliation are all refused. Check sets this for
+	// the duration of a single query; see unify_mode.go.
+	//
+	// Lives on Context (not Checker) so the auto-propagation through
+	// value-copy keeps nested unifyInner calls in the same mode without
+	// any save/restore dance, and so that the field is structurally
+	// scoped to the query that turned it on.
+	QueryUnify bool
 	TypeRefsToUpdate       *Ref[[]*type_system.TypeRefType]
 	// FileScopes maps SourceID to file-specific scope.
 	// Used for file-scoped imports in modules.

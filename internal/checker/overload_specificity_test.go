@@ -233,7 +233,7 @@ func TestCompareOverloadArms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := compareOverloadArms(tt.a, tt.b)
+			got := NewChecker(nil).compareOverloadArms(tt.a, tt.b)
 			require.Equal(t, tt.want, got)
 		})
 	}
@@ -252,7 +252,7 @@ func TestSortOverloadArms_StableSourceOrderOnTies(t *testing.T) {
 	strArm := mkFn(nil, []*type_system.FuncParam{mkParam(str)})
 
 	arms := []*type_system.FuncType{strArm, canvasArm, divArm}
-	sorted := sortOverloadArms(arms)
+	sorted := NewChecker(nil).sortOverloadArms(arms)
 
 	require.Len(t, sorted, 3)
 	require.Same(t, canvasArm, sorted[0], "canvas literal arm declared before div, must come first")
@@ -267,8 +267,8 @@ func TestSortOverloadArms_AcrossAllRules(t *testing.T) {
 
 	// Four arms covering each rule, declared in least-specific-first
 	// order so the sort actually has to do work.
-	twoRequired := mkFn(nil, []*type_system.FuncParam{mkParam(str), mkParam(num)})        // 2 required
-	unboundedGeneric := mkFn(                                                             // 1 required, 1 TP-ref
+	twoRequired := mkFn(nil, []*type_system.FuncParam{mkParam(str), mkParam(num)}) // 2 required
+	unboundedGeneric := mkFn(                                                      // 1 required, 1 TP-ref
 		[]*type_system.TypeParam{{Name: "T"}},
 		[]*type_system.FuncParam{mkParam(type_system.NewTypeRefType(nil, "T", nil))},
 	)
@@ -276,7 +276,7 @@ func TestSortOverloadArms_AcrossAllRules(t *testing.T) {
 	literalArm := mkFn(nil, []*type_system.FuncParam{mkParam(canvasLit)}) // subtype-narrower than oneRequiredStr
 
 	arms := []*type_system.FuncType{twoRequired, unboundedGeneric, oneRequiredStr, literalArm}
-	sorted := sortOverloadArms(arms)
+	sorted := NewChecker(nil).sortOverloadArms(arms)
 
 	// Expected most-specific-first order:
 	//   1. literalArm        (rule 1 subtype: "canvas" <: string)

@@ -133,7 +133,7 @@ func (c *Checker) MergeMethodOverloads(elems []type_system.ObjTypeElem, span ast
 			arms = append(arms, sig)
 		}
 
-		sortOverloadArms(arms)
+		c.sortOverloadArms(arms)
 		mergedAt[idxs[0]] = &type_system.MethodElem{
 			Name:       firstMe.Name,
 			Signatures: arms,
