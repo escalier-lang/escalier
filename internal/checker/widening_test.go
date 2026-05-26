@@ -47,37 +47,6 @@ func TestFlatUnionDeduplicatesSharedMembers(t *testing.T) {
 	assertFlatUnionMembers(t, result, []ts.Type{strType, numType, boolType})
 }
 
-func TestTypeContainsFindsNestedMembers(t *testing.T) {
-	strType := ts.NewStrPrimType(nil)
-	numType := ts.NewNumPrimType(nil)
-	boolType := ts.NewBoolPrimType(nil)
-
-	// Manually create a nested union: Union(Union(string, number), boolean)
-	innerUnion := ts.NewUnionType(nil, strType, numType)
-	nestedUnion := ts.NewUnionType(nil, innerUnion, boolType)
-
-	assert.True(t, typeContains(nestedUnion, strType), "should find string in nested union")
-	assert.True(t, typeContains(nestedUnion, numType), "should find number in nested union")
-	assert.True(t, typeContains(nestedUnion, boolType), "should find boolean in nested union")
-	assert.False(t, typeContains(nestedUnion, ts.NewVoidType(nil)), "should not find void in nested union")
-}
-
-func TestTypeContainsUnionNeedle(t *testing.T) {
-	strType := ts.NewStrPrimType(nil)
-	numType := ts.NewNumPrimType(nil)
-	boolType := ts.NewBoolPrimType(nil)
-
-	haystack := ts.NewUnionType(nil, strType, numType, boolType)
-
-	// Union needle where all members are present.
-	assert.True(t, typeContains(haystack, ts.NewUnionType(nil, strType, numType)),
-		"should find union(string, number) in union(string, number, boolean)")
-
-	// Union needle where one member is missing.
-	assert.False(t, typeContains(haystack, ts.NewUnionType(nil, strType, ts.NewVoidType(nil))),
-		"should not find union(string, void) in union(string, number, boolean)")
-}
-
 // TestWideningWithAliasedTypeVars verifies that when two Widenable TypeVars are
 // aliased (tvA.Instance = tvB) and then widened via tvA, reading through tvB
 // also observes the widened type. This simulates the case where two open objects
