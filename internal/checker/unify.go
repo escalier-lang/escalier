@@ -258,7 +258,12 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 		}
 		newType := widenLiteral(t1)
 		widened := oldType
-		if !typeContains(oldType, newType) {
+		// Check answers "is newType a subtype of oldType" directly: if
+		// so, widening to add it would be redundant (a literal already
+		// covered by its widened prim, a union member already covered
+		// by a wider sibling, etc.). Skips the flatUnion alloc and
+		// keeps the resulting union minimal.
+		if !c.Check(ctx, newType, oldType) {
 			widened = flatUnion(oldType, newType)
 		}
 		for _, tv := range widenableChain {
@@ -1285,13 +1290,18 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			}
 
 			// Probe-then-commit: trial-unify clones to avoid partially mutating
-			// TypeVars on failure (see #381).
-			// For A & B <: C & D, every constraint in C & D must be satisfied by A & B
-			// This means for each part of t2, at least one part of t1 must be a subtype
+			// TypeVars on failure (see #381). Fast path first: if Check
+			// succeeds on the originals, no binding is required and we can
+			// commit without the clone-probe allocation.
 			errors := []Error{}
 			for _, t2Part := range intersection2.Types {
 				found := false
 				for _, t1Part := range intersection1.Types {
+					if c.Check(ctx, t1Part, t2Part) {
+						c.unifyInner(ctx, t1Part, t2Part, seen)
+						found = true
+						break
+					}
 					varMapping := make(map[int]*type_system.TypeVarType)
 					t1Clone := c.deepCloneType(t1Part, varMapping)
 					t2Clone := c.deepCloneType(t2Part, varMapping)
@@ -1328,9 +1338,15 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		}
 
 		// Probe-then-commit: trial-unify clones to avoid partially mutating
-		// TypeVars on failure (see #381).
+		// TypeVars on failure (see #381). Fast path first: if Check
+		// succeeds on the originals, no binding is required and we can
+		// commit without the clone-probe allocation.
 		var allErrors []Error
 		for _, part := range intersection.Types {
+			if c.Check(ctx, part, t2) {
+				c.unifyInner(ctx, part, t2, seen)
+				return nil
+			}
 			varMapping := make(map[int]*type_system.TypeVarType)
 			partClone := c.deepCloneType(part, varMapping)
 			t2Clone := c.deepCloneType(t2, varMapping)
@@ -1500,8 +1516,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	// | _, UnionType -> ...
 	if union, ok := t2.(*type_system.UnionType); ok {
 		// Probe-then-commit: trial-unify clones to avoid partially mutating
-		// TypeVars on failure (see #381).
+		// TypeVars on failure (see #381). Fast path first: if Check
+		// succeeds on the originals, no binding is required and we can
+		// commit without the clone-probe allocation.
 		for _, unionType := range union.Types {
+			if c.Check(ctx, t1, unionType) {
+				c.unifyInner(ctx, t1, unionType, seen)
+				return nil
+			}
 			varMapping := make(map[int]*type_system.TypeVarType)
 			t1Clone := c.deepCloneType(t1, varMapping)
 			unionTypeClone := c.deepCloneType(unionType, varMapping)
@@ -2807,25 +2829,6 @@ func flatUnion(oldType, newType type_system.Type) type_system.Type {
 		}
 	}
 	return type_system.NewUnionType(nil, members...)
-}
-
-// typeContains checks whether every leaf type in needle is already present in
-// haystack. Both sides are flattened if they are UnionTypes.
-func typeContains(haystack type_system.Type, needle type_system.Type) bool {
-	haystackMembers := collectUnionMembers(haystack)
-	for _, n := range collectUnionMembers(needle) {
-		found := false
-		for _, h := range haystackMembers {
-			if type_system.Equals(h, n) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
 }
 
 // splitTupleAtRest splits a tuple's elements into a prefix of fixed elements,
