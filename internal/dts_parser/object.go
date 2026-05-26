@@ -21,18 +21,21 @@ func (p *DtsParser) parseObjectType() TypeAnn {
 
 	// Parse members
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
-		// Skip comments before member
-		for p.peek().Type == LineComment || p.peek().Type == BlockComment {
-			p.consume()
-		}
+		// Capture leading JSDoc, if any, before the next member.
+		doc := p.consumeLeadingDoc()
 
-		// Check again after skipping comments
+		// Check again after consuming comments
 		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
 			break
 		}
 
 		member := p.parseInterfaceMember()
 		if member != nil {
+			if doc != "" {
+				if d, ok := member.(Documented); ok {
+					d.SetDoc(doc)
+				}
+			}
 			members = append(members, member)
 		} else {
 			// Skip to next member or closing brace on error

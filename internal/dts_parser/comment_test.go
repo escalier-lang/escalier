@@ -6,6 +6,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/stretchr/testify/require"
 )
 
 // Test the specific example from the user's request
@@ -102,6 +103,131 @@ func TestCommentsInObjectTypes(t *testing.T) {
 			}
 
 			snaps.MatchSnapshot(t, snapshot.String(module))
+		})
+	}
+}
+
+// TestTopLevelJSDocRetention verifies that leading JSDoc comments
+// (`/** ... */`) on top-level declarations and class members are
+// attached to the AST node's Doc field. Non-JSDoc block comments and
+// line comments are not preserved. Intervening non-doc comments between
+// a JSDoc block and the declaration reset the captured doc.
+func TestTopLevelJSDocRetention(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		assertDoc func(t *testing.T, m *Module)
+	}{
+		{
+			name:  "JSDoc on top-level declare class",
+			input: "/** The Boolean class. */\ndeclare class Boolean {}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
+				require.Equal(t, "/** The Boolean class. */", c.Doc)
+			},
+		},
+		{
+			name:  "JSDoc on top-level declare fn",
+			input: "/** Parse an integer. */\ndeclare function parseInt(s: string): number;",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				f, ok := m.Statements[0].(*FuncDecl)
+				require.True(t, ok, "expected FuncDecl, got %T", m.Statements[0])
+				require.Equal(t, "/** Parse an integer. */", f.Doc)
+			},
+		},
+		{
+			name:  "JSDoc on top-level interface",
+			input: "/** The Boolean interface. */\ninterface Boolean { toString(): string }",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				i, ok := m.Statements[0].(*InterfaceDecl)
+				require.True(t, ok, "expected InterfaceDecl, got %T", m.Statements[0])
+				require.Equal(t, "/** The Boolean interface. */", i.Doc)
+			},
+		},
+		{
+			name:  "JSDoc on namespace member",
+			input: "declare namespace JSON {\n    /** Parse JSON. */\n    function parse(s: string): any;\n}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				ns, ok := m.Statements[0].(*NamespaceDecl)
+				require.True(t, ok, "expected NamespaceDecl, got %T", m.Statements[0])
+				require.Len(t, ns.Statements, 1)
+				f, ok := ns.Statements[0].(*FuncDecl)
+				require.True(t, ok, "expected FuncDecl, got %T", ns.Statements[0])
+				require.Equal(t, "/** Parse JSON. */", f.Doc)
+			},
+		},
+		{
+			name:  "line comment before decl is not retained",
+			input: "// not JSDoc\ndeclare class Foo {}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c := m.Statements[0].(*ClassDecl)
+				require.Equal(t, "", c.Doc)
+			},
+		},
+		{
+			name:  "plain block comment before decl is not retained",
+			input: "/* not JSDoc */\ndeclare class Foo {}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c := m.Statements[0].(*ClassDecl)
+				require.Equal(t, "", c.Doc)
+			},
+		},
+		{
+			name:  "intervening non-JSDoc comment resets the doc",
+			input: "/** dropped */\n// noise\ndeclare class Foo {}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c := m.Statements[0].(*ClassDecl)
+				require.Equal(t, "", c.Doc)
+			},
+		},
+		{
+			name:  "later JSDoc wins over earlier",
+			input: "/** earlier */\n/** later */\ndeclare class Foo {}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c := m.Statements[0].(*ClassDecl)
+				require.Equal(t, "/** later */", c.Doc)
+			},
+		},
+		{
+			name:  "JSDoc on class method",
+			input: "declare class Foo {\n    /** Method doc. */\n    bar(): void;\n}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c := m.Statements[0].(*ClassDecl)
+				require.Len(t, c.Members, 1)
+				md, ok := c.Members[0].(*MethodDecl)
+				require.True(t, ok, "expected MethodDecl, got %T", c.Members[0])
+				require.Equal(t, "/** Method doc. */", md.Doc)
+			},
+		},
+		{
+			name:  "empty /**/ is not JSDoc",
+			input: "/**/\ndeclare class Foo {}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				c := m.Statements[0].(*ClassDecl)
+				require.Equal(t, "", c.Doc)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: tt.input, ID: 0}
+			parser := NewDtsParser(source)
+			module, errors := parser.ParseModule()
+			require.Empty(t, errors, "unexpected parse errors: %v", errors)
+			require.NotNil(t, module)
+			tt.assertDoc(t, module)
 		})
 	}
 }

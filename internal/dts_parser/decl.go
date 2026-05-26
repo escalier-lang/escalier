@@ -397,18 +397,21 @@ func (p *DtsParser) parseInterfaceDeclaration() Statement {
 
 	members := make([]InterfaceMember, 0, 8) // pre-allocate for typical interface size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
-		// Skip comments before member
-		for p.peek().Type == LineComment || p.peek().Type == BlockComment {
-			p.consume()
-		}
+		// Capture leading JSDoc, if any, before the next member.
+		doc := p.consumeLeadingDoc()
 
-		// Check again after skipping comments
+		// Check again after consuming comments
 		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
 			break
 		}
 
 		member := p.parseInterfaceMember()
 		if member != nil {
+			if doc != "" {
+				if d, ok := member.(Documented); ok {
+					d.SetDoc(doc)
+				}
+			}
 			members = append(members, member)
 		} else {
 			// Skip to next member or closing brace on error
@@ -649,16 +652,21 @@ func (p *DtsParser) parseClassDeclaration() Statement {
 
 	members := make([]ClassMember, 0, 8) // pre-allocate for typical class size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
-		// Skip any comments before class members (JSDoc, etc.)
-		p.skipComments()
+		// Capture leading JSDoc, if any, before the next class member.
+		doc := p.consumeLeadingDoc()
 
-		// Check again for closing brace or EOF after skipping comments
+		// Check again for closing brace or EOF after consuming comments
 		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
 			break
 		}
 
 		member := p.parseClassMember()
 		if member != nil {
+			if doc != "" {
+				if d, ok := member.(Documented); ok {
+					d.SetDoc(doc)
+				}
+			}
 			members = append(members, member)
 		} else {
 			// If parsing failed, consume at least one token to avoid infinite loop
@@ -737,16 +745,17 @@ func (p *DtsParser) parseNamespaceDeclaration() Statement {
 
 	statements := make([]Statement, 0, 8) // pre-allocate for typical namespace size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
-		// Skip comments before parsing statements
-		p.skipComments()
+		// Capture leading JSDoc before parsing the next statement.
+		doc := p.consumeLeadingDoc()
 
-		// Check again after skipping comments
+		// Check again after consuming comments
 		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
 			break
 		}
 
 		stmt := p.parseStatement()
 		if stmt != nil {
+			attachDoc(stmt, doc)
 			statements = append(statements, stmt)
 		} else {
 			// Skip token on error to avoid infinite loop
@@ -794,8 +803,15 @@ func (p *DtsParser) parseAmbientModuleDeclaration(startToken *Token) Statement {
 
 	statements := make([]Statement, 0, 8) // pre-allocate for typical module size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
+		doc := p.consumeLeadingDoc()
+
+		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
+			break
+		}
+
 		stmt := p.parseStatement()
 		if stmt != nil {
+			attachDoc(stmt, doc)
 			statements = append(statements, stmt)
 		} else {
 			// Skip token on error to avoid infinite loop
@@ -842,16 +858,16 @@ func (p *DtsParser) parseGlobalDeclaration() Statement {
 
 	statements := make([]Statement, 0, 8) // pre-allocate for typical global size
 	for p.peek().Type != CloseBrace && p.peek().Type != EndOfFile {
-		// Skip comments before parsing statements
-		p.skipComments()
+		doc := p.consumeLeadingDoc()
 
-		// Check again after skipping comments
+		// Check again after consuming comments
 		if p.peek().Type == CloseBrace || p.peek().Type == EndOfFile {
 			break
 		}
 
 		stmt := p.parseStatement()
 		if stmt != nil {
+			attachDoc(stmt, doc)
 			statements = append(statements, stmt)
 		} else {
 			// Skip token on error to avoid infinite loop

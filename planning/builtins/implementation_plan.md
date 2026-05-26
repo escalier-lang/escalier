@@ -16,10 +16,10 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 1   | Declaration-printer audit                            | FR14        | ✅      | —          | Audit test lives in [internal/printer/print_decl_audit_test.go](../../internal/printer/print_decl_audit_test.go); every in-scope form round-trips. Notes on converter-side syntax decisions below.                                                  |
 | 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, both binding shapes, single-class shortcut, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. One follow-up deferred to §7 — the FR5 "non-class package exports as namespace members on the same binding" surface. |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
-| 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | 🚧 | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. **Open:** §4.6 — method-elem overload resolution on class/interface declarations. Must close before §7 so converted `web:dom` methods (`createElement`, `createElementNS`, `addEventListener`, `getContext`, `querySelector`, …) dispatch correctly; until then §4.4's NS-keyed-overloads fixture is forced into a free-fn shape that the real DOM can't match. |
+| 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ⬜      | §1, §3     | Two tiny slices: a trio-idiom class (`Boolean`) and a small `declare namespace` block (e.g. `JSON`). AST-to-AST translation; emit to stdout; no partition logic. Exercises trio recognition + namespace flattening; emits `@js` decorators per §3. |
 | 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{std,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
-| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6, §4.6   | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. §4.6 must land first — the converted DOM/lib output is dense with same-named methods (`createElement`, `addEventListener`, `getContext`, …) that won't dispatch correctly until method-elem overload resolution works on class/interface declarations.                                                                                                                                                        |
+| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
 | 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "std:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
 | 9   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §4, §7, §8 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. Also migrate loader rule §3.4(4) (`@js` arg validation): move it out of the loader (currently reads `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go)) into a CI-only test under [internal/checker/tests/](../../internal/checker/tests/) that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Delete `js_globals.go` and the rule-4 branch in [js_decorator.go](../../internal/checker/js_decorator.go) in the same PR. Same CI-only test should add **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` (or `get`), never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable (today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime). Rule 5 shares the lib parser with rule 4, so doing them separately would duplicate the parse. |
 | 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | §9      | Implement adaptive diagnostic rendering (FR15) and the auto-import quick-fix (FR16); verify `Awaited<T>` source-level definition with documented-fallback policy; confirm intrinsic handlers stay checker-resident (FR13).                                                                                                          |
@@ -59,16 +59,6 @@ the source-of-truth
 while the legacy prelude is still live; §9 then swaps the prelude
 and deletes the legacy paths in a single cut (pre-1.0, no
 deprecation cycle); §10 adds the LSP / diagnostic tooling on top.
-
-**Why §7 also depends on §4.6.** §4.6 (method-elem overload
-resolution on class/interface declarations) is currently the
-only open piece of §4. The converter output from §6 will
-include classes with same-named methods on day one
-(`createElement`, `addEventListener`, `getContext`, …); landing
-those `.esc` files in §7 before §4.6 closes would commit
-declarations that don't dispatch correctly. §4.6 is therefore a
-direct prerequisite of §7, not just a transitive one through
-§8.
 
 **Why §8 precedes §9.** §9 deletes the legacy path in the same
 change that swaps the prelude, so existing fixtures must already
@@ -926,7 +916,16 @@ of `keyof T` / `T[K]` over the merged view. The spike
 scaffolding stays committed as a regression harness for any
 future implementation.
 
-### 4.6 Method-elem overload resolution on class/interface declarations
+### 4.6 Method-elem overload resolution on class/interface declarations ✅
+
+**Status.** Landed via PR-A (#652, `MethodElem.Signatures` slice),
+PR-B (#653, specificity comparator + free-fn intersection sort),
+and PR-C (#656, `MergeMethodOverloads` + class/interface
+elaboration call). Subtype-based specificity follow-up: #657.
+Inheritance + `implements` overload merging (the original PR-D)
+is tracked separately in
+[#651](https://github.com/escalier-lang/escalier/issues/651).
+The narrative below is preserved as the design record.
 
 The `FuncOverloads` path that resolves same-named free
 `declare fn`s by literal-narrowed arg types has no MethodElem
@@ -1390,15 +1389,24 @@ converter against the full lib set.
 **Location.** New directory `tools/dts_to_esc/` alongside
 existing `tools/gen_ast/` and `tools/gen_types/`.
 
-### 5.0 Precursor: `dts_parser` JSDoc retention
+### 5.0 Precursor: `dts_parser` JSDoc retention ✅
 
-Verify that [internal/dts_parser/](../../internal/dts_parser/)
-attaches leading JSDoc comments to declaration AST nodes. If it
-does not, add this as a precursor before the converter can do
-the FR10 step 6 pass-through. Touch points:
+Landed. Leading JSDoc (`/** ... */`) is now attached to top-level
+declarations (`VarDecl`, `FuncDecl`, `ClassDecl`, `InterfaceDecl`,
+`TypeDecl`, `EnumDecl`, `NamespaceDecl`, `ModuleDecl`, `GlobalDecl`)
+and to interface / class / object-type members (`MethodDecl`,
+`PropertyDecl`, getters/setters, `ConstructorDecl`, `IndexSignature`,
+and their `*Signature` interface analogues) via a `Doc string` field
+and a `Documented` interface (`SetDoc(string)`). Pre-existing tests
+(misnamed `TestCommentsInObjectTypes` / `TestRealWorldSymbolInterface`)
+verified comments did not crash the parser; they did not assert
+retention, and the snapshots showed comments were discarded everywhere.
+A new `TestTopLevelJSDocRetention` in
 [internal/dts_parser/comment_test.go](../../internal/dts_parser/comment_test.go)
-already exists for comments; check whether leading JSDoc on a
-declaration is in the AST shape or needs attaching.
+locks in the retention rules: only `/** ... */` blocks immediately
+preceding a declaration attach; line comments and plain `/* */`
+blocks do not; intervening non-doc comments reset the captured doc;
+the most recent contiguous JSDoc wins; `/**/` is not JSDoc.
 
 **Work items.**
 
