@@ -49,11 +49,3 @@ func (c *Checker) Check(ctx Context, t1, t2 type_system.Type) bool {
 	ctx.QueryUnify = true
 	return len(c.unifyInner(ctx, t1, t2, make(unifySeen))) == 0
 }
-
-// MutuallyAssignable reports whether t1 and t2 are structural subtypes
-// of each other (i.e. equivalent modulo aliasing). Equivalent to
-// Check(t1, t2) && Check(t2, t1); exposed as a sibling so callers
-// don't forget the second direction.
-func (c *Checker) MutuallyAssignable(ctx Context, t1, t2 type_system.Type) bool {
-	return c.Check(ctx, t1, t2) && c.Check(ctx, t2, t1)
-}
