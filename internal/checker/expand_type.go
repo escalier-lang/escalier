@@ -92,12 +92,14 @@ func isSymbolIndexKey(key MemberAccessKey) bool {
 func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool {
 	typeAlias := t.TypeAlias
 	if typeAlias == nil {
-		// Scope is required to resolve an unbound qualified name.
-		// Callers without a scope (e.g. the structural Check predicate
-		// invoked from overload specificity) pass a zero Context — in
-		// that case the ref simply isn't expandable, and the caller
-		// falls through to its tiebreaker.
-		if ctx.Scope == nil {
+		// The structural Check predicate (e.g. invoked from overload
+		// specificity) can be called with a zero Context, so we have no
+		// scope to resolve an unbound qualified name. Fail closed — the
+		// ref isn't expandable in query mode, and the caller falls
+		// through to its tiebreaker. Outside query mode a nil scope
+		// here would be a bug, so let resolveQualifiedTypeAlias panic
+		// loudly rather than silently degrading.
+		if ctx.QueryUnify {
 			return false
 		}
 		typeAlias = resolveQualifiedTypeAlias(ctx, t.Name)
@@ -507,11 +509,12 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		// First, check if TypeAlias is already set on the TypeRefType
 		typeAlias := t.TypeAlias
 		if typeAlias == nil {
-			// Scope-less callers (e.g. the structural Check predicate
-			// invoked from overload specificity) pass a zero Context.
-			// Treat unresolvable refs as non-expandable rather than
-			// dereferencing a nil scope.
-			if v.ctx.Scope == nil {
+			// In query mode (Check) the caller may have passed a zero
+			// Context with no scope; treat the ref as non-expandable
+			// rather than dereferencing nil. Outside query mode this
+			// would be a bug, so fall through and let
+			// resolveQualifiedTypeAlias panic loudly.
+			if v.ctx.QueryUnify {
 				return nil
 			}
 			typeAlias = resolveQualifiedTypeAlias(v.ctx, t.Name)

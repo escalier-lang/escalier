@@ -297,12 +297,13 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, seen unifySe
 		// would corrupt Point's alias if unification mutated the shared pointer),
 		// and unifyInner provides Prune + widening on the expanded result.
 		// All three expansion paths below need a real Scope to resolve
-		// qualified type names and run mapped-type elaboration. Scope-less
-		// callers (the structural Check predicate invoked from overload
-		// specificity) pass a zero Context — skip expansion in that case
-		// so the unifier falls through to CannotUnifyTypesError and the
-		// caller treats the pair as incomparable.
-		if ctx.Scope == nil {
+		// qualified type names and run mapped-type elaboration. In query
+		// mode (Check), callers may have passed a zero Context with no
+		// scope — skip expansion so the unifier falls through to
+		// CannotUnifyTypesError and the caller treats the pair as
+		// incomparable. Outside query mode a nil scope here would be a
+		// bug; the expansion paths panic loudly so we catch it.
+		if ctx.QueryUnify {
 			return []Error{&CannotUnifyTypesError{T1: t1, T2: t2}}
 		}
 
