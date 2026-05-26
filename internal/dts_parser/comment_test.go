@@ -166,7 +166,8 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 			input: "// not JSDoc\ndeclare class Foo {}",
 			assertDoc: func(t *testing.T, m *Module) {
 				require.Len(t, m.Statements, 1)
-				c := m.Statements[0].(*ClassDecl)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
 				require.Equal(t, "", c.Doc)
 			},
 		},
@@ -175,7 +176,8 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 			input: "/* not JSDoc */\ndeclare class Foo {}",
 			assertDoc: func(t *testing.T, m *Module) {
 				require.Len(t, m.Statements, 1)
-				c := m.Statements[0].(*ClassDecl)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
 				require.Equal(t, "", c.Doc)
 			},
 		},
@@ -184,7 +186,8 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 			input: "/** dropped */\n// noise\ndeclare class Foo {}",
 			assertDoc: func(t *testing.T, m *Module) {
 				require.Len(t, m.Statements, 1)
-				c := m.Statements[0].(*ClassDecl)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
 				require.Equal(t, "", c.Doc)
 			},
 		},
@@ -193,7 +196,8 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 			input: "/** earlier */\n/** later */\ndeclare class Foo {}",
 			assertDoc: func(t *testing.T, m *Module) {
 				require.Len(t, m.Statements, 1)
-				c := m.Statements[0].(*ClassDecl)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
 				require.Equal(t, "/** later */", c.Doc)
 			},
 		},
@@ -202,7 +206,8 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 			input: "declare class Foo {\n    /** Method doc. */\n    bar(): void;\n}",
 			assertDoc: func(t *testing.T, m *Module) {
 				require.Len(t, m.Statements, 1)
-				c := m.Statements[0].(*ClassDecl)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
 				require.Len(t, c.Members, 1)
 				md, ok := c.Members[0].(*MethodDecl)
 				require.True(t, ok, "expected MethodDecl, got %T", c.Members[0])
@@ -214,7 +219,8 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 			input: "/**/\ndeclare class Foo {}",
 			assertDoc: func(t *testing.T, m *Module) {
 				require.Len(t, m.Statements, 1)
-				c := m.Statements[0].(*ClassDecl)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
 				require.Equal(t, "", c.Doc)
 			},
 		},
@@ -223,7 +229,8 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 			input: "declare class Foo {\n    /** Ctor doc. */\n    constructor(x: number);\n}",
 			assertDoc: func(t *testing.T, m *Module) {
 				require.Len(t, m.Statements, 1)
-				c := m.Statements[0].(*ClassDecl)
+				c, ok := m.Statements[0].(*ClassDecl)
+				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
 				require.Len(t, c.Members, 1)
 				ctor, ok := c.Members[0].(*ConstructorDecl)
 				require.True(t, ok, "expected ConstructorDecl, got %T", c.Members[0])
@@ -238,6 +245,21 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				md, ok := m.Statements[0].(*ModuleDecl)
 				require.True(t, ok, "expected ModuleDecl, got %T", m.Statements[0])
 				require.Equal(t, "/** Module doc. */", md.Doc)
+			},
+		},
+		{
+			name:  "JSDoc on property in object type",
+			input: "type Foo = {\n    /** prop doc */\n    x: number;\n}",
+			assertDoc: func(t *testing.T, m *Module) {
+				require.Len(t, m.Statements, 1)
+				td, ok := m.Statements[0].(*TypeDecl)
+				require.True(t, ok, "expected TypeDecl, got %T", m.Statements[0])
+				ot, ok := td.TypeAnn.(*ObjectType)
+				require.True(t, ok, "expected ObjectType, got %T", td.TypeAnn)
+				require.Len(t, ot.Members, 1)
+				ps, ok := ot.Members[0].(*PropertySignature)
+				require.True(t, ok, "expected PropertySignature, got %T", ot.Members[0])
+				require.Equal(t, "/** prop doc */", ps.Doc)
 			},
 		},
 		{
