@@ -1756,13 +1756,13 @@ B. **`--check` mode + re-run semantics** (6.4). Adds additive
    declarations / members) and the CI-facing read-only check
    (missing declarations, signature / property-type drift via
    the checker's assignability rules). Reviewable on its own
-   once #1 has produced a committed tree to check against;
+   once A has produced a committed tree to check against;
    touches checker internals that are unrelated to partition
    routing.
 C. **TS-version-bump workflow** (6.6). Wires the
    `bootstrap` / `regenerate` / `check` subcommands on
    `tools/dts_to_esc/` and adds `tools/dts_to_esc/README.md`
-   documenting the bump steps. Small; lands after #1 and #2
+   documenting the bump steps. Small; lands after A and B
    have settled the underlying behaviors.
 
 6.5 (`throws` bootstrap policy) is scope/policy rather than

@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
 
@@ -166,8 +167,8 @@ type trioInfo struct {
 // the same instance name) so the walk can skip them.
 type trioTable struct {
 	byName       map[string]*trioInfo
-	consumedCtor map[string]bool // ctor interface name -> true
-	consumedVar  map[string]bool // var binding name -> true
+	consumedCtor set.Set[string] // ctor interface names
+	consumedVar  set.Set[string] // var binding names
 }
 
 // detectTrios scans a module's top-level statements for the
@@ -179,8 +180,8 @@ type trioTable struct {
 func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	t := &trioTable{
 		byName:       make(map[string]*trioInfo),
-		consumedCtor: make(map[string]bool),
-		consumedVar:  make(map[string]bool),
+		consumedCtor: set.NewSet[string](),
+		consumedVar:  set.NewSet[string](),
 	}
 
 	interfaces := make(map[string]*dts_parser.InterfaceDecl)
@@ -225,8 +226,8 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 			constructor: ctor,
 			binding:     v,
 		}
-		t.consumedCtor[ctorName] = true
-		t.consumedVar[name] = true
+		t.consumedCtor.Add(ctorName)
+		t.consumedVar.Add(name)
 	}
 
 	return t
@@ -295,7 +296,7 @@ func convertStandaloneStmt(
 		return out, nil
 
 	case *dts_parser.InterfaceDecl:
-		if trios.consumedCtor[s.Name.Name] {
+		if trios.consumedCtor.Contains(s.Name.Name) {
 			return nil, nil
 		}
 		if info, ok := trios.byName[s.Name.Name]; ok {
@@ -322,7 +323,7 @@ func convertStandaloneStmt(
 		return []docDecl{{doc: s.Doc, decl: decl}}, nil
 
 	case *dts_parser.VarDecl:
-		if trios.consumedVar[s.Name.Name] {
+		if trios.consumedVar.Contains(s.Name.Name) {
 			return nil, nil
 		}
 		decl, err := convertVarDecl(s)
