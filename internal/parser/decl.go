@@ -612,7 +612,16 @@ func (p *Parser) parseConstructorElem(
 
 // parseClassElem parses a single class element (field, method, static, etc.)
 func (p *Parser) parseClassElem() ast.ClassElem {
+	// TODO(#663): attach JSDoc to the parsed elem's Doc field instead
+	// of dropping it. The five class-elem AST types carry a Doc string,
+	// the printer emits it, but the parser currently throws it away —
+	// so JSDoc on hand-authored class members silently fails to round
+	// trip. Port dts_parser.consumeLeadingDoc and wire it through here.
 	token := p.lexer.peek()
+	for token.Type == LineComment || token.Type == BlockComment {
+		p.lexer.consume()
+		token = p.lexer.peek()
+	}
 
 	isStatic := false
 	isAsync := false

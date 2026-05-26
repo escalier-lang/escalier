@@ -98,6 +98,7 @@ type FieldElem struct {
 	Private  bool // true if this field is private
 	Readonly bool // true if this field is readonly
 	Optional bool // true if this field is declared `name?: T`
+	Doc      string
 	Span_    Span
 }
 
@@ -122,6 +123,7 @@ type MethodElem struct {
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static method
 	Private  bool            // true if this is a private method
+	Doc      string
 	Span_    Span
 }
 
@@ -144,6 +146,7 @@ type GetterElem struct {
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static getter
 	Private  bool            // true if this is a private getter
+	Doc      string
 	Span_    Span
 }
 
@@ -172,6 +175,7 @@ type ConstructorElem struct {
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if absent. Carried for diagnostics — a non-nil Lifetime is rejected by validation.
 	Private  bool            // reserved for future "Private Constructors" work
+	Doc      string
 	Span_    Span
 }
 
@@ -193,6 +197,7 @@ type SetterElem struct {
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static setter
 	Private  bool            // true if this is a private setter
+	Doc      string
 	Span_    Span
 }
 

@@ -269,7 +269,31 @@ func (p *Printer) printClassDecl(decl *ast.ClassDecl) {
 	p.writeString("}")
 }
 
+// classElemDoc returns the retained leading JSDoc (verbatim with its
+// `/** ... */` delimiters) attached to a class elem, or "" if absent.
+// Set today only by the dts_to_esc converter — handwritten Escalier
+// sources don't yet parse leading member docs.
+func classElemDoc(elem ast.ClassElem) string {
+	switch e := elem.(type) {
+	case *ast.FieldElem:
+		return e.Doc
+	case *ast.MethodElem:
+		return e.Doc
+	case *ast.GetterElem:
+		return e.Doc
+	case *ast.SetterElem:
+		return e.Doc
+	case *ast.ConstructorElem:
+		return e.Doc
+	}
+	return ""
+}
+
 func (p *Printer) printClassElem(elem ast.ClassElem) {
+	if doc := classElemDoc(elem); doc != "" {
+		p.writeString(doc)
+		p.newline()
+	}
 	switch e := elem.(type) {
 	case *ast.FieldElem:
 		if e.Static {

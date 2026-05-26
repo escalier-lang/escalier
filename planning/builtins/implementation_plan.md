@@ -17,7 +17,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, both binding shapes, single-class shortcut, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. One follow-up deferred to §7 — the FR5 "non-class package exports as namespace members on the same binding" surface. |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
-| 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ⬜      | §1, §3     | Two tiny slices: a trio-idiom class (`Boolean`) and a small `declare namespace` block (e.g. `JSON`). AST-to-AST translation; emit to stdout; no partition logic. Exercises trio recognition + namespace flattening; emits `@js` decorators per §3. |
+| 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `interop.ConvertToStandaloneModule` ([internal/interop/dts_to_esc.go](../../internal/interop/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/interop/dts_to_esc_test.go](../../internal/interop/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
 | 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{std,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
 | 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
 | 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "std:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
@@ -1736,6 +1736,38 @@ without re-architecture.
 idempotent (byte-identical on re-run); the partition matches
 [FR1](requirements.md#fr1-no-ambient-set-shape-loaded-vs-named-bindings)
 member-for-member.
+
+### 6.7 PR sequencing
+
+§6 lands as three PRs after §5 is in. The split keeps each
+review surface focused; bundling is possible but loses the
+isolation between partition-routing churn and the `--check`
+assignability logic that touches checker rules.
+
+A. **Partition table + routing + output layout** (6.1, 6.2, 6.3).
+   Takes the §5 converter from "stdout, one file" to "full
+   `lib.*.d.ts` set, partitioned tree under
+   `internal/interop/data/{std,web}/`". Lands the hand-maintained
+   Go partition map, registry routing (single `web:dom`, sibling
+   `web:*` packages, well-known-symbol stay-put rule), the
+   unmapped-symbol fail-safe, and the `node/` empty directory.
+B. **`--check` mode + re-run semantics** (6.4). Adds additive
+   write mode (sticky hand-edits, add-only for new TS-side
+   declarations / members) and the CI-facing read-only check
+   (missing declarations, signature / property-type drift via
+   the checker's assignability rules). Reviewable on its own
+   once #1 has produced a committed tree to check against;
+   touches checker internals that are unrelated to partition
+   routing.
+C. **TS-version-bump workflow** (6.6). Wires the
+   `bootstrap` / `regenerate` / `check` subcommands on
+   `tools/dts_to_esc/` and adds `tools/dts_to_esc/README.md`
+   documenting the bump steps. Small; lands after #1 and #2
+   have settled the underlying behaviors.
+
+6.5 (`throws` bootstrap policy) is scope/policy rather than
+code — fold into whichever PR is convenient, or defer to §7
+where the hand-curation actually happens.
 
 ---
 
