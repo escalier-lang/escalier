@@ -117,6 +117,13 @@ type Decl interface {
 	Node
 }
 
+// Documented is implemented by any node that can carry a leading JSDoc
+// (`/** ... */`) comment. The string is the raw comment text including
+// delimiters; consumers strip tags as needed.
+type Documented interface {
+	SetDoc(string)
+}
+
 func (*VarDecl) isDecl()       {}
 func (*FuncDecl) isDecl()      {}
 func (*ClassDecl) isDecl()     {}
@@ -133,6 +140,7 @@ type VarDecl struct {
 	Name     *Ident
 	TypeAnn  TypeAnn
 	Readonly bool // for const declarations
+	Doc      string
 	export   bool
 	default_ bool
 	declare  bool
@@ -146,12 +154,14 @@ func (d *VarDecl) Default() bool        { return d.default_ }
 func (d *VarDecl) SetDefault(def bool)  { d.default_ = def }
 func (d *VarDecl) Declare() bool        { return d.declare }
 func (d *VarDecl) SetDeclare(decl bool) { d.declare = decl }
+func (d *VarDecl) SetDoc(doc string)    { d.Doc = doc }
 
 type FuncDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	Params     []*Param
 	ReturnType TypeAnn
+	Doc        string
 	export     bool
 	default_   bool
 	declare    bool
@@ -165,6 +175,7 @@ func (d *FuncDecl) Default() bool        { return d.default_ }
 func (d *FuncDecl) SetDefault(def bool)  { d.default_ = def }
 func (d *FuncDecl) Declare() bool        { return d.declare }
 func (d *FuncDecl) SetDeclare(decl bool) { d.declare = decl }
+func (d *FuncDecl) SetDoc(doc string)    { d.Doc = doc }
 
 type ClassDecl struct {
 	Name       *Ident
@@ -177,6 +188,7 @@ type ClassDecl struct {
 	Implements []TypeAnn
 	Members    []ClassMember
 	Abstract   bool
+	Doc        string
 	export     bool
 	default_   bool
 	declare    bool
@@ -190,6 +202,7 @@ func (d *ClassDecl) Default() bool        { return d.default_ }
 func (d *ClassDecl) SetDefault(def bool)  { d.default_ = def }
 func (d *ClassDecl) Declare() bool        { return d.declare }
 func (d *ClassDecl) SetDeclare(decl bool) { d.declare = decl }
+func (d *ClassDecl) SetDoc(doc string)    { d.Doc = doc }
 
 type InterfaceDecl struct {
 	Name       *Ident
@@ -197,6 +210,7 @@ type InterfaceDecl struct {
 	// TODO(#559): tighten Extends to []*TypeReference (see ClassDecl).
 	Extends    []TypeAnn
 	Members    []InterfaceMember
+	Doc        string
 	export     bool
 	default_   bool
 	declare    bool
@@ -210,11 +224,13 @@ func (d *InterfaceDecl) Default() bool        { return d.default_ }
 func (d *InterfaceDecl) SetDefault(def bool)  { d.default_ = def }
 func (d *InterfaceDecl) Declare() bool        { return d.declare }
 func (d *InterfaceDecl) SetDeclare(decl bool) { d.declare = decl }
+func (d *InterfaceDecl) SetDoc(doc string)    { d.Doc = doc }
 
 type TypeDecl struct {
 	Name       *Ident
 	TypeParams []*TypeParam
 	TypeAnn    TypeAnn
+	Doc        string
 	export     bool
 	default_   bool
 	declare    bool
@@ -228,11 +244,13 @@ func (d *TypeDecl) Default() bool        { return d.default_ }
 func (d *TypeDecl) SetDefault(def bool)  { d.default_ = def }
 func (d *TypeDecl) Declare() bool        { return d.declare }
 func (d *TypeDecl) SetDeclare(decl bool) { d.declare = decl }
+func (d *TypeDecl) SetDoc(doc string)    { d.Doc = doc }
 
 type EnumDecl struct {
 	Name     *Ident
 	Members  []*EnumMember
 	Const    bool
+	Doc      string
 	export   bool
 	default_ bool
 	declare  bool
@@ -246,6 +264,7 @@ func (d *EnumDecl) Default() bool        { return d.default_ }
 func (d *EnumDecl) SetDefault(def bool)  { d.default_ = def }
 func (d *EnumDecl) Declare() bool        { return d.declare }
 func (d *EnumDecl) SetDeclare(decl bool) { d.declare = decl }
+func (d *EnumDecl) SetDoc(doc string)    { d.Doc = doc }
 
 type EnumMember struct {
 	Name  *Ident
@@ -258,6 +277,7 @@ func (e *EnumMember) Span() ast.Span { return e.span }
 type NamespaceDecl struct {
 	Name       *Ident
 	Statements []Statement
+	Doc        string
 	export     bool
 	default_   bool
 	declare    bool
@@ -271,21 +291,26 @@ func (d *NamespaceDecl) Default() bool        { return d.default_ }
 func (d *NamespaceDecl) SetDefault(def bool)  { d.default_ = def }
 func (d *NamespaceDecl) Declare() bool        { return d.declare }
 func (d *NamespaceDecl) SetDeclare(decl bool) { d.declare = decl }
+func (d *NamespaceDecl) SetDoc(doc string)    { d.Doc = doc }
 
 type ModuleDecl struct {
 	Name       string // module name as string literal
 	Statements []Statement
+	Doc        string
 	span       ast.Span
 }
 
-func (d *ModuleDecl) Span() ast.Span { return d.span }
+func (d *ModuleDecl) Span() ast.Span    { return d.span }
+func (d *ModuleDecl) SetDoc(doc string) { d.Doc = doc }
 
 type GlobalDecl struct {
 	Statements []Statement
+	Doc        string
 	span       ast.Span
 }
 
-func (d *GlobalDecl) Span() ast.Span { return d.span }
+func (d *GlobalDecl) Span() ast.Span    { return d.span }
+func (d *GlobalDecl) SetDoc(doc string) { d.Doc = doc }
 
 
 // ============================================================================
@@ -391,10 +416,12 @@ func (*SetterSignature) isInterfaceMember()    {}
 type ConstructorDecl struct {
 	Params    []*Param
 	Modifiers Modifiers
+	Doc       string
 	span      ast.Span
 }
 
-func (c *ConstructorDecl) Span() ast.Span { return c.span }
+func (c *ConstructorDecl) Span() ast.Span    { return c.span }
+func (c *ConstructorDecl) SetDoc(doc string) { c.Doc = doc }
 
 type MethodDecl struct {
 	Name       PropertyKey
@@ -403,56 +430,68 @@ type MethodDecl struct {
 	ReturnType TypeAnn
 	Modifiers  Modifiers
 	Optional   bool
+	Doc        string
 	span       ast.Span
 }
 
-func (m *MethodDecl) Span() ast.Span { return m.span }
+func (m *MethodDecl) Span() ast.Span    { return m.span }
+func (m *MethodDecl) SetDoc(doc string) { m.Doc = doc }
 
 type PropertyDecl struct {
 	Name      PropertyKey
 	TypeAnn   TypeAnn
 	Modifiers Modifiers
 	Optional  bool
+	Doc       string
 	span      ast.Span
 }
 
-func (p *PropertyDecl) Span() ast.Span { return p.span }
+func (p *PropertyDecl) Span() ast.Span    { return p.span }
+func (p *PropertyDecl) SetDoc(doc string) { p.Doc = doc }
 
 type GetterDecl struct {
 	Name       PropertyKey
 	ReturnType TypeAnn
 	Modifiers  Modifiers
+	Doc        string
 	span       ast.Span
 }
 
-func (g *GetterDecl) Span() ast.Span { return g.span }
+func (g *GetterDecl) Span() ast.Span    { return g.span }
+func (g *GetterDecl) SetDoc(doc string) { g.Doc = doc }
 
 type SetterDecl struct {
 	Name      PropertyKey
 	Param     *Param
 	Modifiers Modifiers
+	Doc       string
 	span      ast.Span
 }
 
-func (s *SetterDecl) Span() ast.Span { return s.span }
+func (s *SetterDecl) Span() ast.Span    { return s.span }
+func (s *SetterDecl) SetDoc(doc string) { s.Doc = doc }
 
 type CallSignature struct {
 	TypeParams []*TypeParam
 	Params     []*Param
 	ReturnType TypeAnn
+	Doc        string
 	span       ast.Span
 }
 
-func (c *CallSignature) Span() ast.Span { return c.span }
+func (c *CallSignature) Span() ast.Span    { return c.span }
+func (c *CallSignature) SetDoc(doc string) { c.Doc = doc }
 
 type ConstructSignature struct {
 	TypeParams []*TypeParam
 	Params     []*Param
 	ReturnType TypeAnn
+	Doc        string
 	span       ast.Span
 }
 
-func (c *ConstructSignature) Span() ast.Span { return c.span }
+func (c *ConstructSignature) Span() ast.Span    { return c.span }
+func (c *ConstructSignature) SetDoc(doc string) { c.Doc = doc }
 
 type MethodSignature struct {
 	Name       PropertyKey
@@ -460,46 +499,56 @@ type MethodSignature struct {
 	Params     []*Param
 	ReturnType TypeAnn
 	Optional   bool
+	Doc        string
 	span       ast.Span
 }
 
-func (m *MethodSignature) Span() ast.Span { return m.span }
+func (m *MethodSignature) Span() ast.Span    { return m.span }
+func (m *MethodSignature) SetDoc(doc string) { m.Doc = doc }
 
 type PropertySignature struct {
 	Name     PropertyKey
 	TypeAnn  TypeAnn
 	Optional bool
 	Readonly bool
+	Doc      string
 	span     ast.Span
 }
 
-func (p *PropertySignature) Span() ast.Span { return p.span }
+func (p *PropertySignature) Span() ast.Span    { return p.span }
+func (p *PropertySignature) SetDoc(doc string) { p.Doc = doc }
 
 type GetterSignature struct {
 	Name       PropertyKey
 	ReturnType TypeAnn
+	Doc        string
 	span       ast.Span
 }
 
-func (g *GetterSignature) Span() ast.Span { return g.span }
+func (g *GetterSignature) Span() ast.Span    { return g.span }
+func (g *GetterSignature) SetDoc(doc string) { g.Doc = doc }
 
 type SetterSignature struct {
 	Name  PropertyKey
 	Param *Param
+	Doc   string
 	span  ast.Span
 }
 
-func (s *SetterSignature) Span() ast.Span { return s.span }
+func (s *SetterSignature) Span() ast.Span    { return s.span }
+func (s *SetterSignature) SetDoc(doc string) { s.Doc = doc }
 
 type IndexSignature struct {
 	KeyName   *Ident
 	KeyType   TypeAnn // must be string, number, or symbol
 	ValueType TypeAnn
 	Readonly  bool
+	Doc       string
 	span      ast.Span
 }
 
-func (i *IndexSignature) Span() ast.Span { return i.span }
+func (i *IndexSignature) Span() ast.Span    { return i.span }
+func (i *IndexSignature) SetDoc(doc string) { i.Doc = doc }
 
 // PropertyKey represents a property key, which can be an identifier, string, number, or computed
 type PropertyKey interface {

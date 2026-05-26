@@ -41,13 +41,21 @@ func (p *DtsParser) ParseModule() (*Module, []*Error) {
 			break
 		}
 
-		// Skip comments
-		if token.Type == LineComment || token.Type == BlockComment {
+		// Skip semicolons (optional statement terminators)
+		if token.Type == Semicolon {
 			p.consume()
 			continue
 		}
 
-		// Skip semicolons (optional statement terminators)
+		// Capture any leading JSDoc and stray comments before the next
+		// statement; consumeLeadingDoc returns "" if no JSDoc directly
+		// precedes the statement token.
+		doc := p.consumeLeadingDoc()
+
+		token = p.peek()
+		if token.Type == EndOfFile {
+			break
+		}
 		if token.Type == Semicolon {
 			p.consume()
 			continue
@@ -55,6 +63,7 @@ func (p *DtsParser) ParseModule() (*Module, []*Error) {
 
 		stmt := p.parseStatement()
 		if stmt != nil {
+			attachDoc(stmt, doc)
 			statements = append(statements, stmt)
 			// Consume optional trailing semicolon after statement
 			if p.peek().Type == Semicolon {
@@ -105,6 +114,53 @@ func (p *DtsParser) reportError(span ast.Span, message string) {
 func (p *DtsParser) skipComments() {
 	for p.peek().Type == LineComment || p.peek().Type == BlockComment {
 		p.consume()
+	}
+}
+
+// consumeLeadingDoc consumes any comment tokens preceding the next non-
+// comment token and returns the most recent contiguous JSDoc block (a
+// `/** ... */` block comment) immediately before that token, or "" if
+// there is none. Non-JSDoc comments interleaved between a JSDoc block
+// and the next token reset the captured doc — JSDoc must be the
+// immediately preceding comment to attach.
+func (p *DtsParser) consumeLeadingDoc() string {
+	var doc string
+	for {
+		t := p.peek()
+		if t.Type == BlockComment {
+			if isJSDoc(t.Value) {
+				doc = t.Value
+			} else {
+				doc = ""
+			}
+			p.consume()
+			continue
+		}
+		if t.Type == LineComment {
+			doc = ""
+			p.consume()
+			continue
+		}
+		return doc
+	}
+}
+
+// isJSDoc reports whether a block-comment token value is a JSDoc
+// comment: must start with `/**` and have content beyond the leading
+// stars (excludes `/**/`).
+func isJSDoc(value string) bool {
+	return len(value) > 4 && strings.HasPrefix(value, "/**")
+}
+
+// attachDoc sets doc on n if n implements Documented and doc is
+// non-empty. n is any AST node — typically a Statement, ClassMember,
+// or InterfaceMember.
+func attachDoc(n any, doc string) {
+	if doc == "" {
+		return
+	}
+	if d, ok := n.(Documented); ok {
+		d.SetDoc(doc)
 	}
 }
 

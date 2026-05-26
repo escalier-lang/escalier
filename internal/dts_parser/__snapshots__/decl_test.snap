@@ -3382,6 +3382,7 @@
                         Kind: 6,
                         span: 1:51-1:57,
                     },
+                    Doc: "/** Returns string */",
                     span: 1:39-1:57,
                 },
                 &dts_parser.MethodSignature{
@@ -3393,6 +3394,7 @@
                         Kind: 10,
                         span: 1:88-1:94,
                     },
+                    Doc: "/** Returns value */",
                     span: 1:77-1:94,
                 },
             },
@@ -4203,6 +4205,7 @@
                         },
                         span: 1:82-1:99,
                     },
+                    Doc: "/** [MDN Reference](https://example.com) */",
                     span: 1:66-1:100,
                 },
                 &dts_parser.FuncDecl{
@@ -4230,6 +4233,7 @@
                         },
                         span: 1:149-1:161,
                     },
+                    Doc: "/** Another comment */",
                     span: 1:121-1:162,
                 },
             },
