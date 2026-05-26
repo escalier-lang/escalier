@@ -923,14 +923,17 @@ func TestFunctionOverloads(t *testing.T) {
 			expectedVars: map[string]string{},
 			wantErr:      true,
 		},
-		"overload returns first matching signature": {
+		"overload returns most specific matching signature": {
+			// Arm 2's `number` is a structural subtype of arm 1's
+			// `string | number`, so the comparator ranks arm 2 first
+			// and `process(42)` dispatches to it.
 			input: `
 				declare fn process(value: string | number) -> string
 				declare fn process(value: number) -> number
 				val result = process(42)
 			`,
 			expectedVars: map[string]string{
-				"result": "string",
+				"result": "number",
 			},
 			wantErr: false,
 		},
