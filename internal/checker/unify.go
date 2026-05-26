@@ -1297,10 +1297,16 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			for _, t2Part := range intersection2.Types {
 				found := false
 				for _, t1Part := range intersection1.Types {
+					// Check is side-effect-free and skips lifetime
+					// reconciliation, so a true result doesn't guarantee
+					// the real unify will succeed. Commit only if the
+					// follow-up unifyInner also has no errors; otherwise
+					// fall through to the clone-probe.
 					if c.Check(ctx, t1Part, t2Part) {
-						c.unifyInner(ctx, t1Part, t2Part, seen)
-						found = true
-						break
+						if errs := c.unifyInner(ctx, t1Part, t2Part, seen); len(errs) == 0 {
+							found = true
+							break
+						}
 					}
 					varMapping := make(map[int]*type_system.TypeVarType)
 					t1Clone := c.deepCloneType(t1Part, varMapping)
@@ -1343,9 +1349,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		// commit without the clone-probe allocation.
 		var allErrors []Error
 		for _, part := range intersection.Types {
+			// Check is side-effect-free and skips lifetime reconciliation,
+			// so a true result doesn't guarantee the real unify will
+			// succeed. Commit only if the follow-up unifyInner also has
+			// no errors; otherwise fall through to the clone-probe.
 			if c.Check(ctx, part, t2) {
-				c.unifyInner(ctx, part, t2, seen)
-				return nil
+				if errs := c.unifyInner(ctx, part, t2, seen); len(errs) == 0 {
+					return nil
+				}
 			}
 			varMapping := make(map[int]*type_system.TypeVarType)
 			partClone := c.deepCloneType(part, varMapping)
@@ -1520,9 +1531,14 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		// succeeds on the originals, no binding is required and we can
 		// commit without the clone-probe allocation.
 		for _, unionType := range union.Types {
+			// Check is side-effect-free and skips lifetime reconciliation,
+			// so a true result doesn't guarantee the real unify will
+			// succeed. Commit only if the follow-up unifyInner also has
+			// no errors; otherwise fall through to the clone-probe.
 			if c.Check(ctx, t1, unionType) {
-				c.unifyInner(ctx, t1, unionType, seen)
-				return nil
+				if errs := c.unifyInner(ctx, t1, unionType, seen); len(errs) == 0 {
+					return nil
+				}
 			}
 			varMapping := make(map[int]*type_system.TypeVarType)
 			t1Clone := c.deepCloneType(t1, varMapping)
