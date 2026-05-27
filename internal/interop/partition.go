@@ -188,6 +188,105 @@ var stdPackages = []struct {
 // Standalone web sibling packages, per the §6.1 table. The DOM mass
 // (lib.dom.d.ts symbols not enumerated here) routes to web:dom via
 // DOMResidualSources below.
+//
+// MDN's Web API index (https://developer.mozilla.org/en-US/docs/Web/API)
+// lists many APIs that don't get a dedicated web:* package here.
+// Excluding experimental and deprecated entries, the uncovered set is
+// split into two groups:
+//
+//  1. Absorbed by the web:dom catch-all because their interfaces are
+//     declared in lib.dom.d.ts (per §4.2 the entire DOM/HTML/CSSOM/
+//     observer/event tree lives in one package):
+//
+//     - Beacon API
+//     - Broadcast Channel API
+//     - Canvas API
+//     - Channel Messaging API
+//     - Clipboard API
+//     - Console API
+//     - Credential Management API
+//     - CSS Custom Highlight API
+//     - CSS Font Loading API
+//     - CSS Object Model (CSSOM)
+//     - CSSOM view API
+//     - Device orientation events
+//     - Fullscreen API
+//     - Gamepad API
+//     - Geolocation API
+//     - Geometry interfaces
+//     - History API
+//     - HTML Drag and Drop API
+//     - HTML DOM API
+//     - Intersection Observer API
+//     - Media Capabilities API
+//     - Media Capture and Streams API
+//     - Media Session API
+//     - Media Source API
+//     - MediaStream Image Capture API
+//     - MediaStream Recording API
+//     - Mutation Observer (part of DOM)
+//     - Navigation API
+//     - Notifications API
+//     - Page Visibility API
+//     - Permissions API
+//     - Picture-in-Picture API
+//     - Pointer events
+//     - Pointer Lock API
+//     - Popover API
+//     - Reporting API
+//     - Resize Observer API
+//     - Screen Capture API
+//     - Screen Orientation API
+//     - Screen Wake Lock API
+//     - Selection API
+//     - Server-sent events
+//     - SVG API
+//     - Touch events
+//     - UI Events
+//     - URL Pattern API
+//     - Vibration API
+//     - View Transition API
+//     - Web Animations API
+//     - Web Components (custom-element activation deferred per FR7/FR9)
+//     - Web Share API
+//     - Web Speech API
+//     - WebVTT API
+//     - XMLHttpRequest API
+//
+//  2. Not in lib.dom.d.ts today, so no Escalier symbols exist —
+//     partition entries will be needed if/when TS ships them:
+//
+//     - Background Synchronization API
+//     - Background Tasks API
+//     - Badging API
+//     - Battery Status API
+//     - Cookie Store API
+//     - CSS Properties and Values API
+//     - CSS Typed Object Model API
+//     - Device Memory API
+//     - Document Picture-in-Picture API
+//     - Encrypted Media Extensions API
+//     - File System API
+//     - File and Directory Entries API
+//     - HTML Sanitizer API
+//     - Houdini APIs
+//     - Invoker Commands API
+//     - Network Information API
+//     - Prioritized Task Scheduling API
+//     - Remote Playback API
+//     - Sensor APIs
+//     - Storage API
+//     - Storage Access API
+//     - Trusted Types API
+//     - URL Fragment Text Directives
+//     - Web Locks API
+//     - Web MIDI API
+//     - Web Serial API
+//     - WebTransport API
+//
+// The unmapped-symbol fail-safe (see Route) catches any group-2 API
+// that ships in a future lib bump — the converter aborts with the
+// offending name and points at this file.
 var webPackages = []struct {
 	URI     string
 	File    string
@@ -202,7 +301,10 @@ var webPackages = []struct {
 		"ReferrerPolicy",
 		"RequestCache", "RequestCredentials", "RequestDestination",
 		"RequestMode", "RequestRedirect",
-		"FormData", "FormDataEntryValue",
+		// FormData / FormDataEntryValue intentionally not listed:
+		// MDN classifies them under the XMLHttpRequest API, not
+		// Fetch. They are declared in lib.dom.d.ts so they route to
+		// web:dom via the residual rule.
 	}},
 	{"web:streams", "web/streams.esc", []string{
 		"ReadableStream", "ReadableStreamDefaultReader",
@@ -228,7 +330,10 @@ var webPackages = []struct {
 		"TransformerStartCallback", "TransformerTransformCallback",
 		"TransformerCancelCallback",
 		"GenericTransformStream",
-		"TextDecoderStream", "TextEncoderStream",
+	}},
+	{"web:compression", "web/compression.esc", []string{
+		// MDN documents the Compression Streams API as its own API
+		// distinct from Streams: https://developer.mozilla.org/en-US/docs/Web/API/Compression_Streams_API
 		"CompressionStream", "DecompressionStream",
 	}},
 	{"web:crypto", "web/crypto.esc", []string{
@@ -251,7 +356,11 @@ var webPackages = []struct {
 		"RsaHashedKeyGenParams", "RsaKeyAlgorithm", "RsaKeyGenParams",
 		"RsaOaepParams", "RsaOtherPrimesInfo", "RsaPssParams",
 		"HashAlgorithmIdentifier",
-		"BufferSource",
+		// BufferSource is a general WebIDL typedef
+		// (ArrayBuffer | ArrayBufferView) used by Fetch, Streams,
+		// WebSocket, TextDecoder, WebGL, Crypto, …; it routes to
+		// web:dom via the residual rule (it is declared in
+		// lib.dom.d.ts) rather than being pinned to any one API.
 	}},
 	{"web:workers", "web/workers.esc", []string{
 		"Worker", "WorkerOptions", "WorkerType",
@@ -282,6 +391,11 @@ var webPackages = []struct {
 		"Float32List", "Int32List", "Uint32List",
 	}},
 	{"web:web_audio", "web/web_audio.esc", []string{
+		// Symbols MDN documents under Web Audio that are absent from
+		// the pinned lib.dom.d.ts (no partition entry needed today):
+		// AudioWorkletProcessor, AudioWorkletGlobalScope,
+		// AudioPlaybackStats, ScriptProcessorNode (legacy). Add here
+		// if a future TS version bump ships them.
 		"AudioContext", "AudioContextOptions", "AudioContextState",
 		"AudioContextLatencyCategory",
 		"AudioBuffer", "AudioBufferOptions", "AudioBufferSourceNode",
@@ -322,6 +436,16 @@ var webPackages = []struct {
 		"DecodeErrorCallback", "DecodeSuccessCallback",
 	}},
 	{"web:web_rtc", "web/web_rtc.esc", []string{
+		// Symbols MDN documents under WebRTC that are absent from the
+		// pinned lib.dom.d.ts (no partition entry needed today):
+		// RTCDTMFSender, RTCDTMFToneChangeEvent,
+		// RTCDTMFToneChangeEventInit, RTCIdentityAssertion,
+		// RTCIdentityProvider, RTCIdentityProviderRegistrar,
+		// RTCTransformEvent, RTCRtpScriptTransformer, and the
+		// per-source/codec stats variants (RTCAudioSourceStats,
+		// RTCVideoSourceStats, RTCCodecStats, RTCIceCandidateStats,
+		// RTCPeerConnectionStats). Add here if a future TS version
+		// bump ships them.
 		"RTCPeerConnection", "RTCPeerConnectionEventMap",
 		"RTCPeerConnectionIceErrorEvent", "RTCPeerConnectionIceErrorEventInit",
 		"RTCPeerConnectionIceEvent", "RTCPeerConnectionIceEventInit",
@@ -414,18 +538,37 @@ var webPackages = []struct {
 		"IDBValidKey", "IDBArrayKey",
 	}},
 	{"web:service_worker", "web/service_worker.esc", []string{
+		// Service Worker proper. MDN splits Push and Cache into their
+		// own APIs (https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API);
+		// see web:push and web:cache below.
+		//
+		// Symbols that MDN documents under the Service Worker API but
+		// that aren't present in the pinned lib.dom.d.ts (so they need
+		// no partition entry here): Client, Clients, WindowClient,
+		// ExtendableEvent, ExtendableMessageEvent, FetchEvent,
+		// InstallEvent, ServiceWorkerGlobalScope. If a TS version bump
+		// adds them, add the corresponding entries here.
 		"ServiceWorker", "ServiceWorkerEventMap", "ServiceWorkerState",
 		"ServiceWorkerContainer", "ServiceWorkerContainerEventMap",
 		"ServiceWorkerRegistration", "ServiceWorkerRegistrationEventMap",
 		"ServiceWorkerUpdateViaCache",
 		"RegistrationOptions",
 		"NavigationPreloadManager", "NavigationPreloadState",
+		"FrameType", "ClientType",
+	}},
+	{"web:push", "web/push.esc", []string{
+		// MDN documents Push as a separate API:
+		// https://developer.mozilla.org/en-US/docs/Web/API/Push_API
 		"PushManager", "PushSubscription", "PushSubscriptionJSON",
 		"PushSubscriptionOptions", "PushSubscriptionOptionsInit",
 		"PushEncryptionKeyName", "PushPermissionState",
+	}},
+	{"web:cache", "web/cache.esc", []string{
+		// MDN documents the Cache API as a separate API (defined in the
+		// SW spec but usable from any context):
+		// https://developer.mozilla.org/en-US/docs/Web/API/Cache
 		"CacheStorage", "Cache", "CacheQueryOptions",
 		"MultiCacheQueryOptions",
-		"FrameType", "ClientType",
 	}},
 	{"web:websocket", "web/websocket.esc", []string{
 		"WebSocket", "WebSocketEventMap",
@@ -441,6 +584,9 @@ var webPackages = []struct {
 		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
+		// Per MDN, the *Stream variants belong to the Encoding API,
+		// not the Streams API: https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API
+		"TextEncoderStream", "TextDecoderStream",
 	}},
 	{"web:file", "web/file.esc", []string{
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
@@ -448,6 +594,13 @@ var webPackages = []struct {
 		"FileList", "FileReader", "FileReaderEventMap",
 	}},
 	{"web:performance", "web/performance.esc", []string{
+		// Symbols MDN documents under Performance that are absent from
+		// the pinned lib.dom.d.ts (no partition entry needed today):
+		// PerformanceEventTiming, PerformanceLongTaskTiming,
+		// LargestContentfulPaint, LayoutShift, EventCounts,
+		// TaskAttributionTiming, PerformanceElementTiming,
+		// VisibilityStateEntry. Add here if a future TS version bump
+		// ships them.
 		"Performance", "PerformanceEventMap",
 		"PerformanceEntry", "PerformanceEntryList",
 		"PerformanceMark", "PerformanceMarkOptions",
@@ -474,6 +627,11 @@ var webPackages = []struct {
 		"COSEAlgorithmIdentifier",
 	}},
 	{"web:payments", "web/payments.esc", []string{
+		// Symbols MDN documents under the Payment Request API that
+		// are absent from the pinned lib.dom.d.ts (no partition entry
+		// needed today): PaymentAddress, PaymentRequestUpdateEvent,
+		// MerchantValidationEvent, SecurePaymentConfirmationRequest.
+		// Add here if a future TS version bump ships them.
 		"PaymentRequest", "PaymentRequestEventMap",
 		"PaymentResponse", "PaymentResponseEventMap",
 		"PaymentMethodData", "PaymentMethodChangeEvent",
