@@ -964,14 +964,15 @@ func interfaceMemberToClassElem(
 			}
 			receiver = &ast.MethodReceiver{Mut: mut, Span_: span}
 		}
-		return &ast.MethodElem{
+		elem := &ast.MethodElem{
 			Name:     name,
 			Fn:       fn,
 			Receiver: receiver,
 			Static:   static,
-			Doc:      doc,
 			Span_:    span,
-		}, nil
+		}
+		elem.SetDoc(doc)
+		return elem, nil
 
 	case *dts_parser.PropertySignature:
 		typeAnn, err := convertTypeAnn(m.TypeAnn)
@@ -982,15 +983,16 @@ func interfaceMemberToClassElem(
 		if err != nil {
 			return nil, err
 		}
-		return &ast.FieldElem{
+		elem := &ast.FieldElem{
 			Name:     name,
 			Type:     typeAnn,
 			Static:   static,
 			Readonly: m.Readonly,
 			Optional: m.Optional,
-			Doc:      doc,
 			Span_:    convertSpan(m.Span()),
-		}, nil
+		}
+		elem.SetDoc(doc)
+		return elem, nil
 
 	case *dts_parser.GetterSignature:
 		ret, err := convertTypeAnn(m.ReturnType)
@@ -1007,14 +1009,15 @@ func interfaceMemberToClassElem(
 		if !static {
 			receiver = &ast.MethodReceiver{Mut: false, Span_: span}
 		}
-		return &ast.GetterElem{
+		elem := &ast.GetterElem{
 			Name:     name,
 			Fn:       fn,
 			Receiver: receiver,
 			Static:   static,
-			Doc:      doc,
 			Span_:    span,
-		}, nil
+		}
+		elem.SetDoc(doc)
+		return elem, nil
 
 	case *dts_parser.SetterSignature:
 		param, err := convertParam(m.Param)
@@ -1032,14 +1035,15 @@ func interfaceMemberToClassElem(
 		if !static {
 			receiver = &ast.MethodReceiver{Mut: true, Span_: span}
 		}
-		return &ast.SetterElem{
+		elem := &ast.SetterElem{
 			Name:     name,
 			Fn:       fn,
 			Receiver: receiver,
 			Static:   static,
-			Doc:      doc,
 			Span_:    span,
-		}, nil
+		}
+		elem.SetDoc(doc)
+		return elem, nil
 
 	case *dts_parser.CallSignature, *dts_parser.IndexSignature, *dts_parser.ConstructSignature:
 		// Skip — no direct class-elem mapping in the MVP. ConstructSignature
@@ -1064,12 +1068,13 @@ func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.Const
 	selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
 	allParams := append([]*ast.Param{selfParam}, params...)
 	fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, span)
-	return &ast.ConstructorElem{
+	elem := &ast.ConstructorElem{
 		Fn:       fn,
 		Receiver: &ast.MethodReceiver{Mut: true, Span_: span},
-		Doc:      cs.Doc(),
 		Span_:    span,
-	}, nil
+	}
+	elem.SetDoc(cs.Doc())
+	return elem, nil
 }
 
 // propertyKeyName extracts the textual name from a dts PropertyKey,

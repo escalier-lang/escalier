@@ -200,11 +200,12 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting method name: %w", err)
 		}
-		return &ast.MethodTypeAnn{
+		elem := &ast.MethodTypeAnn{
 			Name: name,
 			Fn:   fn,
-			Doc:  m.Doc(),
-		}, nil
+		}
+		elem.SetDoc(m.Doc())
+		return elem, nil
 	case *dts_parser.PropertySignature:
 		typeAnn, err := convertTypeAnn(m.TypeAnn)
 		if err != nil {
@@ -214,13 +215,14 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting property name: %w", err)
 		}
-		return &ast.PropertyTypeAnn{
+		elem := &ast.PropertyTypeAnn{
 			Name:     name,
 			Optional: m.Optional,
 			Readonly: m.Readonly,
 			Value:    typeAnn,
-			Doc:      m.Doc(),
-		}, nil
+		}
+		elem.SetDoc(m.Doc())
+		return elem, nil
 	case *dts_parser.GetterSignature:
 		// Getter has no parameters, returns the type
 		returnType, err := convertTypeAnn(m.ReturnType)
@@ -232,11 +234,12 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting getter name: %w", err)
 		}
-		return &ast.GetterTypeAnn{
+		elem := &ast.GetterTypeAnn{
 			Name: name,
 			Fn:   fn,
-			Doc:  m.Doc(),
-		}, nil
+		}
+		elem.SetDoc(m.Doc())
+		return elem, nil
 	case *dts_parser.SetterSignature:
 		// Setter has one parameter, returns undefined
 		param, err := convertParam(m.Param)
@@ -249,11 +252,12 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting setter name: %w", err)
 		}
-		return &ast.SetterTypeAnn{
+		elem := &ast.SetterTypeAnn{
 			Name: name,
 			Fn:   fn,
-			Doc:  m.Doc(),
-		}, nil
+		}
+		elem.SetDoc(m.Doc())
+		return elem, nil
 	case *dts_parser.IndexSignature:
 		// Index signatures don't have a direct equivalent in Escalier's ObjTypeAnnElem
 		// We could potentially use a MappedTypeAnn or skip them for now

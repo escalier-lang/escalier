@@ -21,6 +21,11 @@ type ClassElem interface {
 	IsClassElem()
 	Accept(v Visitor)
 	Span() Span
+	// Doc returns the leading JSDoc (`/** ... */`) retained on the elem,
+	// verbatim with delimiters, or "" if absent. Set today only by the
+	// dts_to_esc converter — handwritten Escalier sources don't yet
+	// parse leading member docs (see #663).
+	Doc() string
 }
 
 // MethodReceiver describes a `self` receiver on a method, getter, setter, or
@@ -98,7 +103,7 @@ type FieldElem struct {
 	Private  bool // true if this field is private
 	Readonly bool // true if this field is readonly
 	Optional bool // true if this field is declared `name?: T`
-	Doc      string
+	doc      string
 	Span_    Span
 }
 
@@ -116,6 +121,8 @@ func (f *FieldElem) Accept(v Visitor) {
 	v.ExitClassElem(f)
 }
 func (f *FieldElem) Span() Span { return f.Span_ }
+func (f *FieldElem) Doc() string         { return f.doc }
+func (f *FieldElem) SetDoc(doc string)   { f.doc = doc }
 
 type MethodElem struct {
 	Name     ObjKey
@@ -123,7 +130,7 @@ type MethodElem struct {
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static method
 	Private  bool            // true if this is a private method
-	Doc      string
+	doc      string
 	Span_    Span
 }
 
@@ -138,6 +145,8 @@ func (m *MethodElem) Accept(v Visitor) {
 	v.ExitClassElem(m)
 }
 func (m *MethodElem) Span() Span { return m.Span_ }
+func (m *MethodElem) Doc() string         { return m.doc }
+func (m *MethodElem) SetDoc(doc string)   { m.doc = doc }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
@@ -146,7 +155,7 @@ type GetterElem struct {
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static getter
 	Private  bool            // true if this is a private getter
-	Doc      string
+	doc      string
 	Span_    Span
 }
 
@@ -161,6 +170,8 @@ func (g *GetterElem) Accept(v Visitor) {
 	v.ExitClassElem(g)
 }
 func (g *GetterElem) Span() Span { return g.Span_ }
+func (g *GetterElem) Doc() string         { return g.doc }
+func (g *GetterElem) SetDoc(doc string)   { g.doc = doc }
 
 // ConstructorElem represents an explicit `constructor(...) { ... }` block
 // inside a class body. The constructor's receiver is represented by
@@ -175,7 +186,7 @@ type ConstructorElem struct {
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if absent. Carried for diagnostics — a non-nil Lifetime is rejected by validation.
 	Private  bool            // reserved for future "Private Constructors" work
-	Doc      string
+	doc      string
 	Span_    Span
 }
 
@@ -189,6 +200,8 @@ func (c *ConstructorElem) Accept(v Visitor) {
 	v.ExitClassElem(c)
 }
 func (c *ConstructorElem) Span() Span { return c.Span_ }
+func (c *ConstructorElem) Doc() string         { return c.doc }
+func (c *ConstructorElem) SetDoc(doc string)   { c.doc = doc }
 
 // SetterElem represents a setter in a class.
 type SetterElem struct {
@@ -197,7 +210,7 @@ type SetterElem struct {
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static setter
 	Private  bool            // true if this is a private setter
-	Doc      string
+	doc      string
 	Span_    Span
 }
 
@@ -212,3 +225,5 @@ func (s *SetterElem) Accept(v Visitor) {
 	v.ExitClassElem(s)
 }
 func (s *SetterElem) Span() Span { return s.Span_ }
+func (s *SetterElem) Doc() string         { return s.doc }
+func (s *SetterElem) SetDoc(doc string)   { s.doc = doc }

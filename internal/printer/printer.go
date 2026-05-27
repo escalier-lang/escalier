@@ -309,46 +309,8 @@ func (p *Printer) writeDoc(doc string) {
 	p.newline()
 }
 
-// classElemDoc returns the retained leading JSDoc (verbatim with its
-// `/** ... */` delimiters) attached to a class elem, or "" if absent.
-// Set today only by the dts_to_esc converter — handwritten Escalier
-// sources don't yet parse leading member docs.
-// objTypeAnnElemDoc returns the retained leading JSDoc (verbatim with its
-// `/** ... */` delimiters) attached to an obj-type-annotation elem, or
-// "" if absent. Set today only by the dts_to_esc converter via
-// convertInterfaceMember.
-func objTypeAnnElemDoc(elem ast.ObjTypeAnnElem) string {
-	switch e := elem.(type) {
-	case *ast.MethodTypeAnn:
-		return e.Doc
-	case *ast.GetterTypeAnn:
-		return e.Doc
-	case *ast.SetterTypeAnn:
-		return e.Doc
-	case *ast.PropertyTypeAnn:
-		return e.Doc
-	}
-	return ""
-}
-
-func classElemDoc(elem ast.ClassElem) string {
-	switch e := elem.(type) {
-	case *ast.FieldElem:
-		return e.Doc
-	case *ast.MethodElem:
-		return e.Doc
-	case *ast.GetterElem:
-		return e.Doc
-	case *ast.SetterElem:
-		return e.Doc
-	case *ast.ConstructorElem:
-		return e.Doc
-	}
-	return ""
-}
-
 func (p *Printer) printClassElem(elem ast.ClassElem) {
-	if doc := classElemDoc(elem); doc != "" {
+	if doc := elem.Doc(); doc != "" {
 		p.writeDoc(doc)
 	}
 	switch e := elem.(type) {
@@ -1296,7 +1258,7 @@ func (p *Printer) printObjectTypeAnn(typ *ast.ObjectTypeAnn) {
 }
 
 func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
-	if doc := objTypeAnnElemDoc(elem); doc != "" {
+	if doc := elem.Doc(); doc != "" {
 		p.writeDoc(doc)
 	}
 	switch e := elem.(type) {
