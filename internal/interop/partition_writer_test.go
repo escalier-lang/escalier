@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,13 +76,13 @@ interface Array<T> { length: number; }
 	require.NoError(t, err)
 
 	require.Len(t, res.Drops, 2)
-	dropped := map[string]bool{}
+	dropped := set.NewSet[string]()
 	for _, d := range res.Drops {
-		dropped[d.Name] = true
+		dropped.Add(d.Name)
 		require.Equal(t, "lib.es5.d.ts", d.SourceFile)
 	}
-	require.True(t, dropped["globalThis"])
-	require.True(t, dropped["eval"])
+	require.True(t, dropped.Contains("globalThis"))
+	require.True(t, dropped.Contains("eval"))
 
 	// Bucket should not include the dropped names.
 	for _, stmt := range res.Buckets["std:array"] {
@@ -303,14 +304,14 @@ interface Array<T> {
 		"entries", "keys", "values", // lib.es2015.iterable
 		"findLast", "toReversed", // lib.es2023.array
 	}
-	got := map[string]bool{}
+	got := set.NewSet[string]()
 	for _, elem := range arrayClass.Body {
 		if me, ok := elem.(*ast.MethodElem); ok && !me.Static {
-			got[classElemName(me.Name)] = true
+			got.Add(classElemName(me.Name))
 		}
 	}
 	for _, name := range wantMethods {
-		require.True(t, got[name],
+		require.True(t, got.Contains(name),
 			"method %s (from one of the four lib years) must survive into the fused Array class; got %v",
 			name, got)
 	}
@@ -385,7 +386,7 @@ declare var Map: MapConstructor;
 		"get":     false,
 		"has":     false,
 	}
-	seen := map[string]bool{}
+	seen := set.NewSet[string]()
 	for _, elem := range mapClass.Body {
 		me, ok := elem.(*ast.MethodElem)
 		if !ok || me.Static {
@@ -399,10 +400,10 @@ declare var Map: MapConstructor;
 		require.NotNil(t, me.Receiver, "method %s should have a receiver", name)
 		require.Equal(t, want, me.Receiver.Mut,
 			"method %s receiver mut: want %v, got %v", name, want, me.Receiver.Mut)
-		seen[name] = true
+		seen.Add(name)
 	}
 	for name := range wantReceiver {
-		require.True(t, seen[name], "method %s should be present on Map", name)
+		require.True(t, seen.Contains(name), "method %s should be present on Map", name)
 	}
 
 	// Alias's RHS is Map<K, V>.
@@ -447,16 +448,16 @@ declare var Foo: FooConstructor;
 	}
 	require.NotNil(t, fooClass)
 
-	names := map[string]bool{}
+	names := set.NewSet[string]()
 	for _, elem := range fooClass.Body {
 		if me, ok := elem.(*ast.MethodElem); ok && !me.Static {
-			names[classElemName(me.Name)] = true
+			names.Add(classElemName(me.Name))
 		}
 	}
-	require.True(t, names["onlyOnReadonly"],
+	require.True(t, names.Contains("onlyOnReadonly"),
 		"readonly-only members should be folded onto the mutable class")
-	require.True(t, names["shared"])
-	require.True(t, names["mutating"])
+	require.True(t, names.Contains("shared"))
+	require.True(t, names.Contains("mutating"))
 }
 
 func TestReportPartition_FormatsSortedSummary(t *testing.T) {

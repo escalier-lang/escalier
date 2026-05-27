@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // Package identifies a target pseudo-package for a TS-lib top-level
@@ -652,42 +654,42 @@ var webPackages = []struct {
 // no ambient tier), and `eval` has no good use case. Intrinsic-typed
 // declarations (FR13) are detected structurally, not by name, and so
 // are not listed here.
-var ExplicitDrops = map[string]struct{}{
+var ExplicitDrops = set.FromSlice([]string{
 	// Per §6.1 — `globalThis` had no ambient union to take, `eval` has
 	// no good use case.
-	"globalThis": {},
-	"eval":       {},
+	"globalThis",
+	"eval",
 
 	// FR13 intrinsics: checker-resident handlers with no source-level
 	// declaration. The TS-lib file declares them as `type X<T> = intrinsic`
 	// markers; the partitioner skips emission and the checker resolves
 	// them directly.
-	"Uppercase":    {},
-	"Lowercase":    {},
-	"Capitalize":   {},
-	"Uncapitalize": {},
-	"NoInfer":      {},
+	"Uppercase",
+	"Lowercase",
+	"Capitalize",
+	"Uncapitalize",
+	"NoInfer",
 
 	// EvalError: per §FR1, dropped because `eval` is dropped — no
 	// modern engine throws it from language semantics.
-	"EvalError":            {},
-	"EvalErrorConstructor": {},
+	"EvalError",
+	"EvalErrorConstructor",
 
 	// Legacy URI-encoding cousins. The §6.1 partition explicitly
 	// enumerates encodeURI/decodeURI/encodeURIComponent/decodeURIComponent
 	// in std:url and intentionally omits these two (deprecated since
 	// ES1; superseded by encodeURIComponent).
-	"escape":   {},
-	"unescape": {},
+	"escape",
+	"unescape",
 
 	// TS-side import-machinery types (`import.meta`, `import(...)`
 	// option bags). These shape the TS module loader's surface, not
 	// the language runtime; Escalier handles imports differently.
-	"ImportMeta":        {},
-	"ImportAssertions":  {},
-	"ImportAttributes":  {},
-	"ImportCallOptions": {},
-}
+	"ImportMeta",
+	"ImportAssertions",
+	"ImportAttributes",
+	"ImportCallOptions",
+})
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose
 // unmapped top-level declarations route to `web:dom` (the single-DOM
@@ -699,11 +701,11 @@ var ExplicitDrops = map[string]struct{}{
 // Standalone web siblings (Fetch / Streams / Crypto / …) are mapped
 // explicitly via webPackages above, so they take precedence over this
 // residual rule even when they appear in lib.dom.d.ts.
-var DOMResidualSources = map[string]struct{}{
-	"lib.dom.d.ts":               {},
-	"lib.dom.iterable.d.ts":      {},
-	"lib.dom.asynciterable.d.ts": {},
-}
+var DOMResidualSources = set.FromSlice([]string{
+	"lib.dom.d.ts",
+	"lib.dom.iterable.d.ts",
+	"lib.dom.asynciterable.d.ts",
+})
 
 func init() {
 	for _, p := range stdPackages {
@@ -759,7 +761,7 @@ type RouteResult struct {
 // Lookup order is as documented on Partition: explicit drops → explicit
 // partition → DOM residual → unmapped fail-safe.
 func Route(name, sourceFile string) RouteResult {
-	if _, ok := ExplicitDrops[name]; ok {
+	if ExplicitDrops.Contains(name) {
 		return RouteResult{Drop: true}
 	}
 	if pkg, ok := Partition[name]; ok {
@@ -775,7 +777,7 @@ func Route(name, sourceFile string) RouteResult {
 			return RouteResult{Pkg: pkg}
 		}
 	}
-	if _, ok := DOMResidualSources[sourceFile]; ok {
+	if DOMResidualSources.Contains(sourceFile) {
 		return RouteResult{Pkg: WebDOM}
 	}
 	return RouteResult{Unmapped: true}

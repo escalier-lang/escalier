@@ -10,6 +10,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
 
@@ -236,7 +237,7 @@ type readonlyTwin struct {
 	mutableName  string
 	readonlyName string
 	typeParams   []*dts_parser.TypeParam
-	methodNames  map[string]bool
+	methodNames  set.Set[string]
 }
 
 // fuseReadonlyTwins detects every (Foo, ReadonlyFoo) interface pair in
@@ -268,7 +269,7 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 	}
 
 	var twins []readonlyTwin
-	dropReadonly := make(map[string]bool)
+	dropReadonly := set.NewSet[string]()
 	// Iterate stmts (not ifaceByName) so detection order is deterministic.
 	// Map iteration would randomize the order in which twins are
 	// appended, which downstream determines the order ReadonlyFoo
@@ -293,11 +294,11 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 
 		// Build the name set of the readonly side, fold any missing
 		// members onto the mutable side.
-		methodNames := map[string]bool{}
-		haveOnMutable := map[string]bool{}
+		methodNames := set.NewSet[string]()
+		haveOnMutable := set.NewSet[string]()
 		for _, m := range mutable.Members {
 			if key := memberKey(m); key != "" {
-				haveOnMutable[key] = true
+				haveOnMutable.Add(key)
 			}
 		}
 		for _, m := range iface.Members {
@@ -305,10 +306,10 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 			if key == "" {
 				continue
 			}
-			methodNames[key] = true
-			if !haveOnMutable[key] {
+			methodNames.Add(key)
+			if !haveOnMutable.Contains(key) {
 				mutable.Members = append(mutable.Members, m)
-				haveOnMutable[key] = true
+				haveOnMutable.Add(key)
 			}
 		}
 
@@ -318,15 +319,15 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 			typeParams:   iface.TypeParams,
 			methodNames:  methodNames,
 		})
-		dropReadonly[name] = true
+		dropReadonly.Add(name)
 	}
 
-	if len(dropReadonly) == 0 {
+	if dropReadonly.Len() == 0 {
 		return stmts, nil
 	}
 	out := stmts[:0:len(stmts)]
 	for _, stmt := range stmts {
-		if iface, ok := stmt.(*dts_parser.InterfaceDecl); ok && dropReadonly[iface.Name.Name] {
+		if iface, ok := stmt.(*dts_parser.InterfaceDecl); ok && dropReadonly.Contains(iface.Name.Name) {
 			continue
 		}
 		out = append(out, stmt)
@@ -421,7 +422,7 @@ func applyReadonlyTwinReceivers(mod *StandaloneModule, twins []readonlyTwin) {
 				if name == "" {
 					continue
 				}
-				if twin.methodNames[name] {
+				if twin.methodNames.Contains(name) {
 					me.Receiver.Mut = false
 				}
 			}
