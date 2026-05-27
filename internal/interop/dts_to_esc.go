@@ -50,11 +50,12 @@ type StandaloneModule struct {
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {
 	cctx := &convertCtx{}
 	trios := detectTrios(dtsModule.Statements)
+	singletons := detectSingletons(dtsModule.Statements, trios)
 	docs := make(map[ast.Decl]string)
 
 	var decls []ast.Decl
 	for _, stmt := range dtsModule.Statements {
-		emitted, err := convertStandaloneStmt(cctx, stmt, trios, "")
+		emitted, err := convertStandaloneStmt(cctx, stmt, trios, singletons, "")
 		if err != nil {
 			return nil, err
 		}
@@ -117,15 +118,20 @@ func writeStandaloneModule(m *StandaloneModule, w io.Writer) error {
 			first = false
 			if doc, ok := m.Docs[decl]; ok {
 				// dts_parser hands us the comment verbatim with its
-				// `/** ... */` delimiters intact, so we emit it as-is
-				// and append a newline to separate it from the decl.
-				if _, err := io.WriteString(w, doc); err != nil {
-					iterErr = err
-					return false
-				}
-				if _, err := io.WriteString(w, "\n"); err != nil {
-					iterErr = err
-					return false
+				// `/** ... */` delimiters and the source's original
+				// column offset on continuation lines. Normalize so
+				// continuation `*` lines align at column 1 of the
+				// (top-level) destination instead of leaking the
+				// source's indent.
+				for _, line := range printer.NormalizeDocLines(doc) {
+					if _, err := io.WriteString(w, line); err != nil {
+						iterErr = err
+						return false
+					}
+					if _, err := io.WriteString(w, "\n"); err != nil {
+						iterErr = err
+						return false
+					}
 				}
 			}
 			s, err := printer.Print(decl, opts)
@@ -233,14 +239,421 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	return t
 }
 
-// typeRefName returns the rightmost identifier of a TypeReference's name.
-// Qualified forms (e.g. `Foo.Bar`) return the trailing segment.
+// singletonInfo records an interface+var-singleton pair recognized at
+// the module level: `interface Foo { ... }` + `declare var Foo: Foo`,
+// where the interface name is not referenced as a type anywhere else
+// in the module. The pair collapses to a flat list of top-level decls,
+// each carrying `@js("Foo.<member>")` — the same emission shape as
+// `declare namespace` flattening, because the runtime surface is a
+// single object whose methods are bound to that object.
+type singletonInfo struct {
+	iface   *dts_parser.InterfaceDecl
+	binding *dts_parser.VarDecl
+}
+
+// singletonTable indexes recognized singletons by the interface (and
+// matching var) name. `consumedVar` exists for symmetry with
+// `trioTable`; in the singleton idiom the var and interface share a
+// name, so iterating by `byName` and skipping the var on match works
+// equivalently. Kept as a Set for the same skip-on-walk pattern.
+type singletonTable struct {
+	byName       map[string]*singletonInfo
+	consumedVar  set.Set[string]
+}
+
+// detectSingletons scans a module's top-level statements for the
+// `interface Foo` + `declare var Foo: Foo` idiom. Recognition requires:
+//
+//   - A `declare var Foo: Foo` whose type annotation is a bare
+//     TypeReference to the same name as the var.
+//   - A matching top-level `interface Foo` declaration that is not
+//     already consumed by trio detection.
+//   - No other TypeReference to `Foo` anywhere else in the module
+//     (the candidate var's own type contributes the only legal
+//     reference). Self-references inside the interface body, references
+//     from sibling decls, or a second `declare var X: Foo` all
+//     disqualify the pair — those mean `Foo` is a shared shape, not a
+//     singleton's structure.
+//
+// Trios take priority: a name already routed through `trios.byName` or
+// `trios.consumedCtor`/`trios.consumedVar` is skipped here.
+func detectSingletons(stmts []dts_parser.Statement, trios *trioTable) *singletonTable {
+	t := &singletonTable{
+		byName:      make(map[string]*singletonInfo),
+		consumedVar: set.NewSet[string](),
+	}
+
+	interfaces := make(map[string]*dts_parser.InterfaceDecl)
+	vars := make(map[string]*dts_parser.VarDecl)
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *dts_parser.InterfaceDecl:
+			interfaces[s.Name.Name] = s
+		case *dts_parser.VarDecl:
+			vars[s.Name.Name] = s
+		}
+	}
+
+	for name, iface := range interfaces {
+		if trios.byName[name] != nil || trios.consumedCtor.Contains(name) || trios.consumedVar.Contains(name) {
+			continue
+		}
+		v, hasVar := vars[name]
+		if !hasVar {
+			continue
+		}
+		ref, ok := v.TypeAnn.(*dts_parser.TypeReference)
+		if !ok {
+			continue
+		}
+		if typeRefName(ref) != name {
+			continue
+		}
+		// The var's own type annotation legitimately references the
+		// interface name once. Any further reference (sibling decl,
+		// self-reference inside the interface body) means the interface
+		// is participating as a shared type, not just as the singleton's
+		// structure.
+		if countTypeRefs(stmts, name) > 1 {
+			continue
+		}
+
+		t.byName[name] = &singletonInfo{iface: iface, binding: v}
+		t.consumedVar.Add(name)
+	}
+
+	return t
+}
+
+// flattenSingleton emits a top-level decl for each member of the
+// singleton interface, each decorated with `@js("<jsBase>.<member>")`.
+// MethodSignature → FuncDecl; PropertySignature → VarDecl. Other member
+// kinds (CallSignature, IndexSignature, GetterSignature, SetterSignature,
+// ConstructSignature) have no clean top-level lowering for a singleton
+// and are skipped silently for the MVP.
+func flattenSingleton(info *singletonInfo, jsBase string) ([]docDecl, error) {
+	var out []docDecl
+	for _, m := range info.iface.Members {
+		switch sig := m.(type) {
+		case *dts_parser.MethodSignature:
+			decl, err := singletonMethodToFuncDecl(sig)
+			if err != nil {
+				return nil, fmt.Errorf("flattening singleton method %s.%s: %w",
+					info.iface.Name.Name, propertyKeyName(sig.Name), err)
+			}
+			memberJS := jsBase + "." + propertyKeyName(sig.Name)
+			attachJSDecorator(decl, memberJS)
+			decl.SetExport(true)
+			out = append(out, docDecl{doc: sig.Doc, decl: decl})
+		case *dts_parser.PropertySignature:
+			decl, err := singletonPropertyToVarDecl(sig)
+			if err != nil {
+				return nil, fmt.Errorf("flattening singleton property %s.%s: %w",
+					info.iface.Name.Name, propertyKeyName(sig.Name), err)
+			}
+			memberJS := jsBase + "." + propertyKeyName(sig.Name)
+			attachJSDecorator(decl, memberJS)
+			decl.SetExport(true)
+			out = append(out, docDecl{doc: sig.Doc, decl: decl})
+		}
+	}
+	return out, nil
+}
+
+// singletonMethodToFuncDecl converts an interface MethodSignature to a
+// top-level FuncDecl suitable for emission alongside an `@js(...)`
+// decorator. Mirrors convertFuncDecl's output shape but starts from a
+// signature (no body) and a bare PropertyKey name.
+func singletonMethodToFuncDecl(m *dts_parser.MethodSignature) (*ast.FuncDecl, error) {
+	typeParams, err := convertTypeParams(m.TypeParams)
+	if err != nil {
+		return nil, fmt.Errorf("type params: %w", err)
+	}
+	params, err := convertParams(m.Params)
+	if err != nil {
+		return nil, fmt.Errorf("params: %w", err)
+	}
+	var ret ast.TypeAnn
+	if m.ReturnType != nil {
+		ret, err = convertTypeAnn(m.ReturnType)
+		if err != nil {
+			return nil, fmt.Errorf("return: %w", err)
+		}
+	}
+	span := convertSpan(m.Span())
+	name := propertyKeyName(m.Name)
+	if name == "" {
+		return nil, fmt.Errorf("unsupported singleton method key %T", m.Name)
+	}
+	return ast.NewFuncDecl(
+		ast.NewIdentifier(name, span),
+		nil, // lifetime params
+		typeParams,
+		params,
+		ret,
+		nil, // nil throws is equivalent to throws never (PR #384)
+		nil, // body
+		false, // export — caller sets
+		true,  // declare
+		false, // async
+		span,
+	), nil
+}
+
+// singletonPropertyToVarDecl converts an interface PropertySignature to
+// a top-level VarDecl. Readonly is preserved; the optional `?` form is
+// dropped (top-level singletons in TS are always present).
+func singletonPropertyToVarDecl(p *dts_parser.PropertySignature) (*ast.VarDecl, error) {
+	typeAnn, err := convertTypeAnn(p.TypeAnn)
+	if err != nil {
+		return nil, err
+	}
+	span := convertSpan(p.Span())
+	name := propertyKeyName(p.Name)
+	if name == "" {
+		return nil, fmt.Errorf("unsupported singleton property key %T", p.Name)
+	}
+	kind := ast.VarKind
+	if p.Readonly {
+		kind = ast.ValKind
+	}
+	return ast.NewVarDecl(
+		kind,
+		ast.NewIdentPat(name, false, nil, nil, span),
+		typeAnn,
+		nil,   // init
+		false, // export — caller sets
+		true,  // declare
+		span,
+	), nil
+}
+
+// countTypeRefs returns the total number of TypeReference occurrences
+// whose name resolves (via typeRefName) to `name` across every type
+// annotation reachable from any statement in stmts. Used by
+// detectSingletons to verify the candidate interface is referenced
+// only by its companion var.
+func countTypeRefs(stmts []dts_parser.Statement, name string) int {
+	count := 0
+	visit := func(t dts_parser.TypeAnn) { count += countTypeRefsInTypeAnn(t, name) }
+	for _, stmt := range stmts {
+		walkStatementTypes(stmt, visit)
+	}
+	return count
+}
+
+// walkStatementTypes invokes visit on every top-level TypeAnn carried
+// by stmt. For composite statements (InterfaceDecl, ClassDecl,
+// NamespaceDecl) it descends into member type annotations too.
+func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn)) {
+	switch s := stmt.(type) {
+	case *dts_parser.VarDecl:
+		if s.TypeAnn != nil {
+			visit(s.TypeAnn)
+		}
+	case *dts_parser.TypeDecl:
+		if s.TypeAnn != nil {
+			visit(s.TypeAnn)
+		}
+	case *dts_parser.FuncDecl:
+		for _, p := range s.Params {
+			if p.Type != nil {
+				visit(p.Type)
+			}
+		}
+		if s.ReturnType != nil {
+			visit(s.ReturnType)
+		}
+	case *dts_parser.InterfaceDecl:
+		for _, ext := range s.Extends {
+			visit(ext)
+		}
+		for _, m := range s.Members {
+			walkInterfaceMemberTypes(m, visit)
+		}
+	case *dts_parser.ClassDecl:
+		for _, m := range s.Members {
+			walkClassMemberTypes(m, visit)
+		}
+	case *dts_parser.NamespaceDecl:
+		for _, child := range s.Statements {
+			walkStatementTypes(child, visit)
+		}
+	}
+}
+
+// walkInterfaceMemberTypes invokes visit on every TypeAnn reachable
+// from an interface member.
+func walkInterfaceMemberTypes(m dts_parser.InterfaceMember, visit func(dts_parser.TypeAnn)) {
+	switch sig := m.(type) {
+	case *dts_parser.PropertySignature:
+		if sig.TypeAnn != nil {
+			visit(sig.TypeAnn)
+		}
+	case *dts_parser.MethodSignature:
+		for _, p := range sig.Params {
+			if p.Type != nil {
+				visit(p.Type)
+			}
+		}
+		if sig.ReturnType != nil {
+			visit(sig.ReturnType)
+		}
+	case *dts_parser.GetterSignature:
+		if sig.ReturnType != nil {
+			visit(sig.ReturnType)
+		}
+	case *dts_parser.SetterSignature:
+		if sig.Param != nil && sig.Param.Type != nil {
+			visit(sig.Param.Type)
+		}
+	case *dts_parser.CallSignature:
+		for _, p := range sig.Params {
+			if p.Type != nil {
+				visit(p.Type)
+			}
+		}
+		if sig.ReturnType != nil {
+			visit(sig.ReturnType)
+		}
+	case *dts_parser.ConstructSignature:
+		for _, p := range sig.Params {
+			if p.Type != nil {
+				visit(p.Type)
+			}
+		}
+		if sig.ReturnType != nil {
+			visit(sig.ReturnType)
+		}
+	case *dts_parser.IndexSignature:
+		if sig.KeyType != nil {
+			visit(sig.KeyType)
+		}
+		if sig.ValueType != nil {
+			visit(sig.ValueType)
+		}
+	}
+}
+
+// walkClassMemberTypes invokes visit on every TypeAnn reachable from a
+// class member. Coverage is best-effort — the singleton detector only
+// uses this for the "is the interface name referenced elsewhere?"
+// check, so missing a rare member shape just biases toward emitting a
+// regular interface (the safe direction).
+func walkClassMemberTypes(m dts_parser.ClassMember, visit func(dts_parser.TypeAnn)) {
+	switch member := m.(type) {
+	case *dts_parser.PropertyDecl:
+		if member.TypeAnn != nil {
+			visit(member.TypeAnn)
+		}
+	case *dts_parser.MethodDecl:
+		for _, p := range member.Params {
+			if p.Type != nil {
+				visit(p.Type)
+			}
+		}
+		if member.ReturnType != nil {
+			visit(member.ReturnType)
+		}
+	case *dts_parser.ConstructorDecl:
+		for _, p := range member.Params {
+			if p.Type != nil {
+				visit(p.Type)
+			}
+		}
+	}
+}
+
+// countTypeRefsInTypeAnn recursively walks a TypeAnn and returns the
+// number of TypeReference nodes whose bare name equals `name`.
+func countTypeRefsInTypeAnn(t dts_parser.TypeAnn, name string) int {
+	if t == nil {
+		return 0
+	}
+	switch n := t.(type) {
+	case *dts_parser.TypeReference:
+		count := 0
+		if typeRefName(n) == name {
+			count++
+		}
+		for _, arg := range n.TypeArgs {
+			count += countTypeRefsInTypeAnn(arg, name)
+		}
+		return count
+	case *dts_parser.ArrayType:
+		return countTypeRefsInTypeAnn(n.ElementType, name)
+	case *dts_parser.TupleType:
+		count := 0
+		for _, e := range n.Elements {
+			count += countTypeRefsInTypeAnn(e.Type, name)
+		}
+		return count
+	case *dts_parser.UnionType:
+		count := 0
+		for _, sub := range n.Types {
+			count += countTypeRefsInTypeAnn(sub, name)
+		}
+		return count
+	case *dts_parser.IntersectionType:
+		count := 0
+		for _, sub := range n.Types {
+			count += countTypeRefsInTypeAnn(sub, name)
+		}
+		return count
+	case *dts_parser.FunctionType:
+		count := 0
+		for _, p := range n.Params {
+			count += countTypeRefsInTypeAnn(p.Type, name)
+		}
+		count += countTypeRefsInTypeAnn(n.ReturnType, name)
+		return count
+	case *dts_parser.ConstructorType:
+		count := 0
+		for _, p := range n.Params {
+			count += countTypeRefsInTypeAnn(p.Type, name)
+		}
+		count += countTypeRefsInTypeAnn(n.ReturnType, name)
+		return count
+	case *dts_parser.ObjectType:
+		count := 0
+		for _, m := range n.Members {
+			walkInterfaceMemberTypes(m, func(sub dts_parser.TypeAnn) {
+				count += countTypeRefsInTypeAnn(sub, name)
+			})
+		}
+		return count
+	case *dts_parser.ParenthesizedType:
+		return countTypeRefsInTypeAnn(n.Type, name)
+	case *dts_parser.IndexedAccessType:
+		return countTypeRefsInTypeAnn(n.ObjectType, name) +
+			countTypeRefsInTypeAnn(n.IndexType, name)
+	case *dts_parser.ConditionalType:
+		return countTypeRefsInTypeAnn(n.CheckType, name) +
+			countTypeRefsInTypeAnn(n.ExtendsType, name) +
+			countTypeRefsInTypeAnn(n.TrueType, name) +
+			countTypeRefsInTypeAnn(n.FalseType, name)
+	case *dts_parser.MappedType:
+		return countTypeRefsInTypeAnn(n.ValueType, name)
+	case *dts_parser.KeyOfType:
+		return countTypeRefsInTypeAnn(n.Type, name)
+	case *dts_parser.TypePredicate:
+		return countTypeRefsInTypeAnn(n.Type, name)
+	case *dts_parser.RestType:
+		return countTypeRefsInTypeAnn(n.Type, name)
+	case *dts_parser.OptionalType:
+		return countTypeRefsInTypeAnn(n.Type, name)
+	}
+	return 0
+}
+
+// typeRefName returns the bare identifier of a TypeReference's name, or
+// "" for qualified refs (e.g. `Foo.Bar`). Trio detection uses this to
+// match a binding's type against an interface declared at the same
+// scope; qualified names refer to a different declaration and must not
+// be matched on the trailing segment alone.
 func typeRefName(ref *dts_parser.TypeReference) string {
-	switch n := ref.Name.(type) {
-	case *dts_parser.Ident:
-		return n.Name
-	case *dts_parser.Member:
-		return n.Right.Name
+	if id, ok := ref.Name.(*dts_parser.Ident); ok {
+		return id.Name
 	}
 	return ""
 }
@@ -275,6 +688,7 @@ func convertStandaloneStmt(
 	cctx *convertCtx,
 	stmt dts_parser.Statement,
 	trios *trioTable,
+	singletons *singletonTable,
 	nsPath string,
 ) ([]docDecl, error) {
 	switch s := stmt.(type) {
@@ -286,8 +700,9 @@ func convertStandaloneStmt(
 		qual := qualifiedName(nsPath, s.Name.Name)
 		var out []docDecl
 		innerTrios := detectTrios(s.Statements)
+		innerSingletons := detectSingletons(s.Statements, innerTrios)
 		for _, child := range s.Statements {
-			children, err := convertStandaloneStmt(cctx, child, innerTrios, qual)
+			children, err := convertStandaloneStmt(cctx, child, innerTrios, innerSingletons, qual)
 			if err != nil {
 				return nil, fmt.Errorf("flattening namespace %s: %w", qual, err)
 			}
@@ -311,6 +726,11 @@ func convertStandaloneStmt(
 			// instance side is the one users see and document.
 			return []docDecl{{doc: info.instance.Doc, decl: classDecl}}, nil
 		}
+		if singletons != nil {
+			if info, ok := singletons.byName[s.Name.Name]; ok {
+				return flattenSingleton(info, jsName(nsPath, s.Name.Name))
+			}
+		}
 		decl, err := convertInterfaceDecl(s)
 		if err != nil {
 			return nil, err
@@ -324,6 +744,9 @@ func convertStandaloneStmt(
 
 	case *dts_parser.VarDecl:
 		if trios.consumedVar.Contains(s.Name.Name) {
+			return nil, nil
+		}
+		if singletons != nil && singletons.consumedVar.Contains(s.Name.Name) {
 			return nil, nil
 		}
 		decl, err := convertVarDecl(s)
@@ -524,7 +947,7 @@ func interfaceMemberToClassElem(
 			}
 		}
 		span := convertSpan(m.Span())
-		fn := ast.NewFuncExpr(nil, typeParams, params, ret, ast.NewNeverTypeAnn(span), false, nil, span)
+		fn := ast.NewFuncExpr(nil, typeParams, params, ret, nil, false, nil, span)
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, err
@@ -575,7 +998,7 @@ func interfaceMemberToClassElem(
 			return nil, err
 		}
 		span := convertSpan(m.Span())
-		fn := ast.NewFuncExpr(nil, nil, []*ast.Param{}, ret, ast.NewNeverTypeAnn(span), false, nil, span)
+		fn := ast.NewFuncExpr(nil, nil, []*ast.Param{}, ret, nil, false, nil, span)
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, err
@@ -600,7 +1023,7 @@ func interfaceMemberToClassElem(
 		}
 		span := convertSpan(m.Span())
 		ret := ast.NewLitTypeAnn(ast.NewUndefined(span), span)
-		fn := ast.NewFuncExpr(nil, nil, []*ast.Param{param}, ret, ast.NewNeverTypeAnn(span), false, nil, span)
+		fn := ast.NewFuncExpr(nil, nil, []*ast.Param{param}, ret, nil, false, nil, span)
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, err

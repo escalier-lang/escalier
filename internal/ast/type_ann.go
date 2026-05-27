@@ -203,6 +203,7 @@ type MethodTypeAnn struct {
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
+	Doc      string
 }
 
 func (m *MethodTypeAnn) Span() Span { return m.Name.Span() }
@@ -211,6 +212,7 @@ type GetterTypeAnn struct {
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
+	Doc      string
 }
 
 func (g *GetterTypeAnn) Span() Span { return g.Name.Span() }
@@ -219,6 +221,7 @@ type SetterTypeAnn struct {
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
+	Doc      string
 }
 
 func (s *SetterTypeAnn) Span() Span { return s.Name.Span() }
@@ -239,6 +242,7 @@ type PropertyTypeAnn struct {
 	Optional bool
 	Readonly bool
 	Value    TypeAnn
+	Doc      string
 }
 
 func (p *PropertyTypeAnn) Span() Span { return p.Name.Span() }

@@ -149,7 +149,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting call signature return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, nil, m.Span())
 		return &ast.CallableTypeAnn{Fn: fn}, nil
 	case *dts_parser.ConstructSignature:
 		typeParams := make([]*ast.TypeParam, len(m.TypeParams))
@@ -172,7 +172,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting construct signature return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, nil, m.Span())
 		return &ast.ConstructorTypeAnn{Fn: fn}, nil
 	case *dts_parser.MethodSignature:
 		typeParams := make([]*ast.TypeParam, len(m.TypeParams))
@@ -195,7 +195,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting method signature return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, nil, m.Span())
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, fmt.Errorf("converting method name: %w", err)
@@ -203,6 +203,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		return &ast.MethodTypeAnn{
 			Name: name,
 			Fn:   fn,
+			Doc:  m.Doc,
 		}, nil
 	case *dts_parser.PropertySignature:
 		typeAnn, err := convertTypeAnn(m.TypeAnn)
@@ -218,6 +219,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 			Optional: m.Optional,
 			Readonly: m.Readonly,
 			Value:    typeAnn,
+			Doc:      m.Doc,
 		}, nil
 	case *dts_parser.GetterSignature:
 		// Getter has no parameters, returns the type
@@ -225,7 +227,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting getter return type: %w", err)
 		}
-		fn := ast.NewFuncTypeAnn(nil, nil, []*ast.Param{}, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, nil, []*ast.Param{}, returnType, nil, m.Span())
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, fmt.Errorf("converting getter name: %w", err)
@@ -233,6 +235,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		return &ast.GetterTypeAnn{
 			Name: name,
 			Fn:   fn,
+			Doc:  m.Doc,
 		}, nil
 	case *dts_parser.SetterSignature:
 		// Setter has one parameter, returns undefined
@@ -241,7 +244,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 			return nil, fmt.Errorf("converting setter parameter: %w", err)
 		}
 		returnType := ast.NewLitTypeAnn(ast.NewUndefined(m.Span()), m.Span())
-		fn := ast.NewFuncTypeAnn(nil, nil, []*ast.Param{param}, returnType, ast.NewNeverTypeAnn(m.Span()), m.Span())
+		fn := ast.NewFuncTypeAnn(nil, nil, []*ast.Param{param}, returnType, nil, m.Span())
 		name, err := convertPropertyKey(m.Name)
 		if err != nil {
 			return nil, fmt.Errorf("converting setter name: %w", err)
@@ -249,6 +252,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		return &ast.SetterTypeAnn{
 			Name: name,
 			Fn:   fn,
+			Doc:  m.Doc,
 		}, nil
 	case *dts_parser.IndexSignature:
 		// Index signatures don't have a direct equivalent in Escalier's ObjTypeAnnElem
@@ -386,7 +390,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		if err != nil {
 			return nil, fmt.Errorf("converting function return type: %w", err)
 		}
-		return ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(t.Span()), t.Span()), nil
+		return ast.NewFuncTypeAnn(nil, typeParams, params, returnType, nil, t.Span()), nil
 	case *dts_parser.ConstructorType:
 		// Constructor types don't have a direct equivalent in Escalier
 		// Convert to a function type for now
@@ -410,7 +414,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		if err != nil {
 			return nil, fmt.Errorf("converting constructor return type: %w", err)
 		}
-		return ast.NewFuncTypeAnn(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(t.Span()), t.Span()), nil
+		return ast.NewFuncTypeAnn(nil, typeParams, params, returnType, nil, t.Span()), nil
 	case *dts_parser.ObjectType:
 		elems := make([]ast.ObjTypeAnnElem, 0, len(t.Members))
 		for _, member := range t.Members {
@@ -649,7 +653,7 @@ func convertMethodDecl(cctx *convertCtx, md *dts_parser.MethodDecl, className st
 	}
 
 	// Create a function expression for the method
-	funcExpr := ast.NewFuncExpr(nil, typeParams, params, returnType, ast.NewNeverTypeAnn(md.Span()), md.Modifiers.Async, nil, md.Span())
+	funcExpr := ast.NewFuncExpr(nil, typeParams, params, returnType, nil, md.Modifiers.Async, nil, md.Span())
 
 	// Classify receiver mutability. Static methods have no receiver.
 	var receiver *ast.MethodReceiver
@@ -715,7 +719,7 @@ func convertGetterDecl(cctx *convertCtx, gd *dts_parser.GetterDecl, className st
 	}
 
 	// Create a function expression for the getter (no params, returns the type)
-	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{}, returnType, ast.NewNeverTypeAnn(gd.Span()), false, nil, gd.Span())
+	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{}, returnType, nil, false, nil, gd.Span())
 
 	// Classify receiver mutability. Static getters have no receiver.
 	var receiver *ast.MethodReceiver
@@ -751,7 +755,7 @@ func convertSetterDecl(cctx *convertCtx, sd *dts_parser.SetterDecl, className st
 
 	// Create a function expression for the setter (one param, returns undefined)
 	returnType := ast.NewLitTypeAnn(ast.NewUndefined(sd.Span()), sd.Span())
-	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{param}, returnType, ast.NewNeverTypeAnn(sd.Span()), false, nil, sd.Span())
+	funcExpr := ast.NewFuncExpr(nil, nil, []*ast.Param{param}, returnType, nil, false, nil, sd.Span())
 
 	// Classify receiver mutability. Static setters have no receiver.
 	var receiver *ast.MethodReceiver

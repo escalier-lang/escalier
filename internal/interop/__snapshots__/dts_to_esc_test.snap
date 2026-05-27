@@ -4,7 +4,7 @@
 @js("Boolean")
 export declare class Boolean {
     /** Returns the primitive value of the specified object. */
-    valueOf(self) -> boolean throws never,
+    valueOf(self) -> boolean,
     /** Constructs a new Boolean wrapper around a value. */
     constructor(mut self, value?: any),
     /** The Boolean prototype object. */
@@ -16,10 +16,10 @@ export declare class Boolean {
 [TestStandalone_JSONNamespaceFlattened - 1]
 /** Parses a JSON string. */
 @js("JSON.parse")
-export declare fn parse(text: string, reviver?: fn (this: any, key: string, value: any) -> any) -> any throws never
+export declare fn parse(text: string, reviver?: fn (this: any, key: string, value: any) -> any) -> any
 
 /** Serializes a value to JSON. */
 @js("JSON.stringify")
-export declare fn stringify(value: any, replacer?: fn (this: any, key: string, value: any) -> any, space?: string | number) -> string throws never
+export declare fn stringify(value: any, replacer?: fn (this: any, key: string, value: any) -> any, space?: string | number) -> string
 
 ---
