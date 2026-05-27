@@ -223,7 +223,7 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		// whose return type is the instance name. (We allow other members
 		// alongside it; bare-call signatures and prototype properties pass
 		// through into static members or are skipped.)
-		if !hasNewReturning(ctor, name) {
+		if !hasCtorReturning(ctor, name) {
 			continue
 		}
 
@@ -257,8 +257,8 @@ type singletonInfo struct {
 // name, so iterating by `byName` and skipping the var on match works
 // equivalently. Kept as a Set for the same skip-on-walk pattern.
 type singletonTable struct {
-	byName       map[string]*singletonInfo
-	consumedVar  set.Set[string]
+	byName      map[string]*singletonInfo
+	consumedVar set.Set[string]
 }
 
 // detectSingletons scans a module's top-level statements for the
@@ -341,20 +341,16 @@ func flattenSingleton(info *singletonInfo, jsBase string) ([]docDecl, error) {
 				return nil, fmt.Errorf("flattening singleton method %s.%s: %w",
 					info.iface.Name.Name, propertyKeyName(sig.Name), err)
 			}
-			memberJS := jsBase + "." + propertyKeyName(sig.Name)
-			attachJSDecorator(decl, memberJS)
-			decl.SetExport(true)
-			out = append(out, docDecl{doc: sig.Doc, decl: decl})
+			attachJSDecorator(decl, jsBase+"."+propertyKeyName(sig.Name))
+			out = append(out, docDecl{doc: sig.Doc(), decl: decl})
 		case *dts_parser.PropertySignature:
 			decl, err := singletonPropertyToVarDecl(sig)
 			if err != nil {
 				return nil, fmt.Errorf("flattening singleton property %s.%s: %w",
 					info.iface.Name.Name, propertyKeyName(sig.Name), err)
 			}
-			memberJS := jsBase + "." + propertyKeyName(sig.Name)
-			attachJSDecorator(decl, memberJS)
-			decl.SetExport(true)
-			out = append(out, docDecl{doc: sig.Doc, decl: decl})
+			attachJSDecorator(decl, jsBase+"."+propertyKeyName(sig.Name))
+			out = append(out, docDecl{doc: sig.Doc(), decl: decl})
 		}
 	}
 	return out, nil
@@ -391,9 +387,9 @@ func singletonMethodToFuncDecl(m *dts_parser.MethodSignature) (*ast.FuncDecl, er
 		typeParams,
 		params,
 		ret,
-		nil, // nil throws is equivalent to throws never (PR #384)
-		nil, // body
-		false, // export — caller sets
+		nil,   // nil throws is equivalent to throws never (PR #384)
+		nil,   // body
+		true,  // export
 		true,  // declare
 		false, // async
 		span,
@@ -421,9 +417,9 @@ func singletonPropertyToVarDecl(p *dts_parser.PropertySignature) (*ast.VarDecl, 
 		kind,
 		ast.NewIdentPat(name, false, nil, nil, span),
 		typeAnn,
-		nil,   // init
-		false, // export — caller sets
-		true,  // declare
+		nil,  // init
+		true, // export
+		true, // declare
 		span,
 	), nil
 }
@@ -433,6 +429,11 @@ func singletonPropertyToVarDecl(p *dts_parser.PropertySignature) (*ast.VarDecl, 
 // annotation reachable from any statement in stmts. Used by
 // detectSingletons to verify the candidate interface is referenced
 // only by its companion var.
+//
+// TODO(#666): replace the hand-rolled walkers below with a dts_parser
+// Visitor once that infrastructure lands. This function and its
+// walk* helpers exist because dts_parser has no traversal abstraction
+// yet — they should collapse to a small Visitor implementation.
 func countTypeRefs(stmts []dts_parser.Statement, name string) int {
 	count := 0
 	visit := func(t dts_parser.TypeAnn) { count += countTypeRefsInTypeAnn(t, name) }
@@ -658,9 +659,9 @@ func typeRefName(ref *dts_parser.TypeReference) string {
 	return ""
 }
 
-// hasNewReturning reports whether ctor has at least one ConstructSignature
+// hasCtorReturning reports whether ctor has at least one ConstructSignature
 // whose return type names instanceName.
-func hasNewReturning(ctor *dts_parser.InterfaceDecl, instanceName string) bool {
+func hasCtorReturning(ctor *dts_parser.InterfaceDecl, instanceName string) bool {
 	for _, m := range ctor.Members {
 		cs, ok := m.(*dts_parser.ConstructSignature)
 		if !ok {
@@ -720,11 +721,10 @@ func convertStandaloneStmt(
 				return nil, fmt.Errorf("fusing trio for %s: %w", s.Name.Name, err)
 			}
 			attachJSDecorator(classDecl, jsName(nsPath, s.Name.Name))
-			classDecl.SetExport(true)
 			// Trio class doc comes from the instance interface; the
 			// constructor interface's doc (if any) is dropped — the
 			// instance side is the one users see and document.
-			return []docDecl{{doc: info.instance.Doc, decl: classDecl}}, nil
+			return []docDecl{{doc: info.instance.Doc(), decl: classDecl}}, nil
 		}
 		if singletons != nil {
 			if info, ok := singletons.byName[s.Name.Name]; ok {
@@ -740,7 +740,7 @@ func convertStandaloneStmt(
 		}
 		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc, decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
 
 	case *dts_parser.VarDecl:
 		if trios.consumedVar.Contains(s.Name.Name) {
@@ -755,7 +755,7 @@ func convertStandaloneStmt(
 		}
 		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc, decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
 
 	case *dts_parser.FuncDecl:
 		decl, err := convertFuncDecl(s)
@@ -764,7 +764,7 @@ func convertStandaloneStmt(
 		}
 		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc, decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
 
 	case *dts_parser.TypeDecl:
 		decl, err := convertTypeDecl(s)
@@ -776,7 +776,7 @@ func convertStandaloneStmt(
 		}
 		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc, decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
 
 	case *dts_parser.ClassDecl:
 		decl, err := convertClassDecl(cctx, s)
@@ -785,7 +785,7 @@ func convertStandaloneStmt(
 		}
 		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc, decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
 
 	case *dts_parser.EnumDecl, *dts_parser.ImportDecl,
 		*dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt,
@@ -843,8 +843,8 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //
 // Mapping from interface members to class elems:
 //   - MethodSignature   → MethodElem (Static set per side; receiver from
-//                                     ClassifyMethodByName on the instance
-//                                     side, nil on the static side)
+//     ClassifyMethodByName on the instance
+//     side, nil on the static side)
 //   - PropertySignature → FieldElem
 //   - GetterSignature   → GetterElem
 //   - SetterSignature   → SetterElem
@@ -914,8 +914,8 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 		extends,
 		nil, // implements
 		body,
-		false, // export — caller sets
-		true,  // declare
+		true, // export
+		true, // declare
 		convertSpan(info.instance.Span()),
 	), nil
 }
@@ -928,7 +928,7 @@ func interfaceMemberToClassElem(
 	member dts_parser.InterfaceMember,
 	static bool,
 ) (ast.ClassElem, error) {
-	doc := interfaceMemberDoc(member)
+	doc := member.Doc()
 	switch m := member.(type) {
 	case *dts_parser.MethodSignature:
 		typeParams, err := convertTypeParams(m.TypeParams)
@@ -1067,32 +1067,9 @@ func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.Const
 	return &ast.ConstructorElem{
 		Fn:       fn,
 		Receiver: &ast.MethodReceiver{Mut: true, Span_: span},
-		Doc:      cs.Doc,
+		Doc:      cs.Doc(),
 		Span_:    span,
 	}, nil
-}
-
-// interfaceMemberDoc returns the leading JSDoc string retained on an
-// interface member by the dts_parser (verbatim, with `/** ... */`
-// delimiters), or "" if none was present.
-func interfaceMemberDoc(member dts_parser.InterfaceMember) string {
-	switch m := member.(type) {
-	case *dts_parser.CallSignature:
-		return m.Doc
-	case *dts_parser.ConstructSignature:
-		return m.Doc
-	case *dts_parser.MethodSignature:
-		return m.Doc
-	case *dts_parser.PropertySignature:
-		return m.Doc
-	case *dts_parser.GetterSignature:
-		return m.Doc
-	case *dts_parser.SetterSignature:
-		return m.Doc
-	case *dts_parser.IndexSignature:
-		return m.Doc
-	}
-	return ""
 }
 
 // propertyKeyName extracts the textual name from a dts PropertyKey,

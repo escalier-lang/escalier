@@ -203,7 +203,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		return &ast.MethodTypeAnn{
 			Name: name,
 			Fn:   fn,
-			Doc:  m.Doc,
+			Doc:  m.Doc(),
 		}, nil
 	case *dts_parser.PropertySignature:
 		typeAnn, err := convertTypeAnn(m.TypeAnn)
@@ -219,7 +219,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 			Optional: m.Optional,
 			Readonly: m.Readonly,
 			Value:    typeAnn,
-			Doc:      m.Doc,
+			Doc:      m.Doc(),
 		}, nil
 	case *dts_parser.GetterSignature:
 		// Getter has no parameters, returns the type
@@ -235,7 +235,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		return &ast.GetterTypeAnn{
 			Name: name,
 			Fn:   fn,
-			Doc:  m.Doc,
+			Doc:  m.Doc(),
 		}, nil
 	case *dts_parser.SetterSignature:
 		// Setter has one parameter, returns undefined
@@ -252,7 +252,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		return &ast.SetterTypeAnn{
 			Name: name,
 			Fn:   fn,
-			Doc:  m.Doc,
+			Doc:  m.Doc(),
 		}, nil
 	case *dts_parser.IndexSignature:
 		// Index signatures don't have a direct equivalent in Escalier's ObjTypeAnnElem
