@@ -29,9 +29,6 @@
                                     Return: &ast.VoidTypeAnn{
                                         span: 3:25-3:29,
                                     },
-                                    Throws: &ast.NeverTypeAnn{
-                                        span: 3:9-3:30,
-                                    },
                                 },
                                 declare: true,
                                 span: 3:9-3:30,
@@ -89,9 +86,6 @@
                                 FuncSig: ast.FuncSig{
                                     Return: &ast.VoidTypeAnn{
                                         span: 4:19-4:23,
-                                    },
-                                    Throws: &ast.NeverTypeAnn{
-                                        span: 4:3-4:24,
                                     },
                                 },
                                 export: true,
@@ -195,9 +189,6 @@
                                 FuncSig: ast.FuncSig{
                                     Return: &ast.VoidTypeAnn{
                                         span: 8:32-8:36,
-                                    },
-                                    Throws: &ast.NeverTypeAnn{
-                                        span: 8:9-8:37,
                                     },
                                 },
                                 declare: true,
@@ -367,9 +358,6 @@
                                 FuncSig: ast.FuncSig{
                                     Return: &ast.VoidTypeAnn{
                                         span: 3:25-3:29,
-                                    },
-                                    Throws: &ast.NeverTypeAnn{
-                                        span: 3:9-3:30,
                                     },
                                 },
                                 declare: true,
@@ -601,9 +589,6 @@
                                     Return: &ast.VoidTypeAnn{
                                         span: 4:19-4:23,
                                     },
-                                    Throws: &ast.NeverTypeAnn{
-                                        span: 4:3-4:24,
-                                    },
                                 },
                                 export: true,
                                 declare: true,
@@ -706,9 +691,6 @@
                                     Return: &ast.VoidTypeAnn{
                                         span: 5:21-5:25,
                                     },
-                                    Throws: &ast.NeverTypeAnn{
-                                        span: 5:5-5:26,
-                                    },
                                 },
                                 export: true,
                                 declare: true,
@@ -756,9 +738,6 @@
                                 FuncSig: ast.FuncSig{
                                     Return: &ast.VoidTypeAnn{
                                         span: 3:25-3:29,
-                                    },
-                                    Throws: &ast.NeverTypeAnn{
-                                        span: 3:9-3:30,
                                     },
                                 },
                                 declare: true,

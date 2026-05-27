@@ -125,7 +125,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				c, ok := m.Statements[0].(*ClassDecl)
 				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
-				require.Equal(t, "/** The Boolean class. */", c.Doc)
+				require.Equal(t, "/** The Boolean class. */", c.Doc())
 			},
 		},
 		{
@@ -135,7 +135,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				f, ok := m.Statements[0].(*FuncDecl)
 				require.True(t, ok, "expected FuncDecl, got %T", m.Statements[0])
-				require.Equal(t, "/** Parse an integer. */", f.Doc)
+				require.Equal(t, "/** Parse an integer. */", f.Doc())
 			},
 		},
 		{
@@ -145,7 +145,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				i, ok := m.Statements[0].(*InterfaceDecl)
 				require.True(t, ok, "expected InterfaceDecl, got %T", m.Statements[0])
-				require.Equal(t, "/** The Boolean interface. */", i.Doc)
+				require.Equal(t, "/** The Boolean interface. */", i.Doc())
 			},
 		},
 		{
@@ -158,7 +158,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, ns.Statements, 1)
 				f, ok := ns.Statements[0].(*FuncDecl)
 				require.True(t, ok, "expected FuncDecl, got %T", ns.Statements[0])
-				require.Equal(t, "/** Parse JSON. */", f.Doc)
+				require.Equal(t, "/** Parse JSON. */", f.Doc())
 			},
 		},
 		{
@@ -168,7 +168,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				c, ok := m.Statements[0].(*ClassDecl)
 				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
-				require.Equal(t, "", c.Doc)
+				require.Equal(t, "", c.Doc())
 			},
 		},
 		{
@@ -178,7 +178,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				c, ok := m.Statements[0].(*ClassDecl)
 				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
-				require.Equal(t, "", c.Doc)
+				require.Equal(t, "", c.Doc())
 			},
 		},
 		{
@@ -188,7 +188,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				c, ok := m.Statements[0].(*ClassDecl)
 				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
-				require.Equal(t, "", c.Doc)
+				require.Equal(t, "", c.Doc())
 			},
 		},
 		{
@@ -198,7 +198,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				c, ok := m.Statements[0].(*ClassDecl)
 				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
-				require.Equal(t, "/** later */", c.Doc)
+				require.Equal(t, "/** later */", c.Doc())
 			},
 		},
 		{
@@ -211,7 +211,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, c.Members, 1)
 				md, ok := c.Members[0].(*MethodDecl)
 				require.True(t, ok, "expected MethodDecl, got %T", c.Members[0])
-				require.Equal(t, "/** Method doc. */", md.Doc)
+				require.Equal(t, "/** Method doc. */", md.Doc())
 			},
 		},
 		{
@@ -221,7 +221,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				c, ok := m.Statements[0].(*ClassDecl)
 				require.True(t, ok, "expected ClassDecl, got %T", m.Statements[0])
-				require.Equal(t, "", c.Doc)
+				require.Equal(t, "", c.Doc())
 			},
 		},
 		{
@@ -234,7 +234,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, c.Members, 1)
 				ctor, ok := c.Members[0].(*ConstructorDecl)
 				require.True(t, ok, "expected ConstructorDecl, got %T", c.Members[0])
-				require.Equal(t, "/** Ctor doc. */", ctor.Doc)
+				require.Equal(t, "/** Ctor doc. */", ctor.Doc())
 			},
 		},
 		{
@@ -244,7 +244,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				md, ok := m.Statements[0].(*ModuleDecl)
 				require.True(t, ok, "expected ModuleDecl, got %T", m.Statements[0])
-				require.Equal(t, "/** Module doc. */", md.Doc)
+				require.Equal(t, "/** Module doc. */", md.Doc())
 			},
 		},
 		{
@@ -259,7 +259,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, ot.Members, 1)
 				ps, ok := ot.Members[0].(*PropertySignature)
 				require.True(t, ok, "expected PropertySignature, got %T", ot.Members[0])
-				require.Equal(t, "/** prop doc */", ps.Doc)
+				require.Equal(t, "/** prop doc */", ps.Doc())
 			},
 		},
 		{
@@ -269,7 +269,7 @@ func TestTopLevelJSDocRetention(t *testing.T) {
 				require.Len(t, m.Statements, 1)
 				gd, ok := m.Statements[0].(*GlobalDecl)
 				require.True(t, ok, "expected GlobalDecl, got %T", m.Statements[0])
-				require.Equal(t, "/** Global doc. */", gd.Doc)
+				require.Equal(t, "/** Global doc. */", gd.Doc())
 			},
 		},
 	}

@@ -499,9 +499,6 @@
     Return: &ast.VoidTypeAnn{
         span: 1:7-1:11,
     },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:11,
-    },
     span: 1:1-1:11,
 }
 ---
@@ -521,9 +518,6 @@
     },
     Return: &ast.StringTypeAnn{
         span: 1:16-1:22,
-    },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:22,
     },
     span: 1:1-1:22,
 }
@@ -554,9 +548,6 @@
     Return: &ast.BooleanTypeAnn{
         span: 1:27-1:34,
     },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:34,
-    },
     span: 1:1-1:34,
 }
 ---
@@ -577,9 +568,6 @@
     },
     Return: &ast.VoidTypeAnn{
         span: 1:17-1:21,
-    },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:21,
     },
     span: 1:1-1:21,
 }
@@ -613,9 +601,6 @@
     Return: &ast.VoidTypeAnn{
         span: 1:24-1:28,
     },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:28,
-    },
     span: 1:1-1:28,
 }
 ---
@@ -648,9 +633,6 @@
             span: 1:14-1:15,
         },
         span: 1:14-1:15,
-    },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:15,
     },
     span: 1:1-1:15,
 }
@@ -688,9 +670,6 @@
         },
         span: 1:29-1:30,
     },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:30,
-    },
     span: 1:1-1:30,
 }
 ---
@@ -703,9 +682,6 @@
             span: 1:11-1:14,
         },
         span: 1:11-1:14,
-    },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:14,
     },
     span: 1:1-1:14,
 }
@@ -731,9 +707,6 @@
         },
         span: 1:20-1:23,
     },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:23,
-    },
     span: 1:1-1:23,
 }
 ---
@@ -746,9 +719,6 @@
             span: 1:20-1:23,
         },
         span: 1:20-1:23,
-    },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:23,
     },
     span: 1:1-1:23,
 }
@@ -1115,9 +1085,6 @@
             Name: "R",
             span: 1:29-1:36,
         },
-        Throws: &ast.NeverTypeAnn{
-            span: 1:11-1:36,
-        },
         span: 1:11-1:36,
     },
     Then: &ast.TypeRefTypeAnn{
@@ -1340,9 +1307,6 @@
             Return: &ast.StringTypeAnn{
                 span: 1:8-1:14,
             },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:2-1:14,
-            },
             span: 1:2-1:14,
         },
         &ast.FuncTypeAnn{
@@ -1359,9 +1323,6 @@
             },
             Return: &ast.BooleanTypeAnn{
                 span: 1:34-1:41,
-            },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:19-1:41,
             },
             span: 1:19-1:41,
         },
@@ -1437,9 +1398,6 @@
             },
         },
         span: 1:7-1:22,
-    },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:22,
     },
     span: 1:1-1:22,
 }
@@ -1560,9 +1518,6 @@
     },
     Return: &ast.VoidTypeAnn{
         span: 1:53-1:57,
-    },
-    Throws: &ast.NeverTypeAnn{
-        span: 1:1-1:57,
     },
     span: 1:1-1:57,
 }
@@ -1813,9 +1768,6 @@
             Return: &ast.StringTypeAnn{
                 span: 1:38-1:44,
             },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:22-1:44,
-            },
         },
         span: 1:22-1:44,
     },
@@ -1838,9 +1790,6 @@
             Return: &ast.VoidTypeAnn{
                 span: 1:39-1:43,
             },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:29-1:43,
-            },
         },
         span: 1:29-1:43,
     },
@@ -1859,9 +1808,6 @@
         FuncSig: ast.FuncSig{
             Return: &ast.VoidTypeAnn{
                 span: 1:40-1:44,
-            },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:30-1:44,
             },
         },
         span: 1:30-1:44,
@@ -1894,9 +1840,6 @@
                     },
                 },
                 span: 1:41-1:54,
-            },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:28-1:54,
             },
             Async: true,
         },
@@ -1937,9 +1880,6 @@
                             },
                             span: 1:39-1:40,
                         },
-                        Throws: &ast.NeverTypeAnn{
-                            span: 1:33-1:40,
-                        },
                         span: 1:33-1:40,
                     },
                 },
@@ -1950,9 +1890,6 @@
                     span: 1:43-1:44,
                 },
                 span: 1:43-1:44,
-            },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:22-1:44,
             },
         },
         span: 1:22-1:44,
@@ -2059,9 +1996,6 @@
             Return: &ast.NumberTypeAnn{
                 span: 1:35-1:41,
             },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:22-1:41,
-            },
         },
         span: 1:22-1:41,
     },
@@ -2087,9 +2021,6 @@
                 },
                 span: 1:45-1:52,
             },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:29-1:52,
-            },
         },
         span: 1:29-1:52,
     },
@@ -2108,9 +2039,6 @@
         FuncSig: ast.FuncSig{
             Return: &ast.AnyTypeAnn{
                 span: 1:51-1:54,
-            },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:30-1:54,
             },
         },
         span: 1:30-1:54,
@@ -2146,9 +2074,6 @@
                 Lit: &ast.UndefinedLit{
                     span: 1:22-1:41,
                 },
-                span: 1:22-1:41,
-            },
-            Throws: &ast.NeverTypeAnn{
                 span: 1:22-1:41,
             },
         },
@@ -2187,9 +2112,6 @@
                 },
                 span: 1:29-1:51,
             },
-            Throws: &ast.NeverTypeAnn{
-                span: 1:29-1:51,
-            },
         },
         span: 1:29-1:51,
     },
@@ -2221,9 +2143,6 @@
                 Lit: &ast.UndefinedLit{
                     span: 1:30-1:45,
                 },
-                span: 1:30-1:45,
-            },
-            Throws: &ast.NeverTypeAnn{
                 span: 1:30-1:45,
             },
         },

@@ -269,7 +269,50 @@ func (p *Printer) printClassDecl(decl *ast.ClassDecl) {
 	p.writeString("}")
 }
 
+// NormalizeDocLines splits a multi-line JSDoc block comment into
+// individual lines with continuation-line indentation normalized: each
+// line after the first is left-trimmed and, when it begins with `*`,
+// prefixed with a single space so the `*` column aligns with the
+// second `*` of the opening `/**`. Callers emit each line via their
+// own indent-aware writer (e.g. Printer.writeString + newline) so the
+// surrounding indent context is applied correctly.
+//
+// This matters when a comment is hoisted from a nested context (e.g.
+// an interface body) to a new indent level (e.g. a top-level decl via
+// singleton flattening). The lexer captures the comment verbatim with
+// the source's original column-prefix; without normalization the
+// continuation lines retain a stale indent.
+func NormalizeDocLines(doc string) []string {
+	lines := strings.Split(doc, "\n")
+	for i := 1; i < len(lines); i++ {
+		trimmed := strings.TrimLeft(lines[i], " \t")
+		if strings.HasPrefix(trimmed, "*") {
+			lines[i] = " " + trimmed
+		} else {
+			lines[i] = trimmed
+		}
+	}
+	return lines
+}
+
+// writeDoc emits a doc comment respecting the current indent level —
+// each continuation line is re-indented via the printer's normal
+// per-line indent machinery instead of carrying the source's column
+// offset.
+func (p *Printer) writeDoc(doc string) {
+	for i, line := range NormalizeDocLines(doc) {
+		if i > 0 {
+			p.newline()
+		}
+		p.writeString(line)
+	}
+	p.newline()
+}
+
 func (p *Printer) printClassElem(elem ast.ClassElem) {
+	if doc := elem.Doc(); doc != "" {
+		p.writeDoc(doc)
+	}
 	switch e := elem.(type) {
 	case *ast.FieldElem:
 		if e.Static {
@@ -1215,6 +1258,9 @@ func (p *Printer) printObjectTypeAnn(typ *ast.ObjectTypeAnn) {
 }
 
 func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
+	if doc := elem.Doc(); doc != "" {
+		p.writeDoc(doc)
+	}
 	switch e := elem.(type) {
 	case *ast.CallableTypeAnn:
 		p.printFuncTypeAnn(e.Fn)
