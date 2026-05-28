@@ -953,10 +953,12 @@ func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, prop
 // Array<T1 | T2 | ...> (e.g. [...Array<T>] → Array<T>). Otherwise it
 // returns a TupleType with the elements as-is.
 //
-// Note: this function does not Prune elements before checking because it is
-// called during inference before call-site specialization. TypeVarType-based
-// rests (e.g. [...T0]) are still unbound at this point and correctly fall
-// through to the TupleType path.
+// Only rest-spread elements are Pruned (with a nil journal — no probe is
+// active at tuple-expression inference time, see analysis in PR #672).
+// Non-rest elements are intentionally left unpruned because inference and
+// call-site specialization order requires it: TypeVarType-based elements
+// are still unbound at this point and must fall through to the TupleType
+// path so the downstream Unify can drive their binding.
 func collapseArrayRestSpreads(c *Checker, elems []type_system.Type) type_system.Type {
 	var unionMembers []type_system.Type
 	for _, elem := range elems {
