@@ -5,12 +5,13 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
-// BindJournal records the TypeVar field values that bind() and its helpers
-// (handleArrayConstraintBinding, openClosedObjectForParam, the widening
-// fallback in unifyInner, and Prune's path compression) are about to
-// overwrite. Discard walks the records in reverse and restores the saved
-// values; Commit is a no-op since mutations were applied tentatively
-// in-place.
+// BindJournal records the TypeVar and LifetimeVar field values that
+// bind() and its helpers (handleArrayConstraintBinding,
+// openClosedObjectForParam, the widening fallback in unifyInner, the
+// open-object expansion in expand_type, Prune's path compression, and
+// UnifyLifetimes) are about to overwrite. Discard walks the records in
+// reverse and restores the saved values; Commit is a no-op since
+// mutations were applied tentatively in-place.
 //
 // Lives on Context so a value-copied ctx propagates the journal pointer
 // through every recursive unifyInner call without a save/restore dance —
@@ -18,7 +19,8 @@ import (
 //
 // Implements type_system.Journal so it can be passed directly to Prune.
 type BindJournal struct {
-	records []bindRecord
+	records         []bindRecord
+	lifetimeRecords []lifetimeRecord
 }
 
 // bindRecord snapshots the subset of TypeVarType fields that the unifier
@@ -32,6 +34,16 @@ type bindRecord struct {
 	arrayConstraint *type_system.ArrayConstraint
 	instanceChain   []*type_system.TypeVarType
 	prov            provenance.Provenance
+}
+
+// lifetimeRecord snapshots the Instance of a LifetimeVar mutated by
+// UnifyLifetimes. LifetimeVar has fewer mutable fields than TypeVar, so
+// the record is much smaller. Lives in a separate slice from bindRecord
+// because the two share no state: their rollbacks are independent and
+// the order between them doesn't matter.
+type lifetimeRecord struct {
+	lifetimeVar *type_system.LifetimeVar
+	instance    type_system.Lifetime
 }
 
 // Snapshot appends a record of tv's current mutable fields. Callers MUST
@@ -63,11 +75,25 @@ func (j *BindJournal) Snapshot(tv *type_system.TypeVarType) {
 	})
 }
 
-// rollback restores every record added at or after mark, in reverse
-// order. Used by Discard and by callers that need probe-scope semantics
-// over operations that aren't a single (t1, t2) unification (e.g. an
-// overload arm's full handleFuncCall — see infer_expr.go).
-func (j *BindJournal) rollback(mark int) {
+// SnapshotLifetime records lt's current Instance for rollback. Callers
+// MUST invoke this before any mutation to lt.Instance when
+// ctx.BindJournal is non-nil. Tolerates a nil receiver for the same
+// reason Snapshot does — see Snapshot's doc.
+func (j *BindJournal) SnapshotLifetime(lt *type_system.LifetimeVar) {
+	if j == nil {
+		return
+	}
+	j.lifetimeRecords = append(j.lifetimeRecords, lifetimeRecord{
+		lifetimeVar: lt,
+		instance:    lt.Instance,
+	})
+}
+
+// rollback restores every record added at or after the given marks, in
+// reverse order. Used by Discard and by callers that need probe-scope
+// semantics over operations that aren't a single (t1, t2) unification
+// (e.g. an overload arm's full handleFuncCall — see infer_expr.go).
+func (j *BindJournal) rollback(mark, ltMark int) {
 	records := j.records
 	for i := len(records) - 1; i >= mark; i-- {
 		r := &records[i]
@@ -79,15 +105,26 @@ func (j *BindJournal) rollback(mark int) {
 		r.typeVar.SetProvenance(r.prov)
 	}
 	j.records = records[:mark]
+
+	ltRecords := j.lifetimeRecords
+	for i := len(ltRecords) - 1; i >= ltMark; i-- {
+		r := &ltRecords[i]
+		r.lifetimeVar.Instance = r.instance
+	}
+	j.lifetimeRecords = ltRecords[:ltMark]
 }
 
 // ProbeScope is the journaled-bind context that beginProbeScope opens.
 // Callers run their probed operation between BeginProbeScope and
 // scope.Commit() / scope.Discard(). Use Probe instead for the common
 // case of probing a single (t1, t2) unification.
+//
+// Carries both record-slice marks so Discard rolls back exactly the
+// TypeVar and LifetimeVar mutations made between begin and discard.
 type ProbeScope struct {
 	journal *BindJournal
 	mark    int
+	ltMark  int
 }
 
 // beginProbeScope installs a journal on ctx (allocating one if ctx had
@@ -107,6 +144,7 @@ func (c *Checker) beginProbeScope(ctx *Context) ProbeScope {
 	return ProbeScope{
 		journal: j,
 		mark:    len(j.records),
+		ltMark:  len(j.lifetimeRecords),
 	}
 }
 
@@ -116,11 +154,11 @@ func (c *Checker) beginProbeScope(ctx *Context) ProbeScope {
 // the records are effectively permanent and get GC'd with the journal.
 func (s ProbeScope) Commit() {}
 
-// Discard restores every TypeVar field touched during the scope to its
-// pre-scope value. Replays records in reverse so stacked mutations to
-// the same TypeVar peel off in the right order.
+// Discard restores every TypeVar and LifetimeVar field touched during
+// the scope to its pre-scope value. Replays records in reverse so
+// stacked mutations to the same variable peel off in the right order.
 func (s ProbeScope) Discard() {
-	s.journal.rollback(s.mark)
+	s.journal.rollback(s.mark, s.ltMark)
 }
 
 // ProbeResult holds the outcome of a Probe call. The caller inspects
@@ -161,8 +199,22 @@ func (p ProbeResult) Discard() { p.scope.Discard() }
 // the offset so Discard rolls back only the inner probe's records. An
 // inner Commit leaves records in the outer journal, so the outer scope
 // can still roll them back as part of its own Discard.
+//
+// Allocates a fresh unifySeen, so callers driving Probe from within an
+// already-running unifyInner (the three intersection/union dispatch
+// sites in unify.go) should use probeWithSeen instead to inherit the
+// outer call's co-inductive cycle-detection history.
 func (c *Checker) Probe(ctx Context, t1, t2 type_system.Type) ProbeResult {
+	return c.probeWithSeen(ctx, t1, t2, make(unifySeen))
+}
+
+// probeWithSeen is the internal Probe variant that inherits an outer
+// unifyInner's seen map. Used by the intersection/union dispatch sites
+// in unifyMatched so a recursive type alias the outer call already
+// marked seen isn't re-expanded inside the probe (which would lose the
+// co-inductive cycle-termination guarantee).
+func (c *Checker) probeWithSeen(ctx Context, t1, t2 type_system.Type, seen unifySeen) ProbeResult {
 	scope := c.beginProbeScope(&ctx)
-	errors := c.unifyInner(ctx, t1, t2, make(unifySeen))
+	errors := c.unifyInner(ctx, t1, t2, seen)
 	return ProbeResult{scope: scope, errors: errors}
 }

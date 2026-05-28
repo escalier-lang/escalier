@@ -1301,7 +1301,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			for _, t2Part := range intersection2.Types {
 				found := false
 				for _, t1Part := range intersection1.Types {
-					probe := c.Probe(ctx, t1Part, t2Part)
+					probe := c.probeWithSeen(ctx, t1Part, t2Part, seen)
 					if probe.Success() {
 						probe.Commit()
 						found = true
@@ -1338,7 +1338,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		// (see #381, #660).
 		var allErrors []Error
 		for _, part := range intersection.Types {
-			probe := c.Probe(ctx, part, t2)
+			probe := c.probeWithSeen(ctx, part, t2, seen)
 			if probe.Success() {
 				probe.Commit()
 				return nil
@@ -1507,7 +1507,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		// failed attempts can roll back their partial TypeVar mutations
 		// (see #381, #660).
 		for _, unionType := range union.Types {
-			probe := c.Probe(ctx, t1, unionType)
+			probe := c.probeWithSeen(ctx, t1, unionType, seen)
 			if probe.Success() {
 				probe.Commit()
 				return nil

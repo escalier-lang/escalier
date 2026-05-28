@@ -89,10 +89,12 @@ func (c *Checker) UnifyLifetimes(ctx Context, l1, l2 type_system.Lifetime) []Err
 	// the only way to construct a cycle would be a same-var-twice
 	// binding, which the `l1 == l2` early return above already covers.
 	if v1, ok := l1.(*type_system.LifetimeVar); ok {
+		ctx.BindJournal.SnapshotLifetime(v1)
 		v1.Instance = l2
 		return nil
 	}
 	if v2, ok := l2.(*type_system.LifetimeVar); ok {
+		ctx.BindJournal.SnapshotLifetime(v2)
 		v2.Instance = l1
 		return nil
 	}

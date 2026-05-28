@@ -964,10 +964,12 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 				// Optional chaining: obj?.bar infers obj: {bar: T} | null | undefined.
 				// You can't mutate through optional chaining — the object might be
 				// null/undefined.
+				ctx.BindJournal.Snapshot(t)
 				t.Instance = type_system.NewUnionType(nil, openObj, type_system.NewNullType(nil), type_system.NewUndefinedType(nil))
 				// The expression obj?.bar itself may produce undefined
 				return type_system.NewUnionType(nil, propTV, type_system.NewUndefinedType(nil)), errors
 			}
+			ctx.BindJournal.Snapshot(t)
 			t.Instance = openObj
 			return propTV, errors
 		case IndexKey:
@@ -976,6 +978,7 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 			if indexLit, ok := keyType.(*type_system.LitType); ok {
 				if strLit, ok := indexLit.Lit.(*type_system.StrLit); ok {
 					propTV, openObj := c.newOpenObjectWithProperty(strLit.Value, k)
+					ctx.BindJournal.Snapshot(t)
 					t.Instance = openObj
 					return propTV, errors
 				}

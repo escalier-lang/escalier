@@ -86,6 +86,33 @@ func TestProbeFailureLeavesNoPollution(t *testing.T) {
 	_ = strType
 }
 
+// TestProbeDiscardRollsBackLifetimeBindings: a probe that binds a
+// LifetimeVar through UnifyLifetimes and is then discarded leaves the
+// LifetimeVar's Instance unset, as if the probe never happened.
+//
+// Without LifetimeVar journaling, a failed overload arm with a generic
+// lifetime parameter would leak the binding into the next arm.
+func TestProbeDiscardRollsBackLifetimeBindings(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
+	inferCtx := Context{}
+
+	lv := c.FreshLifetimeVar("a")
+	val := &ts.LifetimeValue{ID: 42, Name: "v"}
+
+	// Open a probe scope manually so we can invoke UnifyLifetimes
+	// directly (it isn't a (t1, t2) unification).
+	scope := c.beginProbeScope(&inferCtx)
+	errs := c.UnifyLifetimes(inferCtx, lv, val)
+	require.Empty(t, errs, "lifetime unification should succeed")
+	require.NotNil(t, lv.Instance, "during probe, lv.Instance is tentatively set")
+	scope.Discard()
+
+	require.Nil(t, lv.Instance,
+		"after Discard, LifetimeVar.Instance must be restored to nil")
+}
+
 // TestProbeNestedDiscardRestoresOuterView: nested probes share a single
 // journal. An inner Discard rolls back only the inner records; an outer
 // Discard rolls back the inner+outer records together.
