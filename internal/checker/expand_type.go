@@ -77,7 +77,7 @@ func isSymbolIndexKey(key MemberAccessKey) bool {
 	if !ok {
 		return false
 	}
-	keyType := type_system.Prune(indexKey.Type)
+	keyType := type_system.Prune(indexKey.Type, nil)
 	if mut, ok := keyType.(*type_system.MutType); ok {
 		keyType = mut.Type
 	}
@@ -115,7 +115,7 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 		return false
 	}
 
-	expandedType := type_system.Prune(typeAlias.Type)
+	expandedType := type_system.Prune(typeAlias.Type, ctx.BindJournal)
 
 	// Don't expand nominal object types — nominal semantics are enforced
 	// in the ObjectType vs ObjectType case in unifyMatched. Expanding here
@@ -152,7 +152,7 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 		if alias == nil {
 			break
 		}
-		cur = type_system.Prune(alias.Type)
+		cur = type_system.Prune(alias.Type, ctx.BindJournal)
 	}
 
 	return true
@@ -165,7 +165,7 @@ func (c *Checker) ExpandType(ctx Context, t type_system.Type, expandTypeRefsCoun
 }
 
 func (c *Checker) expandTypeWithConfig(ctx Context, t type_system.Type, expandTypeRefsCount int, seen expandSeen) (type_system.Type, []Error) {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, ctx.BindJournal)
 	visitor := NewTypeExpansionVisitor(c, ctx, expandTypeRefsCount)
 	visitor.seen = seen
 
@@ -369,11 +369,11 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		return distributed
 	case *type_system.KeyOfType:
 		// Expand keyof T by extracting the keys from the type T
-		targetType := type_system.Prune(t.Type)
+		targetType := type_system.Prune(t.Type, nil)
 
 		// First, try to expand the target type
 		expandedTarget, _ := v.checker.expandTypeWithConfig(v.ctx, targetType, 1, v.seen)
-		expandedTarget = type_system.Prune(expandedTarget)
+		expandedTarget = type_system.Prune(expandedTarget, nil)
 
 		// Unwrap MutType so keyof sees the actual object type
 		if mut, ok := expandedTarget.(*type_system.MutType); ok {
@@ -559,7 +559,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
 			// Do not perform distributions if the conditional type is the child
 			// of any other type.
-			switch prunedType := type_system.Prune(expandedType).(type) {
+			switch prunedType := type_system.Prune(expandedType, nil).(type) {
 			case *type_system.CondType:
 				// generateSubstitutionSets expands each arg internally to check
 				// whether it's a union for distribution purposes, so we don't
@@ -599,7 +599,7 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			// Expand MappedElems in ObjectTypes even if there are no type params/args
 			// `{[P]: string for P in "foo" | "bar"}` should be expanded to
 			// `{foo: string, bar: string}`
-			if objType, ok := type_system.Prune(expandedType).(*type_system.ObjectType); ok {
+			if objType, ok := type_system.Prune(expandedType, nil).(*type_system.ObjectType); ok {
 				expandedType = v.expandMappedElems(objType)
 			}
 		}
@@ -663,7 +663,7 @@ func (c *Checker) getMemberType(ctx Context, objType type_system.Type, key Membe
 func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key MemberAccessKey, mode AccessMode, receiverMut bool) (type_system.Type, []Error) {
 	errors := []Error{}
 
-	objType = type_system.Prune(objType)
+	objType = type_system.Prune(objType, ctx.BindJournal)
 
 	// Fast path for TypeRefTypes: try O(1) per-member lazy lookup before
 	// the expansion loop which would substitute the entire ObjectType (#461).
@@ -933,7 +933,7 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 			case IndexKey:
 				// If the index is a string literal, route to property access
 				// instead of numeric index access.
-				keyType := type_system.Prune(k.Type)
+				keyType := type_system.Prune(k.Type, ctx.BindJournal)
 				if mut, ok := keyType.(*type_system.MutType); ok {
 					keyType = mut.Type
 				}
@@ -1014,9 +1014,9 @@ func (c *Checker) getMemberTypeImpl(ctx Context, objType type_system.Type, key M
 // resolveToObjectType attempts to resolve a type to an *ObjectType. It handles
 // direct ObjectTypes, MutType wrappers, and TypeRefTypes with aliases.
 func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
-	resolved := type_system.Prune(t)
+	resolved := type_system.Prune(t, nil)
 	if mut, ok := resolved.(*type_system.MutType); ok {
-		resolved = type_system.Prune(mut.Type)
+		resolved = type_system.Prune(mut.Type, nil)
 	}
 	if obj, ok := resolved.(*type_system.ObjectType); ok {
 		return obj
@@ -1040,7 +1040,7 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 // constraint's wrapper is consulted; an unconstrained type variable is
 // treated as immutable so generic code can't sneak past the gate.
 func ReceiverIsDefinitelyMutable(t type_system.Type) bool {
-	pruned := type_system.Prune(t)
+	pruned := type_system.Prune(t, nil)
 	if _, ok := pruned.(*type_system.MutType); ok {
 		return true
 	}
@@ -1115,7 +1115,7 @@ func (c *Checker) lazyMemberLookup(ctx Context, t *type_system.TypeRefType, name
 		return nil, false
 	}
 
-	aliasType := type_system.Prune(typeAlias.Type)
+	aliasType := type_system.Prune(typeAlias.Type, ctx.BindJournal)
 	objType, ok := aliasType.(*type_system.ObjectType)
 	if !ok {
 		return nil, false
@@ -1275,14 +1275,14 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		for _, extendsTypeRef := range objType.Extends {
 			extendsType := type_system.Type(extendsTypeRef)
 
-			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
+			if typeRef, ok := type_system.Prune(extendsType, nil).(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
 					resolved := typeRef.TypeAlias.Type
 					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
 						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
 						resolved = SubstituteTypeParams(resolved, subs)
 					}
-					extendsType = type_system.Prune(resolved)
+					extendsType = type_system.Prune(resolved, nil)
 				}
 			}
 
@@ -1505,14 +1505,14 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		// is guaranteed non-nil for valid code).
 		for _, extendsTypeRef := range objType.Extends {
 			extendsType := type_system.Type(extendsTypeRef)
-			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
+			if typeRef, ok := type_system.Prune(extendsType, nil).(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
 					resolved := typeRef.TypeAlias.Type
 					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
 						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
 						resolved = SubstituteTypeParams(resolved, subs)
 					}
-					extendsType = type_system.Prune(resolved)
+					extendsType = type_system.Prune(resolved, nil)
 				}
 			}
 			if extendsObjType, ok := extendsType.(*type_system.ObjectType); ok {
@@ -1619,7 +1619,7 @@ func markPropertyWritten(prunedType type_system.Type, propName string) bool {
 // This includes the number primitive and numeric literal types that are not
 // valid non-negative integer tuple indices (e.g. floats, negatives).
 func isNumericType(t type_system.Type) bool {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 	if numPrim, ok := t.(*type_system.PrimType); ok && numPrim.Prim == type_system.NumPrim {
 		return true
 	}
@@ -1644,7 +1644,7 @@ func isNumericType(t type_system.Type) bool {
 const maxTupleIndex = 20
 
 func asNonNegativeIntLiteral(t type_system.Type) (int, bool) {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 	if litType, ok := t.(*type_system.LitType); ok {
 		if numLit, ok := litType.Lit.(*type_system.NumLit); ok {
 			val := numLit.Value
@@ -1744,7 +1744,7 @@ func (c *Checker) isArrayOnlyMethod(propName string) bool {
 	if arrayAlias == nil {
 		return false
 	}
-	arrayType := type_system.Prune(arrayAlias.Type)
+	arrayType := type_system.Prune(arrayAlias.Type, nil)
 	objType, ok := arrayType.(*type_system.ObjectType)
 	if !ok {
 		return false
@@ -1765,7 +1765,7 @@ func (c *Checker) isArrayMutatingMethod(methodName string) bool {
 	if arrayAlias == nil {
 		return false
 	}
-	arrayType := type_system.Prune(arrayAlias.Type)
+	arrayType := type_system.Prune(arrayAlias.Type, nil)
 	objType, ok := arrayType.(*type_system.ObjectType)
 	if !ok {
 		return false
@@ -1857,7 +1857,7 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 	funcTypes := []*type_system.FuncType{}
 
 	for _, part := range intersectionType.Types {
-		part = type_system.Prune(part)
+		part = type_system.Prune(part, ctx.BindJournal)
 		// Unwrap MutType so explicit `mut Foo` parts are classified as
 		// object parts of the intersection.
 		if mut, ok := part.(*type_system.MutType); ok {
@@ -1932,7 +1932,7 @@ func (c *Checker) getIntersectionAccess(ctx Context, intersectionType *type_syst
 
 	// If not found in object types, try other parts (primitives, functions, etc.)
 	for _, part := range intersectionType.Types {
-		part = type_system.Prune(part)
+		part = type_system.Prune(part, ctx.BindJournal)
 		// Skip object types (including MutType-wrapped) since we already checked them
 		unwrapped := part
 		if mut, ok := unwrapped.(*type_system.MutType); ok {
@@ -1991,7 +1991,7 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType
 
 			// Extract keys from the constraint
 			var keys []type_system.Type
-			switch constraint := type_system.Prune(expandedConstraint).(type) {
+			switch constraint := type_system.Prune(expandedConstraint, nil).(type) {
 			case *type_system.UnionType:
 				keys = constraint.Types
 			default:
@@ -2000,7 +2000,7 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType
 
 			// For each key in the constraint, create a property or index signature
 			for _, keyType := range keys {
-				keyType = type_system.Prune(keyType)
+				keyType = type_system.Prune(keyType, nil)
 
 				// If the key type is a primitive (string, number, symbol), emit an
 				// IndexSignatureElem — we cannot enumerate an infinite key space.
@@ -2057,7 +2057,7 @@ func (v *TypeExpansionVisitor) expandMappedElems(objType *type_system.ObjectType
 
 					// Expand the property key to resolve template literals
 					propKeyType, _ = v.checker.ExpandType(v.ctx, propKeyType, -1)
-					propKeyType = type_system.Prune(propKeyType)
+					propKeyType = type_system.Prune(propKeyType, nil)
 
 					// Convert the expanded key type to an ObjTypeKey
 					switch kt := propKeyType.(type) {
@@ -2182,7 +2182,7 @@ func (v *TypeExpansionVisitor) expandTemplateLitType(t *type_system.TemplateLitT
 	typeOptions := make([][]type_system.Type, len(t.Types))
 
 	for i, t := range t.Types {
-		t = type_system.Prune(t)
+		t = type_system.Prune(t, nil)
 		t, _ = v.checker.ExpandType(v.ctx, t, -1) // fully expand nested type refs
 
 		if unionType, ok := t.(*type_system.UnionType); ok {
@@ -2265,7 +2265,7 @@ func (c *Checker) NormalizeIntersectionType(ctx Context, t *type_system.Intersec
 	expanded := make([]type_system.Type, len(t.Types))
 	for i, typ := range t.Types {
 		// Prune to resolve type variables
-		typ = type_system.Prune(typ)
+		typ = type_system.Prune(typ, ctx.BindJournal)
 
 		// Expand type aliases to their underlying types
 		// Use depth 1 to expand one level of type aliases
@@ -2402,7 +2402,7 @@ func (v *InferTypeFinder) EnterType(t type_system.Type) type_system.EnterResult 
 }
 
 func (v *InferTypeFinder) ExitType(t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 
 	if inferType, ok := t.(*type_system.InferType); ok {
 		if existingVar, exists := v.inferVars[inferType.Name]; exists {
@@ -2439,7 +2439,7 @@ func (v *InferTypeReplacer) EnterType(t type_system.Type) type_system.EnterResul
 }
 
 func (v *InferTypeReplacer) ExitType(t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 
 	// Check if this is an InferType that should be replaced
 	if inferType, ok := t.(*type_system.InferType); ok {
@@ -2459,7 +2459,7 @@ func (v *InferTypeReplacer) ExitType(t type_system.Type) type_system.Type {
 // it returns T (the index doesn't matter since all elements have the same
 // type). For unresolved types it returns the type as-is.
 func restElemType(rest *type_system.RestSpreadType, index int) type_system.Type {
-	resolved := type_system.Prune(rest.Type)
+	resolved := type_system.Prune(rest.Type, nil)
 	switch r := resolved.(type) {
 	case *type_system.TupleType:
 		// Count fixed (non-rest) elements and find any nested rest spread.
@@ -2508,7 +2508,7 @@ func tupleElemUnion(t *type_system.TupleType) type_system.Type {
 	var types []type_system.Type
 	for _, elem := range t.Elems {
 		if rest, ok := elem.(*type_system.RestSpreadType); ok {
-			resolved := type_system.Prune(rest.Type)
+			resolved := type_system.Prune(rest.Type, nil)
 			switch r := resolved.(type) {
 			case *type_system.TupleType:
 				types = append(types, r.Elems...)

@@ -130,7 +130,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			}
 
 			localName := extractLocalName(name)
-			bindingType := type_sys.Prune(binding.Type)
+			bindingType := type_sys.Prune(binding.Type, nil)
 
 			var ifaceStmt *DeclStmt = nil
 			typeAnn := b.buildTypeAnn(bindingType)
@@ -380,7 +380,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			return nil
 		}
 
-		t := type_sys.Prune(typeAlias.Type)
+		t := type_sys.Prune(typeAlias.Type, nil)
 
 		// Classes are represented as nominal ObjectTypes
 		objType, ok := t.(*type_sys.ObjectType)
@@ -435,7 +435,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 			return nil
 		}
 
-		staticType, ok := type_sys.Prune(staticTypeBinding.Type).(*type_sys.ObjectType)
+		staticType, ok := type_sys.Prune(staticTypeBinding.Type, nil).(*type_sys.ObjectType)
 		if !ok {
 			return nil
 		}
@@ -488,7 +488,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 				// Create type declaration for the variant instance type
 				variantTypeAlias := enumNS.Types[variantLocalName]
 				if variantTypeAlias != nil {
-					variantType := type_sys.Prune(variantTypeAlias.Type)
+					variantType := type_sys.Prune(variantTypeAlias.Type, nil)
 					variantTypeAnn := b.buildTypeAnn(variantType)
 
 					// Build type parameters from the variant's type alias
@@ -531,7 +531,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 				// Create value declaration for the variant constructor
 				variantBinding := enumNS.Values[variantLocalName]
 				if variantBinding != nil {
-					constructorType := type_sys.Prune(variantBinding.Type)
+					constructorType := type_sys.Prune(variantBinding.Type, nil)
 					constructorTypeAnn := b.buildTypeAnn(constructorType)
 
 					variantValueDecl := &VarDecl{
@@ -583,7 +583,7 @@ func (b *Builder) buildDeclStmt(decl ast.Decl, namespace *type_sys.Namespace, is
 		// Create the type alias for the enum (union of all variants)
 		enumTypeAlias := namespace.Types[decl.Name.Name]
 		if enumTypeAlias != nil {
-			enumType := type_sys.Prune(enumTypeAlias.Type)
+			enumType := type_sys.Prune(enumTypeAlias.Type, nil)
 			enumTypeAnn := b.buildTypeAnn(enumType)
 
 			// Build type parameters from the declaration
@@ -696,7 +696,7 @@ func convertQualIdent(tsIdent type_sys.QualIdent) QualIdent {
 }
 
 func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
-	switch t := type_sys.Prune(t).(type) {
+	switch t := type_sys.Prune(t, nil).(type) {
 	case *type_sys.TypeVarType:
 		// After generalization, unresolved type vars should not reach here.
 		// Fall back to unknown as a safety net.

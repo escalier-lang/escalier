@@ -940,7 +940,7 @@ func TestTypeVarVisitor(t *testing.T) {
 		visitor := &IdentityVisitor{}
 		result := original.Accept(visitor)
 
-		// This is a bit of a special case because the visitor calls Prune(t)
+		// This is a bit of a special case because the visitor calls Prune(t, nil)
 		// which results in the instance being returned directly instead of the
 		// original TypeVarType.
 		assert.Same(t, instanceType, result)

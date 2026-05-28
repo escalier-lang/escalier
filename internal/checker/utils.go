@@ -83,7 +83,7 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*type_system.Obj
 
 		// TODO(#413): handle custom symbols from Symbol() — currently only
 		// well-known symbols (UniqueSymbolType) are supported as computed keys.
-		switch t := type_system.Prune(keyType).(type) {
+		switch t := type_system.Prune(keyType, ctx.BindJournal).(type) {
 		case *type_system.LitType:
 			switch lit := t.Lit.(type) {
 			case *type_system.StrLit:
@@ -108,10 +108,10 @@ func (c *Checker) astKeyToTypeKey(ctx Context, key ast.ObjKey) (*type_system.Obj
 
 // Helper function to remove undefined from a union type
 func removeUndefinedFromType(t type_system.Type) type_system.Type {
-	if unionType, ok := type_system.Prune(t).(*type_system.UnionType); ok {
+	if unionType, ok := type_system.Prune(t, nil).(*type_system.UnionType); ok {
 		nonUndefinedTypes := []type_system.Type{}
 		for _, typ := range unionType.Types {
-			if litType, ok := type_system.Prune(typ).(*type_system.LitType); ok {
+			if litType, ok := type_system.Prune(typ, nil).(*type_system.LitType); ok {
 				if _, isUndefined := litType.Lit.(*type_system.UndefinedLit); isUndefined {
 					continue // Skip undefined
 				}
@@ -129,7 +129,7 @@ func removeUndefinedFromType(t type_system.Type) type_system.Type {
 func (c *Checker) getDefinedElems(unionType *type_system.UnionType) []type_system.Type {
 	definedElems := []type_system.Type{}
 	for _, elem := range unionType.Types {
-		elem = type_system.Prune(elem)
+		elem = type_system.Prune(elem, nil)
 		switch elem := elem.(type) {
 		case *type_system.LitType:
 			switch elem.Lit.(type) {

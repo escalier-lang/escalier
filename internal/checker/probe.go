@@ -15,6 +15,8 @@ import (
 // Lives on Context so a value-copied ctx propagates the journal pointer
 // through every recursive unifyInner call without a save/restore dance —
 // the same propagation discipline used by QueryUnify (see unify_mode.go).
+//
+// Implements type_system.Journal so it can be passed directly to Prune.
 type BindJournal struct {
 	records []bindRecord
 }
@@ -32,13 +34,24 @@ type bindRecord struct {
 	prov            provenance.Provenance
 }
 
-// snapshot appends a record of tv's current mutable fields. Callers MUST
-// invoke this before any mutation when ctx.BindJournal is non-nil.
+// Snapshot appends a record of tv's current mutable fields. Callers MUST
+// invoke this before any mutation when ctx.BindJournal is non-nil. This
+// is also the method that satisfies type_system.Journal so Prune can
+// record path-compression and recordInstanceChain mutations.
+//
+// Tolerates a nil receiver so callers can pass ctx.BindJournal
+// unconditionally — a typed-nil *BindJournal wrapped in the Journal
+// interface looks non-nil to Prune's `j != nil` guard, and this nil
+// check is the simpler fix than having every caller compute the
+// interface conversion themselves.
 //
 // Idempotency is not required: multiple snapshots of the same TypeVar
 // just stack. Discard restores in reverse order so each snapshot peels
 // one mutation off the stack, leaving the TypeVar in its pre-probe shape.
-func (j *BindJournal) snapshot(tv *type_system.TypeVarType) {
+func (j *BindJournal) Snapshot(tv *type_system.TypeVarType) {
+	if j == nil {
+		return
+	}
 	j.records = append(j.records, bindRecord{
 		typeVar:         tv,
 		instance:        tv.Instance,
@@ -73,15 +86,14 @@ func (j *BindJournal) rollback(mark int) {
 // scope.Commit() / scope.Discard(). Use Probe instead for the common
 // case of probing a single (t1, t2) unification.
 type ProbeScope struct {
-	journal  *BindJournal
-	mark     int
-	prevHook func(*type_system.TypeVarType)
+	journal *BindJournal
+	mark    int
 }
 
-// beginProbeScope installs a journal (allocating one if ctx had none)
-// and a Prune mutation hook so subsequent mutations are snapshotted. The
-// caller is responsible for calling Commit or Discard on the returned
-// scope.
+// beginProbeScope installs a journal on ctx (allocating one if ctx had
+// none) so subsequent Prune calls and bind sites that receive
+// ctx.BindJournal will snapshot pre-mutation state. The caller is
+// responsible for calling Commit or Discard on the returned scope.
 //
 // Takes *Context so the journal pointer becomes visible to subsequent
 // recursive calls that pass ctx by value (each copy keeps the same
@@ -92,28 +104,22 @@ func (c *Checker) beginProbeScope(ctx *Context) ProbeScope {
 		ctx.BindJournal = &BindJournal{}
 	}
 	j := ctx.BindJournal
-	s := ProbeScope{
-		journal:  j,
-		mark:     len(j.records),
-		prevHook: type_system.PruneMutationHook,
+	return ProbeScope{
+		journal: j,
+		mark:    len(j.records),
 	}
-	type_system.PruneMutationHook = j.snapshot
-	return s
 }
 
 // Commit keeps every mutation made during the scope. The records stay
 // in the journal: if the scope is nested inside an outer probe the
 // outer can still roll them back as part of its own Discard; if not,
 // the records are effectively permanent and get GC'd with the journal.
-func (s ProbeScope) Commit() {
-	type_system.PruneMutationHook = s.prevHook
-}
+func (s ProbeScope) Commit() {}
 
 // Discard restores every TypeVar field touched during the scope to its
 // pre-scope value. Replays records in reverse so stacked mutations to
 // the same TypeVar peel off in the right order.
 func (s ProbeScope) Discard() {
-	type_system.PruneMutationHook = s.prevHook
 	s.journal.rollback(s.mark)
 }
 

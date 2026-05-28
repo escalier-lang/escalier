@@ -191,7 +191,7 @@ func (c *Checker) checkMutabilityTransition(
 // them to another variable creates an independent copy, so alias tracking
 // is unnecessary.
 func isValueType(t type_system.Type) bool {
-	pruned := type_system.Prune(t)
+	pruned := type_system.Prune(t, nil)
 	switch p := pruned.(type) {
 	case *type_system.PrimType, *type_system.LitType:
 		return true
@@ -210,7 +210,7 @@ func isValueType(t type_system.Type) bool {
 // determines how a variable accesses the shared value for alias tracking
 // purposes.
 func isMutableType(t type_system.Type) bool {
-	pruned := type_system.Prune(t)
+	pruned := type_system.Prune(t, nil)
 	_, ok := pruned.(*type_system.MutType)
 	return ok
 }

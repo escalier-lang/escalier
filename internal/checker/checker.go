@@ -131,7 +131,7 @@ func (c *Checker) FreshLifetimeVar(name string) *type_system.LifetimeVar {
 //     Symbol.customMatcher method
 //   - (nil, nil) when the extractor is not an ObjectType
 func (c *Checker) findCustomMatcherMethod(ext *type_system.ExtractorType) (*type_system.MethodElem, *type_system.ObjectType) {
-	extractor := type_system.Prune(ext.Extractor)
+	extractor := type_system.Prune(ext.Extractor, nil)
 	extObj, ok := extractor.(*type_system.ObjectType)
 	if !ok {
 		return nil, nil

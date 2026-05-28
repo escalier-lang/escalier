@@ -206,8 +206,8 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 	// concrete type. Prune records the alias chain in tv2.InstanceChain, which
 	// the widening fallback reads to update all aliased TypeVars.
 	tv2, _ := t2.(*type_system.TypeVarType)
-	t1 = type_system.Prune(t1)
-	t2 = type_system.Prune(t2)
+	t1 = type_system.Prune(t1, ctx.BindJournal)
+	t2 = type_system.Prune(t2, ctx.BindJournal)
 
 	errors := c.unifyPruned(ctx, t1, t2, seen)
 	if len(errors) == 0 {
@@ -268,7 +268,7 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 		}
 		for _, tv := range widenableChain {
 			if ctx.BindJournal != nil {
-				ctx.BindJournal.snapshot(tv)
+				ctx.BindJournal.Snapshot(tv)
 			}
 			tv.Instance = widened
 		}
@@ -344,8 +344,8 @@ func (c *Checker) unifyPruned(ctx Context, t1, t2 type_system.Type, seen unifySe
 			// Prune after expansion to resolve any TypeVarTypes returned by
 			// expansion (e.g. TypeOfType resolves to a scope binding's
 			// TypeVarType, which must be pruned before re-entering unifyMatched).
-			t1 = type_system.Prune(nonRefExpT1)
-			t2 = type_system.Prune(nonRefExpT2)
+			t1 = type_system.Prune(nonRefExpT1, ctx.BindJournal)
+			t2 = type_system.Prune(nonRefExpT2, ctx.BindJournal)
 			continue
 		}
 
@@ -1782,9 +1782,9 @@ func (c *Checker) unifyClosedWithRests(
 			// Setters on the outer object are kept (direct access).
 			addEffective(elem.Name, elem.Fn.Params[0].Type)
 		case *type_system.RestSpreadElem:
-			pruned := type_system.Prune(elem.Value)
+			pruned := type_system.Prune(elem.Value, ctx.BindJournal)
 			if mut, ok := pruned.(*type_system.MutType); ok {
-				pruned = type_system.Prune(mut.Type)
+				pruned = type_system.Prune(mut.Type, ctx.BindJournal)
 			}
 			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
 				unboundRests = append(unboundRests, tv)
@@ -1805,7 +1805,7 @@ func (c *Checker) unifyClosedWithRests(
 						// Nested rest from chained destructuring (e.g. the T3 in
 						// {y: T2, ...T3}). Collect so remaining target properties
 						// can flow into it.
-						innerPruned := type_system.Prune(re.Value)
+						innerPruned := type_system.Prune(re.Value, ctx.BindJournal)
 						if tv, ok := innerPruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
 							unboundRests = append(unboundRests, tv)
 						}
@@ -2169,15 +2169,15 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 						// Propagate the constraint to typeVar2 since it becomes the
 						// representative of this equivalence class after binding.
 						if ctx.BindJournal != nil {
-							ctx.BindJournal.snapshot(typeVar2)
+							ctx.BindJournal.Snapshot(typeVar2)
 						}
 						typeVar2.Constraint = typeVar1.Constraint
 					}
 					// Propagate IsObjectRest so that Prune() returns a TypeVar
 					// that preserves the marker for the tuple spread check.
 					if ctx.BindJournal != nil {
-						ctx.BindJournal.snapshot(typeVar1)
-						ctx.BindJournal.snapshot(typeVar2)
+						ctx.BindJournal.Snapshot(typeVar1)
+						ctx.BindJournal.Snapshot(typeVar2)
 					}
 					typeVar2.IsObjectRest = typeVar2.IsObjectRest || typeVar1.IsObjectRest
 					typeVar1.Instance = t2
@@ -2238,7 +2238,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 					targetType = rebuildContainers(targetType)
 				}
 				if ctx.BindJournal != nil {
-					ctx.BindJournal.snapshot(typeVar1)
+					ctx.BindJournal.Snapshot(typeVar1)
 				}
 				typeVar1.Instance = targetType
 				typeVar1.SetProvenance(&type_system.TypeProvenance{
@@ -2287,7 +2287,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 					targetType = rebuildContainers(targetType)
 				}
 				if ctx.BindJournal != nil {
-					ctx.BindJournal.snapshot(typeVar2)
+					ctx.BindJournal.Snapshot(typeVar2)
 				}
 				typeVar2.Instance = targetType
 				typeVar2.SetProvenance(&type_system.TypeProvenance{
@@ -2312,7 +2312,7 @@ func (v *OccursInVisitor) EnterType(t type_system.Type) type_system.EnterResult 
 }
 
 func (v *OccursInVisitor) ExitType(t type_system.Type) type_system.Type {
-	if type_system.Equals(type_system.Prune(t), v.t1) {
+	if type_system.Equals(type_system.Prune(t, nil), v.t1) {
 		v.result = true
 	}
 	return nil
@@ -2331,7 +2331,7 @@ func occursInType(t1, t2 type_system.Type) bool {
 	// the occursInType calls below will themselves hit this same block if
 	// ElemTypeVar or a LiteralIndexes entry is a TypeVar with its own
 	// ArrayConstraint, so nested constraints are covered without additional work.
-	if tv, ok := type_system.Prune(t2).(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
+	if tv, ok := type_system.Prune(t2, nil).(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
 		if occursInType(t1, tv.ArrayConstraint.ElemTypeVar) {
 			return true
 		}
@@ -2379,7 +2379,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 			// Bind the TypeVar to the array type and clear the constraint so
 			// that resolveArrayConstraintsInType won't re-resolve it.
 			if ctx.BindJournal != nil {
-				ctx.BindJournal.snapshot(typeVar)
+				ctx.BindJournal.Snapshot(typeVar)
 			}
 			typeVar.Instance = boundType
 			typeVar.ArrayConstraint = nil
@@ -2401,7 +2401,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 				// literal indexes). Indexes beyond the prefix fall into rest.
 				targetType = rest.Type
 				// Extract element type from Array<T> if the rest is an array
-				if ref, ok := type_system.Prune(targetType).(*type_system.TypeRefType); ok && c.isArrayType(ref) && len(ref.TypeArgs) > 0 {
+				if ref, ok := type_system.Prune(targetType, ctx.BindJournal).(*type_system.TypeRefType); ok && c.isArrayType(ref) && len(ref.TypeArgs) > 0 {
 					targetType = ref.TypeArgs[0]
 				}
 			} else if idx < len(prefix)+len(suffix) {
@@ -2417,7 +2417,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 		// Bind the TypeVar to the tuple and clear the constraint so that
 		// resolveArrayConstraintsInType won't recreate a different tuple.
 		if ctx.BindJournal != nil {
-			ctx.BindJournal.snapshot(typeVar)
+			ctx.BindJournal.Snapshot(typeVar)
 		}
 		typeVar.Instance = boundType
 		typeVar.ArrayConstraint = nil
@@ -2460,7 +2460,7 @@ func (c *Checker) openClosedObjectForParam(ctx Context, typeVar *type_system.Typ
 	}
 	// Re-wrap in MutType if the original was wrapped.
 	if ctx.BindJournal != nil {
-		ctx.BindJournal.snapshot(typeVar)
+		ctx.BindJournal.Snapshot(typeVar)
 	}
 	if mutWrapper != nil {
 		typeVar.Instance = &type_system.MutType{
@@ -2555,7 +2555,7 @@ func distributeIntersectionOverUnion(intersection *type_system.IntersectionType)
 	// Check if any of the types in the intersection is a union
 	var unionIndex = -1
 	for i, t := range intersection.Types {
-		t = type_system.Prune(t)
+		t = type_system.Prune(t, nil)
 		if _, ok := t.(*type_system.UnionType); ok {
 			unionIndex = i
 			break
@@ -2567,7 +2567,7 @@ func distributeIntersectionOverUnion(intersection *type_system.IntersectionType)
 		return intersection, false
 	}
 
-	union := type_system.Prune(intersection.Types[unionIndex]).(*type_system.UnionType)
+	union := type_system.Prune(intersection.Types[unionIndex], nil).(*type_system.UnionType)
 
 	otherTypes := make([]type_system.Type, 0, len(intersection.Types)-1)
 	otherTypes = append(otherTypes, intersection.Types[:unionIndex]...)
@@ -2606,7 +2606,7 @@ func widenLiteral(t type_system.Type) type_system.Type {
 	}
 	// Follow TypeVar instances so we can widen the underlying concrete type
 	// (e.g. MutType wrapping a TypeVar whose Instance is an ObjectType).
-	inner = type_system.Prune(inner)
+	inner = type_system.Prune(inner, nil)
 
 	var widened type_system.Type
 	switch v := inner.(type) {
@@ -2661,7 +2661,7 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 		switch e := elem.(type) {
 		case *type_system.PropertyElem:
 			// Prune through TypeVars, then widen.
-			val := type_system.Prune(e.Value)
+			val := type_system.Prune(e.Value, nil)
 			widened := widenLiteral(val)
 			if widened != e.Value {
 				changed = true
@@ -2730,7 +2730,7 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 func widenFuncType(fn *type_system.FuncType) *type_system.FuncType {
 	changed := false
 
-	ret := type_system.Prune(fn.Return)
+	ret := type_system.Prune(fn.Return, nil)
 	widenedReturn := widenLiteral(ret)
 	if widenedReturn != fn.Return {
 		changed = true
@@ -2738,7 +2738,7 @@ func widenFuncType(fn *type_system.FuncType) *type_system.FuncType {
 
 	newParams := make([]*type_system.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
-		pt := type_system.Prune(p.Type)
+		pt := type_system.Prune(p.Type, nil)
 		widened := widenLiteral(pt)
 		if widened != p.Type {
 			changed = true
@@ -2764,7 +2764,7 @@ func widenTupleLiterals(tuple *type_system.TupleType) *type_system.TupleType {
 	newElems := make([]type_system.Type, len(tuple.Elems))
 	changed := false
 	for i, elem := range tuple.Elems {
-		val := type_system.Prune(elem)
+		val := type_system.Prune(elem, nil)
 		widened := widenLiteral(val)
 		if widened != elem {
 			changed = true

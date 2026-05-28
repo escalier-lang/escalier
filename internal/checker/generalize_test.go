@@ -40,7 +40,7 @@ func TestGeneralizeFuncType_TypeVarConstraintWithNestedTypeVar(t *testing.T) {
 	assert.Equal(t, "Array", ts.QualIdentToString(constraint.Name))
 	assert.Len(t, constraint.TypeArgs, 1)
 	// The type arg resolves (via Prune) to a TypeRefType referencing T1
-	typeArg, ok := ts.Prune(constraint.TypeArgs[0]).(*ts.TypeRefType)
+	typeArg, ok := ts.Prune(constraint.TypeArgs[0], nil).(*ts.TypeRefType)
 	assert.True(t, ok, "type arg should resolve to a TypeRefType")
 	assert.Equal(t, "T1", ts.QualIdentToString(typeArg.Name))
 }
@@ -322,7 +322,7 @@ func TestGeneralizeFuncType_ThrowsOnlyTypeVarBecomesNever(t *testing.T) {
 
 	assert.Len(t, funcType.TypeParams, 0)
 	// tvThrows should have been resolved to never
-	pruned := ts.Prune(tvThrows)
+	pruned := ts.Prune(tvThrows, nil)
 	_, isNever := pruned.(*ts.NeverType)
 	assert.True(t, isNever)
 }

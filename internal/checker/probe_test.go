@@ -24,7 +24,7 @@ func TestProbeCommitKeepsBindings(t *testing.T) {
 	require.True(t, probe.Success(), "probing TV =:= number should succeed")
 	probe.Commit()
 
-	require.Same(t, numType, ts.Prune(tv),
+	require.Same(t, numType, ts.Prune(tv, nil),
 		"after Commit, tv must resolve to the bound type")
 }
 

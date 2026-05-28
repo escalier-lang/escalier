@@ -720,14 +720,14 @@ func TestClassMethodSelfParamPopulated(t *testing.T) {
 			classAlias := ns.Types[test.className]
 			require.NotNilf(t, classAlias, "class type alias %q not found", test.className)
 
-			searchObj := type_system.Prune(classAlias.Type).(*type_system.ObjectType)
+			searchObj := type_system.Prune(classAlias.Type, nil).(*type_system.ObjectType)
 			if test.expectStatic {
 				// Static methods live on the class object's value
 				// binding, not on the instance type. Look up the
 				// constructor type alias for the class to inspect them.
 				ctorBinding := ns.Values[test.className]
 				require.NotNil(t, ctorBinding, "constructor binding not found")
-				if obj, ok := type_system.Prune(ctorBinding.Type).(*type_system.ObjectType); ok {
+				if obj, ok := type_system.Prune(ctorBinding.Type, nil).(*type_system.ObjectType); ok {
 					searchObj = obj
 				}
 			}
@@ -790,7 +790,7 @@ func TestClassMethodSelfLifetime(t *testing.T) {
 	ns := mustInferAsModule(t, src)
 	classAlias := ns.Types["Container"]
 	require.NotNil(t, classAlias)
-	objType := type_system.Prune(classAlias.Type).(*type_system.ObjectType)
+	objType := type_system.Prune(classAlias.Type, nil).(*type_system.ObjectType)
 
 	findMethod := func(name string) *type_system.FuncType {
 		for _, e := range objType.Elems {

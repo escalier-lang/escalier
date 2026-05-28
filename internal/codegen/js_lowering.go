@@ -31,7 +31,7 @@ func memberJSExpr(m *ast.MemberExpr) (string, bool) {
 	if objType == nil {
 		return "", false
 	}
-	nsType, ok := type_system.Prune(objType).(*type_system.NamespaceType)
+	nsType, ok := type_system.Prune(objType, nil).(*type_system.NamespaceType)
 	if !ok || nsType.Namespace == nil {
 		return "", false
 	}

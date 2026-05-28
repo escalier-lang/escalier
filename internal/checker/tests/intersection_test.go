@@ -117,7 +117,7 @@ func TestNormalizeIntersectionType(t *testing.T) {
 
 			// Prune to resolve type variables, then repeatedly call NormalizeIntersectionType
 			// until the result stops changing
-			resultType := type_system.Prune(binding.Type)
+			resultType := type_system.Prune(binding.Type, nil)
 
 			// Keep normalizing until the result stabilizes
 			maxIterations := 10
@@ -132,7 +132,7 @@ func TestNormalizeIntersectionType(t *testing.T) {
 					}
 
 					// Prune again in case we got a type variable
-					resultType = type_system.Prune(resultType)
+					resultType = type_system.Prune(resultType, nil)
 				} else {
 					// Not an intersection type anymore, we're done
 					break
@@ -298,8 +298,8 @@ func TestDistributiveLawsUsingExpandType(t *testing.T) {
 			t2Binding, ok := scope.Types["T2"]
 			assert.True(t, ok, "Expected T2 type alias to be defined")
 
-			t1Type := type_system.Prune(t1Binding.Type)
-			t2Type := type_system.Prune(t2Binding.Type)
+			t1Type := type_system.Prune(t1Binding.Type, nil)
+			t2Type := type_system.Prune(t2Binding.Type, nil)
 
 			// Expand T1 to see what it becomes after distribution
 			expandedT1, expandErrors := c.ExpandType(inferCtx, t1Type, -1)
@@ -566,8 +566,8 @@ func TestUnifyWithIntersections(t *testing.T) {
 			t2Binding, ok := scope.Types["T2"]
 			assert.True(t, ok, "Expected T2 type alias to be defined")
 
-			t1Type := type_system.Prune(t1Binding.Type)
-			t2Type := type_system.Prune(t2Binding.Type)
+			t1Type := type_system.Prune(t1Binding.Type, nil)
+			t2Type := type_system.Prune(t2Binding.Type, nil)
 
 			unifyErrors := c.Unify(inferCtx, t1Type, t2Type)
 

@@ -203,7 +203,7 @@ func sortKeysForDefinitions(depGraph *dep_graph.DepGraph, keys []dep_graph.Bindi
 // encountered (skipped), so callers can emit a diagnostic for name collisions
 // between a function overload and a non-function binding.
 func collectFuncArms(t type_system.Type, arms *[]*type_system.FuncType) int {
-	switch t := type_system.Prune(t).(type) {
+	switch t := type_system.Prune(t, nil).(type) {
 	case *type_system.IntersectionType:
 		nonFunc := 0
 		for _, arm := range t.Types {
@@ -749,7 +749,7 @@ func (c *Checker) InferComponent(
 					errors = slices.Concat(errors, extendsErrors)
 
 					if extendsType != nil {
-						if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
+						if typeRef, ok := type_system.Prune(extendsType, ctx.BindJournal).(*type_system.TypeRefType); ok {
 							objType.Extends = []*type_system.TypeRefType{typeRef}
 						}
 					}
@@ -760,7 +760,7 @@ func (c *Checker) InferComponent(
 				for _, implTypeAnn := range decl.Implements {
 					implType, implErrors := c.inferTypeAnn(declCtx, implTypeAnn)
 					errors = slices.Concat(errors, implErrors)
-					typeRef, ok := type_system.Prune(implType).(*type_system.TypeRefType)
+					typeRef, ok := type_system.Prune(implType, ctx.BindJournal).(*type_system.TypeRefType)
 					if !ok {
 						continue
 					}
@@ -1048,7 +1048,7 @@ func (c *Checker) InferComponent(
 					// Generalize VarDecl bindings that resolve to FuncType.
 					// This handles cases like `val I = S(K)(K)` where the
 					// initializer is a call returning a FuncType with unresolved vars.
-					prunedType := type_system.Prune(decl.InferredType)
+					prunedType := type_system.Prune(decl.InferredType, ctx.BindJournal)
 					if funcType, ok := prunedType.(*type_system.FuncType); ok {
 						c.resolveCallSites(nsCtx)
 						pendingFuncTypes = append(pendingFuncTypes, funcType)
@@ -1073,7 +1073,7 @@ func (c *Checker) InferComponent(
 				// Get the existing type alias from the CURRENT namespace only.
 				// The placeholder phase should have created this in the current namespace.
 				existingTypeAlias := nsCtx.Scope.Namespace.Types[decl.Name.Name]
-				prunedType := type_system.Prune(existingTypeAlias.Type)
+				prunedType := type_system.Prune(existingTypeAlias.Type, ctx.BindJournal)
 
 				// Check if the pruned type is already an ObjectType (from a previous interface)
 				if existingObjType, ok := prunedType.(*type_system.ObjectType); ok && existingObjType.Interface {
@@ -1161,7 +1161,7 @@ func (c *Checker) InferComponent(
 						// Create the SymbolKeyMap for the object type
 						symbolKeyMap := make(map[int]any)
 
-						switch customMatcher := type_system.Prune(customMatcher).(type) {
+						switch customMatcher := type_system.Prune(customMatcher, ctx.BindJournal).(type) {
 						case *type_system.UniqueSymbolType:
 							subjectPat := &type_system.IdentPat{Name: "subject"}
 							// The subject type should include type arguments if the enum is generic
@@ -1259,7 +1259,7 @@ func (c *Checker) InferComponent(
 				}
 
 				typeAlias := nsCtx.Scope.GetTypeAlias(decl.Name.Name)
-				instanceType := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
+				instanceType := type_system.Prune(typeAlias.Type, ctx.BindJournal).(*type_system.ObjectType)
 
 				// Get the class binding to access static methods
 				classBinding := nsCtx.Scope.GetValue(decl.Name.Name)
@@ -1348,7 +1348,7 @@ func (c *Checker) InferComponent(
 								// is detected.
 								resolved, expandErrors := c.ExpandType(ctx, prop.Value, 1)
 								errors = slices.Concat(errors, expandErrors)
-								if !typeContainsUndefined(type_system.Prune(resolved)) {
+								if !typeContainsUndefined(type_system.Prune(resolved, ctx.BindJournal)) {
 									errors = append(errors, StaticFieldMissingInitializerError{
 										FieldName: classFieldName(bodyElem.Name),
 										span:      bodyElem.Span(),

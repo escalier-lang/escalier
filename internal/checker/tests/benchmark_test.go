@@ -699,9 +699,9 @@ func TestArrayTypeStructure(t *testing.T) {
 	if alias == nil {
 		t.Fatal("Array type alias not found")
 	}
-	objType, ok := type_system.Prune(alias.Type).(*type_system.ObjectType)
+	objType, ok := type_system.Prune(alias.Type, nil).(*type_system.ObjectType)
 	if !ok {
-		t.Fatalf("Array type is %T, not ObjectType", type_system.Prune(alias.Type))
+		t.Fatalf("Array type is %T, not ObjectType", type_system.Prune(alias.Type, nil))
 	}
 
 	// Array should be a nominal interface with many elements and no Extends.

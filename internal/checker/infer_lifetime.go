@@ -485,9 +485,9 @@ func descendIntoSlot(t type_system.Type, path []liveness.ProjectionStep) type_sy
 // here so we can match against TupleType / ObjectType / Array<T> /
 // Promise<T> regardless of mutability wrappers.
 func stepIntoSlot(t type_system.Type, step liveness.ProjectionStep) type_system.Type {
-	pruned := type_system.Prune(t)
+	pruned := type_system.Prune(t, nil)
 	if mut, ok := pruned.(*type_system.MutType); ok {
-		pruned = type_system.Prune(mut.Type)
+		pruned = type_system.Prune(mut.Type, nil)
 	}
 	switch s := step.(type) {
 	case liveness.IndexOf:
@@ -616,7 +616,7 @@ func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
 	if pat == nil || t == nil {
 		return
 	}
-	pt := stripMutabilityWrapper(type_system.Prune(t))
+	pt := stripMutabilityWrapper(type_system.Prune(t, nil))
 	switch p := pat.(type) {
 	case *ast.IdentPat:
 		if p.VarID > 0 {
@@ -712,7 +712,7 @@ func walkPatternForLeaves(pat ast.Pat, t type_system.Type, into *[]paramLeaf) {
 // not wrapped.
 func stripMutabilityWrapper(t type_system.Type) type_system.Type {
 	if mt, ok := t.(*type_system.MutType); ok {
-		return type_system.Prune(mt.Type)
+		return type_system.Prune(mt.Type, nil)
 	}
 	return t
 }
@@ -720,7 +720,7 @@ func stripMutabilityWrapper(t type_system.Type) type_system.Type {
 // arrayElemType returns the element type T of an Array<T> reference,
 // walking past mutability wrappers. Returns nil if t is not an Array.
 func arrayElemType(t type_system.Type) type_system.Type {
-	pt := stripMutabilityWrapper(type_system.Prune(t))
+	pt := stripMutabilityWrapper(type_system.Prune(t, nil))
 	tref, ok := pt.(*type_system.TypeRefType)
 	if !ok {
 		return nil
@@ -843,7 +843,7 @@ func (v *escapingRefsVisitor) isEscapingLValue(expr ast.Expr) bool {
 // Has no effect on types that don't carry a lifetime field (primitives,
 // void, never, etc.).
 func setLifetimeOnType(t type_system.Type, lt type_system.Lifetime) {
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.TypeRefType:
 		ty.Lifetime = lt
 	case *type_system.ObjectType:
@@ -964,7 +964,7 @@ func walkPatternForStaticLeaves(pat type_system.Pat, t type_system.Type, into *[
 	if pat == nil || t == nil {
 		return
 	}
-	pt := stripMutabilityWrapper(type_system.Prune(t))
+	pt := stripMutabilityWrapper(type_system.Prune(t, nil))
 	switch p := pat.(type) {
 	case *type_system.IdentPat:
 		lt := type_system.PruneLifetime(type_system.GetLifetime(t))
@@ -1297,7 +1297,7 @@ func attachFieldSlotLifetimes(
 	// The instance type is the class's TypeAlias.Type, which after Prune
 	// is the ObjectType holding the field properties. Anything else (e.g.
 	// a generic instantiation that hasn't resolved yet) is skipped.
-	instanceObj, ok := type_system.Prune(instanceType).(*type_system.ObjectType)
+	instanceObj, ok := type_system.Prune(instanceType, nil).(*type_system.ObjectType)
 	if !ok {
 		return
 	}
@@ -1505,7 +1505,7 @@ func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
 // constraint is itself lifetime-bearing — every legal instantiation of
 // the parameter will then have a place to attach the lifetime.
 func typeCarriesLifetime(t type_system.Type) bool {
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.TypeRefType:
 		if ty.TypeAlias != nil && ty.TypeAlias.IsTypeParam {
 			// Phase 10.2: walk into the bound. For type-parameter
@@ -1539,7 +1539,7 @@ func typeCarriesLifetime(t type_system.Type) bool {
 // real reference shapes (classes, parameterized aliases over objects)
 // flow through it.
 func boundCarriesLifetime(t type_system.Type) bool {
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.TypeRefType:
 		if ty.TypeAlias != nil && ty.TypeAlias.IsTypeParam {
 			if ty.TypeAlias.Type == nil {
@@ -1572,7 +1572,7 @@ func cloneLifetimeBearing(t type_system.Type) type_system.Type {
 	if !boundCarriesLifetime(t) {
 		return nil
 	}
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.MutType:
 		inner := cloneLifetimeBearing(ty.Type)
 		if inner == nil {
@@ -1591,7 +1591,7 @@ func cloneLifetimeBearing(t type_system.Type) type_system.Type {
 // shape, leaving any pre-existing annotation in place for the caller
 // to unify.
 func lifetimeBearingHasNoLifetime(t type_system.Type) bool {
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.TypeRefType:
 		return ty.Lifetime == nil
 	case *type_system.ObjectType:
@@ -1607,7 +1607,7 @@ func lifetimeBearingHasNoLifetime(t type_system.Type) bool {
 // setLifetimeArgsOnType attaches a list of lifetime arguments to a
 // TypeRefType (e.g. Container<'a, 'b>), walking past mutability wrappers.
 func setLifetimeArgsOnType(t type_system.Type, args []type_system.Lifetime) {
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.TypeRefType:
 		ty.LifetimeArgs = args
 	case *type_system.MutType:
@@ -1845,9 +1845,9 @@ func collectReturnLifetimeSlots(t type_system.Type) []returnLifetimeSlot {
 }
 
 func walkReturnLifetimeSlots(t type_system.Type, path []liveness.ProjectionStep, into *[]returnLifetimeSlot) {
-	pruned := type_system.Prune(t)
+	pruned := type_system.Prune(t, nil)
 	if mut, ok := pruned.(*type_system.MutType); ok {
-		pruned = type_system.Prune(mut.Type)
+		pruned = type_system.Prune(mut.Type, nil)
 	}
 	var lifetime type_system.Lifetime
 	switch ty := pruned.(type) {
@@ -1898,12 +1898,12 @@ func walkReturnLifetimeSlots(t type_system.Type, path []liveness.ProjectionStep,
 // extractFuncType reaches into the (possibly wrapped) callee type to find
 // the underlying FuncType. Mirrors the dispatch in inferCallExpr.
 func extractFuncType(t type_system.Type) *type_system.FuncType {
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.FuncType:
 		return ty
 	case *type_system.TypeRefType:
 		if ty.TypeAlias != nil {
-			if obj, ok := type_system.Prune(ty.TypeAlias.Type).(*type_system.ObjectType); ok {
+			if obj, ok := type_system.Prune(ty.TypeAlias.Type, nil).(*type_system.ObjectType); ok {
 				return funcFromObjectType(obj)
 			}
 		}
@@ -1978,7 +1978,7 @@ func (v *returnExprVisitor) EnterDecl(decl ast.Decl) bool {
 // mutability wrappers. Returns nil if t is not a generator reference or
 // has no type args.
 func generatorYieldType(t type_system.Type) type_system.Type {
-	pt := stripMutabilityWrapper(type_system.Prune(t))
+	pt := stripMutabilityWrapper(type_system.Prune(t, nil))
 	tref, ok := pt.(*type_system.TypeRefType)
 	if !ok {
 		return nil
@@ -1998,7 +1998,7 @@ func generatorYieldType(t type_system.Type) type_system.Type {
 // reference, walking past mutability wrappers. Returns nil if t is not
 // a generator reference or doesn't have a second type arg.
 func generatorReturnType(t type_system.Type) type_system.Type {
-	pt := stripMutabilityWrapper(type_system.Prune(t))
+	pt := stripMutabilityWrapper(type_system.Prune(t, nil))
 	tref, ok := pt.(*type_system.TypeRefType)
 	if !ok {
 		return nil
@@ -2017,7 +2017,7 @@ func generatorReturnType(t type_system.Type) type_system.Type {
 // Promise<T, E> reference, walking past mutability wrappers. Returns
 // nil if t is not a Promise reference or has no type args.
 func promiseValueType(t type_system.Type) type_system.Type {
-	pt := stripMutabilityWrapper(type_system.Prune(t))
+	pt := stripMutabilityWrapper(type_system.Prune(t, nil))
 	tref, ok := pt.(*type_system.TypeRefType)
 	if !ok {
 		return nil

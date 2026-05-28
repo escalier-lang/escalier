@@ -383,10 +383,10 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 			classTypeAlias := namespace.Types[name]
 
 			var instIdent type_system.QualIdent
-			if ct, ok := type_system.Prune(classTypeAlias.Type).(*type_system.ObjectType); ok {
+			if ct, ok := type_system.Prune(classTypeAlias.Type, ctx.BindJournal).(*type_system.ObjectType); ok {
 				for _, elem := range ct.Elems {
 					if ce, ok := elem.(*type_system.ConstructorElem); ok {
-						if rt, ok := type_system.Prune(ce.Fn.Return).(*type_system.TypeRefType); ok {
+						if rt, ok := type_system.Prune(ce.Fn.Return, ctx.BindJournal).(*type_system.TypeRefType); ok {
 							instIdent = rt.Name
 						}
 					}
@@ -409,7 +409,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 				// TODO(#254): Support qualified identifiers in mutability overrides
 				overrides := mutabilityOverrides[instName]
 
-				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
+				if it, ok := type_system.Prune(instTypeAlias.Type, ctx.BindJournal).(*type_system.ObjectType); ok {
 					// TypeScript .d.ts has no mut-self annotation, so
 					// methods default to `mut self` (set by
 					// populateSelfParams). Apply per-interface overrides
@@ -447,7 +447,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 	slices.Sort(typeNames)
 	for _, name := range typeNames {
 		typeAlias := namespace.Types[name]
-		objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
+		objType, ok := type_system.Prune(typeAlias.Type, ctx.BindJournal).(*type_system.ObjectType)
 		if !ok {
 			continue
 		}
@@ -485,11 +485,11 @@ func mergeReadonlyVariant(namespace *type_system.Namespace, mutableName, readonl
 	if !ok {
 		return
 	}
-	mutableType, ok := type_system.Prune(mutableTypeAlias.Type).(*type_system.ObjectType)
+	mutableType, ok := type_system.Prune(mutableTypeAlias.Type, nil).(*type_system.ObjectType)
 	if !ok {
 		return
 	}
-	readonlyType, ok := type_system.Prune(readonlyTypeAlias.Type).(*type_system.ObjectType)
+	readonlyType, ok := type_system.Prune(readonlyTypeAlias.Type, nil).(*type_system.ObjectType)
 	if !ok {
 		return
 	}
@@ -556,11 +556,11 @@ func (c *Checker) initializeGlobalScope() {
 
 	// Post-process the namespace
 	for _, typeAlias := range globalNs.Types {
-		typeAlias.Type = type_system.Prune(typeAlias.Type)
+		typeAlias.Type = type_system.Prune(typeAlias.Type, nil)
 	}
 
 	for _, binding := range globalNs.Values {
-		binding.Type = type_system.Prune(binding.Type)
+		binding.Type = type_system.Prune(binding.Type, nil)
 	}
 
 	inferCtx := Context{
@@ -822,7 +822,7 @@ func (c *Checker) addCustomMatcherToSymbol(ns *type_system.Namespace) {
 	}
 
 	// Get the ObjectType from the type alias
-	objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
+	objType, ok := type_system.Prune(symbolConstructor.Type, nil).(*type_system.ObjectType)
 	if !ok {
 		return
 	}

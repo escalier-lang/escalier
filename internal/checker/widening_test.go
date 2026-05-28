@@ -78,7 +78,7 @@ func TestWideningWithAliasedTypeVars(t *testing.T) {
 	// Sanity: tvB should resolve to number. Do NOT Prune tvA here — that
 	// would path-compress tvA.Instance from tvB to numType, destroying the
 	// alias chain before the widening test.
-	assert.Equal(t, "number", ts.Prune(tvB).String())
+	assert.Equal(t, "number", ts.Prune(tvB, nil).String())
 
 	// Conflicting write through tvA: Unify("hello", tvA).
 	// This should trigger widening to number | string.
@@ -87,9 +87,9 @@ func TestWideningWithAliasedTypeVars(t *testing.T) {
 	assert.Empty(t, errors, "widening should suppress the error")
 
 	// Both tvA and tvB should resolve to number | string.
-	assert.Equal(t, "number | string", ts.Prune(tvA).String(),
+	assert.Equal(t, "number | string", ts.Prune(tvA, nil).String(),
 		"tvA should see the widened type")
-	assert.Equal(t, "number | string", ts.Prune(tvB).String(),
+	assert.Equal(t, "number | string", ts.Prune(tvB, nil).String(),
 		"tvB should also see the widened type (alias consistency)")
 }
 

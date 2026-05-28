@@ -16,13 +16,13 @@ func newWidenableTV(id int) *TypeVarType {
 
 func TestPruneConcreteType(t *testing.T) {
 	strType := NewStrPrimType(nil)
-	result := Prune(strType)
+	result := Prune(strType, nil)
 	assert.Equal(t, strType, result, "pruning a concrete type returns it unchanged")
 }
 
 func TestPruneUnboundTypeVar(t *testing.T) {
 	tv := NewTypeVarType(nil, 1)
-	result := Prune(tv)
+	result := Prune(tv, nil)
 	assert.Equal(t, tv, result, "pruning an unbound TypeVar returns it unchanged")
 }
 
@@ -31,7 +31,7 @@ func TestPruneSingleTypeVarWithConcreteInstance(t *testing.T) {
 	tv := NewTypeVarType(nil, 1)
 	tv.Instance = numType
 
-	result := Prune(tv)
+	result := Prune(tv, nil)
 	assert.Equal(t, numType, result, "pruning a TypeVar with concrete Instance returns the Instance")
 	assert.Equal(t, numType, tv.Instance, "Instance should still point to concrete type")
 }
@@ -43,7 +43,7 @@ func TestPruneTwoTypeVarChain(t *testing.T) {
 	tvA.Instance = tvB
 	tvB.Instance = numType
 
-	result := Prune(tvA)
+	result := Prune(tvA, nil)
 	assert.Equal(t, numType, result, "should resolve to the terminal concrete type")
 	// Path compression: both should point directly at the concrete type.
 	assert.Equal(t, numType, tvA.Instance, "tvA.Instance should be path-compressed to concrete type")
@@ -59,7 +59,7 @@ func TestPruneThreeTypeVarChain(t *testing.T) {
 	tvB.Instance = tvC
 	tvC.Instance = strType
 
-	result := Prune(tvA)
+	result := Prune(tvA, nil)
 	assert.Equal(t, strType, result, "should resolve through 3-node chain")
 	assert.Equal(t, strType, tvA.Instance, "tvA should be path-compressed")
 	assert.Equal(t, strType, tvB.Instance, "tvB should be path-compressed")
@@ -73,7 +73,7 @@ func TestPruneInstanceChainTwoNodes(t *testing.T) {
 	tvA.Instance = tvB
 	tvB.Instance = numType
 
-	Prune(tvA)
+	Prune(tvA, nil)
 
 	// tvA should have InstanceChain [tvA, tvB]
 	assert.Len(t, tvA.InstanceChain, 2, "tvA.InstanceChain should contain both TypeVars")
@@ -94,7 +94,7 @@ func TestPruneInstanceChainThreeNodes(t *testing.T) {
 	tvB.Instance = tvC
 	tvC.Instance = strType
 
-	Prune(tvA)
+	Prune(tvA, nil)
 
 	assert.Len(t, tvA.InstanceChain, 3)
 	assert.Equal(t, []*TypeVarType{tvA, tvB, tvC}, tvA.InstanceChain)
@@ -113,7 +113,7 @@ func TestPruneNoInstanceChainForNonWidenableTypeVars(t *testing.T) {
 	tvA.Instance = tvB
 	tvB.Instance = numType
 
-	result := Prune(tvA)
+	result := Prune(tvA, nil)
 	assert.Equal(t, numType, result, "path compression should still work")
 	assert.Nil(t, tvA.InstanceChain, "non-Widenable TypeVars should not get InstanceChain")
 	assert.Nil(t, tvB.InstanceChain, "non-Widenable TypeVars should not get InstanceChain")
@@ -124,7 +124,7 @@ func TestPruneNoInstanceChainForDirectConcreteInstance(t *testing.T) {
 	tv := NewTypeVarType(nil, 1)
 	tv.Instance = numType
 
-	Prune(tv)
+	Prune(tv, nil)
 
 	// No chain when Instance is directly a concrete type (not another TypeVar).
 	assert.Nil(t, tv.InstanceChain, "no InstanceChain when Instance is concrete")
@@ -137,12 +137,12 @@ func TestPruneInstanceChainNotOverwrittenOnSecondCall(t *testing.T) {
 	tvA.Instance = tvB
 	tvB.Instance = numType
 
-	Prune(tvA)
+	Prune(tvA, nil)
 	originalChain := tvA.InstanceChain
 
 	// After path compression, tvA.Instance is numType (concrete).
 	// A second Prune should NOT overwrite the chain.
-	Prune(tvA)
+	Prune(tvA, nil)
 	assert.Equal(t, originalChain, tvA.InstanceChain, "InstanceChain should not be overwritten by second Prune")
 }
 
@@ -153,7 +153,7 @@ func TestPruneChainWithUnboundTerminal(t *testing.T) {
 	tvA.Instance = tvB
 	// tvB.Instance is nil (unbound)
 
-	result := Prune(tvA)
+	result := Prune(tvA, nil)
 	assert.Equal(t, tvB, result, "should resolve to the terminal unbound TypeVar")
 
 	// InstanceChain should still be recorded.
@@ -169,11 +169,11 @@ func TestPruneUnboundTerminalNotSelfReferencing(t *testing.T) {
 	tvB := NewTypeVarType(nil, 2)
 	tvA.Instance = tvB
 
-	Prune(tvA)
+	Prune(tvA, nil)
 	assert.Nil(t, tvB.Instance, "terminal unbound TypeVar must not get a self-referencing Instance")
 
 	// A subsequent Prune on tvB must not loop.
-	result := Prune(tvB)
+	result := Prune(tvB, nil)
 	assert.Equal(t, tvB, result, "pruning unbound tvB should return tvB itself")
 }
 
@@ -186,7 +186,7 @@ func TestPruneUnboundTerminalThreeNodeChain(t *testing.T) {
 	tvA.Instance = tvB
 	tvB.Instance = tvC
 
-	result := Prune(tvA)
+	result := Prune(tvA, nil)
 	assert.Equal(t, tvC, result)
 	assert.Equal(t, tvC, tvA.Instance, "tvA should be compressed to tvC")
 	assert.Equal(t, tvC, tvB.Instance, "tvB should be compressed to tvC")
@@ -206,12 +206,12 @@ func TestPruneMiddleThenHead_PreservesFullChain(t *testing.T) {
 	tvC.Instance = numType
 
 	// Prune middle first — tvB gets [tvB, tvC], tvC gets [tvC].
-	Prune(tvB)
+	Prune(tvB, nil)
 	assert.Equal(t, []*TypeVarType{tvB, tvC}, tvB.InstanceChain)
 	assert.Equal(t, []*TypeVarType{tvC}, tvC.InstanceChain)
 
 	// Now prune from the head.
-	Prune(tvA)
+	Prune(tvA, nil)
 
 	// tvA's chain must include all three, not just [tvA, tvB].
 	assert.Equal(t, []*TypeVarType{tvA, tvB, tvC}, tvA.InstanceChain,
@@ -224,7 +224,7 @@ func TestPruneMiddleThenHead_PreservesFullChain(t *testing.T) {
 
 func TestPruneRealiasExtendsCachedChain(t *testing.T) {
 	// Prune tvA (tvA->tvB unbound), then re-alias tvB->tvC.
-	// A second Prune(tvA) must detect the new link and extend the chain.
+	// A second Prune(tvA, nil) must detect the new link and extend the chain.
 	numType := NewNumPrimType(nil)
 	tvA := newWidenableTV(1)
 	tvB := newWidenableTV(2)
@@ -234,7 +234,7 @@ func TestPruneRealiasExtendsCachedChain(t *testing.T) {
 	// tvB is unbound
 
 	// First prune captures chain [tvA, tvB].
-	Prune(tvA)
+	Prune(tvA, nil)
 	assert.Equal(t, []*TypeVarType{tvA, tvB}, tvA.InstanceChain)
 
 	// Simulate bind re-aliasing tvB to tvC.
@@ -242,7 +242,7 @@ func TestPruneRealiasExtendsCachedChain(t *testing.T) {
 	tvC.Instance = numType
 
 	// Second prune should detect the new link and extend the chain.
-	result := Prune(tvA)
+	result := Prune(tvA, nil)
 	assert.Equal(t, numType, result)
 	assert.Contains(t, tvA.InstanceChain, tvC,
 		"tvA.InstanceChain should include tvC after re-aliasing")
@@ -258,7 +258,7 @@ func TestPruneCalledOnMiddleOfChain(t *testing.T) {
 	tvC.Instance = numType
 
 	// Prune starting from tvB (middle of chain).
-	result := Prune(tvB)
+	result := Prune(tvB, nil)
 	assert.Equal(t, numType, result)
 	assert.Equal(t, numType, tvB.Instance, "tvB should be path-compressed")
 

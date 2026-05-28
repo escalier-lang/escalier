@@ -113,7 +113,7 @@ func (c *Checker) checkExhaustiveness(
 // covered for exhaustiveness. Returns the coverage set and whether the type is
 // finite (i.e., can be fully enumerated without a catch-all).
 func expandCoverageSet(targetType type_system.Type) ([]type_system.Type, bool) {
-	targetType = type_system.Prune(targetType)
+	targetType = type_system.Prune(targetType, nil)
 
 	if union, ok := targetType.(*type_system.UnionType); ok {
 		// Each union member is a separate item in the coverage set.
@@ -224,7 +224,7 @@ func isCatchAllPat(pat ast.Pat) bool {
 // both top-level and inner exhaustiveness checking: Prune, resolve type aliases,
 // and expand booleans into {true, false}.
 func normalizeTargetType(t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 	t = resolveTypeRef(t)
 	if expanded, ok := expandBooleanType(t); ok {
 		t = expanded
@@ -270,11 +270,11 @@ func (c *Checker) computePatternCoverage(
 
 	case *ast.IdentPat:
 		if pat.TypeAnn != nil && pat.TypeAnn.InferredType() != nil {
-			inferredType := type_system.Prune(pat.TypeAnn.InferredType())
+			inferredType := type_system.Prune(pat.TypeAnn.InferredType(), nil)
 			// If the annotated type matches the entire target type (e.g.,
 			// n: number against number), treat it as a catch-all for this
 			// position rather than computing partial coverage.
-			if typesMatchForCoverage(inferredType, type_system.Prune(targetType)) {
+			if typesMatchForCoverage(inferredType, type_system.Prune(targetType, nil)) {
 				coverage.IsCatchAll = true
 			} else {
 				coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
@@ -286,13 +286,13 @@ func (c *Checker) computePatternCoverage(
 	case *ast.LitPat:
 		// The pattern's inferred type is a literal type (e.g., true, "foo", 42).
 		// It covers that specific literal type within the target union.
-		inferredType := type_system.Prune(pat.InferredType())
+		inferredType := type_system.Prune(pat.InferredType(), nil)
 		coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 
 	case *ast.ObjectPat:
 		// Read MatchedUnionMembers from the pattern's inferred ObjectType,
 		// which was populated by unifyPatternWithUnion during type checking.
-		inferredType := type_system.Prune(pat.InferredType())
+		inferredType := type_system.Prune(pat.InferredType(), nil)
 		if objType, ok := inferredType.(*type_system.ObjectType); ok {
 			if len(objType.MatchedUnionMembers) > 0 {
 				coverage.CoveredTypes = objType.MatchedUnionMembers
@@ -302,7 +302,7 @@ func (c *Checker) computePatternCoverage(
 				// tuple pattern coverage.
 				if covered := c.computeObjectPatCoverage(pat, targetObj); covered != nil {
 					coverage.CoveredTypes = covered
-				} else if typesMatchForCoverage(inferredType, type_system.Prune(targetType)) {
+				} else if typesMatchForCoverage(inferredType, type_system.Prune(targetType, nil)) {
 					// The pattern's inferred type structurally matches the
 					// entire target (e.g., {value::number} vs {value: number}).
 					// Treat as catch-all since the coverage set is non-finite.
@@ -324,7 +324,7 @@ func (c *Checker) computePatternCoverage(
 		// The customMatcher method's param type identifies which variant
 		// this extractor matches. Walk the extractor's resolved type to
 		// find [Symbol.customMatcher] and read its param type.
-		inferredType := type_system.Prune(pat.InferredType())
+		inferredType := type_system.Prune(pat.InferredType(), nil)
 		if ext, ok := inferredType.(*type_system.ExtractorType); ok {
 			paramType := c.getCustomMatcherParamType(ext)
 			if paramType != nil {
@@ -335,7 +335,7 @@ func (c *Checker) computePatternCoverage(
 	case *ast.InstancePat:
 		// The pattern's inferred type is a nominal ObjectType with an ID
 		// matching a specific union member. Find which member shares that ID.
-		inferredType := type_system.Prune(pat.InferredType())
+		inferredType := type_system.Prune(pat.InferredType(), nil)
 		coverage.CoveredTypes = findMatchingMembers(inferredType, targetType)
 
 	case *ast.TuplePat:
@@ -368,13 +368,13 @@ func (c *Checker) computePatternCoverage(
 			// We must NOT set IsCatchAll here because the union may contain
 			// non-tuple members (e.g., number) that a TuplePat cannot match.
 			for _, member := range union.Types {
-				memberTuple, ok := type_system.Prune(member).(*type_system.TupleType)
+				memberTuple, ok := type_system.Prune(member, nil).(*type_system.TupleType)
 				if !ok || len(memberTuple.Elems) != len(pat.Elems) {
 					continue
 				}
 				matches := true
 				for i, elemPat := range pat.Elems {
-					elemType := type_system.Prune(memberTuple.Elems[i])
+					elemType := type_system.Prune(memberTuple.Elems[i], nil)
 					switch ep := elemPat.(type) {
 					case *ast.WildcardPat:
 						// Matches anything at this position.
@@ -382,13 +382,13 @@ func (c *Checker) computePatternCoverage(
 						// An IdentPat without a type annotation is a catch-all.
 						// With a type annotation, check if it covers the element type.
 						if ep.TypeAnn != nil && ep.TypeAnn.InferredType() != nil {
-							inferredType := type_system.Prune(ep.TypeAnn.InferredType())
+							inferredType := type_system.Prune(ep.TypeAnn.InferredType(), nil)
 							if !typesMatchForCoverage(inferredType, elemType) {
 								matches = false
 							}
 						}
 					case *ast.LitPat:
-						inferredType := type_system.Prune(ep.InferredType())
+						inferredType := type_system.Prune(ep.InferredType(), nil)
 						if !typesMatchForCoverage(inferredType, elemType) {
 							// Check if the literal is a valid value of the
 							// element type (e.g., true is a value of boolean).
@@ -454,7 +454,7 @@ func (c *Checker) getCustomMatcherParamType(ext *type_system.ExtractorType) type
 	if methodElem != nil {
 		fn := methodElem.SingleSig()
 		if fn != nil && len(fn.Params) == 1 {
-			return type_system.Prune(fn.Params[0].Type)
+			return type_system.Prune(fn.Params[0].Type, nil)
 		}
 	}
 	return nil
@@ -468,7 +468,7 @@ func (c *Checker) getCustomMatcherReturnType(ext *type_system.ExtractorType) typ
 	methodElem, _ := c.findCustomMatcherMethod(ext)
 	if methodElem != nil {
 		if fn := methodElem.SingleSig(); fn != nil {
-			return type_system.Prune(fn.Return)
+			return type_system.Prune(fn.Return, nil)
 		}
 	}
 	return nil
@@ -478,7 +478,7 @@ func (c *Checker) getCustomMatcherReturnType(ext *type_system.ExtractorType) typ
 // the given pattern type. If the target is a union, it checks each member.
 // Otherwise, it checks if the pattern type matches the target directly.
 func findMatchingMembers(patternType type_system.Type, targetType type_system.Type) []type_system.Type {
-	targetType = type_system.Prune(targetType)
+	targetType = type_system.Prune(targetType, nil)
 
 	if union, ok := targetType.(*type_system.UnionType); ok {
 		var matched []type_system.Type
@@ -503,7 +503,7 @@ func findMatchingMembers(patternType type_system.Type, targetType type_system.Ty
 // are expanded before coverage set computation.
 func resolveTypeRef(t type_system.Type) type_system.Type {
 	if ref, ok := t.(*type_system.TypeRefType); ok && ref.TypeAlias != nil {
-		return type_system.Prune(ref.TypeAlias.Type)
+		return type_system.Prune(ref.TypeAlias.Type, nil)
 	}
 	return t
 }
@@ -518,8 +518,8 @@ func resolveTypeRef(t type_system.Type) type_system.Type {
 // unifyPatternWithUnion. Those pointers are the same objects as the ones in
 // the coverage set (from UnionType.Types), so identity comparison suffices.
 func typesMatchForCoverage(patternType, memberType type_system.Type) bool {
-	patternType = type_system.Prune(patternType)
-	memberType = type_system.Prune(memberType)
+	patternType = type_system.Prune(patternType, nil)
+	memberType = type_system.Prune(memberType, nil)
 
 	// Pointer identity: if both types are the exact same object (e.g.,
 	// MatchedUnionMembers stores direct references to union members),
@@ -705,7 +705,7 @@ func collectStrProps(obj *type_system.ObjectType) map[string]type_system.Type {
 	for _, elem := range obj.Elems {
 		if prop, ok := elem.(*type_system.PropertyElem); ok {
 			if prop.Name.Kind == type_system.StrObjTypeKeyKind {
-				props[prop.Name.Str] = type_system.Prune(prop.Value)
+				props[prop.Name.Str] = type_system.Prune(prop.Value, nil)
 			}
 		}
 	}
@@ -752,7 +752,7 @@ func (c *Checker) computePositionCoverage(elemPat ast.Pat, elemType type_system.
 		return members, true
 	case *ast.IdentPat:
 		if p.TypeAnn != nil && p.TypeAnn.InferredType() != nil {
-			inferredType := type_system.Prune(p.TypeAnn.InferredType())
+			inferredType := type_system.Prune(p.TypeAnn.InferredType(), nil)
 			matched := findMatchingMembers(inferredType, elemType)
 			if len(matched) == 0 {
 				return nil, false
@@ -765,14 +765,14 @@ func (c *Checker) computePositionCoverage(elemPat ast.Pat, elemType type_system.
 		}
 		return members, true
 	case *ast.LitPat:
-		inferredType := type_system.Prune(p.InferredType())
+		inferredType := type_system.Prune(p.InferredType(), nil)
 		matched := findMatchingMembers(inferredType, elemType)
 		if len(matched) == 0 {
 			return nil, false
 		}
 		return matched, true
 	case *ast.ExtractorPat:
-		inferredType := type_system.Prune(p.InferredType())
+		inferredType := type_system.Prune(p.InferredType(), nil)
 		ext, ok := inferredType.(*type_system.ExtractorType)
 		if !ok {
 			return nil, false
@@ -787,14 +787,14 @@ func (c *Checker) computePositionCoverage(elemPat ast.Pat, elemType type_system.
 		}
 		return matched, true
 	case *ast.InstancePat:
-		inferredType := type_system.Prune(p.InferredType())
+		inferredType := type_system.Prune(p.InferredType(), nil)
 		matched := findMatchingMembers(inferredType, elemType)
 		if len(matched) == 0 {
 			return nil, false
 		}
 		return matched, true
 	case *ast.ObjectPat:
-		inferredType := type_system.Prune(p.InferredType())
+		inferredType := type_system.Prune(p.InferredType(), nil)
 		matched := findMatchingMembers(inferredType, elemType)
 		if len(matched) == 0 {
 			return nil, false
@@ -949,7 +949,7 @@ func literalBelongsToType(litType type_system.Type, targetType type_system.Type)
 		return false
 	}
 
-	targetType = type_system.Prune(targetType)
+	targetType = type_system.Prune(targetType, nil)
 	targetType = resolveTypeRef(targetType)
 
 	// Boolean expansion: true/false belong to boolean.
@@ -1094,8 +1094,8 @@ func typeAnnsMatchForEquality(a, b ast.TypeAnn) bool {
 	if aType == nil || bType == nil {
 		return aType == nil && bType == nil
 	}
-	aPruned := type_system.Prune(aType)
-	bPruned := type_system.Prune(bType)
+	aPruned := type_system.Prune(aType, nil)
+	bPruned := type_system.Prune(bType, nil)
 	return typesMatchForCoverage(aPruned, bPruned) && typesMatchForCoverage(bPruned, aPruned)
 }
 
@@ -1144,23 +1144,23 @@ func branchPartiallyCovers(cov CaseCoverage[ast.Pat], member type_system.Type) b
 	// For TuplePat matching a literal-element tuple member: check if every
 	// LitPat element exactly matches the member's corresponding LitType.
 	if tuplePat, ok := cov.Pattern.(*ast.TuplePat); ok {
-		memberTuple, ok := type_system.Prune(resolveTypeRef(member)).(*type_system.TupleType)
+		memberTuple, ok := type_system.Prune(resolveTypeRef(member), nil).(*type_system.TupleType)
 		if ok && len(tuplePat.Elems) == len(memberTuple.Elems) {
 			allExactMatch := true
 			for i, elemPat := range tuplePat.Elems {
-				elemType := type_system.Prune(memberTuple.Elems[i])
+				elemType := type_system.Prune(memberTuple.Elems[i], nil)
 				switch p := elemPat.(type) {
 				case *ast.WildcardPat:
 					// catch-all — always matches
 				case *ast.IdentPat:
 					if p.TypeAnn != nil && p.TypeAnn.InferredType() != nil {
-						inferredType := type_system.Prune(p.TypeAnn.InferredType())
+						inferredType := type_system.Prune(p.TypeAnn.InferredType(), nil)
 						if !typesMatchForCoverage(inferredType, elemType) {
 							allExactMatch = false
 						}
 					}
 				case *ast.LitPat:
-					inferredType := type_system.Prune(p.InferredType())
+					inferredType := type_system.Prune(p.InferredType(), nil)
 					if !typesMatchForCoverage(inferredType, elemType) {
 						allExactMatch = false
 					}
@@ -1221,7 +1221,7 @@ func (c *Checker) checkExtractorInnerExhaustiveness(
 ) *ExhaustivenessResult {
 	firstPat := branchCoverages[0].Pattern
 
-	inferredType := type_system.Prune(firstPat.InferredType())
+	inferredType := type_system.Prune(firstPat.InferredType(), nil)
 	ext, ok := inferredType.(*type_system.ExtractorType)
 	if !ok {
 		return nil
@@ -1232,7 +1232,7 @@ func (c *Checker) checkExtractorInnerExhaustiveness(
 		return nil
 	}
 
-	returnTuple, ok := type_system.Prune(returnType).(*type_system.TupleType)
+	returnTuple, ok := type_system.Prune(returnType, nil).(*type_system.TupleType)
 	if !ok {
 		return nil
 	}
@@ -1275,7 +1275,7 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 	branchCoverages []CaseCoverage[*ast.ObjectPat],
 	member type_system.Type,
 ) *ExhaustivenessResult {
-	memberObj, ok := type_system.Prune(resolveTypeRef(member)).(*type_system.ObjectType)
+	memberObj, ok := type_system.Prune(resolveTypeRef(member), nil).(*type_system.ObjectType)
 	if !ok {
 		return nil
 	}
@@ -1296,7 +1296,7 @@ func (c *Checker) checkObjectInnerExhaustiveness(
 		}
 		props = append(props, objPropInfo{
 			name:     prop.Name.Str,
-			propType: type_system.Prune(prop.Value),
+			propType: type_system.Prune(prop.Value, nil),
 		})
 	}
 
@@ -1412,7 +1412,7 @@ func (c *Checker) checkTupleInnerExhaustiveness(
 	branchCoverages []CaseCoverage[*ast.TuplePat],
 	member type_system.Type,
 ) *ExhaustivenessResult {
-	memberTuple, ok := type_system.Prune(resolveTypeRef(member)).(*type_system.TupleType)
+	memberTuple, ok := type_system.Prune(resolveTypeRef(member), nil).(*type_system.TupleType)
 	if !ok {
 		return nil
 	}

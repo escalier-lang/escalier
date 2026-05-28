@@ -26,7 +26,7 @@ func (v *NamedCaptureGroupExtractor) EnterType(t type_system.Type) type_system.E
 }
 
 func (v *NamedCaptureGroupExtractor) ExitType(t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 
 	if regexType, ok := t.(*type_system.RegexType); ok {
 		// Create a new RegexType with fresh type variables for named capture groups
@@ -68,7 +68,7 @@ func (v *RegexTypeReplacer) EnterType(t type_system.Type) type_system.EnterResul
 }
 
 func (v *RegexTypeReplacer) ExitType(t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 
 	if regexType, ok := t.(*type_system.RegexType); ok {
 		// Check if any named groups in this regex type have substitutions

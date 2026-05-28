@@ -112,7 +112,7 @@ func (c *Checker) unifyJSXPropsWithAttrs(ctx Context, propsType type_system.Type
 	c.collectPropsFromType(ctx, propsType, &expectedProps, &requiredProps)
 
 	// Get the provided attributes as an object type
-	attrObj, ok := type_system.Prune(attrType).(*type_system.ObjectType)
+	attrObj, ok := type_system.Prune(attrType, ctx.BindJournal).(*type_system.ObjectType)
 	if !ok {
 		return errors
 	}
@@ -242,7 +242,7 @@ func (c *Checker) inferJSXAttributes(ctx Context, attrs []ast.JSXAttrElem) (JSXA
 			// Note: key and ref in spread objects are passed through to regular props
 			// (this matches React's behavior - only explicit key/ref are special)
 			if spreadType != nil {
-				if objType, ok := type_system.Prune(spreadType).(*type_system.ObjectType); ok {
+				if objType, ok := type_system.Prune(spreadType, ctx.BindJournal).(*type_system.ObjectType); ok {
 					elems = append(elems, objType.Elems...)
 				}
 				// For non-object spread types, we could add an error, but for now
@@ -323,7 +323,7 @@ func (c *Checker) validateChildrenType(
 	var childrenPropOptional bool
 	var childrenPropExists bool
 
-	if objType, ok := type_system.Prune(propsType).(*type_system.ObjectType); ok {
+	if objType, ok := type_system.Prune(propsType, ctx.BindJournal).(*type_system.ObjectType); ok {
 		for _, elem := range objType.Elems {
 			if prop, ok := elem.(*type_system.PropertyElem); ok {
 				if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "children" {
@@ -464,7 +464,7 @@ func (c *Checker) getIntrinsicElementProps(ctx Context, tagName ast.QualIdent, e
 	}
 
 	// Get the underlying type (resolve type aliases, type variables, etc.)
-	intrinsicType := type_system.Prune(intrinsicElements.Type)
+	intrinsicType := type_system.Prune(intrinsicElements.Type, ctx.BindJournal)
 
 	// IntrinsicElements should be an object type mapping tag names to prop types
 	switch t := intrinsicType.(type) {
@@ -554,7 +554,7 @@ func (c *Checker) resolveJSXComponentType(ctx Context, tagName ast.QualIdent) (t
 // For other component patterns (class components, etc.), it returns nil to allow any props.
 func (c *Checker) extractPropsFromComponentType(componentType type_system.Type) type_system.Type {
 	// Prune to get the underlying type (resolve type variables, etc.)
-	prunedType := type_system.Prune(componentType)
+	prunedType := type_system.Prune(componentType, nil)
 
 	switch t := prunedType.(type) {
 	case *type_system.FuncType:
@@ -630,7 +630,7 @@ func (c *Checker) collectPropsFromType(
 	expectedProps *btree.Map[string, type_system.Type],
 	requiredProps *btree.Set[string],
 ) {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, ctx.BindJournal)
 
 	switch typ := t.(type) {
 	case *type_system.ObjectType:

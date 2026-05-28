@@ -149,8 +149,8 @@ func (c *Checker) compareBySubtype(a, b *type_system.FuncType) specificity {
 	allBIsSubtypeOfA := true
 	sawComparable := false
 	for i := range a.Params {
-		ap := type_system.Prune(a.Params[i].Type)
-		bp := type_system.Prune(b.Params[i].Type)
+		ap := type_system.Prune(a.Params[i].Type, nil)
+		bp := type_system.Prune(b.Params[i].Type, nil)
 		aTop, aEff := effectiveParamType(ap, aTP)
 		bTop, bEff := effectiveParamType(bp, bTP)
 		if aTop && bTop {
@@ -214,8 +214,8 @@ func typeParamBounds(fn *type_system.FuncType) map[string]type_system.Type {
 	for _, tp := range fn.TypeParams {
 		var bound type_system.Type
 		if tp.Constraint != nil {
-			if _, isNever := type_system.Prune(tp.Constraint).(*type_system.NeverType); !isNever {
-				bound = type_system.Prune(tp.Constraint)
+			if _, isNever := type_system.Prune(tp.Constraint, nil).(*type_system.NeverType); !isNever {
+				bound = type_system.Prune(tp.Constraint, nil)
 			}
 		}
 		out[tp.Name] = bound
@@ -280,7 +280,7 @@ func countTypeParamRefParams(fn *type_system.FuncType) int {
 	}
 	n := 0
 	for _, p := range fn.Params {
-		if isOwnedTypeParamRef(type_system.Prune(p.Type), names) {
+		if isOwnedTypeParamRef(type_system.Prune(p.Type, nil), names) {
 			n++
 		}
 	}
@@ -293,7 +293,7 @@ func countRequiredParams(fn *type_system.FuncType) int {
 		if p.Optional {
 			continue
 		}
-		if _, isRest := type_system.Prune(p.Type).(*type_system.RestSpreadType); isRest {
+		if _, isRest := type_system.Prune(p.Type, nil).(*type_system.RestSpreadType); isRest {
 			continue
 		}
 		n++

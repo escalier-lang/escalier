@@ -88,20 +88,50 @@ func (*NamespaceType) isType()    {}
 func (*RegexType) isType()        {}
 func (*ErrorType) isType()        {}
 
-// PruneMutationHook, when non-nil, is called by Prune for every TypeVar
-// in the alias chain BEFORE Prune mutates that TypeVar's Instance or
-// InstanceChain field. The checker installs a hook during Probe so the
-// journal can snapshot the intermediate TypeVars for rollback — without
-// it, Discard would leave compressed pointers pointing at probe-time
-// concrete types after their terminal TypeVars were restored to unbound.
+// Journal is the type_system-side interface that lets Prune record
+// pre-mutation snapshots of TypeVars it's about to modify (path
+// compression + recordInstanceChain). The checker's BindJournal in
+// internal/checker/probe.go implements this so Probe can roll back
+// Prune's mutations as part of a failed probe.
 //
-// Package-level (not threaded through Prune) because Prune has hundreds
-// of callers — changing its signature would touch every type-resolution
-// site in the checker. The hook is single-threaded by construction (the
-// checker is single-threaded) and is set/restored around the probe.
-var PruneMutationHook func(*TypeVarType)
+// Defined here so type_system stays free of a checker import; the
+// concrete journal type lives in checker.
+type Journal interface {
+	Snapshot(*TypeVarType)
+}
 
-func Prune(t Type) Type {
+// resolve walks t's alias chain to the terminal type without mutating
+// any intermediate TypeVar. Private to type_system: used internally by
+// Type.Accept and the union/intersection constructors so visitor-driven
+// traversal doesn't need a Journal in scope. Callers in the checker
+// that want path compression call the public Prune (which takes a
+// Journal).
+func resolve(t Type) Type {
+	tv, ok := t.(*TypeVarType)
+	if !ok || tv.Instance == nil {
+		return t
+	}
+	cur := tv.Instance
+	for {
+		next, ok := cur.(*TypeVarType)
+		if !ok || next.Instance == nil {
+			return cur
+		}
+		cur = next.Instance
+	}
+}
+
+// Prune resolves t's alias chain, path-compresses intermediate
+// TypeVars, and records InstanceChain for Widenable TypeVars. When j
+// is non-nil, every TypeVar that will be mutated is snapshotted via
+// j.Snapshot first so the change can be rolled back by a Probe's
+// Discard.
+//
+// j is threaded through Context (carried by the checker's BindJournal),
+// not as package-level state — so concurrent goroutines with separate
+// Contexts don't race on a shared hook. Callers outside the unifier
+// hot path (codegen, LSP, declaration-level checker code) pass nil.
+func Prune(t Type, j Journal) Type {
 	tv, ok := t.(*TypeVarType)
 	if !ok || tv.Instance == nil {
 		return t
@@ -112,9 +142,9 @@ func Prune(t Type) Type {
 	// Doing this once up-front (rather than at each mutation site) keeps
 	// the rollback semantics simple: each chain member has exactly one
 	// pre-Prune snapshot, regardless of how many times Prune touches it.
-	if PruneMutationHook != nil {
+	if j != nil {
 		for cur := tv; cur != nil; {
-			PruneMutationHook(cur)
+			j.Snapshot(cur)
 			next, ok := cur.Instance.(*TypeVarType)
 			if !ok {
 				break
@@ -251,9 +281,14 @@ func (t *TypeVarType) Accept(v TypeVisitor) Type {
 		return t
 	}
 
-	prunedType := Prune(t)
+	// resolve (not Prune) here so visitor-driven traversals don't trigger
+	// path compression. Compressing intermediate Instance fields during a
+	// Probe would need journaling, but Accept has no Journal in scope.
+	// Direct Prune calls from the unifier still compress with rollback
+	// support.
+	prunedType := resolve(t)
 	if prunedType != t {
-		return prunedType.Accept(v) // Accept on the pruned type
+		return prunedType.Accept(v) // Accept on the resolved type
 	}
 
 	if result := v.ExitType(t); result != nil {
@@ -1917,7 +1952,7 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 	// Flatten nested intersections
 	flattened := []Type{}
 	for _, t := range types {
-		t = Prune(t)
+		t = resolve(t)
 		if inter, ok := t.(*IntersectionType); ok {
 			flattened = append(flattened, inter.Types...)
 		} else {
@@ -1932,7 +1967,7 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 	primitiveTypes := make(map[Prim]*PrimType)
 
 	for _, t := range flattened {
-		t = Prune(t)
+		t = resolve(t)
 
 		// Check for any
 		if _, ok := t.(*AnyType); ok {
@@ -2000,7 +2035,7 @@ func NewIntersectionType(provenance Provenance, types ...Type) Type {
 			// Prune mut.Type so a TypeVar bound to a concrete type compares
 			// equal to that concrete type — the first pass already pruned
 			// `normalized` entries the same way.
-			mutInner := Prune(mut.Type)
+			mutInner := resolve(mut.Type)
 			hasImmutable := false
 			for _, other := range normalized {
 				if other.Equals(mutInner) {

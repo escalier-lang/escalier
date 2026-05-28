@@ -76,7 +76,7 @@ func TestLocalShadowingOfGlobals(t *testing.T) {
 	require.NotNil(t, numBinding, "num binding should exist")
 
 	// The type annotation creates a TypeRefType pointing to our local Number type alias
-	numType := type_system.Prune(numBinding.Type)
+	numType := type_system.Prune(numBinding.Type, nil)
 	typeRef, ok := numType.(*type_system.TypeRefType)
 	require.True(t, ok, "num should have TypeRefType, got %T", numType)
 
@@ -85,7 +85,7 @@ func TestLocalShadowingOfGlobals(t *testing.T) {
 
 	// Verify the type alias points to our custom object type
 	require.NotNil(t, typeRef.TypeAlias, "TypeRefType should have TypeAlias set")
-	aliasType := type_system.Prune(typeRef.TypeAlias.Type)
+	aliasType := type_system.Prune(typeRef.TypeAlias.Type, nil)
 	objType, ok := aliasType.(*type_system.ObjectType)
 	require.True(t, ok, "Number alias should be object type, got %T", aliasType)
 
@@ -142,7 +142,7 @@ func TestGlobalThisAccessToGlobals(t *testing.T) {
 	require.NotNil(t, globalArrayBinding, "globalArray binding should exist")
 
 	// globalArray should use the global Array type (via globalThis)
-	globalArrayType := type_system.Prune(globalArrayBinding.Type)
+	globalArrayType := type_system.Prune(globalArrayBinding.Type, nil)
 	globalTypeRef, ok := globalArrayType.(*type_system.TypeRefType)
 	require.True(t, ok, "globalArray should have TypeRefType, got %T", globalArrayType)
 
@@ -200,7 +200,7 @@ func TestGlobalThisAccessWhenShadowed(t *testing.T) {
 	require.NotNil(t, globalArrBinding, "globalArr binding should exist")
 
 	// localArr should use the local Array type (TypeRefType pointing to our custom type)
-	localArrType := type_system.Prune(localArrBinding.Type)
+	localArrType := type_system.Prune(localArrBinding.Type, nil)
 	typeRef, ok := localArrType.(*type_system.TypeRefType)
 	require.True(t, ok, "localArr should have TypeRefType, got %T", localArrType)
 
@@ -209,7 +209,7 @@ func TestGlobalThisAccessWhenShadowed(t *testing.T) {
 
 	// Verify the type alias points to our custom object type with isLocal property
 	require.NotNil(t, typeRef.TypeAlias, "TypeRefType should have TypeAlias set")
-	aliasType := type_system.Prune(typeRef.TypeAlias.Type)
+	aliasType := type_system.Prune(typeRef.TypeAlias.Type, nil)
 	objType, ok := aliasType.(*type_system.ObjectType)
 	require.True(t, ok, "Array alias should be object type, got %T", aliasType)
 
@@ -225,7 +225,7 @@ func TestGlobalThisAccessWhenShadowed(t *testing.T) {
 	assert.True(t, hasIsLocalProp, "Local Array type should have isLocal property")
 
 	// globalArr should use the global Array type (via globalThis)
-	globalArrType := type_system.Prune(globalArrBinding.Type)
+	globalArrType := type_system.Prune(globalArrBinding.Type, nil)
 	globalTypeRef, ok := globalArrType.(*type_system.TypeRefType)
 	require.True(t, ok, "globalArr should have TypeRefType, got %T", globalArrType)
 
@@ -298,7 +298,7 @@ func TestGlobalThisValueAccess(t *testing.T) {
 	symBinding := scope.Namespace.Values["sym"]
 	require.NotNil(t, symBinding, "sym binding should exist")
 
-	symType := type_system.Prune(symBinding.Type)
+	symType := type_system.Prune(symBinding.Type, nil)
 	_, ok := symType.(*type_system.UniqueSymbolType)
 	assert.True(t, ok, "sym should be a unique symbol type, got %T", symType)
 }

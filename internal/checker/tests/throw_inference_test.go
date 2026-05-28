@@ -158,8 +158,8 @@ func TestThrowExpressionInference(t *testing.T) {
 			assert.NotNil(t, binding, "Expected testFunc to be defined")
 
 			// Prune the type to resolve any type variables
-			funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
-			assert.True(t, ok, "Expected testFunc to be a function type, got %T", type_system.Prune(binding.Type))
+			funcType, ok := type_system.Prune(binding.Type, nil).(*type_system.FuncType)
+			assert.True(t, ok, "Expected testFunc to be a function type, got %T", type_system.Prune(binding.Type, nil))
 			assert.NotNil(t, funcType, "Expected function type to be non-nil")
 
 			// Check that the throws type matches expected
@@ -242,10 +242,10 @@ func TestNeverReturnInference(t *testing.T) {
 			binding := scope.GetValue("testFunc")
 			assert.NotNil(t, binding, "Expected testFunc to be defined")
 
-			funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
-			assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type))
+			funcType, ok := type_system.Prune(binding.Type, nil).(*type_system.FuncType)
+			assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type, nil))
 
-			returnStr := type_system.Prune(funcType.Return).String()
+			returnStr := type_system.Prune(funcType.Return, nil).String()
 			assert.Equal(t, test.expectedReturn, returnStr, "Expected return type to match")
 		})
 	}
@@ -407,8 +407,8 @@ func TestCallSiteThrowsInference(t *testing.T) {
 			binding, ok := inferCtx.Scope.Namespace.Values["testFunc"]
 			assert.Truef(t, ok, "Expected testFunc to be defined")
 
-			funcType, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
-			assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type))
+			funcType, ok := type_system.Prune(binding.Type, nil).(*type_system.FuncType)
+			assert.Truef(t, ok, "Expected FuncType, got %T", type_system.Prune(binding.Type, nil))
 
 			assert.Equal(t, test.expectedTestFunc, funcType.String())
 		})

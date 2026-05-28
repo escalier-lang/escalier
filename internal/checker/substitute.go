@@ -25,7 +25,7 @@ func (v *TypeParamSubstitutionVisitor) SubstituteType(t type_system.Type) type_s
 		return nil
 	}
 
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 	return t.Accept(v)
 }
 
@@ -105,7 +105,7 @@ func SubstituteTypeParams[T type_system.Type](t T, substitutions map[string]type
 		return t
 	}
 
-	t = type_system.Prune(t).(T)
+	t = type_system.Prune(t, nil).(T)
 	visitor := NewTypeParamSubstitutionVisitor(substitutions)
 	result := t.Accept(visitor)
 	return result.(T)

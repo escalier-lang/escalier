@@ -45,7 +45,7 @@ func IsReferenceType(t type_system.Type) bool {
 	if t == nil {
 		return false
 	}
-	switch ty := type_system.Prune(t).(type) {
+	switch ty := type_system.Prune(t, nil).(type) {
 	case *type_system.MutType:
 		return IsReferenceType(ty.Type)
 	case *type_system.ObjectType, *type_system.TupleType, *type_system.FuncType:

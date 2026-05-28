@@ -15,8 +15,8 @@ func (c *Checker) unifyMut(ctx Context, mut1, mut2 *type_system.MutType) []Error
 	t1 := mut1.Type
 	t2 := mut2.Type
 
-	t1 = type_system.Prune(t1)
-	t2 = type_system.Prune(t2)
+	t1 = type_system.Prune(t1, ctx.BindJournal)
+	t2 = type_system.Prune(t2, ctx.BindJournal)
 
 	// For invariant unification, the types must be exactly equal —
 	// except when one side is an unbound TypeVar (e.g. a fresh

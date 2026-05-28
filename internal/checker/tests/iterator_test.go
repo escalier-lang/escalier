@@ -76,7 +76,7 @@ func TestStdLibIteratorTypesLoaded(t *testing.T) {
 		symbolConstructor := scope.GetTypeAlias("SymbolConstructor")
 		require.NotNil(t, symbolConstructor, "SymbolConstructor should be loaded")
 
-		objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
+		objType, ok := type_system.Prune(symbolConstructor.Type, nil).(*type_system.ObjectType)
 		require.True(t, ok, "SymbolConstructor should be an ObjectType")
 
 		// Check that the 'iterator' property exists
@@ -85,7 +85,7 @@ func TestStdLibIteratorTypesLoaded(t *testing.T) {
 			if prop, ok := elem.(*type_system.PropertyElem); ok {
 				if prop.Name.Kind == type_system.StrObjTypeKeyKind && prop.Name.Str == "iterator" {
 					found = true
-					_, isUniqueSymbol := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType)
+					_, isUniqueSymbol := type_system.Prune(prop.Value, nil).(*type_system.UniqueSymbolType)
 					assert.True(t, isUniqueSymbol, "Symbol.iterator should be a unique symbol type")
 					break
 				}

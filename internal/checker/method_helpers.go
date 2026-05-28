@@ -145,7 +145,7 @@ func walkPopulateSelfParams(
 		walkPopulateSelfParams(child, iterID, hasIter, asyncIterID, hasAsync)
 	}
 	for name, typeAlias := range ns.Types {
-		objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType)
+		objType, ok := type_system.Prune(typeAlias.Type, nil).(*type_system.ObjectType)
 		if !ok {
 			continue
 		}
@@ -201,7 +201,7 @@ func wrapReturnMut(fn *type_system.FuncType) {
 	if fn == nil || fn.Return == nil {
 		return
 	}
-	if _, isMut := type_system.Prune(fn.Return).(*type_system.MutType); isMut {
+	if _, isMut := type_system.Prune(fn.Return, nil).(*type_system.MutType); isMut {
 		return
 	}
 	fn.Return = type_system.NewMutType(nil, fn.Return)

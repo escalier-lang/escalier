@@ -281,7 +281,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 		extendsType, extendsErrors := c.inferTypeAnn(declCtx, decl.Extends)
 		errors = slices.Concat(errors, extendsErrors)
 		if extendsType != nil {
-			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
+			if typeRef, ok := type_system.Prune(extendsType, ctx.BindJournal).(*type_system.TypeRefType); ok {
 				objType.Extends = []*type_system.TypeRefType{typeRef}
 			}
 		}
@@ -291,7 +291,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 	for _, implTypeAnn := range decl.Implements {
 		implType, implErrors := c.inferTypeAnn(declCtx, implTypeAnn)
 		errors = slices.Concat(errors, implErrors)
-		typeRef, ok := type_system.Prune(implType).(*type_system.TypeRefType)
+		typeRef, ok := type_system.Prune(implType, ctx.BindJournal).(*type_system.TypeRefType)
 		if !ok {
 			continue
 		}
@@ -404,7 +404,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			if isStatic && bodyElem.Value == nil {
 				resolved, expandErrors := c.ExpandType(ctx, prop.Value, 1)
 				errors = slices.Concat(errors, expandErrors)
-				if !typeContainsUndefined(type_system.Prune(resolved)) {
+				if !typeContainsUndefined(type_system.Prune(resolved, ctx.BindJournal)) {
 					errors = append(errors, StaticFieldMissingInitializerError{
 						FieldName: classFieldName(bodyElem.Name),
 						span:      bodyElem.Span(),

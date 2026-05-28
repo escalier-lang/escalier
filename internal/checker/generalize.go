@@ -34,7 +34,7 @@ func collectUnresolvedTypeVarsImpl(
 		return
 	}
 
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 
 	if visited.Contains(t) {
 		return
@@ -147,7 +147,7 @@ func collectUnresolvedTypeVarsImpl(
 // Container types (FuncType, TupleType, etc.) are rebuilt; leaf types (LitType,
 // PrimType, NeverType, etc.) are shared since Unify never mutates them.
 func (c *Checker) deepCloneType(t type_system.Type, varMapping map[int]*type_system.TypeVarType) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 	switch t := t.(type) {
 	case *type_system.TypeVarType:
 		if fresh, ok := varMapping[t.ID]; ok {
@@ -383,7 +383,7 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 			return nil // shouldn't happen after sort, but defensive
 		}
 		for j := 0; j < prefixLen; j++ {
-			if !type_system.Equals(type_system.Prune(site.Params[j].Type), type_system.Prune(shortest.Params[j].Type)) {
+			if !type_system.Equals(type_system.Prune(site.Params[j].Type, ctx.BindJournal), type_system.Prune(shortest.Params[j].Type, ctx.BindJournal)) {
 				return nil // prefix doesn't match
 			}
 		}
@@ -392,7 +392,7 @@ func (c *Checker) tryMergeCallSitesWithOptionalParams(ctx Context, sites []*type
 		// corresponding prefix of the longest.
 		for j := prefixLen; j < len(site.Params); j++ {
 			if j < len(longest.Params) {
-				if !type_system.Equals(type_system.Prune(site.Params[j].Type), type_system.Prune(longest.Params[j].Type)) {
+				if !type_system.Equals(type_system.Prune(site.Params[j].Type, ctx.BindJournal), type_system.Prune(longest.Params[j].Type, ctx.BindJournal)) {
 					return nil
 				}
 			}
@@ -445,7 +445,7 @@ func (c *Checker) resolveCallSites(ctx Context) {
 		// existing binding, and (2) the call sites' arg types were already unified
 		// against the synthetic FuncType params during handleFuncCall, so type
 		// constraints from the calls have already been captured.
-		if type_system.Prune(tv) != tv {
+		if type_system.Prune(tv, ctx.BindJournal) != tv {
 			continue
 		}
 
@@ -518,7 +518,7 @@ func finalizeOpenObject(openObj *type_system.ObjectType) bool {
 		// widenable TypeVar created by newOpenObjectWithProperty; if any
 		// chained access bound it to another open object, that object is
 		// the recursive target.
-		valPruned := type_system.Prune(prop.Value)
+		valPruned := type_system.Prune(prop.Value, nil)
 		if nestedObj, ok := valPruned.(*type_system.ObjectType); ok && nestedObj.Open {
 			if finalizeOpenObject(nestedObj) {
 				// Per the invariant documented above, prop.Value is always a
@@ -671,7 +671,7 @@ func leadsToCycle(t type_system.Type, target type_system.Type, visited set.Set[t
 	if t == nil {
 		return false
 	}
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 	if t == target {
 		return true
 	}
@@ -778,7 +778,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 			if !ok {
 				continue
 			}
-			pruned := type_system.Prune(tv)
+			pruned := type_system.Prune(tv, nil)
 			openObj, ok := pruned.(*type_system.ObjectType)
 			if !ok || !openObj.Open {
 				continue
@@ -890,7 +890,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 			if _, inReturn := fv.returnVars[id]; !inReturn {
 				continue
 			}
-			pruned := type_system.Prune(funcType.Return)
+			pruned := type_system.Prune(funcType.Return, nil)
 			tv, ok := pruned.(*type_system.TypeVarType)
 			if !ok || tv.ID != id {
 				allTopLevel = false
@@ -908,7 +908,7 @@ func generalizeFuncTypes(funcTypes []*type_system.FuncType, excluded set.Set[int
 	// never — these can't both be expressed via TV.Instance, so the
 	// throws field is rewritten directly.)
 	for _, funcType := range funcTypes {
-		throwsTV, ok := type_system.Prune(funcType.Throws).(*type_system.TypeVarType)
+		throwsTV, ok := type_system.Prune(funcType.Throws, nil).(*type_system.TypeVarType)
 		if !ok {
 			continue
 		}

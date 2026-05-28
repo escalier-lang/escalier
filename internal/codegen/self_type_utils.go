@@ -21,7 +21,7 @@ type selfTypeRefVisitor struct {
 }
 
 func (v *selfTypeRefVisitor) EnterType(t type_system.Type) type_system.EnterResult {
-	if tref, ok := type_system.Prune(t).(*type_system.TypeRefType); ok {
+	if tref, ok := type_system.Prune(t, nil).(*type_system.TypeRefType); ok {
 		if type_system.QualIdentToString(tref.Name) == "Self" {
 			v.found = true
 			return type_system.EnterResult{SkipChildren: true}
@@ -43,7 +43,7 @@ func (v *selfReplaceVisitor) EnterType(t type_system.Type) type_system.EnterResu
 }
 
 func (v *selfReplaceVisitor) ExitType(t type_system.Type) type_system.Type {
-	if tref, ok := type_system.Prune(t).(*type_system.TypeRefType); ok {
+	if tref, ok := type_system.Prune(t, nil).(*type_system.TypeRefType); ok {
 		if type_system.QualIdentToString(tref.Name) == "Self" {
 			return &type_system.TypeRefType{Name: type_system.NewIdent("this"), TypeAlias: nil, TypeArgs: nil}
 			// return &type_system.GlobalThisType{}

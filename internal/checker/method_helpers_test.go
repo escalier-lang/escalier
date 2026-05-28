@@ -45,7 +45,7 @@ func TestPopulateSelfParamsRecursesIntoNestedNamespaces(t *testing.T) {
 	populateSelfParams(root)
 
 	check := func(alias *type_system.TypeAlias, methodName string) {
-		obj := type_system.Prune(alias.Type).(*type_system.ObjectType)
+		obj := type_system.Prune(alias.Type, nil).(*type_system.ObjectType)
 		var fn *type_system.FuncType
 		for _, elem := range obj.Elems {
 			if me, ok := elem.(*type_system.MethodElem); ok && me.Name.Str == methodName {

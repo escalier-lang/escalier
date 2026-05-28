@@ -2973,7 +2973,7 @@ func TestJSXElementTypeResolution(t *testing.T) {
 		assert.NotNil(t, binding, "Expected elem binding to exist")
 
 		// Prune the type to resolve any type variables
-		prunedType := type_system.Prune(binding.Type)
+		prunedType := type_system.Prune(binding.Type, nil)
 
 		// The type should be the JSX.Element type we defined
 		objType, ok := prunedType.(*type_system.ObjectType)
@@ -3105,7 +3105,7 @@ func TestJSXFragmentTypeResolution(t *testing.T) {
 		assert.NotNil(t, binding, "Expected elem binding to exist")
 
 		// Prune the type to resolve any type variables
-		prunedType := type_system.Prune(binding.Type)
+		prunedType := type_system.Prune(binding.Type, nil)
 
 		// The type should be the JSX.Element type we defined
 		objType, ok := prunedType.(*type_system.ObjectType)

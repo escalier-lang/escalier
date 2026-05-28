@@ -170,10 +170,10 @@ func (c *Checker) inferPattern(
 				bindings[name] = binding
 			}
 
-			typeAliasType := type_system.Prune(typeAlias.Type)
+			typeAliasType := type_system.Prune(typeAlias.Type, ctx.BindJournal)
 
 			if clsType, ok := typeAliasType.(*type_system.ObjectType); ok {
-				if patType, ok := type_system.Prune(patType).(*type_system.ObjectType); ok {
+				if patType, ok := type_system.Prune(patType, ctx.BindJournal).(*type_system.ObjectType); ok {
 					// We know that the object type inferred from this pattern
 					// must be an instance of the class type, so we set the ID
 					// of the pattern type to be the same as the class type.
@@ -222,7 +222,7 @@ func (c *Checker) inferPattern(
 // move from true → false, so this is a one-way OR.
 func updateBindingMutableFromType(bindings map[string]*type_system.Binding) {
 	for _, binding := range bindings {
-		if _, isMut := type_system.Prune(binding.Type).(*type_system.MutType); isMut {
+		if _, isMut := type_system.Prune(binding.Type, nil).(*type_system.MutType); isMut {
 			binding.Mutable = true
 		}
 	}

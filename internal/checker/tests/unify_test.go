@@ -600,7 +600,7 @@ func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
 		assert.Empty(t, errors, "TypeVar should unify with second union member {x: string}")
 
 		// After successful unification, TypeVar should be bound to string
-		resolved := type_system.Prune(tv)
+		resolved := type_system.Prune(tv, nil)
 		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to a PrimType")
 		prim := resolved.(*type_system.PrimType)
 		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
@@ -625,7 +625,7 @@ func TestUnifyTypeVarNotCorruptedByFailedUnionTrial(t *testing.T) {
 		errors := checker.Unify(inferCtx, t1, t2)
 		assert.Empty(t, errors, "TypeVar in tuple should unify with second union member")
 
-		resolved := type_system.Prune(tv)
+		resolved := type_system.Prune(tv, nil)
 		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to a PrimType")
 		prim := resolved.(*type_system.PrimType)
 		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
@@ -686,7 +686,7 @@ func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
 		errors := checker.Unify(inferCtx, t1, t2)
 		assert.Empty(t, errors, "second intersection part {x: string, a: string} should unify with {x: TypeVar, a: string}")
 
-		resolved := type_system.Prune(tv)
+		resolved := type_system.Prune(tv, nil)
 		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to string")
 		prim := resolved.(*type_system.PrimType)
 		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
@@ -751,7 +751,7 @@ func TestUnifyTypeVarNotCorruptedByFailedIntersectionTrial(t *testing.T) {
 		errors := checker.Unify(inferCtx, t1, t2)
 		assert.Empty(t, errors, "intersection types should unify successfully")
 
-		resolved := type_system.Prune(tv)
+		resolved := type_system.Prune(tv, nil)
 		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to string")
 		prim := resolved.(*type_system.PrimType)
 		assert.Equal(t, type_system.StrPrim, prim.Prim, "TypeVar should be bound to string, not number")
@@ -789,7 +789,7 @@ func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
 		assert.Empty(t, errors, "unifying matching index signatures should not produce errors")
 
 		// The type variable should be bound to number
-		resolved := type_system.Prune(tv)
+		resolved := type_system.Prune(tv, nil)
 		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to number")
 		prim := resolved.(*type_system.PrimType)
 		assert.Equal(t, type_system.NumPrim, prim.Prim)
@@ -867,7 +867,7 @@ func TestUnifyOpenClosedIndexSignatureDedup(t *testing.T) {
 		assert.Empty(t, errors, "unifying matching index signatures should not produce errors")
 
 		// The type variable should be bound to number
-		resolved := type_system.Prune(tv)
+		resolved := type_system.Prune(tv, nil)
 		assert.IsType(t, &type_system.PrimType{}, resolved, "TypeVar should resolve to number")
 		prim := resolved.(*type_system.PrimType)
 		assert.Equal(t, type_system.NumPrim, prim.Prim)
@@ -914,7 +914,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		assert.Equal(t, "number", type_system.Prune(tv).String(),
+		assert.Equal(t, "number", type_system.Prune(tv, nil).String(),
 			"numeric key should resolve to number via numeric index signature")
 	})
 
@@ -935,7 +935,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		assert.Equal(t, "number", type_system.Prune(tv).String(),
+		assert.Equal(t, "number", type_system.Prune(tv, nil).String(),
 			"numeric key should resolve to number regardless of signature declaration order")
 	})
 
@@ -955,7 +955,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		assert.Equal(t, "number", type_system.Prune(tv).String(),
+		assert.Equal(t, "number", type_system.Prune(tv, nil).String(),
 			"string key should match string index signature")
 	})
 
@@ -974,7 +974,7 @@ func TestFindIndexSignatureForKeyOrderIndependence(t *testing.T) {
 		errors := checker.Unify(inferCtx, obj1, obj2)
 		assert.Empty(t, errors)
 
-		assert.Equal(t, "string", type_system.Prune(tv).String(),
+		assert.Equal(t, "string", type_system.Prune(tv, nil).String(),
 			"numeric key should fall back to string index signature when no numeric sig exists")
 	})
 

@@ -351,7 +351,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	// async/generator wrappers wrap the return in a Promise/Generator
 	// where `never` semantics differ.
 	if divergent && !containsYield && !isAsync {
-		annotated := type_system.Prune(funcSigType.Return)
+		annotated := type_system.Prune(funcSigType.Return, ctx.BindJournal)
 		if _, isTypeVar := annotated.(*type_system.TypeVarType); !isTypeVar {
 			if _, isNever := annotated.(*type_system.NeverType); !isNever {
 				errors = append(errors, DivergingBodyNonNeverReturnError{
@@ -575,7 +575,7 @@ func exprAlwaysExits(expr ast.Expr) bool {
 		// no-value sentinel rather than as a divergence marker
 		// (notably assignment expressions).
 		if t := e.InferredType(); t != nil {
-			if _, isNever := type_system.Prune(t).(*type_system.NeverType); isNever {
+			if _, isNever := type_system.Prune(t, nil).(*type_system.NeverType); isNever {
 				return true
 			}
 		}
@@ -740,7 +740,7 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 // clause, or its throws type is `never`).
 func calleeThrowsType(callExpr *ast.CallExpr) type_system.Type {
 	if rt := callExpr.ResolvedThrows(); rt != nil {
-		if _, isNever := type_system.Prune(rt).(*type_system.NeverType); isNever {
+		if _, isNever := type_system.Prune(rt, nil).(*type_system.NeverType); isNever {
 			return nil
 		}
 		return rt
@@ -752,13 +752,13 @@ func calleeThrowsType(callExpr *ast.CallExpr) type_system.Type {
 	if calleeType == nil {
 		return nil
 	}
-	fns := collectCalleeFuncTypes(type_system.Prune(calleeType))
+	fns := collectCalleeFuncTypes(type_system.Prune(calleeType, nil))
 	throws := []type_system.Type{}
 	for _, fn := range fns {
 		if fn.Throws == nil {
 			continue
 		}
-		if _, isNever := type_system.Prune(fn.Throws).(*type_system.NeverType); isNever {
+		if _, isNever := type_system.Prune(fn.Throws, nil).(*type_system.NeverType); isNever {
 			continue
 		}
 		throws = append(throws, fn.Throws)
@@ -801,11 +801,11 @@ func collectCalleeFuncTypes(t type_system.Type) []*type_system.FuncType {
 		if tt.TypeAlias == nil {
 			return nil
 		}
-		return collectCalleeFuncTypes(type_system.Prune(tt.TypeAlias.Type))
+		return collectCalleeFuncTypes(type_system.Prune(tt.TypeAlias.Type, nil))
 	case *type_system.IntersectionType:
 		var out []*type_system.FuncType
 		for _, arm := range tt.Types {
-			out = append(out, collectCalleeFuncTypes(type_system.Prune(arm))...)
+			out = append(out, collectCalleeFuncTypes(type_system.Prune(arm, nil))...)
 		}
 		return out
 	default:
@@ -868,7 +868,7 @@ func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
 		// equivalence class. If Instance is set (param was unified with the
 		// return TypeVar), the representative is the other end of the chain;
 		// otherwise the param TypeVar is its own representative.
-		rep := type_system.Prune(tv)
+		rep := type_system.Prune(tv, nil)
 		if repTV, ok := rep.(*type_system.TypeVarType); ok {
 			repTV.Instance = resolved
 		} else {
@@ -880,7 +880,7 @@ func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
 		return
 	}
 
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 
 	// Recurse into type constructors that can appear in inferred parameter types.
 	// We only need to cover shapes produced by inference on unannotated params:
@@ -1005,7 +1005,7 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 // constructors (TypeRefType args, TupleType elements, UnionType options, etc.)
 // to find and close nested open objects.
 func closeOpenObjectsInType(t type_system.Type, returnVars map[int]*type_system.TypeVarType) {
-	pruned := type_system.Prune(t)
+	pruned := type_system.Prune(t, nil)
 
 	// If t is a TypeVar resolving to an open object, finalize and close it.
 	// Setting tv.Instance is the standard union-find mechanism: Prune()
@@ -1087,7 +1087,7 @@ func closeObjectType(objType *type_system.ObjectType, returnVars map[int]*type_s
 	filtered := make([]type_system.ObjTypeElem, 0, len(objType.Elems))
 	for _, elem := range objType.Elems {
 		if rest, ok := elem.(*type_system.RestSpreadElem); ok {
-			if rowVar, ok := type_system.Prune(rest.Value).(*type_system.TypeVarType); ok {
+			if rowVar, ok := type_system.Prune(rest.Value, nil).(*type_system.TypeVarType); ok {
 				if _, found := returnVars[rowVar.ID]; !found {
 					continue // remove this RestSpreadElem
 				}
@@ -1109,7 +1109,7 @@ func closeTupleType(tupleType *type_system.TupleType, returnVars map[int]*type_s
 	}
 	last := tupleType.Elems[len(tupleType.Elems)-1]
 	if rest, ok := last.(*type_system.RestSpreadType); ok {
-		if tv, ok := type_system.Prune(rest.Type).(*type_system.TypeVarType); ok {
+		if tv, ok := type_system.Prune(rest.Type, nil).(*type_system.TypeVarType); ok {
 			// Preserve rest variables from explicit destructuring patterns.
 			// For example, in `fn foo([first, ...rest]) { return first }`,
 			// the rest type variable should be kept even though it doesn't

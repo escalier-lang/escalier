@@ -241,7 +241,7 @@ func (c *Checker) inferTypeAnn(
 			// However, if it's a TypeRefType (type parameter), we skip the check
 			// because it will be validated when the type is actually used/expanded.
 			// TODO: Also check if the value has a .toString() method.
-			if _, isTypeRef := type_system.Prune(typeAnnType).(*type_system.TypeRefType); !isTypeRef {
+			if _, isTypeRef := type_system.Prune(typeAnnType, ctx.BindJournal).(*type_system.TypeRefType); !isTypeRef {
 				unifyErrors := c.Unify(ctx, typeAnnType, strOrNumType)
 				errors = slices.Concat(errors, unifyErrors)
 			}

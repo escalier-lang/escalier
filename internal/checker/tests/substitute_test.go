@@ -452,9 +452,9 @@ func TestSubstituteTypeParams_DoesNotMutateSharedSubstitute(t *testing.T) {
 	require.True(t, ok, "expected tuple result, got %T", result)
 	require.Len(t, resTuple.Elems, 2)
 
-	first, ok := type_system.Prune(resTuple.Elems[0]).(*type_system.ObjectType)
+	first, ok := type_system.Prune(resTuple.Elems[0], nil).(*type_system.ObjectType)
 	require.True(t, ok)
-	second, ok := type_system.Prune(resTuple.Elems[1]).(*type_system.ObjectType)
+	second, ok := type_system.Prune(resTuple.Elems[1], nil).(*type_system.ObjectType)
 	require.True(t, ok)
 
 	assert.Equal(t, ltA, first.Lifetime, "first slot should carry 'a")

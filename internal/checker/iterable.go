@@ -14,7 +14,7 @@ func lookupSymbolID(ns *type_system.Namespace, name string) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	objType, ok := type_system.Prune(symbolConstructor.Type).(*type_system.ObjectType)
+	objType, ok := type_system.Prune(symbolConstructor.Type, nil).(*type_system.ObjectType)
 	if !ok {
 		return 0, false
 	}
@@ -23,7 +23,7 @@ func lookupSymbolID(ns *type_system.Namespace, name string) (int, bool) {
 		if !ok || prop.Name.Kind != type_system.StrObjTypeKeyKind || prop.Name.Str != name {
 			continue
 		}
-		if sym, ok := type_system.Prune(prop.Value).(*type_system.UniqueSymbolType); ok {
+		if sym, ok := type_system.Prune(prop.Value, nil).(*type_system.UniqueSymbolType); ok {
 			return sym.Value, true
 		}
 	}
@@ -45,11 +45,11 @@ func (c *Checker) getSymbolID(name string) (int, bool) {
 // the first type argument from the returned Iterator type.
 // Returns nil if the type is not iterable.
 func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, ctx.BindJournal)
 
 	// Unwrap MutType
 	if mut, ok := t.(*type_system.MutType); ok {
-		t = type_system.Prune(mut.Type)
+		t = type_system.Prune(mut.Type, ctx.BindJournal)
 	}
 
 	// Handle UnionType by extracting the element type from each branch and unioning
@@ -113,7 +113,7 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		return nil
 	}
 
-	iteratorMethod = type_system.Prune(iteratorMethod)
+	iteratorMethod = type_system.Prune(iteratorMethod, ctx.BindJournal)
 
 	// [Symbol.iterator] should be a function that returns an Iterator
 	funcType, ok := iteratorMethod.(*type_system.FuncType)
@@ -121,7 +121,7 @@ func (c *Checker) GetIterableElementType(ctx Context, t type_system.Type) type_s
 		return nil
 	}
 
-	returnType := type_system.Prune(funcType.Return)
+	returnType := type_system.Prune(funcType.Return, ctx.BindJournal)
 
 	// Extract the element type from the return type.
 	// The return type should be Iterator<T, ...>, IterableIterator<T, ...>,
@@ -152,7 +152,7 @@ func (c *Checker) unifyIteratorNextReturn(ctx Context, t type_system.Type) (type
 		return nil, nil
 	}
 
-	nextMethod = type_system.Prune(nextMethod)
+	nextMethod = type_system.Prune(nextMethod, ctx.BindJournal)
 	funcType, ok := nextMethod.(*type_system.FuncType)
 	if !ok {
 		return nil, nil
@@ -172,7 +172,7 @@ func (c *Checker) unifyIteratorNextReturn(ctx Context, t type_system.Type) (type
 		return nil, nil
 	}
 
-	return type_system.Prune(freshT), type_system.Prune(freshTReturn)
+	return type_system.Prune(freshT, ctx.BindJournal), type_system.Prune(freshTReturn, ctx.BindJournal)
 }
 
 // extractIteratorElementType extracts the element type T from an Iterator-like type
@@ -188,10 +188,10 @@ func (c *Checker) extractIteratorElementType(ctx Context, t type_system.Type) ty
 // TReturn from the IteratorResult<T, TReturn> returned by next().
 // Used for determining the type of `yield from` (yield*) expressions.
 func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, ctx.BindJournal)
 
 	if mut, ok := t.(*type_system.MutType); ok {
-		t = type_system.Prune(mut.Type)
+		t = type_system.Prune(mut.Type, ctx.BindJournal)
 	}
 
 	// Handle UnionType by extracting TReturn from each branch and unioning the results.
@@ -231,13 +231,13 @@ func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_sy
 		return nil
 	}
 
-	iteratorMethod = type_system.Prune(iteratorMethod)
+	iteratorMethod = type_system.Prune(iteratorMethod, ctx.BindJournal)
 	funcType, ok := iteratorMethod.(*type_system.FuncType)
 	if !ok {
 		return nil
 	}
 
-	returnType := type_system.Prune(funcType.Return)
+	returnType := type_system.Prune(funcType.Return, ctx.BindJournal)
 	_, tReturn := c.unifyIteratorNextReturn(ctx, returnType)
 	return tReturn
 }
@@ -247,10 +247,10 @@ func (c *Checker) GetIteratorReturnType(ctx Context, t type_system.Type) type_sy
 // AsyncIterator type. Returns nil if the type is not async iterable.
 // Note: Requires ES2018+ lib files to be loaded for AsyncIterable/AsyncIterator types.
 func (c *Checker) GetAsyncIterableElementType(ctx Context, t type_system.Type) type_system.Type {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, ctx.BindJournal)
 
 	if mut, ok := t.(*type_system.MutType); ok {
-		t = type_system.Prune(mut.Type)
+		t = type_system.Prune(mut.Type, ctx.BindJournal)
 	}
 
 	asyncIterSymID, ok := c.getSymbolID("asyncIterator")
@@ -269,12 +269,12 @@ func (c *Checker) GetAsyncIterableElementType(ctx Context, t type_system.Type) t
 		return nil
 	}
 
-	iteratorMethod = type_system.Prune(iteratorMethod)
+	iteratorMethod = type_system.Prune(iteratorMethod, ctx.BindJournal)
 	funcType, ok := iteratorMethod.(*type_system.FuncType)
 	if !ok {
 		return nil
 	}
 
-	returnType := type_system.Prune(funcType.Return)
+	returnType := type_system.Prune(funcType.Return, ctx.BindJournal)
 	return c.extractIteratorElementType(ctx, returnType)
 }

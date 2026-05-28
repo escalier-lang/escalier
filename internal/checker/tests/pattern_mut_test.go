@@ -316,14 +316,14 @@ func TestPatternLevelMut_GenericParam(t *testing.T) {
 	ns := mustInferAsModule(t, input)
 	binding, ok := ns.Values["f"]
 	require.True(t, ok, "f binding not found")
-	fn, ok := type_system.Prune(binding.Type).(*type_system.FuncType)
+	fn, ok := type_system.Prune(binding.Type, nil).(*type_system.FuncType)
 	require.True(t, ok, "expected FuncType for f, got %T", binding.Type)
 	require.Len(t, fn.Params, 1, "expected one parameter")
-	pruned := type_system.Prune(fn.Params[0].Type)
+	pruned := type_system.Prune(fn.Params[0].Type, nil)
 	mut, isMut := pruned.(*type_system.MutType)
 	require.Truef(t, isMut, "expected param type wrapped in MutType, got %T", pruned)
 	// The wrapped inner type should be a TypeRef to T (the type parameter).
-	inner := type_system.Prune(mut.Type)
+	inner := type_system.Prune(mut.Type, nil)
 	_, isRef := inner.(*type_system.TypeRefType)
 	assert.Truef(t, isRef, "expected MutType wrapping a TypeRefType, got %T", inner)
 }
@@ -389,23 +389,23 @@ func TestPatternLevelMut_NoLeakIntoParentContainer(t *testing.T) {
 
 			switch p := pat.(type) {
 			case *ast.ObjectPat:
-				ot, ok := type_system.Prune(p.InferredType()).(*type_system.ObjectType)
+				ot, ok := type_system.Prune(p.InferredType(), nil).(*type_system.ObjectType)
 				require.Truef(t, ok, "expected ObjectType, got %T", p.InferredType())
 				for _, elem := range ot.Elems {
 					prop, ok := elem.(*type_system.PropertyElem)
 					if !ok {
 						continue
 					}
-					_, isMut := type_system.Prune(prop.Value).(*type_system.MutType)
+					_, isMut := type_system.Prune(prop.Value, nil).(*type_system.MutType)
 					assert.Falsef(t, isMut,
 						"property %v should not be wrapped in MutType (leak from leaf binding); got %v",
 						prop.Name, prop.Value)
 				}
 			case *ast.TuplePat:
-				tt, ok := type_system.Prune(p.InferredType()).(*type_system.TupleType)
+				tt, ok := type_system.Prune(p.InferredType(), nil).(*type_system.TupleType)
 				require.Truef(t, ok, "expected TupleType, got %T", p.InferredType())
 				for i, elem := range tt.Elems {
-					_, isMut := type_system.Prune(elem).(*type_system.MutType)
+					_, isMut := type_system.Prune(elem, nil).(*type_system.MutType)
 					assert.Falsef(t, isMut,
 						"element %d should not be wrapped in MutType (leak from leaf binding); got %v",
 						i, elem)

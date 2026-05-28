@@ -453,7 +453,7 @@ func (c *Checker) inferInterface(
 			} else {
 				// If it's not a TypeRefType, we still set it but wrap it if needed
 				// This handles cases where the type might be pruned or indirect
-				prunedType := type_system.Prune(extendsType)
+				prunedType := type_system.Prune(extendsType, ctx.BindJournal)
 				if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
 					extendsTypes = append(extendsTypes, typeRef)
 				}
@@ -498,7 +498,7 @@ func (c *Checker) inferInterface(
 		errors = slices.Concat(errors, validateLifetimeErrors)
 
 		// If it exists, merge the elements
-		if existingObjType, ok := type_system.Prune(existingAlias.Type).(*type_system.ObjectType); ok &&
+		if existingObjType, ok := type_system.Prune(existingAlias.Type, ctx.BindJournal).(*type_system.ObjectType); ok &&
 			existingObjType.Interface {
 			// Validate that duplicate properties have compatible types
 			mergeErrors := c.validateInterfaceMerge(ctx, existingObjType, objType, decl)
@@ -674,7 +674,7 @@ func (c *Checker) inferEnumDecl(ctx Context, decl *ast.EnumDecl) []Error {
 
 			symbolKeyMap := make(map[int]any)
 
-			switch customMatcher := type_system.Prune(customMatcher).(type) {
+			switch customMatcher := type_system.Prune(customMatcher, ctx.BindJournal).(type) {
 			case *type_system.UniqueSymbolType:
 				subjectPat := &type_system.IdentPat{Name: "subject"}
 				subjectType := type_system.NewTypeRefType(

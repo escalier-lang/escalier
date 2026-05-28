@@ -44,7 +44,7 @@ func (c *Checker) checkImplementsOne(
 	if len(expandErrors) > 0 {
 		return expandErrors
 	}
-	ifaceObj, ok := type_system.Prune(expanded).(*type_system.ObjectType)
+	ifaceObj, ok := type_system.Prune(expanded, ctx.BindJournal).(*type_system.ObjectType)
 	if !ok {
 		return nil
 	}
@@ -275,7 +275,7 @@ func findElemByKey(ctx Context, c *Checker, objType *type_system.ObjectType, key
 	}
 	for _, ext := range objType.Extends {
 		expanded, _ := c.expandTypeRef(ctx, ext)
-		if parent, ok := type_system.Prune(expanded).(*type_system.ObjectType); ok {
+		if parent, ok := type_system.Prune(expanded, ctx.BindJournal).(*type_system.ObjectType); ok {
 			if found := findElemByKey(ctx, c, parent, key); found != nil {
 				return found
 			}

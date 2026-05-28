@@ -1336,13 +1336,13 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		inferredType := t.InferredType()
 		if inferredType != nil {
 			// Prune type variables to get the actual type
-			prunedType := type_system.Prune(inferredType)
+			prunedType := type_system.Prune(inferredType, nil)
 
 			// Check if it's a TypeRefType with a TypeAlias
 			if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
 				if typeRef.TypeAlias != nil {
 					// Get the aliased type
-					aliasedType := type_system.Prune(typeRef.TypeAlias.Type)
+					aliasedType := type_system.Prune(typeRef.TypeAlias.Type, nil)
 
 					// Check if the aliased type is a nominal object type
 					if objType, ok := aliasedType.(*type_system.ObjectType); ok && objType.Nominal {
@@ -1721,13 +1721,13 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 		// For if-let expressions, check if the target type is nullable and add null/undefined check
 		if expr.Target.InferredType() != nil {
-			targetType := type_system.Prune(expr.Target.InferredType())
+			targetType := type_system.Prune(expr.Target.InferredType(), nil)
 			if unionType, ok := targetType.(*type_system.UnionType); ok {
 				// Check if the union contains null or undefined
 				hasNull := false
 				hasUndefined := false
 				for _, t := range unionType.Types {
-					if litType, ok := type_system.Prune(t).(*type_system.LitType); ok {
+					if litType, ok := type_system.Prune(t, nil).(*type_system.LitType); ok {
 						if _, isNull := litType.Lit.(*type_system.NullLit); isNull {
 							hasNull = true
 						}

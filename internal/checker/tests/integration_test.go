@@ -334,8 +334,8 @@ func TestE2E_MultiplePackagesWithSameSymbols(t *testing.T) {
 
 	// Both should be function types
 	if lodashMapExists && ramdaMapExists {
-		_, isLodashFunc := type_system.Prune(lodashMapBinding.Type).(*type_system.FuncType)
-		_, isRamdaFunc := type_system.Prune(ramdaMapBinding.Type).(*type_system.FuncType)
+		_, isLodashFunc := type_system.Prune(lodashMapBinding.Type, nil).(*type_system.FuncType)
+		_, isRamdaFunc := type_system.Prune(ramdaMapBinding.Type, nil).(*type_system.FuncType)
 		assert.True(t, isLodashFunc, "lodashMap should be a function")
 		assert.True(t, isRamdaFunc, "ramdaMap should be a function")
 	}
@@ -411,7 +411,7 @@ func TestE2E_GlobalThisBypassesShadowing(t *testing.T) {
 	globalSymbolBinding, globalSymbolExists := scope.Values["globalSymbol"]
 	assert.True(t, globalSymbolExists, "globalSymbol should exist")
 	if globalSymbolExists {
-		symType := type_system.Prune(globalSymbolBinding.Type)
+		symType := type_system.Prune(globalSymbolBinding.Type, nil)
 		_, isUniqueSymbol := symType.(*type_system.UniqueSymbolType)
 		assert.True(t, isUniqueSymbol, "globalSymbol should be a unique symbol type, got %T", symType)
 	}
@@ -679,8 +679,8 @@ func TestE2E_SubpathImportsIsolation(t *testing.T) {
 
 	// Both should be functions
 	if mainMapExists && fpMapExists {
-		mainMapType := type_system.Prune(mainMapBinding.Type)
-		fpMapType := type_system.Prune(fpMapBinding.Type)
+		mainMapType := type_system.Prune(mainMapBinding.Type, nil)
+		fpMapType := type_system.Prune(fpMapBinding.Type, nil)
 
 		mainFuncType, isMainFunc := mainMapType.(*type_system.FuncType)
 		fpFuncType, isFpFunc := fpMapType.(*type_system.FuncType)

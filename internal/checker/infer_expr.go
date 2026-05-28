@@ -78,7 +78,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						span:     expr.Left.Span(),
 					})
 				} else {
-					pruned := type_system.Prune(objType)
+					pruned := type_system.Prune(objType, ctx.BindJournal)
 					// Open object types start without a MutType wrapper —
 					// mark the property as written since we now know mutation occurs.
 					if !markPropertyWritten(pruned, memberExpr.Prop.Name) {
@@ -125,7 +125,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						span:     expr.Left.Span(),
 					})
 				} else {
-					pruned := type_system.Prune(objType)
+					pruned := type_system.Prune(objType, ctx.BindJournal)
 					// Check if the base has an ArrayConstraint — mark index assignment
 					if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
 						tv.ArrayConstraint.HasIndexAssignment = true
@@ -295,7 +295,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			// We create a new type and set its provenance to be the identifier
 			// instead of the binding source.  This ensures that errors are reported
 			// on the identifier itself instead of the binding source.
-			t := type_system.Prune(binding.Type)
+			t := type_system.Prune(binding.Type, ctx.BindJournal)
 			if _, isTypeVar := t.(*type_system.TypeVarType); isTypeVar {
 				// Don't copy TypeVarType — preserving pointer identity is essential
 				// so that unification constraints flow back to the function signature.
@@ -330,10 +330,10 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				spreadType, spreadErrors := c.inferExpr(ctx, spread.Value)
 				errors = slices.Concat(errors, spreadErrors)
 
-				prunedType := type_system.Prune(spreadType)
+				prunedType := type_system.Prune(spreadType, ctx.BindJournal)
 				// Unwrap MutType if present
 				if mut, ok := prunedType.(*type_system.MutType); ok {
-					prunedType = type_system.Prune(mut.Type)
+					prunedType = type_system.Prune(mut.Type, ctx.BindJournal)
 				}
 				handled := false
 				switch st := prunedType.(type) {
@@ -690,7 +690,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					expr := expr.Exprs[i]
 					t, _ := c.inferExpr(ctx, expr)
 
-					switch t := type_system.Prune(t).(type) {
+					switch t := type_system.Prune(t, ctx.BindJournal).(type) {
 					case *type_system.LitType:
 						str += t.Lit.String()
 					default:
@@ -752,7 +752,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// For if-let expressions, we need to narrow the target type by removing null/undefined
 		// The pattern should match the non-nullable part of the target type
 		narrowedTargetType := targetType
-		if unionType, ok := type_system.Prune(targetType).(*type_system.UnionType); ok {
+		if unionType, ok := type_system.Prune(targetType, ctx.BindJournal).(*type_system.UnionType); ok {
 			definedElems := c.getDefinedElems(unionType)
 			if len(definedElems) > 0 {
 				narrowedTargetType = type_system.NewUnionType(nil, definedElems...)
@@ -907,7 +907,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 
 // isPropertyReadonly checks if a specific property in an object type is readonly
 func (c *Checker) isPropertyReadonly(ctx Context, objType type_system.Type, propertyName string) bool {
-	objType = type_system.Prune(objType)
+	objType = type_system.Prune(objType, ctx.BindJournal)
 
 	// Repeatedly expand objType until it's either an ObjectType or can't be expanded further
 	for {
@@ -964,7 +964,7 @@ func collapseArrayRestSpreads(c *Checker, elems []type_system.Type) type_system.
 		if !ok {
 			return type_system.NewTupleType(nil, elems...)
 		}
-		inner := type_system.Prune(rest.Type)
+		inner := type_system.Prune(rest.Type, nil)
 		ref, ok := inner.(*type_system.TypeRefType)
 		if !ok || !c.isArrayType(ref) || len(ref.TypeArgs) == 0 {
 			return type_system.NewTupleType(nil, elems...)
@@ -1010,7 +1010,7 @@ func (c *Checker) inferCallExpr(
 				&CalleeIsNotCallableError{Type: calleeType, span: expr.Callee.Span()}}
 		}
 
-		if objType, ok := type_system.Prune(typeAlias.Type).(*type_system.ObjectType); ok {
+		if objType, ok := type_system.Prune(typeAlias.Type, ctx.BindJournal).(*type_system.ObjectType); ok {
 			// Check if ObjectType has a constructor or callable element
 			var fnType *type_system.FuncType = nil
 
@@ -1276,7 +1276,7 @@ func (c *Checker) handleFuncCall(
 		returnType := fnType.Return
 		// Don't copy TypeVarType — preserving pointer identity is essential
 		// so that unification constraints flow back to the caller.
-		if _, isTypeVar := type_system.Prune(returnType).(*type_system.TypeVarType); !isTypeVar {
+		if _, isTypeVar := type_system.Prune(returnType, ctx.BindJournal).(*type_system.TypeVarType); !isTypeVar {
 			returnType = returnType.Copy()
 			returnType.SetProvenance(provneance)
 		}
@@ -1327,7 +1327,7 @@ func (c *Checker) handleFuncCall(
 		returnType := fnType.Return
 		// Don't copy TypeVarType — preserving pointer identity is essential
 		// so that unification constraints flow back to the caller.
-		if _, isTypeVar := type_system.Prune(returnType).(*type_system.TypeVarType); !isTypeVar {
+		if _, isTypeVar := type_system.Prune(returnType, ctx.BindJournal).(*type_system.TypeVarType); !isTypeVar {
 			returnType = returnType.Copy()
 			returnType.SetProvenance(provneance)
 		}
@@ -1402,7 +1402,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 	matchErrors = slices.Concat(matchErrors, targetErrors)
 
 	// Check if target type is a constructor when patterns expect instances
-	targetObjType, isObj := type_system.Prune(targetType).(*type_system.ObjectType)
+	targetObjType, isObj := type_system.Prune(targetType, ctx.BindJournal).(*type_system.ObjectType)
 	if isObj {
 		hasCallableOrConstructor := false
 		for _, elem := range targetObjType.Elems {
@@ -1441,7 +1441,7 @@ func (c *Checker) inferMatchExpr(ctx Context, expr *ast.MatchExpr) (type_system.
 	// Phase 2: If the target is an unresolved TypeVar (e.g. an unannotated
 	// function parameter), infer its type from the match patterns before
 	// processing individual cases.
-	if _, isTypeVar := type_system.Prune(targetType).(*type_system.TypeVarType); isTypeVar {
+	if _, isTypeVar := type_system.Prune(targetType, ctx.BindJournal).(*type_system.TypeVarType); isTypeVar {
 		if inferredType := c.inferTargetTypeFromPatterns(ctx, expr.Cases, patternInfos); inferredType != nil {
 			unifyErrors := c.Unify(ctx, targetType, inferredType)
 			matchErrors = slices.Concat(matchErrors, unifyErrors)
@@ -1636,7 +1636,7 @@ func (c *Checker) getEnumTypeFromExtractor(ctx Context, p *ast.ExtractorPat) typ
 	if binding == nil {
 		return nil
 	}
-	objType, ok := type_system.Prune(binding.Type).(*type_system.ObjectType)
+	objType, ok := type_system.Prune(binding.Type, ctx.BindJournal).(*type_system.ObjectType)
 	if !ok {
 		return nil
 	}

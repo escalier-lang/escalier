@@ -417,7 +417,7 @@ func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.Co
 // MutType so the receiver's outer mutability isn't lost when we strip
 // the wrapper to look up the inner type's members.
 func completionsFromTypeImpl(t type_system.Type, scope *checker.Scope, receiverMut bool) []protocol.CompletionItem {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 
 	switch t := t.(type) {
 	case *type_system.MutType:
@@ -608,7 +608,7 @@ func completionsFromUnionType(u *type_system.UnionType, scope *checker.Scope, re
 	// detail type is shown with "| undefined".
 	var allSets []map[string]protocol.CompletionItem
 	for _, variant := range u.Types {
-		variant = type_system.Prune(variant)
+		variant = type_system.Prune(variant, nil)
 		// Skip null/undefined in unions
 		if isNullOrUndefined(variant) {
 			continue
@@ -1327,7 +1327,7 @@ func safeTypeString(t type_system.Type) string {
 }
 
 func completionKindForValueType(t type_system.Type) protocol.CompletionItemKind {
-	t = type_system.Prune(t)
+	t = type_system.Prune(t, nil)
 	if _, ok := t.(*type_system.FuncType); ok {
 		return protocol.CompletionItemKindFunction
 	}
