@@ -358,6 +358,28 @@ func TestStandalone_SharedInterfaceNotFlattened(t *testing.T) {
 	require.Equal(t, 2, varCount, "both vars survive")
 	require.Contains(t, printed, "/** does a thing */",
 		"interface member JSDoc preserved on the surviving interface")
+
+	// Full round-trip: the printed output parses, and the surviving
+	// interface's member carries its Doc on the parsed AST. Pins the
+	// objTypeAnnElem half of #663 — without the parser-side fix, leading
+	// JSDoc inside an interface body silently lost its Doc field (and
+	// in fact failed to parse at all).
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	var parsedIface *ast.InterfaceDecl
+	for _, d := range parsedDecls {
+		if i, ok := d.(*ast.InterfaceDecl); ok {
+			parsedIface = i
+			break
+		}
+	}
+	require.NotNil(t, parsedIface, "parsed output contains the interface")
+	require.NotEmpty(t, parsedIface.TypeAnn.Elems, "interface has members")
+	for i, elem := range parsedIface.TypeAnn.Elems {
+		require.NotEmpty(t, elem.Doc(),
+			"elem[%d] (%T) lost its JSDoc on parse — #663 regression", i, elem)
+	}
 }
 
 // multilineDocSlice mirrors the real lib.es5.d.ts JSON shape: an

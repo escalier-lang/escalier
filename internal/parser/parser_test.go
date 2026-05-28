@@ -1020,6 +1020,107 @@ func TestClassElemDocs(t *testing.T) {
 	})
 }
 
+func TestObjTypeAnnElemDocs(t *testing.T) {
+	parseIface := func(t *testing.T, src string) *ast.InterfaceDecl {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
+		require.Empty(t, errors)
+		require.Len(t, decls, 1)
+		iface, ok := decls[0].(*ast.InterfaceDecl)
+		require.True(t, ok, "first decl is an interface")
+		require.NotNil(t, iface.TypeAnn)
+		return iface
+	}
+
+	t.Run("PropertyTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Point {
+				/** the x coordinate */
+				x: number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		p, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok, "elem is a PropertyTypeAnn")
+		require.Equal(t, "/** the x coordinate */", p.Doc())
+	})
+
+	t.Run("MethodTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Dog {
+				/** says hi */
+				bark(self) -> string
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		m, ok := iface.TypeAnn.Elems[0].(*ast.MethodTypeAnn)
+		require.True(t, ok, "elem is a MethodTypeAnn")
+		require.Equal(t, "/** says hi */", m.Doc())
+	})
+
+	t.Run("GetterTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Sized {
+				/** the size */
+				get size(self) -> number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		g, ok := iface.TypeAnn.Elems[0].(*ast.GetterTypeAnn)
+		require.True(t, ok, "elem is a GetterTypeAnn")
+		require.Equal(t, "/** the size */", g.Doc())
+	})
+
+	t.Run("SetterTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface HasValue {
+				/** replace the value */
+				set value(mut self, x: number) -> undefined
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		s, ok := iface.TypeAnn.Elems[0].(*ast.SetterTypeAnn)
+		require.True(t, ok, "elem is a SetterTypeAnn")
+		require.Equal(t, "/** replace the value */", s.Doc())
+	})
+
+	t.Run("LineCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Point {
+				/** the x coordinate */
+				// reset
+				x: number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		p, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok)
+		require.Empty(t, p.Doc(), "intervening line comment resets the captured doc")
+	})
+
+	t.Run("PlainBlockCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Point {
+				/** the x coordinate */
+				/* plain block */
+				x: number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		p, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok)
+		require.Empty(t, p.Doc(), "intervening non-JSDoc block comment resets the captured doc")
+	})
+}
+
 func TestClassConstructorErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string

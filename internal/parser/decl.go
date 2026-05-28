@@ -64,6 +64,28 @@ func setClassElemDoc(elem ast.ClassElem, doc string) {
 	}
 }
 
+// setObjTypeAnnElemDoc attaches doc to elem when doc is non-empty.
+// Mirrors the type switch in printer.printObjTypeAnnElem — only the
+// elem kinds with a real doc field (MethodTypeAnn, GetterTypeAnn,
+// SetterTypeAnn, PropertyTypeAnn) accept one; CallableTypeAnn,
+// ConstructorTypeAnn, MappedTypeAnn, and RestSpreadTypeAnn fall
+// through with Doc() == "".
+func setObjTypeAnnElemDoc(elem ast.ObjTypeAnnElem, doc string) {
+	if doc == "" || elem == nil {
+		return
+	}
+	switch e := elem.(type) {
+	case *ast.MethodTypeAnn:
+		e.SetDoc(doc)
+	case *ast.GetterTypeAnn:
+		e.SetDoc(doc)
+	case *ast.SetterTypeAnn:
+		e.SetDoc(doc)
+	case *ast.PropertyTypeAnn:
+		e.SetDoc(doc)
+	}
+}
+
 // maybeTypeParams parses optional type parameters if present.
 // Returns the parsed type parameters and updates the current token position.
 //

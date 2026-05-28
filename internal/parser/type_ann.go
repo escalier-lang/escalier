@@ -718,7 +718,19 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 	return nil
 }
 
+// objTypeAnnElem parses a single member of an object type annotation
+// (interface body, inline object type, etc.) and attaches any leading
+// JSDoc block comment to the resulting elem's Doc field. Non-JSDoc
+// comments are still consumed but do not populate Doc. Mirrors the
+// shape of parseClassElem — see #663.
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
+	doc := p.consumeLeadingDoc()
+	elem := p.objTypeAnnElemInner()
+	setObjTypeAnnElemDoc(elem, doc)
+	return elem
+}
+
+func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	token := p.lexer.peek()
 
 	// Handle rest spread syntax: ...T
