@@ -189,12 +189,12 @@ func (t *VoidTypeAnn) Accept(v Visitor) {
 type ObjTypeAnnElem interface {
 	isObjTypeAnnElem()
 	// Doc returns the leading JSDoc retained on the elem, verbatim
-	// with `/** ... */` delimiters, or "" if absent. Set today only by
-	// the dts_to_esc converter via convertInterfaceMember. Variants
-	// that don't conceptually carry a doc (CallableTypeAnn,
-	// ConstructorTypeAnn, MappedTypeAnn, RestSpreadTypeAnn) return ""
-	// from a no-op implementation.
+	// with `/** ... */` delimiters, or "" if absent. Variants that
+	// don't conceptually carry a doc (CallableTypeAnn,
+	// ConstructorTypeAnn, MappedTypeAnn) return "" from a no-op
+	// implementation; SetDoc on those is a no-op.
 	Doc() string
+	SetDoc(string)
 }
 
 func (*CallableTypeAnn) isObjTypeAnnElem()    {}
@@ -206,11 +206,13 @@ func (*PropertyTypeAnn) isObjTypeAnnElem()    {}
 func (*MappedTypeAnn) isObjTypeAnnElem()      {}
 func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
 
-// No-op Doc() impls for the variants that don't carry a JSDoc.
-func (*CallableTypeAnn) Doc() string    { return "" }
-func (*ConstructorTypeAnn) Doc() string { return "" }
-func (*MappedTypeAnn) Doc() string      { return "" }
-func (*RestSpreadTypeAnn) Doc() string  { return "" }
+// No-op Doc/SetDoc impls for the variants that don't carry a JSDoc.
+func (*CallableTypeAnn) Doc() string       { return "" }
+func (*CallableTypeAnn) SetDoc(string)     {}
+func (*ConstructorTypeAnn) Doc() string    { return "" }
+func (*ConstructorTypeAnn) SetDoc(string)  {}
+func (*MappedTypeAnn) Doc() string         { return "" }
+func (*MappedTypeAnn) SetDoc(string)       {}
 
 type CallableTypeAnn struct{ Fn *FuncTypeAnn }
 type ConstructorTypeAnn struct{ Fn *FuncTypeAnn }
@@ -288,6 +290,7 @@ type IndexParamTypeAnn struct {
 
 type RestSpreadTypeAnn struct {
 	Value        TypeAnn
+	doc          string
 	span         Span
 	inferredType Type
 }
@@ -302,6 +305,11 @@ func (t *RestSpreadTypeAnn) Accept(v Visitor) {
 	}
 	v.ExitTypeAnn(t)
 }
+
+// RestSpreadTypeAnn carries a real doc field: a hand-authored
+// `interface F { /** doc */ ...Bar }` should round-trip the JSDoc.
+func (t *RestSpreadTypeAnn) Doc() string       { return t.doc }
+func (t *RestSpreadTypeAnn) SetDoc(doc string) { t.doc = doc }
 
 type ObjectTypeAnn struct {
 	Elems        []ObjTypeAnnElem

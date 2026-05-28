@@ -17,6 +17,18 @@ type Inferrable interface {
 	SetInferredType(Type)
 }
 
+// Documented is implemented by any node that can carry a leading JSDoc
+// (`/** ... */`) comment. The string is the raw comment text including
+// delimiters; consumers strip tags as needed. Both ClassElem and
+// ObjTypeAnnElem embed this contract so any implementation must
+// participate — variants that conceptually don't carry a doc (e.g.
+// CallableTypeAnn, ConstructorTypeAnn, MappedTypeAnn) implement Doc as
+// a constant "" and SetDoc as a no-op.
+type Documented interface {
+	Doc() string
+	SetDoc(string)
+}
+
 // If `Name` is an empty string it means that the identifier is missing in
 // the expression.
 type Ident struct {

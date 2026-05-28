@@ -564,6 +564,36 @@ func TestIsIdentContinue(t *testing.T) {
 	}
 }
 
+func TestIsJSDoc(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		// Real JSDoc.
+		{"/** doc */", true},
+		{"/** */", true},
+		{"/**\n * multi\n */", true},
+		{"/**foo*/", true},
+		// All-asterisk runs carry no content.
+		{"/**/", false},
+		{"/***/", false},
+		{"/****/", false},
+		{"/*****/", false},
+		// Not a JSDoc opener.
+		{"/* doc */", false},
+		{"// doc", false},
+		{"", false},
+		// Unterminated.
+		{"/** doc", false},
+		{"/**", false},
+	}
+	for _, tc := range tests {
+		if got := IsJSDoc(tc.value); got != tc.want {
+			t.Errorf("IsJSDoc(%q) = %v, want %v", tc.value, got, tc.want)
+		}
+	}
+}
+
 func BenchmarkScanIdent(b *testing.B) {
 	benchmarks := []struct {
 		name     string

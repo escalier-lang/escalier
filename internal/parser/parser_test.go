@@ -1007,16 +1007,53 @@ func TestClassElemDocs(t *testing.T) {
 
 	t.Run("EmptyDocComment", func(t *testing.T) {
 		t.Parallel()
-		cls := parseClass(t, `
-			class Point {
-				/**/
-				x: number,
-			}
-		`)
-		require.Len(t, cls.Body, 1)
-		f, ok := cls.Body[0].(*ast.FieldElem)
+		// /**/, /***/, /****/ — all pure-asterisk runs carry no
+		// documentation content and must not attach as JSDoc.
+		for _, src := range []string{
+			"class Point { /**/ x: number, }",
+			"class Point { /***/ x: number, }",
+			"class Point { /****/ x: number, }",
+		} {
+			cls := parseClass(t, src)
+			require.Len(t, cls.Body, 1, "src=%q", src)
+			f, ok := cls.Body[0].(*ast.FieldElem)
+			require.True(t, ok, "src=%q", src)
+			require.Empty(t, f.Doc(), "all-asterisk comment is not JSDoc (src=%q)", src)
+		}
+	})
+
+	t.Run("TrailingDocReportsOrphanError", func(t *testing.T) {
+		t.Parallel()
+		// #1 + #4: a JSDoc immediately before `}` has no elem to
+		// attach to. The parser should report a clear diagnostic
+		// instead of falling through to the cascading 'Expected a
+		// property name' error from the inner.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `class Foo { /** trail */ }`})
+		require.Len(t, errors, 1)
+		require.Contains(t, errors[0].Message, "JSDoc comment is not attached to a declaration")
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
 		require.True(t, ok)
-		require.Empty(t, f.Doc(), "/**/ is not a JSDoc block")
+		require.Empty(t, cls.Body, "no spurious elem from the orphan path")
+	})
+
+	t.Run("TrailingDocAfterCommaReportsOrphanError", func(t *testing.T) {
+		t.Parallel()
+		// Same shape as TrailingDocReportsOrphanError, but the doc
+		// comes after a trailing comma.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `class Foo { x: number, /** trail */ }`})
+		require.Len(t, errors, 1)
+		require.Contains(t, errors[0].Message, "JSDoc comment is not attached to a declaration")
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Len(t, cls.Body, 1, "the elem before the comma still parses")
 	})
 }
 
@@ -1118,6 +1155,53 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 		p, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
 		require.True(t, ok)
 		require.Empty(t, p.Doc(), "intervening non-JSDoc block comment resets the captured doc")
+	})
+
+	t.Run("RestSpreadTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		// #3: RestSpreadTypeAnn now carries a real doc field.
+		iface := parseIface(t, `interface F { /** spread */ ...Bar }`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		rs, ok := iface.TypeAnn.Elems[0].(*ast.RestSpreadTypeAnn)
+		require.True(t, ok, "elem is a RestSpreadTypeAnn")
+		require.Equal(t, "/** spread */", rs.Doc())
+	})
+
+	t.Run("TrailingDocReportsOrphanError", func(t *testing.T) {
+		t.Parallel()
+		// #1 + #4 for interface bodies.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `interface Foo { /** trail */ }`})
+		require.Len(t, errors, 1)
+		require.Contains(t, errors[0].Message, "JSDoc comment is not attached to a declaration")
+		require.Len(t, decls, 1)
+		iface, ok := decls[0].(*ast.InterfaceDecl)
+		require.True(t, ok)
+		require.Empty(t, iface.TypeAnn.Elems)
+	})
+
+	t.Run("MissingTypeAnnotationGetsNeverRecovery", func(t *testing.T) {
+		t.Parallel()
+		// #5: PropertyTypeAnn{Value: nil} from error recovery is
+		// replaced with a NeverTypeAnn so the printer/checker see a
+		// well-formed type instead of a nil dereference target.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `interface I { /** d */ x }`})
+		require.Len(t, errors, 1)
+		require.Contains(t, errors[0].Message, "expected type annotation")
+		require.Len(t, decls, 1)
+		iface := decls[0].(*ast.InterfaceDecl)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		prop, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok)
+		require.IsType(t, &ast.NeverTypeAnn{}, prop.Value,
+			"recovery substitutes NeverTypeAnn for the missing type")
+		require.Equal(t, "/** d */", prop.Doc(),
+			"the captured doc still attaches to the recovered property")
 	})
 }
 

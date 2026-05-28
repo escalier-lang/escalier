@@ -1,9 +1,10 @@
 package parser
 
 import (
-	"strings"
+	"reflect"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/lexer_util"
 )
 
 // consumeLeadingDoc consumes any comment tokens preceding the next
@@ -13,13 +14,18 @@ import (
 // block and the next token reset the captured doc — JSDoc must be the
 // immediately preceding comment to attach. Mirrors
 // dts_parser.consumeLeadingDoc so the two parsers agree on what counts
-// as a leading doc.
+// as a leading doc; both rely on lexer_util.IsJSDoc for the predicate.
 func (p *Parser) consumeLeadingDoc() string {
 	var doc string
 	for {
+		select {
+		case <-p.ctx.Done():
+			return doc
+		default:
+		}
 		t := p.lexer.peek()
 		if t.Type == BlockComment {
-			if isJSDoc(t.Value) {
+			if lexer_util.IsJSDoc(t.Value) {
 				doc = t.Value
 			} else {
 				doc = ""
@@ -36,54 +42,20 @@ func (p *Parser) consumeLeadingDoc() string {
 	}
 }
 
-// isJSDoc reports whether a block-comment token value is a JSDoc
-// comment: must start with `/**` and have content beyond the leading
-// stars (excludes `/**/`).
-func isJSDoc(value string) bool {
-	return len(value) > 4 && strings.HasPrefix(value, "/**")
-}
-
-// setClassElemDoc attaches doc to elem when doc is non-empty. Mirrors
-// the type switch in printer.printClassElem so every elem kind that
-// the printer emits a doc for also accepts one from the parser.
-func setClassElemDoc(elem ast.ClassElem, doc string) {
-	if doc == "" || elem == nil {
+// attachDoc sets doc on node when doc is non-empty and node is
+// non-nil. Both the interface-nil case (untyped nil from an inner
+// returning `return nil`) and the typed-nil case (a future caller
+// returning `var fe *FieldElem; ... return fe`) are guarded — without
+// the reflect check the typed-nil path would nil-deref inside SetDoc.
+func attachDoc(node ast.Documented, doc string) {
+	if doc == "" || node == nil {
 		return
 	}
-	switch e := elem.(type) {
-	case *ast.FieldElem:
-		e.SetDoc(doc)
-	case *ast.MethodElem:
-		e.SetDoc(doc)
-	case *ast.GetterElem:
-		e.SetDoc(doc)
-	case *ast.SetterElem:
-		e.SetDoc(doc)
-	case *ast.ConstructorElem:
-		e.SetDoc(doc)
-	}
-}
-
-// setObjTypeAnnElemDoc attaches doc to elem when doc is non-empty.
-// Mirrors the type switch in printer.printObjTypeAnnElem — only the
-// elem kinds with a real doc field (MethodTypeAnn, GetterTypeAnn,
-// SetterTypeAnn, PropertyTypeAnn) accept one; CallableTypeAnn,
-// ConstructorTypeAnn, MappedTypeAnn, and RestSpreadTypeAnn fall
-// through with Doc() == "".
-func setObjTypeAnnElemDoc(elem ast.ObjTypeAnnElem, doc string) {
-	if doc == "" || elem == nil {
+	v := reflect.ValueOf(node)
+	if v.Kind() == reflect.Ptr && v.IsNil() {
 		return
 	}
-	switch e := elem.(type) {
-	case *ast.MethodTypeAnn:
-		e.SetDoc(doc)
-	case *ast.GetterTypeAnn:
-		e.SetDoc(doc)
-	case *ast.SetterTypeAnn:
-		e.SetDoc(doc)
-	case *ast.PropertyTypeAnn:
-		e.SetDoc(doc)
-	}
+	node.SetDoc(doc)
 }
 
 // maybeTypeParams parses optional type parameters if present.
@@ -698,8 +670,19 @@ func (p *Parser) parseConstructorElem(
 // are still consumed but do not populate Doc.
 func (p *Parser) parseClassElem() ast.ClassElem {
 	doc := p.consumeLeadingDoc()
+	// After consuming a leading JSDoc, if we're sitting on the class
+	// body's closing brace, there's no elem to attach the doc to.
+	// Surface that to the user as a parse error AND return nil so
+	// parseDelimSeq exits cleanly (avoiding a spurious 'Expected a
+	// property name' from objExprKey).
+	if next := p.lexer.peek(); next.Type == CloseBrace {
+		if doc != "" {
+			p.reportError(next.Span, "JSDoc comment is not attached to a declaration")
+		}
+		return nil
+	}
 	elem := p.parseClassElemInner()
-	setClassElemDoc(elem, doc)
+	attachDoc(elem, doc)
 	return elem
 }
 

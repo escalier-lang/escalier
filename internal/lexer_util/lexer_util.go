@@ -1,11 +1,29 @@
 package lexer_util
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 )
+
+// IsJSDoc reports whether a block-comment token value is a JSDoc
+// comment. A value qualifies when it starts with `/**`, ends with
+// `*/`, and has at least one non-asterisk character between the
+// opening `/**` and closing `*/`. Pure asterisk runs like `/**/`,
+// `/***/`, and `/****/` are not JSDoc and are rejected — they carry
+// no documentation content.
+//
+// Shared between the regular parser and dts_parser so both agree on
+// what counts as an attachable JSDoc block.
+func IsJSDoc(value string) bool {
+	if len(value) < 5 || !strings.HasPrefix(value, "/**") || !strings.HasSuffix(value, "*/") {
+		return false
+	}
+	inner := value[3 : len(value)-2]
+	return strings.TrimLeft(inner, "*") != ""
+}
 
 // Based on https://www.unicode.org/reports/tr31/#D1
 func IsIdentStart(r rune) bool {

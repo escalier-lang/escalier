@@ -725,8 +725,19 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 // shape of parseClassElem — see #663.
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	doc := p.consumeLeadingDoc()
+	// After consuming a leading JSDoc, if we're sitting on the object
+	// type's closing brace, there's no elem to attach the doc to.
+	// Surface that to the user as a parse error AND return nil so
+	// parseDelimSeq exits cleanly (avoiding cascading 'Expected a
+	// property name' / 'Expected }' errors from the inner).
+	if next := p.lexer.peek(); next.Type == CloseBrace {
+		if doc != "" {
+			p.reportError(next.Span, "JSDoc comment is not attached to a declaration")
+		}
+		return nil
+	}
 	elem := p.objTypeAnnElemInner()
-	setObjTypeAnnElemDoc(elem, doc)
+	attachDoc(elem, doc)
 	return elem
 }
 
@@ -801,6 +812,16 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		}
 	}
 
+	// Error-recovery placeholder: when the user wrote a property name
+	// without (or with a malformed) type annotation we substitute
+	// `never` so downstream consumers (printer, checker) see a
+	// well-formed type instead of a nil dereference target. The
+	// `expected type annotation` diagnostic already tells the user
+	// what went wrong; `never` is just a typed stand-in.
+	recoveryNever := func(span ast.Span) ast.TypeAnn {
+		return ast.NewNeverTypeAnn(span)
+	}
+
 	// nolint: exhaustive
 	switch token.Type {
 	case CloseBrace:
@@ -810,7 +831,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 			Name:     objKey,
 			Optional: false,
 			Readonly: readonly,
-			Value:    nil,
+			Value:    recoveryNever(token.Span),
 		}
 		return property
 	case Comma:
@@ -820,7 +841,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 			Name:     objKey,
 			Optional: false,
 			Readonly: readonly,
-			Value:    nil,
+			Value:    recoveryNever(token.Span),
 		}
 		return property
 	case Colon:
@@ -836,6 +857,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		token = p.lexer.peek()
 		if token.Type == Comma {
 			p.reportError(token.Span, "expected type annotation")
+			property.Value = recoveryNever(token.Span)
 			return property
 		}
 
