@@ -18,7 +18,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `interop.ConvertToStandaloneModule` ([internal/interop/dts_to_esc.go](../../internal/interop/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/interop/dts_to_esc_test.go](../../internal/interop/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
-| 6   | Converter productionization                          | FR10        | ⬜      | §5         | Partition table; full output paths under `internal/interop/data/{std,web}/`; `--check` mode; full `lib.*.d.ts` input set; registry/well-known-symbol routing.                                                                                        |
+| 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/interop/partition.go](../../internal/interop/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/interop/partition_writer.go](../../internal/interop/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; `dts_to_esc partition <lib-dir> <out-dir>` subcommand. lib.es5.d.ts smoke gate runs end-to-end (8/17 packages parse roundtrip; the rest surface printer/parser gaps that §7 hand-edits and PR B's `--check` mode will close). PR B (`--check` + re-run semantics) and PR C (TS-version-bump workflow) still outstanding. |
 | 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
 | 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "std:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
 | 9   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §4, §7, §8 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. Also migrate loader rule §3.4(4) (`@js` arg validation): move it out of the loader (currently reads `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go)) into a CI-only test under [internal/checker/tests/](../../internal/checker/tests/) that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Delete `js_globals.go` and the rule-4 branch in [js_decorator.go](../../internal/checker/js_decorator.go) in the same PR. Same CI-only test should add **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` (or `get`), never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable (today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime). Rule 5 shares the lib parser with rule 4, so doing them separately would duplicate the parse. |
@@ -1601,7 +1601,60 @@ lookup site so misses surface where the routing decision is
 actually made.
 
 **`node:*`.** Partition deferred until Node support lands. The
-`internal/interop/data/node/` directory is created empty.
+`internal/interop/data/node/` directory is scaffolded with a README
+explaining its reserved status; no `.esc` files are emitted there
+until the Node workstream begins.
+
+**Within-bucket declaration merging.** TypeScript spreads the
+declaration of stdlib types across many `lib.*.d.ts` files —
+`interface Array<T>` is augmented by `lib.es5`, `lib.es2015.core`,
+`lib.es2015.iterable`, `lib.es2015.symbol`,
+`lib.es2016.array.include`, … and similarly for `Date`,
+`Promise`, `String`, `Math`, etc. Every contributing file routes
+to the same target package, so once the routing pass has placed
+each top-level declaration in its bucket the converter performs
+TS-style declaration merging *inside* the bucket: same-named
+`InterfaceDecl`s have their `Members` concatenated, and same-named
+`NamespaceDecl`s have their `Statements` concatenated (recursively)
+before trio detection runs. This guarantees the trio detector sees
+exactly one merged `interface Array` + one merged `interface
+ArrayConstructor` + one `declare var Array`, regardless of how many
+lib years contributed members. See `mergeDecls` in
+[internal/interop/partition_writer.go](../../internal/interop/partition_writer.go).
+Distinct-name interfaces (e.g. `interface Array<T>` and `interface
+ReadonlyArray<T>`) are *not* merged by this pass — they are
+separate TS types and stay distinct after routing. The Readonly-
+twin pass below handles them.
+
+**Readonly-twin fusion (mirrors `mergeReadonlyVariant`).** Per-class
+buckets often contain a `Readonly<X>` companion (`ReadonlyArray`,
+`ReadonlyMap`, `ReadonlySet`, …). The legacy prelude
+[`mergeReadonlyVariant`](../../internal/checker/prelude.go) treated
+presence on the readonly twin as positive evidence the method does
+not mutate; the new converter does the same at emission time:
+
+1. Detect any `interface ReadonlyFoo` whose mutable counterpart
+   `interface Foo` is also in the bucket. Detection is purely
+   structural (the `Readonly` prefix strip + companion lookup);
+   no enumeration table is needed.
+2. Append any `ReadonlyFoo` member not already present on `Foo`
+   to `Foo.Members` so the fused class carries the readonly
+   surface too.
+3. Drop the `ReadonlyFoo` declaration from the bucket and emit
+   `type ReadonlyFoo<…> = Foo<…>` in its place — keeps the
+   readonly name resolvable in user code (no runtime referent;
+   the type alias has no `@js(...)`).
+4. After trio fusion produces `class Foo`, post-process each
+   instance `MethodElem`: if the method name appears on the
+   readonly twin's member set, set `Receiver.Mut = false`;
+   otherwise leave whatever `ClassifyMethodByName` chose
+   (defaulting to `mut self`). Symbol-keyed methods
+   (`[Symbol.iterator]`) participate in the merge via dotted-
+   name stringification of the computed key.
+
+See `fuseReadonlyTwins` / `applyReadonlyTwinReceivers` /
+`appendReadonlyAliases` in
+[internal/interop/partition_writer.go](../../internal/interop/partition_writer.go).
 
 ### 6.2 Registry routing
 
@@ -1744,13 +1797,20 @@ review surface focused; bundling is possible but loses the
 isolation between partition-routing churn and the `--check`
 assignability logic that touches checker rules.
 
-A. **Partition table + routing + output layout** (6.1, 6.2, 6.3).
+A. **Partition table + routing + output layout** (6.1, 6.2, 6.3) ✅.
    Takes the §5 converter from "stdout, one file" to "full
    `lib.*.d.ts` set, partitioned tree under
    `internal/interop/data/{std,web}/`". Lands the hand-maintained
    Go partition map, registry routing (single `web:dom`, sibling
    `web:*` packages, well-known-symbol stay-put rule), the
    unmapped-symbol fail-safe, and the `node/` empty directory.
+   `XxxConstructor` follows its `Xxx` partition entry via a
+   suffix-strip fallback in [Route](../../internal/interop/partition.go)
+   so contributors only list the instance name. Cross-input
+   declaration merging (TS-style interface/namespace merging) runs
+   inside each bucket before trio fusion, so members spread across
+   lib years collapse onto one synthesized class.
+
 B. **`--check` mode + re-run semantics** (6.4). Adds additive
    write mode (sticky hand-edits, add-only for new TS-side
    declarations / members) and the CI-facing read-only check
@@ -1759,6 +1819,7 @@ B. **`--check` mode + re-run semantics** (6.4). Adds additive
    once A has produced a committed tree to check against;
    touches checker internals that are unrelated to partition
    routing.
+
 C. **TS-version-bump workflow** (6.6). Wires the
    `bootstrap` / `regenerate` / `check` subcommands on
    `tools/dts_to_esc/` and adds `tools/dts_to_esc/README.md`
