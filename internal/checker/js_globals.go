@@ -91,7 +91,7 @@ func (c *Checker) knownJSGlobals() set.Set[string] {
 // SymbolConstructor, …) surface their members. Returns nil for any
 // non-object shape.
 func objectMemberNames(t type_system.Type) []string {
-	obj := resolveToObjectType(t)
+	obj := resolveToObjectType(t, nil)
 	if obj == nil {
 		return nil
 	}

@@ -256,7 +256,7 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 		if _, isTV := oldType.(*type_system.TypeVarType); isTV {
 			return errors
 		}
-		newType := widenLiteral(t1)
+		newType := widenLiteral(t1, ctx.BindJournal)
 		widened := oldType
 		// Check answers "is newType a subtype of oldType" directly: if
 		// so, widening to add it would be redundant (a literal already
@@ -1277,7 +1277,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	// First, try to distribute intersections over unions (Phase 2: Distributive laws)
 	// A & (B | C) should be equivalent to (A & B) | (A & C)
 	if intersection1, ok := t1.(*type_system.IntersectionType); ok {
-		distributed1, _ := distributeIntersectionOverUnion(intersection1)
+		distributed1, _ := distributeIntersectionOverUnion(intersection1, ctx.BindJournal)
 		// Check if distribution occurred by seeing if the type changed
 		if _, stillIntersection := distributed1.(*type_system.IntersectionType); !stillIntersection {
 			// Distribution created a different type (likely a union), retry unification
@@ -1285,7 +1285,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 		}
 
 		if intersection2, ok := t2.(*type_system.IntersectionType); ok {
-			distributed2, _ := distributeIntersectionOverUnion(intersection2)
+			distributed2, _ := distributeIntersectionOverUnion(intersection2, ctx.BindJournal)
 			// Check if distribution occurred on t2
 			if _, stillIntersection := distributed2.(*type_system.IntersectionType); !stillIntersection {
 				// Distribution occurred on t2, retry unification
@@ -1326,7 +1326,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	// We try each part and if any succeeds, the intersection is valid.
 	if intersection, ok := t1.(*type_system.IntersectionType); ok {
 		// First, try distribution (Phase 2: Distributive laws)
-		distributed, _ := distributeIntersectionOverUnion(intersection)
+		distributed, _ := distributeIntersectionOverUnion(intersection, ctx.BindJournal)
 		// Check if distribution occurred
 		if _, stillIntersection := distributed.(*type_system.IntersectionType); !stillIntersection {
 			// Distribution created a different type (likely a union), retry unification
@@ -1354,7 +1354,7 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	// This is because B & C requires all the properties of both B and C.
 	if intersection, ok := t2.(*type_system.IntersectionType); ok {
 		// First, try distribution (Phase 2: Distributive laws)
-		distributed, _ := distributeIntersectionOverUnion(intersection)
+		distributed, _ := distributeIntersectionOverUnion(intersection, ctx.BindJournal)
 		// Check if distribution occurred
 		if _, stillIntersection := distributed.(*type_system.IntersectionType); !stillIntersection {
 			// Distribution created a different type (likely a union), retry unification
@@ -1788,7 +1788,7 @@ func (c *Checker) unifyClosedWithRests(
 			}
 			if tv, ok := pruned.(*type_system.TypeVarType); ok && tv.Instance == nil {
 				unboundRests = append(unboundRests, tv)
-			} else if obj := resolveToObjectType(pruned); obj != nil {
+			} else if obj := resolveToObjectType(pruned, ctx.BindJournal); obj != nil {
 				// Apply spread semantics: methods → fn type, getters → return
 				// type, setter-only → skipped.
 				for _, re := range obj.Elems {
@@ -2149,7 +2149,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 	errors := []Error{}
 
 	if !type_system.Equals(t1, t2) {
-		if occursInType(t1, t2) {
+		if occursInType(t1, t2, ctx.BindJournal) {
 			fmt.Fprintf(os.Stderr, "Recursive unification: cannot bind %s to %s\n", t1.String(), t2.String())
 			return []Error{&RecursiveUnificationError{
 				Left:  t1,
@@ -2229,7 +2229,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				// (e.g. "hello" -> string, {x: 1} -> {x: number}).
 				targetType := t2
 				if typeVar1.Widenable {
-					targetType = widenLiteral(targetType)
+					targetType = widenLiteral(targetType, ctx.BindJournal)
 				}
 				// FromBinding TypeVars need re-normalization: a union/intersection
 				// built before its inner TypeVars were resolved may now collapse
@@ -2278,7 +2278,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				// (e.g. "hello" -> string, {x: 1} -> {x: number}).
 				targetType := t1
 				if typeVar2.Widenable {
-					targetType = widenLiteral(targetType)
+					targetType = widenLiteral(targetType, ctx.BindJournal)
 				}
 				// FromBinding TypeVars need re-normalization: a union/intersection
 				// built before its inner TypeVars were resolved may now collapse
@@ -2304,6 +2304,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 type OccursInVisitor struct {
 	result bool
 	t1     type_system.Type
+	j      type_system.Journal
 }
 
 func (v *OccursInVisitor) EnterType(t type_system.Type) type_system.EnterResult {
@@ -2312,14 +2313,14 @@ func (v *OccursInVisitor) EnterType(t type_system.Type) type_system.EnterResult 
 }
 
 func (v *OccursInVisitor) ExitType(t type_system.Type) type_system.Type {
-	if type_system.Equals(type_system.Prune(t, nil), v.t1) {
+	if type_system.Equals(type_system.Prune(t, v.j), v.t1) {
 		v.result = true
 	}
 	return nil
 }
 
-func occursInType(t1, t2 type_system.Type) bool {
-	visitor := &OccursInVisitor{result: false, t1: t1}
+func occursInType(t1, t2 type_system.Type, j type_system.Journal) bool {
+	visitor := &OccursInVisitor{result: false, t1: t1, j: j}
 	t2.Accept(visitor)
 	if visitor.result {
 		return true
@@ -2331,12 +2332,12 @@ func occursInType(t1, t2 type_system.Type) bool {
 	// the occursInType calls below will themselves hit this same block if
 	// ElemTypeVar or a LiteralIndexes entry is a TypeVar with its own
 	// ArrayConstraint, so nested constraints are covered without additional work.
-	if tv, ok := type_system.Prune(t2, nil).(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
-		if occursInType(t1, tv.ArrayConstraint.ElemTypeVar) {
+	if tv, ok := type_system.Prune(t2, j).(*type_system.TypeVarType); ok && tv.ArrayConstraint != nil {
+		if occursInType(t1, tv.ArrayConstraint.ElemTypeVar, j) {
 			return true
 		}
 		for _, elemTV := range tv.ArrayConstraint.LiteralIndexes {
-			if occursInType(t1, elemTV) {
+			if occursInType(t1, elemTV, j) {
 				return true
 			}
 		}
@@ -2551,11 +2552,11 @@ func rebuildContainers(t type_system.Type) type_system.Type {
 // distributeIntersectionOverUnion distributes an intersection type over any unions it contains.
 // For example: A & (B | C) becomes (A & B) | (A & C)
 // Returns the original type if no distribution is needed or if distribution involves problematic nominal types.
-func distributeIntersectionOverUnion(intersection *type_system.IntersectionType) (type_system.Type, bool) {
+func distributeIntersectionOverUnion(intersection *type_system.IntersectionType, j type_system.Journal) (type_system.Type, bool) {
 	// Check if any of the types in the intersection is a union
 	var unionIndex = -1
 	for i, t := range intersection.Types {
-		t = type_system.Prune(t, nil)
+		t = type_system.Prune(t, j)
 		if _, ok := t.(*type_system.UnionType); ok {
 			unionIndex = i
 			break
@@ -2567,7 +2568,7 @@ func distributeIntersectionOverUnion(intersection *type_system.IntersectionType)
 		return intersection, false
 	}
 
-	union := type_system.Prune(intersection.Types[unionIndex], nil).(*type_system.UnionType)
+	union := type_system.Prune(intersection.Types[unionIndex], j).(*type_system.UnionType)
 
 	otherTypes := make([]type_system.Type, 0, len(intersection.Types)-1)
 	otherTypes = append(otherTypes, intersection.Types[:unionIndex]...)
@@ -2597,7 +2598,7 @@ func distributeIntersectionOverUnion(intersection *type_system.IntersectionType)
 //
 // If the type is wrapped in a MutType, the wrapper is preserved on the
 // widened inner type. Types that don't match any case are returned unchanged.
-func widenLiteral(t type_system.Type) type_system.Type {
+func widenLiteral(t type_system.Type, j type_system.Journal) type_system.Type {
 	inner := t
 	var mutWrapper *type_system.MutType
 	if mut, ok := inner.(*type_system.MutType); ok {
@@ -2606,7 +2607,7 @@ func widenLiteral(t type_system.Type) type_system.Type {
 	}
 	// Follow TypeVar instances so we can widen the underlying concrete type
 	// (e.g. MutType wrapping a TypeVar whose Instance is an ObjectType).
-	inner = type_system.Prune(inner, nil)
+	inner = type_system.Prune(inner, j)
 
 	var widened type_system.Type
 	switch v := inner.(type) {
@@ -2616,9 +2617,9 @@ func widenLiteral(t type_system.Type) type_system.Type {
 			return t
 		}
 	case *type_system.ObjectType:
-		widened = widenObjectLiterals(v)
+		widened = widenObjectLiterals(v, j)
 	case *type_system.TupleType:
-		widened = widenTupleLiterals(v)
+		widened = widenTupleLiterals(v, j)
 	default:
 		return t
 	}
@@ -2654,15 +2655,15 @@ func widenLitToPrim(lit *type_system.LitType) type_system.Type {
 // widenObjectLiterals returns a copy of the ObjectType with all element types
 // recursively widened (literals → primitives). Handles property values, method
 // param/return types, and getter/setter types.
-func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
+func widenObjectLiterals(obj *type_system.ObjectType, j type_system.Journal) *type_system.ObjectType {
 	newElems := make([]type_system.ObjTypeElem, len(obj.Elems))
 	changed := false
 	for i, elem := range obj.Elems {
 		switch e := elem.(type) {
 		case *type_system.PropertyElem:
 			// Prune through TypeVars, then widen.
-			val := type_system.Prune(e.Value, nil)
-			widened := widenLiteral(val)
+			val := type_system.Prune(e.Value, j)
+			widened := widenLiteral(val, j)
 			if widened != e.Value {
 				changed = true
 				newElems[i] = &type_system.PropertyElem{
@@ -2682,15 +2683,15 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 			// compatible with PR-C overloads.
 			newSigs := e.Signatures
 			armChanged := false
-			for j, fn := range e.Signatures {
-				widened := widenFuncType(fn)
+			for k, fn := range e.Signatures {
+				widened := widenFuncType(fn, j)
 				if widened != fn {
 					if !armChanged {
 						newSigs = make([]*type_system.FuncType, len(e.Signatures))
 						copy(newSigs, e.Signatures)
 						armChanged = true
 					}
-					newSigs[j] = widened
+					newSigs[k] = widened
 				}
 			}
 			if armChanged {
@@ -2700,14 +2701,14 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 				newElems[i] = elem
 			}
 		case *type_system.GetterElem:
-			if fn := widenFuncType(e.Fn); fn != e.Fn {
+			if fn := widenFuncType(e.Fn, j); fn != e.Fn {
 				changed = true
 				newElems[i] = &type_system.GetterElem{Name: e.Name, Fn: fn}
 			} else {
 				newElems[i] = elem
 			}
 		case *type_system.SetterElem:
-			if fn := widenFuncType(e.Fn); fn != e.Fn {
+			if fn := widenFuncType(e.Fn, j); fn != e.Fn {
 				changed = true
 				newElems[i] = &type_system.SetterElem{Name: e.Name, Fn: fn}
 			} else {
@@ -2727,19 +2728,19 @@ func widenObjectLiterals(obj *type_system.ObjectType) *type_system.ObjectType {
 
 // widenFuncType returns a copy of the FuncType with parameter and return types
 // recursively widened. Returns the original if nothing changed.
-func widenFuncType(fn *type_system.FuncType) *type_system.FuncType {
+func widenFuncType(fn *type_system.FuncType, j type_system.Journal) *type_system.FuncType {
 	changed := false
 
-	ret := type_system.Prune(fn.Return, nil)
-	widenedReturn := widenLiteral(ret)
+	ret := type_system.Prune(fn.Return, j)
+	widenedReturn := widenLiteral(ret, j)
 	if widenedReturn != fn.Return {
 		changed = true
 	}
 
 	newParams := make([]*type_system.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
-		pt := type_system.Prune(p.Type, nil)
-		widened := widenLiteral(pt)
+		pt := type_system.Prune(p.Type, j)
+		widened := widenLiteral(pt, j)
 		if widened != p.Type {
 			changed = true
 			newParams[i] = &type_system.FuncParam{
@@ -2760,12 +2761,12 @@ func widenFuncType(fn *type_system.FuncType) *type_system.FuncType {
 
 // widenTupleLiterals returns a copy of the TupleType with all element types
 // recursively widened (literals → primitives).
-func widenTupleLiterals(tuple *type_system.TupleType) *type_system.TupleType {
+func widenTupleLiterals(tuple *type_system.TupleType, j type_system.Journal) *type_system.TupleType {
 	newElems := make([]type_system.Type, len(tuple.Elems))
 	changed := false
 	for i, elem := range tuple.Elems {
-		val := type_system.Prune(elem, nil)
-		widened := widenLiteral(val)
+		val := type_system.Prune(elem, j)
+		widened := widenLiteral(val, j)
 		if widened != elem {
 			changed = true
 		}

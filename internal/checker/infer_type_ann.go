@@ -179,7 +179,7 @@ func (c *Checker) inferTypeAnn(
 		errors = slices.Concat(errors, extendsErrors)
 
 		// Find all InferType nodes in the extends type and create type aliases for them
-		inferTypesMap := c.findInferTypes(extendsType)
+		inferTypesMap := c.findInferTypes(extendsType, ctx.BindJournal)
 
 		// TODO: find all named capture groups in the extends type
 		// and add them to the context scope as type aliases

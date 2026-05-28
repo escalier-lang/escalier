@@ -409,7 +409,7 @@ func (s *Server) moduleCompletion(
 
 // completionsFromType returns completion items for member access on a type.
 func completionsFromType(t type_system.Type, scope *checker.Scope) []protocol.CompletionItem {
-	return completionsFromTypeImpl(t, scope, checker.ReceiverIsDefinitelyMutable(t))
+	return completionsFromTypeImpl(t, scope, checker.ReceiverIsDefinitelyMutable(t, nil))
 }
 
 // completionsFromTypeImpl is the same as completionsFromType but lets internal
