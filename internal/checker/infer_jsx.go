@@ -552,6 +552,15 @@ func (c *Checker) resolveJSXComponentType(ctx Context, tagName ast.QualIdent) (t
 // extractPropsFromComponentType extracts the props type from a component type.
 // For function components (fn(props: Props) -> JSX.Element), it returns the first parameter's type.
 // For other component patterns (class components, etc.), it returns nil to allow any props.
+//
+// Prune journal is nil because JSX inference (inferJSXElement → getComponentProps
+// → extractPropsFromComponentType) runs at expression-inference time and is
+// not reachable from any Probe scope: nothing in unify.go or expand_type.go
+// invokes inferJSX*. To require threading, the unifier would need to
+// expand component-typed values speculatively inside a Probe — at that
+// point this function would need to take ctx (or a Journal) and forward
+// it into the Prune call here, plus its caller getComponentProps would
+// need to plumb the journal in.
 func (c *Checker) extractPropsFromComponentType(componentType type_system.Type) type_system.Type {
 	// Prune to get the underlying type (resolve type variables, etc.)
 	prunedType := type_system.Prune(componentType, nil)

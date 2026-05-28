@@ -574,6 +574,15 @@ func exprAlwaysExits(expr ast.Expr) bool {
 		// expression forms in this codebase use `never` as a
 		// no-value sentinel rather than as a divergence marker
 		// (notably assignment expressions).
+		//
+		// Prune journal is nil because exprAlwaysExits runs during
+		// post-body control-flow analysis (called from
+		// inferFuncBodyWithFuncSigType), never inside a Probe scope —
+		// no probe is open during top-level body inference. If a future
+		// feature triggers exit analysis inside the unifier or expand
+		// path (currently unreachable), this site and every other
+		// Prune(..., nil) below in this file would need to take the
+		// active ctx.BindJournal.
 		if t := e.InferredType(); t != nil {
 			if _, isNever := type_system.Prune(t, nil).(*type_system.NeverType); isNever {
 				return true
@@ -738,6 +747,14 @@ func (c *Checker) findThrowTypes(ctx Context, block *ast.Block) ([]type_system.T
 //
 // Returns nil when no throws can be attributed (callee has no throws
 // clause, or its throws type is `never`).
+//
+// Prune journal is nil throughout: this is post-body throws collection,
+// reachable only from findThrowTypes → inferFuncBodyWithFuncSigType.
+// To require journal threading, an inferExpr-driven path would have to
+// call calleeThrowsType from inside a Probe scope (e.g. if the unifier
+// gained a lazy expression-inference hook). In that case calleeThrowsType
+// and collectCalleeFuncTypes would both need to take a Journal parameter
+// and forward it into every Prune call below.
 func calleeThrowsType(callExpr *ast.CallExpr) type_system.Type {
 	if rt := callExpr.ResolvedThrows(); rt != nil {
 		if _, isNever := type_system.Prune(rt, nil).(*type_system.NeverType); isNever {
@@ -855,6 +872,14 @@ func (c *Checker) closeOpenParams(funcSigType *type_system.FuncType) {
 // the pre-prune check catches it), or the incoming TypeVar's representative
 // is a different param TypeVar that will be processed in its own iteration
 // of closeOpenParams's loop over all params.
+//
+// Prune journal is nil here: this is closing-time, after body inference
+// completes and before generalization, called from closeOpenParams which
+// is itself called outside any Probe. Threading would be required if a
+// future code path performs closing inside a Probe (e.g. speculative
+// generalization of a candidate signature). At that point this function
+// and its recursive walk over params/returns would need to take a
+// Journal parameter and forward it into every Prune call.
 func (c *Checker) resolveArrayConstraintsInType(t type_system.Type) {
 	// Check for ArrayConstraint before pruning: a param TypeVar with an
 	// ArrayConstraint may have had its Instance set during return-type
@@ -1004,6 +1029,14 @@ func (c *Checker) resolveArrayConstraint(constraint *type_system.ArrayConstraint
 // mutability and closes the object. Otherwise, it recurses into type
 // constructors (TypeRefType args, TupleType elements, UnionType options, etc.)
 // to find and close nested open objects.
+//
+// Prune journal is nil here and in closeObjectType / closeTupleType: the
+// whole close-family runs at closing time, after body inference and
+// outside any Probe. To require threading, a future feature would need to
+// run object/tuple closing speculatively inside a probe (e.g. trial
+// closure to test if a signature would be inferred correctly). All three
+// close-family functions would then need to take a Journal parameter and
+// forward it to every Prune call below.
 func closeOpenObjectsInType(t type_system.Type, returnVars map[int]*type_system.TypeVarType) {
 	pruned := type_system.Prune(t, nil)
 
