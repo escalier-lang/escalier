@@ -221,10 +221,13 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // = Foo<…>` alias is synthesised in its place so user code that names
 // the readonly variant in a type position still resolves.
 //
-// TODO(#668): rewrite reference sites in the converted output so TS-side
-// `Foo<…>` becomes Escalier `mut Foo<…>` and TS-side `ReadonlyFoo<…>`
-// becomes Escalier `Foo<…>` (matching Escalier's mut-modifier model).
-// Also handle `T[]` shorthand as if it were `Array<T>`.
+// After conversion, rewriteReadonlyTwinRefs walks every TypeAnn slot
+// in the emitted module and rewrites references to the twin names so
+// they match Escalier's mut-modifier model: TS `ReadonlyFoo<…>` becomes
+// `Foo<…>` (immutable view), TS `Foo<…>` becomes `mut Foo<…>` (mutable
+// view). `T[]` is already desugared to `Array<T>` by convertTypeAnn so
+// it flows through the same rewrite; `readonly T[]` is desugared to
+// `ReadonlyArray<T>` for the same reason.
 func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
 	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts})
@@ -232,6 +235,7 @@ func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 		return nil, err
 	}
 	applyReadonlyTwinReceivers(mod, twins)
+	rewriteReadonlyTwinRefs(mod, twins)
 	appendReadonlyAliases(mod, twins)
 	return mod, nil
 }

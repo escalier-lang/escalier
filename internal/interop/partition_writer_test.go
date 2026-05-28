@@ -458,6 +458,111 @@ declare var Foo: FooConstructor;
 	require.True(t, names.Contains("mutating"))
 }
 
+func TestConvertBucket_ReadonlyTwinRewritesRefs(t *testing.T) {
+	t.Parallel()
+	// References to the readonly twin should be renamed to the
+	// mutable name; references to the mutable name should be wrapped
+	// in MutableTypeAnn. Both bare-name and `T[]` (and `readonly T[]`)
+	// shorthands flow through the same rewrite because the converter
+	// desugars them to `Array<T>` / `ReadonlyArray<T>` first.
+	lib := parseLib(t, "lib.es5.d.ts", `
+interface ReadonlyArray<T> {
+    readonly length: number;
+    concat(...items: ConcatArray<T>[]): T[];
+}
+interface Array<T> {
+    length: number;
+    push(...items: T[]): number;
+    concat(items: ReadonlyArray<T>): T[];
+    readArr(items: readonly T[]): void;
+}
+interface ArrayConstructor {
+    new <T>(): Array<T>;
+    readonly prototype: Array<any>;
+}
+declare var Array: ArrayConstructor;
+`)
+	res, err := PartitionLib([]LibInput{lib})
+	require.NoError(t, err)
+
+	mod, err := ConvertBucket(res.Buckets["std:array"])
+	require.NoError(t, err)
+
+	rootNS, _ := mod.Module.Namespaces.Get("")
+	var arrayClass *ast.ClassDecl
+	for _, decl := range rootNS.Decls {
+		if cd, ok := decl.(*ast.ClassDecl); ok && cd.Name.Name == "Array" {
+			arrayClass = cd
+		}
+	}
+	require.NotNil(t, arrayClass)
+
+	methods := map[string]*ast.MethodElem{}
+	for _, elem := range arrayClass.Body {
+		if me, ok := elem.(*ast.MethodElem); ok && !me.Static {
+			methods[classElemName(me.Name)] = me
+		}
+	}
+
+	// push(...items: T[]): number → param `T[]` desugars to Array<T>,
+	// then rewrite wraps it as `mut Array<T>`; return `number` is untouched.
+	push := methods["push"]
+	require.NotNil(t, push)
+	require.Len(t, push.Fn.Params, 1)
+	pushArg := unwrapRestSpread(t, push.Fn.Params[0].TypeAnn)
+	mut, ok := pushArg.(*ast.MutableTypeAnn)
+	require.True(t, ok, "push items: T[] → expected MutableTypeAnn, got %T", pushArg)
+	ref, ok := mut.Target.(*ast.TypeRefTypeAnn)
+	require.True(t, ok)
+	require.Equal(t, "Array", ast.QualIdentToString(ref.Name))
+
+	// concat(items: ReadonlyArray<T>): T[] → param renamed to Array<T>,
+	// return T[] wrapped to `mut Array<T>`.
+	concat := methods["concat"]
+	require.NotNil(t, concat)
+	require.Len(t, concat.Fn.Params, 1)
+	concatArg, ok := concat.Fn.Params[0].TypeAnn.(*ast.TypeRefTypeAnn)
+	require.True(t, ok, "concat items: ReadonlyArray<T> → expected TypeRef, got %T", concat.Fn.Params[0].TypeAnn)
+	require.Equal(t, "Array", ast.QualIdentToString(concatArg.Name))
+	concatRet, ok := concat.Fn.Return.(*ast.MutableTypeAnn)
+	require.True(t, ok, "concat return T[] → expected MutableTypeAnn, got %T", concat.Fn.Return)
+	concatRetRef, ok := concatRet.Target.(*ast.TypeRefTypeAnn)
+	require.True(t, ok)
+	require.Equal(t, "Array", ast.QualIdentToString(concatRetRef.Name))
+
+	// readArr(items: readonly T[]): void → readonly T[] desugars to
+	// ReadonlyArray<T>, then rewrite renames it to Array<T> (immutable).
+	readArr := methods["readArr"]
+	require.NotNil(t, readArr)
+	require.Len(t, readArr.Fn.Params, 1)
+	readArg, ok := readArr.Fn.Params[0].TypeAnn.(*ast.TypeRefTypeAnn)
+	require.True(t, ok, "readArr readonly T[] → expected TypeRef, got %T", readArr.Fn.Params[0].TypeAnn)
+	require.Equal(t, "Array", ast.QualIdentToString(readArg.Name))
+
+	// The synthesised `type ReadonlyArray<T> = Array<T>` alias's RHS
+	// must remain a bare TypeRef — the rewrite pass runs before
+	// appendReadonlyAliases, so the alias is appended after the
+	// wrapping pass and its `Array<T>` reference stays unwrapped.
+	var alias *ast.TypeDecl
+	for _, decl := range rootNS.Decls {
+		if td, ok := decl.(*ast.TypeDecl); ok && td.Name.Name == "ReadonlyArray" {
+			alias = td
+		}
+	}
+	require.NotNil(t, alias)
+	rhs, ok := alias.TypeAnn.(*ast.TypeRefTypeAnn)
+	require.True(t, ok, "ReadonlyArray alias RHS should be a bare TypeRef, got %T", alias.TypeAnn)
+	require.Equal(t, "Array", ast.QualIdentToString(rhs.Name))
+}
+
+func unwrapRestSpread(t *testing.T, ta ast.TypeAnn) ast.TypeAnn {
+	t.Helper()
+	if rs, ok := ta.(*ast.RestSpreadTypeAnn); ok {
+		return rs.Value
+	}
+	return ta
+}
+
 func TestReportPartition_FormatsSortedSummary(t *testing.T) {
 	t.Parallel()
 	res := &PartitionResult{
