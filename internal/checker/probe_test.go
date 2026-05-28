@@ -113,6 +113,28 @@ func TestProbeDiscardRollsBackLifetimeBindings(t *testing.T) {
 		"after Discard, LifetimeVar.Instance must be restored to nil")
 }
 
+// TestProbeCommitThenDiscardIsNoOp: once a probe is committed, a
+// subsequent Discard must not roll back the just-committed mutations.
+// Guards against the documented gap that calling Discard after Commit
+// would silently undo the commit.
+func TestProbeCommitThenDiscardIsNoOp(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := NewChecker(ctx)
+	inferCtx := Context{}
+
+	tv := c.FreshVar(nil)
+	numType := ts.NewNumPrimType(nil)
+
+	probe := c.Probe(inferCtx, tv, numType)
+	require.True(t, probe.Success())
+	probe.Commit()
+	probe.Discard() // must not undo the commit
+
+	require.Same(t, numType, tv.Instance,
+		"Discard after Commit must be a no-op")
+}
+
 // TestProbeNestedDiscardRestoresOuterView: nested probes share a single
 // journal. An inner Discard rolls back only the inner records; an outer
 // Discard rolls back the inner+outer records together.
@@ -134,12 +156,12 @@ func TestProbeNestedDiscardRestoresOuterView(t *testing.T) {
 	outer := c.Probe(inferCtx, tvOuter, numType)
 	require.True(t, outer.Success())
 
-	// Inner probe sees the outer-set journal via ctx-propagation: pass
-	// the same ctx, and Probe reuses the existing BindJournal. The
-	// inner ctx is constructed by Probe(*ctx), so we set BindJournal
-	// here for the inner call.
+	// Nest the inner probe under the outer journal by passing it
+	// through ctx. Probe takes ctx by value, so the outer probe's
+	// journal pointer isn't visible in the caller's ctx after Probe
+	// returns; ProbeResult.Journal() exposes it for this purpose.
 	innerCtx := inferCtx
-	innerCtx.BindJournal = outer.scope.journal
+	innerCtx.BindJournal = outer.Journal()
 	inner := c.Probe(innerCtx, tvInner, strType)
 	require.True(t, inner.Success())
 

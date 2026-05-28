@@ -1069,6 +1069,12 @@ func (c *Checker) inferCallExpr(
 				// param-arg unifications and binds the return TypeVar,
 				// so a single (t1, t2) Probe doesn't fit.
 				scope := c.beginProbeScope(&ctx)
+				// Snapshot expr.ResolvedThrows so a failed arm's
+				// handleFuncCall write is rolled back by Discard. Probe-
+				// nil-receiver safe; if there's no journal (no probe is
+				// active above this dispatch), AddCleanup is a no-op.
+				prevThrows := expr.ResolvedThrows()
+				ctx.BindJournal.AddCleanup(func() { expr.SetResolvedThrows(prevThrows) })
 				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, []Error{})
 
 				if len(callErrors) == 0 {
@@ -1076,20 +1082,16 @@ func (c *Checker) inferCallExpr(
 					return retType, errors
 				}
 
-				// Roll back the arm's TypeVar mutations so the next arm
-				// sees a clean slate. SetResolvedThrows on `expr` is not
-				// journaled — the cleanup below clears it after the
-				// loop, matching the prior behavior.
+				// Roll back the arm's TypeVar mutations and the
+				// SetResolvedThrows cleanup so the next arm sees a clean
+				// slate.
 				scope.Discard()
 				attemptedErrors = append(attemptedErrors, callErrors)
 			}
 		}
 
-		// No overload matched - create a comprehensive error.
-		// Clear ResolvedThrows since handleFuncCall set it on the last
-		// attempted (failing) arm; downstream code should treat this
-		// call as having no resolved signature.
-		expr.SetResolvedThrows(nil)
+		// No overload matched; all arms have Discard'd their state,
+		// including ResolvedThrows. Build the error.
 		overloadErr := &NoMatchingOverloadError{
 			CallExpr:         expr,
 			IntersectionType: t,

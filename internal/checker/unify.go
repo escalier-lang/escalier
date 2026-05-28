@@ -267,9 +267,7 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 			widened = flatUnion(oldType, newType)
 		}
 		for _, tv := range widenableChain {
-			if ctx.BindJournal != nil {
-				ctx.BindJournal.Snapshot(tv)
-			}
+			ctx.BindJournal.Snapshot(tv)
 			tv.Instance = widened
 		}
 		return nil
@@ -2163,22 +2161,22 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 
 			if typeVar1, ok := t1.(*type_system.TypeVarType); ok {
 				if typeVar2, ok := t2.(*type_system.TypeVarType); ok {
+					// Snapshot both upfront — covers the Constraint
+					// propagation, IsObjectRest propagation, and Instance
+					// write that follow. One record per TypeVar instead
+					// of stacking three for typeVar2 in the constraint-
+					// propagation branch.
+					ctx.BindJournal.Snapshot(typeVar1)
+					ctx.BindJournal.Snapshot(typeVar2)
 					if typeVar1.Constraint != nil && typeVar2.Constraint != nil {
 						errors = c.unifyInner(ctx, typeVar1.Constraint, typeVar2.Constraint, seen)
 					} else if typeVar1.Constraint != nil && typeVar2.Constraint == nil {
 						// Propagate the constraint to typeVar2 since it becomes the
 						// representative of this equivalence class after binding.
-						if ctx.BindJournal != nil {
-							ctx.BindJournal.Snapshot(typeVar2)
-						}
 						typeVar2.Constraint = typeVar1.Constraint
 					}
 					// Propagate IsObjectRest so that Prune() returns a TypeVar
 					// that preserves the marker for the tuple spread check.
-					if ctx.BindJournal != nil {
-						ctx.BindJournal.Snapshot(typeVar1)
-						ctx.BindJournal.Snapshot(typeVar2)
-					}
 					typeVar2.IsObjectRest = typeVar2.IsObjectRest || typeVar1.IsObjectRest
 					typeVar1.Instance = t2
 					typeVar1.SetProvenance(&type_system.TypeProvenance{
@@ -2237,9 +2235,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				if typeVar1.FromBinding {
 					targetType = rebuildContainers(targetType)
 				}
-				if ctx.BindJournal != nil {
-					ctx.BindJournal.Snapshot(typeVar1)
-				}
+				ctx.BindJournal.Snapshot(typeVar1)
 				typeVar1.Instance = targetType
 				typeVar1.SetProvenance(&type_system.TypeProvenance{
 					Type: targetType,
@@ -2286,9 +2282,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				if typeVar2.FromBinding {
 					targetType = rebuildContainers(targetType)
 				}
-				if ctx.BindJournal != nil {
-					ctx.BindJournal.Snapshot(typeVar2)
-				}
+				ctx.BindJournal.Snapshot(typeVar2)
 				typeVar2.Instance = targetType
 				typeVar2.SetProvenance(&type_system.TypeProvenance{
 					Type: targetType,
@@ -2379,9 +2373,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 			}
 			// Bind the TypeVar to the array type and clear the constraint so
 			// that resolveArrayConstraintsInType won't re-resolve it.
-			if ctx.BindJournal != nil {
-				ctx.BindJournal.Snapshot(typeVar)
-			}
+			ctx.BindJournal.Snapshot(typeVar)
 			typeVar.Instance = boundType
 			typeVar.ArrayConstraint = nil
 			return true, errs
@@ -2417,9 +2409,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 		}
 		// Bind the TypeVar to the tuple and clear the constraint so that
 		// resolveArrayConstraintsInType won't recreate a different tuple.
-		if ctx.BindJournal != nil {
-			ctx.BindJournal.Snapshot(typeVar)
-		}
+		ctx.BindJournal.Snapshot(typeVar)
 		typeVar.Instance = boundType
 		typeVar.ArrayConstraint = nil
 		return true, errs
@@ -2460,9 +2450,7 @@ func (c *Checker) openClosedObjectForParam(ctx Context, typeVar *type_system.Typ
 		Mutable:   closedObj.Mutable,
 	}
 	// Re-wrap in MutType if the original was wrapped.
-	if ctx.BindJournal != nil {
-		ctx.BindJournal.Snapshot(typeVar)
-	}
+	ctx.BindJournal.Snapshot(typeVar)
 	if mutWrapper != nil {
 		typeVar.Instance = &type_system.MutType{
 			Type: openCopy,

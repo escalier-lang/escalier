@@ -21,6 +21,19 @@ import (
 type BindJournal struct {
 	records         []bindRecord
 	lifetimeRecords []lifetimeRecord
+	// cleanups holds deferred rollback closures for side effects that
+	// don't fit the TypeVar / LifetimeVar record shape — e.g.
+	// expr.SetResolvedThrows on the overload-dispatch path. Closures
+	// run in reverse order during rollback, mirroring the record
+	// slices.
+	cleanups []func()
+	// depth counts open ProbeScopes sharing this journal. When the
+	// last open scope Commits, records become permanent — no outer
+	// scope can roll them back — so we can free the backing slices to
+	// keep journal memory bounded across many committed probes
+	// (otherwise the slice would grow append-only for the lifetime of
+	// the journal).
+	depth int
 }
 
 // bindRecord snapshots the subset of TypeVarType fields that the unifier
@@ -89,11 +102,22 @@ func (j *BindJournal) SnapshotLifetime(lt *type_system.LifetimeVar) {
 	})
 }
 
+// AddCleanup registers a closure that runs during rollback in reverse
+// order. Use for ad-hoc side effects (e.g. AST mutations like
+// SetResolvedThrows) that don't fit the TypeVar / LifetimeVar record
+// shape. Tolerates a nil receiver.
+func (j *BindJournal) AddCleanup(f func()) {
+	if j == nil {
+		return
+	}
+	j.cleanups = append(j.cleanups, f)
+}
+
 // rollback restores every record added at or after the given marks, in
 // reverse order. Used by Discard and by callers that need probe-scope
 // semantics over operations that aren't a single (t1, t2) unification
 // (e.g. an overload arm's full handleFuncCall — see infer_expr.go).
-func (j *BindJournal) rollback(mark, ltMark int) {
+func (j *BindJournal) rollback(mark, ltMark, cleanupMark int) {
 	records := j.records
 	for i := len(records) - 1; i >= mark; i-- {
 		r := &records[i]
@@ -112,6 +136,12 @@ func (j *BindJournal) rollback(mark, ltMark int) {
 		r.lifetimeVar.Instance = r.instance
 	}
 	j.lifetimeRecords = ltRecords[:ltMark]
+
+	cleanups := j.cleanups
+	for i := len(cleanups) - 1; i >= cleanupMark; i-- {
+		cleanups[i]()
+	}
+	j.cleanups = cleanups[:cleanupMark]
 }
 
 // ProbeScope is the journaled-bind context that beginProbeScope opens.
@@ -121,10 +151,18 @@ func (j *BindJournal) rollback(mark, ltMark int) {
 //
 // Carries both record-slice marks so Discard rolls back exactly the
 // TypeVar and LifetimeVar mutations made between begin and discard.
+//
+// `done` is a heap pointer so the first Commit or Discard call on the
+// scope flips it for every value-receiver copy of the scope, making
+// subsequent Commit/Discard calls no-ops. Without this, a caller that
+// committed mutations could later (e.g. in deferred cleanup) Discard
+// the same scope and silently roll them back.
 type ProbeScope struct {
-	journal *BindJournal
-	mark    int
-	ltMark  int
+	journal      *BindJournal
+	mark         int
+	ltMark       int
+	cleanupMark  int
+	done         *bool
 }
 
 // beginProbeScope installs a journal on ctx (allocating one if ctx had
@@ -141,24 +179,50 @@ func (c *Checker) beginProbeScope(ctx *Context) ProbeScope {
 		ctx.BindJournal = &BindJournal{}
 	}
 	j := ctx.BindJournal
+	done := false
+	j.depth++
 	return ProbeScope{
-		journal: j,
-		mark:    len(j.records),
-		ltMark:  len(j.lifetimeRecords),
+		journal:     j,
+		mark:        len(j.records),
+		ltMark:      len(j.lifetimeRecords),
+		cleanupMark: len(j.cleanups),
+		done:        &done,
 	}
 }
 
 // Commit keeps every mutation made during the scope. The records stay
 // in the journal: if the scope is nested inside an outer probe the
-// outer can still roll them back as part of its own Discard; if not,
-// the records are effectively permanent and get GC'd with the journal.
-func (s ProbeScope) Commit() {}
+// outer can still roll them back as part of its own Discard. When
+// this is the last open scope on the journal (depth reaches 0), the
+// records become permanent and the journal trims its backing slices
+// to free the memory accumulated by every committed probe so far.
+//
+// Idempotent: a second Commit or a Discard after Commit is a no-op.
+func (s ProbeScope) Commit() {
+	if *s.done {
+		return
+	}
+	*s.done = true
+	s.journal.depth--
+	if s.journal.depth == 0 {
+		s.journal.records = s.journal.records[:0]
+		s.journal.lifetimeRecords = s.journal.lifetimeRecords[:0]
+		s.journal.cleanups = s.journal.cleanups[:0]
+	}
+}
 
 // Discard restores every TypeVar and LifetimeVar field touched during
 // the scope to its pre-scope value. Replays records in reverse so
 // stacked mutations to the same variable peel off in the right order.
+//
+// Idempotent: a second Discard or a Commit after Discard is a no-op.
 func (s ProbeScope) Discard() {
-	s.journal.rollback(s.mark, s.ltMark)
+	if *s.done {
+		return
+	}
+	*s.done = true
+	s.journal.depth--
+	s.journal.rollback(s.mark, s.ltMark, s.cleanupMark)
 }
 
 // ProbeResult holds the outcome of a Probe call. The caller inspects
@@ -171,6 +235,13 @@ type ProbeResult struct {
 // Errors returns the errors produced by the probed unification, or an
 // empty slice if probing succeeded.
 func (p ProbeResult) Errors() []Error { return p.errors }
+
+// Journal returns the BindJournal this probe wrote to. Use it to nest
+// a follow-on probe under the same journal — set ctx.BindJournal to
+// the returned pointer and call Probe with that ctx. (Probe takes ctx
+// by value, so it can't propagate the journal back to the caller's
+// scope automatically.)
+func (p ProbeResult) Journal() *BindJournal { return p.scope.journal }
 
 // Success is true iff the probed unification produced no errors.
 func (p ProbeResult) Success() bool { return len(p.errors) == 0 }
