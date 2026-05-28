@@ -1056,20 +1056,31 @@ func (c *Checker) inferCallExpr(
 		return c.handleFuncCall(ctx, fnType, expr, argTypes, provneance, errors)
 
 	case *type_system.IntersectionType:
-		// Try each function type in the intersection as a potential overload
+		// Try each function type in the intersection as a potential overload.
+		// Each arm runs under a probe scope so its partial TypeVar bindings
+		// are rolled back before the next arm is tried — without this,
+		// generic arms like (x: T) leak their binding for T into subsequent
+		// arms (see #660).
 		attemptedErrors := [][]Error{}
 
 		for _, funcType := range t.Types {
 			if funcType, ok := funcType.(*type_system.FuncType); ok {
-				// Try this overload
+				// Probe-scope spans the full arm: handleFuncCall does
+				// param-arg unifications and binds the return TypeVar,
+				// so a single (t1, t2) Probe doesn't fit.
+				scope := c.beginProbeScope(&ctx)
 				retType, callErrors := c.handleFuncCall(ctx, funcType, expr, argTypes, provneance, []Error{})
 
-				// If this overload succeeds (no errors), use it
 				if len(callErrors) == 0 {
+					scope.Commit()
 					return retType, errors
 				}
 
-				// Otherwise, record the errors for this overload attempt
+				// Roll back the arm's TypeVar mutations so the next arm
+				// sees a clean slate. SetResolvedThrows on `expr` is not
+				// journaled — the cleanup below clears it after the
+				// loop, matching the prior behavior.
+				scope.Discard()
 				attemptedErrors = append(attemptedErrors, callErrors)
 			}
 		}

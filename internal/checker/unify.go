@@ -267,6 +267,9 @@ func (c *Checker) unifyInner(ctx Context, t1, t2 type_system.Type, seen unifySee
 			widened = flatUnion(oldType, newType)
 		}
 		for _, tv := range widenableChain {
+			if ctx.BindJournal != nil {
+				ctx.BindJournal.snapshot(tv)
+			}
 			tv.Instance = widened
 		}
 		return nil
@@ -1289,35 +1292,22 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 				return c.unifyInner(ctx, distributed1, distributed2, seen)
 			}
 
-			// Probe-then-commit: trial-unify clones to avoid partially mutating
-			// TypeVars on failure (see #381). Fast path first: if Check
-			// succeeds on the originals, no binding is required and we can
-			// commit without the clone-probe allocation.
+			// Probe-then-commit: trial-unify on the originals with a journal
+			// so failed attempts can roll back their partial TypeVar mutations
+			// (see #381, #660). Probe runs unifyInner exactly once per arm —
+			// on success we Commit (keep mutations); on failure we Discard
+			// (rollback) and try the next arm.
 			errors := []Error{}
 			for _, t2Part := range intersection2.Types {
 				found := false
 				for _, t1Part := range intersection1.Types {
-					// Check is side-effect-free and skips lifetime
-					// reconciliation, so a true result doesn't guarantee
-					// the real unify will succeed. Commit only if the
-					// follow-up unifyInner also has no errors; otherwise
-					// fall through to the clone-probe.
-					if c.Check(ctx, t1Part, t2Part) {
-						if errs := c.unifyInner(ctx, t1Part, t2Part, seen); len(errs) == 0 {
-							found = true
-							break
-						}
-					}
-					varMapping := make(map[int]*type_system.TypeVarType)
-					t1Clone := c.deepCloneType(t1Part, varMapping)
-					t2Clone := c.deepCloneType(t2Part, varMapping)
-					probeErrors := c.unifyInner(ctx, t1Clone, t2Clone, seen)
-					if len(probeErrors) == 0 {
-						// Probe succeeded — safe to unify originals.
-						c.unifyInner(ctx, t1Part, t2Part, seen)
+					probe := c.Probe(ctx, t1Part, t2Part)
+					if probe.Success() {
+						probe.Commit()
 						found = true
 						break
 					}
+					probe.Discard()
 				}
 				if !found {
 					// Could not find a matching type in intersection1 for this t2Part
@@ -1343,31 +1333,18 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 			return c.unifyInner(ctx, distributed, t2, seen)
 		}
 
-		// Probe-then-commit: trial-unify clones to avoid partially mutating
-		// TypeVars on failure (see #381). Fast path first: if Check
-		// succeeds on the originals, no binding is required and we can
-		// commit without the clone-probe allocation.
+		// Probe-then-commit: trial-unify on the originals with a journal so
+		// failed attempts can roll back their partial TypeVar mutations
+		// (see #381, #660).
 		var allErrors []Error
 		for _, part := range intersection.Types {
-			// Check is side-effect-free and skips lifetime reconciliation,
-			// so a true result doesn't guarantee the real unify will
-			// succeed. Commit only if the follow-up unifyInner also has
-			// no errors; otherwise fall through to the clone-probe.
-			if c.Check(ctx, part, t2) {
-				if errs := c.unifyInner(ctx, part, t2, seen); len(errs) == 0 {
-					return nil
-				}
-			}
-			varMapping := make(map[int]*type_system.TypeVarType)
-			partClone := c.deepCloneType(part, varMapping)
-			t2Clone := c.deepCloneType(t2, varMapping)
-			probeErrors := c.unifyInner(ctx, partClone, t2Clone, seen)
-			if len(probeErrors) == 0 {
-				// Probe succeeded — safe to unify originals.
-				c.unifyInner(ctx, part, t2, seen)
+			probe := c.Probe(ctx, part, t2)
+			if probe.Success() {
+				probe.Commit()
 				return nil
 			}
-			allErrors = slices.Concat(allErrors, probeErrors)
+			allErrors = slices.Concat(allErrors, probe.Errors())
+			probe.Discard()
 		}
 		// None of the parts successfully unified with t2
 		return allErrors
@@ -1526,29 +1503,16 @@ func (c *Checker) unifyMatched(ctx Context, t1, t2 type_system.Type, seen unifyS
 	}
 	// | _, UnionType -> ...
 	if union, ok := t2.(*type_system.UnionType); ok {
-		// Probe-then-commit: trial-unify clones to avoid partially mutating
-		// TypeVars on failure (see #381). Fast path first: if Check
-		// succeeds on the originals, no binding is required and we can
-		// commit without the clone-probe allocation.
+		// Probe-then-commit: trial-unify on the originals with a journal so
+		// failed attempts can roll back their partial TypeVar mutations
+		// (see #381, #660).
 		for _, unionType := range union.Types {
-			// Check is side-effect-free and skips lifetime reconciliation,
-			// so a true result doesn't guarantee the real unify will
-			// succeed. Commit only if the follow-up unifyInner also has
-			// no errors; otherwise fall through to the clone-probe.
-			if c.Check(ctx, t1, unionType) {
-				if errs := c.unifyInner(ctx, t1, unionType, seen); len(errs) == 0 {
-					return nil
-				}
-			}
-			varMapping := make(map[int]*type_system.TypeVarType)
-			t1Clone := c.deepCloneType(t1, varMapping)
-			unionTypeClone := c.deepCloneType(unionType, varMapping)
-			probeErrors := c.unifyInner(ctx, t1Clone, unionTypeClone, seen)
-			if len(probeErrors) == 0 {
-				// Probe succeeded — safe to unify originals.
-				c.unifyInner(ctx, t1, unionType, seen)
+			probe := c.Probe(ctx, t1, unionType)
+			if probe.Success() {
+				probe.Commit()
 				return nil
 			}
+			probe.Discard()
 		}
 		// If we couldn't unify with any union member, return a unification error
 		return []Error{&CannotUnifyTypesError{
@@ -2204,10 +2168,17 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 					} else if typeVar1.Constraint != nil && typeVar2.Constraint == nil {
 						// Propagate the constraint to typeVar2 since it becomes the
 						// representative of this equivalence class after binding.
+						if ctx.BindJournal != nil {
+							ctx.BindJournal.snapshot(typeVar2)
+						}
 						typeVar2.Constraint = typeVar1.Constraint
 					}
 					// Propagate IsObjectRest so that Prune() returns a TypeVar
 					// that preserves the marker for the tuple spread check.
+					if ctx.BindJournal != nil {
+						ctx.BindJournal.snapshot(typeVar1)
+						ctx.BindJournal.snapshot(typeVar2)
+					}
 					typeVar2.IsObjectRest = typeVar2.IsObjectRest || typeVar1.IsObjectRest
 					typeVar1.Instance = t2
 					typeVar1.SetProvenance(&type_system.TypeProvenance{
@@ -2241,7 +2212,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				// the type variable as a side effect, and openClosedObjectForParam
 				// checks Instance != nil to avoid double-binding.
 				if typeVar1.IsParam {
-					if opened := c.openClosedObjectForParam(typeVar1, t2); opened {
+					if opened := c.openClosedObjectForParam(ctx, typeVar1, t2); opened {
 						return errors
 					}
 				}
@@ -2265,6 +2236,9 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				// (e.g. `number | 10` → `number`).
 				if typeVar1.FromBinding {
 					targetType = rebuildContainers(targetType)
+				}
+				if ctx.BindJournal != nil {
+					ctx.BindJournal.snapshot(typeVar1)
 				}
 				typeVar1.Instance = targetType
 				typeVar1.SetProvenance(&type_system.TypeProvenance{
@@ -2295,7 +2269,7 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				}
 				// See comment in typeVar1 branch above re: IsParam and Constraint.
 				if typeVar2.IsParam {
-					if opened := c.openClosedObjectForParam(typeVar2, t1); opened {
+					if opened := c.openClosedObjectForParam(ctx, typeVar2, t1); opened {
 						return errors
 					}
 				}
@@ -2311,6 +2285,9 @@ func (c *Checker) bind(ctx Context, t1 type_system.Type, t2 type_system.Type, se
 				// (e.g. `number | 10` → `number`).
 				if typeVar2.FromBinding {
 					targetType = rebuildContainers(targetType)
+				}
+				if ctx.BindJournal != nil {
+					ctx.BindJournal.snapshot(typeVar2)
 				}
 				typeVar2.Instance = targetType
 				typeVar2.SetProvenance(&type_system.TypeProvenance{
@@ -2401,6 +2378,9 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 			}
 			// Bind the TypeVar to the array type and clear the constraint so
 			// that resolveArrayConstraintsInType won't re-resolve it.
+			if ctx.BindJournal != nil {
+				ctx.BindJournal.snapshot(typeVar)
+			}
 			typeVar.Instance = boundType
 			typeVar.ArrayConstraint = nil
 			return true, errs
@@ -2436,6 +2416,9 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 		}
 		// Bind the TypeVar to the tuple and clear the constraint so that
 		// resolveArrayConstraintsInType won't recreate a different tuple.
+		if ctx.BindJournal != nil {
+			ctx.BindJournal.snapshot(typeVar)
+		}
 		typeVar.Instance = boundType
 		typeVar.ArrayConstraint = nil
 		return true, errs
@@ -2450,7 +2433,7 @@ func (c *Checker) handleArrayConstraintBinding(ctx Context, typeVar *type_system
 // properties inferred from other usage in the function body (e.g. `obj.b = "hi"`).
 // By converting to an open copy with a RestSpreadElem row variable, the parameter
 // picks up bar's constraints while remaining extensible.
-func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, boundType type_system.Type) bool {
+func (c *Checker) openClosedObjectForParam(ctx Context, typeVar *type_system.TypeVarType, boundType type_system.Type) bool {
 	if typeVar.Instance != nil {
 		return false // already bound (e.g. during constraint unification)
 	}
@@ -2476,6 +2459,9 @@ func (c *Checker) openClosedObjectForParam(typeVar *type_system.TypeVarType, bou
 		Mutable:   closedObj.Mutable,
 	}
 	// Re-wrap in MutType if the original was wrapped.
+	if ctx.BindJournal != nil {
+		ctx.BindJournal.snapshot(typeVar)
+	}
 	if mutWrapper != nil {
 		typeVar.Instance = &type_system.MutType{
 			Type: openCopy,

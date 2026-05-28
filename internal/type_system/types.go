@@ -88,10 +88,39 @@ func (*NamespaceType) isType()    {}
 func (*RegexType) isType()        {}
 func (*ErrorType) isType()        {}
 
+// PruneMutationHook, when non-nil, is called by Prune for every TypeVar
+// in the alias chain BEFORE Prune mutates that TypeVar's Instance or
+// InstanceChain field. The checker installs a hook during Probe so the
+// journal can snapshot the intermediate TypeVars for rollback — without
+// it, Discard would leave compressed pointers pointing at probe-time
+// concrete types after their terminal TypeVars were restored to unbound.
+//
+// Package-level (not threaded through Prune) because Prune has hundreds
+// of callers — changing its signature would touch every type-resolution
+// site in the checker. The hook is single-threaded by construction (the
+// checker is single-threaded) and is set/restored around the probe.
+var PruneMutationHook func(*TypeVarType)
+
 func Prune(t Type) Type {
 	tv, ok := t.(*TypeVarType)
 	if !ok || tv.Instance == nil {
 		return t
+	}
+
+	// Snapshot every TypeVar in the alias chain before recordInstanceChain
+	// and path compression mutate their Instance / InstanceChain fields.
+	// Doing this once up-front (rather than at each mutation site) keeps
+	// the rollback semantics simple: each chain member has exactly one
+	// pre-Prune snapshot, regardless of how many times Prune touches it.
+	if PruneMutationHook != nil {
+		for cur := tv; cur != nil; {
+			PruneMutationHook(cur)
+			next, ok := cur.Instance.(*TypeVarType)
+			if !ok {
+				break
+			}
+			cur = next
+		}
 	}
 
 	// Record the alias chain for Widenable TypeVars before path compression

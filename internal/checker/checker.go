@@ -167,6 +167,16 @@ type Context struct {
 	// any save/restore dance, and so that the field is structurally
 	// scoped to the query that turned it on.
 	QueryUnify bool
+	// BindJournal, when non-nil, records every TypeVar mutation made by
+	// bind / handleArrayConstraintBinding / openClosedObjectForParam / the
+	// widening fallback / Prune's path compression. Probe sets it for the
+	// duration of a single probed unification; Discard replays the records
+	// in reverse to restore the pre-probe state. See probe.go.
+	//
+	// Same propagation discipline as QueryUnify: value-copied ctx carries
+	// the pointer through recursive unifyInner calls, so a Probe at the
+	// top auto-journals every nested mutation.
+	BindJournal *BindJournal
 	TypeRefsToUpdate       *Ref[[]*type_system.TypeRefType]
 	// FileScopes maps SourceID to file-specific scope.
 	// Used for file-scoped imports in modules.
