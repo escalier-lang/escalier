@@ -8,31 +8,34 @@ import (
 
 func TestRoute_ExplicitPartition(t *testing.T) {
 	t.Parallel()
+	// Explicit-partition routing keys on name only — the sourceFile
+	// argument is ignored unless the name falls through to the DOM
+	// residual rule (covered separately by TestRoute_DOMResidual and
+	// TestRoute_StandalonePackageWinsOverDOMResidual).
 	cases := []struct {
-		name       string
-		sourceFile string
-		wantURI    string
+		name    string
+		wantURI string
 	}{
-		{"Array", "lib.es5.d.ts", "std:array"},
-		{"ArrayConstructor", "lib.es5.d.ts", "std:array"},
-		{"parseInt", "lib.es5.d.ts", "std:number"},
-		{"Promise", "lib.es2015.promise.d.ts", "std:async"},
-		{"Awaited", "lib.es5.d.ts", "std:async"},
-		{"Partial", "lib.es5.d.ts", "std:object"},
-		{"URIError", "lib.es5.d.ts", "std:url"},
-		{"encodeURIComponent", "lib.es5.d.ts", "std:url"},
-		{"Math", "lib.es5.d.ts", "std:math"},
-		{"WebAssembly", "lib.es2018.intl.d.ts", "std:wasm"},
-		{"fetch", "lib.dom.d.ts", "web:fetch"},
-		{"ReadableStream", "lib.dom.d.ts", "web:streams"},
-		{"WebGLRenderingContext", "lib.dom.d.ts", "web:webgl"},
-		{"URL", "lib.dom.d.ts", "web:url"},
-		{"WebSocket", "lib.dom.d.ts", "web:websocket"},
+		{"Array", "std:array"},
+		{"ArrayConstructor", "std:array"},
+		{"parseInt", "std:number"},
+		{"Promise", "std:async"},
+		{"Awaited", "std:async"},
+		{"Partial", "std:object"},
+		{"URIError", "std:url"},
+		{"encodeURIComponent", "std:url"},
+		{"Math", "std:math"},
+		{"WebAssembly", "std:wasm"},
+		{"fetch", "web:fetch"},
+		{"ReadableStream", "web:streams"},
+		{"WebGLRenderingContext", "web:webgl"},
+		{"URL", "web:url"},
+		{"WebSocket", "web:websocket"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := Route(tc.name, tc.sourceFile)
+			got := Route(tc.name, "")
 			require.False(t, got.Drop)
 			require.False(t, got.Unmapped)
 			require.Equal(t, tc.wantURI, got.Pkg.URI)
@@ -91,9 +94,7 @@ func TestRoute_Unmapped(t *testing.T) {
 func TestUnmappedError_MentionsSymbolSourceAndTable(t *testing.T) {
 	t.Parallel()
 	err := UnmappedError("FooBar", "lib.es5.d.ts")
-	require.ErrorContains(t, err, "FooBar")
-	require.ErrorContains(t, err, "lib.es5.d.ts")
-	require.ErrorContains(t, err, "internal/interop/partition.go")
+	require.EqualError(t, err, `converter: unmapped top-level declaration "FooBar" from lib.es5.d.ts; add it to internal/interop/partition.go (see planning/builtins/implementation_plan.md §6.1) or to ExplicitDrops if intentional`)
 }
 
 func TestRoute_StandalonePackageWinsOverDOMResidual(t *testing.T) {
@@ -150,15 +151,6 @@ func TestPackageForURI(t *testing.T) {
 
 	_, ok = PackageForURI("std:does_not_exist")
 	require.False(t, ok)
-}
-
-func TestIsKnownPackageURI(t *testing.T) {
-	t.Parallel()
-	require.True(t, IsKnownPackageURI("std:array"))
-	require.True(t, IsKnownPackageURI("web:fetch"))
-	require.True(t, IsKnownPackageURI("web:dom"))
-	require.False(t, IsKnownPackageURI("std:typo"))
-	require.False(t, IsKnownPackageURI("node:fs"))
 }
 
 func TestSchemeOf(t *testing.T) {

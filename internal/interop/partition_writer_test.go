@@ -99,9 +99,7 @@ declare var TotallyNewSymbol: number;
 `)
 	_, err := PartitionLib([]LibInput{lib})
 	require.Error(t, err)
-	require.ErrorContains(t, err, "TotallyNewSymbol")
-	require.ErrorContains(t, err, "lib.es2099.weirdness.d.ts")
-	require.ErrorContains(t, err, "internal/interop/partition.go")
+	require.EqualError(t, err, UnmappedError("TotallyNewSymbol", "lib.es2099.weirdness.d.ts").Error())
 }
 
 func TestMergeDecls_InterfaceMembersConcatenate(t *testing.T) {

@@ -64,6 +64,9 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 		Buckets: make(map[string][]dts_parser.Statement),
 	}
 	for _, in := range inputs {
+		if in.Module == nil {
+			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
+		}
 		for _, stmt := range in.Module.Statements {
 			name := topLevelName(stmt)
 			if name == "" {
@@ -217,6 +220,11 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // `ReadonlyFoo` itself is dropped from emission; a `type ReadonlyFoo<…>
 // = Foo<…>` alias is synthesised in its place so user code that names
 // the readonly variant in a type position still resolves.
+//
+// TODO(#668): rewrite reference sites in the converted output so TS-side
+// `Foo<…>` becomes Escalier `mut Foo<…>` and TS-side `ReadonlyFoo<…>`
+// becomes Escalier `Foo<…>` (matching Escalier's mut-modifier model).
+// Also handle `T[]` shorthand as if it were `Array<T>`.
 func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
 	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts})
@@ -229,15 +237,16 @@ func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 }
 
 // readonlyTwin records one (Foo, ReadonlyFoo) pair detected at bucket
-// scope. `methodNames` is the set of member names declared on the
-// readonly interface — used by post-processing to flip the emitted
-// class's receivers from `mut self` to `self` for any method whose
-// presence on the twin proves it does not mutate.
+// scope. `nonMutatingNames` is the set of member names that appear on
+// ReadonlyFoo — presence on the readonly twin is positive evidence the
+// member does not mutate, so post-processing flips those members'
+// receivers from `mut self` to `self` on the emitted class. Members on
+// Foo whose names are absent from this set are left as `mut self`.
 type readonlyTwin struct {
-	mutableName  string
-	readonlyName string
-	typeParams   []*dts_parser.TypeParam
-	methodNames  set.Set[string]
+	mutableName      string
+	readonlyName     string
+	typeParams       []*dts_parser.TypeParam
+	nonMutatingNames set.Set[string]
 }
 
 // fuseReadonlyTwins detects every (Foo, ReadonlyFoo) interface pair in
@@ -294,7 +303,7 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 
 		// Build the name set of the readonly side, fold any missing
 		// members onto the mutable side.
-		methodNames := set.NewSet[string]()
+		nonMutatingNames := set.NewSet[string]()
 		haveOnMutable := set.NewSet[string]()
 		for _, m := range mutable.Members {
 			if key := memberKey(m); key != "" {
@@ -306,7 +315,7 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 			if key == "" {
 				continue
 			}
-			methodNames.Add(key)
+			nonMutatingNames.Add(key)
 			if !haveOnMutable.Contains(key) {
 				mutable.Members = append(mutable.Members, m)
 				haveOnMutable.Add(key)
@@ -314,10 +323,10 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 		}
 
 		twins = append(twins, readonlyTwin{
-			mutableName:  mutableName,
-			readonlyName: name,
-			typeParams:   iface.TypeParams,
-			methodNames:  methodNames,
+			mutableName:      mutableName,
+			readonlyName:     name,
+			typeParams:       iface.TypeParams,
+			nonMutatingNames: nonMutatingNames,
 		})
 		dropReadonly.Add(name)
 	}
@@ -359,8 +368,15 @@ func memberKey(m dts_parser.InterfaceMember) string {
 
 // propertyKeyString stringifies a PropertyKey for member-name matching.
 // Plain idents and string literals return their text; ComputedKey
-// expressions return their dotted representation ("Symbol.iterator")
-// when expressible. Returns "" for keys with no stable string form.
+// expressions are restricted to well-known-symbol member access
+// (`[Symbol.iterator]`, `[Symbol.asyncIterator]`, …) and returned in
+// dotted form ("Symbol.iterator"). Any other computed-key shape
+// panics: every computed key in the pinned TS lib corpus is a
+// `Symbol.*` access, so a new shape is a corpus-change canary —
+// silently returning "" would drop the member from the readonly-twin
+// fold and miscategorise its receiver. If a legitimate non-Symbol
+// shape ever shows up, extend this function (and exprDottedName) to
+// cover it explicitly.
 func propertyKeyString(pk dts_parser.PropertyKey) string {
 	switch k := pk.(type) {
 	case *dts_parser.Ident:
@@ -368,7 +384,18 @@ func propertyKeyString(pk dts_parser.PropertyKey) string {
 	case *dts_parser.StringLiteral:
 		return k.Value
 	case *dts_parser.ComputedKey:
-		return exprDottedName(k.Expr)
+		dotted := exprDottedName(k.Expr)
+		if strings.HasPrefix(dotted, "Symbol.") {
+			return dotted
+		}
+		panic(fmt.Sprintf(
+			"propertyKeyString: computed key %T is not a well-known-symbol "+
+				"member access (got %q from expr %T); every computed key in "+
+				"the pinned TS lib is `[Symbol.*]` — extend "+
+				"propertyKeyString/exprDottedName to cover this new shape, "+
+				"otherwise the member would be silently dropped from the "+
+				"readonly-twin fold",
+			pk, dotted, k.Expr))
 	}
 	return ""
 }
@@ -390,11 +417,20 @@ func exprDottedName(e dts_parser.Expr) string {
 	return ""
 }
 
-// applyReadonlyTwinReceivers walks every ClassDecl in the standalone
-// module and, for any class whose name matches a twin's mutableName,
-// sets `Receiver.Mut = false` on each instance MethodElem whose name
-// appears in the twin's readonlyMembers set. Static members and
-// non-method elems are left alone.
+// applyReadonlyTwinReceivers walks the top-level Decls of every
+// namespace in the standalone module and, for any ClassDecl whose
+// name matches a twin's mutableName, sets `Receiver.Mut = false` on
+// each instance MethodElem whose name appears in the twin's
+// nonMutatingNames set. Static members and non-method elems are left
+// alone.
+//
+// Only top-level classes within each namespace are visited — a class
+// nested inside another class or further down inside another decl
+// won't be inspected. That's fine for the current corpus: every
+// readonly twin in the pinned TS lib (ReadonlyArray, ReadonlyMap,
+// ReadonlySet, plus their mutable siblings) is declared at the top
+// level. If a future twin lands inside a namespace member, this pass
+// will need to recurse.
 func applyReadonlyTwinReceivers(mod *StandaloneModule, twins []readonlyTwin) {
 	if len(twins) == 0 {
 		return
@@ -422,7 +458,7 @@ func applyReadonlyTwinReceivers(mod *StandaloneModule, twins []readonlyTwin) {
 				if name == "" {
 					continue
 				}
-				if twin.methodNames.Contains(name) {
+				if twin.nonMutatingNames.Contains(name) {
 					me.Receiver.Mut = false
 				}
 			}
@@ -432,7 +468,15 @@ func applyReadonlyTwinReceivers(mod *StandaloneModule, twins []readonlyTwin) {
 }
 
 // classElemName extracts the textual name from a class-elem name slot
-// for twin-name matching. Returns "" for keys with no plain-name form.
+// for twin-name matching. Plain idents and string literals return
+// their text; ComputedKey expressions are restricted to well-known-
+// symbol member access (`[Symbol.iterator]`, …) and returned in
+// dotted form ("Symbol.iterator"). Any other computed-key shape
+// panics — same corpus-change-canary rationale as propertyKeyString:
+// every computed key in the pinned TS lib is `Symbol.*`, so a new
+// shape would silently dodge the receiver-flip pass and miscategorise
+// the method. Extend this function (and astExprDottedName) if a
+// legitimate non-Symbol shape ever shows up.
 func classElemName(name ast.ObjKey) string {
 	switch k := name.(type) {
 	case *ast.IdentExpr:
@@ -440,7 +484,18 @@ func classElemName(name ast.ObjKey) string {
 	case *ast.StrLit:
 		return k.Value
 	case *ast.ComputedKey:
-		return astExprDottedName(k.Expr)
+		dotted := astExprDottedName(k.Expr)
+		if strings.HasPrefix(dotted, "Symbol.") {
+			return dotted
+		}
+		panic(fmt.Sprintf(
+			"classElemName: computed key %T is not a well-known-symbol "+
+				"member access (got %q from expr %T); every computed key in "+
+				"the pinned TS lib is `[Symbol.*]` — extend "+
+				"classElemName/astExprDottedName to cover this new shape, "+
+				"otherwise the method would silently bypass the "+
+				"readonly-twin receiver-flip pass",
+			name, dotted, k.Expr))
 	}
 	return ""
 }
@@ -466,6 +521,10 @@ func astExprDottedName(e ast.Expr) string {
 // code that wrote `ReadonlyArray<number>` still type-checks. No
 // `@js("...")` decorator: the readonly name has no runtime referent
 // (it is a type-only alias for the mutable class).
+//
+// TODO(#668): once reference sites are rewritten, decide whether to keep
+// this alias as a TS-migration aid or drop it (no converter-emitted code
+// would reference the readonly name anymore).
 func appendReadonlyAliases(mod *StandaloneModule, twins []readonlyTwin) {
 	if len(twins) == 0 {
 		return

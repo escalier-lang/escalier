@@ -76,5 +76,5 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	bogus := parseLib(t, "lib.es99.fake.d.ts", `declare var __TotallyUnknown__: number;`)
 	_, err = PartitionLib(append(inputs, bogus))
 	require.Error(t, err)
-	require.ErrorContains(t, err, "__TotallyUnknown__")
+	require.EqualError(t, err, UnmappedError("__TotallyUnknown__", "lib.es99.fake.d.ts").Error())
 }

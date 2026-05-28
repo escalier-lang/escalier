@@ -831,15 +831,6 @@ func PackageForURI(uri string) (Package, bool) {
 	return Package{}, false
 }
 
-// IsKnownPackageURI reports whether uri names a std/web package the
-// partition knows about. Used as a sanity check at boundaries (e.g.
-// resolver lookups that need to differentiate "package exists but is
-// empty" from "package URI is a typo").
-func IsKnownPackageURI(uri string) bool {
-	_, ok := PackageForURI(uri)
-	return ok
-}
-
 // SchemeOf returns the URI scheme prefix (the segment before the first
 // colon) for an import-style URI, or "" if there is no colon. Helper
 // for callers that need to bucket package URIs by realm.
