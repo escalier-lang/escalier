@@ -91,6 +91,24 @@ func TestStandalone_BooleanTrio(t *testing.T) {
 	require.Empty(t, parseErrs, "printed output parses")
 	require.NotEmpty(t, parsedDecls)
 
+	// Gate: full round trip — every elem on the parser-roundtripped class
+	// body carries the same Doc that the converter emitted. Pins #663:
+	// the parser must populate Doc, not silently drop the JSDoc that the
+	// printer emits.
+	var parsedClass *ast.ClassDecl
+	for _, d := range parsedDecls {
+		if c, ok := d.(*ast.ClassDecl); ok {
+			parsedClass = c
+			break
+		}
+	}
+	require.NotNil(t, parsedClass, "parser-roundtripped output contains the fused class")
+	require.NotEmpty(t, parsedClass.Body, "class body has members to inspect")
+	for i, elem := range parsedClass.Body {
+		require.NotEmpty(t, elem.Doc(),
+			"elem[%d] (%T) lost its JSDoc on parse — #663 regression", i, elem)
+	}
+
 	// Gate: idempotent — converting and re-printing the parser-roundtripped
 	// dts module yields the same string.
 	_, printed2 := convertSlice(t, booleanSlice)

@@ -1,8 +1,68 @@
 package parser
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 )
+
+// consumeLeadingDoc consumes any comment tokens preceding the next
+// non-comment token and returns the most recent contiguous JSDoc block
+// (a `/** ... */` block comment) immediately before that token, or ""
+// if there is none. Non-JSDoc comments interleaved between a JSDoc
+// block and the next token reset the captured doc — JSDoc must be the
+// immediately preceding comment to attach. Mirrors
+// dts_parser.consumeLeadingDoc so the two parsers agree on what counts
+// as a leading doc.
+func (p *Parser) consumeLeadingDoc() string {
+	var doc string
+	for {
+		t := p.lexer.peek()
+		if t.Type == BlockComment {
+			if isJSDoc(t.Value) {
+				doc = t.Value
+			} else {
+				doc = ""
+			}
+			p.lexer.consume()
+			continue
+		}
+		if t.Type == LineComment {
+			doc = ""
+			p.lexer.consume()
+			continue
+		}
+		return doc
+	}
+}
+
+// isJSDoc reports whether a block-comment token value is a JSDoc
+// comment: must start with `/**` and have content beyond the leading
+// stars (excludes `/**/`).
+func isJSDoc(value string) bool {
+	return len(value) > 4 && strings.HasPrefix(value, "/**")
+}
+
+// setClassElemDoc attaches doc to elem when doc is non-empty. Mirrors
+// the type switch in printer.printClassElem so every elem kind that
+// the printer emits a doc for also accepts one from the parser.
+func setClassElemDoc(elem ast.ClassElem, doc string) {
+	if doc == "" || elem == nil {
+		return
+	}
+	switch e := elem.(type) {
+	case *ast.FieldElem:
+		e.SetDoc(doc)
+	case *ast.MethodElem:
+		e.SetDoc(doc)
+	case *ast.GetterElem:
+		e.SetDoc(doc)
+	case *ast.SetterElem:
+		e.SetDoc(doc)
+	case *ast.ConstructorElem:
+		e.SetDoc(doc)
+	}
+}
 
 // maybeTypeParams parses optional type parameters if present.
 // Returns the parsed type parameters and updates the current token position.
@@ -611,17 +671,18 @@ func (p *Parser) parseConstructorElem(
 }
 
 // parseClassElem parses a single class element (field, method, static, etc.)
+// and attaches any leading JSDoc block comment to the resulting elem's
+// Doc field. Non-JSDoc comments (line comments, plain block comments)
+// are still consumed but do not populate Doc.
 func (p *Parser) parseClassElem() ast.ClassElem {
-	// TODO(#663): attach JSDoc to the parsed elem's Doc field instead
-	// of dropping it. The five class-elem AST types carry a Doc string,
-	// the printer emits it, but the parser currently throws it away —
-	// so JSDoc on hand-authored class members silently fails to round
-	// trip. Port dts_parser.consumeLeadingDoc and wire it through here.
+	doc := p.consumeLeadingDoc()
+	elem := p.parseClassElemInner()
+	setClassElemDoc(elem, doc)
+	return elem
+}
+
+func (p *Parser) parseClassElemInner() ast.ClassElem {
 	token := p.lexer.peek()
-	for token.Type == LineComment || token.Type == BlockComment {
-		p.lexer.consume()
-		token = p.lexer.peek()
-	}
 
 	isStatic := false
 	isAsync := false

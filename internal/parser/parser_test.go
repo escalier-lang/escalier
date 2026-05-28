@@ -885,6 +885,141 @@ func TestClassDeclarations(t *testing.T) {
 	}
 }
 
+func TestClassElemDocs(t *testing.T) {
+	parseClass := func(t *testing.T, src string) *ast.ClassDecl {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
+		require.Empty(t, errors)
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok, "first decl is a class")
+		return cls
+	}
+
+	t.Run("FieldElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Point {
+				/** the x coordinate */
+				x: number,
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		f, ok := cls.Body[0].(*ast.FieldElem)
+		require.True(t, ok, "elem is a FieldElem")
+		require.Equal(t, "/** the x coordinate */", f.Doc())
+	})
+
+	t.Run("MethodElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Dog {
+				/** says hi */
+				bark(self) {
+					return "Woof!"
+				}
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		m, ok := cls.Body[0].(*ast.MethodElem)
+		require.True(t, ok, "elem is a MethodElem")
+		require.Equal(t, "/** says hi */", m.Doc())
+	})
+
+	t.Run("GetterElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Box {
+				/** the wrapped value */
+				get value(self) -> number {
+					return 0
+				}
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		g, ok := cls.Body[0].(*ast.GetterElem)
+		require.True(t, ok, "elem is a GetterElem")
+		require.Equal(t, "/** the wrapped value */", g.Doc())
+	})
+
+	t.Run("SetterElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Box {
+				/** replace the wrapped value */
+				set value(mut self, v: number) {}
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		s, ok := cls.Body[0].(*ast.SetterElem)
+		require.True(t, ok, "elem is a SetterElem")
+		require.Equal(t, "/** replace the wrapped value */", s.Doc())
+	})
+
+	t.Run("ConstructorElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Email {
+				addr: string,
+				/** make a new Email */
+				constructor(mut self, addr: string) {
+					self.addr = addr
+				},
+			}
+		`)
+		require.Len(t, cls.Body, 2)
+		c, ok := cls.Body[1].(*ast.ConstructorElem)
+		require.True(t, ok, "second elem is a ConstructorElem")
+		require.Equal(t, "/** make a new Email */", c.Doc())
+	})
+
+	t.Run("LineCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Point {
+				/** the x coordinate */
+				// reset
+				x: number,
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		f, ok := cls.Body[0].(*ast.FieldElem)
+		require.True(t, ok)
+		require.Empty(t, f.Doc(), "intervening line comment resets the captured doc")
+	})
+
+	t.Run("PlainBlockCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Point {
+				/** the x coordinate */
+				/* plain block */
+				x: number,
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		f, ok := cls.Body[0].(*ast.FieldElem)
+		require.True(t, ok)
+		require.Empty(t, f.Doc(), "intervening non-JSDoc block comment resets the captured doc")
+	})
+
+	t.Run("EmptyDocComment", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Point {
+				/**/
+				x: number,
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		f, ok := cls.Body[0].(*ast.FieldElem)
+		require.True(t, ok)
+		require.Empty(t, f.Doc(), "/**/ is not a JSDoc block")
+	})
+}
+
 func TestClassConstructorErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string
