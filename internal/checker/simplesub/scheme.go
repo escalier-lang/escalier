@@ -58,6 +58,12 @@ func (in *Inferer) freshenAbove(lim int, ty SimpleType, lvl int, cache map[int]*
 			elems[i] = in.freshenAbove(lim, e, lvl, cache)
 		}
 		return &Tuple{elems: elems}
+	case *Record:
+		fields := make(map[string]SimpleType, len(t.fields))
+		for name, f := range t.fields {
+			fields[name] = in.freshenAbove(lim, f, lvl, cache)
+		}
+		return &Record{fields: fields}
 	default:
 		return ty
 	}

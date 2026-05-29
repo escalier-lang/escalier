@@ -23,6 +23,16 @@ func lam(param string, body Term) *Lam { return &Lam{Params: []string{param}, Bo
 func vr(name string) *Var              { return &Var{Name: name} }
 func litStr(s string) *Lit             { return &Lit{Kind: "str", Str: s} }
 func litNum(n float64) *Lit            { return &Lit{Kind: "num", Num: n} }
+func sel(recv Term, name string) *Sel  { return &Sel{Receiver: recv, Name: name} }
+
+// rec builds a *Record from name, type pairs: rec("a", num(), "b", str()).
+func rec(pairs ...any) *Record {
+	fields := map[string]SimpleType{}
+	for i := 0; i < len(pairs); i += 2 {
+		fields[pairs[i].(string)] = pairs[i+1].(SimpleType)
+	}
+	return &Record{fields: fields}
+}
 
 // TestInferIdentity is the identity case (also TopLevelLetPolymorphism):
 // fn (x){return x}  ==>  fn <T0>(x: T0) -> T0.
@@ -89,6 +99,60 @@ func TestInnerCapturesOuterParam(t *testing.T) {
 	got, errs := Render(outer)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T0>(y: T0) -> [T0, T0]", got)
+}
+
+// TestPropertyAccess: reading obj.bar infers the receiver's required shape from
+// usage. The receiver's variable accumulates {bar: <fresh>} as an upper bound,
+// which coalesces (negative position) to the record {bar: T0}.
+//
+//	fn foo(obj) { return obj.bar }  ==>  fn <T0>(obj: {bar: T0}) -> T0
+func TestPropertyAccess(t *testing.T) {
+	foo := &Lam{Params: []string{"obj"}, Body: sel(vr("obj"), "bar")}
+	got, errs := Render(foo)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(obj: {bar: T0}) -> T0", got)
+}
+
+// TestMultipleReads: two field reads accumulate two record upper bounds on the
+// receiver, which merge into a single record at coalescing.
+//
+//	fn foo(obj) { return [obj.bar, obj.baz] }
+//	  ==>  fn <T0, T1>(obj: {bar: T0, baz: T1}) -> [T0, T1]
+func TestMultipleReads(t *testing.T) {
+	foo := &Lam{Params: []string{"obj"}, Body: &TupleExpr{Elems: []Term{
+		sel(vr("obj"), "bar"),
+		sel(vr("obj"), "baz"),
+	}}}
+	got, errs := Render(foo)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0, T1>(obj: {bar: T0, baz: T1}) -> [T0, T1]", got)
+}
+
+// TestConstrainRecords exercises record width + depth subtyping directly.
+func TestConstrainRecords(t *testing.T) {
+	tests := []struct {
+		name     string
+		lhs, rhs SimpleType
+		wantErr  bool
+	}{
+		// width: a record with more fields is a subtype of one with fewer.
+		{"more fields subtype of fewer", rec("a", num(), "b", str()), rec("a", num()), false},
+		// ...but a record missing a required field is not.
+		{"missing field", rec("a", num()), rec("a", num(), "b", str()), true},
+		{"depth covariant ok", rec("a", num()), rec("a", num()), false},
+		{"depth covariant fail", rec("a", num()), rec("a", str()), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := NewInferer()
+			errs := in.Constrain(tt.lhs, tt.rhs)
+			if tt.wantErr {
+				require.NotEmpty(t, errs)
+			} else {
+				require.Empty(t, errs)
+			}
+		})
+	}
 }
 
 // TestConstrain exercises the constrain primitive directly.

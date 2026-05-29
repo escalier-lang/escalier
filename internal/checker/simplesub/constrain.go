@@ -84,6 +84,21 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 			}
 			return errs
 		}
+	case *Record:
+		if r, ok := rhs.(*Record); ok {
+			// Width + depth subtyping: l must have every field r requires (l may
+			// have more), and each shared field is covariant.
+			var errs []error
+			for name, rt := range r.fields {
+				lt, ok := l.fields[name]
+				if !ok {
+					errs = append(errs, fmt.Errorf("record is missing field %q", name))
+					continue
+				}
+				errs = append(errs, in.constrain(lt, rt, seen)...)
+			}
+			return errs
+		}
 	}
 
 	// lhs is a variable.
@@ -153,6 +168,12 @@ func (in *Inferer) extrude(ty SimpleType, pol Polarity, lvl int, cache map[int]*
 			elems[i] = in.extrude(e, pol, lvl, cache)
 		}
 		return &Tuple{elems: elems}
+	case *Record:
+		fields := make(map[string]SimpleType, len(t.fields))
+		for name, f := range t.fields {
+			fields[name] = in.extrude(f, pol, lvl, cache)
+		}
+		return &Record{fields: fields}
 	default:
 		return ty
 	}
@@ -175,6 +196,8 @@ func describe(st SimpleType) string {
 		return "function"
 	case *Tuple:
 		return "tuple"
+	case *Record:
+		return "record"
 	case *Variable:
 		return "t" + strconv.Itoa(t.id)
 	}

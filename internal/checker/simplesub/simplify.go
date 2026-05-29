@@ -35,6 +35,10 @@ func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool,
 		for _, e := range t.elems {
 			analyze(e, pol, occurrences, seen)
 		}
+	case *Record:
+		for _, f := range t.fields {
+			analyze(f, pol, occurrences, seen) // fields are covariant
+		}
 	}
 }
 
@@ -62,6 +66,10 @@ func collectVars(st SimpleType, set map[int]*Variable) {
 	case *Tuple:
 		for _, e := range t.elems {
 			collectVars(e, set)
+		}
+	case *Record:
+		for _, f := range t.fields {
+			collectVars(f, set)
 		}
 	}
 }
@@ -161,6 +169,10 @@ func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, se
 	case *Tuple:
 		for _, e := range t.elems {
 			collectCoOcc(e, pol, coOcc, seen)
+		}
+	case *Record:
+		for _, f := range t.fields {
+			collectCoOcc(f, pol, coOcc, seen)
 		}
 	}
 }

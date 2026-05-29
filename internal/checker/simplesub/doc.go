@@ -19,8 +19,12 @@
 // id(5) yields `5`, not `T0 | 5`) plus co-occurrence variable merging (variables
 // that mutually co-occur in every polarity they appear in are unified, so
 // InnerCapturesOuterParam coalesces to `fn <T0>(y: T0) -> [T0, T0]`).
-// Records/usage inference (M2), `mut` invariance (M3), and lifetimes (M4) remain
-// out of scope.
+//
+// M2 adds records and usage-based inference: member access `obj.bar` constrains
+// the receiver to `{bar: <fresh>}`, so a parameter's required shape accumulates
+// as upper bounds and coalesces (negative position) to a record — object bounds
+// in an intersection are merged into one record. `mut` invariance (M3) and
+// lifetimes (M4) remain out of scope.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.

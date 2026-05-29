@@ -32,12 +32,23 @@ type Let struct {
 }
 type TupleExpr struct{ Elems []Term }
 
+// RecordExpr is a record literal, e.g. {bar: e, baz: e}.
+type RecordExpr struct{ Fields map[string]Term }
+
+// Sel is field access, e.g. obj.bar.
+type Sel struct {
+	Receiver Term
+	Name     string
+}
+
 func (*Lit) isTerm()       {}
 func (*Var) isTerm()       {}
 func (*Lam) isTerm()       {}
 func (*App) isTerm()       {}
 func (*Let) isTerm()       {}
-func (*TupleExpr) isTerm() {}
+func (*TupleExpr) isTerm()  {}
+func (*RecordExpr) isTerm() {}
+func (*Sel) isTerm()        {}
 
 func litToSimple(t *Lit) *Literal {
 	return &Literal{kind: t.Kind, str: t.Str, num: t.Num, b: t.Bool}
@@ -96,6 +107,24 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 			errs = append(errs, ee...)
 		}
 		return &Tuple{elems: elems}, errs
+	case *RecordExpr:
+		fields := make(map[string]SimpleType, len(t.Fields))
+		var errs []error
+		for name, e := range t.Fields {
+			ft, ee := in.typeTerm(e, ctx, lvl)
+			fields[name] = ft
+			errs = append(errs, ee...)
+		}
+		return &Record{fields: fields}, errs
+	case *Sel:
+		// Member access drives usage-based inference: obj.bar requires the
+		// receiver to be a subtype of {bar: <fresh>}, accumulating the field
+		// requirement as an upper bound on the receiver's variable.
+		recvT, errs := in.typeTerm(t.Receiver, ctx, lvl)
+		res := in.freshVar(lvl)
+		errs = append(errs, in.constrain(recvT,
+			&Record{fields: map[string]SimpleType{t.Name: res}}, map[constraintKey]bool{})...)
+		return res, errs
 	default:
 		panic(fmt.Sprintf("typeTerm: unhandled %T", term))
 	}

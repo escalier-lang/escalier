@@ -44,11 +44,17 @@ type Function struct {
 // Tuple is a fixed-length tuple type.
 type Tuple struct{ elems []SimpleType }
 
+// Record is a structural record type with named fields. Fields are covariant,
+// and width subtyping lets a record with MORE fields be a subtype of one with
+// fewer.
+type Record struct{ fields map[string]SimpleType }
+
 func (*Variable) isSimpleType()  {}
 func (*Primitive) isSimpleType() {}
 func (*Literal) isSimpleType()   {}
 func (*Function) isSimpleType()  {}
 func (*Tuple) isSimpleType()     {}
+func (*Record) isSimpleType()    {}
 
 func (l *Literal) eq(o *Literal) bool {
 	if l.kind != o.kind {
@@ -81,6 +87,12 @@ func levelOf(ty SimpleType) int {
 		m := 0
 		for _, e := range t.elems {
 			m = max(m, levelOf(e))
+		}
+		return m
+	case *Record:
+		m := 0
+		for _, f := range t.fields {
+			m = max(m, levelOf(f))
 		}
 		return m
 	default:
