@@ -169,9 +169,12 @@ type Context struct {
 	QueryUnify bool
 	// BindJournal, when non-nil, records every TypeVar mutation made by
 	// bind / handleArrayConstraintBinding / openClosedObjectForParam / the
-	// widening fallback / Prune's path compression. Probe sets it for the
-	// duration of a single probed unification; Discard replays the records
-	// in reverse to restore the pre-probe state. See probe.go.
+	// widening fallback / Prune's path compression, every LifetimeVar
+	// binding made by UnifyLifetimes, and any ad-hoc rollback closure
+	// registered via AddCleanup (e.g. expr.SetResolvedThrows on the
+	// overload-dispatch path). Probe sets it for the duration of a
+	// single probed unification; Discard replays the records in reverse
+	// to restore the pre-probe state. See probe.go.
 	//
 	// Same propagation discipline as QueryUnify: value-copied ctx carries
 	// the pointer through recursive unifyInner calls, so a Probe at the
