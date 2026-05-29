@@ -34,6 +34,36 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// ---- Polarity ----
+
+// Polarity is the position a type occupies: Positive (output / covariant, e.g. a
+// function's result) or Negative (input / contravariant, e.g. a parameter).
+// Under algebraic subtyping a variable coalesces to the union of its lower
+// bounds in Positive position and the intersection of its upper bounds in
+// Negative position.
+type Polarity int
+
+const (
+	Positive Polarity = iota
+	Negative
+)
+
+// flip returns the opposite polarity, used when descending into contravariant
+// positions such as function parameters.
+func (p Polarity) flip() Polarity {
+	if p == Positive {
+		return Negative
+	}
+	return Positive
+}
+
+func (p Polarity) String() string {
+	if p == Positive {
+		return "positive"
+	}
+	return "negative"
+}
+
 // ---- SimpleType: the internal inference representation ----
 
 type SimpleType interface{ isSimpleType() }
@@ -45,6 +75,16 @@ type Variable struct {
 	level       int
 	lowerBounds []SimpleType
 	upperBounds []SimpleType
+}
+
+// boundsAt returns the bounds relevant to the given polarity: lower bounds in
+// Positive position (the variable becomes their union), upper bounds in Negative
+// position (the variable becomes their intersection).
+func (v *Variable) boundsAt(pol Polarity) []SimpleType {
+	if pol == Positive {
+		return v.lowerBounds
+	}
+	return v.upperBounds
 }
 
 // Primitive is a base type: "number" | "string" | "boolean".
@@ -205,7 +245,7 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 		}
 		// rhs lives at a higher level: extrude it down so it isn't wrongly
 		// generalized at lv's level.
-		return in.constrain(lhs, in.extrude(rhs, false, lv.level, map[int]*Variable{}), seen)
+		return in.constrain(lhs, in.extrude(rhs, Negative, lv.level, map[int]*Variable{}), seen)
 	}
 	// rhs is a variable.
 	if rv, ok := rhs.(*Variable); ok {
@@ -217,7 +257,7 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 			}
 			return errs
 		}
-		return in.constrain(in.extrude(lhs, true, rv.level, map[int]*Variable{}), rhs, seen)
+		return in.constrain(in.extrude(lhs, Positive, rv.level, map[int]*Variable{}), rhs, seen)
 	}
 
 	return []error{fmt.Errorf("cannot constrain %s <: %s", describe(lhs), describe(rhs))}
@@ -225,7 +265,7 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 
 // extrude copies ty so that variables above lvl are replaced by fresh variables
 // at lvl, wired to the originals through the appropriate bound direction.
-func (in *Inferer) extrude(ty SimpleType, pol bool, lvl int, cache map[int]*Variable) SimpleType {
+func (in *Inferer) extrude(ty SimpleType, pol Polarity, lvl int, cache map[int]*Variable) SimpleType {
 	if levelOf(ty) <= lvl {
 		return ty
 	}
@@ -236,7 +276,7 @@ func (in *Inferer) extrude(ty SimpleType, pol bool, lvl int, cache map[int]*Vari
 		}
 		nv := in.freshVar(lvl)
 		cache[t.id] = nv
-		if pol {
+		if pol == Positive {
 			t.upperBounds = append(t.upperBounds, nv)
 			for _, lb := range t.lowerBounds {
 				nv.lowerBounds = append(nv.lowerBounds, in.extrude(lb, pol, lvl, cache))
@@ -251,7 +291,7 @@ func (in *Inferer) extrude(ty SimpleType, pol bool, lvl int, cache map[int]*Vari
 	case *Function:
 		params := make([]SimpleType, len(t.params))
 		for i, p := range t.params {
-			params[i] = in.extrude(p, !pol, lvl, cache)
+			params[i] = in.extrude(p, pol.flip(), lvl, cache)
 		}
 		return &Function{params: params, paramNames: t.paramNames, ret: in.extrude(t.ret, pol, lvl, cache)}
 	case *Tuple:
@@ -462,38 +502,34 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 
 type polKey struct {
 	id  int
-	pol bool
+	pol Polarity
 }
 
 // analyze records, for each variable, the polarities it occurs in (following
 // bounds in the relevant direction). This drives single-polarity elimination.
-func analyze(st SimpleType, pol bool, occ map[int]map[bool]bool, seen map[polKey]bool) {
+func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool, seen map[polKey]bool) {
 	switch t := st.(type) {
 	case *Variable:
-		if occ[t.id] == nil {
-			occ[t.id] = map[bool]bool{}
+		if occurrences[t.id] == nil {
+			occurrences[t.id] = map[Polarity]bool{}
 		}
-		occ[t.id][pol] = true
+		occurrences[t.id][pol] = true
 		pk := polKey{t.id, pol}
 		if seen[pk] {
 			return
 		}
 		seen[pk] = true
-		bounds := t.lowerBounds
-		if !pol {
-			bounds = t.upperBounds
-		}
-		for _, b := range bounds {
-			analyze(b, pol, occ, seen)
+		for _, b := range t.boundsAt(pol) {
+			analyze(b, pol, occurrences, seen)
 		}
 	case *Function:
 		for _, p := range t.params {
-			analyze(p, !pol, occ, seen)
+			analyze(p, pol.flip(), occurrences, seen)
 		}
-		analyze(t.ret, pol, occ, seen)
+		analyze(t.ret, pol, occurrences, seen)
 	case *Tuple:
 		for _, e := range t.elems {
-			analyze(e, pol, occ, seen)
+			analyze(e, pol, occurrences, seen)
 		}
 	}
 }
@@ -575,16 +611,12 @@ func symmetrize(vars map[int]*Variable) {
 // gatherGroup collects the transitive same-polarity variable closure of v: the
 // variables that end up in the same flattened union (positive) or intersection
 // (negative) as v.
-func gatherGroup(v *Variable, pol bool, g map[int]bool) {
+func gatherGroup(v *Variable, pol Polarity, g map[int]bool) {
 	if g[v.id] {
 		return
 	}
 	g[v.id] = true
-	bounds := v.lowerBounds
-	if !pol {
-		bounds = v.upperBounds
-	}
-	for _, b := range bounds {
+	for _, b := range v.boundsAt(pol) {
 		if bv, ok := b.(*Variable); ok {
 			gatherGroup(bv, pol, g)
 		}
@@ -593,7 +625,7 @@ func gatherGroup(v *Variable, pol bool, g map[int]bool) {
 
 // collectCoOcc records, per (variable, polarity), the set of variables that
 // co-occur with it (share a union/intersection node).
-func collectCoOcc(st SimpleType, pol bool, coOcc map[polKey]map[int]bool, seen map[polKey]bool) {
+func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, seen map[polKey]bool) {
 	switch t := st.(type) {
 	case *Variable:
 		g := map[int]bool{}
@@ -614,16 +646,12 @@ func collectCoOcc(st SimpleType, pol bool, coOcc map[polKey]map[int]bool, seen m
 			return
 		}
 		seen[pk] = true
-		bounds := t.lowerBounds
-		if !pol {
-			bounds = t.upperBounds
-		}
-		for _, b := range bounds {
+		for _, b := range t.boundsAt(pol) {
 			collectCoOcc(b, pol, coOcc, seen)
 		}
 	case *Function:
 		for _, p := range t.params {
-			collectCoOcc(p, !pol, coOcc, seen)
+			collectCoOcc(p, pol.flip(), coOcc, seen)
 		}
 		collectCoOcc(t.ret, pol, coOcc, seen)
 	case *Tuple:
@@ -664,16 +692,16 @@ func (u *unionFind) union(a, b int) {
 
 // mutualCoOcc reports whether a and b co-occur in every polarity each occurs in
 // — the condition under which they can be soundly merged.
-func mutualCoOcc(a, b int, occ map[int]map[bool]bool, coOcc map[polKey]map[int]bool) bool {
-	if len(occ[a]) == 0 || len(occ[b]) == 0 {
+func mutualCoOcc(a, b int, occurrences map[int]map[Polarity]bool, coOcc map[polKey]map[int]bool) bool {
+	if len(occurrences[a]) == 0 || len(occurrences[b]) == 0 {
 		return false
 	}
-	for pol := range occ[a] {
+	for pol := range occurrences[a] {
 		if !coOcc[polKey{a, pol}][b] {
 			return false
 		}
 	}
-	for pol := range occ[b] {
+	for pol := range occurrences[b] {
 		if !coOcc[polKey{b, pol}][a] {
 			return false
 		}
@@ -681,7 +709,7 @@ func mutualCoOcc(a, b int, occ map[int]map[bool]bool, coOcc map[polKey]map[int]b
 	return true
 }
 
-func mergeCoOccurring(vars map[int]*Variable, occ map[int]map[bool]bool, coOcc map[polKey]map[int]bool) *unionFind {
+func mergeCoOccurring(vars map[int]*Variable, occurrences map[int]map[Polarity]bool, coOcc map[polKey]map[int]bool) *unionFind {
 	uf := newUnionFind()
 	ids := make([]int, 0, len(vars))
 	for id := range vars {
@@ -690,7 +718,7 @@ func mergeCoOccurring(vars map[int]*Variable, occ map[int]map[bool]bool, coOcc m
 	sort.Ints(ids)
 	for i := 0; i < len(ids); i++ {
 		for j := i + 1; j < len(ids); j++ {
-			if mutualCoOcc(ids[i], ids[j], occ, coOcc) {
+			if mutualCoOcc(ids[i], ids[j], occurrences, coOcc) {
 				uf.union(ids[i], ids[j])
 			}
 		}
@@ -714,12 +742,12 @@ func dedupTypes(parts []type_system.Type) []type_system.Type {
 // ---- Coalescing ----
 
 type coalescer struct {
-	names     map[int]string // keyed by representative id
-	order     []string
-	counter   int
-	mergedOcc map[int]map[bool]bool // keyed by representative id
-	uf        *unionFind
-	inProc    map[polKey]bool // keyed by (representative id, polarity)
+	names             map[int]string // keyed by representative id
+	order             []string
+	counter           int
+	mergedOccurrences map[int]map[Polarity]bool // keyed by representative id
+	uf                *unionFind
+	inProc            map[polKey]bool // keyed by (representative id, polarity)
 }
 
 func (c *coalescer) nameForRep(rep int) string {
@@ -733,7 +761,7 @@ func (c *coalescer) nameForRep(rep int) string {
 	return n
 }
 
-func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
+func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
 	switch t := st.(type) {
 	case *Primitive:
 		return primToType(t.name)
@@ -744,7 +772,7 @@ func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 		for i, p := range t.params {
 			params[i] = type_system.NewFuncParam(
 				type_system.NewIdentPat(paramName(t.paramNames, i)),
-				c.coalesce(p, !pol)) // contravariant
+				c.coalesce(p, pol.flip())) // contravariant
 		}
 		return type_system.NewFuncType(nil, nil, params, c.coalesce(t.ret, pol), nil) // covariant
 	case *Tuple:
@@ -755,11 +783,7 @@ func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 		return type_system.NewTupleType(nil, elems...)
 	case *Variable:
 		rep := c.uf.find(t.id)
-		bipolar := c.mergedOcc[rep][true] && c.mergedOcc[rep][false]
-		bounds := t.lowerBounds
-		if !pol {
-			bounds = t.upperBounds
-		}
+		bipolar := c.mergedOccurrences[rep][Positive] && c.mergedOccurrences[rep][Negative]
 		pk := polKey{rep, pol}
 		if c.inProc[pk] {
 			return type_system.NewTypeRefType(nil, c.nameForRep(rep), nil)
@@ -767,8 +791,8 @@ func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 		c.inProc[pk] = true
 		defer delete(c.inProc, pk)
 
-		boundTypes := make([]type_system.Type, 0, len(bounds))
-		for _, b := range bounds {
+		boundTypes := make([]type_system.Type, 0, len(t.boundsAt(pol)))
+		for _, b := range t.boundsAt(pol) {
 			boundTypes = append(boundTypes, c.coalesce(b, pol))
 		}
 
@@ -777,7 +801,7 @@ func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 			// its bounds (positive => union of lowers, negative => inter of uppers).
 			parts := dedupTypes(boundTypes)
 			if len(parts) == 0 {
-				if pol {
+				if pol == Positive {
 					return type_system.NewNeverType(nil)
 				}
 				return type_system.NewUnknownType(nil)
@@ -795,11 +819,11 @@ func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 
 // combine builds a union (positive) or intersection (negative) of parts,
 // returning the sole element directly when only one remains.
-func combine(pol bool, parts []type_system.Type) type_system.Type {
+func combine(pol Polarity, parts []type_system.Type) type_system.Type {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	if pol {
+	if pol == Positive {
 		return type_system.NewUnionType(nil, parts...)
 	}
 	return type_system.NewIntersectionType(nil, parts...)
@@ -854,25 +878,30 @@ func Infer(term Term) (type_system.Type, []error) {
 
 	// Occurrence + co-occurrence analysis, then merge variables that always
 	// co-occur.
-	occ := map[int]map[bool]bool{}
-	analyze(st, true, occ, map[polKey]bool{})
+	occurrences := map[int]map[Polarity]bool{}
+	analyze(st, Positive, occurrences, map[polKey]bool{})
 	coOcc := map[polKey]map[int]bool{}
-	collectCoOcc(st, true, coOcc, map[polKey]bool{})
-	uf := mergeCoOccurring(vars, occ, coOcc)
+	collectCoOcc(st, Positive, coOcc, map[polKey]bool{})
+	uf := mergeCoOccurring(vars, occurrences, coOcc)
 
-	mergedOcc := map[int]map[bool]bool{}
-	for id, pols := range occ {
+	mergedOccurrences := map[int]map[Polarity]bool{}
+	for id, pols := range occurrences {
 		rep := uf.find(id)
-		if mergedOcc[rep] == nil {
-			mergedOcc[rep] = map[bool]bool{}
+		if mergedOccurrences[rep] == nil {
+			mergedOccurrences[rep] = map[Polarity]bool{}
 		}
 		for pol := range pols {
-			mergedOcc[rep][pol] = true
+			mergedOccurrences[rep][pol] = true
 		}
 	}
 
-	c := &coalescer{names: map[int]string{}, mergedOcc: mergedOcc, uf: uf, inProc: map[polKey]bool{}}
-	ty := c.coalesce(st, true)
+	c := &coalescer{
+		names:             map[int]string{},
+		mergedOccurrences: mergedOccurrences,
+		uf:                uf,
+		inProc:            map[polKey]bool{},
+	}
+	ty := c.coalesce(st, Positive)
 	if ft, ok := ty.(*type_system.FuncType); ok && len(c.order) > 0 {
 		tps := make([]*type_system.TypeParam, len(c.order))
 		for i, n := range c.order {
