@@ -23,8 +23,15 @@
 // M2 adds records and usage-based inference: member access `obj.bar` constrains
 // the receiver to `{bar: <fresh>}`, so a parameter's required shape accumulates
 // as upper bounds and coalesces (negative position) to a record — object bounds
-// in an intersection are merged into one record. `mut` invariance (M3) and
-// lifetimes (M4) remain out of scope.
+// in an intersection are merged into one record.
+//
+// M3 adds `mut` (invariant mutable references) via the read/write decomposition:
+// a Mut's content occurs both covariantly (read) and contravariantly (write), so
+// constraining two Muts forces equality in both directions. This is the
+// highest-risk gate — invariance is not native to algebraic subtyping — and it
+// shows the decomposition encodes it cleanly: e.g. `mut {x,y} <: mut {x}` fails
+// even though immutable `{x,y} <: {x}` succeeds by width subtyping. Lifetimes
+// (M4) remain out of scope.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.

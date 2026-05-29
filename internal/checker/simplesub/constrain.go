@@ -99,6 +99,23 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 			}
 			return errs
 		}
+	case *Mut:
+		if r, ok := rhs.(*Mut); ok {
+			// Invariance via the read/write decomposition: the read view is
+			// covariant (l.inner <: r.inner) and the write view is contravariant
+			// (r.inner <: l.inner). Emitting both directions forces the contents
+			// to be equal, so e.g. `mut {x,y} <: mut {x}` fails even though the
+			// immutable `{x,y} <: {x}` succeeds by width subtyping.
+			errs := in.constrain(l.inner, r.inner, seen)                // read (covariant)
+			return append(errs, in.constrain(r.inner, l.inner, seen)...) // write (contravariant)
+		}
+		// Against a variable, record the Mut itself as a bound (fall through to
+		// the variable cases below) so the result still renders as `mut ...`.
+		// Against any other concrete type, a mutable reference can be read where
+		// an immutable value is expected: mut T <: U via the read view, T <: U.
+		if _, ok := rhs.(*Variable); !ok {
+			return in.constrain(l.inner, rhs, seen)
+		}
 	}
 
 	// lhs is a variable.
@@ -174,6 +191,11 @@ func (in *Inferer) extrude(ty SimpleType, pol Polarity, lvl int, cache map[int]*
 			fields[name] = in.extrude(f, pol, lvl, cache)
 		}
 		return &Record{fields: fields}
+	case *Mut:
+		// inner is invariant, so it is reachable in both polarities; extrude it
+		// in the current polarity (the read view) — the write view shares the
+		// same fresh variables via the cache.
+		return &Mut{inner: in.extrude(t.inner, pol, lvl, cache)}
 	default:
 		return ty
 	}
@@ -198,6 +220,8 @@ func describe(st SimpleType) string {
 		return "tuple"
 	case *Record:
 		return "record"
+	case *Mut:
+		return "mut " + describe(t.inner)
 	case *Variable:
 		return "t" + strconv.Itoa(t.id)
 	}

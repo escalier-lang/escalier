@@ -3,6 +3,7 @@ package simplesub
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,6 +33,16 @@ func rec(pairs ...any) *Record {
 		fields[pairs[i].(string)] = pairs[i+1].(SimpleType)
 	}
 	return &Record{fields: fields}
+}
+
+func mut(inner SimpleType) *Mut  { return &Mut{inner: inner} }
+func litNumT(n float64) *Literal { return &Literal{kind: "num", num: n} }
+
+// renderWith infers and renders using a caller-supplied Inferer, so a test can
+// pre-create variables (sharing the id counter) for use in annotations.
+func renderWith(in *Inferer, term Term) (string, []error) {
+	ty, errs := inferWith(in, term)
+	return type_system.PrintType(ty, type_system.PrintConfig{}), errs
 }
 
 // TestInferIdentity is the identity case (also TopLevelLetPolymorphism):
@@ -153,6 +164,86 @@ func TestConstrainRecords(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMutInvariance is the M3 gate: mutable references are invariant, encoded
+// via the read/write decomposition. The decisive cases contrast a step that the
+// immutable type allows (and that the mutable type must reject):
+//
+//   - width:  {x,y} <: {x}  ok      but  mut {x,y} <: mut {x}  FAIL
+//   - depth:  {x: 5} <: {x: number} ok but  mut {x: 5} <: mut {x: number} FAIL
+//
+// If invariance could not be encoded, these mut cases would wrongly succeed and
+// the migration would be in serious doubt.
+func TestMutInvariance(t *testing.T) {
+	tests := []struct {
+		name     string
+		lhs, rhs SimpleType
+		wantErr  bool
+	}{
+		{"mut equal ok", mut(num()), mut(num()), false},
+		{"mut prim mismatch", mut(num()), mut(str()), true},
+
+		// width subtyping: allowed immutably, rejected under mut.
+		{"immutable width ok", rec("x", num(), "y", num()), rec("x", num()), false},
+		{"mut width rejected", mut(rec("x", num(), "y", num())), mut(rec("x", num())), true},
+
+		// depth (literal vs primitive): allowed immutably, rejected under mut.
+		{"immutable depth ok", rec("x", litNumT(5)), rec("x", num()), false},
+		{"mut depth rejected", mut(rec("x", litNumT(5))), mut(rec("x", num())), true},
+
+		// a mutable reference can be read where an immutable value is expected.
+		{"mut read coercion ok", mut(rec("x", num())), rec("x", num()), false},
+		// but an immutable value is not a mutable reference.
+		{"immutable is not mut", rec("x", num()), mut(rec("x", num())), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := NewInferer()
+			errs := in.Constrain(tt.lhs, tt.rhs)
+			if tt.wantErr {
+				require.NotEmpty(t, errs)
+			} else {
+				require.Empty(t, errs)
+			}
+		})
+	}
+}
+
+// TestMutParamFlows checks mut flows through inference and renders correctly: an
+// identity over a concretely-annotated mut parameter keeps the mut on the
+// result. (The lifetime annotations of the production checker are M4.)
+//
+//	fn identity(p: mut {x: number}) { return p }
+//	  ==>  fn (p: mut {x: number}) -> mut {x: number}
+func TestMutParamFlows(t *testing.T) {
+	identity := &Lam{
+		Params:     []string{"p"},
+		ParamTypes: []SimpleType{mut(rec("x", num()))},
+		Body:       vr("p"),
+	}
+	got, errs := Render(identity)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", got)
+}
+
+// TestMutFieldIsInvariantTypeParam: reading the field of a mut parameter with a
+// polymorphic content type keeps that content as a single (invariant) type
+// parameter, readable as the result.
+//
+//	fn get(p: mut {x: <fresh>}) { return p.x }
+//	  ==>  fn <T0>(p: mut {x: T0}) -> T0
+func TestMutFieldIsInvariantTypeParam(t *testing.T) {
+	in := NewInferer()
+	alpha := in.freshVar(1)
+	get := &Lam{
+		Params:     []string{"p"},
+		ParamTypes: []SimpleType{mut(&Record{fields: map[string]SimpleType{"x": alpha}})},
+		Body:       sel(vr("p"), "x"),
+	}
+	got, errs := renderWith(in, get)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(p: mut {x: T0}) -> T0", got)
 }
 
 // TestConstrain exercises the constrain primitive directly.

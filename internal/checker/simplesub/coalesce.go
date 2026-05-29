@@ -62,6 +62,11 @@ func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
 				type_system.NewStrKey(name), c.coalesce(t.fields[name], pol))
 		}
 		return type_system.NewObjectType(nil, elems)
+	case *Mut:
+		// inner is invariant, so its read and write views are equal; coalesce
+		// via the read (current-polarity) view. Variables inside are bipolar, so
+		// they survive simplification and print as consistent type parameters.
+		return type_system.NewMutType(nil, c.coalesce(t.inner, pol))
 	case *Variable:
 		rep := c.uf.find(t.id)
 		bipolar := c.mergedOccurrences[rep][Positive] && c.mergedOccurrences[rep][Negative]

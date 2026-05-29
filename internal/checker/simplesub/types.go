@@ -49,12 +49,23 @@ type Tuple struct{ elems []SimpleType }
 // fewer.
 type Record struct{ fields map[string]SimpleType }
 
+// Mut is a mutable reference (cell) holding a value of type inner. It is
+// INVARIANT in inner. Algebraic subtyping has no native invariance — it is all
+// co/contravariance — so Mut is modeled by the standard read/write
+// decomposition: the cell's content occurs both as a covariant "read" view and
+// a contravariant "write" view, i.e. Mut{T} behaves like a structure
+// {read: T (+), write: T (-)}. Subtyping two such structures forces T in both
+// directions, which is exactly invariance. See constrain for where the two
+// directions are emitted.
+type Mut struct{ inner SimpleType }
+
 func (*Variable) isSimpleType()  {}
 func (*Primitive) isSimpleType() {}
 func (*Literal) isSimpleType()   {}
 func (*Function) isSimpleType()  {}
 func (*Tuple) isSimpleType()     {}
 func (*Record) isSimpleType()    {}
+func (*Mut) isSimpleType()       {}
 
 func (l *Literal) eq(o *Literal) bool {
 	if l.kind != o.kind {
@@ -95,6 +106,8 @@ func levelOf(ty SimpleType) int {
 			m = max(m, levelOf(f))
 		}
 		return m
+	case *Mut:
+		return levelOf(t.inner)
 	default:
 		return 0
 	}

@@ -19,7 +19,10 @@ type Lit struct {
 type Var struct{ Name string }
 type Lam struct {
 	Params []string
-	Body   Term
+	// ParamTypes optionally annotates parameters. A nil slice (or a nil entry)
+	// leaves that parameter unannotated, so it gets a fresh inference variable.
+	ParamTypes []SimpleType
+	Body       Term
 }
 type App struct {
 	Fn  Term
@@ -75,9 +78,14 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 		newCtx := cloneCtx(ctx)
 		params := make([]SimpleType, len(t.Params))
 		for i, p := range t.Params {
-			pv := in.freshVar(lvl)
-			params[i] = pv
-			newCtx[p] = &MonoScheme{ty: pv}
+			var pt SimpleType
+			if i < len(t.ParamTypes) && t.ParamTypes[i] != nil {
+				pt = t.ParamTypes[i] // annotated parameter
+			} else {
+				pt = in.freshVar(lvl) // unannotated: fresh inference variable
+			}
+			params[i] = pt
+			newCtx[p] = &MonoScheme{ty: pt}
 		}
 		body, errs := in.typeTerm(t.Body, newCtx, lvl)
 		return &Function{params: params, paramNames: append([]string{}, t.Params...), ret: body}, errs
@@ -136,7 +144,13 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 // it as a type_system.Type. Free variables surviving simplification are
 // generalized into named type parameters (T0, T1, ...) on a top-level function.
 func Infer(term Term) (type_system.Type, []error) {
-	in := NewInferer()
+	return inferWith(NewInferer(), term)
+}
+
+// inferWith is Infer using a caller-supplied Inferer, so a test can pre-create
+// inference variables (sharing the same id counter) and reference them in an
+// annotation before inferring.
+func inferWith(in *Inferer, term Term) (type_system.Type, []error) {
 	st, errs := in.typeTerm(term, map[string]TypeScheme{}, 1)
 
 	// Mirror var-to-var bounds so each variable sees all its subtyping facts.

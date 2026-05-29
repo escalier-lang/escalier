@@ -39,6 +39,11 @@ func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool,
 		for _, f := range t.fields {
 			analyze(f, pol, occurrences, seen) // fields are covariant
 		}
+	case *Mut:
+		// inner occurs both covariantly (read) and contravariantly (write), so
+		// variables inside a Mut are bipolar — the source of invariance.
+		analyze(t.inner, pol, occurrences, seen)
+		analyze(t.inner, pol.flip(), occurrences, seen)
 	}
 }
 
@@ -71,6 +76,8 @@ func collectVars(st SimpleType, set map[int]*Variable) {
 		for _, f := range t.fields {
 			collectVars(f, set)
 		}
+	case *Mut:
+		collectVars(t.inner, set)
 	}
 }
 
@@ -174,6 +181,9 @@ func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, se
 		for _, f := range t.fields {
 			collectCoOcc(f, pol, coOcc, seen)
 		}
+	case *Mut:
+		collectCoOcc(t.inner, pol, coOcc, seen)
+		collectCoOcc(t.inner, pol.flip(), coOcc, seen)
 	}
 }
 
