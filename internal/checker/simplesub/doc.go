@@ -105,6 +105,19 @@
 // so the runtime budget remains the backstop. The check and the budget are
 // complementary: a precise early error where decidable, safe termination always.
 //
+// M9 (lazy.go) prototypes the lazy alternative to the eager evaluator: alias
+// references stay unexpanded (LazyRef) and are forced only when an operation —
+// here a structural subtype check — needs their shape, with a COINDUCTIVE
+// seen-set (Amadio–Cardelli) so recursive-vs-recursive comparisons terminate. It
+// demonstrates that laziness *relocates* the decidability limit rather than
+// removing it: regular recursive types (List-shaped) are decided COMPLETELY with
+// no budget and no CheckRegular (the seen-set always closes the loop), while
+// non-regular recursion (Grow) unfolds to infinitely many distinct
+// instantiations the seen-set can never close, so it still falls through to the
+// depth budget. μ-knots finitely represent only regular trees — the lazy/μ model
+// is the enabler for a TS-compatible permissive policy but buys no decision
+// procedure for the Turing-complete fragment.
+//
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
 //
