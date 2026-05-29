@@ -519,6 +519,49 @@ func TestPropertyLevelLifetimes_SharedSource(t *testing.T) {
 		got)
 }
 
+// TestTuplePerSlotLifetimes: a tuple preserves a distinct lifetime per slot —
+// each element is its own borrow with its own lifetime, and (unlike Array<T>)
+// the slots stay separate rather than collapsing into a union.
+//
+//	fn pair(a: mut {x: number}, b: mut {x: number}) { return [a, b] }
+//	  ==>  fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number})
+//	         -> [mut 'a {x: number}, mut 'b {x: number}]
+//
+// This matches the production checker's TupleOfTwoParams_PerSlotDistinctLifetimes
+// and, like property-level lifetimes, falls out of the value-based model for
+// free: each tuple element is the corresponding parameter value, carrying its
+// own lifetime, and coalescing renders each slot independently.
+func TestTuplePerSlotLifetimes(t *testing.T) {
+	pair := &Lam{
+		Params:     []string{"a", "b"},
+		ParamTypes: []SimpleType{mutRec("x", num()), mutRec("x", num())},
+		Body:       &TupleExpr{Elems: []Term{vr("a"), vr("b")}},
+	}
+	got, errs := Render(pair)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> [mut 'a {x: number}, mut 'b {x: number}]",
+		got)
+}
+
+// TestTuplePerSlotLifetimes_SharedSource: the same borrow in two slots gives
+// both the same lifetime.
+//
+//	fn dup(a: mut {x: number}) { return [a, a] }
+//	  ==>  fn <'a>(a: mut 'a {x: number}) -> [mut 'a {x: number}, mut 'a {x: number}]
+func TestTuplePerSlotLifetimes_SharedSource(t *testing.T) {
+	dup := &Lam{
+		Params:     []string{"a"},
+		ParamTypes: []SimpleType{mutRec("x", num())},
+		Body:       &TupleExpr{Elems: []Term{vr("a"), vr("a")}},
+	}
+	got, errs := Render(dup)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a>(a: mut 'a {x: number}) -> [mut 'a {x: number}, mut 'a {x: number}]",
+		got)
+}
+
 // TestConstrain exercises the constrain primitive directly.
 func TestConstrain(t *testing.T) {
 	tests := []struct {
