@@ -50,45 +50,41 @@ func Index(operand SimpleType, key string) *ResidualOp {
 	return &ResidualOp{kind: ResidualIndex, operand: operand, key: key}
 }
 
-// maxResidualRounds bounds the post-solve reduction fixpoint, so a genuinely
-// irreducible or cyclic operator terminates with a symbolic result instead of
-// looping forever (the Design-A termination guard).
-const maxResidualRounds = 100
-
 // reduceResidual reduces a residual operator after the value solve. It coalesces
 // the operand to a concrete type_system.Type (driving the value solve's result
-// for a usage-inferred operand) and then applies the operator. If the operand
-// still isn't a shape the operator can reduce against, the result stays symbolic
-// (keyof T / T[k]) — Baseline-D behavior as the fixpoint's fixed point.
+// for a usage-inferred operand) and then applies the operator once. If the
+// operand isn't a shape the operator can reduce against, the result stays
+// symbolic (keyof T / T[k]) — Baseline-D behavior.
+//
+// This is a single reduction step: the operator is applied to the operand's
+// coalesced shape. Recursion/termination concerns live in the type-level
+// evaluator (typeops.go), whose cycle cache + depth budget guarantee the
+// operand itself coalesces to a finite type even when it is recursive — so a
+// keyof/index over a recursive type (see TestResidualKeyofOverRecursiveType)
+// reduces here without any loop.
 func (c *coalescer) reduceResidual(op *ResidualOp) type_system.Type {
-	rounds := 0
 	// The operand is *read* (its required shape determines the reduction), so
 	// coalesce it in Negative position regardless of where the operator's result
 	// sits — a usage-inferred operand records its shape as upper bounds, which
 	// are the negative-position view.
 	target := c.coalesce(op.operand, Negative)
-	for {
-		rounds++
-		obj, ok := findObjectType(target)
-		switch op.kind {
-		case ResidualKeyof:
-			if !ok {
-				return type_system.NewKeyOfType(nil, target) // symbolic fixed point
-			}
-			return keyofObject(obj)
-		case ResidualIndex:
-			if ok {
-				if v := propValue(obj, op.key); v != nil {
-					return v
-				}
-			}
-			return type_system.NewIndexType(nil, target,
-				type_system.NewStrLitType(nil, op.key)) // symbolic fixed point
+	obj, ok := findObjectType(target)
+	switch op.kind {
+	case ResidualKeyof:
+		if !ok {
+			return type_system.NewKeyOfType(nil, target) // symbolic
 		}
-		if rounds >= maxResidualRounds {
-			return target // termination guard
+		return keyofObject(obj)
+	case ResidualIndex:
+		if ok {
+			if v := propValue(obj, op.key); v != nil {
+				return v
+			}
 		}
+		return type_system.NewIndexType(nil, target,
+			type_system.NewStrLitType(nil, op.key)) // symbolic
 	}
+	return target
 }
 
 // findObjectType locates the object type a residual operand reduced to, looking

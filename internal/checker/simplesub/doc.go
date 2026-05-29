@@ -83,6 +83,17 @@
 // symbolic (`keyof unknown`) as the fixpoint's terminating result. Designs B/C
 // remain out of scope; M7 validates only the recommended Design-A backbone.
 //
+// Recursive type aliases (`type List<T> = {head: T, tail: List<T> | Null}`) are
+// handled by the type-level evaluator (typeops.go) with a cycle cache plus a
+// depth budget — the principled alternative to a magic round counter. A repeated
+// (alias, args) instantiation emits a symbolic back-reference (the finite "knot"
+// representing the infinite regular type), so the analytically-bounded case
+// terminates exactly; unbounded-growth recursion (`type Grow<T> = Grow<Array<T>>`),
+// where every state is distinct and no finite bound exists, is stopped by the
+// budget with a symbolic result rather than hanging. Residual type operators
+// reduce cleanly over recursive types because the operand coalesces to its finite
+// knot first (`keyof List<number>` ⇒ `"head" | "tail"`).
+//
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
 //

@@ -1,7 +1,9 @@
 package simplesub
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
@@ -74,6 +76,22 @@ type TyAlias struct {
 }
 
 // TypeEvaluator reduces type-level expressions against a set of aliases.
+//
+// Recursive aliases (`type List<T> = {head: T, tail: List<T> | null}`) are
+// handled by a two-part termination strategy, the principled alternative to a
+// magic round counter:
+//
+//   - A cycle cache keyed on the (alias, evaluated-args) instantiation state.
+//     When an alias instantiation recurs with the *same* state, the evaluator
+//     emits a symbolic TypeRefType back to it instead of expanding again — a
+//     finite representation of the infinite (regular) type. This is the
+//     analytically-bounded case: the number of expansions is the number of
+//     distinct reachable instantiation states.
+//   - A depth budget (maxExpandDepth) as the catch-all for the Turing-complete
+//     fragment where the cache never fires because every state is distinct
+//     (`type Grow<T> = Grow<Array<T>>` grows its argument forever). There is no
+//     finite analytical bound there, so the budget stops it and the result
+//     stays symbolic.
 type TypeEvaluator struct {
 	aliases map[string]*TyAlias
 }
@@ -86,11 +104,29 @@ func (e *TypeEvaluator) Define(name string, params []string, body TyExpr) {
 	e.aliases[name] = &TyAlias{Params: params, Body: body}
 }
 
+// maxExpandDepth bounds alias-instantiation depth for the case where the cycle
+// cache can't fire (each instantiation state is distinct because an argument
+// grows without bound). It is a safety budget, not a derived maximum — no finite
+// maximum exists for that (Turing-complete) fragment.
+const maxExpandDepth = 200
+
 // tyEnv maps type-parameter names to evaluated concrete types.
 type tyEnv map[string]type_system.Type
 
+// evalState threads the recursion-control state through Eval: the set of
+// alias-instantiation states currently being expanded (for cycle detection) and
+// the remaining expansion budget.
+type evalState struct {
+	active map[string]bool // instantiation keys on the current expansion path
+	depth  int             // remaining alias expansions before the budget trips
+}
+
 // Eval reduces a type-level expression to a concrete type_system.Type.
 func (e *TypeEvaluator) Eval(expr TyExpr, env tyEnv) type_system.Type {
+	return e.eval(expr, env, &evalState{active: map[string]bool{}, depth: maxExpandDepth})
+}
+
+func (e *TypeEvaluator) eval(expr TyExpr, env tyEnv, st *evalState) type_system.Type {
 	switch t := expr.(type) {
 	case *TyPrim:
 		return primToType(t.Name)
@@ -105,46 +141,87 @@ func (e *TypeEvaluator) Eval(expr TyExpr, env tyEnv) type_system.Type {
 	case *TyUnion:
 		members := make([]type_system.Type, len(t.Members))
 		for i, m := range t.Members {
-			members[i] = e.Eval(m, env)
+			members[i] = e.eval(m, env, st)
 		}
 		return type_system.NewUnionType(nil, members...)
 	case *TyArray:
-		return type_system.NewTypeRefType(nil, "Array", nil, e.Eval(t.Elem, env))
+		return type_system.NewTypeRefType(nil, "Array", nil, e.eval(t.Elem, env, st))
 	case *TyRecord:
-		return e.evalRecord(t, env)
+		return e.evalRecord(t, env, st)
 	case *TyRef:
-		// A bare name bound in the environment is a type parameter.
-		if bound, ok := env[t.Name]; ok && len(t.Args) == 0 {
-			return bound
-		}
-		// A known alias is instantiated with its evaluated arguments.
-		if alias, ok := e.aliases[t.Name]; ok {
-			newEnv := tyEnv{}
-			for i, p := range alias.Params {
-				if i < len(t.Args) {
-					newEnv[p] = e.Eval(t.Args[i], env)
-				}
-			}
-			return e.Eval(alias.Body, newEnv)
-		}
-		// Otherwise nominal/symbolic (e.g. a class name).
-		args := make([]type_system.Type, len(t.Args))
-		for i, a := range t.Args {
-			args[i] = e.Eval(a, env)
-		}
-		return type_system.NewTypeRefType(nil, t.Name, nil, args...)
+		return e.evalRef(t, env, st)
 	case *TyCond:
-		return e.evalCond(t, env)
+		return e.evalCond(t, env, st)
 	case *TyKeyof:
-		return e.evalKeyof(t, env)
+		return e.evalKeyof(t, env, st)
 	case *TyIndex:
-		return e.evalIndex(t, env)
+		return e.evalIndex(t, env, st)
 	default:
 		panic("typeops: unhandled TyExpr")
 	}
 }
 
-func (e *TypeEvaluator) evalRecord(t *TyRecord, env tyEnv) type_system.Type {
+// evalRef evaluates a type reference: a type-parameter lookup, a (possibly
+// recursive) alias instantiation, or a nominal/symbolic reference. Alias
+// instantiation is where recursion is controlled — see TypeEvaluator's doc.
+func (e *TypeEvaluator) evalRef(t *TyRef, env tyEnv, st *evalState) type_system.Type {
+	// A bare name bound in the environment is a type parameter.
+	if bound, ok := env[t.Name]; ok && len(t.Args) == 0 {
+		return bound
+	}
+	alias, ok := e.aliases[t.Name]
+	if !ok {
+		// Nominal/symbolic (e.g. a class name): evaluate args, keep the head.
+		args := make([]type_system.Type, len(t.Args))
+		for i, a := range t.Args {
+			args[i] = e.eval(a, env, st)
+		}
+		return type_system.NewTypeRefType(nil, t.Name, nil, args...)
+	}
+
+	// Evaluate the arguments, then form the instantiation key (alias name +
+	// rendered args) used for both cycle detection and the symbolic fallback.
+	args := make([]type_system.Type, 0, len(t.Args))
+	newEnv := tyEnv{}
+	for i, p := range alias.Params {
+		if i < len(t.Args) {
+			a := e.eval(t.Args[i], env, st)
+			newEnv[p] = a
+			args = append(args, a)
+		}
+	}
+	key := instantiationKey(t.Name, args)
+
+	// Cycle: this exact instantiation is already being expanded on the current
+	// path. Emit a symbolic reference to it — the finite "knot" that represents
+	// the infinite regular type (e.g. List<number> referring back to itself).
+	if st.active[key] {
+		return type_system.NewTypeRefType(nil, t.Name, nil, args...)
+	}
+	// Budget exhausted (unbounded-growth recursion the cycle cache can't catch).
+	if st.depth <= 0 {
+		return type_system.NewTypeRefType(nil, t.Name, nil, args...)
+	}
+
+	st.active[key] = true
+	st.depth--
+	result := e.eval(alias.Body, newEnv, st)
+	delete(st.active, key)
+	st.depth++
+	return result
+}
+
+// instantiationKey identifies an alias applied to a specific list of evaluated
+// arguments, by rendering each argument to its canonical string form.
+func instantiationKey(name string, args []type_system.Type) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = renderType(a)
+	}
+	return fmt.Sprintf("%s<%s>", name, strings.Join(parts, ","))
+}
+
+func (e *TypeEvaluator) evalRecord(t *TyRecord, env tyEnv, st *evalState) type_system.Type {
 	names := make([]string, 0, len(t.Fields))
 	for name := range t.Fields {
 		names = append(names, name)
@@ -153,7 +230,7 @@ func (e *TypeEvaluator) evalRecord(t *TyRecord, env tyEnv) type_system.Type {
 	elems := make([]type_system.ObjTypeElem, len(names))
 	for i, name := range names {
 		elems[i] = type_system.NewPropertyElem(
-			type_system.NewStrKey(name), e.Eval(t.Fields[name], env))
+			type_system.NewStrKey(name), e.eval(t.Fields[name], env, st))
 	}
 	return type_system.NewObjectType(nil, elems)
 }
@@ -161,7 +238,7 @@ func (e *TypeEvaluator) evalRecord(t *TyRecord, env tyEnv) type_system.Type {
 // evalCond reduces a conditional type. Distributive conditionals: when the Check
 // is a bare type parameter bound to a union, the conditional distributes over
 // the union members (matching TypeScript's behavior for naked type parameters).
-func (e *TypeEvaluator) evalCond(t *TyCond, env tyEnv) type_system.Type {
+func (e *TypeEvaluator) evalCond(t *TyCond, env tyEnv, st *evalState) type_system.Type {
 	if ref, ok := t.Check.(*TyRef); ok && len(ref.Args) == 0 {
 		if bound, ok := env[ref.Name]; ok {
 			if union, ok := type_system.Prune(bound).(*type_system.UnionType); ok {
@@ -169,33 +246,33 @@ func (e *TypeEvaluator) evalCond(t *TyCond, env tyEnv) type_system.Type {
 				for i, member := range union.Types {
 					branchEnv := cloneTyEnv(env)
 					branchEnv[ref.Name] = member
-					results[i] = e.evalCondNonDistributive(t, branchEnv)
+					results[i] = e.evalCondNonDistributive(t, branchEnv, st)
 				}
 				return type_system.NewUnionType(nil, results...)
 			}
 		}
 	}
-	return e.evalCondNonDistributive(t, env)
+	return e.evalCondNonDistributive(t, env, st)
 }
 
-func (e *TypeEvaluator) evalCondNonDistributive(t *TyCond, env tyEnv) type_system.Type {
-	checkT := e.Eval(t.Check, env)
+func (e *TypeEvaluator) evalCondNonDistributive(t *TyCond, env tyEnv, st *evalState) type_system.Type {
+	checkT := e.eval(t.Check, env, st)
 	bindings := tyEnv{}
-	if e.matches(checkT, t.Extends, env, bindings) {
+	if e.matches(checkT, t.Extends, env, bindings, st) {
 		thenEnv := cloneTyEnv(env)
 		for k, v := range bindings {
 			thenEnv[k] = v // bring `infer` bindings into scope for the Then branch
 		}
-		return e.Eval(t.Then, thenEnv)
+		return e.eval(t.Then, thenEnv, st)
 	}
-	return e.Eval(t.Else, env)
+	return e.eval(t.Else, env, st)
 }
 
 // matches reports whether the concrete type checkT satisfies the Extends
 // pattern, recording any `infer` bindings. This is the Baseline-D structural
 // subtype check over ground types — it covers any / infer / Array<pat> /
 // primitive / literal / union, which is what the supported conditionals need.
-func (e *TypeEvaluator) matches(checkT type_system.Type, pat TyExpr, env tyEnv, bindings tyEnv) bool {
+func (e *TypeEvaluator) matches(checkT type_system.Type, pat TyExpr, env tyEnv, bindings tyEnv, st *evalState) bool {
 	checkT = type_system.Prune(checkT)
 	switch p := pat.(type) {
 	case *TyAny:
@@ -208,7 +285,7 @@ func (e *TypeEvaluator) matches(checkT type_system.Type, pat TyExpr, env tyEnv, 
 		if !ok || type_system.QualIdentToString(ref.Name) != "Array" || len(ref.TypeArgs) != 1 {
 			return false
 		}
-		return e.matches(ref.TypeArgs[0], p.Elem, env, bindings)
+		return e.matches(ref.TypeArgs[0], p.Elem, env, bindings, st)
 	case *TyPrim:
 		// A primitive matches its own primitive, and a literal matches its
 		// primitive kind (literal <: primitive).
@@ -229,7 +306,7 @@ func (e *TypeEvaluator) matches(checkT type_system.Type, pat TyExpr, env tyEnv, 
 	case *TyUnion:
 		// checkT matches if it matches any member of the union pattern.
 		for _, m := range p.Members {
-			if e.matches(checkT, m, env, bindings) {
+			if e.matches(checkT, m, env, bindings, st) {
 				return true
 			}
 		}
@@ -237,15 +314,15 @@ func (e *TypeEvaluator) matches(checkT type_system.Type, pat TyExpr, env tyEnv, 
 	default:
 		// Fallback: evaluate the pattern and compare structurally by rendered
 		// form (sound for ground, variable-free types).
-		return renderType(checkT) == renderType(e.Eval(pat, env))
+		return renderType(checkT) == renderType(e.eval(pat, env, st))
 	}
 }
 
 // evalKeyof reduces `keyof T`: for an object type, the union of its string-keyed
 // property names as string literals; otherwise it stays symbolic. Shares the
 // reduction with the M7 residual path (keyofObject).
-func (e *TypeEvaluator) evalKeyof(t *TyKeyof, env tyEnv) type_system.Type {
-	target := type_system.Prune(e.Eval(t.Target, env))
+func (e *TypeEvaluator) evalKeyof(t *TyKeyof, env tyEnv, st *evalState) type_system.Type {
+	target := type_system.Prune(e.eval(t.Target, env, st))
 	obj, ok := target.(*type_system.ObjectType)
 	if !ok {
 		return type_system.NewKeyOfType(nil, target) // symbolic
@@ -255,9 +332,9 @@ func (e *TypeEvaluator) evalKeyof(t *TyKeyof, env tyEnv) type_system.Type {
 
 // evalIndex reduces indexed access `T[K]`: for an object type indexed by a
 // string-literal key, the property's value type; otherwise it stays symbolic.
-func (e *TypeEvaluator) evalIndex(t *TyIndex, env tyEnv) type_system.Type {
-	target := type_system.Prune(e.Eval(t.Target, env))
-	index := type_system.Prune(e.Eval(t.Index, env))
+func (e *TypeEvaluator) evalIndex(t *TyIndex, env tyEnv, st *evalState) type_system.Type {
+	target := type_system.Prune(e.eval(t.Target, env, st))
+	index := type_system.Prune(e.eval(t.Index, env, st))
 	obj, objOK := target.(*type_system.ObjectType)
 	lit, litOK := index.(*type_system.LitType)
 	if objOK && litOK {

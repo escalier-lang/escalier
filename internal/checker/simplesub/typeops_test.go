@@ -1,6 +1,7 @@
 package simplesub
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -110,4 +111,61 @@ func TestSymbolicWhenOperandNotGround(t *testing.T) {
 	require.Equal(t, "keyof Foo", e.Render(&TyKeyof{Target: tref("Foo")}))
 	require.Equal(t, "Foo[\"x\"]",
 		e.Render(&TyIndex{Target: tref("Foo"), Index: tstr("x")}))
+}
+
+// --- Recursive types ---
+
+// TestRecursiveAliasFiniteKnot: a recursive alias reduces to a finite type with
+// a symbolic back-reference (the "knot") at the recursion point, rather than
+// expanding forever. This is the cycle-cache case: the bound is analytic (the
+// number of distinct instantiation states), not the budget.
+//
+//	type List<T> = {head: T, tail: List<T> | Null}
+//	List<number> ==> {head: number, tail: List<number> | Null}
+func TestRecursiveAliasFiniteKnot(t *testing.T) {
+	e := NewTypeEvaluator()
+	e.Define("List", []string{"T"},
+		trec("head", tref("T"), "tail", tunion(tref("List", tref("T")), tref("Null"))))
+	require.Equal(t, "{head: number, tail: List<number> | Null}",
+		e.Render(tref("List", tprim("number"))))
+}
+
+// TestResidualKeyofOverRecursiveType: a keyof residual reduces over a recursive
+// type — the operand expands to its finite knot, and keyof reads its key set.
+//
+//	keyof List<number> ==> "head" | "tail"
+func TestResidualKeyofOverRecursiveType(t *testing.T) {
+	e := NewTypeEvaluator()
+	e.Define("List", []string{"T"},
+		trec("head", tref("T"), "tail", tunion(tref("List", tref("T")), tref("Null"))))
+	require.Equal(t, "\"head\" | \"tail\"",
+		e.Render(&TyKeyof{Target: tref("List", tprim("number"))}))
+	require.Equal(t, "number",
+		e.Render(&TyIndex{Target: tref("List", tprim("number")), Index: tstr("head")}))
+}
+
+// TestRecursiveConditionalTerminatesAtBaseCase: a conditional that recurses on a
+// shrinking argument terminates at its base case.
+//
+//	type Last<T> = if T : Array<infer U> { Last<U> } else { T }
+//	Last<Array<Array<number>>> ==> number
+func TestRecursiveConditionalTerminatesAtBaseCase(t *testing.T) {
+	e := NewTypeEvaluator()
+	e.Define("Last", []string{"T"},
+		tcond(tref("T"), tarray(&TyInfer{Name: "U"}), tref("Last", tref("U")), tref("T")))
+	require.Equal(t, "number", e.Render(tref("Last", tarray(tarray(tprim("number"))))))
+}
+
+// TestUnboundedRecursionTerminatesViaBudget documents the Turing-complete
+// fragment: an alias whose argument grows without bound has no base case and no
+// repeating instantiation state, so the cycle cache never fires. The depth
+// budget stops it — the result stays symbolic (a deeply nested Grow<...> head)
+// instead of hanging. The point is termination, not the exact result, so we
+// assert only that it completes and stays headed by Grow.
+func TestUnboundedRecursionTerminatesViaBudget(t *testing.T) {
+	e := NewTypeEvaluator()
+	e.Define("Grow", []string{"T"}, tref("Grow", tarray(tref("T"))))
+	got := e.Render(tref("Grow", tprim("number")))
+	require.True(t, strings.HasPrefix(got, "Grow<"),
+		"unbounded recursion should terminate with a symbolic Grow<...> head, got %q", got)
 }
