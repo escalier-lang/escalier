@@ -14,14 +14,13 @@
 // Driven by a tiny hand-built expression IR (the parser bridge is a later
 // milestone).
 //
-// M1 simplification status: single-polarity elimination is implemented (a
-// variable that occurs in only one polarity is replaced by the union/
-// intersection of its bounds, so e.g. id(5) yields `5`, not `T0 | 5`).
-// Co-occurrence variable merging is NOT yet implemented — without it,
-// InnerCapturesOuterParam coalesces to the equivalent-but-verbose
-// `<T0, T1>(y: T0 & T1) -> [T0, T1]` rather than `<T0>(y: T0) -> [T0, T0]`
-// (see the skipped test). Records/usage inference (M2), `mut` invariance (M3),
-// and lifetimes (M4) remain out of scope.
+// M1 simplification: single-polarity elimination (a variable occurring in only
+// one polarity is replaced by the union/intersection of its bounds, so e.g.
+// id(5) yields `5`, not `T0 | 5`) plus co-occurrence variable merging (variables
+// that mutually co-occur in every polarity they appear in are unified, so
+// InnerCapturesOuterParam coalesces to `fn <T0>(y: T0) -> [T0, T0]`).
+// Records/usage inference (M2), `mut` invariance (M3), and lifetimes (M4) remain
+// out of scope.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
@@ -29,6 +28,7 @@ package simplesub
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -498,21 +498,237 @@ func analyze(st SimpleType, pol bool, occ map[int]map[bool]bool, seen map[polKey
 	}
 }
 
-type coalescer struct {
-	names   map[int]string
-	order   []string
-	counter int
-	occ     map[int]map[bool]bool
-	inProc  map[polKey]bool
+// ---- Co-occurrence merging support ----
+
+// collectVars gathers every variable reachable from st, following both bounds.
+func collectVars(st SimpleType, set map[int]*Variable) {
+	switch t := st.(type) {
+	case *Variable:
+		if _, ok := set[t.id]; ok {
+			return
+		}
+		set[t.id] = t
+		for _, b := range t.lowerBounds {
+			collectVars(b, set)
+		}
+		for _, b := range t.upperBounds {
+			collectVars(b, set)
+		}
+	case *Function:
+		for _, p := range t.params {
+			collectVars(p, set)
+		}
+		collectVars(t.ret, set)
+	case *Tuple:
+		for _, e := range t.elems {
+			collectVars(e, set)
+		}
+	}
 }
 
-func (c *coalescer) nameFor(v *Variable) string {
-	if n, ok := c.names[v.id]; ok {
+func containsVarBound(bounds []SimpleType, v *Variable) bool {
+	for _, b := range bounds {
+		if bv, ok := b.(*Variable); ok && bv.id == v.id {
+			return true
+		}
+	}
+	return false
+}
+
+// symmetrize records every var-to-var bound in both directions: if v <: w is
+// stored on v.upperBounds, ensure w.lowerBounds contains v (and vice versa).
+// constrain records bounds one-sided, but coalescing/co-occurrence needs each
+// variable to see all of its own subtyping facts. Mirroring is idempotent, so a
+// single pass over a snapshot of the edges suffices.
+func symmetrize(vars map[int]*Variable) {
+	type edge struct {
+		from  *Variable
+		to    *Variable
+		upper bool // add 'to' to from.upperBounds (else lowerBounds)
+	}
+	var edges []edge
+	for _, v := range vars {
+		for _, u := range v.upperBounds {
+			if uv, ok := u.(*Variable); ok {
+				edges = append(edges, edge{uv, v, false}) // v <: uv  =>  uv has lower v
+			}
+		}
+		for _, l := range v.lowerBounds {
+			if lv, ok := l.(*Variable); ok {
+				edges = append(edges, edge{lv, v, true}) // lv <: v  =>  lv has upper v
+			}
+		}
+	}
+	for _, e := range edges {
+		if e.upper {
+			if !containsVarBound(e.from.upperBounds, e.to) {
+				e.from.upperBounds = append(e.from.upperBounds, e.to)
+			}
+		} else {
+			if !containsVarBound(e.from.lowerBounds, e.to) {
+				e.from.lowerBounds = append(e.from.lowerBounds, e.to)
+			}
+		}
+	}
+}
+
+// gatherGroup collects the transitive same-polarity variable closure of v: the
+// variables that end up in the same flattened union (positive) or intersection
+// (negative) as v.
+func gatherGroup(v *Variable, pol bool, g map[int]bool) {
+	if g[v.id] {
+		return
+	}
+	g[v.id] = true
+	bounds := v.lowerBounds
+	if !pol {
+		bounds = v.upperBounds
+	}
+	for _, b := range bounds {
+		if bv, ok := b.(*Variable); ok {
+			gatherGroup(bv, pol, g)
+		}
+	}
+}
+
+// collectCoOcc records, per (variable, polarity), the set of variables that
+// co-occur with it (share a union/intersection node).
+func collectCoOcc(st SimpleType, pol bool, coOcc map[polKey]map[int]bool, seen map[polKey]bool) {
+	switch t := st.(type) {
+	case *Variable:
+		g := map[int]bool{}
+		gatherGroup(t, pol, g)
+		for a := range g {
+			for b := range g {
+				if a != b {
+					k := polKey{a, pol}
+					if coOcc[k] == nil {
+						coOcc[k] = map[int]bool{}
+					}
+					coOcc[k][b] = true
+				}
+			}
+		}
+		pk := polKey{t.id, pol}
+		if seen[pk] {
+			return
+		}
+		seen[pk] = true
+		bounds := t.lowerBounds
+		if !pol {
+			bounds = t.upperBounds
+		}
+		for _, b := range bounds {
+			collectCoOcc(b, pol, coOcc, seen)
+		}
+	case *Function:
+		for _, p := range t.params {
+			collectCoOcc(p, !pol, coOcc, seen)
+		}
+		collectCoOcc(t.ret, pol, coOcc, seen)
+	case *Tuple:
+		for _, e := range t.elems {
+			collectCoOcc(e, pol, coOcc, seen)
+		}
+	}
+}
+
+type unionFind struct{ parent map[int]int }
+
+func newUnionFind() *unionFind { return &unionFind{parent: map[int]int{}} }
+
+func (u *unionFind) find(x int) int {
+	p, ok := u.parent[x]
+	if !ok {
+		u.parent[x] = x
+		return x
+	}
+	if p != x {
+		r := u.find(p)
+		u.parent[x] = r
+		return r
+	}
+	return x
+}
+
+func (u *unionFind) union(a, b int) {
+	ra, rb := u.find(a), u.find(b)
+	if ra == rb {
+		return
+	}
+	if rb < ra { // keep the smaller id as representative for stable naming
+		ra, rb = rb, ra
+	}
+	u.parent[rb] = ra
+}
+
+// mutualCoOcc reports whether a and b co-occur in every polarity each occurs in
+// — the condition under which they can be soundly merged.
+func mutualCoOcc(a, b int, occ map[int]map[bool]bool, coOcc map[polKey]map[int]bool) bool {
+	if len(occ[a]) == 0 || len(occ[b]) == 0 {
+		return false
+	}
+	for pol := range occ[a] {
+		if !coOcc[polKey{a, pol}][b] {
+			return false
+		}
+	}
+	for pol := range occ[b] {
+		if !coOcc[polKey{b, pol}][a] {
+			return false
+		}
+	}
+	return true
+}
+
+func mergeCoOccurring(vars map[int]*Variable, occ map[int]map[bool]bool, coOcc map[polKey]map[int]bool) *unionFind {
+	uf := newUnionFind()
+	ids := make([]int, 0, len(vars))
+	for id := range vars {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	for i := 0; i < len(ids); i++ {
+		for j := i + 1; j < len(ids); j++ {
+			if mutualCoOcc(ids[i], ids[j], occ, coOcc) {
+				uf.union(ids[i], ids[j])
+			}
+		}
+	}
+	return uf
+}
+
+func dedupTypes(parts []type_system.Type) []type_system.Type {
+	seen := map[string]bool{}
+	out := parts[:0:0]
+	for _, p := range parts {
+		s := type_system.PrintType(p, type_system.PrintConfig{})
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ---- Coalescing ----
+
+type coalescer struct {
+	names     map[int]string // keyed by representative id
+	order     []string
+	counter   int
+	mergedOcc map[int]map[bool]bool // keyed by representative id
+	uf        *unionFind
+	inProc    map[polKey]bool // keyed by (representative id, polarity)
+}
+
+func (c *coalescer) nameForRep(rep int) string {
+	if n, ok := c.names[rep]; ok {
 		return n
 	}
 	n := "T" + strconv.Itoa(c.counter)
 	c.counter++
-	c.names[v.id] = n
+	c.names[rep] = n
 	c.order = append(c.order, n)
 	return n
 }
@@ -538,14 +754,15 @@ func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 		}
 		return type_system.NewTupleType(nil, elems...)
 	case *Variable:
-		bipolar := c.occ[t.id][true] && c.occ[t.id][false]
+		rep := c.uf.find(t.id)
+		bipolar := c.mergedOcc[rep][true] && c.mergedOcc[rep][false]
 		bounds := t.lowerBounds
 		if !pol {
 			bounds = t.upperBounds
 		}
-		pk := polKey{t.id, pol}
+		pk := polKey{rep, pol}
 		if c.inProc[pk] {
-			return type_system.NewTypeRefType(nil, c.nameFor(t), nil)
+			return type_system.NewTypeRefType(nil, c.nameForRep(rep), nil)
 		}
 		c.inProc[pk] = true
 		defer delete(c.inProc, pk)
@@ -558,30 +775,30 @@ func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 		if !bipolar {
 			// Single-polarity variable: drop the variable itself and keep only
 			// its bounds (positive => union of lowers, negative => inter of uppers).
-			switch len(boundTypes) {
-			case 0:
+			parts := dedupTypes(boundTypes)
+			if len(parts) == 0 {
 				if pol {
 					return type_system.NewNeverType(nil)
 				}
 				return type_system.NewUnknownType(nil)
-			case 1:
-				return boundTypes[0]
-			default:
-				return combine(pol, boundTypes)
 			}
+			return combine(pol, parts)
 		}
 
-		self := type_system.NewTypeRefType(nil, c.nameFor(t), nil)
-		if len(boundTypes) == 0 {
-			return self
-		}
-		return combine(pol, append([]type_system.Type{self}, boundTypes...))
+		self := type_system.NewTypeRefType(nil, c.nameForRep(rep), nil)
+		parts := dedupTypes(append([]type_system.Type{self}, boundTypes...))
+		return combine(pol, parts)
 	default:
 		panic(fmt.Sprintf("coalesce: unhandled %T", st))
 	}
 }
 
+// combine builds a union (positive) or intersection (negative) of parts,
+// returning the sole element directly when only one remains.
 func combine(pol bool, parts []type_system.Type) type_system.Type {
+	if len(parts) == 1 {
+		return parts[0]
+	}
 	if pol {
 		return type_system.NewUnionType(nil, parts...)
 	}
@@ -630,10 +847,31 @@ func Infer(term Term) (type_system.Type, []error) {
 	in := NewInferer()
 	st, errs := in.typeTerm(term, map[string]TypeScheme{}, 1)
 
+	// Mirror var-to-var bounds so each variable sees all its subtyping facts.
+	vars := map[int]*Variable{}
+	collectVars(st, vars)
+	symmetrize(vars)
+
+	// Occurrence + co-occurrence analysis, then merge variables that always
+	// co-occur.
 	occ := map[int]map[bool]bool{}
 	analyze(st, true, occ, map[polKey]bool{})
+	coOcc := map[polKey]map[int]bool{}
+	collectCoOcc(st, true, coOcc, map[polKey]bool{})
+	uf := mergeCoOccurring(vars, occ, coOcc)
 
-	c := &coalescer{names: map[int]string{}, occ: occ, inProc: map[polKey]bool{}}
+	mergedOcc := map[int]map[bool]bool{}
+	for id, pols := range occ {
+		rep := uf.find(id)
+		if mergedOcc[rep] == nil {
+			mergedOcc[rep] = map[bool]bool{}
+		}
+		for pol := range pols {
+			mergedOcc[rep][pol] = true
+		}
+	}
+
+	c := &coalescer{names: map[int]string{}, mergedOcc: mergedOcc, uf: uf, inProc: map[polKey]bool{}}
 	ty := c.coalesce(st, true)
 	if ft, ok := ty.(*type_system.FuncType); ok && len(c.order) > 0 {
 		tps := make([]*type_system.TypeParam, len(c.order))

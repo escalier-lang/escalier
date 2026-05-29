@@ -66,13 +66,10 @@ func TestApplyIdentitySimplifies(t *testing.T) {
 	require.Equal(t, "5", got)
 }
 
-// TestInnerCapturesOuterParam is a Category-A target that additionally requires
-// co-occurrence variable merging, which M1 does not yet implement. Without it
-// the result coalesces to the equivalent-but-verbose
-// "fn <T0, T1>(y: T0 & T1) -> [T0, T1]" instead of the expected compact form.
+// TestInnerCapturesOuterParam exercises co-occurrence variable merging: the
+// inner function captures the outer parameter y, so both results alias y and
+// must collapse to a single type variable.
 func TestInnerCapturesOuterParam(t *testing.T) {
-	t.Skip("needs co-occurrence variable merging in simplify (M1 follow-up)")
-
 	// fn outer(y) {
 	//   val inner = fn (x) { return y }
 	//   val a = inner(1)
