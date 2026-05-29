@@ -15,6 +15,10 @@ func fn1(param, ret SimpleType) *Function {
 	return &Function{params: []SimpleType{param}, ret: ret}
 }
 
+func fn2(p1, p2, ret SimpleType) *Function {
+	return &Function{params: []SimpleType{p1, p2}, ret: ret}
+}
+
 // TestInferIdentity is the M0 acceptance case: the identity function infers to
 // the generalized fn <T0>(x: T0) -> T0, rendered by the production printer.
 func TestInferIdentity(t *testing.T) {
@@ -41,8 +45,15 @@ func TestConstrain(t *testing.T) {
 		// return is covariant: (number)->number <: (number)->string requires
 		// number <: string, which fails.
 		{"func return covariant fail", fn1(num(), num()), fn1(num(), str()), true},
-		{"func arity mismatch", fn1(num(), num()),
-			&Function{params: []SimpleType{num(), num()}, ret: num()}, true},
+		// A function with fewer params is a subtype of one with more: the extra
+		// supertype param is ignored. (number)->number <: (number, number)->number.
+		{"fewer params subtype of more", fn1(num(), num()), fn2(num(), num(), num()), false},
+		// ...but more params cannot be a subtype of fewer.
+		{"more params not subtype of fewer", fn2(num(), num(), num()), fn1(num(), num()), true},
+		// the overlapping prefix is still checked contravariantly even when
+		// arity grows: (string)->number <: (number, number)->number needs
+		// number <: string, which fails.
+		{"fewer params but overlap contravariant fail", fn1(str(), num()), fn2(num(), num(), num()), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

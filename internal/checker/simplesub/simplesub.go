@@ -108,14 +108,20 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 		}
 	case *Function:
 		if r, ok := rhs.(*Function); ok {
-			if len(l.params) != len(r.params) {
+			// A function with FEWER parameters is a subtype of one with more:
+			// the supertype's extra trailing parameters are simply ignored by
+			// the subtype (JS/TS callback semantics). So l <: r requires
+			// len(l.params) <= len(r.params); only the overlapping prefix is
+			// related, and a subtype that demands MORE params than the
+			// supertype provides is rejected.
+			if len(l.params) > len(r.params) {
 				return []error{fmt.Errorf(
 					"cannot constrain function of arity %d <: function of arity %d",
 					len(l.params), len(r.params))}
 			}
 			var errs []error
 			for i := range l.params {
-				// parameters are contravariant
+				// overlapping parameters are contravariant
 				errs = append(errs, in.constrain(r.params[i], l.params[i], seen)...)
 			}
 			// return type is covariant
