@@ -465,6 +465,60 @@ func TestLifetimePassesThroughIdentity(t *testing.T) {
 	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", got)
 }
 
+// recExpr builds a record-literal term from name, term pairs.
+func recExpr(pairs ...any) *RecordExpr {
+	fields := map[string]Term{}
+	for i := 0; i < len(pairs); i += 2 {
+		fields[pairs[i].(string)] = pairs[i+1].(Term)
+	}
+	return &RecordExpr{Fields: fields}
+}
+
+// TestPropertyLevelLifetimes: a record can carry distinct lifetimes per
+// property, because each property's value is itself a borrow with its own
+// lifetime. Storing two differently-borrowed params into a fresh record yields
+// per-property lifetimes on the result — no lifetime sits on the outer (freshly
+// allocated) record.
+//
+//	fn wrap(a: mut {x: number}, b: mut {x: number}) { return {head: a, tail: b} }
+//	  ==>  fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number})
+//	         -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}
+//
+// This matches the production checker's ObjectLiteral_PropertyLevelDistinctLifetimes.
+// It falls out of the value-based lifetime model for free: each field is the
+// corresponding parameter value, carrying its own lifetime, and coalescing
+// renders each independently.
+func TestPropertyLevelLifetimes(t *testing.T) {
+	wrap := &Lam{
+		Params:     []string{"a", "b"},
+		ParamTypes: []SimpleType{mutRec("x", num()), mutRec("x", num())},
+		Body:       recExpr("head", vr("a"), "tail", vr("b")),
+	}
+	got, errs := Render(wrap)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> {head: mut 'a {x: number}, tail: mut 'b {x: number}}",
+		got)
+}
+
+// TestPropertyLevelLifetimes_SharedSource: storing the SAME borrow into two
+// properties gives both the same lifetime (one parameter, one lifetime).
+//
+//	fn dup(a: mut {x: number}) { return {head: a, tail: a} }
+//	  ==>  fn <'a>(a: mut 'a {x: number}) -> {head: mut 'a {x: number}, tail: mut 'a {x: number}}
+func TestPropertyLevelLifetimes_SharedSource(t *testing.T) {
+	dup := &Lam{
+		Params:     []string{"a"},
+		ParamTypes: []SimpleType{mutRec("x", num())},
+		Body:       recExpr("head", vr("a"), "tail", vr("a")),
+	}
+	got, errs := Render(dup)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a>(a: mut 'a {x: number}) -> {head: mut 'a {x: number}, tail: mut 'a {x: number}}",
+		got)
+}
+
 // TestConstrain exercises the constrain primitive directly.
 func TestConstrain(t *testing.T) {
 	tests := []struct {
