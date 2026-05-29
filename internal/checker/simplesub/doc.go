@@ -93,6 +93,18 @@
 // reduce cleanly over recursive types because the operand coalesces to its finite
 // knot first (`keyof List<number>` ⇒ `"head" | "tail"`).
 //
+// CheckRegular (regularity.go) is an optional level-2 static check that rejects
+// *expanding* recursion up front: an alias is flagged when a recursive call (a
+// reference into its strongly-connected component) passes a formal parameter
+// nested under a type constructor, so the parameter grows each lap and the
+// reachable-instantiation set is infinite. It accepts regular recursion (List,
+// Json, DeepPartial-on-T[P], conditionals recursing on an infer binding) and
+// rejects expanding recursion (Grow), with a precise definition-time diagnostic.
+// It is sound but incomplete (an expanding alias gated on a base-case conditional
+// terminates yet is still rejected — deciding otherwise is the halting problem),
+// so the runtime budget remains the backstop. The check and the budget are
+// complementary: a precise early error where decidable, safe termination always.
+//
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
 //
