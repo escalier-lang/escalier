@@ -19,13 +19,20 @@ import (
 // already on the current path counts as success, so a recursive type compared
 // against another terminates without ever fully unfolding.
 //
+// Two cheap structural shortcuts run before any forcing: reflexivity (identical
+// types are subtypes by axiom — so even Grow<number> <: Grow<number> is settled
+// with no expansion, since the two LazyRefs share a canonical key) and the
+// coinductive seen-set.
+//
 // The payoff and its limit:
 //   - REGULAR recursive types (List, Json-shaped) unfold to trees with finitely
 //     many distinct subterms, so the seen-set always closes the loop: subtyping
 //     is decided COMPLETELY with NO budget and NO CheckRegular.
 //   - NON-REGULAR recursion (Grow<T> = Grow<Array<T>>) unfolds to infinitely many
-//     distinct subterms; the seen-set never hits, so forcing it still needs the
-//     depth budget. Laziness relocates the limit; it does not remove it.
+//     distinct subterms. Reflexivity handles the X <: X case for free, but
+//     comparing two DIFFERENT non-regular instantiations (Grow<number> vs
+//     Grow<string>) the seen-set never closes, so it still needs the depth
+//     budget. Laziness relocates the limit; it does not remove it.
 
 // LazyType is a structural type whose alias references are expanded on demand.
 type LazyType interface{ isLazyType() }
@@ -198,10 +205,22 @@ func (a *LazyAliases) Subtypes(lhs, rhs LazyType) (ok bool, budgetHit bool) {
 }
 
 func (s *subtyper) sub(a, b LazyType) bool {
+	ka, kb := lazyKey(a), lazyKey(b)
+
+	// Reflexivity: identical types are subtypes by axiom, with no expansion. This
+	// settles X <: X for any X — including a non-regular recursive instantiation
+	// like Grow<number> <: Grow<number> — without forcing either side, since the
+	// two LazyRefs share a canonical key. (Without this, one-sided forcing would
+	// grow the left unboundedly against a fixed right and only the budget would
+	// stop it.)
+	if ka == kb {
+		return true
+	}
+
 	// Coinductive guard: if this exact pair is already being proven on the
 	// current path, assume it holds (greatest fixed point). This is what makes
 	// recursive-vs-recursive subtyping terminate.
-	key := subPair{lazyKey(a), lazyKey(b)}
+	key := subPair{ka, kb}
 	if s.seen[key] {
 		return true
 	}

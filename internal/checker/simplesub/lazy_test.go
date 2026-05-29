@@ -58,20 +58,36 @@ func TestLazy_RegularNegativeTerminates(t *testing.T) {
 	require.False(t, budgetHit, "the mismatch terminates structurally, not via the budget")
 }
 
-// TestLazy_NonRegularNeedsBudget is the relocated-limit case: Grow<number>, a
-// non-regular recursive alias, unfolds to infinitely many distinct
-// instantiations, so the coinductive seen-set NEVER closes the loop — only the
-// depth budget terminates the query. This is the precise sense in which laziness
-// relocates the decidability limit rather than removing it.
+// TestLazy_NonRegularReflexiveNoBudget: identical types are subtypes by
+// reflexivity, with no expansion — even a non-regular instantiation. So
+// Grow<number> <: Grow<number> succeeds immediately without forcing either side
+// and without touching the budget. (The two LazyRefs share a canonical key, so
+// the reflexivity short-circuit fires before any unfolding.)
 //
 //	type Grow<T> = Grow<Array<T>>
+func TestLazy_NonRegularReflexiveNoBudget(t *testing.T) {
+	a := NewLazyAliases()
+	a.Define("Grow", []string{"T"}, a.Ref("Grow", &LazyCtor{Name: "Array", Args: []LazyType{LazyVar("T")}}))
+
+	ok, budgetHit := a.Subtypes(a.Ref("Grow", lnum()), a.Ref("Grow", lnum()))
+	require.True(t, ok, "Grow<number> is a subtype of itself by reflexivity")
+	require.False(t, budgetHit, "reflexivity settles it with no expansion, so the budget is untouched")
+}
+
+// TestLazy_NonRegularNeedsBudget is the relocated-limit case: comparing two
+// DIFFERENT non-regular instantiations (Grow<number> vs Grow<string>) can't be
+// saved by reflexivity. Each unfolds to infinitely many distinct instantiations
+// (Grow<Array<number>>, Grow<Array<Array<number>>>, …) that never coincide with
+// the other side, so the coinductive seen-set never closes the loop — only the
+// depth budget terminates the query. This is the precise sense in which laziness
+// relocates the decidability limit rather than removing it.
 func TestLazy_NonRegularNeedsBudget(t *testing.T) {
 	a := NewLazyAliases()
 	a.Define("Grow", []string{"T"}, a.Ref("Grow", &LazyCtor{Name: "Array", Args: []LazyType{LazyVar("T")}}))
 
-	_, budgetHit := a.Subtypes(a.Ref("Grow", lnum()), a.Ref("Grow", lnum()))
+	_, budgetHit := a.Subtypes(a.Ref("Grow", lnum()), a.Ref("Grow", lstr()))
 	require.True(t, budgetHit,
-		"non-regular recursion cannot close via the seen-set; only the budget terminates it")
+		"distinct non-regular instantiations can't close via the seen-set; only the budget terminates it")
 }
 
 // TestLazy_ForcedOnDemand: a lazy alias is only expanded when the subtype check
