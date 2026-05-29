@@ -340,6 +340,10 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		// reference so the readonly-twin rewrite in ConvertBucket can
 		// flip it to Escalier's immutable `Array<T>` spelling (and
 		// leave `mut Array<T>` to be wrapped onto the plain form).
+		//
+		// t.Readonly is only set for the `readonly T[]` shorthand;
+		// a source written as `ReadonlyArray<T>` lands in the
+		// TypeReference case above instead.
 		name := "Array"
 		if t.Readonly {
 			name = "ReadonlyArray"
