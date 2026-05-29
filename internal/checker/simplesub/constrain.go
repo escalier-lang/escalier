@@ -116,6 +116,10 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 		if _, ok := rhs.(*Variable); !ok {
 			return in.constrain(l.inner, rhs, seen)
 		}
+	case *Void:
+		if _, ok := rhs.(*Void); ok {
+			return nil
+		}
 	}
 
 	// lhs is a variable.
@@ -222,10 +226,23 @@ func describe(st SimpleType) string {
 		return "record"
 	case *Mut:
 		return "mut " + describe(t.inner)
+	case *Void:
+		return "void"
 	case *Variable:
 		return "t" + strconv.Itoa(t.id)
 	}
 	return "?"
+}
+
+// widen generalizes a literal to its primitive type. A value stored through a
+// mutable reference is observed at its widened type — writing `5` into a field
+// makes that field `number`, not the literal `5`, because a later write could
+// store any number. Non-literals are returned unchanged.
+func widen(st SimpleType) SimpleType {
+	if l, ok := st.(*Literal); ok {
+		return &Primitive{name: litKindPrim(l)}
+	}
+	return st
 }
 
 func litKindPrim(l *Literal) string {

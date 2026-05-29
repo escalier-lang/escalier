@@ -30,8 +30,16 @@
 // constraining two Muts forces equality in both directions. This is the
 // highest-risk gate — invariance is not native to algebraic subtyping — and it
 // shows the decomposition encodes it cleanly: e.g. `mut {x,y} <: mut {x}` fails
-// even though immutable `{x,y} <: {x}` succeeds by width subtyping. Lifetimes
-// (M4) remain out of scope.
+// even though immutable `{x,y} <: {x}` succeeds by width subtyping.
+//
+// M3 also infers mutability from usage: a field assignment `obj.x = v`
+// constrains the receiver to `mut {x: widen(typeof v)}` (literals widen to their
+// primitive on write), and multiple writes merge into one mutable record, so
+// `fn foo(obj) { obj.x = 5; obj.y = 10 }` infers
+// `fn (obj: mut {x: number, y: number}) -> void`. Known limitation: a field that
+// is both read and written is not yet collapsed (read vs. write requirements are
+// separate upper bounds with no shared field variable). Lifetimes (M4) remain
+// out of scope.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.

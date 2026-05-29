@@ -44,6 +44,18 @@ type Sel struct {
 	Name     string
 }
 
+// Assign is a field assignment statement, e.g. obj.x = v. Its type is void; its
+// effect is to require the receiver to be mutable in that field.
+type Assign struct {
+	Receiver Term
+	Name     string
+	Value    Term
+}
+
+// Block is a sequence of statements/expressions. Each is typed for its effects;
+// the block's type is that of the last term, or void when empty.
+type Block struct{ Exprs []Term }
+
 func (*Lit) isTerm()        {}
 func (*Var) isTerm()        {}
 func (*Lam) isTerm()        {}
@@ -52,6 +64,8 @@ func (*Let) isTerm()        {}
 func (*TupleExpr) isTerm()  {}
 func (*RecordExpr) isTerm() {}
 func (*Sel) isTerm()        {}
+func (*Assign) isTerm()     {}
+func (*Block) isTerm()      {}
 
 func litToSimple(t *Lit) *Literal {
 	return &Literal{kind: t.Kind, str: t.Str, num: t.Num, b: t.Bool}
@@ -133,6 +147,28 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 		errs = append(errs, in.constrain(recvT,
 			&Record{fields: map[string]SimpleType{t.Name: res}}, map[constraintKey]bool{})...)
 		return res, errs
+	case *Assign:
+		// Field assignment drives mutability inference: obj.x = v requires the
+		// receiver to be a subtype of `mut {x: widen(typeof v)}`. The mut forces
+		// the receiver's field invariant, and widen lifts a literal to its
+		// primitive (writing 5 makes the field `number`, since a later write
+		// could store any number). Result type is void.
+		recvT, errs := in.typeTerm(t.Receiver, ctx, lvl)
+		valT, ve := in.typeTerm(t.Value, ctx, lvl)
+		errs = append(errs, ve...)
+		errs = append(errs, in.constrain(recvT,
+			&Mut{inner: &Record{fields: map[string]SimpleType{t.Name: widen(valT)}}},
+			map[constraintKey]bool{})...)
+		return &Void{}, errs
+	case *Block:
+		var errs []error
+		var last SimpleType = &Void{}
+		for _, e := range t.Exprs {
+			et, ee := in.typeTerm(e, ctx, lvl)
+			last = et
+			errs = append(errs, ee...)
+		}
+		return last, errs
 	default:
 		panic(fmt.Sprintf("typeTerm: unhandled %T", term))
 	}

@@ -67,6 +67,8 @@ func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
 		// via the read (current-polarity) view. Variables inside are bipolar, so
 		// they survive simplification and print as consistent type parameters.
 		return type_system.NewMutType(nil, c.coalesce(t.inner, pol))
+	case *Void:
+		return type_system.NewVoidType(nil)
 	case *Variable:
 		rep := c.uf.find(t.id)
 		bipolar := c.mergedOccurrences[rep][Positive] && c.mergedOccurrences[rep][Negative]
@@ -123,19 +125,55 @@ func combine(pol Polarity, parts []type_system.Type) type_system.Type {
 // (the meet): field sets are unioned, and a field shared by several objects
 // becomes the intersection of its types. This turns `{bar: T0} & {baz: T1}`
 // into `{bar: T0, baz: T1}` — how member-access requirements on one receiver
-// combine.
+// combine. Objects wrapped in `mut` are merged the same way, with the result
+// re-wrapped: `mut {x} & mut {y}` becomes `mut {x, y}` — how multiple field
+// writes to one receiver combine.
 func mergeObjects(parts []type_system.Type) []type_system.Type {
-	var objs []*type_system.ObjectType
+	var bareObjs, mutObjs []*type_system.ObjectType
 	var others []type_system.Type
 	for _, p := range parts {
-		if o, ok := p.(*type_system.ObjectType); ok {
-			objs = append(objs, o)
-		} else {
+		switch t := p.(type) {
+		case *type_system.ObjectType:
+			bareObjs = append(bareObjs, t)
+		case *type_system.MutType:
+			if o, ok := t.Type.(*type_system.ObjectType); ok {
+				mutObjs = append(mutObjs, o)
+				continue
+			}
+			others = append(others, p)
+		default:
 			others = append(others, p)
 		}
 	}
+
+	var merged []type_system.Type
+	if m := mergeObjectGroup(bareObjs); m != nil {
+		merged = append(merged, m)
+	} else {
+		for _, o := range bareObjs {
+			merged = append(merged, o)
+		}
+	}
+	if m := mergeObjectGroup(mutObjs); m != nil {
+		merged = append(merged, type_system.NewMutType(nil, m))
+	} else {
+		for _, o := range mutObjs {
+			merged = append(merged, type_system.NewMutType(nil, o))
+		}
+	}
+
+	if len(merged) == 0 {
+		return parts // nothing mergeable; leave as-is
+	}
+	return append(merged, others...)
+}
+
+// mergeObjectGroup merges a group of object types into a single object (the
+// meet), or returns nil if there are fewer than two. A field shared by several
+// objects becomes the intersection of its types.
+func mergeObjectGroup(objs []*type_system.ObjectType) *type_system.ObjectType {
 	if len(objs) < 2 {
-		return parts
+		return nil
 	}
 	byName := map[string]type_system.Type{}
 	var order []string
@@ -159,8 +197,7 @@ func mergeObjects(parts []type_system.Type) []type_system.Type {
 	for i, name := range order {
 		elems[i] = type_system.NewPropertyElem(type_system.NewStrKey(name), byName[name])
 	}
-	merged := type_system.NewObjectType(nil, elems)
-	return append([]type_system.Type{merged}, others...)
+	return type_system.NewObjectType(nil, elems)
 }
 
 // dedupTypes removes parts that render to the same string, preserving order.

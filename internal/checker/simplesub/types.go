@@ -59,6 +59,10 @@ type Record struct{ fields map[string]SimpleType }
 // directions are emitted.
 type Mut struct{ inner SimpleType }
 
+// Void is the result type of a statement block with no value (e.g. a function
+// body that only performs assignments).
+type Void struct{}
+
 func (*Variable) isSimpleType()  {}
 func (*Primitive) isSimpleType() {}
 func (*Literal) isSimpleType()   {}
@@ -66,6 +70,7 @@ func (*Function) isSimpleType()  {}
 func (*Tuple) isSimpleType()     {}
 func (*Record) isSimpleType()    {}
 func (*Mut) isSimpleType()       {}
+func (*Void) isSimpleType()      {}
 
 func (l *Literal) eq(o *Literal) bool {
 	if l.kind != o.kind {
@@ -109,6 +114,7 @@ func levelOf(ty SimpleType) int {
 	case *Mut:
 		return levelOf(t.inner)
 	default:
+		// Primitive, Literal, Void: no nested variables.
 		return 0
 	}
 }

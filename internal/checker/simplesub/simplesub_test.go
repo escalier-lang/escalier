@@ -246,6 +246,64 @@ func TestMutFieldIsInvariantTypeParam(t *testing.T) {
 	require.Equal(t, "fn <T0>(p: mut {x: T0}) -> T0", got)
 }
 
+// assign builds a field-assignment statement: obj.name = value.
+func assign(recv Term, name string, value Term) *Assign {
+	return &Assign{Receiver: recv, Name: name, Value: value}
+}
+
+// TestInferMutFromWrites is the M3-extension headline: writing to a parameter's
+// fields infers a mutable record parameter, with literals widened to their
+// primitives and multiple writes merged into one record.
+//
+//	fn foo(obj) { obj.x = 5; obj.y = 10 }
+//	  ==>  fn (obj: mut {x: number, y: number}) -> void
+func TestInferMutFromWrites(t *testing.T) {
+	foo := &Lam{Params: []string{"obj"}, Body: &Block{Exprs: []Term{
+		assign(vr("obj"), "x", litNum(5)),
+		assign(vr("obj"), "y", litNum(10)),
+	}}}
+	got, errs := Render(foo)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {x: number, y: number}) -> void", got)
+}
+
+// TestWriteWidensLiteral isolates the widening rule: a single write of a literal
+// infers the field at the literal's primitive type, not the literal.
+//
+//	fn foo(obj) { obj.x = 5 }  ==>  fn (obj: mut {x: number}) -> void
+func TestWriteWidensLiteral(t *testing.T) {
+	foo := &Lam{Params: []string{"obj"}, Body: &Block{Exprs: []Term{
+		assign(vr("obj"), "x", litNum(5)),
+	}}}
+	got, errs := Render(foo)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {x: number}) -> void", got)
+}
+
+// TestReadAndWriteSameField documents a known limitation. Reading and writing
+// the same field of a parameter should collapse to the written (widened) type:
+//
+//	fn foo(obj) { obj.x = 5; return obj.x }  ==>  fn (obj: mut {x: number}) -> number
+//
+// But the read requirement ({x: β}) and the write requirement (mut {x: number})
+// are independent upper bounds on the receiver, and a parameter has no lower
+// bound to flow `number` into the read result β. They only meet at coalescing,
+// giving the equivalent-but-unmerged `{x: T0} & mut {x: number}) -> T0`.
+// Collapsing this needs per-receiver shared field variables (reads and writes
+// referencing the same field variable), which also touches M2's read path — a
+// focused follow-up, not part of this extension.
+func TestReadAndWriteSameField(t *testing.T) {
+	t.Skip("needs shared per-field variables to connect read and write requirements")
+
+	foo := &Lam{Params: []string{"obj"}, Body: &Block{Exprs: []Term{
+		assign(vr("obj"), "x", litNum(5)),
+		sel(vr("obj"), "x"),
+	}}}
+	got, errs := Render(foo)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {x: number}) -> number", got)
+}
+
 // TestConstrain exercises the constrain primitive directly.
 func TestConstrain(t *testing.T) {
 	tests := []struct {
