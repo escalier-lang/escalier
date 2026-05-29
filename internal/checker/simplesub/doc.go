@@ -76,11 +76,10 @@
 // solve. A ResidualOp (keyof / indexed access over a value-inference SimpleType)
 // is inert during constraint solving — it carries no bounds and constrain never
 // touches it, so Design A adds NO new mutable solver state — and reduces at
-// coalescing once its operand has a concrete shape, in a fixpoint bounded by
-// maxResidualRounds (the termination guard). So `fn f(x) { x.a; x.b; return
-// keyof typeof x }` reduces the keyof to `"a" | "b"` post-solve, where M5 would
-// have stalled. An operand that never gains object structure leaves the operator
-// symbolic (`keyof unknown`) as the fixpoint's terminating result. Designs B/C
+// coalescing once its operand has a concrete shape. So `fn f(x) { x.a; x.b;
+// return keyof typeof x }` reduces the keyof to `"a" | "b"` post-solve, where M5
+// would have stalled. An operand that never gains object structure leaves the
+// operator symbolic (`keyof unknown`). Designs B/C
 // remain out of scope; M7 validates only the recommended Design-A backbone.
 //
 // Recursive type aliases (`type List<T> = {head: T, tail: List<T> | Null}`) are

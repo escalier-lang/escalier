@@ -16,9 +16,10 @@ import (
 // Design A's defining property (vs. designs B/C): the residual node adds NO new
 // mutable solver state. constrain never touches it (it carries no bounds and
 // participates in no subtype relation while residual); all reduction happens
-// after coalescing. The fixpoint re-runs reduce → coalesce until nothing
-// changes, bounded by maxResidualRounds so an irreducible/cyclic operator
-// terminates rather than loops.
+// after coalescing. Reduction is a single step over the operand's coalesced
+// shape (reduceResidual) — recursion/termination concerns live in the type-level
+// evaluator (typeops.go), whose cycle cache + depth budget make even a recursive
+// operand coalesce to a finite type before the operator applies.
 
 // ResidualKind is which type operator a ResidualOp represents.
 type ResidualKind int
