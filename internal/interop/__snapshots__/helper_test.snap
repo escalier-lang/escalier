@@ -256,7 +256,7 @@
 [TestConvertTypeAnn/readonly_array - 1]
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
-        Name: "Array",
+        Name: "ReadonlyArray",
         span: 1:1-1:18,
     },
     TypeArgs: []ast.TypeAnn{

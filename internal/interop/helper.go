@@ -335,9 +335,21 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		if err != nil {
 			return nil, fmt.Errorf("converting array element type: %w", err)
 		}
-		// Array types in TypeScript are represented as TypeRef to Array<T>
-		arrayIdent := ast.NewIdentifier("Array", t.Span())
-		return ast.NewRefTypeAnn(arrayIdent, []ast.TypeAnn{elemType}, t.Span()), nil
+		// Array types in TypeScript are represented as TypeRef to
+		// Array<T>; the `readonly` modifier maps to a ReadonlyArray<T>
+		// reference so the readonly-twin rewrite in ConvertBucket can
+		// flip it to Escalier's immutable `Array<T>` spelling (and
+		// leave `mut Array<T>` to be wrapped onto the plain form).
+		//
+		// t.Readonly is only set for the `readonly T[]` shorthand;
+		// a source written as `ReadonlyArray<T>` lands in the
+		// TypeReference case above instead.
+		name := "Array"
+		if t.Readonly {
+			name = "ReadonlyArray"
+		}
+		ident := ast.NewIdentifier(name, t.Span())
+		return ast.NewRefTypeAnn(ident, []ast.TypeAnn{elemType}, t.Span()), nil
 	case *dts_parser.TupleType:
 		elems := make([]ast.TypeAnn, len(t.Elements))
 		for i, elem := range t.Elements {

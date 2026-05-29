@@ -8,7 +8,9 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
 
@@ -456,6 +458,80 @@ declare var Foo: FooConstructor;
 		"readonly-only members should be folded onto the mutable class")
 	require.True(t, names.Contains("shared"))
 	require.True(t, names.Contains("mutating"))
+}
+
+func TestConvertBucket_ReadonlyTwinRewritesRefs(t *testing.T) {
+	t.Parallel()
+	// References to the readonly twin should be renamed to the
+	// mutable name; references to the mutable name should be wrapped
+	// in MutableTypeAnn. Both bare-name and `T[]` (and `readonly T[]`)
+	// shorthands flow through the same rewrite because the converter
+	// desugars them to `Array<T>` / `ReadonlyArray<T>` first.
+	lib := parseLib(t, "lib.es5.d.ts", `
+interface ReadonlyArray<T> {
+    readonly length: number;
+    concat(...items: ConcatArray<T>[]): T[];
+}
+interface Array<T> {
+    length: number;
+    push(...items: T[]): number;
+    concat(items: ReadonlyArray<T>): T[];
+    readArr(items: readonly T[]): void;
+}
+interface ArrayConstructor {
+    new <T>(): Array<T>;
+    readonly prototype: Array<any>;
+}
+declare var Array: ArrayConstructor;
+`)
+	res, err := PartitionLib([]LibInput{lib})
+	require.NoError(t, err)
+
+	mod, err := ConvertBucket(res.Buckets["std:array"])
+	require.NoError(t, err)
+
+	rootNS, _ := mod.Module.Namespaces.Get("")
+	var arrayClass *ast.ClassDecl
+	for _, decl := range rootNS.Decls {
+		if cd, ok := decl.(*ast.ClassDecl); ok && cd.Name.Name == "Array" {
+			arrayClass = cd
+		}
+	}
+	require.NotNil(t, arrayClass)
+
+	// Per-method assertions are replaced with a single inline snapshot
+	// of the printed class so the param/return rewrites are reviewed
+	// holistically. The expected output covers:
+	//   - push(...items: T[]) → `mut Array<T>` (T[] desugared then wrapped)
+	//   - concat(items: ReadonlyArray<T>) → renamed to `Array<T>`;
+	//     return `T[]` wrapped to `mut Array<T>`
+	//   - readArr(readonly T[]) → desugared then renamed to `Array<T>`
+	printed, err := printer.Print(arrayClass, printer.DefaultOptions())
+	require.NoError(t, err)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Array")
+export declare class Array<T> {
+    length: number,
+    push(mut self, ...items: mut Array<T>) -> number,
+    concat(self, items: Array<T>) -> mut Array<T>,
+    readArr(mut self, items: Array<T>) -> void,
+    constructor(mut self),
+    static readonly prototype: mut Array<any>
+}`))
+
+	// The synthesised `type ReadonlyArray<T> = Array<T>` alias's RHS
+	// must remain a bare TypeRef — the rewrite pass runs before
+	// appendReadonlyAliases, so the alias is appended after the
+	// wrapping pass and its `Array<T>` reference stays unwrapped.
+	var alias *ast.TypeDecl
+	for _, decl := range rootNS.Decls {
+		if td, ok := decl.(*ast.TypeDecl); ok && td.Name.Name == "ReadonlyArray" {
+			alias = td
+		}
+	}
+	require.NotNil(t, alias)
+	rhs, ok := alias.TypeAnn.(*ast.TypeRefTypeAnn)
+	require.True(t, ok, "ReadonlyArray alias RHS should be a bare TypeRef, got %T", alias.TypeAnn)
+	require.Equal(t, "Array", ast.QualIdentToString(rhs.Name))
 }
 
 func TestReportPartition_FormatsSortedSummary(t *testing.T) {
