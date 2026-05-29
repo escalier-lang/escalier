@@ -434,6 +434,37 @@ func TestAliasStructuralSubtyping(t *testing.T) {
 	require.NotEmpty(t, in.Constrain(point, rec("x", str())))
 }
 
+// TestLifetimePassesThroughIdentity verifies that a borrow's lifetime flows
+// THROUGH the polymorphic identity, even though identity is typed as
+// fn <T0>(x: T0) -> T0 with no lifetime on its signature. Lifetimes ride on
+// values, not on the type scheme: instantiating id at the call site lets the
+// argument's mut-record (carrying lifetime 'a) flow into the result.
+//
+//	fn wrapper(p: mut {x: number}) {
+//	  val id = fn (x) { return x }   // id : fn <T0>(x: T0) -> T0
+//	  return id(p)
+//	}  ==>  fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}
+func TestLifetimePassesThroughIdentity(t *testing.T) {
+	// Precondition: the identity on its own carries no lifetime.
+	idTy, idErrs := Render(lam("x", vr("x")))
+	require.Empty(t, idErrs)
+	require.Equal(t, "fn <T0>(x: T0) -> T0", idTy)
+
+	// Applying that same polymorphic identity to a mut borrow passes the
+	// borrow's lifetime through to the result.
+	wrapper := &Lam{
+		Params:     []string{"p"},
+		ParamTypes: []SimpleType{mutRec("x", num())},
+		Body: &Let{
+			Name: "id", Rhs: lam("x", vr("x")),
+			Body: &App{Fn: vr("id"), Arg: vr("p")},
+		},
+	}
+	got, errs := Render(wrapper)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", got)
+}
+
 // TestConstrain exercises the constrain primitive directly.
 func TestConstrain(t *testing.T) {
 	tests := []struct {
