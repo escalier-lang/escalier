@@ -1033,7 +1033,7 @@ func TestClassElemDocs(t *testing.T) {
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `class Foo { /** trail */ }`})
 		require.Len(t, errors, 1)
-		require.Contains(t, errors[0].Message, "JSDoc comment is not attached to a declaration")
+		require.Equal(t, "JSDoc comment is not attached to a declaration", errors[0].Message)
 		require.Len(t, decls, 1)
 		cls, ok := decls[0].(*ast.ClassDecl)
 		require.True(t, ok)
@@ -1049,7 +1049,7 @@ func TestClassElemDocs(t *testing.T) {
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `class Foo { x: number, /** trail */ }`})
 		require.Len(t, errors, 1)
-		require.Contains(t, errors[0].Message, "JSDoc comment is not attached to a declaration")
+		require.Equal(t, "JSDoc comment is not attached to a declaration", errors[0].Message)
 		require.Len(t, decls, 1)
 		cls, ok := decls[0].(*ast.ClassDecl)
 		require.True(t, ok)
@@ -1175,7 +1175,7 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `interface Foo { /** trail */ }`})
 		require.Len(t, errors, 1)
-		require.Contains(t, errors[0].Message, "JSDoc comment is not attached to a declaration")
+		require.Equal(t, "JSDoc comment is not attached to a declaration", errors[0].Message)
 		require.Len(t, decls, 1)
 		iface, ok := decls[0].(*ast.InterfaceDecl)
 		require.True(t, ok)
@@ -1192,7 +1192,7 @@ func TestObjTypeAnnElemDocs(t *testing.T) {
 		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
 			Contents: `interface I { /** d */ x }`})
 		require.Len(t, errors, 1)
-		require.Contains(t, errors[0].Message, "expected type annotation")
+		require.Equal(t, "expected type annotation", errors[0].Message)
 		require.Len(t, decls, 1)
 		iface := decls[0].(*ast.InterfaceDecl)
 		require.Len(t, iface.TypeAnn.Elems, 1)
