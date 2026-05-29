@@ -62,6 +62,15 @@
 // carries a lifetime — only `mut` borrows do — matching the production checker,
 // where even an unbounded `mut T` is lifetime-free.
 //
+// M5 adds "Baseline D" type-level operators (see typeops.go), kept separate from
+// the value-expression solver: conditional types (`if T : U { X } else { Y }`,
+// with `infer` and union distribution), `keyof T`, and indexed access `T[K]`.
+// An operator reduces only when its operands are ground (no unresolved type
+// parameter) — the common case of a generic alias applied to concrete arguments
+// — and otherwise stays symbolic (`keyof Foo`, `Foo["x"]`). This is a TypeEvaluator
+// over TyExprs producing concrete type_system.Types directly; the suspend-until-
+// coalescing designs (A/B/C in the plan) are deliberately out of scope.
+//
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
 //
