@@ -183,6 +183,12 @@ func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
 		return type_system.NewMutType(nil, c.coalesce(t.inner, pol))
 	case *Void:
 		return type_system.NewVoidType(nil)
+	case *Alias:
+		ref := type_system.NewTypeRefType(nil, t.name, nil)
+		if t.lt != nil {
+			ref.Lifetime = c.coalesceLifetime(t.lt, pol)
+		}
+		return ref
 	case *Variable:
 		rep := c.uf.find(t.id)
 		bipolar := c.mergedOccurrences[rep][Positive] && c.mergedOccurrences[rep][Negative]

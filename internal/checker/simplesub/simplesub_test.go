@@ -303,6 +303,9 @@ func TestReadAndWriteSameField(t *testing.T) {
 // mutRec builds a mut record parameter type from field pairs.
 func mutRec(pairs ...any) *Mut { return mut(rec(pairs...)) }
 
+// alias builds a named type alias over a body (e.g. type Point = {x: number}).
+func alias(name string, body SimpleType) *Alias { return &Alias{name: name, body: body} }
+
 // TestIdentityRefReturn: returning a mut parameter shares its lifetime by value
 // identity, so the same lifetime variable appears on parameter and result.
 //
@@ -379,6 +382,56 @@ func TestEscapingRefIntoStatic(t *testing.T) {
 	got, errs := Render(cache)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (item: mut 'static {x: number}) -> void", got)
+}
+
+// TestAliasRefReturn: a lifetime attaches to a type alias just as it does to a
+// record. Returning a `mut` borrow of an alias-typed parameter shares the
+// borrow's lifetime, which renders before the alias name.
+//
+//	type Point = {x: number}
+//	fn identity(p: mut Point) { return p }
+//	  ==>  fn <'a>(p: mut 'a Point) -> mut 'a Point
+//
+// This mirrors lifetime_test.go's ConstrainedTypeParam_AliasBound shape, where
+// a lifetime-bearing alias makes the borrow lifetime-annotated.
+func TestAliasRefReturn(t *testing.T) {
+	identity := &Lam{
+		Params:     []string{"p"},
+		ParamTypes: []SimpleType{mut(alias("Point", rec("x", num())))},
+		Body:       vr("p"),
+	}
+	got, errs := Render(identity)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: mut 'a Point) -> mut 'a Point", got)
+}
+
+// TestAliasByValueNoLifetime: a by-value alias parameter borrows nothing, so no
+// lifetime is attached (the alias renders bare).
+//
+//	type Point = {x: number}
+//	fn get(p: Point) { return p.x }  ==>  fn (p: Point) -> number
+func TestAliasByValueNoLifetime(t *testing.T) {
+	get := &Lam{
+		Params:     []string{"p"},
+		ParamTypes: []SimpleType{alias("Point", rec("x", num()))},
+		Body:       sel(vr("p"), "x"),
+	}
+	got, errs := Render(get)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: Point) -> number", got)
+}
+
+// TestAliasStructuralSubtyping: an alias is structurally its body, so a value of
+// the alias's shape satisfies the alias and vice versa.
+func TestAliasStructuralSubtyping(t *testing.T) {
+	in := NewInferer()
+	point := alias("Point", rec("x", num()))
+	// {x: number, y: number} <: Point   (width subtyping through the alias body)
+	require.Empty(t, in.Constrain(rec("x", num(), "y", num()), point))
+	// Point <: {x: number}
+	require.Empty(t, in.Constrain(point, rec("x", num())))
+	// Point </: {x: string}
+	require.NotEmpty(t, in.Constrain(point, rec("x", str())))
 }
 
 // TestConstrain exercises the constrain primitive directly.

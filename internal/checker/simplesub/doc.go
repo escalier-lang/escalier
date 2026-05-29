@@ -54,6 +54,14 @@
 // production checker's multi-phase infer_lifetime.go collapses into ordinary
 // constraint solving over a second sort.
 //
+// Lifetimes attach to type aliases (Alias) exactly as they do to records: a
+// `mut` borrow of an alias-typed value carries a lifetime that renders before
+// the alias name (`fn <'a>(p: mut 'a Point) -> mut 'a Point`), while a by-value
+// alias parameter borrows nothing and renders bare (`fn (p: Point) -> number`).
+// An Alias is structurally its body for subtyping. A by-value parameter never
+// carries a lifetime — only `mut` borrows do — matching the production checker,
+// where even an unbounded `mut T` is lifetime-free.
+//
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
 //

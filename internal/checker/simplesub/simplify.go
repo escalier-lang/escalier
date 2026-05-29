@@ -44,6 +44,8 @@ func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool,
 		// variables inside a Mut are bipolar — the source of invariance.
 		analyze(t.inner, pol, occurrences, seen)
 		analyze(t.inner, pol.flip(), occurrences, seen)
+	case *Alias:
+		analyze(t.body, pol, occurrences, seen)
 	}
 }
 
@@ -78,6 +80,8 @@ func collectVars(st SimpleType, set map[int]*Variable) {
 		}
 	case *Mut:
 		collectVars(t.inner, set)
+	case *Alias:
+		collectVars(t.body, set)
 	}
 }
 
@@ -184,6 +188,8 @@ func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, se
 	case *Mut:
 		collectCoOcc(t.inner, pol, coOcc, seen)
 		collectCoOcc(t.inner, pol.flip(), coOcc, seen)
+	case *Alias:
+		collectCoOcc(t.body, pol, coOcc, seen)
 	}
 }
 

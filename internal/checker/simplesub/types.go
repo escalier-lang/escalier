@@ -67,6 +67,17 @@ type Mut struct{ inner SimpleType }
 // body that only performs assignments).
 type Void struct{}
 
+// Alias is a reference to a named type alias (e.g. `Point` for
+// `type Point = {x: number}`). Like Record it can carry a lifetime — a `mut`
+// borrow of an alias-typed value gets one, rendering as `mut 'a Point`. The
+// body is the alias's underlying type, used for structural subtyping; name is
+// what prints.
+type Alias struct {
+	name string
+	body SimpleType
+	lt   Lifetime
+}
+
 func (*Variable) isSimpleType()  {}
 func (*Primitive) isSimpleType() {}
 func (*Literal) isSimpleType()   {}
@@ -75,6 +86,7 @@ func (*Tuple) isSimpleType()     {}
 func (*Record) isSimpleType()    {}
 func (*Mut) isSimpleType()       {}
 func (*Void) isSimpleType()      {}
+func (*Alias) isSimpleType()     {}
 
 func (l *Literal) eq(o *Literal) bool {
 	if l.kind != o.kind {
@@ -117,6 +129,8 @@ func levelOf(ty SimpleType) int {
 		return m
 	case *Mut:
 		return levelOf(t.inner)
+	case *Alias:
+		return levelOf(t.body)
 	default:
 		// Primitive, Literal, Void: no nested variables.
 		return 0

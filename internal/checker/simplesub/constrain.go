@@ -142,6 +142,21 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 		if _, ok := rhs.(*Void); ok {
 			return nil
 		}
+	case *Alias:
+		// An alias is structurally its body. Constrain through to the body on
+		// whichever side is an alias, so `mut Point <: mut {x: number}` and
+		// alias-vs-alias both reduce to structural checks.
+		if r, ok := rhs.(*Alias); ok {
+			return in.constrain(l.body, r.body, seen)
+		}
+		return in.constrain(l.body, rhs, seen)
+	}
+	if r, ok := rhs.(*Alias); ok {
+		// lhs is not an alias (the switch above didn't return): relate it to the
+		// alias's body.
+		if _, lvar := lhs.(*Variable); !lvar {
+			return in.constrain(lhs, r.body, seen)
+		}
 	}
 
 	// lhs is a variable.
@@ -222,6 +237,8 @@ func (in *Inferer) extrude(ty SimpleType, pol Polarity, lvl int, cache map[int]*
 		// in the current polarity (the read view) — the write view shares the
 		// same fresh variables via the cache.
 		return &Mut{inner: in.extrude(t.inner, pol, lvl, cache)}
+	case *Alias:
+		return &Alias{name: t.name, body: in.extrude(t.body, pol, lvl, cache), lt: t.lt}
 	default:
 		return ty
 	}
@@ -250,6 +267,8 @@ func describe(st SimpleType) string {
 		return "mut " + describe(t.inner)
 	case *Void:
 		return "void"
+	case *Alias:
+		return t.name
 	case *Variable:
 		return "t" + strconv.Itoa(t.id)
 	}

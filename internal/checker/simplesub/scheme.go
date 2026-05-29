@@ -66,6 +66,8 @@ func (in *Inferer) freshenAbove(lim int, ty SimpleType, lvl int, cache map[int]*
 		return &Record{fields: fields, lt: t.lt}
 	case *Mut:
 		return &Mut{inner: in.freshenAbove(lim, t.inner, lvl, cache)}
+	case *Alias:
+		return &Alias{name: t.name, body: in.freshenAbove(lim, t.body, lvl, cache), lt: t.lt}
 	default:
 		return ty
 	}

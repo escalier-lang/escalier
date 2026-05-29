@@ -83,6 +83,8 @@ func lifetimeOf(st SimpleType) Lifetime {
 	switch t := st.(type) {
 	case *Record:
 		return t.lt
+	case *Alias:
+		return t.lt
 	case *Mut:
 		return lifetimeOf(t.inner)
 	default:
@@ -133,6 +135,11 @@ func analyzeLts(st SimpleType, pol Polarity, ltOcc map[int]map[Polarity]bool, vs
 		for _, f := range t.fields {
 			analyzeLts(f, pol, ltOcc, vseen, ltseen)
 		}
+	case *Alias:
+		if t.lt != nil {
+			analyzeLifetime(t.lt, pol, ltOcc, ltseen)
+		}
+		analyzeLts(t.body, pol, ltOcc, vseen, ltseen)
 	case *Mut:
 		analyzeLts(t.inner, pol, ltOcc, vseen, ltseen) // lifetime is covariant
 	}
@@ -189,6 +196,9 @@ func collectLifetimeVars(st SimpleType, out map[int]*LifetimeVar, vseen map[int]
 		for _, f := range t.fields {
 			collectLifetimeVars(f, out, vseen)
 		}
+	case *Alias:
+		collectLtVarsFromLifetime(t.lt, out)
+		collectLifetimeVars(t.body, out, vseen)
 	case *Mut:
 		collectLifetimeVars(t.inner, out, vseen)
 	}
@@ -217,14 +227,27 @@ func collectLtVarsFromLifetime(lt Lifetime, out map[int]*LifetimeVar) {
 // (a borrow originates at a parameter). Internal join variables — created by
 // joinBranches — are never named; only their param-lifetime members are.
 func (in *Inferer) attachParamLifetimes(st SimpleType) SimpleType {
-	if m, ok := st.(*Mut); ok {
-		if rec, ok := m.inner.(*Record); ok && rec.lt == nil {
-			lt := in.freshLifetime()
-			if in.paramLifetimes == nil {
-				in.paramLifetimes = map[int]bool{}
-			}
-			in.paramLifetimes[lt.id] = true
-			return &Mut{inner: &Record{fields: rec.fields, lt: lt}}
+	m, ok := st.(*Mut)
+	if !ok {
+		return st
+	}
+	lt := in.freshLifetime()
+	record := func() {
+		if in.paramLifetimes == nil {
+			in.paramLifetimes = map[int]bool{}
+		}
+		in.paramLifetimes[lt.id] = true
+	}
+	switch inner := m.inner.(type) {
+	case *Record:
+		if inner.lt == nil {
+			record()
+			return &Mut{inner: &Record{fields: inner.fields, lt: lt}}
+		}
+	case *Alias:
+		if inner.lt == nil {
+			record()
+			return &Mut{inner: &Alias{name: inner.name, body: inner.body, lt: lt}}
 		}
 	}
 	return st
