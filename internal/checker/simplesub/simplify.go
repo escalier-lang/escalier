@@ -53,6 +53,14 @@ func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool,
 		// usage-inferred operand bipolar and keep it (as `... & T0`) instead of
 		// letting it render as the plain inferred shape.
 		analyze(t.operand, Negative, occurrences, seen)
+	case *Union:
+		for _, m := range t.types {
+			analyze(m, pol, occurrences, seen)
+		}
+	case *Intersection:
+		for _, m := range t.types {
+			analyze(m, pol, occurrences, seen)
+		}
 	}
 }
 
@@ -91,6 +99,14 @@ func collectVars(st SimpleType, set map[int]*Variable) {
 		collectVars(t.body, set)
 	case *ResidualOp:
 		collectVars(t.operand, set)
+	case *Union:
+		for _, m := range t.types {
+			collectVars(m, set)
+		}
+	case *Intersection:
+		for _, m := range t.types {
+			collectVars(m, set)
+		}
 	}
 }
 
@@ -201,6 +217,14 @@ func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, se
 		collectCoOcc(t.body, pol, coOcc, seen)
 	case *ResidualOp:
 		collectCoOcc(t.operand, Negative, coOcc, seen)
+	case *Union:
+		for _, m := range t.types {
+			collectCoOcc(m, pol, coOcc, seen)
+		}
+	case *Intersection:
+		for _, m := range t.types {
+			collectCoOcc(m, pol, coOcc, seen)
+		}
 	}
 }
 

@@ -78,15 +78,29 @@ type Alias struct {
 	lt   Lifetime
 }
 
-func (*Variable) isSimpleType()  {}
-func (*Primitive) isSimpleType() {}
-func (*Literal) isSimpleType()   {}
-func (*Function) isSimpleType()  {}
-func (*Tuple) isSimpleType()     {}
-func (*Record) isSimpleType()    {}
-func (*Mut) isSimpleType()       {}
-func (*Void) isSimpleType()      {}
-func (*Alias) isSimpleType()     {}
+// Union is a union type written as an annotation (e.g. `number | string`). M2
+// already produces unions as coalescing *output* (the join of a positive
+// variable's lower bounds); Union is the *input* side — a union a programmer can
+// write and constrain against. Directional subtyping (see constrain):
+// X <: (A | B) iff X <: A or X <: B; (A | B) <: Y iff A <: Y and B <: Y.
+type Union struct{ types []SimpleType }
+
+// Intersection is an intersection type written as an annotation (e.g. `A & B`).
+// Dual to Union: X <: (A & B) iff X <: A and X <: B; (A & B) <: Y iff A <: Y or
+// B <: Y.
+type Intersection struct{ types []SimpleType }
+
+func (*Variable) isSimpleType()     {}
+func (*Primitive) isSimpleType()    {}
+func (*Literal) isSimpleType()      {}
+func (*Function) isSimpleType()     {}
+func (*Tuple) isSimpleType()        {}
+func (*Record) isSimpleType()       {}
+func (*Mut) isSimpleType()          {}
+func (*Void) isSimpleType()         {}
+func (*Alias) isSimpleType()        {}
+func (*Union) isSimpleType()        {}
+func (*Intersection) isSimpleType() {}
 
 func (l *Literal) eq(o *Literal) bool {
 	if l.kind != o.kind {
@@ -133,8 +147,20 @@ func levelOf(ty SimpleType) int {
 		return levelOf(t.body)
 	case *ResidualOp:
 		return levelOf(t.operand)
+	case *Union:
+		return maxLevel(t.types)
+	case *Intersection:
+		return maxLevel(t.types)
 	default:
 		// Primitive, Literal, Void: no nested variables.
 		return 0
 	}
+}
+
+func maxLevel(types []SimpleType) int {
+	m := 0
+	for _, t := range types {
+		m = max(m, levelOf(t))
+	}
+	return m
 }

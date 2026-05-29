@@ -3,6 +3,7 @@ package simplesub
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // ---- Inference engine ----
@@ -52,6 +53,61 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 		return nil
 	}
 	seen[key] = true
+
+	// Union/intersection lattice rules, applied before the structural and
+	// variable cases because a union/intersection on either side decomposes
+	// regardless of the other side. The two "for all" rules (a union on the
+	// left, an intersection on the right) come before the two "exists" rules (a
+	// union on the right, an intersection on the left): the universal sides
+	// must always be fully decomposed, while the existential sides pick a
+	// witness.
+	if u, ok := lhs.(*Union); ok {
+		// (A | B) <: Y  iff  A <: Y and B <: Y.
+		var errs []error
+		for _, m := range u.types {
+			errs = append(errs, in.constrain(m, rhs, seen)...)
+		}
+		return errs
+	}
+	if i, ok := rhs.(*Intersection); ok {
+		// X <: (A & B)  iff  X <: A and X <: B.
+		var errs []error
+		for _, m := range i.types {
+			errs = append(errs, in.constrain(lhs, m, seen)...)
+		}
+		return errs
+	}
+	// The two "exists" rules pick a member as a witness by trial. That trial is
+	// only sound when the *other* side is concrete: trying a branch against a
+	// Variable would speculatively add a bound and "succeed", permanently
+	// pinning the variable to the first member even though the choice was meant
+	// to be non-committal. When the other side is a Variable we therefore fall
+	// through to the variable case, which records the whole union/intersection
+	// as a bound — sound, and what coalescing already expects. (A production
+	// checker would instead probe-and-roll-back per the journaled-Probe design;
+	// the spike takes the conservative route.)
+	if u, ok := rhs.(*Union); ok {
+		if _, lhsVar := lhs.(*Variable); !lhsVar {
+			// X <: (A | B)  iff  X <: A or X <: B.
+			for _, m := range u.types {
+				if errs := in.constrain(lhs, m, seen); len(errs) == 0 {
+					return nil
+				}
+			}
+			return []error{fmt.Errorf("cannot constrain %s <: %s", describe(lhs), describe(rhs))}
+		}
+	}
+	if i, ok := lhs.(*Intersection); ok {
+		if _, rhsVar := rhs.(*Variable); !rhsVar {
+			// (A & B) <: Y  iff  A <: Y or B <: Y.
+			for _, m := range i.types {
+				if errs := in.constrain(m, rhs, seen); len(errs) == 0 {
+					return nil
+				}
+			}
+			return []error{fmt.Errorf("cannot constrain %s <: %s", describe(lhs), describe(rhs))}
+		}
+	}
 
 	// Structural cases first; fall through to the variable cases when a side
 	// that didn't match here is a Variable.
@@ -241,9 +297,21 @@ func (in *Inferer) extrude(ty SimpleType, pol Polarity, lvl int, cache map[int]*
 		return &Alias{name: t.name, body: in.extrude(t.body, pol, lvl, cache), lt: t.lt}
 	case *ResidualOp:
 		return &ResidualOp{kind: t.kind, operand: in.extrude(t.operand, pol, lvl, cache), key: t.key}
+	case *Union:
+		return &Union{types: in.extrudeAll(t.types, pol, lvl, cache)}
+	case *Intersection:
+		return &Intersection{types: in.extrudeAll(t.types, pol, lvl, cache)}
 	default:
 		return ty
 	}
+}
+
+func (in *Inferer) extrudeAll(types []SimpleType, pol Polarity, lvl int, cache map[int]*Variable) []SimpleType {
+	out := make([]SimpleType, len(types))
+	for i, t := range types {
+		out[i] = in.extrude(t, pol, lvl, cache)
+	}
+	return out
 }
 
 func describe(st SimpleType) string {
@@ -271,10 +339,22 @@ func describe(st SimpleType) string {
 		return "void"
 	case *Alias:
 		return t.name
+	case *Union:
+		return joinDescribe(t.types, " | ")
+	case *Intersection:
+		return joinDescribe(t.types, " & ")
 	case *Variable:
 		return "t" + strconv.Itoa(t.id)
 	}
 	return "?"
+}
+
+func joinDescribe(types []SimpleType, sep string) string {
+	parts := make([]string, len(types))
+	for i, t := range types {
+		parts[i] = describe(t)
+	}
+	return strings.Join(parts, sep)
 }
 
 // widen generalizes a literal to its primitive type. A value stored through a

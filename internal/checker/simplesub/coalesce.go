@@ -194,6 +194,18 @@ func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
 		// here, in the post-solve coalescing pass, once its operand has a
 		// concrete coalesced shape.
 		return c.reduceResidual(t)
+	case *Union:
+		members := make([]type_system.Type, len(t.types))
+		for i, m := range t.types {
+			members[i] = c.coalesce(m, pol)
+		}
+		return type_system.NewUnionType(nil, members...)
+	case *Intersection:
+		members := make([]type_system.Type, len(t.types))
+		for i, m := range t.types {
+			members[i] = c.coalesce(m, pol)
+		}
+		return type_system.NewIntersectionType(nil, members...)
 	case *Variable:
 		rep := c.uf.find(t.id)
 		bipolar := c.mergedOccurrences[rep][Positive] && c.mergedOccurrences[rep][Negative]

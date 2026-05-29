@@ -70,6 +70,18 @@
 // — and otherwise stays symbolic (`keyof Foo`, `Foo["x"]`). This is a TypeEvaluator
 // over TyExprs producing concrete type_system.Types directly.
 //
+// M6 adds union/intersection types as annotation *input* (Union/Intersection),
+// complementing M2's union/intersection *output* from variable bounds. constrain
+// applies the directional lattice rules — X <: (A|B) iff X <: some member;
+// (A|B) <: Y iff every member <: Y; dually for intersections — with the two
+// "for all" rules (union on the left, intersection on the right) before the two
+// "exists" rules. The "exists" rules only fire when the other side is concrete:
+// against a Variable they fall through to the variable case, recording the whole
+// union/intersection as a bound, since speculatively trying a member would pin
+// the variable to it (a real implementation would probe-and-roll-back instead).
+// So `fn f(x: number | string) { return x }` round-trips, a number argument is
+// accepted and a boolean rejected.
+//
 // M7 adds Design A — residual type-operators + a post-solve fixpoint (see
 // residual.go) — for the case M5 leaves symbolic: an operator whose operand is a
 // value whose type is inferred from usage, hence not ground during the value

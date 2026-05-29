@@ -70,7 +70,19 @@ func (in *Inferer) freshenAbove(lim int, ty SimpleType, lvl int, cache map[int]*
 		return &Alias{name: t.name, body: in.freshenAbove(lim, t.body, lvl, cache), lt: t.lt}
 	case *ResidualOp:
 		return &ResidualOp{kind: t.kind, operand: in.freshenAbove(lim, t.operand, lvl, cache), key: t.key}
+	case *Union:
+		return &Union{types: in.freshenAll(lim, t.types, lvl, cache)}
+	case *Intersection:
+		return &Intersection{types: in.freshenAll(lim, t.types, lvl, cache)}
 	default:
 		return ty
 	}
+}
+
+func (in *Inferer) freshenAll(lim int, types []SimpleType, lvl int, cache map[int]*Variable) []SimpleType {
+	out := make([]SimpleType, len(types))
+	for i, t := range types {
+		out[i] = in.freshenAbove(lim, t, lvl, cache)
+	}
+	return out
 }
