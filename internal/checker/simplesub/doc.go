@@ -68,8 +68,20 @@
 // An operator reduces only when its operands are ground (no unresolved type
 // parameter) — the common case of a generic alias applied to concrete arguments
 // — and otherwise stays symbolic (`keyof Foo`, `Foo["x"]`). This is a TypeEvaluator
-// over TyExprs producing concrete type_system.Types directly; the suspend-until-
-// coalescing designs (A/B/C in the plan) are deliberately out of scope.
+// over TyExprs producing concrete type_system.Types directly.
+//
+// M7 adds Design A — residual type-operators + a post-solve fixpoint (see
+// residual.go) — for the case M5 leaves symbolic: an operator whose operand is a
+// value whose type is inferred from usage, hence not ground during the value
+// solve. A ResidualOp (keyof / indexed access over a value-inference SimpleType)
+// is inert during constraint solving — it carries no bounds and constrain never
+// touches it, so Design A adds NO new mutable solver state — and reduces at
+// coalescing once its operand has a concrete shape, in a fixpoint bounded by
+// maxResidualRounds (the termination guard). So `fn f(x) { x.a; x.b; return
+// keyof typeof x }` reduces the keyof to `"a" | "b"` post-solve, where M5 would
+// have stalled. An operand that never gains object structure leaves the operator
+// symbolic (`keyof unknown`) as the fixpoint's terminating result. Designs B/C
+// remain out of scope; M7 validates only the recommended Design-A backbone.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.

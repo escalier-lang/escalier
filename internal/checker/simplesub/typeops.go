@@ -242,23 +242,15 @@ func (e *TypeEvaluator) matches(checkT type_system.Type, pat TyExpr, env tyEnv, 
 }
 
 // evalKeyof reduces `keyof T`: for an object type, the union of its string-keyed
-// property names as string literals; otherwise it stays symbolic.
+// property names as string literals; otherwise it stays symbolic. Shares the
+// reduction with the M7 residual path (keyofObject).
 func (e *TypeEvaluator) evalKeyof(t *TyKeyof, env tyEnv) type_system.Type {
 	target := type_system.Prune(e.Eval(t.Target, env))
 	obj, ok := target.(*type_system.ObjectType)
 	if !ok {
 		return type_system.NewKeyOfType(nil, target) // symbolic
 	}
-	var keys []type_system.Type
-	for _, elem := range obj.Elems {
-		if pe, ok := elem.(*type_system.PropertyElem); ok && pe.Name.Kind == type_system.StrObjTypeKeyKind {
-			keys = append(keys, type_system.NewStrLitType(nil, pe.Name.Str))
-		}
-	}
-	if len(keys) == 0 {
-		return type_system.NewNeverType(nil)
-	}
-	return type_system.NewUnionType(nil, keys...)
+	return keyofObject(obj)
 }
 
 // evalIndex reduces indexed access `T[K]`: for an object type indexed by a
@@ -270,11 +262,8 @@ func (e *TypeEvaluator) evalIndex(t *TyIndex, env tyEnv) type_system.Type {
 	lit, litOK := index.(*type_system.LitType)
 	if objOK && litOK {
 		if s, ok := lit.Lit.(*type_system.StrLit); ok {
-			for _, elem := range obj.Elems {
-				if pe, ok := elem.(*type_system.PropertyElem); ok &&
-					pe.Name.Kind == type_system.StrObjTypeKeyKind && pe.Name.Str == s.Value {
-					return pe.Value
-				}
+			if v := propValue(obj, s.Value); v != nil {
+				return v
 			}
 		}
 	}

@@ -189,6 +189,11 @@ func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
 			ref.Lifetime = c.coalesceLifetime(t.lt, pol)
 		}
 		return ref
+	case *ResidualOp:
+		// Design A: a type operator left inert during the value solve reduces
+		// here, in the post-solve coalescing pass, once its operand has a
+		// concrete coalesced shape.
+		return c.reduceResidual(t)
 	case *Variable:
 		rep := c.uf.find(t.id)
 		bipolar := c.mergedOccurrences[rep][Positive] && c.mergedOccurrences[rep][Negative]

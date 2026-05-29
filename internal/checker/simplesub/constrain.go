@@ -239,6 +239,8 @@ func (in *Inferer) extrude(ty SimpleType, pol Polarity, lvl int, cache map[int]*
 		return &Mut{inner: in.extrude(t.inner, pol, lvl, cache)}
 	case *Alias:
 		return &Alias{name: t.name, body: in.extrude(t.body, pol, lvl, cache), lt: t.lt}
+	case *ResidualOp:
+		return &ResidualOp{kind: t.kind, operand: in.extrude(t.operand, pol, lvl, cache), key: t.key}
 	default:
 		return ty
 	}

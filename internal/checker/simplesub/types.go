@@ -131,6 +131,8 @@ func levelOf(ty SimpleType) int {
 		return levelOf(t.inner)
 	case *Alias:
 		return levelOf(t.body)
+	case *ResidualOp:
+		return levelOf(t.operand)
 	default:
 		// Primitive, Literal, Void: no nested variables.
 		return 0

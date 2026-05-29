@@ -70,6 +70,17 @@ type IfExpr struct {
 // escaping value's lifetime to outlive everything, i.e. `<: 'static`.
 type Escape struct{ Value Term }
 
+// KeyofExpr is the type-level operator `keyof typeof e` applied to a value whose
+// type may be usage-inferred. It produces a residual operator (M7 / Design A):
+// inert during the value solve, reduced at coalescing once e's type is known.
+type KeyofExpr struct{ Value Term }
+
+// IndexExpr is `(typeof e)[key]` for a literal key — likewise residual.
+type IndexExpr struct {
+	Value Term
+	Key   string
+}
+
 func (*Lit) isTerm()        {}
 func (*Var) isTerm()        {}
 func (*Lam) isTerm()        {}
@@ -82,6 +93,8 @@ func (*Assign) isTerm()     {}
 func (*Block) isTerm()      {}
 func (*IfExpr) isTerm()     {}
 func (*Escape) isTerm()     {}
+func (*KeyofExpr) isTerm()  {}
+func (*IndexExpr) isTerm()  {}
 
 func litToSimple(t *Lit) *Literal {
 	return &Literal{kind: t.Kind, str: t.Str, num: t.Num, b: t.Bool}
@@ -218,6 +231,14 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 			in.constrainLt(lt, &StaticLifetime{})
 		}
 		return &Void{}, errs
+	case *KeyofExpr:
+		// Type the value (generating any usage constraints on it), then wrap its
+		// type in a residual `keyof` that reduces post-solve (Design A).
+		valT, errs := in.typeTerm(t.Value, ctx, lvl)
+		return Keyof(valT), errs
+	case *IndexExpr:
+		valT, errs := in.typeTerm(t.Value, ctx, lvl)
+		return Index(valT, t.Key), errs
 	default:
 		panic(fmt.Sprintf("typeTerm: unhandled %T", term))
 	}
