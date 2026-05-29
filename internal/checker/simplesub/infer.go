@@ -41,11 +41,11 @@ type Sel struct {
 	Name     string
 }
 
-func (*Lit) isTerm()       {}
-func (*Var) isTerm()       {}
-func (*Lam) isTerm()       {}
-func (*App) isTerm()       {}
-func (*Let) isTerm()       {}
+func (*Lit) isTerm()        {}
+func (*Var) isTerm()        {}
+func (*Lam) isTerm()        {}
+func (*App) isTerm()        {}
+func (*Let) isTerm()        {}
 func (*TupleExpr) isTerm()  {}
 func (*RecordExpr) isTerm() {}
 func (*Sel) isTerm()        {}
