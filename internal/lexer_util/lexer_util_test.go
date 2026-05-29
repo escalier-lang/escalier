@@ -2,6 +2,8 @@ package lexer_util
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestScanIdent(t *testing.T) {
@@ -588,9 +590,8 @@ func TestIsJSDoc(t *testing.T) {
 		{"/**", false},
 	}
 	for _, tc := range tests {
-		if got := IsJSDoc(tc.value); got != tc.want {
-			t.Errorf("IsJSDoc(%q) = %v, want %v", tc.value, got, tc.want)
-		}
+		got := IsJSDoc(tc.value)
+		require.Equal(t, tc.want, got, "IsJSDoc(%q)", tc.value)
 	}
 }
 
