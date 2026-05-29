@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// test helpers for building SimpleTypes directly
+// --- SimpleType helpers for direct constrain tests ---
 func num() *Primitive     { return &Primitive{name: "number"} }
 func str() *Primitive     { return &Primitive{name: "string"} }
 func boolean() *Primitive { return &Primitive{name: "boolean"} }
@@ -14,22 +14,87 @@ func boolean() *Primitive { return &Primitive{name: "boolean"} }
 func fn1(param, ret SimpleType) *Function {
 	return &Function{params: []SimpleType{param}, ret: ret}
 }
-
 func fn2(p1, p2, ret SimpleType) *Function {
 	return &Function{params: []SimpleType{p1, p2}, ret: ret}
 }
 
-// TestInferIdentity is the M0 acceptance case: the identity function infers to
-// the generalized fn <T0>(x: T0) -> T0, rendered by the production printer.
+// --- IR helpers ---
+func lam(param string, body Term) *Lam { return &Lam{Params: []string{param}, Body: body} }
+func vr(name string) *Var              { return &Var{Name: name} }
+func litStr(s string) *Lit             { return &Lit{Kind: "str", Str: s} }
+func litNum(n float64) *Lit            { return &Lit{Kind: "num", Num: n} }
+
+// TestInferIdentity is the identity case (also TopLevelLetPolymorphism):
+// fn (x){return x}  ==>  fn <T0>(x: T0) -> T0.
 func TestInferIdentity(t *testing.T) {
-	id := &Lam{Param: "x", Body: &Var{Name: "x"}}
-	got, errs := Render(id)
+	got, errs := Render(lam("x", vr("x")))
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T0>(x: T0) -> T0", got)
 }
 
-// TestConstrain exercises the constrain primitive directly (no coalescing), so
-// it does not depend on the M1 simplification pass.
+// TestIdentityPolymorphism: a let-bound identity applied at two different types
+// must be generalized, so the results keep their literal types.
+//
+//	fn outer() {
+//	  val id = fn (x) { return x }
+//	  val a = id("hello")
+//	  val b = id(5)
+//	  return [a, b]
+//	}  ==>  fn () -> ["hello", 5]
+func TestIdentityPolymorphism(t *testing.T) {
+	outer := &Lam{Params: nil, Body: &Let{
+		Name: "id", Rhs: lam("x", vr("x")),
+		Body: &Let{
+			Name: "a", Rhs: &App{Fn: vr("id"), Arg: litStr("hello")},
+			Body: &Let{
+				Name: "b", Rhs: &App{Fn: vr("id"), Arg: litNum(5)},
+				Body: &TupleExpr{Elems: []Term{vr("a"), vr("b")}},
+			},
+		},
+	}}
+	got, errs := Render(outer)
+	require.Empty(t, errs)
+	require.Equal(t, `fn () -> ["hello", 5]`, got)
+}
+
+// TestApplyIdentitySimplifies shows the M1 simplification pass: applying the
+// identity to a literal yields that literal (the result variable is
+// single-polarity, so it collapses to its lower bound rather than `T0 | 5`).
+func TestApplyIdentitySimplifies(t *testing.T) {
+	got, errs := Render(&App{Fn: lam("x", vr("x")), Arg: litNum(5)})
+	require.Empty(t, errs)
+	require.Equal(t, "5", got)
+}
+
+// TestInnerCapturesOuterParam is a Category-A target that additionally requires
+// co-occurrence variable merging, which M1 does not yet implement. Without it
+// the result coalesces to the equivalent-but-verbose
+// "fn <T0, T1>(y: T0 & T1) -> [T0, T1]" instead of the expected compact form.
+func TestInnerCapturesOuterParam(t *testing.T) {
+	t.Skip("needs co-occurrence variable merging in simplify (M1 follow-up)")
+
+	// fn outer(y) {
+	//   val inner = fn (x) { return y }
+	//   val a = inner(1)
+	//   val b = inner("a")
+	//   return [a, b]
+	// }  ==>  fn <T0>(y: T0) -> [T0, T0]
+	outer := &Lam{Params: []string{"y"}, Body: &Let{
+		Name: "inner", Rhs: lam("x", vr("y")),
+		Body: &Let{
+			Name: "a", Rhs: &App{Fn: vr("inner"), Arg: litNum(1)},
+			Body: &Let{
+				Name: "b", Rhs: &App{Fn: vr("inner"), Arg: litStr("a")},
+				Body: &TupleExpr{Elems: []Term{vr("a"), vr("b")}},
+			},
+		},
+	}}
+	got, errs := Render(outer)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(y: T0) -> [T0, T0]", got)
+}
+
+// TestConstrain exercises the constrain primitive directly.
 func TestConstrain(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -39,20 +104,10 @@ func TestConstrain(t *testing.T) {
 		{"prim equal", boolean(), boolean(), false},
 		{"prim mismatch", boolean(), num(), true},
 		{"func equal", fn1(num(), num()), fn1(num(), num()), false},
-		// parameters are contravariant: (number)->number <: (string)->number
-		// requires string <: number, which fails.
 		{"func param contravariant fail", fn1(num(), num()), fn1(str(), num()), true},
-		// return is covariant: (number)->number <: (number)->string requires
-		// number <: string, which fails.
 		{"func return covariant fail", fn1(num(), num()), fn1(num(), str()), true},
-		// A function with fewer params is a subtype of one with more: the extra
-		// supertype param is ignored. (number)->number <: (number, number)->number.
 		{"fewer params subtype of more", fn1(num(), num()), fn2(num(), num(), num()), false},
-		// ...but more params cannot be a subtype of fewer.
 		{"more params not subtype of fewer", fn2(num(), num(), num()), fn1(num(), num()), true},
-		// the overlapping prefix is still checked contravariantly even when
-		// arity grows: (string)->number <: (number, number)->number needs
-		// number <: string, which fails.
 		{"fewer params but overlap contravariant fail", fn1(str(), num()), fn2(num(), num(), num()), true},
 	}
 	for _, tt := range tests {
@@ -68,26 +123,11 @@ func TestConstrain(t *testing.T) {
 	}
 }
 
-// TestConstrainVariablePropagation checks that a bound recorded on a variable is
-// enforced against bounds added later (the core of bound propagation): once
-// v <: number, asserting boolean <: v must fail via boolean <: number.
+// TestConstrainVariablePropagation: once v <: number, asserting boolean <: v
+// must fail via boolean <: number.
 func TestConstrainVariablePropagation(t *testing.T) {
 	in := NewInferer()
-	v := in.freshVar()
-	require.Empty(t, in.Constrain(v, num())) // v <: number  (number is an upper bound of v)
+	v := in.freshVar(0)
+	require.Empty(t, in.Constrain(v, num()))
 	require.NotEmpty(t, in.Constrain(boolean(), v))
-}
-
-// TestApplyIdentityRawUnsimplified documents a known M0 limitation: applying the
-// identity to a boolean yields a result variable whose single lower bound is
-// boolean. Without the M1 simplification pass, coalescing renders the variable
-// alongside its bound as a union. M1 will reduce this to `boolean`.
-func TestApplyIdentityRawUnsimplified(t *testing.T) {
-	app := &App{
-		Fn:  &Lam{Param: "x", Body: &Var{Name: "x"}},
-		Arg: &Lit{Prim: "boolean"},
-	}
-	got, errs := Render(app)
-	require.Empty(t, errs)
-	require.Equal(t, "T0 | boolean", got)
 }

@@ -1,25 +1,30 @@
-// Package simplesub is a throwaway proof-of-concept — Milestone M0 of the
+// Package simplesub is a throwaway proof-of-concept — Milestones M0/M1 of the
 // algebraic-subtyping de-risking plan — implementing the core of Lionel
 // Parreaux's "Simple-sub" algorithm:
 //
-//   - fresh type variables that carry lower/upper *bound lists* (not a single
-//     Instance, the way type_system.TypeVarType does today),
-//   - a constrain(lhs <: rhs) primitive with a coinductive seen-cache, and
-//   - polarity-driven coalescing into a production type_system.Type, so the
-//     result renders with the real printer (type_system.PrintType) and can be
+//   - fresh type variables that carry lower/upper *bound lists* plus a level,
+//   - a constrain(lhs <: rhs) primitive with a coinductive seen-cache, plus
+//     level-aware extrusion,
+//   - level-based let-generalization (instantiate / freshenAbove),
+//   - a simplification pass, and
+//   - polarity-driven coalescing into a production type_system.Type, rendered
+//     with the real printer (type_system.PrintType) so the result can be
 //     string-compared against the existing checker test expectations.
 //
-// Scope (M0): type variables, functions, and primitives, driven by a tiny
-// hand-built expression IR (the parser bridge is a later milestone). NOT yet
-// covered, by design: a simplification pass (M1), records / usage-based
-// inference (M2), `mut` invariance (M3), and lifetimes (M4). In particular, M0
-// coalesces bound-carrying variables verbatim (e.g. `T0 | boolean`); the M1
-// simplification pass is what reduces those to their expected compact form
-// (`boolean`).
+// Driven by a tiny hand-built expression IR (the parser bridge is a later
+// milestone).
 //
-// The Simple-sub variable bounds live on the spike-local Variable struct, never
-// on type_system.TypeVarType — keeping the shared type system untouched, as the
-// plan requires.
+// M1 simplification status: single-polarity elimination is implemented (a
+// variable that occurs in only one polarity is replaced by the union/
+// intersection of its bounds, so e.g. id(5) yields `5`, not `T0 | 5`).
+// Co-occurrence variable merging is NOT yet implemented — without it,
+// InnerCapturesOuterParam coalesces to the equivalent-but-verbose
+// `<T0, T1>(y: T0 & T1) -> [T0, T1]` rather than `<T0>(y: T0) -> [T0, T0]`
+// (see the skipped test). Records/usage inference (M2), `mut` invariance (M3),
+// and lifetimes (M4) remain out of scope.
+//
+// Variable bounds live on the spike-local Variable struct, never on
+// type_system.TypeVarType — the shared type system stays untouched.
 package simplesub
 
 import (
@@ -31,60 +36,97 @@ import (
 
 // ---- SimpleType: the internal inference representation ----
 
-// SimpleType is the term language constraint solving operates on. It is
-// deliberately separate from type_system.Type: solving uses bound-carrying
-// Variables, and only coalescing produces a type_system.Type for rendering.
 type SimpleType interface{ isSimpleType() }
 
-// Variable is an inference variable carrying the Simple-sub lower/upper bound
-// lists. Under algebraic subtyping a variable is never "the single type it was
-// unified to"; it accumulates the lower bounds (things assigned into it) and
-// upper bounds (things it is used as) monotonically, and coalescing turns those
-// into a union/intersection respectively.
+// Variable is an inference variable carrying Simple-sub lower/upper bounds and
+// the level at which it was created (used for let-generalization).
 type Variable struct {
 	id          int
+	level       int
 	lowerBounds []SimpleType
 	upperBounds []SimpleType
 }
 
-func (*Variable) isSimpleType() {}
-
-// Primitive is a base type. name is one of "number", "string", "boolean".
+// Primitive is a base type: "number" | "string" | "boolean".
 type Primitive struct{ name string }
 
-func (*Primitive) isSimpleType() {}
+// Literal is a literal type, e.g. "hello" or 5.
+type Literal struct {
+	kind string // "str" | "num" | "bool"
+	str  string
+	num  float64
+	b    bool
+}
 
-// Function is a (possibly multi-argument) function type. paramNames is carried
-// only for rendering and may be empty/shorter than params.
+// Function is a (possibly multi-argument) function type.
 type Function struct {
 	params     []SimpleType
 	paramNames []string
 	ret        SimpleType
 }
 
-func (*Function) isSimpleType() {}
+// Tuple is a fixed-length tuple type.
+type Tuple struct{ elems []SimpleType }
+
+func (*Variable) isSimpleType()  {}
+func (*Primitive) isSimpleType() {}
+func (*Literal) isSimpleType()   {}
+func (*Function) isSimpleType()  {}
+func (*Tuple) isSimpleType()     {}
+
+func (l *Literal) eq(o *Literal) bool {
+	if l.kind != o.kind {
+		return false
+	}
+	switch l.kind {
+	case "str":
+		return l.str == o.str
+	case "num":
+		return l.num == o.num
+	case "bool":
+		return l.b == o.b
+	}
+	return false
+}
+
+// levelOf is the maximum level of any variable inside ty; concrete leaves are
+// level 0. Used to decide generalization and extrusion.
+func levelOf(ty SimpleType) int {
+	switch t := ty.(type) {
+	case *Variable:
+		return t.level
+	case *Function:
+		m := 0
+		for _, p := range t.params {
+			m = max(m, levelOf(p))
+		}
+		return max(m, levelOf(t.ret))
+	case *Tuple:
+		m := 0
+		for _, e := range t.elems {
+			m = max(m, levelOf(e))
+		}
+		return m
+	default:
+		return 0
+	}
+}
 
 // ---- Inference engine ----
 
-// Inferer owns the fresh-variable counter for one inference run.
 type Inferer struct{ varCounter int }
 
 func NewInferer() *Inferer { return &Inferer{} }
 
-func (in *Inferer) freshVar() *Variable {
-	v := &Variable{id: in.varCounter}
+func (in *Inferer) freshVar(level int) *Variable {
+	v := &Variable{id: in.varCounter, level: level}
 	in.varCounter++
 	return v
 }
 
-// constraintKey caches (lhs, rhs) pairs so constrain terminates on recursive
-// types. Interface values backed by pointers are comparable, so they work as
-// map keys.
 type constraintKey struct{ lhs, rhs SimpleType }
 
-// Constrain asserts lhs <: rhs, mutating the bound lists of any variables
-// involved. It returns the errors found (empty == success). This is the
-// algebraic-subtyping replacement for unification's bind/unify.
+// Constrain asserts lhs <: rhs, mutating bound lists. Empty result == success.
 func (in *Inferer) Constrain(lhs, rhs SimpleType) []error {
 	return in.constrain(lhs, rhs, map[constraintKey]bool{})
 }
@@ -106,14 +148,24 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 			}
 			return []error{fmt.Errorf("cannot constrain %s <: %s", l.name, r.name)}
 		}
+	case *Literal:
+		if r, ok := rhs.(*Literal); ok {
+			if l.eq(r) {
+				return nil
+			}
+			return []error{fmt.Errorf("cannot constrain %s <: %s", describe(l), describe(r))}
+		}
+		if r, ok := rhs.(*Primitive); ok {
+			if litKindPrim(l) == r.name {
+				return nil // a literal is a subtype of its primitive
+			}
+			return []error{fmt.Errorf("cannot constrain %s <: %s", describe(l), r.name)}
+		}
 	case *Function:
 		if r, ok := rhs.(*Function); ok {
-			// A function with FEWER parameters is a subtype of one with more:
-			// the supertype's extra trailing parameters are simply ignored by
-			// the subtype (JS/TS callback semantics). So l <: r requires
-			// len(l.params) <= len(r.params); only the overlapping prefix is
-			// related, and a subtype that demands MORE params than the
-			// supertype provides is rejected.
+			// A function with FEWER params is a subtype of one with more: the
+			// supertype's extra trailing params are ignored. l <: r requires
+			// len(l.params) <= len(r.params).
 			if len(l.params) > len(r.params) {
 				return []error{fmt.Errorf(
 					"cannot constrain function of arity %d <: function of arity %d",
@@ -121,135 +173,337 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 			}
 			var errs []error
 			for i := range l.params {
-				// overlapping parameters are contravariant
-				errs = append(errs, in.constrain(r.params[i], l.params[i], seen)...)
+				errs = append(errs, in.constrain(r.params[i], l.params[i], seen)...) // contravariant
 			}
-			// return type is covariant
-			errs = append(errs, in.constrain(l.ret, r.ret, seen)...)
+			errs = append(errs, in.constrain(l.ret, r.ret, seen)...) // covariant
+			return errs
+		}
+	case *Tuple:
+		if r, ok := rhs.(*Tuple); ok {
+			if len(l.elems) != len(r.elems) {
+				return []error{fmt.Errorf(
+					"cannot constrain tuple of length %d <: tuple of length %d",
+					len(l.elems), len(r.elems))}
+			}
+			var errs []error
+			for i := range l.elems {
+				errs = append(errs, in.constrain(l.elems[i], r.elems[i], seen)...) // covariant
+			}
 			return errs
 		}
 	}
 
-	// lhs is a variable: rhs becomes an upper bound, and must hold against every
-	// existing lower bound.
-	if v, ok := lhs.(*Variable); ok {
-		v.upperBounds = append(v.upperBounds, rhs)
-		var errs []error
-		for _, lb := range v.lowerBounds {
-			errs = append(errs, in.constrain(lb, rhs, seen)...)
+	// lhs is a variable.
+	if lv, ok := lhs.(*Variable); ok {
+		if levelOf(rhs) <= lv.level {
+			lv.upperBounds = append(lv.upperBounds, rhs)
+			var errs []error
+			for _, lb := range lv.lowerBounds {
+				errs = append(errs, in.constrain(lb, rhs, seen)...)
+			}
+			return errs
 		}
-		return errs
+		// rhs lives at a higher level: extrude it down so it isn't wrongly
+		// generalized at lv's level.
+		return in.constrain(lhs, in.extrude(rhs, false, lv.level, map[int]*Variable{}), seen)
 	}
-	// rhs is a variable: lhs becomes a lower bound, and must hold against every
-	// existing upper bound.
-	if v, ok := rhs.(*Variable); ok {
-		v.lowerBounds = append(v.lowerBounds, lhs)
-		var errs []error
-		for _, ub := range v.upperBounds {
-			errs = append(errs, in.constrain(lhs, ub, seen)...)
+	// rhs is a variable.
+	if rv, ok := rhs.(*Variable); ok {
+		if levelOf(lhs) <= rv.level {
+			rv.lowerBounds = append(rv.lowerBounds, lhs)
+			var errs []error
+			for _, ub := range rv.upperBounds {
+				errs = append(errs, in.constrain(lhs, ub, seen)...)
+			}
+			return errs
 		}
-		return errs
+		return in.constrain(in.extrude(lhs, true, rv.level, map[int]*Variable{}), rhs, seen)
 	}
 
 	return []error{fmt.Errorf("cannot constrain %s <: %s", describe(lhs), describe(rhs))}
+}
+
+// extrude copies ty so that variables above lvl are replaced by fresh variables
+// at lvl, wired to the originals through the appropriate bound direction.
+func (in *Inferer) extrude(ty SimpleType, pol bool, lvl int, cache map[int]*Variable) SimpleType {
+	if levelOf(ty) <= lvl {
+		return ty
+	}
+	switch t := ty.(type) {
+	case *Variable:
+		if nv, ok := cache[t.id]; ok {
+			return nv
+		}
+		nv := in.freshVar(lvl)
+		cache[t.id] = nv
+		if pol {
+			t.upperBounds = append(t.upperBounds, nv)
+			for _, lb := range t.lowerBounds {
+				nv.lowerBounds = append(nv.lowerBounds, in.extrude(lb, pol, lvl, cache))
+			}
+		} else {
+			t.lowerBounds = append(t.lowerBounds, nv)
+			for _, ub := range t.upperBounds {
+				nv.upperBounds = append(nv.upperBounds, in.extrude(ub, pol, lvl, cache))
+			}
+		}
+		return nv
+	case *Function:
+		params := make([]SimpleType, len(t.params))
+		for i, p := range t.params {
+			params[i] = in.extrude(p, !pol, lvl, cache)
+		}
+		return &Function{params: params, paramNames: t.paramNames, ret: in.extrude(t.ret, pol, lvl, cache)}
+	case *Tuple:
+		elems := make([]SimpleType, len(t.elems))
+		for i, e := range t.elems {
+			elems[i] = in.extrude(e, pol, lvl, cache)
+		}
+		return &Tuple{elems: elems}
+	default:
+		return ty
+	}
 }
 
 func describe(st SimpleType) string {
 	switch t := st.(type) {
 	case *Primitive:
 		return t.name
+	case *Literal:
+		switch t.kind {
+		case "str":
+			return strconv.Quote(t.str)
+		case "num":
+			return strconv.FormatFloat(t.num, 'f', -1, 32)
+		case "bool":
+			return strconv.FormatBool(t.b)
+		}
 	case *Function:
 		return "function"
+	case *Tuple:
+		return "tuple"
 	case *Variable:
 		return "t" + strconv.Itoa(t.id)
+	}
+	return "?"
+}
+
+func litKindPrim(l *Literal) string {
+	switch l.kind {
+	case "str":
+		return "string"
+	case "num":
+		return "number"
+	case "bool":
+		return "boolean"
+	}
+	return ""
+}
+
+// ---- Type schemes (let-polymorphism) ----
+
+type TypeScheme interface{ isScheme() }
+
+// MonoScheme is a plain type (e.g. a lambda parameter): no generalization.
+type MonoScheme struct{ ty SimpleType }
+
+// PolyScheme generalizes variables in body whose level is > level.
+type PolyScheme struct {
+	level int
+	body  SimpleType
+}
+
+func (*MonoScheme) isScheme() {}
+func (*PolyScheme) isScheme() {}
+
+func (in *Inferer) instantiate(s TypeScheme, lvl int) SimpleType {
+	switch sc := s.(type) {
+	case *MonoScheme:
+		return sc.ty
+	case *PolyScheme:
+		return in.freshenAbove(sc.level, sc.body, lvl, map[int]*Variable{})
+	}
+	panic("unreachable")
+}
+
+// freshenAbove copies ty, replacing each variable with level > lim by a fresh
+// variable at lvl (its bounds freshened too); variables at level <= lim are kept.
+func (in *Inferer) freshenAbove(lim int, ty SimpleType, lvl int, cache map[int]*Variable) SimpleType {
+	if levelOf(ty) <= lim {
+		return ty
+	}
+	switch t := ty.(type) {
+	case *Variable:
+		if nv, ok := cache[t.id]; ok {
+			return nv
+		}
+		nv := in.freshVar(lvl)
+		cache[t.id] = nv
+		for _, lb := range t.lowerBounds {
+			nv.lowerBounds = append(nv.lowerBounds, in.freshenAbove(lim, lb, lvl, cache))
+		}
+		for _, ub := range t.upperBounds {
+			nv.upperBounds = append(nv.upperBounds, in.freshenAbove(lim, ub, lvl, cache))
+		}
+		return nv
+	case *Function:
+		params := make([]SimpleType, len(t.params))
+		for i, p := range t.params {
+			params[i] = in.freshenAbove(lim, p, lvl, cache)
+		}
+		return &Function{params: params, paramNames: t.paramNames, ret: in.freshenAbove(lim, t.ret, lvl, cache)}
+	case *Tuple:
+		elems := make([]SimpleType, len(t.elems))
+		for i, e := range t.elems {
+			elems[i] = in.freshenAbove(lim, e, lvl, cache)
+		}
+		return &Tuple{elems: elems}
 	default:
-		return "?"
+		return ty
 	}
 }
 
-// ---- Tiny expression IR (stands in for the parser at M0) ----
+// ---- Tiny expression IR (stands in for the parser) ----
 
-// Term is the source-expression IR. At M0 it is hand-built in tests; later
-// milestones bridge to internal/parser + internal/ast.
 type Term interface{ isTerm() }
 
-// Lit is a primitive literal carrying its primitive type name, e.g. {"boolean"}.
-type Lit struct{ Prim string }
-
-// Var references a binding by name.
-type Var struct{ Name string }
-
-// Lam is a single-parameter lambda: fn (Param) { return Body }.
-type Lam struct {
-	Param string
-	Body  Term
+type Lit struct {
+	Kind string // "str" | "num" | "bool"
+	Str  string
+	Num  float64
+	Bool bool
 }
-
-// App is application: Fn(Arg).
+type Var struct{ Name string }
+type Lam struct {
+	Params []string
+	Body   Term
+}
 type App struct {
 	Fn  Term
 	Arg Term
 }
+type Let struct {
+	Name string
+	Rhs  Term
+	Body Term
+}
+type TupleExpr struct{ Elems []Term }
 
-func (*Lit) isTerm() {}
-func (*Var) isTerm() {}
-func (*Lam) isTerm() {}
-func (*App) isTerm() {}
+func (*Lit) isTerm()       {}
+func (*Var) isTerm()       {}
+func (*Lam) isTerm()       {}
+func (*App) isTerm()       {}
+func (*Let) isTerm()       {}
+func (*TupleExpr) isTerm() {}
 
-// typeTerm walks a Term, generating constraints and returning its SimpleType.
-func (in *Inferer) typeTerm(term Term, ctx map[string]SimpleType) (SimpleType, []error) {
+func litToSimple(t *Lit) *Literal {
+	return &Literal{kind: t.Kind, str: t.Str, num: t.Num, b: t.Bool}
+}
+
+func cloneCtx(ctx map[string]TypeScheme) map[string]TypeScheme {
+	c := make(map[string]TypeScheme, len(ctx)+1)
+	for k, v := range ctx {
+		c[k] = v
+	}
+	return c
+}
+
+func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (SimpleType, []error) {
 	switch t := term.(type) {
 	case *Lit:
-		return &Primitive{name: t.Prim}, nil
+		return litToSimple(t), nil
 	case *Var:
-		if st, ok := ctx[t.Name]; ok {
-			return st, nil
+		if s, ok := ctx[t.Name]; ok {
+			return in.instantiate(s, lvl), nil
 		}
-		return in.freshVar(), []error{fmt.Errorf("unbound variable: %s", t.Name)}
+		return in.freshVar(lvl), []error{fmt.Errorf("unbound variable: %s", t.Name)}
 	case *Lam:
-		param := in.freshVar()
-		newCtx := make(map[string]SimpleType, len(ctx)+1)
-		for k, v := range ctx {
-			newCtx[k] = v
+		newCtx := cloneCtx(ctx)
+		params := make([]SimpleType, len(t.Params))
+		for i, p := range t.Params {
+			pv := in.freshVar(lvl)
+			params[i] = pv
+			newCtx[p] = &MonoScheme{ty: pv}
 		}
-		newCtx[t.Param] = param
-		body, errs := in.typeTerm(t.Body, newCtx)
-		return &Function{
-			params:     []SimpleType{param},
-			paramNames: []string{t.Param},
-			ret:        body,
-		}, errs
+		body, errs := in.typeTerm(t.Body, newCtx, lvl)
+		return &Function{params: params, paramNames: append([]string{}, t.Params...), ret: body}, errs
 	case *App:
-		fnT, e1 := in.typeTerm(t.Fn, ctx)
-		argT, e2 := in.typeTerm(t.Arg, ctx)
-		res := in.freshVar()
+		fnT, e1 := in.typeTerm(t.Fn, ctx, lvl)
+		argT, e2 := in.typeTerm(t.Arg, ctx, lvl)
+		res := in.freshVar(lvl)
 		errs := append(append([]error{}, e1...), e2...)
-		errs = append(errs, in.Constrain(fnT, &Function{
-			params: []SimpleType{argT},
-			ret:    res,
-		})...)
+		errs = append(errs, in.constrain(fnT,
+			&Function{params: []SimpleType{argT}, ret: res}, map[constraintKey]bool{})...)
 		return res, errs
+	case *Let:
+		// Type the rhs one level deeper, then generalize: variables created at
+		// lvl+1 (or above) become quantifiable; captured outer variables (level
+		// <= lvl) do not.
+		rhsT, e1 := in.typeTerm(t.Rhs, ctx, lvl+1)
+		newCtx := cloneCtx(ctx)
+		newCtx[t.Name] = &PolyScheme{level: lvl, body: rhsT}
+		bodyT, e2 := in.typeTerm(t.Body, newCtx, lvl)
+		return bodyT, append(e1, e2...)
+	case *TupleExpr:
+		elems := make([]SimpleType, len(t.Elems))
+		var errs []error
+		for i, e := range t.Elems {
+			et, ee := in.typeTerm(e, ctx, lvl)
+			elems[i] = et
+			errs = append(errs, ee...)
+		}
+		return &Tuple{elems: elems}, errs
 	default:
 		panic(fmt.Sprintf("typeTerm: unhandled %T", term))
 	}
 }
 
-// ---- Coalescing: SimpleType -> type_system.Type ----
+// ---- Occurrence analysis + coalescing/simplification ----
 
 type polKey struct {
 	id  int
 	pol bool
 }
 
-type coalescer struct {
-	names   map[int]string
-	order   []string // names in first-seen order; become the top-level TypeParams
-	counter int
-	inProc  map[polKey]bool // breaks recursion on (variable, polarity)
+// analyze records, for each variable, the polarities it occurs in (following
+// bounds in the relevant direction). This drives single-polarity elimination.
+func analyze(st SimpleType, pol bool, occ map[int]map[bool]bool, seen map[polKey]bool) {
+	switch t := st.(type) {
+	case *Variable:
+		if occ[t.id] == nil {
+			occ[t.id] = map[bool]bool{}
+		}
+		occ[t.id][pol] = true
+		pk := polKey{t.id, pol}
+		if seen[pk] {
+			return
+		}
+		seen[pk] = true
+		bounds := t.lowerBounds
+		if !pol {
+			bounds = t.upperBounds
+		}
+		for _, b := range bounds {
+			analyze(b, pol, occ, seen)
+		}
+	case *Function:
+		for _, p := range t.params {
+			analyze(p, !pol, occ, seen)
+		}
+		analyze(t.ret, pol, occ, seen)
+	case *Tuple:
+		for _, e := range t.elems {
+			analyze(e, pol, occ, seen)
+		}
+	}
 }
 
-func newCoalescer() *coalescer {
-	return &coalescer{names: map[int]string{}, inProc: map[polKey]bool{}}
+type coalescer struct {
+	names   map[int]string
+	order   []string
+	counter int
+	occ     map[int]map[bool]bool
+	inProc  map[polKey]bool
 }
 
 func (c *coalescer) nameFor(v *Variable) string {
@@ -263,52 +517,75 @@ func (c *coalescer) nameFor(v *Variable) string {
 	return n
 }
 
-// coalesce renders st as a type_system.Type. polarity=true is positive (output)
-// position, where a variable becomes the UNION of its lower bounds; polarity
-// false is negative (input), where it becomes the INTERSECTION of its upper
-// bounds. M0 performs no simplification, so a bound-carrying variable renders
-// verbatim (e.g. `T0 | boolean`); M1's simplification pass collapses those.
-func (c *coalescer) coalesce(st SimpleType, polarity bool) type_system.Type {
+func (c *coalescer) coalesce(st SimpleType, pol bool) type_system.Type {
 	switch t := st.(type) {
 	case *Primitive:
 		return primToType(t.name)
+	case *Literal:
+		return litToType(t)
 	case *Function:
 		params := make([]*type_system.FuncParam, len(t.params))
 		for i, p := range t.params {
 			params[i] = type_system.NewFuncParam(
 				type_system.NewIdentPat(paramName(t.paramNames, i)),
-				c.coalesce(p, !polarity), // parameters are contravariant
-			)
+				c.coalesce(p, !pol)) // contravariant
 		}
-		ret := c.coalesce(t.ret, polarity) // return is covariant
-		return type_system.NewFuncType(nil, nil, params, ret, nil)
+		return type_system.NewFuncType(nil, nil, params, c.coalesce(t.ret, pol), nil) // covariant
+	case *Tuple:
+		elems := make([]type_system.Type, len(t.elems))
+		for i, e := range t.elems {
+			elems[i] = c.coalesce(e, pol)
+		}
+		return type_system.NewTupleType(nil, elems...)
 	case *Variable:
-		self := type_system.NewTypeRefType(nil, c.nameFor(t), nil)
+		bipolar := c.occ[t.id][true] && c.occ[t.id][false]
 		bounds := t.lowerBounds
-		if !polarity {
+		if !pol {
 			bounds = t.upperBounds
 		}
-		if len(bounds) == 0 {
-			return self
-		}
-		pk := polKey{t.id, polarity}
+		pk := polKey{t.id, pol}
 		if c.inProc[pk] {
-			return self // recursive type: stop at the variable reference
+			return type_system.NewTypeRefType(nil, c.nameFor(t), nil)
 		}
 		c.inProc[pk] = true
 		defer delete(c.inProc, pk)
 
-		parts := []type_system.Type{self}
+		boundTypes := make([]type_system.Type, 0, len(bounds))
 		for _, b := range bounds {
-			parts = append(parts, c.coalesce(b, polarity))
+			boundTypes = append(boundTypes, c.coalesce(b, pol))
 		}
-		if polarity {
-			return type_system.NewUnionType(nil, parts...)
+
+		if !bipolar {
+			// Single-polarity variable: drop the variable itself and keep only
+			// its bounds (positive => union of lowers, negative => inter of uppers).
+			switch len(boundTypes) {
+			case 0:
+				if pol {
+					return type_system.NewNeverType(nil)
+				}
+				return type_system.NewUnknownType(nil)
+			case 1:
+				return boundTypes[0]
+			default:
+				return combine(pol, boundTypes)
+			}
 		}
-		return type_system.NewIntersectionType(nil, parts...)
+
+		self := type_system.NewTypeRefType(nil, c.nameFor(t), nil)
+		if len(boundTypes) == 0 {
+			return self
+		}
+		return combine(pol, append([]type_system.Type{self}, boundTypes...))
 	default:
 		panic(fmt.Sprintf("coalesce: unhandled %T", st))
 	}
+}
+
+func combine(pol bool, parts []type_system.Type) type_system.Type {
+	if pol {
+		return type_system.NewUnionType(nil, parts...)
+	}
+	return type_system.NewIntersectionType(nil, parts...)
 }
 
 func paramName(names []string, i int) string {
@@ -331,16 +608,32 @@ func primToType(name string) type_system.Type {
 	}
 }
 
+func litToType(l *Literal) type_system.Type {
+	switch l.kind {
+	case "str":
+		return type_system.NewStrLitType(nil, l.str)
+	case "num":
+		return type_system.NewNumLitType(nil, l.num)
+	case "bool":
+		return type_system.NewBoolLitType(nil, l.b)
+	default:
+		panic("simplesub: unknown literal kind " + l.kind)
+	}
+}
+
 // ---- Public entry points ----
 
-// Infer types a term and renders it as a type_system.Type. Free variables of a
-// top-level function are generalized into named type parameters (T0, T1, ...).
-// Proper level-based let-generalization is M1; M0 only needs this top-level
-// generalization for the identity case.
+// Infer types a top-level binding's body (at level 1), simplifies, and renders
+// it as a type_system.Type. Free variables surviving simplification are
+// generalized into named type parameters (T0, T1, ...) on a top-level function.
 func Infer(term Term) (type_system.Type, []error) {
 	in := NewInferer()
-	st, errs := in.typeTerm(term, map[string]SimpleType{})
-	c := newCoalescer()
+	st, errs := in.typeTerm(term, map[string]TypeScheme{}, 1)
+
+	occ := map[int]map[bool]bool{}
+	analyze(st, true, occ, map[polKey]bool{})
+
+	c := &coalescer{names: map[int]string{}, occ: occ, inProc: map[polKey]bool{}}
 	ty := c.coalesce(st, true)
 	if ft, ok := ty.(*type_system.FuncType); ok && len(c.order) > 0 {
 		tps := make([]*type_system.TypeParam, len(c.order))
