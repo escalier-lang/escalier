@@ -36,10 +36,10 @@
 // constrains the receiver to `mut {x: widen(typeof v)}` (literals widen to their
 // primitive on write), and multiple writes merge into one mutable record, so
 // `fn foo(obj) { obj.x = 5; obj.y = 10 }` infers
-// `fn (obj: mut {x: number, y: number}) -> void`. Known limitation: a field that
-// is both read and written is not yet collapsed (read vs. write requirements are
-// separate upper bounds with no shared field variable). Lifetimes (M4) remain
-// out of scope.
+// `fn (obj: mut {x: number, y: number}) -> void`. A write also records the
+// field's type per receiver variable, so a later read of the same field returns
+// the written type — `fn foo(obj) { obj.x = 5; return obj.x }` infers
+// `fn (obj: mut {x: number}) -> number`. Lifetimes (M4) remain out of scope.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.

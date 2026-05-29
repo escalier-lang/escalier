@@ -280,21 +280,13 @@ func TestWriteWidensLiteral(t *testing.T) {
 	require.Equal(t, "fn (obj: mut {x: number}) -> void", got)
 }
 
-// TestReadAndWriteSameField documents a known limitation. Reading and writing
-// the same field of a parameter should collapse to the written (widened) type:
+// TestReadAndWriteSameField: reading and writing the same field of a parameter
+// collapses to the written (widened) type. The write records the field's type
+// per receiver variable, so the later read returns it directly rather than
+// emitting an independent read requirement.
 //
 //	fn foo(obj) { obj.x = 5; return obj.x }  ==>  fn (obj: mut {x: number}) -> number
-//
-// But the read requirement ({x: β}) and the write requirement (mut {x: number})
-// are independent upper bounds on the receiver, and a parameter has no lower
-// bound to flow `number` into the read result β. They only meet at coalescing,
-// giving the equivalent-but-unmerged `{x: T0} & mut {x: number}) -> T0`.
-// Collapsing this needs per-receiver shared field variables (reads and writes
-// referencing the same field variable), which also touches M2's read path — a
-// focused follow-up, not part of this extension.
 func TestReadAndWriteSameField(t *testing.T) {
-	t.Skip("needs shared per-field variables to connect read and write requirements")
-
 	foo := &Lam{Params: []string{"obj"}, Body: &Block{Exprs: []Term{
 		assign(vr("obj"), "x", litNum(5)),
 		sel(vr("obj"), "x"),

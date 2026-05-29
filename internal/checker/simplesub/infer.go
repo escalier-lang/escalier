@@ -143,6 +143,16 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 		// receiver to be a subtype of {bar: <fresh>}, accumulating the field
 		// requirement as an upper bound on the receiver's variable.
 		recvT, errs := in.typeTerm(t.Receiver, ctx, lvl)
+		// If this field was already written on the same receiver variable, the
+		// read returns the (concrete, widened) written type — so a value written
+		// to obj.x flows to a later read of obj.x. The mut write requirement
+		// already subsumes the read requirement, so no extra read constraint is
+		// emitted in that case.
+		if rv, ok := recvT.(*Variable); ok {
+			if wt := in.written[fieldKey{rv.id, t.Name}]; wt != nil {
+				return wt, errs
+			}
+		}
 		res := in.freshVar(lvl)
 		errs = append(errs, in.constrain(recvT,
 			&Record{fields: map[string]SimpleType{t.Name: res}}, map[constraintKey]bool{})...)
@@ -156,8 +166,14 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 		recvT, errs := in.typeTerm(t.Receiver, ctx, lvl)
 		valT, ve := in.typeTerm(t.Value, ctx, lvl)
 		errs = append(errs, ve...)
+		fieldT := widen(valT)
+		// Record the written field type per receiver variable so a later read of
+		// the same field returns it (see the *Sel case).
+		if rv, ok := recvT.(*Variable); ok {
+			in.written[fieldKey{rv.id, t.Name}] = fieldT
+		}
 		errs = append(errs, in.constrain(recvT,
-			&Mut{inner: &Record{fields: map[string]SimpleType{t.Name: widen(valT)}}},
+			&Mut{inner: &Record{fields: map[string]SimpleType{t.Name: fieldT}}},
 			map[constraintKey]bool{})...)
 		return &Void{}, errs
 	case *Block:

@@ -7,9 +7,26 @@ import (
 
 // ---- Inference engine ----
 
-type Inferer struct{ varCounter int }
+// fieldKey identifies a field of a particular receiver variable.
+type fieldKey struct {
+	recvID int
+	field  string
+}
 
-func NewInferer() *Inferer { return &Inferer{} }
+type Inferer struct {
+	varCounter int
+	// written records the (widened) type stored into a field of a receiver
+	// variable. A subsequent read of the same field on the same receiver
+	// returns this type, so a value written to obj.x flows to a later read of
+	// obj.x. The stored type is concrete (not a variable) so that, inside the
+	// invariant `mut {x: ...}` requirement, the field renders as e.g. `number`
+	// rather than surviving as a bipolar type parameter.
+	written map[fieldKey]SimpleType
+}
+
+func NewInferer() *Inferer {
+	return &Inferer{written: map[fieldKey]SimpleType{}}
+}
 
 func (in *Inferer) freshVar(level int) *Variable {
 	v := &Variable{id: in.varCounter, level: level}
