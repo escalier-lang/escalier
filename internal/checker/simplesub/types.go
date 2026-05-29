@@ -46,8 +46,12 @@ type Tuple struct{ elems []SimpleType }
 
 // Record is a structural record type with named fields. Fields are covariant,
 // and width subtyping lets a record with MORE fields be a subtype of one with
-// fewer.
-type Record struct{ fields map[string]SimpleType }
+// fewer. lt is the record's lifetime (the borrow it carries), or nil for a
+// freshly-allocated record that borrows nothing.
+type Record struct {
+	fields map[string]SimpleType
+	lt     Lifetime
+}
 
 // Mut is a mutable reference (cell) holding a value of type inner. It is
 // INVARIANT in inner. Algebraic subtyping has no native invariance — it is all

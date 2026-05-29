@@ -17,6 +17,32 @@ type coalescer struct {
 	mergedOccurrences map[int]map[Polarity]bool // keyed by representative id
 	uf                *unionFind
 	inProc            map[polKey]bool // keyed by (representative id, polarity)
+
+	// lifetime naming (the second sort): leaf lifetime variables become named
+	// parameters 'a, 'b, ... collected in ltOrder for the function's <...> list.
+	ltNames   map[int]string
+	ltCounter int
+	ltOrder   []string
+	// ltKeep[id] is true for param lifetimes that survive elision: those
+	// occurring in both polarities (connecting an input to an output) or forced
+	// to 'static. A param lifetime occurring only on its parameter connects
+	// nothing and is elided (rendered as no lifetime), the lifetime-sort analogue
+	// of single-polarity type-variable elimination.
+	ltKeep map[int]bool
+	// paramLifetimes mirrors Inferer.paramLifetimes: the lifetime-variable ids
+	// that originate on a parameter and may therefore be named.
+	paramLifetimes map[int]bool
+}
+
+// lifetimeForced reports whether a lifetime variable has 'static among its
+// bounds (in which case it coalesces to 'static rather than being elided).
+func lifetimeForced(v *LifetimeVar) bool {
+	for _, b := range append(append([]Lifetime{}, v.lowerBounds...), v.upperBounds...) {
+		if isStaticLifetime(b) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *coalescer) nameForRep(rep int) string {
@@ -28,6 +54,90 @@ func (c *coalescer) nameForRep(rep int) string {
 	c.names[rep] = n
 	c.order = append(c.order, n)
 	return n
+}
+
+func (c *coalescer) ltNameFor(id int) string {
+	if n, ok := c.ltNames[id]; ok {
+		return n
+	}
+	n := string(rune('a' + c.ltCounter))
+	c.ltCounter++
+	c.ltNames[id] = n
+	c.ltOrder = append(c.ltOrder, n)
+	return n
+}
+
+// coalesceLifetime renders a Lifetime into a type_system.Lifetime. The only
+// named lifetimes are *param* lifetimes that survive elision (ltKeep). A param
+// lifetime renders as its own name. A non-param (join) variable expands to the
+// set of param lifetimes reachable through its bounds — its lower bounds in
+// Positive position (a return uniting several borrows ⇒ `('a | 'b)`), its upper
+// bounds in Negative position. 'static (top) absorbs.
+func (c *coalescer) coalesceLifetime(lt Lifetime, pol Polarity) type_system.Lifetime {
+	v, ok := lt.(*LifetimeVar)
+	if !ok {
+		if isStaticLifetime(lt) {
+			return &type_system.LifetimeValue{IsStatic: true}
+		}
+		return nil
+	}
+
+	// A named param lifetime renders as itself — unless it is forced to 'static
+	// (its borrow escapes), in which case it renders 'static.
+	if c.paramLifetimes[v.id] {
+		if lifetimeForced(v) {
+			return &type_system.LifetimeValue{IsStatic: true}
+		}
+		if c.ltKeep[v.id] {
+			return &type_system.LifetimeVar{Name: c.ltNameFor(v.id)}
+		}
+		return nil
+	}
+
+	// A join/internal variable: gather the param lifetimes it reaches.
+	members, static := c.reachableParamLifetimes(v, pol, map[int]bool{})
+	if static {
+		return &type_system.LifetimeValue{IsStatic: true}
+	}
+	switch len(members) {
+	case 0:
+		return nil
+	case 1:
+		return members[0]
+	default:
+		return &type_system.LifetimeUnion{Lifetimes: members}
+	}
+}
+
+// reachableParamLifetimes collects the kept param lifetimes reachable from v
+// through its polarity-relevant bounds, and whether 'static is reached.
+func (c *coalescer) reachableParamLifetimes(v *LifetimeVar, pol Polarity, seen map[int]bool) ([]type_system.Lifetime, bool) {
+	if seen[v.id] {
+		return nil, false
+	}
+	seen[v.id] = true
+	var members []type_system.Lifetime
+	static := false
+	for _, b := range v.boundsAt(pol) {
+		if isStaticLifetime(b) {
+			static = true
+			continue
+		}
+		bv, ok := b.(*LifetimeVar)
+		if !ok {
+			continue
+		}
+		if c.paramLifetimes[bv.id] {
+			if c.ltKeep[bv.id] {
+				members = append(members, &type_system.LifetimeVar{Name: c.ltNameFor(bv.id)})
+			}
+			continue
+		}
+		sub, subStatic := c.reachableParamLifetimes(bv, pol, seen)
+		members = append(members, sub...)
+		static = static || subStatic
+	}
+	return members, static
 }
 
 func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
@@ -61,7 +171,11 @@ func (c *coalescer) coalesce(st SimpleType, pol Polarity) type_system.Type {
 			elems[i] = type_system.NewPropertyElem(
 				type_system.NewStrKey(name), c.coalesce(t.fields[name], pol))
 		}
-		return type_system.NewObjectType(nil, elems)
+		obj := type_system.NewObjectType(nil, elems)
+		if t.lt != nil {
+			obj.Lifetime = c.coalesceLifetime(t.lt, pol)
+		}
+		return obj
 	case *Mut:
 		// inner is invariant, so its read and write views are equal; coalesce
 		// via the read (current-polarity) view. Variables inside are bipolar, so

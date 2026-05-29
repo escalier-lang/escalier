@@ -56,6 +56,20 @@ type Assign struct {
 // the block's type is that of the last term, or void when empty.
 type Block struct{ Exprs []Term }
 
+// IfExpr is a conditional whose value is one of its two branches. Both branches
+// are typed and unified into one result, so when both return borrowed records
+// the result carries the union of their lifetimes (e.g. `('a | 'b)`).
+type IfExpr struct {
+	Cond Term
+	Then Term
+	Else Term
+}
+
+// Escape models a value escaping into module-level/static storage (e.g. storing
+// a parameter into a global). Its type is void; its effect is to constrain the
+// escaping value's lifetime to outlive everything, i.e. `<: 'static`.
+type Escape struct{ Value Term }
+
 func (*Lit) isTerm()        {}
 func (*Var) isTerm()        {}
 func (*Lam) isTerm()        {}
@@ -66,6 +80,8 @@ func (*RecordExpr) isTerm() {}
 func (*Sel) isTerm()        {}
 func (*Assign) isTerm()     {}
 func (*Block) isTerm()      {}
+func (*IfExpr) isTerm()     {}
+func (*Escape) isTerm()     {}
 
 func litToSimple(t *Lit) *Literal {
 	return &Literal{kind: t.Kind, str: t.Str, num: t.Num, b: t.Bool}
@@ -94,7 +110,9 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 		for i, p := range t.Params {
 			var pt SimpleType
 			if i < len(t.ParamTypes) && t.ParamTypes[i] != nil {
-				pt = t.ParamTypes[i] // annotated parameter
+				// A `mut` record parameter is a borrow: give it a fresh lifetime
+				// variable, so the borrow's lifetime flows wherever the param does.
+				pt = in.attachParamLifetimes(t.ParamTypes[i])
 			} else {
 				pt = in.freshVar(lvl) // unannotated: fresh inference variable
 			}
@@ -185,9 +203,66 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 			errs = append(errs, ee...)
 		}
 		return last, errs
+	case *IfExpr:
+		_, ce := in.typeTerm(t.Cond, ctx, lvl)
+		thenT, te := in.typeTerm(t.Then, ctx, lvl)
+		elseT, ee := in.typeTerm(t.Else, ctx, lvl)
+		errs := append(append(ce, te...), ee...)
+		res, je := in.joinBranches(thenT, elseT, lvl)
+		return res, append(errs, je...)
+	case *Escape:
+		// The value escapes to static storage: its lifetime must outlive
+		// everything, i.e. lifetime(value) <: 'static.
+		valT, errs := in.typeTerm(t.Value, ctx, lvl)
+		if lt := lifetimeOf(valT); lt != nil {
+			in.constrainLt(lt, &StaticLifetime{})
+		}
+		return &Void{}, errs
 	default:
 		panic(fmt.Sprintf("typeTerm: unhandled %T", term))
 	}
+}
+
+// joinBranches computes the result type of an if-expression whose branches have
+// types a and b. For two borrowed (mut) records it produces a mut record whose
+// lifetime is a fresh variable bounded below by both branches' lifetimes — so a
+// positive-position result coalesces to `('a | 'b)` — with fields constrained
+// equal across the branches. Otherwise it falls back to a fresh type variable
+// bounded below by both branch types (their union).
+func (in *Inferer) joinBranches(a, b SimpleType, lvl int) (SimpleType, []error) {
+	ma, aIsMut := a.(*Mut)
+	mb, bIsMut := b.(*Mut)
+	if aIsMut && bIsMut {
+		ra, aok := ma.inner.(*Record)
+		rb, bok := mb.inner.(*Record)
+		if aok && bok && ra.lt != nil && rb.lt != nil {
+			joined := in.freshLifetime()
+			in.constrainLt(ra.lt, joined)
+			in.constrainLt(rb.lt, joined)
+			// Fields are invariant inside mut; constrain shared fields equal and
+			// take the union of both field sets.
+			fields := map[string]SimpleType{}
+			var errs []error
+			for name, at := range ra.fields {
+				fields[name] = at
+				if bt, ok := rb.fields[name]; ok {
+					errs = append(errs, in.constrain(at, bt, map[constraintKey]bool{})...)
+					errs = append(errs, in.constrain(bt, at, map[constraintKey]bool{})...)
+				}
+			}
+			for name, bt := range rb.fields {
+				if _, ok := fields[name]; !ok {
+					fields[name] = bt
+				}
+			}
+			return &Mut{inner: &Record{fields: fields, lt: joined}}, errs
+		}
+	}
+	res := in.freshVar(lvl)
+	var errs []error
+	errs = append(errs, in.constrain(a, res, map[constraintKey]bool{})...)
+	errs = append(errs, in.constrain(b, res, map[constraintKey]bool{})...)
+	return res, errs
 }
 
 // ---- Public entry points ----
@@ -229,19 +304,51 @@ func inferWith(in *Inferer, term Term) (type_system.Type, []error) {
 		}
 	}
 
+	// Lifetime elision: a *param* lifetime is named only if it connects an input
+	// to an output (occurs in both polarities) or is forced to 'static. A param
+	// lifetime that occurs only on the parameter (its borrow is never returned
+	// or stored) is elided. Join/internal variables are never named — they
+	// expand to their param-lifetime members — so they are not kept here.
+	ltOcc := map[int]map[Polarity]bool{}
+	analyzeLts(st, Positive, ltOcc, map[polKey]bool{}, map[polKey]bool{})
+	ltKeep := map[int]bool{}
+	ltVars := map[int]*LifetimeVar{}
+	collectLifetimeVars(st, ltVars, map[int]bool{})
+	for id := range in.paramLifetimes {
+		pols := ltOcc[id]
+		if pols[Positive] && pols[Negative] {
+			ltKeep[id] = true
+		}
+		if v := ltVars[id]; v != nil && lifetimeForced(v) {
+			ltKeep[id] = true
+		}
+	}
+
 	c := &coalescer{
 		names:             map[int]string{},
 		mergedOccurrences: mergedOccurrences,
 		uf:                uf,
 		inProc:            map[polKey]bool{},
+		ltNames:           map[int]string{},
+		ltKeep:            ltKeep,
+		paramLifetimes:    in.paramLifetimes,
 	}
 	ty := c.coalesce(st, Positive)
-	if ft, ok := ty.(*type_system.FuncType); ok && len(c.order) > 0 {
-		tps := make([]*type_system.TypeParam, len(c.order))
-		for i, n := range c.order {
-			tps[i] = type_system.NewTypeParam(n)
+	if ft, ok := ty.(*type_system.FuncType); ok {
+		if len(c.order) > 0 {
+			tps := make([]*type_system.TypeParam, len(c.order))
+			for i, n := range c.order {
+				tps[i] = type_system.NewTypeParam(n)
+			}
+			ft.TypeParams = tps
 		}
-		ft.TypeParams = tps
+		if len(c.ltOrder) > 0 {
+			lps := make([]*type_system.LifetimeVar, len(c.ltOrder))
+			for i, n := range c.ltOrder {
+				lps[i] = &type_system.LifetimeVar{Name: n}
+			}
+			ft.LifetimeParams = lps
+		}
 	}
 	return ty, errs
 }

@@ -224,7 +224,9 @@ func TestMutParamFlows(t *testing.T) {
 	}
 	got, errs := Render(identity)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", got)
+	// With M4, returning the mut borrow infers a lifetime connecting param and
+	// result (this is exactly IdentityRefReturn).
+	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", got)
 }
 
 // TestMutFieldIsInvariantTypeParam: reading the field of a mut parameter with a
@@ -294,6 +296,89 @@ func TestReadAndWriteSameField(t *testing.T) {
 	got, errs := Render(foo)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: mut {x: number}) -> number", got)
+}
+
+// --- M4: lifetimes as a second sort ---
+
+// mutRec builds a mut record parameter type from field pairs.
+func mutRec(pairs ...any) *Mut { return mut(rec(pairs...)) }
+
+// TestIdentityRefReturn: returning a mut parameter shares its lifetime by value
+// identity, so the same lifetime variable appears on parameter and result.
+//
+//	fn identity(p: mut {x: number}) { return p }
+//	  ==>  fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}
+func TestIdentityRefReturn(t *testing.T) {
+	identity := &Lam{
+		Params:     []string{"p"},
+		ParamTypes: []SimpleType{mutRec("x", num())},
+		Body:       vr("p"),
+	}
+	got, errs := Render(identity)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", got)
+}
+
+// TestFreshObjectReturn: returning a freshly-allocated record borrows nothing,
+// so the result carries no lifetime. The parameter's lifetime is also elided —
+// the borrow is never returned or stored, so it connects nothing (lifetime
+// elision, the lifetime-sort analogue of single-polarity variable elimination).
+// This is the key contrast with IdentityRefReturn, where the borrow IS returned.
+//
+//	fn clone(p: mut {x: number}) { return {x: 0} }  ==>  fn (p: mut {x: number}) -> {x: 0}
+//
+// (The result is {x: 0}, not {x: number}: record literals aren't widened — only
+// values written through a mut reference are, per the M3 extension.)
+func TestFreshObjectReturn(t *testing.T) {
+	clone := &Lam{
+		Params:     []string{"p"},
+		ParamTypes: []SimpleType{mutRec("x", num())},
+		Body:       &RecordExpr{Fields: map[string]Term{"x": litNum(0)}},
+	}
+	got, errs := Render(clone)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {x: number}) -> {x: 0}", got)
+}
+
+// TestConditionalUnionReturn: returning one of two borrowed parameters unions
+// their lifetimes on the result.
+//
+//	fn pick(a: mut {x: number}, b: mut {x: number}, cond: boolean) {
+//	  if cond { a } else { b }
+//	}  ==>  fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}, cond: boolean) -> mut ('a | 'b) {x: number}
+//
+// Returning one of two borrowed parameters unions their lifetimes on the result
+// — the M4 thesis in action: a fresh join lifetime variable bounded below by
+// both branches' lifetimes coalesces, in positive (return) position, to the
+// union of its param-lifetime members.
+func TestConditionalUnionReturn(t *testing.T) {
+	pick := &Lam{
+		Params:     []string{"a", "b", "cond"},
+		ParamTypes: []SimpleType{mutRec("x", num()), mutRec("x", num()), boolean()},
+		Body:       &IfExpr{Cond: vr("cond"), Then: vr("a"), Else: vr("b")},
+	}
+	got, errs := Render(pick)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}, cond: boolean) -> mut ('a | 'b) {x: number}",
+		got)
+}
+
+// TestEscapingRefIntoStatic: a parameter that escapes into static storage has
+// its lifetime constrained to 'static, which coalesces away the lifetime
+// variable in favor of 'static.
+//
+//	fn cache(item: mut {x: number}) { escape(item) }
+//	  ==>  fn (item: mut 'static {x: number}) -> void
+func TestEscapingRefIntoStatic(t *testing.T) {
+	cache := &Lam{
+		Params:     []string{"item"},
+		ParamTypes: []SimpleType{mutRec("x", num())},
+		Body:       &Block{Exprs: []Term{&Escape{Value: vr("item")}}},
+	}
+	got, errs := Render(cache)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (item: mut 'static {x: number}) -> void", got)
 }
 
 // TestConstrain exercises the constrain primitive directly.

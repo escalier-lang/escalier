@@ -14,7 +14,12 @@ type fieldKey struct {
 }
 
 type Inferer struct {
-	varCounter int
+	varCounter      int
+	lifetimeCounter int
+	// paramLifetimes is the set of lifetime-variable ids that originate on a
+	// parameter (a borrow). Only these are named in the output; internal join
+	// variables are not.
+	paramLifetimes map[int]bool
 	// written records the (widened) type stored into a field of a receiver
 	// variable. A subsequent read of the same field on the same receiver
 	// returns this type, so a value written to obj.x flows to a later read of
@@ -211,7 +216,7 @@ func (in *Inferer) extrude(ty SimpleType, pol Polarity, lvl int, cache map[int]*
 		for name, f := range t.fields {
 			fields[name] = in.extrude(f, pol, lvl, cache)
 		}
-		return &Record{fields: fields}
+		return &Record{fields: fields, lt: t.lt}
 	case *Mut:
 		// inner is invariant, so it is reachable in both polarities; extrude it
 		// in the current polarity (the read view) — the write view shares the

@@ -39,7 +39,20 @@
 // `fn (obj: mut {x: number, y: number}) -> void`. A write also records the
 // field's type per receiver variable, so a later read of the same field returns
 // the written type — `fn foo(obj) { obj.x = 5; return obj.x }` infers
-// `fn (obj: mut {x: number}) -> number`. Lifetimes (M4) remain out of scope.
+// `fn (obj: mut {x: number}) -> number`.
+//
+// M4 adds lifetimes as a SECOND SORT solved by the same constraint machinery
+// (see lifetime.go): a LifetimeVar carries lower/upper bounds over the
+// "outlives" lattice ('static = top), and constrainLt mirrors constrain. A `mut`
+// record parameter is a borrow, so it gets a fresh lifetime; returning it shares
+// that lifetime by value identity (`fn <'a>(p: mut 'a {x}) -> mut 'a {x}`);
+// returning one of several borrows unions their lifetimes via a fresh join
+// variable (`mut ('a | 'b) {x}`); a borrow that escapes to static storage is
+// constrained `<: 'static` and renders `mut 'static {x}`. Lifetime elision drops
+// a param lifetime that connects nothing (the lifetime-sort analogue of
+// single-polarity elimination). This demonstrates the thesis that the
+// production checker's multi-phase infer_lifetime.go collapses into ordinary
+// constraint solving over a second sort.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
