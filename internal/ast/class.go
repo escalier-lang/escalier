@@ -22,10 +22,10 @@ type ClassElem interface {
 	Accept(v Visitor)
 	Span() Span
 	// Doc returns the leading JSDoc (`/** ... */`) retained on the elem,
-	// verbatim with delimiters, or "" if absent. Set today only by the
-	// dts_to_esc converter — handwritten Escalier sources don't yet
-	// parse leading member docs (see #663).
+	// verbatim with delimiters, or "" if absent. Populated by both the
+	// dts_to_esc converter and the regular parser (#663).
 	Doc() string
+	SetDoc(string)
 }
 
 // MethodReceiver describes a `self` receiver on a method, getter, setter, or

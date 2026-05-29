@@ -1,8 +1,62 @@
 package parser
 
 import (
+	"reflect"
+
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/lexer_util"
 )
+
+// consumeLeadingDoc consumes any comment tokens preceding the next
+// non-comment token and returns the most recent contiguous JSDoc block
+// (a `/** ... */` block comment) immediately before that token, or ""
+// if there is none. Non-JSDoc comments interleaved between a JSDoc
+// block and the next token reset the captured doc — JSDoc must be the
+// immediately preceding comment to attach. Mirrors
+// dts_parser.consumeLeadingDoc so the two parsers agree on what counts
+// as a leading doc; both rely on lexer_util.IsJSDoc for the predicate.
+func (p *Parser) consumeLeadingDoc() string {
+	var doc string
+	for {
+		select {
+		case <-p.ctx.Done():
+			return doc
+		default:
+		}
+		t := p.lexer.peek()
+		if t.Type == BlockComment {
+			if lexer_util.IsJSDoc(t.Value) {
+				doc = t.Value
+			} else {
+				doc = ""
+			}
+			p.lexer.consume()
+			continue
+		}
+		if t.Type == LineComment {
+			doc = ""
+			p.lexer.consume()
+			continue
+		}
+		return doc
+	}
+}
+
+// attachDoc sets doc on node when doc is non-empty and node is
+// non-nil. Both the interface-nil case (untyped nil from an inner
+// returning `return nil`) and the typed-nil case (a future caller
+// returning `var fe *FieldElem; ... return fe`) are guarded — without
+// the reflect check the typed-nil path would nil-deref inside SetDoc.
+func attachDoc(node ast.Documented, doc string) {
+	if doc == "" || node == nil {
+		return
+	}
+	v := reflect.ValueOf(node)
+	if v.Kind() == reflect.Ptr && v.IsNil() {
+		return
+	}
+	node.SetDoc(doc)
+}
 
 // maybeTypeParams parses optional type parameters if present.
 // Returns the parsed type parameters and updates the current token position.
@@ -611,17 +665,29 @@ func (p *Parser) parseConstructorElem(
 }
 
 // parseClassElem parses a single class element (field, method, static, etc.)
+// and attaches any leading JSDoc block comment to the resulting elem's
+// Doc field. Non-JSDoc comments (line comments, plain block comments)
+// are still consumed but do not populate Doc.
 func (p *Parser) parseClassElem() ast.ClassElem {
-	// TODO(#663): attach JSDoc to the parsed elem's Doc field instead
-	// of dropping it. The five class-elem AST types carry a Doc string,
-	// the printer emits it, but the parser currently throws it away —
-	// so JSDoc on hand-authored class members silently fails to round
-	// trip. Port dts_parser.consumeLeadingDoc and wire it through here.
-	token := p.lexer.peek()
-	for token.Type == LineComment || token.Type == BlockComment {
-		p.lexer.consume()
-		token = p.lexer.peek()
+	doc := p.consumeLeadingDoc()
+	// After consuming a leading JSDoc, if we're sitting on the class
+	// body's closing brace, there's no elem to attach the doc to.
+	// Surface that to the user as a parse error AND return nil so
+	// parseDelimSeq exits cleanly (avoiding a spurious 'Expected a
+	// property name' from objExprKey).
+	if next := p.lexer.peek(); next.Type == CloseBrace {
+		if doc != "" {
+			p.reportError(next.Span, "JSDoc comment is not attached to a declaration")
+		}
+		return nil
 	}
+	elem := p.parseClassElemInner()
+	attachDoc(elem, doc)
+	return elem
+}
+
+func (p *Parser) parseClassElemInner() ast.ClassElem {
+	token := p.lexer.peek()
 
 	isStatic := false
 	isAsync := false

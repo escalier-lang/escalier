@@ -885,6 +885,326 @@ func TestClassDeclarations(t *testing.T) {
 	}
 }
 
+func TestClassElemDocs(t *testing.T) {
+	parseClass := func(t *testing.T, src string) *ast.ClassDecl {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
+		require.Empty(t, errors)
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok, "first decl is a class")
+		return cls
+	}
+
+	t.Run("FieldElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Point {
+				/** the x coordinate */
+				x: number,
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		f, ok := cls.Body[0].(*ast.FieldElem)
+		require.True(t, ok, "elem is a FieldElem")
+		require.Equal(t, "/** the x coordinate */", f.Doc())
+	})
+
+	t.Run("MethodElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Dog {
+				/** says hi */
+				bark(self) {
+					return "Woof!"
+				}
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		m, ok := cls.Body[0].(*ast.MethodElem)
+		require.True(t, ok, "elem is a MethodElem")
+		require.Equal(t, "/** says hi */", m.Doc())
+	})
+
+	t.Run("GetterElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Box {
+				/** the wrapped value */
+				get value(self) -> number {
+					return 0
+				}
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		g, ok := cls.Body[0].(*ast.GetterElem)
+		require.True(t, ok, "elem is a GetterElem")
+		require.Equal(t, "/** the wrapped value */", g.Doc())
+	})
+
+	t.Run("SetterElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Box {
+				/** replace the wrapped value */
+				set value(mut self, v: number) {}
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		s, ok := cls.Body[0].(*ast.SetterElem)
+		require.True(t, ok, "elem is a SetterElem")
+		require.Equal(t, "/** replace the wrapped value */", s.Doc())
+	})
+
+	t.Run("ConstructorElem", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Email {
+				addr: string,
+				/** make a new Email */
+				constructor(mut self, addr: string) {
+					self.addr = addr
+				},
+			}
+		`)
+		require.Len(t, cls.Body, 2)
+		c, ok := cls.Body[1].(*ast.ConstructorElem)
+		require.True(t, ok, "second elem is a ConstructorElem")
+		require.Equal(t, "/** make a new Email */", c.Doc())
+	})
+
+	t.Run("LineCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Point {
+				/** the x coordinate */
+				// reset
+				x: number,
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		f, ok := cls.Body[0].(*ast.FieldElem)
+		require.True(t, ok)
+		require.Empty(t, f.Doc(), "intervening line comment resets the captured doc")
+	})
+
+	t.Run("PlainBlockCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		cls := parseClass(t, `
+			class Point {
+				/** the x coordinate */
+				/* plain block */
+				x: number,
+			}
+		`)
+		require.Len(t, cls.Body, 1)
+		f, ok := cls.Body[0].(*ast.FieldElem)
+		require.True(t, ok)
+		require.Empty(t, f.Doc(), "intervening non-JSDoc block comment resets the captured doc")
+	})
+
+	t.Run("EmptyDocComment", func(t *testing.T) {
+		t.Parallel()
+		// /**/, /***/, /****/ — all pure-asterisk runs carry no
+		// documentation content and must not attach as JSDoc.
+		for _, src := range []string{
+			"class Point { /**/ x: number, }",
+			"class Point { /***/ x: number, }",
+			"class Point { /****/ x: number, }",
+		} {
+			cls := parseClass(t, src)
+			require.Len(t, cls.Body, 1, "src=%q", src)
+			f, ok := cls.Body[0].(*ast.FieldElem)
+			require.True(t, ok, "src=%q", src)
+			require.Empty(t, f.Doc(), "all-asterisk comment is not JSDoc (src=%q)", src)
+		}
+	})
+
+	t.Run("TrailingDocReportsOrphanError", func(t *testing.T) {
+		t.Parallel()
+		// #1 + #4: a JSDoc immediately before `}` has no elem to
+		// attach to. The parser should report a clear diagnostic
+		// instead of falling through to the cascading 'Expected a
+		// property name' error from the inner.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `class Foo { /** trail */ }`})
+		require.Len(t, errors, 1)
+		require.Equal(t, "JSDoc comment is not attached to a declaration", errors[0].Message)
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Empty(t, cls.Body, "no spurious elem from the orphan path")
+	})
+
+	t.Run("TrailingDocAfterCommaReportsOrphanError", func(t *testing.T) {
+		t.Parallel()
+		// Same shape as TrailingDocReportsOrphanError, but the doc
+		// comes after a trailing comma.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `class Foo { x: number, /** trail */ }`})
+		require.Len(t, errors, 1)
+		require.Equal(t, "JSDoc comment is not attached to a declaration", errors[0].Message)
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok)
+		require.Len(t, cls.Body, 1, "the elem before the comma still parses")
+	})
+}
+
+func TestObjTypeAnnElemDocs(t *testing.T) {
+	parseIface := func(t *testing.T, src string) *ast.InterfaceDecl {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
+		require.Empty(t, errors)
+		require.Len(t, decls, 1)
+		iface, ok := decls[0].(*ast.InterfaceDecl)
+		require.True(t, ok, "first decl is an interface")
+		require.NotNil(t, iface.TypeAnn)
+		return iface
+	}
+
+	t.Run("PropertyTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Point {
+				/** the x coordinate */
+				x: number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		p, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok, "elem is a PropertyTypeAnn")
+		require.Equal(t, "/** the x coordinate */", p.Doc())
+	})
+
+	t.Run("MethodTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Dog {
+				/** says hi */
+				bark(self) -> string
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		m, ok := iface.TypeAnn.Elems[0].(*ast.MethodTypeAnn)
+		require.True(t, ok, "elem is a MethodTypeAnn")
+		require.Equal(t, "/** says hi */", m.Doc())
+	})
+
+	t.Run("GetterTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Sized {
+				/** the size */
+				get size(self) -> number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		g, ok := iface.TypeAnn.Elems[0].(*ast.GetterTypeAnn)
+		require.True(t, ok, "elem is a GetterTypeAnn")
+		require.Equal(t, "/** the size */", g.Doc())
+	})
+
+	t.Run("SetterTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface HasValue {
+				/** replace the value */
+				set value(mut self, x: number) -> undefined
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		s, ok := iface.TypeAnn.Elems[0].(*ast.SetterTypeAnn)
+		require.True(t, ok, "elem is a SetterTypeAnn")
+		require.Equal(t, "/** replace the value */", s.Doc())
+	})
+
+	t.Run("LineCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Point {
+				/** the x coordinate */
+				// reset
+				x: number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		p, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok)
+		require.Empty(t, p.Doc(), "intervening line comment resets the captured doc")
+	})
+
+	t.Run("PlainBlockCommentBetweenJSDocAndElemResetsDoc", func(t *testing.T) {
+		t.Parallel()
+		iface := parseIface(t, `
+			interface Point {
+				/** the x coordinate */
+				/* plain block */
+				x: number
+			}
+		`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		p, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok)
+		require.Empty(t, p.Doc(), "intervening non-JSDoc block comment resets the captured doc")
+	})
+
+	t.Run("RestSpreadTypeAnn", func(t *testing.T) {
+		t.Parallel()
+		// #3: RestSpreadTypeAnn now carries a real doc field.
+		iface := parseIface(t, `interface F { /** spread */ ...Bar }`)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		rs, ok := iface.TypeAnn.Elems[0].(*ast.RestSpreadTypeAnn)
+		require.True(t, ok, "elem is a RestSpreadTypeAnn")
+		require.Equal(t, "/** spread */", rs.Doc())
+	})
+
+	t.Run("TrailingDocReportsOrphanError", func(t *testing.T) {
+		t.Parallel()
+		// #1 + #4 for interface bodies.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `interface Foo { /** trail */ }`})
+		require.Len(t, errors, 1)
+		require.Equal(t, "JSDoc comment is not attached to a declaration", errors[0].Message)
+		require.Len(t, decls, 1)
+		iface, ok := decls[0].(*ast.InterfaceDecl)
+		require.True(t, ok)
+		require.Empty(t, iface.TypeAnn.Elems)
+	})
+
+	t.Run("MissingTypeAnnotationGetsNeverRecovery", func(t *testing.T) {
+		t.Parallel()
+		// #5: PropertyTypeAnn{Value: nil} from error recovery is
+		// replaced with a NeverTypeAnn so the printer/checker see a
+		// well-formed type instead of a nil dereference target.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc",
+			Contents: `interface I { /** d */ x }`})
+		require.Len(t, errors, 1)
+		require.Equal(t, "expected type annotation", errors[0].Message)
+		require.Len(t, decls, 1)
+		iface := decls[0].(*ast.InterfaceDecl)
+		require.Len(t, iface.TypeAnn.Elems, 1)
+		prop, ok := iface.TypeAnn.Elems[0].(*ast.PropertyTypeAnn)
+		require.True(t, ok)
+		require.IsType(t, &ast.NeverTypeAnn{}, prop.Value,
+			"recovery substitutes NeverTypeAnn for the missing type")
+		require.Equal(t, "/** d */", prop.Doc(),
+			"the captured doc still attaches to the recovered property")
+	})
+}
+
 func TestClassConstructorErrors(t *testing.T) {
 	tests := map[string]struct {
 		input string

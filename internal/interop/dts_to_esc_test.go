@@ -91,6 +91,35 @@ func TestStandalone_BooleanTrio(t *testing.T) {
 	require.Empty(t, parseErrs, "printed output parses")
 	require.NotEmpty(t, parsedDecls)
 
+	// Gate: full round trip — every elem on the parser-roundtripped
+	// class body carries the same Doc that the converter emitted, in
+	// the same order. Per-elem parity, not a blanket NotEmpty: if the
+	// converter ever emits a synthesized member without a JSDoc, this
+	// test should pin doc-parity, not require every member to have a
+	// doc.
+	var converterClass, parsedClass *ast.ClassDecl
+	for _, d := range rootNS.Decls {
+		if c, ok := d.(*ast.ClassDecl); ok {
+			converterClass = c
+			break
+		}
+	}
+	for _, d := range parsedDecls {
+		if c, ok := d.(*ast.ClassDecl); ok {
+			parsedClass = c
+			break
+		}
+	}
+	require.NotNil(t, converterClass, "converter emitted a fused class")
+	require.NotNil(t, parsedClass, "parser-roundtripped output contains the fused class")
+	require.Equal(t, len(converterClass.Body), len(parsedClass.Body),
+		"converter and parser-roundtripped classes have the same number of elems")
+	for i, before := range converterClass.Body {
+		after := parsedClass.Body[i]
+		require.Equal(t, before.Doc(), after.Doc(),
+			"elem[%d] (%T) Doc parity broken on parse — #663 regression", i, after)
+	}
+
 	// Gate: idempotent — converting and re-printing the parser-roundtripped
 	// dts module yields the same string.
 	_, printed2 := convertSlice(t, booleanSlice)
@@ -340,6 +369,28 @@ func TestStandalone_SharedInterfaceNotFlattened(t *testing.T) {
 	require.Equal(t, 2, varCount, "both vars survive")
 	require.Contains(t, printed, "/** does a thing */",
 		"interface member JSDoc preserved on the surviving interface")
+
+	// Full round-trip: the printed output parses, and the surviving
+	// interface's member carries its Doc on the parsed AST. Pins the
+	// objTypeAnnElem half of #663 — without the parser-side fix, leading
+	// JSDoc inside an interface body silently lost its Doc field (and
+	// in fact failed to parse at all).
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	var parsedIface *ast.InterfaceDecl
+	for _, d := range parsedDecls {
+		if i, ok := d.(*ast.InterfaceDecl); ok {
+			parsedIface = i
+			break
+		}
+	}
+	require.NotNil(t, parsedIface, "parsed output contains the interface")
+	require.NotEmpty(t, parsedIface.TypeAnn.Elems, "interface has members")
+	for i, elem := range parsedIface.TypeAnn.Elems {
+		require.NotEmpty(t, elem.Doc(),
+			"elem[%d] (%T) lost its JSDoc on parse — #663 regression", i, elem)
+	}
 }
 
 // multilineDocSlice mirrors the real lib.es5.d.ts JSON shape: an

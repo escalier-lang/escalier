@@ -2,6 +2,8 @@ package lexer_util
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestScanIdent(t *testing.T) {
@@ -561,6 +563,35 @@ func TestIsIdentContinue(t *testing.T) {
 				t.Errorf("isIdentContinue(%q) = %v, want %v", tt.r, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIsJSDoc(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		// Real JSDoc.
+		{"/** doc */", true},
+		{"/** */", true},
+		{"/**\n * multi\n */", true},
+		{"/**foo*/", true},
+		// All-asterisk runs carry no content.
+		{"/**/", false},
+		{"/***/", false},
+		{"/****/", false},
+		{"/*****/", false},
+		// Not a JSDoc opener.
+		{"/* doc */", false},
+		{"// doc", false},
+		{"", false},
+		// Unterminated.
+		{"/** doc", false},
+		{"/**", false},
+	}
+	for _, tc := range tests {
+		got := IsJSDoc(tc.value)
+		require.Equal(t, tc.want, got, "IsJSDoc(%q)", tc.value)
 	}
 }
 

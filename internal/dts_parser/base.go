@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/lexer_util"
 )
 
 // DtsParser parses TypeScript .d.ts declaration files
@@ -128,7 +129,7 @@ func (p *DtsParser) consumeLeadingDoc() string {
 	for {
 		t := p.peek()
 		if t.Type == BlockComment {
-			if isJSDoc(t.Value) {
+			if lexer_util.IsJSDoc(t.Value) {
 				doc = t.Value
 			} else {
 				doc = ""
@@ -143,13 +144,6 @@ func (p *DtsParser) consumeLeadingDoc() string {
 		}
 		return doc
 	}
-}
-
-// isJSDoc reports whether a block-comment token value is a JSDoc
-// comment: must start with `/**` and have content beyond the leading
-// stars (excludes `/**/`).
-func isJSDoc(value string) bool {
-	return len(value) > 4 && strings.HasPrefix(value, "/**")
 }
 
 // attachDoc sets doc on n if n implements Documented and doc is
