@@ -106,7 +106,7 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 			// (r.inner <: l.inner). Emitting both directions forces the contents
 			// to be equal, so e.g. `mut {x,y} <: mut {x}` fails even though the
 			// immutable `{x,y} <: {x}` succeeds by width subtyping.
-			errs := in.constrain(l.inner, r.inner, seen)                // read (covariant)
+			errs := in.constrain(l.inner, r.inner, seen)                 // read (covariant)
 			return append(errs, in.constrain(r.inner, l.inner, seen)...) // write (contravariant)
 		}
 		// Against a variable, record the Mut itself as a bound (fall through to
