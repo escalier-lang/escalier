@@ -61,6 +61,58 @@ type LifetimeVar struct { id int; lowerBounds, upperBounds []Lifetime }
 type StaticLifetime struct{}           // top of the outlives lattice
 ```
 
+## Exactness
+
+Escalier's structural formers are **exact by default** — closed, no extra
+members — with a trailing `...` opting into inexactness. The full semantics live
+in `planning/exact-types/requirements.md` (merged on `main`); this section
+records what the checker core must carry. The guiding insight: exactness is the
+same architectural shape as lifetimes — a property *carried on the former*, cheap
+to add when the former is born, painful to retrofit across `constrain` /
+`coalesce` / `analyze` / `freshenAbove` / `extrude` / `print`. So the **flag and
+the subtyping rule are introduced with each former (M3–M6)**; the propagation and
+utility machinery is deferred (M8) and the value-level conversion is codegen (M9).
+
+**Representation** — an `exact` flag on each structural former, plus `final` on
+classes (a class instance is exact iff `final`):
+
+```go
+type Record struct { fields map[string]Type; lt Lifetime; exact bool }
+type Tuple  struct { elems  []Type;          lt Lifetime; exact bool }
+type Func   struct { /* params, ret, ... */              exact bool } // call-site only
+type Union  struct { types  []Type;                      exact bool }
+type Class  struct { name string; args []Type; lt Lifetime; final bool } // final ⇒ exact instance
+```
+
+**Subtyping rules** (added to `constrain`'s structural cases):
+
+- **Objects / tuples / unions** — the one-way rule: exact `<:` inexact, *not* the
+  reverse. Exact `<:` exact requires the *same* member set (no width subtyping);
+  inexact `<:` inexact is the spike's current structural width subtyping.
+- **Functions** — exactness governs **call-site argument counts only**, not
+  function-to-function subtyping. Function arities must match in *both*
+  directions regardless of exactness (exact `</:` inexact *and* the reverse).
+  The spike's "fewer params is a subtype" is the *inexact* case (spec §4.2.1).
+- **`mut` is orthogonal** (spec §7.11): `mut T` carries `T`'s exactness; `mut`
+  neither tightens nor loosens. The M3 read/write invariance encoding and the
+  exactness flag compose without interaction.
+
+**Inference defaults:** object/tuple/union *literals* infer as **exact**; a
+*usage-inferred* shape (from member access) is **inexact** (a lower bound on
+fields that must exist); **TS imports are inexact** for all categories (spec §8).
+
+**The default decision is the real forcing function.** The spike is uniformly
+inexact-by-default — the *opposite* of the spec. Flipping to exact-by-default is
+a breaking change to every object/tuple/function/union type, so it must be
+settled **before M7's conformance corpus** encodes it; afterwards, flipping means
+rewriting the corpus and any code written against the MVP.
+
+**Deferred (not core):** `Exact<T>`/`Inexact<T>` type operators and exactness
+propagation through `keyof`/mapped/conditional types (M8, type operators);
+value-level `exact<T>(v)` lowering and `@escalier-type` JSDoc round-tripping
+(M9, codegen); the `std:*`/`dom:*` finality/inexactness annotation effort
+(spec §11 + `planning/exact-types/builtin-classes.md`, independent stdlib track).
+
 ## `Info` side table (the AST decoupling — option (a))
 
 The AST is never modified. Node→type associations live here, à la
@@ -187,3 +239,7 @@ read once and branched at those three sites.
    or a fresh one (the corpus asserts full messages either way).
 5. **Scope sharing in `CheckOutput`** — interface vs. parallel fields during the
    differential phase.
+6. **Exact-by-default timing** — *settled by spec* (exact source / inexact
+   imports), but the implementation must honor it no later than M7 so the
+   conformance corpus isn't authored against the wrong default. See the
+   "Exactness" section above.
