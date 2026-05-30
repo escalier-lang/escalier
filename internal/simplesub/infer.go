@@ -33,6 +33,30 @@ type Let struct {
 	Rhs  Term
 	Body Term
 }
+
+// LetRec is a recursive binding: Name is in scope within its own Rhs (e.g.
+// `fact` referring to itself). Compare Let, where Name is only in scope in Body.
+type LetRec struct {
+	Name string
+	Rhs  Term
+	Body Term
+}
+
+// recBinding is one binding of a mutually-recursive group.
+type recBinding struct {
+	Name string
+	Rhs  Term
+}
+
+// LetRecGroup is a set of mutually-recursive bindings: every Name is in scope
+// within every Rhs and within Body (e.g. `isEven`/`isOdd`). This is the
+// expression-level analogue of inferring one strongly-connected component of
+// declarations.
+type LetRecGroup struct {
+	Bindings []recBinding
+	Body     Term
+}
+
 type TupleExpr struct{ Elems []Term }
 
 // RecordExpr is a record literal, e.g. {bar: e, baz: e}.
@@ -81,20 +105,22 @@ type IndexExpr struct {
 	Key   string
 }
 
-func (*Lit) isTerm()        {}
-func (*Var) isTerm()        {}
-func (*Lam) isTerm()        {}
-func (*App) isTerm()        {}
-func (*Let) isTerm()        {}
-func (*TupleExpr) isTerm()  {}
-func (*RecordExpr) isTerm() {}
-func (*Sel) isTerm()        {}
-func (*Assign) isTerm()     {}
-func (*Block) isTerm()      {}
-func (*IfExpr) isTerm()     {}
-func (*Escape) isTerm()     {}
-func (*KeyofExpr) isTerm()  {}
-func (*IndexExpr) isTerm()  {}
+func (*Lit) isTerm()         {}
+func (*Var) isTerm()         {}
+func (*Lam) isTerm()         {}
+func (*App) isTerm()         {}
+func (*Let) isTerm()         {}
+func (*TupleExpr) isTerm()   {}
+func (*RecordExpr) isTerm()  {}
+func (*Sel) isTerm()         {}
+func (*Assign) isTerm()      {}
+func (*Block) isTerm()       {}
+func (*IfExpr) isTerm()      {}
+func (*Escape) isTerm()      {}
+func (*KeyofExpr) isTerm()   {}
+func (*IndexExpr) isTerm()   {}
+func (*LetRec) isTerm()      {}
+func (*LetRecGroup) isTerm() {}
 
 func litToSimple(t *Lit) *Literal {
 	return &Literal{kind: t.Kind, str: t.Str, num: t.Num, b: t.Bool}
@@ -151,6 +177,43 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 		newCtx[t.Name] = &PolyScheme{level: lvl, body: rhsT}
 		bodyT, e2 := in.typeTerm(t.Body, newCtx, lvl)
 		return bodyT, append(e1, e2...)
+	case *LetRec:
+		return in.typeTerm(&LetRecGroup{
+			Bindings: []recBinding{{Name: t.Name, Rhs: t.Rhs}},
+			Body:     t.Body,
+		}, ctx, lvl)
+	case *LetRecGroup:
+		// Inferring a (mutually) recursive group, the expression-level analogue
+		// of one strongly-connected component of declarations. No placeholder
+		// types and no post-inference patching are needed (contrast the
+		// unification checker's placeholder phase): give each binding a fresh
+		// variable at lvl+1, make ALL of them visible in EVERY rhs (so the rhss
+		// can reference each other and themselves), then constrain each rhs's
+		// inferred type to be a subtype of its variable. References resolve
+		// through the variable, whose meaning is just the bounds that accumulate.
+		recCtx := cloneCtx(ctx)
+		vars := make([]*Variable, len(t.Bindings))
+		for i, b := range t.Bindings {
+			v := in.freshVar(lvl + 1)
+			vars[i] = v
+			// Monomorphic inside the group: recursive calls share one type,
+			// generalization happens once for the whole group below.
+			recCtx[b.Name] = &MonoScheme{ty: v}
+		}
+		var errs []error
+		for i, b := range t.Bindings {
+			rhsT, e := in.typeTerm(b.Rhs, recCtx, lvl+1)
+			errs = append(errs, e...)
+			errs = append(errs, in.constrain(rhsT, vars[i], map[constraintKey]bool{})...)
+		}
+		// Generalize the whole group at once (shared level boundary lvl), so
+		// mutually recursive bindings get a consistent set of quantified vars.
+		bodyCtx := cloneCtx(ctx)
+		for i, b := range t.Bindings {
+			bodyCtx[b.Name] = &PolyScheme{level: lvl, body: vars[i]}
+		}
+		bodyT, e := in.typeTerm(t.Body, bodyCtx, lvl)
+		return bodyT, append(errs, e...)
 	case *TupleExpr:
 		elems := make([]SimpleType, len(t.Elems))
 		var errs []error

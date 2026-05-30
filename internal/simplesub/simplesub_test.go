@@ -421,6 +421,101 @@ func TestEscapingRefIntoStatic(t *testing.T) {
 	require.Equal(t, "fn (item: mut 'static {x: number}) -> void", got)
 }
 
+// --- Recursive functions (LetRec / LetRecGroup) ---
+//
+// The point of these tests is that "fresh var + constrain" handles cyclic
+// declarations without the placeholder/patch dance the unification checker
+// needs in InferComponent: each binding gets a fresh type variable that is
+// visible during its own (and its siblings') inference, references resolve
+// through the variable, and generalization happens once for the whole group
+// at the end. There is no separate "create placeholder, infer, then unify
+// back to patch the placeholder" step.
+
+// TestLetRec_Loop is the minimal recursion: `letrec loop = fn(x){ loop(x) }`.
+// With no constraint pinning the result, both the parameter and return type
+// generalize independently — exactly what the principal type asks for.
+//
+//	letrec loop = fn(x) { loop(x) } in loop  ==>  fn <T0, T1>(x: T0) -> T1
+func TestLetRec_Loop(t *testing.T) {
+	prog := &LetRec{
+		Name: "loop",
+		Rhs:  lam("x", &App{Fn: vr("loop"), Arg: vr("x")}),
+		Body: vr("loop"),
+	}
+	got, errs := Render(prog)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0, T1>(x: T0) -> T1", got)
+}
+
+// TestLetRec_Factorial: a recursive factorial-shaped function. To avoid pulling
+// arithmetic into the spike IR, we model the body with curried builtins
+// (`pred: number->number`, `mul: number->number->number`) injected as parameters
+// of an outer lambda. The recursive structure itself is what we want to verify:
+// `fact` refers to itself inside its own RHS, and the type
+// `fact: fn(number) -> number` falls out of constrain propagation through the
+// builtins, with no placeholder type needed.
+//
+//	fn(pred, mul, base) {
+//	  letrec fact = fn(n) { mul(n)(fact(pred(n))) } in fact
+//	}  ==>  fn (pred: number->number, mul: number->number->number, base: number)
+//	         -> fn (n: number) -> number
+func TestLetRec_Factorial(t *testing.T) {
+	prog := &Lam{
+		Params: []string{"pred", "mul", "base"},
+		ParamTypes: []SimpleType{
+			fn1(num(), num()),             // pred: number -> number
+			fn1(num(), fn1(num(), num())), // mul: number -> number -> number (curried)
+			num(),                         // base: number
+		},
+		Body: &LetRec{
+			Name: "fact",
+			Rhs: lam("n", &App{
+				Fn:  &App{Fn: vr("mul"), Arg: vr("n")},
+				Arg: &App{Fn: vr("fact"), Arg: &App{Fn: vr("pred"), Arg: vr("n")}},
+			}),
+			Body: vr("fact"),
+		},
+	}
+	got, errs := Render(prog)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn (pred: fn (x0: number) -> number, "+
+			"mul: fn (x0: number) -> fn (x0: number) -> number, "+
+			"base: number) -> fn (n: number) -> number",
+		got)
+}
+
+// TestLetRecGroup_MutualEvenOdd: mutually recursive `isEven`/`isOdd`. Both
+// names are in scope inside *both* RHSs (and the body), and each RHS's inferred
+// type is constrained `<:` its corresponding fresh variable in one shot. With no
+// base case in the IR, the return type generalizes to a fresh parameter — the
+// recursion is sound regardless, which is the point.
+//
+//	fn(pred) {
+//	  letrec
+//	    isEven = fn(n) { isOdd(pred(n)) }
+//	    isOdd  = fn(n) { isEven(pred(n)) }
+//	  in isEven
+//	}  ==>  fn <T0>(pred: number->number) -> fn (n: number) -> T0
+func TestLetRecGroup_MutualEvenOdd(t *testing.T) {
+	prog := &Lam{
+		Params:     []string{"pred"},
+		ParamTypes: []SimpleType{fn1(num(), num())},
+		Body: &LetRecGroup{
+			Bindings: []recBinding{
+				{Name: "isEven", Rhs: lam("n", &App{Fn: vr("isOdd"), Arg: &App{Fn: vr("pred"), Arg: vr("n")}})},
+				{Name: "isOdd", Rhs: lam("n", &App{Fn: vr("isEven"), Arg: &App{Fn: vr("pred"), Arg: vr("n")}})},
+			},
+			Body: vr("isEven"),
+		},
+	}
+	got, errs := Render(prog)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <T0>(pred: fn (x0: number) -> number) -> fn (n: number) -> T0",
+		got)
+}
+
 // TestAliasRefReturn: a lifetime attaches to a type alias just as it does to a
 // record. Returning a `mut` borrow of an alias-typed parameter shares the
 // borrow's lifetime, which renders before the alias name.
