@@ -136,12 +136,15 @@
 // self-verifying — a `match` must equal production verbatim (and must not use a
 // reconstructed baseline), a `benign` must genuinely differ and carry a
 // sound-divergence note, and regressions are asserted zero. Current tally:
-// 10 match, 2 benign, 0 regression. Both benign cases are the same cosmetic gap
-// (an unconstrained negative-position variable renders as `unknown` rather than
-// a generalized `T0`) and have *reconstructed* baselines (the spike can express
-// them but production has no exact test), flagged as such. Because the spike uses
-// a hand-built IR (no parser bridge), this is breadth evidence for the inference
-// *algorithm*, not parser coverage.
+// 10 match, 2 benign, 0 regression. Both benign cases are the same divergence: a
+// variable occurring only in a parameter (never the return) coalesces to
+// `unknown` via single-polarity elimination, where production keeps a vacuous
+// `<T0>`. The spike's form is arguably the more principled one — the two types
+// are mutually subtypes, and quantifying over a parameter-only variable carries
+// no information — so this is a simplification difference, not a defect; both
+// have *reconstructed* baselines (no exact production test), flagged as such.
+// Because the spike uses a hand-built IR (no parser bridge), this is breadth
+// evidence for the inference *algorithm*, not parser coverage.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.

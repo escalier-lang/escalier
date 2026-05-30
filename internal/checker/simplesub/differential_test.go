@@ -169,9 +169,12 @@ func m8Corpus() []diffCase {
 			bucket:        bucketBenign,
 			note: "no verbatim production test for `fn (x){return 5}`; the `<T0>(x: T0)` baseline " +
 				"is reconstructed from production's documented param-generalization (infer_test.go:892). " +
-				"The spike renders an unconstrained negative-position variable as `unknown` rather than " +
-				"generalizing it to a fresh type parameter; `unknown` is the sound meet-of-nothing, just " +
-				"less pretty, and does not affect what the function accepts.",
+				"The spike's form is arguably the MORE principled one: a type parameter that occurs only " +
+				"in a parameter (never the return) is a vacuous quantifier — SimpleSub single-polarity " +
+				"elimination coalesces it to the meet of its (empty) upper bounds, i.e. `unknown`. " +
+				"`fn <T0>(x: T0) -> 5` and `fn (x: unknown) -> 5` are mutually subtypes (the same type); " +
+				"the spike emits the simplified representative. Production likely keeps `<T0>` for " +
+				"TS-interop ergonomics, not correctness.",
 		},
 		{
 			name: "ConditionalUnionReturn",
@@ -196,8 +199,10 @@ func m8Corpus() []diffCase {
 			bucket:        bucketBenign,
 			note: "no verbatim production test (keyof typeof a usage-inferred value has no analog; " +
 				"production keyof is type-level). The return type `\"a\" | \"b\"` is exact — keyof " +
-				"depends only on the key set; the param field types render `unknown` instead of " +
-				"generalized `T0`/`T1` (same unconstrained-variable limitation as UnconstrainedParam).",
+				"depends only on the key set. The field types render `unknown` rather than generalized " +
+				"`T0`/`T1`: the field-read result variables occur only negatively (in the param shape), " +
+				"never in the return, so single-polarity elimination coalesces them to `unknown` — the " +
+				"same principled simplification as UnconstrainedParam, not a defect.",
 		},
 	}
 }
