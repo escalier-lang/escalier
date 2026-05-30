@@ -84,15 +84,32 @@ type Union  struct { types  []Type;                      exact bool }
 type Class  struct { name string; args []Type; lt Lifetime; final bool } // final ⇒ exact instance
 ```
 
+**`Intersection` carries no `exact` flag.** Exactness is a property of *value
+shapes* (objects, tuples, functions) and *closed alternative-sets* (unions) —
+both about whether the set of inhabitants is *open*. A union is a join, so
+"and possibly more" (`A | B | ...`) is meaningful: more alternatives, a sound
+widening. An intersection is a meet (a *constraint combinator*), so the dual
+"`A & B & ...`" would mean *hidden extra constraints* — fewer inhabitants, no
+value-level shape, the opposite of what inexact means everywhere else. So
+intersection has no exact/inexact variant; instead the exactness of its *result*
+is **derived from its operands** during coalescing/normalization (spec §7.7) —
+e.g. exact-object `&` exact-object → an exact object over the union of declared
+properties; exact `&` inexact → exact iff the inexact side's declared props are a
+subset, else an error. The `exact` flag then lands on the resulting
+`Record`/`Tuple`, not on the `Intersection` node.
+
 **Subtyping rules** (added to `constrain`'s structural cases):
 
 - **Objects / tuples / unions** — the one-way rule: exact `<:` inexact, *not* the
   reverse. Exact `<:` exact requires the *same* member set (no width subtyping);
   inexact `<:` inexact is the spike's current structural width subtyping.
-- **Functions** — exactness governs **call-site argument counts only**, not
-  function-to-function subtyping. Function arities must match in *both*
-  directions regardless of exactness (exact `</:` inexact *and* the reverse).
-  The spike's "fewer params is a subtype" is the *inexact* case (spec §4.2.1).
+- **Functions** — direct calls reject extra args regardless of exactness;
+  exactness governs **callback subtyping**. A function type accepts the set of
+  arg-counts it can be invoked with (exact `[required, declared]`, inexact
+  `[required, ∞)`), and `G <: F` iff `G` accepts every arg-count `F`'s holders
+  may invoke with (params contravariant, return covariant). The spike's "fewer
+  params is a subtype" is the *inexact* case. (This corrects the merged spec's
+  §4.2 — see escalier-lang/escalier#677.)
 - **`mut` is orthogonal** (spec §7.11): `mut T` carries `T`'s exactness; `mut`
   neither tightens nor loosens. The M3 read/write invariance encoding and the
   exactness flag compose without interaction.
