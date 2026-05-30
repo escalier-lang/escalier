@@ -7,7 +7,7 @@ M1–M7 (structural core + unions/intersections + conformance corpus + type-leve
 operators); codegen/LSP and the cutover come after.
 
 Spike provenance is cited where a milestone promotes proven spike work
-(`internal/checker/simplesub/`).
+(`internal/simplesub/`).
 
 ---
 
@@ -15,9 +15,11 @@ Spike provenance is cited where a milestone promotes proven spike work
 
 Stand up the new package and its type representation.
 
-- New package as a **subpackage under `internal/checker/`** (the repo rule keeps
-  the checker pipeline under `internal/checker/`; cf. the spike at
-  `internal/checker/simplesub/`). Leaf name TBD, e.g. `internal/checker/solver/`.
+- New package as a **top-level sibling to `internal/checker/`** (e.g.
+  `internal/solver/`; leaf name TBD). The spike lives at
+  `internal/simplesub/`, but the production package sits beside the old
+  checker so both can be built and differential-tested side-by-side, and so the
+  old `internal/checker/` tree can be deleted wholesale at cutover.
 - `soltype` types promoted from the spike: bound-list `TypeVar`
   (`lowerBounds`/`upperBounds` + `level`), `Primitive`, `Literal`, `Function`,
   `Tuple`, plus the constraint primitive `constrain(lhs <: rhs)` with the

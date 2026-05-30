@@ -4,7 +4,7 @@ This directory holds the plan for replacing Escalier's unification-based type
 checker (`internal/checker/`) with one based on **algebraic subtyping**
 (Parreaux's *Simple-sub*, extended with lifetimes as a second sort). The
 approach was de-risked by a working spike in
-[`internal/checker/simplesub/`](../../internal/checker/simplesub/) that proved
+[`internal/simplesub/`](../../internal/simplesub/) that proved
 out the algorithm against Escalier's actual semantics (function/record/`mut`
 inference, lifetimes-as-a-second-sort, type-level operators, recursive types).
 

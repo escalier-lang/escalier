@@ -2,7 +2,7 @@
 
 Background reading and a precise description of the type **lattice** our
 extension of Simple-sub is built on. This is the conceptual foundation for the
-plan; the spike in [`internal/checker/simplesub/`](../../internal/checker/simplesub/)
+plan; the spike in [`internal/simplesub/`](../../internal/simplesub/)
 is its concrete realization.
 
 ## Primary sources

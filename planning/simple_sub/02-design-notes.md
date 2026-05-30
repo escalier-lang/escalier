@@ -1,13 +1,13 @@
 # 02 — Design notes
 
 Concrete shapes for the pieces the milestones reference. These promote the
-spike (`internal/checker/simplesub/`) into production form. Names are
+spike (`internal/simplesub/`) into production form. Names are
 provisional.
 
 ## Package layout
 
 ```text
-internal/checker/solver/    (new checker subpackage; leaf name TBD)
+internal/solver/            (new top-level package, sibling to internal/checker/; leaf name TBD)
   soltype/                  the type representation (its own; NOT type_system)
     type.go                 Type interface; TypeVar, Primitive, Literal,
                             Function, Tuple, Record, Mut, Union, Intersection,
@@ -179,7 +179,7 @@ read once and branched at those three sites.
 
 ## Open questions (decide as we go)
 
-1. **Package leaf name** — under `internal/checker/`: `solver/` vs `algsub/` vs other.
+1. **Package leaf name** — top-level under `internal/`: `solver/` vs `algsub/` vs other.
 2. **`BindingOwner`** — reuse `type_system`'s marker interface, or define the
    new checker's own.
 3. **Codegen path (M8)** — bridge (`soltype → type_system`) vs. port codegen.

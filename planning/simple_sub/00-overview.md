@@ -11,7 +11,7 @@ type-var widening, `Open` objects that grow during unification, the
 `ArrayConstraint` apparatus, intersection-over-union distribution, and a
 separate multi-phase lifetime analysis (`infer_lifetime.go`, ~2k LoC).
 
-A spike in [`internal/checker/simplesub/`](../../internal/checker/simplesub/)
+A spike in [`internal/simplesub/`](../../internal/simplesub/)
 validated that **algebraic subtyping** (Simple-sub) reproduces Escalier-shaped
 inferences while dissolving most of that machinery into one mechanism:
 type variables carry lower/upper **bound lists**, the primitive is
@@ -56,7 +56,7 @@ MVP, as the final milestone M7; the spike already proved them.)
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Build location | New parallel subpackage under `internal/checker/` (e.g. `internal/checker/solver/` — leaf name TBD), per the repo rule | Reversible; differential-testable; delete the old package at the end. |
+| Build location | New top-level package **sibling to `internal/checker/`** (e.g. `internal/solver/` — leaf name TBD) | Reversible; differential-testable; delete the old `internal/checker/` package at the end. |
 | Type representation | Own `soltype` package, bound-list type vars | Clean algorithm-shaped data model; the whole reason not to reuse `type_system`. |
 | AST coupling | **Untouched** — side table (`Info`), option (a) | No AST generics; old checker undisturbed; AST becomes type-system-agnostic at cleanup. |
 | Compatibility | Improve, don't match | Corpus encodes language semantics; improvements are blessed. |
