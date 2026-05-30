@@ -50,12 +50,16 @@ type diffCase struct {
 	name string
 	// build returns the spike's rendered inference result.
 	build func() (string, []error)
-	// production is the expected string from the real checker test suite (with a
-	// source citation in source). Empty for cases with no production baseline.
-	production string
-	source     string // production test file/case this string comes from
-	bucket     diffBucket
-	note       string // required for benign: why the divergence is sound
+	// production is the expected string the production checker yields. For
+	// `match`/most cases this is copied verbatim from the cited test (source); for
+	// cases the spike can express but production has no exact test for, it is
+	// RECONSTRUCTED from production's documented behavior — flagged by
+	// reconstructed=true and explained in note.
+	production    string
+	source        string // production test file:line this string comes from / is grounded in
+	reconstructed bool   // true when `production` is inferred, not copied verbatim
+	bucket        diffBucket
+	note          string // required for benign; also required when reconstructed
 }
 
 func m8Corpus() []diffCase {
@@ -157,14 +161,17 @@ func m8Corpus() []diffCase {
 
 		// --- Benign divergences ---
 		{
-			name:       "UnconstrainedParam",
-			build:      func() (string, []error) { return Render(lam("x", litNum(5))) },
-			production: "fn <T0>(x: T0) -> 5",
-			source:     "production generalizes an unused param to a type parameter",
-			bucket:     bucketBenign,
-			note: "the spike renders an unconstrained negative-position variable as `unknown` " +
-				"rather than generalizing it to a fresh type parameter; `unknown` is the sound " +
-				"meet-of-nothing, just less pretty. Does not affect what the function accepts.",
+			name:          "UnconstrainedParam",
+			build:         func() (string, []error) { return Render(lam("x", litNum(5))) },
+			production:    "fn <T0>(x: T0) -> 5",
+			source:        "grounded in infer_test.go:892 (production generalizes an unconstrained param: \"I\": \"fn <T0>(x: T0) -> T0\")",
+			reconstructed: true,
+			bucket:        bucketBenign,
+			note: "no verbatim production test for `fn (x){return 5}`; the `<T0>(x: T0)` baseline " +
+				"is reconstructed from production's documented param-generalization (infer_test.go:892). " +
+				"The spike renders an unconstrained negative-position variable as `unknown` rather than " +
+				"generalizing it to a fresh type parameter; `unknown` is the sound meet-of-nothing, just " +
+				"less pretty, and does not affect what the function accepts.",
 		},
 		{
 			name: "ConditionalUnionReturn",
@@ -173,12 +180,9 @@ func m8Corpus() []diffCase {
 					ParamTypes: []SimpleType{mutRec("x", num()), mutRec("x", num()), boolean()},
 					Body:       &IfExpr{Cond: vr("cond"), Then: vr("a"), Else: vr("b")}})
 			},
-			production: "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}, cond: T0) -> mut ('a | 'b) {x: number}",
-			source:     "lifetime_test.go ConditionalUnionReturn",
-			bucket:     bucketBenign,
-			note: "identical except `cond`: the spike test annotates it `boolean` (a condition), " +
-				"where production leaves it an unconstrained `T0`. The lifetime result — the point " +
-				"of the case — matches exactly: mut ('a | 'b) {x: number}.",
+			production: "fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}, cond: boolean) -> mut ('a | 'b) {x: number}",
+			source:     "lifetime_test.go:65 ConditionalUnionReturn",
+			bucket:     bucketMatch,
 		},
 		{
 			name: "KeyofResidualUsageInferred",
@@ -186,12 +190,14 @@ func m8Corpus() []diffCase {
 				return Render(&Lam{Params: []string{"x"}, Body: &Block{Exprs: []Term{
 					sel(vr("x"), "a"), sel(vr("x"), "b"), &KeyofExpr{Value: vr("x")}}}})
 			},
-			production: `fn <T0, T1>(x: {a: T0, b: T1}) -> "a" | "b"`,
-			source:     "keyof over a usage-inferred operand (M7 / conditional_test.go-style)",
-			bucket:     bucketBenign,
-			note: "the return type `\"a\" | \"b\"` matches; the param field types render `unknown` " +
-				"instead of generalized `T0`/`T1` (same unconstrained-variable limitation as " +
-				"UnconstrainedParam). keyof depends only on the key set, so the reduction is exact.",
+			production:    `fn <T0, T1>(x: {a: T0, b: T1}) -> "a" | "b"`,
+			source:        "no production analog: keyof over a *usage-inferred* value is an M7 spike construct; production keyof is type-level (keyof T)",
+			reconstructed: true,
+			bucket:        bucketBenign,
+			note: "no verbatim production test (keyof typeof a usage-inferred value has no analog; " +
+				"production keyof is type-level). The return type `\"a\" | \"b\"` is exact — keyof " +
+				"depends only on the key set; the param field types render `unknown` instead of " +
+				"generalized `T0`/`T1` (same unconstrained-variable limitation as UnconstrainedParam).",
 		},
 	}
 }
@@ -201,12 +207,15 @@ func TestM8DifferentialEvaluation(t *testing.T) {
 	tally := map[diffBucket]int{}
 	var report []string
 
+	reconstructedCount := 0
 	for _, c := range cases {
 		got, errs := c.build()
 		require.Empty(t, errs, "%s: spike inference produced errors: %v", c.name, errs)
 
 		switch c.bucket {
 		case bucketMatch:
+			require.False(t, c.reconstructed,
+				"%s is `match` but `reconstructed` — a verbatim baseline is required to claim a match", c.name)
 			require.Equal(t, c.production, got,
 				"%s tagged `match` but diverged from production (%s)", c.name, c.source)
 		case bucketBenign:
@@ -216,9 +225,17 @@ func TestM8DifferentialEvaluation(t *testing.T) {
 		case bucketRegression:
 			t.Errorf("%s is a regression (spike=%q, production=%q): %s", c.name, got, c.production, c.note)
 		}
+		if c.reconstructed {
+			require.NotEmpty(t, c.note, "%s has a reconstructed baseline and must explain it in note", c.name)
+			reconstructedCount++
+		}
 
 		tally[c.bucket]++
-		report = append(report, fmt.Sprintf("  [%-6s] %-28s spike=%q", c.bucket, c.name, got))
+		flag := ""
+		if c.reconstructed {
+			flag = " (reconstructed baseline)"
+		}
+		report = append(report, fmt.Sprintf("  [%-6s] %-28s spike=%q%s", c.bucket, c.name, got, flag))
 	}
 
 	// No regressions allowed.
@@ -226,8 +243,8 @@ func TestM8DifferentialEvaluation(t *testing.T) {
 
 	sort.Strings(report)
 	total := len(cases)
-	t.Logf("\nM8 differential evaluation — %d cases\n%s\n  ---\n  match=%d  benign=%d  regression=%d",
-		total, joinLines(report), tally[bucketMatch], tally[bucketBenign], tally[bucketRegression])
+	t.Logf("\nM8 differential evaluation — %d cases\n%s\n  ---\n  match=%d  benign=%d  regression=%d  (%d benign baselines reconstructed, not copied verbatim)",
+		total, joinLines(report), tally[bucketMatch], tally[bucketBenign], tally[bucketRegression], reconstructedCount)
 }
 
 func joinLines(lines []string) string {

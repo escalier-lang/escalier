@@ -133,12 +133,15 @@
 // M8 (differential_test.go) is a differential-evaluation harness: a corpus of
 // hand-encoded cases, each tagged match / benign / regression and checked
 // against production expected strings from internal/checker/tests/. The test is
-// self-verifying — a `match` must equal production, a `benign` must genuinely
-// differ and carry a sound-divergence note, and regressions are asserted to be
-// zero. Current tally: mostly match, a few benign (the unconstrained-variable
-// renders-as-`unknown`-vs-`T0` cosmetic gap), no regressions. Because the spike
-// uses a hand-built IR (no parser bridge), this is breadth evidence for the
-// inference *algorithm*, not parser coverage.
+// self-verifying — a `match` must equal production verbatim (and must not use a
+// reconstructed baseline), a `benign` must genuinely differ and carry a
+// sound-divergence note, and regressions are asserted zero. Current tally:
+// 10 match, 2 benign, 0 regression. Both benign cases are the same cosmetic gap
+// (an unconstrained negative-position variable renders as `unknown` rather than
+// a generalized `T0`) and have *reconstructed* baselines (the spike can express
+// them but production has no exact test), flagged as such. Because the spike uses
+// a hand-built IR (no parser bridge), this is breadth evidence for the inference
+// *algorithm*, not parser coverage.
 //
 // Variable bounds live on the spike-local Variable struct, never on
 // type_system.TypeVarType — the shared type system stays untouched.
