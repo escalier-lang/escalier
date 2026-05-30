@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -31,7 +32,7 @@ type coalescer struct {
 	ltKeep map[int]bool
 	// paramLifetimes mirrors Inferer.paramLifetimes: the lifetime-variable ids
 	// that originate on a parameter and may therefore be named.
-	paramLifetimes map[int]bool
+	paramLifetimes set.Set[int]
 }
 
 // lifetimeForced reports whether a lifetime variable has 'static among its
@@ -84,7 +85,7 @@ func (c *coalescer) coalesceLifetime(lt Lifetime, pol Polarity) type_system.Life
 
 	// A named param lifetime renders as itself — unless it is forced to 'static
 	// (its borrow escapes), in which case it renders 'static.
-	if c.paramLifetimes[v.id] {
+	if c.paramLifetimes.Contains(v.id) {
 		if lifetimeForced(v) {
 			return &type_system.LifetimeValue{IsStatic: true}
 		}
@@ -127,7 +128,7 @@ func (c *coalescer) reachableParamLifetimes(v *LifetimeVar, pol Polarity, seen m
 		if !ok {
 			continue
 		}
-		if c.paramLifetimes[bv.id] {
+		if c.paramLifetimes.Contains(bv.id) {
 			if c.ltKeep[bv.id] {
 				members = append(members, &type_system.LifetimeVar{Name: c.ltNameFor(bv.id)})
 			}

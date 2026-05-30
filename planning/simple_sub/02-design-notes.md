@@ -6,8 +6,8 @@ provisional.
 
 ## Package layout
 
-```
-internal/solver/            (new checker package; name TBD)
+```text
+internal/checker/solver/    (new checker subpackage; leaf name TBD)
   soltype/                  the type representation (its own; NOT type_system)
     type.go                 Type interface; TypeVar, Primitive, Literal,
                             Function, Tuple, Record, Mut, Union, Intersection,
@@ -115,7 +115,7 @@ Checker-agnostic, encoding the language semantics we *want* (improve, don't
 match). One suggested layout — a directory of cases, each either an inline table
 or a fixture dir:
 
-```
+```text
 testdata/conformance/<category>/<name>.txt
 ---
 source:
@@ -127,7 +127,7 @@ expect:
 
 Or, for error cases:
 
-```
+```text
 source:
   val x: number = "hello"
 expect-error:
@@ -145,7 +145,7 @@ Key properties:
 
 A triage tool, not a conformance gate (since we improve, don't match):
 
-```
+```text
 for each fixture/source:
     tree := parse(source)                  // parse ONCE
     oldScope := oldChecker.Infer(tree)     // uses ast.inferredType field
@@ -179,7 +179,7 @@ read once and branched at those three sites.
 
 ## Open questions (decide as we go)
 
-1. **Package name** — `internal/solver/` vs `internal/checker2/` vs other.
+1. **Package leaf name** — under `internal/checker/`: `solver/` vs `algsub/` vs other.
 2. **`BindingOwner`** — reuse `type_system`'s marker interface, or define the
    new checker's own.
 3. **Codegen path (M8)** — bridge (`soltype → type_system`) vs. port codegen.

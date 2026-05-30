@@ -60,7 +60,7 @@ to B"; A is more specific, lower in the lattice).
 | top `⊤` | `unknown` (everything `<: unknown`) |
 | bottom `⊥` | `never` (`never <:` everything) |
 
-```
+```text
             unknown            ⊤
           /    |    \
      number  string  {x:number} ...

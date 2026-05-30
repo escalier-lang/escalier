@@ -256,25 +256,23 @@ func (in *Inferer) joinBranches(a, b SimpleType, lvl int) (SimpleType, []error) 
 	if aIsMut && bIsMut {
 		ra, aok := ma.inner.(*Record)
 		rb, bok := mb.inner.(*Record)
-		if aok && bok && ra.lt != nil && rb.lt != nil {
+		// Only synthesize a joined mut record when the branches have the SAME
+		// field set. A mut record is invariant, so its field set is observable
+		// (you can read AND write every field); unioning differing field sets
+		// would invent writable fields absent from one branch — unsound. When
+		// the keys differ, fall through to the generic union path below.
+		if aok && bok && ra.lt != nil && rb.lt != nil && sameKeys(ra.fields, rb.fields) {
 			joined := in.freshLifetime()
 			in.constrainLt(ra.lt, joined)
 			in.constrainLt(rb.lt, joined)
-			// Fields are invariant inside mut; constrain shared fields equal and
-			// take the union of both field sets.
+			// Fields are invariant inside mut; constrain shared fields equal.
 			fields := map[string]SimpleType{}
 			var errs []error
 			for name, at := range ra.fields {
+				bt := rb.fields[name] // present: keys are equal
 				fields[name] = at
-				if bt, ok := rb.fields[name]; ok {
-					errs = append(errs, in.constrain(at, bt, map[constraintKey]bool{})...)
-					errs = append(errs, in.constrain(bt, at, map[constraintKey]bool{})...)
-				}
-			}
-			for name, bt := range rb.fields {
-				if _, ok := fields[name]; !ok {
-					fields[name] = bt
-				}
+				errs = append(errs, in.constrain(at, bt, map[constraintKey]bool{})...)
+				errs = append(errs, in.constrain(bt, at, map[constraintKey]bool{})...)
 			}
 			return &Mut{inner: &Record{fields: fields, lt: joined}}, errs
 		}
@@ -284,6 +282,19 @@ func (in *Inferer) joinBranches(a, b SimpleType, lvl int) (SimpleType, []error) 
 	errs = append(errs, in.constrain(a, res, map[constraintKey]bool{})...)
 	errs = append(errs, in.constrain(b, res, map[constraintKey]bool{})...)
 	return res, errs
+}
+
+// sameKeys reports whether two field maps have exactly the same set of keys.
+func sameKeys(a, b map[string]SimpleType) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // ---- Public entry points ----
@@ -335,7 +346,7 @@ func inferWith(in *Inferer, term Term) (type_system.Type, []error) {
 	ltKeep := map[int]bool{}
 	ltVars := map[int]*LifetimeVar{}
 	collectLifetimeVars(st, ltVars, map[int]bool{})
-	for id := range in.paramLifetimes {
+	for _, id := range in.paramLifetimes.ToSlice() {
 		pols := ltOcc[id]
 		if pols[Positive] && pols[Negative] {
 			ltKeep[id] = true

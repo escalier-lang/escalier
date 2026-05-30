@@ -170,8 +170,12 @@ func (e *TypeEvaluator) evalRef(t *TyRef, env tyEnv, st *evalState) type_system.
 		return bound
 	}
 	alias, ok := e.aliases[t.Name]
-	if !ok {
-		// Nominal/symbolic (e.g. a class name): evaluate args, keep the head.
+	// An alias instantiation must supply exactly one argument per parameter. On
+	// any arity mismatch, do NOT instantiate (that would truncate args or leave
+	// params unbound, silently mis-evaluating the body); fall back to the
+	// nominal/symbolic head, the same as for an unknown name. (This evaluator has
+	// no error channel; a real arity diagnostic is the production checker's job.)
+	if !ok || len(t.Args) != len(alias.Params) {
 		args := make([]type_system.Type, len(t.Args))
 		for i, a := range t.Args {
 			args[i] = e.eval(a, env, st)
@@ -184,11 +188,9 @@ func (e *TypeEvaluator) evalRef(t *TyRef, env tyEnv, st *evalState) type_system.
 	args := make([]type_system.Type, 0, len(t.Args))
 	newEnv := tyEnv{}
 	for i, p := range alias.Params {
-		if i < len(t.Args) {
-			a := e.eval(t.Args[i], env, st)
-			newEnv[p] = a
-			args = append(args, a)
-		}
+		a := e.eval(t.Args[i], env, st) // arity checked above
+		newEnv[p] = a
+		args = append(args, a)
 	}
 	key := instantiationKey(t.Name, args)
 

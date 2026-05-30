@@ -56,7 +56,7 @@ This plan turns that spike into a production checker.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Build location | New parallel package (`internal/checker2/` or `internal/solver/` — name TBD) | Reversible; differential-testable; delete the old package at the end. |
+| Build location | New parallel subpackage under `internal/checker/` (e.g. `internal/checker/solver/` — leaf name TBD), per the repo rule | Reversible; differential-testable; delete the old package at the end. |
 | Type representation | Own `soltype` package, bound-list type vars | Clean algorithm-shaped data model; the whole reason not to reuse `type_system`. |
 | AST coupling | **Untouched** — side table (`Info`), option (a) | No AST generics; old checker undisturbed; AST becomes type-system-agnostic at cleanup. |
 | Compatibility | Improve, don't match | Corpus encodes language semantics; improvements are blessed. |
@@ -87,7 +87,7 @@ The integration surface is small and the reuse boundary is clean:
 
 ## Migration shape (reversible until the flip)
 
-```
+```text
 parser ──► *ast.Module ──┬──► old checker ─► type_system.Scope ──► codegen / LSP  (unchanged)
  (parse once)            │
                          └──► new checker ─► soltype.Scope + Info  ─► new test suite + differential harness

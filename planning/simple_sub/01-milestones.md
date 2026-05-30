@@ -14,7 +14,9 @@ Spike provenance is cited where a milestone promotes proven spike work
 
 Stand up the new package and its type representation.
 
-- New package (name TBD: `internal/solver/` or `internal/checker2/`).
+- New package as a **subpackage under `internal/checker/`** (the repo rule keeps
+  the checker pipeline under `internal/checker/`; cf. the spike at
+  `internal/checker/simplesub/`). Leaf name TBD, e.g. `internal/checker/solver/`.
 - `soltype` types promoted from the spike: bound-list `TypeVar`
   (`lowerBounds`/`upperBounds` + `level`), `Primitive`, `Literal`, `Function`,
   `Tuple`, plus the constraint primitive `constrain(lhs <: rhs)` with the

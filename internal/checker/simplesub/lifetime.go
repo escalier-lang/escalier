@@ -1,5 +1,7 @@
 package simplesub
 
+import "github.com/escalier-lang/escalier/internal/set"
+
 // ---- Lifetimes: a second sort, solved by the same constraint machinery ----
 //
 // The M4 thesis: lifetime inference is not a separate multi-phase dataflow
@@ -234,9 +236,9 @@ func (in *Inferer) attachParamLifetimes(st SimpleType) SimpleType {
 	lt := in.freshLifetime()
 	record := func() {
 		if in.paramLifetimes == nil {
-			in.paramLifetimes = map[int]bool{}
+			in.paramLifetimes = set.NewSet[int]()
 		}
-		in.paramLifetimes[lt.id] = true
+		in.paramLifetimes.Add(lt.id)
 	}
 	switch inner := m.inner.(type) {
 	case *Record:

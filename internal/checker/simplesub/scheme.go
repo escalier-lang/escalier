@@ -28,6 +28,15 @@ func (in *Inferer) instantiate(s TypeScheme, lvl int) SimpleType {
 
 // freshenAbove copies ty, replacing each variable with level > lim by a fresh
 // variable at lvl (its bounds freshened too); variables at level <= lim are kept.
+//
+// KNOWN LIMITATION (deferred to the M1 production rewrite): the lifetime carried
+// by a Record/Tuple/Alias is copied by reference, not freshened, so two
+// instantiations of a generalized lifetime-bearing scheme share the same
+// LifetimeVar. A correct fix needs the lifetime sort to carry its own levels
+// (LifetimeVar has none today) plus a lifetime cache threaded through here and
+// instantiate — a lifetime-generalization design change out of scope for the
+// spike. No current inference exhibits wrong output from this (lifetimes that
+// would collide tend to elide), so it is documented rather than band-aided.
 func (in *Inferer) freshenAbove(lim int, ty SimpleType, lvl int, cache map[int]*Variable) SimpleType {
 	if levelOf(ty) <= lim {
 		return ty

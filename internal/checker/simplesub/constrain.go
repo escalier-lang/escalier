@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // ---- Inference engine ----
@@ -20,7 +22,7 @@ type Inferer struct {
 	// paramLifetimes is the set of lifetime-variable ids that originate on a
 	// parameter (a borrow). Only these are named in the output; internal join
 	// variables are not.
-	paramLifetimes map[int]bool
+	paramLifetimes set.Set[int]
 	// written records the (widened) type stored into a field of a receiver
 	// variable. A subsequent read of the same field on the same receiver
 	// returns this type, so a value written to obj.x flows to a later read of
@@ -87,7 +89,7 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 	// checker would instead probe-and-roll-back per the journaled-Probe design;
 	// the spike takes the conservative route.)
 	if u, ok := rhs.(*Union); ok {
-		if _, lhsVar := lhs.(*Variable); !lhsVar {
+		if !containsVariable(lhs) {
 			// X <: (A | B)  iff  X <: A or X <: B.
 			for _, m := range u.types {
 				if errs := in.constrain(lhs, m, seen); len(errs) == 0 {
@@ -98,7 +100,7 @@ func (in *Inferer) constrain(lhs, rhs SimpleType, seen map[constraintKey]bool) [
 		}
 	}
 	if i, ok := lhs.(*Intersection); ok {
-		if _, rhsVar := rhs.(*Variable); !rhsVar {
+		if !containsVariable(rhs) {
 			// (A & B) <: Y  iff  A <: Y or B <: Y.
 			for _, m := range i.types {
 				if errs := in.constrain(m, rhs, seen); len(errs) == 0 {
@@ -355,6 +357,61 @@ func joinDescribe(types []SimpleType, sep string) string {
 		parts[i] = describe(t)
 	}
 	return strings.Join(parts, sep)
+}
+
+// containsVariable reports whether t contains any Variable, anywhere. The
+// existential union/intersection rules trial a member via structural subtyping,
+// which can speculatively bind a *nested* variable (not just a top-level one) —
+// so the "is the other side concrete?" guard must look through composites, not
+// just check the head. When a variable is present we fall through to the
+// variable case instead of trialling.
+func containsVariable(t SimpleType) bool {
+	switch ty := t.(type) {
+	case *Variable:
+		return true
+	case *Function:
+		for _, p := range ty.params {
+			if containsVariable(p) {
+				return true
+			}
+		}
+		return containsVariable(ty.ret)
+	case *Tuple:
+		for _, e := range ty.elems {
+			if containsVariable(e) {
+				return true
+			}
+		}
+		return false
+	case *Record:
+		for _, f := range ty.fields {
+			if containsVariable(f) {
+				return true
+			}
+		}
+		return false
+	case *Mut:
+		return containsVariable(ty.inner)
+	case *Alias:
+		return containsVariable(ty.body)
+	case *Union:
+		for _, m := range ty.types {
+			if containsVariable(m) {
+				return true
+			}
+		}
+		return false
+	case *Intersection:
+		for _, m := range ty.types {
+			if containsVariable(m) {
+				return true
+			}
+		}
+		return false
+	default:
+		// Primitive, Literal, Void, ResidualOp: no embedded variables to bind.
+		return false
+	}
 }
 
 // widen generalizes a literal to its primitive type. A value stored through a

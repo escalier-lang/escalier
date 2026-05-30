@@ -1,6 +1,7 @@
 package simplesub
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -142,28 +143,41 @@ func TestMultipleReads(t *testing.T) {
 // TestConstrainRecords exercises record width + depth subtyping directly.
 func TestConstrainRecords(t *testing.T) {
 	tests := []struct {
-		name     string
-		lhs, rhs SimpleType
-		wantErr  bool
+		name       string
+		lhs, rhs   SimpleType
+		wantErrMsg string // "" means success expected; otherwise the joined error text
 	}{
 		// width: a record with more fields is a subtype of one with fewer.
-		{"more fields subtype of fewer", rec("a", num(), "b", str()), rec("a", num()), false},
+		{"more fields subtype of fewer", rec("a", num(), "b", str()), rec("a", num()), ""},
 		// ...but a record missing a required field is not.
-		{"missing field", rec("a", num()), rec("a", num(), "b", str()), true},
-		{"depth covariant ok", rec("a", num()), rec("a", num()), false},
-		{"depth covariant fail", rec("a", num()), rec("a", str()), true},
+		{"missing field", rec("a", num()), rec("a", num(), "b", str()), `record is missing field "b"`},
+		{"depth covariant ok", rec("a", num()), rec("a", num()), ""},
+		{"depth covariant fail", rec("a", num()), rec("a", str()), "cannot constrain number <: string"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := NewInferer()
 			errs := in.Constrain(tt.lhs, tt.rhs)
-			if tt.wantErr {
-				require.NotEmpty(t, errs)
-			} else {
-				require.Empty(t, errs)
-			}
+			requireErrMsg(t, errs, tt.wantErrMsg)
 		})
 	}
+}
+
+// requireErrMsg asserts the joined text of errs equals wantErrMsg (empty means
+// no errors expected). Joining handles cases that legitimately produce more than
+// one error (e.g. mut invariance emits both the read and write directions).
+func requireErrMsg(t *testing.T, errs []error, wantErrMsg string) {
+	t.Helper()
+	if wantErrMsg == "" {
+		require.Empty(t, errs)
+		return
+	}
+	require.NotEmpty(t, errs)
+	parts := make([]string, len(errs))
+	for i, e := range errs {
+		parts[i] = e.Error()
+	}
+	require.Equal(t, wantErrMsg, strings.Join(parts, "; "))
 }
 
 // TestMutInvariance is the M3 gate: mutable references are invariant, encoded
@@ -177,35 +191,37 @@ func TestConstrainRecords(t *testing.T) {
 // the migration would be in serious doubt.
 func TestMutInvariance(t *testing.T) {
 	tests := []struct {
-		name     string
-		lhs, rhs SimpleType
-		wantErr  bool
+		name       string
+		lhs, rhs   SimpleType
+		wantErrMsg string // "" means success expected; otherwise the joined error text
 	}{
-		{"mut equal ok", mut(num()), mut(num()), false},
-		{"mut prim mismatch", mut(num()), mut(str()), true},
+		{"mut equal ok", mut(num()), mut(num()), ""},
+		// mut is invariant: a prim mismatch fails in both the read and write
+		// directions of the read/write decomposition.
+		{"mut prim mismatch", mut(num()), mut(str()),
+			"cannot constrain number <: string; cannot constrain string <: number"},
 
 		// width subtyping: allowed immutably, rejected under mut.
-		{"immutable width ok", rec("x", num(), "y", num()), rec("x", num()), false},
-		{"mut width rejected", mut(rec("x", num(), "y", num())), mut(rec("x", num())), true},
+		{"immutable width ok", rec("x", num(), "y", num()), rec("x", num()), ""},
+		{"mut width rejected", mut(rec("x", num(), "y", num())), mut(rec("x", num())),
+			`record is missing field "y"`},
 
 		// depth (literal vs primitive): allowed immutably, rejected under mut.
-		{"immutable depth ok", rec("x", litNumT(5)), rec("x", num()), false},
-		{"mut depth rejected", mut(rec("x", litNumT(5))), mut(rec("x", num())), true},
+		{"immutable depth ok", rec("x", litNumT(5)), rec("x", num()), ""},
+		{"mut depth rejected", mut(rec("x", litNumT(5))), mut(rec("x", num())),
+			"cannot constrain number <: 5"},
 
 		// a mutable reference can be read where an immutable value is expected.
-		{"mut read coercion ok", mut(rec("x", num())), rec("x", num()), false},
+		{"mut read coercion ok", mut(rec("x", num())), rec("x", num()), ""},
 		// but an immutable value is not a mutable reference.
-		{"immutable is not mut", rec("x", num()), mut(rec("x", num())), true},
+		{"immutable is not mut", rec("x", num()), mut(rec("x", num())),
+			"cannot constrain record <: mut record"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := NewInferer()
 			errs := in.Constrain(tt.lhs, tt.rhs)
-			if tt.wantErr {
-				require.NotEmpty(t, errs)
-			} else {
-				require.Empty(t, errs)
-			}
+			requireErrMsg(t, errs, tt.wantErrMsg)
 		})
 	}
 }
@@ -364,6 +380,27 @@ func TestConditionalUnionReturn(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t,
 		"fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}, cond: boolean) -> mut ('a | 'b) {x: number}",
+		got)
+}
+
+// TestConditionalMutDifferingFieldsNoInventedFields guards against the mut-join
+// unsoundly unioning *differing* field sets into one mut record (which would
+// invent a writable field absent from one branch). When the branches' field
+// sets differ, joinBranches must fall back to the generic union path, preserving
+// each branch's true shape rather than synthesizing a merged mut record.
+//
+//	fn pick(a: mut {x}, b: mut {x, y}, cond) { if cond { a } else { b } }
+//	  ==>  result is the union of the two mut records, NOT mut {x, y}
+func TestConditionalMutDifferingFieldsNoInventedFields(t *testing.T) {
+	pick := &Lam{
+		Params:     []string{"a", "b", "cond"},
+		ParamTypes: []SimpleType{mutRec("x", num()), mutRec("x", num(), "y", num()), boolean()},
+		Body:       &IfExpr{Cond: vr("cond"), Then: vr("a"), Else: vr("b")},
+	}
+	got, errs := Render(pick)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number, y: number}, cond: boolean) -> mut 'a {x: number} | mut 'b {x: number, y: number}",
 		got)
 }
 
@@ -565,28 +602,28 @@ func TestTuplePerSlotLifetimes_SharedSource(t *testing.T) {
 // TestConstrain exercises the constrain primitive directly.
 func TestConstrain(t *testing.T) {
 	tests := []struct {
-		name     string
-		lhs, rhs SimpleType
-		wantErr  bool
+		name       string
+		lhs, rhs   SimpleType
+		wantErrMsg string // "" means success expected
 	}{
-		{"prim equal", boolean(), boolean(), false},
-		{"prim mismatch", boolean(), num(), true},
-		{"func equal", fn1(num(), num()), fn1(num(), num()), false},
-		{"func param contravariant fail", fn1(num(), num()), fn1(str(), num()), true},
-		{"func return covariant fail", fn1(num(), num()), fn1(num(), str()), true},
-		{"fewer params subtype of more", fn1(num(), num()), fn2(num(), num(), num()), false},
-		{"more params not subtype of fewer", fn2(num(), num(), num()), fn1(num(), num()), true},
-		{"fewer params but overlap contravariant fail", fn1(str(), num()), fn2(num(), num(), num()), true},
+		{"prim equal", boolean(), boolean(), ""},
+		{"prim mismatch", boolean(), num(), "cannot constrain boolean <: number"},
+		{"func equal", fn1(num(), num()), fn1(num(), num()), ""},
+		{"func param contravariant fail", fn1(num(), num()), fn1(str(), num()),
+			"cannot constrain string <: number"},
+		{"func return covariant fail", fn1(num(), num()), fn1(num(), str()),
+			"cannot constrain number <: string"},
+		{"fewer params subtype of more", fn1(num(), num()), fn2(num(), num(), num()), ""},
+		{"more params not subtype of fewer", fn2(num(), num(), num()), fn1(num(), num()),
+			"cannot constrain function of arity 2 <: function of arity 1"},
+		{"fewer params but overlap contravariant fail", fn1(str(), num()), fn2(num(), num(), num()),
+			"cannot constrain number <: string"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := NewInferer()
 			errs := in.Constrain(tt.lhs, tt.rhs)
-			if tt.wantErr {
-				require.NotEmpty(t, errs)
-			} else {
-				require.Empty(t, errs)
-			}
+			requireErrMsg(t, errs, tt.wantErrMsg)
 		})
 	}
 }

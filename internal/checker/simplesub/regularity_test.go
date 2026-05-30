@@ -96,7 +96,10 @@ func TestRegular_MutualExpandingRejected(t *testing.T) {
 
 	errs := e.CheckRegular()
 	require.Len(t, errs, 1)
-	require.Contains(t, errs[0].Error(), "type alias \"Ping\" is not regular")
+	require.EqualError(t, errs[0],
+		"type alias \"Ping\" is not regular: parameter \"T\" grows under a type "+
+			"constructor in a recursive call, so its expansion is unbounded; introduce "+
+			"a nominal type to break the recursion or remove the growing wrapper")
 }
 
 // TestRegular_GrowTerminatesViaBudgetWhenUnchecked confirms the static check and

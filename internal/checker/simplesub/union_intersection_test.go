@@ -15,29 +15,32 @@ func intersection(ts ...SimpleType) *Intersection { return &Intersection{types: 
 //   - (A | B) <: Y  iff  A <: Y and B <: Y
 func TestConstrainUnionAnnotation(t *testing.T) {
 	tests := []struct {
-		name     string
-		lhs, rhs SimpleType
-		wantErr  bool
+		name       string
+		lhs, rhs   SimpleType
+		wantErrMsg string // "" means success expected
 	}{
 		// X <: (A | B): a member matches.
-		{"number <: number | string", num(), union(num(), str()), false},
-		{"string <: number | string", str(), union(num(), str()), false},
+		{"number <: number | string", num(), union(num(), str()), ""},
+		{"string <: number | string", str(), union(num(), str()), ""},
 		// X <: (A | B): no member matches.
-		{"boolean </: number | string", boolean(), union(num(), str()), true},
+		{"boolean </: number | string", boolean(), union(num(), str()),
+			"cannot constrain boolean <: number | string"},
 		// (A | B) <: Y: every member must be <: Y.
-		{"number | number <: number", union(num(), num()), num(), false},
-		{"number | string </: number", union(num(), str()), num(), true},
+		{"number | number <: number", union(num(), num()), num(), ""},
+		{"number | string </: number", union(num(), str()), num(),
+			"cannot constrain string <: number"},
 		// literal <: its primitive, inside a union.
-		{"5 <: number | string", litNumT(5), union(num(), str()), false},
+		{"5 <: number | string", litNumT(5), union(num(), str()), ""},
 		// nested: a union of records against a single record (each member must fit).
-		{"union of records <: record", union(rec("x", num()), rec("x", num(), "y", num())), rec("x", num()), false},
+		{"union of records <: record", union(rec("x", num()), rec("x", num(), "y", num())), rec("x", num()), ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := NewInferer()
 			errs := in.Constrain(tt.lhs, tt.rhs)
-			if tt.wantErr {
-				require.NotEmpty(t, errs)
+			if tt.wantErrMsg != "" {
+				require.Len(t, errs, 1)
+				require.EqualError(t, errs[0], tt.wantErrMsg)
 			} else {
 				require.Empty(t, errs)
 			}
@@ -50,28 +53,30 @@ func TestConstrainUnionAnnotation(t *testing.T) {
 //   - (A & B) <: Y  iff  A <: Y or B <: Y
 func TestConstrainIntersectionAnnotation(t *testing.T) {
 	tests := []struct {
-		name     string
-		lhs, rhs SimpleType
-		wantErr  bool
+		name       string
+		lhs, rhs   SimpleType
+		wantErrMsg string // "" means success expected
 	}{
 		// X <: (A & B): X must satisfy both. A record with both fields satisfies
 		// {x} & {y}.
 		{"{x,y} <: {x} & {y}", rec("x", num(), "y", num()),
-			intersection(rec("x", num()), rec("y", num())), false},
+			intersection(rec("x", num()), rec("y", num())), ""},
 		// X <: (A & B): missing one half fails.
 		{"{x} </: {x} & {y}", rec("x", num()),
-			intersection(rec("x", num()), rec("y", num())), true},
+			intersection(rec("x", num()), rec("y", num())), "record is missing field \"y\""},
 		// (A & B) <: Y: one member suffices.
-		{"number & string <: number", intersection(num(), str()), num(), false},
+		{"number & string <: number", intersection(num(), str()), num(), ""},
 		// (A & B) <: Y: neither member matches.
-		{"number & string </: boolean", intersection(num(), str()), boolean(), true},
+		{"number & string </: boolean", intersection(num(), str()), boolean(),
+			"cannot constrain number & string <: boolean"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			in := NewInferer()
 			errs := in.Constrain(tt.lhs, tt.rhs)
-			if tt.wantErr {
-				require.NotEmpty(t, errs)
+			if tt.wantErrMsg != "" {
+				require.Len(t, errs, 1)
+				require.EqualError(t, errs[0], tt.wantErrMsg)
 			} else {
 				require.Empty(t, errs)
 			}
@@ -128,6 +133,24 @@ func TestVariableAgainstUnionRecordsWholeUnion(t *testing.T) {
 	require.Empty(t, in.Constrain(str(), a), "string is a subtype of number | string")
 	// A non-member is still rejected.
 	require.NotEmpty(t, in.Constrain(boolean(), a), "boolean is not a subtype of number | string")
+}
+
+// TestNestedVariableAgainstUnionNotSpeculativelyPinned guards the deep form of
+// the same soundness concern: the existential `X <: (A | B)` rule must not trial
+// a member when X contains a variable *anywhere* (not just at the top level),
+// because the trial subtypes structurally and would speculatively bind the
+// nested variable. Here the lhs is `{x: v}` with `v` a variable; constraining it
+// against a union of records must NOT pin `v` to the first member's field type.
+func TestNestedVariableAgainstUnionNotSpeculativelyPinned(t *testing.T) {
+	in := NewInferer()
+	v := in.freshVar(0)
+	lhs := &Record{fields: map[string]SimpleType{"x": v}}
+	rhs := union(rec("x", num()), rec("x", str()))
+	_ = in.Constrain(lhs, rhs)
+	// The nested variable must not have been speculatively bound by a member trial.
+	require.Empty(t, v.upperBounds,
+		"nested variable was speculatively pinned by an existential union trial")
+	require.Empty(t, v.lowerBounds)
 }
 
 // TestUnionAnnotationAcceptsAndRejectsArgument is the plan's headline check: a
