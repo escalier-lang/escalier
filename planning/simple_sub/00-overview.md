@@ -41,16 +41,16 @@ This plan turns that spike into a production checker.
 5. Migrate **reversibly**: at every step before the final flip, the old checker
    still works and the new one is opt-in.
 
-## Non-goals (for v1)
+## Non-goals (for the MVP)
 
-- Codegen / `.d.ts` emission from the new checker — **deferred entirely**. v1 is
-  a pure type-checker. `.d.ts`/JS keep running on the old checker.
+- Codegen / `.d.ts` emission from the new checker — **deferred entirely**. The
+  MVP is a pure type-checker. `.d.ts`/JS keep running on the old checker.
 - LSP on the new checker — **deferred**. It may lag the CLI and switch once the
   new checker is the default.
-- Type-level operators (`keyof`, conditional, indexed access) — land **after**
-  the structural core. (The spike proved them; they are not on the v1 critical
-  path.)
 - Bug-for-bug parity with the old checker.
+
+(Type-level operators — `keyof`, conditional, indexed access — **are** in the
+MVP, as the final milestone M7; the spike already proved them.)
 
 ## Strategic decisions (settled)
 
@@ -61,7 +61,7 @@ This plan turns that spike into a production checker.
 | AST coupling | **Untouched** — side table (`Info`), option (a) | No AST generics; old checker undisturbed; AST becomes type-system-agnostic at cleanup. |
 | Compatibility | Improve, don't match | Corpus encodes language semantics; improvements are blessed. |
 | Lifetimes | In the core from the start | Introduced with the first lifetime-carrying type (records); lifetimes ride on values. |
-| Codegen / LSP | Deferred | v1 is pure checking; biggest integration cost (codegen's `type_system` use) is paid later. |
+| Codegen / LSP | Deferred | The MVP is pure checking; biggest integration cost (codegen's `type_system` use) is paid later. |
 
 ## Boundary analysis (why this is tractable)
 
@@ -82,8 +82,9 @@ The integration surface is small and the reuse boundary is clean:
   inference.
 - **Deferred boundary (the real cost of not reusing `type_system`):** codegen
   consumes `type_system` in ~4 files / ~30 refs, concentrated in `dts.go`
-  (`.d.ts` emission). Because codegen is deferred, this cost is not paid in v1; a
-  `soltype → type_system` bridge (or a port of codegen) is a later decision.
+  (`.d.ts` emission). Because codegen is deferred, this cost is not paid in the
+  MVP; a `soltype → type_system` bridge (or a port of codegen) is a later
+  decision.
 
 ## Migration shape (reversible until the flip)
 

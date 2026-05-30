@@ -131,7 +131,7 @@ the one place we deliberately step outside the clean lattice structure.
 
 - **Boolean algebra (negation):** adding negation types `¬T` (MLstruct) turns the
   subtype lattice into a Boolean algebra (complements + distributivity), enabling
-  narrowing. Out of scope for v1; noted for the type-operator/narrowing future.
+  narrowing. Out of scope for the MVP; noted for the narrowing future.
 - **Nominal types** break pure structural ordering; they are layered on as atomic
   lattice elements with an explicit declared-subtype relation feeding `constrain`.
 - **Recursive types** are not lattice elements per se; they are handled

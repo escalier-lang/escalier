@@ -163,7 +163,7 @@ report; fail CI only on `bug`-bucket (untriaged/unintended) divergences.
 
 The flag lives at the **3** `checker.NewChecker(ctx)` sites in
 `internal/compiler/compiler.go` (`CheckLib`, `Compile`, `CompilePackage`).
-v1 selects the new checker for *checking only* — codegen continues from the old
+the MVP selects the new checker for *checking only* — codegen continues from the old
 checker's output (codegen deferred). Simplest form: an env var or build tag
 read once and branched at those three sites.
 

@@ -2,8 +2,9 @@
 
 Ordered milestones for the new checker. Each is independently testable and
 leaves the old checker fully working. "Structural core first"; lifetimes are
-introduced **with the first lifetime-carrying type** (records, M4); type-level
-operators and codegen/LSP come after the core.
+introduced **with the first lifetime-carrying type** (records, M4). The MVP is
+M1–M7 (structural core + unions/intersections + conformance corpus + type-level
+operators); codegen/LSP and the cutover come after.
 
 Spike provenance is cited where a milestone promotes proven spike work
 (`internal/checker/simplesub/`).
@@ -138,12 +139,22 @@ gaps; burn down before proceeding.
 
 ---
 
-## Later (post-core, not on the v1 critical path)
+## M7 — Type-level operators
 
-- **M7 — Type-level operators.** `keyof`, indexed access, conditional types:
-  Baseline-D (reduce when operands ground) + Design-A residual nodes reduced
-  post-coalescing, + recursive-type handling (cycle cache + depth budget, and
-  the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
+The last MVP milestone. `keyof`, indexed access, conditional types: Baseline-D
+(reduce when operands ground) + Design-A residual nodes reduced post-coalescing,
++ recursive-type handling (cycle cache + depth budget, and the level-2
+regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
+
+**Accept:** the spike's type-operator cases against real source —
+`keyof`/indexed access over ground and usage-inferred operands; conditional
+types incl. `infer` and distribution; recursive aliases terminate (finite knot
+or budget). Errors (e.g. arity, non-regular recursion) assert full messages.
+
+---
+
+## Later (post-MVP)
+
 - **M8 — Codegen.** Either a `soltype → type_system` bridge to reuse codegen
   unchanged, or port codegen (`dts.go` et al., ~4 files / ~30 refs) onto
   `soltype`. Decide when the checker is proven.

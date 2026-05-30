@@ -36,6 +36,6 @@ inference, lifetimes-as-a-second-sort, type-level operators, recursive types).
   (e.g. `unknown` instead of a vacuous `<T0>`) are blessed, not chased.
 - **Lifetimes are baked into the core**, introduced with the first
   lifetime-carrying type (records), not bolted on afterward.
-- **Codegen and the LSP are deferred** — v1 is a pure type-checker (errors +
+- **Codegen and the LSP are deferred** — the MVP is a pure type-checker (errors +
   inferred types), validated by its own test suite. Codegen/`.d.ts` and the LSP
   keep running on the old checker until the new one is the default.
