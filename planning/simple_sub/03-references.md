@@ -91,15 +91,19 @@ Simple-sub as published is purely structural; it has no notion of lifetimes.
 by the *same* constraint machinery (the spike proved this collapses Escalier's
 multi-phase `infer_lifetime.go` into ordinary constraint solving).
 
-The ordering is **"outlives"**: `'a ≤ 'b` ⟺ `'a` outlives `'b` (a longer-lived
-value is usable wherever a shorter-lived one is expected — references are
-covariant in their lifetime).
+The ordering `≤` is **"is outlived by"**: `'a ≤ 'b` ⟺ `'b` outlives `'a`
+(equivalently, `'a` is outlived by `'b`). So a **longer-lived lifetime is a
+greater element**, and `'static` — which outlives everything — is the top. (This
+is the lattice direction the code uses: `X <: 'static` always holds. It is
+consistent with references being covariant in their lifetime — a longer-lived
+value can stand in where a shorter-lived one is expected, so the longer lifetime
+sits higher.)
 
 | Lattice notion | Lifetime meaning |
 |---|---|
-| order `≤` | "outlives" |
+| order `≤` | "is outlived by" (`'a ≤ 'b` ⟺ `'b` outlives `'a`) |
 | join `'a ⊔ 'b` | `LifetimeUnion` `('a \| 'b)` — value may carry either lifetime |
-| top `⊤` | `'static` — outlives everything |
+| top `⊤` | `'static` — outlives everything, so every lifetime `≤ 'static` |
 | bottom `⊥` | a maximally-short / fresh lifetime |
 
 A `LifetimeVar` carries lower/upper bound lists and coalesces by join/meet
@@ -138,6 +142,6 @@ the one place we deliberately step outside the clean lattice structure.
 
 The lattice is the subtype-ordered space of types (`never` ⊥, `unknown` ⊤, union
 = join, intersection = meet); Simple-sub is "collect ordering constraints, then
-compute joins and meets in it," and **our extension adds a second lattice ordered
-by 'outlives' (`'static` = ⊤) so lifetimes are solved by the very same
-machinery.**
+compute joins and meets in it," and **our extension adds a second lattice over
+lifetimes ordered so that longer-lived is greater (`'static` = ⊤) — i.e. `≤` is
+"is outlived by" — so lifetimes are solved by the very same machinery.**
