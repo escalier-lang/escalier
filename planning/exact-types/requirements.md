@@ -472,6 +472,17 @@ caller may pass — not subtyping between function types themselves.
   so the supplier just needs to handle at least the parameters the
   consumer's contract requires.
 
+**Optional parameters are part of the declared parameter list.** For
+the arity-matching rules above, a function type `fn(a: A, b?: B) -> R`
+has declared parameter list `[a: A, b?: B]` — *not* `[a: A]`. It is
+therefore neither a subtype nor a supertype of `fn(a: A) -> R` under
+exact-to-exact subtyping (declared lists differ), and only inexact
+suppliers with declared list `[a: A]` (or fewer) fit an inexact slot
+whose declared list is `[a: A, b?: B]`. This rule applies uniformly to
+both `Exact <: Exact` and `Inexact <: Inexact`: the optionality marker
+is structural identity of the function type, not a deletion the type
+system silently performs. (See §4.2.1.2 for a worked example.)
+
 ##### 4.2.1.1. Why exact `</:` inexact for functions
 
 Unlike object, tuple, and union types — where exact `<:` inexact is
@@ -520,6 +531,195 @@ arities must match exactly for subtyping" — is simple and memorable. The
 exact/inexact distinction on functions then governs call-site argument
 counts only, not function-to-function subtyping, keeping the soundness
 story tight.
+
+##### 4.2.1.2. A worked example: chained widenings in TypeScript
+
+The principled argument above is best illustrated by a concrete program
+that is sound in Escalier but silently miscompiles in TypeScript. The
+following TypeScript code type-checks and runs without errors, yet
+exhibits a runtime type confusion:
+
+```ts
+function foo(cb: (a: string) => void) {
+    bar(cb);
+}
+
+function bar(cb: (a: string, b: number) => void) {
+    cb("hello", 5);
+}
+
+function cb(a: string, b?: boolean) { /* uses b as a boolean */ }
+
+foo(cb);
+// At runtime, the original `cb` is invoked with ("hello", 5).
+// `b` is bound to the number `5`, but the body trusts `b: boolean`.
+```
+
+The unsoundness chain has three steps:
+
+1. `foo(cb)` — TS allows `(a: string, b?: boolean) => void` to flow into
+   `(a: string) => void` because TS treats the trailing optional as
+   droppable.
+2. `bar(cb)` (inside `foo`) — TS allows `(a: string) => void` to flow
+   into `(a: string, b: number) => void` via the classic "fewer-args is
+   fine" bivariance.
+3. `bar` calls `cb("hello", 5)`. The original `cb`'s `b: boolean`
+   parameter is bound to the number `5`. No runtime error; downstream
+   computations on `b` produce silent garbage.
+
+The literal Escalier translation rejects this at **step 1**:
+
+```
+fn foo(cb: fn(a: string) -> undefined) {
+    bar(cb)
+}
+fn bar(cb: fn(a: string, b: number) -> undefined) {
+    cb("hello", 5)
+}
+fn cb(a: string, b?: boolean) -> undefined { ... }
+
+foo(cb)
+// Error: cb's declared parameter list is [a: string, b?: boolean], which
+// does not match foo's slot [a: string]. Per §4.2.1, exact-to-exact
+// subtyping requires arities to match, with optionality preserved.
+```
+
+The presence of the optional `b` is structural identity of `cb`'s type,
+not a deletion the type system silently performs. Even if step 1 had
+let it through, step 2 would also reject: `fn(a: string) -> undefined`
+has arity 1; `bar`'s slot has arity 2; §4.2.1.1 forbids fewer-args
+bivariance.
+
+###### Variations that look promising but still fail
+
+A reader might try to "rescue" the chain by introducing inexact slots
+or explicit `Inexact<T>` widenings. None of them succeed; each falls to
+a different rule.
+
+**Variation A — inexact slot at `foo`, exact `cb`:**
+
+```
+fn foo(cb: fn(a: string, ...) -> undefined) { bar(cb) }
+foo(cb)
+// Error: exact </: inexact for functions (§4.2.1.1).
+```
+
+**Variation B — inexact slot at `foo`, user widens with `Inexact<T>`:**
+
+```
+fn foo(cb: fn(a: string, ...) -> undefined) { bar(cb) }
+foo(Inexact(cb))
+// Error: Inexact(cb) has declared list [a, b?]; foo's slot has [a].
+// Inexact-to-inexact subtyping requires supplier_arity <= slot_arity
+// (§4.2.1); here the supplier has more declared parameters.
+```
+
+**Variation C — inexact slot at `foo` with matching arity:**
+
+```
+fn foo(cb: fn(a: string, b: number, ...) -> undefined) { bar(cb) }
+foo(Inexact(cb))
+// Error: parameter-type contravariance fails at position 1.
+// Slot demands b: number; supplier offers b?: boolean. number </: boolean.
+```
+
+**Variation D — both `foo` and `bar` inexact, all arities aligned:**
+
+```
+fn foo(cb: fn(a: string, b: number, ...) -> undefined) { bar(cb) }
+fn bar(cb: fn(a: string, b: number, ...) -> undefined) { cb("hello", 5) }
+foo(Inexact(cb))
+// Error: same contravariance failure at position 1.
+```
+
+The parameter-type check at position 1 (`number` vs `boolean`) is the
+ultimate backstop. Even when the user systematically loosens every
+slot to inexact and explicitly widens with `Inexact<T>`, the
+contravariant check on the declared parameter types preserves the
+soundness invariant.
+
+##### 4.2.1.3. Anti-patterns that undermine the soundness story
+
+The §4.2.1.2 analysis shows that pure Escalier source cannot reproduce
+the TypeScript unsoundness. The remaining ways to introduce the
+runtime bug all involve the user explicitly opting out of type
+safety. These are anti-patterns, and code review should flag them.
+
+**A1. `any` in callback parameter types.**
+
+```
+fn cb(a: string, b?: any) -> undefined {
+    if b { ... }   // body treats b as a boolean
+}
+```
+
+Once `b: any` is in the type, contravariance trivially succeeds at every
+boundary (everything `<:` `any`), and the chained-widening unsoundness
+becomes reachable. The escape is not specific to exact types — `any`
+disables every check — but the function-typing rules' soundness
+guarantees no longer apply once it is introduced. **Prefer `unknown`
+plus an explicit narrowing**, which forces the unsafe step to be
+visible at the source.
+
+**A2. Intersection types that promise overloads the implementation
+does not honor.**
+
+```
+val cb: (fn(a: string) -> undefined) & (fn(a: string, b: number) -> undefined)
+    = realImpl                            // realImpl is fn(a, b?: boolean)
+```
+
+A function intersection (§7.7) is a *promise* that the value handles
+each listed arm correctly. Annotating an implementation with an
+intersection it does not actually satisfy is a lie that the type
+system cannot independently verify. The runtime confusion that
+follows is the user's annotation, not a gap in the exactness rules.
+**Construct intersection-typed values only from implementations that
+genuinely handle every arm**, or use a single accurate signature.
+
+**A3. Unverified `.d.ts` declarations from third-party packages.**
+
+A TypeScript-authored `.d.ts` whose declared signature does not match
+its JavaScript implementation can carry the runtime unsoundness into
+Escalier regardless of how carefully the Escalier-side types are
+written. The standard exact/inexact import defaults (§8) cannot
+detect this. **When importing from plain TypeScript, treat the
+declared signature as a claim that requires the same scrutiny as any
+other unverified input.** When the implementation is known to differ
+from the declaration, narrow the declaration to match the implementation
+(via a local override or a wrapper) rather than trusting the published
+type.
+
+**A4. `Inexact<T>` as a habit rather than an interop tool.**
+
+`Inexact<T>` (§6.2) exists for the rare cases where a callback genuinely
+must be passed to a TypeScript API that types it inexact. Using it
+reflexively — for example, to silence a type error without
+understanding why the exact type was rejected — re-introduces exactly
+the widening the §4.2.1.1 argument exists to prevent (modulo the
+parameter-type contravariance check, which remains in force).
+**Reach for `Inexact<T>` only when interop forces it, and prefer a
+hand-written wrapper** (`fn(a, ...) => cb(a)`) when the lossy step
+deserves to be visible at the source. This is the same widening pattern
+recommended in §4.2.1.1 (an exact callable exposed through an
+inexact-facing slot) — the wrapper makes the arity narrowing explicit
+at the source rather than implicit at the type-system level.
+
+**A5. `any`-typed callback parameters in Escalier-authored
+`.d.ts`-equivalents.**
+
+When emitting `.d.ts` for downstream Escalier consumers, the
+`@escalier-type` JSDoc tag carries the original Escalier type
+(§9). Any `any` introduced into a published signature defeats the
+soundness story for every consumer, not just the author. Treat
+published `any` in function types as a soundness-breaking commitment
+that should not be made lightly.
+
+In short: the function-typing rules in §4.2.1 are sound *with respect
+to fully-typed Escalier source*. Each anti-pattern above is a way the
+user explicitly tells the type system "don't check this," and each
+re-opens the door to the bug `parseInt`-in-`map` and the
+optional-trailing-param example were designed to close.
 
 #### 4.2.2. Optional and Rest Parameters
 
@@ -959,6 +1159,183 @@ if a real need emerges; we do not provide one initially.
   declaration so that other Escalier consumers can recover the precise
   exactness. See §9.
 
+### 6.6. Value-Level Conversion: `exact<T>(v)`
+
+The `Exact<T>` / `Inexact<T>` utilities in §6.1 and §6.2 are
+*type-level* operators — they change a type without producing any
+runtime code. Sometimes a program also needs to convert a *value* from
+the inexact form to the exact form (e.g. to call into Escalier code
+that requires an exact-typed argument with a TS-imported inexact
+value). This subsection specifies a built-in `exact<T>(v)` operator
+for that purpose, and explicitly documents the categories where it is
+*not* available.
+
+#### 6.6.1. Semantics by category
+
+`exact<T>(v)` is a compile-time-resolved built-in. The checker
+inspects the target type `T`, validates that the input type `typeof v`
+is the corresponding inexact form (or already exact), and lowers the
+call to the appropriate runtime expression. There is no generic
+"convert anything" implementation — each category gets its own
+lowering, and some categories have no lowering at all.
+
+| Category | Lowering | Cost |
+|---|---|---|
+| Object | Property pick into a fresh object: `{ k1: v.k1, ..., kn: v.kn }` | One allocation, `O(n)` in declared keys |
+| Tuple | `v.slice(0, n)` (where `n` is the declared length) | One allocation, `O(n)` |
+| Union (discriminable) | A `match` over the listed members, emitting a `RuntimeError` for unhandled tails | `O(1)` per call (one discrimination check) |
+| Function | **Not supported** — compile error directs the user to a manual wrapper. See §6.6.3. |
+
+##### Runtime type information
+
+`exact<T>(v)` is deliberately designed not to depend on reified
+types. The object and tuple lowerings are pure property access and
+slicing — the declared keys and length are known to the compiler from
+`T`, so the emitted JavaScript only manipulates values it can already
+see. No type tags or runtime type descriptors are introduced.
+
+The union lowering does require some runtime cooperation, but only
+in the form of mechanisms JavaScript already exposes: value equality
+for primitive-literal unions, discriminator-field equality for
+tagged unions, and `instanceof` for unions of class instances. The
+checker selects the appropriate discrimination strategy from `T`'s
+structure and emits the corresponding JS check. Each strategy uses
+ordinary JS values (string literals, the class objects themselves)
+rather than a separate runtime type system.
+
+| Union shape | Discrimination strategy | Example |
+|---|---|---|
+| Primitive literals (`"a" \| "b" \| ...`, `1 \| 2 \| ...`, `true \| false \| ...`) | Value equality (`v === "a"`) | exact color, exact bit flag |
+| Discriminated objects (`{kind: "ok", ...} \| {kind: "err", ...}`) | Discriminator-field equality (`v.kind === "ok"`) | Result types, tagged AST nodes |
+| Class instances (`Circle \| Square`) where each member is a `final` class instance type | `instanceof` against the class object (`v instanceof Circle`) | enum variants (§2.6.1), exception hierarchies |
+| Mixed primitive/class (`string \| Date \| RegExp`) | `typeof` for primitives, `instanceof` for the rest | rarely needed, but supported |
+
+Unions whose members can only be told apart by **structural property
+shape** — e.g., `{x: number} | {y: string}` with no shared discriminator
+— are **rejected at compile time**. JavaScript has no built-in way to
+inspect arbitrary structural shapes at runtime, and adding one would
+require exactly the reified-type machinery the rest of this design
+avoids. Users in this position must either add a discriminator field
+to their union members or write a manual converter with explicit
+predicates.
+
+Examples:
+
+```
+val inexactPoint: {x: number, y: number, ...} = importedFromTS()
+val p: {x: number, y: number} = exact(inexactPoint)
+// lowers to: val p = { x: inexactPoint.x, y: inexactPoint.y }
+
+val inexactPair: [string, number, ...] = importedFromTS()
+val pair: [string, number] = exact(inexactPair)
+// lowers to: val pair = inexactPair.slice(0, 2)
+
+val inexactColor: "red" | "green" | "blue" | ... = importedFromTS()
+val color: "red" | "green" | "blue" = exact(inexactColor)
+// lowers to: val color = match (inexactColor) {
+//     "red" => "red", "green" => "green", "blue" => "blue",
+//     _ => throw RuntimeError("exact: value outside listed members"),
+// }
+```
+
+For object and tuple lowerings, extras present on the input are
+silently dropped: an inexact object with a `z` property converted to
+exact `{x, y}` produces an object without `z`. This matches the §6.1
+*type-level* semantics — `Exact<T>` over an inexact type removes the
+trailing `...`, not the extra members the runtime value happened to
+carry. For union lowerings, the runtime error makes the alternative
+explicit: an inexact value that does not match any listed member
+throws rather than silently slipping through.
+
+#### 6.6.2. Conditions on `T` and `v`
+
+For `exact<T>(v)` to type-check:
+
+- `T` must be in a category where the operator has a lowering (object,
+  tuple, or union — see §6.6.3 for the excluded categories).
+- `typeof v` must be assignable to `Inexact<T>`. In particular, `v`
+  must have at least the declared members of `T` (with each
+  member-type covariantly compatible). For unions, every listed member
+  of `T` must be assignable to some listed member of `v`'s type.
+- `T` must itself be a concrete enough shape that the lowering has
+  something to enumerate. `exact<Inexact>(v)` (with `Inexact` being a
+  pure interface or non-`final` class instance type) is rejected —
+  there is no closed set of members to pick.
+- **For union targets:** every listed member of `T` must be
+  *discriminable at runtime* using one of the strategies in §6.6.1
+  (value equality for primitive literals, discriminator-field equality
+  for tagged objects, or `instanceof` for `final` class instance
+  types). Unions whose members can only be told apart by structural
+  property shape are rejected — JavaScript has no general way to
+  inspect arbitrary structural shapes at runtime, and `exact<T>(v)`
+  is designed not to introduce reified-type machinery to fill that
+  gap.
+
+If `T` is already exact, `exact<T>(v)` is the identity: the checker
+emits `v` unchanged. This is convenient for generic code that should
+not have to case-split on whether the input type happens to be exact
+or inexact.
+
+#### 6.6.3. Why functions are excluded
+
+Function types have no `exact<...>` lowering for the same reason
+§4.2.1.1 rejects the implicit exact `<:` inexact widening: converting
+an inexact function to an exact one is either **unsafe** (a pure type
+cast that re-introduces the `parseInt`-style bug) or **expensive** (a
+runtime arity-check wrapper that breaks referential equality, mutates
+`.length` / `.name`, and adds a stack frame). Neither option is
+acceptable as a built-in.
+
+Users who need this conversion at a specific interop site should
+write the wrapper explicitly:
+
+```
+declare val f: fn(a: A, b: B, ...) -> R   // inexact, from TS interop
+
+val g: fn(a: A, b: B) -> R = fn(a, b) => f(a, b)
+// g calls f with exactly two args; if f's underlying implementation
+// looked at a third positional arg, it now reliably receives undefined.
+```
+
+The explicit wrapper has the same runtime cost as a boundary check
+would, but the cost is *visible at the source* — the reader can see
+that arity narrowing is happening and can reason about whether `f`'s
+behavior on `(a, b, undefined)` is what they want. The hidden
+`exact<...>` form would silently impose the same wrapper everywhere
+without surfacing the soundness-relevant question.
+
+The class instance form is excluded for the same reason expressed in
+type-level terms (§6.1): a non-`final` class instance type cannot be
+tightened because the class's openness is part of its public contract.
+Declare the class `final` if you need exact instance types.
+
+#### 6.6.4. TypeScript interop
+
+`exact<T>(v)` has no TypeScript equivalent. When emitting `.d.ts`,
+calls to `exact<...>` are erased to their lowered form — TypeScript
+consumers see the property-pick / slice / match expression directly,
+with the inexact-to-exact step recorded only in the `@escalier-type`
+JSDoc payload (§9). Escalier consumers re-importing the declaration
+recover the original `exact<T>(v)` form.
+
+A common pattern at the TS-interop boundary: wrap an imported value
+once at the boundary and pass the exact form through the rest of the
+program.
+
+```
+import { getConfig } from "some-ts-lib"
+// `getConfig` declared as returning {host: string, port: number}
+// (imported as inexact per §8).
+
+fn loadConfig() -> {host: string, port: number} {
+    return exact(getConfig())
+}
+```
+
+The boundary `exact(...)` makes the trust decision explicit at the
+source — every downstream consumer of `loadConfig` works with a
+genuinely exact value, with no further conversion needed.
+
 ## 7. Type Operators and Exactness Propagation
 
 Most type-level operators produce types whose exactness is *derived* from
@@ -1083,20 +1460,68 @@ The general rule, of which §4.2.4 is the function-pattern instance:
 
 #### 7.4.3. Distribution over unions
 
-When `T` is a union, the conditional distributes over its members and
-each distributed result has the exactness of its branch:
+When `T` is a union, the conditional distributes over its members:
+each listed member is checked against `U` individually, and the
+per-member results are unioned.
+
+For an **exact** union, every member is enumerated by name, so the
+distribution is complete:
 
 ```
 type Foo<T> = if T : string { "yes" } else { "no" }
 
-type R1 = Foo<"a" | "b">             // exact — distributes to "yes" | "yes" = "yes"
-type R2 = Foo<"a" | "b" | ...>       // inexact — distributes over known members,
-                                     // tail handled conservatively
+type R1 = Foo<"a" | "b">             // exact: "yes" | "yes" = "yes"
 ```
 
-For an inexact `T`, distribution can only enumerate the listed members.
-The unknown tail must be handled conservatively — typically by widening
-the result to include both branches, or by leaving an inexact result.
+The exactness of the result follows the standard union-combining
+rules (§7.6): if every distributed branch result is exact, the
+overall result is exact.
+
+For an **inexact** union `M1 | ... | Mn | ...`, distribution can
+enumerate only the listed members `M1..Mn`. The unknown tail is
+`unknown`-typed (§5.2), and for any `U` other than `unknown` the
+predicate `unknown : U` is **undecidable** — the tail may at runtime
+contain values that satisfy `U` (sending them to the `Then` branch)
+or values that do not (sending them to the `Else` branch).
+
+The checker handles this conservatively by **widening the tail's
+contribution to include both branch results** and **marking the
+overall result inexact**. Concretely, the distributed type is:
+
+```
+Distributed(M1) | ... | Distributed(Mn) | Then | Else | ...
+```
+
+where `Then` and `Else` are the conditional's branch result types
+(evaluated at the worst-case input for any `T`-dependent
+computation in the branch — typically `unknown` for `infer`-bound
+positions). The trailing `...` records that conservative widening
+occurred and that downstream consumers cannot rely on the result
+being a closed set even when `Then` and `Else` are themselves exact.
+
+```
+type R2 = Foo<"a" | "b" | ...>       // inexact: "yes" | "no" | ...
+                                     //   "yes" — distributed from "a" and "b"
+                                     //   "no"  — Else branch widened for the
+                                     //           undecidable unknown tail
+                                     //   ...   — marker that widening occurred
+```
+
+##### Exactness rule for conditional results
+
+The conditional's result is **exact** iff *both* of the following hold:
+
+1. The predicate `T : U` is decidable for every member of `T`
+   (including the unknown tail, if any).
+2. Each contributing branch's result type is itself exact.
+
+Otherwise the result is **inexact**. For an exact `T`, condition (1)
+is automatic — every member is named and the predicate is decided
+per-member. For an inexact `T`, condition (1) holds only when `U` is
+`unknown` (so the tail trivially routes to `Then`) or under a
+sufficiently strong constraint on `T` at the type-parameter level
+(§7.4.4) that prevents inexact arguments from reaching the
+conditional in the first place.
 
 #### 7.4.4. Constraints on `T` simplify the picture
 
@@ -1354,7 +1779,538 @@ val h: Headers = {
 }
 ```
 
-## 11. Open Questions
+## 11. `std:*` and `dom:*` Module Adjustments
+
+Exact function types change what idiomatic JavaScript APIs look like when
+wrapped for Escalier. Several built-in JS APIs invoke their callbacks with
+"bonus" arguments that are rarely used in practice and that, under
+TypeScript's permissive callback compatibility, enable bugs like
+`["1","2","3"].map(parseInt)`. With exact callbacks, those bonus arguments
+become a usability problem: either every callback must declare every
+parameter, or we relax to inexact and lose the safety guarantee.
+
+The resolution is to design the `std:*` (and where relevant, `dom:*`)
+wrappers around **exact, minimal callback signatures**, and to expose
+secondary methods for the less common cases where the extra arguments are
+genuinely wanted. The runtime cost is zero — extras are dropped at the JS
+boundary as they already are today — and the type-level cost is one extra
+method per affected operation.
+
+### 11.1. `std:array`
+
+The iteration methods on `std:array` follow the split below. Each `map`-
+style method takes an **exact unary** callback; the `-i` variant takes an
+exact binary callback that also receives the index.
+
+| Method | Callback type | Notes |
+|---|---|---|
+| `map<T, U>(arr, f)` | `fn(elem: T) -> U` | The default; rejects `parseInt`-style misuse. |
+| `mapi<T, U>(arr, f)` | `fn(elem: T, index: number) -> U` | Use when the index is needed. |
+| `filter<T>(arr, p)` | `fn(elem: T) -> boolean` | |
+| `filteri<T>(arr, p)` | `fn(elem: T, index: number) -> boolean` | |
+| `forEach<T>(arr, f)` | `fn(elem: T) -> undefined` | |
+| `forEachi<T>(arr, f)` | `fn(elem: T, index: number) -> undefined` | |
+| `find<T>(arr, p)` | `fn(elem: T) -> boolean` | |
+| `findi<T>(arr, p)` | `fn(elem: T, index: number) -> boolean` | |
+| `findIndex<T>(arr, p)` | `fn(elem: T) -> boolean` | Returns `number`. |
+| `some<T>(arr, p)` | `fn(elem: T) -> boolean` | |
+| `every<T>(arr, p)` | `fn(elem: T) -> boolean` | |
+| `reduce<T, A>(arr, f, init)` | `fn(acc: A, elem: T) -> A` | No index variant by default. |
+| `reducei<T, A>(arr, f, init)` | `fn(acc: A, elem: T, index: number) -> A` | When the index is needed. |
+
+The third "source array" argument that `Array.prototype.{map,filter,...}`
+passes is **not** exposed by any `std:array` method. In the rare case where
+a callback genuinely needs the source array, the caller already has it in
+scope and can close over it explicitly.
+
+Users who want the index *and* something more (e.g. both index and source)
+should fall back to a `for` loop or `arr.entries()` rather than reach for
+an ever-wider callback. The split stops at adding at most one context
+parameter (the index) beyond the callback's intrinsic shape — so
+`map`/`filter`/`forEach`/`find` cap out at two-parameter callbacks
+(elem + index), and `reduce` caps out at three (acc + elem + index in
+`reducei`).
+
+### 11.2. Other `std:*` callback-taking APIs
+
+A survey of the non-DOM `lib.es*.d.ts` surface area shows that
+callback-taking methods fall into three patterns. Each has a fixed
+treatment.
+
+**Pattern 1 — Bonus-arg callbacks (the `-i` split).** Apply the §11.1
+rule to every method whose JS callback receives a fixed but mostly
+unused trailing argument:
+
+- `std:typedArray.{map,filter,forEach,find,findIndex,reduce,sort,...}` —
+  same shape as `std:array`, including the `-i` variants.
+- `std:iterator.{map,filter,flatMap,reduce,forEach,some,every,find}`
+  (the ES2024 Iterator helpers) — exact unary + `-i` binary.
+- `std:map.groupBy`, and other ES2024+ `Map`/`Set` callback methods —
+  the key (for maps) or value (for sets) replaces "index" in the `-i`
+  variant.
+
+**Pattern 2 — Fixed-arity callbacks (no split needed).** Some callbacks
+have a known, useful arity with no bonus args; these are exposed as a
+single exact signature:
+
+- `std:array.sort`, `std:typedArray.sort` — `fn(a: T, b: T) -> number`.
+- `std:json.parse` reviver — `fn(key: string, value: unknown) -> unknown`.
+- `std:json.stringify` replacer — `fn(key: string, value: unknown) -> unknown`.
+- `Promise` executor — `fn(resolve, reject) -> undefined`.
+- `Promise.then/catch/finally` callbacks — exact unary on the
+  fulfillment/rejection value, or exact nullary for `finally`.
+- All `ProxyHandler` traps — each trap has a fixed, documented arity.
+
+**Pattern 3 — Genuinely variadic callbacks.** Only one method in the
+core lib surface qualifies: `String.prototype.replace` with a function
+replacement, where the callback is invoked with
+`(match, p1, …, pN, offset, fullString)` and `N` depends on the regex.
+An inexact callback type is **not** the right tool here — the §4.2.1.1
+rule that function-type subtyping requires arities to match in *both*
+directions means an inexact callback slot would actually *reject* the
+ordinary exact functions users naturally write. Instead, `std:string`
+exposes two specialized methods, each with an exact callback:
+
+```
+fn replace(s: string, pattern: string | RegExp, f: fn(match: string) -> string) -> string
+fn replaceWithGroups(
+    s: string,
+    re: RegExp,
+    f: fn(match: string, groups: Array<string>, offset: number) -> string,
+) -> string
+```
+
+The simple `replace` accepts either a string or a RegExp as the search
+pattern and exposes only the matched substring to the callback — for
+the string-search case there are no capture groups, and for the
+RegExp case the groups are discarded. The `replaceWithGroups` form is
+RegExp-only (a string search would always yield an empty `groups`
+array) and exposes the capture groups and offset.
+
+The `std:string` implementation collects the variadic capture-group
+arguments into a single `groups` array before calling the user's
+function, so the variadic shape is handled at the boundary, not in the
+type system.
+
+### 11.3. Non-callback variadic functions
+
+A separate cluster of built-ins takes a variable number of *values*
+(not callbacks). These use **typed rest parameters**, which are exact
+(§4.2.2):
+
+- `std:math.max`, `std:math.min` — `fn(...nums: Array<number>) -> number`.
+- `std:console.log` and peers — `fn(...args: Array<unknown>) -> undefined`.
+
+The §4.2.2 rule explicitly forbids combining a typed rest parameter
+with the inexact `...` sentinel, so there is no ambiguity here: typed
+rest is always the correct spelling for "any number of values of a
+known element type."
+
+A handful of TS-surface APIs use an *untyped* variadic passthrough
+(`setTimeout(fn, ms, ...args)`, `Function.prototype.bind` partial
+application). `std:*` does not reproduce these signatures. Instead:
+
+- `std:timer.setTimeout(cb: fn() -> undefined, ms: number) -> TimerHandle` —
+  users close over any extra state explicitly.
+- No `std:*` equivalent of `Function.prototype.bind`'s partial
+  application — arrow functions and explicit closures replace it
+  cleanly.
+
+### 11.4. When inexact function types are appropriate
+
+The survey above produces no case where `std:*` should expose an
+inexact function type, in either parameter or return position. This is
+not a coincidence: the §4.2.1.1 asymmetry means inexact function types
+only make sense for values whose *call contract* genuinely permits
+extra positional arguments — and Escalier-authored functions, by
+default, never have such a contract.
+
+Inexact function types are therefore principally an **interop
+construct**:
+
+- TS-imported functions are inexact by default (§8), because we
+  cannot trust the TS-side arity contract.
+- The `Inexact<T>` utility (§6.2) is the explicit way to widen an
+  exact function type when interop genuinely requires it.
+
+Escalier source code — including the entire `std:*` and `dom:*`
+surface — should be written with exact function types throughout. If
+a future `std:*` or `dom:*` API appears to call for an inexact
+function type, that's a strong signal the surface should be
+restructured (split into multiple exact methods, switched to a typed
+rest parameter, or dropped entirely) rather than reaching for `...`.
+
+### 11.5. `dom:*` modules
+
+A survey of `lib.dom.d.ts`, `lib.dom.iterable.d.ts`, and the worker
+variants confirms that the §11.2 patterns cover the DOM surface as
+well. The §11.4 conclusion — inexact function types have no place in
+Escalier-authored wrappers — applies here without modification. The
+specifics below show how each pattern maps to DOM APIs.
+
+#### 11.5.1. Event listeners (Pattern 2 — fixed-arity)
+
+`addEventListener` and the `on*` event-handler properties take exact
+unary callbacks. The event argument *is* the callback's purpose, and
+there are no JS-level bonus arguments to discard:
+
+```
+fn addEventListener<K : keyof HTMLElementEventMap>(
+    target: EventTarget,
+    type: K,
+    handler: fn(event: HTMLElementEventMap[K]) -> undefined,
+) -> undefined
+```
+
+#### 11.5.2. Observer callbacks (Pattern 1 — drop the bonus arg)
+
+Every modern observer constructor invokes its callback with
+`(entries, observer)`, where the `observer` argument is the same value
+the user just constructed and has in scope. It's pure bonus; the
+`dom:*` wrapper drops it and exposes an exact unary callback. This
+applies uniformly to:
+
+- `MutationObserver` — `fn(mutations: Array<MutationRecord>) -> undefined`
+- `IntersectionObserver` — `fn(entries: Array<IntersectionObserverEntry>) -> undefined`
+- `ResizeObserver` — `fn(entries: Array<ResizeObserverEntry>) -> undefined`
+- `PerformanceObserver` — `fn(entries: PerformanceObserverEntryList) -> undefined`
+- `ReportingObserver` — `fn(reports: Array<Report>) -> undefined`
+
+Unlike `std:array`'s `-i` split, there is no observer-receiving
+variant: the user already has the observer reference in scope, so the
+second method would be pure noise.
+
+#### 11.5.3. Array-like `forEach` (Pattern 1 — `-i`/`-k` split)
+
+A large number of DOM collection types expose `Array.forEach`-shaped
+callbacks with `(value, key, parent)`. Each gets the `-i`/`-k` split
+following §11.1:
+
+- Index-keyed: `NodeList`, `NodeListOf<T>`, `DOMTokenList`,
+  `CSSNumericArray`, `CSSTransformValue`, `CSSUnparsedValue`,
+  `EventCounts`.
+- String-keyed: `FormData`, `Headers`, `URLSearchParams`,
+  `HighlightRegistry`, `AudioParamMap`, `CustomStateSet`,
+  `RTCStatsReport`.
+
+The "parent collection" third argument is dropped in every case,
+matching the §11.1 rule for `std:array`.
+
+#### 11.5.4. Scheduling, filter, and one-shot callbacks (Pattern 2)
+
+These are already fixed-arity with no bonus args, and the `dom:*`
+wrapper preserves the natural exact signature unchanged:
+
+- `requestAnimationFrame(cb: fn(time: DOMHighResTimeStamp) -> undefined)`
+- `requestIdleCallback(cb: fn(deadline: IdleDeadline) -> undefined, options?)`
+- `queueMicrotask(cb: fn() -> undefined)`
+- `NodeFilter` (used by `createNodeIterator` / `createTreeWalker`) —
+  `fn(node: Node) -> number`
+- `Geolocation.{getCurrentPosition, watchPosition}` success/error
+  callbacks
+- `MediaSession.setActionHandler` — `fn(details: MediaSessionActionDetails) -> undefined`
+- `HTMLVideoElement.requestVideoFrameCallback` —
+  `fn(now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) -> undefined`
+- WebCodecs output and error callbacks
+- `DataTransferItem.getAsString` callback
+
+`setTimeout` and `setInterval` follow §11.3: the `...arguments: any[]`
+passthrough is dropped, and the `dom:*` (or `std:timer`) wrapper
+exposes `fn(cb: fn() -> undefined, ms: number) -> TimerHandle`. Users
+close over any extra state.
+
+#### 11.5.5. Stream controllers are *not* bonus args
+
+`ReadableStream`, `WritableStream`, and `TransformStream` source/sink/
+transformer callbacks take a `controller` parameter that superficially
+looks like a bonus argument but is essential: the callback's whole job
+is to call `controller.enqueue(...)`, `controller.terminate()`, etc.
+The `dom:*` wrappers therefore preserve the natural exact signatures
+without splitting:
+
+```
+fn(chunk: I, controller: TransformStreamDefaultController<O>) -> Promise<undefined> | undefined
+fn(controller: ReadableStreamDefaultController<R>) -> Promise<undefined> | undefined
+```
+
+This is the one DOM pattern that *looks* like Pattern 1 but isn't — a
+useful reminder that "second argument" is not the same as "bonus
+argument." The test is whether the argument carries information the
+callback can't obtain from its enclosing scope.
+
+#### 11.5.6. Non-callback variadics
+
+DOM has many variadic-value APIs, all of which use typed rest
+parameters (§11.3) and pose no challenge:
+
+- `Element.{append, prepend, after, before, replaceWith, replaceChildren}`
+- `DOMTokenList.{add, remove}` and `Element.classList` operations
+- `Document.{write, writeln}`
+- `Console.{log, error, warn, info, debug, trace, group, ...}`
+- `CSSNumericValue.{add, sub, mul, div, min, max, equals, toSum}` and
+  the `CSSMath*` constructors
+- `RTCRtpSender.{addTrack, setStreams}`
+- `Highlight` constructor
+
+None require inexact function types; all are well-served by
+`fn(...args: Array<T>) -> R` with a known element type.
+
+### 11.6. TypeScript interop
+
+The native callback-taking methods on `Array.prototype` (`map`, `filter`,
+`forEach`, `find`, `findIndex`, `some`, `every`, `reduce`, `reduceRight`,
+and `flatMap`) are **not exposed** in Escalier. Allowing them via direct
+TypeScript import would reintroduce the `parseInt`-style misuse the
+`std:array` wrappers exist to prevent, and would give users two
+near-identical APIs with different safety properties — exactly the kind
+of footgun the exact-types feature is designed to eliminate.
+
+Concretely, the Escalier prelude's `Array<T>` type omits these methods
+from the instance interface. Non-callback methods on `Array.prototype`
+(`length`, `push`, `pop`, `slice`, `concat`, indexing, `includes`,
+`indexOf`, `join`, etc.) remain available unchanged; only the
+callback-taking subset is removed in favor of the `std:array`
+free-function equivalents.
+
+The same rule applies to any other built-in JS type whose native
+callback-taking methods have a corresponding `std:*` wrapper: the
+wrapper is the supported surface, and the native method is hidden at
+the type level even though it still exists at runtime.
+
+### 11.7. Class finality for `std:*` and `dom:*` wrappers
+
+Per §2.6, class instance types are inexact by default; per §2.6.1,
+declaring a class `final` makes its instance type exact and disallows
+subclassing. This subsection specifies which built-in classes in the
+`std:*` and `dom:*` wrappers are declared `final` and which are not.
+
+The analysis below is grounded in an enumeration of all class-like
+declarations in TypeScript's bundled `lib.*.d.ts` files. Under
+Escalier's interpretation of `interface Foo` + `var Foo: FooConstructor`
+(the es-lib pattern) and `interface Foo` + `var Foo: { prototype: Foo;
+new(): Foo; ... }` (the dom-lib pattern), TypeScript's lib declares 692
+classes. The full enumeration with parents and source files is saved
+as [`builtin-classes.md`](./builtin-classes.md) alongside this document.
+
+#### 11.7.1. The mechanical rule: lib subclasses imply non-final
+
+Any class that has at least one subclass declared in the TypeScript lib
+itself is exposed as **non-final** by the corresponding wrapper.
+Declaring such a class `final` would forbid lib-declared subclasses,
+which is incoherent.
+
+This rule alone forces roughly 110 classes non-final. The major
+non-final bases are:
+
+- **`Error`** — 12 direct subclasses (`EvalError`, `RangeError`,
+  `ReferenceError`, `SyntaxError`, `TypeError`, `URIError`,
+  `AggregateError`, `SuppressedError`, `DOMException`, plus the
+  WebAssembly `CompileError` / `LinkError` / `RuntimeError`).
+- **`Event` → `UIEvent` → `MouseEvent`** — each non-leaf level in the
+  event hierarchy is non-final because of its lib subclasses.
+- **`EventTarget`** — ~70 lib subclasses (`Node`, `Window`,
+  `AbortSignal`, `XMLHttpRequest`, `WebSocket`, all `AudioNode`s, all
+  IDB and Media* types, etc.).
+- **`Node` → `Element` → `HTMLElement` / `SVGElement` / `MathMLElement`** —
+  the DOM element tree. `HTMLElement` and `SVGElement` are also the
+  documented web-platform extension points (§11.7.2).
+- **`AudioNode` → `AudioScheduledSourceNode`** — Web Audio.
+- **`CSSRule` → `CSSGroupingRule` → `CSSConditionRule`** — CSS OM.
+- **`CSSStyleValue` → `CSSNumericValue` → `CSSMathValue`** — CSS Typed OM.
+- **The `*ReadOnly` / `*Mutable` pairs**: `DOMMatrixReadOnly`,
+  `DOMPointReadOnly`, `DOMRectReadOnly` — each non-final because the
+  mutable variant extends it.
+- **Other base classes with lib subclasses**: `Blob` (→ `File`),
+  `CharacterData`, `Document`, `DocumentFragment`, `Text`, `IDBRequest`,
+  `MIDIPort`, `MediaStreamTrack`, `XMLHttpRequestEventTarget`,
+  `BaseAudioContext`, `Animation`, `AnimationEffect`,
+  `AnimationTimeline`, `AbstractRange`, `Credential`,
+  `AuthenticatorResponse`, `PaymentRequestUpdateEvent`,
+  `SpeechSynthesisEvent`, `TextTrackCue`.
+
+#### 11.7.2. Documented extension points stay non-final at the leaves
+
+Some lib non-leaves are also documented *extension points*: the web
+platform expects user code to subclass them. They are already non-final
+by §11.7.1, but the rationale is independent and worth stating
+explicitly so the choice survives any future lib reshuffling:
+
+- **`HTMLElement`** is the canonical custom-elements extension point
+  (`class MyEl extends HTMLElement { ... }`, registered via
+  `customElements.define`).
+- **`SVGElement`** and **`MathMLElement`** are the analogous extension
+  points for custom SVG and MathML elements.
+- **`Error`** is the canonical extension point for user-defined error
+  hierarchies (`class NotFoundError extends Error { ... }`).
+- **`Event`** is the standard pattern for custom event subclasses, used
+  alongside `CustomEvent` for typed-payload events.
+
+No other DOM extension points exist that the §11.7.1 rule does not
+already cover.
+
+#### 11.7.3. Library-leaf classes: `final` by default
+
+Every concrete class with no lib subclass and no platform expectation of
+subclassing is exposed as `final`. This covers the bulk of the lib —
+roughly 580 of the 692 classes. Representative groups:
+
+- **All concrete `HTMLXxxElement` leaves** — `HTMLDivElement`,
+  `HTMLAnchorElement`, `HTMLInputElement`, ..., ~85 classes.
+- **All concrete `SVGXxxElement` leaves** — `SVGCircleElement`,
+  `SVGPathElement`, ..., ~50 classes.
+- **All concrete `*Event` leaves** — `KeyboardEvent`, `WheelEvent`,
+  `CustomEvent`, `PointerEvent`, `DragEvent`, ..., ~40 classes.
+- **All concrete `AudioNode` leaves** — `GainNode`, `OscillatorNode`,
+  `AnalyserNode`, etc.
+- **All observers** — `MutationObserver`, `IntersectionObserver`,
+  `ResizeObserver`, `PerformanceObserver`, `ReportingObserver`.
+- **All typed arrays** — `Int8Array` through `Float64Array`,
+  `Float16Array`, `BigInt64Array`, `BigUint64Array`,
+  `Uint8ClampedArray`.
+- **ES wrapper types** — `Date`, `RegExp`, `ArrayBuffer`,
+  `SharedArrayBuffer`, `DataView`, `WeakRef`, `FinalizationRegistry`,
+  `DisposableStack`, `AsyncDisposableStack`, `Symbol`, `BigInt`,
+  `Number`, `String`, `Boolean`.
+- **DOM utility classes** — `URL`, `URLSearchParams`, `Headers`,
+  `FormData`, `AbortController`, `Request`, `Response`, `FileReader`,
+  `Blob` *as constructed* (the `File` subclass exists, so `Blob`
+  itself is non-final; see §11.7.1).
+- **Stream classes** — `ReadableStream`, `WritableStream`,
+  `TransformStream`, and their controllers/readers/writers.
+- **Promise** — see §11.7.4.
+
+The payoff: `keyof HTMLDivElement` is the *exact* set of properties
+HTML defines for `<div>`; `match` over a known union of `*Event`
+subclasses can be exhaustive without a default arm; and reading
+`.fooo` on an `HTMLDivElement` is a type error rather than "well, a
+subclass might define it."
+
+#### 11.7.4. Leaf exceptions: classes users genuinely subclass
+
+A small number of leaves have a real-world subclassing pattern common
+enough that the wrapper should accommodate it. These are exposed as
+**non-final** despite having no lib subclasses:
+
+- **`Array`** — subclassed for typed collections, observable arrays,
+  custom iteration wrappers. The exact-instance benefit is small
+  (most `Array` properties are well-known anyway) and the ergonomic
+  cost of `final` is high.
+- **`Map`** — subclassed for LRU caches, ordered maps, multi-maps,
+  weak-keyed caches.
+- **`Set`** — subclassed for ordered sets, sets-with-default, bag-like
+  collections.
+
+A second motivation for keeping `Array`, `Map`, and `Set` non-final is
+**third-party TypeScript interop**. These three classes are the ones
+TS libraries most commonly subclass (e.g. `NonEmptyArray`, `LRUCache
+extends Map`, ordered-set wrappers). Marking them `final` would force a
+boundary conversion at every interop site that produced or consumed
+such a subclass — either an `Array.from(...)`-style copy or a wrapper
+module. The downstream gains from exact instance types are not large
+enough on these specific classes to justify that tax. For other final
+classes the same interop hazard is present in principle but rare in
+practice; see §11.7.7.
+
+Other leaves that *appear* to invite subclassing are nonetheless
+**final**. These already appear in §11.7.3's list; called out here to
+explain why each one stays in the default-final bucket despite a
+plausible-sounding case for subclassing:
+
+- **`Promise`** — subclassing is spec-supported via `Symbol.species`
+  but rare, bug-prone, and breaks common library patterns.
+- **`Function`** — subclassing has no sensible runtime semantics
+  beyond what arrow functions and ordinary closures already provide.
+- **`WeakMap`, `WeakSet`, `WeakRef`, `FinalizationRegistry`** — same
+  reasoning as `Promise`; no observed real-world subclassing demand.
+
+The primitive wrapper types **`Number`**, **`String`**, and
+**`Boolean`** are also final (per §11.7.3) and warrant no special
+justification — they are essentially never subclassed in practice.
+
+#### 11.7.5. Why default-final, not default-non-final
+
+`final` is the right default for leaves because the benefit accrues to
+*every* downstream use site, not just the declaration site:
+
+- **Exact instance types** mean `keyof T` and property access on `T`
+  are precise. Downstream code does not have to defensively handle
+  "what if a subclass added a property."
+- **Exhaustive `match` over class unions** works without a default
+  arm — relevant for the DOM event union, the error hierarchy, and
+  any user-defined enum-like union of variant classes (§2.6.1).
+- **Better error messages**: a typo accessing `.fooo` on an
+  `HTMLDivElement` is rejected immediately rather than treated as
+  "perhaps a subclass defined `fooo`."
+
+The cost of `final` — forbidding subclassing — is bounded by being
+**reversible** in a backward-compatible way. Loosening a class from
+`final` to non-`final` is a widening change (exact `<:` inexact for
+objects/instance types), so we can start a class `final` and relax it
+later if a genuine subclassing need emerges. The reverse direction
+(non-`final` → `final`) is breaking. The conservative initial position
+is therefore `final` on every leaf, with the §11.7.4 exceptions
+explicitly carved out where current real-world usage justifies the
+weaker contract.
+
+#### 11.7.6. Round-tripping through `.d.ts`
+
+When emitting `.d.ts` files, `final` is an Escalier-only annotation:
+TypeScript has no equivalent. Per §9, the `@escalier-type` JSDoc tag
+carries the original Escalier declaration (including the `final`
+modifier), so other Escalier consumers recover the exactness of the
+instance type. Plain TypeScript consumers see the erased class
+declaration and lose nothing — TypeScript already allows subclassing
+anything, and subclasses introduced on the TS side cannot leak back
+into Escalier as instance values of the `final` type, because the
+Escalier-side type only admits direct instances.
+
+#### 11.7.7. Importing third-party subclasses of final classes
+
+A TS library may declare `class Foo extends Bar` where `Bar` is a class
+that the `std:*` or `dom:*` wrapper exposes as `final`. The `extends`
+clause cannot be honored as a subtype relationship in Escalier without
+contradicting the `final` modifier — `final` guarantees that values
+typed `Bar` have *exactly* `Bar`'s declared members, and admitting an
+`extends Bar` subclass would silently widen every consumer of `Bar`.
+
+The importer therefore **strips the `extends` clause** when the parent
+is a final wrapper class. The imported `Foo` is treated as an
+independent, inexact class instance type that inherits `Bar`'s methods
+into its own interface (flattened from the TS declaration) but is
+**not** a subtype of `Bar`. Concretely, after import:
+
+- `Foo`'s own methods and `Bar`'s inherited methods are both callable
+  on values of type `Foo`.
+- `val x: Bar = someFoo` is rejected — `Foo </: Bar`.
+- `val x: Bar = Bar.from(someFoo)` (or whatever the analogous
+  conversion is for the specific `Bar`) succeeds, with an explicit,
+  runtime-visible boundary conversion.
+
+This contains the impact of the mismatch: the third-party subclass is
+usable through its own type, the user pays a conversion only when they
+actually need to cross into a `Bar`-typed slot, and Escalier's
+`final`-instance guarantees remain intact for all downstream consumers
+of `Bar`.
+
+**Residual unsoundness risk.** A `.d.ts` whose function signature
+claims to return `Bar` but actually returns a subclass instance at
+runtime can still produce a value that violates the `final` contract.
+The exact-types system has no way to detect this; it is an instance of
+the lying-`.d.ts` anti-pattern (§4.2.1.3 A3), made slightly more
+consequential by `final` because consumers now actively rely on the
+absence of extra members. The recommended defense is the same as for
+any other lying `.d.ts`: wrap the suspect import in a local module
+that converts at the boundary, and treat libraries that hide
+subclasses behind base-class signatures as needing scrutiny.
+
+This is part of the trade-off justifying the §11.7.4 carve-out for
+`Array`, `Map`, and `Set`: those three are the classes where TS-side
+subclassing is common enough that the boundary-conversion tax and the
+lying-`.d.ts` exposure would be noticeable. For the other ~580 final
+leaves, third-party subclassing is rare enough that the residual risk
+is acceptable.
+
+## 12. Open Questions
 
 *(None at present — previously open questions about index signatures and
 generic constraints are resolved in §2.7.1 and §7.12 respectively.)*
