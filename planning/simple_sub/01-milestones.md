@@ -79,19 +79,24 @@ reassess.
   variables coalesce to `unknown` rather than a vacuous `<T0>` — a blessed
   improvement).
 - **Function exactness flag.** `Function` carries an `exact` flag; a bare
-  `fn(...)` is exact, `fn(..., ...)` is inexact. Per the spec (§4.2.1), this
-  governs **call-site argument counts only** — function-to-function subtyping
-  requires arities to match in *both* directions regardless of exactness (so
-  exact `</:` inexact *and* inexact `</:` exact). The spike's current
-  fewer-params-is-subtype rule is the *inexact <: inexact* case; the exact
-  arity-match case is added here.
+  `fn(...)` is exact, `fn(..., ...)` is inexact. **Direct calls reject extra
+  args regardless of exactness** (an inexact function ignores them, but passing
+  them is almost always a bug — flag it, as TypeScript does). Exactness instead
+  governs **callback subtyping**: a function type accepts the set of arg-counts
+  it can be invoked with (exact `[required, declared]`, inexact `[required, ∞)`),
+  and `G <: F` iff `G` accepts every arg-count `F`'s holders may invoke with
+  (params contravariant, return covariant). The spike's current
+  fewer-params-is-subtype rule is the *inexact* case of this. (This corrects the
+  merged spec's §4.2, which had exactness govern call-sites rather than
+  subtyping — see escalier-lang/escalier#677.)
 
 **Accept:** the spike's Category-A cases against real source:
 `TopLevelLetPolymorphism` ⇒ `fn <T0>(x: T0) -> T0`; `IdentityPolymorphism` ⇒
 `fn () -> ["hello", 5]`; `InnerCapturesOuterParam` ⇒ `fn <T0>(y: T0) -> [T0, T0]`.
-(Spike M1.) Plus: an exact `fn(x, y)` rejects a 3-argument call; an inexact
-`fn(x, y, ...)` accepts it; exact and inexact function types are not
-subtype-related in either direction.
+(Spike M1.) Plus, on function exactness (per escalier-lang/escalier#677):
+**both** exact `fn(x, y)` and inexact `fn(x, y, ...)` reject a 3-argument *direct
+call*; and into a `fn(x, y)` callback slot, `fn(x, y)` / `fn(x, ...)` / `fn(...)`
+are accepted while exact `fn(x)` and any 3+-param function are rejected.
 
 ---
 
