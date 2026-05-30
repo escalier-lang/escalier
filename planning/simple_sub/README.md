@@ -17,6 +17,9 @@ inference, lifetimes-as-a-second-sort, type-level operators, recursive types).
 - **[02-design-notes.md](02-design-notes.md)** — concrete shapes: the `soltype`
   package, the `Info` side table, the constraint-generating AST walk, the
   conformance-corpus format, and the differential harness.
+- **[03-references.md](03-references.md)** — background reading (Simple-sub /
+  algebraic subtyping) and a precise description of the **lattice** our
+  extension is built on (the subtype lattice + the lifetime "outlives" lattice).
 
 ## TL;DR of the strategy
 
