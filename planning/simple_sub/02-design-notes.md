@@ -76,7 +76,7 @@ func (i *Info) setType(n ast.Node, t soltype.Type) { i.types[n] = t }
 ```
 
 The new checker **never** calls `ast` node `InferredType()`/`SetInferredType()`.
-The embedded `inferredType` field stays for the old checker until M10 cleanup.
+The embedded `inferredType` field stays for the old checker until M11 cleanup.
 
 ## The constraint-generating AST walk (`infer.go`)
 
@@ -109,7 +109,7 @@ old checker's but over `soltype`. This is what the compiler reads back. During
 the differential phase the compiler holds either the old or the new scope behind
 the flag (a small interface or two fields on `CheckOutput`).
 
-## Conformance corpus format (M6)
+## Conformance corpus format (M7)
 
 Checker-agnostic, encoding the language semantics we *want* (improve, don't
 match). One suggested layout — a directory of cases, each either an inline table
@@ -141,7 +141,7 @@ Key properties:
 - This *is* the "more comprehensive fixtures" upgrade — organized by language
   feature, with both positive (inferred type) and negative (error) cases.
 
-## Differential harness (M6)
+## Differential harness (M7)
 
 A triage tool, not a conformance gate (since we improve, don't match):
 
@@ -159,7 +159,7 @@ Because both checkers annotate the **same** parsed tree into **separate** stores
 exactly why the side-table approach beats AST generics here. Output a triaged
 report; fail CI only on `bug`-bucket (untriaged/unintended) divergences.
 
-## Compiler wiring (M6)
+## Compiler wiring (M7)
 
 The flag lives at the **3** `checker.NewChecker(ctx)` sites in
 `internal/compiler/compiler.go` (`CheckLib`, `Compile`, `CompilePackage`).
@@ -167,7 +167,7 @@ the MVP selects the new checker for *checking only* — codegen continues from t
 checker's output (codegen deferred). Simplest form: an env var or build tag
 read once and branched at those three sites.
 
-## What gets deleted at M10 (cleanup)
+## What gets deleted at M11 (cleanup)
 
 - `internal/checker/` (old package) + its ~38k LoC of tests.
 - `internal/ast/ast.go`: `type Type = type_system.Type`.
@@ -182,7 +182,7 @@ read once and branched at those three sites.
 1. **Package leaf name** — top-level under `internal/`: `solver/` vs `algsub/` vs other.
 2. **`BindingOwner`** — reuse `type_system`'s marker interface, or define the
    new checker's own.
-3. **Codegen path (M8)** — bridge (`soltype → type_system`) vs. port codegen.
+3. **Codegen path (M9)** — bridge (`soltype → type_system`) vs. port codegen.
 4. **Error representation** — reuse the old checker's `Error`/diagnostic types,
    or a fresh one (the corpus asserts full messages either way).
 5. **Scope sharing in `CheckOutput`** — interface vs. parallel fields during the

@@ -50,7 +50,7 @@ This plan turns that spike into a production checker.
 - Bug-for-bug parity with the old checker.
 
 (Type-level operators — `keyof`, conditional, indexed access — **are** in the
-MVP, as the final milestone M7; the spike already proved them.)
+MVP, as the final milestone M8; the spike already proved them.)
 
 ## Strategic decisions (settled)
 

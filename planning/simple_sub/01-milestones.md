@@ -3,8 +3,8 @@
 Ordered milestones for the new checker. Each is independently testable and
 leaves the old checker fully working. "Structural core first"; lifetimes are
 introduced **with the first lifetime-carrying type** (records, M4). The MVP is
-M1–M7 (structural core + unions/intersections + conformance corpus + type-level
-operators); codegen/LSP and the cutover come after.
+M1–M8 (structural core + nominal classes + unions/intersections + conformance
+corpus + type-level operators); codegen/LSP and the cutover come after.
 
 Spike provenance is cited where a milestone promotes proven spike work
 (`internal/simplesub/`).
@@ -107,7 +107,72 @@ gate to clear before investing further.
 
 ---
 
-## M5 — Unions / intersections
+## M5 — Nominal types (classes)
+
+Escalier's `class` declarations introduce **nominal** types: a value of class
+`Point` is not assignable to a bare structural `{x: number}` (and vice versa)
+even when the fields line up. SimpleSub is fundamentally structural, so nominal
+types are layered on as atomic lattice elements with an explicit
+**declared-subtype graph** feeding `constrain` — the design sketched in
+[`03-references.md`](03-references.md). Lifetimes and `mut` ride on classes
+exactly as they do on records (introduced in M4), so this milestone reuses the
+M4 substrate without retrofitting.
+
+- A `Class` SimpleType `{name, args, lt}` that is **atomic from `constrain`'s
+  perspective**: subtyping never looks at its members structurally. Member
+  *lookup* (`p.x`, `p.method()`) resolves through the declared body — that's a
+  separate path from subtyping.
+- **Nominal subtyping rule.** `Class<A, args_A> <: Class<B, args_B>` succeeds
+  iff (a) `A == B` (per-position check on args, with variance per parameter —
+  see below), or (b) `A extends B` (transitively) in the declared-subtype graph
+  built from each class's `Extends`/`Implements`. Mixed
+  `Class <: structural record` (and the reverse) rejects: a `Point` is not a
+  `{x: number}`.
+- **Per-type-parameter variance via polarity (Option 2).** Each class's type
+  parameters get their variance inferred from how they appear in the class body,
+  exactly as SimpleSub already does for inference variables. A parameter that
+  appears only in output positions (field types, method returns) is covariant;
+  only in input positions (method parameters, write-only fields), contravariant;
+  in both, invariant. The subtyping rule then dispatches per parameter:
+  covariant → `arg <: arg'`, contravariant → `arg' <: arg`, invariant → both.
+  Declaration-site markers and use-site wildcards are explicitly **not** used.
+- **`mut` and lifetimes ride on it free.** `Class` carries an `lt` field, so the
+  M4 lifetime machinery applies unchanged (`mut 'a Point` works the same as
+  `mut 'a {x: number}`). The `mut` invariance encoding (read/write
+  decomposition) composes with per-parameter variance: a `mut` wrapping forces
+  both directions on the whole `Class`, which cascades to forcing both
+  directions per arg — invariance in `T` regardless of `T`'s declared variance.
+- **Mutually recursive classes** infer via the same "fresh var per binding +
+  constrain + generalize" pattern proven in the spike for recursive functions
+  (`LetRec`/`LetRecGroup`) — no placeholder phase or `typeRefsToUpdate` patching.
+
+**Accept:** the four variance lines that pin down Option 2 against `mut`:
+
+```text
+Box<number> <: Box<number | string>                ✓  (T covariant in Box's body)
+mut Box<number> <: mut Box<number | string>        ✗  (Mut forces invariance over the top)
+Consumer<number> <: Consumer<number | string>      ✗  (T contravariant in Consumer's body)
+mut Consumer<number | string> <: mut Consumer<number>  ✗  (Mut over contravariant: still invariant)
+```
+
+Plus: a bare `{x: number}` is rejected against `Point` (and vice versa);
+`class B extends A` yields `B <: A` via the declared graph and method dispatch
+finds A's methods when not overridden; mutually recursive class declarations
+infer cleanly.
+
+**Scope note.** The *subtyping rule* is short (a few cases in `constrain` plus
+a small declared-subtype graph). The bulk of the class machinery — constructor
+handling, static vs. instance partitioning, method overload merging, `Self`
+type substitution, the type-vs-value dual binding — is language semantics, not
+unification, and is roughly proportional to the surface regardless of the
+inference core. That work stays. What SimpleSub does avoid is the placeholder /
+`typeRefsToUpdate` patching the production checker needs for cross-class
+recursive references (cf. `infer_module.go:431-872` and the discussion in
+`02-design-notes.md`).
+
+---
+
+## M6 — Unions / intersections
 
 - Union/intersection as both inferred **output** (from bounds, polarity
   coalescing) and written **annotation input**, with the directional lattice
@@ -121,7 +186,7 @@ round-trip through the printer; inferred unions from multi-branch returns.
 
 ---
 
-## M6 — Conformance corpus + differential harness
+## M7 — Conformance corpus + differential harness
 
 - A comprehensive, **checker-agnostic** corpus encoding language semantics
   (`(source, expected type | expected error)`), the long-wanted fixtures
@@ -141,7 +206,7 @@ gaps; burn down before proceeding.
 
 ---
 
-## M7 — Type-level operators
+## M8 — Type-level operators
 
 The last MVP milestone. `keyof`, indexed access, conditional types: Baseline-D
 (reduce when operands ground) + Design-A residual nodes reduced post-coalescing,
@@ -157,11 +222,11 @@ or budget). Errors (e.g. arity, non-regular recursion) assert full messages.
 
 ## Later (post-MVP)
 
-- **M8 — Codegen.** Either a `soltype → type_system` bridge to reuse codegen
+- **M9 — Codegen.** Either a `soltype → type_system` bridge to reuse codegen
   unchanged, or port codegen (`dts.go` et al., ~4 files / ~30 refs) onto
   `soltype`. Decide when the checker is proven.
-- **M9 — LSP.** Switch the LSP to the new checker's `Scope`/`Info`.
-- **M10 — Flip & cleanup.** Make the new checker the default; retire the old
+- **M10 — LSP.** Switch the LSP to the new checker's `Scope`/`Info`.
+- **M11 — Flip & cleanup.** Make the new checker the default; retire the old
   checker + its tests; **delete** the AST `inferredType` field, the
   `type Type = type_system.Type` alias, and `tools/gen_ast`'s generation of the
   field — leaving the AST fully type-system-agnostic.
@@ -171,9 +236,13 @@ or budget). Errors (e.g. arity, non-regular recursion) assert full messages.
 - M4 is front-loaded as the combined "core value types" milestone because
   records, `mut`, and lifetimes are an inseparable cluster once lifetimes ride on
   values — and it contains the highest-risk gate (`mut` invariance).
+- M5 (nominal classes) sits right after M4 so it reuses M4's `mut`/lifetimes
+  substrate directly. Its subtyping rule is small; its bulk (constructor / body
+  inference / overloads) is language-proportional and unrelated to the inference
+  core, so it doesn't change M4's risk profile.
 - Codegen is deferred to the latest safe point because it is the single largest
   integration cost (its `type_system` dependency) and is not needed to prove the
   checker.
-- The corpus (M6) is "improve, don't match," so the differential harness is a
+- The corpus (M7) is "improve, don't match," so the differential harness is a
   triage tool — this is what lets intended improvements through instead of
   forcing old-checker parity.
