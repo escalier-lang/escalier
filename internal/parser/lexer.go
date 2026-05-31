@@ -194,7 +194,15 @@ func (lexer *Lexer) next() *Token {
 		}
 	}
 
-	codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
+	var codePoint rune
+	var width int
+	if startOffset < len(lexer.source.Contents) {
+		if b := lexer.source.Contents[startOffset]; b < utf8.RuneSelf {
+			codePoint, width = rune(b), 1
+		} else {
+			codePoint, width = utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
+		}
+	}
 
 	endOffset := startOffset + width
 	end := ast.Location{Line: start.Line, Column: start.Column + 1}
