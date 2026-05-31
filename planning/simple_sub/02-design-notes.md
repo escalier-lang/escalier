@@ -42,6 +42,265 @@ type TypeVar struct {
 }
 ```
 
+### Relationship to PR #672's journaled probe
+
+PR #672 adds a `BindJournal` / `ProbeScope` / `ProbeResult` apparatus that
+snapshots TypeVar and LifetimeVar mutations plus `Prune` path-compression
+and `InstanceChain` edits, so failed speculative unifications don't leave
+variables in partially-bound states. The widening fallback and
+intersection-over-union distribution depend on it; before the journal they
+deep-cloned to get the same property.
+
+Soltype changes what rollback has to cover, but **does not eliminate
+rollback entirely**:
+
+- **Partial-binding-after-failure leakage goes away by representation.**
+  `constrain` only appends to `lowerBounds` / `upperBounds`; there is no
+  single `Instance` cell to half-write. A failed constraint produces an
+  error without leaving any variable in an inconsistent state. The
+  *specific* class of bug PR #672 cites — "failed unification leaves
+  TypeVars/LifetimeVars in partially-bound states, polluting subsequent
+  inference" — is structurally impossible.
+- **The PR #672–specific subsystems don't exist here.** `Widenable`
+  widening, intersection-over-union distribution, `Prune` path compression,
+  and `InstanceChain` are the hand-rolled approximations that algebraic
+  subtyping dissolves into `constrain` + polarity-driven coalescing (see
+  [00-overview.md](00-overview.md)). The journal's snapshot targets simply
+  aren't there to snapshot.
+- **Lifetimes ride the same mechanism.** Soltype's `LifetimeVar` is the
+  same bound-list shape solved by the same `constrain`, so it inherits the
+  same monotonicity — no parallel lifetime journal needed.
+
+**But genuinely speculative semantics still need rollback.** `satisfies`,
+`NoInfer<T>`, overload resolution, conditional-type branch selection, and
+any feature that tries a constraint and may discard it must still unwind
+the bounds appended during the trial. What changes is the *shape* of
+rollback, not its existence: because bound-lists are append-only, a probe
+is a snapshot of `(len(lowerBounds), len(upperBounds))` on each touched
+var (plus the analogous lengths on each touched `LifetimeVar`), and
+unwinding is slice truncation. No cell-overwrite restore, no `Prune` /
+`InstanceChain` replay, no separate lifetime journal. Soltype will want a
+small probe API for these sites; it's a much smaller surface than
+`BindJournal` covers today.
+
+### Speculative checks: probe-API sketches
+
+Four candidate designs, in roughly increasing implementation cost. Different
+features will compose them differently; the recommended baseline is (A) plus
+selective use of (D).
+
+**A. Length-snapshot journal (recommended baseline).** A `*Probe` is threaded
+through `constrain` on `Context` (nullable; nil means mutations are real).
+First mutation of each var records `(prevLen(lower), prevLen(upper))`;
+discard truncates each touched var's slices back. Commit on a nested probe
+propagates the touched set to the parent, so an outer discard still rolls
+inner-committed work.
+
+Lifetimes are a second sort with the same bound-list shape as `TypeVar`
+(see [the lifetime sort below](#exactness)), so the probe records both
+sorts uniformly. A small `Bounded` interface ("has `lowerBounds` /
+`upperBounds` slices") lets one entry shape cover both:
+
+```go
+type Bounded interface {                 // implemented by *TypeVar, *LifetimeVar
+    boundLengths() (lower, upper int)
+    truncateBounds(lower, upper int)
+}
+
+type probeEntry struct {
+    v                    Bounded
+    prevLower, prevUpper int
+}
+
+type Probe struct {
+    entries  []probeEntry
+    touched  set.Set[Bounded]             // dedupe — only snapshot first touch
+    cleanups []func()                     // side-table rollback — see below
+    parent   *Probe                       // nested probes
+}
+
+func (p *Probe) record(v Bounded) {
+    if p.touched.Contains(v) { return }
+    p.touched.Add(v)
+    lo, hi := v.boundLengths()
+    p.entries = append(p.entries, probeEntry{v, lo, hi})
+}
+
+func (p *Probe) onRollback(f func()) { p.cleanups = append(p.cleanups, f) }
+
+// rollback runs side-table cleanups in reverse, then restores every
+// touched var to the (lower, upper) lengths recorded at first touch.
+// Cleanups run first so they observe vars while their bounds still
+// reflect the speculative state, in case any cleanup needs to inspect
+// what was written.
+func (p *Probe) rollback() {
+    for i := len(p.cleanups) - 1; i >= 0; i-- {
+        p.cleanups[i]()
+    }
+    for i := len(p.entries) - 1; i >= 0; i-- {
+        e := p.entries[i]
+        e.v.truncateBounds(e.prevLower, e.prevUpper)
+    }
+}
+```
+
+`truncateBounds` on each sort is a two-line slice reslice:
+
+```go
+func (v *TypeVar) boundLengths() (int, int) {
+    return len(v.lowerBounds), len(v.upperBounds)
+}
+func (v *TypeVar) truncateBounds(lower, upper int) {
+    v.lowerBounds = v.lowerBounds[:lower]
+    v.upperBounds = v.upperBounds[:upper]
+}
+// LifetimeVar: same shape, same methods.
+```
+
+`Discard()` is the public entry point — it calls `rollback()` and then
+marks the probe finalized so a subsequent `Commit()` is a no-op
+(idempotency, matching PR #672's `ProbeResult` discipline). `Commit()`
+on a nested probe propagates `touched` to `p.parent` (so the parent's
+later rollback still covers these vars) and clears `p.entries` without
+truncating.
+
+Every `append(v.lowerBounds, …)` / `append(v.upperBounds, …)` site is
+preceded by `probe.record(v)` — in `constrain` for `TypeVar`, in
+`constrainLt` for `LifetimeVar`. Both sorts go through the same probe;
+there is no parallel lifetime journal. (Contrast with PR #672, which has
+to add `LifetimeVar` records to `BindJournal` as a separate case because
+the existing `LifetimeVar` is a different mutable shape — a single
+`Instance` cell — than `TypeVar`. Soltype unifies the shape, so the probe
+unifies too.)
+
+No `Prune` snapshot and no `InstanceChain` replay either — neither exists
+in soltype. Hot-path overhead when `p == nil`: one nil check before each
+append.
+
+#### Side-table cleanup
+
+Bound-list rollback is only half the story — the inference walk also
+writes to `Prov` (type → Origin) and `Info` (ast.Node → soltype.Type) as
+it goes, and a discarded probe needs those writes undone too. PR #672
+handles the analogous case with ad-hoc "cleanup closures" on
+`BindJournal`; soltype's `Probe.cleanups` field is the same mechanism.
+
+There are three side tables to think about and only two need probe
+discipline:
+
+**`Prov`** — every writer helper records a closure before mutating. The
+prior state may be "absent" (the common case for fresh vars created
+inside the probe) or "previously had a different Origin" (for
+pre-existing types that pick up new bound-propagation entries):
+
+```go
+func (c *checker) setProv(t soltype.Type, o Origin) {
+    if c.probe != nil {
+        prev, had := c.prov[t]
+        c.probe.onRollback(func() {
+            if had { c.prov[t] = prev } else { delete(c.prov, t) }
+        })
+    }
+    c.prov[t] = o
+}
+```
+
+**`Info`** — symmetric. This matters more than it might look: an
+overload-resolution trial walks the entire argument expression tree,
+calling `setType` on every node. If the trial loses, those entries would
+otherwise stick around and corrupt LSP hovers and error messages.
+
+```go
+func (i *Info) setType(n ast.Node, t soltype.Type, probe *Probe) {
+    if probe != nil {
+        prev, had := i.types[n]
+        probe.onRollback(func() {
+            if had { i.types[n] = prev } else { delete(i.types, n) }
+        })
+    }
+    i.types[n] = t
+}
+```
+
+**`seen` cache for `constrain`** — *not* a probe concern. It's scoped to
+a single subtyping question and dies with the call frame; a failing
+probe drops it for free.
+
+**Why closures, not a typed `probeEntry` per table.** Two reasons:
+
+- *Open set.* New side tables (a future definitions/uses map, a
+  constraint-witness table, etc.) shouldn't have to extend `Probe`'s
+  struct. Closures keep the probe a closed type and let each table own
+  its rollback discipline.
+- *PR #672 already does this* for the same reason — its `BindJournal`
+  carries cleanup closures for ad-hoc side effects that don't fit the
+  TypeVar/LifetimeVar record shape. Same pattern, same justification.
+
+The cost is one closure allocation per side-table write *under a probe*.
+Outside a probe (the common case), the nil check skips the whole branch.
+
+**What stays out.** Errors are the trial's *output*, not a side effect to
+roll back — the caller decides whether to surface them based on whether
+the trial wins. Generalization and scheme construction don't happen
+mid-probe; they're binding-boundary operations, post-inference of an
+RHS.
+
+**B. Overlay map (no mutation during the probe).** The probe carries
+delta maps `extraLower`, `extraUpper`; reads consult `real ∪ overlay`.
+Commit folds the overlay into reality; discard drops it. Pros: canonical
+state never tentatively mutated; nested probes are a stack of overlays;
+reasoning about "what's real" is local. Cons: every bounds read pays
+overlay lookup + concatenation, so the *non-speculative* hot path slows
+down too — and the seen-cache and other helper structures have to be
+overlay-aware. Probably not worth it given (A) is so cheap.
+
+**C. Generation tags.** Each appended bound is tagged with the probe
+generation that wrote it (`type Bound struct { typ Type; gen uint32 }`);
+reads filter by `gen ≤ active`. Zero-cost discard, supports out-of-order
+commits, but every bound read filters. Same hot-path tax as (B). Listed
+for completeness; probably overkill.
+
+**D. Fresh-instance retry (no probe at all, for some features).** For
+overload resolution: each candidate signature gets its own `freshenAbove`
+instance, and argument constraints flow into the *fresh* parameter vars.
+Discarding a candidate means dropping the fresh instance — nothing shared
+was mutated, so no rollback is needed *on the callee side*. But the
+argument expressions' own vars do pick up upper bounds from the trial,
+so (D) has to compose with (A) for the caller side.
+
+```go
+for _, sig := range overloads {
+    inst := freshenAbove(sig, curLevel)
+    probe := ctx.OpenProbe()
+    if tryConstrainArgs(args, inst) {
+        probe.Commit()
+        return inst.ret
+    }
+    probe.Discard()                   // unwind caller-side bounds; drop inst
+}
+```
+
+#### Recommended composition per feature
+
+| Feature | Strategy |
+|---|---|
+| `satisfies T` | (A) — issue `constrain(exprType <: T)` inside a probe; **always discard** after checking. The expression's own bounds are preserved; only the satisfaction check is transient. |
+| `NoInfer<T>` | Not a probe; a per-constraint flag. The parameter position marked `NoInfer` issues a check-only constraint that does not propagate into inference vars on the argument side. (Equivalently: the constraint runs under a probe that is *always* discarded, but the flag form is more honest about intent.) |
+| Overload resolution | (D) + (A): fresh-instance per candidate, (A) wraps the trial so caller-side bounds from losing candidates roll back. First success commits. |
+| Conditional types `T extends U ? A : B` | (A) — try `constrain(T <: U)` inside a probe to pick the branch, discard either way, then emit only the chosen branch's constraints against real vars. |
+| Failed top-level `constrain` | No probe — bound-list monotonicity already prevents leakage, the error surfaces, and inference continues from a consistent state. |
+
+#### What lives on `Context`
+
+`type_system.Context` today carries `*BindJournal`. Soltype's equivalent is
+`*Probe` (nullable). The hot-path overhead when nil is a single nil check
+before each bound append. When non-nil, `BindJournal`'s additional
+responsibilities (`Prune` path-compression snapshots, `InstanceChain`
+replay, parallel lifetime journal) all drop out, so the active-probe cost
+is also lower than today's. The probe API is the only piece of soltype
+infrastructure that exists *because* speculation exists — everything else
+is just constrain + bound lists.
+
 Borrows and mutability are carried by a single unified wrapper, `Ref`, with
 two flags. Owned types (`Record`, `Tuple`, `Alias`, `Class`) have **no**
 lifetime field — a lifetime is the lifetime of a *borrow*, and a borrow is
@@ -56,9 +315,93 @@ type Alias  struct { name string; body Type }          // owned, no lt
 type Ref struct {
     mut   bool       // mutable borrow if true, immutable borrow if false
     lt    Lifetime   // nilable: nil = owned mutable (only meaningful with mut=true)
-    inner Type
+    inner RefInner   // narrower than Type — see below
 }
 ```
+
+### `RefInner` — what can sit inside a `Ref`
+
+`Ref.inner` is narrower than `Type`. Escalier compiles to JavaScript, so the
+`mut`/lifetime machinery only makes sense for aggregate value types whose
+mutations can actually be observed through the borrow. Borrowing a primitive
+(`mut number`) is a no-op in JS — the callee's mutation doesn't propagate —
+and a function reference isn't "borrowed" in the lifetime sense, just shared.
+Nested `Ref`s are also forbidden: the inner `Ref` of a nested-borrow scenario
+sits as a *field* of an outer carrier (`Ref{mut, lt, Record{f: Ref{...}}}`),
+never directly inside another `Ref`.
+
+A sealed marker interface encodes the shape invariant statically:
+
+```go
+// RefInner is the set of types that can appear inside a Ref wrapper.
+// Sealed: only the implementors below qualify.
+type RefInner interface {
+    Type
+    isRefInner()
+}
+
+func (*TypeVar)      isRefInner() {}  // mid-inference; bounds checked at constrain time
+func (*Record)       isRefInner() {}
+func (*Tuple)        isRefInner() {}
+func (*Class)        isRefInner() {}
+func (*Alias)        isRefInner() {}
+func (*Union)        isRefInner() {}  // e.g. mut (Foo | Bar)
+func (*Intersection) isRefInner() {}
+
+// Deliberately NOT RefInner:
+//   *Ref          — nested borrows are illegal at this level (see above)
+//   *Primitive    — mut number / mut string / mut bool make no JS-level sense
+//   *Literal      — same reasoning, plus literals are singleton values
+//   *Function     — function references are shared, not borrowed
+```
+
+This rules out `NewRef(_, _, &Primitive{...})` at compile time. The `Type`
+embedding in `RefInner` means a `RefInner` is always usable wherever a `Type`
+is expected (constrain rules, printing, etc.); the narrowing is one-way.
+
+**Content invariants on collection types.** `Union` and `Intersection`
+satisfy `RefInner` because `mut (Foo | Bar)` is legitimate when both branches
+are themselves borrowable. The interface can't enforce *what's inside* the
+union — `Union{Record, Primitive}` is structurally a `RefInner` but
+semantically nonsense in a `Ref`. The constrain-side predicate
+`borrowableType(t Type) bool` covers this content invariant, descending into
+`Union`/`Intersection` and checking that every branch is borrowable.
+
+```go
+func borrowableType(t Type) bool {
+    switch t := t.(type) {
+    case *Record, *Tuple, *Class, *Alias, *TypeVar: return true
+    case *Union:        return all(t.types, borrowableType)
+    case *Intersection: return all(t.types, borrowableType)
+    case *Ref:          return false  // nested Ref forbidden
+    default:            return false  // Primitive, Literal, Function
+    }
+}
+```
+
+It runs at the constrain site where a `TypeVar` in `Ref.inner` position
+picks up a new bound (and at coalescing, when the bound list resolves to a
+concrete carrier). The `RefInner` marker handles the construction-shape
+invariant; `borrowableType` handles the content invariant deferred through
+`TypeVar` and collection types. Together they cover the cases the type
+system needs to reject — split between static and runtime as cheaply as
+each one allows.
+
+**Why not parameterize Union/Intersection over `RefInner`.** Tempting:
+`Union[RefInner]` would push the content invariant into the type system.
+But the constrain rules over Union/Intersection are element-agnostic, so
+either every signature in the unifier picks up generic parameters or it
+coerces to `Union[Type]` at the door and the precision evaporates.
+Coalescing has the same problem in reverse — it would have to pick a
+parameterization based on whether all bounds happen to be `RefInner`, a
+runtime check on every coalesce. And M8 type-level operators (`keyof`,
+conditional, indexed access) don't preserve `RefInner`-ness anyway
+(`keyof Union[RefInner]` is `Union[Literal]`, and `Literal` isn't
+`RefInner`), so the chain breaks at the first operator. Non-generic
+collection types plus `borrowableType` deliver the same coverage without
+the unifier-wide tax.
+
+
 
 The four cells of `(mut, lt)`:
 
