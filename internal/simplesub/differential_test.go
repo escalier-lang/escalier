@@ -3,6 +3,7 @@ package simplesub
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -249,16 +250,5 @@ func TestM8DifferentialEvaluation(t *testing.T) {
 	sort.Strings(report)
 	total := len(cases)
 	t.Logf("\nM8 differential evaluation — %d cases\n%s\n  ---\n  match=%d  benign=%d  regression=%d  (%d benign baselines reconstructed, not copied verbatim)",
-		total, joinLines(report), tally[bucketMatch], tally[bucketBenign], tally[bucketRegression], reconstructedCount)
-}
-
-func joinLines(lines []string) string {
-	out := ""
-	for i, l := range lines {
-		if i > 0 {
-			out += "\n"
-		}
-		out += l
-	}
-	return out
+		total, strings.Join(report, "\n"), tally[bucketMatch], tally[bucketBenign], tally[bucketRegression], reconstructedCount)
 }

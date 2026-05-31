@@ -113,15 +113,16 @@ func (a *LazyAliases) Ref(name string, args ...LazyType) *LazyRef {
 		Args: args,
 		force: func() LazyType {
 			def, ok := a.defs[name]
-			if !ok {
-				// Unknown name: treat as an opaque nominal constructor.
+			// Unknown name, or an arity mismatch: treat as an opaque nominal
+			// constructor rather than substituting a partial param set (which
+			// would leave the unmatched params unbound in the body). Mirrors
+			// evalRef in typeops.go.
+			if !ok || len(args) != len(def.params) {
 				return &LazyCtor{Name: name, Args: args}
 			}
 			env := map[string]LazyType{}
 			for i, p := range def.params {
-				if i < len(args) {
-					env[p] = args[i]
-				}
+				env[p] = args[i]
 			}
 			return substLazy(def.body, env)
 		},

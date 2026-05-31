@@ -38,7 +38,12 @@ type coalescer struct {
 // lifetimeForced reports whether a lifetime variable has 'static among its
 // bounds (in which case it coalesces to 'static rather than being elided).
 func lifetimeForced(v *LifetimeVar) bool {
-	for _, b := range append(append([]Lifetime{}, v.lowerBounds...), v.upperBounds...) {
+	for _, b := range v.lowerBounds {
+		if isStaticLifetime(b) {
+			return true
+		}
+	}
+	for _, b := range v.upperBounds {
 		if isStaticLifetime(b) {
 			return true
 		}
@@ -61,11 +66,25 @@ func (c *coalescer) ltNameFor(id int) string {
 	if n, ok := c.ltNames[id]; ok {
 		return n
 	}
-	n := string(rune('a' + c.ltCounter))
+	n := alphaName(c.ltCounter)
 	c.ltCounter++
 	c.ltNames[id] = n
 	c.ltOrder = append(c.ltOrder, n)
 	return n
+}
+
+// alphaName maps 0,1,...,25,26,... to a,b,...,z,aa,ab,... (Excel-style base-26),
+// so lifetime names stay valid letters beyond the first 26.
+func alphaName(i int) string {
+	var b []byte
+	for {
+		b = append([]byte{byte('a' + i%26)}, b...)
+		i = i/26 - 1
+		if i < 0 {
+			break
+		}
+	}
+	return string(b)
 }
 
 // coalesceLifetime renders a Lifetime into a type_system.Lifetime. The only

@@ -245,6 +245,20 @@ func containsParamNested(expr TyExpr, p string, nested bool) bool {
 			}
 		}
 		return false
+	case *TyCond:
+		// Conditional / keyof / indexed-access are not growth constructors
+		// either: a parameter appearing in their subexpressions is at the same
+		// depth, so preserve `nested`. (Without these cases a parameter nested
+		// under one of them would be invisible to the regularity check.)
+		return containsParamNested(t.Check, p, nested) ||
+			containsParamNested(t.Extends, p, nested) ||
+			containsParamNested(t.Then, p, nested) ||
+			containsParamNested(t.Else, p, nested)
+	case *TyKeyof:
+		return containsParamNested(t.Target, p, nested)
+	case *TyIndex:
+		return containsParamNested(t.Target, p, nested) ||
+			containsParamNested(t.Index, p, nested)
 	default:
 		return false
 	}

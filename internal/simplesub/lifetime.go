@@ -59,23 +59,52 @@ func (in *Inferer) freshLifetime() *LifetimeVar {
 // type sort gets this from the separate symmetrize pass, but lifetimes are
 // recorded directly here. 'static is the top, so X <: 'static always holds.
 func (in *Inferer) constrainLt(lhs, rhs Lifetime) {
+	in.constrainLtSeen(lhs, rhs, map[ltPair]bool{})
+}
+
+// ltPair keys the in-progress set so a transitive cycle (e.g. 'a <: 'b, 'b <: 'a,
+// or a longer 'a <: 'b <: 'c <: 'a) terminates: the same (lhs, rhs) pair is never
+// re-entered, and a bound already present is not re-appended.
+type ltPair struct{ lhs, rhs Lifetime }
+
+func (in *Inferer) constrainLtSeen(lhs, rhs Lifetime, seen map[ltPair]bool) {
 	if lhs == rhs {
 		return
 	}
+	key := ltPair{lhs, rhs}
+	if seen[key] {
+		return
+	}
+	seen[key] = true
+
 	lv, lIsVar := lhs.(*LifetimeVar)
 	rv, rIsVar := rhs.(*LifetimeVar)
 	if lIsVar {
-		lv.upperBounds = append(lv.upperBounds, rhs)
+		if !containsLifetime(lv.upperBounds, rhs) {
+			lv.upperBounds = append(lv.upperBounds, rhs)
+		}
 		for _, lb := range lv.lowerBounds {
-			in.constrainLt(lb, rhs)
+			in.constrainLtSeen(lb, rhs, seen)
 		}
 	}
 	if rIsVar {
-		rv.lowerBounds = append(rv.lowerBounds, lhs)
+		if !containsLifetime(rv.lowerBounds, lhs) {
+			rv.lowerBounds = append(rv.lowerBounds, lhs)
+		}
 		for _, ub := range rv.upperBounds {
-			in.constrainLt(lhs, ub)
+			in.constrainLtSeen(lhs, ub, seen)
 		}
 	}
+}
+
+// containsLifetime reports whether lt is already in bounds (by identity).
+func containsLifetime(bounds []Lifetime, lt Lifetime) bool {
+	for _, b := range bounds {
+		if b == lt {
+			return true
+		}
+	}
+	return false
 }
 
 // lifetimeOf extracts the lifetime a value carries, or nil if it has none

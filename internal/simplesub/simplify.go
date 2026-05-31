@@ -67,45 +67,45 @@ func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool,
 // ---- Co-occurrence merging ----
 
 // collectVars gathers every variable reachable from st, following both bounds.
-func collectVars(st SimpleType, set map[int]*Variable) {
+func collectVars(st SimpleType, out map[int]*Variable) {
 	switch t := st.(type) {
 	case *Variable:
-		if _, ok := set[t.id]; ok {
+		if _, ok := out[t.id]; ok {
 			return
 		}
-		set[t.id] = t
+		out[t.id] = t
 		for _, b := range t.lowerBounds {
-			collectVars(b, set)
+			collectVars(b, out)
 		}
 		for _, b := range t.upperBounds {
-			collectVars(b, set)
+			collectVars(b, out)
 		}
 	case *Function:
 		for _, p := range t.params {
-			collectVars(p, set)
+			collectVars(p, out)
 		}
-		collectVars(t.ret, set)
+		collectVars(t.ret, out)
 	case *Tuple:
 		for _, e := range t.elems {
-			collectVars(e, set)
+			collectVars(e, out)
 		}
 	case *Record:
 		for _, f := range t.fields {
-			collectVars(f, set)
+			collectVars(f, out)
 		}
 	case *Mut:
-		collectVars(t.inner, set)
+		collectVars(t.inner, out)
 	case *Alias:
-		collectVars(t.body, set)
+		collectVars(t.body, out)
 	case *ResidualOp:
-		collectVars(t.operand, set)
+		collectVars(t.operand, out)
 	case *Union:
 		for _, m := range t.types {
-			collectVars(m, set)
+			collectVars(m, out)
 		}
 	case *Intersection:
 		for _, m := range t.types {
-			collectVars(m, set)
+			collectVars(m, out)
 		}
 	}
 }

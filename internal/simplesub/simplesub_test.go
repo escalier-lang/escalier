@@ -421,6 +421,23 @@ func TestEscapingRefIntoStatic(t *testing.T) {
 	require.Equal(t, "fn (item: mut 'static {x: number}) -> void", got)
 }
 
+// TestConstrainLtCycleTerminates guards against the lifetime-constraint
+// propagation looping on a transitive cycle. A 3-cycle
+// ('a <: 'b, 'b <: 'c, 'c <: 'a) previously recursed forever; the seen-set and
+// dedup in constrainLt make it terminate (and stay idempotent: no duplicate
+// bounds). The test would hang/overflow on the old code.
+func TestConstrainLtCycleTerminates(t *testing.T) {
+	in := NewInferer()
+	a, b, c := in.freshLifetime(), in.freshLifetime(), in.freshLifetime()
+	in.constrainLt(a, b)
+	in.constrainLt(b, c)
+	in.constrainLt(c, a) // closes the cycle
+	// Idempotent: re-asserting an existing edge adds no duplicate bound.
+	before := len(a.upperBounds)
+	in.constrainLt(a, b)
+	require.Equal(t, before, len(a.upperBounds), "re-constraining an existing edge must not duplicate the bound")
+}
+
 // --- Recursive functions (LetRec / LetRecGroup) ---
 //
 // The point of these tests is that "fresh var + constrain" handles cyclic
@@ -563,7 +580,9 @@ func TestAliasStructuralSubtyping(t *testing.T) {
 	// Point <: {x: number}
 	require.Empty(t, in.Constrain(point, rec("x", num())))
 	// Point </: {x: string}
-	require.NotEmpty(t, in.Constrain(point, rec("x", str())))
+	errs := in.Constrain(point, rec("x", str()))
+	require.Len(t, errs, 1)
+	require.EqualError(t, errs[0], "cannot constrain number <: string")
 }
 
 // TestLifetimePassesThroughIdentity verifies that a borrow's lifetime flows
@@ -729,5 +748,8 @@ func TestConstrainVariablePropagation(t *testing.T) {
 	in := NewInferer()
 	v := in.freshVar(0)
 	require.Empty(t, in.Constrain(v, num()))
-	require.NotEmpty(t, in.Constrain(boolean(), v))
+	// boolean <: v fails by propagating to v's upper bound: boolean <: number.
+	errs := in.Constrain(boolean(), v)
+	require.Len(t, errs, 1)
+	require.EqualError(t, errs[0], "cannot constrain boolean <: number")
 }
