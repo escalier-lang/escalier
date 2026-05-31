@@ -12,8 +12,11 @@ extra properties on an object, no extra elements in a tuple, no extra arguments
 passed to a function. **Exact types** are the umbrella term for these. Exact
 types still permit ordinary structural variation on the per-property,
 per-element, or per-parameter basis (a property can still be a subtype, a
-parameter can still be contravariant, etc.), but the **arity must match
-exactly**.
+parameter can still be contravariant, etc.), but the **arity is constrained**:
+for objects, tuples, and unions, an exact type's member set must match exactly;
+for functions, exactness bounds how many arguments the function tolerates when
+invoked, which in turn governs callback compatibility (see §4.2.1 — the
+"accept-set" model).
 
 This document specifies exact and inexact variants for four categories of
 types:
@@ -413,10 +416,17 @@ type ExactCallback   = fn(x: number, y: number) -> number
 type InexactCallback = fn(x: number, y: number, ...) -> number
 ```
 
-- A bare function type `fn(...) -> T` is **exact** — callers may not pass extra
-  arguments beyond those declared.
+- A bare function type `fn(p1..pn) -> T` (no trailing `...`) is **exact** —
+  it does not tolerate being invoked with more arguments than it declares,
+  in any context.
 - A function type whose parameter list ends with a trailing `...` is
-  **inexact** — extra positional arguments are permitted at call sites.
+  **inexact** — it tolerates being invoked with extra positional
+  arguments *when used as a callback* (i.e. it may fill a function-typed
+  slot that passes more arguments than it names; see §4.2.1).
+
+The exact/inexact distinction governs **callback subtyping** (§4.2.1), not
+direct calls — at a direct call site both forms reject more arguments than
+the callee declares (§4.2.3).
 
 This is distinct from an explicit typed rest parameter:
 
@@ -429,108 +439,209 @@ fn log(msg: string, ...) -> undefined { ... }      // inexact — extras of any 
 
 In TypeScript, a function type `(x: number) => void` is assignable to a
 parameter expecting `(x: number, y: number) => void` because the implementation
-may simply ignore extra arguments. This means *callers* of the latter type can
-pass two arguments, and the supplied function will silently discard the second.
+may simply ignore extra arguments — so a holder of the two-parameter type can
+call the supplied function with a second argument it silently discards. This
+*callback bivariance* is a well-known source of bugs.
 
-In Escalier, with exact function types, **the callee declares how many
-arguments it accepts**, and callers may not pass more than that:
+The most damaging form of the bug involves **optional parameters**. A
+callback with a trailing optional — `(a: string, b?: boolean) => void` —
+flows through TypeScript's bivariance into a slot that supplies more
+arguments, and at runtime the optional parameter is bound to a value of
+the wrong type:
+
+```ts
+function foo(cb: (a: string) => void)             { bar(cb); }
+function bar(cb: (a: string, b: number) => void)  { cb("hello", 5); }
+function cb(a: string, b?: boolean) { if (b) { /* b is "truthy" */ } }
+
+foo(cb);
+// At runtime cb is invoked as cb("hello", 5).
+// b is bound to the number 5; the body's `if (b)` treats it as a boolean.
+// No runtime error, silently wrong downstream.
+```
+
+The optional `b?: boolean` is the unsafe surface: the callee *declared*
+that `b` might be absent, but TypeScript's chain of widenings lets a
+caller supply *anything* there. Inexact functions are how Escalier
+controls this — `...` is the explicit opt-in to "callers may supply
+extras," and the accept-set/contravariance rules in §4.2.1 are designed
+so that the chain above cannot be reconstructed in pure Escalier source.
+§4.2.1.2 walks the worked example end-to-end.
+
+Escalier splits the concern in two:
+
+- **Direct call sites** reject more arguments than the callee declares,
+  regardless of exactness — passing extra arguments to a call you can see
+  is treated as a likely mistake (§4.2.3).
+- **Callback subtyping** — whether a function may be supplied where a
+  function-typed slot is expected — is governed by exactness, via the
+  accept-set rule (§4.2.1). An *inexact* function explicitly tolerates
+  being invoked with extras, so it may fill a slot that passes more
+  arguments than it names (as long as it still requires no more arguments
+  than the slot supplies); an *exact* function may not fill a slot that
+  passes extras at all.
 
 ```
 declare val f: ExactCallback     // fn(x: number, y: number) -> number
 declare val g: InexactCallback   // fn(x: number, y: number, ...) -> number
 
 f(1, 2)        // okay
-f(1, 2, 3)     // Error — exact function type accepts exactly 2 arguments
-
+f(1, 2, 3)     // Error — more arguments than declared
 g(1, 2)        // okay
-g(1, 2, 3)     // okay — inexact function accepts extras
+g(1, 2, 3)     // Error — more arguments than declared (direct calls reject
+               //         extras regardless of exactness; the `...` matters
+               //         for callback subtyping, not direct calls)
 ```
 
 #### 4.2.1. Subtyping (Function Compatibility)
 
-Standard function subtyping rules still apply (contravariant parameters,
-covariant returns), with an added arity rule:
+Standard function subtyping rules still apply — parameter types are
+checked contravariantly and return types covariantly — and the arity
+relationship is governed by the **accept-set** model below.
 
-**Function arities must match exactly when comparing function types,
-regardless of exact/inexact.** Neither direction (`Exact <: Inexact` nor
-`Inexact <: Exact`) is permitted for function subtyping. Exactness on
-function types governs *call-site* checking only — how many arguments a
-caller may pass — not subtyping between function types themselves.
+**The accept-set.** A function type's exactness defines the set of
+argument counts it tolerates when invoked. Let `required` be the number
+of required (non-optional) parameters and `n` the number of declared
+parameters:
 
-- **Exact </: Inexact:** An exact function is *not* a subtype of the
-  corresponding inexact function. See "Why exact `</:` inexact for
-  functions" below.
-- **Inexact </: Exact:** An inexact function is not a subtype of an exact
-  function either, because the inexact function "advertises" that callers
-  may pass extras, which the exact callsite would forbid.
-- **Exact <: Exact:** Standard structural rule with arities matching
-  exactly. `fn(a: A, b: B) -> R <: fn(c: C, d: D) -> S` only if both have
-  exactly two parameters, `C <: A`, `D <: B`, and `R <: S`.
-- **Inexact <: Inexact:** The classic "fewer params is okay" rule applies
-  *within* inexact function types: `fn(a: A, ...) -> R <:
-  fn(a: A, b: B, ...) -> R`. Both types permit unbounded extra arguments,
-  so the supplier just needs to handle at least the parameters the
-  consumer's contract requires.
+- exact `fn(p1..pn)` → accepts the closed range `[required, n]`
+- inexact `fn(p1..pn, ...)` → accepts the open range `[required, ∞)`
 
-**Optional parameters are part of the declared parameter list.** For
-the arity-matching rules above, a function type `fn(a: A, b?: B) -> R`
-has declared parameter list `[a: A, b?: B]` — *not* `[a: A]`. It is
-therefore neither a subtype nor a supertype of `fn(a: A) -> R` under
-exact-to-exact subtyping (declared lists differ), and only inexact
-suppliers with declared list `[a: A]` (or fewer) fit an inexact slot
-whose declared list is `[a: A, b?: B]`. This rule applies uniformly to
-both `Exact <: Exact` and `Inexact <: Inexact`: the optionality marker
-is structural identity of the function type, not a deletion the type
-system silently performs. (See §4.2.1.2 for a worked example.)
+`required` is the lower bound — a function always needs at least its
+required arguments. Exactness sets the *upper* bound: `n` for exact,
+unbounded for inexact. Optional parameters lower `required` without
+changing `n`:
+
+```
+fn(a, b)       // required=2, n=2  → exact [2,2]   inexact [2,∞)
+fn(a, b?)      // required=1, n=2  → exact [1,2]   inexact [1,∞)
+fn()           // required=0, n=0  → exact [0,0]   inexact [0,∞)
+```
+
+**Subtyping rule.** Read the supertype `F` as a callback slot: whoever
+holds an `F` will invoke whatever is supplied with the argument counts
+`F` permits. A supplied function `G` is therefore a subtype of `F` only
+if `G` tolerates every argument count `F` may invoke it with (with
+parameter types contravariant and the return type covariant):
+
+> **`G <: F` iff `accept(G) ⊇ accept(F)`**, i.e. with
+> `accept(F) = [rF, uF]` and `accept(G) = [rG, uG]`:
+> - `rG <= rF` — `G` must not *demand* more arguments than `F` might supply, **and**
+> - `uG >= uF` — `G` must not *refuse* an argument count `F` might supply.
+
+The upper-bound condition is the part exactness governs; the lower-bound
+condition is the `required` part. Consequences:
+
+- **Exact <: Exact:** standard structural rule with the accept-set check.
+  `fn(a: A, b: B) -> R <: fn(c: C, d: D) -> S` requires `C <: A`,
+  `D <: B`, `R <: S`, and `accept ⊇`. Same-arity exact functions relate
+  structurally; an exact function with an optional trailing parameter can
+  also fill a *narrower* exact slot (e.g. `fn(a: A, b?: B) -> R`,
+  accept `[1, 2]`, fills `fn(a: A) -> R`, accept `[1, 1]`) — the slot
+  simply never supplies the optional argument.
+- **Inexact <: Inexact:** the classic "fewer params is okay" rule —
+  `fn(a: A, ...) -> R <: fn(a: A, b: B, ...) -> R`. Both have upper bound
+  `∞`, so `uG >= uF` holds; the supplier just needs to handle at least
+  the consumer's required parameters.
+- **Inexact <: (narrower or wider) exact:** an inexact function fills an
+  exact callback slot whenever its required count fits.
+  `fn(a: A, ...) -> R <: fn(a: A, b: B) -> R` — the slot invokes with 2
+  args; the inexact supplier's accept-set `[1, ∞)` covers `{2}`. A
+  zero-param inexact `fn(...) -> R` fills *any* exact slot whose required
+  count it meets. **This is the case exactness exists to permit:** a
+  function that has explicitly opted into tolerating extras can stand in
+  for a higher-arity callback.
+- **Lower-bound (`required`) failures cut the other way.** The `rG <= rF`
+  condition is not vestigial: a supplier that *demands* more arguments
+  than the slot ever supplies is rejected, exactness aside. `fn(a, b) -> R`
+  (required 2) is **not** a subtype of `fn(a) -> R` (a slot that supplies
+  1) — it would be invoked with one argument and left missing `b`. The
+  same bound rejects `fn(a, b, ...) -> R` (inexact, required 2) as a
+  supplier for a `fn(a) -> R` slot.
+- **Exact </: inexact, and exact </: any higher-arity slot:** an exact
+  function's finite upper bound `n` cannot cover a slot whose upper bound
+  exceeds `n` (an inexact slot's `∞`, or a wider exact slot's larger
+  `n`). It would be invoked with arguments it refuses. See "Why exact
+  `</:` inexact for functions" below.
+
+**Optional parameters are part of the declared parameter list.** A
+function type `fn(a: A, b?: B) -> R` has declared parameter list
+`[a: A, b?: B]` with `required=1`, `n=2` — *not* `[a: A]`. The
+optionality marker is structural identity of the function type, not a
+deletion the type system silently performs; it lowers the accept-set's
+lower bound (the function may be called with one argument) without
+discarding the second declared parameter. (See §4.2.1.2 for a worked
+example.)
 
 ##### 4.2.1.1. Why exact `</:` inexact for functions
 
-Unlike object, tuple, and union types — where exact `<:` inexact is
-straightforwardly sound (an exact value just happens to have no extras and
-trivially satisfies an inexact contract) — function exactness sits on the
-*opposite side* of the call contract from value exactness:
+The accept-set rule is asymmetric: an *inexact* function can fill a
+narrower slot (§4.2.1), but an *exact* function can never fill a wider
+one — in particular `exact </: inexact`. This subsection explains why
+that asymmetry is the sound one.
+
+Function exactness sits on the *opposite side* of the call contract from
+value exactness:
 
 - Object/tuple/union exactness is a property of the **value**: "this value
   has no more than the declared shape." Widening to inexact loses
   information but never grants new permissions.
-- Function exactness is a property of what **callers** are allowed to do:
-  "callers may not pass extra arguments." Widening an exact function to an
-  inexact type *grants callers a permission the underlying function never
-  agreed to honor*.
+- Function exactness is a property of how the function may be **invoked**:
+  an exact function does not tolerate extra arguments. Treating an exact
+  function as inexact would *grant its holders a permission the function
+  never agreed to honor* — the right to call it with extras.
 
 Concretely:
 
 ```
-declare val f: fn(a: A, b: B) -> R              // exact: rejects extras
-val g: fn(a: A, b: B, ...) -> R = f             // would advertise extras are okay
-g(1, 2, 3)                                       // type-checks, but f rejects it
+declare val f: fn(a: A, b: B) -> R              // exact: accept-set [2, 2]
+declare val invokeWith3: fn(cb: fn(a: A, b: B, c: C) -> R) -> R
+                                                 // exact 3-arg slot: will
+                                                 // invoke cb with 3 args
+declare val forward: fn(cb: fn(a: A, b: B, ...) -> R) -> R
+                                                 // inexact slot — body cannot
+                                                 // call cb with extras directly
+                                                 // (§4.2.3), but can pass cb on
+                                                 // to a slot that does:
+                                                 //   fn(cb) => invokeWith3(cb)
+forward(f)                                       // would let f reach invokeWith3,
+                                                 // which invokes it with 3 args
+                                                 // f refuses
 ```
 
-We considered three resolutions:
+The accept-set check rejects the assignment of `f` to `forward`'s inexact
+parameter slot: `accept(f) = [2, 2]` does not contain any count above
+`2`, so `f`'s upper bound `2` fails the `uG >= uF` condition against the
+slot's `∞`. Note that a *direct* call like `f(1, 2, 3)` — or
+`cb(1, 2, 3)` inside `forward`'s body — is independently rejected by
+§4.2.3; the accept-set rule governs the callback-subtyping direction,
+where extras materialize only by chained forwarding into a slot that
+itself supplies them (see §4.2.1.2 for a worked chain). The same
+reasoning blocks an exact function from filling a *wider exact* slot
+(`fn(a, b) </: fn(a, b, c)`): a holder of the wider slot would invoke
+it with 3 arguments it refuses.
 
-1. **Disallow the direction.** Subtyping requires arities to match; users
-   who genuinely want "exact function used where extras are silently
-   dropped" write a one-line wrapper (`fn(a, b, ...) => f(a, b)`) that
-   makes the lossy step explicit at the source.
-2. **Allow it, drop extras silently at runtime.** This is the TypeScript
-   status quo and is precisely what enables bugs like
-   `["1","2","3"].map(parseInt)` returning `[1, NaN, NaN]` — the bug exact
-   function types exist to prevent. Allowing this coercion would let any
-   exact function silently lose its protection at a widening site,
-   defeating the feature's purpose.
-3. **Allow it, insert a runtime arity check at the boundary.** Sound, but
-   pays a runtime cost in a system that otherwise compiles to zero-cost
-   TypeScript. Boundary wrappers also break referential equality, leak
-   into stack traces, and interfere with `.length` / `.name` /
-   `Function.prototype.bind`. Making the type system's behavior depend on
-   codegen is a smell.
+**The soundness insight is preserved.** Exact functions reject extra
+arguments *everywhere* — both at direct call sites (§4.2.3) and by being
+unable to fill any slot that would pass more arguments than they declare.
+This is exactly what closes the `parseInt`-in-`map` class of bug: an
+exact function can never silently receive arguments its body does not
+expect. What the accept-set model *adds* is the dual direction — an
+inexact function filling a narrower slot — and that direction is sound
+precisely because the trailing `...` is an explicit declaration that the
+function tolerates being called with extras.
 
-**We chose option 1.** The cases that need this coercion are rare and easy
-to handle explicitly with a wrapper, and the rule that results — "function
-arities must match exactly for subtyping" — is simple and memorable. The
-exact/inexact distinction on functions then governs call-site argument
-counts only, not function-to-function subtyping, keeping the soundness
-story tight.
+When a user genuinely wants an exact function to flow into a slot that
+passes extras, the conversion must be made explicit — either with the
+`Inexact<T>` utility (§6.2) or, preferably, a one-line wrapper
+(`fn(a, b, ...) => f(a, b)`) that makes the arity narrowing visible at
+the source. We considered instead inserting an implicit runtime arity
+check at such boundaries; that is sound but pays a runtime cost in a
+system that otherwise compiles to zero-cost TypeScript, and boundary
+wrappers break referential equality, leak into stack traces, and
+interfere with `.length` / `.name` / `Function.prototype.bind`. Making
+the type system's behavior depend on codegen is a smell, so the explicit
+opt-in is preferred.
 
 ##### 4.2.1.2. A worked example: chained widenings in TypeScript
 
@@ -567,7 +678,7 @@ The unsoundness chain has three steps:
    parameter is bound to the number `5`. No runtime error; downstream
    computations on `b` produce silent garbage.
 
-The literal Escalier translation rejects this at **step 1**:
+The literal Escalier translation rejects this at **step 2**:
 
 ```
 fn foo(cb: fn(a: string) -> undefined) {
@@ -579,16 +690,27 @@ fn bar(cb: fn(a: string, b: number) -> undefined) {
 fn cb(a: string, b?: boolean) -> undefined { ... }
 
 foo(cb)
-// Error: cb's declared parameter list is [a: string, b?: boolean], which
-// does not match foo's slot [a: string]. Per §4.2.1, exact-to-exact
-// subtyping requires arities to match, with optionality preserved.
 ```
 
-The presence of the optional `b` is structural identity of `cb`'s type,
-not a deletion the type system silently performs. Even if step 1 had
-let it through, step 2 would also reject: `fn(a: string) -> undefined`
-has arity 1; `bar`'s slot has arity 2; §4.2.1.1 forbids fewer-args
-bivariance.
+- **Step 1 — `foo(cb)` is accepted, and soundly so.** `cb` is exact with
+  `required=1`, `n=2`, so `accept(cb) = [1, 2]`; `foo`'s slot
+  `fn(a: string)` has `accept = [1, 1]`. The check `[1, 2] ⊇ [1, 1]`
+  holds (`rG=1 <= rF=1`, `uG=2 >= uF=1`), and the only position the unary
+  slot ever supplies is `a: string`, which matches. This is correct: `foo`
+  will only ever call `cb` with one argument, leaving the optional `b`
+  unset — exactly what an optional parameter is for.
+- **Step 2 — `bar(cb)` (inside `foo`) is rejected.** Here `cb` has `foo`'s
+  *declared* type `fn(a: string)` (exact, `accept = [1, 1]`), not its
+  original type. `bar`'s slot is `fn(a: string, b: number)` with
+  `accept = [2, 2]`. The check fails: `uG = 1 >= uF = 2` is false — the
+  exact unary function would be invoked with a second argument it refuses
+  (§4.2.1.1).
+
+The chain breaks because the *advertised* unary type `fn(a: string)`
+cannot widen back up to a binary slot. The exactness that `foo`'s
+parameter declares — "this is called with exactly one argument" — is the
+information that stops the unsound second step, independently of `cb`'s
+optional `b`.
 
 ###### Variations that look promising but still fail
 
@@ -601,7 +723,9 @@ a different rule.
 ```
 fn foo(cb: fn(a: string, ...) -> undefined) { bar(cb) }
 foo(cb)
-// Error: exact </: inexact for functions (§4.2.1.1).
+// Error: exact </: inexact. accept(cb) = [1, 2] does not cover the
+// inexact slot's [1, ∞): the exact cb would be invoked with extras it
+// refuses (§4.2.1.1).
 ```
 
 **Variation B — inexact slot at `foo`, user widens with `Inexact<T>`:**
@@ -609,10 +733,19 @@ foo(cb)
 ```
 fn foo(cb: fn(a: string, ...) -> undefined) { bar(cb) }
 foo(Inexact(cb))
-// Error: Inexact(cb) has declared list [a, b?]; foo's slot has [a].
-// Inexact-to-inexact subtyping requires supplier_arity <= slot_arity
-// (§4.2.1); here the supplier has more declared parameters.
+// Inexact(cb) is fn(a: string, b?: boolean, ...). The accept-set check
+// now passes ([1, ∞) ⊇ [1, ∞)), but parameter-type contravariance fails
+// at position 1: foo's inexact slot may pass an extra of arbitrary type
+// there, and that arbitrary type is not <: the supplier's declared
+// b?: boolean. Error.
 ```
+
+This is the load-bearing rejection: if it were accepted, the chain would
+complete soundly-looking and miscompile. Inside `foo`, `cb` would have the
+slot type `fn(a: string, ...)`, which *does* satisfy `bar`'s exact
+`fn(a: string, b: number)` slot (an inexact function filling a narrower
+exact slot, §4.2.1), and `bar` would then invoke the original `cb` with
+`("hello", 5)`. Contravariance at the `foo` boundary is what stops it.
 
 **Variation C — inexact slot at `foo` with matching arity:**
 
@@ -632,11 +765,13 @@ foo(Inexact(cb))
 // Error: same contravariance failure at position 1.
 ```
 
-The parameter-type check at position 1 (`number` vs `boolean`) is the
-ultimate backstop. Even when the user systematically loosens every
-slot to inexact and explicitly widens with `Inexact<T>`, the
-contravariant check on the declared parameter types preserves the
-soundness invariant.
+The parameter-type check at position 1 is the ultimate backstop. The
+accept-set rule deliberately *permits* an inexact function to fill a
+narrower slot — that is the feature — but it never relaxes the
+contravariant check on the declared parameter types. Even when the user
+systematically loosens every slot to inexact and explicitly widens with
+`Inexact<T>`, that contravariant check (`number`/arbitrary-extra vs
+`boolean` at position 1) preserves the soundness invariant.
 
 ##### 4.2.1.3. Anti-patterns that undermine the soundness story
 
@@ -738,18 +873,53 @@ parameter with the inexact `...` sentinel
 (`fn(a: A, ...rest: Array<B>, ...) -> R`) is therefore **disallowed**:
 either the rest type already specifies what the trailing arguments must
 be (no need for the sentinel), or the sentinel is used on its own to
-admit untyped extras (no typed rest). A function with a typed rest
-parameter is always exact in the §4.2.1 sense.
+admit untyped extras (no typed rest).
+
+A typed rest parameter does, however, raise the function's accept-set
+upper bound to `∞` (any number of trailing arguments is permitted, each
+constrained to the rest element type) — so for the §4.2.1 accept-set its
+upper bound is unbounded, like an inexact function's. It is *not* inexact
+in the §4.1 sense: the trailing arguments are typed (each must be a `B`,
+not an untyped extra), and the `...` sentinel is disallowed alongside it.
+Concretely, `fn(a: A, ...rest: Array<B>) -> R` has accept-set
+`[1, ∞)` with every position past the first checked against `B`. This is
+the one exact function form whose accept-set is unbounded above; the
+finite-`n` upper bound stated in §4.2.1 is the rule for functions
+*without* a typed rest.
 
 #### 4.2.3. Call-Site Checking
 
-At call sites, the checker enforces:
+At a **direct** call site (`f(args)` where `f`'s type is known), the checker
+enforces the same bounds regardless of exactness:
 
-- For an exact function type, the number of supplied arguments must be `>=` the
-  number of required parameters and `<=` the number of declared parameters
-  (counting optionals and any typed rest as documented).
-- For an inexact function type, the number of supplied arguments must be `>=`
-  the number of required parameters; there is no upper bound.
+- The number of supplied arguments must be `>=` the number of required
+  parameters (optional parameters may be omitted).
+- It must also be `<=` the number of declared parameters — **except** when
+  the function has a typed rest parameter, which admits any number of
+  trailing arguments (each checked against the rest element type, §4.2.2).
+  Equivalently: the supplied-argument count must lie within the function's
+  accept-set lower/upper bounds (§4.2.1), where a typed rest sets the upper
+  bound to `∞`.
+
+Passing more arguments than the callee declares is rejected for both exact
+and inexact function types — supplying extra arguments to a call you can see
+is treated as a likely mistake:
+
+```
+declare val f: fn(x: number, y: number) -> number          // exact
+declare val g: fn(x: number, y: number, ...) -> number     // inexact
+
+f(1, 2)        // okay
+f(1, 2, 3)     // Error — more arguments than declared
+g(1, 2)        // okay
+g(1, 2, 3)     // Error — more arguments than declared
+```
+
+The exact/inexact distinction does **not** affect direct calls; it governs
+**callback subtyping** (§4.2.1) — whether the function may be supplied where a
+function-typed slot expects it. An inexact type's tolerance for extras is a
+statement about how the function may be *invoked through a slot that holds it*,
+not a license to pass extras at a visible call site.
 
 #### 4.2.4. `Parameters<T>` and `infer` on Function Parameter Lists
 
@@ -768,11 +938,12 @@ For this to produce the right tuple exactness, two rules apply:
   `infer P` binds `P` to the exact tuple `[A, B]`. When `T` is
   `fn(a: A, b: B, ...) -> R` (inexact), `infer P` binds `P` to the inexact
   tuple `[A, B, ...]`.
-- **The matcher and the constraint must admit both exact and inexact
-  function types.** Function-type subtyping requires arities to match in
-  both directions (see §4.2.1.1), so a single fixed-exactness pattern
-  would cause the other exactness to fall to the `else` branch. The
-  pattern `fn(...args: infer P) -> any` and the constraint
+- **The conditional-type pattern and the generic constraint must admit
+  both exact and inexact function types.** A single fixed-exactness
+  pattern would only match its own exactness and let the other fall to
+  the `else` branch (exact and inexact function types are not
+  interchangeable as match targets — their accept-sets differ, §4.2.1).
+  The pattern `fn(...args: infer P) -> any` and the constraint
   `fn(...args: any) -> any` are therefore treated as exactness-agnostic
   for matching and constraint-checking purposes — they accept either an
   exact or an inexact function type, and the captured `infer P`
@@ -789,10 +960,11 @@ type PG = Parameters<G>    // inexact [string, number, ...]
 ```
 
 Note that `Parameters` is a projection, not a subtyping bridge: even
-though `F` and `G` are not subtype-related as function types (§4.2.1.1),
-their parameter tuples `PF` and `PG` are related via the usual tuple
-rule `[string, number] <: [string, number, ...]`. This is intentional —
-the asymmetry on function-type subtyping reflects the call-contract
+though the *exact* `F` is not a subtype of the *inexact* `G` as function
+types (§4.2.1.1 — `F` cannot fill `G`'s wider slot), their parameter
+tuples `PF` and `PG` are related via the usual tuple rule
+`[string, number] <: [string, number, ...]`. This is intentional — the
+asymmetry on function-type subtyping reflects the call-contract
 direction, which a tuple of parameter types no longer carries.
 
 #### 4.2.5. `ReturnType<T>` and Other Function Utility Types
@@ -813,9 +985,9 @@ each carries the natural exactness:
 - **`ThisParameterType<T>`** extracts the type of the explicit `this`
   parameter, with that type's exactness preserved.
 
-The matcher and constraint for each of these utility types are
-exactness-agnostic on the function/constructor type they accept, for the
-same reason as `Parameters` (§4.2.4).
+The conditional-type pattern and generic constraint for each of these
+utility types are exactness-agnostic on the function/constructor type
+they accept, for the same reason as `Parameters` (§4.2.4).
 
 ## 5. Union Types
 
@@ -1088,10 +1260,13 @@ error:
   `{x: number, y: number, ...}`.
 - **Tuple types:** `Inexact<[string, number]>` is `[string, number, ...]`.
 - **Function types:** `Inexact<fn(a: A, b: B) -> R>` is
-  `fn(a: A, b: B, ...) -> R`. Callers of the result may pass extra
-  arguments. Note this is the one direction users *cannot* obtain via
-  function-type subtyping (§4.2.1.1) — `Inexact<F>` exists precisely to
-  express it explicitly.
+  `fn(a: A, b: B, ...) -> R`, a function that tolerates being invoked with
+  extra arguments. Producing the inexact form from an exact one is the one
+  direction subtyping *cannot* give you — an exact function is never a
+  subtype of its inexact counterpart (§4.2.1.1), since the inexact slot
+  would invoke it with extras it refuses. `Inexact<F>` exists precisely to
+  express that widening explicitly (with the lossy step visible at the
+  source), so that the widened value can then fill inexact slots.
 - **Union types:** `Inexact<T1 | T2>` is `T1 | T2 | ...`.
 - **Already-inexact types:** `Inexact<T>` is `T` if `T` is already
   inexact.
@@ -1184,7 +1359,7 @@ lowering, and some categories have no lowering at all.
 | Object | Property pick into a fresh object: `{ k1: v.k1, ..., kn: v.kn }` | One allocation, `O(n)` in declared keys |
 | Tuple | `v.slice(0, n)` (where `n` is the declared length) | One allocation, `O(n)` |
 | Union (discriminable) | A `match` over the listed members, emitting a `RuntimeError` for unhandled tails | `O(1)` per call (one discrimination check) |
-| Function | **Not supported** — compile error directs the user to a manual wrapper. See §6.6.3. |
+| Function | **No lowering needed** — the usual inexact→exact narrowing is already a subtype relationship (a plain annotation), so `exact<...>` is unnecessary. See §6.6.3. | None (compile-time only) |
 
 ##### Runtime type information
 
@@ -1276,35 +1451,36 @@ emits `v` unchanged. This is convenient for generic code that should
 not have to case-split on whether the input type happens to be exact
 or inexact.
 
-#### 6.6.3. Why functions are excluded
+#### 6.6.3. Why functions need no `exact<...>` lowering
 
-Function types have no `exact<...>` lowering for the same reason
-§4.2.1.1 rejects the implicit exact `<:` inexact widening: converting
-an inexact function to an exact one is either **unsafe** (a pure type
-cast that re-introduces the `parseInt`-style bug) or **expensive** (a
-runtime arity-check wrapper that breaks referential equality, mutates
-`.length` / `.name`, and adds a stack frame). Neither option is
-acceptable as a built-in.
+Function types have no `exact<...>` lowering because, unlike objects,
+tuples, and unions, no runtime work is required to tighten one. The
+object/tuple/union lowerings exist because tightening drops real runtime
+data (extra properties, trailing elements), so a fresh allocation is
+needed. Narrowing a function's *type* drops nothing at runtime — the
+function value is unchanged.
 
-Users who need this conversion at a specific interop site should
-write the wrapper explicitly:
+And the narrowing that interop usually wants is already a subtype
+relationship, so a plain annotation does it for free. An inexact function
+is a subtype of any compatible exact function whose required count it
+meets (§4.2.1):
 
 ```
 declare val f: fn(a: A, b: B, ...) -> R   // inexact, from TS interop
 
-val g: fn(a: A, b: B) -> R = fn(a, b) => f(a, b)
-// g calls f with exactly two args; if f's underlying implementation
-// looked at a third positional arg, it now reliably receives undefined.
+val g: fn(a: A, b: B) -> R = f            // okay — inexact <: narrower exact
+// accept(f) = [2, ∞) ⊇ accept(target) = [2, 2]. g is typed exact; the
+// inexact f underneath tolerates the two-argument calls g's type permits.
 ```
 
-The explicit wrapper has the same runtime cost as a boundary check
-would, but the cost is *visible at the source* — the reader can see
-that arity narrowing is happening and can reason about whether `f`'s
-behavior on `(a, b, undefined)` is what they want. The hidden
-`exact<...>` form would silently impose the same wrapper everywhere
-without surfacing the soundness-relevant question.
+A separate, genuinely lossy operation is narrowing to *fewer* parameters
+than the function requires (e.g. forcing `fn(a: A, b: B, ...) -> R` into
+`fn(a: A) -> R`, which the function cannot satisfy — it needs `b`). That
+is not a type-narrowing at all but a behavioral change, and it should be
+written as an explicit wrapper (`fn(a) => f(a, defaultB)`) so the dropped
+argument is visible at the source. No built-in performs it silently.
 
-The class instance form is excluded for the same reason expressed in
+The class instance form is excluded for the reason expressed in
 type-level terms (§6.1): a non-`final` class instance type cannot be
 tightened because the class's openness is part of its public contract.
 Declare the class `final` if you need exact instance types.
@@ -1410,11 +1586,13 @@ branch selection through the asymmetric rules already documented:
 
   if T : U { X } else { Y }                  // takes the Y branch
   ```
-- **Function types are a special case.** Because function-type subtyping
-  requires matching exactness in *both* directions (see the function
-  subtyping section), a conditional comparing two function types of
-  mismatched exactness always takes the false branch — even when the
-  parameter and return types align.
+- **Function types follow the accept-set rule.** A conditional comparing
+  two function types asks `T : U` using the function-subtyping rule of
+  §4.2.1 (`accept(T) ⊇ accept(U)`, params contravariant, return
+  covariant). So an *inexact* `T` satisfies a narrower *exact* `U` (it
+  takes the true branch), while an *exact* `T` does **not** satisfy an
+  inexact or wider-arity `U` (false branch) — exactly the asymmetry of
+  §4.2.1.1.
 
 #### 7.4.2. How the result's exactness is determined
 
@@ -1592,11 +1770,10 @@ Intersection inherits exactness from its operands per kind:
   is exact iff both operands are exact, and each element type is the
   intersection of the corresponding element types from each side.
 - **Function types:** Intersection of function types models overload —
-  `(fn(A) -> R) & (fn(B) -> S)` is callable as either signature.
-  Because function-type subtyping requires arities (and exactness) to
-  match in both directions, the operands' exactnesses do not need to
-  agree; each call site is checked against the matching overload's
-  exactness.
+  `(fn(A) -> R) & (fn(B) -> S)` is callable as either signature. The
+  operands' exactnesses do not need to agree; each call site is resolved
+  to a matching overload and checked against that overload's accept-set
+  (§4.2.1) independently.
 - **Union types:** Intersection distributes over unions as usual; the
   result's exactness is the conjunction (exact only if both operands are
   exact and the resulting member set is fully determined).
@@ -1646,8 +1823,11 @@ dump(q)                            // Error — inexact argument fails exact con
 
 The dual rule already follows from §2.3: an inexact constraint admits
 both exact and inexact arguments, since exact `<:` inexact for objects,
-tuples, and unions. (Function-type constraints follow the stricter
-arities-must-match-in-both-directions rule of §4.2.1.1.)
+tuples, and unions. (Function-type constraints instead follow the
+accept-set subtyping rule of §4.2.1: a function argument satisfies a
+function-type constraint exactly when it is a subtype of the constraint —
+so an inexact function satisfies a narrower exact constraint, but an exact
+function does not satisfy a wider or inexact one.)
 
 In short: the exactness of the *constraint* fixes the exactness of the
 admissible arguments — exact constraints reject inexact arguments;
@@ -1747,21 +1927,39 @@ first(["a", 1])           // okay
 first(["a", 1, true])     // Error — extra element on exact tuple
 ```
 
-### 10.3. Function: Forbidding Extra Callback Arguments
+### 10.3. Function: A Minimal Callback Slot Prevents Surprise Arguments
 
 A common JavaScript pitfall: `["1", "2", "3"].map(parseInt)` returns
 `[1, NaN, NaN]` because `parseInt` accepts a second `radix` argument and
-`Array.prototype.map` passes the index. With exact function types, the type
-of `parseInt` would be `fn(s: string, radix?: number) -> number` (exact), and
-`Array.prototype.map`'s callback parameter could require an exact unary
-function:
+`Array.prototype.map` passes the index, so `parseInt("2", 1)` is evaluated
+in base 1. The bug is that `map` passes a *surprise* second argument.
+
+Exact function types let an API author close this off — not by rejecting
+`parseInt`, but by declaring a callback slot that promises to invoke its
+argument with exactly one parameter:
 
 ```
 declare fn map<T, U>(arr: Array<T>, f: fn(item: T) -> U) -> Array<U>
 
-map(["1", "2", "3"], parseInt)
-// Error — parseInt's exact arity (1 or 2) doesn't match exact unary `fn(item: T) -> U`
+map(["1", "2", "3"], parseInt)   // okay — returns [1, 2, 3]
 ```
+
+The slot type `fn(item: T) -> U` is exact, so `map` is bound by its own
+declared signature to call `f` with a single argument; the JS index is
+never forwarded. Passing `parseInt` (type `fn(s: string, radix?: number)
+-> number`, accept-set `[1, 2]`) is *accepted* — its accept-set covers the
+slot's `[1, 1]` (§4.2.1) — and because `map` only ever supplies one
+argument, `parseInt` runs as `parseInt("1")`, `parseInt("2")`,
+`parseInt("3")`, yielding `[1, 2, 3]`. The exactness of the **slot** is
+what prevents the bug, by constraining what the API may pass, rather than
+constraining which functions the caller may supply.
+
+A binary callback slot, by contrast, *would* reject a plain unary
+function: into `fn(elem: T, index: number) -> U` (accept-set `[2, 2]`) an
+exact `fn(elem: T) -> U` (accept-set `[1, 1]`) does not fit, since it
+would be invoked with a second argument it refuses. This is exactly why
+`std:array` splits `map` (unary) from `mapi` (binary) rather than exposing
+one binary slot — see §11.1.
 
 ### 10.4. Mixed: An Inexact Object as a Bag
 
@@ -1804,7 +2002,7 @@ exact binary callback that also receives the index.
 
 | Method | Callback type | Notes |
 |---|---|---|
-| `map<T, U>(arr, f)` | `fn(elem: T) -> U` | The default; rejects `parseInt`-style misuse. |
+| `map<T, U>(arr, f)` | `fn(elem: T) -> U` | The default; its unary slot never forwards the index, so `parseInt`-style bugs can't arise (§10.3). |
 | `mapi<T, U>(arr, f)` | `fn(elem: T, index: number) -> U` | Use when the index is needed. |
 | `filter<T>(arr, p)` | `fn(elem: T) -> boolean` | |
 | `filteri<T>(arr, p)` | `fn(elem: T, index: number) -> boolean` | |
@@ -1865,11 +2063,14 @@ single exact signature:
 core lib surface qualifies: `String.prototype.replace` with a function
 replacement, where the callback is invoked with
 `(match, p1, …, pN, offset, fullString)` and `N` depends on the regex.
-An inexact callback type is **not** the right tool here — the §4.2.1.1
-rule that function-type subtyping requires arities to match in *both*
-directions means an inexact callback slot would actually *reject* the
-ordinary exact functions users naturally write. Instead, `std:string`
-exposes two specialized methods, each with an exact callback:
+An inexact callback type is **not** the right tool here. An inexact
+*slot* such as `fn(match: string, ...) -> string` has accept-set
+`[1, ∞)`, and an ordinary exact function the user naturally writes —
+`fn(match: string) -> string`, accept-set `[1, 1]` — does *not* fit it:
+its finite upper bound `1` cannot cover the slot's `∞` (§4.2.1). So an
+inexact slot would reject exactly the functions users want to pass.
+Instead, `std:string` exposes two specialized methods, each with an exact
+callback:
 
 ```
 fn replace(s: string, pattern: string | RegExp, f: fn(match: string) -> string) -> string
@@ -2060,10 +2261,12 @@ None require inexact function types; all are well-served by
 The native callback-taking methods on `Array.prototype` (`map`, `filter`,
 `forEach`, `find`, `findIndex`, `some`, `every`, `reduce`, `reduceRight`,
 and `flatMap`) are **not exposed** in Escalier. Allowing them via direct
-TypeScript import would reintroduce the `parseInt`-style misuse the
-`std:array` wrappers exist to prevent, and would give users two
-near-identical APIs with different safety properties — exactly the kind
-of footgun the exact-types feature is designed to eliminate.
+TypeScript import would forward the index (and source array) into
+callbacks through inexact, higher-arity slots — reopening the
+`parseInt`-style hazard the `std:array` wrappers close by exposing
+minimal unary slots (§10.3) — and would give users two near-identical
+APIs with different safety properties, exactly the kind of footgun the
+exact-types feature is designed to eliminate.
 
 Concretely, the Escalier prelude's `Array<T>` type omits these methods
 from the instance interface. Non-callback methods on `Array.prototype`
