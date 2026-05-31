@@ -102,9 +102,38 @@ sits higher.)
 | Lattice notion | Lifetime meaning |
 |---|---|
 | order `≤` | "is outlived by" (`'a ≤ 'b` ⟺ `'b` outlives `'a`) |
-| join `'a ⊔ 'b` | `LifetimeUnion` `('a \| 'b)` — value may carry either lifetime |
+| join `'a ⊔ 'b` | least lifetime that outlives both — arises in **positive position** from a multi-source borrow (e.g. an `if` returning either `&'a T` or `&'b T`); the result carries one of the source lifetimes |
+| meet `'a ⊓ 'b` | greatest lifetime outlived by both — arises in **negative position** from a borrow with multiple upper bounds (e.g. a borrow that must fit within both context `'a` and context `'b`); the principal solution is the shorter window where both are still valid |
 | top `⊤` | `'static` — outlives everything, so every lifetime `≤ 'static` |
 | bottom `⊥` | a maximally-short / fresh lifetime |
+
+The lattice formally has both operations and the spike computes both —
+positive-position coalescing joins lower bounds, negative-position coalescing
+meets upper bounds (see `LifetimeVar` in
+[internal/simplesub/lifetime.go](../../internal/simplesub/lifetime.go)). The
+spike's *surface representation*, however, uses a single `LifetimeUnion` for
+both: the underlying value is a list of param lifetimes, and the polarity at
+which the list was collected determines whether it's read as a join (each
+member is a possible carrier) or a meet (each member is a context the borrow
+must fit within). A future production representation could split these into
+`LifetimeUnion`/`LifetimeIntersection` for clarity, but the spike intentionally
+unified them since the list of lifetimes is the same in both directions.
+
+Strictly speaking, the rendered `'a | 'b` is a **flow-set**, not a literal
+lattice element — it names the source lifetimes that fed into the variable.
+For a positive-position result this is operationally indistinguishable from
+the LUB (the caller still must consume the result within the intersection of
+the source spans), and for a negative-position constraint it's the bound list
+itself. The flow-set framing is what makes a single representation work for
+both polarities.
+
+```text
+            'static            ⊤   (outlives everything)
+          /    |    \
+       'a     'b    'c   ...     (concrete borrows)
+          \    |    /
+         (fresh/short)         ⊥
+```
 
 A `LifetimeVar` carries lower/upper bound lists and coalesces by join/meet
 **identically** to a type variable — only the lattice differs. This symmetry is
@@ -121,11 +150,20 @@ the entire reason "lifetimes as a second sort" works:
 ### How the two lattices compose
 
 A type and its lifetime are solved in parallel over their respective lattices,
-joined at the types that *carry* a lifetime (records, tuples, type-refs/aliases,
-through `mut`). `mut` is **invariant** in both its contents and its lifetime,
-encoded via the read/write decomposition (covariant read view + contravariant
-write view) — invariance is not native to a co/contravariant lattice, so it is
-the one place we deliberately step outside the clean lattice structure.
+joined at the `Ref` wrapper — a single unified node that carries both the
+mutability flag and the (nilable) lifetime around a borrowed value (see
+[02-design-notes.md](02-design-notes.md) §"`soltype` — the type representation").
+`Ref` is **invariant in its inner type when the wrapper is mutable**, encoded
+via the read/write decomposition (covariant read view + contravariant write
+view); invariance is not native to a co/contravariant lattice, so it is the
+one place we deliberately step outside the clean lattice structure.
+**Lifetimes themselves are always covariant**: a `Ref`'s lifetime field is
+constrained once in the subtype direction (longer-lived can stand in for
+shorter-lived), regardless of whether the wrapper is mutable. Because the
+lifetime lives on the wrapper rather than inside the inner type, the
+mutability-driven bidirectional sweep over the inner cannot accidentally
+double-emit the lifetime constraint into both directions — lifetime
+covariance is structural, not a special case.
 
 ### Beyond a plain lattice (for context)
 
