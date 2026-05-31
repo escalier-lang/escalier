@@ -325,7 +325,7 @@ func (s *Scope) GetType(name string) (TypeBinding, bool)
 func (s *Scope) GetNamespace(name string) (*Namespace, bool)
 ```
 
-**The expression walk (PR-1 lits/idents; PR-2 fn/call/block; PR-2b objects).**
+**The expression walk (PR-1 lits/idents; PR-3 fn/call/block; PR-4 objects).**
 The production `typeTerm`, split by node category. Each returns a `soltype.Type`
 and threads `*Scope` + `level`:
 
@@ -338,9 +338,9 @@ func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) soltype.Type
 // inferExpr dispatches; the per-kind helpers mirror the spike's typeTerm cases:
 func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type           // PR-1
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type   // PR-1
-func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type // PR-2
-func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type     // PR-2
-func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type // PR-2b
+func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type // PR-3
+func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type     // PR-3
+func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type // PR-4
 ```
 
 `inferIdent` is the load-bearing one — it's the production form of the spike's
@@ -360,24 +360,24 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 }
 ```
 
-**Declaration & module driver (PR-2 single-decl; PR-3 SCC).** Mirrors the old
+**Declaration & module driver (PR-2 single-decl; PR-5 SCC).** Mirrors the old
 checker's `InferDepGraph`/`InferComponent`, over `soltype`:
 
 ```go
 // module.go
-func InferModule(module *ast.Module) (*Scope, *soltype.Info, []Error)   // PR-2 (1 file), PR-3 (SCC)
-func InferModules(modules []*ast.Module) (*Scope, *soltype.Info, []Error) // PR-4 (multi-file)
+func InferModule(module *ast.Module) (*Scope, *soltype.Info, []Error)   // PR-2 (source-order), PR-5 (SCC)
+func InferModules(modules []*ast.Module) (*Scope, *soltype.Info, []Error) // PR-6 (multi-file)
 
-func (c *checker) inferDepGraph(scope *Scope, g *dep_graph.DepGraph) // PR-3
-func (c *checker) inferComponent(scope *Scope, g *dep_graph.DepGraph, // PR-3
+func (c *checker) inferDepGraph(scope *Scope, g *dep_graph.DepGraph) // PR-5
+func (c *checker) inferComponent(scope *Scope, g *dep_graph.DepGraph, // PR-5
     component []dep_graph.BindingKey)
 
 // infer_decl.go
-func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) ValueBinding // PR-2
-func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBinding // PR-2
+func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) ValueBinding   // PR-2
+func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBinding // PR-3
 ```
 
-`inferComponent` is the LetRecGroup lift (PR-3); the singleton non-recursive
+`inferComponent` is the LetRecGroup lift (PR-5); the singleton non-recursive
 case is the same code with a one-element slice:
 
 ```go
@@ -417,7 +417,7 @@ type NamespaceUsedAsValueError struct{ Name string; Span provenance.Span }
 type UnsupportedNodeError struct{ Kind string; Span provenance.Span } // M2-subset guard
 ```
 
-**Test harness (PR-2 table; PR-4 fixtures).**
+**Test harness (PR-2 table; PR-6 fixtures).**
 
 ```go
 // infer_test.go — table harness
@@ -581,7 +581,7 @@ which exercises decls, functions, and SCC ordering together).
   stop-and-reassess signal — raise it rather than working around it.
 - **dep_graph coupling to `type_system`.** `dep_graph` operates on `*ast.Module`
   and `ast.Decl` (its `Decls`/`Components`/`BindingKey` API is type-system-free),
-  so this risk is low — but confirm it in PR-3. *Mitigation:* consume only its
+  so this risk is low — but confirm it in PR-5. *Mitigation:* consume only its
   structural outputs (`BindingKey`s, `Components`, `GetDecls`/`GetNamespace`);
   keep all *type* data in `soltype`/`Info`.
 - **Walk vs. AST `Visitor` deviation.** Using a direct switch instead of the
@@ -601,11 +601,11 @@ which exercises decls, functions, and SCC ordering together).
 - **Package name** is settled (`internal/solver/`, design-notes decision #1);
   M2 inherits it from M1. No open decision here.
 - **How much namespace resolution to drive in M2 vs. defer.** If full
-  cross-module/namespace resolution is heavier than the val/fn bar needs, PR-4
+  cross-module/namespace resolution is heavier than the val/fn bar needs, PR-6
   can scope to the minimum that satisfies the multi-file acceptance (a binding
   in file B referencing a top-level `val`/`fn` in file A via its qualified
   `BindingKey`) and leave richer namespace semantics (`ns.foo` member access,
-  nested namespaces) to later milestones — decide when PR-4 starts, based on what
+  nested namespaces) to later milestones — decide when PR-6 starts, based on what
   `dep_graph` already records in `DeclNamespace`.
 - **Whether M2 needs `internal/resolver` at all.** It's only for `@types`
   `.d.ts` resolution; if no M2 fixture imports a TS-typed module, M2 can skip it
