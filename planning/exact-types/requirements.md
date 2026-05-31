@@ -966,14 +966,12 @@ Exactness for unions captures whether the listed members are *all* the
 inhabitants of the type, or merely a known subset. This shows up in three
 places:
 
-1. **Keys of exact/inexact objects.** For an exact object `{x: number, y:
-   number}`, the type of `keyof` is the **exact** union `"x" | "y"`. For an
-   inexact object `{x: number, y: number, ...}`, `keyof` is the **inexact**
-   union `"x" | "y" | ...` (i.e. at least these, possibly more strings).
-2. **Values/element-types of exact/inexact tuples.** For an exact tuple
-   `[string, number]`, the union of its element types is the **exact**
-   `string | number`. For an inexact tuple `[string, number, ...]`, the union
-   of element types is the **inexact** `string | number | ...`.
+1. **Keys of exact/inexact objects.** `keyof` of an exact object is an
+   exact union of its keys; `keyof` of an inexact object is inexact
+   (detailed in §5.3.2 and §7.1).
+2. **Values/element-types of exact/inexact tuples.** The element-type
+   union of an exact tuple is exact; of an inexact tuple, inexact
+   (detailed in §5.3.2 and §7.3).
 3. **`throws` clauses on function signatures.** If a function body is fully
    wrapped in `try/catch` with a catch-all that re-throws a known set of
    error types `E1 | E2`, the function's `throws` clause is the **exact**
