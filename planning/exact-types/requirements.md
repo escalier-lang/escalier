@@ -447,26 +447,16 @@ The most damaging form of the bug involves **optional parameters**. A
 callback with a trailing optional — `(a: string, b?: boolean) => void` —
 flows through TypeScript's bivariance into a slot that supplies more
 arguments, and at runtime the optional parameter is bound to a value of
-the wrong type:
+the wrong type. The callee *declared* that `b` might be absent, but
+TypeScript's chain of widenings lets a caller supply *anything* there: a
+`number` reaches a parameter the body trusts as `boolean`, with no runtime
+error and silently wrong results downstream. §4.2.1.2 walks this worked
+example end-to-end.
 
-```ts
-function foo(cb: (a: string) => void)             { bar(cb); }
-function bar(cb: (a: string, b: number) => void)  { cb("hello", 5); }
-function cb(a: string, b?: boolean) { if (b) { /* b is "truthy" */ } }
-
-foo(cb);
-// At runtime cb is invoked as cb("hello", 5).
-// b is bound to the number 5; the body's `if (b)` treats it as a boolean.
-// No runtime error, silently wrong downstream.
-```
-
-The optional `b?: boolean` is the unsafe surface: the callee *declared*
-that `b` might be absent, but TypeScript's chain of widenings lets a
-caller supply *anything* there. Inexact functions are how Escalier
-controls this — `...` is the explicit opt-in to "callers may supply
-extras," and the accept-set/contravariance rules in §4.2.1 are designed
-so that the chain above cannot be reconstructed in pure Escalier source.
-§4.2.1.2 walks the worked example end-to-end.
+Inexact functions are how Escalier controls this — `...` is the explicit
+opt-in to "callers may supply extras," and the accept-set/contravariance
+rules in §4.2.1 are designed so that the chain cannot be reconstructed in
+pure Escalier source.
 
 Escalier splits the concern in two:
 
@@ -481,17 +471,8 @@ Escalier splits the concern in two:
   than the slot supplies); an *exact* function may not fill a slot that
   passes extras at all.
 
-```
-declare val f: ExactCallback     // fn(x: number, y: number) -> number
-declare val g: InexactCallback   // fn(x: number, y: number, ...) -> number
-
-f(1, 2)        // okay
-f(1, 2, 3)     // Error — more arguments than declared
-g(1, 2)        // okay
-g(1, 2, 3)     // Error — more arguments than declared (direct calls reject
-               //         extras regardless of exactness; the `...` matters
-               //         for callback subtyping, not direct calls)
-```
+§4.2.3 works the direct-call side of this split with a concrete example;
+§4.2.1 covers callback subtyping.
 
 #### 4.2.1. Subtyping (Function Compatibility)
 
@@ -756,14 +737,17 @@ foo(Inexact(cb))
 // Slot demands b: number; supplier offers b?: boolean. number </: boolean.
 ```
 
-**Variation D — both `foo` and `bar` inexact, all arities aligned:**
+Loosening more slots to inexact does not change this. Even with every slot
+made inexact and arities aligned end-to-end —
 
 ```
 fn foo(cb: fn(a: string, b: number, ...) -> undefined) { bar(cb) }
 fn bar(cb: fn(a: string, b: number, ...) -> undefined) { cb("hello", 5) }
 foo(Inexact(cb))
-// Error: same contravariance failure at position 1.
 ```
+
+— the same contravariance failure at position 1 (`number </: boolean`)
+recurs.
 
 The parameter-type check at position 1 is the ultimate backstop. The
 accept-set rule deliberately *permits* an inexact function to fill a
@@ -1164,12 +1148,9 @@ import type { Color } from "some-ts-lib"     // inferred inexact
 type StrictColor = Exact<Color>              // opt-in to exact
 ```
 
-Escalier-emitted `.d.ts` files preserve the original Escalier type via
-an `@escalier-type` JSDoc tag alongside each declaration (see §9), so
-when one Escalier project consumes another Escalier project's emitted
-`.d.ts`, exact unions round-trip correctly. Only plain
-TypeScript-authored declarations (without an `@escalier-type` tag) fall
-back to the inexact default.
+Exact unions round-trip correctly between Escalier projects via the
+`@escalier-type` JSDoc tag (the general mechanism is in §9); only plain
+TypeScript-authored declarations fall back to the inexact default.
 
 ##### Provably-closed primitive unions
 
@@ -1324,15 +1305,11 @@ if a real need emerges; we do not provide one initially.
 ### 6.5. TypeScript Interop
 
 `Exact<T>` and `Inexact<T>` are Escalier-only constructs. When emitting
-`.d.ts` files:
-
-- The result type (after applying `Exact`/`Inexact`) is what's emitted as a
-  plain TypeScript type — TypeScript itself has no notion of exactness, so
-  the `Exact<...>` / `Inexact<...>` wrapper is erased.
-- The original Escalier form (including the `Exact<...>` / `Inexact<...>`
-  wrapper) is preserved in the `@escalier-type` JSDoc tag alongside the
-  declaration so that other Escalier consumers can recover the precise
-  exactness. See §9.
+`.d.ts`, the wrapper is erased to its result type for plain TypeScript
+consumers (which have no notion of exactness), while the original wrapped
+form is preserved in the `@escalier-type` JSDoc tag so other Escalier
+consumers recover the precise exactness. This is the general round-trip
+mechanism in §9.
 
 ### 6.6. Value-Level Conversion: `exact<T>(v)`
 
@@ -1857,11 +1834,10 @@ inexact constraints accept either.
   behavior across the package boundary and avoids spurious errors when
   calling into TypeScript libraries. Users who know an imported type is
   actually closed can opt into exactness at the use site with `Exact<T>`.
-- **Round-tripping:** When Escalier emits `.d.ts` files for consumption by
-  other Escalier projects, it preserves the original Escalier type via an
-  `@escalier-type` JSDoc tag on each declaration (see §9). TypeScript
-  consumers will see the (inexact) erased form; Escalier consumers will
-  recover the precise exactness from the JSDoc payload.
+- **Round-tripping:** Escalier-emitted `.d.ts` carries the original type
+  in an `@escalier-type` JSDoc tag, so exactness round-trips between
+  Escalier projects while plain TypeScript consumers see the erased form.
+  See §9 for the full mechanism.
 
 ## 9. TypeScript Interop
 
