@@ -810,11 +810,12 @@ func jsName(nsPath, name string) string {
 	return nsPath + "." + name
 }
 
-// attachJSDecorator stamps `@js("<arg>")` onto a decoratable decl. Only
-// the decl kinds with a Decorators field are handled; other kinds are
-// no-ops (matching the §3.3 rule that decorators apply to declarations
-// that lower to a JS reference — type aliases and similar are silently
-// dropped if they have no field).
+// attachJSDecorator stamps `@js("<arg>")` onto a decoratable decl. Per
+// the §3.3 rule, decorators apply only to declarations that lower to a
+// JS reference — `VarDecl`, `FuncDecl`, and `ClassDecl`. `TypeDecl` and
+// `InterfaceDecl` erase at codegen and are excluded by design: they have
+// no Decorators field and these branches are intentional no-ops (see the
+// per-case comments below).
 func attachJSDecorator(decl ast.Decl, arg string) {
 	dec := &ast.Decorator{
 		Name: ast.NewIdentifier("js", ast.Span{}),
@@ -828,12 +829,17 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 	case *ast.ClassDecl:
 		d.Decorators = append(d.Decorators, dec)
 	case *ast.TypeDecl:
-		// TODO(#664): TypeDecl has no Decorators field; this is a silent
-		// no-op. Decide whether type aliases (and InterfaceDecls below)
-		// should carry @js("...") or stay unmarked by design, and
-		// either widen the AST or codify the exclusion in §3.3.
+		// By design (§3.3): @js("...") only applies to decls that lower
+		// to a JS reference. A type alias erases at codegen and has no
+		// runtime form, so there is nothing for @js to point at — the
+		// parser even rejects decorators on `declare type`. Attaching one
+		// here would be meaningless, so this is an intentional no-op (and
+		// AST.TypeDecl deliberately carries no Decorators field).
 	case *ast.InterfaceDecl:
-		// TODO(#664): see TypeDecl above.
+		// Likewise (§3.3): a bare interface that survives trio detection
+		// is purely a type and erases at codegen, so @js has no runtime
+		// reference to lower. Intentional no-op; InterfaceDecl carries no
+		// Decorators field.
 	}
 }
 
