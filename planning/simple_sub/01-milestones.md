@@ -29,6 +29,19 @@ that opts back into row polymorphism are not yet reflected in
 [exact-types/requirements.md](../exact-types/requirements.md); the spec needs
 a section recording both before M3 lands.)
 
+## Contents
+
+- [M1 — Package skeleton + `soltype`](#m1--package-skeleton--soltype)
+- [M2 — Parser/resolver bridge](#m2--parserresolver-bridge)
+- [M3 — Functions, application, let-polymorphism](#m3--functions-application-let-polymorphism)
+- [M4 — Core value types: records + usage-based inference + `mut` + **lifetimes**](#m4--core-value-types-records--usage-based-inference--mut--lifetimes)
+- [M5 — Nominal types (classes)](#m5--nominal-types-classes)
+- [M6 — Unions / intersections](#m6--unions--intersections)
+- [M7 — Second fixture harness + differential triage](#m7--second-fixture-harness--differential-triage)
+- [M8 — Type-level operators](#m8--type-level-operators)
+- [Later (post-MVP)](#later-post-mvp)
+- [Dependency / risk ordering rationale](#dependency--risk-ordering-rationale)
+
 ---
 
 ## M1 — Package skeleton + `soltype`
