@@ -59,11 +59,27 @@ yet (that's M7). `go build ./...` and `go test ./...` stay green throughout.
 
 ---
 
-## 2. What we promote from the spike (and the two deltas)
+## 2. Differences from the spike
 
-The spike already implements every M1 mechanism and is the reference
-implementation. Most of M1 is a faithful copy-with-rename. The files that map
-directly:
+The spike (`internal/simplesub/`) already implements every M1 mechanism and is
+the reference implementation, so most of M1 is a faithful copy-with-rename. But
+the spike was a *throwaway proof-of-concept* (its own `doc.go` says so), and it
+took several shortcuts and skipped several project conventions that the
+production package must not. This section enumerates **every** intended
+difference, grouped as:
+
+- **§2.1** file→file mapping (what moves where),
+- **§2.2** the two output deltas (the only genuinely *new* code),
+- **§2.3** representation & API differences,
+- **§2.4** convention cleanups the spike skipped,
+- **§2.5** what is deliberately *not* carried over.
+
+A reviewer comparing an M1 PR against the spike should be able to account for
+any diff by one of the entries below; anything else is unintended drift.
+
+### 2.1 File→file mapping
+
+Most of M1 is a faithful copy-with-rename. The files that map directly:
 
 | Spike file | M1 destination | Notes |
 |---|---|---|
@@ -75,7 +91,13 @@ directly:
 | (the printer the spike borrowed) | `soltype/print.go` | **Delta #2 below.** |
 | `scheme.go`, `infer.go`, `lifetime.go`, `typeops.go`, `residual.go`, `regularity.go`, `lazy.go` | — | Not M1. |
 
-### Delta #1 — coalescing targets `soltype`, not `type_system`
+### 2.2 The two output deltas (the only new code)
+
+These two items are the reason M1 is *not* a pure `sed`-rename: the spike leaned
+on `type_system` for both its coalescing output and its printing, and M1 must
+sever both.
+
+#### Delta #1 — coalescing targets `soltype`, not `type_system`
 
 The spike's `coalesce.go` produces `type_system.Type`
 (`type_system.NewUnionType`, `NewFuncType`, …) — an expedient shortcut so spike
@@ -97,7 +119,7 @@ into the coalescer/printer (see Delta #2).
 This is the single largest piece of *new* (non-copy) work in M1, and the reason
 M1 is not a pure `sed`-rename of the spike.
 
-### Delta #2 — a native `soltype` printer
+#### Delta #2 — a native `soltype` printer
 
 M1 must ship `soltype/print.go` rendering Escalier type-annotation syntax
 directly from `soltype.Type` — the spike never had this (it leaned on
@@ -113,6 +135,70 @@ directly from `soltype.Type` — the spike never had this (it leaned on
 Mirror `type_system.PrintType`'s surface syntax so the two checkers' rendered
 types are comparable in M7's differential harness, but share **no code** with
 it.
+
+> **Two renderers, distinct jobs.** Keep this printer separate from the spike's
+> `describe()` (§2.3). `describe` renders a *raw, uncoalesced* `soltype.Type`
+> mid-`constrain` for error messages (`t0`, `function`, `number`); `Print`
+> renders a *coalesced* type as user-facing Escalier syntax. They look similar
+> but operate at different stages and must not be merged in M1.
+
+### 2.3 Representation & API differences
+
+| # | Spike | M1 production | Rationale |
+|---|---|---|---|
+| 1 | One flat `package simplesub` | Two packages: `solver` (engine) + `soltype` (representation + printer) | Matches [02-design-notes.md](02-design-notes.md) layout; lets the printer live with the types without importing the engine. |
+| 2 | Terse names: `Variable`, `Primitive`, `Literal`, `Function`, `Tuple` | `TypeVarType`, `PrimitiveType`, `LiteralType`, `FunctionType`, `TupleType` | The design-notes names; consistent `…Type` suffix. |
+| 3 | `SimpleType` interface (`isSimpleType()`) | `soltype.Type` interface (`isType()`) | One representation in production — no separate "SimpleType vs output type" split, since coalescing now stays within `soltype` (Delta #1). |
+| 4 | `Inferer` struct carrying `varCounter`, `lifetimeCounter`, `paramLifetimes`, `written` | `solver.Context` carrying **only** `varCounter` (+ `freshVar`) | `lifetimeCounter`/`paramLifetimes` are M4 (lifetimes); `written` (field-write tracking) is M4 (records/`mut`). M1's `Context` is correspondingly lean. |
+| 5 | Named-type-param refs in output are `type_system.NewTypeRefType(nil, "T0", nil)` | A native `soltype.TypeRefType{Name string}` node | Delta #1 needs an in-`soltype` node for coalesced bipolar vars; also the future home for alias refs (M4+). |
+| 6 | Variable naming (`T0…`) + `<…>` quantifier collection done inside the coalescer (`nameForRep`, `order`) | Naming assigned during coalesce; **quantifier collection done in the printer** | Keeps `Print` self-contained (it walks the coalesced tree and gathers the refs it sees) and the coalescer free of presentation concerns. |
+| 7 | Public entry points `Infer(term)` / `Render(...)` over a hand-built `Term` IR | **No public inference entry point in M1.** Tests drive `constrain` / `coalesce` / `Print` directly | The `Term` IR and `typeTerm` walk are the spike's stand-in for the parser bridge — replaced wholesale by the real AST walk in **M2**, not promoted. |
+
+### 2.4 Convention cleanups the spike skipped
+
+The spike is a throwaway, so it freely uses raw maps and `fmt.Errorf`. Per
+[CLAUDE.md](../../CLAUDE.md), the production package must not:
+
+- **`set.Set` instead of raw `map[T]bool`.** The spike threads the `constrain`
+  seen-cache as `map[constraintKey]bool` and uses `map[int]bool` / `map[polKey]bool`
+  throughout `analyze`/coalescing. M1 uses `set.Set[T]`
+  (`set.NewSet`, `set.FromSlice`) per the repo convention. (The spike is already
+  inconsistent here — it uses `set.Set[int]` for `paramLifetimes` but raw maps
+  for the seen-cache; M1 makes it uniform.) The `seen` cache becomes
+  `set.Set[constraintKey]`.
+- **Error representation.** The spike returns `[]error` built from bare
+  `fmt.Errorf("cannot constrain %s <: %s", …)`. M1 keeps the **same full message
+  strings** (so the unit-test assertions read naturally and match the spike's
+  proven wording) but routes them through the package's error type rather than
+  ad-hoc `fmt.Errorf`. Per [02-design-notes.md](02-design-notes.md) Settled
+  Decision #4, production reuses the old checker's diagnostic types where they
+  apply and adds new kinds as needed — but **M1 has no source spans yet** (no
+  parser bridge until M2), so M1's errors stay span-free value types; wiring
+  provenance/locations is deferred. The discipline to settle in M1 is just "one
+  error constructor, not scattered `fmt.Errorf`," so M2 has a single place to add
+  spans.
+- **Testing conventions.** The spike already uses `testify/require` (good) and
+  small constructor helpers (`num()`, `str()`, `fn1`, `fn2`) — carry those over.
+  But for the richer rendered-type assertions, adopt `snaps.MatchInlineSnapshot`
+  per CLAUDE.md (reserve `require.Equal` for the single headline identity
+  string). Assert **full** error messages, never substrings.
+
+### 2.5 What is deliberately *not* carried over
+
+- **The `Term` IR + `typeTerm` walk** (`infer.go`) — the spike's hand-built
+  expression IR is its stand-in for the parser; M2 replaces it with a real
+  `*ast.Module` walk. M1 builds `soltype` terms directly in tests.
+- **Everything past the structural core** — `Record`, `Mut`, `Alias`, `Union`,
+  `Intersection`, `ResidualOp`, lifetimes (`lifetime.go`), type operators
+  (`typeops.go`), residuals (`residual.go`), regularity (`regularity.go`), and
+  the lazy/coinductive variant (`lazy.go`). Each lands in its own milestone with
+  its own tests (and, for `mut`, its own gate).
+- **The spike's documented `freshenAbove` lifetime-generalization limitation.**
+  It's in `scheme.go`, which is M3 (let-polymorphism) work; the fix it calls for
+  (lifetime levels) is M4. Neither `scheme.go` nor that limitation enters M1.
+- **The `type_system` import.** After M1, the new package must have **zero**
+  `type_system` references (the spike has 4 in non-test files, all in
+  `coalesce.go`). This is the concrete, greppable success signal for Delta #1.
 
 ---
 
@@ -315,7 +401,9 @@ identity term renders `fn <T0>(x: T0) -> T0`."*
 green; zero edits to existing packages; the old checker, `go build ./...`, and
 the full `go test ./...` suite unaffected. (There are **no fixture tests** in M1
 — `cmd/...` is untouched until the M2 parser bridge — so M1 is validated purely
-by `internal/solver/...` unit tests.)
+by `internal/solver/...` unit tests.) The greppable signal for Delta #1:
+`grep -rn "type_system" internal/solver/ | grep -v _test` returns **nothing** —
+the new package has fully severed the spike's `type_system` coupling.
 
 ---
 
