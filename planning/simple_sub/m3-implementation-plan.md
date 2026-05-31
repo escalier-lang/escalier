@@ -76,6 +76,80 @@ spec-sync (PR0) ─────────────────────�
   and can proceed alongside PR3/PR4. It is the largest and highest-uncertainty
   PR; keeping it last lets the simpler function core settle first.
 
+## Core types added or changed in M3
+
+The sketches below use design-notes `soltype` naming (`FunctionType`,
+`TypeVarType`, …) and are **illustrative, not final** — field names and exact
+shapes are settled in code review. `// ...` marks elisions. They show *what M3
+adds on top of M1/M2*, not the whole package.
+
+**`FunctionType` grows three fields** beyond the spike's `Function` — `exact`
+(PR4), and the `required` count that lets optionals lower the accept-set lower
+bound without changing arity (PR4):
+
+```go
+// soltype/type.go — promoted from spike Function, extended for M3.
+type FunctionType struct {
+    params     []Type   // parameter types, in declared order
+    paramNames []string // parallel to params; for rendering only
+    required   int      // # of args that MUST be supplied (optionals lower this)
+    ret        Type
+    exact      bool     // bare fn(...) ⇒ true; fn(..., ...) ⇒ false  (PR4)
+}
+```
+
+**Schemes** (let-polymorphism, PR2) — promoted verbatim from `scheme.go`:
+
+```go
+// solver/poly.go
+type TypeScheme interface{ isScheme() }
+
+type MonoScheme struct{ ty Type }            // param, current-level RHS, LetRec self-ref
+type PolyScheme struct{ level int; body Type } // generalized: freshen vars with level > level
+
+func (*MonoScheme) isScheme() {}
+func (*PolyScheme) isScheme() {}
+```
+
+**`ValueBinding` carries either a scheme or an overload set** (PR5). An
+overloaded symbol is *not* a single `soltype.Type` — the disjunction never
+enters the lattice:
+
+```go
+// solver/scope.go
+type ValueBinding struct {
+    scheme   TypeScheme   // nil iff this is an overload set
+    overload *OverloadSet // non-nil for overloaded fn declarations
+}
+
+type OverloadSet struct {
+    branches  []TypeScheme // one per declared/inferred overload, declaration order
+    annotated bool         // every branch explicitly annotated? (gates recursive groups)
+}
+```
+
+**The probe** (PR5) — baseline (A) from
+[02-design-notes.md](02-design-notes.md) §"Speculative checks," the only new
+infrastructure in M3:
+
+```go
+// solver/probe.go
+type Bounded interface { // implemented by *TypeVarType (and *LifetimeVar in M4)
+    boundLengths() (lower, upper int)
+    truncateBounds(lower, upper int)
+}
+
+type probeEntry struct{ v Bounded; prevLower, prevUpper int }
+
+type Probe struct {
+    entries  []probeEntry
+    touched  set.Set[Bounded] // dedupe — snapshot only first touch
+    cleanups []func()         // Info/Prov side-table rollback closures
+    parent   *Probe           // nested probes
+    done     bool             // idempotent Discard/Commit
+}
+```
+
 ## PR breakdown
 
 ### PR0 — Spec sync: Policy A, the `open` marker, and #677's accept-set model
@@ -125,6 +199,60 @@ single-arg `App`.
   (the spike's IR had expression bodies only); a body with no value infers
   `Void`.
 
+**Sketch:**
+
+```go
+// solver/infer.go — the constraint-generating walk (replaces spike typeTerm).
+func (c *checker) inferFuncExpr(n *ast.FuncExpr, s *Scope) Type {
+    child := s.child()
+    params := make([]Type, len(n.Params))
+    names := make([]string, len(n.Params))
+    for i, p := range n.Params {
+        var pt Type
+        if p.TypeAnn != nil {
+            pt = c.typeFromAnn(p.TypeAnn, child)
+        } else {
+            pt = c.freshVarAt(p, ParamBinding) // fresh inference var + Prov entry
+        }
+        params[i] = pt
+        names[i] = p.Name
+        child.values[p.Name] = ValueBinding{scheme: &MonoScheme{ty: pt}}
+    }
+    ret := c.inferBlock(n.Body, child) // Void if the body yields no value
+    f := &FunctionType{params: params, paramNames: names,
+        required: len(params), ret: ret, exact: true} // exact/required refined in PR4
+    c.info.setType(n, f)
+    return f
+}
+
+func (c *checker) inferCallExpr(n *ast.CallExpr, s *Scope) Type {
+    callee := c.inferExpr(n.Callee, s)
+    args := make([]Type, len(n.Args))
+    for i, a := range n.Args {
+        args[i] = c.inferExpr(a, s)
+    }
+    res := c.freshVarAt(n, Application)
+    c.constrain(callee, &FunctionType{params: args, required: len(args), ret: res, exact: true})
+    c.info.setType(n, res)
+    return res
+}
+```
+
+```go
+// solver/constrain.go — function case (PR1 baseline; refined in PR4).
+case *FunctionType:
+    if r, ok := rhs.(*FunctionType); ok {
+        if len(l.params) > len(r.params) { // fewer-params-is-subtype (inexact case)
+            return arityError(l, r)
+        }
+        var errs []error
+        for i := range l.params {
+            errs = append(errs, c.constrain(r.params[i], l.params[i], seen)...) // contravariant
+        }
+        return append(errs, c.constrain(l.ret, r.ret, seen)...) // covariant
+    }
+```
+
 **Tests:** monomorphic function inference from real source — application type
 flows (`val n = (fn (x) { return x + 1 })(5)` ⇒ `n: number`), arity mismatch
 errors (full message), contravariant-param / covariant-return acceptance and
@@ -167,6 +295,42 @@ Promote `scheme.go` (`TypeScheme`/`MonoScheme`/`PolyScheme`, `instantiate`,
   is a non-issue — but leave a `// M4:` marker where `freshenAbove` will need a
   lifetime cache.
 
+**Sketch:**
+
+```go
+// solver/poly.go — promoted from scheme.go.
+func (c *checker) instantiate(s TypeScheme, lvl int) Type {
+    switch sc := s.(type) {
+    case *MonoScheme:
+        return sc.ty // no freshening
+    case *PolyScheme:
+        return c.freshenAbove(sc.level, sc.body, lvl, map[int]*TypeVarType{}) // + FromInstantiation Prov
+    }
+    panic("unreachable")
+}
+
+// freshenAbove copies ty, replacing each var with level > lim by a fresh var at
+// lvl (bounds freshened too); vars at level <= lim are shared. // M4: thread a
+// lifetime cache here so generalized lifetimes freshen per-instance.
+func (c *checker) freshenAbove(lim int, ty Type, lvl int, cache map[int]*TypeVarType) Type { /* ... */ }
+
+// generalize runs at a binding boundary once the RHS has finished inferring.
+func (c *checker) generalize(body Type, lvl int) TypeScheme {
+    body = c.simplify(body, lvl) // PR3 — compact the signature before quantifying
+    return &PolyScheme{level: lvl, body: body}
+}
+```
+
+```go
+// solver/infer.go — module-level: dep-graph SCC order drives declaration order.
+func (c *checker) inferModule(m *ast.Module) {
+    for _, scc := range c.deps.SCCsInTopoOrder(m) {
+        c.checkOverloadAnnotations(scc) // PR5 gate
+        c.inferSCC(scc)                 // fresh var per binding, constrain RHS <: var, generalize
+    }
+}
+```
+
 **Tests:** polymorphic instantiation — `val id = fn (x) { return x }` used at two
 types; let-bound polymorphism captured correctly (inner `let` generalizes after
 its RHS finishes); recursive and mutually-recursive groups infer without
@@ -197,6 +361,37 @@ generalization boundaries before coalescing.
 - **Wire into the pipeline:** run `analyze` → `symmetrize` → `collectCoOcc` →
   `mergeCoOccurring` on a `PolyScheme`'s body at generalization time, feeding the
   merged result into `coalesce` and then the printer.
+
+**Sketch:**
+
+```go
+// solver/simplify.go — promoted from simplify.go; pipeline orchestrated here.
+func (c *checker) simplify(ty Type, lvl int) Type {
+    // 1. occurrence analysis: which polarities does each var appear in?
+    occ := map[int]map[Polarity]bool{}
+    analyze(ty, Positive, occ, map[polKey]bool{})
+
+    // 2. co-occurrence: which vars share a union/intersection node, per polarity?
+    vars := map[int]*TypeVarType{}
+    collectVars(ty, vars)
+    symmetrize(vars) // mirror one-sided var<:var bounds so each var sees all its facts
+    coOcc := map[polKey]map[int]bool{}
+    collectCoOcc(ty, Positive, coOcc, map[polKey]bool{})
+
+    // 3. merge vars that co-occur in EVERY polarity they appear in.
+    uf := mergeCoOccurring(vars, occ, coOcc)
+
+    // 4. rewrite: drop single-polarity vars (-> their bound, or unknown/never for
+    //    the empty case), apply union-find representatives.
+    return rewrite(ty, occ, uf)
+}
+
+// analyze / collectVars / collectCoOcc / mergeCoOccurring port directly from the
+// spike; the Mut->Ref and ResidualOp bipolarity special cases come along in M4/M8.
+func analyze(st Type, pol Polarity, occ map[int]map[Polarity]bool, seen map[polKey]bool) { /* ... */ }
+func mergeCoOccurring(vars map[int]*TypeVarType, occ map[int]map[Polarity]bool,
+    coOcc map[polKey]map[int]bool) *unionFind { /* ... */ }
+```
 
 **Tests — the Category-A acceptance from the milestone, against real source:**
 
@@ -239,6 +434,56 @@ land in parallel with PR3.
 - **`required` vs `n`.** Optional params lower `required` without changing `n`.
   Wire optional-param detection from the AST (`x?`-style) into the accept-set
   computation.
+
+**Sketch:**
+
+```go
+// solver/constrain.go — accept-set helper + refined function case.
+const unboundedArity = math.MaxInt
+
+// acceptSet is the inclusive range of arg-counts a function accepts when invoked.
+func acceptSet(f *FunctionType) (lo, hi int) {
+    lo = f.required
+    if f.exact {
+        hi = len(f.params)
+    } else {
+        hi = unboundedArity
+    }
+    return
+}
+
+case *FunctionType:
+    if r, ok := rhs.(*FunctionType); ok {
+        // l <: r  iff  accept(l) superset-of accept(r):  loL <= loR  AND  hiL >= hiR.
+        loL, hiL := acceptSet(l)
+        loR, hiR := acceptSet(r)
+        if loL > loR || hiL < hiR {
+            return callContractError(l, r)
+        }
+        var errs []error
+        n := min(len(l.params), len(r.params)) // relate shared positions only
+        for i := 0; i < n; i++ {
+            errs = append(errs, c.constrain(r.params[i], l.params[i], seen)...) // contravariant
+        }
+        return append(errs, c.constrain(l.ret, r.ret, seen)...) // covariant
+    }
+```
+
+```go
+// solver/infer.go — direct-call arity, independent of exactness (from inferCallExpr).
+func (c *checker) checkDirectCallArity(n *ast.CallExpr, callee Type, argc int) {
+    f, ok := peelToFunc(callee) // through aliases / a resolved var bound
+    if !ok {
+        return // not (yet) known to be a function; the constraint handles it
+    }
+    switch {
+    case argc > len(f.params):
+        c.error(n, TooManyArgsError{Got: argc, Want: len(f.params)})
+    case argc < f.required:
+        c.error(n, TooFewArgsError{Got: argc, Required: f.required})
+    }
+}
+```
 
 **Tests (the milestone's exactness acceptance):**
 
@@ -291,6 +536,70 @@ the **probe API** they need. Depends on PR2 (per-overload schemes).
   isn't guaranteed to converge under subtyping. Self-recursion is softer (each
   body inferred with the *other* overload signatures visible). Emit a clear
   error pointing at the unannotated overloaded participant.
+
+**Sketch:**
+
+```go
+// solver/probe.go — baseline (A).
+func (p *Probe) record(v Bounded) {
+    if p.touched.Contains(v) {
+        return
+    }
+    p.touched.Add(v)
+    lo, hi := v.boundLengths()
+    p.entries = append(p.entries, probeEntry{v, lo, hi})
+}
+func (p *Probe) onRollback(f func()) { p.cleanups = append(p.cleanups, f) }
+
+func (p *Probe) rollback() {
+    for i := len(p.cleanups) - 1; i >= 0; i-- { p.cleanups[i]() } // side tables first
+    for i := len(p.entries) - 1; i >= 0; i-- {
+        e := p.entries[i]
+        e.v.truncateBounds(e.prevLower, e.prevUpper)
+    }
+}
+func (p *Probe) Discard() { if !p.done { p.rollback(); p.done = true } }
+func (p *Probe) Commit()  { /* propagate touched + cleanups to parent; clear entries */ }
+
+func (c *checker) openProbe() *Probe { p := &Probe{parent: c.probe}; c.probe = p; return p }
+```
+
+```go
+// solver/overload.go — call-site resolution (D + A), a phase distinct from constrain.
+func (c *checker) resolveOverload(set *OverloadSet, args []Type, call ast.Node) (res Type, decided bool) {
+    if !groundEnough(args) {
+        return nil, false // defer: let more bounds accumulate before choosing
+    }
+    for _, sig := range orderBySpecificity(set.branches) { // ONE documented ordering
+        inst := c.freshenAbove(/* sig at curLevel */).(*FunctionType) // (D) fresh per candidate
+        p := c.openProbe()                                            // (A) wrap caller-side bounds
+        if c.tryConstrainArgs(args, inst, p) {
+            p.Commit()
+            return inst.ret, true
+        }
+        p.Discard() // unwind caller-side bounds; drop inst
+    }
+    c.error(call, NoMatchingOverloadError{Set: set, Args: args})
+    return nil, true
+}
+
+// groundEnough: no argument is a fully-unconstrained variable.
+func groundEnough(args []Type) bool { /* ... */ }
+```
+
+```go
+// solver/infer.go — the mutual-recursion gate, run before inferring an SCC (PR2 hook).
+func (c *checker) checkOverloadAnnotations(scc []ast.Decl) {
+    if len(scc) <= 1 {
+        return // self-recursion is softer; only multi-member groups require annotation
+    }
+    for _, d := range scc {
+        if set := overloadSetOf(d); set != nil && !set.annotated {
+            c.error(d, UnannotatedRecursiveOverloadError{Decl: d})
+        }
+    }
+}
+```
 
 **Tests:** a two-overload free `fn` resolves per-argument-type at call sites;
 declaration-order tie-break is asserted; a deferred-then-resolved call (argument
