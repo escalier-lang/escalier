@@ -443,6 +443,31 @@ may simply ignore extra arguments — so a holder of the two-parameter type can
 call the supplied function with a second argument it silently discards. This
 *callback bivariance* is a well-known source of bugs.
 
+The most damaging form of the bug involves **optional parameters**. A
+callback with a trailing optional — `(a: string, b?: boolean) => void` —
+flows through TypeScript's bivariance into a slot that supplies more
+arguments, and at runtime the optional parameter is bound to a value of
+the wrong type:
+
+```ts
+function foo(cb: (a: string) => void)             { bar(cb); }
+function bar(cb: (a: string, b: number) => void)  { cb("hello", 5); }
+function cb(a: string, b?: boolean) { if (b) { /* b is "truthy" */ } }
+
+foo(cb);
+// At runtime cb is invoked as cb("hello", 5).
+// b is bound to the number 5; the body's `if (b)` treats it as a boolean.
+// No runtime error, silently wrong downstream.
+```
+
+The optional `b?: boolean` is the unsafe surface: the callee *declared*
+that `b` might be absent, but TypeScript's chain of widenings lets a
+caller supply *anything* there. Inexact functions are how Escalier
+controls this — `...` is the explicit opt-in to "callers may supply
+extras," and the accept-set/contravariance rules in §4.2.1 are designed
+so that the chain above cannot be reconstructed in pure Escalier source.
+§4.2.1.2 walks the worked example end-to-end.
+
 Escalier splits the concern in two:
 
 - **Direct call sites** reject more arguments than the callee declares,
@@ -570,15 +595,31 @@ Concretely:
 
 ```
 declare val f: fn(a: A, b: B) -> R              // exact: accept-set [2, 2]
-val g: fn(a: A, b: B, ...) -> R = f             // inexact slot: accept-set [2, ∞)
-g(1, 2, 3)                                       // slot permits 3 args, but f refuses the 3rd
+declare val invokeWith3: fn(cb: fn(a: A, b: B, c: C) -> R) -> R
+                                                 // exact 3-arg slot: will
+                                                 // invoke cb with 3 args
+declare val forward: fn(cb: fn(a: A, b: B, ...) -> R) -> R
+                                                 // inexact slot — body cannot
+                                                 // call cb with extras directly
+                                                 // (§4.2.3), but can pass cb on
+                                                 // to a slot that does:
+                                                 //   fn(cb) => invokeWith3(cb)
+forward(f)                                       // would let f reach invokeWith3,
+                                                 // which invokes it with 3 args
+                                                 // f refuses
 ```
 
-The accept-set check rejects this: `accept(f) = [2, 2]` does not contain
-`3`, so `f`'s upper bound `2` fails the `uG >= uF` condition against the
-slot's `∞`. The same reasoning blocks an exact function from filling a
-*wider exact* slot (`fn(a, b) </: fn(a, b, c)`): the slot would invoke it
-with 3 arguments it refuses.
+The accept-set check rejects the assignment of `f` to `forward`'s inexact
+parameter slot: `accept(f) = [2, 2]` does not contain any count above
+`2`, so `f`'s upper bound `2` fails the `uG >= uF` condition against the
+slot's `∞`. Note that a *direct* call like `f(1, 2, 3)` — or
+`cb(1, 2, 3)` inside `forward`'s body — is independently rejected by
+§4.2.3; the accept-set rule governs the callback-subtyping direction,
+where extras materialize only by chained forwarding into a slot that
+itself supplies them (see §4.2.1.2 for a worked chain). The same
+reasoning blocks an exact function from filling a *wider exact* slot
+(`fn(a, b) </: fn(a, b, c)`): a holder of the wider slot would invoke
+it with 3 arguments it refuses.
 
 **The soundness insight is preserved.** Exact functions reject extra
 arguments *everywhere* — both at direct call sites (§4.2.3) and by being
@@ -897,15 +938,16 @@ For this to produce the right tuple exactness, two rules apply:
   `infer P` binds `P` to the exact tuple `[A, B]`. When `T` is
   `fn(a: A, b: B, ...) -> R` (inexact), `infer P` binds `P` to the inexact
   tuple `[A, B, ...]`.
-- **The matcher and the constraint must admit both exact and inexact
-  function types.** A single fixed-exactness pattern would only match its
-  own exactness and let the other fall to the `else` branch (exact and
-  inexact function types are not interchangeable as match targets — their
-  accept-sets differ, §4.2.1). The pattern `fn(...args: infer P) -> any`
-  and the constraint `fn(...args: any) -> any` are therefore treated as
-  exactness-agnostic for matching and constraint-checking purposes — they
-  accept either an exact or an inexact function type, and the captured
-  `infer P` faithfully reflects which one it was.
+- **The conditional-type pattern and the generic constraint must admit
+  both exact and inexact function types.** A single fixed-exactness
+  pattern would only match its own exactness and let the other fall to
+  the `else` branch (exact and inexact function types are not
+  interchangeable as match targets — their accept-sets differ, §4.2.1).
+  The pattern `fn(...args: infer P) -> any` and the constraint
+  `fn(...args: any) -> any` are therefore treated as exactness-agnostic
+  for matching and constraint-checking purposes — they accept either an
+  exact or an inexact function type, and the captured `infer P`
+  faithfully reflects which one it was.
 
 Consequently:
 
@@ -943,9 +985,9 @@ each carries the natural exactness:
 - **`ThisParameterType<T>`** extracts the type of the explicit `this`
   parameter, with that type's exactness preserved.
 
-The matcher and constraint for each of these utility types are
-exactness-agnostic on the function/constructor type they accept, for the
-same reason as `Parameters` (§4.2.4).
+The conditional-type pattern and generic constraint for each of these
+utility types are exactness-agnostic on the function/constructor type
+they accept, for the same reason as `Parameters` (§4.2.4).
 
 ## 5. Union Types
 
