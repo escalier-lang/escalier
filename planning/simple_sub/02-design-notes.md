@@ -515,9 +515,23 @@ Four other shapes were considered and rejected:
 - **Both `mut` and `lt` as flags directly on each carrier** (no wrapper at
   all). Re-creates the original "N carriers each duplicate the
   bidirectional-if-mut logic" cost that motivated `mut`-as-wrapper to begin
-  with — plus each carrier still has to handle the lt-peel logic to avoid
-  the original invariance bug. Worst of both worlds; the wrapper centralizes
-  both axes in one rule.
+  with. A shared `Borrowable` interface (`Mut()`/`Lifetime()` exposed by each
+  carrier, one constrain rule dispatching over the interface) recovers the
+  no-duplication property, but two representation costs remain. **Interning
+  breaks:** owned `RecordType{f: int}` can no longer be shared across uses
+  because every Record now has a `(mut, lt)` slot that may differ between
+  occurrences; structurally-equal records have to ignore the degenerate
+  slot specially. The provenance side-table design (which relies on
+  interning common atoms — see "Provenance" below) suffers correspondingly.
+  **`RefInner` loses its narrowing teeth:** today `RefInner` statically
+  rejects `mut number` / `mut "hello"` / `mut fn(...)` by excluding
+  `PrimitiveType`/`LiteralType`/`FunctionType` from the inner position.
+  With flags on each carrier, the equivalent invariant ("which carriers
+  may set `mut: true` or a non-nil `lt`?") is a runtime smart-constructor
+  assertion on every `WithMut`/`WithLt` call, not a type-level distinction.
+  Plus each carrier still has to handle the lt-peel logic to avoid the
+  original invariance bug. Worst of both worlds; the wrapper centralizes
+  both axes in one rule and keeps the static narrowing.
 
 The unified `RefType` consolidates the borrow concern in a single wrapper with a
 single rule. Carrier rules (`RecordType`, `TupleType`, `AliasType`, `ClassType`) stay focused
@@ -565,28 +579,41 @@ calling out so they're not surprises later:
   explicitly construct the wrapper. More code per site, but more
   type-checkable code per site.
 - **Tooling that expects "the type of a value" to flow through one shape
-  doesn't quite work.** A piece of code that today destructures a `RecordType`
-  to inspect its fields can no longer assume the value-typed binding's type
-  is a `RecordType` directly — it might be `RefType{...,inner: RecordType{...}}`. Every
-  field-inspection or member-access code path has to first peel any `RefType`
-  wrapper to reach the carrier. The peel is one line, but it has to appear
-  everywhere a `RecordType` (or `TupleType`, etc.) is consumed. Helpers (`unwrapRef`,
-  `carrierOf`) keep this from being ugly, but they have to exist and be
-  used consistently. **Provenance is not affected by this peel** — `unwrapRef`
+  doesn't quite work.** A piece of code that destructures a `RecordType` to
+  inspect its fields can't assume the value-typed binding's type is a
+  `RecordType` directly — it might be `RefType{...,inner: RecordType{...}}`.
+  Every field-inspection or member-access code path has to first peel any
+  `RefType` wrapper to reach the carrier. This is **not a new cost**: the
+  current checker already has the same peel discipline against the `MutType`
+  wrapper, and the codebase has internalized "type-switch through `MutType`
+  before destructuring." `RefType` extends the same discipline to immutable
+  borrows — the existing `MutType` peel sites become `RefType` peel sites,
+  and the few read-only borrow sites that previously could skip the peel
+  now have to perform it. Helpers (`unwrapRef`, `carrierOf`) keep this from
+  being ugly, but they have to exist and be used consistently.
+  **Provenance is not affected by this peel** — `unwrapRef`
   just navigates to the existing `inner` pointer, so both the wrapper's and
   the carrier's `Prov` entries are independently preserved. Downstream
   consumers (errors, hovers) choose *which* of the two to surface based on
   what they're reporting (carrier Prov for field-shape errors, wrapper Prov
   for mutability/lifetime errors), but neither is ever lost.
-- **Lifetime elision is per-wrapper, not per-occurrence.** Today, a `RecordType`
-  with a parameter-only `lt` that connects nothing has its `lt` elided
-  in-place. Under the unified `RefType`, the elidable lifetime sits on the
-  wrapper — and the question becomes whether to elide just the lifetime
-  (leaving a `RefType{mut: true, lt: nil, inner: ...}` for an owned-mutable
-  result) or to also drop the `RefType` wrapper entirely (if the result is
-  effectively bare). The coalescer needs to know the difference and pick
-  the right one. Not hard, but it's one more shape of decision the elision
-  pass has to make.
+- **Lifetime elision is per-wrapper, not per-occurrence — and on immutable
+  borrows must drop the wrapper.** Today, a `RecordType` with a
+  parameter-only `lt` that connects nothing has its `lt` elided in-place.
+  Under the unified `RefType`, the elidable lifetime sits on the wrapper,
+  and the right action depends on `mut`. For a mutable borrow with elided
+  lifetime, the result is `RefType{mut: true, lt: nil, inner: ...}` — an
+  owned-mutable value, well-formed. For an *immutable* borrow with elided
+  lifetime, the result would be `RefType{mut: false, lt: nil, inner: ...}`,
+  which is **exactly the degenerate cell** (`(false, nil)`) that the
+  representation forbids. So immutable-borrow elision must always drop the
+  `RefType` wrapper entirely and return the bare `inner`; only the mutable
+  case can elide-in-place. This isn't optional — leaving the degenerate
+  cell behind violates the construction invariant the smart constructor
+  enforces, and every downstream `*RefType` type-switch would see a
+  borrow-shaped value that isn't really a borrow. The coalescer needs to
+  branch on `mut` at the elision site, but the logic is mechanical once
+  the rule is written down.
 
 None of these are showstoppers, and most fall under "write a constructor and
 a couple of helpers, then use them consistently." The reason they're worth
