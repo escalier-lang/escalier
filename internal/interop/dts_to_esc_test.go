@@ -257,12 +257,12 @@ func TestStandalone_QualifiedBindingSkipsTrio(t *testing.T) {
 }
 
 // typeAliasSlice exercises convertStandaloneStmt's TypeDecl path. The
-// converter exports the alias but attachJSDecorator is a no-op for
-// TypeDecl (the AST has no Decorators field on type aliases). This test
-// asserts that asymmetry. See #664 for the decision on whether to widen
-// the AST so type aliases carry @js("...") too. If that lands, update
-// this test to assert that the converter emits an @js("Id") decorator
-// on the type alias.
+// converter exports the alias but attachJSDecorator is intentionally a
+// no-op for TypeDecl: per §3.3, @js("...") applies only to decls that
+// lower to a JS reference, and a type alias erases at codegen with no
+// runtime form to point at (the parser likewise rejects decorators on
+// `declare type`). This test is the regression guard for that design
+// decision — see #664.
 const typeAliasSlice = `
 type Id = string;
 `

@@ -479,6 +479,19 @@ syntax. This phase adds it:
   concrete need surfaces.
 - Printer round-trips decorators (FR14 audit must cover them,
   in combination with the `export` modifier).
+- **Converter symmetry (#664).** The same "decorators only on
+  decls that lower to a JS reference" rule governs the `.d.ts`
+  converter. `attachJSDecorator` in
+  [internal/interop/dts_to_esc.go](../../internal/interop/dts_to_esc.go)
+  stamps `@js("...")` only on `VarDecl`, `FuncDecl`, and
+  `ClassDecl`; `TypeDecl` and `InterfaceDecl` are excluded by
+  design and carry no `Decorators` field, so those branches are
+  intentional no-ops. A bare exported type alias or interface is
+  therefore emitted *unmarked*, which is correct: it erases at
+  codegen and has no runtime reference to point at (and a printed
+  `@js("...")` on it would not even re-parse, given the
+  parse-time rejection above). `TestStandalone_TypeAliasExportedNoDecorator`
+  pins this.
 
 Touch points:
 [internal/lexer_util/](../../internal/lexer_util/),
