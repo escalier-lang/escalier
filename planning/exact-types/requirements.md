@@ -416,16 +416,17 @@ type ExactCallback   = fn(x: number, y: number) -> number
 type InexactCallback = fn(x: number, y: number, ...) -> number
 ```
 
-- A bare function type `fn(...) -> T` is **exact** — it does not tolerate
-  being invoked with more arguments than it declares, in any context.
+- A bare function type `fn(p1..pn) -> T` (no trailing `...`) is **exact** —
+  it does not tolerate being invoked with more arguments than it declares,
+  in any context.
 - A function type whose parameter list ends with a trailing `...` is
   **inexact** — it tolerates being invoked with extra positional
   arguments *when used as a callback* (i.e. it may fill a function-typed
   slot that passes more arguments than it names; see §4.2.1).
 
-At a *direct* call site, both forms reject more arguments than the callee
-declares (§4.2.3); the exact/inexact distinction governs **callback
-subtyping** (§4.2.1), not direct calls.
+The exact/inexact distinction governs **callback subtyping** (§4.2.1), not
+direct calls — at a direct call site both forms reject more arguments than
+the callee declares (§4.2.3).
 
 This is distinct from an explicit typed rest parameter:
 
@@ -451,7 +452,9 @@ Escalier splits the concern in two:
   function-typed slot is expected — is governed by exactness, via the
   accept-set rule (§4.2.1). An *inexact* function explicitly tolerates
   being invoked with extras, so it may fill a slot that passes more
-  arguments than it names; an *exact* function may not.
+  arguments than it names (as long as it still requires no more arguments
+  than the slot supplies); an *exact* function may not fill a slot that
+  passes extras at all.
 
 ```
 declare val f: ExactCallback     // fn(x: number, y: number) -> number
@@ -523,6 +526,13 @@ condition is the `required` part. Consequences:
   count it meets. **This is the case exactness exists to permit:** a
   function that has explicitly opted into tolerating extras can stand in
   for a higher-arity callback.
+- **Lower-bound (`required`) failures cut the other way.** The `rG <= rF`
+  condition is not vestigial: a supplier that *demands* more arguments
+  than the slot ever supplies is rejected, exactness aside. `fn(a, b) -> R`
+  (required 2) is **not** a subtype of `fn(a) -> R` (a slot that supplies
+  1) — it would be invoked with one argument and left missing `b`. The
+  same bound rejects `fn(a, b, ...) -> R` (inexact, required 2) as a
+  supplier for a `fn(a) -> R` slot.
 - **Exact </: inexact, and exact </: any higher-arity slot:** an exact
   function's finite upper bound `n` cannot cover a slot whose upper bound
   exceeds `n` (an inexact slot's `∞`, or a wider exact slot's larger
@@ -822,8 +832,19 @@ parameter with the inexact `...` sentinel
 (`fn(a: A, ...rest: Array<B>, ...) -> R`) is therefore **disallowed**:
 either the rest type already specifies what the trailing arguments must
 be (no need for the sentinel), or the sentinel is used on its own to
-admit untyped extras (no typed rest). A function with a typed rest
-parameter is always exact in the §4.2.1 sense.
+admit untyped extras (no typed rest).
+
+A typed rest parameter does, however, raise the function's accept-set
+upper bound to `∞` (any number of trailing arguments is permitted, each
+constrained to the rest element type) — so for the §4.2.1 accept-set its
+upper bound is unbounded, like an inexact function's. It is *not* inexact
+in the §4.1 sense: the trailing arguments are typed (each must be a `B`,
+not an untyped extra), and the `...` sentinel is disallowed alongside it.
+Concretely, `fn(a: A, ...rest: Array<B>) -> R` has accept-set
+`[1, ∞)` with every position past the first checked against `B`. This is
+the one exact function form whose accept-set is unbounded above; the
+finite-`n` upper bound stated in §4.2.1 is the rule for functions
+*without* a typed rest.
 
 #### 4.2.3. Call-Site Checking
 
@@ -831,8 +852,13 @@ At a **direct** call site (`f(args)` where `f`'s type is known), the checker
 enforces the same bounds regardless of exactness:
 
 - The number of supplied arguments must be `>=` the number of required
-  parameters and `<=` the number of declared parameters (counting optionals
-  and any typed rest as documented).
+  parameters (optional parameters may be omitted).
+- It must also be `<=` the number of declared parameters — **except** when
+  the function has a typed rest parameter, which admits any number of
+  trailing arguments (each checked against the rest element type, §4.2.2).
+  Equivalently: the supplied-argument count must lie within the function's
+  accept-set lower/upper bounds (§4.2.1), where a typed rest sets the upper
+  bound to `∞`.
 
 Passing more arguments than the callee declares is rejected for both exact
 and inexact function types — supplying extra arguments to a call you can see
@@ -1518,11 +1544,13 @@ branch selection through the asymmetric rules already documented:
 
   if T : U { X } else { Y }                  // takes the Y branch
   ```
-- **Function types are a special case.** Because function-type subtyping
-  requires matching exactness in *both* directions (see the function
-  subtyping section), a conditional comparing two function types of
-  mismatched exactness always takes the false branch — even when the
-  parameter and return types align.
+- **Function types follow the accept-set rule.** A conditional comparing
+  two function types asks `T : U` using the function-subtyping rule of
+  §4.2.1 (`accept(T) ⊇ accept(U)`, params contravariant, return
+  covariant). So an *inexact* `T` satisfies a narrower *exact* `U` (it
+  takes the true branch), while an *exact* `T` does **not** satisfy an
+  inexact or wider-arity `U` (false branch) — exactly the asymmetry of
+  §4.2.1.1.
 
 #### 7.4.2. How the result's exactness is determined
 
@@ -1932,7 +1960,7 @@ exact binary callback that also receives the index.
 
 | Method | Callback type | Notes |
 |---|---|---|
-| `map<T, U>(arr, f)` | `fn(elem: T) -> U` | The default; rejects `parseInt`-style misuse. |
+| `map<T, U>(arr, f)` | `fn(elem: T) -> U` | The default; its unary slot never forwards the index, so `parseInt`-style bugs can't arise (§10.3). |
 | `mapi<T, U>(arr, f)` | `fn(elem: T, index: number) -> U` | Use when the index is needed. |
 | `filter<T>(arr, p)` | `fn(elem: T) -> boolean` | |
 | `filteri<T>(arr, p)` | `fn(elem: T, index: number) -> boolean` | |
@@ -2191,10 +2219,12 @@ None require inexact function types; all are well-served by
 The native callback-taking methods on `Array.prototype` (`map`, `filter`,
 `forEach`, `find`, `findIndex`, `some`, `every`, `reduce`, `reduceRight`,
 and `flatMap`) are **not exposed** in Escalier. Allowing them via direct
-TypeScript import would reintroduce the `parseInt`-style misuse the
-`std:array` wrappers exist to prevent, and would give users two
-near-identical APIs with different safety properties — exactly the kind
-of footgun the exact-types feature is designed to eliminate.
+TypeScript import would forward the index (and source array) into
+callbacks through inexact, higher-arity slots — reopening the
+`parseInt`-style hazard the `std:array` wrappers close by exposing
+minimal unary slots (§10.3) — and would give users two near-identical
+APIs with different safety properties, exactly the kind of footgun the
+exact-types feature is designed to eliminate.
 
 Concretely, the Escalier prelude's `Array<T>` type omits these methods
 from the instance interface. Non-callback methods on `Array.prototype`
