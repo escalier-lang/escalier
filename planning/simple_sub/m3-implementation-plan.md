@@ -47,34 +47,80 @@ exist in `internal/solver/`:
 > `fn <T0>(x: T0) -> T0`") is over a **hand-built** soltype term, exercising the
 > printer + coalescing on a single variable. M3 is where that render is produced
 > **from real source** end-to-end, which additionally requires generalization
-> (PR 3) and the simplification pass (PR 4). The `freshenAbove`/`instantiate`
+> (PR2) and the simplification pass (PR3). The `freshenAbove`/`instantiate`
 > and `analyze`/`mergeCoOccurring` code in the spike (`scheme.go`, `simplify.go`)
 > is *promoted* here, not invented.
 
 ## Sequencing rationale
 
-```text
-PR1 funcs+app ──► PR2 schemes/generalization ──► PR3 simplification ──► PR4 exactness
-                                                          │
-                                                          └──► PR5 overloading (+ probe API)
-spec-sync (PR0) ────────────────────────────────────────────────────► (gates PR4)
+Seven PRs (PR0–PR6) across two prerequisites (M1, M2). The diagram shows the
+dependency edges; solid = hard dependency (the downstream PR can't compile or
+pass its tests without the upstream one), dashed = soft (downstream lands
+correctly without it, but produces a degraded result — non-compact renders, or a
+specificity rule that doesn't yet account for exactness — until the upstream PR
+fills it in).
+
+```mermaid
+flowchart TD
+    M1([M1: soltype core]):::prereq
+    M2([M2: AST walk + Scope]):::prereq
+
+    PR0[PR0: spec sync]
+    PR1[PR1: functions + application]
+    PR2[PR2: let-polymorphism]
+    PR3[PR3: simplification]
+    PR4[PR4: function exactness]
+    PR5[PR5: probe API]
+    PR6[PR6: overloading]
+
+    M1 --> PR1
+    M2 --> PR1
+    M1 --> PR5
+    PR0 --> PR4
+    PR1 --> PR2
+    PR2 --> PR3
+    PR1 --> PR4
+    PR2 --> PR6
+    PR5 --> PR6
+    PR3 -. compact renders .-> PR2
+    PR4 -. specificity accounts for exactness .-> PR6
+
+    classDef prereq fill:#eee,stroke:#999,stroke-dasharray:3 3;
 ```
+
+Three independent tracks fall out of the graph, exploitable for parallelism:
+the **function-core chain** (PR1 → PR2 → PR3), **exactness** (PR0 → PR4, joining
+after PR1), and the **probe API** (PR5, gated only on M1). Overloading (PR6) is
+the join point where the schemes track (PR2), the probe (PR5), and — softly —
+exactness (PR4) all converge.
 
 - **PR1 → PR2 → PR3 is a hard chain.** Application needs function types (PR1).
   Generalization needs application working so that polymorphic uses actually
   instantiate (PR2). The Category-A acceptance renders (`fn <T0>(x: T0) -> T0`,
   the `unknown` improvement) only become *correct and compact* once
   simplification runs (PR3) — before it, generalized signatures render with
-  redundant or single-polarity variables.
-- **PR4 (exactness) depends on PR1** (it adds a flag + rule to the function
-  case) but is independent of PR2/PR3, so it can land in parallel with PR3
-  once PR1 is in. It is gated on **PR0 (spec-sync)** because the default it
-  encodes (exact bare `fn`, inexact `fn(..., ...)`) must be recorded in the
-  spec before the implementation asserts it.
-- **PR5 (overloading) depends on PR2** (it bundles per-overload *schemes*) and
-  introduces the **probe API**, but is otherwise the most self-contained piece
-  and can proceed alongside PR3/PR4. It is the largest and highest-uncertainty
-  PR; keeping it last lets the simpler function core settle first.
+  redundant or single-polarity variables. (PR2's `generalize` calls `simplify`,
+  so the PR3 → PR2 edge is soft: PR2 lands with a no-op `simplify` and PR3 makes
+  the renders compact.)
+- **PR4 (exactness) depends on PR1** (it reworks the function subtyping case)
+  but is independent of PR2/PR3, so it can land in parallel with PR2/PR3 once
+  PR1 is in. It is gated on **PR0 (spec-sync)** because the default it encodes
+  (exact bare `fn`, inexact `fn(..., ...)`) must be recorded in the spec before
+  the implementation asserts it. Direct-call arity and the `constrainCall`
+  obligation live in **PR1**, not here — PR4 owns only the `exact`/`required`
+  representation and the accept-set *subtyping* rule.
+- **PR5 (probe API) depends only on M1.** It is general speculation
+  infrastructure (length-snapshot journal over bound lists + side-table cleanup
+  closures), independently unit-testable, and reused well beyond M3 (M4
+  mutability transitions, M8 conditional-branch selection, `satisfies`). Split
+  out of overloading so it can be built and reviewed on its own and so PR6's
+  risk is contained to the resolution logic.
+- **PR6 (overloading) depends on PR2** (it bundles per-overload *schemes*) and
+  **PR5** (each candidate trial runs under a probe), and softly on **PR4** (the
+  one specificity ordering must account for the exact/inexact distinction). It
+  is the highest-uncertainty PR; keeping it last lets the function core and the
+  probe settle first, and it is the one piece that can ship in a reduced form
+  (declaration-order first-match) without blocking M4.
 
 ## Core types added or changed in M3
 
@@ -83,9 +129,10 @@ The sketches below use design-notes `soltype` naming (`FunctionType`,
 shapes are settled in code review. `// ...` marks elisions. They show *what M3
 adds on top of M1/M2*, not the whole package.
 
-**`FunctionType` grows three fields** beyond the spike's `Function` — `exact`
-(PR4), and the `required` count that lets optionals lower the accept-set lower
-bound without changing arity (PR4):
+**`FunctionType` grows two fields** beyond the spike's `Function`. Both are
+introduced in PR1 with trivial values (`exact: true`, `required: len(params)`)
+so the call path compiles; PR4 gives `exact` real variance and refines
+`required` from optional-param (`x?`) detection:
 
 ```go
 // soltype/type.go — promoted from spike Function, extended for M3.
@@ -94,7 +141,7 @@ type FunctionType struct {
     paramNames []string // parallel to params; for rendering only
     required   int      // # of args that MUST be supplied (optionals lower this)
     ret        Type
-    exact      bool     // bare fn(...) ⇒ true; fn(..., ...) ⇒ false  (PR4)
+    exact      bool     // bare fn(...) ⇒ true; fn(..., ...) ⇒ false  (varies in PR4)
 }
 ```
 
@@ -111,7 +158,7 @@ func (*MonoScheme) isScheme() {}
 func (*PolyScheme) isScheme() {}
 ```
 
-**`ValueBinding` carries either a scheme or an overload set** (PR5). An
+**`ValueBinding` carries either a scheme or an overload set** (PR6). An
 overloaded symbol is *not* a single `soltype.Type` — the disjunction never
 enters the lattice:
 
@@ -188,15 +235,20 @@ single-arg `App`.
   params take their `TypeAnn`); infer the body in a child scope binding each
   param to a `MonoScheme`; build `FunctionType{params, paramNames, ret}`.
   `info.setType` on the node and each param.
-- **`*ast.CallExpr`** → infer callee and each arg, allocate a fresh result var,
-  and emit a **call obligation** (`constrainCall`, defined in PR4) — not a
-  `FunctionType <: FunctionType` subtype assertion — so direct-call arity stays
-  owned by `checkDirectCallArity` and isn't re-checked by the accept-set gate.
-  Generalize the spike's single-arg `App` to N args.
+- **`*ast.CallExpr`** → infer callee and each arg; run `checkDirectCallArity`
+  for the call-site arity check (too-many / too-few args); then allocate a fresh
+  result var and emit a **call obligation** (`constrainCall`, sketched below) —
+  *not* a `FunctionType <: FunctionType` subtype assertion. Arity is owned by the
+  call-site check, so the obligation only relates arg/return types and lets an
+  unresolved callee resolve structurally. Generalize the spike's single-arg `App`
+  to N args. (In PR1 `required == len(params)`, so `checkDirectCallArity` rejects
+  any omitted arg; PR4's optional-param detection relaxes that for `x?` params.)
 - **Function `constrain` rule** (already in M1 from the spike, `constrain.go:137`)
-  — verify the multi-arg/variance path: `len(l.params) <= len(r.params)` arity
-  check (the *inexact* fewer-params rule, refined in PR4), params contravariant,
-  return covariant.
+  — verify the multi-arg/variance path used by **function-to-function**
+  subtyping (assignment, callback slots): `len(l.params) <= len(r.params)` arity
+  check (the *inexact* fewer-params rule, replaced by the accept-set rule in
+  PR4), params contravariant, return covariant. Direct calls do **not** go
+  through this rule — they use `constrainCall`.
 - **Multi-statement bodies / `return`** as needed by real `FuncExpr` bodies
   (the spike's IR had expression bodies only); a body with no value infers
   `Void`.
@@ -233,10 +285,10 @@ func (c *checker) inferCallExpr(n *ast.CallExpr, s *Scope) Type {
     for i, a := range n.Args {
         args[i] = c.inferExpr(a, s)
     }
+    c.checkDirectCallArity(n, callee, len(args)) // call-site arity (too many / too few)
     res := c.freshVarAt(n, Application)
-    // Call obligation, NOT function subtyping (see PR4 constrainCall): relates
-    // arg/return types and lets an unresolved callee resolve structurally, but
-    // never gates on arity — direct-call arity is owned solely by checkDirectCallArity.
+    // Call obligation, NOT function subtyping: relates arg/return types and lets
+    // an unresolved callee resolve structurally; arity is owned above.
     c.constrainCall(callee, args, res)
     c.info.setType(n, res)
     return res
@@ -244,7 +296,8 @@ func (c *checker) inferCallExpr(n *ast.CallExpr, s *Scope) Type {
 ```
 
 ```go
-// solver/constrain.go — function case (PR1 baseline; refined in PR4).
+// solver/constrain.go — function-to-function subtyping (PR1 baseline; reworked
+// to the accept-set rule in PR4). Direct calls use constrainCall, not this rule.
 case *FunctionType:
     if r, ok := rhs.(*FunctionType); ok {
         if len(l.params) > len(r.params) { // fewer-params-is-subtype (inexact case)
@@ -256,6 +309,38 @@ case *FunctionType:
         }
         return append(errs, c.constrain(l.ret, r.ret, seen)...) // covariant
     }
+```
+
+```go
+// solver/constrain.go — direct-call obligation; no accept-set arity gate.
+func (c *checker) constrainCall(callee Type, args []Type, res Type) {
+    if f, ok := peelToFunc(callee); ok {
+        n := min(len(args), len(f.params))
+        for i := 0; i < n; i++ {
+            c.constrain(args[i], f.params[i]) // arg flows into param
+        }
+        c.constrain(f.ret, res)
+        return
+    }
+    // Unresolved callee: record the call shape as an application-tagged bound so
+    // resolution relates it structurally, not via the accept-set <: rule.
+    c.recordCallObligation(callee, args, res)
+}
+
+// solver/infer.go — call-site arity; in PR1 every param is required, so this also
+// catches omitted args. PR4's optional-param detection lowers f.required for x?.
+func (c *checker) checkDirectCallArity(n *ast.CallExpr, callee Type, argc int) {
+    f, ok := peelToFunc(callee) // through aliases / a resolved var bound
+    if !ok {
+        return // not (yet) known to be a function; the obligation handles it
+    }
+    switch {
+    case argc > len(f.params):
+        c.error(n, TooManyArgsError{Got: argc, Want: len(f.params)})
+    case argc < f.required:
+        c.error(n, TooFewArgsError{Got: argc, Required: f.required})
+    }
+}
 ```
 
 **Tests:** monomorphic function inference from real source — application type
@@ -330,7 +415,7 @@ func (c *checker) generalize(body Type, lvl int) TypeScheme {
 // solver/infer.go — module-level: dep-graph SCC order drives declaration order.
 func (c *checker) inferModule(m *ast.Module) {
     for _, scc := range c.deps.SCCsInTopoOrder(m) {
-        c.checkOverloadAnnotations(scc) // PR5 gate
+        c.checkOverloadAnnotations(scc) // PR6 gate (no-op until overloading lands)
         c.inferSCC(scc)                 // fresh var per binding, constrain RHS <: var, generalize
     }
 }
@@ -419,36 +504,34 @@ It is well-covered by the spike's existing tests, which port directly.
 
 ### PR4 — Function exactness (accept-set model, #677)
 
-Add exactness to functions per the now-synced spec (PR0). Depends on PR1; can
-land in parallel with PR3.
+Give `exact` real meaning per the now-synced spec (PR0), and rework
+function-to-function subtyping to the accept-set rule. Depends on PR1 (which
+introduced the fields and the call-site machinery) and PR0; can land in parallel
+with PR2/PR3. Scope is deliberately narrow: the call-site mechanics
+(`constrainCall`, `checkDirectCallArity`) already shipped in PR1 — PR4 changes
+only the *subtyping* rule and `required` derivation.
 
-- **Representation.** Add `exact bool` to `soltype.FunctionType`
-  ([02-design-notes.md](02-design-notes.md) §"Exactness"). A bare `fn(...)` is
-  exact; `fn(..., ...)` (trailing `...`) is inexact. Parser support for the
-  trailing-marker on function types if not already present from M2; old checker
-  ignores the flag (parser-level tolerance, per M7's strategy).
-- **Direct-call arity (both exactness modes reject extra args).** In the
-  `CallExpr` path, reject supplying more args than the function declares
-  regardless of `exact` — matching TypeScript. Keep the `>= required` lower
-  bound. This is a call-site check, *not* a `constrain` rule.
-- **The call obligation skips the accept-set gate.** The constraint
-  `inferCallExpr` emits (PR1) must *not* run the `lo/hi` accept-set check, or it
-  would re-reject the same arity mismatches `checkDirectCallArity` reports, with
-  a less specific message. Emit it via a dedicated `constrainCall`, distinct
-  from `FunctionType <: FunctionType`: when the callee is concrete, relate
-  `arg_i <: param_i` (contravariant) and `ret <: res` directly; when it is still
-  a variable, record the call shape as a bound **tagged as an application
-  obligation** so later resolution relates it structurally rather than
-  re-running the accept-set gate. The `lo/hi` gate fires *only* for genuine
-  function-to-function (callback) subtyping.
+- **Representation + parser.** `exact bool` is already on `soltype.FunctionType`
+  (PR1, default `true`); PR4 makes it vary. A bare `fn(...)` stays exact;
+  `fn(..., ...)` (trailing `...`) is inexact. Add parser support for the
+  trailing-marker on function types if not already present from M2; the old
+  checker ignores the flag (parser-level tolerance, per M7's strategy).
 - **Callback subtyping = accept-set rule.** Rework the function case of
-  `constrain`: `G <: F` iff `accept(G) ⊇ accept(F)`, i.e. `rG <= rF` (required)
-  **and** `uG >= uF` (upper bound: `n` if exact, `∞` if inexact). Params remain
-  contravariant per shared position, return covariant. The spike's current
-  "fewer params is a subtype" becomes exactly the **inexact** case (`uG = ∞`).
+  `constrain` (the function-to-function rule from PR1, not the direct-call
+  `constrainCall`): `G <: F` iff `accept(G) ⊇ accept(F)`, i.e. `rG <= rF`
+  (required) **and** `uG >= uF` (upper bound: `n` if exact, `∞` if inexact).
+  Params remain contravariant per shared position, return covariant. The spike's
+  current "fewer params is a subtype" becomes exactly the **inexact** case
+  (`uG = ∞`).
+- **Direct-call arity is unchanged by exactness.** `checkDirectCallArity` (PR1)
+  already rejects extra args regardless of `exact` — matching TypeScript — and
+  it never went through the subtyping rule, so reworking the rule here doesn't
+  touch it. Confirm with a test that an *inexact* function still rejects a
+  too-many-args direct call.
 - **`required` vs `n`.** Optional params lower `required` without changing `n`.
-  Wire optional-param detection from the AST (`x?`-style) into the accept-set
-  computation.
+  Wire optional-param detection from the AST (`x?`-style) into `required` (set in
+  PR1 to `len(params)`); this simultaneously relaxes `checkDirectCallArity`'s
+  lower bound and the accept-set rule's `r`.
 
 **Sketch:**
 
@@ -484,38 +567,9 @@ case *FunctionType:
     }
 ```
 
-```go
-// solver/infer.go — direct-call arity, independent of exactness (from inferCallExpr).
-func (c *checker) checkDirectCallArity(n *ast.CallExpr, callee Type, argc int) {
-    f, ok := peelToFunc(callee) // through aliases / a resolved var bound
-    if !ok {
-        return // not (yet) known to be a function; the constraint handles it
-    }
-    switch {
-    case argc > len(f.params):
-        c.error(n, TooManyArgsError{Got: argc, Want: len(f.params)})
-    case argc < f.required:
-        c.error(n, TooFewArgsError{Got: argc, Required: f.required})
-    }
-}
-```
-
-```go
-// solver/constrain.go — direct-call obligation; no accept-set arity gate.
-func (c *checker) constrainCall(callee Type, args []Type, res Type) {
-    if f, ok := peelToFunc(callee); ok {
-        n := min(len(args), len(f.params))
-        for i := 0; i < n; i++ {
-            c.constrain(args[i], f.params[i]) // arg flows into param
-        }
-        c.constrain(f.ret, res)
-        return
-    }
-    // Unresolved callee: record the call shape as an application-tagged bound so
-    // resolution relates it structurally, not via the accept-set <: rule.
-    c.recordCallObligation(callee, args, res)
-}
-```
+(The direct-call path — `constrainCall` and `checkDirectCallArity` — shipped in
+PR1 and is unchanged here; this rule governs only function-to-function
+subtyping.)
 
 **Tests (the milestone's exactness acceptance):**
 
@@ -531,43 +585,32 @@ acceptance rows exactly right.
 
 ---
 
-### PR5 — Function overloading (free functions) + the probe API
+### PR5 — Probe API (speculation infrastructure)
 
-The largest and least mechanical PR. Lands overloaded free `fn` declarations and
-the **probe API** they need. Depends on PR2 (per-overload schemes).
+The **only** new soltype infrastructure in M3, split out from overloading so it
+can be built and reviewed on its own. Depends only on M1 (`TypeVarType` bound
+lists), so it can proceed in parallel with PR1–PR4. Baseline (A) + (D) from
+[02-design-notes.md](02-design-notes.md) §"Speculative checks."
 
-- **Probe API (baseline A + D)** from [02-design-notes.md](02-design-notes.md)
-  §"Speculative checks." A length-snapshot journal (`*Probe` on `Context`,
-  nullable; record first-touch `(len(lower), len(upper))` per touched
-  `TypeVarType`, truncate on discard; `cleanups` closures for `Info`/`Prov`
-  side-table rollback; nested-probe commit propagates `touched` to parent). Plus
-  fresh-instance retry (D) for per-candidate `freshenAbove`. This is the **only**
-  new soltype infrastructure in M3, and it is built here because overload
-  resolution is the first speculative consumer. Keep it minimal — no overlay
-  map, generation tags, or `Prune`/`InstanceChain` (none exist in soltype).
-- **Overload sets as side-channel metadata.** An overloaded symbol's binding
-  holds a *set* of declared/inferred schemes, **not** a single `soltype.Type`.
-  Infer each overload body individually (each is a normal `fn` with its own
-  principal type), then bundle. Never inject the disjunction into the lattice —
-  there is no SimpleSub type for "either this arrow or that arrow."
-- **Call-site resolution as a separate phase from `constrain`.** At each call,
-  collect the argument types' bounds, then pick a single overload and emit
-  constraints only for the chosen branch — under a probe (D + A), committing the
-  first success and rolling back losers' caller-side bounds.
-- **Ground-enough deferral.** If an argument is still a fully unconstrained
-  variable, **defer the call** (preferred — let bounds accumulate) or fall back
-  to declaration-order first-match. No speculative pinning + backtrack.
-- **One documented specificity ordering.** Declaration-order + best-match
-  (TypeScript-style), documented in a `doc.go` comment and chosen to interact
-  cleanly with subtyping and the exact/inexact distinction from PR4 (M4's
-  object-arg overloads will reuse this one rule).
-- **Mutual recursion forces annotations.** If an overloaded function
-  participates in a mutually recursive group, **its overload signatures must be
-  annotated** (bodies still checked against them; only the set itself must be
-  ground before the group starts) — fixed-point iteration over overload choices
-  isn't guaranteed to converge under subtyping. Self-recursion is softer (each
-  body inferred with the *other* overload signatures visible). Emit a clear
-  error pointing at the unannotated overloaded participant.
+- **Length-snapshot journal (A).** A nullable `*Probe` on `Context`. The first
+  mutation of each variable records `(len(lower), len(upper))`; discard truncates
+  each touched var's bound slices back. Commit on a nested probe propagates its
+  touched set to the parent so an outer discard still covers them.
+- **Side-table cleanup closures.** `Info` (node → type) and `Prov` (type →
+  origin) writes register an `onRollback` closure so a discarded trial leaves no
+  stray hover/error entries. The `seen` cache inside a single `constrain` call is
+  *not* a probe concern — it dies with the call frame.
+- **Push/pop discipline.** `openProbe` pushes the current-probe pointer;
+  `closeProbe(p, commit)` runs `Commit`/`Discard` and pops it back to
+  `p.parent`, so `c.probe` never dangles at a finished probe.
+- **Fresh-instance retry (D)** is just the existing `instantiate`/`freshenAbove`
+  used per-candidate by consumers — no probe state of its own; it composes with
+  (A) for the caller-side bounds. No standalone code here beyond documenting the
+  pattern.
+- Keep it minimal — **no** overlay map, generation tags, or
+  `Prune`/`InstanceChain` (none exist in soltype). This API is reused well beyond
+  M3 (M4 mutability transitions, M8 conditional-branch selection, `satisfies`,
+  `NoInfer`), so getting the shape right here pays off repeatedly.
 
 **Sketch:**
 
@@ -607,6 +650,51 @@ func (c *checker) closeProbe(p *Probe, commit bool) {
 }
 ```
 
+**Tests:** a discarded probe restores bound-list lengths exactly (append-then-
+discard is a no-op on the var); a discarded probe runs `Info`/`Prov` cleanups
+(no stray entries); a committed nested probe leaves its touched vars covered by
+the parent's later discard; nesting depth is balanced (`c.probe` returns to its
+original value after paired open/close). All unit tests over hand-built terms —
+no overload machinery needed, which is the point of the split.
+
+**Risk:** low. Small, self-contained, and exactly specified by the design notes;
+the append-only bound-list representation makes rollback a slice truncation.
+
+---
+
+### PR6 — Function overloading (free functions)
+
+The highest-uncertainty PR. Lands overloaded free `fn` declarations and their
+call-site resolution. Depends on **PR2** (per-overload schemes) and **PR5** (each
+candidate trial runs under a probe), and softly on **PR4** (the specificity
+ordering must account for the exact/inexact distinction).
+
+- **Overload sets as side-channel metadata.** An overloaded symbol's binding
+  holds a *set* of declared/inferred schemes, **not** a single `soltype.Type`.
+  Infer each overload body individually (each is a normal `fn` with its own
+  principal type), then bundle. Never inject the disjunction into the lattice —
+  there is no SimpleSub type for "either this arrow or that arrow."
+- **Call-site resolution as a separate phase from `constrain`.** At each call,
+  collect the argument types' bounds, then pick a single overload and emit
+  constraints only for the chosen branch — under a probe (PR5), committing the
+  first success and rolling back losers' caller-side bounds.
+- **Ground-enough deferral.** If an argument is still a fully unconstrained
+  variable, **defer the call** (preferred — let bounds accumulate) or fall back
+  to declaration-order first-match. No speculative pinning + backtrack.
+- **One documented specificity ordering.** Declaration-order + best-match
+  (TypeScript-style), documented in a `doc.go` comment and chosen to interact
+  cleanly with subtyping and the exact/inexact distinction from PR4 (M5's
+  method overloads and M4's object-arg overloads will reuse this one rule).
+- **Mutual recursion forces annotations.** If an overloaded function
+  participates in a mutually recursive group, **its overload signatures must be
+  annotated** (bodies still checked against them; only the set itself must be
+  ground before the group starts) — fixed-point iteration over overload choices
+  isn't guaranteed to converge under subtyping. Self-recursion is softer (each
+  body inferred with the *other* overload signatures visible). Emit a clear
+  error pointing at the unannotated overloaded participant.
+
+**Sketch:**
+
 ```go
 // solver/overload.go — call-site resolution (D + A), a phase distinct from constrain.
 func (c *checker) resolveOverload(set *OverloadSet, args []Type, call ast.Node) (res Type, decided bool) {
@@ -615,7 +703,7 @@ func (c *checker) resolveOverload(set *OverloadSet, args []Type, call ast.Node) 
     }
     for _, sig := range orderBySpecificity(set.branches) { // ONE documented ordering
         inst := c.instantiate(sig, c.level).(*FunctionType) // (D) fresh per candidate; branches are fn schemes
-        p := c.openProbe()                                  // (A) wrap caller-side bounds
+        p := c.openProbe()                                  // (A, PR5) wrap caller-side bounds
         ok := c.tryConstrainArgs(args, inst, p)
         c.closeProbe(p, ok) // commit on success, roll back on failure; always pops the stack
         if ok {
@@ -647,22 +735,24 @@ func (c *checker) checkOverloadAnnotations(scc []ast.Decl) {
 **Tests:** a two-overload free `fn` resolves per-argument-type at call sites;
 declaration-order tie-break is asserted; a deferred-then-resolved call (argument
 ground only after later constraints); the mutual-recursion-without-annotation
-error (full message); a probe-rollback test (a losing overload leaves no bounds
-on argument vars and no stray `Info` entries).
+error (full message); a resolution-rollback test (a losing overload leaves no
+bounds on argument vars and no stray `Info` entries — exercising PR5's probe).
 
 **Risk:** **highest in M3.** Overloading is a poor fit for "one principal type
-per expression," and the probe API is new. Mitigations: the design notes specify
-the composition (D + A) precisely; keep the specificity rule deliberately simple
-and documented; lean on the ground-enough *defer* path over guessing. If
-resolution proves intractable against the real AST, the fallback is
-declaration-order first-match for the MVP with a tracked follow-up — overloading
-is the one M3 piece that can ship in a reduced form without blocking M4.
+per expression." Mitigations: the probe (PR5) is already proven by the time this
+lands; the design notes specify the (D + A) composition precisely; keep the
+specificity rule deliberately simple and documented; lean on the ground-enough
+*defer* path over guessing. If resolution proves intractable against the real
+AST, the fallback is declaration-order first-match for the MVP with a tracked
+follow-up — overloading is the one M3 piece that can ship in a reduced form
+without blocking M4.
 
 ## Risks & gates
 
 - **No M3-level go/no-go gate** (those live at M4's `Ref` rule and M7's
-  differential). M3's risk is concentrated in **PR5**; the function core
-  (PR1–PR4) is high-confidence promotion of spike code.
+  differential). M3's risk is concentrated in **PR6 (overloading)**; the
+  function core (PR1–PR4) and the probe (PR5) are high-confidence promotion of
+  spike / design-notes work.
 - **Simplification correctness (PR3)** is the subtlest core algorithm — but it
   is the most thoroughly spike-tested, so the risk is "port faithfully," not
   "design."
@@ -683,7 +773,7 @@ M3 is done when, against **real source**:
   rejected. *(PR4)*
 - Overloaded free `fn` declarations resolve at call sites per the documented
   specificity rule; mutually-recursive overloaded participants without
-  annotations are rejected with a full error message. *(PR5)*
+  annotations are rejected with a full error message. *(PR6, on the PR5 probe)*
 
 All assertions are full error messages and Escalier-syntax rendered types, in
 the new package's table-test harness (CLAUDE.md test conventions; the M7
