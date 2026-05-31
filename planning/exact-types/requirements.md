@@ -1317,7 +1317,7 @@ lowering, and some categories have no lowering at all.
 | Object | Property pick into a fresh object: `{ k1: v.k1, ..., kn: v.kn }` | One allocation, `O(n)` in declared keys |
 | Tuple | `v.slice(0, n)` (where `n` is the declared length) | One allocation, `O(n)` |
 | Union (discriminable) | A `match` over the listed members, emitting a `RuntimeError` for unhandled tails | `O(1)` per call (one discrimination check) |
-| Function | **No lowering needed** — the usual inexact→exact narrowing is already a subtype relationship (a plain annotation), so `exact<...>` is unnecessary. See §6.6.3. |
+| Function | **No lowering needed** — the usual inexact→exact narrowing is already a subtype relationship (a plain annotation), so `exact<...>` is unnecessary. See §6.6.3. | None (compile-time only) |
 
 ##### Runtime type information
 
