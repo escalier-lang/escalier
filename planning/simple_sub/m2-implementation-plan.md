@@ -103,7 +103,7 @@ internal/solver/
   infer.go        # constraint-generating walk over *ast.Module (production typeTerm)
   infer_expr.go   # per-expression-kind constraint generation
   infer_decl.go   # VarDecl / FuncDecl → bindings, SCC group inference
-  module.go       # InferModule: dep_graph SCC ordering + resolver + drive the walk
+  module.go       # InferModule(s): dep_graph SCC ordering + drive the walk
   scope.go        # Scope / Binding / Namespace (own, not type_system)
   errors.go       # bridge errors (unbound name, unsupported node) with provenance/spans
   // (soltype core, Info side table, printer: from M1)
@@ -259,74 +259,313 @@ Assert inferred types as Escalier type-annotation strings; use `testify/require`
 (CLAUDE.md). For tree-shaped assertions prefer `snaps.MatchInlineSnapshot` over
 field-by-field drilling.
 
+### 3.7 Sketched types & function signatures
+
+Concrete shapes to anchor the PRs below. These are *sketches* — names and
+fields will shift in review — but they pin down the surface area each PR owns.
+All live in `internal/solver`. Types prefixed `soltype.` come from M1; the rest
+are introduced by M2 (the PR that owns each is noted).
+
+**The checker carrier (PR-1).** A per-inference-run struct threading the M1
+core's mutable state (the fresh-var counter, the `Info`/provenance tables) — the
+production analogue of the spike's `Inferer`. Method receiver for the whole walk.
+
+```go
+// infer.go
+type checker struct {
+    core *soltype.Inferer  // M1: freshVar, constrain, instantiate, freshenAbove, level
+    info *soltype.Info     // M1: node → type side table
+    prov soltype.Prov      // M1: type → origin side table
+    errs []Error           // accumulated; mirrors the spike's []error threading
+}
+
+func newChecker() *checker
+
+// fresh allocates a fresh inference variable at the current level and records
+// its AST origin in prov (the freshVarAt helper from design-notes §Provenance).
+func (c *checker) fresh(n ast.Node, kind soltype.ASTOriginKind) *soltype.TypeVarType
+
+// report appends a structured error; returns soltype's error type so callers
+// can `return c.report(...)` in a value position (yielding an error placeholder).
+func (c *checker) report(e Error) soltype.Type
+```
+
+**Scope / Binding / Namespace (PR-1).** Design-notes §"Scope / Binding" gives
+the three-slot shape; the constructors and `define*` mutators are M2's:
+
+```go
+// scope.go
+type ValueBinding struct {
+    Scheme soltype.TypeScheme    // MonoScheme | PolyScheme (spike scheme.go)
+    Source provenance.Provenance // the introducing VarDecl/FuncDecl/param
+}
+type TypeBinding struct {        // shape only in M2; populated M3+
+    Type   soltype.Type
+    Source provenance.Provenance
+}
+type Namespace struct {
+    Name   string                // qualified, from dep_graph.GetNamespace
+    Values map[string]ValueBinding
+    Types  map[string]TypeBinding
+    Nested map[string]*Namespace
+}
+
+type Scope struct {
+    values     map[string]ValueBinding
+    types      map[string]TypeBinding
+    namespaces map[string]*Namespace
+    parent     *Scope
+}
+
+func NewScope() *Scope
+func (s *Scope) Child() *Scope
+func (s *Scope) defineValue(name string, b ValueBinding)
+func (s *Scope) GetValue(name string) (ValueBinding, bool)      // walks parents
+func (s *Scope) GetType(name string) (TypeBinding, bool)
+func (s *Scope) GetNamespace(name string) (*Namespace, bool)
+```
+
+**The expression walk (PR-1 lits/idents; PR-2 fn/call/block; PR-2b objects).**
+The production `typeTerm`, split by node category. Each returns a `soltype.Type`
+and threads `*Scope` + `level`:
+
+```go
+// infer.go / infer_expr.go
+func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type
+func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type
+func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) soltype.Type
+
+// inferExpr dispatches; the per-kind helpers mirror the spike's typeTerm cases:
+func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type           // PR-1
+func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type   // PR-1
+func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type // PR-2
+func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type     // PR-2
+func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type // PR-2b
+```
+
+`inferIdent` is the load-bearing one — it's the production form of the spike's
+`*Var` case crossed with design-notes §"The constraint-generating AST walk":
+
+```go
+func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
+    if b, ok := scope.GetValue(e.Name); ok {
+        t := c.core.Instantiate(b.Scheme, lvl) // MonoScheme: as-is; PolyScheme: freshenAbove
+        c.info.SetType(e, t)
+        return t
+    }
+    if _, ok := scope.GetNamespace(e.Name); ok {
+        return c.report(NamespaceUsedAsValueError{Name: e.Name, Span: e.Span()})
+    }
+    return c.report(UnknownIdentifierError{Name: e.Name, Span: e.Span()})
+}
+```
+
+**Declaration & module driver (PR-2 single-decl; PR-3 SCC).** Mirrors the old
+checker's `InferDepGraph`/`InferComponent`, over `soltype`:
+
+```go
+// module.go
+func InferModule(module *ast.Module) (*Scope, *soltype.Info, []Error)   // PR-2 (1 file), PR-3 (SCC)
+func InferModules(modules []*ast.Module) (*Scope, *soltype.Info, []Error) // PR-4 (multi-file)
+
+func (c *checker) inferDepGraph(scope *Scope, g *dep_graph.DepGraph) // PR-3
+func (c *checker) inferComponent(scope *Scope, g *dep_graph.DepGraph, // PR-3
+    component []dep_graph.BindingKey)
+
+// infer_decl.go
+func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) ValueBinding // PR-2
+func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBinding // PR-2
+```
+
+`inferComponent` is the LetRecGroup lift (PR-3); the singleton non-recursive
+case is the same code with a one-element slice:
+
+```go
+func (c *checker) inferComponent(scope *Scope, g *dep_graph.DepGraph,
+    component []dep_graph.BindingKey) {
+    // 1. fresh var per binding at lvl+1, all visible in scope before any body
+    vars := map[dep_graph.BindingKey]*soltype.TypeVarType{}
+    for _, key := range component {
+        v := c.fresh(/* decl node */ nil, soltype.OriginRecBinding)
+        vars[key] = v
+        scope.defineValue(key.Name(), ValueBinding{Scheme: &soltype.MonoScheme{Ty: v}})
+    }
+    // 2. infer each body, constrain body <: its var
+    for _, key := range component {
+        for _, d := range g.GetDecls(key) {
+            body := c.inferDeclBody(scope, c.core.Level()+1, d)
+            c.core.Constrain(body, vars[key])
+        }
+    }
+    // 3. generalize the whole group at the shared (outer) level
+    for _, key := range component {
+        scope.defineValue(key.Name(), ValueBinding{
+            Scheme: &soltype.PolyScheme{Level: c.core.Level(), Body: vars[key]},
+        })
+    }
+}
+```
+
+**Errors (PR-1).** A small set of structured errors with spans; assert full
+messages in tests:
+
+```go
+// errors.go
+type Error interface{ error; Span() provenance.Span }
+type UnknownIdentifierError struct{ Name string; Span provenance.Span }
+type NamespaceUsedAsValueError struct{ Name string; Span provenance.Span }
+type UnsupportedNodeError struct{ Kind string; Span provenance.Span } // M2-subset guard
+```
+
+**Test harness (PR-2 table; PR-4 fixtures).**
+
+```go
+// infer_test.go — table harness
+func inferSource(t *testing.T, src string) (values, types map[string]string)
+// returns name → rendered soltype string, via parser + InferModule + soltype printer
+
+// fixture_test.go — multi-file harness (sibling to cmd/escalier/fixture_test.go)
+func checkSolverFixture(t *testing.T, fixtureDir string) // asserts rendered top-level types
+```
+
 ## 4. Sequencing
 
-```
-M1 (package skeleton + soltype + Info + printer)   ── prerequisite
-        │
-        ▼
-PR-1  Scope/Binding/Namespace + expression walk skeleton (lits, idents)
-        │
-        ▼
-PR-2  single-decl driver: VarDecl/FuncDecl, table harness, val/fn end-to-end
-        │
-        ▼
-PR-3  dep_graph SCC ordering + recursive-group (LetRecGroup) inference
-        │
-        ▼
-PR-4  multi-file (cross-module) resolution + fixtures harness  ── closes M2 exit
+### Sizing rationale (why six PRs, not four)
+
+The earlier four-PR cut bundled too much into "PR-2" (decl driver + the
+fn/call/block walk + the table harness all at once) and left "PR-1" thin. The
+revised split keeps each PR to **one reviewable concern** — roughly
+150–400 LoC of non-test code plus its tests — and front-loads the
+infrastructure (`checker` carrier, `Scope`, harness) so later PRs are pure
+feature additions. Concretely:
+
+- **PR-1** is foundation only (carrier + scope + errors + the two leaf
+  expression cases). Small, no driver.
+- The old PR-2 split into **PR-2 (decl driver, source-order, the table
+  harness — `val` end-to-end)** and **PR-3 (the function/application/block
+  walk — `fn` end-to-end)**. These are independent given PR-1: the decl driver
+  can land typing only `val x = <literal/ident>` initializers, and the
+  fn/call/block walk is a self-contained set of `inferExpr` cases. Either can
+  merge first; the second rebases trivially.
+- **PR-4** (objects/members) is a small, optional-for-the-bar add that several
+  fixtures will want; isolated so it can slip without blocking the SCC/multi-file
+  work.
+- The old PR-3 (SCC) becomes **PR-5**, the old PR-4 (multi-file) becomes
+  **PR-6** — unchanged in content, renumbered.
+
+### PR dependency graph
+
+```text
+                M1 (soltype + Info + printer)
+                        │
+                        ▼
+                ┌─────────────────┐
+                │ PR-1  carrier +  │   checker{}, Scope/Binding/Namespace,
+                │ scope + leaves   │   errors, inferExpr(lits, idents)
+                └───────┬─────────┘
+                        │
+            ┌───────────┴───────────┐
+            ▼                       ▼
+   ┌──────────────────┐   ┌──────────────────────┐
+   │ PR-2 decl driver │   │ PR-3 fn / call /      │   (PR-2 ∥ PR-3:
+   │ + table harness  │   │ block walk            │    independent given PR-1)
+   │ (val end-to-end) │   │ (fn end-to-end)       │
+   └───────┬──────────┘   └──────────┬───────────┘
+           │                         │
+           │   ┌─────────────────────┤
+           ▼   ▼                     ▼
+   ┌──────────────────┐   ┌──────────────────────┐
+   │ PR-5 dep_graph   │   │ PR-4 objects /        │   (PR-4 ∥ PR-5:
+   │ SCC + LetRecGroup│   │ member access         │    both need PR-2+PR-3)
+   └───────┬──────────┘   └──────────┬───────────┘
+           │                         │
+           └───────────┬─────────────┘
+                       ▼
+           ┌────────────────────────┐
+           │ PR-6 multi-file (x-mod) │   closes M2 exit criteria
+           │ resolution + fixtures   │
+           └────────────────────────┘
 ```
 
-PR-1 establishes the package-owned `Scope` and the value-returning walk against
-M1's `soltype`/`Info`. PR-2 makes a *single* module's top-level `val`/`fn`
-infer end-to-end with the table harness — the first half of the exit bar. PR-3
-brings in dep-graph SCC ordering and recursive groups (still single-file). PR-4
-adds cross-module resolution (via the qualified-`BindingKey` `Namespace`) and
-the `fixtures/` harness, closing the multi-file half of the exit bar. PRs are
-mostly linear because each
-depends on the prior layer's plumbing; PR-2's table harness and PR-1's walk
-skeleton are the only pieces that could overlap.
+Edges are hard dependencies (the target imports/uses symbols the source
+introduces). The two `∥` pairs (PR-2 ∥ PR-3, and PR-4 ∥ PR-5) have no edge
+between them and can be developed/reviewed in parallel. PR-6 is the only PR that
+needs *both* upstream branches merged (it asserts end-to-end over real fixtures,
+which exercises decls, functions, and SCC ordering together).
 
 ## 5. PR breakdown
 
-### PR-1 — Scope + expression-walk skeleton
-- `scope.go`: `Scope`/`Binding`/`Namespace` (minimal).
-- `infer.go`/`infer_expr.go`: value-returning recursive walk over `ast.Expr`
-  for `LiteralExpr`, `IdentExpr` (via `Scope`), writing into `Info`.
-- Unsupported nodes return a structured error (no panic).
-- Tests: literal type; identifier resolves to its binding's scheme; unbound
-  identifier → full-message error with span.
-- **Exit:** the walk types the trivial expression subset against `soltype`/`Info`.
+> Each PR lists its **owned files**, the **sketches from §3.7** it implements,
+> its **tests**, and an **exit** line. "LoC" estimates are non-test code.
 
-### PR-2 — Single-module decl driver + table harness
-- `infer_decl.go`: `VarDecl` → `Binding`; `FuncDecl` → `Function` binding,
-  walking the body with the spike's function/let machinery (as re-homed in M1).
-- `module.go`: a first `InferModule` that handles one module, declarations in
-  source order (no SCC yet), populating `Scope` + `Info`.
-- Table-driven harness: `.esc` snippet → rendered top-level binding type.
-- Tests: `val x = 5` ⇒ `5`/`number` per M1 widening; a simple `fn` infers its
-  rendered type; an expression-stmt module.
-- **Exit:** top-level `val`/`fn` in a *single* module infer correct rendered
-  types end-to-end (first half of the milestone bar).
+### PR-1 — Checker carrier + Scope + leaf expressions  (~250 LoC)
+- `infer.go`: the `checker` struct, `newChecker`, `fresh`, `report`;
+  `inferExpr` dispatch with only the leaf cases wired.
+- `scope.go`: `Scope`/`ValueBinding`/`TypeBinding`/`Namespace` + `NewScope`,
+  `Child`, `defineValue`, `GetValue`/`GetType`/`GetNamespace`.
+- `errors.go`: `Error` interface, `UnknownIdentifierError`,
+  `NamespaceUsedAsValueError`, `UnsupportedNodeError`.
+- `infer_expr.go`: `inferLiteral`, `inferIdent`; all other `ast.Expr` kinds fall
+  through to `UnsupportedNodeError` (no panic).
+- Tests: literal → rendered type; identifier resolves to a pre-seeded binding's
+  scheme; unbound identifier and namespace-as-value → full-message errors with
+  spans.
+- **Exit:** the walk types the literal/identifier subset against `soltype`/`Info`;
+  every other node fails cleanly.
 
-### PR-3 — dep_graph SCC ordering + recursive groups
-- `module.go`: build the dependency graph from the module, process top-level
-  decls in SCC order.
-- Lift the spike's `LetRecGroup` pattern to a `dep_graph` SCC: fresh var per
-  binding at `level+1`, all visible in every body, `constrain` body `<:` var,
-  generalize the group at the shared level. **No placeholder/patching phase.**
+### PR-2 — Single-module decl driver + table harness  (~250 LoC)
+*(depends on PR-1; parallel with PR-3)*
+- `infer_decl.go`: `inferVarDecl` (initializer typed via `inferExpr`, generalized
+  into a `ValueBinding`).
+- `module.go`: first `InferModule` for one module, decls in **source order**
+  (no SCC yet), seeding the module `Scope` and `Info`.
+- `infer_test.go`: the `inferSource` table harness.
+- Tests: `val x = 5` ⇒ `5`/`number` (per M1 widening); `val y = x` referencing an
+  earlier decl; forward reference → (documented) error until PR-5 adds ordering.
+- **Exit:** top-level `val` decls with literal/identifier initializers infer
+  end-to-end and render correctly via the harness.
+
+### PR-3 — Function / application / block walk  (~300 LoC)
+*(depends on PR-1; parallel with PR-2)*
+- `infer_expr.go`: `inferFuncExpr` (n-ary `Function`, fresh var per param),
+  `inferCall` (`constrain(callee <: Function{args, fresh})`), `inferBlock` /
+  `inferStmt` (sequence; result = last expr or `void`).
+- `infer_decl.go`: `inferFuncDecl` (reuses `inferFuncExpr` on the decl's sig+body).
+- Tests: identity `fn`, application of it, a block with a `return`, arity
+  mismatch on a direct call → full-message error.
+- **Exit:** `fn` decls and calls infer end-to-end (the second half of the
+  per-expression bar; deep let-polymorphism polish is still M3).
+
+### PR-4 — Objects & member access  (~200 LoC)
+*(depends on PR-2 + PR-3; parallel with PR-5)*
+- `infer_expr.go`: `inferObject` (`Record{fields}`), `inferMember` (basic
+  `constrain(recv <: Record{name: fresh})`), `inferTuple`.
+- Reject shorthand/spread/computed members with `UnsupportedNodeError`.
+- Tests: record literal type; field read; field-on-missing → constraint failure;
+  tuple literal.
+- **Exit:** record/tuple literals and simple field reads infer; usage-inference
+  depth is explicitly deferred to M4.
+
+### PR-5 — dep_graph SCC ordering + recursive groups  (~250 LoC)
+*(depends on PR-2 + PR-3)*
+- `module.go`: `inferDepGraph` (iterate `g.Components`), `inferComponent` (the
+  LetRecGroup lift sketched in §3.7).
+- Replace PR-2's source-order loop with SCC ordering. **No placeholder/patching
+  phase.**
 - Tests: self-recursive `fn`; mutually-recursive `fn` pair; a decl that
-  forward-references a later decl resolves via SCC ordering.
+  forward-references a later decl now resolves via SCC ordering (the PR-2
+  documented-error case flips to success).
 - **Exit:** recursive and out-of-order top-level decls infer correctly in one
   module.
 
-### PR-4 — multi-file (cross-module) resolution + fixtures harness
-- Cross-module references resolve through the qualified-`BindingKey` `Namespace`
-  recorded on each binding (`dep_graph.GetNamespace`); engage `internal/resolver`
-  only if a fixture imports a `.d.ts`-typed third-party module.
-- `module.go`: accept multiple parsed modules; build the dep graph across them.
-- Add a `fixtures/`-style harness (sibling to `cmd/escalier/fixture_test.go`)
-  asserting rendered top-level binding types for a multi-file fixture.
+### PR-6 — Multi-file (cross-module) resolution + fixtures harness  (~250 LoC)
+*(depends on PR-4 + PR-5)*
+- `module.go`: `InferModules` over multiple parsed modules; build the dep graph
+  across them; cross-module references resolve through the qualified-`BindingKey`
+  `Namespace` (`dep_graph.GetNamespace`). Engage `internal/resolver` only if a
+  fixture imports a `.d.ts`-typed third-party module.
+- `fixture_test.go`: the `checkSolverFixture` harness (sibling to
+  `cmd/escalier/fixture_test.go`).
 - Tests: a two-file fixture where file B imports a `val`/`fn` from file A and the
   inferred types render correctly end-to-end.
 - Update `01-milestones.md` M2 status.
