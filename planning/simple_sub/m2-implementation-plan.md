@@ -1,334 +1,333 @@
-# M2 Implementation Plan — AST → Simple-sub lowering
+# M2 Implementation Plan — Parser/resolver bridge
 
-> Companion to [`01-milestones.md`](01-milestones.md) (M2 entry) and
-> [`02-design-notes.md`](02-design-notes.md) ("AST lowering" section).
-> Status legend: `[ ]` not started · `[~]` in progress · `[x]` complete
+> Companion to [`01-milestones.md`](01-milestones.md) (the **M2 — Parser/resolver
+> bridge** entry) and [`02-design-notes.md`](02-design-notes.md)
+> (§"The constraint-generating AST walk", §"Scope / Binding", §"`Info` side
+> table"). Status legend: `[ ]` not started · `[~]` in progress · `[x]` complete.
 
-## 1. Goal & scope
+## 1. What M2 is (and is not)
 
-M2 connects the standalone Simple-sub core to real Escalier source. We lower a
-useful subset of the `ast` package into Simple-sub `Term`s, add a driver that
-runs `lexer → parser → lower → Infer`, and assert inferred (and simplified)
-types over `.esc` snippets.
+**M2 replaces the spike's hand-built expression IR with a real
+constraint-generating walk over `*ast.Module`.** The spike
+(`internal/simplesub/`) proved the algorithm against a toy `Term` ADT
+(`Lit`/`Var`/`Lam`/`App`/`Let`/…) driven by `typeTerm`. M2 throws that IR away
+and drives the *same algorithm* — now living in the M1 package — directly from
+real parsed source, resolved through the existing `dep_graph`/`resolver`, with
+results recorded in the `Info` side table.
 
-**In scope (per the milestone):**
-- A lowering layer mapping `ast.Expr` / `ast.Decl` → Simple-sub `Term`.
-- Coverage for: literals, identifiers, lambdas/functions, application, `let` /
-  `letrec` bindings, records, field access, conditionals.
-- A driver returning the inferred type for a source string.
-- Golden tests over `.esc` snippets, including the Simple-sub paper examples
-  translated to Escalier syntax.
-- Error reporting (unbound variables, failed constraints) carrying source spans.
+Per the milestone, M2 delivers:
 
-**Out of scope (later milestones):**
-- Type annotations / ascription (M3).
-- Variants and pattern matching beyond plain records (M4).
-- Recursive types surfaced as named types, full `let` generalization polish (M5).
-- Effects / throws / async (M6).
-- Mapping `simplesub.Type` → `type_system.Type`, checker/codegen wiring (M7).
-- Diagnostics polish and provenance threading (M8).
+1. **Drive from real source.** `parser.Parse*` → `*ast.Module` →
+   `dep_graph`/`resolver` → a constraint-generating AST visitor that produces
+   `soltype` types and populates `Info`.
+2. **Own `Scope`/`Binding`/`Namespace`.** Analogues owned by the new package,
+   *not* reused from `internal/type_system/`.
+3. **A fixture-style harness.** Given `.esc` source, infer and assert the
+   rendered binding types — its own assertions, independent of the old checker.
 
-The lowering must sit **behind a small interface** so M7 can widen AST coverage
-without rewriting the core (design-notes "AST lowering").
+**Exit criteria (from the milestone):**
+- Top-level `val`/`fn` declarations from real source infer correct rendered
+  types end-to-end.
+- A multi-file module resolves via the dep graph.
 
-## 2. Current state (what M2 builds on)
+**Gate (from the milestone):** if driving from the real AST/dep-graph requires
+reaching back into the old checker's internals, the parallel-package boundary is
+wrong — **stop and reassess**.
 
-- **Spike core** lives in `internal/simplesub/` (commit #676): `term.go`,
-  `types.go`, `infer.go`, `simplify.go`, `builtins.go`, `errors.go`.
-- **Public API today:** `func Infer(term Term) (Type, error)` — fresh context per
-  call, returns a coalesced surface `Type`. (`infer.go`)
-- **`Term` ADT (curried):** `Lit{Value int}`, `Var{Name}`, `Lam{Name, Body}`,
-  `App{Func, Arg}`, `Rcd{Fields}`, `Sel{Term, Name}`,
-  `Let{IsRec, Name, Body, Rest}`. (`term.go`)
-- **Default environment** (`builtins.go`): `bool`, `+`, `if`, etc.
-- **Escalier AST expression nodes** (`internal/ast/expr.go`): `LiteralExpr`,
-  `IdentExpr`, `FuncExpr` (`Fn *FuncLit`, with `FuncSig` + body, **n-ary** params),
-  `CallExpr` (`Callee`, `Args []Expr`), `ObjectExpr` (`Elems []ObjectExprElem`),
-  `MemberExpr`, `IfElseExpr`, `BinaryExpr`, `TupleExpr`, `ArrayExpr`, …
-- **Decls:** `VarDecl`, `FuncDecl`, `TypeDecl`, `ClassDecl`.
-  **Stmts:** `DeclStmt`, `ExprStmt`, `ReturnStmt`.
+### Scope boundary against neighbouring milestones
 
-### Dependency on M1
+- **M1 (prerequisite — Package skeleton + `soltype`)** must land first. It
+  creates the new package (sibling to `internal/checker/`, leaf name TBD —
+  `internal/solver/` is the working name), the `soltype` representation
+  (bound-list `TypeVar` with `lowerBounds`/`upperBounds` + `level`, `Primitive`,
+  `Literal`, `Function`, `Tuple`), `constrain`, levels/extrusion, polarity-driven
+  coalescing, the **own** `soltype` printer, and the `Info` side table
+  (`map[ast.Node]soltype.Type` + `TypeOf`/`setType`). M2 consumes all of these;
+  it does not modify the core algorithm.
+- **M2 expression coverage is deliberately shallow.** The milestone's bar is
+  "top-level `val`/`fn` infer correct rendered types end-to-end" plus multi-file
+  resolution. The *deep* function/application/let-polymorphism work — and its
+  acceptance cases (`TopLevelLetPolymorphism`, `IdentityPolymorphism`,
+  `InnerCapturesOuterParam`) plus the simplification pass and function
+  exactness — is **M3**. M2 wires up enough of the walk to satisfy its own
+  acceptance (literals, identifiers, simple `val` initializers, `fn` decls with
+  bodies the spike already handles) and leaves richer expression coverage and
+  polish to M3.
+- **Records/`mut`/lifetimes (M4), classes (M5), unions (M6), operators (M8)**
+  are out of scope. Unsupported expression/decl nodes produce a structured
+  "unsupported in M2" error, never a panic.
 
-M2's deliverables ("a clean API the lowering can depend on") assume M1 has
-stabilized the core API. M1 is not yet started and M0 is in progress. Two viable
-sequencings:
+## 2. Current state this builds on
 
-- **Preferred:** land M1's API freeze first (at minimum the items in §6 PR-0),
-  then build M2 against it.
-- **Pragmatic (parallel):** start M2 against the current M0 `Infer`/`Term`
-  surface, but treat any churn in that surface as M1 work and keep the lowering's
-  dependency on the core narrow (only `Term` constructors + `Infer`). This plan
-  assumes the pragmatic path with an explicit "API touch-ups" PR (PR-0) that can
-  be folded into M1 if M1 lands first.
+- **Spike core** (`internal/simplesub/`): `typeTerm` (the recursive
+  switch we are re-targeting), `constrain`, `coalesce`, `simplify`, levels via
+  `scheme.go` (`MonoScheme`/`PolyScheme`, `instantiate`/`freshenAbove`),
+  `LetRecGroup` (fresh var per binding + `constrain` + generalize — the
+  recursion story that avoids placeholder patching). The spike's `Infer` returns
+  `(type_system.Type, []error)` and renders via `type_system.PrintType`; M1
+  re-homes this onto `soltype` with its own printer.
+- **AST** (`internal/ast/`): expression nodes the walk must handle for the M2
+  bar — `LiteralExpr`, `IdentExpr`, `FuncExpr` (`FuncSig` at `expr.go:326`,
+  `FuncExpr` at `expr.go:335`), `CallExpr`, `ObjectExpr`, `MemberExpr`,
+  `TupleExpr`, `IfElseExpr`, `BinaryExpr`, plus `Block` (`expr.go:905`). Decls:
+  `VarDecl` (`decl.go:40`), `FuncDecl`, with `Param` at `decl.go:101`. Stmts:
+  `DeclStmt`, `ExprStmt`, `ReturnStmt`.
+- **Reusable as-is** (overview boundary analysis): `parser`, `ast`, `resolver`,
+  `dep_graph`, `set`, `provenance`, `liveness`, `interop`. M2 must consume these
+  **without** touching `internal/checker/` or `internal/type_system/` (that is
+  the gate).
+- **Compiler entry points: 3** (`CheckLib`, `Compile`, `CompilePackage` in
+  `internal/compiler/compiler.go`). M2 does **not** wire into these — the new
+  checker is exercised only through M2's own harness. Compiler wiring behind a
+  flag is M7.
 
 ## 3. Design
 
 ### 3.1 Package layout
 
+Inside the M1 package (working name `internal/solver/`):
+
 ```
-internal/simplesub/
-  lower/
-    lower.go        # Lowerer + Expr/Decl/Stmt → Term entry points
-    lower_expr.go   # per-expression-kind lowering
-    lower_decl.go   # VarDecl/FuncDecl → Let/letrec
-    builtins.go     # surface-name → builtin Var mapping shared with the env
-    errors.go       # LowerError (unsupported node, unbound name) with spans
-    driver.go       # InferSource(src) — lexer→parser→lower→Infer
-    lower_test.go
-    driver_test.go
-  testdata/
-    *.esc           # paper examples + Escalier-specific snippets
+internal/solver/
+  infer.go        # constraint-generating walk over *ast.Module (production typeTerm)
+  infer_expr.go   # per-expression-kind constraint generation
+  infer_decl.go   # VarDecl / FuncDecl → bindings, SCC group inference
+  module.go       # InferModule: dep_graph SCC ordering + resolver + drive the walk
+  scope.go        # Scope / Binding / Namespace (own, not type_system)
+  errors.go       # bridge errors (unbound name, unsupported node) with provenance/spans
+  // (soltype core, Info side table, printer: from M1)
+  testdata/ or fixtures wiring   # see §3.6
 ```
 
-Rationale for a sub-package (`internal/simplesub/lower`) rather than living in
-`internal/simplesub`: it keeps the core free of any `ast`/`parser` dependency
-(the core stays a pure algorithm package), and it gives M7 a clear seam — the
-checker integration can provide an alternative lowering target without importing
-this package. The "small interface" is the `Lowerer` type below.
+### 3.2 The constraint-generating walk (`infer.go`)
 
-### 3.2 The lowering interface
+The production analogue of the spike's `typeTerm`. Two realistic shapes:
+
+- **Direct recursive switch** over `ast.Expr`/`ast.Stmt`/`ast.Decl`, mirroring
+  the spike's `typeTerm` (returns `(soltype.Type, []error)` and threads a
+  `*Scope` + `level`). This is the natural fit: constraint generation is
+  bottom-up and value-producing, which the AST's enter/exit `Visitor`
+  (`internal/ast/visitor.go`, designed for transformation) does not model
+  cleanly.
+- **AST `Visitor`** — rejected for the expression walk: CLAUDE.md says prefer
+  the existing visitor for traversals, but that visitor returns no synthesized
+  value per node and is shaped for rewriting, not type synthesis. A direct
+  switch matching the spike (and the old checker's `inferExpr`) is the right
+  call; note this deviation explicitly in the PR.
+
+Each node maps to the constraint the spike already established, now over real
+AST instead of `Term`:
+
+| AST node | Constraint (per spike `typeTerm`) | Records into `Info`? |
+|----------|-----------------------------------|----------------------|
+| `LiteralExpr` | `Literal` soltype | yes |
+| `IdentExpr` | resolve via `Scope` → `instantiate` scheme | yes |
+| `FuncExpr` | `Function{params, ret}`; params get fresh vars | yes |
+| `CallExpr` | fresh `res`; `constrain(fn, Function{args, res})` | yes |
+| `BinaryExpr` | operator scheme from builtins env | yes |
+| `TupleExpr` | `Tuple{elems}` | yes |
+| `ObjectExpr` | `Record{fields}` (basic; usage-inference is M4) | yes |
+| `MemberExpr` | `constrain(recv, Record{name: fresh})` (basic; M4 deepens) | yes |
+| `IfElseExpr` | join branches; `constrain(cond, boolean)` | yes |
+| `Block` | type each stmt; result = last expr (or `void`) | yes |
+
+Every node that produces a type calls the M1 `Info.setType(node, t)` so the side
+table is the single source of truth for node→type (the AST stays untouched — no
+`InferredType()` writes; that is the AST-decoupling decision). Nodes outside the
+M2 subset emit an "unsupported in M2" error.
+
+### 3.3 Module driver (`module.go`) — dep_graph + resolver
+
+The milestone's spine: `parser.Parse*` → `*ast.Module` → `dep_graph`/`resolver`
+→ walk.
+
+- **Name resolution** runs through the existing `resolver` so identifiers bind
+  to their declarations/namespaces before inference. M2 *consumes* resolver
+  output; it does not reimplement resolution.
+- **Declaration ordering** comes from `dep_graph`: top-level declarations are
+  grouped into strongly-connected components (SCCs) and processed in dependency
+  order. This is exactly how the old `infer_module.go` consumes the dep graph —
+  M2 reuses the same `dep_graph` package, but feeds its SCCs into the new walk.
+- **Recursive groups need no placeholder phase.** Where the old checker uses a
+  placeholder/`typeRefsToUpdate` patching pass for cross-declaration recursion
+  (`infer_module.go`), the simple-sub approach handles an SCC the way the spike's
+  `LetRecGroup` does: give each binding in the SCC a fresh var at `level+1`, make
+  all of them visible in every body, `constrain` each body `<:` its var, then
+  generalize the whole group at the shared level. M2 lifts this pattern from the
+  spike to operate over a `dep_graph` SCC of `VarDecl`/`FuncDecl`. This is the
+  single biggest simplification the bridge buys and should be called out.
+- **Multi-file** falls out of the dep graph spanning modules: the driver builds
+  the graph across the parsed modules and resolves cross-module references
+  through the resolver + the new `Namespace` (below).
+
+Entry point (working signature):
 
 ```go
-// Lowerer translates a subset of the Escalier AST into Simple-sub Terms.
-type Lowerer struct {
-    // builtins maps surface operator/keyword names to the Var names bound in
-    // simplesub's default environment (e.g. "+" -> "+", "if" -> "if").
-    // span side-table: Term has no span field, so we record spans here keyed
-    // by Term pointer for error reporting.
-    spans map[simplesub.Term]ast.Span
-    errs  []LowerError
-}
-
-func (l *Lowerer) LowerExpr(e ast.Expr) simplesub.Term
-func (l *Lowerer) LowerDecls(decls []ast.Decl, body simplesub.Term) simplesub.Term
-func (l *Lowerer) Errors() []LowerError
+// InferModule resolves and infers every top-level declaration in the parsed
+// module(s), populating Info and returning the module Scope plus errors.
+func InferModule(modules []*ast.Module) (*Scope, *Info, []error)
 ```
 
-`Term` has no provenance/span field today (deliberately — spans are "added in
-integration" per design-notes `errors.go`). M2 keeps `Term` clean and records
-spans in a **side table** keyed by `Term` pointer. This is enough to attach
-spans to lowering errors and, once the core surfaces constraint failures with a
-`Term` reference, to inference errors too.
+### 3.4 Scope / Binding / Namespace (own, not `type_system`)
 
-### 3.3 AST → Term mapping (M2 subset)
+A minimal, package-owned analogue (the milestone forbids reusing
+`type_system`'s):
 
-Following design-notes "AST lowering":
+- `Binding` — a name's `soltype` scheme (`MonoScheme`/`PolyScheme`) plus its
+  source provenance.
+- `Scope` — parent-linked name→`Binding` lookup, the production analogue of the
+  spike's `ctx map[string]TypeScheme`.
+- `Namespace` — the module/namespace grouping that cross-module resolution
+  resolves through.
 
-| Escalier AST | Simple-sub `Term` | Notes |
-|--------------|-------------------|-------|
-| `LiteralExpr` (number) | `Lit` | see §3.4 — `Lit.Value` is `int` today |
-| `LiteralExpr` (string/bool) | `Lit` / builtin `Var` | needs core support (§3.4) |
-| `IdentExpr` | `Var` | unbound → `LowerError` with span |
-| `FuncExpr` (1 param) | `Lam` | direct |
-| `FuncExpr` (n params) | curried `Lam` | `\a b. e` ⇒ `Lam a (Lam b e)` |
-| `CallExpr` (1 arg) | `App` | direct |
-| `CallExpr` (n args) | curried `App` | `f x y` ⇒ `App (App f x) y` |
-| `ObjectExpr` | `Rcd` | shorthand/spread/computed → unsupported error in M2 |
-| `MemberExpr` (`.field`) | `Sel` | computed/optional access → unsupported in M2 |
-| `BinaryExpr` | `App (App (Var op) l) r` | op resolved via builtins env |
-| `IfElseExpr` | `App` of `if` builtin (or dedicated `If`) | see §3.5 |
-| `VarDecl` (value) | `Let{IsRec:false}` | §3.6 |
-| `FuncDecl` | `Let{IsRec:true}` | recursion allowed |
+Keep this deliberately small in M2 — only what top-level `val`/`fn` +
+multi-file resolution require. It grows with later milestones (types,
+lifetimes, classes).
 
-Block bodies (`FuncLit` body, `IfElseExpr` arms) are sequences of statements
-ending in an expression. M2 lowers a block by folding its leading `DeclStmt`s
-into nested `Let`s wrapping the final `ExprStmt`/`ReturnStmt` value (§3.6).
+### 3.5 Errors & provenance
 
-Nodes **explicitly unsupported in M2** (emit a clear `LowerError`, not a panic):
-`ArrayExpr`/`TupleExpr`, `MatchExpr`, `AwaitExpr`, `AssignExpr`, JSX,
-`TemplateLitExpr`, `TypeCastExpr` (M3), `IndexExpr`, `ClassDecl`, `TypeDecl`.
+- Bridge errors (`errors.go`): unbound name, unsupported node — carry
+  `provenance`/source spans from the AST node (reuse `internal/provenance/`).
+- Inference errors from the core (`constrain` failures) attach the offending
+  node's provenance via the `Info`/provenance side table (M1 provides the
+  mechanism; M2 supplies the AST node). Assert **full** messages in tests
+  (CLAUDE.md).
 
-### 3.4 Literals (core touch-up — feeds PR-0 / M1)
+### 3.6 Fixture-style harness
 
-`Lit.Value` is `int`. Escalier literals are number/string/bool. Minimum viable
-options, in preference order:
+Two complementary test surfaces, matching the milestone's "fixture-style harness
+… its own assertions, independent of the old checker":
 
-1. **Extend the env, not the term:** keep `Lit` for numbers; lower `true`/`false`
-   to builtin `Var`s (`true`/`false : bool`) and strings to a `str`-typed
-   builtin or a new `Lit` payload. Smallest blast radius if strings are deferred.
-2. **Generalize `Lit`:** change `Lit.Value` to a tagged payload
-   (`Kind: Int|Str|Bool`) and add `int`/`str`/`bool` primitives to the core.
+- **Table-driven `*_test.go`** in the new package: `.esc` snippet → expected
+  rendered binding type string (using the M1 `soltype` printer). This is the
+  primary M2 surface — fast, no per-case package overhead, mirrors the spike's
+  existing `simplesub_test.go` pattern and the checker-tests pattern in
+  `internal/checker/tests/`.
+- **A real `fixtures/`-style harness** (sibling to
+  `cmd/escalier/fixture_test.go`) for the multi-file/dep-graph acceptance:
+  `fixtures/<name>/lib/index.esc` (+ `package.json`) → resolve via dep graph →
+  assert rendered top-level binding types. This proves the dep-graph/multi-file
+  path end-to-end, which a single-snippet table test can't.
 
-Recommendation: do (2) as a small, well-scoped change because string/bool
-literals appear in nearly every realistic snippet and option (1) leaks encoding
-into the lowering. This is a **core change**, so it belongs in PR-0 (or M1) and
-is a prerequisite for the records/conditionals PRs.
+Assert inferred types as Escalier type-annotation strings; use `testify/require`
+(CLAUDE.md). For tree-shaped assertions prefer `snaps.MatchInlineSnapshot` over
+field-by-field drilling.
 
-### 3.5 Conditionals
-
-Two encodings (design-notes leaves this open):
-- **Builtin `if`:** `if : bool -> 'a -> 'a -> 'a`, lowered as
-  `App(App(App(Var "if", cond), then), else)`. Reuses the existing `builtins.go`
-  `if`. Zero core change.
-- **Dedicated `If` term:** add `If{Cond, Then, Else}` to the `Term` ADT and type
-  it directly in `infer.go`.
-
-Recommendation: **start with the builtin `if`** (zero core change, matches the
-reference's approach and the existing `builtins.go`). Revisit a dedicated `If`
-only if branch-type precision or error messages demand it.
-
-### 3.6 Decls, blocks, and `letrec`
-
-- A module / block is a list of statements. Lower it right-to-left: the trailing
-  expression is the result `Term`; each preceding `DeclStmt` becomes a `Let`
-  whose `Rest` is the already-lowered remainder.
-- `FuncDecl` ⇒ `Let{IsRec: true}` so self-recursion type-checks.
-- `VarDecl` binding a `FuncExpr` ⇒ also `IsRec: true` (matches the milestone's
-  "`isrec` for functions"); other `VarDecl`s ⇒ `IsRec: false`.
-- Destructuring patterns in `VarDecl` are **out of scope** for M2 (single-name
-  bindings only); emit `LowerError` otherwise.
-
-### 3.7 Driver
-
-```go
-// InferSource lowers a single Escalier expression/module source and returns the
-// inferred, simplified type, or the first lowering/inference error.
-func InferSource(src string) (simplesub.Type, error)
-```
-
-Pipeline: `lexer_util` → `parser` → collect parse diagnostics (fail fast on
-parse errors) → `Lowerer.LowerExpr` / `LowerDecls` → check `Lowerer.Errors()` →
-`simplesub.Infer`. Errors are wrapped so the caller sees span + message. Reuse
-the existing fixture/parse harness conventions where practical, but the driver
-itself is a thin, testable function.
-
-### 3.8 Errors & spans
-
-- `LowerError{Span ast.Span, Msg string}` for unbound names and unsupported
-  nodes. Assert the **full** message in tests (CLAUDE.md convention).
-- Inference errors from the core (`errors.go`) currently lack spans. M2 attaches
-  a span by mapping the failing `Term` back through the side table when the core
-  exposes the offending `Term`; if it doesn't yet, that hook is a small core
-  addition tracked in PR-0/M1. Until then, inference errors surface message-only
-  and span-from-root.
-
-## 4. Testing strategy
-
-- **Lowering unit tests** (`lower_test.go`): parse a snippet, lower it, assert
-  the resulting `Term` tree via `snaps.MatchInlineSnapshot` (per CLAUDE.md, snapshot
-  tree-shaped output rather than drilling field-by-field).
-- **Driver / golden tests** (`driver_test.go`): table-driven, `.esc` snippet →
-  expected simplified type string. Include:
-  - All Simple-sub paper examples, translated to Escalier syntax (milestone exit
-    criterion). Track each against its reference-expected type.
-  - Escalier-flavored snippets: records, field access, curried calls,
-    `if`/ternary, recursive `FuncDecl`.
-  - Error cases: unbound variable, unsupported node, failed constraint — assert
-    full message + span.
-- Use `testify/require`. Keep snippet inputs as Escalier source and expected
-  types as Escalier type-annotation strings (CLAUDE.md).
-- Run with `UPDATE_SNAPS=true` on first authoring.
-
-## 5. Sequencing
+## 4. Sequencing
 
 ```
-PR-0  core API touch-ups (literals, error/term hook)   ── prereq, foldable into M1
+M1 (package skeleton + soltype + Info + printer)   ── prerequisite
         │
         ▼
-PR-1  lowering skeleton + driver (lits, idents, lambda, app)
+PR-1  Scope/Binding/Namespace + expression walk skeleton (lits, idents)
         │
         ▼
-PR-2  records + field access            ┐ (PR-2 and PR-3 are
-PR-3  conditionals + binary operators   ┘  independent; either order / parallel)
+PR-2  single-decl driver: VarDecl/FuncDecl, table harness, val/fn end-to-end
         │
         ▼
-PR-4  decls, blocks, letrec
+PR-3  dep_graph SCC ordering + recursive-group (LetRecGroup) inference
         │
         ▼
-PR-5  paper-example golden suite + error/span polish  ── closes M2 exit criteria
+PR-4  resolver wiring + multi-file fixtures harness  ── closes M2 exit criteria
 ```
 
-PR-1 must land first (it establishes the `Lowerer`, driver, and test harness).
-PR-2 and PR-3 are independent and can be developed in parallel once PR-1 is in.
-PR-4 depends on the expression coverage from PR-1–PR-3. PR-5 is the
-exit-criteria gate.
+PR-1 establishes the package-owned `Scope` and the value-returning walk against
+M1's `soltype`/`Info`. PR-2 makes a *single* module's top-level `val`/`fn`
+infer end-to-end with the table harness — the first half of the exit bar. PR-3
+brings in dep-graph SCC ordering and recursive groups (still single-file). PR-4
+adds resolver-driven cross-module resolution and the `fixtures/` harness,
+closing the multi-file half of the exit bar. PRs are mostly linear because each
+depends on the prior layer's plumbing; PR-2's table harness and PR-1's walk
+skeleton are the only pieces that could overlap.
 
-## 6. PR breakdown
+## 5. PR breakdown
 
-### PR-0 — Core API touch-ups (prerequisite; fold into M1 if M1 lands first)
-- Generalize `Lit` to carry `int | string | bool` and add the matching
-  primitives + builtins (`true`, `false`, string prim). (§3.4)
-- Add a hook so inference errors can reference the offending `Term` (enables
-  span attachment in M2). If infeasible cheaply, document the gap and ship
-  message-only inference errors.
-- Tests: extend the core's existing example tests for the new literal kinds.
-- **Exit:** core builds, `Infer` handles bool/string literals, existing tests green.
+### PR-1 — Scope + expression-walk skeleton
+- `scope.go`: `Scope`/`Binding`/`Namespace` (minimal).
+- `infer.go`/`infer_expr.go`: value-returning recursive walk over `ast.Expr`
+  for `LiteralExpr`, `IdentExpr` (via `Scope`), writing into `Info`.
+- Unsupported nodes return a structured error (no panic).
+- Tests: literal type; identifier resolves to its binding's scheme; unbound
+  identifier → full-message error with span.
+- **Exit:** the walk types the trivial expression subset against `soltype`/`Info`.
 
-### PR-1 — Lowering skeleton + driver
-- New `internal/simplesub/lower` package: `Lowerer`, span side-table,
-  `LowerError`, `LowerExpr` for `LiteralExpr`/`IdentExpr`/`FuncExpr`/`CallExpr`
-  (with currying), and `InferSource` driver.
-- Unsupported nodes return structured `LowerError` (no panics).
-- Tests: lowering snapshots for the four node kinds; driver round-trips
-  `(fun x -> x)` / identity, application, and an unbound-variable error.
-- **Exit:** `InferSource` infers types for the lambda-calculus subset; errors
-  carry spans.
+### PR-2 — Single-module decl driver + table harness
+- `infer_decl.go`: `VarDecl` → `Binding`; `FuncDecl` → `Function` binding,
+  walking the body with the spike's function/let machinery (as re-homed in M1).
+- `module.go`: a first `InferModule` that handles one module, declarations in
+  source order (no SCC yet), populating `Scope` + `Info`.
+- Table-driven harness: `.esc` snippet → rendered top-level binding type.
+- Tests: `val x = 5` ⇒ `5`/`number` per M1 widening; a simple `fn` infers its
+  rendered type; an expression-stmt module.
+- **Exit:** top-level `val`/`fn` in a *single* module infer correct rendered
+  types end-to-end (first half of the milestone bar).
 
-### PR-2 — Records & field access
-- Lower `ObjectExpr` → `Rcd`, `MemberExpr` → `Sel`.
-- Reject shorthand/spread/computed members with `LowerError`.
-- Tests: record literal type, field selection, row-polymorphic function
-  (`fun r -> r.x`), missing-field constraint failure.
-- **Exit:** record snippets infer expected structural types.
+### PR-3 — dep_graph SCC ordering + recursive groups
+- `module.go`: build the dependency graph from the module, process top-level
+  decls in SCC order.
+- Lift the spike's `LetRecGroup` pattern to a `dep_graph` SCC: fresh var per
+  binding at `level+1`, all visible in every body, `constrain` body `<:` var,
+  generalize the group at the shared level. **No placeholder/patching phase.**
+- Tests: self-recursive `fn`; mutually-recursive `fn` pair; a decl that
+  forward-references a later decl resolves via SCC ordering.
+- **Exit:** recursive and out-of-order top-level decls infer correctly in one
+  module.
 
-### PR-3 — Conditionals & binary operators
-- Lower `IfElseExpr` via the `if` builtin (§3.5); lower `BinaryExpr` via builtin
-  operator `Var`s.
-- Ensure both `if`/`else` and ternary forms route through the same path.
-- Tests: `if`-expression type (join of branches), arithmetic/comparison
-  operators, branch-type-mismatch behavior.
-- **Exit:** conditional and operator snippets infer expected types.
+### PR-4 — resolver wiring + multi-file fixtures harness
+- Wire the existing `resolver` so identifiers (incl. cross-module) bind before
+  inference; resolve through the new `Namespace`.
+- `module.go`: accept multiple parsed modules; build the dep graph across them.
+- Add a `fixtures/`-style harness (sibling to `cmd/escalier/fixture_test.go`)
+  asserting rendered top-level binding types for a multi-file fixture.
+- Tests: a two-file fixture where file B imports a `val`/`fn` from file A and the
+  inferred types render correctly end-to-end.
+- Update `01-milestones.md` M2 status.
+- **Exit (M2 exit criteria):** multi-file module resolves via the dep graph;
+  top-level `val`/`fn` infer correct rendered types end-to-end.
 
-### PR-4 — Decls, blocks, and `letrec`
-- Lower `VarDecl`/`FuncDecl` and statement blocks → nested `Let` (§3.6), with
-  `IsRec` for functions.
-- Single-name bindings only; destructuring → `LowerError`.
-- Tests: `let` polymorphism (`let id = fun x -> x in (id 1, id true)`-style),
-  recursive function, sequenced bindings in a block.
-- **Exit:** multi-binding modules infer end-to-end; `let` generalization works.
+## 6. Risks & mitigations
 
-### PR-5 — Paper examples + error/span polish
-- Add `testdata/*.esc` for every Simple-sub paper example with its expected
-  simplified type; wire into the golden table.
-- Tighten error messages and ensure unbound-variable and failed-constraint
-  errors report correct spans.
-- Update milestone status in `01-milestones.md` (`M2` → `[x]`).
-- **Exit (M2 exit criteria):** paper examples infer expected types; errors are
-  reported with source spans.
+- **Gate — reaching into old checker internals.** Driving from
+  AST/dep-graph/resolver must not pull in `internal/checker/` or
+  `internal/type_system/`. *Mitigation:* a package-boundary test/lint that the
+  new package imports neither; if dep_graph/resolver turn out to expose
+  checker-coupled types, that is the milestone's stop-and-reassess signal — raise
+  it rather than working around it.
+- **dep_graph/resolver coupling to `type_system`.** If those packages return
+  `type_system`-flavoured data, the bridge leaks. *Mitigation:* consume only
+  their structural outputs (names, SCCs, resolution edges); keep all *type* data
+  in `soltype`/`Info`.
+- **Walk vs. AST `Visitor` deviation.** Using a direct switch instead of the
+  shared visitor is a deliberate departure from the CLAUDE.md convention.
+  *Mitigation:* document the rationale (value-synthesis vs. transformation) in
+  the PR; it matches both the spike and the old checker's `inferExpr`.
+- **Scope creep into M3/M4.** Records/usage-inference, full let-polymorphism
+  polish, simplification, exactness are *not* M2. *Mitigation:* the explicit
+  "unsupported in M2" error path and the shallow-coverage table in §3.2.
+- **Curried-Term assumptions in the spike.** The spike curries `Lam`/`App`;
+  Escalier `FuncExpr`/`CallExpr` are n-ary. *Mitigation:* the production walk
+  builds n-ary `Function` constraints directly (the spike's `typeTerm` `*Lam`
+  case already supports multi-param), so no currying shim is needed.
 
-## 7. Risks & mitigations
+## 7. Open questions to resolve during M2
 
-- **M1 not done:** M2's API dependency may churn. *Mitigation:* keep the
-  lowering's dependency on the core to `Term` constructors + `Infer`; isolate any
-  core change in PR-0 so it can merge into M1.
-- **`Term` has no span:** can't attach spans natively. *Mitigation:* span
-  side-table keyed by `Term` pointer; add a core error→Term hook in PR-0.
-- **Literal encoding leak:** deferring string/bool support would push encoding
-  hacks into the lowering. *Mitigation:* generalize `Lit` up front (PR-0, §3.4).
-- **Currying vs n-ary divergence from eventual checker types:** curried lowering
-  produces curried function types that won't match Escalier's n-ary `FuncType`.
-  *Mitigation:* acceptable for M2 (types asserted in simplesub's own surface);
-  flag n-ary `Lam`/`App` as an M7 decision point (design-notes already notes
-  this).
-- **Scope creep from richer AST nodes:** *Mitigation:* explicit "unsupported in
-  M2" list (§3.3) that fails with a clear error rather than partial handling.
+- **Final package name.** M1 picks the leaf (working name `internal/solver/`);
+  M2 inherits it. No new decision unless M1 defers it.
+- **How much resolver to drive in M2 vs. defer.** If full namespace resolution
+  is heavier than the val/fn bar needs, PR-4 can scope to the minimum
+  cross-module resolution that satisfies the multi-file acceptance and leave
+  richer namespace semantics to later milestones — decide when PR-4 starts,
+  based on what `resolver` already provides.
 
-## 8. Resolved decisions (milestone "open questions")
+## 8. M2 exit checklist
 
-- **Reuse `ast` vs. dedicated surface syntax?** → Reuse the existing `ast`
-  package; no new surface syntax (design-notes "AST lowering" already commits to
-  this).
-- **Where does lowering live so it's shareable with checker integration?** →
-  `internal/simplesub/lower`, behind the `Lowerer` interface, so the core stays
-  AST-free and M7 can supply richer coverage against the same seam.
-
-## 9. M2 exit checklist
-
-- [ ] Lowering covers literals, identifiers, lambdas/functions, application,
-      `let`/`letrec`, records, field access, conditionals.
-- [ ] `InferSource` driver runs lexer → parser → lower → `Infer`.
-- [ ] Golden tests assert inferred + simplified types over `.esc` snippets.
-- [ ] Simple-sub paper examples have Escalier equivalents inferring expected types.
-- [ ] Unbound variables and failed constraints report errors with source spans.
-- [ ] `01-milestones.md` M2 status set to `[x]`.
+- [ ] Constraint-generating walk over `*ast.Module` produces `soltype` and
+      populates `Info` (no AST `InferredType()` writes).
+- [ ] Package-owned `Scope`/`Binding`/`Namespace` (no `type_system` reuse).
+- [ ] Top-level `val`/`fn` from real source infer correct rendered types
+      end-to-end (table harness).
+- [ ] Multi-file module resolves via the dep graph (fixtures harness).
+- [ ] Recursive SCC groups infer with no placeholder/patching phase.
+- [ ] No imports of `internal/checker/` or `internal/type_system/` from the new
+      package (gate honored).
+- [ ] `01-milestones.md` M2 status updated.
