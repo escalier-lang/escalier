@@ -280,10 +280,11 @@ func (in *Inferer) typeTerm(term Term, ctx map[string]TypeScheme, lvl int) (Simp
 		}
 		return last, errs
 	case *IfExpr:
-		_, ce := in.typeTerm(t.Cond, ctx, lvl)
+		condT, ce := in.typeTerm(t.Cond, ctx, lvl)
 		thenT, te := in.typeTerm(t.Then, ctx, lvl)
 		elseT, ee := in.typeTerm(t.Else, ctx, lvl)
 		errs := append(append(ce, te...), ee...)
+		errs = append(errs, in.constrain(condT, &Primitive{name: "boolean"}, map[constraintKey]bool{})...)
 		res, je := in.joinBranches(thenT, elseT, lvl)
 		return res, append(errs, je...)
 	case *Escape:

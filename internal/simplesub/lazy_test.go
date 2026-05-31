@@ -90,6 +90,44 @@ func TestLazy_NonRegularNeedsBudget(t *testing.T) {
 		"distinct non-regular instantiations can't close via the seen-set; only the budget terminates it")
 }
 
+// TestLazy_RefArityMismatchFallsBack: instantiating an alias with the wrong
+// number of arguments must NOT partially substitute (that would leave some
+// params unbound, silently mis-evaluating the body with one param remaining as
+// a bare LazyCtor in the body). Instead Ref forces to an opaque nominal
+// LazyCtor, mirroring evalRef in typeops.go. Verified both for too-few and
+// too-many args; the well-formed instantiation still forces to the body.
+func TestLazy_RefArityMismatchFallsBack(t *testing.T) {
+	a := NewLazyAliases()
+	a.Define("Pair", []string{"A", "B"}, &LazyObj{Fields: map[string]LazyType{
+		"fst": LazyVar("A"),
+		"snd": LazyVar("B"),
+	}})
+
+	cases := []struct {
+		name string
+		args []LazyType
+	}{
+		{"tooFew", []LazyType{lnum()}},
+		{"tooMany", []LazyType{lnum(), lstr(), lnum()}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			forced := a.Ref("Pair", tc.args...).force()
+			ctor, ok := forced.(*LazyCtor)
+			require.True(t, ok, "arity mismatch should force to an opaque LazyCtor, got %T", forced)
+			require.Equal(t, "Pair", ctor.Name)
+			require.Equal(t, tc.args, ctor.Args)
+		})
+	}
+
+	// Sanity: the correct arity still substitutes into the body.
+	forced := a.Ref("Pair", lnum(), lstr()).force()
+	obj, ok := forced.(*LazyObj)
+	require.True(t, ok, "correct arity should force to the substituted body, got %T", forced)
+	require.Equal(t, lnum(), obj.Fields["fst"])
+	require.Equal(t, lstr(), obj.Fields["snd"])
+}
+
 // TestLazy_ForcedOnDemand: a lazy alias is only expanded when the subtype check
 // needs to see through it. Comparing List<number> against a plain object that
 // matches its first unfolding succeeds — the ref is forced exactly as far as the
