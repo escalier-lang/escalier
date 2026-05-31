@@ -12,13 +12,24 @@ constraint-generating walk over `*ast.Module`.** The spike
 (`internal/simplesub/`) proved the algorithm against a toy `Term` ADT
 (`Lit`/`Var`/`Lam`/`App`/`Let`/…) driven by `typeTerm`. M2 throws that IR away
 and drives the *same algorithm* — now living in the M1 package — directly from
-real parsed source, resolved through the existing `dep_graph`/`resolver`, with
-results recorded in the `Info` side table.
+real parsed source, ordered by the existing `dep_graph`, with results recorded
+in the `Info` side table.
+
+> **Terminology note (corrected after surveying the packages).** In Escalier,
+> top-level *name/dependency resolution* is done by **`internal/dep_graph/`**
+> (`BuildDepGraph(*ast.Module)` → `DepGraph.Components`, the SCCs the checker
+> infers in order). `internal/resolver/` is a **narrow** helper that only
+> resolves TypeScript `@types` packages (`ResolveTypesPackage`,
+> `GetTypesEntryPoint`) — it is *not* the general name resolver. The milestone's
+> phrase "dep_graph/resolver" therefore means: drive declaration order and
+> cross-declaration references through `dep_graph`; `resolver` is relevant only
+> when a fixture imports a `.d.ts`-typed third-party module (likely beyond the
+> M2 `val`/`fn` bar). The plan below is built around `dep_graph`.
 
 Per the milestone, M2 delivers:
 
 1. **Drive from real source.** `parser.Parse*` → `*ast.Module` →
-   `dep_graph`/`resolver` → a constraint-generating AST visitor that produces
+   `dep_graph.BuildDepGraph` → a constraint-generating AST walk that produces
    `soltype` types and populates `Info`.
 2. **Own `Scope`/`Binding`/`Namespace`.** Analogues owned by the new package,
    *not* reused from `internal/type_system/`.
@@ -37,8 +48,8 @@ wrong — **stop and reassess**.
 ### Scope boundary against neighbouring milestones
 
 - **M1 (prerequisite — Package skeleton + `soltype`)** must land first. It
-  creates the new package (sibling to `internal/checker/`, leaf name TBD —
-  `internal/solver/` is the working name), the `soltype` representation
+  creates the new package — `internal/solver/` (settled decision #1 in
+  design-notes; sibling to `internal/checker/`) — the `soltype` representation
   (bound-list `TypeVar` with `lowerBounds`/`upperBounds` + `level`, `Primitive`,
   `Literal`, `Function`, `Tuple`), `constrain`, levels/extrusion, polarity-driven
   coalescing, the **own** `soltype` printer, and the `Info` side table
@@ -85,7 +96,7 @@ wrong — **stop and reassess**.
 
 ### 3.1 Package layout
 
-Inside the M1 package (working name `internal/solver/`):
+Inside the M1 package (`internal/solver/`):
 
 ```
 internal/solver/
@@ -136,53 +147,88 @@ table is the single source of truth for node→type (the AST stays untouched —
 `InferredType()` writes; that is the AST-decoupling decision). Nodes outside the
 M2 subset emit an "unsupported in M2" error.
 
-### 3.3 Module driver (`module.go`) — dep_graph + resolver
+### 3.3 Module driver (`module.go`) — dep_graph-ordered inference
 
-The milestone's spine: `parser.Parse*` → `*ast.Module` → `dep_graph`/`resolver`
-→ walk.
-
-- **Name resolution** runs through the existing `resolver` so identifiers bind
-  to their declarations/namespaces before inference. M2 *consumes* resolver
-  output; it does not reimplement resolution.
-- **Declaration ordering** comes from `dep_graph`: top-level declarations are
-  grouped into strongly-connected components (SCCs) and processed in dependency
-  order. This is exactly how the old `infer_module.go` consumes the dep graph —
-  M2 reuses the same `dep_graph` package, but feeds its SCCs into the new walk.
-- **Recursive groups need no placeholder phase.** Where the old checker uses a
-  placeholder/`typeRefsToUpdate` patching pass for cross-declaration recursion
-  (`infer_module.go`), the simple-sub approach handles an SCC the way the spike's
-  `LetRecGroup` does: give each binding in the SCC a fresh var at `level+1`, make
-  all of them visible in every body, `constrain` each body `<:` its var, then
-  generalize the whole group at the shared level. M2 lifts this pattern from the
-  spike to operate over a `dep_graph` SCC of `VarDecl`/`FuncDecl`. This is the
-  single biggest simplification the bridge buys and should be called out.
-- **Multi-file** falls out of the dep graph spanning modules: the driver builds
-  the graph across the parsed modules and resolves cross-module references
-  through the resolver + the new `Namespace` (below).
-
-Entry point (working signature):
+The milestone's spine: `parser.Parse*` → `*ast.Module` →
+`dep_graph.BuildDepGraph` → SCC-ordered walk. The new driver mirrors the old
+checker's `InferDepGraph` / `InferComponent` shape exactly, swapping
+`type_system` for `soltype`:
 
 ```go
-// InferModule resolves and infers every top-level declaration in the parsed
-// module(s), populating Info and returning the module Scope plus errors.
-func InferModule(modules []*ast.Module) (*Scope, *Info, []error)
+// Old checker (internal/checker/infer_module.go), for reference:
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (errors []Error)
+func (c *Checker) InferComponent(ctx Context, depGraph *dep_graph.DepGraph,
+    component []dep_graph.BindingKey) []Error
+```
+
+- **Declaration ordering comes from `dep_graph`.** `BuildDepGraph(module)`
+  returns a `*dep_graph.DepGraph` whose `Components` field is the list of SCCs
+  (`[][]dep_graph.BindingKey`) in **topological order** (if A depends on B, B's
+  component precedes A's). A `BindingKey` is `"value:"` / `"type:"` + the
+  qualified name; `GetDecls(key)` returns the `[]ast.Decl` for that binding
+  (a slice because overloads / interface-merging contribute several). M2's
+  driver iterates `Components` and infers each, exactly as the old
+  `InferDepGraph` loops over `depGraph.Components` calling `InferComponent`.
+- **Recursive groups need no placeholder phase.** The old `InferComponent`
+  runs a two-phase placeholder/definition pass (`sortKeysForPlaceholders` +
+  signature-then-body) to break cross-declaration recursion. The simple-sub
+  approach replaces that with the spike's `LetRecGroup` pattern: for an SCC,
+  give each binding a fresh var at `level+1`, make all of them visible in every
+  body, `constrain` each body `<:` its var, then generalize the whole group at
+  the shared level. **No placeholder phase, no `typeRefsToUpdate` patching** —
+  this is the single biggest simplification the bridge buys and should be
+  called out in the PR. (A singleton non-recursive SCC is just the degenerate
+  case — one binding, generalize after its body.)
+- **Multi-file** falls out of the dep graph spanning modules and the new
+  `Namespace` (below): cross-module references resolve through the qualified
+  `BindingKey` namespace recorded on each binding (`DeclNamespace` /
+  `GetNamespace(key)`).
+- **`resolver` is *not* on this path.** `internal/resolver/` only locates
+  `@types` `.d.ts` packages; it is engaged only if an M2 fixture imports a
+  TypeScript-typed third-party module, which the `val`/`fn` bar does not
+  require. M2 leaves `.d.ts` import typing to later milestones unless a fixture
+  forces it.
+
+Entry point (working signature, paralleling the old driver):
+
+```go
+// InferModule builds the dep graph for the parsed module, infers every
+// top-level declaration in SCC order, populates Info, and returns the module
+// Scope plus errors. Multi-file callers pass the merged module / module set.
+func (c *checker) InferModule(module *ast.Module) (*Scope, *Info, []error)
 ```
 
 ### 3.4 Scope / Binding / Namespace (own, not `type_system`)
 
-A minimal, package-owned analogue (the milestone forbids reusing
-`type_system`'s):
+A package-owned, **multi-sorted** analogue (the milestone forbids reusing
+`type_system`'s). Design-notes §"Scope / Binding" already specifies the shape —
+three slots, one per binding sort:
 
-- `Binding` — a name's `soltype` scheme (`MonoScheme`/`PolyScheme`) plus its
-  source provenance.
-- `Scope` — parent-linked name→`Binding` lookup, the production analogue of the
+```go
+type Scope struct {
+    values     map[string]ValueBinding   // soltype schemes (Mono | Poly)
+    types      map[string]TypeBinding    // type aliases, class types
+    namespaces map[string]*Namespace     // a separate sort — NOT a soltype.Type
+    parent     *Scope
+}
+func (s *Scope) GetValue(name string) *ValueBinding
+func (s *Scope) GetType(name string) *TypeBinding
+func (s *Scope) GetNamespace(name string) *Namespace
+```
+
+- `ValueBinding` — a name's `soltype` scheme (`MonoScheme`/`PolyScheme`, from the
+  spike's `scheme.go`) plus its source provenance. The production analogue of the
   spike's `ctx map[string]TypeScheme`.
-- `Namespace` — the module/namespace grouping that cross-module resolution
-  resolves through.
+- The **value-position `IdentExpr`** path queries `GetValue`, then `GetNamespace`
+  only to raise `NamespaceUsedAsValueError` (namespaces are a separate sort and
+  never flow as values — design-notes §"The constraint-generating AST walk").
+- `Namespace` is keyed by the qualified `BindingKey` namespace `dep_graph`
+  records (`GetNamespace(key)`), which is how multi-file resolution lands.
 
-Keep this deliberately small in M2 — only what top-level `val`/`fn` +
-multi-file resolution require. It grows with later milestones (types,
-lifetimes, classes).
+**M2 scope:** `values` + `namespaces` are what the `val`/`fn` + multi-file bar
+needs. The `types` slot's shape lands now (cheap, and it's load-bearing for the
+two-map test harness below), but populating it with real type aliases/classes is
+M3+ work. Keep the rest deliberately small; it grows with later milestones.
 
 ### 3.5 Errors & provenance
 
@@ -228,15 +274,16 @@ PR-2  single-decl driver: VarDecl/FuncDecl, table harness, val/fn end-to-end
 PR-3  dep_graph SCC ordering + recursive-group (LetRecGroup) inference
         │
         ▼
-PR-4  resolver wiring + multi-file fixtures harness  ── closes M2 exit criteria
+PR-4  multi-file (cross-module) resolution + fixtures harness  ── closes M2 exit
 ```
 
 PR-1 establishes the package-owned `Scope` and the value-returning walk against
 M1's `soltype`/`Info`. PR-2 makes a *single* module's top-level `val`/`fn`
 infer end-to-end with the table harness — the first half of the exit bar. PR-3
 brings in dep-graph SCC ordering and recursive groups (still single-file). PR-4
-adds resolver-driven cross-module resolution and the `fixtures/` harness,
-closing the multi-file half of the exit bar. PRs are mostly linear because each
+adds cross-module resolution (via the qualified-`BindingKey` `Namespace`) and
+the `fixtures/` harness, closing the multi-file half of the exit bar. PRs are
+mostly linear because each
 depends on the prior layer's plumbing; PR-2's table harness and PR-1's walk
 skeleton are the only pieces that could overlap.
 
@@ -273,9 +320,10 @@ skeleton are the only pieces that could overlap.
 - **Exit:** recursive and out-of-order top-level decls infer correctly in one
   module.
 
-### PR-4 — resolver wiring + multi-file fixtures harness
-- Wire the existing `resolver` so identifiers (incl. cross-module) bind before
-  inference; resolve through the new `Namespace`.
+### PR-4 — multi-file (cross-module) resolution + fixtures harness
+- Cross-module references resolve through the qualified-`BindingKey` `Namespace`
+  recorded on each binding (`dep_graph.GetNamespace`); engage `internal/resolver`
+  only if a fixture imports a `.d.ts`-typed third-party module.
 - `module.go`: accept multiple parsed modules; build the dep graph across them.
 - Add a `fixtures/`-style harness (sibling to `cmd/escalier/fixture_test.go`)
   asserting rendered top-level binding types for a multi-file fixture.
@@ -287,16 +335,16 @@ skeleton are the only pieces that could overlap.
 
 ## 6. Risks & mitigations
 
-- **Gate — reaching into old checker internals.** Driving from
-  AST/dep-graph/resolver must not pull in `internal/checker/` or
-  `internal/type_system/`. *Mitigation:* a package-boundary test/lint that the
-  new package imports neither; if dep_graph/resolver turn out to expose
-  checker-coupled types, that is the milestone's stop-and-reassess signal — raise
-  it rather than working around it.
-- **dep_graph/resolver coupling to `type_system`.** If those packages return
-  `type_system`-flavoured data, the bridge leaks. *Mitigation:* consume only
-  their structural outputs (names, SCCs, resolution edges); keep all *type* data
-  in `soltype`/`Info`.
+- **Gate — reaching into old checker internals.** Driving from AST/dep-graph
+  must not pull in `internal/checker/` or `internal/type_system/`. *Mitigation:*
+  a package-boundary test/lint that the new package imports neither; if
+  `dep_graph` turns out to expose checker-coupled types, that is the milestone's
+  stop-and-reassess signal — raise it rather than working around it.
+- **dep_graph coupling to `type_system`.** `dep_graph` operates on `*ast.Module`
+  and `ast.Decl` (its `Decls`/`Components`/`BindingKey` API is type-system-free),
+  so this risk is low — but confirm it in PR-3. *Mitigation:* consume only its
+  structural outputs (`BindingKey`s, `Components`, `GetDecls`/`GetNamespace`);
+  keep all *type* data in `soltype`/`Info`.
 - **Walk vs. AST `Visitor` deviation.** Using a direct switch instead of the
   shared visitor is a deliberate departure from the CLAUDE.md convention.
   *Mitigation:* document the rationale (value-synthesis vs. transformation) in
@@ -311,13 +359,19 @@ skeleton are the only pieces that could overlap.
 
 ## 7. Open questions to resolve during M2
 
-- **Final package name.** M1 picks the leaf (working name `internal/solver/`);
-  M2 inherits it. No new decision unless M1 defers it.
-- **How much resolver to drive in M2 vs. defer.** If full namespace resolution
-  is heavier than the val/fn bar needs, PR-4 can scope to the minimum
-  cross-module resolution that satisfies the multi-file acceptance and leave
-  richer namespace semantics to later milestones — decide when PR-4 starts,
-  based on what `resolver` already provides.
+- **Package name** is settled (`internal/solver/`, design-notes decision #1);
+  M2 inherits it from M1. No open decision here.
+- **How much namespace resolution to drive in M2 vs. defer.** If full
+  cross-module/namespace resolution is heavier than the val/fn bar needs, PR-4
+  can scope to the minimum that satisfies the multi-file acceptance (a binding
+  in file B referencing a top-level `val`/`fn` in file A via its qualified
+  `BindingKey`) and leave richer namespace semantics (`ns.foo` member access,
+  nested namespaces) to later milestones — decide when PR-4 starts, based on what
+  `dep_graph` already records in `DeclNamespace`.
+- **Whether M2 needs `internal/resolver` at all.** It's only for `@types`
+  `.d.ts` resolution; if no M2 fixture imports a TS-typed module, M2 can skip it
+  entirely and the milestone's "dep_graph/resolver" phrasing is satisfied by
+  `dep_graph` alone.
 
 ## 8. M2 exit checklist
 
