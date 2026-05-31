@@ -159,16 +159,10 @@ literal instead of an `interface`.
 
 ### 2.5. Namespaces
 
-Namespaces are **always inexact**, for essentially the same reasons as
-interfaces:
-
-- **Declaration merging.** Multiple `namespace` declarations with the same
-  name merge into a single namespace containing the union of their members.
-  As with interfaces, the set of merged declarations is not closed at any
-  single declaration site.
-- **Open extension across modules.** Namespaces can be augmented across
-  module boundaries (especially in TypeScript interop scenarios), so by
-  construction they admit unknown additional members.
+Namespaces are **always inexact**, for the same two reasons as interfaces
+(§2.4): multiple `namespace` declarations with the same name merge, so the
+member set is not closed at any single declaration site, and namespaces can
+be augmented across module boundaries (especially in TypeScript interop).
 
 Consequently, `keyof SomeNamespace` is an inexact union, and the
 exactness-propagation rules apply just as they do for interface types. There
@@ -458,21 +452,12 @@ opt-in to "callers may supply extras," and the accept-set/contravariance
 rules in §4.2.1 are designed so that the chain cannot be reconstructed in
 pure Escalier source.
 
-Escalier splits the concern in two:
+Escalier splits the concern in two, and the two are independent:
 
 - **Direct call sites** reject more arguments than the callee declares,
-  regardless of exactness — passing extra arguments to a call you can see
-  is treated as a likely mistake (§4.2.3).
-- **Callback subtyping** — whether a function may be supplied where a
-  function-typed slot is expected — is governed by exactness, via the
-  accept-set rule (§4.2.1). An *inexact* function explicitly tolerates
-  being invoked with extras, so it may fill a slot that passes more
-  arguments than it names (as long as it still requires no more arguments
-  than the slot supplies); an *exact* function may not fill a slot that
-  passes extras at all.
-
-§4.2.3 works the direct-call side of this split with a concrete example;
-§4.2.1 covers callback subtyping.
+  regardless of exactness — worked through in §4.2.3.
+- **Callback subtyping** — whether a function may fill a function-typed
+  slot — is governed by exactness, via the accept-set rule in §4.2.1.
 
 #### 4.2.1. Subtyping (Function Compatibility)
 
@@ -1242,12 +1227,11 @@ error:
 - **Tuple types:** `Inexact<[string, number]>` is `[string, number, ...]`.
 - **Function types:** `Inexact<fn(a: A, b: B) -> R>` is
   `fn(a: A, b: B, ...) -> R`, a function that tolerates being invoked with
-  extra arguments. Producing the inexact form from an exact one is the one
-  direction subtyping *cannot* give you — an exact function is never a
-  subtype of its inexact counterpart (§4.2.1.1), since the inexact slot
-  would invoke it with extras it refuses. `Inexact<F>` exists precisely to
-  express that widening explicitly (with the lossy step visible at the
-  source), so that the widened value can then fill inexact slots.
+  extra arguments. This is the one widening subtyping *cannot* give you —
+  an exact function is never a subtype of its inexact counterpart
+  (§4.2.1.1) — so `Inexact<F>` exists to express it explicitly (with the
+  lossy step visible at the source), after which the widened value can
+  fill inexact slots.
 - **Union types:** `Inexact<T1 | T2>` is `T1 | T2 | ...`.
 - **Already-inexact types:** `Inexact<T>` is `T` if `T` is already
   inexact.
@@ -1769,8 +1753,8 @@ exact union; narrowing an inexact union still leaves the unknown tail.
 Built-in utility types preserve exactness in the natural way: the result
 of `Partial<T>`, `Readonly<T>`, `Pick<T, K>`, or `Omit<T, K>` over an
 exact type is exact; the result over an inexact type is inexact. (See
-the **Utility Types** section for `Exact<T>` / `Inexact<T>` themselves,
-which deliberately *change* exactness.)
+§6 for `Exact<T>` / `Inexact<T>` themselves, which deliberately *change*
+exactness.)
 
 ### 7.10. Type aliases and references
 
