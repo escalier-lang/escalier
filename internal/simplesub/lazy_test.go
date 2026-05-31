@@ -1,0 +1,147 @@
+package simplesub
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// num/str primitives for lazy types.
+func lnum() *LazyPrim { return &LazyPrim{Name: "number"} }
+func lstr() *LazyPrim { return &LazyPrim{Name: "string"} }
+
+// defineList registers `type List<T> = {head: T, tail: List<T> | Null}` on a.
+func defineList(a *LazyAliases, name string) {
+	a.Define(name, []string{"T"}, &LazyObj{Fields: map[string]LazyType{
+		"head": LazyVar("T"),
+		"tail": &LazyUnion{Members: []LazyType{a.Ref(name, LazyVar("T")), &LazyNull{}}},
+	}})
+}
+
+// TestLazy_RegularSelfSubtypeNoBudget: List<number> <: List<number> is decided
+// by the coinductive seen-set, terminating WITHOUT hitting the depth budget —
+// the regular-recursion payoff (no budget, no CheckRegular needed).
+func TestLazy_RegularSelfSubtypeNoBudget(t *testing.T) {
+	a := NewLazyAliases()
+	defineList(a, "List")
+
+	ok, budgetHit := a.Subtypes(a.Ref("List", lnum()), a.Ref("List", lnum()))
+	require.True(t, ok, "List<number> should be a subtype of itself")
+	require.False(t, budgetHit, "regular recursion must close via the seen-set, not the budget")
+}
+
+// TestLazy_RegularCrossSubtypeNoBudget: two structurally-identical regular
+// recursive aliases (List and Stream, same shape) are mutual subtypes, decided
+// coinductively with no budget hit.
+func TestLazy_RegularCrossSubtypeNoBudget(t *testing.T) {
+	a := NewLazyAliases()
+	defineList(a, "List")
+	defineList(a, "Stream") // identical body
+
+	ok1, hit1 := a.Subtypes(a.Ref("List", lnum()), a.Ref("Stream", lnum()))
+	ok2, hit2 := a.Subtypes(a.Ref("Stream", lnum()), a.Ref("List", lnum()))
+	require.True(t, ok1)
+	require.True(t, ok2)
+	require.False(t, hit1)
+	require.False(t, hit2)
+}
+
+// TestLazy_RegularNegativeTerminates: List<number> </: List<string> — the field
+// mismatch (number </: string) is found, and the check still terminates via the
+// seen-set without the budget.
+func TestLazy_RegularNegativeTerminates(t *testing.T) {
+	a := NewLazyAliases()
+	defineList(a, "List")
+
+	ok, budgetHit := a.Subtypes(a.Ref("List", lnum()), a.Ref("List", lstr()))
+	require.False(t, ok, "List<number> should not be a subtype of List<string>")
+	require.False(t, budgetHit, "the mismatch terminates structurally, not via the budget")
+}
+
+// TestLazy_NonRegularReflexiveNoBudget: identical types are subtypes by
+// reflexivity, with no expansion — even a non-regular instantiation. So
+// Grow<number> <: Grow<number> succeeds immediately without forcing either side
+// and without touching the budget. (The two LazyRefs share a canonical key, so
+// the reflexivity short-circuit fires before any unfolding.)
+//
+//	type Grow<T> = Grow<Array<T>>
+func TestLazy_NonRegularReflexiveNoBudget(t *testing.T) {
+	a := NewLazyAliases()
+	a.Define("Grow", []string{"T"}, a.Ref("Grow", &LazyCtor{Name: "Array", Args: []LazyType{LazyVar("T")}}))
+
+	ok, budgetHit := a.Subtypes(a.Ref("Grow", lnum()), a.Ref("Grow", lnum()))
+	require.True(t, ok, "Grow<number> is a subtype of itself by reflexivity")
+	require.False(t, budgetHit, "reflexivity settles it with no expansion, so the budget is untouched")
+}
+
+// TestLazy_NonRegularNeedsBudget is the relocated-limit case: comparing two
+// DIFFERENT non-regular instantiations (Grow<number> vs Grow<string>) can't be
+// saved by reflexivity. Each unfolds to infinitely many distinct instantiations
+// (Grow<Array<number>>, Grow<Array<Array<number>>>, …) that never coincide with
+// the other side, so the coinductive seen-set never closes the loop — only the
+// depth budget terminates the query. This is the precise sense in which laziness
+// relocates the decidability limit rather than removing it.
+func TestLazy_NonRegularNeedsBudget(t *testing.T) {
+	a := NewLazyAliases()
+	a.Define("Grow", []string{"T"}, a.Ref("Grow", &LazyCtor{Name: "Array", Args: []LazyType{LazyVar("T")}}))
+
+	_, budgetHit := a.Subtypes(a.Ref("Grow", lnum()), a.Ref("Grow", lstr()))
+	require.True(t, budgetHit,
+		"distinct non-regular instantiations can't close via the seen-set; only the budget terminates it")
+}
+
+// TestLazy_RefArityMismatchFallsBack: instantiating an alias with the wrong
+// number of arguments must NOT partially substitute (that would leave some
+// params unbound, silently mis-evaluating the body with one param remaining as
+// a bare LazyCtor in the body). Instead Ref forces to an opaque nominal
+// LazyCtor, mirroring evalRef in typeops.go. Verified both for too-few and
+// too-many args; the well-formed instantiation still forces to the body.
+func TestLazy_RefArityMismatchFallsBack(t *testing.T) {
+	a := NewLazyAliases()
+	a.Define("Pair", []string{"A", "B"}, &LazyObj{Fields: map[string]LazyType{
+		"fst": LazyVar("A"),
+		"snd": LazyVar("B"),
+	}})
+
+	cases := []struct {
+		name string
+		args []LazyType
+	}{
+		{"tooFew", []LazyType{lnum()}},
+		{"tooMany", []LazyType{lnum(), lstr(), lnum()}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			forced := a.Ref("Pair", tc.args...).force()
+			ctor, ok := forced.(*LazyCtor)
+			require.True(t, ok, "arity mismatch should force to an opaque LazyCtor, got %T", forced)
+			require.Equal(t, "Pair", ctor.Name)
+			require.Equal(t, tc.args, ctor.Args)
+		})
+	}
+
+	// Sanity: the correct arity still substitutes into the body.
+	forced := a.Ref("Pair", lnum(), lstr()).force()
+	obj, ok := forced.(*LazyObj)
+	require.True(t, ok, "correct arity should force to the substituted body, got %T", forced)
+	require.Equal(t, lnum(), obj.Fields["fst"])
+	require.Equal(t, lstr(), obj.Fields["snd"])
+}
+
+// TestLazy_ForcedOnDemand: a lazy alias is only expanded when the subtype check
+// needs to see through it. Comparing List<number> against a plain object that
+// matches its first unfolding succeeds — the ref is forced exactly as far as the
+// comparison demands, then the recursive tail closes coinductively.
+func TestLazy_ForcedOnDemand(t *testing.T) {
+	a := NewLazyAliases()
+	defineList(a, "List")
+
+	// {head: number, tail: List<number> | Null} <: List<number>
+	oneLevel := &LazyObj{Fields: map[string]LazyType{
+		"head": lnum(),
+		"tail": &LazyUnion{Members: []LazyType{a.Ref("List", lnum()), &LazyNull{}}},
+	}}
+	ok, budgetHit := a.Subtypes(oneLevel, a.Ref("List", lnum()))
+	require.True(t, ok)
+	require.False(t, budgetHit)
+}
