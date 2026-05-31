@@ -215,6 +215,7 @@ internal/solver/
   polarity.go      Polarity enum + flip
   context.go       Context: varCounter + freshVar (the engine's mutable state)
   constrain.go     constrain(lhs <: rhs), seen-cache, extrude
+  errors.go        typeError value type + cannotConstrain* constructors, describe
   simplify.go      analyze (occurrence analysis; single-polarity only)
   coalesce.go      soltype.Type (with bounds) -> coalesced soltype.Type
   info.go          Info side table (map[ast.Node]soltype.Type)
@@ -264,7 +265,9 @@ negative in the param, positive in the return, so it survives and is named).
 Five PRs. PR 1 is the foundation; PRs 2→3→4 are a linear chain (engine →
 coalesce → print) because each is tested against the previous; PR 5 (`Info`) is
 independent of the engine and can land in parallel any time after PR 1. Each PR
-leaves `go build ./...` and `go test ./...` green.
+leaves `go build ./...` and `go test ./...` green. **§9 sketches the concrete
+types and functions each PR introduces** — the PR descriptions below reference
+those sketches by name.
 
 ```text
 PR1 (skeleton + soltype types)
@@ -275,7 +278,7 @@ PR1 (skeleton + soltype types)
 ### PR 1 — Package skeleton + `soltype` core types
 
 **Creates:** `solver/polarity.go`, `solver/context.go`, `solver/doc.go`,
-`soltype/type.go`.
+`soltype/type.go`. *(sketches: §9.1, §9.2)*
 
 - `soltype/type.go`: the `Type` interface (`isType()` marker), the M1 type set
   (`TypeVarType`, `PrimitiveType`, `LiteralType`, `FunctionType`, `TupleType`,
@@ -293,7 +296,7 @@ sequencing; literal `eq`. Table-driven, `require.*`.
 
 ### PR 2 — `constrain` + extrusion (the engine)
 
-**Creates:** `solver/constrain.go`.
+**Creates:** `solver/constrain.go`, `solver/errors.go`. *(sketches: §9.3)*
 
 - `constrain(lhs, rhs, seen)` with the coinductive `seen`-cache.
 - Structural cases: `PrimitiveType` (name equality), `LiteralType <:
@@ -321,6 +324,7 @@ criterion — table-driven, **full** error-message assertions per CLAUDE.md):
 ### PR 3 — Occurrence analysis + polarity-driven coalescing
 
 **Creates:** `solver/simplify.go` (`analyze` only), `solver/coalesce.go`.
+*(sketches: §9.4, §9.5)*
 
 - `analyze(st, pol, occurrences, seen)` — occurrence/polarity analysis over the
   M1 type set (function params flip polarity; return covariant; tuple covariant).
@@ -337,7 +341,7 @@ ref; `combine` union/intersection shaping.
 
 ### PR 4 — `soltype` printer + the identity end-to-end test
 
-**Creates:** `soltype/print.go`.
+**Creates:** `soltype/print.go`. *(sketches: §9.6)*
 
 - `Print(t soltype.Type) string` rendering Escalier annotation syntax for the M1
   type set; collects named `TypeRefType`s into a `<T0, …>` quantifier prefix in
@@ -356,7 +360,7 @@ ref; `combine` union/intersection shaping.
 
 ### PR 5 — `Info` side table *(parallel; depends only on PR 1)*
 
-**Creates:** `solver/info.go`.
+**Creates:** `solver/info.go`. *(sketches: §9.7)*
 
 - `Info{ types map[ast.Node]soltype.Type }`, `TypeOf(n) soltype.Type`,
   `setType(n, t)`. No probe/cleanup discipline yet (deferred with `Prov`/`Probe`).
@@ -439,3 +443,435 @@ Follow [CLAUDE.md](../../CLAUDE.md): table-driven tests; `require.*` over
 (`snaps.MatchInlineSnapshot`) for the printer's richer rendered-type assertions.
 Don't shadow Go builtins. There are no snapshot/fixture env-var flows in M1
 (no `cmd/...` involvement); tests run with plain `go test ./internal/solver/...`.
+
+---
+
+## 9. Type & function sketches
+
+Illustrative shapes for the M1 surface, derived from the spike with the §2
+deltas applied. **Names and signatures are provisional** — the point is to pin
+down the data model and the boundaries between functions, not to prescribe final
+code. Repetitive switch arms are elided with `// …`. Sketches are grouped by the
+file they land in (§3.1 layout) and tagged with the PR that introduces them.
+
+### 9.1 `soltype/type.go` — the type representation *(PR 1)*
+
+```go
+package soltype
+
+// Type is the sealed interface for all soltype nodes. (Production name for the
+// spike's SimpleType; marker renamed isSimpleType -> isType.)
+type Type interface{ isType() }
+
+// TypeVarType is an inference variable carrying Simple-sub lower/upper bound
+// lists plus the level at which it was created (for let-generalization in M3).
+type TypeVarType struct {
+	ID          int
+	Level       int
+	LowerBounds []Type
+	UpperBounds []Type
+}
+
+// BoundsAt returns the bounds relevant to a polarity: lowers in Positive
+// position (the var becomes their union), uppers in Negative (their meet).
+// Polarity lives in package solver, so this takes the raw direction as a bool
+// to avoid a soltype->solver import. (Alternatively, move Polarity into soltype;
+// decide in PR 1.)
+func (v *TypeVarType) BoundsAt(positive bool) []Type {
+	if positive {
+		return v.LowerBounds
+	}
+	return v.UpperBounds
+}
+
+type PrimitiveType struct{ Name string } // "number" | "string" | "boolean"
+
+type LiteralType struct {
+	Kind string // "str" | "num" | "bool"
+	Str  string
+	Num  float64
+	Bool bool
+}
+
+func (l *LiteralType) Eq(o *LiteralType) bool { /* same as spike Literal.eq */ }
+
+type FunctionType struct {
+	Params     []Type
+	ParamNames []string // for rendering param names; "" => synthesized x0, x1, …
+	Ret        Type
+}
+
+type TupleType struct{ Elems []Type }
+
+// Void is the result type of a statement block with no value.
+type Void struct{}
+
+// TypeRefType is the coalesced-output node for a named type parameter (the role
+// the spike fills with type_system.NewTypeRefType). Also the future home for
+// alias references (M4+). NEW in M1 — see §2.2 Delta #1.
+type TypeRefType struct{ Name string }
+
+func (*TypeVarType) isType()   {}
+func (*PrimitiveType) isType() {}
+func (*LiteralType) isType()   {}
+func (*FunctionType) isType()  {}
+func (*TupleType) isType()     {}
+func (*Void) isType()          {}
+func (*TypeRefType) isType()   {}
+
+// LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
+// Trimmed to the M1 type set (grows back as later milestones add formers).
+func LevelOf(t Type) int {
+	switch t := t.(type) {
+	case *TypeVarType:
+		return t.Level
+	case *FunctionType:
+		m := 0
+		for _, p := range t.Params {
+			m = max(m, LevelOf(p))
+		}
+		return max(m, LevelOf(t.Ret))
+	case *TupleType:
+		m := 0
+		for _, e := range t.Elems {
+			m = max(m, LevelOf(e))
+		}
+		return m
+	default: // PrimitiveType, LiteralType, Void, TypeRefType
+		return 0
+	}
+}
+```
+
+### 9.2 `solver/polarity.go` and `solver/context.go` *(PR 1)*
+
+```go
+package solver
+
+type Polarity int
+
+const (
+	Positive Polarity = iota
+	Negative
+)
+
+func (p Polarity) Flip() Polarity { /* Positive<->Negative */ }
+
+// Context owns the engine's mutable counters. M1 carries ONLY varCounter; the
+// spike's lifetimeCounter / paramLifetimes / written fields are M4 (§2.3 row 4).
+type Context struct {
+	varCounter int
+}
+
+func (c *Context) freshVar(level int) *soltype.TypeVarType {
+	v := &soltype.TypeVarType{ID: c.varCounter, Level: level}
+	c.varCounter++
+	return v
+}
+```
+
+### 9.3 `solver/constrain.go` — the engine *(PR 2)*
+
+```go
+package solver
+
+// constraintKey keys the coinductive seen-set.
+type constraintKey struct{ lhs, rhs soltype.Type }
+
+// Constrain asserts lhs <: rhs, mutating bound lists. Empty result == success.
+func (c *Context) Constrain(lhs, rhs soltype.Type) []error {
+	return c.constrain(lhs, rhs, set.NewSet[constraintKey]()) // set.Set, not map (§2.4)
+}
+
+func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) []error {
+	key := constraintKey{lhs, rhs}
+	if seen.Contains(key) {
+		return nil
+	}
+	seen.Add(key)
+
+	switch l := lhs.(type) {
+	case *soltype.PrimitiveType:
+		if r, ok := rhs.(*soltype.PrimitiveType); ok {
+			if r.Name == l.Name {
+				return nil
+			}
+			return []error{cannotConstrain(l, r)}
+		}
+	case *soltype.LiteralType:
+		// LiteralType <: LiteralType (Eq) and LiteralType <: PrimitiveType
+		// (a literal is a subtype of its primitive). // …
+	case *soltype.FunctionType:
+		if r, ok := rhs.(*soltype.FunctionType); ok {
+			// Fewer-params-is-subtype: l <: r requires len(l.Params) <= len(r.Params).
+			if len(l.Params) > len(r.Params) {
+				return []error{cannotConstrainArity(len(l.Params), len(r.Params))}
+			}
+			var errs []error
+			for i := range l.Params {
+				errs = append(errs, c.constrain(r.Params[i], l.Params[i], seen)...) // contravariant
+			}
+			return append(errs, c.constrain(l.Ret, r.Ret, seen)...) // covariant
+		}
+	case *soltype.TupleType:
+		// same length, element-wise covariant // …
+	case *soltype.Void:
+		if _, ok := rhs.(*soltype.Void); ok {
+			return nil
+		}
+	}
+
+	// lhs is a variable: record rhs as an upper bound, propagate existing lowers.
+	if lv, ok := lhs.(*soltype.TypeVarType); ok {
+		if soltype.LevelOf(rhs) <= lv.Level {
+			lv.UpperBounds = append(lv.UpperBounds, rhs)
+			var errs []error
+			for _, lb := range lv.LowerBounds {
+				errs = append(errs, c.constrain(lb, rhs, seen)...)
+			}
+			return errs
+		}
+		return c.constrain(lhs, c.extrude(rhs, Negative, lv.Level, map[int]*soltype.TypeVarType{}), seen)
+	}
+	// rhs is a variable: symmetric (record lower bound, propagate uppers). // …
+
+	return []error{cannotConstrain(lhs, rhs)}
+}
+
+// extrude copies t so variables above lvl become fresh vars at lvl, wired to the
+// originals through the polarity-appropriate bound. (Same algorithm as the
+// spike; cache is keyed by var ID.)
+func (c *Context) extrude(t soltype.Type, pol Polarity, lvl int, cache map[int]*soltype.TypeVarType) soltype.Type {
+	// … TypeVarType / FunctionType (params flip) / TupleType cases …
+}
+```
+
+The error helpers are the §2.4 "one constructor, not scattered `fmt.Errorf`"
+discipline — same message strings as the spike, span-free until M2:
+
+```go
+// errors.go (PR 2). A lightweight value type now; gains spans/diagnostic-kind in M2+.
+type typeError struct{ msg string }
+
+func (e *typeError) Error() string { return e.msg }
+
+func cannotConstrain(lhs, rhs soltype.Type) error {
+	return &typeError{fmt.Sprintf("cannot constrain %s <: %s", describe(lhs), describe(rhs))}
+}
+func cannotConstrainArity(a, b int) error { /* "cannot constrain function of arity %d <: …" */ }
+
+// describe renders a RAW, uncoalesced type for in-flight error messages
+// (t0, function, number). Distinct from soltype.Print, which renders coalesced
+// output (§2.2). Lives in solver because it walks bound-carrying vars.
+func describe(t soltype.Type) string { /* … */ }
+```
+
+### 9.4 `solver/simplify.go` — occurrence analysis *(PR 3)*
+
+Single-polarity elimination only; co-occurrence merging is M3 (§3.3).
+
+```go
+package solver
+
+type polKey struct {
+	id  int
+	pol Polarity
+}
+
+// analyze records, per variable, the polarities it occurs in (following bounds
+// in the relevant direction). Drives single-polarity elimination in coalescing.
+func analyze(t soltype.Type, pol Polarity, occ map[int]set.Set[Polarity], seen set.Set[polKey]) {
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		if occ[t.ID] == nil {
+			occ[t.ID] = set.NewSet[Polarity]()
+		}
+		occ[t.ID].Add(pol)
+		k := polKey{t.ID, pol}
+		if seen.Contains(k) {
+			return
+		}
+		seen.Add(k)
+		for _, b := range t.BoundsAt(pol == Positive) {
+			analyze(b, pol, occ, seen)
+		}
+	case *soltype.FunctionType:
+		for _, p := range t.Params {
+			analyze(p, pol.Flip(), occ, seen) // contravariant
+		}
+		analyze(t.Ret, pol, occ, seen)
+	case *soltype.TupleType:
+		for _, e := range t.Elems {
+			analyze(e, pol, occ, seen)
+		}
+	}
+}
+```
+
+### 9.5 `solver/coalesce.go` — `soltype.Type` → coalesced `soltype.Type` *(PR 3)*
+
+Delta #1: returns `soltype.Type`, not `type_system.Type`. Lean coalescer — no
+union-find (degenerate/identity in M1), no lifetime fields (M4).
+
+```go
+package solver
+
+type coalescer struct {
+	occ     map[int]set.Set[Polarity] // from analyze
+	names   map[int]string            // var ID -> "T0" (assigned on first sight)
+	counter int
+	inProc  set.Set[polKey] // recursion guard
+}
+
+func (co *coalescer) nameFor(id int) string {
+	if n, ok := co.names[id]; ok {
+		return n
+	}
+	n := "T" + strconv.Itoa(co.counter)
+	co.counter++
+	co.names[id] = n
+	return n
+}
+
+func (co *coalescer) bipolar(id int) bool {
+	return co.occ[id].Contains(Positive) && co.occ[id].Contains(Negative)
+}
+
+func (co *coalescer) coalesce(t soltype.Type, pol Polarity) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.PrimitiveType, *soltype.LiteralType, *soltype.Void:
+		return t // atoms pass through
+	case *soltype.FunctionType:
+		params := make([]soltype.Type, len(t.Params))
+		for i, p := range t.Params {
+			params[i] = co.coalesce(p, pol.Flip()) // contravariant
+		}
+		return &soltype.FunctionType{Params: params, ParamNames: t.ParamNames, Ret: co.coalesce(t.Ret, pol)}
+	case *soltype.TupleType:
+		// element-wise coalesce in pol // …
+	case *soltype.TypeVarType:
+		pk := polKey{t.ID, pol}
+		if co.inProc.Contains(pk) {
+			return &soltype.TypeRefType{Name: co.nameFor(t.ID)}
+		}
+		co.inProc.Add(pk)
+		defer co.inProc.Remove(pk)
+
+		bounds := make([]soltype.Type, 0, len(t.BoundsAt(pol == Positive)))
+		for _, b := range t.BoundsAt(pol == Positive) {
+			bounds = append(bounds, co.coalesce(b, pol))
+		}
+		if !co.bipolar(t.ID) {
+			// Single-polarity: drop the var, keep only its bounds.
+			if len(bounds) == 0 {
+				if pol == Positive {
+					return &soltype.NeverType{} // or the chosen bottom repr
+				}
+				return &soltype.UnknownType{} // top
+			}
+			return combine(pol, dedup(bounds))
+		}
+		self := &soltype.TypeRefType{Name: co.nameFor(t.ID)}
+		return combine(pol, dedup(append([]soltype.Type{self}, bounds...)))
+	}
+	panic("coalesce: unhandled type")
+}
+
+// combine builds a union (Positive) or intersection (Negative) of parts,
+// returning the sole element directly when only one remains. Union/Intersection
+// nodes themselves arrive in M6 — in M1, len(parts) is always 1, so combine just
+// returns parts[0]. (Stub the multi-part branch with a TODO(M6).)
+func combine(pol Polarity, parts []soltype.Type) soltype.Type { /* … */ }
+```
+
+> M1 note: `NeverType`/`UnknownType`/`UnionType`/`IntersectionType` are not in
+> the M1 type set (§1). For M1, the only reachable coalesce outputs are atoms,
+> functions, tuples, and `TypeRefType`; the empty-bounds and multi-part branches
+> are written against placeholders and exercised for real in M6. Decide in PR 3
+> whether to introduce bare `NeverType`/`UnknownType` now (cheap) or stub them.
+
+### 9.6 `soltype/print.go` — the native printer *(PR 4)*
+
+Delta #2. Renders a *coalesced* type; collects the `TypeRefType` names it sees
+into the `<…>` quantifier prefix (quantifier collection moved out of the
+coalescer, §2.3 row 6).
+
+```go
+package soltype
+
+// Print renders a coalesced Type as an Escalier type-annotation string,
+// prefixing a function's type-parameter quantifier when it has free TypeRefs.
+func Print(t Type) string {
+	params := collectTypeParams(t) // distinct TypeRefType names, first-seen order
+	body := printType(t)
+	if fn, ok := t.(*FunctionType); ok && len(params) > 0 {
+		_ = fn
+		return "fn <" + strings.Join(params, ", ") + ">" + body[len("fn "):]
+	}
+	return body
+}
+
+func printType(t Type) string {
+	switch t := t.(type) {
+	case *PrimitiveType:
+		return t.Name
+	case *LiteralType:
+		// "hello" | 5 | true (Escalier literal syntax) // …
+	case *TypeRefType:
+		return t.Name
+	case *FunctionType:
+		ps := make([]string, len(t.Params))
+		for i, p := range t.Params {
+			ps[i] = paramName(t.ParamNames, i) + ": " + printType(p)
+		}
+		return "fn (" + strings.Join(ps, ", ") + ") -> " + printType(t.Ret)
+	case *TupleType:
+		// "[" + comma-join(printType(e)) + "]" // …
+	case *Void:
+		return "void"
+	}
+	panic("Print: unhandled type")
+}
+
+// collectTypeParams walks t and returns distinct TypeRefType names in first-seen
+// order — the order the <…> quantifier is emitted in. Deterministic because the
+// walk is a fixed left-to-right traversal.
+func collectTypeParams(t Type) []string { /* … */ }
+
+func paramName(names []string, i int) string { /* names[i] or "x"+i, per spike */ }
+```
+
+For the identity term, a test builds the type by hand and asserts the string:
+
+```go
+func TestIdentityRenders(t *testing.T) {
+	ctx := &Context{}
+	a := ctx.freshVar(1)
+	fn := &soltype.FunctionType{Params: []soltype.Type{a}, ParamNames: []string{"x"}, Ret: a}
+
+	occ := map[int]set.Set[Polarity]{}
+	analyze(fn, Positive, occ, set.NewSet[polKey]())
+	co := &coalescer{occ: occ, names: map[int]string{}, inProc: set.NewSet[polKey]()}
+
+	got := soltype.Print(co.coalesce(fn, Positive))
+	require.Equal(t, "fn <T0>(x: T0) -> T0", got)
+}
+```
+
+### 9.7 `solver/info.go` — the `Info` side table *(PR 5)*
+
+```go
+package solver
+
+// Info is the AST->type side table (à la go/types.Info). The new checker never
+// touches ast node InferredType()/SetInferredType(). No probe/cleanup discipline
+// in M1 (that arrives with Prov/Probe later).
+type Info struct {
+	types map[ast.Node]soltype.Type
+}
+
+func NewInfo() *Info { return &Info{types: map[ast.Node]soltype.Type{}} }
+
+func (i *Info) TypeOf(n ast.Node) soltype.Type { return i.types[n] }
+func (i *Info) setType(n ast.Node, t soltype.Type) { i.types[n] = t }
+```
