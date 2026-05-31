@@ -189,8 +189,10 @@ single-arg `App`.
   param to a `MonoScheme`; build `FunctionType{params, paramNames, ret}`.
   `info.setType` on the node and each param.
 - **`*ast.CallExpr`** → infer callee and each arg, allocate a fresh result var,
-  and emit `constrain(callee <: FunctionType{args, result})`. Generalize the
-  spike's single-arg `App` to N args.
+  and emit a **call obligation** (`constrainCall`, defined in PR4) — not a
+  `FunctionType <: FunctionType` subtype assertion — so direct-call arity stays
+  owned by `checkDirectCallArity` and isn't re-checked by the accept-set gate.
+  Generalize the spike's single-arg `App` to N args.
 - **Function `constrain` rule** (already in M1 from the spike, `constrain.go:137`)
   — verify the multi-arg/variance path: `len(l.params) <= len(r.params)` arity
   check (the *inexact* fewer-params rule, refined in PR4), params contravariant,
@@ -232,7 +234,10 @@ func (c *checker) inferCallExpr(n *ast.CallExpr, s *Scope) Type {
         args[i] = c.inferExpr(a, s)
     }
     res := c.freshVarAt(n, Application)
-    c.constrain(callee, &FunctionType{params: args, required: len(args), ret: res, exact: true})
+    // Call obligation, NOT function subtyping (see PR4 constrainCall): relates
+    // arg/return types and lets an unresolved callee resolve structurally, but
+    // never gates on arity — direct-call arity is owned solely by checkDirectCallArity.
+    c.constrainCall(callee, args, res)
     c.info.setType(n, res)
     return res
 }
@@ -426,6 +431,16 @@ land in parallel with PR3.
   `CallExpr` path, reject supplying more args than the function declares
   regardless of `exact` — matching TypeScript. Keep the `>= required` lower
   bound. This is a call-site check, *not* a `constrain` rule.
+- **The call obligation skips the accept-set gate.** The constraint
+  `inferCallExpr` emits (PR1) must *not* run the `lo/hi` accept-set check, or it
+  would re-reject the same arity mismatches `checkDirectCallArity` reports, with
+  a less specific message. Emit it via a dedicated `constrainCall`, distinct
+  from `FunctionType <: FunctionType`: when the callee is concrete, relate
+  `arg_i <: param_i` (contravariant) and `ret <: res` directly; when it is still
+  a variable, record the call shape as a bound **tagged as an application
+  obligation** so later resolution relates it structurally rather than
+  re-running the accept-set gate. The `lo/hi` gate fires *only* for genuine
+  function-to-function (callback) subtyping.
 - **Callback subtyping = accept-set rule.** Rework the function case of
   `constrain`: `G <: F` iff `accept(G) ⊇ accept(F)`, i.e. `rG <= rF` (required)
   **and** `uG >= uF` (upper bound: `n` if exact, `∞` if inexact). Params remain
@@ -482,6 +497,23 @@ func (c *checker) checkDirectCallArity(n *ast.CallExpr, callee Type, argc int) {
     case argc < f.required:
         c.error(n, TooFewArgsError{Got: argc, Required: f.required})
     }
+}
+```
+
+```go
+// solver/constrain.go — direct-call obligation; no accept-set arity gate.
+func (c *checker) constrainCall(callee Type, args []Type, res Type) {
+    if f, ok := peelToFunc(callee); ok {
+        n := min(len(args), len(f.params))
+        for i := 0; i < n; i++ {
+            c.constrain(args[i], f.params[i]) // arg flows into param
+        }
+        c.constrain(f.ret, res)
+        return
+    }
+    // Unresolved callee: record the call shape as an application-tagged bound so
+    // resolution relates it structurally, not via the accept-set <: rule.
+    c.recordCallObligation(callee, args, res)
 }
 ```
 
@@ -559,9 +591,20 @@ func (p *Probe) rollback() {
     }
 }
 func (p *Probe) Discard() { if !p.done { p.rollback(); p.done = true } }
-func (p *Probe) Commit()  { /* propagate touched + cleanups to parent; clear entries */ }
+func (p *Probe) Commit()  { /* hand touched + cleanups to parent; clear entries */ }
 
 func (c *checker) openProbe() *Probe { p := &Probe{parent: c.probe}; c.probe = p; return p }
+
+// closeProbe pops the probe stack after a trial — always paired with openProbe,
+// on both the commit and discard paths, so c.probe never dangles at a finished probe.
+func (c *checker) closeProbe(p *Probe, commit bool) {
+    if commit {
+        p.Commit()
+    } else {
+        p.Discard()
+    }
+    c.probe = p.parent
+}
 ```
 
 ```go
@@ -571,13 +614,13 @@ func (c *checker) resolveOverload(set *OverloadSet, args []Type, call ast.Node) 
         return nil, false // defer: let more bounds accumulate before choosing
     }
     for _, sig := range orderBySpecificity(set.branches) { // ONE documented ordering
-        inst := c.freshenAbove(/* sig at curLevel */).(*FunctionType) // (D) fresh per candidate
-        p := c.openProbe()                                            // (A) wrap caller-side bounds
-        if c.tryConstrainArgs(args, inst, p) {
-            p.Commit()
+        inst := c.instantiate(sig, c.level).(*FunctionType) // (D) fresh per candidate; branches are fn schemes
+        p := c.openProbe()                                  // (A) wrap caller-side bounds
+        ok := c.tryConstrainArgs(args, inst, p)
+        c.closeProbe(p, ok) // commit on success, roll back on failure; always pops the stack
+        if ok {
             return inst.ret, true
         }
-        p.Discard() // unwind caller-side bounds; drop inst
     }
     c.error(call, NoMatchingOverloadError{Set: set, Args: args})
     return nil, true
