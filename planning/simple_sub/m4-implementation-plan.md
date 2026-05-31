@@ -4,335 +4,403 @@ This is the implementation plan for **M4** as defined in
 [01-milestones.md](01-milestones.md) §"M4 — Core value types". It assumes M1
 (package skeleton + `soltype`), M2 (parser/resolver bridge), and M3 (functions,
 application, let-polymorphism, function exactness) have landed. It is grounded in
-the design in [02-design-notes.md](02-design-notes.md) (the `RefType` wrapper, the
-exactness flag, the `Probe` API, the provenance/`Info` side tables) and the
-lifetime lattice in [03-references.md](03-references.md).
+[02-design-notes.md](02-design-notes.md) (the `RefType` wrapper, the exactness
+flag, the `Probe` API, the `Info`/`Prov` side tables) and the lifetime lattice in
+[03-references.md](03-references.md).
+
+The type/function sketches below are **adapted from the proven spike**
+(`internal/simplesub/` — `types.go`, `constrain.go`, `lifetime.go`,
+`coalesce.go`) into production `soltype` shapes. The spike's separate `Mut`
+wrapper + `lt`-on-`Record` is **replaced** by the unified `RefType{mut, lt,
+inner}` per the settled design; names are provisional.
 
 ## Why M4 is "the big one"
 
 M4 promotes three spike milestones at once and they are **inseparable**:
+records/objects (spike M2 — the first borrowable value), `mut` (spike M3 — the
+highest-risk gate), and lifetimes (spike M4 — a second sort solved by the same
+`constrain`). Lifetimes ride on borrows, records are the first thing that can be
+borrowed, `mut` borrows are what first populate a lifetime. Exactness (the
+`exact` flag on `RecordType`/`TupleType`) also lands here, because the settled
+decision is to introduce the flag *with* each former, not retrofit it.
 
-- **records/objects** (spike M2) — the first *value* type that can be borrowed;
-- **`mut`** (spike M3) — invariant mutable references, encoded by the read/write
-  decomposition; the **highest-risk gate** of the whole migration;
-- **lifetimes** (spike M4) — a *second sort* solved by the same `constrain`
-  machinery, riding on the `RefType` wrapper.
+## Scope
 
-Lifetimes ride on borrows, records are the first thing that can be borrowed, and
-`mut` borrows are what first populate a lifetime. Trying to land any one of them
-without the others produces a representation you immediately have to rework, so
-the milestone is deliberately scoped as a cluster. Exactness (the `exact` flag on
-`RecordType`/`TupleType`) also lands here because, per the settled exactness
-decision, the flag is introduced *with* each former rather than retrofitted.
+In: owned `RecordType`/`TupleType` with the `exact` flag; the unified `RefType`
+borrow wrapper; usage-based inference (member reads → constraints); the single
+`RefType` constrain rule (mut invariance via read/write decomposition); field-write
+inference + read-after-write; lifetimes as a second sort; ported
+mutability-transition checking.
 
-The plan below decomposes the cluster into a strictly-ordered PR sequence that
-keeps `go test ./...` green at every step and **clears the highest-risk gate as
-early as the representation allows**.
+Out (later milestones): nominal classes (M5); union/intersection *annotations*
+(M6 — M2/M4 already produce them as coalescing *output*); type-level operators
+(M8); codegen and value-level `exact<T>(v)` (M9).
 
-## Scope (from the milestone definition)
+---
 
-In:
+## Key types and function sketches
 
-1. Owned `RecordType` / `TupleType` with the `exact` flag (default exact;
-   trailing `...` ⇒ inexact). Object/tuple **literals infer as exact**.
-2. The unified `RefType{mut, lt, inner}` borrow wrapper (per
-   [02-design-notes.md](02-design-notes.md) §"`soltype`"), with the `RefInner`
-   sealed marker and the `borrowableType` content predicate.
-3. **Usage-based inference**: member read `obj.bar` ⇒ `constrain(obj <:
-   RecordType{bar: β})`; field requirements accumulate as upper bounds and
-   coalesce (negative position) into a record/intersection. Replaces
-   `Open`/`Widenable`/`ArrayConstraint`. Usage-collected shape coalesces **exact**
-   by default (Policy A); the `open` parameter marker opts back into row
-   polymorphism.
-4. **The single `RefType` constrain rule**: mutability compatibility, `mut`-driven
-   inner invariance via read/write decomposition, covariant lifetime, mutability
-   decay, plus the two cross-cases (`bare <: RefType`, `RefType <: bare`).
-   Field-write inference (`obj.x = v` ⇒ `mut` record with a fresh lifetime) and
-   read-after-write field collapse.
-5. **Lifetimes as a second sort**: `LifetimeVar` (bound lists over the outlives
-   lattice, `'static` = top), `constrainLt`, lifetime coalescing + elision,
-   borrow origination at `RefType`-typed parameters, multi-source-return unioning,
-   escape ⇒ `<: 'static`.
-6. **Mutability-transition checking** ported from the old checker
-   (`internal/liveness/` verbatim + the two narrow predicates over `soltype`),
-   wired onto `solver.Context`.
+### Owned carriers + exactness (`soltype/type.go`)
 
-Out (deferred): nominal classes (M5), unions/intersections as *input annotations*
-(M6 — though M2/M4 already produce them as coalescing *output*), type-level
-operators (M8), codegen / value-level `exact<T>(v)` (M9).
+```go
+// RecordType is an owned structural object type. exact closes the type (no extra
+// members, no width subtyping); inexact (written `{... ...}`) permits width
+// subtyping. Owned — carries NO lifetime; a lifetime is a property of a borrow
+// and lives on the RefType wrapper.
+type RecordType struct {
+    fields map[string]Type
+    exact  bool
+}
 
-## Prerequisites and assumptions
-
-- `soltype` already has `TypeVarType` (bound lists + level), `PrimitiveType`,
-  `LiteralType`, `FunctionType`, `TupleType` scaffolding, `constrain`, extrusion,
-  let-polymorphism, simplification, and polarity-driven coalescing (M1–M3).
-- The `Info` side table and the `Prov` provenance side table exist (M1).
-- The `Probe` API (length-snapshot journal, design (A) in
-  [02-design-notes.md](02-design-notes.md)) exists; M4 does **not** need
-  speculation for its core path (bound-list monotonicity covers failed
-  constraints), but the field-write/read-after-write merge and any future
-  union-against-variable deferral should be probe-aware where they trial
-  constraints.
-- The constraint-generating AST walk (`infer.go`) handles `IdentExpr`,
-  `FuncExpr`, `CallExpr` (M2/M3). M4 adds `MemberExpr` (read + write),
-  `ObjectExpr`, `TupleExpr`, and conditional/branch joining.
-
-## Architecture / where the code lands
-
-Per the package layout in [02-design-notes.md](02-design-notes.md) (names
-provisional):
-
-```
-internal/solver/
-  soltype/
-    type.go        RecordType, TupleType (exact flag), RefType, RefInner marker
-    lifetime.go    LifetimeVar, StaticLifetime, LifetimeUnion (the second sort)
-    print.go       record / tuple / `mut 'a T` / `'a T` / exact `...` rendering
-  constrain.go     record & tuple structural+width rules (exact-aware);
-                   the single RefType rule; constrainLt; borrowableType
-  coalesce.go      negative-position record coalescing; lifetime join/meet;
-                   lifetime elision (mut elide-in-place vs immutable drop-wrapper)
-  simplify.go      occurrence analysis extended over record fields / Ref inner / lt
-  infer.go         MemberExpr read/write, ObjectExpr, TupleExpr, branch joining,
-                   attachParamLifetimes; field-write & read-after-write
-  transitions.go   ported checkMutabilityTransition over soltype (new in M4)
-  context.go       solver.Context gains Liveness / Aliases fields
+// TupleType gains the same flag (M1 left it as a stub). exact ⇒ fixed length;
+// inexact ⇒ length-flexible tail.
+type TupleType struct {
+    elems []Type
+    exact bool
+}
 ```
 
-`internal/liveness/` is reused **verbatim** (it operates on the name-resolved AST
-and has no `type_system` references — see the milestone note).
+### The borrow wrapper (`soltype/type.go`)
 
-## Sequencing rationale
+```go
+// RefType is the single wrapper for borrows and mutability (replaces the spike's
+// Mut + lt-on-carrier). See 02-design-notes.md §"soltype".
+//
+//   mut=false lt=nil  -> forbidden degenerate cell (smart ctor returns bare inner)
+//   mut=false lt='a   -> immutable borrow with lifetime 'a
+//   mut=true  lt=nil  -> owned mutable value
+//   mut=true  lt='a   -> mutable borrow with lifetime 'a
+type RefType struct {
+    mut   bool
+    lt    Lifetime  // nilable; see table above
+    inner RefInner  // narrower than Type — see marker below
+}
 
-The ordering is driven by two forces that mostly agree:
+// RefInner is the sealed set of types that may sit inside a RefType. Primitives,
+// literals, functions, and nested RefTypes are deliberately excluded.
+type RefInner interface {
+    Type
+    isRefInner()
+}
 
-1. **Dependency order.** A carrier must exist before it can be borrowed; the
-   `RefType` wrapper must exist before a lifetime can ride on it; transition
-   checking consumes the lifetime sort.
-2. **Risk order.** The milestone names the `RefType` rule's `mut`-driven inner
-   invariance as the **HIGHEST-RISK gate**: *"if it cannot be encoded cleanly
-   against the real AST, the whole migration is in question."* So it must be hit
-   as early as the dependency order permits, and nothing expensive (lifetimes,
-   transition port) should be built before it is cleared.
+func (*RecordType)  isRefInner() {}
+func (*TupleType)   isRefInner() {}
+func (*AliasType)   isRefInner() {}
+func (*TypeVarType) isRefInner() {} // mid-inference; checked at constrain time
+// + UnionType / IntersectionType once M6 lands; ClassType in M5.
 
-These agree: records (carrier) → usage-based reads (needed to produce non-trivial
-record shapes worth borrowing) → **`RefType` + `mut` gate** → lifetimes →
-transition checking. The gate lands third — right after the minimum needed to
-exercise it against the real AST.
+// NewRef enforces the wrapper invariant: the degenerate (immutable, no-lifetime)
+// cell collapses to the bare inner so no downstream *RefType type-switch ever
+// sees a borrow-shaped value that isn't a borrow.
+func NewRef(mut bool, lt Lifetime, inner RefInner) Type {
+    if !mut && lt == nil {
+        return inner
+    }
+    return &RefType{mut: mut, lt: lt, inner: inner}
+}
 
-De-risking note: the spike already proved the `mut`-invariance encoding in
-isolation (`internal/simplesub` M3, `mut {x,y} <: mut {x}` fails while immutable
-succeeds). PR 3 is therefore **re-validation against the production AST/`soltype`
-representation**, not novel research — but it is still the go/no-go gate, so its
-acceptance set is the spike's `mut` cases reproduced end-to-end from real source.
+// Peel helpers used everywhere a value is destructured (field access, etc.).
+func unwrapRef(t Type) (inner Type, mut bool, lt Lifetime)
+func carrierOf(t Type) Type // peel any RefType, return the inner carrier
 
-## PR breakdown
-
-Each PR is independently reviewable, lands behind no flag (the new checker is not
-yet wired into the compiler — that's M7), keeps `go test ./...` green, and ships
-its own table-driven tests asserting **rendered types** and **full error
-messages** (per CLAUDE.md). Sizes are rough.
-
-### PR 1 — Owned records & tuples + exactness + literal inference
-
-Representation and structural subtyping for the carriers, no borrows yet.
-
-- `RecordType{fields, exact}` and extend `TupleType` with `exact` (M1 stubbed
-  `TupleType`; this completes it). Smart constructors; printer support for
-  `{x: T, y: U}`, `[T, U]`, and the trailing `...` for inexact.
-- `constrain` structural cases:
-  - record `<:` record: per-field covariant; **width subtyping only in the
-    inexact `<:` inexact case**; exact `<:` exact requires the *same* field set;
-    exact `<:` inexact allowed; inexact `<:` exact rejected (the one-way rule
-    from [02-design-notes.md](02-design-notes.md) §"Exactness").
-  - tuple `<:` tuple: per-slot covariant; length rules mirror the exactness rule.
-- Inference (`infer.go`): `ObjectExpr` ⇒ `RecordType` (exact), `TupleExpr` ⇒
-  `TupleType` (exact), over inferred element types.
-- Coalescing: positive-position record/tuple recursion (fields are covariant).
-- **Tests**: object/tuple literal inference renders exact; exact `{x,y}` assignable
-  to inexact `{x,y,...}` but not the reverse; extra member on an exact target
-  rejected (full message); width subtyping works inexact-to-inexact.
-- **~Size**: medium. No `mut`, no lifetimes, no usage inference — deliberately the
-  smallest first slice so the carrier and exactness rule are reviewed alone.
-
-### PR 2 — Usage-based inference (member reads) + the `open` marker
-
-Turn member access into constraints; this is what makes record shapes worth
-borrowing in PR 3.
-
-- `infer.go` `MemberExpr` (value-typed receiver, read): `constrain(recv <:
-  RecordType{field: β})` with `β` fresh at the current level; record the field
-  type for the eventual read-after-write path (stubbed here, completed in PR 3).
-- Negative-position coalescing (`coalesce.go`): a variable's upper-bound record
-  requirements **merge into one record** (intersection of object bounds → single
-  record), coalescing as **exact** by default (Policy A — row closed once body
-  inference completes).
-- The `open` parameter marker (keyword provisional, e.g. `fn dist(open p) =>`):
-  keeps the usage-inferred param **inexact** so callers may pass richer records.
-  Lands here because this is the first milestone with record-typed params.
-- Namespace-qualified `MemberExpr` (`ns.foo`) routing is M2's concern; confirm the
-  value-typed-receiver path is correctly distinguished (see
-  [02-design-notes.md](02-design-notes.md) §"the constraint-generating AST walk").
-- **Tests**: `fn (p) => p.x + p.y` infers an (exact) `{x, y}`-shaped param; `open`
-  variant infers inexact `{x, y, ...}`; accessing a missing field on a known exact
-  record is rejected; the replacement of `Open`/`ArrayConstraint` behavior is
-  covered by re-expressing representative old-checker cases as intended-form table
-  tests.
-- **~Size**: medium.
-
-### PR 3 — `RefType` + `mut` (THE GATE)
-
-The single borrow wrapper and the one constrain rule. This clears the
-highest-risk gate.
-
-- `soltype`: `RefType{mut, lt, inner}` with `lt` left **nil** throughout this PR
-  (lifetimes arrive in PR 4); the `RefInner` sealed marker interface (only
-  `RecordType`/`TupleType`/`ClassType`(future)/`AliasType`/`UnionType`/
-  `IntersectionType`/`TypeVarType` qualify) and the `borrowableType` content
-  predicate. The `NewRef` smart constructor enforcing the degenerate-cell
-  invariant (`{false, nil}` ⇒ return bare `inner`). Helpers `unwrapRef` /
-  `carrierOf`. Printer: `mut Point`, and bare-inner pass-through for the
-  degenerate cell.
-- `constrain` — the **one** `RefType` rule (per
-  [02-design-notes.md](02-design-notes.md) §"The one `RefType` constrain rule"),
-  with lifetime steps written but inert while `lt == nil`:
-  1. mutability compatibility (`!l.mut && r.mut` ⇒ error);
-  2. inner variance — **bidirectional iff `r.mut`** (read view always +
-     contravariant write view when the target writes) = the read/write
-     decomposition that encodes invariance; covariant-only otherwise;
-  3. lifetime step (no-op here);
-  - plus `bare <: RefType` (wrap source as immutable/no-lt and re-dispatch) and
-    `RefType <: bare` (peel; escape-error guard becomes live in PR 4).
-- Field-write inference (`infer.go`): `obj.x = v` ⇒ `constrain(obj <: RefType{mut:
-  true, lt: nil, inner: RecordType{x: widen(v)}})` with literal widening; multiple
-  writes merge into one mutable record. Read-after-write: a read of a
-  just-written field returns the written type.
-- **Acceptance (the gate)**: reproduce the spike's `mut` cases from real source —
-  `mut {x,y} <: mut {x}` **fails** while immutable `{x,y} <: {x}` succeeds by
-  width subtyping; `fn foo(obj) { obj.x = 5; obj.y = 10 }` infers `(obj: mut {x:
-  number, y: number}) -> unit`; `fn foo(obj) { obj.x = 5; return obj.x }` infers
-  `(obj: mut {x: number}) -> number`; mut-borrow decay (`mut {x} <: {x}`) allowed,
-  the reverse rejected (full messages).
-- **Gate decision**: if the `mut`-driven invariance cannot be encoded cleanly here,
-  **stop and reassess** before PR 4/5 — that is the milestone's instruction.
-- **~Size**: medium-large. This is the conceptual core of M4.
-
-### PR 4 — Lifetimes as a second sort
-
-Populate the `lt` field that PR 3 left nil; activate the lifetime steps of the
-`RefType` rule.
-
-- `soltype/lifetime.go`: `LifetimeVar{lowerBounds, upperBounds}`,
-  `StaticLifetime` (top), and the single `LifetimeUnion` flow-set surface
-  representation (per [03-references.md](03-references.md) — one list, read as
-  join in positive position / meet in negative). `constrainLt` mirroring
-  `constrain` over the outlives lattice.
-- Activate `RefType` rule step 3 (covariant lifetime; the `RefType <: bare`
-  escape-error when `l.lt != nil`) and the `bare <: RefType` owned-satisfies-any
-  branch.
-- Borrow origination: `mut`/immutable `RefType`-typed parameters get a **fresh
-  lifetime** (`attachParamLifetimes` in `infer.go`); returning a borrow shares the
-  lifetime by value identity; multi-source returns **union** lifetimes via a fresh
-  join var; escape to module/static storage ⇒ `constrain(lt <: 'static)`.
-- Field-write target lifetime becomes a **fresh variable** (not nil) so the
-  receiver may be owned-mutable or a mut-borrow of any lifetime (per
-  [02-design-notes.md](02-design-notes.md) §"the constraint-generating AST walk",
-  assignment-to-member case).
-- Lifetime coalescing + **elision**, branching on `mut` at the elision site:
-  mutable borrow with elided lt ⇒ elide-in-place (`RefType{mut:true, lt:nil}`,
-  well-formed owned-mutable); **immutable** borrow with elided lt ⇒ **drop the
-  wrapper entirely** (else it becomes the forbidden degenerate cell).
-- **Acceptance**: the canonical lifetime cases from real source —
-  `IdentityRefReturn` ⇒ `fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}`;
-  `FreshObjectReturn` carries no lifetime; `ConditionalUnionReturn` ⇒ `mut ('a |
-  'b) {x: number}`; `EscapingRefIntoStatic` ⇒ `mut 'static`; property-level and
-  tuple-per-slot lifetimes; read-after-write field collapse with a lifetime
-  present. Plus: `RefType` neither tightens nor loosens the inner's exactness (the
-  inner carrier's `exact` flag passes through unchanged).
-- **~Size**: large. The second-sort machinery + elision branching is the bulk.
-
-### PR 5 — Mutability-transition checking (port)
-
-The flow-sensitive mutable↔immutable alias-creation check, ported with minimal
-adaptation (per the milestone's "reuses existing infrastructure" note).
-
-- Reuse `internal/liveness/` **verbatim** (`VarID`/`CFG`/`AliasTracker`/
-  `LivenessInfo`); reuse `liveness_prepass.go`.
-- Reimplement the two narrow predicates over `soltype`: `isValueType(t)` and
-  `isMutableType(t)` (the latter becomes `if r, ok := t.(*soltype.RefType); ok {
-  return r.mut }; return false`).
-- `checkMutabilityTransition`'s Rule 1 / Rule 2 / Rule 3 logic is **unchanged** —
-  it talks only to `liveness.Liveness`/`liveness.AliasTracker`.
-- `solver.Context` gains `Liveness` / `Aliases` fields, populated by the existing
-  prepass.
-- **Simplification**: collapse the `HasStaticMutAlias` / `HasStaticImmAlias`
-  escape-hatch bits — under the new checker the escape is first-class
-  (`lt <: 'static` is in the inference output), so the transition checker queries
-  the lifetime sort directly. This depends on PR 4, which is why it is last.
-- **Acceptance**: port the old checker's transition-checking fixtures/cases as
-  intended-form table tests; the static-escape cases pass via lifetime queries
-  rather than the dropped bits.
-- **~Size**: medium (mostly a port; the simplification is the only genuinely new
-  logic).
-
-## Sequencing summary
-
-```
-PR1 records+tuples+exactness ─► PR2 usage-based reads ─► PR3 RefType + mut  (GATE)
-                                                              │
-                                                              ▼
-                                              PR4 lifetimes (second sort)
-                                                              │
-                                                              ▼
-                                              PR5 transition checking (port)
+// borrowableType is the content invariant the RefInner marker can't express
+// (e.g. it rejects Union{RecordType, PrimitiveType}); descends collections.
+func borrowableType(t Type) bool
 ```
 
-- PR1 → PR2: usage inference needs the record carrier and its coalescing.
-- PR2 → PR3: the `mut` write path and read-after-write build on the member-access
-  path; non-trivial inferred record shapes make the gate's tests meaningful.
-- **PR3 is the gate** — do not start PR4/PR5 until it is cleared.
-- PR3 → PR4: lifetimes ride on the `RefType` wrapper PR3 introduces.
-- PR4 → PR5: the transition-check simplification (dropping the static-alias bits)
-  consumes the lifetime sort.
+### The lifetime sort (`soltype/lifetime.go`, faithful to spike)
 
-PR1 and the *test scaffolding* for PR2 can be drafted in parallel, but the merge
-order is strict. PR4 and PR5 cannot be meaningfully parallelized because PR5's
-simplification depends on PR4's escape-as-`'static` output.
+```go
+type Lifetime interface{ isLifetime() }
+
+type LifetimeVar struct {
+    id          int
+    lowerBounds []Lifetime
+    upperBounds []Lifetime
+}
+type StaticLifetime struct{} // top of the outlives lattice ('static)
+
+func (c *checker) freshLifetime() *LifetimeVar
+
+// constrainLt mirrors constrain over the outlives lattice: a var on the left
+// gains an upper bound, on the right a lower bound; var-to-var records both
+// directions. 'static is top, so X <: 'static always holds. Uses a seen-set
+// keyed on (lhs, rhs) for cycle termination.
+func (c *checker) constrainLt(lhs, rhs Lifetime)
+```
+
+### `constrain`: record + exactness (`constrain.go`)
+
+```go
+func (c *checker) constrainRecords(l, r *RecordType, seen seenSet) []error {
+    var errs []error
+    // every field r requires must exist in l, covariantly (depth subtyping)
+    for name, rt := range r.fields {
+        lt, ok := l.fields[name]
+        if !ok {
+            errs = append(errs, missingFieldError(name)) // full message asserted in tests
+            continue
+        }
+        errs = append(errs, c.constrain(lt, rt, seen)...)
+    }
+    // one-way exactness rule (02-design-notes §"Exactness"):
+    //   exact <: inexact            ok
+    //   exact <: exact              same member set (no extra in l)
+    //   inexact <: exact            rejected
+    //   inexact <: inexact          width subtyping (the loop above already allows extra)
+    if r.exact {
+        if !l.exact {
+            errs = append(errs, inexactIntoExactError(l, r))
+        }
+        for name := range l.fields {
+            if _, ok := r.fields[name]; !ok {
+                errs = append(errs, extraMemberError(name, r))
+            }
+        }
+    }
+    return errs
+}
+```
+
+### `constrain`: the single `RefType` rule — **THE GATE** (`constrain.go`)
+
+```go
+// Adapted from the spike's *Mut case (constrain.go:182-198), generalized to the
+// unified wrapper. The mut-driven bidirectional inner sweep is the read/write
+// decomposition that encodes invariance — the highest-risk gate.
+case *RefType: // l := lhs.(*RefType)
+    if r, ok := rhs.(*RefType); ok {
+        // 1. mutability compatibility — can't widen immutable to mutable.
+        if !l.mut && r.mut {
+            return []error{mutabilityError(l, r)}
+        }
+        // 2. inner variance — bidirectional iff the TARGET is mutable.
+        errs := c.constrain(l.inner, r.inner, seen) // read view (covariant)
+        if r.mut {
+            errs = append(errs, c.constrain(r.inner, l.inner, seen)...) // write view (contra)
+        }
+        // 3. lifetime — covariant when both present (inert until Phase D).
+        switch {
+        case l.lt != nil && r.lt != nil:
+            c.constrainLt(r.lt, l.lt)
+        case l.lt == nil && r.lt != nil: // owned source into borrow slot: ok
+        case l.lt != nil && r.lt == nil: // borrow into owned slot: escape
+            errs = append(errs, escapeError(l, r))
+        }
+        return errs
+    }
+    // RefType <: bare: only valid when l is an owned value (no lifetime).
+    if l.lt != nil {
+        return []error{escapeError(l, rhs)}
+    }
+    return c.constrain(l.inner, rhs, seen)
+// (bare <: RefType handled symmetrically: wrap source as NewRef(false,nil,_)
+//  and re-dispatch into the RefType<:RefType branch.)
+```
+
+### Usage-based inference + field write (`infer.go`)
+
+```go
+// MemberExpr read on a value-typed receiver: obj.field
+// The synthesized requirement is INEXACT ({field: β, ...}) — "recv must have AT
+// LEAST this field"; Policy-A coalescing closes the param to exact afterward.
+func (c *checker) inferMemberRead(recv Type, field string, n ast.Node) Type {
+    beta := c.freshVarAt(n, FieldAccess) // also writes Prov
+    req := &RecordType{fields: map[string]Type{field: beta}, exact: false}
+    c.constrain(recv, req, c.newSeen())
+    return beta
+}
+
+// Member write: obj.field = v  (constrain.go widen() reused)
+func (c *checker) inferFieldWrite(recv Type, field string, v Type, n ast.Node) {
+    lt := c.freshLifetime() // fresh: recv may be owned-mutable OR a mut-borrow of any lifetime
+    req := NewRef(true, lt, &RecordType{
+        fields: map[string]Type{field: widen(v)}, exact: false,
+    })
+    c.constrain(recv, req, c.newSeen())
+    c.recordWritten(recv, field, widen(v)) // read-after-write (spike's `written` map)
+}
+```
+
+### Borrow origination + lifetime coalescing/elision (`infer.go` / `coalesce.go`)
+
+```go
+// A RefType-typed parameter is a borrow without a lifetime yet: give it a fresh
+// one and record it as a "param lifetime" (only these are named in output).
+// Adapted from spike attachParamLifetimes (lifetime.go:260).
+func (c *checker) attachParamLifetimes(t Type) Type {
+    r, ok := t.(*RefType)
+    if !ok || r.lt != nil {
+        return t
+    }
+    lt := c.freshLifetime()
+    c.paramLifetimes.Add(lt.id)
+    return &RefType{mut: r.mut, lt: lt, inner: r.inner}
+}
+
+// Coalescing a RefType, with the mut-vs-immutable elision branch (the subtle one).
+func (c *checker) coalesceRef(t *RefType, pol Polarity, st *coalesceState) Type {
+    inner := c.coalesceInner(t.inner, pol, st) // inner invariance handled by constrain, not here
+    name := c.lifetimeName(t.lt, pol)          // "" when the lifetime is elidable
+    if name == "" {
+        if t.mut {
+            return NewRef(true, nil, inner.(RefInner)) // owned-mutable, well-formed
+        }
+        return inner // immutable + elided ⇒ MUST drop the wrapper (else degenerate cell)
+    }
+    return type_system.NewBorrowType(nil, inner, name, t.mut) // `mut 'a T` / `'a T`
+}
+```
+
+### Transition checking (`transitions.go` / `context.go`)
+
+```go
+// Two narrow predicates reimplemented over soltype (the rest of
+// internal/liveness ports verbatim).
+func isMutableType(t Type) bool {
+    if r, ok := t.(*RefType); ok {
+        return r.mut
+    }
+    return false
+}
+func isValueType(t Type) bool // ported from check_transitions.go:189-217
+
+// solver.Context gains the liveness fields the ported checker reads.
+type Context struct {
+    // ... existing M1–M3 fields (level, Probe, etc.)
+    Liveness *liveness.Liveness
+    Aliases  *liveness.AliasTracker
+}
+```
+
+---
+
+## Revised PR breakdown (finer than the first cut)
+
+The first draft of this plan used five PRs, two of them "large" (the `mut` gate
+and lifetimes lumped whole). For "the big one" that is too coarse to review
+well — the gate in particular deserves a PR where it is the *only* thing under
+review. The breakdown below is **13 PRs across 5 phases**, each independently
+mergeable, each keeping `go test ./...` green, each shipping its own
+table-driven tests (rendered types + **full** error messages, per CLAUDE.md).
+LoC figures are non-test estimates.
+
+### Phase A — Records & tuples (carrier + exactness)
+
+- **A1 — Representation + literal inference + coalescing + printer** (~250).
+  `RecordType`/`TupleType` with the `exact` flag; smart constructors; `ObjectExpr`
+  ⇒ exact record, `TupleExpr` ⇒ exact tuple; positive-position coalescing
+  (covariant fields/elems); printer for `{x: T}`, `[T, U]`, trailing `...`.
+  *Mergeable alone:* infers and renders literals; no subtyping needed to test.
+- **A2 — Structural + exactness subtyping** (~200). `constrainRecords` /
+  `constrainTuples` with the one-way exact/inexact rule (width subtyping only
+  inexact↔inexact; exact↔exact same-set; extra-member rejection). *Builds on A1;
+  first PR that accepts/rejects against annotations.*
+
+### Phase B — Usage-based inference
+
+- **B1 — Member-read usage inference + negative-position record coalescing**
+  (~250). `MemberExpr` read ⇒ `constrain(recv <: {field: β, ...})`; merge object
+  upper-bounds into one record at coalescing; close to **exact** (Policy A).
+  Replaces `Open`/`Widenable`/`ArrayConstraint` (re-express representative
+  old-checker cases as intended-form tests).
+- **B2 — The `open` parameter marker** (~120). Parser keyword (provisional) +
+  semantic flag that keeps a usage-inferred param **inexact**. *Small, isolated;
+  the surface syntax can be gated if the spelling is unsettled.*
+
+### Phase C — Borrows & mutability (**the gate**)
+
+- **C1 — `RefType` plumbing** (~200). The wrapper type, `RefInner` sealed marker,
+  `borrowableType`, `NewRef` smart constructor (degenerate-cell invariant),
+  `unwrapRef`/`carrierOf`, printer. **No constrain rule yet.** *Pure plumbing +
+  unit tests on the constructor/marker/printer; trivially green.*
+- **C2 — The `RefType` constrain rule** (~180). **← THE GATE.** The single rule:
+  mutability compatibility, mut-driven bidirectional inner sweep (read/write
+  decomposition), lifetime steps written but inert (`lt == nil`), and the two
+  cross-cases. *Scoped so the gate is the only thing under review.* Acceptance:
+  `mut {x,y} <: mut {x}` **fails** while immutable `{x,y} <: {x}` succeeds;
+  mut-borrow decay (`mut {x} <: {x}`) allowed, reverse rejected.
+  **If this can't be encoded cleanly against the real AST, stop and reassess
+  before Phase D/E** (the milestone's instruction).
+- **C3 — Field-write inference + read-after-write** (~180). `obj.x = v` ⇒ a `mut`
+  record requirement (lifetime nil for now); literal widening; multi-write merge;
+  read-after-write field collapse. Acceptance: `fn foo(obj){obj.x=5; obj.y=10}`
+  ⇒ `(obj: mut {x: number, y: number}) -> unit`; `{obj.x=5; return obj.x}` ⇒
+  `... -> number`.
+
+### Phase D — Lifetimes (second sort)
+
+- **D1 — Lifetime sort plumbing** (~220). `LifetimeVar`/`StaticLifetime`/
+  `LifetimeUnion`, `constrainLt`, printer. *Standalone second-sort machinery +
+  unit tests on `constrainLt` (outlives, transitivity, cycles, `'static` top).*
+- **D2 — Activate lifetimes in the `RefType` rule + borrow origination** (~150).
+  Turn on step 3 of the gate rule and the escape guards; `attachParamLifetimes`.
+  Acceptance: `IdentityRefReturn` ⇒ `fn <'a>(p: mut 'a {x: number}) -> mut 'a {x:
+  number}`; `FreshObjectReturn` carries no lifetime.
+- **D3 — Multi-source unioning + escape-to-`'static`** (~140). Join branch
+  lifetimes via a fresh join var; escape ⇒ `constrain(lt <: 'static)`. Acceptance:
+  `ConditionalUnionReturn` ⇒ `mut ('a | 'b) {x}`; `EscapingRefIntoStatic` ⇒
+  `mut 'static`.
+- **D4 — Lifetime coalescing + elision** (~200). `analyzeLts` occurrence pass;
+  drop a param-only lifetime that connects nothing; the **mut elide-in-place vs
+  immutable drop-the-wrapper** branch (the subtle one — isolated on purpose).
+  Acceptance: property-level / tuple-per-slot lifetimes; `RefType` passes the
+  inner carrier's `exact` flag through unchanged.
+
+### Phase E — Mutability-transition checking (port)
+
+- **E1 — Port liveness + predicates + wiring** (~220). Reuse `internal/liveness/`
+  verbatim and `liveness_prepass.go`; reimplement `isValueType`/`isMutableType`
+  over `soltype`; `checkMutabilityTransition` logic unchanged; add `Liveness`/
+  `Aliases` to `Context`. Port the old transition fixtures as intended-form tests.
+- **E2 — Collapse the static-alias escape hatches** (~120). Drop
+  `HasStaticMutAlias`/`HasStaticImmAlias`; the transition checker queries the
+  lifetime sort (`lt <: 'static`) directly. *Depends on Phase D, hence last; the
+  only genuinely new logic in the port.*
+
+### Dependency graph
+
+```
+A1 → A2 → B1 → B2
+            └─→ C1 → C2(GATE) → C3 → D1 → D2 → D3 → D4 → E1 → E2
+```
+
+A1→A2 (subtyping needs the carrier); B1 needs A's coalescing; C2 needs C1's
+wrapper; C3/Phase D ride on the gate; E2 needs Phase D's escape-as-`'static`.
+A and the test scaffolding for B can be drafted in parallel, but merge order is
+strict. The gate (C2) is reached after only the minimum needed to exercise it
+against the real AST, and nothing expensive (lifetimes, the port) is built before
+it is cleared.
+
+Total ≈ 2.4k LoC non-test across 13 PRs — a realistic shape for "the big one,"
+with the single highest-risk change (C2) isolated to ~180 reviewable lines.
+
+---
 
 ## Testing strategy
 
-Following [02-design-notes.md](02-design-notes.md) §"Test coverage" and CLAUDE.md:
+Per [02-design-notes.md](02-design-notes.md) §"Test coverage" and CLAUDE.md:
+table-driven `*_test.go` keyed by name, with `expectedValues`/`expectedTypes`
+(rendered Escalier annotations) and `expectedError` (**full** message), authored
+against intended semantics — not copied from the old checker. Use inline snapshots
+for large type trees (nested borrowed records with per-field lifetimes). Each PR
+carries the acceptance set named in its section; the union is the milestone's M4
+criteria. No fixture-harness wiring yet (that's M7); M4 is validated entirely by
+the new package's own tests driven from real `.esc` source through the M2 bridge.
 
-- **Granular semantics** as table-driven `*_test.go` in the new checker package,
-  keyed by test name with `expectedValues` / `expectedTypes` (rendered Escalier
-  type-annotation strings) and `expectedError` (**full** message). Authored
-  against intended semantics, not copied from the old checker.
-- Where a type tree is large (e.g. nested borrowed records with per-field
-  lifetimes), render the subtree and use an inline snapshot rather than many
-  drill-down assertions.
-- Each PR carries the acceptance set named in its section above; the union of
-  those sets is the milestone's M4 acceptance criteria from
-  [01-milestones.md](01-milestones.md).
-- No fixture-harness wiring yet (that is M7); M4 validation is entirely the new
-  package's own tests driven from real `.esc` source through the M2 parser bridge.
+## Risks / open questions
 
-## Risks and open questions
-
-- **The gate (PR 3)** is the dominant risk; it is front-loaded and has an explicit
-  stop-and-reassess decision. The spike de-risked the *algorithm*; the residual
-  risk is encoding it cleanly against the production AST and `soltype`.
-- **Lifetime elision branching on `mut`** (PR 4) is the subtlest non-gate piece —
-  the immutable-borrow-must-drop-the-wrapper rule is easy to get wrong and
-  reintroduce the forbidden degenerate cell. The `NewRef` smart-constructor
-  assertion is the backstop; the coalescer must branch on `mut` at the elision
-  site.
-- **`open` keyword** is provisional (PR 2). If naming is unsettled, gate the
-  surface syntax behind the parser and keep the semantic flag; the inference
-  behavior is what M4 must prove, not the spelling.
-- **Probe usage**: M4's core path is monotone and needs no rollback, but the
-  field-write merge and any union-against-variable deferral should be written
-  probe-aware so M6/M8 speculation composes without rework.
-- **`exact`-by-default surface**: per the milestone, the exactness default for
-  usage-inferred shapes (Policy A) and the `open` opt-out are **not yet reflected
-  in `planning/exact-types/requirements.md`**. That spec section should be written
-  before PR 2 lands so the tests assert an agreed default.
+- **The gate (C2)** is the dominant risk and is front-loaded with an explicit
+  stop-and-reassess. The spike de-risked the *algorithm*; residual risk is
+  encoding it cleanly against the production AST/`soltype`.
+- **Elision branching on `mut` (D4)** is the subtlest non-gate piece — the
+  immutable-borrow-must-drop-the-wrapper rule, if missed, reintroduces the
+  forbidden degenerate cell. The `NewRef` assertion is the backstop.
+- **`open` keyword (B2)** is provisional; gate the spelling, keep the semantic
+  flag — the inference behavior is what M4 must prove.
+- **Probe usage**: M4's core path is monotone (no rollback needed for failed
+  constraints), but the field-write merge and any future union-against-variable
+  deferral should be written probe-aware so M6/M8 speculation composes.
+- **Exact-by-default spec**: the Policy-A default and the `open` opt-out are **not
+  yet in `planning/exact-types/requirements.md`** — that section should be written
+  before B1 lands so the tests assert an agreed default.
