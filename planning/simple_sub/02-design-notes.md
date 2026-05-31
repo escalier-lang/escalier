@@ -9,9 +9,9 @@ provisional.
 ```text
 internal/solver/            (new top-level package, sibling to internal/checker/; leaf name TBD)
   soltype/                  the type representation (its own; NOT type_system)
-    type.go                 Type interface; TypeVar, Primitive, Literal,
-                            Function, Tuple, Record, Ref, Union, Intersection,
-                            Alias, ... each carrying what it needs
+    type.go                 Type interface; TypeVarType, PrimitiveType, LiteralType,
+                            FunctionType, TupleType, RecordType, RefType, UnionType, IntersectionType,
+                            AliasType, ... each carrying what it needs
     lifetime.go             Lifetime sort: LifetimeVar (bound lists),
                             StaticLifetime, LifetimeUnion
     print.go                Type -> Escalier annotation string
@@ -34,7 +34,7 @@ The clean, algorithm-shaped data model that motivates not reusing
 type TypeVarType struct { Instance Type; Constraint Type; ... }
 
 // soltype: bound lists (Simple-sub).
-type TypeVar struct {
+type TypeVarType struct {
     id          int
     level       int
     lowerBounds []Type
@@ -96,13 +96,13 @@ discard truncates each touched var's slices back. Commit on a nested probe
 propagates the touched set to the parent, so an outer discard still rolls
 inner-committed work.
 
-Lifetimes are a second sort with the same bound-list shape as `TypeVar`
+Lifetimes are a second sort with the same bound-list shape as `TypeVarType`
 (see [the lifetime sort below](#exactness)), so the probe records both
 sorts uniformly. A small `Bounded` interface ("has `lowerBounds` /
 `upperBounds` slices") lets one entry shape cover both:
 
 ```go
-type Bounded interface {                 // implemented by *TypeVar, *LifetimeVar
+type Bounded interface {                 // implemented by *TypeVarType, *LifetimeVar
     boundLengths() (lower, upper int)
     truncateBounds(lower, upper int)
 }
@@ -147,10 +147,10 @@ func (p *Probe) rollback() {
 `truncateBounds` on each sort is a two-line slice reslice:
 
 ```go
-func (v *TypeVar) boundLengths() (int, int) {
+func (v *TypeVarType) boundLengths() (int, int) {
     return len(v.lowerBounds), len(v.upperBounds)
 }
-func (v *TypeVar) truncateBounds(lower, upper int) {
+func (v *TypeVarType) truncateBounds(lower, upper int) {
     v.lowerBounds = v.lowerBounds[:lower]
     v.upperBounds = v.upperBounds[:upper]
 }
@@ -165,12 +165,12 @@ later rollback still covers these vars) and clears `p.entries` without
 truncating.
 
 Every `append(v.lowerBounds, …)` / `append(v.upperBounds, …)` site is
-preceded by `probe.record(v)` — in `constrain` for `TypeVar`, in
+preceded by `probe.record(v)` — in `constrain` for `TypeVarType`, in
 `constrainLt` for `LifetimeVar`. Both sorts go through the same probe;
 there is no parallel lifetime journal. (Contrast with PR #672, which has
 to add `LifetimeVar` records to `BindJournal` as a separate case because
 the existing `LifetimeVar` is a different mutable shape — a single
-`Instance` cell — than `TypeVar`. Soltype unifies the shape, so the probe
+`Instance` cell — than `TypeVarType`. Soltype unifies the shape, so the probe
 unifies too.)
 
 No `Prune` snapshot and no `InstanceChain` replay either — neither exists
@@ -301,102 +301,102 @@ is also lower than today's. The probe API is the only piece of soltype
 infrastructure that exists *because* speculation exists — everything else
 is just constrain + bound lists.
 
-Borrows and mutability are carried by a single unified wrapper, `Ref`, with
-two flags. Owned types (`Record`, `Tuple`, `Alias`, `Class`) have **no**
+Borrows and mutability are carried by a single unified wrapper, `RefType`, with
+two flags. Owned types (`RecordType`, `TupleType`, `AliasType`, `ClassType`) have **no**
 lifetime field — a lifetime is the lifetime of a *borrow*, and a borrow is
 structurally distinct from the value being borrowed:
 
 ```go
-type Record struct { fields map[string]Type }         // owned, no lt
-type Tuple  struct { elems  []Type }                   // owned, no lt
-type Alias  struct { name string; body Type }          // owned, no lt
-// Class adds final/exact in M5; see "Exactness" below.
+type RecordType struct { fields map[string]Type }         // owned, no lt
+type TupleType  struct { elems  []Type }                   // owned, no lt
+type AliasType  struct { name string; body Type }          // owned, no lt
+// ClassType adds final/exact in M5; see "Exactness" below.
 
-type Ref struct {
+type RefType struct {
     mut   bool       // mutable borrow if true, immutable borrow if false
     lt    Lifetime   // nilable: nil = owned mutable (only meaningful with mut=true)
     inner RefInner   // narrower than Type — see below
 }
 ```
 
-### `RefInner` — what can sit inside a `Ref`
+### `RefInner` — what can sit inside a `RefType`
 
-`Ref.inner` is narrower than `Type`. Escalier compiles to JavaScript, so the
+`RefType.inner` is narrower than `Type`. Escalier compiles to JavaScript, so the
 `mut`/lifetime machinery only makes sense for aggregate value types whose
 mutations can actually be observed through the borrow. Borrowing a primitive
 (`mut number`) is a no-op in JS — the callee's mutation doesn't propagate —
 and a function reference isn't "borrowed" in the lifetime sense, just shared.
-Nested `Ref`s are also forbidden: the inner `Ref` of a nested-borrow scenario
-sits as a *field* of an outer carrier (`Ref{mut, lt, Record{f: Ref{...}}}`),
-never directly inside another `Ref`.
+Nested `RefType`s are also forbidden: the inner `RefType` of a nested-borrow scenario
+sits as a *field* of an outer carrier (`RefType{mut, lt, RecordType{f: RefType{...}}}`),
+never directly inside another `RefType`.
 
 A sealed marker interface encodes the shape invariant statically:
 
 ```go
-// RefInner is the set of types that can appear inside a Ref wrapper.
+// RefInner is the set of types that can appear inside a RefType wrapper.
 // Sealed: only the implementors below qualify.
 type RefInner interface {
     Type
     isRefInner()
 }
 
-func (*TypeVar)      isRefInner() {}  // mid-inference; bounds checked at constrain time
-func (*Record)       isRefInner() {}
-func (*Tuple)        isRefInner() {}
-func (*Class)        isRefInner() {}
-func (*Alias)        isRefInner() {}
-func (*Union)        isRefInner() {}  // e.g. mut (Foo | Bar)
-func (*Intersection) isRefInner() {}
+func (*TypeVarType)      isRefInner() {}  // mid-inference; bounds checked at constrain time
+func (*RecordType)       isRefInner() {}
+func (*TupleType)        isRefInner() {}
+func (*ClassType)        isRefInner() {}
+func (*AliasType)        isRefInner() {}
+func (*UnionType)        isRefInner() {}  // e.g. mut (Foo | Bar)
+func (*IntersectionType) isRefInner() {}
 
 // Deliberately NOT RefInner:
-//   *Ref          — nested borrows are illegal at this level (see above)
-//   *Primitive    — mut number / mut string / mut bool make no JS-level sense
-//   *Literal      — same reasoning, plus literals are singleton values
-//   *Function     — function references are shared, not borrowed
+//   *RefType          — nested borrows are illegal at this level (see above)
+//   *PrimitiveType    — mut number / mut string / mut bool make no JS-level sense
+//   *LiteralType      — same reasoning, plus literals are singleton values
+//   *FunctionType     — function references are shared, not borrowed
 ```
 
-This rules out `NewRef(_, _, &Primitive{...})` at compile time. The `Type`
+This rules out `NewRef(_, _, &PrimitiveType{...})` at compile time. The `Type`
 embedding in `RefInner` means a `RefInner` is always usable wherever a `Type`
 is expected (constrain rules, printing, etc.); the narrowing is one-way.
 
-**Content invariants on collection types.** `Union` and `Intersection`
+**Content invariants on collection types.** `UnionType` and `IntersectionType`
 satisfy `RefInner` because `mut (Foo | Bar)` is legitimate when both branches
 are themselves borrowable. The interface can't enforce *what's inside* the
-union — `Union{Record, Primitive}` is structurally a `RefInner` but
-semantically nonsense in a `Ref`. The constrain-side predicate
+union — `UnionType{RecordType, PrimitiveType}` is structurally a `RefInner` but
+semantically nonsense in a `RefType`. The constrain-side predicate
 `borrowableType(t Type) bool` covers this content invariant, descending into
-`Union`/`Intersection` and checking that every branch is borrowable.
+`UnionType`/`IntersectionType` and checking that every branch is borrowable.
 
 ```go
 func borrowableType(t Type) bool {
     switch t := t.(type) {
-    case *Record, *Tuple, *Class, *Alias, *TypeVar: return true
-    case *Union:        return all(t.types, borrowableType)
-    case *Intersection: return all(t.types, borrowableType)
-    case *Ref:          return false  // nested Ref forbidden
-    default:            return false  // Primitive, Literal, Function
+    case *RecordType, *TupleType, *ClassType, *AliasType, *TypeVarType: return true
+    case *UnionType:        return all(t.types, borrowableType)
+    case *IntersectionType: return all(t.types, borrowableType)
+    case *RefType:          return false  // nested RefType forbidden
+    default:            return false  // PrimitiveType, LiteralType, FunctionType
     }
 }
 ```
 
-It runs at the constrain site where a `TypeVar` in `Ref.inner` position
+It runs at the constrain site where a `TypeVarType` in `RefType.inner` position
 picks up a new bound (and at coalescing, when the bound list resolves to a
 concrete carrier). The `RefInner` marker handles the construction-shape
 invariant; `borrowableType` handles the content invariant deferred through
-`TypeVar` and collection types. Together they cover the cases the type
+`TypeVarType` and collection types. Together they cover the cases the type
 system needs to reject — split between static and runtime as cheaply as
 each one allows.
 
-**Why not parameterize Union/Intersection over `RefInner`.** Tempting:
-`Union[RefInner]` would push the content invariant into the type system.
-But the constrain rules over Union/Intersection are element-agnostic, so
+**Why not parameterize `UnionType`/`IntersectionType` over `RefInner`.** Tempting:
+`UnionType[RefInner]` would push the content invariant into the type system.
+But the constrain rules over `UnionType`/`IntersectionType` are element-agnostic, so
 either every signature in the unifier picks up generic parameters or it
-coerces to `Union[Type]` at the door and the precision evaporates.
+coerces to `UnionType[Type]` at the door and the precision evaporates.
 Coalescing has the same problem in reverse — it would have to pick a
 parameterization based on whether all bounds happen to be `RefInner`, a
 runtime check on every coalesce. And M8 type-level operators (`keyof`,
 conditional, indexed access) don't preserve `RefInner`-ness anyway
-(`keyof Union[RefInner]` is `Union[Literal]`, and `Literal` isn't
+(`keyof UnionType[RefInner]` is `UnionType[LiteralType]`, and `LiteralType` isn't
 `RefInner`), so the chain breaks at the first operator. Non-generic
 collection types plus `borrowableType` deliver the same coverage without
 the unifier-wide tax.
@@ -415,10 +415,10 @@ The four cells of `(mut, lt)`:
 The `(false, nil)` cell is meaningless — a smart constructor returns the bare
 `inner` rather than constructing it.
 
-### The one `Ref` constrain rule
+### The one `RefType` constrain rule
 
 ```go
-case Ref <: Ref:
+case RefType <: RefType:
     // 1. Mutability compatibility — can't widen immut to mut.
     if !l.mut && r.mut {
         return mutabilityError
@@ -443,16 +443,16 @@ case Ref <: Ref:
         // borrow source into owned slot: reject (escape)
     }
 
-case bare <: Ref:
-    // Owned value flowing into a Ref slot: wrap with mut=false, lt=nil
-    // (i.e. as if the source were Ref{mut: false, lt: nil, inner: l}) and
-    // dispatch back into the Ref <: Ref case. The Ref slot's lt being nil
+case bare <: RefType:
+    // Owned value flowing into a RefType slot: wrap with mut=false, lt=nil
+    // (i.e. as if the source were RefType{mut: false, lt: nil, inner: l}) and
+    // dispatch back into the RefType <: RefType case. The RefType slot's lt being nil
     // or set is handled there; an owned source satisfies any required
     // lifetime (the lt-nil-on-source branch above).
-    constrain(Ref{mut: false, lt: nil, inner: l}, r, seen)
+    constrain(RefType{mut: false, lt: nil, inner: l}, r, seen)
 
-case Ref <: bare:
-    // Ref source into an owned-typed slot: only valid when l represents
+case RefType <: bare:
+    // RefType source into an owned-typed slot: only valid when l represents
     // an owned value (l.mut may be true or false, l.lt must be nil).
     // Equivalently: peel the wrapper and continue.
     if l.lt != nil {
@@ -464,15 +464,15 @@ case Ref <: bare:
 The two cross-cases are written as branches of the same rule because they're
 the same lattice question — "does this value fit this borrow shape" — viewed
 from either side; they're not separate rules over distinct wrapper types.
-Mut-borrow decay to immutable is the `l.mut && !r.mut` sub-branch of `Ref <:
-Ref` (step 1 falls through and step 2 takes the covariant-only path).
+Mut-borrow decay to immutable is the `l.mut && !r.mut` sub-branch of `RefType <:
+RefType` (step 1 falls through and step 2 takes the covariant-only path).
 
 ### What this representation buys us
 
 **The bidirectional inner sweep cannot accidentally invariate a lifetime.**
 Lifetimes don't live inside the inner (carriers have no `lt` field), so the
 recursive bidirectional `constrain` over `inner` has no `lt` to sweep. The
-covariant lifetime constraint is emitted exactly once, by the `Ref` rule
+covariant lifetime constraint is emitted exactly once, by the `RefType` rule
 itself, in step 3 above. The lifetime-invariance bug — where the bidirectional
 emission accidentally doubles a structural rule's `constrainLt` call into both
 directions, forcing equality — is **structurally impossible** rather than
@@ -482,16 +482,16 @@ This matters in two specific cases that motivated the design:
 
 - **Multiple mut aliases to the same value with independent lifetimes.**
   Escalier compiles to single-threaded JS and explicitly allows aliased mut
-  borrows; their lifetimes are independent per-borrow properties. `Ref{mut:
-  true, lt: 'a, R} <: Ref{mut: true, lt: 'b, R}` succeeds when `'a` outlives
+  borrows; their lifetimes are independent per-borrow properties. `RefType{mut:
+  true, lt: 'a, R} <: RefType{mut: true, lt: 'b, R}` succeeds when `'a` outlives
   `'b` — no spurious lifetime equality.
 - **Nested borrows.** A field that is itself a borrow (e.g.
-  `Ref{mut:true, lt:'a, Record{f: Ref{mut:true, lt:'b, ...}}}`) is correctly
-  invariant in `'b`: the outer Ref's bidirectional sweep recurses through
-  the outer Record's field `f`, hits the inner Ref, and the inner Ref's rule
+  `RefType{mut:true, lt:'a, RecordType{f: RefType{mut:true, lt:'b, ...}}}`) is correctly
+  invariant in `'b`: the outer `RefType`'s bidirectional sweep recurses through
+  the outer `RecordType`'s field `f`, hits the inner `RefType`, and the inner `RefType`'s rule
   fires once per direction — emitting `constrainLt` in both directions, which
   is the correct semantics for "the type of a field of a mut record." The
-  top-level `'a` stays covariant (handled directly by the outer Ref rule);
+  top-level `'a` stays covariant (handled directly by the outer `RefType` rule);
   the nested `'b` is invariant (handled by the bidirectional sweep). Both
   outcomes are correct, and neither requires special casing.
 
@@ -500,12 +500,12 @@ This matters in two specific cases that motivated the design:
 Four other shapes were considered and rejected:
 
 - **`mut` wrapper + `lt` field on carriers** (the original draft). The
-  bidirectional `Mut`-sweep over the inner Record accidentally invariates the
+  bidirectional `Mut`-sweep over the inner `RecordType` accidentally invariates the
   carrier's `lt` field, because the structural rule emits `constrainLt(l.lt,
   r.lt)` once per direction of the sweep. The fix requires a "peel" or
   "suppress-lt-emission" special case in the Mut rule; the bug is prevented
   by code discipline rather than by representation.
-- **`lt` on `Mut` only, no `Ref` wrapper.** Doesn't cover immutable borrows,
+- **`lt` on `Mut` only, no `RefType` wrapper.** Doesn't cover immutable borrows,
   which Escalier supports with their own lifetimes (`'a {x: number}` is a
   valid type for a read-only borrow).
 - **`lt` on both `Mut` and carriers, with a "don't set both" invariant.**
@@ -519,12 +519,12 @@ Four other shapes were considered and rejected:
   the original invariance bug. Worst of both worlds; the wrapper centralizes
   both axes in one rule.
 
-The unified `Ref` consolidates the borrow concern in a single wrapper with a
-single rule. Carrier rules (`Record`, `Tuple`, `Alias`, `Class`) stay focused
+The unified `RefType` consolidates the borrow concern in a single wrapper with a
+single rule. Carrier rules (`RecordType`, `TupleType`, `AliasType`, `ClassType`) stay focused
 on structural subtyping and know nothing about mut or lifetimes. The flag
 form for `mut` parallels the choices already made for `exact` (on
-`Record`/`Tuple`/`Union`) and `final` (on `Class`); the wrapper form for the
-borrow itself reflects that `Ref` is a structurally distinct *kind* of type
+`RecordType`/`TupleType`/`UnionType`) and `final` (on `ClassType`); the wrapper form for the
+borrow itself reflects that `RefType` is a structurally distinct *kind* of type
 (it has different rules), not just an annotation on a value-type.
 
 ### Costs
@@ -532,45 +532,45 @@ borrow itself reflects that `Ref` is a structurally distinct *kind* of type
 The representation is not free; the costs are small and contained, but worth
 calling out so they're not surprises later:
 
-- **One degenerate cell to police.** `Ref{mut: false, lt: nil, inner}` is
+- **One degenerate cell to police.** `RefType{mut: false, lt: nil, inner}` is
   semantically equivalent to bare `inner` (immutable, no borrow). Construction
   must go through a smart constructor that returns the bare `inner` rather than
   wrapping it. If a future code path bypasses the constructor and produces a
-  raw `Ref{false, nil, x}`, every downstream rule that pattern-matches on
-  `*Ref` would see it as a borrow-shaped value that isn't really a borrow —
-  the bugs are subtle (e.g. an `if r, ok := t.(*Ref); ok` branch fires when it
+  raw `RefType{false, nil, x}`, every downstream rule that pattern-matches on
+  `*RefType` would see it as a borrow-shaped value that isn't really a borrow —
+  the bugs are subtle (e.g. an `if r, ok := t.(*RefType); ok` branch fires when it
   shouldn't). Mitigation: a single `NewRef(mut, lt, inner)` constructor that
   enforces the invariant, and an assertion in the printer / `lifetimeOf` /
   `isMutableType` that the degenerate cell is never observed.
 - **Slightly less direct type-switches at call sites.** "Is this a mutable
   borrow?" today is a one-line type assertion (`_, ok := t.(*Mut)`); under
-  the unified `Ref`, it's a two-line check (`r, ok := t.(*Ref); ok && r.mut`).
+  the unified `RefType`, it's a two-line check (`r, ok := t.(*RefType); ok && r.mut`).
   Cosmetic loss, but readers reaching for `*Mut` muscle memory will have to
   adjust. The wins on `lifetimeOf` / `isMutableType` more than compensate.
-- **Two axes encoded in one node.** Reading a `Ref` in test fixtures, printer
+- **Two axes encoded in one node.** Reading a `RefType` in test fixtures, printer
   output, or debugger views requires holding both axes in mind: "this is a
-  Ref with mut=X and lt=Y wrapping Z." The surface syntax (`mut 'a Point`,
+  `RefType` with mut=X and lt=Y wrapping Z." The surface syntax (`mut 'a Point`,
   `'a Point`, `mut Point`) doesn't change, but the internal representation is
   slightly more conceptually dense per node than a separate-types form would
-  be. Mostly a non-issue once the team has internalized "`Ref` is *the*
+  be. Mostly a non-issue once the team has internalized "`RefType` is *the*
   borrow wrapper."
 - **Construction sites have one new step.** Every place that today produces a
   borrowed value (`mut` parameter binding, address-of-style construction,
-  field write inference, multi-source return joining) now constructs a `Ref`
+  field write inference, multi-source return joining) now constructs a `RefType`
   wrapper around an owned inner, rather than a carrier-with-lt directly.
   That's a real refactor surface for the eventual port, and the construction
   code has to remember which `mut` and which `lt` to pass. With Mut as a
   separate wrapper and lt on the carrier (today's spike), some of these sites
-  just set `lt` on the carrier in place; under the unified `Ref`, they
+  just set `lt` on the carrier in place; under the unified `RefType`, they
   explicitly construct the wrapper. More code per site, but more
   type-checkable code per site.
 - **Tooling that expects "the type of a value" to flow through one shape
-  doesn't quite work.** A piece of code that today destructures a `Record`
+  doesn't quite work.** A piece of code that today destructures a `RecordType`
   to inspect its fields can no longer assume the value-typed binding's type
-  is a `Record` directly — it might be `Ref{...,inner: Record{...}}`. Every
-  field-inspection or member-access code path has to first peel any `Ref`
+  is a `RecordType` directly — it might be `RefType{...,inner: RecordType{...}}`. Every
+  field-inspection or member-access code path has to first peel any `RefType`
   wrapper to reach the carrier. The peel is one line, but it has to appear
-  everywhere a Record (or Tuple, etc.) is consumed. Helpers (`unwrapRef`,
+  everywhere a `RecordType` (or `TupleType`, etc.) is consumed. Helpers (`unwrapRef`,
   `carrierOf`) keep this from being ugly, but they have to exist and be
   used consistently. **Provenance is not affected by this peel** — `unwrapRef`
   just navigates to the existing `inner` pointer, so both the wrapper's and
@@ -578,12 +578,12 @@ calling out so they're not surprises later:
   consumers (errors, hovers) choose *which* of the two to surface based on
   what they're reporting (carrier Prov for field-shape errors, wrapper Prov
   for mutability/lifetime errors), but neither is ever lost.
-- **Lifetime elision is per-wrapper, not per-occurrence.** Today, a `Record`
+- **Lifetime elision is per-wrapper, not per-occurrence.** Today, a `RecordType`
   with a parameter-only `lt` that connects nothing has its `lt` elided
-  in-place. Under the unified `Ref`, the elidable lifetime sits on the
+  in-place. Under the unified `RefType`, the elidable lifetime sits on the
   wrapper — and the question becomes whether to elide just the lifetime
-  (leaving a `Ref{mut: true, lt: nil, inner: ...}` for an owned-mutable
-  result) or to also drop the `Ref` wrapper entirely (if the result is
+  (leaving a `RefType{mut: true, lt: nil, inner: ...}` for an owned-mutable
+  result) or to also drop the `RefType` wrapper entirely (if the result is
   effectively bare). The coalescer needs to know the difference and pick
   the right one. Not hard, but it's one more shape of decision the elision
   pass has to make.
@@ -592,8 +592,8 @@ None of these are showstoppers, and most fall under "write a constructor and
 a couple of helpers, then use them consistently." The reason they're worth
 naming is that they're the kind of cost that compounds quietly — each site
 that forgets the smart constructor, or that destructures a value without
-peeling its `Ref` first, becomes a paper cut. The team needs to internalize
-`Ref` as the standard borrow wrapper and reach for it reflexively, the way
+peeling its `RefType` first, becomes a paper cut. The team needs to internalize
+`RefType` as the standard borrow wrapper and reach for it reflexively, the way
 the existing checker reflexively reaches for `MutType`.
 
 Lifetimes are a **second sort** solved by the same machinery:
@@ -619,15 +619,15 @@ utility machinery is deferred (M8) and the value-level conversion is codegen (M9
 classes (a class instance is exact iff `final`):
 
 ```go
-type Record struct { fields map[string]Type;            exact bool }
-type Tuple  struct { elems  []Type;                     exact bool }
-type Func   struct { /* params, ret, ... */             exact bool } // call-site only
-type Union  struct { types  []Type;                     exact bool }
-type Class  struct { name string; args []Type;          final bool } // final ⇒ exact instance
-// Ref{mut, lt, inner} wraps a borrowed/mutable value — see "soltype" above.
+type RecordType struct { fields map[string]Type;            exact bool }
+type TupleType  struct { elems  []Type;                     exact bool }
+type FuncType   struct { /* params, ret, ... */             exact bool } // call-site only
+type UnionType  struct { types  []Type;                     exact bool }
+type ClassType  struct { name string; args []Type;          final bool } // final ⇒ exact instance
+// RefType{mut, lt, inner} wraps a borrowed/mutable value — see "soltype" above.
 ```
 
-**`Intersection` carries no `exact` flag.** Exactness is a property of *value
+**`IntersectionType` carries no `exact` flag.** Exactness is a property of *value
 shapes* (objects, tuples, functions) and *closed alternative-sets* (unions) —
 both about whether the set of inhabitants is *open*. A union is a join, so
 "and possibly more" (`A | B | ...`) is meaningful: more alternatives, a sound
@@ -639,7 +639,7 @@ is **derived from its operands** during coalescing/normalization (spec §7.7) �
 e.g. exact-object `&` exact-object → an exact object over the union of declared
 properties; exact `&` inexact → exact iff the inexact side's declared props are a
 subset, else an error. The `exact` flag then lands on the resulting
-`Record`/`Tuple`, not on the `Intersection` node.
+`RecordType`/`TupleType`, not on the `IntersectionType` node.
 
 **Subtyping rules** (added to `constrain`'s structural cases):
 
@@ -653,9 +653,9 @@ subset, else an error. The `exact` flag then lands on the resulting
   may invoke with (params contravariant, return covariant). The spike's "fewer
   params is a subtype" is the *inexact* case. (This corrects the merged spec's
   §4.2 — see escalier-lang/escalier#677.)
-- **`Ref` is orthogonal** ([exact-types/requirements.md](../exact-types/requirements.md) §7.11): a `Ref` wrapper carries its inner
+- **`RefType` is orthogonal** ([exact-types/requirements.md](../exact-types/requirements.md) §7.11): a `RefType` wrapper carries its inner
   carrier's exactness through unchanged; the mut/lifetime axes neither tighten
-  nor loosen exactness. The `Ref` rule's mut-driven inner invariance and the
+  nor loosen exactness. The `RefType` rule's mut-driven inner invariance and the
   carrier's `exact` flag compose without interaction.
 
 **Inference defaults:** object/tuple/union *literals* infer as **exact**; a
@@ -787,9 +787,9 @@ scheme S at call site C" rather than "see also: type 0x4f3a1c". Same DAG
 structure, structurally honest about what each edge means.
 
 **Why a side table and not a field.** Soltype relies on sharing/interning for
-the common atoms (`Primitive{number}`, the few `Literal`s, `Void`,
+the common atoms (`PrimitiveType{number}`, the few `LiteralType`s, `Void`,
 `StaticLifetime`). A `Provenance()` field per node either breaks that interning
-(two structurally-equal `Primitive{number}` from different ASTs become distinct
+(two structurally-equal `PrimitiveType{number}` from different ASTs become distinct
 because their provenance differs) or lies about provenance on the shared nodes
 (every use of `number` reports the same source location). Provenance is
 **per-occurrence**; structure is **per-shape**. A sparse map sidesteps the
@@ -859,9 +859,9 @@ expression cases (mirrors the spike's `typeTerm`, but over `ast`):
   - **Unknown identifier**: if neither slot has a binding, emit
     `UnknownIdentifierError`.
 - `*ast.FuncExpr` → fresh var per param (or annotated type via `TypeAnn`),
-  infer body, build `Function`; `mut` record params get a fresh lifetime
+  infer body, build `FunctionType`; `mut` record params get a fresh lifetime
   (`attachParamLifetimes`).
-- `*ast.CallExpr` → `constrain(callee <: Function{args, fresh result})`.
+- `*ast.CallExpr` → `constrain(callee <: FunctionType{args, fresh result})`.
 - `*ast.MemberExpr` (read) → two paths depending on the receiver:
   - **Namespace-qualified access**: if the receiver is a bare `IdentExpr` (or
     a chain of them) that resolves to a `NamespaceBinding`, look the property
@@ -871,17 +871,17 @@ expression cases (mirrors the spike's `typeTerm`, but over `ast`):
     only legal in type position and rejects here. No constraint is emitted —
     the result type comes from the binding itself.
   - **Value-typed receiver**: the usage-inference path —
-    `constrain(recv <: Record{field: fresh})`. Applies to every receiver that
+    `constrain(recv <: RecordType{field: fresh})`. Applies to every receiver that
     isn't a namespace chain (locals, params, results of calls, etc.).
-- assignment to a member (write) → `constrain(recv <: Ref{mut: true, lt:
-  freshLt, inner: Record{field: widen(v)}})` and record the written field type
+- assignment to a member (write) → `constrain(recv <: RefType{mut: true, lt:
+  freshLt, inner: RecordType{field: widen(v)}})` and record the written field type
   for read-after-write. The lifetime is a **fresh variable**, not `nil`: a
-  `nil` lt on the target would mean "owned mutable slot," which the `Ref` rule
+  `nil` lt on the target would mean "owned mutable slot," which the `RefType` rule
   rejects when the source is a borrow (the "borrow source into owned slot:
   reject (escape)" branch). The fresh var lets the receiver be either an owned
   mutable value or a mutable borrow of any lifetime; the write itself imposes
   no lifetime obligation on the receiver.
-- `*ast.ObjectExpr`/`*ast.TupleExpr` → `Record`/`Tuple` over inferred elems.
+- `*ast.ObjectExpr`/`*ast.TupleExpr` → `RecordType`/`TupleType` over inferred elems.
 - conditionals/branches → join branch types; for borrowed records, union their
   lifetimes via a fresh join lifetime var.
 - Every node: `info.setType(node, result)`.
@@ -924,7 +924,7 @@ in-line test sources (May 2026) found **no** Escalier code that aliased a
 namespace to a variable or passed one to a function, so this restriction is
 not a breaking change in practice. It avoids the existing `NamespaceType`'s
 status as a foreign object in the value-type space — every part of the value
-machinery has to special-case it, and none of `Ref`/lifetimes/subtyping have
+machinery has to special-case it, and none of `RefType`/lifetimes/subtyping have
 anything to say about it. Lifting namespaces to their own sort makes the
 multi-sortedness honest: namespace members include type bindings (which no
 record-typed upper bound can express) and value bindings (whose schemes need
