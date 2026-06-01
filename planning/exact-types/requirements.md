@@ -159,16 +159,10 @@ literal instead of an `interface`.
 
 ### 2.5. Namespaces
 
-Namespaces are **always inexact**, for essentially the same reasons as
-interfaces:
-
-- **Declaration merging.** Multiple `namespace` declarations with the same
-  name merge into a single namespace containing the union of their members.
-  As with interfaces, the set of merged declarations is not closed at any
-  single declaration site.
-- **Open extension across modules.** Namespaces can be augmented across
-  module boundaries (especially in TypeScript interop scenarios), so by
-  construction they admit unknown additional members.
+Namespaces are **always inexact**, for the same two reasons as interfaces
+(§2.4): multiple `namespace` declarations with the same name merge, so the
+member set is not closed at any single declaration site, and namespaces can
+be augmented across module boundaries (especially in TypeScript interop).
 
 Consequently, `keyof SomeNamespace` is an inexact union, and the
 exactness-propagation rules apply just as they do for interface types. There
@@ -460,38 +454,22 @@ foo(cb);
 // No runtime error, silently wrong downstream.
 ```
 
-The optional `b?: boolean` is the unsafe surface: the callee *declared*
-that `b` might be absent, but TypeScript's chain of widenings lets a
-caller supply *anything* there. Inexact functions are how Escalier
-controls this — `...` is the explicit opt-in to "callers may supply
-extras," and the accept-set/contravariance rules in §4.2.1 are designed
-so that the chain above cannot be reconstructed in pure Escalier source.
-§4.2.1.2 walks the worked example end-to-end.
+The callee *declared* that `b` might be absent, but TypeScript's chain of
+widenings lets a caller supply *anything* there — here a `number` reaches a
+parameter the body trusts as `boolean`. §4.2.1.2 walks this worked example
+end-to-end.
 
-Escalier splits the concern in two:
+Inexact functions are how Escalier controls this — `...` is the explicit
+opt-in to "callers may supply extras," and the accept-set/contravariance
+rules in §4.2.1 are designed so that the chain cannot be reconstructed in
+pure Escalier source.
+
+Escalier splits the concern in two, and the two are independent:
 
 - **Direct call sites** reject more arguments than the callee declares,
-  regardless of exactness — passing extra arguments to a call you can see
-  is treated as a likely mistake (§4.2.3).
-- **Callback subtyping** — whether a function may be supplied where a
-  function-typed slot is expected — is governed by exactness, via the
-  accept-set rule (§4.2.1). An *inexact* function explicitly tolerates
-  being invoked with extras, so it may fill a slot that passes more
-  arguments than it names (as long as it still requires no more arguments
-  than the slot supplies); an *exact* function may not fill a slot that
-  passes extras at all.
-
-```
-declare val f: ExactCallback     // fn(x: number, y: number) -> number
-declare val g: InexactCallback   // fn(x: number, y: number, ...) -> number
-
-f(1, 2)        // okay
-f(1, 2, 3)     // Error — more arguments than declared
-g(1, 2)        // okay
-g(1, 2, 3)     // Error — more arguments than declared (direct calls reject
-               //         extras regardless of exactness; the `...` matters
-               //         for callback subtyping, not direct calls)
-```
+  regardless of exactness — worked through in §4.2.3.
+- **Callback subtyping** — whether a function may fill a function-typed
+  slot — is governed by exactness, via the accept-set rule in §4.2.1.
 
 #### 4.2.1. Subtyping (Function Compatibility)
 
@@ -756,14 +734,17 @@ foo(Inexact(cb))
 // Slot demands b: number; supplier offers b?: boolean. number </: boolean.
 ```
 
-**Variation D — both `foo` and `bar` inexact, all arities aligned:**
+Loosening more slots to inexact does not change this. Even with every slot
+made inexact and arities aligned end-to-end —
 
 ```
 fn foo(cb: fn(a: string, b: number, ...) -> undefined) { bar(cb) }
 fn bar(cb: fn(a: string, b: number, ...) -> undefined) { cb("hello", 5) }
 foo(Inexact(cb))
-// Error: same contravariance failure at position 1.
 ```
+
+— the same contravariance failure at position 1 (`number </: boolean`)
+recurs.
 
 The parameter-type check at position 1 is the ultimate backstop. The
 accept-set rule deliberately *permits* an inexact function to fill a
@@ -997,14 +978,12 @@ Exactness for unions captures whether the listed members are *all* the
 inhabitants of the type, or merely a known subset. This shows up in three
 places:
 
-1. **Keys of exact/inexact objects.** For an exact object `{x: number, y:
-   number}`, the type of `keyof` is the **exact** union `"x" | "y"`. For an
-   inexact object `{x: number, y: number, ...}`, `keyof` is the **inexact**
-   union `"x" | "y" | ...` (i.e. at least these, possibly more strings).
-2. **Values/element-types of exact/inexact tuples.** For an exact tuple
-   `[string, number]`, the union of its element types is the **exact**
-   `string | number`. For an inexact tuple `[string, number, ...]`, the union
-   of element types is the **inexact** `string | number | ...`.
+1. **Keys of exact/inexact objects.** `keyof` of an exact object is an
+   exact union of its keys; `keyof` of an inexact object is inexact
+   (detailed in §5.3.2 and §7.1).
+2. **Values/element-types of exact/inexact tuples.** The element-type
+   union of an exact tuple is exact; of an inexact tuple, inexact
+   (detailed in §5.3.2 and §7.3).
 3. **`throws` clauses on function signatures.** If a function body is fully
    wrapped in `try/catch` with a catch-all that re-throws a known set of
    error types `E1 | E2`, the function's `throws` clause is the **exact**
@@ -1164,12 +1143,9 @@ import type { Color } from "some-ts-lib"     // inferred inexact
 type StrictColor = Exact<Color>              // opt-in to exact
 ```
 
-Escalier-emitted `.d.ts` files preserve the original Escalier type via
-an `@escalier-type` JSDoc tag alongside each declaration (see §9), so
-when one Escalier project consumes another Escalier project's emitted
-`.d.ts`, exact unions round-trip correctly. Only plain
-TypeScript-authored declarations (without an `@escalier-type` tag) fall
-back to the inexact default.
+Exact unions round-trip correctly between Escalier projects via the
+`@escalier-type` JSDoc tag (the general mechanism is in §9); only plain
+TypeScript-authored declarations fall back to the inexact default.
 
 ##### Provably-closed primitive unions
 
@@ -1261,12 +1237,11 @@ error:
 - **Tuple types:** `Inexact<[string, number]>` is `[string, number, ...]`.
 - **Function types:** `Inexact<fn(a: A, b: B) -> R>` is
   `fn(a: A, b: B, ...) -> R`, a function that tolerates being invoked with
-  extra arguments. Producing the inexact form from an exact one is the one
-  direction subtyping *cannot* give you — an exact function is never a
-  subtype of its inexact counterpart (§4.2.1.1), since the inexact slot
-  would invoke it with extras it refuses. `Inexact<F>` exists precisely to
-  express that widening explicitly (with the lossy step visible at the
-  source), so that the widened value can then fill inexact slots.
+  extra arguments. This is the one widening subtyping *cannot* give you —
+  an exact function is never a subtype of its inexact counterpart
+  (§4.2.1.1) — so `Inexact<F>` exists to express it explicitly (with the
+  lossy step visible at the source), after which the widened value can
+  fill inexact slots.
 - **Union types:** `Inexact<T1 | T2>` is `T1 | T2 | ...`.
 - **Already-inexact types:** `Inexact<T>` is `T` if `T` is already
   inexact.
@@ -1324,15 +1299,11 @@ if a real need emerges; we do not provide one initially.
 ### 6.5. TypeScript Interop
 
 `Exact<T>` and `Inexact<T>` are Escalier-only constructs. When emitting
-`.d.ts` files:
-
-- The result type (after applying `Exact`/`Inexact`) is what's emitted as a
-  plain TypeScript type — TypeScript itself has no notion of exactness, so
-  the `Exact<...>` / `Inexact<...>` wrapper is erased.
-- The original Escalier form (including the `Exact<...>` / `Inexact<...>`
-  wrapper) is preserved in the `@escalier-type` JSDoc tag alongside the
-  declaration so that other Escalier consumers can recover the precise
-  exactness. See §9.
+`.d.ts`, the wrapper is erased to its result type for plain TypeScript
+consumers (which have no notion of exactness), while the original wrapped
+form is preserved in the `@escalier-type` JSDoc tag so other Escalier
+consumers recover the precise exactness. This is the general round-trip
+mechanism in §9.
 
 ### 6.6. Value-Level Conversion: `exact<T>(v)`
 
@@ -1792,8 +1763,8 @@ exact union; narrowing an inexact union still leaves the unknown tail.
 Built-in utility types preserve exactness in the natural way: the result
 of `Partial<T>`, `Readonly<T>`, `Pick<T, K>`, or `Omit<T, K>` over an
 exact type is exact; the result over an inexact type is inexact. (See
-the **Utility Types** section for `Exact<T>` / `Inexact<T>` themselves,
-which deliberately *change* exactness.)
+§6 for `Exact<T>` / `Inexact<T>` themselves, which deliberately *change*
+exactness.)
 
 ### 7.10. Type aliases and references
 
@@ -1857,11 +1828,10 @@ inexact constraints accept either.
   behavior across the package boundary and avoids spurious errors when
   calling into TypeScript libraries. Users who know an imported type is
   actually closed can opt into exactness at the use site with `Exact<T>`.
-- **Round-tripping:** When Escalier emits `.d.ts` files for consumption by
-  other Escalier projects, it preserves the original Escalier type via an
-  `@escalier-type` JSDoc tag on each declaration (see §9). TypeScript
-  consumers will see the (inexact) erased form; Escalier consumers will
-  recover the precise exactness from the JSDoc payload.
+- **Round-tripping:** Escalier-emitted `.d.ts` carries the original type
+  in an `@escalier-type` JSDoc tag, so exactness round-trips between
+  Escalier projects while plain TypeScript consumers see the erased form.
+  See §9 for the full mechanism.
 
 ## 9. TypeScript Interop
 
