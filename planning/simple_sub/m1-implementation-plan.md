@@ -27,7 +27,10 @@ Per the milestone, M1 delivers the **structural core**:
    - `TypeVarType` — bound-list inference variable (`id`, `level`,
      `lowerBounds`, `upperBounds`).
    - `PrimitiveType`, `LiteralType`, `FunctionType` (multi-arg), `TupleType`,
-     plus `Void`.
+     `Void`, plus the lattice bounds `NeverType` (⊥) and `UnknownType` (⊤) —
+     these two are fundamental to the subtyping lattice (they're the coalesced
+     output of an empty-bounds single-polarity variable), so they belong in M1
+     even though the spike emits them via `type_system`.
 3. **The constraint engine** — `constrain(lhs <: rhs)` with the coinductive
    `seen`-cache, the structural cases for the M1 type set, the variable cases
    (bound-append + transitive propagation), and **levels + extrusion**.
@@ -84,7 +87,7 @@ Most of M1 is a faithful copy-with-rename. The files that map directly:
 | Spike file | M1 destination | Notes |
 |---|---|---|
 | `polarity.go` | `solver/polarity.go` | Copy verbatim. |
-| `types.go` (M1 subset) | `soltype/type.go` | Keep `Variable`→`TypeVarType`, `Primitive`→`PrimitiveType`, `Literal`→`LiteralType`, `Function`→`FunctionType`, `Tuple`→`TupleType`, `Void`. **Drop** `Record`/`Mut`/`Alias`/`Union`/`Intersection`/`ResidualOp` (M4/M6/M8). Trim `levelOf`/`containsVariable` to the M1 cases. |
+| `types.go` (M1 subset) | `soltype/type.go` | Keep `Variable`→`TypeVarType`, `Primitive`→`PrimitiveType`, `Literal`→`LiteralType`, `Function`→`FunctionType`, `Tuple`→`TupleType`, `Void`; add `NeverType`/`UnknownType` (lattice ⊥/⊤, which the spike emits via `type_system`). **Drop** `Record`/`Mut`/`Alias`/`Union`/`Intersection` (M4/M6). Trim `levelOf`/`containsVariable` to the M1 cases — this also drops their `*ResidualOp` arms (the `ResidualOp` type itself is defined in the spike's `residual.go`, not `types.go`, and is M8). |
 | `constrain.go` | `solver/constrain.go` | Keep the prim/literal/function/tuple/variable cases + `extrude`. Drop the union/intersection lattice rules and the record/mut/alias cases (re-added in their milestones). |
 | `simplify.go` (`analyze` only) | `solver/simplify.go` | Promote **occurrence analysis only**. Leave co-occurrence merging for M3. |
 | `coalesce.go` | `solver/coalesce.go` | **Delta #1 below.** |
@@ -197,8 +200,12 @@ The spike is a throwaway, so it freely uses raw maps and `fmt.Errorf`. Per
   It's in `scheme.go`, which is M3 (let-polymorphism) work; the fix it calls for
   (lifetime levels) is M4. Neither `scheme.go` nor that limitation enters M1.
 - **The `type_system` import.** After M1, the new package must have **zero**
-  `type_system` references (the spike has 4 in non-test files, all in
-  `coalesce.go`). This is the concrete, greppable success signal for Delta #1.
+  `type_system` references. (For scale: 4 non-test files in the *whole* spike
+  import `type_system` — `coalesce.go`, `infer.go`, `typeops.go`, `residual.go` —
+  but of the files M1 actually promotes, only `coalesce.go` uses it, ~64
+  references. `infer.go`/`typeops.go`/`residual.go` aren't carried into M1 at
+  all, per §2.1.) The greppable success signal for Delta #1:
+  `grep -rn "type_system" internal/solver/ | grep -v _test` returns nothing.
 
 ---
 
@@ -210,7 +217,8 @@ The spike is a throwaway, so it freely uses raw maps and `fmt.Errorf`. Per
 internal/solver/
   soltype/
     type.go        Type iface; TypeVarType, PrimitiveType, LiteralType,
-                   FunctionType, TupleType, Void, TypeRefType; levelOf, boundsAt
+                   FunctionType, TupleType, Void, NeverType, UnknownType,
+                   TypeRefType; levelOf, boundsAt
     print.go       Type -> Escalier annotation string (+ quantifier collection)
   polarity.go      Polarity enum + flip
   context.go       Context: varCounter + freshVar (the engine's mutable state)
@@ -247,8 +255,11 @@ inline). So:
 
 - **M1 promotes `analyze`** (occurrence analysis) — single-polarity elimination
   falls out of it, and it's what makes `id(5)`-shaped terms coalesce to `5`
-  rather than `T0 | 5`, and the identity's parameter-only variables coalesce to
-  `unknown` rather than a vacuous `<T0>`.
+  rather than `T0 | 5`, and a parameter the body never uses (e.g. `fn (x) { 5 }`,
+  whose `x` occurs only negatively) coalesce to `unknown` rather than a vacuous
+  `<T0>`. (The identity's own variable is *bipolar* — it occurs in both the
+  parameter and the return — so it survives as the named `T0`; the `unknown`
+  case is the genuinely single-polarity one.)
 - **M1 uses a degenerate (identity) union-find** — no merging.
 - **M3 adds co-occurrence merging** (`collectCoOcc`, `mergeCoOccurring`, the real
   union-find), which is what collapses `InnerCapturesOuterParam` to
@@ -336,8 +347,10 @@ criterion — table-driven, **full** error-message assertions per CLAUDE.md):
   interim.
 
 **Tests:** single-polarity elimination (positive var with lower bound `5` ⇒
-`5`; parameter-only negative var ⇒ `unknown`); bipolar var survives as a named
-ref; `combine` union/intersection shaping.
+`5`; parameter-only negative var with no bound ⇒ `unknown`; positive var with no
+bound ⇒ `never`); bipolar var survives as a named ref; `combine` sole-element
+passthrough (the multi-element union/intersection case needs M6 nodes and is
+deferred there — M1 tests keep `combine` to `len(parts) == 1`, see §9.5).
 
 ### PR 4 — `soltype` printer + the identity end-to-end test
 
@@ -352,7 +365,9 @@ ref; `combine` union/intersection shaping.
 - **the headline case** — build the identity `FunctionType{[α], α}` by hand,
   coalesce + print ⇒ `fn <T0>(x: T0) -> T0`;
 - round-trips for primitives, literals, tuples (`[number, string]`),
-  multi-arg functions, and a coalesced union/intersection from PR 3.
+  multi-arg functions, and the lattice bounds (`never`, `unknown`). (The
+  multi-element union/intersection round-trip is an **M6** test — those nodes
+  and their `printType` cases don't exist in M1; see §9.5.)
 
 > Inline-snapshot option: per CLAUDE.md, the printed-string assertions are exactly
 > the case where `snaps.MatchInlineSnapshot` is appropriate; use it for the
@@ -511,6 +526,13 @@ type Void struct{}
 // alias references (M4+). NEW in M1 — see §2.2 Delta #1.
 type TypeRefType struct{ Name string }
 
+// NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
+// the coalesced output of an empty-bounds single-polarity variable (positive ⇒
+// never, negative ⇒ unknown). The spike emits these via type_system; M1 carries
+// them natively because they're fundamental to the lattice, not optional sugar.
+type NeverType struct{}
+type UnknownType struct{}
+
 func (*TypeVarType) isType()   {}
 func (*PrimitiveType) isType() {}
 func (*LiteralType) isType()   {}
@@ -518,6 +540,8 @@ func (*FunctionType) isType()  {}
 func (*TupleType) isType()     {}
 func (*Void) isType()          {}
 func (*TypeRefType) isType()   {}
+func (*NeverType) isType()     {}
+func (*UnknownType) isType()   {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -537,7 +561,7 @@ func LevelOf(t Type) int {
 			m = max(m, LevelOf(e))
 		}
 		return m
-	default: // PrimitiveType, LiteralType, Void, TypeRefType
+	default: // PrimitiveType, LiteralType, Void, TypeRefType, NeverType, UnknownType
 		return 0
 	}
 }
@@ -599,8 +623,12 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			return []error{cannotConstrain(l, r)}
 		}
 	case *soltype.LiteralType:
-		// LiteralType <: LiteralType (Eq) and LiteralType <: PrimitiveType
-		// (a literal is a subtype of its primitive). // …
+		// Two arms, both per spike constrain.go:124-136:
+		//   LiteralType <: LiteralType  -> nil if l.Eq(r), else cannotConstrain(l, r)
+		//   LiteralType <: PrimitiveType -> nil if litKindPrim(l) == r.Name
+		//                                   (a literal is a subtype of its primitive),
+		//                                   else cannotConstrain(l, r)
+		// A mismatch returns the error; any other rhs falls through to the var case. // …
 	case *soltype.FunctionType:
 		if r, ok := rhs.(*soltype.FunctionType); ok {
 			// Fewer-params-is-subtype: l <: r requires len(l.Params) <= len(r.Params).
@@ -765,9 +793,9 @@ func (co *coalescer) coalesce(t soltype.Type, pol Polarity) soltype.Type {
 			// Single-polarity: drop the var, keep only its bounds.
 			if len(bounds) == 0 {
 				if pol == Positive {
-					return &soltype.NeverType{} // or the chosen bottom repr
+					return &soltype.NeverType{} // ⊥ — in the M1 type set (§9.1)
 				}
-				return &soltype.UnknownType{} // top
+				return &soltype.UnknownType{} // ⊤ — in the M1 type set (§9.1)
 			}
 			return combine(pol, dedup(bounds))
 		}
@@ -778,17 +806,22 @@ func (co *coalescer) coalesce(t soltype.Type, pol Polarity) soltype.Type {
 }
 
 // combine builds a union (Positive) or intersection (Negative) of parts,
-// returning the sole element directly when only one remains. Union/Intersection
-// nodes themselves arrive in M6 — in M1, len(parts) is always 1, so combine just
-// returns parts[0]. (Stub the multi-part branch with a TODO(M6).)
+// returning the sole element directly when only one remains. UnionType/
+// IntersectionType nodes arrive in M6 — so in M1 the multi-part branch is a
+// TODO(M6) and M1 tests are written so combine only ever sees len(parts) == 1
+// (see the note below); combine just returns parts[0].
 func combine(pol Polarity, parts []soltype.Type) soltype.Type { /* … */ }
 ```
 
-> M1 note: `NeverType`/`UnknownType`/`UnionType`/`IntersectionType` are not in
-> the M1 type set (§1). For M1, the only reachable coalesce outputs are atoms,
-> functions, tuples, and `TypeRefType`; the empty-bounds and multi-part branches
-> are written against placeholders and exercised for real in M6. Decide in PR 3
-> whether to introduce bare `NeverType`/`UnknownType` now (cheap) or stub them.
+> M1 note: `NeverType`/`UnknownType` **are** in the M1 type set (§9.1) — they're
+> the lattice bottom/top and the reachable output of an empty-bounds
+> single-polarity variable, so the empty-bounds branch above is live M1 code.
+> `UnionType`/`IntersectionType` are **not** in M1 (they land in M6): a
+> single-polarity variable with two or more *distinct* concrete bounds would
+> need one, so **M1's tests are restricted to single-bound / bipolar variables**,
+> keeping `combine` to the `len(parts) == 1` passthrough. The genuine
+> multi-element union/intersection shaping-and-round-trip test lives in M6, where
+> the nodes and their `printType` cases exist.
 
 ### 9.6 `soltype/print.go` — the native printer *(PR 4)*
 
@@ -799,16 +832,17 @@ coalescer, §2.3 row 6).
 ```go
 package soltype
 
-// Print renders a coalesced Type as an Escalier type-annotation string,
-// prefixing a function's type-parameter quantifier when it has free TypeRefs.
+// Print renders a coalesced Type as an Escalier type-annotation string. When the
+// top-level type is a function with free TypeRefs, it prefixes the quantifier.
+// (In M1 the quantifier attaches only to a top-level function, matching the
+// spike — a bare tuple/atom with free refs is not a reachable M1 output.)
 func Print(t Type) string {
-	params := collectTypeParams(t) // distinct TypeRefType names, first-seen order
-	body := printType(t)
-	if fn, ok := t.(*FunctionType); ok && len(params) > 0 {
-		_ = fn
-		return "fn <" + strings.Join(params, ", ") + ">" + body[len("fn "):]
+	if fn, ok := t.(*FunctionType); ok {
+		if params := collectTypeParams(fn); len(params) > 0 {
+			return "fn <" + strings.Join(params, ", ") + ">" + printFuncTail(fn)
+		}
 	}
-	return body
+	return printType(t)
 }
 
 func printType(t Type) string {
@@ -819,18 +853,29 @@ func printType(t Type) string {
 		// "hello" | 5 | true (Escalier literal syntax) // …
 	case *TypeRefType:
 		return t.Name
+	case *NeverType:
+		return "never"
+	case *UnknownType:
+		return "unknown"
 	case *FunctionType:
-		ps := make([]string, len(t.Params))
-		for i, p := range t.Params {
-			ps[i] = paramName(t.ParamNames, i) + ": " + printType(p)
-		}
-		return "fn (" + strings.Join(ps, ", ") + ") -> " + printType(t.Ret)
+		return "fn " + printFuncTail(t)
 	case *TupleType:
 		// "[" + comma-join(printType(e)) + "]" // …
 	case *Void:
 		return "void"
 	}
 	panic("Print: unhandled type")
+}
+
+// printFuncTail renders the "(params) -> ret" portion of a function, without the
+// "fn" keyword or quantifier — so both Print (with a quantifier) and printType
+// (without) compose it instead of byte-slicing a rendered prefix.
+func printFuncTail(t *FunctionType) string {
+	ps := make([]string, len(t.Params))
+	for i, p := range t.Params {
+		ps[i] = paramName(t.ParamNames, i) + ": " + printType(p)
+	}
+	return "(" + strings.Join(ps, ", ") + ") -> " + printType(t.Ret)
 }
 
 // collectTypeParams walks t and returns distinct TypeRefType names in first-seen
@@ -841,9 +886,15 @@ func collectTypeParams(t Type) []string { /* … */ }
 func paramName(names []string, i int) string { /* names[i] or "x"+i, per spike */ }
 ```
 
-For the identity term, a test builds the type by hand and asserts the string:
+For the identity term, a test builds the type by hand and asserts the string.
+**This end-to-end test lives in `package solver`** (e.g. `solver/coalesce_test.go`),
+*not* in `soltype` — it drives the engine's unexported `Context`/`freshVar`/
+`analyze`/`coalescer` and reaches `soltype.Print` across the boundary (`soltype`
+must not import `solver`, per §3.1):
 
 ```go
+package solver // solver/coalesce_test.go
+
 func TestIdentityRenders(t *testing.T) {
 	ctx := &Context{}
 	a := ctx.freshVar(1)
