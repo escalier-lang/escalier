@@ -439,8 +439,8 @@ the new package has fully severed the spike's `type_system` coupling.
   (`type_system.New… → soltype.…`) and moving variable-naming into the
   coalescer/printer; diff against the spike during review to confirm the
   algorithm is unchanged.
-- **Scope creep from the spike.** The spike file set is tempting to copy whol
- wholesale. Resist: M1 is the structural-core subset only. Records, `mut`,
+- **Scope creep from the spike.** The spike file set is tempting to copy
+  wholesale. Resist: M1 is the structural-core subset only. Records, `mut`,
   lifetimes, unions, and type operators each land in their own milestone with
   their own tests and (for `mut`) their own gate. Copying them early lands
   untested-against-real-source code ahead of the bridge.
