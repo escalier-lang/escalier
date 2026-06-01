@@ -441,11 +441,23 @@ The most damaging form of the bug involves **optional parameters**. A
 callback with a trailing optional — `(a: string, b?: boolean) => void` —
 flows through TypeScript's bivariance into a slot that supplies more
 arguments, and at runtime the optional parameter is bound to a value of
-the wrong type. The callee *declared* that `b` might be absent, but
-TypeScript's chain of widenings lets a caller supply *anything* there: a
-`number` reaches a parameter the body trusts as `boolean`, with no runtime
-error and silently wrong results downstream. §4.2.1.2 walks this worked
-example end-to-end.
+the wrong type:
+
+```ts
+function foo(cb: (a: string) => void)             { bar(cb); }
+function bar(cb: (a: string, b: number) => void)  { cb("hello", 5); }
+function cb(a: string, b?: boolean) { if (b) { /* b is "truthy" */ } }
+
+foo(cb);
+// At runtime cb is invoked as cb("hello", 5).
+// b is bound to the number 5; the body's `if (b)` treats it as a boolean.
+// No runtime error, silently wrong downstream.
+```
+
+The callee *declared* that `b` might be absent, but TypeScript's chain of
+widenings lets a caller supply *anything* there — here a `number` reaches a
+parameter the body trusts as `boolean`. §4.2.1.2 walks this worked example
+end-to-end.
 
 Inexact functions are how Escalier controls this — `...` is the explicit
 opt-in to "callers may supply extras," and the accept-set/contravariance
