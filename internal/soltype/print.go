@@ -114,13 +114,13 @@ func printFuncTail(t *FuncType) string {
 }
 
 // paramName renders p.Pattern. M1's only Pat concrete is IdentPat; a nil or
-// otherwise-unknown pattern falls back to a positional name ("x0", "x1", ...).
-// M2's destructuring Pat concretes add their own arms here.
+// otherwise-unknown pattern falls back to a positional name ("arg0", "arg1",
+// ...). M2's destructuring Pat concretes add their own arms here.
 func paramName(p *FuncParam, i int) string {
 	if pat, ok := p.Pattern.(*IdentPat); ok {
 		return pat.Name
 	}
-	return "x" + strconv.Itoa(i)
+	return "arg" + strconv.Itoa(i)
 }
 
 // printPrim maps a Prim to its Escalier surface name — mirrors
