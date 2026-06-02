@@ -75,7 +75,12 @@ func describe(t soltype.Type) string {
 		case *soltype.StrLit:
 			return strconv.Quote(l.Value)
 		case *soltype.NumLit:
-			return strconv.FormatFloat(l.Value, 'f', -1, 32)
+			// JavaScript numbers are IEEE 754 doubles, and NumLit.Value is a
+			// float64, so render at 64-bit precision — bitSize 32 would round
+			// through float32 and misrender values beyond float32's range/mantissa
+			// (e.g. 0.123456789, 16777217). Note codegen/printer.go still uses
+			// bitSize 32 here, which is the same latent bug on the emit path.
+			return strconv.FormatFloat(l.Value, 'f', -1, 64)
 		case *soltype.BoolLit:
 			return strconv.FormatBool(l.Value)
 		}

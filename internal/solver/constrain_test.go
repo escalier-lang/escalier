@@ -75,6 +75,12 @@ func TestConstrainLiteral(t *testing.T) {
 		{"5 <: 5", numLit(5), numLit(5), nil},
 		{"5 <: string", numLit(5), str(), []string{"cannot constrain 5 <: string"}},
 		{"5 <: 6", numLit(5), numLit(6), []string{"cannot constrain 5 <: 6"}},
+		// Regression: float64 literals must render at 64-bit precision, not
+		// float32 (which would garble these to 0.12345679 / 16777216).
+		{"high-precision decimal", numLit(0.123456789), str(),
+			[]string{"cannot constrain 0.123456789 <: string"}},
+		{"large integer past float32 mantissa", numLit(16777217), str(),
+			[]string{"cannot constrain 16777217 <: string"}},
 		{`"a" <: "b"`, strLit("a"), strLit("b"), []string{`cannot constrain "a" <: "b"`}},
 	}
 	for _, tt := range tests {
