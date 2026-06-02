@@ -46,24 +46,69 @@ a section recording both before M3 lands.)
 
 ## M1 — Package skeleton + `soltype`
 
-Stand up the new package and its type representation.
+Stand up the new package and its type representation — the structural-core
+subset, no polymorphism rendering yet. See
+[m1-implementation-plan.md](m1-implementation-plan.md) for the full PR
+breakdown, design rationale, and per-file sketches.
 
-- New package as a **top-level sibling to `internal/checker/`** (e.g.
-  `internal/solver/`; leaf name TBD). The spike lives at
-  `internal/simplesub/`, but the production package sits beside the old
-  checker so both can be built and differential-tested side-by-side, and so the
-  old `internal/checker/` tree can be deleted wholesale at cutover.
-- `soltype` types promoted from the spike: bound-list `TypeVar`
-  (`lowerBounds`/`upperBounds` + `level`), `Primitive`, `Literal`, `Function`,
-  `Tuple`, plus the constraint primitive `constrain(lhs <: rhs)` with the
-  coinductive seen-cache, levels/extrusion, and polarity-driven coalescing.
-- A printer for `soltype.Type` (its own, not `type_system.PrintType`) producing
-  Escalier type-annotation syntax for test assertions.
-- `Info` side table: `map[ast.Node]soltype.Type` + `TypeOf`/`setType`.
+- New package as a **top-level sibling to `internal/checker/`**
+  (`internal/solver/`, with `internal/solver/soltype/` for the type
+  representation). The spike lives at `internal/simplesub/`, but the
+  production package sits beside the old checker so both can be built and
+  differential-tested side-by-side, and so the old `internal/checker/` tree
+  can be deleted wholesale at cutover.
+- **`soltype` types** promoted from the spike, with shapes mirroring
+  `type_system` where they're cleaner: `TypeVarType` (bound-list inference
+  variable with `ID`/`Level`/`LowerBounds`/`UpperBounds`); `PrimType` with a
+  closed `Prim` enum (`NumPrim`/`StrPrim`/`BoolPrim`); `LitType` wrapping a
+  sealed `Lit` interface (`NumLit`/`StrLit`/`BoolLit`); `FuncType` whose
+  `Params` are `*FuncParam` carrying a sealed `Pat` (M1 ships only
+  `IdentPat`); `TupleType`; `Void`; plus the lattice bounds `NeverType` (⊥)
+  and `UnknownType` (⊤); plus `UnionType` / `IntersectionType` for
+  multi-bound coalesced output. `Polarity` enum lives in `soltype` so
+  `TypeVarType.BoundsAt(pol)` can take it without inverting the
+  `soltype`/`solver` package boundary.
+- **The constraint engine** — `constrain(lhs <: rhs)` with the coinductive
+  seen-cache (pointer-identity keying, sufficient for M1's non-recursive
+  type set), the structural cases (`PrimType`/`LitType`/`FuncType`/
+  `TupleType`/`Void`) for the M1 set, the variable cases (bound-append +
+  transitive propagation), and **levels + extrusion**. Note: M1's
+  same-length tuple rule and fewer-params-is-subtype function rule are the
+  implicit "one side" of the exact/inexact split that lands in M3
+  (functions) and M4 (tuples) with the exactness flag.
+- **Bound-inlining coalescing** — `coalesce(t, pol)` walks a bound-carrying
+  `soltype.Type` and returns a coalesced `soltype.Type` by inlining every
+  `TypeVarType` to its bounds (positive ⇒ union of lowers, negative ⇒
+  intersection of uppers; empty positive ⇒ `never`, empty negative ⇒
+  `unknown`). No bipolar-variable retention, no occurrence analysis, no
+  named-type-param refs — these are deferred to M3 along with the rest of
+  the polymorphism-rendering bundle (`Scheme`s,
+  `instantiate`/`freshenAbove`, `analyze`, named-ref node informed by M4's
+  alias-ref needs, co-occurrence merging, `<T0, …>` quantifier prefix).
+- **A printer for `soltype.Type`** (its own, not `type_system.PrintType`)
+  rendering the M1 coalesced type set in Escalier type-annotation syntax.
+  No `<T0, …>` quantifier prefix in M1 — nothing to collect.
+- **Sealed `SolverError` interface with per-kind concrete structs**
+  (`CannotConstrainError`, `FuncArityMismatchError`,
+  `TupleLengthMismatchError`, …), modeled on
+  [internal/checker/error.go](../../internal/checker/error.go). Each struct
+  carries typed `soltype.Type` references so LSP/tooling consumers can
+  inspect what an error refers to without scraping the rendered message.
+  Wording matches the spike's `fmt.Errorf` strings verbatim. Errors are
+  span-free in M1; M2 adds `Span()` and may rebase onto the old checker's
+  diagnostic types per [02-design-notes.md](02-design-notes.md) Settled
+  Decision #4.
+- **`Info` side table**: `map[ast.Node]soltype.Type` + `TypeOf`/`setType`.
 
-**Accept:** unit tests for `constrain` (prim/function variance incl. Escalier's
-fewer-params-is-subtype rule) and coalescing; an identity term renders
-`fn <T0>(x: T0) -> T0`. (Spike M0/M1.)
+**Accept:** unit tests for `constrain` (prim/function variance incl.
+Escalier's fewer-params-is-subtype rule; levels + extrusion with no
+higher-level var leakage into lower-level bound lists); coalescing
+(inline-to-bounds, empty-bound collapse to `never`/`unknown`, multi-bound
+union/intersection); printer round-trips for the M1 coalesced type set
+(prims, literals, tuples, multi-arg functions, `never`/`unknown`,
+`number | string`, `number & string`). The identity rendering
+(`fn <T0>(x: T0) -> T0`) is **deferred to M3** along with the rest of the
+polymorphism-rendering bundle — see [m1-implementation-plan.md](m1-implementation-plan.md) §3.3.
 
 ---
 
@@ -79,9 +124,26 @@ Replace the spike's hand-built IR with a real constraint-generating walk over
   own, not `type_system`'s).
 - A fixture-style harness: given `.esc` source, infer and assert the rendered
   binding types (its own assertions, independent of the old checker).
+- **Stdlib types: prerequisite tracking.** Real source uses constructs whose
+  type rules reference standard-library type names — `await e` needs
+  `Promise<T>`; `for (x in xs)` and `for await (x in xs)` need an
+  `Iterable<T>` / `AsyncIterable<T>` protocol type; `yield e` needs
+  `Generator<Y, R, TNext>` / `AsyncGenerator<…>`; iteration-related
+  built-ins need a `{value, done}` `IteratorResult<T>`. None of these
+  type-checking *rules* land in M2 (they sit in the milestones that own the
+  language features below), but the stdlib type *definitions* they reference
+  must exist by the time those milestones can wire up their rules. M2's
+  responsibility is just to make sure these names resolve through the
+  existing stdlib decls (whether sourced from `lib.esc.d.ts`-equivalents,
+  Escalier's own stdlib, or both) — i.e., the parser-bridge produces
+  `soltype` types for them — so downstream milestones aren't blocked on
+  "but where does `Promise` come from?"
 
 **Accept:** top-level `val`/`fn` declarations from real source infer correct
-rendered types end-to-end; multi-file module via the dep graph resolves.
+rendered types end-to-end; multi-file module via the dep graph resolves;
+references to the stdlib types listed above resolve through the existing
+declaration channels and surface as `soltype.Type` values (the rules that
+*use* them land later).
 
 **Gate:** if driving from the real AST/dep-graph requires reaching back into the
 old checker's internals, the parallel-package boundary is wrong — stop and
@@ -97,6 +159,18 @@ reassess.
   merging (so generalized signatures render compactly, and parameter-only
   variables coalesce to `unknown` rather than a vacuous `<T0>` — a blessed
   improvement).
+- **`async fn` and `await e`.** An `async fn () -> T` is internally typed
+  exactly like a plain function (the body has return type `T`), but its
+  *external* type is `fn () -> Promise<T>` — the async modifier wraps the
+  return in `Promise<…>`. `await e` requires `e <: Promise<U>` for some `U`
+  and produces `U`; the constraint emitted is just that subtype check, with
+  `U` minted fresh and inferred from `e`'s bounds like any other inference
+  variable. Awaiting outside an `async` function is rejected by the AST
+  walk, not by the type rule. Nested `Promise<Promise<T>>` does *not*
+  auto-flatten in this milestone — `Awaited<T>` (the recursive-conditional
+  flattening) is a type-level operator that lands in M8; user code that
+  cares about flattening writes `Awaited<T>` explicitly until then.
+  Depends on `Promise<T>` being available from the stdlib (M2 prerequisite).
 - **Function exactness flag.** `Function` carries an `exact` flag; a bare
   `fn(...)` is exact, `fn(..., ...)` is inexact. **Direct calls reject extra
   args regardless of exactness** (an inexact function ignores them, but passing
@@ -115,7 +189,11 @@ reassess.
 (Spike M1.) Plus, on function exactness (per escalier-lang/escalier#677):
 **both** exact `fn(x, y)` and inexact `fn(x, y, ...)` reject a 3-argument *direct
 call*; and into a `fn(x, y)` callback slot, `fn(x, y)` / `fn(x, ...)` / `fn(...)`
-are accepted while exact `fn(x)` and any 3+-param function are rejected.
+are accepted while exact `fn(x)` and any 3+-param function are rejected. Plus,
+on async: `async fn () -> number` renders as `fn () -> Promise<number>`;
+`await p` where `p: Promise<string>` yields `string`; `await p` where
+`p: Promise<Promise<number>>` yields `Promise<number>` (no auto-flatten —
+that's M8's `Awaited<T>`).
 
 **Function overloading.** Escalier supports overloaded `fn` declarations and
 this milestone is where they land for free functions. Overloading is a poor fit
@@ -324,6 +402,21 @@ M4 substrate without retrofitting.
   must dispatch without expanding, so variance is inferred internally for use
   there, but is never user-annotated. `in`/`out` modifiers are therefore
   allowed only on classes/interfaces, not on `type` declarations (matching TS).
+- **Iteration protocol for `for (x in xs)` and `for await (x in xs)`.** Both
+  loop forms desugar to a protocol check rather than a structural rule:
+  - Sync: `xs <: Iterable<T>` for some `T`; the loop variable's type is `T`.
+    `Iterable<T>` is the stdlib type defining `[Symbol.iterator](): Iterator<T>`
+    (plus `Iterator<T>` itself with `.next() -> IteratorResult<T>`).
+  - Async (`for await`): `xs <: AsyncIterable<T>`, similar shape with
+    promise-wrapped results. Only legal inside an `async fn` (the AST walk
+    enforces this).
+  The constraint is just the standard `xs <: Iterable<T>` subtype check with
+  `T` minted fresh — the protocol resolution is one method-dispatch step
+  through the M5 nominal machinery (same path as `p.x` on a class instance).
+  No new constraint machinery needed; this is purely "wire the loop syntax to
+  the existing dispatch path." Depends on `Iterable<T>` / `Iterator<T>` /
+  `AsyncIterable<T>` / `IteratorResult<T>` being available from the stdlib
+  (M2 prerequisite).
 - **`mut` and lifetimes ride on it free.** `Class` is borrowed the same way
   records and tuples are — wrapped in `Ref{mut, lt, inner: Class{...}}`. The
   M4 lifetime machinery applies unchanged (`mut 'a Point` is `Ref{mut: true,
@@ -362,7 +455,10 @@ Plus: a bare `{x: number}` is rejected against `Point` (and vice versa);
 finds A's methods when not overridden; mutually recursive class declarations
 infer cleanly. Plus exactness: a `final class Point` instance is exact (rejects
 extra members, `keyof` is an exact union); a non-`final` class instance is
-inexact.
+inexact. Plus iteration: `for (x in numbers)` where `numbers: Array<number>`
+binds `x: number`; `for (x in 5)` is rejected (number doesn't implement
+`Iterable`); `for await (x in stream)` outside an `async fn` is rejected by
+the AST walk; `for await` over a sync iterable is rejected by the type rule.
 
 **Method overloading.** Methods reuse M3's overload-resolution machinery
 (no-inference, separate-phase, ground-enough, single specificity rule) with
@@ -550,6 +646,40 @@ the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
   be checked — it builds on the flag laid down in M3–M6. The
   `Exact<T>`/`Inexact<T>` type-level utilities also land here (they are type
   operators).
+- **Generators (`gen fn` / `yield e` / `yield from g`).** Same shape as
+  `throws`: `FuncType` gains a `Yields Type` field, covariant in subtyping,
+  defaulting to `never`. A `gen fn () -> R` is internally typed with body
+  return `R` and a yields-inference variable accumulating each `yield e`'s
+  type as a lower; externally the function's type is
+  `Generator<Y, R, TNext>` (or `AsyncGenerator<…>` for `async gen fn`) where
+  `Y` is the coalesced yields variable. `yield e` requires no special
+  constraint beyond `typeof(e) <: yields_var`; the expression itself has
+  type `TNext` (the next-value-sent-in type, which lands as a third
+  position once anyone uses `generator.next(value)`). `yield from g`
+  (a.k.a. `yield*` in JS) requires `g <: Iterable<Y>` and forwards yields.
+  The constraint engine extends just like `throws` did: parallel arms in
+  `constrain`/`extrude`/`LevelOf`/printer, no new lattice machinery.
+  Depends on `Generator<Y, R, TNext>` / `AsyncGenerator<…>` being
+  available from the stdlib (M2 prerequisite).
+- **`throws T` clause on functions.** `FuncType` gains a `Throws Type` field
+  (parallel to `Ret`), covariant in subtyping, defaulting to `never` (⊥) when
+  the source has no `throws` clause. The constraint engine extends naturally:
+  the function arm in `constrain` recurses `l.Throws <: r.Throws`; `extrude`
+  recurses into `Throws` with the same polarity as `Ret`; `LevelOf` takes the
+  max of params, ret, and throws; the printer renders `throws T` after the
+  return type when `T` isn't `never`. Each function body has a throws
+  inference variable that accumulates lowers as `throw e` statements and
+  calls to throwing functions emit `constrain(thrown, throws_var)`. Throws
+  polymorphism (`<E>(f: () -> T throws E) -> T throws E`) falls out of M3's
+  let-generalization without special handling — `E` is just another type
+  variable that gets quantified. **Open design question, not settled in
+  this plan:** how `try`/`catch` narrows the inferred throws of the body
+  (i.e., the "subtract `K` from `body_throws` for everything not in the
+  `catch` clause" semantics). A two-variable encoding (`body_throws <:
+  surrounding_throws ∪ caught_throws`) works in the existing lattice and is
+  the conservative starting point; integration with the existing checker's
+  narrowing semantics is the actual question to resolve before
+  implementation.
 
 **Accept:** the spike's type-operator cases against real source —
 `keyof`/indexed access over ground and usage-inferred operands; conditional
@@ -571,6 +701,21 @@ Escalier and asserting their reductions match TS:
 - `Record<K, V>` (mapped over a key union).
 - `Capitalize<S>` / `Uncapitalize<S>` / `Uppercase<S>` / `Lowercase<S>` and a
   small template-literal case (e.g. `EventName<K>` ⇒ `` `on${Capitalize<K>}` ``).
+
+Plus, on `throws`: a no-`throws` body infers `throws never` and prints
+without the clause; a body with `throw "boom"` infers `throws "boom"`;
+covariant subtyping (`fn () throws "a"` is a subtype of `fn () throws "a"
+| "b"` but not the reverse); throws polymorphism (`<E>(f: () -> () throws
+E) -> () throws E` round-trips through let-generalization); a `try`/`catch`
+test for the body-narrowing rule decided during design.
+
+Plus, on generators: `gen fn () { yield 1; yield "a" }` renders
+externally as `Generator<1 | "a", void, unknown>`; `yield from g` where
+`g: Iterable<number>` is accepted in a `gen fn` whose yields lower-bound
+includes `number`; `gen fn` outside a `gen` context (top-level `yield`)
+is rejected by the AST walk; `Awaited<ReturnType<F>>` over an
+`async gen fn () -> R` returns `R` once `Awaited<T>` and `ReturnType<F>`
+reduce through the M8 operator machinery.
 
 ---
 
