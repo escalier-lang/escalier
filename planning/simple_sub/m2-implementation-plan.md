@@ -194,8 +194,10 @@ Entry point (working signature, paralleling the old driver):
 ```go
 // InferModule builds the dep graph for the parsed module, infers every
 // top-level declaration in SCC order, populates Info, and returns the module
-// Scope plus errors. Multi-file callers pass the merged module / module set.
-func (c *checker) InferModule(module *ast.Module) (*Scope, *Info, []error)
+// Scope plus errors. The package-level entry constructs a fresh checker
+// internally; multi-file callers use InferModules (§3.7). Full signatures in
+// §3.7.
+func InferModule(module *ast.Module) (*Scope, *soltype.Info, []Error)
 ```
 
 ### 3.4 Scope / Binding / Namespace (own, not `type_system`)
@@ -211,10 +213,14 @@ type Scope struct {
     namespaces map[string]*Namespace     // a separate sort — NOT a soltype.Type
     parent     *Scope
 }
-func (s *Scope) GetValue(name string) *ValueBinding
-func (s *Scope) GetType(name string) *TypeBinding
-func (s *Scope) GetNamespace(name string) *Namespace
+func (s *Scope) GetValue(name string) (ValueBinding, bool)
+func (s *Scope) GetType(name string) (TypeBinding, bool)
+func (s *Scope) GetNamespace(name string) (*Namespace, bool)
 ```
+
+(Comma-ok return shape, matching the `inferIdent` sketch in §3.7. Design-notes
+sketches these as pointer returns; the comma-ok form is the M2 refinement so the
+not-found case is explicit at every call site.)
 
 - `ValueBinding` — a name's `soltype` scheme (`MonoScheme`/`PolyScheme`, from the
   spike's `scheme.go`) plus its source provenance. The production analogue of the
@@ -232,8 +238,10 @@ M3+ work. Keep the rest deliberately small; it grows with later milestones.
 
 ### 3.5 Errors & provenance
 
-- Bridge errors (`errors.go`): unbound name, unsupported node — carry
-  `provenance`/source spans from the AST node (reuse `internal/provenance/`).
+- Bridge errors (`errors.go`): unbound name, unsupported node — carry source
+  spans (`ast.Span`) taken from the offending AST node via `node.Span()`. (Note:
+  the `internal/provenance/` package exports only the `Provenance` marker
+  interface — `IsProvenance()` — *not* a span type; spans live in `internal/ast`.)
 - Inference errors from the core (`constrain` failures) attach the offending
   node's provenance via the `Info`/provenance side table (M1 provides the
   mechanism; M2 supplies the AST node). Assert **full** messages in tests
@@ -281,9 +289,10 @@ type checker struct {
 
 func newChecker() *checker
 
-// fresh allocates a fresh inference variable at the current level and records
-// its AST origin in prov (the freshVarAt helper from design-notes §Provenance).
-func (c *checker) fresh(n ast.Node, kind soltype.ASTOriginKind) *soltype.TypeVarType
+// freshAt allocates a fresh inference variable at the given level (wrapping the
+// spike's Inferer.freshVar(level)) and records its AST origin in prov (the
+// freshVarAt helper from design-notes §Provenance).
+func (c *checker) freshAt(lvl int, n ast.Node, kind soltype.ASTOriginKind) *soltype.TypeVarType
 
 // report appends a structured error; returns soltype's error type so callers
 // can `return c.report(...)` in a value position (yielding an error placeholder).
@@ -368,8 +377,8 @@ checker's `InferDepGraph`/`InferComponent`, over `soltype`:
 func InferModule(module *ast.Module) (*Scope, *soltype.Info, []Error)   // PR-2 (source-order), PR-5 (SCC)
 func InferModules(modules []*ast.Module) (*Scope, *soltype.Info, []Error) // PR-6 (multi-file)
 
-func (c *checker) inferDepGraph(scope *Scope, g *dep_graph.DepGraph) // PR-5
-func (c *checker) inferComponent(scope *Scope, g *dep_graph.DepGraph, // PR-5
+func (c *checker) inferDepGraph(scope *Scope, lvl int, g *dep_graph.DepGraph) // PR-5
+func (c *checker) inferComponent(scope *Scope, lvl int, g *dep_graph.DepGraph, // PR-5
     component []dep_graph.BindingKey)
 
 // infer_decl.go
@@ -378,29 +387,36 @@ func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBin
 ```
 
 `inferComponent` is the LetRecGroup lift (PR-5); the singleton non-recursive
-case is the same code with a one-element slice:
+case is the same code with a one-element slice. The level discipline mirrors the
+spike's `LetRecGroup` exactly: bind the group's vars and infer its bodies at
+`lvl+1`, then generalize at the outer `lvl` — `freshenAbove` only quantifies
+vars whose level is `> lim`, so the `+1`/generalize-at-`lvl` split is what makes
+the recursive bindings polymorphic. (Generalizing at `lvl+1` instead would leave
+them monomorphic — the bug to avoid.)
 
 ```go
-func (c *checker) inferComponent(scope *Scope, g *dep_graph.DepGraph,
+func (c *checker) inferComponent(scope *Scope, lvl int, g *dep_graph.DepGraph,
     component []dep_graph.BindingKey) {
-    // 1. fresh var per binding at lvl+1, all visible in scope before any body
+    inner := lvl + 1
+    // 1. fresh var per binding at the inner level, all visible before any body
     vars := map[dep_graph.BindingKey]*soltype.TypeVarType{}
     for _, key := range component {
-        v := c.fresh(/* decl node */ nil, soltype.OriginRecBinding)
+        v := c.freshAt(inner, /* decl node */ nil, soltype.OriginRecBinding)
         vars[key] = v
         scope.defineValue(key.Name(), ValueBinding{Scheme: &soltype.MonoScheme{Ty: v}})
     }
-    // 2. infer each body, constrain body <: its var
+    // 2. infer each body at the inner level, constrain body <: its var
     for _, key := range component {
         for _, d := range g.GetDecls(key) {
-            body := c.inferDeclBody(scope, c.core.Level()+1, d)
+            body := c.inferDeclBody(scope, inner, d)
             c.core.Constrain(body, vars[key])
         }
     }
-    // 3. generalize the whole group at the shared (outer) level
+    // 3. generalize the whole group at the OUTER level lvl (not inner): vars
+    //    created at lvl+1 are > lvl, so freshenAbove quantifies them.
     for _, key := range component {
         scope.defineValue(key.Name(), ValueBinding{
-            Scheme: &soltype.PolyScheme{Level: c.core.Level(), Body: vars[key]},
+            Scheme: &soltype.PolyScheme{Level: lvl, Body: vars[key]},
         })
     }
 }
@@ -411,10 +427,10 @@ messages in tests:
 
 ```go
 // errors.go
-type Error interface{ error; Span() provenance.Span }
-type UnknownIdentifierError struct{ Name string; Span provenance.Span }
-type NamespaceUsedAsValueError struct{ Name string; Span provenance.Span }
-type UnsupportedNodeError struct{ Kind string; Span provenance.Span } // M2-subset guard
+type Error interface{ error; Span() ast.Span }
+type UnknownIdentifierError struct{ Name string; Span ast.Span }
+type NamespaceUsedAsValueError struct{ Name string; Span ast.Span }
+type UnsupportedNodeError struct{ Kind string; Span ast.Span } // M2-subset guard
 ```
 
 **Test harness (PR-2 table; PR-6 fixtures).**
