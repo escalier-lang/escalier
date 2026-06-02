@@ -92,3 +92,18 @@ func TestPrintNestedPrecedence(t *testing.T) {
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`[fn (x: number) -> string, boolean]`))
 	})
 }
+
+// TestPrintUnnamedParamFallback verifies that a parameter with no IdentPat
+// pattern falls back to a positional name (arg0, arg1, ...), numbered by param
+// index. This path isn't reachable in M1 (params are always IdentPat), but the
+// fallback exists for nil/unknown patterns, so it's covered directly here.
+func TestPrintUnnamedParamFallback(t *testing.T) {
+	fn := &FuncType{
+		Params: []*FuncParam{
+			{Pattern: nil, Type: numP()},
+			{Pattern: nil, Type: strP()},
+		},
+		Ret: boolP(),
+	}
+	require.Equal(t, "fn (arg0: number, arg1: string) -> boolean", Print(fn))
+}
