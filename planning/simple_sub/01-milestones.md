@@ -72,10 +72,12 @@ breakdown, design rationale, and per-file sketches.
   seen-cache (pointer-identity keying, sufficient for M1's non-recursive
   type set), the structural cases (`PrimType`/`LitType`/`FuncType`/
   `TupleType`/`Void`) for the M1 set, the variable cases (bound-append +
-  transitive propagation), and **levels + extrusion**. Note: M1's
-  same-length tuple rule and fewer-params-is-subtype function rule are the
-  implicit "one side" of the exact/inexact split that lands in M3
-  (functions) and M4 (tuples) with the exactness flag.
+  transitive propagation), and **levels + extrusion**. Note: M1 is
+  **uniformly exact** (Escalier is exact-by-default), so both the
+  same-length tuple rule *and* the same-arity function rule are the *exact*
+  "one side" of the exact/inexact split; the inexact arms
+  (fewer-params-is-subtype for functions, `longer <: shorter` for tuples)
+  land with the exactness flag in M3 (functions) and M4 (tuples).
 - **Bound-inlining coalescing** — `coalesce(t, pol)` walks a bound-carrying
   `soltype.Type` and returns a coalesced `soltype.Type` by inlining every
   `TypeVarType` to its bounds (positive ⇒ union of lowers, negative ⇒
@@ -100,8 +102,9 @@ breakdown, design rationale, and per-file sketches.
   Decision #4.
 - **`Info` side table**: `map[ast.Node]soltype.Type` + `TypeOf`/`setType`.
 
-**Accept:** unit tests for `constrain` (prim/function variance incl.
-Escalier's fewer-params-is-subtype rule; levels + extrusion with no
+**Accept:** unit tests for `constrain` (prim/function variance with exact
+arity — same-arity required, both fewer and more params rejected, parallel
+to the exact-tuple same-length rule; levels + extrusion with no
 higher-level var leakage into lower-level bound lists); coalescing
 (inline-to-bounds, empty-bound collapse to `never`/`unknown`, multi-bound
 union/intersection); printer round-trips for the M1 coalesced type set
@@ -178,10 +181,12 @@ reassess.
   governs **callback subtyping**: a function type accepts the set of arg-counts
   it can be invoked with (exact `[required, declared]`, inexact `[required, ∞)`),
   and `G <: F` iff `G` accepts every arg-count `F`'s holders may invoke with
-  (params contravariant, return covariant). The spike's current
-  fewer-params-is-subtype rule is the *inexact* case of this. (This corrects the
-  merged spec's §4.2, which had exactness govern call-sites rather than
-  subtyping — see escalier-lang/escalier#677.)
+  (params contravariant, return covariant). M1 ships only the *exact* case
+  (same-arity required); this milestone adds the *inexact*
+  fewer-params-is-subtype case (the spike's uniform rule) once the flag
+  exists to opt into it. (This corrects the merged spec's §4.2, which had
+  exactness govern call-sites rather than subtyping — see
+  escalier-lang/escalier#677.)
 
 **Accept:** the spike's Category-A cases against real source:
 `TopLevelLetPolymorphism` ⇒ `fn <T0>(x: T0) -> T0`; `IdentityPolymorphism` ⇒

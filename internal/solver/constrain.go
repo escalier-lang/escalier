@@ -54,10 +54,14 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		}
 	case *soltype.FuncType:
 		if r, ok := rhs.(*soltype.FuncType); ok {
-			// Fewer-params-is-subtype: a function with FEWER params is a subtype
-			// of one with more (the supertype's extra trailing params are
-			// ignored). l <: r requires len(l.Params) <= len(r.Params).
-			if len(l.Params) > len(r.Params) {
+			// Exact arity: M1 functions are exact (Escalier is exact-by-default),
+			// so subtyping requires the SAME number of params — parallel to the
+			// exact-tuple same-length rule below. The inexact
+			// "fewer-params-is-subtype" arm (a function ignoring extra trailing
+			// args) lands in M3 with the exactness flag (`...`), exactly as the
+			// inexact-tuple arm lands in M4. See
+			// planning/simple_sub/01-milestones.md.
+			if len(l.Params) != len(r.Params) {
 				return []SolverError{&FuncArityMismatchError{LHS: l, RHS: r}}
 			}
 			var errs []SolverError

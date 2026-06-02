@@ -129,24 +129,30 @@ func TestConstrainFunctionVariance(t *testing.T) {
 }
 
 func TestConstrainFunctionArity(t *testing.T) {
-	// M1 functions are uniformly inexact (no exactness flag yet — it lands in
-	// M3), so fewer-params-is-subtype holds: arity 1 <: arity 2 is OK because a
-	// 1-param function can be called wherever a 2-param one is expected (the
-	// extra arg is ignored). This is the *inexact* case of the eventual
-	// exact/inexact split; see planning/simple_sub/01-milestones.md M1 scope
-	// (lines 76-78) and accept criteria, and the M3 function-exactness section.
-	t.Run("fewer params is subtype", func(t *testing.T) {
+	// M1 functions are exact (Escalier is exact-by-default), so subtyping
+	// requires the SAME arity — both fewer and more params are rejected,
+	// parallel to the exact-tuple same-length rule. The inexact
+	// fewer-params-is-subtype arm lands in M3 with the exactness flag; see
+	// planning/simple_sub/01-milestones.md M1 scope and accept criteria.
+
+	// Fewer params is NOT a subtype under exact arity: arity 1 <: arity 2 fails.
+	t.Run("fewer params rejected", func(t *testing.T) {
 		c := &Context{}
 		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
 		f2 := &soltype.FuncType{
 			Params: []*soltype.FuncParam{identParam("x", num()), identParam("y", num())},
 			Ret:    num(),
 		}
-		require.Empty(t, c.Constrain(f1, f2))
+		errs := c.Constrain(f1, f2)
+		require.Equal(t, []string{"cannot constrain function of arity 1 <: function of arity 2"}, Messages(errs))
+		fa, ok := errs[0].(*FuncArityMismatchError)
+		require.True(t, ok)
+		require.Same(t, f1, fa.LHS)
+		require.Same(t, f2, fa.RHS)
 	})
 
-	// More params is NOT a subtype: arity 2 <: arity 1 fails.
-	t.Run("more params is not subtype", func(t *testing.T) {
+	// More params is also NOT a subtype: arity 2 <: arity 1 fails.
+	t.Run("more params rejected", func(t *testing.T) {
 		c := &Context{}
 		f1 := &soltype.FuncType{
 			Params: []*soltype.FuncParam{identParam("x", num()), identParam("y", num())},
@@ -159,6 +165,14 @@ func TestConstrainFunctionArity(t *testing.T) {
 		require.True(t, ok)
 		require.Same(t, f1, fa.LHS)
 		require.Same(t, f2, fa.RHS)
+	})
+
+	// Same arity is fine; variance is then checked element-wise.
+	t.Run("same arity ok", func(t *testing.T) {
+		c := &Context{}
+		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
+		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
+		require.Empty(t, c.Constrain(f1, f2))
 	})
 }
 

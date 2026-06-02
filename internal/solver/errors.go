@@ -29,9 +29,11 @@ type CannotConstrainError struct {
 	LHS, RHS soltype.Type
 }
 
-// FuncArityMismatchError fires on FuncType <: FuncType when LHS has MORE params
-// than RHS (the fewer-params-is-subtype rule). Holds the full FuncTypes, not
-// just the arities, so consumers can report param/return types too.
+// FuncArityMismatchError fires on FuncType <: FuncType when the two arities
+// differ (M1's exact-function rule; exact-by-default requires the same number
+// of params). Holds the full FuncTypes, not just the arities, so consumers can
+// report param/return types too. M3 narrows the firing conditions when the
+// exactness flag adds the inexact fewer-params-is-subtype arm.
 type FuncArityMismatchError struct {
 	LHS, RHS *soltype.FuncType
 }
