@@ -74,7 +74,7 @@ Per the milestone, M1 delivers the **structural core**:
 | **The entire polymorphism-rendering bundle** — bipolar variable retention, occurrence analysis (`analyze`), named-type-param ref node (`TypeRefType`), quantifier-prefix collection in the printer, the identity headline test | M3 | See §3.3 — these all hang off the same design question (what node represents a named ref, alias vs param) and should land together once M3's `Scheme`/alias context exists to inform the choice. M1 ships a coalescer that always inlines vars to bounds. |
 | **Co-occurrence variable merging** (`collectCoOcc`/`mergeCoOccurring`/union-find) | M3 | Hangs off occurrence analysis; lands as part of the M3 polymorphism-rendering bundle above. |
 | Records, `RefType`/`mut`, **lifetimes** | M4 | First lifetime-carrying types. |
-| `exact` flag on formers + the inexact `constrain` arms | M3 (functions), M4 (records, tuples), M6 (unions) | M1 stands up bare `FuncType`/`TupleType` without the flag, which means each former's M1 constraint rule is **implicitly one side** of the eventual exact/inexact split: M1's `FuncType` "fewer-params-is-subtype" is the *inexact-function* case (function exactness lands in M3); M1's `TupleType` "same length, element-wise covariant" is the *exact-tuple* case (tuple exactness lands in M4 alongside `RecordType`, adding the inexact arm `longer <: shorter`). See [01-milestones.md](01-milestones.md) §M4 "Exactness flag on records and tuples." |
+| `exact` flag on formers + the inexact `constrain` arms | M3 (functions), M4 (records, tuples), M6 (unions) | M1 stands up bare `FuncType`/`TupleType` without the flag. Because Escalier is **exact-by-default**, M1 implements each former's *exact* rule uniformly — so each M1 constraint rule is the **exact "one side"** of the eventual exact/inexact split: M1's `FuncType` "same-arity required" is the *exact-function* case (the inexact fewer-params-is-subtype arm lands in M3 with the flag); M1's `TupleType` "same length, element-wise covariant" is the *exact-tuple* case (the inexact arm `longer <: shorter` lands in M4 alongside `RecordType`). Functions and tuples thus follow the **same trajectory** — ship exact now, add the inexact arm with the flag later. See [01-milestones.md](01-milestones.md) §M4 "Exactness flag on records and tuples." |
 | Classes, union/intersection **subtyping rules** in `constrain`, type-level operators | M5/M6/M8 | M1 ships `UnionType`/`IntersectionType` *nodes* for coalesced output, but their lattice rules in `constrain` land in M6. |
 | `Prov` provenance side table, `Probe` speculation API | M3+/as-needed | M1 has no speculation and no error-message provenance yet. |
 
@@ -418,10 +418,11 @@ sequencing; literal `eq`. Table-driven, `require.*`.
 - `constrain(lhs, rhs, seen)` with the coinductive `seen`-cache.
 - Structural cases: `PrimType` (name equality), `LitType <:
   LitType` and `LitType <: PrimType` (literal is a subtype of its
-  primitive), `FuncType` (**fewer-params-is-subtype** rule + contravariant
-  params / covariant return), `TupleType` (same length, covariant elements —
-  implicitly the *exact* tuple case; the inexact arm lands in M4 with the
-  exact flag),
+  primitive), `FuncType` (**same-arity required** + contravariant
+  params / covariant return — implicitly the *exact* function case; the
+  inexact fewer-params-is-subtype arm lands in M3 with the exact flag),
+  `TupleType` (same length, covariant elements — implicitly the *exact* tuple
+  case; the inexact arm lands in M4 with the exact flag),
   `Void`.
 - Variable cases: append to `upper`/`lowerBounds` and transitively propagate
   existing bounds; **levels + `extrude`** for cross-level constraints.
@@ -435,9 +436,9 @@ where structural inspection adds value, also type-switch on the concrete
   *and* that the failure is a `*CannotConstrainError` with the right
   `*PrimType`s);
 - `LitType <: PrimType` (e.g. `5 <: number`), and the mismatch error;
-- **function variance** incl. fewer-params-is-subtype both directions (arity
-  `1 <: 2` ok, `2 <: 1` rejected — assert `*FuncArityMismatchError` carrying
-  the offending `*FuncType`s);
+- **function variance** with exact arity both directions (arity
+  `1 <: 2` and `2 <: 1` both rejected — assert `*FuncArityMismatchError`
+  carrying the offending `*FuncType`s — plus same-arity success);
 - tuple same-length covariant; length-mismatch error (`*TupleLengthMismatchError`);
 - variable binding + transitive propagation (constrain `α <: number` then `5 <:
   α` propagates `5 <: number`);
@@ -520,17 +521,19 @@ Critical path is 1 → 2 → 3 → 4. PR 5 is off the critical path.
 ## 6. Acceptance criteria (milestone → PR mapping)
 
 The milestone doc's accept clause is: *"unit tests for `constrain`
-(prim/function variance incl. Escalier's fewer-params-is-subtype rule) and
-coalescing; an identity term renders `fn <T0>(x: T0) -> T0`."* **This plan
-diverges** on the identity clause: the identity rendering is deferred to M3
-along with the rest of the polymorphism-rendering bundle (§3.3). A
+(prim/function variance with exact arity) and coalescing; an identity term
+renders `fn <T0>(x: T0) -> T0`."* **This plan diverges** on the identity
+clause: the identity rendering is deferred to M3 along with the rest of the
+polymorphism-rendering bundle (§3.3). A
 [milestones-doc update](01-milestones.md) should restate M1's accept as the
 constellation below and move the identity rendering into M3's accept.
+(Functions are **exact** in M1 — same-arity required, exact-by-default — so
+the inexact fewer-params-is-subtype rule is an M3 accept clause, not M1's.)
 
 | Accept clause | Delivered by |
 |---|---|
 | `constrain` prim variance | PR 2 |
-| `constrain` function variance + fewer-params-is-subtype | PR 2 |
+| `constrain` function variance + exact arity (same-arity required) | PR 2 |
 | `constrain` levels + extrusion (no cross-level leakage into bound lists) | PR 2 |
 | coalescing unit tests (inline-to-bounds, empty-bound collapse, multi-bound union/intersection) | PR 3 |
 | printer round-trips for the M1 coalesced type set (prims, literals, tuples, multi-arg functions, `never`/`unknown`, `\|`/`&`) | PR 4 |
@@ -824,8 +827,9 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		// primOf maps a Lit concrete to its Prim: *NumLit -> NumPrim, etc.
 	case *soltype.FuncType:
 		if r, ok := rhs.(*soltype.FuncType); ok {
-			// Fewer-params-is-subtype: l <: r requires len(l.Params) <= len(r.Params).
-			if len(l.Params) > len(r.Params) {
+			// Exact arity (exact-by-default): l <: r requires the SAME arity,
+			// len(l.Params) == len(r.Params). The inexact fewer-params arm is M3.
+			if len(l.Params) != len(r.Params) {
 				return []SolverError{&FuncArityMismatchError{LHS: l, RHS: r}}
 			}
 			var errs []SolverError
@@ -897,9 +901,10 @@ type CannotConstrainError struct {
 	LHS, RHS soltype.Type
 }
 
-// FuncArityMismatchError fires on FuncType <: FuncType when LHS has MORE
-// params than RHS (fewer-params-is-subtype rule). Holds the full FuncTypes,
-// not just the arities, so consumers can report param/return types too.
+// FuncArityMismatchError fires on FuncType <: FuncType when the arities
+// differ (exact-function rule; exact-by-default requires same arity). Holds
+// the full FuncTypes, not just the arities, so consumers can report
+// param/return types too.
 type FuncArityMismatchError struct {
 	LHS, RHS *soltype.FuncType
 }
