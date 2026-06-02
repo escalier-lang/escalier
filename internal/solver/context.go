@@ -1,6 +1,6 @@
 package solver
 
-import "github.com/escalier-lang/escalier/internal/solver/soltype"
+import "github.com/escalier-lang/escalier/internal/soltype"
 
 // Context owns the engine's mutable counters. M1 carries ONLY varCounter; the
 // spike's lifetimeCounter / paramLifetimes / written fields are M4 (lifetimes

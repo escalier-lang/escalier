@@ -11,8 +11,9 @@
 //     returning a native soltype.Type.
 //
 // The type representation, the printer, and the Polarity enum live in the
-// soltype subpackage; the engine (constrain/extrude), coalescing, and the
-// mutable Context live here. solver imports soltype and internal/ast (for the
+// sibling internal/soltype package; the engine (constrain/extrude),
+// coalescing, and the mutable Context live here. solver imports soltype and
+// internal/ast (for the
 // Info side table's key type); neither ast nor type_system imports solver, so
 // the package is acyclic and additive — it shares no code with type_system.
 //
