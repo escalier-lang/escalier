@@ -1,5 +1,7 @@
 package soltype
 
+import "fmt"
+
 // Type is the sealed interface for all soltype nodes. (Production name for the
 // spike's SimpleType; marker renamed isSimpleType -> isType.)
 type Type interface{ isType() }
@@ -66,8 +68,9 @@ func (l *LitType) Equal(o *LitType) bool {
 	case *BoolLit:
 		b, ok := o.Lit.(*BoolLit)
 		return ok && a.Value == b.Value
+	default:
+		panic(fmt.Sprintf("unknown Lit type in LitType.Equal: %T", l.Lit))
 	}
-	return false
 }
 
 // Pat is the sealed interface for parameter patterns. Mirrors the role of

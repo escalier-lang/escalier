@@ -80,6 +80,20 @@ func TestLevelOf(t *testing.T) {
 	}
 }
 
+func TestTypeVarTypeBoundsAt(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	v := &TypeVarType{
+		ID:          0,
+		Level:       0,
+		LowerBounds: []Type{num},
+		UpperBounds: []Type{str},
+	}
+
+	require.Equal(t, v.LowerBounds, v.BoundsAt(Positive))
+	require.Equal(t, v.UpperBounds, v.BoundsAt(Negative))
+}
+
 func TestLitTypeEqual(t *testing.T) {
 	tests := []struct {
 		name string
