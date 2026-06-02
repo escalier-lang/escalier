@@ -129,7 +129,12 @@ func TestConstrainFunctionVariance(t *testing.T) {
 }
 
 func TestConstrainFunctionArity(t *testing.T) {
-	// Fewer-params-is-subtype: arity 1 <: arity 2 is OK.
+	// M1 functions are uniformly inexact (no exactness flag yet — it lands in
+	// M3), so fewer-params-is-subtype holds: arity 1 <: arity 2 is OK because a
+	// 1-param function can be called wherever a 2-param one is expected (the
+	// extra arg is ignored). This is the *inexact* case of the eventual
+	// exact/inexact split; see planning/simple_sub/01-milestones.md M1 scope
+	// (lines 76-78) and accept criteria, and the M3 function-exactness section.
 	t.Run("fewer params is subtype", func(t *testing.T) {
 		c := &Context{}
 		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
