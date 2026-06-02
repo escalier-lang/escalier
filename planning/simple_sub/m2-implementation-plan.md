@@ -47,14 +47,35 @@ wrong — **stop and reassess**.
 
 ### Scope boundary against neighbouring milestones
 
-- **M1 (prerequisite — Package skeleton + `soltype`)** must land first. It
-  creates the new package — `internal/solver/` (settled decision #1 in
-  design-notes; sibling to `internal/checker/`) — the `soltype` representation
-  (bound-list `TypeVar` with `lowerBounds`/`upperBounds` + `level`, `Primitive`,
-  `Literal`, `Function`, `Tuple`), `constrain`, levels/extrusion, polarity-driven
-  coalescing, the **own** `soltype` printer, and the `Info` side table
-  (`map[ast.Node]soltype.Type` + `TypeOf`/`setType`). M2 consumes all of these;
-  it does not modify the core algorithm.
+- **M1 (prerequisite — Package skeleton + `soltype`) has landed** (PRs #686–#693
+  on `main`). It created **two** packages: `internal/soltype/` (the type
+  representation — its own top-level package, imported as `soltype`) and
+  `internal/solver/` (the engine + side tables, sibling to `internal/checker/`).
+  M2 code lives in `internal/solver/`. What M1 actually delivered, and what it
+  **deferred**, materially shapes M2 — see the "M1 landed: deltas from this
+  plan's original assumptions" box in §2.
+  - **Available now:** `soltype.Type` and its kinds (`TypeVarType` with
+    `ID`/`Level`/`LowerBounds`/`UpperBounds`; `PrimType`/`LitType`/`FuncType`
+    (params are `*FuncParam` carrying a sealed `Pat`, M1 = `IdentPat` only)/
+    `TupleType`/`Void`/`NeverType`/`UnknownType`/`UnionType`/`IntersectionType`);
+    `soltype.Polarity` + `TypeVarType.BoundsAt(pol)`; `solver.Context` with
+    `freshVar(level)` and `Constrain(lhs, rhs) []SolverError`; levels/extrusion;
+    bound-inlining `coalesce(t, pol)`; the `soltype.Print(t)` printer;
+    `solver.Info` (`TypeOf` / unexported `setType`); and a `SolverError`
+    interface with concrete span-free error kinds.
+  - **Deferred to M3 (NOT available to M2):** type **schemes**
+    (`TypeScheme`/`MonoScheme`/`PolyScheme`), `instantiate`/`freshenAbove`,
+    occurrence analysis / co-occurrence merging, and the `<T0, …>` quantifier
+    prefix in the printer. **Consequence:** M2 inference is **monomorphic** — it
+    cannot generalize a top-level binding, so an un-annotated polymorphic
+    function (`val id = fn (x) { x }`) cannot render as `fn <T0>(x: T0) -> T0`
+    in M2. That rendering, and the `TopLevelLetPolymorphism` /
+    `IdentityPolymorphism` / `InnerCapturesOuterParam` acceptance cases, are
+    **M3** (the M1 milestone already moves them there). M2's "infer correct
+    rendered types end-to-end" bar therefore means the **monomorphic** forms
+    (`val x = 5` ⇒ `5`; `val f = fn (x: number) { x }` ⇒ `fn(x: number) -> number`).
+  - **Deferred to later (NOT available to M2):** the `Prov` provenance side
+    table (M2/later) and error `Span()` (M2 *adds* this — see §3.5).
 - **M2 expression coverage is deliberately shallow.** The milestone's bar is
   "top-level `val`/`fn` infer correct rendered types end-to-end" plus multi-file
   resolution. The *deep* function/application/let-polymorphism work — and its
@@ -62,21 +83,47 @@ wrong — **stop and reassess**.
   `InnerCapturesOuterParam`) plus the simplification pass and function
   exactness — is **M3**. M2 wires up enough of the walk to satisfy its own
   acceptance (literals, identifiers, simple `val` initializers, `fn` decls with
-  bodies the spike already handles) and leaves richer expression coverage and
-  polish to M3.
+  bodies the spike already handles), all **monomorphic** (M1 deferred schemes /
+  generalization to M3), and leaves richer expression coverage and polish to M3.
+- **Stdlib-type prerequisite tracking (new in M2's milestone).** The M1-era
+  edit to `01-milestones.md` added an M2 responsibility: names that downstream
+  type rules reference — `Promise<T>`, `Iterable<T>`/`AsyncIterable<T>`,
+  `Generator`/`AsyncGenerator`, `IteratorResult<T>` — must **resolve** through
+  the existing stdlib declaration channels and surface as `soltype.Type` values.
+  M2 does **not** implement the rules that *use* them (`await`/`for-in`/`yield`
+  land in later milestones); it only ensures the parser-bridge produces
+  `soltype` types for these names so later milestones aren't blocked on "where
+  does `Promise` come from?". See §3.8.
 - **Records/`mut`/lifetimes (M4), classes (M5), unions (M6), operators (M8)**
   are out of scope. Unsupported expression/decl nodes produce a structured
   "unsupported in M2" error, never a panic.
 
 ## 2. Current state this builds on
 
-- **Spike core** (`internal/simplesub/`): `typeTerm` (the recursive
-  switch we are re-targeting), `constrain`, `coalesce`, `simplify`, levels via
-  `scheme.go` (`MonoScheme`/`PolyScheme`, `instantiate`/`freshenAbove`),
-  `LetRecGroup` (fresh var per binding + `constrain` + generalize — the
-  recursion story that avoids placeholder patching). The spike's `Infer` returns
-  `(type_system.Type, []error)` and renders via `type_system.PrintType`; M1
-  re-homes this onto `soltype` with its own printer.
+> **M1 landed: deltas from this plan's original assumptions.** This plan was
+> drafted before M1 merged. M1 (PRs #686–#693) came in with a different package
+> split and a narrower scope than assumed; the sketches in §3.7 were updated to
+> match, but read these deltas first:
+>
+> | Plan originally assumed | M1 actually shipped |
+> |---|---|
+> | `soltype` is a sub-package `internal/solver/soltype/` | **Two top-level packages**: `internal/soltype/` (types) + `internal/solver/` (engine). M2 code is in `internal/solver/`, importing `soltype`. |
+> | An `Inferer` carrier with `c.core.Level()` | `solver.Context{ varCounter }` with `freshVar(level)`; **no ambient level** — level is an explicit argument everywhere. |
+> | Schemes + `instantiate`/`freshenAbove` exist (re-homed from spike) | **Deferred to M3.** No `TypeScheme`/`MonoScheme`/`PolyScheme`, no `instantiate`. M2 inference is **monomorphic**. |
+> | `Info.setType` callable; a `Prov` table exists | `solver.Info` with **unexported** `setType` (so the walk lives in `package solver`); **no `Prov`** (deferred). |
+> | M2 defines the error types | M1 already ships `SolverError` + `CannotConstrainError`/`FuncArityMismatchError`/`TupleLengthMismatchError`, **span-free**; M2's job is to **add `Span()`** and the new error kinds it needs. |
+> | `coalesce` does occurrence analysis / quantifier prefix | M1 `coalesce` is **bound-inlining only** (positive ⇒ ∪ lowers, negative ⇒ ∩ uppers; empty ⇒ `never`/`unknown`). Occurrence analysis + `<T0,…>` prefix are M3. |
+>
+> The single biggest impact: **M2 cannot generalize**, so polymorphic rendering
+> (`fn <T0>(x: T0) -> T0`) and the recursive-group `LetRecGroup` lift both move
+> their *generalization* aspect to M3. M2's SCC handling (PR-5) still orders and
+> infers groups, but binds them monomorphically (see §3.7 note).
+
+- **Spike core** (`internal/simplesub/`, the throwaway PoC): `typeTerm` (the
+  recursive switch M2 re-targets), `constrain`, `coalesce`, `simplify`, levels
+  via `scheme.go`, `LetRecGroup`. **Note:** the spike is the *reference shape*,
+  but M1 re-homed only a subset onto `soltype`/`solver` (see the deltas box);
+  the scheme/generalization parts the spike has are M3, not available to M2.
 - **AST** (`internal/ast/`): expression nodes the walk must handle for the M2
   bar — `LiteralExpr`, `IdentExpr`, `FuncExpr` (`FuncSig` at `expr.go:326`,
   `FuncExpr` at `expr.go:335`), `CallExpr`, `ObjectExpr`, `MemberExpr`,
@@ -96,15 +143,17 @@ wrong — **stop and reassess**.
 
 ### 3.1 Package layout
 
-Inside the M1 package (`internal/solver/`):
+M2 code goes in `internal/solver/` (the engine package M1 created); the type
+representation it consumes lives in the **separate** `internal/soltype/` package
+(M1). M2 adds no files to `soltype` — it only imports it.
 
 ```
-internal/solver/
-  infer.go        # constraint-generating walk over *ast.Module (production typeTerm)
-  infer_expr.go   # per-expression-kind constraint generation
-  infer_decl.go   # VarDecl / FuncDecl → bindings, SCC group inference
-  module.go       # InferModule(s): dep_graph SCC ordering + drive the walk
-  scope.go        # Scope / Binding / Namespace (own, not type_system)
+internal/solver/        # M1: context.go, constrain.go, coalesce.go, info.go, errors.go
+  infer.go        # M2: constraint-generating walk over *ast.Module (production typeTerm)
+  infer_expr.go   # M2: per-expression-kind constraint generation
+  infer_decl.go   # M2: VarDecl / FuncDecl → bindings, SCC group inference
+  module.go       # M2: InferModule(s): dep_graph SCC ordering + drive the walk
+  scope.go        # M2: Scope / Binding / Namespace (own, not type_system)
   errors.go       # bridge errors (unbound name, unsupported node) with provenance/spans
   // (soltype core, Info side table, printer: from M1)
   testdata/ or fixtures wiring   # see §3.6
@@ -142,10 +191,11 @@ AST instead of `Term`:
 | `IfElseExpr` | join branches; `constrain(cond, boolean)` | yes |
 | `Block` | type each stmt; result = last expr (or `void`) | yes |
 
-Every node that produces a type calls the M1 `Info.setType(node, t)` so the side
-table is the single source of truth for node→type (the AST stays untouched — no
-`InferredType()` writes; that is the AST-decoupling decision). Nodes outside the
-M2 subset emit an "unsupported in M2" error.
+Every node that produces a type records it in M1's `Info` side table via the
+(unexported, same-package) `setType(node, t)` — which is why the M2 walk lives
+in `package solver`. `Info` is the single source of truth for node→type (the AST
+stays untouched — no `InferredType()` writes; that is the AST-decoupling
+decision). Nodes outside the M2 subset emit an "unsupported in M2" error.
 
 ### 3.3 Module driver (`module.go`) — dep_graph-ordered inference
 
@@ -222,9 +272,11 @@ func (s *Scope) GetNamespace(name string) (*Namespace, bool)
 sketches these as pointer returns; the comma-ok form is the M2 refinement so the
 not-found case is explicit at every call site.)
 
-- `ValueBinding` — a name's `soltype` scheme (`MonoScheme`/`PolyScheme`, from the
-  spike's `scheme.go`) plus its source provenance. The production analogue of the
-  spike's `ctx map[string]TypeScheme`.
+- `ValueBinding` — in M2, a name's **monomorphic** `soltype.Type` plus its
+  source provenance (the production analogue of the spike's
+  `ctx map[string]TypeScheme`, minus the scheme). M1 has no schemes, so binding
+  carries a plain type; M3 swaps the field for a `TypeScheme` when generalization
+  lands.
 - The **value-position `IdentExpr`** path queries `GetValue`, then `GetNamespace`
   only to raise `NamespaceUsedAsValueError` (namespaces are a separate sort and
   never flow as values — design-notes §"The constraint-generating AST walk").
@@ -271,41 +323,52 @@ field-by-field drilling.
 
 Concrete shapes to anchor the PRs below. These are *sketches* — names and
 fields will shift in review — but they pin down the surface area each PR owns.
-All live in `internal/solver`. Types prefixed `soltype.` come from M1; the rest
-are introduced by M2 (the PR that owns each is noted).
+All M2 code lives in `internal/solver`. Types prefixed `soltype.` come from the
+`internal/soltype/` package (M1); `solver.`-level names without comment are M1's
+engine; the rest are introduced by M2 (the PR that owns each is noted).
 
-**The checker carrier (PR-1).** A per-inference-run struct threading the M1
-core's mutable state (the fresh-var counter, the `Info`/provenance tables) — the
-production analogue of the spike's `Inferer`. Method receiver for the whole walk.
+> **These sketches reflect M1 as shipped** (see §2 deltas box). Specifically:
+> the carrier embeds M1's `*solver.Context` (there is no `Inferer`); there are
+> **no schemes** (`ValueBinding` holds a plain `soltype.Type`, not a
+> `TypeScheme`), **no `Instantiate`**, and **no `Prov`** — all M3-or-later. M2
+> is monomorphic.
+
+**The checker carrier (PR-1).** A per-inference-run struct wrapping M1's
+`solver.Context` (the fresh-var counter + `Constrain`) and threading the `Info`
+side table and accumulated errors. Method receiver for the whole walk.
 
 ```go
 // infer.go
 type checker struct {
-    core *soltype.Inferer  // M1: freshVar, constrain, instantiate, freshenAbove, level
-    info *soltype.Info     // M1: node → type side table
-    prov soltype.Prov      // M1: type → origin side table
-    errs []Error           // accumulated; mirrors the spike's []error threading
+    ctx  *Context  // M1 solver.Context: freshVar(level), Constrain(lhs, rhs) []SolverError
+    info *Info     // M1 solver.Info: node → soltype.Type side table (unexported setType)
+    errs []Error   // accumulated; mirrors the spike's []error threading
 }
 
 func newChecker() *checker
 
-// freshAt allocates a fresh inference variable at the given level (wrapping the
-// spike's Inferer.freshVar(level)) and records its AST origin in prov (the
-// freshVarAt helper from design-notes §Provenance).
-func (c *checker) freshAt(lvl int, n ast.Node, kind soltype.ASTOriginKind) *soltype.TypeVarType
+// freshAt allocates a fresh inference variable at the given level (delegates to
+// ctx.freshVar(level)). No provenance recording in M2 — Prov is deferred.
+func (c *checker) freshAt(lvl int) *soltype.TypeVarType
 
-// report appends a structured error; returns soltype's error type so callers
-// can `return c.report(...)` in a value position (yielding an error placeholder).
+// constrain delegates to ctx.Constrain and appends any SolverErrors (wrapped
+// with the offending node's span) to c.errs.
+func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type)
+
+// report appends a structured error; returns a placeholder type (e.g.
+// &soltype.NeverType{}) so callers can `return c.report(...)` in value position.
 func (c *checker) report(e Error) soltype.Type
 ```
 
 **Scope / Binding / Namespace (PR-1).** Design-notes §"Scope / Binding" gives
-the three-slot shape; the constructors and `define*` mutators are M2's:
+the three-slot shape; the constructors and `define*` mutators are M2's. Because
+M1 has **no schemes**, an M2 `ValueBinding` holds a plain monomorphic
+`soltype.Type` — the `Scheme` field arrives in M3 with generalization:
 
 ```go
 // scope.go
 type ValueBinding struct {
-    Scheme soltype.TypeScheme    // MonoScheme | PolyScheme (spike scheme.go)
+    Type   soltype.Type          // M2: monomorphic. M3 replaces with a TypeScheme.
     Source provenance.Provenance // the introducing VarDecl/FuncDecl/param
 }
 type TypeBinding struct {        // shape only in M2; populated M3+
@@ -353,13 +416,16 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 ```
 
 `inferIdent` is the load-bearing one — it's the production form of the spike's
-`*Var` case crossed with design-notes §"The constraint-generating AST walk":
+`*Var` case crossed with design-notes §"The constraint-generating AST walk". In
+M2 (monomorphic, no schemes) it returns the binding's type directly; the M3
+note marks where `instantiate` slots in once schemes exist:
 
 ```go
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
     if b, ok := scope.GetValue(e.Name); ok {
-        t := c.core.Instantiate(b.Scheme, lvl) // MonoScheme: as-is; PolyScheme: freshenAbove
-        c.info.SetType(e, t)
+        t := b.Type // M2: monomorphic — return as-is.
+                    // M3: t = c.instantiate(b.Scheme, lvl) (fresh copy per use).
+        c.recordType(e, t) // wraps info.setType (unexported; same package)
         return t
     }
     if _, ok := scope.GetNamespace(e.Name); ok {
@@ -374,8 +440,8 @@ checker's `InferDepGraph`/`InferComponent`, over `soltype`:
 
 ```go
 // module.go
-func InferModule(module *ast.Module) (*Scope, *soltype.Info, []Error)   // PR-2 (source-order), PR-5 (SCC)
-func InferModules(modules []*ast.Module) (*Scope, *soltype.Info, []Error) // PR-6 (multi-file)
+func InferModule(module *ast.Module) (*Scope, *Info, []Error)   // PR-2 (source-order), PR-5 (SCC)
+func InferModules(modules []*ast.Module) (*Scope, *Info, []Error) // PR-6 (multi-file)
 
 func (c *checker) inferDepGraph(scope *Scope, lvl int, g *dep_graph.DepGraph) // PR-5
 func (c *checker) inferComponent(scope *Scope, lvl int, g *dep_graph.DepGraph, // PR-5
@@ -386,52 +452,72 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) ValueBindi
 func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBinding // PR-3
 ```
 
-`inferComponent` is the LetRecGroup lift (PR-5); the singleton non-recursive
-case is the same code with a one-element slice. The level discipline mirrors the
-spike's `LetRecGroup` exactly: bind the group's vars and infer its bodies at
-`lvl+1`, then generalize at the outer `lvl` — `freshenAbove` only quantifies
-vars whose level is `> lim`, so the `+1`/generalize-at-`lvl` split is what makes
-the recursive bindings polymorphic. (Generalizing at `lvl+1` instead would leave
-them monomorphic — the bug to avoid.)
+`inferComponent` orders an SCC and binds it (PR-5); the singleton non-recursive
+case is the same code with a one-element slice. **M2 binds the group
+monomorphically** — it still uses the spike's level discipline (fresh var per
+binding, infer bodies at `lvl+1`, all group members visible before any body so
+recursive references resolve) but **does not generalize**: M1 has no schemes, so
+the group's vars stay as their (coalesced) monomorphic types. The
+generalization step — wrapping each in a `PolyScheme` at the outer `lvl` so
+`freshenAbove` quantifies the `lvl+1` vars — is **M3**, and is what turns these
+into reusable polymorphic bindings. M2's value is correct *ordering* and
+*recursive resolution*; M3 adds the polymorphism on top.
 
 ```go
 func (c *checker) inferComponent(scope *Scope, lvl int, g *dep_graph.DepGraph,
     component []dep_graph.BindingKey) {
     inner := lvl + 1
     // 1. fresh var per binding at the inner level, all visible before any body
+    //    (so mutually-recursive references resolve through the var).
     vars := map[dep_graph.BindingKey]*soltype.TypeVarType{}
     for _, key := range component {
-        v := c.freshAt(inner, /* decl node */ nil, soltype.OriginRecBinding)
+        v := c.freshAt(inner)
         vars[key] = v
-        scope.defineValue(key.Name(), ValueBinding{Scheme: &soltype.MonoScheme{Ty: v}})
+        scope.defineValue(key.Name(), ValueBinding{Type: v})
     }
     // 2. infer each body at the inner level, constrain body <: its var
     for _, key := range component {
         for _, d := range g.GetDecls(key) {
             body := c.inferDeclBody(scope, inner, d)
-            c.core.Constrain(body, vars[key])
+            c.constrain(d, body, vars[key])
         }
     }
-    // 3. generalize the whole group at the OUTER level lvl (not inner): vars
-    //    created at lvl+1 are > lvl, so freshenAbove quantifies them.
+    // 3. M2: rebind each name to its (monomorphic) coalesced type.
+    //    M3 replaces this with generalization at the outer level:
+    //      scope.defineValue(key.Name(),
+    //          ValueBinding{Scheme: &soltype.PolyScheme{Level: lvl, Body: vars[key]}})
     for _, key := range component {
-        scope.defineValue(key.Name(), ValueBinding{
-            Scheme: &soltype.PolyScheme{Level: lvl, Body: vars[key]},
-        })
+        t := coalesce(vars[key], soltype.Positive)
+        scope.defineValue(key.Name(), ValueBinding{Type: t})
     }
 }
 ```
 
-**Errors (PR-1).** A small set of structured errors with spans; assert full
-messages in tests:
+**Errors (PR-1).** M1 already ships a `SolverError` interface
+(`isSolverError()` + `Message()`) with span-free concrete kinds
+(`CannotConstrainError`, `FuncArityMismatchError`, `TupleLengthMismatchError`).
+The M1 milestone notes M2 is where `Span()` arrives. So M2's error work is:
+**(a)** add `Span() ast.Span` to the `SolverError` interface and backfill it on
+M1's existing kinds (carrying the offending node's span), and **(b)** add the
+M2-specific bridge kinds below. Assert full messages in tests.
 
 ```go
-// errors.go
-type Error interface{ error; Span() ast.Span }
-type UnknownIdentifierError struct{ Name string; Span ast.Span }
-type NamespaceUsedAsValueError struct{ Name string; Span ast.Span }
-type UnsupportedNodeError struct{ Kind string; Span ast.Span } // M2-subset guard
+// errors.go — M2 extends M1's SolverError
+type SolverError interface {  // M1 interface, + Span() added in M2
+    isSolverError()
+    Message() string
+    Span() ast.Span           // NEW in M2
+}
+// new M2 kinds (each implements SolverError):
+type UnknownIdentifierError struct{ Name string; span ast.Span }
+type NamespaceUsedAsValueError struct{ Name string; span ast.Span }
+type UnsupportedNodeError struct{ Kind string; span ast.Span } // M2-subset guard
 ```
+
+(The plan earlier used a separate `Error` interface; M1 having already
+established `SolverError` means M2 should extend *that*, not introduce a
+parallel hierarchy. The `Error`/`c.report` naming in the carrier sketch reads
+against this `SolverError` type.)
 
 **Test harness (PR-2 table; PR-6 fixtures).**
 
@@ -443,6 +529,36 @@ func inferSource(t *testing.T, src string) (values, types map[string]string)
 // fixture_test.go — multi-file harness (sibling to cmd/escalier/fixture_test.go)
 func checkSolverFixture(t *testing.T, fixtureDir string) // asserts rendered top-level types
 ```
+
+### 3.8 Stdlib-type prerequisite tracking
+
+The M1-era edit to `01-milestones.md` added a new M2 acceptance clause: names
+that *downstream* type rules will reference must already **resolve** through the
+stdlib declaration channels and surface as `soltype.Type` values by the end of
+M2 — even though the rules that consume them land later. The names called out:
+
+| Name | Consumed by (later milestone) |
+|------|-------------------------------|
+| `Promise<T>` | `await e` |
+| `Iterable<T>` / `AsyncIterable<T>` | `for (x in xs)` / `for await (x in xs)` |
+| `Generator` / `AsyncGenerator` | `yield e` |
+| `IteratorResult<T>` (`{value, done}`) | iteration built-ins |
+
+**M2's responsibility is resolution only, not rules.** The parser-bridge must
+make these names resolve (whether sourced from Escalier's own stdlib decls,
+`lib.esc.d.ts`-equivalents, or both) and produce `soltype` types for them, so
+later milestones aren't blocked on "where does `Promise` come from?". M2 does
+**not** implement `await`/`for-in`/`yield` type-checking.
+
+Practically this is the same `TypeBinding`/`Namespace` machinery (§3.4) the
+val/fn path already needs, pointed at the stdlib decl source — but note two M2
+caveats: these are *generic* type references (`Promise<T>`), and M1's `soltype`
+has no generic-type-reference / alias node yet (that's M3/M4). For M2 the
+acceptance is just that the **names resolve** to *some* `soltype.Type` (likely a
+placeholder type-binding) without an unbound-name error — full generic
+instantiation of them is later. This is folded into **PR-6** (the milestone that
+owns multi-file/stdlib resolution); if it proves heavier than a name-resolution
+stub, split it into its own PR-7.
 
 ## 4. Sequencing
 
@@ -472,12 +588,13 @@ feature additions. Concretely:
 ### PR dependency graph
 
 ```text
-                M1 (soltype + Info + printer)
+        M1 shipped: soltype/ + solver/ (Context, Constrain,
+        coalesce, Info, SolverError, Print) — monomorphic; no schemes
                         │
                         ▼
                 ┌─────────────────┐
-                │ PR-1  carrier +  │   checker{}, Scope/Binding/Namespace,
-                │ scope + leaves   │   errors, inferExpr(lits, idents)
+                │ PR-1  carrier +  │   checker{ctx,info,errs}, Scope/Binding/Namespace,
+                │ scope + leaves   │   SolverError+Span, inferExpr(lits, idents)
                 └───────┬─────────┘
                         │
             ┌───────────┴───────────┐
@@ -492,7 +609,7 @@ feature additions. Concretely:
            ▼   ▼                     ▼
    ┌──────────────────┐   ┌──────────────────────┐
    │ PR-5 dep_graph   │   │ PR-4 objects /        │   (PR-4 ∥ PR-5:
-   │ SCC + LetRecGroup│   │ member access         │    both need PR-2+PR-3)
+   │ SCC (monomorphic)│   │ member access         │    both need PR-2+PR-3)
    └───────┬──────────┘   └──────────┬───────────┘
            │                         │
            └───────────┬─────────────┘
@@ -515,31 +632,34 @@ which exercises decls, functions, and SCC ordering together).
 > its **tests**, and an **exit** line. "LoC" estimates are non-test code.
 
 ### PR-1 — Checker carrier + Scope + leaf expressions  (~250 LoC)
-- `infer.go`: the `checker` struct, `newChecker`, `fresh`, `report`;
-  `inferExpr` dispatch with only the leaf cases wired.
-- `scope.go`: `Scope`/`ValueBinding`/`TypeBinding`/`Namespace` + `NewScope`,
-  `Child`, `defineValue`, `GetValue`/`GetType`/`GetNamespace`.
-- `errors.go`: `Error` interface, `UnknownIdentifierError`,
-  `NamespaceUsedAsValueError`, `UnsupportedNodeError`.
+- `infer.go`: the `checker` struct (wrapping M1's `*Context` + `*Info`),
+  `newChecker`, `freshAt`, `constrain`, `report`, `recordType`; `inferExpr`
+  dispatch with only the leaf cases wired.
+- `scope.go`: `Scope`/`ValueBinding`(monomorphic `Type`)/`TypeBinding`/
+  `Namespace` + `NewScope`, `Child`, `defineValue`, `GetValue`/`GetType`/
+  `GetNamespace`.
+- `errors.go`: add `Span() ast.Span` to M1's `SolverError` and backfill it on
+  M1's existing kinds; add `UnknownIdentifierError`, `NamespaceUsedAsValueError`,
+  `UnsupportedNodeError`.
 - `infer_expr.go`: `inferLiteral`, `inferIdent`; all other `ast.Expr` kinds fall
   through to `UnsupportedNodeError` (no panic).
 - Tests: literal → rendered type; identifier resolves to a pre-seeded binding's
-  scheme; unbound identifier and namespace-as-value → full-message errors with
+  type; unbound identifier and namespace-as-value → full-message errors with
   spans.
 - **Exit:** the walk types the literal/identifier subset against `soltype`/`Info`;
   every other node fails cleanly.
 
 ### PR-2 — Single-module decl driver + table harness  (~250 LoC)
 *(depends on PR-1; parallel with PR-3)*
-- `infer_decl.go`: `inferVarDecl` (initializer typed via `inferExpr`, generalized
-  into a `ValueBinding`).
+- `infer_decl.go`: `inferVarDecl` (initializer typed via `inferExpr`, coalesced
+  into a **monomorphic** `ValueBinding` — no generalization in M2).
 - `module.go`: first `InferModule` for one module, decls in **source order**
   (no SCC yet), seeding the module `Scope` and `Info`.
 - `infer_test.go`: the `inferSource` table harness.
 - Tests: `val x = 5` ⇒ `5`/`number` (per M1 widening); `val y = x` referencing an
   earlier decl; forward reference → (documented) error until PR-5 adds ordering.
 - **Exit:** top-level `val` decls with literal/identifier initializers infer
-  end-to-end and render correctly via the harness.
+  end-to-end (monomorphic) and render correctly via the harness.
 
 ### PR-3 — Function / application / block walk  (~300 LoC)
 *(depends on PR-1; parallel with PR-2)*
@@ -547,10 +667,12 @@ which exercises decls, functions, and SCC ordering together).
   `inferCall` (`constrain(callee <: Function{args, fresh})`), `inferBlock` /
   `inferStmt` (sequence; result = last expr or `void`).
 - `infer_decl.go`: `inferFuncDecl` (reuses `inferFuncExpr` on the decl's sig+body).
-- Tests: identity `fn`, application of it, a block with a `return`, arity
-  mismatch on a direct call → full-message error.
-- **Exit:** `fn` decls and calls infer end-to-end (the second half of the
-  per-expression bar; deep let-polymorphism polish is still M3).
+- Tests: an **annotated** `fn` (e.g. `fn (x: number) { x }` ⇒ `fn(x: number) ->
+  number`), application of it, a block with a `return`, arity mismatch on a
+  direct call → full-message error. (Un-annotated polymorphic `fn` renders with
+  fresh vars, **not** `<T0>` — generalization is M3.)
+- **Exit:** `fn` decls and calls infer end-to-end, monomorphically (let-
+  polymorphism and `<T0>` rendering are M3, which M1 deferred schemes to).
 
 ### PR-4 — Objects & member access  (~200 LoC)
 *(depends on PR-2 + PR-3; parallel with PR-5)*
@@ -565,14 +687,16 @@ which exercises decls, functions, and SCC ordering together).
 ### PR-5 — dep_graph SCC ordering + recursive groups  (~250 LoC)
 *(depends on PR-2 + PR-3)*
 - `module.go`: `inferDepGraph` (iterate `g.Components`), `inferComponent` (the
-  LetRecGroup lift sketched in §3.7).
+  monomorphic SCC bind sketched in §3.7: fresh var per binding, infer bodies at
+  `lvl+1`, group members visible before any body).
 - Replace PR-2's source-order loop with SCC ordering. **No placeholder/patching
-  phase.**
-- Tests: self-recursive `fn`; mutually-recursive `fn` pair; a decl that
-  forward-references a later decl now resolves via SCC ordering (the PR-2
-  documented-error case flips to success).
+  phase.** **No generalization** — bindings are bound monomorphically; the
+  `PolyScheme` generalization step is M3 (M1 deferred schemes).
+- Tests: self-recursive `fn` (resolves, monomorphic); mutually-recursive `fn`
+  pair; a decl that forward-references a later decl now resolves via SCC
+  ordering (the PR-2 documented-error case flips to success).
 - **Exit:** recursive and out-of-order top-level decls infer correctly in one
-  module.
+  module (monomorphically).
 
 ### PR-6 — Multi-file (cross-module) resolution + fixtures harness  (~250 LoC)
 *(depends on PR-4 + PR-5)*
@@ -580,13 +704,19 @@ which exercises decls, functions, and SCC ordering together).
   across them; cross-module references resolve through the qualified-`BindingKey`
   `Namespace` (`dep_graph.GetNamespace`). Engage `internal/resolver` only if a
   fixture imports a `.d.ts`-typed third-party module.
+- Stdlib-type prerequisite resolution (§3.8): `Promise`/`Iterable`/`Generator`/
+  `IteratorResult` names resolve to `soltype` types through the stdlib decl
+  channel without unbound-name errors (resolution only; the rules that use them
+  are later). If heavier than a name-resolution stub, split into PR-7.
 - `fixture_test.go`: the `checkSolverFixture` harness (sibling to
   `cmd/escalier/fixture_test.go`).
 - Tests: a two-file fixture where file B imports a `val`/`fn` from file A and the
-  inferred types render correctly end-to-end.
+  inferred types render correctly end-to-end; a fixture referencing a stdlib
+  type name resolves without error.
 - Update `01-milestones.md` M2 status.
 - **Exit (M2 exit criteria):** multi-file module resolves via the dep graph;
-  top-level `val`/`fn` infer correct rendered types end-to-end.
+  top-level `val`/`fn` infer correct rendered types end-to-end (monomorphic);
+  stdlib type names resolve.
 
 ## 6. Risks & mitigations
 
@@ -614,8 +744,17 @@ which exercises decls, functions, and SCC ordering together).
 
 ## 7. Open questions to resolve during M2
 
-- **Package name** is settled (`internal/solver/`, design-notes decision #1);
-  M2 inherits it from M1. No open decision here.
+- **Package name** is settled and shipped: `internal/solver/` (engine, where M2
+  code lives) + `internal/soltype/` (types). No open decision here.
+- **Monomorphic-`ValueBinding` forward-compat.** M2's `ValueBinding` holds a
+  plain `soltype.Type`; M3 swaps it for a `TypeScheme`. Decide in PR-1 whether to
+  (a) ship the plain-`Type` field now and take the M3 churn, or (b) introduce a
+  thin `ValueBinding` accessor M3 can re-point. Leaning (a) — the churn is
+  mechanical and (b) risks over-abstracting before schemes exist.
+- **Does anything in M2 need `coalesce` at binding time?** The §3.7 SCC sketch
+  coalesces each group var before binding so the stored monomorphic type is
+  inspectable; confirm in PR-5 whether binding the raw var (and coalescing only
+  at render) is simpler. M1's `coalesce` is available either way.
 - **How much namespace resolution to drive in M2 vs. defer.** If full
   cross-module/namespace resolution is heavier than the val/fn bar needs, PR-6
   can scope to the minimum that satisfies the multi-file acceptance (a binding
@@ -632,11 +771,17 @@ which exercises decls, functions, and SCC ordering together).
 
 - [ ] Constraint-generating walk over `*ast.Module` produces `soltype` and
       populates `Info` (no AST `InferredType()` writes).
-- [ ] Package-owned `Scope`/`Binding`/`Namespace` (no `type_system` reuse).
-- [ ] Top-level `val`/`fn` from real source infer correct rendered types
-      end-to-end (table harness).
+- [ ] Package-owned `Scope`/`Binding`/`Namespace` in `internal/solver/` (no
+      `type_system` reuse).
+- [ ] Top-level `val`/`fn` from real source infer correct **monomorphic**
+      rendered types end-to-end (table harness). *(Polymorphic `<T0>` rendering
+      is M3 — M1 deferred schemes/generalization.)*
 - [ ] Multi-file module resolves via the dep graph (fixtures harness).
-- [ ] Recursive SCC groups infer with no placeholder/patching phase.
+- [ ] Recursive SCC groups infer (monomorphically) with no placeholder/patching
+      phase.
+- [ ] Stdlib type names (`Promise`/`Iterable`/`Generator`/`IteratorResult`)
+      resolve to `soltype` types without unbound-name errors (resolution only).
+- [ ] `SolverError` gained `Span()`; M2 error kinds carry spans.
 - [ ] No imports of `internal/checker/` or `internal/type_system/` from the new
       package (gate honored).
 - [ ] `01-milestones.md` M2 status updated.
