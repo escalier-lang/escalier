@@ -216,8 +216,10 @@ func TestConstrainVariableBinding(t *testing.T) {
 	require.Same(t, soltype.Type(n), a.UpperBounds[0])
 
 	// 5 <: α records 5 as a lower bound of α.
-	require.Empty(t, c.Constrain(numLit(5), a))
+	five := numLit(5)
+	require.Empty(t, c.Constrain(five, a))
 	require.Len(t, a.LowerBounds, 1)
+	require.Same(t, soltype.Type(five), a.LowerBounds[0])
 }
 
 func TestConstrainTransitivePropagation(t *testing.T) {
