@@ -16,6 +16,14 @@ import (
 // "Forward requirements for the named-ref node design".
 type constraintKey struct{ lhs, rhs soltype.Type }
 
+// extrudeKey keys extrude's per-extrusion cache by both the origin variable's
+// ID and the polarity it was reached in, so the same variable copied in
+// covariant and contravariant position produces two distinct fresh vars.
+type extrudeKey struct {
+	id  int
+	pol soltype.Polarity
+}
+
 // Constrain asserts lhs <: rhs, mutating bound lists. An empty result means
 // success.
 func (c *Context) Constrain(lhs, rhs soltype.Type) []SolverError {
@@ -102,7 +110,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		}
 		// rhs lives at a higher level: extrude it down so it isn't wrongly
 		// generalized at lv's level.
-		return c.constrain(lhs, c.extrude(rhs, soltype.Negative, lv.Level, map[int]*soltype.TypeVarType{}), seen)
+		return c.constrain(lhs, c.extrude(rhs, soltype.Negative, lv.Level, map[extrudeKey]*soltype.TypeVarType{}), seen)
 	}
 	// rhs is a variable: symmetric — record lhs as a lower bound, propagate uppers.
 	if rv, ok := rhs.(*soltype.TypeVarType); ok {
@@ -114,7 +122,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			}
 			return errs
 		}
-		return c.constrain(c.extrude(lhs, soltype.Positive, rv.Level, map[int]*soltype.TypeVarType{}), rhs, seen)
+		return c.constrain(c.extrude(lhs, soltype.Positive, rv.Level, map[extrudeKey]*soltype.TypeVarType{}), rhs, seen)
 	}
 
 	return []SolverError{&CannotConstrainError{LHS: lhs, RHS: rhs}}
@@ -122,18 +130,23 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 
 // extrude copies t so that variables above lvl are replaced by fresh variables
 // at lvl, wired to the originals through the polarity-appropriate bound
-// direction. (Same algorithm as the spike; the cache is keyed by var ID.)
-func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache map[int]*soltype.TypeVarType) soltype.Type {
+// direction. The cache is keyed by (var ID, polarity): a variable reached in
+// both polarities during a single extrusion must yield two distinct fresh vars
+// with opposite bound wiring (matching canonical Simple-sub's PolarVariable
+// cache). Keying by ID alone would reuse a Negative-polarity copy in Positive
+// position — skipping its covariant bounds — and vice versa.
+func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache map[extrudeKey]*soltype.TypeVarType) soltype.Type {
 	if soltype.LevelOf(t) <= lvl {
 		return t
 	}
 	switch t := t.(type) {
 	case *soltype.TypeVarType:
-		if nv, ok := cache[t.ID]; ok {
+		key := extrudeKey{id: t.ID, pol: pol}
+		if nv, ok := cache[key]; ok {
 			return nv
 		}
 		nv := c.freshVar(lvl)
-		cache[t.ID] = nv
+		cache[key] = nv
 		if pol == soltype.Positive {
 			t.UpperBounds = append(t.UpperBounds, nv)
 			for _, lb := range t.LowerBounds {
