@@ -103,7 +103,7 @@ func TestConstrainFunctionVariance(t *testing.T) {
 
 	// Contravariant params: (number) -> number <: (5) -> number requires
 	// 5 <: number on the param (rhs param <: lhs param), which holds.
-	t.Run("contravariant params ok", func(t *testing.T) {
+	t.Run("contravariant params (ok)", func(t *testing.T) {
 		c := &Context{}
 		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
 		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", numLit(5))}, Ret: num()}
@@ -112,7 +112,7 @@ func TestConstrainFunctionVariance(t *testing.T) {
 
 	// Contravariant params: (5) -> number <: (number) -> number requires
 	// number <: 5, which fails.
-	t.Run("contravariant params fail", func(t *testing.T) {
+	t.Run("contravariant params (fail)", func(t *testing.T) {
 		c := &Context{}
 		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", numLit(5))}, Ret: num()}
 		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
@@ -120,7 +120,7 @@ func TestConstrainFunctionVariance(t *testing.T) {
 	})
 
 	// Covariant return: (number) -> 5 <: (number) -> number requires 5 <: number.
-	t.Run("covariant return ok", func(t *testing.T) {
+	t.Run("covariant return (ok)", func(t *testing.T) {
 		c := &Context{}
 		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: numLit(5)}
 		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
