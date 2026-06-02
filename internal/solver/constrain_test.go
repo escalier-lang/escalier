@@ -278,3 +278,36 @@ func TestConstrainExtrusion(t *testing.T) {
 	require.Len(t, high.LowerBounds, 1)
 	require.Same(t, soltype.Type(bound), high.LowerBounds[0])
 }
+
+func TestConstrainExtrusionBothPolarities(t *testing.T) {
+	// Extruding a function that mentions the same higher-level variable in both
+	// a contravariant (param) and a covariant (return) position must produce
+	// TWO distinct fresh vars — one per polarity, with opposite bound wiring.
+	// A cache keyed by var ID alone would reuse the first-seen polarity's copy
+	// in the other position; the (id, polarity) key keeps them distinct.
+	c := &Context{}
+	low := c.freshVar(0) // level 0
+	a := c.freshVar(1)   // level 1, used in both positions of fn
+	fn := &soltype.FuncType{
+		Params: []*soltype.FuncParam{identParam("x", a)},
+		Ret:    a,
+	}
+
+	// low <: fn. fn lives above low's level, so it is extruded down; `a` is
+	// reached at Positive (return) and Negative (param) polarity.
+	require.Empty(t, c.Constrain(low, fn))
+
+	require.Len(t, low.UpperBounds, 1)
+	extruded, ok := low.UpperBounds[0].(*soltype.FuncType)
+	require.True(t, ok)
+
+	paramVar, ok := extruded.Params[0].Type.(*soltype.TypeVarType)
+	require.True(t, ok)
+	retVar, ok := extruded.Ret.(*soltype.TypeVarType)
+	require.True(t, ok)
+
+	// Distinct fresh vars, both copied down to low's level.
+	require.NotSame(t, paramVar, retVar)
+	require.Equal(t, 0, paramVar.Level)
+	require.Equal(t, 0, retVar.Level)
+}
