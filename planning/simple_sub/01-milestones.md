@@ -3,8 +3,9 @@
 Ordered milestones for the new checker. Each is independently testable and
 leaves the old checker fully working. "Structural core first"; lifetimes are
 introduced **with the first lifetime-carrying type** (records, M4). The MVP is
-M1–M8 (structural core + nominal classes + unions/intersections + fixture
-differential + type-level operators); codegen/LSP and the cutover come after.
+M1–M9 (structural core + nominal classes + unions/intersections + library type
+resolution + fixture differential + type-level operators); codegen/LSP and the
+cutover come after.
 
 Spike provenance is cited where a milestone promotes proven spike work
 (`internal/simplesub/`).
@@ -19,7 +20,7 @@ lifetimes — so the **representation** (an `exact` flag) and the **one-way
 not retrofitted. The richer machinery (`Exact<T>`/`Inexact<T>` type operators,
 exactness propagation through `keyof`/mapped/conditional types, the value-level
 `exact<T>(v)` lowering, and the `std:*`/`dom:*` annotation effort) is deferred to
-M8 and later. See [02-design-notes.md](02-design-notes.md) §"Exactness" for the representation and
+M9 and later. See [02-design-notes.md](02-design-notes.md) §"Exactness" for the representation and
 rules. The **default is settled**: Escalier code is exact-by-default, TypeScript
 imports are inexact-by-default, and each former implements its default *as it
 lands* (M3 functions, M4 records/tuples, M5 class instances via `final`,
@@ -34,11 +35,12 @@ a section recording both before M3 lands.)
 - [M1 — Package skeleton + `soltype`](#m1--package-skeleton--soltype)
 - [M2 — Parser/resolver bridge](#m2--parserresolver-bridge)
 - [M3 — Functions, application, let-polymorphism](#m3--functions-application-let-polymorphism)
-- [M4 — Core value types: records + usage-based inference + `mut` + **lifetimes**](#m4--core-value-types-records--usage-based-inference--mut--lifetimes)
+- [M4 — Core value types: records + usage-based inference + `mut` + **lifetimes** + destructuring/`match`](#m4--core-value-types-records--usage-based-inference--mut--lifetimes--destructuringmatch)
 - [M5 — Nominal types (classes)](#m5--nominal-types-classes)
 - [M6 — Unions / intersections](#m6--unions--intersections)
-- [M7 — Second fixture harness + differential triage](#m7--second-fixture-harness--differential-triage)
-- [M8 — Type-level operators](#m8--type-level-operators)
+- [M7 — Library type resolution (`std:*` / `web:*` / `node:*`)](#m7--library-type-resolution-std--web--node)
+- [M8 — Second fixture harness + differential triage](#m8--second-fixture-harness--differential-triage)
+- [M9 — Type-level operators](#m9--type-level-operators)
 - [Later (post-MVP)](#later-post-mvp)
 - [Dependency / risk ordering rationale](#dependency--risk-ordering-rationale)
 
@@ -134,19 +136,22 @@ Replace the spike's hand-built IR with a real constraint-generating walk over
   `Generator<Y, R, TNext>` / `AsyncGenerator<…>`; iteration-related
   built-ins need a `{value, done}` `IteratorResult<T>`. None of these
   type-checking *rules* land in M2 (they sit in the milestones that own the
-  language features below), but the stdlib type *definitions* they reference
-  must exist by the time those milestones can wire up their rules. M2's
-  responsibility is just to make sure these names resolve through the
-  existing stdlib decls (whether sourced from `lib.esc.d.ts`-equivalents,
-  Escalier's own stdlib, or both) — i.e., the parser-bridge produces
-  `soltype` types for them — so downstream milestones aren't blocked on
-  "but where does `Promise` come from?"
+  language features below), and the **real** stdlib type definitions are ingested
+  in **M7** (library type resolution), once the representational machinery they
+  need (generics, objects, classes, unions) exists. M2's narrower job is just to
+  **seed placeholder bindings** for these names — hand-built opaque `soltype`
+  stubs in the new checker's prelude — so a *reference* resolves without an
+  unbound-name error and downstream rules can be authored against a stand-in. M2
+  does **not** read the real stdlib decls (that path is old-checker- and
+  `type_system`-coupled, and `soltype` has no generic-type node until M3/M4);
+  M7 swaps the placeholders for real structures. See the M2 implementation
+  plan §3.8.
 
 **Accept:** top-level `val`/`fn` declarations from real source infer correct
 rendered types end-to-end; multi-file module via the dep graph resolves;
-references to the stdlib types listed above resolve through the existing
-declaration channels and surface as `soltype.Type` values (the rules that
-*use* them land later).
+references to the stdlib type names listed above resolve to placeholder
+`soltype.Type` stubs without an unbound-name error (real structures and the
+rules that *use* them land in M7 and the feature milestones).
 
 **Gate:** if driving from the real AST/dep-graph requires reaching back into the
 old checker's internals, the parallel-package boundary is wrong — stop and
@@ -171,9 +176,10 @@ reassess.
   variable. Awaiting outside an `async` function is rejected by the AST
   walk, not by the type rule. Nested `Promise<Promise<T>>` does *not*
   auto-flatten in this milestone — `Awaited<T>` (the recursive-conditional
-  flattening) is a type-level operator that lands in M8; user code that
+  flattening) is a type-level operator that lands in M9; user code that
   cares about flattening writes `Awaited<T>` explicitly until then.
-  Depends on `Promise<T>` being available from the stdlib (M2 prerequisite).
+  Depends on `Promise<T>` being available from the stdlib (M2 placeholder;
+  real resolution lands in M7).
 - **Function exactness flag.** `Function` carries an `exact` flag; a bare
   `fn(...)` is exact, `fn(..., ...)` is inexact. **Direct calls reject extra
   args regardless of exactness** (an inexact function ignores them, but passing
@@ -198,7 +204,7 @@ are accepted while exact `fn(x)` and any 3+-param function are rejected. Plus,
 on async: `async fn () -> number` renders as `fn () -> Promise<number>`;
 `await p` where `p: Promise<string>` yields `string`; `await p` where
 `p: Promise<Promise<number>>` yields `Promise<number>` (no auto-flatten —
-that's M8's `Awaited<T>`).
+that's M9's `Awaited<T>`).
 
 **Function overloading.** Escalier supports overloaded `fn` declarations and
 this milestone is where they land for free functions. Overloading is a poor fit
@@ -247,7 +253,7 @@ checker:
 
 ---
 
-## M4 — Core value types: records + usage-based inference + `mut` + **lifetimes**
+## M4 — Core value types: records + usage-based inference + `mut` + **lifetimes** + destructuring/`match`
 
 The big one. These are inseparable: lifetimes ride on borrows, records are the
 first value type that can be borrowed, and `mut` borrows (via the `Ref`
@@ -294,6 +300,36 @@ wrapper) are what first populate a lifetime. Land them together.
   originate at parameters typed as `Ref` (mut or immut); returning shares by
   value identity; multi-source returns union lifetimes; escape constrains `<:
   'static`. (Spike M4.)
+- **Destructuring patterns + the `match` expression form.** `IdentPat` (M1, the
+  only `Pat` concrete through M2–M3) is joined here by the structural concretes —
+  `TuplePat`, `RecordPat`, and literal patterns — now that tuple/record types
+  exist to type them. The *same* `Pat` machinery powers both **binding
+  destructuring** (`val {x, y} = p`, `val [a, b] = t`, and the identical forms in
+  function params) and **`match` arms**: a pattern dispatches through the usage /
+  member-lookup path (`obj.bar` ⇒ `constrain(obj <: {bar: β})`), **not**
+  subtyping — the rule M5 restates for class/enum patterns. M4 owns introducing
+  the `match` *expression* over these structural patterns; exhaustiveness for a
+  closed scrutinee follows the exactness flag (an exact record/tuple pattern set
+  is complete; an inexact one requires a catch-all arm). **Constructor/enum
+  patterns and enum-exhaustive `match` are M5; union `match` exhaustiveness is
+  M6** — M4 lays the form and the structural-pattern machinery they both extend.
+- **Namespace member lookup (`Foo.bar`, `Foo["x"]`).** Lands here, co-located
+  with object member access, because it's the same operation against a different
+  container. M2 introduced the `Namespace` *structure* and made a free-floating
+  namespace ident an error; M4 adds the *access*. A single `resolvePath` resolves
+  an ident/member/index chain to `Value | Namespace` (a name is never both — a
+  scope invariant); the **object/index position tolerates a namespace, every
+  other (value) position rejects one** — so the `NamespaceUsedAsValueError` moves
+  off `inferIdent` to the value-position consumer and fires once, covering both
+  `f(Foo)` and partial chains `f(A.B)`. Namespace lookup is a **direct,
+  non-lexical** read of the namespace's own `Values`/`Nested` maps
+  (`LookupValue`/`LookupNamespace`) — unlike `Scope.Get*`, no parent walk, just
+  like object member access. Index keys into a namespace must be **statically
+  constant** (string/symbol — for members whose names aren't valid identifiers),
+  since membership is resolved by name, not dynamically. New errors:
+  `UnknownNamespaceMemberError`, `DynamicNamespaceIndexError`. (Producing the
+  namespace in the first place — cross-package import resolution — is a separate
+  concern from this lookup logic.)
 
 **Accept:** the canonical lifetime cases against real source — `IdentityRefReturn`
 ⇒ `fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}`; `FreshObjectReturn`
@@ -305,6 +341,14 @@ the reverse; an extra property on an exact target is rejected; `Ref` neither
 tightens nor loosens the inner's exactness (the inner carrier's `exact` flag
 passes through, per [exact-types/requirements.md](../exact-types/requirements.md)
 §7.11 — orthogonal to `Ref`'s mut/lifetime axes).
+Plus patterns: `val {x, y} = p` and `val [a, b] = t` bind each name at the
+member's type (and reject a missing field / wrong arity); a destructured param
+`fn (({x, y})) { … }` types the same way; a `match` over structural patterns
+binds and type-checks each arm, and an exact-record/tuple scrutinee with a
+complete pattern set needs no catch-all while an inexact one does.
+Plus namespaces: `Foo.bar` resolves to the member's type and `Foo["weird-name"]`
+to a constant-keyed member, while `f(Foo)` and `f(A.B)` are rejected as
+`NamespaceUsedAsValueError` and a dynamic `Foo[k]` as `DynamicNamespaceIndexError`.
 
 **Mutability-transition checking reuses existing infrastructure.** Escalier's
 flow-sensitive analysis that permits mutable↔immutable alias creation in
@@ -377,12 +421,16 @@ M4 substrate without retrofitting.
   built from each class's `Extends`/`Implements`. Mixed
   `Class <: structural record` (and the reverse) rejects: a `Point` is not a
   `{x: number}`.
-- **Pattern matching and destructuring are separate from assignability.** A
-  record pattern like `let {x, y} = point` (and the equivalent `match` arm)
-  succeeds against a `Point` because patterns dispatch through member lookup,
-  not subtyping — the same path that resolves `p.x`. The assignment forms
+- **`match` extends to nominal patterns; destructuring stays separate from
+  assignability.** M5 adds **enum/class constructor patterns** to the `match`
+  expression introduced in M4 (structural patterns there), plus
+  **enum-exhaustive `match`** — enum variants are implicitly `final` (above), so
+  a `match` covering every variant needs no default arm. A record pattern like
+  `let {x, y} = point` (and the equivalent `match` arm) still succeeds against a
+  `Point` because patterns dispatch through member lookup, **not** subtyping —
+  the same path that resolves `p.x`. The assignment forms
   `var foo: {x: number, y: number} = Point(5, 10)` and
-  `var bar: Point = {x: 5, y: 10}` both remain rejected by the rule above.
+  `var bar: Point = {x: 5, y: 10}` both remain rejected by the nominal rule above.
 - **Per-type-parameter variance via polarity (Option 2).** Each class's type
   parameters get their variance inferred from how they appear in the class body,
   exactly as SimpleSub already does for inference variables. A parameter that
@@ -402,7 +450,7 @@ M4 substrate without retrofitting.
 - **Generic type aliases do *not* carry variance separately.** A non-recursive
   alias like `type Box<T> = {value: T}` is transparent: `Box<A> <: Box<B>`
   reduces to the structural subtyping of its expansion, so variance falls out
-  for free and storing it would be redundant. Recursive aliases (handled in M8
+  for free and storing it would be redundant. Recursive aliases (handled in M9
   via the cycle cache) are the wrinkle — at the cycle-cache hit point the rule
   must dispatch without expanding, so variance is inferred internally for use
   there, but is never user-annotated. `in`/`out` modifiers are therefore
@@ -421,7 +469,7 @@ M4 substrate without retrofitting.
   No new constraint machinery needed; this is purely "wire the loop syntax to
   the existing dispatch path." Depends on `Iterable<T>` / `Iterator<T>` /
   `AsyncIterable<T>` / `IteratorResult<T>` being available from the stdlib
-  (M2 prerequisite).
+  (M2 placeholder; real resolution lands in M7).
 - **`mut` and lifetimes ride on it free.** `Class` is borrowed the same way
   records and tuples are — wrapped in `Ref{mut, lt, inner: Class{...}}`. The
   M4 lifetime machinery applies unchanged (`mut 'a Point` is `Ref{mut: true,
@@ -527,10 +575,12 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
     mirrors SAT/SMT unit-propagation-before-branching: do all the forced work
     first, and when forced to branch, keep the decision symbolic in a
     variable's bounds.
-- **Union exactness flag.** A bare `A | B` is an **exact** (closed) union — its
+- **Union exactness flag — completes `match` exhaustiveness.** A bare `A | B` is
+  an **exact** (closed) union — its
   inhabitants are exactly `A ∪ B`; `A | B | ...` is inexact (at least these, with
-  an `unknown`-typed tail). Exact `<:` inexact, not the reverse. Exactness drives
-  the closed-set consequences: a `match` over an exact union is exhaustive with
+  an `unknown`-typed tail). Exact `<:` inexact, not the reverse. This is the
+  third and last leg of the `match` story (structural M4, enum M5, union here):
+  a `match` over an exact union is exhaustive with
   no default arm; over an inexact union a default is required. (The exhaustiveness
   payoff is the main motivation, per
   [exact-types/requirements.md](../exact-types/requirements.md) §5.) `keyof` of an exact object and the
@@ -546,7 +596,72 @@ inexact-union `match` does.
 
 ---
 
-## M7 — Second fixture harness + differential triage
+## M7 — Library type resolution (`std:*` / `web:*` / `node:*`)
+
+Port the standard-library type ingestion onto `soltype`. Today this is a
+self-contained subsystem living entirely in `internal/checker/`
+(`infer_import.go`, `infer_stdlib_import.go`, `infer_stdlib_scc.go`) plus
+`internal/interop/`, and it produces `type_system.Type`. This milestone
+retargets it to produce `soltype.Type` in the new checker's `Scope`/`Namespace`,
+covering both ingestion channels:
+
+- **Ambient global lib** — `Array`, `Promise`, `Map`, `Set`, `console`, `Math`,
+  `JSON`, the iteration protocols, etc., loaded from `lib.*.d.ts` without an
+  import (the `globalThis` surface).
+- **Scheme imports** — `std:*` / `web:*` / `node:*` (the DOM lives under
+  `web:dom`), routed through the `interop` partition table to the stdlib `.esc`
+  modules.
+
+This **replaces M2's placeholder "prerequisite tracking"**: the names M2 stubbed
+(`Promise`/`Iterable`/`Generator`/`IteratorResult`) and the broader lib surface
+now resolve to real `soltype` structures rather than opaque placeholders.
+
+- **Interop reuse, gate intact.** The front half of the existing pipeline
+  (`dts_parser` parse → `interop.ConvertModule` → `*ast.Module`) is reusable as
+  AST. The back half (the old checker's `InferModule` → `type_system`) is what
+  this milestone replaces with the new checker's `soltype` walk over that AST.
+  `interop` itself imports `type_system`, so this milestone must consume only its
+  AST-producing surface and keep the `soltype` output path free of `type_system`
+  — confirm the M2 parallel-package gate still holds.
+- **Scope = the operator-free lib subset.** Everything expressible with the
+  M3–M6 representational features (generics, object/record types, nominal
+  classes + `final`, unions): `Array`, `Promise`, `Map`/`Set`, the
+  `Iterable`/`Iterator`/`IteratorResult` protocols, `console`, `Math`, `JSON`,
+  the `string`/`number`/`boolean`/`symbol`/`regexp` method surfaces, and the
+  common `web:dom` types.
+- **Deferred to a phase-2 backfill (after M9).** Lib types whose definitions
+  need conditional/mapped/utility **type operators** (`Awaited<T>`, `Partial`,
+  `Pick`, `Record`, and the operator-heavy parts of `web:dom`) cannot be
+  represented until M9 (type-level operators) lands. Until then they resolve as
+  placeholders/inexact stubs — the same posture M2 takes — and are backfilled
+  once the operator machinery exists. Record which lib names are stubbed so the
+  gap stays visible rather than reading as full coverage.
+- **Exactness.** TS-imported lib types are **inexact by default**
+  ([exact-types/requirements.md](../exact-types/requirements.md) §8); this
+  milestone stamps the inexact flag on ingested lib formers as they land.
+- **Not in scope: operators.** The built-in operator schemes (`+`, `==`, `&&`,
+  `++`, …) are **not** library types and are **not** owned here. They are
+  hand-coded, monomorphic-over-primitive value bindings the expression walk needs
+  from day one, so they live in the M2 prelude (a port of the old checker's
+  `addOperatorBindings`). M7 ports *type* ingestion (`.d.ts`/interop → `soltype`),
+  not the value-level operator env.
+
+**Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
+`Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
+to real `soltype` structures and type-checks (not placeholders); `import { … }
+from "std:array"` / `"web:dom"` resolves member types; the M3 `await` and M5
+`for (x in xs)` rules now exercise against the **real** `Promise`/`Iterable`
+(replacing the M2 placeholders); operator-dependent utility types remain stubbed
+pending M9, and which names are stubbed is reported, not silently dropped.
+
+**Depends on:** M3 (generics), M4 (objects/records), M5 (classes / methods /
+`final`), M6 (unions). **Feeds:** M8 — the real-package differential cannot run
+the existing `fixtures/` tree (which uses `console`/`Array`/`Promise`/…) without
+real lib types.
+
+---
+
+## M8 — Second fixture harness + differential triage
 
 Two complementary mechanisms, picked to match the granularity of what each one
 tests:
@@ -564,7 +679,7 @@ tests:
   `cmd/escalier/fixture_test.go`). Phase 1 (this milestone) runs the checker
   only — no codegen; acceptance is "the new checker accepts/rejects every
   fixture the way the old checker does, modulo triaged intended
-  improvements." Phase 2 (post-M9) extends to end-to-end compilation and
+  improvements." Phase 2 (post-M10) extends to end-to-end compilation and
   `build/` golden diffs once the codegen path is settled. This is the
   regression net that catches "did we break anything real."
 - **Differential triage** runs both checkers on the same parsed tree (parse
@@ -585,7 +700,7 @@ tests:
   still need to express the distinction. Strategy (cheapest first):
   - **Parser-level tolerance, semantics no-op in old checker.** Teach the
     shared parser to accept the `...` trailing-marker syntax (and the
-    `Exact<T>`/`Inexact<T>` type operators once M8 lands); the old checker
+    `Exact<T>`/`Inexact<T>` type operators once M9 lands); the old checker
     reads the AST node and ignores the flag, behaving as today. The old
     checker is already an effectively-inexact world, so most fixtures "just
     work" without semantic changes — the cost is one parser change and zero
@@ -619,7 +734,7 @@ gaps; burn down before proceeding.
 
 ---
 
-## M8 — Type-level operators
+## M9 — Type-level operators
 
 The last MVP milestone. The full type-level operator surface, reduced via
 Baseline-D (reduce when operands ground) + Design-A residual nodes reduced
@@ -665,7 +780,8 @@ the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
   The constraint engine extends just like `throws` did: parallel arms in
   `constrain`/`extrude`/`LevelOf`/printer, no new lattice machinery.
   Depends on `Generator<Y, R, TNext>` / `AsyncGenerator<…>` being
-  available from the stdlib (M2 prerequisite).
+  available from the stdlib (M2 placeholder; real resolution in M7 — M9 follows,
+  so generators can rely on the real types).
 - **`throws T` clause on functions.** `FuncType` gains a `Throws Type` field
   (parallel to `Ret`), covariant in subtyping, defaulting to `never` (⊥) when
   the source has no `throws` clause. The constraint engine extends naturally:
@@ -720,13 +836,13 @@ externally as `Generator<1 | "a", void, unknown>`; `yield from g` where
 includes `number`; `gen fn` outside a `gen` context (top-level `yield`)
 is rejected by the AST walk; `Awaited<ReturnType<F>>` over an
 `async gen fn () -> R` returns `R` once `Awaited<T>` and `ReturnType<F>`
-reduce through the M8 operator machinery.
+reduce through the M9 operator machinery.
 
 ---
 
 ## Later (post-MVP)
 
-- **M9 — Codegen.** Either a `soltype → type_system` bridge to reuse codegen
+- **M10 — Codegen.** Either a `soltype → type_system` bridge to reuse codegen
   unchanged, or port codegen (`dts.go` et al., ~4 files / ~30 refs) onto
   `soltype`. Decide when the checker is proven. **The value-level `exact<T>(v)`
   conversion** ([exact-types/requirements.md](../exact-types/requirements.md)
@@ -736,8 +852,8 @@ reduce through the M8 operator machinery.
   JSDoc round-tripping for exactness
   ([exact-types/requirements.md](../exact-types/requirements.md) §9) is also
   codegen work.
-- **M10 — LSP.** Switch the LSP to the new checker's `Scope`/`Info`.
-- **M11 — Flip & cleanup.** Make the new checker the default; retire the old
+- **M11 — LSP.** Switch the LSP to the new checker's `Scope`/`Info`.
+- **M12 — Flip & cleanup.** Make the new checker the default; retire the old
   checker + its tests; **delete** the AST `inferredType` field, the
   `type Type = type_system.Type` alias, and `tools/gen_ast`'s generation of the
   field — leaving the AST fully type-system-agnostic.
@@ -762,7 +878,7 @@ reduce through the M8 operator machinery.
 - Codegen is deferred to the latest safe point because it is the single largest
   integration cost (its `type_system` dependency) and is not needed to prove the
   checker.
-- M7's test posture is "improve, don't match" — table tests assert intended
+- M8's test posture is "improve, don't match" — table tests assert intended
   semantics (not old-checker output), and the second fixture harness's
   differential is a triage tool, not a parity gate. This is what lets
   intended improvements through instead of forcing old-checker parity.

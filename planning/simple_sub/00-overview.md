@@ -50,7 +50,7 @@ This plan turns that spike into a production checker.
 - Bug-for-bug parity with the old checker.
 
 (Type-level operators — `keyof`, conditional, indexed access — **are** in the
-MVP, as the final milestone M8; the spike already proved them.)
+MVP, as the final milestone M9; the spike already proved them.)
 
 ## Strategic decisions (settled)
 
@@ -61,7 +61,7 @@ MVP, as the final milestone M8; the spike already proved them.)
 | AST coupling | **Untouched** — side table (`Info`), option (a) | No AST generics; old checker undisturbed; AST becomes type-system-agnostic at cleanup. |
 | Compatibility | Improve, don't match | Corpus encodes language semantics; improvements are blessed. |
 | Lifetimes | In the core from the start | Introduced with the first lifetime-carrying type (records); lifetimes ride on values. |
-| Exactness | Flag + subtyping rule from the start (M3–M6); machinery deferred (M8+) | Exact-by-default (`planning/exact-types/requirements.md`); a flag on each former, same born-with-the-type shape as lifetimes. The *default* must be settled before M7's corpus. |
+| Exactness | Flag + subtyping rule from the start (M3–M6); machinery deferred (M9+) | Exact-by-default (`planning/exact-types/requirements.md`); a flag on each former, same born-with-the-type shape as lifetimes. The *default* must be settled before M8's corpus. |
 | Codegen / LSP | Deferred | The MVP is pure checking; biggest integration cost (codegen's `type_system` use) is paid later. |
 
 ## Boundary analysis (why this is tractable)

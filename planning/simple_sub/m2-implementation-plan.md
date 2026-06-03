@@ -23,7 +23,7 @@ in the `Info` side table.
 > `GetTypesEntryPoint`) — it is *not* the general name resolver. The milestone's
 > phrase "dep_graph/resolver" therefore means: drive declaration order and
 > cross-declaration references through `dep_graph`; `resolver` is relevant only
-> when a fixture imports a `.d.ts`-typed third-party module (likely beyond the
+> when a test source imports a `.d.ts`-typed third-party module (likely beyond the
 > M2 `val`/`fn` bar). The plan below is built around `dep_graph`.
 
 Per the milestone, M2 delivers:
@@ -33,8 +33,10 @@ Per the milestone, M2 delivers:
    `soltype` types and populates `Info`.
 2. **Own `Scope`/`Binding`/`Namespace`.** Analogues owned by the new package,
    *not* reused from `internal/type_system/`.
-3. **A fixture-style harness.** Given `.esc` source, infer and assert the
-   rendered binding types — its own assertions, independent of the old checker.
+3. **A table-driven test harness.** Given `.esc` source (single- and multi-file,
+   in-memory), infer and assert the rendered binding types — its own assertions,
+   independent of the old checker. No on-disk `fixtures/` directories in M2; the
+   real fixture harness is M8's job (see §3.6).
 
 **Exit criteria (from the milestone):**
 - Top-level `val`/`fn` declarations from real source infer correct rendered
@@ -85,18 +87,27 @@ wrong — **stop and reassess**.
   acceptance (literals, identifiers, simple `val` initializers, `fn` decls with
   bodies the spike already handles), all **monomorphic** (M1 deferred schemes /
   generalization to M3), and leaves richer expression coverage and polish to M3.
-- **Stdlib-type prerequisite tracking (new in M2's milestone).** The M1-era
+- **Stdlib-type placeholder seeding (new in M2's milestone).** The M1-era
   edit to `01-milestones.md` added an M2 responsibility: names that downstream
   type rules reference — `Promise<T>`, `Iterable<T>`/`AsyncIterable<T>`,
-  `Generator`/`AsyncGenerator`, `IteratorResult<T>` — must **resolve** through
-  the existing stdlib declaration channels and surface as `soltype.Type` values.
-  M2 does **not** implement the rules that *use* them (`await`/`for-in`/`yield`
-  land in later milestones); it only ensures the parser-bridge produces
-  `soltype` types for these names so later milestones aren't blocked on "where
-  does `Promise` come from?". See §3.8.
-- **Records/`mut`/lifetimes (M4), classes (M5), unions (M6), operators (M8)**
+  `Generator`/`AsyncGenerator`, `IteratorResult<T>` — must **resolve** to *some*
+  `soltype.Type` so a reference doesn't error. M2 does this with **hand-seeded
+  placeholder bindings**, not by reading the real stdlib decls: the real
+  ingestion is checker/`type_system`-coupled and needs generics M1's `soltype`
+  doesn't have yet. Real library type resolution is its own milestone, **M7**;
+  M2 only unblocks the names. M2 also does **not** implement the rules that
+  *use* them (`await`/`for-in`/`yield` land in later milestones). See §3.8.
+- **Records/`mut`/lifetimes (M4), classes (M5), unions (M6), operators (M9)**
   are out of scope. Unsupported expression/decl nodes produce a structured
   "unsupported in M2" error, never a panic.
+- **Body-level declarations are `VarDecl`-only — a language rule, not a subset
+  gate.** Inside a function/method body the only declaration a statement may
+  introduce is a `val`/`var`; any other decl kind (`FuncDecl`, `TypeDecl`,
+  `ClassDecl`, …) is a permanent `BodyDeclNotAllowedError`, distinct from the
+  temporary "unsupported in M2" gate above. Bodies may also **redeclare** a
+  name — a later `val x` rebinds it with a fresh, unrelated type. Both are
+  deliberate language simplifications that keep the body walk to a single
+  decl shape; see §3.2. (Methods get the same rule when classes land in M5.)
 
 ## 2. Current state this builds on
 
@@ -137,7 +148,7 @@ wrong — **stop and reassess**.
 - **Compiler entry points: 3** (`CheckLib`, `Compile`, `CompilePackage` in
   `internal/compiler/compiler.go`). M2 does **not** wire into these — the new
   checker is exercised only through M2's own harness. Compiler wiring behind a
-  flag is M7.
+  flag is M8.
 
 ## 3. Design
 
@@ -154,9 +165,10 @@ internal/solver/        # M1: context.go, constrain.go, coalesce.go, info.go, er
   infer_decl.go   # M2: VarDecl / FuncDecl → bindings, SCC group inference
   module.go       # M2: InferModule(s): dep_graph SCC ordering + drive the walk
   scope.go        # M2: Scope / Binding / Namespace (own, not type_system)
+  prelude.go      # M2: global scope — operator/builtin schemes + placeholder stdlib type bindings (§3.8)
   errors.go       # bridge errors (unbound name, unsupported node) with provenance/spans
   // (soltype core, Info side table, printer: from M1)
-  testdata/ or fixtures wiring   # see §3.6
+  *_test.go       # M2: table-driven tests (single- + multi-file, in-memory); see §3.6
 ```
 
 ### 3.2 The constraint-generating walk (`infer.go`)
@@ -189,13 +201,62 @@ AST instead of `Term`:
 | `ObjectExpr` | `Record{fields}` (basic; usage-inference is M4) | yes |
 | `MemberExpr` | `constrain(recv, Record{name: fresh})` (basic; M4 deepens) | yes |
 | `IfElseExpr` | join branches; `constrain(cond, boolean)` | yes |
-| `Block` | type each stmt; result = last expr (or `void`) | yes |
+| `Block` | type each stmt in source order; result = last expr (or `void`). Body decls are `VarDecl`-only; redeclaration rebinds (below) | yes |
 
 Every node that produces a type records it in M1's `Info` side table via the
 (unexported, same-package) `setType(node, t)` — which is why the M2 walk lives
 in `package solver`. `Info` is the single source of truth for node→type (the AST
 stays untouched — no `InferredType()` writes; that is the AST-decoupling
 decision). Nodes outside the M2 subset emit an "unsupported in M2" error.
+
+**Statement-level declarations in bodies — `VarDecl` only.** Inside a
+function/method body the only declaration a statement may introduce is a
+`VarDecl` (`val`/`var`). A body-level `DeclStmt` wrapping any other decl kind —
+`FuncDecl`, `TypeDecl`, `ClassDecl`, `EnumDecl`, `InterfaceDecl`, … — is a
+**language-level error** (`BodyDeclNotAllowedError`, §3.7), *not* the
+"unsupported in M2" subset gate: it is a deliberate, permanent simplification of
+the language, so the body walk only ever folds a `VarDecl` into scope. No
+expressiveness is lost — a function value inside a body is written as a `val`
+bound to a `FuncExpr` (`val f = fn () { … }`), which is a `VarDecl`. Top-level
+decls are unaffected: the module driver (§3.3) still infers
+`FuncDecl`/`TypeDecl`/… through the dep graph.
+
+**Redeclaration within a body is allowed.** A body may bind the same name more
+than once, each occurrence with its own type:
+
+```
+fn foo() {
+    val x: string = "hello"   // x : string here
+    val x: number = 5         // x : number from here on
+}
+```
+
+Each `val`/`var` introduces a **fresh, independent** binding: `inferVarDecl`
+infers the initializer on its own and the body walk *overwrites* the name's slot
+in the current `Scope` (plain map assignment via `defineValue`, §3.4). No
+constraint links the old and new bindings — the second `x` is **not** constrained
+`<:` the first — so the two types need not be compatible. Statements between the
+decls see the earlier type; statements after the second see the later one (the
+walk is strictly source-order within a block). This matches what the current
+checker already does for `val`/`var` (it merges body bindings with `maps.Copy`,
+an overwrite); M2 makes the behavior uniform and intentional rather than an
+accident of which insertion path a decl kind happens to take.
+
+```go
+// infer_stmt.go — body-level DeclStmt: VarDecl only, redeclaration overwrites.
+case *ast.DeclStmt:
+    vd, ok := s.Decl.(*ast.VarDecl)
+    if !ok {
+        c.report(BodyDeclNotAllowedError{Kind: declKind(s.Decl), span: s.Span()})
+        break
+    }
+    b := c.inferVarDecl(scope, lvl, vd)
+    scope.defineValue(varName(vd), b) // overwrite ⇒ same-name redeclaration rebinds
+```
+
+(`varName(vd)` reads the `IdentPat` name — M2 binds `IdentPat`-only patterns,
+mirroring M1's `IdentPat`-only `FuncParam`; destructuring `val`/param patterns
+(`TuplePat`/`RecordPat`) arrive in **M4**, once record/tuple types exist.)
 
 ### 3.3 Module driver (`module.go`) — dep_graph-ordered inference
 
@@ -233,11 +294,10 @@ func (c *Checker) InferComponent(ctx Context, depGraph *dep_graph.DepGraph,
   `Namespace` (below): cross-module references resolve through the qualified
   `BindingKey` namespace recorded on each binding (`DeclNamespace` /
   `GetNamespace(key)`).
-- **`resolver` is *not* on this path.** `internal/resolver/` only locates
-  `@types` `.d.ts` packages; it is engaged only if an M2 fixture imports a
-  TypeScript-typed third-party module, which the `val`/`fn` bar does not
-  require. M2 leaves `.d.ts` import typing to later milestones unless a fixture
-  forces it.
+- **`resolver` is *not* on this path (decided — §7).** `internal/resolver/` only
+  locates `@types/*` third-party TypeScript packages; the `val`/`fn` bar has no
+  such imports, so **M2 skips `resolver` entirely**. `.d.ts` / stdlib / library
+  type ingestion is M7.
 
 Entry point (working signature, paralleling the old driver):
 
@@ -270,7 +330,9 @@ func (s *Scope) GetNamespace(name string) (*Namespace, bool)
 
 (Comma-ok return shape, matching the `inferIdent` sketch in §3.7. Design-notes
 sketches these as pointer returns; the comma-ok form is the M2 refinement so the
-not-found case is explicit at every call site.)
+not-found case is explicit at every call site. All three `Get*` are lexical
+lookups: check this scope's own map, then walk the `parent` chain — they differ
+only in which of the three sorts (`values`/`types`/`namespaces`) they consult.)
 
 - `ValueBinding` — in M2, a name's **monomorphic** `soltype.Type` plus its
   source provenance (the production analogue of the spike's
@@ -279,14 +341,32 @@ not-found case is explicit at every call site.)
   lands.
 - The **value-position `IdentExpr`** path queries `GetValue`, then `GetNamespace`
   only to raise `NamespaceUsedAsValueError` (namespaces are a separate sort and
-  never flow as values — design-notes §"The constraint-generating AST walk").
+  never flow as values — design-notes §"The constraint-generating AST walk"). M2
+  has **no** namespace *member* access (`Foo.bar`) — that's M4 (see the
+  `inferIdent` note in §3.7). M2's `Namespace` is structure + the free-floating
+  error only.
 - `Namespace` is keyed by the qualified `BindingKey` namespace `dep_graph`
   records (`GetNamespace(key)`), which is how multi-file resolution lands.
+  Cross-file references in M2's acceptance use **root-namespace short names**
+  (`foo`, resolved through the module scope), not qualified `Foo.bar` access —
+  the latter needs the M4 namespace-member lookup.
 
 **M2 scope:** `values` + `namespaces` are what the `val`/`fn` + multi-file bar
 needs. The `types` slot's shape lands now (cheap, and it's load-bearing for the
 two-map test harness below), but populating it with real type aliases/classes is
 M3+ work. Keep the rest deliberately small; it grows with later milestones.
+
+**`defineValue` overwrites — redeclaration and rec-groups both rely on it.**
+`defineValue(name, b)` is a plain insert into the current scope's `values` map:
+if `name` is already bound *in this scope* it replaces the binding — it does
+**not** panic or error the way the old checker's `setValue` does on a duplicate.
+Two M2 paths depend on the overwrite: (a) body-level variable redeclaration
+(§3.2), and (b) `inferComponent`, which binds each rec-group name twice — first
+to its fresh var, then to its coalesced type (§3.7). The old checker's split
+behavior — `val`/`var` overwrite via `maps.Copy` but a duplicate `fn` panics via
+`setValue` — is **not** carried into M2: `defineValue` is uniformly overwrite,
+and `fn`-as-a-body-statement is disallowed outright (§3.2), so that inconsistency
+cannot arise.
 
 ### 3.5 Errors & provenance
 
@@ -294,26 +374,45 @@ M3+ work. Keep the rest deliberately small; it grows with later milestones.
   spans (`ast.Span`) taken from the offending AST node via `node.Span()`. (Note:
   the `internal/provenance/` package exports only the `Provenance` marker
   interface — `IsProvenance()` — *not* a span type; spans live in `internal/ast`.)
-- Inference errors from the core (`constrain` failures) attach the offending
-  node's provenance via the `Info`/provenance side table (M1 provides the
-  mechanism; M2 supplies the AST node). Assert **full** messages in tests
-  (CLAUDE.md).
+- Inference errors from the core (`constrain` failures) carry the offending
+  node's span **directly on the error kind** (the `Span() ast.Span` field added
+  to `SolverError`, §3.7) — M2 stamps it at the `constrain` call site from the
+  AST node being walked. M2 does **not** look provenance up from a side table:
+  the `Prov` provenance table (`Type → Origin`, the inverse of `Info`) is
+  **deferred to M3+** ([02-design-notes.md](02-design-notes.md) §"Provenance side
+  table"), so the richer "why this type" derivation chains it powers are a later
+  milestone. (`ValueBinding.Source` is a separate, per-binding back-pointer to
+  the *introducing* AST node — present in M2, unrelated to `Prov`.) Assert
+  **full** messages in tests (CLAUDE.md).
 
-### 3.6 Fixture-style harness
+### 3.6 Test harness (table-driven)
 
-Two complementary test surfaces, matching the milestone's "fixture-style harness
-… its own assertions, independent of the old checker":
+M2 has **one** test surface — table-driven `*_test.go` in the new package — and
+**no** on-disk `fixtures/` directories. This satisfies the milestone's "given
+`.esc` source, infer and assert the rendered binding types … its own assertions,
+independent of the old checker" directly, and keeps M2 from standing up fixture
+infrastructure that M8 owns deliberately.
 
-- **Table-driven `*_test.go`** in the new package: `.esc` snippet → expected
-  rendered binding type string (using the M1 `soltype` printer). This is the
-  primary M2 surface — fast, no per-case package overhead, mirrors the spike's
-  existing `simplesub_test.go` pattern and the checker-tests pattern in
-  `internal/checker/tests/`.
-- **A real `fixtures/`-style harness** (sibling to
-  `cmd/escalier/fixture_test.go`) for the multi-file/dep-graph acceptance:
-  `fixtures/<name>/lib/index.esc` (+ `package.json`) → resolve via dep graph →
-  assert rendered top-level binding types. This proves the dep-graph/multi-file
-  path end-to-end, which a single-snippet table test can't.
+- **Single-file cases:** `.esc` snippet → expected rendered binding type string
+  (using the M1 `soltype` printer). The primary M2 surface — fast, no per-case
+  package overhead, mirrors the spike's `simplesub_test.go` pattern and the
+  checker-tests pattern in `internal/checker/tests/`.
+- **Multi-file / dep-graph cases:** still table-driven, but the case supplies
+  **several in-memory sources** instead of one. `ast.Module` already holds
+  `Files []*File` (and `Sources`), and `InferModule`/`InferModules` take parsed
+  modules — so a case parses each source string, assembles a multi-file `Module`
+  (or several modules), drives `BuildDepGraph` across them, and asserts the
+  rendered top-level types. This exercises the exact dep-graph-spanning-files
+  path on-disk fixtures would, without `package.json` / file-discovery ceremony.
+
+**Why no on-disk fixtures in M2.** Real `fixtures/<name>/lib/index.esc` (+
+`package.json`) directories would pull in the `resolver` / file-discovery layer
+and a second harness — both of which M2 otherwise defers (M2 doesn't engage
+`resolver` unless a `.d.ts` import forces it, and doesn't wire into the compiler
+entry points; that's M8). An M2 on-disk fixture wouldn't run the real pipeline
+anyway — it'd run M2's own harness — so the directory layout is pure ceremony
+here. M8 stands up the real fixture harness (sibling to
+`cmd/escalier/fixture_test.go`) with differential triage; M2 leaves it there.
 
 Assert inferred types as Escalier type-annotation strings; use `testify/require`
 (CLAUDE.md). For tree-shaped assertions prefer `snaps.MatchInlineSnapshot` over
@@ -392,8 +491,8 @@ type Scope struct {
 func NewScope() *Scope
 func (s *Scope) Child() *Scope
 func (s *Scope) defineValue(name string, b ValueBinding)
-func (s *Scope) GetValue(name string) (ValueBinding, bool)      // walks parents
-func (s *Scope) GetType(name string) (TypeBinding, bool)
+func (s *Scope) GetValue(name string) (ValueBinding, bool)      // all three walk parents
+func (s *Scope) GetType(name string) (TypeBinding, bool)        // (lexical lookup: this scope, then parent chain)
 func (s *Scope) GetNamespace(name string) (*Namespace, bool)
 ```
 
@@ -434,6 +533,20 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
     return c.report(UnknownIdentifierError{Name: e.Name, Span: e.Span()})
 }
 ```
+
+> **Namespace member access (`Foo.bar`) is M4, not M2.** In M2 the *only* thing a
+> namespace ident can do is fail: there is no legal namespace-member position yet
+> (M2's `MemberExpr` is value-only — `constrain(recv, Record{…})` — and there is
+> no `IndexExpr`). So `inferIdent` raising `NamespaceUsedAsValueError` on *any*
+> namespace name is correct for M2. M4 — where member access deepens and
+> `IndexExpr` lands — adds qualified namespace access: a `resolvePath` that
+> returns `Value | Namespace`, namespace branches in member/index access
+> (`LookupValue`/`LookupNamespace` — a **direct**, non-lexical lookup in the
+> namespace's own maps, unlike `Scope.Get*`), and at that point the
+> `NamespaceUsedAsValueError` moves from `inferIdent` to the value-position
+> consumer (so `Foo.bar` is allowed while `f(Foo)` / `f(A.B)` still error). M2
+> keeps the namespace **structure** (for qualified `BindingKey` resolution) and
+> the free-floating error; the *lookup* is M4.
 
 **Declaration & module driver (PR-2 single-decl; PR-5 SCC).** Mirrors the old
 checker's `InferDepGraph`/`InferComponent`, over `soltype`:
@@ -512,6 +625,7 @@ type SolverError interface {  // M1 interface, + Span() added in M2
 type UnknownIdentifierError struct{ Name string; span ast.Span }
 type NamespaceUsedAsValueError struct{ Name string; span ast.Span }
 type UnsupportedNodeError struct{ Kind string; span ast.Span } // M2-subset guard
+type BodyDeclNotAllowedError struct{ Kind string; span ast.Span } // body decls are VarDecl-only (§3.2); permanent language rule, not a subset gate
 ```
 
 (The plan earlier used a separate `Error` interface; M1 having already
@@ -519,23 +633,26 @@ established `SolverError` means M2 should extend *that*, not introduce a
 parallel hierarchy. The `Error`/`c.report` naming in the carrier sketch reads
 against this `SolverError` type.)
 
-**Test harness (PR-2 table; PR-6 fixtures).**
+**Test harness (PR-2 single-file table; PR-6 multi-file table).**
 
 ```go
-// infer_test.go — table harness
+// infer_test.go — table harness, single-file
 func inferSource(t *testing.T, src string) (values, types map[string]string)
 // returns name → rendered soltype string, via parser + InferModule + soltype printer
 
-// fixture_test.go — multi-file harness (sibling to cmd/escalier/fixture_test.go)
-func checkSolverFixture(t *testing.T, fixtureDir string) // asserts rendered top-level types
+// infer_test.go — table harness, multi-file (in-memory; no on-disk fixtures)
+func inferSources(t *testing.T, srcs map[string]string) (values, types map[string]string)
+// parses each named source, assembles a multi-file Module / modules, drives
+// BuildDepGraph + InferModule(s), returns rendered top-level types
 ```
 
-### 3.8 Stdlib-type prerequisite tracking
+### 3.8 Stdlib-type placeholder seeding
 
 The M1-era edit to `01-milestones.md` added a new M2 acceptance clause: names
-that *downstream* type rules will reference must already **resolve** through the
-stdlib declaration channels and surface as `soltype.Type` values by the end of
-M2 — even though the rules that consume them land later. The names called out:
+that *downstream* type rules will reference must already **resolve** to a
+`soltype.Type` by the end of M2 — even though the rules that consume them, and
+the real type definitions, land later (real ingestion is its own milestone, M7).
+The names called out:
 
 | Name | Consumed by (later milestone) |
 |------|-------------------------------|
@@ -544,21 +661,29 @@ M2 — even though the rules that consume them land later. The names called out:
 | `Generator` / `AsyncGenerator` | `yield e` |
 | `IteratorResult<T>` (`{value, done}`) | iteration built-ins |
 
-**M2's responsibility is resolution only, not rules.** The parser-bridge must
-make these names resolve (whether sourced from Escalier's own stdlib decls,
-`lib.esc.d.ts`-equivalents, or both) and produce `soltype` types for them, so
-later milestones aren't blocked on "where does `Promise` come from?". M2 does
-**not** implement `await`/`for-in`/`yield` type-checking.
+**M2 seeds placeholders only; real ingestion is M7.** M2 does **not** read the
+real stdlib decls and does **not** implement `await`/`for-in`/`yield`. Two hard
+reasons it can't: (a) the existing stdlib ingestion lives inside
+`internal/checker/` and produces `type_system.Type` — off-limits behind the M2
+gate; and (b) these are *generic* type references (`Promise<T>`), and M1's
+`soltype` has **no** generic-type-reference / alias node yet (that's M3/M4). So
+M2's whole job here is to **hand-seed placeholder `TypeBinding`s** — opaque
+stubs (e.g. `soltype.Unknown`) for exactly `Promise`, `Iterable`,
+`AsyncIterable`, `Generator`, `AsyncGenerator`, `IteratorResult` — into the
+prelude `Scope.types` (§3.4), so a *reference* to the name resolves without an
+unbound-name error. Nothing structural; no arity.
 
-Practically this is the same `TypeBinding`/`Namespace` machinery (§3.4) the
-val/fn path already needs, pointed at the stdlib decl source — but note two M2
-caveats: these are *generic* type references (`Promise<T>`), and M1's `soltype`
-has no generic-type-reference / alias node yet (that's M3/M4). For M2 the
-acceptance is just that the **names resolve** to *some* `soltype.Type` (likely a
-placeholder type-binding) without an unbound-name error — full generic
-instantiation of them is later. This is folded into **PR-6** (the milestone that
-owns multi-file/stdlib resolution); if it proves heavier than a name-resolution
-stub, split it into its own PR-7.
+The **real** ingestion — retargeting `internal/checker/`'s
+`infer_stdlib_import` / `infer_import` + `interop` onto `soltype` — is its own
+milestone, **M7 (library type resolution)**, sequenced after M6 once generics
+(M3), objects (M4), classes (M5), and unions (M6) exist to represent the lib
+types. M7 swaps these placeholders for real structures. (See
+[01-milestones.md](01-milestones.md) M7.)
+
+Because it's just a hand-seeded table, this belongs with the **prelude
+construction in PR-1** (alongside the operator/builtin bindings the
+`BinaryExpr` walk needs), not the multi-file PR — it has no dependency on
+dep-graph or multi-file resolution.
 
 ## 4. Sequencing
 
@@ -580,7 +705,7 @@ feature additions. Concretely:
   fn/call/block walk is a self-contained set of `inferExpr` cases. Either can
   merge first; the second rebases trivially.
 - **PR-4** (objects/members) is a small, optional-for-the-bar add that several
-  fixtures will want; isolated so it can slip without blocking the SCC/multi-file
+  test cases will want; isolated so it can slip without blocking the SCC/multi-file
   work.
 - The old PR-3 (SCC) becomes **PR-5**, the old PR-4 (multi-file) becomes
   **PR-6** — unchanged in content, renumbered.
@@ -592,39 +717,39 @@ feature additions. Concretely:
         coalesce, Info, SolverError, Print) — monomorphic; no schemes
                         │
                         ▼
-                ┌─────────────────┐
+                ┌──────────────────┐
                 │ PR-1  carrier +  │   checker{ctx,info,errs}, Scope/Binding/Namespace,
                 │ scope + leaves   │   SolverError+Span, inferExpr(lits, idents)
-                └───────┬─────────┘
+                └───────┬──────────┘
                         │
             ┌───────────┴───────────┐
             ▼                       ▼
-   ┌──────────────────┐   ┌──────────────────────┐
+   ┌──────────────────┐   ┌───────────────────────┐
    │ PR-2 decl driver │   │ PR-3 fn / call /      │   (PR-2 ∥ PR-3:
    │ + table harness  │   │ block walk            │    independent given PR-1)
    │ (val end-to-end) │   │ (fn end-to-end)       │
-   └───────┬──────────┘   └──────────┬───────────┘
+   └───────┬──────────┘   └──────────┬────────────┘
            │                         │
            │   ┌─────────────────────┤
            ▼   ▼                     ▼
-   ┌──────────────────┐   ┌──────────────────────┐
+   ┌──────────────────┐   ┌───────────────────────┐
    │ PR-5 dep_graph   │   │ PR-4 objects /        │   (PR-4 ∥ PR-5:
    │ SCC (monomorphic)│   │ member access         │    both need PR-2+PR-3)
-   └───────┬──────────┘   └──────────┬───────────┘
+   └───────┬──────────┘   └──────────┬────────────┘
            │                         │
            └───────────┬─────────────┘
                        ▼
-           ┌────────────────────────┐
+           ┌─────────────────────────┐
            │ PR-6 multi-file (x-mod) │   closes M2 exit criteria
-           │ resolution + fixtures   │
-           └────────────────────────┘
+           │ resolution + table tests│
+           └─────────────────────────┘
 ```
 
 Edges are hard dependencies (the target imports/uses symbols the source
 introduces). The two `∥` pairs (PR-2 ∥ PR-3, and PR-4 ∥ PR-5) have no edge
 between them and can be developed/reviewed in parallel. PR-6 is the only PR that
-needs *both* upstream branches merged (it asserts end-to-end over real fixtures,
-which exercises decls, functions, and SCC ordering together).
+needs *both* upstream branches merged (it asserts end-to-end over in-memory
+multi-file sources, which exercises decls, functions, and SCC ordering together).
 
 ## 5. PR breakdown
 
@@ -640,14 +765,30 @@ which exercises decls, functions, and SCC ordering together).
   `GetNamespace`.
 - `errors.go`: add `Span() ast.Span` to M1's `SolverError` and backfill it on
   M1's existing kinds; add `UnknownIdentifierError`, `NamespaceUsedAsValueError`,
-  `UnsupportedNodeError`.
+  `UnsupportedNodeError`, `BodyDeclNotAllowedError`.
 - `infer_expr.go`: `inferLiteral`, `inferIdent`; all other `ast.Expr` kinds fall
   through to `UnsupportedNodeError` (no panic).
+- `prelude.go`: build the global/prelude `Scope` — operator/builtin value
+  schemes the `BinaryExpr` walk needs, plus the **placeholder stdlib type
+  bindings** (§3.8): opaque `soltype` stubs for `Promise`/`Iterable`/
+  `AsyncIterable`/`Generator`/`AsyncGenerator`/`IteratorResult` so references
+  resolve. Hand-built, no checker/`type_system` import; real ingestion is M7.
+  The operator schemes are a near-mechanical port of the old checker's
+  `addOperatorBindings` (`internal/checker/prelude.go`) from `type_system`
+  constructors to `soltype` ones — **every operator is monomorphic over
+  primitives** (`+`/`-`/`*`/`/`: `fn(number, number) -> number`; `<`/`>`/`<=`/
+  `>=`: `fn(number, number) -> boolean`; `==`/`!=`: `fn(unknown, unknown) ->
+  boolean`; `&&`/`||`: `fn(boolean, boolean) -> boolean`; `!`:
+  `fn(boolean) -> boolean`; `++`: `fn(string, string) -> string`), so they need
+  no generics/unions/lib types and belong here, not in a later milestone.
+  Richer forms (bigint arithmetic, string `<`, generic equality) are refinements
+  that land with their enabling milestone (overloads M3, unions M6), not M2.
 - Tests: literal → rendered type; identifier resolves to a pre-seeded binding's
-  type; unbound identifier and namespace-as-value → full-message errors with
-  spans.
+  type; a stdlib placeholder name resolves without an unbound-name error;
+  unbound identifier and namespace-as-value → full-message errors with spans.
 - **Exit:** the walk types the literal/identifier subset against `soltype`/`Info`;
-  every other node fails cleanly.
+  the prelude resolves operators and the placeholder stdlib names; every other
+  node fails cleanly.
 
 ### PR-2 — Single-module decl driver + table harness  (~250 LoC)
 *(depends on PR-1; parallel with PR-3)*
@@ -692,31 +833,37 @@ which exercises decls, functions, and SCC ordering together).
 - Replace PR-2's source-order loop with SCC ordering. **No placeholder/patching
   phase.** **No generalization** — bindings are bound monomorphically; the
   `PolyScheme` generalization step is M3 (M1 deferred schemes).
+- **Verify `coalesce` terminates on recursive groups.** A mutually-recursive SCC
+  can build a cyclic var↔var bound graph, and M1's `coalesce` has no `seen`-guard
+  (deferred to M3). Confirm guard-free `coalesce` terminates on the recursive
+  tests below; if an ungrounded group loops, pull the M3 `seen`-guard forward (§7).
 - Tests: self-recursive `fn` (resolves, monomorphic); mutually-recursive `fn`
   pair; a decl that forward-references a later decl now resolves via SCC
   ordering (the PR-2 documented-error case flips to success).
 - **Exit:** recursive and out-of-order top-level decls infer correctly in one
   module (monomorphically).
 
-### PR-6 — Multi-file (cross-module) resolution + fixtures harness  (~250 LoC)
+### PR-6 — Multi-file (cross-module) resolution + multi-file table tests  (~250 LoC)
 *(depends on PR-4 + PR-5)*
 - `module.go`: `InferModules` over multiple parsed modules; build the dep graph
   across them; cross-module references resolve through the qualified-`BindingKey`
-  `Namespace` (`dep_graph.GetNamespace`). Engage `internal/resolver` only if a
-  fixture imports a `.d.ts`-typed third-party module.
-- Stdlib-type prerequisite resolution (§3.8): `Promise`/`Iterable`/`Generator`/
-  `IteratorResult` names resolve to `soltype` types through the stdlib decl
-  channel without unbound-name errors (resolution only; the rules that use them
-  are later). If heavier than a name-resolution stub, split into PR-7.
-- `fixture_test.go`: the `checkSolverFixture` harness (sibling to
-  `cmd/escalier/fixture_test.go`).
-- Tests: a two-file fixture where file B imports a `val`/`fn` from file A and the
-  inferred types render correctly end-to-end; a fixture referencing a stdlib
-  type name resolves without error.
+  `Namespace` (`dep_graph.GetNamespace`). **M2 does not engage `internal/resolver`**
+  (it resolves `@types/*` third-party packages; M2 has no such imports — that's
+  M7; see §7).
+- `infer_test.go`: the `inferSources` multi-file table helper (§3.7) — in-memory
+  sources, **no** on-disk `fixtures/` directories (those are M8; see §3.6).
+- Tests: a two-file table case where file B references a `val`/`fn` from file A
+  by **root-namespace short name** (not qualified `Foo.bar`) and the inferred
+  types render correctly end-to-end. (Qualified namespace-member access is M4;
+  stdlib placeholder names are seeded in PR-1, §3.8 — not this PR; real ingestion
+  is M7.)
+- **Out of scope (→ M4):** qualified namespace-member access (`Foo.bar`,
+  `Foo["x"]`) and the `resolvePath` `Value | Namespace` machinery. M2 resolves
+  cross-file references through the dep-graph namespace structure under
+  short/qualified `BindingKey`s, but the *expression-level* `Foo.bar` walk is M4.
 - Update `01-milestones.md` M2 status.
 - **Exit (M2 exit criteria):** multi-file module resolves via the dep graph;
-  top-level `val`/`fn` infer correct rendered types end-to-end (monomorphic);
-  stdlib type names resolve.
+  top-level `val`/`fn` infer correct rendered types end-to-end (monomorphic).
 
 ## 6. Risks & mitigations
 
@@ -746,26 +893,43 @@ which exercises decls, functions, and SCC ordering together).
 
 - **Package name** is settled and shipped: `internal/solver/` (engine, where M2
   code lives) + `internal/soltype/` (types). No open decision here.
-- **Monomorphic-`ValueBinding` forward-compat.** M2's `ValueBinding` holds a
-  plain `soltype.Type`; M3 swaps it for a `TypeScheme`. Decide in PR-1 whether to
-  (a) ship the plain-`Type` field now and take the M3 churn, or (b) introduce a
-  thin `ValueBinding` accessor M3 can re-point. Leaning (a) — the churn is
-  mechanical and (b) risks over-abstracting before schemes exist.
-- **Does anything in M2 need `coalesce` at binding time?** The §3.7 SCC sketch
-  coalesces each group var before binding so the stored monomorphic type is
-  inspectable; confirm in PR-5 whether binding the raw var (and coalescing only
-  at render) is simpler. M1's `coalesce` is available either way.
-- **How much namespace resolution to drive in M2 vs. defer.** If full
-  cross-module/namespace resolution is heavier than the val/fn bar needs, PR-6
-  can scope to the minimum that satisfies the multi-file acceptance (a binding
-  in file B referencing a top-level `val`/`fn` in file A via its qualified
-  `BindingKey`) and leave richer namespace semantics (`ns.foo` member access,
-  nested namespaces) to later milestones — decide when PR-6 starts, based on what
-  `dep_graph` already records in `DeclNamespace`.
-- **Whether M2 needs `internal/resolver` at all.** It's only for `@types`
-  `.d.ts` resolution; if no M2 fixture imports a TS-typed module, M2 can skip it
-  entirely and the milestone's "dep_graph/resolver" phrasing is satisfied by
-  `dep_graph` alone.
+- **Monomorphic-`ValueBinding` forward-compat — DECIDED: (a).** M2's
+  `ValueBinding` holds a plain `soltype.Type`; M3 swaps it for a `TypeScheme`.
+  Ship the plain-`Type` field now and take the M3 churn — it's mechanical, and
+  the alternative (a thin accessor M3 re-points) over-abstracts before schemes
+  exist.
+- **`coalesce` at binding time — DECIDED: keep it (coalesce at SCC completion).**
+  The binding-vs-render *timing* is correctness-neutral: a binding is stored at
+  **Positive** polarity, `coalesce(var, Positive)` reads only *lower* bounds, and
+  every downstream *use* adds *upper* bounds (`f(x)`, `x.foo`, `x+1`, `val y=x`
+  all upper-bound `x`), so the Positive view is stable after the defining SCC —
+  binding-time and render-time coalesce yield the identical type. Keep
+  coalesce-at-binding anyway because it (i) **isolates SCCs** (a later SCC gets a
+  frozen, var-free type and can't mutate an earlier binding's vars), (ii) makes
+  `ValueBinding.Type` stable/inspectable, and (iii) is the natural monomorphic
+  stand-in for M3's `PolyScheme` — both freeze the binding at its definition
+  boundary, so the (a) field-swap above is the only M3 change. Binding the raw
+  var renders identically but leaves live shared vars in scope (not simpler).
+  **Caveat for PR-5:** `coalesce` has **no recursion guard** (M1 deferred the
+  `seen`-set to M3), but a mutually-recursive SCC can build a cyclic var↔var
+  bound graph (`constrain` appends var-to-var bounds; it terminates on cycles via
+  its own coinductive `seen`-set, `coalesce` does not). Well-typed recursion
+  usually grounds the return to a concrete type so the cycle collapses, but an
+  ungrounded recursive group could loop — PR-5 must verify guard-free `coalesce`
+  terminates on its recursive-SCC tests, or pull the M3 `seen`-guard forward.
+- **How much namespace resolution to drive in M2 — DECIDED: the minimum.** M2
+  populates the `Namespace` slot from `dep_graph` and resolves cross-file
+  references by **short name through the scope chain** (the multi-file acceptance:
+  file B references a top-level `val`/`fn` in file A by short name). M2 does
+  **not** implement `Foo.bar`/`ns.foo` member access, nested-namespace access, or
+  qualified cross-namespace resolution — all **M4** (the `resolvePath`
+  `Value | Namespace` machinery; see §3.7 and PR-6). M2's namespace surface is
+  the slot + qualified `BindingKey` structure + the free-floating-namespace error.
+- **Whether M2 needs `internal/resolver` — DECIDED: no, M2 skips it.** `resolver`
+  resolves `@types/*` third-party TypeScript packages
+  (`ResolveTypesPackage`/`GetTypesEntryPoint`); M2 has no such imports, so it is
+  entirely off the M2 path and `dep_graph` alone satisfies the milestone's
+  "dep_graph/resolver" phrasing. `.d.ts` / third-party typing lands in M7.
 
 ## 8. M2 exit checklist
 
@@ -776,11 +940,13 @@ which exercises decls, functions, and SCC ordering together).
 - [ ] Top-level `val`/`fn` from real source infer correct **monomorphic**
       rendered types end-to-end (table harness). *(Polymorphic `<T0>` rendering
       is M3 — M1 deferred schemes/generalization.)*
-- [ ] Multi-file module resolves via the dep graph (fixtures harness).
+- [ ] Multi-file module resolves via the dep graph (in-memory multi-file table
+      test; no on-disk fixtures — those are M8).
 - [ ] Recursive SCC groups infer (monomorphically) with no placeholder/patching
       phase.
 - [ ] Stdlib type names (`Promise`/`Iterable`/`Generator`/`IteratorResult`)
-      resolve to `soltype` types without unbound-name errors (resolution only).
+      resolve to **placeholder** `soltype` stubs without unbound-name errors
+      (seeded in the prelude; real ingestion is M7).
 - [ ] `SolverError` gained `Span()`; M2 error kinds carry spans.
 - [ ] No imports of `internal/checker/` or `internal/type_system/` from the new
       package (gate honored).

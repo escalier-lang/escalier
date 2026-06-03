@@ -13,7 +13,7 @@ call with a native `soltype` node so coalescing returns `soltype.Type`, and
 ships its own `soltype/print.go`. The result is a `soltype`/`solver` package
 pair with **zero** `type_system` imports — though several surfaces are
 deliberately **inspired by** `type_system` (node names mirror the `…Type`
-convention, the printer mirrors `type_system.PrintType`'s surface syntax so M7's
+convention, the printer mirrors `type_system.PrintType`'s surface syntax so M8's
 differential harness can string-compare outputs, and M1 error wording matches
 the spike's, which echoes the old checker's). None of that is shared code; the
 only sharing actually planned (per [02-design-notes.md](02-design-notes.md)
@@ -75,14 +75,14 @@ Per the milestone, M1 delivers the **structural core**:
 | **Co-occurrence variable merging** (`collectCoOcc`/`mergeCoOccurring`/union-find) | M3 | Hangs off occurrence analysis; lands as part of the M3 polymorphism-rendering bundle above. |
 | Records, `RefType`/`mut`, **lifetimes** | M4 | First lifetime-carrying types. |
 | `exact` flag on formers + the inexact `constrain` arms | M3 (functions), M4 (records, tuples), M6 (unions) | M1 stands up bare `FuncType`/`TupleType` without the flag. Because Escalier is **exact-by-default**, M1 implements each former's *exact* rule uniformly — so each M1 constraint rule is the **exact "one side"** of the eventual exact/inexact split: M1's `FuncType` "same-arity required" is the *exact-function* case (the inexact fewer-params-is-subtype arm lands in M3 with the flag); M1's `TupleType` "same length, element-wise covariant" is the *exact-tuple* case (the inexact arm `longer <: shorter` lands in M4 alongside `RecordType`). Functions and tuples thus follow the **same trajectory** — ship exact now, add the inexact arm with the flag later. See [01-milestones.md](01-milestones.md) §M4 "Exactness flag on records and tuples." |
-| Classes, union/intersection **subtyping rules** in `constrain`, type-level operators | M5/M6/M8 | M1 ships `UnionType`/`IntersectionType` *nodes* for coalesced output, but their lattice rules in `constrain` land in M6. |
+| Classes, union/intersection **subtyping rules** in `constrain`, type-level operators | M5/M6/M9 | M1 ships `UnionType`/`IntersectionType` *nodes* for coalesced output, but their lattice rules in `constrain` land in M6. |
 | `Prov` provenance side table, `Probe` speculation API | M3+/as-needed | M1 has no speculation and no error-message provenance yet. |
 
 ### Reversibility
 
 M1 is **purely additive**: it creates new files in a new package and edits
 **zero** existing files. The old checker is untouched; there is no flag to flip
-yet (that's M7). `go build ./...` and `go test ./...` stay green throughout.
+yet (that's M8). `go build ./...` and `go test ./...` stay green throughout.
 
 ---
 
@@ -111,7 +111,7 @@ Most of M1 is a faithful copy-with-rename. The files that map directly:
 | Spike file | M1 destination | Notes |
 |---|---|---|
 | `polarity.go` | `soltype/polarity.go` | Copy verbatim. Lives in `soltype` (not `solver`) so `soltype.TypeVarType.BoundsAt` can take a `Polarity` argument without `soltype` importing `solver`. |
-| `types.go` (M1 subset) | `soltype/type.go` | Keep `Variable`→`TypeVarType`, `Primitive`→`PrimType`, `Literal`→`LitType`, `Function`→`FuncType`, `Tuple`→`TupleType`, `Void`; add `NeverType`/`UnknownType` (lattice ⊥/⊤, which the spike emits via `type_system`); add `UnionType`/`IntersectionType` (needed by Delta #1's `combine` — the spike emits these via `type_system.NewUnionType`/`NewIntersectionType`). **Reshape `PrimType` and `LitType` to mirror `type_system`** (closed `Prim` enum instead of `Name string`; sealed `Lit` interface with `NumLit`/`StrLit`/`BoolLit` concretes instead of a flat `{Kind, Str, Num, Bool}` struct) — see §2.3 row 3. **Drop** `Record`/`Mut`/`Alias` (M4) and the spike's `TypeRefType` role (M3 — see §3.3). Trim `levelOf`/`containsVariable` to the M1 cases — this also drops their `*ResidualOp` arms (the `ResidualOp` type itself is defined in the spike's `residual.go`, not `types.go`, and is M8). |
+| `types.go` (M1 subset) | `soltype/type.go` | Keep `Variable`→`TypeVarType`, `Primitive`→`PrimType`, `Literal`→`LitType`, `Function`→`FuncType`, `Tuple`→`TupleType`, `Void`; add `NeverType`/`UnknownType` (lattice ⊥/⊤, which the spike emits via `type_system`); add `UnionType`/`IntersectionType` (needed by Delta #1's `combine` — the spike emits these via `type_system.NewUnionType`/`NewIntersectionType`). **Reshape `PrimType` and `LitType` to mirror `type_system`** (closed `Prim` enum instead of `Name string`; sealed `Lit` interface with `NumLit`/`StrLit`/`BoolLit` concretes instead of a flat `{Kind, Str, Num, Bool}` struct) — see §2.3 row 3. **Drop** `Record`/`Mut`/`Alias` (M4) and the spike's `TypeRefType` role (M3 — see §3.3). Trim `levelOf`/`containsVariable` to the M1 cases — this also drops their `*ResidualOp` arms (the `ResidualOp` type itself is defined in the spike's `residual.go`, not `types.go`, and is M9). |
 | `constrain.go` | `solver/constrain.go` | Keep the prim/literal/function/tuple/variable cases + `extrude`. Drop the union/intersection lattice rules **that fire on `UnionType`/`IntersectionType` inputs to `constrain`** (distributivity laws like `A \| B <: C` ⟹ `A <: C ∧ B <: C`), and drop the record/mut/alias cases (re-added in their milestones). The implicit lattice — bounds on `TypeVarType` (lowers semantically join, uppers meet) — is fully present in M1; only the explicit-node rules go. M1 ships `UnionType`/`IntersectionType` nodes in `soltype` for coalesced output, but no path in M1 feeds them back as `constrain` inputs (no user annotations until M2, scheme bounds carry raw `TypeVarType`s, coalesced output isn't re-constrained). |
 | `simplify.go` | — | Not M1. Both `analyze` (occurrence analysis) and co-occurrence merging land in M3 as part of the polymorphism-rendering bundle (§3.3). |
 | `coalesce.go` | `solver/coalesce.go` | **Delta #1 below.** Significantly trimmed vs. the spike — no occurrence/`bipolar` branching, no `nameFor`/`inProc`, just inline-to-bounds. |
@@ -162,7 +162,7 @@ quantifier-prefix machinery lands in M3 with the rest of the
 polymorphism-rendering bundle.
 
 Mirror `type_system.PrintType`'s surface syntax so the two checkers' rendered
-types are comparable in M7's differential harness, but share **no code** with
+types are comparable in M8's differential harness, but share **no code** with
 it.
 
 > **Two renderers, distinct jobs.** Keep this printer separate from the spike's
@@ -177,7 +177,7 @@ it.
 |---|---|---|---|
 | 1 | One flat `package simplesub` | Two packages: `solver` (engine) + `soltype` (representation + printer) | Matches [02-design-notes.md](02-design-notes.md) layout; lets the printer live with the types without importing the engine. |
 | 2 | Terse names: `Variable`, `Primitive`, `Literal`, `Function`, `Tuple` | `TypeVarType`, `PrimType`, `LitType`, `FuncType`, `TupleType` | The design-notes names; consistent `…Type` suffix. |
-| 3 | `Primitive { name string }`; `Literal { kind string; str string; num float64; bool bool }` — flat structs with string discriminators; `Function { params []SimpleType; paramNames []string; ret SimpleType }` — two parallel arrays for params | `PrimType { Prim Prim }` with closed `Prim` enum; `LitType { Lit Lit }` where `Lit` is a sealed interface with `NumLit { Value float64 }` / `StrLit { Value string }` / `BoolLit { Value bool }` concretes; `FuncType { Params []*FuncParam; Ret Type }` where `FuncParam { Pattern Pat; Type Type }` and `Pat` is a sealed interface (`IdentPat { Name string }` in M1; M2 adds destructuring concretes) | Mirrors `type_system`'s shapes: closed enum catches mismatches at compile time (vs. silent typos like `"numbr"`); per-kind literal structs carry exactly the value field they need (vs. flat struct with two dead value fields per instance); single struct per param (vs. parallel-array bug-trap); `FuncParam.Pattern` is a sealed interface from day one so M2's destructuring lands as new `Pat` concretes without restructuring `FuncParam`. `soltype.Pat` is defined inside `soltype` (not imported from `ast`) to keep `soltype` ast-free. M1 omits `type_system.FuncParam.Optional` — no optional params in M1. |
+| 3 | `Primitive { name string }`; `Literal { kind string; str string; num float64; bool bool }` — flat structs with string discriminators; `Function { params []SimpleType; paramNames []string; ret SimpleType }` — two parallel arrays for params | `PrimType { Prim Prim }` with closed `Prim` enum; `LitType { Lit Lit }` where `Lit` is a sealed interface with `NumLit { Value float64 }` / `StrLit { Value string }` / `BoolLit { Value bool }` concretes; `FuncType { Params []*FuncParam; Ret Type }` where `FuncParam { Pattern Pat; Type Type }` and `Pat` is a sealed interface (`IdentPat { Name string }` in M1; M4 adds destructuring concretes, M2 stays IdentPat-only) | Mirrors `type_system`'s shapes: closed enum catches mismatches at compile time (vs. silent typos like `"numbr"`); per-kind literal structs carry exactly the value field they need (vs. flat struct with two dead value fields per instance); single struct per param (vs. parallel-array bug-trap); `FuncParam.Pattern` is a sealed interface from day one so M4's destructuring lands as new `Pat` concretes without restructuring `FuncParam`. `soltype.Pat` is defined inside `soltype` (not imported from `ast`) to keep `soltype` ast-free. M1 omits `type_system.FuncParam.Optional` — no optional params in M1. |
 | 4 | `SimpleType` interface (`isSimpleType()`) | `soltype.Type` interface (`isType()`) | One representation in production — no separate "SimpleType vs output type" split, since coalescing now stays within `soltype` (Delta #1). |
 | 5 | `Inferer` struct carrying `varCounter`, `lifetimeCounter`, `paramLifetimes`, `written` | `solver.Context` carrying **only** `varCounter` (+ `freshVar`) | `lifetimeCounter`/`paramLifetimes` are M4 (lifetimes); `written` (field-write tracking) is M4 (records/`mut`). M1's `Context` is correspondingly lean. |
 | 6 | Public entry points `Infer(term)` / `Render(...)` over a hand-built `Term` IR | **No public inference entry point in M1.** Tests drive `constrain` / `coalesce` / `Print` directly | The `Term` IR and `typeTerm` walk are the spike's stand-in for the parser bridge — replaced wholesale by the real AST walk in **M2**, not promoted. |
@@ -232,7 +232,7 @@ Per [CLAUDE.md](../../CLAUDE.md):
   This is about **shared code**, not shared *design*. Several M1 surfaces are
   intentionally modeled on `type_system` and must stay comparable to it:
   `soltype`'s node names follow the `…Type` convention, `print.go` mirrors
-  `type_system.PrintType`'s surface forms (so M7 can string-diff the two
+  `type_system.PrintType`'s surface forms (so M8 can string-diff the two
   checkers' output), and error wording is preserved verbatim from the spike.
   None of these share an import — they're reimplementations that look alike on
   purpose. The one place real sharing is on the roadmap is **diagnostic types**
@@ -662,9 +662,10 @@ func (l *LitType) Equal(o *LitType) bool { /* dispatch on Lit concrete, compare 
 
 // Pat is the sealed interface for parameter patterns. Mirrors the role of
 // type_system.Pat (and ast.Pat) but lives in soltype to keep soltype ast-free.
-// M1 ships a single concrete (IdentPat); M2 adds destructuring concretes
-// (TuplePat, RecordPat, …) as the parser bridge surfaces them, with no
-// FuncParam restructuring.
+// M1 ships a single concrete (IdentPat); M4 adds destructuring concretes
+// (TuplePat, RecordPat, …) once record/tuple types exist — M2 stays
+// IdentPat-only. The sealed interface means they land as new Pat concretes
+// with no FuncParam restructuring.
 type Pat interface{ isPat() }
 
 type IdentPat struct{ Name string }
@@ -673,7 +674,7 @@ func (*IdentPat) isPat() {}
 
 // FuncParam mirrors type_system.FuncParam. M1 omits Optional (no optional
 // params until M3+); Pattern is reachable only through Pat concretes M1
-// defines (IdentPat).
+// defines (IdentPat). Destructured params (TuplePat/RecordPat) arrive in M4.
 type FuncParam struct {
 	Pattern Pat
 	Type    Type
@@ -1070,7 +1071,7 @@ func printFuncTail(t *FuncType) string {
 
 // paramName renders p.Pattern; for M1 the only Pat concrete is IdentPat,
 // so this dispatches on that and falls back to "x"+strconv.Itoa(i) for a
-// nil/unknown pattern. M2's destructuring Pat concretes add their own arms.
+// nil/unknown pattern. M4's destructuring Pat concretes add their own arms.
 func paramName(p *FuncParam, i int) string {
 	switch pat := p.Pattern.(type) {
 	case *IdentPat:
