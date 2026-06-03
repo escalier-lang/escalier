@@ -947,9 +947,10 @@ multi-file sources, which exercises decls, functions, and SCC ordering together)
       test; no on-disk fixtures — those are M8).
 - [ ] Recursive SCC groups infer (monomorphically) with no placeholder/patching
       phase.
-- [ ] Stdlib type names (`Promise`/`Iterable`/`Generator`/`IteratorResult`)
-      resolve to **placeholder** `soltype` stubs without unbound-name errors
-      (seeded in the prelude; real ingestion is M7).
+- [ ] Stdlib type names (`Promise`/`Iterable`/`AsyncIterable`/`Generator`/
+      `AsyncGenerator`/`IteratorResult`) resolve to **placeholder** `soltype`
+      stubs without unbound-name errors (seeded in the prelude; real ingestion
+      is M7).
 - [ ] `SolverError` gained `Span()`; M2 error kinds carry spans.
 - [ ] No imports of `internal/checker/` or `internal/type_system/` from the new
       package (gate honored).
