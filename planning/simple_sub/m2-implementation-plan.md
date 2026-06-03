@@ -266,10 +266,12 @@ checker's `InferDepGraph` / `InferComponent` shape exactly, swapping
 `type_system` for `soltype`:
 
 ```go
-// Old checker (internal/checker/infer_module.go), for reference:
-func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (errors []Error)
+// Old checker (internal/checker/infer_module.go), for reference. NB: these
+// []Error are the old checker.Error type — distinct from the solver's
+// SolverError (§3.7); the names are qualified here to keep the boundary clear.
+func (c *Checker) InferDepGraph(ctx Context, depGraph *dep_graph.DepGraph) (errors []checker.Error)
 func (c *Checker) InferComponent(ctx Context, depGraph *dep_graph.DepGraph,
-    component []dep_graph.BindingKey) []Error
+    component []dep_graph.BindingKey) []checker.Error
 ```
 
 - **Declaration ordering comes from `dep_graph`.** `BuildDepGraph(module)`
@@ -307,7 +309,7 @@ Entry point (working signature, paralleling the old driver):
 // Scope plus errors. The package-level entry constructs a fresh checker
 // internally; multi-file callers use InferModules (§3.7). Full signatures in
 // §3.7.
-func InferModule(module *ast.Module) (*Scope, *soltype.Info, []Error)
+func InferModule(module *ast.Module) (*Scope, *Info, []SolverError)
 ```
 
 ### 3.4 Scope / Binding / Namespace (own, not `type_system`)
@@ -441,7 +443,7 @@ side table and accumulated errors. Method receiver for the whole walk.
 type checker struct {
     ctx  *Context  // M1 solver.Context: freshVar(level), Constrain(lhs, rhs) []SolverError
     info *Info     // M1 solver.Info: node → soltype.Type side table (unexported setType)
-    errs []Error   // accumulated; mirrors the spike's []error threading
+    errs []SolverError // accumulated; mirrors the spike's []error threading
 }
 
 func newChecker() *checker
@@ -456,7 +458,7 @@ func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type)
 
 // report appends a structured error; returns a placeholder type (e.g.
 // &soltype.NeverType{}) so callers can `return c.report(...)` in value position.
-func (c *checker) report(e Error) soltype.Type
+func (c *checker) report(e SolverError) soltype.Type
 ```
 
 **Scope / Binding / Namespace (PR-1).** Design-notes §"Scope / Binding" gives
@@ -553,8 +555,8 @@ checker's `InferDepGraph`/`InferComponent`, over `soltype`:
 
 ```go
 // module.go
-func InferModule(module *ast.Module) (*Scope, *Info, []Error)   // PR-2 (source-order), PR-5 (SCC)
-func InferModules(modules []*ast.Module) (*Scope, *Info, []Error) // PR-6 (multi-file)
+func InferModule(module *ast.Module) (*Scope, *Info, []SolverError)   // PR-2 (source-order), PR-5 (SCC)
+func InferModules(modules []*ast.Module) (*Scope, *Info, []SolverError) // PR-6 (multi-file)
 
 func (c *checker) inferDepGraph(scope *Scope, lvl int, g *dep_graph.DepGraph) // PR-5
 func (c *checker) inferComponent(scope *Scope, lvl int, g *dep_graph.DepGraph, // PR-5
@@ -628,10 +630,11 @@ type UnsupportedNodeError struct{ Kind string; span ast.Span } // M2-subset guar
 type BodyDeclNotAllowedError struct{ Kind string; span ast.Span } // body decls are VarDecl-only (§3.2); permanent language rule, not a subset gate
 ```
 
-(The plan earlier used a separate `Error` interface; M1 having already
-established `SolverError` means M2 should extend *that*, not introduce a
-parallel hierarchy. The `Error`/`c.report` naming in the carrier sketch reads
-against this `SolverError` type.)
+(An earlier draft of this plan used a separate `Error` interface; M1 having
+already established `SolverError` means M2 extends *that*, not a parallel
+hierarchy. The carrier's `errs []SolverError` and `report(e SolverError)` use
+this type directly. Note the old checker's reference signatures in §3.3 use the
+distinct `checker.Error` type — same spelling, different package.)
 
 **Test harness (PR-2 single-file table; PR-6 multi-file table).**
 
