@@ -394,7 +394,7 @@ either every signature in the unifier picks up generic parameters or it
 coerces to `UnionType[Type]` at the door and the precision evaporates.
 Coalescing has the same problem in reverse — it would have to pick a
 parameterization based on whether all bounds happen to be `RefInner`, a
-runtime check on every coalesce. And M8 type-level operators (`keyof`,
+runtime check on every coalesce. And M9 type-level operators (`keyof`,
 conditional, indexed access) don't preserve `RefInner`-ness anyway
 (`keyof UnionType[RefInner]` is `UnionType[LiteralType]`, and `LiteralType` isn't
 `RefInner`), so the chain breaks at the first operator. Non-generic
@@ -640,7 +640,7 @@ same architectural shape as lifetimes — a property *carried on the former*, ch
 to add when the former is born, painful to retrofit across `constrain` /
 `coalesce` / `analyze` / `freshenAbove` / `extrude` / `print`. So the **flag and
 the subtyping rule are introduced with each former (M3–M6)**; the propagation and
-utility machinery is deferred (M8) and the value-level conversion is codegen (M9).
+utility machinery is deferred (M9) and the value-level conversion is codegen (M10).
 
 **Representation** — an `exact` flag on each structural former, plus `final` on
 classes (a class instance is exact iff `final`):
@@ -713,9 +713,9 @@ and the tests another. (The spike itself is uniformly inexact-by-default — the
 production direction.)
 
 **Deferred (not core):** `Exact<T>`/`Inexact<T>` type operators and exactness
-propagation through `keyof`/mapped/conditional types (M8, type operators);
+propagation through `keyof`/mapped/conditional types (M9, type operators);
 value-level `exact<T>(v)` lowering and `@escalier-type` JSDoc round-tripping
-(M9, codegen); the `std:*`/`dom:*` finality/inexactness annotation effort
+(M10, codegen); the `std:*`/`dom:*` finality/inexactness annotation effort
 ([exact-types/requirements.md](../exact-types/requirements.md) §11 +
 [exact-types/builtin-classes.md](../exact-types/builtin-classes.md), independent
 stdlib track).
@@ -735,7 +735,7 @@ func (i *Info) setType(n ast.Node, t soltype.Type) { i.types[n] = t }
 ```
 
 The new checker **never** calls `ast` node `InferredType()`/`SetInferredType()`.
-The embedded `inferredType` field stays for the old checker until M11 cleanup.
+The embedded `inferredType` field stays for the old checker until M12 cleanup.
 
 ## Provenance side table (the inverse of `Info`)
 
@@ -834,7 +834,7 @@ a single pointer.
 `Prov: Type → Origin` is its inverse. Same package, same walk populates both,
 same downstream consumers (error messages, LSP hovers, the differential harness
 when diagnosing divergence) query both. If it turns out we don't need it,
-dropping a map at M11 is one file edit; dropping a field would be a refactor of
+dropping a map at M12 is one file edit; dropping a field would be a refactor of
 every `Type` constructor.
 
 **Population discipline.** Helpers in `infer.go` keep both tables in sync:
@@ -963,7 +963,7 @@ JS objects (`buildNamespaceStatements` in
 restriction is purely a *type-system* discipline: you address namespace
 members only through qualified names known statically.
 
-## Test coverage for M7
+## Test coverage for M8
 
 Two mechanisms, picked to match the granularity of what each one tests.
 **Granular semantics** lives in table-driven `*_test.go` files in the new
@@ -1031,18 +1031,18 @@ omit the other map entirely.
 ### Real-package regression: second fixture harness
 
 `fixtures/` already encodes whole-package behavior — `package.json` +
-`lib/*.esc` + golden `build/` and optional `error.txt`. M7 adds a **second
+`lib/*.esc` + golden `build/` and optional `error.txt`. M8 adds a **second
 harness** that runs the new checker over the same fixtures. Two phases match
-the codegen-port decision (M9):
+the codegen-port decision (M10):
 
-- **Phase 1 (M7, before codegen is ported):** new-checker harness runs the
+- **Phase 1 (M8, before codegen is ported):** new-checker harness runs the
   checker only — no codegen. Acceptance is "checker accepts (or rejects)
   every fixture the way the old checker does, modulo triaged intended
   improvements." Each divergence is bucketed as match / intended-improvement
   / bug; CI fails only on `bug`. Implemented as a sibling to
   `cmd/escalier/fixture_test.go` that loads the same fixtures and runs only
   the check phase.
-- **Phase 2 (post-M9, once codegen is decided):** the harness compiles
+- **Phase 2 (post-M10, once codegen is decided):** the harness compiles
   end-to-end and diffs `build/` against fixture goldens using the same
   `UPDATE_FIXTURES=true` flow. At that point both checkers can drive the
   full pipeline.
@@ -1077,7 +1077,7 @@ intended-improvement / bug. The bug bucket is the only CI gate; intended
 improvements are recorded (a short note per case is enough — no separate
 ledger needed) so future contributors don't mistake them for regressions.
 
-## Compiler wiring (M7)
+## Compiler wiring (M8)
 
 The flag lives at the **3** `checker.NewChecker(ctx)` sites in
 `internal/compiler/compiler.go` (`CheckLib`, `Compile`, `CompilePackage`).
@@ -1085,7 +1085,7 @@ the MVP selects the new checker for *checking only* — codegen continues from t
 checker's output (codegen deferred). Simplest form: an env var or build tag
 read once and branched at those three sites.
 
-## What gets deleted at M11 (cleanup)
+## What gets deleted at M12 (cleanup)
 
 - `internal/checker/` (old package) + its ~38k LoC of tests.
 - `internal/ast/ast.go`: `type Type = type_system.Type`.
@@ -1103,8 +1103,8 @@ read once and branched at those three sites.
 2. **`BindingOwner`** — move the marker interface into `internal/ast` itself
    (rather than living in `type_system`). Both the old and new checkers refer
    to `ast.BindingOwner`; neither package owns it. This also clears one of the
-   AST→`type_system` imports that M11 cleanup is targeting.
-3. **Codegen path (M9)** — **port codegen onto `soltype`**, not a bridge.
+   AST→`type_system` imports that M12 cleanup is targeting.
+3. **Codegen path (M10)** — **port codegen onto `soltype`**, not a bridge.
    Driver: the `@escalier-type` JSDoc round-tripping for exactness needs the new
    checker's exactness information end-to-end; a `soltype → type_system`
    bridge would either lose the flag or have to re-encode it on the way back
@@ -1119,7 +1119,7 @@ read once and branched at those three sites.
    `NewModuleScope *solver.Scope` (plus the matching `FileScopes` maps), with
    a flag picking which one is active at each downstream call site. The
    branching is confined to LSP entry points and the codegen driver — a
-   small, stable set of sites. At M11 cleanup, drop the old field; no
+   small, stable set of sites. At M12 cleanup, drop the old field; no
    interface ever needed.
 6. **Exact-by-default is day-one behavior.** Escalier code is
    exact-by-default and TypeScript-imported types are inexact-by-default
@@ -1127,7 +1127,7 @@ read once and branched at those three sites.
    records/tuples in M4, exact class-instances-via-`final` in M5, exact
    unions in M6. Tests at each milestone assert what the implementation
    produces, so there's no window in which the code is one default and the
-   tests another. No M7 deadline.
+   tests another. No M8 deadline.
 7. **Exact-only fixture skip-tag location** — **magic comment header** in
    `lib/index.esc` (e.g. `// @applicable_to new`). More visible than a
    `package.json` field; people rarely open the package.json in a fixture.
