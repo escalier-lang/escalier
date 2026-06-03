@@ -25,7 +25,7 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 	default:
 		return c.report(&UnsupportedNodeError{
 			errSpan: errSpan{span: e.Span()},
-			Kind:    litKind(e.Lit),
+			Kind:    astKind(e.Lit),
 		})
 	}
 	t := &soltype.LitType{Lit: lit}
@@ -60,15 +60,11 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 	})
 }
 
-// exprKind returns a short surface name for an expression node, used in the M2
-// subset-guard error message. It strips the leading "*ast." from the Go type
-// name so e.g. *ast.BinaryExpr renders as "BinaryExpr".
-func exprKind(e ast.Expr) string {
-	return strings.TrimPrefix(fmt.Sprintf("%T", e), "*ast.")
-}
-
-// litKind returns a short surface name for a literal node, used when a literal
-// kind is outside M1's soltype.Lit set.
-func litKind(l ast.Lit) string {
-	return strings.TrimPrefix(fmt.Sprintf("%T", l), "*ast.")
+// astKind returns a short surface name for any AST node — an expression,
+// literal, declaration, or pattern — used in the M2 subset-guard error messages.
+// It strips the leading "*ast." from the Go type name so e.g. *ast.BinaryExpr
+// renders as "BinaryExpr". One helper serves every guard site (inferExpr,
+// inferLiteral, inferDecl) so the format lives in a single place.
+func astKind(n any) string {
+	return strings.TrimPrefix(fmt.Sprintf("%T", n), "*ast.")
 }

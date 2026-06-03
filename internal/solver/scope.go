@@ -94,6 +94,15 @@ func (s *Scope) defineNamespace(name string, ns *Namespace) {
 	s.namespaces[name] = ns
 }
 
+// hasOwnValue reports whether name is bound in THIS scope's own value map,
+// without walking the parent chain. The module driver uses it to reject a
+// duplicate top-level `val`/`var` (a redeclaration in the same scope) while
+// still allowing a decl to shadow a prelude/parent binding.
+func (s *Scope) hasOwnValue(name string) bool {
+	_, ok := s.values[name]
+	return ok
+}
+
 // GetValue resolves name in the value sort by lexical lookup: this scope's own
 // map, then up the parent chain. The comma-ok form makes the not-found case
 // explicit at every call site.

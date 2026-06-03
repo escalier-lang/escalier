@@ -28,23 +28,18 @@ func inferSource(t *testing.T, src string) (values, types map[string]string, err
 	require.Empty(t, parseErrors, "expected no parse errors")
 
 	scope, _, errs := InferModule(module)
-	return renderValueBindings(scope.values), renderTypeBindings(scope.types), errs
+	values = renderBindings(scope.values, func(b ValueBinding) soltype.Type { return b.Type })
+	types = renderBindings(scope.types, func(b TypeBinding) soltype.Type { return b.Type })
+	return values, types, errs
 }
 
-// renderValueBindings renders each value binding to its soltype string.
-func renderValueBindings(m map[string]ValueBinding) map[string]string {
+// renderBindings renders each binding in m to its soltype string, using typeOf
+// to pull the soltype.Type out of the binding. One helper serves both the value
+// and type sorts.
+func renderBindings[B any](m map[string]B, typeOf func(B) soltype.Type) map[string]string {
 	out := make(map[string]string, len(m))
 	for name, b := range m {
-		out[name] = soltype.Print(b.Type)
-	}
-	return out
-}
-
-// renderTypeBindings renders each type binding to its soltype string.
-func renderTypeBindings(m map[string]TypeBinding) map[string]string {
-	out := make(map[string]string, len(m))
-	for name, b := range m {
-		out[name] = soltype.Print(b.Type)
+		out[name] = soltype.Print(typeOf(b))
 	}
 	return out
 }
@@ -119,19 +114,50 @@ func TestInferModuleUnsupportedDecl(t *testing.T) {
 	require.Equal(t, "Unsupported in M2: FuncDecl", errs[0].Message())
 }
 
-// A `val` with no initializer is outside the PR-2 subset (annotation-driven
-// binding needs TypeAnn support that lands later) and reports cleanly.
+// A `val` with no initializer can't be inferred in M2 (annotation-driven binding
+// needs TypeAnn support that lands later); it reports MissingInitializerError and
+// binds NOTHING, so a later reference still fails as an unknown identifier rather
+// than silently resolving to a placeholder.
 func TestInferModuleVarDeclWithoutInitializer(t *testing.T) {
-	_, _, errs := inferSource(t, `declare val x: number`)
+	values, _, errs := inferSource(t, `declare val x: number`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: VarDecl without initializer", errs[0].Message())
+	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
+	require.Empty(t, values)
+}
+
+// A no-initializer decl must not leak a binding: a later use of the name is a
+// genuine unknown-identifier error, not a silent resolution to a placeholder.
+func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare val x: number
+		val y = x
+	`)
+	require.Len(t, errs, 2)
+	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
+	require.Equal(t, "Unknown identifier: x", errs[1].Message())
+	require.Equal(t, map[string]string{"y": "never"}, values)
 }
 
 // A destructuring pattern is IdentPat-only-gated in M2 (M4 adds tuple/record
 // binding); the binding reports UnsupportedNodeError and introduces no value.
+// The initializer is still walked, so its own errors (here the as-yet-unsupported
+// tuple expression) surface too rather than being dropped.
 func TestInferModuleDestructuringPatternUnsupported(t *testing.T) {
 	values, _, errs := inferSource(t, `val [a, b] = [1, 2]`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: TuplePat", errs[0].Message())
+	require.Len(t, errs, 2)
+	require.Equal(t, "Unsupported in M2: TupleExpr", errs[0].Message())
+	require.Equal(t, "Unsupported in M2: TuplePat", errs[1].Message())
 	require.Empty(t, values)
+}
+
+// A duplicate top-level `val` is a redeclaration error (unlike FuncDecl
+// overloads); the first binding is kept and the second reports cleanly.
+func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		val x = 5
+		val x = "hi"
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Duplicate declaration: x", errs[0].Message())
+	require.Equal(t, map[string]string{"x": "5"}, values)
 }
