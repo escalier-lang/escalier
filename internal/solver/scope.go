@@ -38,6 +38,19 @@ type Namespace struct {
 // Scope is the package-owned, multi-sorted analogue of type_system's scope (the
 // milestone forbids reusing type_system's). It has one map per binding sort plus
 // a parent link for lexical lookup.
+//
+// Why namespaces are stored by pointer while values/types are stored by value:
+// the distinction is by *kind*, not by slot. A Namespace is a shared, mutable,
+// recursive container — keyed by its qualified dep_graph BindingKey, referenced
+// from several scopes/files (so a pointer gives it one identity), populated
+// incrementally after insertion (a struct value in a map can't be field-mutated
+// in place), and recursive (Namespace.Nested is also *Namespace). A
+// ValueBinding/TypeBinding, by contrast, is a tiny identity-free record that is
+// replaced wholesale — defineValue is a plain map overwrite, and redeclaration
+// and the rec-group rebind both swap the entry rather than mutate it — so
+// storing it by value avoids a per-binding allocation and a nil case for no
+// loss. (Namespace.Values/Types follow the same value rule; Namespace.Nested
+// follows the same pointer rule.)
 type Scope struct {
 	values     map[string]ValueBinding
 	types      map[string]TypeBinding
