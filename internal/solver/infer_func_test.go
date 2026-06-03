@@ -123,6 +123,35 @@ func TestInferFuncExprBodyValDecl(t *testing.T) {
 	require.Equal(t, "fn () -> 5", render(got))
 }
 
+// A bodyless (declare/ambient) function adopts its return annotation without
+// constraining a synthetic Void against it (which would error spuriously).
+func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
+	c := newChecker()
+	// declare fn now() -> number
+	d := ast.NewFuncDecl(
+		ast.NewIdentifier("now", testSpan()), nil, nil,
+		nil, numAnn(), nil,
+		nil, // no body
+		false, true, false, testSpan(),
+	)
+
+	b := c.inferFuncDecl(NewScope(), 0, d)
+	require.Empty(t, c.errs)
+	require.Equal(t, "fn () -> number", render(b.Type))
+}
+
+// A param that arrives without a pattern must report a clean error, not panic on
+// p.Span() (which dereferences the nil pattern). Not reachable from the real
+// parser, but the walk must uphold M2's "never a panic" guarantee.
+func TestInferFuncExprNilParamPatternNoPanic(t *testing.T) {
+	c := newChecker()
+	e := funcExpr([]*ast.Param{{Pattern: nil}}, nil, block(exprStmt(numExpr(1))))
+
+	require.NotPanics(t, func() { c.inferExpr(NewScope(), 0, e) })
+	require.Len(t, c.errs, 1)
+	require.Equal(t, testSpan(), c.errs[0].Span())
+}
+
 func TestInferFuncExprDestructuringParamUnsupported(t *testing.T) {
 	c := newChecker()
 	// fn ([a, b]) { ... } — destructuring params are M4.

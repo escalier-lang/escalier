@@ -79,8 +79,9 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // builds the n-ary soltype.FuncType. When the signature carries a return
 // annotation the inferred body type is constrained against it and the annotated
 // type becomes the function's return type; otherwise the body type is the
-// return type directly. node supplies the span stamped onto a return-annotation
-// constraint failure.
+// return type directly. A bodyless (declare/ambient) function adopts its return
+// annotation without constraining anything. node supplies the span stamped onto
+// a return-annotation constraint failure.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
 	fnScope := scope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
@@ -89,8 +90,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		name, ok := identPatName(p.Pattern)
 		if !ok {
 			// Destructuring params (TuplePat/ObjectPat) need record/tuple types —
-			// they arrive in M4. M2 binds IdentPat only.
-			c.report(&UnsupportedNodeError{errSpan: errSpan{span: p.Span()}, Kind: patKind(p.Pattern)})
+			// they arrive in M4. M2 binds IdentPat only. p.Span() dereferences
+			// p.Pattern, so fall back to the function node's span for a pattern-less
+			// param to honor M2's "never a panic" guarantee.
+			span := node.Span()
+			if p.Pattern != nil {
+				span = p.Span()
+			}
+			c.report(&UnsupportedNodeError{errSpan: errSpan{span: span}, Kind: patKind(p.Pattern)})
 			name = fmt.Sprintf("arg%d", i)
 		}
 		fnScope.defineValue(name, ValueBinding{Type: pt})
@@ -98,12 +105,19 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 
 	var ret soltype.Type = &soltype.Void{}
-	if body != nil {
+	hasBody := body != nil
+	if hasBody {
 		ret = c.inferBlock(fnScope, lvl, body)
 	}
 	if sig.Return != nil {
 		annT := c.resolveTypeAnn(sig.Return)
-		c.constrain(node, ret, annT) // body <: declared return
+		// Only check the inferred body against the declared return when there IS a
+		// body. A bodyless (declare/ambient) function has no body to constrain, so
+		// it simply adopts the annotation; constraining the synthetic Void return
+		// would raise a spurious `void <: T` error.
+		if hasBody {
+			c.constrain(node, ret, annT) // body <: declared return
+		}
 		ret = annT
 	}
 	return &soltype.FuncType{Params: params, Ret: ret}

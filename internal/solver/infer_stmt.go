@@ -11,6 +11,14 @@ import (
 // the param scope, so body-level val/var redeclarations overwrite alongside the
 // params, per §3.2). soltype.Void is the result of a block that ends in a
 // declaration or a value-free statement.
+//
+// TODO(M3): a non-tail ReturnStmt only contributes the last statement's type to
+// the block value, so an early return (`{ return X; Y }`) is dropped and never
+// checked against the declared return type. Harmless at the M2 bar — there is no
+// IfElseExpr (control flow), so an early return cannot arise from a real branch —
+// but once M3 adds conditionals the walk must collect every return-point type and
+// join it with the tail before constraining against the annotation. Tracked in
+// planning/simple_sub/01-milestones.md (M3).
 func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) soltype.Type {
 	var result soltype.Type = &soltype.Void{}
 	for _, s := range b.Stmts {
