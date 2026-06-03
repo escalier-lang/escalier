@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -14,18 +15,32 @@ import (
 // error refers to — e.g. navigate to a type's declaration — without reparsing
 // the message. Modeled on internal/checker/error.go's shape.
 //
-// Errors are span-free in M1 (there is no parser bridge until M2). M2 adds a
-// Span() ast.Span method and likely rebases these onto the checker's diagnostic
-// types per 02-design-notes.md Settled Decision #4.
+// M2 adds Span() ast.Span. The constraint kinds (CannotConstrainError, …) are
+// still constructed span-free inside the engine (constrain.go has no AST node
+// in hand); the M2 walk stamps the offending node's span onto each returned
+// error via the unexported setSpan at the constrain call site (see
+// (*checker).constrain). The M2 bridge kinds below carry their span from
+// construction.
 type SolverError interface {
 	isSolverError()
 	Message() string
+	Span() ast.Span
+	setSpan(ast.Span)
 }
+
+// errSpan is the embeddable span carrier shared by every SolverError kind. It
+// supplies Span()/setSpan so a span-free engine error can be stamped after the
+// fact and a bridge error can be built with its span in place.
+type errSpan struct{ span ast.Span }
+
+func (e *errSpan) Span() ast.Span     { return e.span }
+func (e *errSpan) setSpan(s ast.Span) { e.span = s }
 
 // CannotConstrainError fires when a non-variable LHS/RHS pair fails to match:
 // prim/prim mismatch, lit/lit mismatch, lit/prim mismatch, and the generic
 // "no rule applies" fall-through at the end of constrain.
 type CannotConstrainError struct {
+	errSpan
 	LHS, RHS soltype.Type
 }
 
@@ -35,6 +50,7 @@ type CannotConstrainError struct {
 // report param/return types too. M3 narrows the firing conditions when the
 // exactness flag adds the inexact fewer-params-is-subtype arm.
 type FuncArityMismatchError struct {
+	errSpan
 	LHS, RHS *soltype.FuncType
 }
 
@@ -42,12 +58,68 @@ type FuncArityMismatchError struct {
 // lengths (M1's exact-tuple case; M4 may narrow the firing conditions when the
 // inexact flag is added).
 type TupleLengthMismatchError struct {
+	errSpan
 	LHS, RHS *soltype.TupleType
 }
 
 func (*CannotConstrainError) isSolverError()     {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
+
+// --- M2 bridge errors (carry their span from construction) ---
+
+// UnknownIdentifierError fires when a value-position identifier resolves to no
+// binding in the scope chain.
+type UnknownIdentifierError struct {
+	errSpan
+	Name string
+}
+
+// NamespaceUsedAsValueError fires when an identifier resolves to a namespace
+// rather than a value. Namespaces are a separate binding sort and never flow as
+// values; in M2 a namespace name in value position can only fail (qualified
+// member access — Foo.bar — is M4).
+type NamespaceUsedAsValueError struct {
+	errSpan
+	Name string
+}
+
+// UnsupportedNodeError is the M2-subset guard: an AST node outside the M2 walk's
+// coverage. Unlike BodyDeclNotAllowedError this is a temporary scope gate, not a
+// permanent language rule — later milestones widen coverage and remove arms.
+type UnsupportedNodeError struct {
+	errSpan
+	Kind string
+}
+
+// BodyDeclNotAllowedError fires when a statement-level declaration in a function
+// body is anything other than a VarDecl. This is a permanent language rule
+// (§3.2), not the temporary subset gate above: body decls are VarDecl-only.
+type BodyDeclNotAllowedError struct {
+	errSpan
+	Kind string
+}
+
+func (*UnknownIdentifierError) isSolverError()    {}
+func (*NamespaceUsedAsValueError) isSolverError() {}
+func (*UnsupportedNodeError) isSolverError()      {}
+func (*BodyDeclNotAllowedError) isSolverError()   {}
+
+func (e *UnknownIdentifierError) Message() string {
+	return "Unknown identifier: " + e.Name
+}
+
+func (e *NamespaceUsedAsValueError) Message() string {
+	return "Namespace used as a value: " + e.Name
+}
+
+func (e *UnsupportedNodeError) Message() string {
+	return "Unsupported in M2: " + e.Kind
+}
+
+func (e *BodyDeclNotAllowedError) Message() string {
+	return "Declaration not allowed in function body: " + e.Kind
+}
 
 func (e *CannotConstrainError) Message() string {
 	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.LHS), describe(e.RHS))
