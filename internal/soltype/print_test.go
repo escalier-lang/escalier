@@ -45,6 +45,14 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"empty tuple", &TupleType{}, "[]"},
 		{"pair tuple", &TupleType{Elems: []Type{numP(), strP()}}, "[number, string]"},
 
+		// Records.
+		{"empty record", &RecordType{}, "{}"},
+		{
+			"two-field record",
+			&RecordType{Fields: []*RecordField{{Name: "a", Type: numP()}, {Name: "b", Type: strP()}}},
+			"{a: number, b: string}",
+		},
+
 		// Functions.
 		{"nullary fn", &FuncType{Ret: numP()}, "fn () -> number"},
 		{"unary fn", &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}, "fn (x: number) -> string"},
@@ -90,6 +98,16 @@ func TestPrintNestedPrecedence(t *testing.T) {
 			boolP(),
 		}}
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`[fn (x: number) -> string, boolean]`))
+	})
+
+	// A record is brace-delimited (an atom), so a record nested in a union needs
+	// no parens, and a function as a field value is delimited by the field's `:`.
+	t.Run("record in union", func(t *testing.T) {
+		ty := &UnionType{Types: []Type{
+			&RecordType{Fields: []*RecordField{{Name: "f", Type: &FuncType{Ret: numP()}}}},
+			strP(),
+		}}
+		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`{f: fn () -> number} | string`))
 	})
 }
 

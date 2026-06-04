@@ -92,6 +92,28 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			}
 			return errs
 		}
+	case *soltype.RecordType:
+		if r, ok := rhs.(*soltype.RecordType); ok {
+			// Width + depth subtyping: every field the RHS requires must be present
+			// on the LHS (the LHS may carry MORE fields — width), and the shared
+			// fields are covariant (depth). M2 records are read-only — `mut` makes a
+			// field invariant, and that lands in M4 — so there is no invariance arm
+			// here. Fields are matched by name, so source order is irrelevant.
+			lf := make(map[string]soltype.Type, len(l.Fields))
+			for _, f := range l.Fields {
+				lf[f.Name] = f.Type
+			}
+			var errs []SolverError
+			for _, rf := range r.Fields {
+				lt, ok := lf[rf.Name]
+				if !ok {
+					errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rf.Name})
+					continue
+				}
+				errs = append(errs, c.constrain(lt, rf.Type, seen)...) // covariant
+			}
+			return errs
+		}
 	case *soltype.Void:
 		if _, ok := rhs.(*soltype.Void); ok {
 			return nil
@@ -171,6 +193,13 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 			elems[i] = c.extrude(e, pol, lvl, cache)
 		}
 		return &soltype.TupleType{Elems: elems}
+	case *soltype.RecordType:
+		fields := make([]*soltype.RecordField, len(t.Fields))
+		for i, f := range t.Fields {
+			// Fields are covariant (read-only records in M2), so no polarity flip.
+			fields[i] = &soltype.RecordField{Name: f.Name, Type: c.extrude(f.Type, pol, lvl, cache)}
+		}
+		return &soltype.RecordType{Fields: fields}
 	default:
 		return t
 	}

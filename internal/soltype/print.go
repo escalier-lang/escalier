@@ -27,7 +27,8 @@ func typePrec(t Type) int {
 	case *IntersectionType:
 		return precIntersection
 	default:
-		// PrimType, LitType, TupleType, Void, NeverType, UnknownType — atoms. A
+		// PrimType, LitType, TupleType, RecordType, Void, NeverType, UnknownType —
+		// atoms (RecordType is brace-delimited, so it never needs parens). A
 		// raw TypeVarType (which appears only when printing an un-coalesced type,
 		// see printType) is also an atom (rendered as `t{ID}`), so it lands here.
 		return precAtom
@@ -98,6 +99,12 @@ func printType(t Type) string {
 			elems[i] = printType(e)
 		}
 		return "[" + strings.Join(elems, ", ") + "]"
+	case *RecordType:
+		fields := make([]string, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = f.Name + ": " + printType(f.Type)
+		}
+		return "{" + strings.Join(fields, ", ") + "}"
 	case *FuncType:
 		return "fn " + printFuncTail(t)
 	case *UnionType:

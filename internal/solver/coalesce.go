@@ -41,6 +41,12 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 			elems[i] = coalesce(e, pol) // covariant elements
 		}
 		return &soltype.TupleType{Elems: elems}
+	case *soltype.RecordType:
+		fields := make([]*soltype.RecordField, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesce(f.Type, pol)} // covariant fields
+		}
+		return &soltype.RecordType{Fields: fields}
 	case *soltype.TypeVarType:
 		// Uniform inline: drop the variable, keep only its (recursively
 		// coalesced) bounds in the current polarity.
@@ -132,6 +138,23 @@ func equalType(a, b soltype.Type) bool {
 		}
 		for i := range a.Elems {
 			if !equalType(a.Elems[i], b.Elems[i]) {
+				return false
+			}
+		}
+		return true
+	case *soltype.RecordType:
+		b, ok := b.(*soltype.RecordType)
+		if !ok || len(a.Fields) != len(b.Fields) {
+			return false
+		}
+		// Records are equal up to field order — match by name, not position.
+		bf := make(map[string]soltype.Type, len(b.Fields))
+		for _, f := range b.Fields {
+			bf[f.Name] = f.Type
+		}
+		for _, f := range a.Fields {
+			bt, ok := bf[f.Name]
+			if !ok || !equalType(f.Type, bt) {
 				return false
 			}
 		}
