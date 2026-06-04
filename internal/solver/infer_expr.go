@@ -23,10 +23,7 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 	case *ast.BoolLit:
 		lit = &soltype.BoolLit{Value: l.Value}
 	default:
-		return c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: e.Span()},
-			Kind:    astKind(e.Lit),
-		})
+		return c.reportUnsupported(e, e.Lit)
 	}
 	t := &soltype.LitType{Lit: lit}
 	c.recordType(e, t)
@@ -97,10 +94,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
 		// which are M3. M2 is monomorphic, so diagnose the type parameters rather
 		// than silently erasing them, then continue inferring monomorphically.
-		c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: node.Span()},
-			Kind:    astKind(sig.TypeParams[0]),
-		})
+		c.reportUnsupported(node, sig.TypeParams[0])
 	}
 	fnScope := scope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
@@ -202,27 +196,38 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 //
 // Usage-inference depth (e.g. inferring an open record from how a value is used)
 // is explicitly M4; M2 builds the closed record the literal spells out.
+//
+// Duplicate keys follow JavaScript semantics: the last value wins, keeping the
+// field at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
+// field names unique, the invariant RecordType.Field / equalType rely on.
 func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type {
 	fields := make([]*soltype.RecordField, 0, len(e.Elems))
+	pos := make(map[string]int, len(e.Elems)) // field name → index in fields, for last-wins dedup
 	for _, elem := range e.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
 			// ObjSpreadExpr, CallableExpr (method), ConstructorExpr — all M4.
-			c.report(&UnsupportedNodeError{errSpan: errSpan{span: elem.Span()}, Kind: astKind(elem)})
+			c.reportUnsupported(elem, elem)
 			continue
 		}
 		if prop.Value == nil {
 			// Shorthand ({x}) needs the ident's binding folded in as the value — M4.
-			c.report(&UnsupportedNodeError{errSpan: errSpan{span: prop.Span()}, Kind: astKind(prop)})
+			c.reportUnsupported(prop, prop)
 			continue
 		}
 		name, ok := objKeyName(prop.Name)
 		if !ok {
 			// Computed/numeric keys carry no static field name — M4.
-			c.report(&UnsupportedNodeError{errSpan: errSpan{span: prop.Span()}, Kind: astKind(prop.Name)})
+			c.reportUnsupported(prop, prop.Name)
 			continue
 		}
-		fields = append(fields, &soltype.RecordField{Name: name, Type: c.inferExpr(scope, lvl, prop.Value)})
+		ft := c.inferExpr(scope, lvl, prop.Value)
+		if i, dup := pos[name]; dup {
+			fields[i] = &soltype.RecordField{Name: name, Type: ft} // last value wins, first position kept
+			continue
+		}
+		pos[name] = len(fields)
+		fields = append(fields, &soltype.RecordField{Name: name, Type: ft})
 	}
 	t := &soltype.RecordType{Fields: fields}
 	c.recordType(e, t)
@@ -239,6 +244,15 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 	recv := c.inferExpr(scope, lvl, e.Object)
 	if e.OptChain {
 		return c.report(&UnsupportedNodeError{errSpan: errSpan{span: e.Span()}, Kind: "OptionalChain"})
+	}
+	if e.Prop == nil || e.Prop.Name == "" {
+		// A malformed `recv.` with no valid property name: the parser already
+		// reported the missing identifier, so constraining recv <: {"": res} here
+		// would only layer a spurious "object is missing property: " on top. Yield
+		// a never placeholder without reporting or constraining.
+		t := soltype.Type(&soltype.NeverType{})
+		c.recordType(e, t)
+		return t
 	}
 	res := c.freshAt(lvl)
 	c.constrain(e, recv, &soltype.RecordType{Fields: []*soltype.RecordField{{Name: e.Prop.Name, Type: res}}})

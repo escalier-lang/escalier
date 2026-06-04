@@ -147,13 +147,12 @@ func equalType(a, b soltype.Type) bool {
 		if !ok || len(a.Fields) != len(b.Fields) {
 			return false
 		}
-		// Records are equal up to field order — match by name, not position.
-		bf := make(map[string]soltype.Type, len(b.Fields))
-		for _, f := range b.Fields {
-			bf[f.Name] = f.Type
-		}
+		// Records are equal up to field order — match by name (RecordType.Field),
+		// not position. Well-formed records have unique field names (the solver
+		// dedups on construction), so equal lengths plus every a-field matching a
+		// b-field by name is a full structural match.
 		for _, f := range a.Fields {
-			bt, ok := bf[f.Name]
+			bt, ok := b.Field(f.Name)
 			if !ok || !equalType(f.Type, bt) {
 				return false
 			}

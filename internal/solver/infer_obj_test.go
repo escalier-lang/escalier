@@ -58,6 +58,24 @@ func TestInferObjectStringKey(t *testing.T) {
 	require.Equal(t, "{a: 5}", render(got))
 }
 
+// Duplicate keys follow JS last-wins semantics: the later value replaces the
+// earlier one while the field keeps its first position. This keeps field names
+// unique, so the record is well-formed (and equalType stays reflexive on it).
+func TestInferObjectDuplicateKeyLastWins(t *testing.T) {
+	c := newChecker()
+	// {a: 1, b: 2, a: "x"}  ⇒  {a: "x", b: 2}
+	e := objExpr(prop("a", numExpr(1)), prop("b", numExpr(2)), prop("a", strExpr("x")))
+
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, `{a: "x", b: 2}`, render(got))
+
+	rec, ok := got.(*soltype.RecordType)
+	require.True(t, ok)
+	require.Len(t, rec.Fields, 2) // the duplicate `a` was collapsed, not appended
+	require.True(t, equalType(rec, rec), "equalType must be reflexive for a deduped record")
+}
+
 // Shorthand ({x}) is a property with no value — deferred to M4. It reports a
 // clean UnsupportedNodeError and is skipped (the rest of the object still types).
 func TestInferObjectShorthandUnsupported(t *testing.T) {
@@ -129,4 +147,19 @@ func TestInferMemberOptionalChainUnsupported(t *testing.T) {
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: OptionalChain", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
+}
+
+// A malformed `recv.` (no valid property name) leaves Prop.Name empty; the
+// parser has already reported the missing identifier, so the walk must NOT layer
+// a spurious "object is missing property: " on top. It yields a never
+// placeholder and reports nothing.
+func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
+	c := newChecker()
+	// recv = {a: 5}; access with an empty property name (as the parser builds for `recv.`)
+	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("", testSpan()), false, testSpan())
+
+	got := c.inferExpr(NewScope(), 0, e)
+	require.IsType(t, &soltype.NeverType{}, got)
+	require.Empty(t, c.errs) // no spurious MissingPropertyError
+	require.Same(t, got, c.info.TypeOf(e))
 }

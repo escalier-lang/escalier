@@ -117,6 +117,21 @@ type RecordField struct {
 	Type Type
 }
 
+// Field returns the type of the named field and whether it is present. Field
+// names are unique in a well-formed RecordType — the constraint solver dedups
+// duplicate keys (last value wins) when it builds a record from a literal — so
+// the first match is the field. The scan is linear because records are small;
+// it is the single canonical field lookup shared by constraining, structural
+// equality, and member access.
+func (r *RecordType) Field(name string) (Type, bool) {
+	for _, f := range r.Fields {
+		if f.Name == name {
+			return f.Type, true
+		}
+	}
+	return nil, false
+}
+
 // Void is the result type of a statement block with no value.
 type Void struct{}
 

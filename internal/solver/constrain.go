@@ -98,14 +98,11 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			// on the LHS (the LHS may carry MORE fields — width), and the shared
 			// fields are covariant (depth). M2 records are read-only — `mut` makes a
 			// field invariant, and that lands in M4 — so there is no invariance arm
-			// here. Fields are matched by name, so source order is irrelevant.
-			lf := make(map[string]soltype.Type, len(l.Fields))
-			for _, f := range l.Fields {
-				lf[f.Name] = f.Type
-			}
+			// here. Fields are matched by name (RecordType.Field), so source order is
+			// irrelevant.
 			var errs []SolverError
 			for _, rf := range r.Fields {
-				lt, ok := lf[rf.Name]
+				lt, ok := l.Field(rf.Name)
 				if !ok {
 					errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rf.Name})
 					continue

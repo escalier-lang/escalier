@@ -52,6 +52,16 @@ func (c *checker) report(e SolverError) soltype.Type {
 	return &soltype.NeverType{}
 }
 
+// reportUnsupported records an UnsupportedNodeError for an AST node outside the
+// M2 subset: the span comes from spanNode, the rendered kind name from kindNode
+// (astKind). The two are usually the same node but differ when the unsupported
+// thing is a child carried by its parent — e.g. an object property's key, whose
+// span we report against the property. Returns the never placeholder so a caller
+// can `return c.reportUnsupported(...)` in value position.
+func (c *checker) reportUnsupported(spanNode ast.Node, kindNode any) soltype.Type {
+	return c.report(&UnsupportedNodeError{errSpan: errSpan{span: spanNode.Span()}, Kind: astKind(kindNode)})
+}
+
 // recordType records t as the inferred type of n in the Info side table. Wraps
 // the unexported setType — which is why the whole M2 walk lives in package
 // solver. The AST stays untouched (no InferredType() writes); Info is the single
@@ -82,9 +92,6 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	case *ast.MemberExpr:
 		return c.inferMember(scope, lvl, e)
 	default:
-		return c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: e.Span()},
-			Kind:    astKind(e),
-		})
+		return c.reportUnsupported(e, e)
 	}
 }
