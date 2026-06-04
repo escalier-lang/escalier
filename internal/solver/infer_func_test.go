@@ -9,8 +9,10 @@ import (
 )
 
 // render coalesces a (possibly variable-carrying) inferred type at Positive
-// polarity — the binding view — and prints it. soltype.Print panics on a raw
-// TypeVarType, so every function/call result must be coalesced before printing.
+// polarity — the binding view — and prints it via soltype.Print, giving the
+// stable, var-free form a binding would render as. soltype.Print also handles a
+// raw TypeVarType safely (rendering it as t{ID}), so coalescing here is for the
+// consistent binding-view rendering, not to avoid a panic.
 func render(t soltype.Type) string {
 	return soltype.Print(coalesce(t, soltype.Positive))
 }
@@ -133,6 +135,21 @@ func TestInferFuncExprDestructuringParamUnsupported(t *testing.T) {
 	c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: TuplePat", c.errs[0].Message())
+}
+
+// A generic function (fn <T>() { ... }) is diagnosed rather than silently erased
+// to a monomorphic type — type schemes / generalization are M3.
+func TestInferFuncExprGenericUnsupported(t *testing.T) {
+	c := newChecker()
+	// fn <T>() { 1 }
+	tp := ast.NewTypeParam("T", nil, nil)
+	e := ast.NewFuncExpr(nil, []*ast.TypeParam{&tp}, nil, nil, nil, false,
+		block(exprStmt(numExpr(1))), testSpan())
+
+	c.inferExpr(NewScope(), 0, e)
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Unsupported in M2: TypeParam", c.errs[0].Message())
+	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
 // --- CallExpr ---

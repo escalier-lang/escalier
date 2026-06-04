@@ -73,9 +73,10 @@ func astKind(n any) string {
 // in Info. It delegates to inferFunc, the shared core also used by inferFuncDecl
 // (the plan's "reuse inferFuncExpr on the decl's sig+body", factored so neither
 // side owns the other). M2 is monomorphic: any TypeParams on the signature are a
-// generic function (M3) and are ignored here — an un-annotated param simply gets
-// a fresh var, which coalesces to unknown/never at render time rather than a
-// <T0> quantifier (generalization is M3).
+// generic function (M3) and are diagnosed as unsupported by inferFunc, not
+// silently erased; an un-annotated param simply gets a fresh var, which
+// coalesces to unknown/never at render time rather than a <T0> quantifier
+// (generalization is M3).
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e)
 	c.recordType(e, t)
@@ -92,6 +93,15 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // annotation without constraining anything. node supplies the span stamped onto
 // a return-annotation constraint failure.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
+	if len(sig.TypeParams) > 0 {
+		// Generic functions (fn <T>(...)) need type schemes / generalization,
+		// which are M3. M2 is monomorphic, so diagnose the type parameters rather
+		// than silently erasing them, then continue inferring monomorphically.
+		c.report(&UnsupportedNodeError{
+			errSpan: errSpan{span: node.Span()},
+			Kind:    astKind(sig.TypeParams[0]),
+		})
+	}
 	fnScope := scope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
 	for i, p := range sig.Params {
