@@ -84,6 +84,14 @@ func (s *Scope) defineValue(name string, b ValueBinding) {
 	s.values[name] = b
 }
 
+// removeValue deletes name from THIS scope's value map (a no-op if absent). The
+// SCC driver uses it to retract a value binding it pre-bound to a fresh var but
+// whose declaration then failed to produce a definition, so the mutation goes
+// through Scope's API rather than touching the map directly.
+func (s *Scope) removeValue(name string) {
+	delete(s.values, name)
+}
+
 // defineType inserts b under name in this scope's type map (overwrite, as above).
 func (s *Scope) defineType(name string, b TypeBinding) {
 	s.types[name] = b

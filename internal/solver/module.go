@@ -186,7 +186,7 @@ func (c *checker) inferComponent(
 			continue
 		}
 		if !b.bound {
-			delete(scope.values, key.Name())
+			scope.removeValue(key.Name())
 			continue
 		}
 		t := coalesce(b.v, soltype.Positive)

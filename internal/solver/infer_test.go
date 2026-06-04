@@ -169,9 +169,11 @@ func TestInferModuleForwardReferenceResolves(t *testing.T) {
 // reports as unsupported. (FuncDecl, unsupported at the module level through
 // PR-2, is now wired in by PR-5; see the func/recursion tests.)
 func TestInferModuleUnsupportedDecl(t *testing.T) {
-	_, _, errs := inferSource(t, `type Foo = number`)
+	_, types, errs := inferSource(t, `type Foo = number`)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unsupported in M2: TypeDecl", errs[0].Message())
+	// The unsupported decl must not leak a type binding.
+	require.NotContains(t, types, "Foo")
 }
 
 // A `val` with no initializer can't be inferred in M2 (annotation-driven binding
@@ -352,7 +354,7 @@ func TestInferModuleFunctionOverloadNotSupported(t *testing.T) {
 // inferDepGraph walks the module's own declarations and flags any the SCC walk
 // never visited.
 func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
-	values, _, errs := inferSource(t, `
+	values, types, errs := inferSource(t, `
 		namespace Foo {
 			val x = 5
 		}
@@ -360,4 +362,6 @@ func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unsupported in M2: NamespaceDecl", errs[0].Message())
 	require.Empty(t, values)
+	// The unsupported decl must not leak a type binding for the namespace.
+	require.NotContains(t, types, "Foo")
 }
