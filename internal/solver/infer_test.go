@@ -91,6 +91,66 @@ func TestInferModuleValDecls(t *testing.T) {
 	}
 }
 
+// PR-4: object literals, tuple literals, and member access infer end-to-end
+// through the real parser pipeline. Field reads resolve through a record-typed
+// binding (constrain's record <: record arm lowers the result from the matching
+// field), and a read of an absent field surfaces a MissingPropertyError.
+func TestInferModuleObjectsAndTuples(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "RecordLiteral",
+			src:  `val o = {a: 5, b: "hi"}`,
+			want: map[string]string{"o": `{a: 5, b: "hi"}`},
+		},
+		{
+			name: "EmptyRecord",
+			src:  `val o = {}`,
+			want: map[string]string{"o": "{}"},
+		},
+		{
+			name: "TupleLiteral",
+			src:  `val t = [1, "hi"]`,
+			want: map[string]string{"t": `[1, "hi"]`},
+		},
+		{
+			name: "NestedRecordInTuple",
+			src:  `val t = [{a: 1}, 2]`,
+			want: map[string]string{"t": `[{a: 1}, 2]`},
+		},
+		{
+			name: "FieldRead",
+			src: `
+				val o = {a: 5, b: "hi"}
+				val x = o.a
+			`,
+			want: map[string]string{"o": `{a: 5, b: "hi"}`, "x": "5"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values)
+		})
+	}
+}
+
+// Reading a field the receiver lacks is a constraint failure (MissingProperty);
+// the binding for the failed read resolves to the never placeholder.
+func TestInferModuleFieldReadMissingProperty(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		val o = {a: 5}
+		val x = o.b
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "object is missing property: b", errs[0].Message())
+	require.Equal(t, map[string]string{"o": "{a: 5}", "x": "never"}, values)
+}
+
 // A forward reference — a decl that uses a name defined later in the source —
 // fails in PR-2 because the module driver walks decls in source order with no
 // dep-graph ordering. PR-5 adds SCC ordering and this case flips to success.
@@ -140,13 +200,12 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 
 // A destructuring pattern is IdentPat-only-gated in M2 (M4 adds tuple/record
 // binding); the binding reports UnsupportedNodeError and introduces no value.
-// The initializer is still walked, so its own errors (here the as-yet-unsupported
-// tuple expression) surface too rather than being dropped.
+// The initializer `[1, 2]` is a tuple expression, which PR-4 now infers, so the
+// only remaining error is the destructuring pattern on the binding side.
 func TestInferModuleDestructuringPatternUnsupported(t *testing.T) {
 	values, _, errs := inferSource(t, `val [a, b] = [1, 2]`)
-	require.Len(t, errs, 2)
-	require.Equal(t, "Unsupported in M2: TupleExpr", errs[0].Message())
-	require.Equal(t, "Unsupported in M2: TuplePat", errs[1].Message())
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: TuplePat", errs[0].Message())
 	require.Empty(t, values)
 }
 

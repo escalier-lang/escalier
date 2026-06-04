@@ -41,6 +41,12 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 			elems[i] = coalesce(e, pol) // covariant elements
 		}
 		return &soltype.TupleType{Elems: elems}
+	case *soltype.RecordType:
+		fields := make([]*soltype.RecordField, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesce(f.Type, pol)} // covariant fields
+		}
+		return &soltype.RecordType{Fields: fields}
 	case *soltype.TypeVarType:
 		// Uniform inline: drop the variable, keep only its (recursively
 		// coalesced) bounds in the current polarity.
@@ -132,6 +138,22 @@ func equalType(a, b soltype.Type) bool {
 		}
 		for i := range a.Elems {
 			if !equalType(a.Elems[i], b.Elems[i]) {
+				return false
+			}
+		}
+		return true
+	case *soltype.RecordType:
+		b, ok := b.(*soltype.RecordType)
+		if !ok || len(a.Fields) != len(b.Fields) {
+			return false
+		}
+		// Records are equal up to field order — match by name (RecordType.Field),
+		// not position. Well-formed records have unique field names (the solver
+		// dedups on construction), so equal lengths plus every a-field matching a
+		// b-field by name is a full structural match.
+		for _, f := range a.Fields {
+			bt, ok := b.Field(f.Name)
+			if !ok || !equalType(f.Type, bt) {
 				return false
 			}
 		}

@@ -46,3 +46,17 @@ func valDecl(name string, ann ast.TypeAnn, init ast.Expr) *ast.VarDecl {
 func funcExpr(params []*ast.Param, ret ast.TypeAnn, body *ast.Block) *ast.FuncExpr {
 	return ast.NewFuncExpr(nil, nil, params, ret, nil, false, body, builderSpan())
 }
+
+func tupleExpr(elems ...ast.Expr) *ast.TupleExpr { return ast.NewArray(elems, builderSpan()) }
+
+// prop builds a `name: value` object property with an identifier key.
+func prop(name string, value ast.Expr) *ast.PropertyExpr {
+	return ast.NewProperty(ast.NewIdent(name, builderSpan()), false, false, value, builderSpan())
+}
+
+func objExpr(elems ...ast.ObjExprElem) *ast.ObjectExpr { return ast.NewObject(elems, builderSpan()) }
+
+// memberExpr builds a non-optional `obj.prop` field read.
+func memberExpr(obj ast.Expr, name string) *ast.MemberExpr {
+	return ast.NewMember(obj, ast.NewIdentifier(name, builderSpan()), false, builderSpan())
+}

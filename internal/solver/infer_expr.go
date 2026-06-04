@@ -23,10 +23,7 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 	case *ast.BoolLit:
 		lit = &soltype.BoolLit{Value: l.Value}
 	default:
-		return c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: e.Span()},
-			Kind:    astKind(e.Lit),
-		})
+		return c.reportUnsupported(e, e.Lit)
 	}
 	t := &soltype.LitType{Lit: lit}
 	c.recordType(e, t)
@@ -97,10 +94,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
 		// which are M3. M2 is monomorphic, so diagnose the type parameters rather
 		// than silently erasing them, then continue inferring monomorphically.
-		c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: node.Span()},
-			Kind:    astKind(sig.TypeParams[0]),
-		})
+		c.reportUnsupported(node, sig.TypeParams[0])
 	}
 	fnScope := scope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
@@ -175,6 +169,113 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	}
 	c.recordType(e, res)
 	return res
+}
+
+// inferTuple types a tuple literal as a soltype.TupleType of its element types
+// and records it in Info. Elements are typed left-to-right in the current scope.
+// A spread element ([...xs]) is an ArraySpreadExpr, which is not in the M2 walk,
+// so inferExpr reports it as unsupported and contributes a never placeholder in
+// its slot — the tuple is still built (error already accumulated), never a panic.
+func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
+	elems := make([]soltype.Type, len(e.Elems))
+	for i, el := range e.Elems {
+		elems[i] = c.inferExpr(scope, lvl, el)
+	}
+	t := &soltype.TupleType{Elems: elems}
+	c.recordType(e, t)
+	return t
+}
+
+// inferObject types an object literal as a soltype.RecordType. M2 covers the
+// basic case only: a `name: value` property with a static (identifier or string)
+// key. The forms it does not cover each report an UnsupportedNodeError and are
+// skipped rather than panicking (the deeper object system is M4):
+//   - spreads ({...o}) and method/constructor elements,
+//   - computed ({[k]: v}) and numeric ({0: v}) keys,
+//   - shorthand ({x}, i.e. a property with no value).
+//
+// Usage-inference depth (e.g. inferring an open record from how a value is used)
+// is explicitly M4; M2 builds the closed record the literal spells out.
+//
+// Duplicate keys follow JavaScript semantics: the last value wins, keeping the
+// field at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
+// field names unique, the invariant RecordType.Field / equalType rely on.
+func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type {
+	fields := make([]*soltype.RecordField, 0, len(e.Elems))
+	pos := make(map[string]int, len(e.Elems)) // field name → index in fields, for last-wins dedup
+	for _, elem := range e.Elems {
+		prop, ok := elem.(*ast.PropertyExpr)
+		if !ok {
+			// ObjSpreadExpr, CallableExpr (method), ConstructorExpr — all M4.
+			c.reportUnsupported(elem, elem)
+			continue
+		}
+		if prop.Value == nil {
+			// Shorthand ({x}) needs the ident's binding folded in as the value — M4.
+			c.reportUnsupported(prop, prop)
+			continue
+		}
+		name, ok := objKeyName(prop.Name)
+		if !ok {
+			// Computed/numeric keys carry no static field name — M4.
+			c.reportUnsupported(prop, prop.Name)
+			continue
+		}
+		ft := c.inferExpr(scope, lvl, prop.Value)
+		if i, dup := pos[name]; dup {
+			fields[i] = &soltype.RecordField{Name: name, Type: ft} // last value wins, first position kept
+			continue
+		}
+		pos[name] = len(fields)
+		fields = append(fields, &soltype.RecordField{Name: name, Type: ft})
+	}
+	t := &soltype.RecordType{Fields: fields}
+	c.recordType(e, t)
+	return t
+}
+
+// inferMember types a field read (recv.prop). It types the receiver, allocates a
+// fresh result var, and constrains recv <: {prop: res} — the basic form from the
+// plan's §3.2 table. The record <: record arm of constrain lowers res from the
+// receiver's matching field (so res coalesces to that field's type); a receiver
+// missing the field surfaces as a MissingPropertyError stamped with the member's
+// span. Optional chaining (recv?.prop) needs union/undefined handling and is M6.
+func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.Type {
+	if e.OptChain {
+		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
+		// up front and do NOT descend into the receiver, so a single diagnostic
+		// stands for the construct instead of cascading the receiver's errors.
+		return c.report(&UnsupportedNodeError{errSpan: errSpan{span: e.Span()}, Kind: "OptionalChain"})
+	}
+	recv := c.inferExpr(scope, lvl, e.Object)
+	if e.Prop == nil || e.Prop.Name == "" {
+		// A malformed `recv.` with no valid property name: the parser already
+		// reported the missing identifier, so constraining recv <: {"": res} here
+		// would only layer a spurious "object is missing property: " on top. Yield
+		// a never placeholder without reporting or constraining.
+		t := soltype.Type(&soltype.NeverType{})
+		c.recordType(e, t)
+		return t
+	}
+	res := c.freshAt(lvl)
+	c.constrain(e, recv, &soltype.RecordType{Fields: []*soltype.RecordField{{Name: e.Prop.Name, Type: res}}})
+	c.recordType(e, res)
+	return res
+}
+
+// objKeyName reads the static field name of an object-literal key. M2 records
+// have string field names, so an identifier label or a string-literal key maps
+// to a field; numeric and computed keys do not (they need M4's wider object
+// system) and return false so the caller can raise a structured error.
+func objKeyName(k ast.ObjKey) (string, bool) {
+	switch k := k.(type) {
+	case *ast.IdentExpr:
+		return k.Name, true
+	case *ast.StrLit:
+		return k.Value, true
+	default:
+		return "", false
+	}
 }
 
 // identPatName reads the name of an IdentPat. M2 binds IdentPat-only patterns

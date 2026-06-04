@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Precedence levels for type operators, matching the Escalier parser (and
@@ -27,7 +28,8 @@ func typePrec(t Type) int {
 	case *IntersectionType:
 		return precIntersection
 	default:
-		// PrimType, LitType, TupleType, Void, NeverType, UnknownType — atoms. A
+		// PrimType, LitType, TupleType, RecordType, Void, NeverType, UnknownType —
+		// atoms (RecordType is brace-delimited, so it never needs parens). A
 		// raw TypeVarType (which appears only when printing an un-coalesced type,
 		// see printType) is also an atom (rendered as `t{ID}`), so it lands here.
 		return precAtom
@@ -98,6 +100,12 @@ func printType(t Type) string {
 			elems[i] = printType(e)
 		}
 		return "[" + strings.Join(elems, ", ") + "]"
+	case *RecordType:
+		fields := make([]string, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = printRecordFieldName(f.Name) + ": " + printType(f.Type)
+		}
+		return "{" + strings.Join(fields, ", ") + "}"
 	case *FuncType:
 		return "fn " + printFuncTail(t)
 	case *UnionType:
@@ -135,6 +143,37 @@ func paramName(p *FuncParam, i int) string {
 		return pat.Name
 	}
 	return "arg" + strconv.Itoa(i)
+}
+
+// printRecordFieldName renders a record field name as Escalier surface syntax:
+// a bare label when the name is a valid identifier, otherwise a quoted string
+// key (e.g. "a-b", a key that came from a string-literal property). This keeps
+// the rendered record parseable; an unquoted "a-b" would corrupt the type.
+func printRecordFieldName(name string) string {
+	if isIdent(name) {
+		return name
+	}
+	return strconv.Quote(name)
+}
+
+// isIdent reports whether name is a valid Escalier identifier: non-empty, with a
+// leading letter or underscore and letter/underscore/digit runes thereafter.
+func isIdent(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !unicode.IsLetter(r) && r != '_' {
+				return false
+			}
+			continue
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // printPrim maps a Prim to its Escalier surface name — mirrors

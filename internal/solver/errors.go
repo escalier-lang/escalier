@@ -62,9 +62,22 @@ type TupleLengthMismatchError struct {
 	LHS, RHS *soltype.TupleType
 }
 
+// MissingPropertyError fires on RecordType <: RecordType when the RHS requires a
+// field the LHS lacks — the record analogue of FuncArityMismatchError /
+// TupleLengthMismatchError. It is the failure behind a field read on a record
+// without that field (recv.foo where recv has no foo): the walk constrains
+// recv <: {foo: fresh}, and the absent field surfaces here. Holds both records
+// plus the missing name so consumers can inspect what was required.
+type MissingPropertyError struct {
+	errSpan
+	LHS, RHS *soltype.RecordType
+	Name     string
+}
+
 func (*CannotConstrainError) isSolverError()     {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
+func (*MissingPropertyError) isSolverError()     {}
 
 // --- M2 bridge errors (carry their span from construction) ---
 
@@ -167,6 +180,10 @@ func (e *TupleLengthMismatchError) Message() string {
 		len(e.LHS.Elems), len(e.RHS.Elems))
 }
 
+func (e *MissingPropertyError) Message() string {
+	return "object is missing property: " + e.Name
+}
+
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,
 // function, number). Distinct from soltype.Print, which renders coalesced
 // output as user-facing Escalier syntax (see m1-implementation-plan §2.2). It
@@ -195,6 +212,8 @@ func describe(t soltype.Type) string {
 		return "function"
 	case *soltype.TupleType:
 		return "tuple"
+	case *soltype.RecordType:
+		return "object"
 	case *soltype.Void:
 		return "void"
 	case *soltype.NeverType:

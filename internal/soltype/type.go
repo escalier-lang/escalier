@@ -101,6 +101,37 @@ type FuncType struct {
 // TupleType is a fixed-length tuple type.
 type TupleType struct{ Elems []Type }
 
+// RecordType is a record/object type with named value fields. M2 ships the
+// BASIC width-and-depth-subtyping form that record literals and field reads
+// need ({a: 5}, recv.a); the richer object system — optional fields, methods,
+// getters/setters, index signatures, spreads, `mut`, and usage-inference — is
+// M4. It mirrors the role of type_system.ObjectType but carries only named
+// value fields (no method/getter/setter/mapped elements yet), so it stays a
+// flat list of Name→Type fields. Subtyping matches fields by name (order is
+// irrelevant); the slice order is preserved only for stable rendering.
+type RecordType struct{ Fields []*RecordField }
+
+// RecordField is one named field of a RecordType.
+type RecordField struct {
+	Name string
+	Type Type
+}
+
+// Field returns the type of the named field and whether it is present. Field
+// names are unique in a well-formed RecordType — the constraint solver dedups
+// duplicate keys (last value wins) when it builds a record from a literal — so
+// the first match is the field. The scan is linear because records are small;
+// it is the single canonical field lookup shared by constraining, structural
+// equality, and member access.
+func (r *RecordType) Field(name string) (Type, bool) {
+	for _, f := range r.Fields {
+		if f.Name == name {
+			return f.Type, true
+		}
+	}
+	return nil, false
+}
+
 // Void is the result type of a statement block with no value.
 type Void struct{}
 
@@ -125,6 +156,7 @@ func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
 func (*TupleType) isType()        {}
+func (*RecordType) isType()       {}
 func (*Void) isType()             {}
 func (*NeverType) isType()        {}
 func (*UnknownType) isType()      {}
@@ -147,6 +179,12 @@ func LevelOf(t Type) int {
 		m := 0
 		for _, e := range t.Elems {
 			m = max(m, LevelOf(e))
+		}
+		return m
+	case *RecordType:
+		m := 0
+		for _, f := range t.Fields {
+			m = max(m, LevelOf(f.Type))
 		}
 		return m
 	default:

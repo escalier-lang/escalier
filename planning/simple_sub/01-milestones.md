@@ -283,6 +283,18 @@ wrapper) are what first populate a lifetime. Land them together.
   This is the spike's lifetime lesson applied again — a property carried with the
   former is cheap now, painful to retrofit; the spike today is uniformly inexact,
   so this is additive `constrain` cases plus a flag, not a rework.
+  - **Differentiate member-access selection from concrete record subtyping.** M2
+    routes both through one width-tolerant `RecordType <: RecordType` arm
+    ([solver/constrain.go](../../internal/solver/constrain.go) record case),
+    because its only consumer is member access — `recv.foo` lowers to
+    `constrain(recv, {foo: β})`, a "has-field" *requirement* that is inherently
+    width-tolerant (the receiver legitimately carries more fields). M4 must split
+    these: the field-selection requirement stays width-tolerant (or becomes its
+    own constraint form), while concrete record `<:` record (for record-typed
+    params/annotations, which M2 lacks) becomes **exact** — same field set, no
+    width — matching the tuple same-length and function same-arity arms. Until
+    that split, the M2 record arm's width subtyping is a member-access mechanism,
+    not the settled record-subtyping semantics.
 - **Usage-based inference**: member access `obj.bar` ⇒ `constrain(obj <: {bar:
   β})`; field requirements accumulate as upper bounds and coalesce (negative
   position) to a record. This is what replaces `Open`/`Widenable`/

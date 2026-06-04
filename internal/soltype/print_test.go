@@ -45,6 +45,21 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"empty tuple", &TupleType{}, "[]"},
 		{"pair tuple", &TupleType{Elems: []Type{numP(), strP()}}, "[number, string]"},
 
+		// Records.
+		{"empty record", &RecordType{}, "{}"},
+		{
+			"two-field record",
+			&RecordType{Fields: []*RecordField{{Name: "a", Type: numP()}, {Name: "b", Type: strP()}}},
+			"{a: number, b: string}",
+		},
+		{
+			// A field name that isn't a valid identifier (e.g. from a string-literal
+			// key) is quoted so the rendered record stays parseable.
+			"non-identifier field name is quoted",
+			&RecordType{Fields: []*RecordField{{Name: "a-b", Type: numP()}}},
+			`{"a-b": number}`,
+		},
+
 		// Functions.
 		{"nullary fn", &FuncType{Ret: numP()}, "fn () -> number"},
 		{"unary fn", &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}, "fn (x: number) -> string"},
@@ -62,6 +77,34 @@ func TestPrintRoundTrips(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, Print(tt.in))
+		})
+	}
+}
+
+func TestIsIdent(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"a", true},
+		{"_x", true},
+		{"a1", true},
+		{"camelCase_9", true},
+		{"café", true},     // unicode letter (continue)
+		{"naïve", true},    // unicode letter (continue)
+		{"数値", true},       // non-Latin letters
+		{"Ωmega", true},     // unicode letter (leading)
+		{"x٢", true},        // unicode digit (Arabic-Indic) after letter
+		{"", false},
+		{"1a", false},  // leading digit
+		{"٢x", false},  // leading unicode digit
+		{"a-b", false}, // hyphen
+		{"a b", false}, // space
+		{"a.b", false}, // dot
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isIdent(tt.name))
 		})
 	}
 }
@@ -90,6 +133,16 @@ func TestPrintNestedPrecedence(t *testing.T) {
 			boolP(),
 		}}
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`[fn (x: number) -> string, boolean]`))
+	})
+
+	// A record is brace-delimited (an atom), so a record nested in a union needs
+	// no parens, and a function as a field value is delimited by the field's `:`.
+	t.Run("record in union", func(t *testing.T) {
+		ty := &UnionType{Types: []Type{
+			&RecordType{Fields: []*RecordField{{Name: "f", Type: &FuncType{Ret: numP()}}}},
+			strP(),
+		}}
+		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`{f: fn () -> number} | string`))
 	})
 }
 

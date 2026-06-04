@@ -52,6 +52,16 @@ func (c *checker) report(e SolverError) soltype.Type {
 	return &soltype.NeverType{}
 }
 
+// reportUnsupported records an UnsupportedNodeError for an AST node outside the
+// M2 subset: the span comes from spanNode, the rendered kind name from kindNode
+// (astKind). The two are usually the same node but differ when the unsupported
+// thing is a child carried by its parent — e.g. an object property's key, whose
+// span we report against the property. Returns the never placeholder so a caller
+// can `return c.reportUnsupported(...)` in value position.
+func (c *checker) reportUnsupported(spanNode ast.Node, kindNode any) soltype.Type {
+	return c.report(&UnsupportedNodeError{errSpan: errSpan{span: spanNode.Span()}, Kind: astKind(kindNode)})
+}
+
 // recordType records t as the inferred type of n in the Info side table. Wraps
 // the unexported setType — which is why the whole M2 walk lives in package
 // solver. The AST stays untouched (no InferredType() writes); Info is the single
@@ -63,8 +73,8 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 // inferExpr dispatches on the concrete expression kind. PR-1 wired the two leaf
 // cases (literals, identifiers); PR-3 adds the function/application walk
 // (FuncExpr, CallExpr — the block/statement walk they drive lives in
-// infer_stmt.go). Every remaining kind falls through to a clean
-// UnsupportedNodeError (never a panic); PR-4 adds objects/members/tuples.
+// infer_stmt.go); PR-4 adds tuples, object literals, and member access. Every
+// remaining kind falls through to a clean UnsupportedNodeError (never a panic).
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	switch e := e.(type) {
 	case *ast.LiteralExpr:
@@ -75,10 +85,13 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferFuncExpr(scope, lvl, e)
 	case *ast.CallExpr:
 		return c.inferCall(scope, lvl, e)
+	case *ast.TupleExpr:
+		return c.inferTuple(scope, lvl, e)
+	case *ast.ObjectExpr:
+		return c.inferObject(scope, lvl, e)
+	case *ast.MemberExpr:
+		return c.inferMember(scope, lvl, e)
 	default:
-		return c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: e.Span()},
-			Kind:    astKind(e),
-		})
+		return c.reportUnsupported(e, e)
 	}
 }
