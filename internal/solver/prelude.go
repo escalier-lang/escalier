@@ -1,6 +1,27 @@
 package solver
 
-import "github.com/escalier-lang/escalier/internal/soltype"
+import (
+	"sync"
+
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
+
+var (
+	preludeOnce sync.Once
+	sharedScope *Scope
+)
+
+// sharedPrelude returns a process-wide, lazily-built prelude scope reused across
+// InferModule calls instead of rebuilding the operator/stdlib table every time.
+// This is safe because the prelude is effectively immutable: every InferModule
+// run hangs its module scope off a fresh Child(), writes only to that child, and
+// the seeded prelude bindings are concrete types (no shared inference variables
+// for constrain to mutate). Tests that need a private prelude still call
+// NewPrelude() directly.
+func sharedPrelude() *Scope {
+	preludeOnce.Do(func() { sharedScope = NewPrelude() })
+	return sharedScope
+}
 
 // NewPrelude builds the global scope every inference run starts from. It holds
 // two hand-seeded sorts:

@@ -100,13 +100,45 @@ type BodyDeclNotAllowedError struct {
 	Kind string
 }
 
+// MissingInitializerError fires when a `val`/`var` declaration has no
+// initializer. M2 has no way to bind such a name yet — annotation-only binding
+// needs TypeAnn→soltype resolution that lands in a later PR — so this is its own
+// kind rather than a generic UnsupportedNodeError: it marks an annotation-driven
+// binding the walk can't infer, not an AST node shape outside the subset.
+type MissingInitializerError struct {
+	errSpan
+	Name string // the bound name when the pattern is an IdentPat; "" otherwise
+}
+
+// DuplicateDeclarationError fires when a top-level `val`/`var` rebinds a name
+// already declared in the module scope. Unlike a function (whose repeated
+// top-level declarations are overloads, supported from PR-3), a variable may be
+// declared only once per scope; the first binding is kept.
+type DuplicateDeclarationError struct {
+	errSpan
+	Name string
+}
+
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
 func (*UnsupportedNodeError) isSolverError()      {}
 func (*BodyDeclNotAllowedError) isSolverError()   {}
+func (*MissingInitializerError) isSolverError()   {}
+func (*DuplicateDeclarationError) isSolverError() {}
 
 func (e *UnknownIdentifierError) Message() string {
 	return "Unknown identifier: " + e.Name
+}
+
+func (e *MissingInitializerError) Message() string {
+	if e.Name != "" {
+		return "Variable declaration requires an initializer: " + e.Name
+	}
+	return "Variable declaration requires an initializer"
+}
+
+func (e *DuplicateDeclarationError) Message() string {
+	return "Duplicate declaration: " + e.Name
 }
 
 func (e *NamespaceUsedAsValueError) Message() string {

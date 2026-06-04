@@ -73,7 +73,7 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	default:
 		return c.report(&UnsupportedNodeError{
 			errSpan: errSpan{span: e.Span()},
-			Kind:    exprKind(e),
+			Kind:    astKind(e),
 		})
 	}
 }
