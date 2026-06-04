@@ -27,9 +27,9 @@ func typePrec(t Type) int {
 	case *IntersectionType:
 		return precIntersection
 	default:
-		// PrimType, LitType, TupleType, Void, NeverType, UnknownType — atoms.
-		// TypeVarType never appears in coalesced output (coalesce inlines every
-		// variable, m1-implementation-plan Delta #1), so it has no printer arm.
+		// PrimType, LitType, TupleType, Void, NeverType, UnknownType — atoms. A
+		// raw TypeVarType (which appears only when printing an un-coalesced type,
+		// see printType) is also an atom (rendered as `t{ID}`), so it lands here.
 		return precAtom
 	}
 }
@@ -50,6 +50,12 @@ func typePrec(t Type) int {
 // uncoalesced type (t0, function, number) mid-constrain for error messages,
 // whereas Print renders a COALESCED type as user-facing syntax. They look
 // similar but operate at different stages and must not be merged (§2.2).
+//
+// Print's normal input is a coalesced type, but it also tolerates a raw,
+// un-coalesced TypeVarType (rendering it as `t{ID}`) rather than panicking: the
+// M2 walk records var-carrying types in its Info side table and coalesces only
+// at binding boundaries, so a consumer may legitimately print an inner node's
+// still-raw type (M2 plan §7).
 func Print(t Type) string {
 	return printType(t)
 }
@@ -68,6 +74,14 @@ func printTypeMinPrec(t Type, minPrec int) string {
 
 func printType(t Type) string {
 	switch t := t.(type) {
+	case *TypeVarType:
+		// A raw, un-coalesced variable. Coalesced output never contains one (every
+		// variable is inlined to its bounds, m1-implementation-plan Delta #1), but
+		// the M2 walk records raw, var-carrying types in its Info side table and
+		// only coalesces at binding boundaries — so a consumer printing an inner
+		// node's type directly may hand Print a live variable. Render it as `t{ID}`
+		// (matching solver's describe()) rather than panicking. See the M2 plan §7.
+		return "t" + strconv.Itoa(t.ID)
 	case *PrimType:
 		return printPrim(t.Prim)
 	case *LitType:
