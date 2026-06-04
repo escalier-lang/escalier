@@ -60,114 +60,15 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 	})
 }
 
-// inferFuncExpr types a function expression as a soltype.FuncType and records it
-// in Info. It delegates to inferFunc, the shared core also used by inferFuncDecl
-// (the plan's "reuse inferFuncExpr on the decl's sig+body", factored so neither
-// side owns the other). M2 is monomorphic: any TypeParams on the signature are a
-// generic function (M3) and are ignored here — an un-annotated param simply gets
-// a fresh var, which coalesces to unknown/never at render time rather than a
-// <T0> quantifier (generalization is M3).
-func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
-	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e)
-	c.recordType(e, t)
-	return t
-}
-
-// inferFunc is the shared function-typing core for FuncExpr and FuncDecl. It
-// opens a child scope, binds each param (its annotation resolved to a soltype,
-// or a fresh var when un-annotated), types the body block in that scope, and
-// builds the n-ary soltype.FuncType. When the signature carries a return
-// annotation the inferred body type is constrained against it and the annotated
-// type becomes the function's return type; otherwise the body type is the
-// return type directly. A bodyless (declare/ambient) function adopts its return
-// annotation without constraining anything. node supplies the span stamped onto
-// a return-annotation constraint failure.
-func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
-	fnScope := scope.Child()
-	params := make([]*soltype.FuncParam, len(sig.Params))
-	for i, p := range sig.Params {
-		pt := c.paramType(p, lvl)
-		name, ok := identPatName(p.Pattern)
-		if !ok {
-			// Destructuring params (TuplePat/ObjectPat) need record/tuple types —
-			// they arrive in M4. M2 binds IdentPat only. p.Span() dereferences
-			// p.Pattern, so fall back to the function node's span for a pattern-less
-			// param to honor M2's "never a panic" guarantee.
-			span := node.Span()
-			if p.Pattern != nil {
-				span = p.Span()
-			}
-			c.report(&UnsupportedNodeError{errSpan: errSpan{span: span}, Kind: patKind(p.Pattern)})
-			name = fmt.Sprintf("arg%d", i)
-		}
-		fnScope.defineValue(name, ValueBinding{Type: pt})
-		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt}
-	}
-
-	var ret soltype.Type = &soltype.Void{}
-	hasBody := body != nil
-	if hasBody {
-		ret = c.inferBlock(fnScope, lvl, body)
-	}
-	if sig.Return != nil {
-		annT := c.resolveTypeAnn(sig.Return)
-		// Only check the inferred body against the declared return when there IS a
-		// body. A bodyless (declare/ambient) function has no body to constrain, so
-		// it simply adopts the annotation; constraining the synthetic Void return
-		// would raise a spurious `void <: T` error.
-		if hasBody {
-			c.constrain(node, ret, annT) // body <: declared return
-		}
-		ret = annT
-	}
-	return &soltype.FuncType{Params: params, Ret: ret}
-}
-
-// paramType resolves a param's type: its annotation when present, else a fresh
-// inference variable at the current level (the spike's "fresh var per param").
-func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
-	if p.TypeAnn != nil {
-		return c.resolveTypeAnn(p.TypeAnn)
-	}
-	return c.freshAt(lvl)
-}
-
-// inferCall types a function application. It types the callee and each argument,
-// allocates a fresh result var, and constrains callee <: fn(args) -> res — the
-// production form of the spike's *App case. The result var picks up the callee's
-// return type (covariantly) and renders as that once coalesced; an arity or
-// argument mismatch surfaces as a constraint error stamped with the call's span.
-func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
-	callee := c.inferExpr(scope, lvl, e.Callee)
-	args := make([]*soltype.FuncParam, len(e.Args))
-	for i, a := range e.Args {
-		args[i] = &soltype.FuncParam{Type: c.inferExpr(scope, lvl, a)}
-	}
-	res := c.freshAt(lvl)
-	c.constrain(e, callee, &soltype.FuncType{Params: args, Ret: res})
-	c.recordType(e, res)
-	return res
-}
-
-// astKind returns a short surface name for an AST node, used in the M2
-// subset-guard error messages. It strips the leading "*ast." from the Go type
+// exprKind returns a short surface name for an expression node, used in the M2
+// subset-guard error message. It strips the leading "*ast." from the Go type
 // name so e.g. *ast.BinaryExpr renders as "BinaryExpr".
-func astKind(n any) string {
-	return strings.TrimPrefix(fmt.Sprintf("%T", n), "*ast.")
+func exprKind(e ast.Expr) string {
+	return strings.TrimPrefix(fmt.Sprintf("%T", e), "*ast.")
 }
 
-// exprKind/litKind/patKind name an expression, literal, or pattern node for the
-// subset-guard error message.
-func exprKind(e ast.Expr) string { return astKind(e) }
-func litKind(l ast.Lit) string   { return astKind(l) }
-func patKind(p ast.Pat) string   { return astKind(p) }
-
-// identPatName reads the name of an IdentPat. M2 binds IdentPat-only patterns
-// (mirroring M1's IdentPat-only FuncParam); the comma-ok form lets callers raise
-// a structured error for the destructuring patterns deferred to M4.
-func identPatName(pat ast.Pat) (string, bool) {
-	if ip, ok := pat.(*ast.IdentPat); ok {
-		return ip.Name, true
-	}
-	return "", false
+// litKind returns a short surface name for a literal node, used when a literal
+// kind is outside M1's soltype.Lit set.
+func litKind(l ast.Lit) string {
+	return strings.TrimPrefix(fmt.Sprintf("%T", l), "*ast.")
 }

@@ -60,21 +60,16 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 	c.info.setType(n, t)
 }
 
-// inferExpr dispatches on the concrete expression kind. PR-1 wired the two leaf
-// cases (literals, identifiers); PR-3 adds the function/application walk
-// (FuncExpr, CallExpr — the block/statement walk they drive lives in
-// infer_stmt.go). Every remaining kind falls through to a clean
-// UnsupportedNodeError (never a panic); PR-4 adds objects/members/tuples.
+// inferExpr dispatches on the concrete expression kind. PR-1 wires only the two
+// leaf cases (literals, identifiers); every other kind falls through to a clean
+// UnsupportedNodeError (never a panic). Later PRs replace fall-through arms with
+// real cases: fn/call/block (PR-3), objects/members/tuples (PR-4).
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	switch e := e.(type) {
 	case *ast.LiteralExpr:
 		return c.inferLiteral(e)
 	case *ast.IdentExpr:
 		return c.inferIdent(scope, lvl, e)
-	case *ast.FuncExpr:
-		return c.inferFuncExpr(scope, lvl, e)
-	case *ast.CallExpr:
-		return c.inferCall(scope, lvl, e)
 	default:
 		return c.report(&UnsupportedNodeError{
 			errSpan: errSpan{span: e.Span()},
