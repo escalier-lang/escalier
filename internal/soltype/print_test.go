@@ -52,6 +52,13 @@ func TestPrintRoundTrips(t *testing.T) {
 			&RecordType{Fields: []*RecordField{{Name: "a", Type: numP()}, {Name: "b", Type: strP()}}},
 			"{a: number, b: string}",
 		},
+		{
+			// A field name that isn't a valid identifier (e.g. from a string-literal
+			// key) is quoted so the rendered record stays parseable.
+			"non-identifier field name is quoted",
+			&RecordType{Fields: []*RecordField{{Name: "a-b", Type: numP()}}},
+			`{"a-b": number}`,
+		},
 
 		// Functions.
 		{"nullary fn", &FuncType{Ret: numP()}, "fn () -> number"},
@@ -70,6 +77,28 @@ func TestPrintRoundTrips(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, Print(tt.in))
+		})
+	}
+}
+
+func TestIsIdent(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"a", true},
+		{"_x", true},
+		{"a1", true},
+		{"camelCase_9", true},
+		{"", false},
+		{"1a", false},  // leading digit
+		{"a-b", false}, // hyphen
+		{"a b", false}, // space
+		{"a.b", false}, // dot
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isIdent(tt.name))
 		})
 	}
 }

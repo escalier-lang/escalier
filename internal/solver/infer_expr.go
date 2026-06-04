@@ -241,10 +241,13 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 // missing the field surfaces as a MissingPropertyError stamped with the member's
 // span. Optional chaining (recv?.prop) needs union/undefined handling and is M6.
 func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.Type {
-	recv := c.inferExpr(scope, lvl, e.Object)
 	if e.OptChain {
+		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
+		// up front and do NOT descend into the receiver, so a single diagnostic
+		// stands for the construct instead of cascading the receiver's errors.
 		return c.report(&UnsupportedNodeError{errSpan: errSpan{span: e.Span()}, Kind: "OptionalChain"})
 	}
+	recv := c.inferExpr(scope, lvl, e.Object)
 	if e.Prop == nil || e.Prop.Name == "" {
 		// A malformed `recv.` with no valid property name: the parser already
 		// reported the missing identifier, so constraining recv <: {"": res} here
