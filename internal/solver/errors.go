@@ -132,12 +132,24 @@ type DuplicateDeclarationError struct {
 	Name string
 }
 
+// OverloadNotSupportedError fires when a name has more than one top-level
+// FuncDecl. Function overloading needs the overload-intersection representation
+// that lands in M3; M2 keeps the first declaration (so the binding stays
+// callable with that signature) and reports each extra arm, rather than merging
+// the arms into the same var — which yields an uncallable union-of-functions
+// binding whose every call fails with an opaque `function | function` mismatch.
+type OverloadNotSupportedError struct {
+	errSpan
+	Name string
+}
+
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
 func (*UnsupportedNodeError) isSolverError()      {}
 func (*BodyDeclNotAllowedError) isSolverError()   {}
 func (*MissingInitializerError) isSolverError()   {}
 func (*DuplicateDeclarationError) isSolverError() {}
+func (*OverloadNotSupportedError) isSolverError() {}
 
 func (e *UnknownIdentifierError) Message() string {
 	return "Unknown identifier: " + e.Name
@@ -152,6 +164,10 @@ func (e *MissingInitializerError) Message() string {
 
 func (e *DuplicateDeclarationError) Message() string {
 	return "Duplicate declaration: " + e.Name
+}
+
+func (e *OverloadNotSupportedError) Message() string {
+	return "Function overloads are not supported in M2: " + e.Name
 }
 
 func (e *NamespaceUsedAsValueError) Message() string {

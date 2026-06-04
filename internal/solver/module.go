@@ -25,7 +25,7 @@ import (
 func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	scope := sharedPrelude().Child()
-	c.inferDepGraph(scope, 0, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	return scope, c.info, c.errs
 }
 
@@ -35,21 +35,40 @@ func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
 // it refers to — mirroring the old checker's InferDepGraph loop, over soltype
 // instead of type_system. The shared `handled` set guards against inferring a
 // single declaration twice when it contributes to several binding keys (a
-// destructuring `val [a, b] = …` registers under both value:a and value:b).
-func (c *checker) inferDepGraph(scope *Scope, lvl int, g *dep_graph.DepGraph) {
+// destructuring `val [a, b] = …` registers under both value:a and value:b), and
+// drives the reconciliation pass that reports any top-level declaration the dep
+// graph did not model.
+func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) {
 	handled := set.NewSet[ast.Decl]()
 	for _, component := range g.Components {
 		c.inferComponent(scope, lvl, g, component, handled)
 	}
+	// Reconcile against the source: BuildDepGraph only produces binding keys for
+	// the decl kinds it models, so a kind it does not descend into — e.g. a
+	// NamespaceDecl — yields no component and would vanish without a diagnostic.
+	// Report every top-level declaration that no component visited, so an
+	// unsupported decl always fails cleanly rather than being silently dropped.
+	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, d := range ns.Decls {
+			if !handled.Contains(d) {
+				c.report(&UnsupportedNodeError{
+					errSpan: errSpan{span: d.Span()},
+					Kind:    astKind(d),
+				})
+			}
+		}
+		return true
+	})
 }
 
 // componentBinding tracks the in-flight state of one value binding while its
 // strongly connected component is inferred.
 type componentBinding struct {
-	v      *soltype.TypeVarType  // the group var every body is constrained against
-	source provenance.Provenance // the introducing decl of the primary definition
-	bound  bool                  // a definition was inferred and constrained
-	isVar  bool                  // the primary definition is a `val`/`var`
+	v       *soltype.TypeVarType  // the group var every body is constrained against
+	source  provenance.Provenance // the introducing decl of the primary definition
+	primary ast.Decl              // the primary definition's decl (for phase-3 Info)
+	bound   bool                  // a definition was inferred and constrained
+	isVar   bool                  // the primary definition is a `val`/`var`
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -111,17 +130,23 @@ func (c *checker) inferComponent(
 			if !b.bound {
 				c.constrain(d, t, b.v)
 				b.source = src
+				b.primary = d
 				b.bound = true
 				_, b.isVar = d.(*ast.VarDecl)
 				continue
 			}
 			// The binding already has its primary definition. A repeated FuncDecl is
-			// a top-level overload, which M2 represents only monomorphically by
-			// constraining every arm into the same var (real overload-intersection
-			// resolution is M3). Any other repeat — a duplicate `val`/`var`, or a
-			// decl redeclaring a variable binding — keeps the first and reports.
+			// a top-level overload: M2 has no overload-intersection representation
+			// (that is M3), so it keeps the first arm — leaving the binding callable
+			// with that signature — and reports each extra arm, rather than merging
+			// the arms into the same var (which yields an uncallable union binding).
+			// Any other repeat — a duplicate `val`/`var`, or a decl redeclaring a
+			// variable binding — likewise keeps the first and reports.
 			if _, isFunc := d.(*ast.FuncDecl); isFunc && !b.isVar {
-				c.constrain(d, t, b.v)
+				c.report(&OverloadNotSupportedError{
+					errSpan: errSpan{span: d.Span()},
+					Name:    key.Name(),
+				})
 				continue
 			}
 			c.report(&DuplicateDeclarationError{
@@ -164,9 +189,15 @@ func (c *checker) inferComponent(
 			delete(scope.values, key.Name())
 			continue
 		}
-		scope.defineValue(key.Name(), ValueBinding{
-			Type:   coalesce(b.v, soltype.Positive),
-			Source: b.source,
-		})
+		t := coalesce(b.v, soltype.Positive)
+		scope.defineValue(key.Name(), ValueBinding{Type: t, Source: b.source})
+		// Record the binding's final (coalesced) type in Info on the pattern. The
+		// raw initializer path (inferDeclDef) no longer records it, so this is where
+		// the var-free type lands — and it is correct even for a `val` in a
+		// recursive group, where coalescing at definition time would have frozen it
+		// to `never`.
+		if vd, ok := b.primary.(*ast.VarDecl); ok {
+			c.recordType(vd.Pattern, t)
+		}
 	}
 }

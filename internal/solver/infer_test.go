@@ -305,3 +305,59 @@ func TestInferModuleUngroundedMutualRecursionTerminates(t *testing.T) {
 		"b": "fn (n: number) -> never",
 	}, values)
 }
+
+// A `val` that participates in a recursive group must be constrained against its
+// peer's group var RAW and coalesced only once the group is complete. `a` (a
+// `val`) references `z`, and `z` calls `a` back, so they form one SCC; `a` sorts
+// first and is inferred before `z`. Coalescing `a`'s initializer at definition
+// time (as inferVarDecl does for body-level binds) would read `z`'s still-empty
+// var and freeze `a` to `never`; inferDeclDef instead returns the raw type, so
+// `a` correctly resolves to `z`'s function type once `z`'s body grounds the
+// return via its `-> number` annotation.
+func TestInferModuleValInRecursiveGroupUsesRawType(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		val a = z
+		fn z() -> number { a() }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, map[string]string{
+		"a": "fn () -> number",
+		"z": "fn () -> number",
+	}, values)
+}
+
+// Repeated top-level functions of the same name are overloads, which M2 does not
+// represent (overload-intersection is M3). Rather than merge the arms into one
+// var — yielding an uncallable union-of-functions binding — M2 keeps the first
+// arm (so the binding stays callable with that signature) and reports each extra
+// arm with a clear diagnostic.
+func TestInferModuleFunctionOverloadNotSupported(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) -> number { x }
+		fn f(x: string) -> string { x }
+		val r = f(5)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Function overloads are not supported in M2: f", errs[0].Message())
+	// The first arm is kept, so f stays callable and the call to f(5) resolves.
+	require.Equal(t, map[string]string{
+		"f": "fn (x: number) -> number",
+		"r": "number",
+	}, values)
+}
+
+// A declaration kind the dep graph does not model — here a `namespace` block,
+// which BuildDepGraph produces no binding key for — must still report a clean
+// UnsupportedNodeError rather than vanishing silently. The reconciliation pass in
+// inferDepGraph walks the module's own declarations and flags any the SCC walk
+// never visited.
+func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		namespace Foo {
+			val x = 5
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: NamespaceDecl", errs[0].Message())
+	require.Empty(t, values)
+}

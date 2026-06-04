@@ -7,13 +7,20 @@ import (
 )
 
 // inferDeclDef infers a single top-level declaration's definition for the SCC
-// driver (inferComponent) and returns the soltype.Type to constrain against the
-// binding's group var, the introducing decl's source provenance, and ok=false
-// when the decl introduces no value. It does NOT bind the name — inferComponent
-// owns scope placement, so the group var stays visible to every body before any
-// of them is constrained (the LetRecGroup discipline). ok=false cases, each
-// already reported:
-//   - VarDecl without an initializer → MissingInitializerError (via inferVarDecl)
+// driver (inferComponent) and returns the RAW (un-coalesced) soltype.Type to
+// constrain against the binding's group var, the introducing decl's source
+// provenance, and ok=false when the decl introduces no value. It does NOT bind
+// the name — inferComponent owns scope placement, so the group var stays visible
+// to every body before any of them is constrained (the LetRecGroup discipline).
+//
+// The type is returned RAW (variable-carrying), not coalesced: inferComponent
+// coalesces the group var once, after every member has constrained it (phase 3).
+// Coalescing a `val` initializer here instead would read a recursive peer's group
+// var while it is still empty and freeze the binding to `never` — the bug a `val`
+// inside a recursive group hit before this was split out of inferVarDecl.
+//
+// ok=false cases, each already reported:
+//   - VarDecl without an initializer → MissingInitializerError
 //   - VarDecl with a destructuring pattern → UnsupportedNodeError
 //   - any decl kind outside the M2 subset → UnsupportedNodeError
 //
@@ -22,13 +29,13 @@ import (
 func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type, provenance.Provenance, bool) {
 	switch d := d.(type) {
 	case *ast.VarDecl:
-		b, ok := c.inferVarDecl(scope, lvl, d)
+		initType, ok := c.inferVarDeclInit(scope, lvl, d)
 		if !ok {
 			return nil, nil, false
 		}
 		if _, named := varName(d); !named {
 			// Destructuring patterns (TuplePat/ObjectPat) need the tuple/record
-			// types that arrive in M4. inferVarDecl already walked the initializer
+			// types that arrive in M4. The initializer was already walked above
 			// (its errors surfaced); report the pattern and produce no binding.
 			c.report(&UnsupportedNodeError{
 				errSpan: errSpan{span: d.Pattern.Span()},
@@ -36,7 +43,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 			})
 			return nil, nil, false
 		}
-		return b.Type, b.Source, true
+		return initType, &ast.NodeProvenance{Node: d}, true
 	case *ast.FuncDecl:
 		b := c.inferFuncDecl(scope, lvl, d)
 		return b.Type, b.Source, true
@@ -49,31 +56,42 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 	}
 }
 
-// inferVarDecl types a `val`/`var` declaration's initializer and returns the
-// resulting MONOMORPHIC ValueBinding, with ok=false when there is no initializer
-// to infer from. The initializer is typed via inferExpr and coalesced at
-// Positive polarity (coalesce-at-binding, §7) so the stored type is var-free and
-// stable: a later SCC can't mutate it, ValueBinding.Type stays inspectable, and
-// it is the natural monomorphic stand-in for M3's PolyScheme.
-//
-// inferVarDecl always walks the initializer (so a malformed RHS still surfaces
-// its errors) and records the type, but it does NOT bind anything — the caller
-// owns the name lookup, duplicate check, and defineValue, so this routine serves
-// both the module driver and the body-level redeclaration path (§3.2) unchanged.
+// inferVarDeclInit types a `val`/`var` declaration's initializer and returns its
+// RAW (un-coalesced, variable-carrying) type, with ok=false when there is no
+// initializer to infer from (MissingInitializerError reported). It is the shared
+// core of both binding paths: the SCC driver (inferDeclDef) constrains this raw
+// type against the binding's group var and coalesces the var once at group
+// completion, while the body-level path (inferVarDecl) coalesces it immediately
+// for a stable stored binding. It walks the initializer regardless (so a
+// malformed RHS still surfaces its errors) and binds nothing — the caller owns
+// scope placement.
 //
 // A `val`/`var` with no initializer needs a type annotation to infer from;
 // annotation-driven binding lands with TypeAnn support in a later PR, so for now
 // it reports MissingInitializerError and returns ok=false.
-func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBinding, bool) {
+func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, bool) {
 	if d.Init == nil {
 		name, _ := varName(d)
 		c.report(&MissingInitializerError{
 			errSpan: errSpan{span: d.Span()},
 			Name:    name,
 		})
+		return nil, false
+	}
+	return c.inferExpr(scope, lvl, d.Init), true
+}
+
+// inferVarDecl types a `val`/`var` declaration into a MONOMORPHIC ValueBinding,
+// coalescing the initializer at Positive polarity (coalesce-at-binding, §7) so
+// the stored type is var-free and stable. This is the body-level redeclaration
+// path (§3.2); the module/SCC driver instead uses inferVarDeclInit's raw type so
+// a recursive group coalesces only at completion (see inferDeclDef). ok=false
+// when there is no initializer to infer from.
+func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBinding, bool) {
+	initType, ok := c.inferVarDeclInit(scope, lvl, d)
+	if !ok {
 		return ValueBinding{}, false
 	}
-	initType := c.inferExpr(scope, lvl, d.Init)
 	t := coalesce(initType, soltype.Positive)
 	c.recordType(d.Pattern, t)
 	return ValueBinding{Type: t, Source: &ast.NodeProvenance{Node: d}}, true
