@@ -146,6 +146,12 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // production form of the spike's *App case. The result var picks up the callee's
 // return type (covariantly) and renders as that once coalesced; an arity or
 // argument mismatch surfaces as a constraint error stamped with the call's span.
+//
+// Error recovery: a call to a known function still yields that function's
+// declared return type even when the arguments don't match, so a downstream
+// expression sees the real return type rather than a poisoned `never`. constrain
+// short-circuits its FuncType arity arm before propagating the return into res,
+// so when the callee is a concrete function its return is wired through directly.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	args := make([]*soltype.FuncParam, len(e.Args))
@@ -154,6 +160,9 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	}
 	res := c.freshAt(lvl)
 	c.constrain(e, callee, &soltype.FuncType{Params: args, Ret: res})
+	if fn, ok := callee.(*soltype.FuncType); ok {
+		c.constrain(e, fn.Ret, res)
+	}
 	c.recordType(e, res)
 	return res
 }

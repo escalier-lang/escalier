@@ -8,10 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// AST builders for hand-assembling test inputs live in astbuild.go (a non-test
-// file, so they're shared across the package). They stamp builderSpan(), which
-// testSpan() also returns, so error-span assertions below stay consistent.
-
 // render coalesces a (possibly variable-carrying) inferred type at Positive
 // polarity — the binding view — and prints it. soltype.Print panics on a raw
 // TypeVarType, so every function/call result must be coalesced before printing.
@@ -159,10 +155,12 @@ func TestInferCallArgMismatch(t *testing.T) {
 	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{strExpr("hello")}, false, testSpan())
 
-	c.inferExpr(NewScope(), 0, e)
+	got := c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
 	require.Equal(t, `cannot constrain "hello" <: number`, c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
+	// The result is still the callee's return type despite the bad argument.
+	require.Equal(t, "number", render(got))
 }
 
 func TestInferCallArityMismatch(t *testing.T) {
@@ -171,10 +169,12 @@ func TestInferCallArityMismatch(t *testing.T) {
 	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{numExpr(1), numExpr(2)}, false, testSpan())
 
-	c.inferExpr(NewScope(), 0, e)
+	got := c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 2", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
+	// Error recovery: the result is still the callee's return type, not `never`.
+	require.Equal(t, "number", render(got))
 }
 
 func TestInferCallThroughBinding(t *testing.T) {
@@ -285,4 +285,27 @@ func TestInferFuncDeclSelfReference(t *testing.T) {
 	b := c.inferFuncDecl(scope, 0, d)
 	require.Empty(t, c.errs)
 	require.IsType(t, &soltype.FuncType{}, b.Type)
+}
+
+// A FuncExpr may be assigned to a body-level `val` inside a FuncDecl (the way a
+// function value is introduced in a body, since body decls are VarDecl-only).
+// The bound name resolves to the function type, and the enclosing function
+// returns it as its tail value.
+func TestInferFuncDeclBodyFuncValDecl(t *testing.T) {
+	c := newChecker()
+	// fn outer() { val f = fn (x: number) { x }; f }
+	inner := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	d := ast.NewFuncDecl(
+		ast.NewIdentifier("outer", testSpan()), nil, nil,
+		nil, nil, nil,
+		block(
+			ast.NewDeclStmt(valDecl("f", nil, inner), testSpan()),
+			exprStmt(identExpr("f")),
+		),
+		false, false, false, testSpan(),
+	)
+
+	b := c.inferFuncDecl(NewScope(), 0, d)
+	require.Empty(t, c.errs)
+	require.Equal(t, "fn () -> fn (x: number) -> number", render(b.Type))
 }
