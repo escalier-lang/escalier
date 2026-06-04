@@ -266,25 +266,28 @@ func TestInferFuncDecl(t *testing.T) {
 	require.Equal(t, "fn (x: number) -> number", render(b.Type))
 }
 
-// A recursive reference resolves when the name is pre-bound (the SCC wiring that
-// arranges this for real top-level groups is PR-5; here we bind the name by hand
-// to exercise the body walk seeing itself).
+// A truly recursive function: foo's body calls itself. PR-3 has no SCC driver
+// (that's PR-5), so foo is pre-bound to a fresh var the way inferComponent will,
+// letting the body reference itself through inferCall. With unconditional
+// recursion the function never returns — a base case would need a conditional,
+// which arrives in a later milestone — so its return type coalesces to `never`.
+// (`foo(x + 1)` would be the textbook shape, but `+` is a BinaryExpr, which
+// PR-3 doesn't type yet; `foo(x)` exercises the same recursive-call path.)
 func TestInferFuncDeclSelfReference(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
-	self := c.freshAt(1)
-	scope.defineValue("loop", ValueBinding{Type: self})
-	// fn loop(x: number) { loop }
+	scope.defineValue("foo", ValueBinding{Type: c.freshAt(1)})
+	// fn foo(x: number) { foo(x) }
 	d := ast.NewFuncDecl(
-		ast.NewIdentifier("loop", testSpan()), nil, nil,
+		ast.NewIdentifier("foo", testSpan()), nil, nil,
 		[]*ast.Param{param("x", numAnn())}, nil, nil,
-		block(exprStmt(identExpr("loop"))),
+		block(exprStmt(ast.NewCall(identExpr("foo"), []ast.Expr{identExpr("x")}, false, testSpan()))),
 		false, false, false, testSpan(),
 	)
 
 	b := c.inferFuncDecl(scope, 0, d)
 	require.Empty(t, c.errs)
-	require.IsType(t, &soltype.FuncType{}, b.Type)
+	require.Equal(t, "fn (x: number) -> never", render(b.Type))
 }
 
 // A FuncExpr may be assigned to a body-level `val` inside a FuncDecl (the way a
