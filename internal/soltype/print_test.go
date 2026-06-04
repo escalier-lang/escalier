@@ -93,6 +93,25 @@ func TestPrintNestedPrecedence(t *testing.T) {
 	})
 }
 
+// TestPrintRawTypeVar verifies that Print tolerates a raw, un-coalesced
+// TypeVarType (rendering it as `t{ID}`) instead of panicking — the M2 walk
+// records var-carrying types in Info and only coalesces at binding boundaries,
+// so a consumer can hand Print a live variable, standalone or nested in a
+// function. See print.go's printType TypeVarType arm.
+func TestPrintRawTypeVar(t *testing.T) {
+	t.Run("bare variable", func(t *testing.T) {
+		require.Equal(t, "t7", Print(&TypeVarType{ID: 7}))
+	})
+
+	t.Run("variable nested in a function", func(t *testing.T) {
+		fn := &FuncType{
+			Params: []*FuncParam{identP("x", &TypeVarType{ID: 0})},
+			Ret:    &TypeVarType{ID: 0},
+		}
+		require.Equal(t, "fn (x: t0) -> t0", Print(fn))
+	})
+}
+
 // TestPrintUnnamedParamFallback verifies that a parameter with no IdentPat
 // pattern falls back to a positional name (arg0, arg1, ...), numbered by param
 // index. This path isn't reachable in M1 (params are always IdentPat), but the

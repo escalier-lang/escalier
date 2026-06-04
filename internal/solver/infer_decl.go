@@ -96,3 +96,16 @@ func varName(d *ast.VarDecl) (string, bool) {
 	}
 	return "", false
 }
+
+// inferFuncDecl types a function declaration into a monomorphic ValueBinding,
+// reusing the shared inferFunc core (infer_expr.go) on the decl's signature and
+// body. Like inferVarDecl it returns the binding rather than defining it, so the
+// caller owns scope placement: the SCC driver (PR-5) binds a self/mutually
+// recursive group to a fresh var first so each body can see itself, then rebinds
+// to the inferred type. inferDecl does not yet wire FuncDecl into the module
+// walk — that, with the recursive-group ordering and top-level overloads, is
+// PR-5/M3.
+func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBinding {
+	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d)
+	return ValueBinding{Type: t, Source: &ast.NodeProvenance{Node: d}}
+}
