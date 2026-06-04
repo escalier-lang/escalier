@@ -193,6 +193,14 @@ reassess.
   exists to opt into it. (This corrects the merged spec's §4.2, which had
   exactness govern call-sites rather than subtyping — see
   escalier-lang/escalier#677.)
+- **Block return-point join (carried over from M2).** M2's block walk uses the
+  *last statement* as the block's value and only constrains that tail against a
+  declared return type; a non-tail `return` (`{ return X; Y }`) is dropped. This
+  is harmless at the M2 bar (no `IfElseExpr`, so an early return cannot come from
+  a real branch), but once this milestone adds conditionals/early return the walk
+  must collect **every** `ReturnStmt` type (valued and bare) and join them with
+  the tail expression before constraining against the return annotation. See
+  `internal/solver/infer_stmt.go` (`inferBlock` TODO(M3)).
 
 **Accept:** the spike's Category-A cases against real source:
 `TopLevelLetPolymorphism` ⇒ `fn <T0>(x: T0) -> T0`; `IdentityPolymorphism` ⇒
