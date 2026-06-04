@@ -94,12 +94,25 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		}
 	case *soltype.RecordType:
 		if r, ok := rhs.(*soltype.RecordType); ok {
-			// Width + depth subtyping: every field the RHS requires must be present
-			// on the LHS (the LHS may carry MORE fields — width), and the shared
-			// fields are covariant (depth). M2 records are read-only — `mut` makes a
-			// field invariant, and that lands in M4 — so there is no invariance arm
-			// here. Fields are matched by name (RecordType.Field), so source order is
-			// irrelevant.
+			// M2 serves exactly one consumer through this arm: member-access field
+			// selection. inferMember lowers `recv.foo` to `constrain(recv, {foo:
+			// fresh})` (m2-implementation-plan.md §3.2), where the RHS lists only the
+			// field being read. That is a "has-field" REQUIREMENT, not a concrete
+			// record type, so the rule here is intentionally width-tolerant: every
+			// field the RHS requires must be present on the LHS (the LHS may carry
+			// MORE fields), and the shared fields are covariant (depth). Fields are
+			// matched by name (RecordType.Field), so source order is irrelevant.
+			//
+			// This is NOT the final record-subtyping semantics. Escalier records are
+			// exact-by-default (01-milestones.md:278-282): exact <: exact requires the
+			// SAME field set (no width), and width is only the inexact <: inexact case
+			// behind the `...` flag. M4 differentiates the two uses the plan conflates
+			// here — the member-access field-selection requirement (width-tolerant,
+			// this arm) vs. concrete record <: record subtyping for record-typed
+			// params/annotations (exact, like the tuple same-length and function
+			// same-arity arms above). M2 has neither record annotations nor deep
+			// record params, so the exact path is unreachable and only this
+			// selection arm exists; `mut`-driven field invariance also lands in M4.
 			var errs []SolverError
 			for _, rf := range r.Fields {
 				lt, ok := l.Field(rf.Name)

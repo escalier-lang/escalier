@@ -90,8 +90,14 @@ func TestIsIdent(t *testing.T) {
 		{"_x", true},
 		{"a1", true},
 		{"camelCase_9", true},
+		{"café", true},     // unicode letter (continue)
+		{"naïve", true},    // unicode letter (continue)
+		{"数値", true},       // non-Latin letters
+		{"Ωmega", true},     // unicode letter (leading)
+		{"x٢", true},        // unicode digit (Arabic-Indic) after letter
 		{"", false},
 		{"1a", false},  // leading digit
+		{"٢x", false},  // leading unicode digit
 		{"a-b", false}, // hyphen
 		{"a b", false}, // space
 		{"a.b", false}, // dot

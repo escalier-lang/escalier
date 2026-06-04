@@ -28,6 +28,21 @@ func TestInferTupleEmpty(t *testing.T) {
 	require.Equal(t, "[]", render(got))
 }
 
+// A spread element ([...a]) is an ArraySpreadExpr, which the M2 walk does not
+// cover; inferExpr reports it as unsupported and drops a never placeholder into
+// the tuple slot, so the tuple still builds (no panic) and the spread's value `a`
+// is never walked — so no cascading unknown-identifier error. Tuple/array spread
+// is M4.
+func TestInferTupleSpreadUnsupported(t *testing.T) {
+	c := newChecker()
+	// [...a]
+	e := tupleExpr(ast.NewArraySpread(identExpr("a"), testSpan()))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Equal(t, "[never]", render(got))
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Unsupported in M2: ArraySpreadExpr", c.errs[0].Message())
+}
+
 // --- ObjectExpr ---
 
 func TestInferObject(t *testing.T) {
