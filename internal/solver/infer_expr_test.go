@@ -8,10 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testSpan is a fixed, non-zero span used to build the AST nodes these unit
-// tests feed directly into the walk (the source-driven harness arrives in PR-2).
+// testSpan is the fixed, non-zero placeholder span these unit tests stamp on the
+// AST nodes they feed directly into the walk. It delegates to the shared
+// builderSpan() (astbuild.go) so a node from a builder and a node built inline in
+// a test carry the same span, keeping error-span assertions consistent.
 func testSpan() ast.Span {
-	return ast.NewSpan(ast.Location{Line: 1, Column: 1}, ast.Location{Line: 1, Column: 2}, 0)
+	return builderSpan()
 }
 
 func TestInferLiteral(t *testing.T) {

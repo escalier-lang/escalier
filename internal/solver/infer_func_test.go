@@ -8,36 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- AST builders (PR-3 hand-builds nodes; the source-driven harness is PR-2) ---
-
-func numExpr(v float64) *ast.LiteralExpr { return ast.NewLitExpr(ast.NewNumber(v, testSpan())) }
-func strExpr(s string) *ast.LiteralExpr  { return ast.NewLitExpr(ast.NewString(s, testSpan())) }
-func identExpr(name string) *ast.IdentExpr {
-	return ast.NewIdent(name, testSpan())
-}
-
-func numAnn() ast.TypeAnn { return ast.NewNumberTypeAnn(testSpan()) }
-func strAnn() ast.TypeAnn { return ast.NewStringTypeAnn(testSpan()) }
-
-func param(name string, ann ast.TypeAnn) *ast.Param {
-	return &ast.Param{Pattern: ast.NewIdentPat(name, false, nil, nil, testSpan()), TypeAnn: ann}
-}
-
-func block(stmts ...ast.Stmt) *ast.Block {
-	return &ast.Block{Stmts: stmts, Span: testSpan()}
-}
-
-func exprStmt(e ast.Expr) ast.Stmt   { return ast.NewExprStmt(e, testSpan()) }
-func returnStmt(e ast.Expr) ast.Stmt { return ast.NewReturnStmt(e, testSpan()) }
-
-func valDecl(name string, ann ast.TypeAnn, init ast.Expr) *ast.VarDecl {
-	return ast.NewVarDecl(ast.ValKind, ast.NewIdentPat(name, false, nil, nil, testSpan()),
-		ann, init, false, false, testSpan())
-}
-
-func funcExpr(params []*ast.Param, ret ast.TypeAnn, body *ast.Block) *ast.FuncExpr {
-	return ast.NewFuncExpr(nil, nil, params, ret, nil, false, body, testSpan())
-}
+// AST builders for hand-assembling test inputs live in astbuild.go (a non-test
+// file, so they're shared across the package). They stamp builderSpan(), which
+// testSpan() also returns, so error-span assertions below stay consistent.
 
 // render coalesces a (possibly variable-carrying) inferred type at Positive
 // polarity — the binding view — and prints it. soltype.Print panics on a raw
