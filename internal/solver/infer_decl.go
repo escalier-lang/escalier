@@ -2,57 +2,50 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferDecl types a single top-level declaration and binds its name into scope.
-// PR-2 wires only VarDecl (the `val`/`var` path); FuncDecl lands in PR-3 (where
-// repeated top-level functions become overloads) and the remaining decl kinds in
-// later milestones. Any not-yet-supported kind reports a clean
-// UnsupportedNodeError (never a panic) and binds nothing.
+// inferDeclDef infers a single top-level declaration's definition for the SCC
+// driver (inferComponent) and returns the soltype.Type to constrain against the
+// binding's group var, the introducing decl's source provenance, and ok=false
+// when the decl introduces no value. It does NOT bind the name — inferComponent
+// owns scope placement, so the group var stays visible to every body before any
+// of them is constrained (the LetRecGroup discipline). ok=false cases, each
+// already reported:
+//   - VarDecl without an initializer → MissingInitializerError (via inferVarDecl)
+//   - VarDecl with a destructuring pattern → UnsupportedNodeError
+//   - any decl kind outside the M2 subset → UnsupportedNodeError
 //
-// The VarDecl path always walks the initializer first (so its errors surface
-// even when the binding itself can't be formed), then decides whether to bind:
-//   - no initializer            → MissingInitializerError, bind nothing
-//   - non-IdentPat (destructure) → UnsupportedNodeError, bind nothing
-//   - name already bound here   → DuplicateDeclarationError, keep the first
-//   - otherwise                  → defineValue
-func (c *checker) inferDecl(scope *Scope, lvl int, d ast.Decl) {
+// The VarDecl path walks the initializer first (so a malformed RHS still surfaces
+// its errors) before reporting an unsupported pattern.
+func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type, provenance.Provenance, bool) {
 	switch d := d.(type) {
 	case *ast.VarDecl:
 		b, ok := c.inferVarDecl(scope, lvl, d)
 		if !ok {
-			// No initializer: inferVarDecl already reported it and there is no
-			// type to bind. Don't pollute the scope with a placeholder binding —
-			// a later reference should still fail as an unknown identifier.
-			return
+			return nil, nil, false
 		}
-		name, named := varName(d)
-		if !named {
+		if _, named := varName(d); !named {
 			// Destructuring patterns (TuplePat/ObjectPat) need the tuple/record
-			// types that arrive in M4. The initializer was already walked above
-			// (its errors surfaced); report the pattern and bind nothing.
+			// types that arrive in M4. inferVarDecl already walked the initializer
+			// (its errors surfaced); report the pattern and produce no binding.
 			c.report(&UnsupportedNodeError{
 				errSpan: errSpan{span: d.Pattern.Span()},
 				Kind:    astKind(d.Pattern),
 			})
-			return
+			return nil, nil, false
 		}
-		if scope.hasOwnValue(name) {
-			// A duplicate top-level `val`/`var` is a redeclaration error (unlike a
-			// FuncDecl, whose duplicates are overloads). Keep the first binding.
-			c.report(&DuplicateDeclarationError{
-				errSpan: errSpan{span: d.Span()},
-				Name:    name,
-			})
-			return
-		}
-		scope.defineValue(name, b)
+		return b.Type, b.Source, true
+	case *ast.FuncDecl:
+		b := c.inferFuncDecl(scope, lvl, d)
+		return b.Type, b.Source, true
 	default:
 		c.report(&UnsupportedNodeError{
 			errSpan: errSpan{span: d.Span()},
 			Kind:    astKind(d),
 		})
+		return nil, nil, false
 	}
 }
 
@@ -100,11 +93,11 @@ func varName(d *ast.VarDecl) (string, bool) {
 // inferFuncDecl types a function declaration into a monomorphic ValueBinding,
 // reusing the shared inferFunc core (infer_expr.go) on the decl's signature and
 // body. Like inferVarDecl it returns the binding rather than defining it, so the
-// caller owns scope placement: the SCC driver (PR-5) binds a self/mutually
-// recursive group to a fresh var first so each body can see itself, then rebinds
-// to the inferred type. inferDecl does not yet wire FuncDecl into the module
-// walk — that, with the recursive-group ordering and top-level overloads, is
-// PR-5/M3.
+// caller owns scope placement: the SCC driver (inferComponent) binds a
+// self/mutually recursive group to a fresh var first so each body can see itself
+// (and its group peers), then rebinds to the inferred type. Repeated top-level
+// FuncDecls under one name are constrained into the same var as monomorphic
+// overload arms; the overload-intersection representation is M3.
 func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBinding {
 	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d)
 	return ValueBinding{Type: t, Source: &ast.NodeProvenance{Node: d}}

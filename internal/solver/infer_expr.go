@@ -61,7 +61,7 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 // literal, declaration, or pattern — used in the M2 subset-guard error messages.
 // It strips the leading "*ast." from the Go type name so e.g. *ast.BinaryExpr
 // renders as "BinaryExpr". One helper serves every guard site (inferExpr,
-// inferLiteral, inferDecl) so the format lives in a single place.
+// inferLiteral, inferDeclDef) so the format lives in a single place.
 func astKind(n any) string {
 	return strings.TrimPrefix(fmt.Sprintf("%T", n), "*ast.")
 }

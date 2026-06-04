@@ -60,7 +60,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			})
 			return &soltype.Void{}
 		}
-		// Unlike the module driver (inferDecl), a body-level redeclaration is
+		// Unlike the module driver (inferComponent), a body-level redeclaration is
 		// allowed and overwrites the name's slot (§3.2). inferVarDecl reports a
 		// missing initializer itself and returns ok=false; bind only when it
 		// produced a type.

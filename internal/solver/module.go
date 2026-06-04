@@ -1,37 +1,172 @@
 package solver
 
-import "github.com/escalier-lang/escalier/internal/ast"
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
 
-// InferModule infers every top-level declaration in a single parsed module and
-// returns the populated module Scope (a child of the prelude, so operators and
-// the stdlib-type placeholders resolve through the parent), the Info side table,
-// and any SolverErrors.
+// InferModule builds the dep graph for a single parsed module, infers every
+// top-level declaration in dep_graph SCC order, populates Info, and returns the
+// populated module Scope (a child of the prelude, so operators and the
+// stdlib-type placeholders resolve through the parent), the Info side table, and
+// any SolverErrors.
 //
-// PR-2 walks namespaces in namespace-key order and, within each, declarations in
-// source order — with no dep_graph SCC ordering yet. So within a single
-// namespace a forward reference (a decl that uses a name defined later) fails
-// with UnknownIdentifierError, and across namespaces the visit order follows the
-// sorted namespace key rather than source/file order. PR-5 replaces this loop
-// with dep_graph SCC ordering, which makes both cases order-independent; the
-// source-order loop is sufficient only for PR-2's single-namespace
-// literal/identifier-initializer bar.
+// PR-5 replaces PR-2's source-order loop with dep_graph SCC ordering: a decl that
+// forward-references a name defined later in the source, or that mutually
+// recurses with another decl, now infers correctly because BuildDepGraph
+// topologically orders the strongly connected components and inferComponent makes
+// every member of a group visible before inferring any of their bodies.
+// Inference is MONOMORPHIC — M1 ships no schemes, so a group's vars stay as their
+// coalesced monomorphic types; the generalization that yields <T0> rendering is
+// M3.
 func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	scope := sharedPrelude().Child()
-	c.inferModule(scope, 0, module)
+	c.inferDepGraph(scope, 0, dep_graph.BuildDepGraph(module))
 	return scope, c.info, c.errs
 }
 
-// inferModule iterates the module's namespaces (in sorted key order, per
-// btree.Map.Scan) and, within each, its declarations in source order, typing
-// each through inferDecl. The module Scope is mutated in place as bindings are
-// introduced, so a decl sees every earlier decl's binding (the basis for the
-// forward-reference limitation above).
-func (c *checker) inferModule(scope *Scope, lvl int, module *ast.Module) {
-	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
-		for _, d := range ns.Decls {
-			c.inferDecl(scope, lvl, d)
+// inferDepGraph infers every component of g into scope. BuildDepGraph returns
+// Components in topological order (a dependency's component precedes its
+// dependents'), so a straight iteration types each binding only after everything
+// it refers to — mirroring the old checker's InferDepGraph loop, over soltype
+// instead of type_system. The shared `handled` set guards against inferring a
+// single declaration twice when it contributes to several binding keys (a
+// destructuring `val [a, b] = …` registers under both value:a and value:b).
+func (c *checker) inferDepGraph(scope *Scope, lvl int, g *dep_graph.DepGraph) {
+	handled := set.NewSet[ast.Decl]()
+	for _, component := range g.Components {
+		c.inferComponent(scope, lvl, g, component, handled)
+	}
+}
+
+// componentBinding tracks the in-flight state of one value binding while its
+// strongly connected component is inferred.
+type componentBinding struct {
+	v      *soltype.TypeVarType  // the group var every body is constrained against
+	source provenance.Provenance // the introducing decl of the primary definition
+	bound  bool                  // a definition was inferred and constrained
+	isVar  bool                  // the primary definition is a `val`/`var`
+}
+
+// inferComponent infers one strongly connected component — a group of
+// mutually-recursive (or, in the singleton case, independent) top-level bindings
+// — and binds each name in scope. It follows the spike's LetRecGroup discipline
+// with NO placeholder/patching phase (the single biggest simplification the
+// simple-sub bridge buys over the old checker's two-phase
+// placeholder/definition pass):
+//
+//  1. give every VALUE binding in the component a fresh var at lvl+1 and define
+//     it in scope BEFORE any body is inferred, so a mutually-recursive reference
+//     resolves through the var;
+//  2. infer each declaration's definition at lvl+1 and constrain it <: its var;
+//  3. rebind each name to the coalesced MONOMORPHIC type of its var.
+//
+// M2 does NOT generalize (M1 ships no schemes): step 3 freezes each binding at
+// its coalesced monomorphic type rather than wrapping it in a PolyScheme. The
+// generalization that turns these into reusable polymorphic bindings — the <T0>
+// rendering — is M3. M2's contribution is correct ordering and recursive
+// resolution.
+func (c *checker) inferComponent(
+	scope *Scope, lvl int, g *dep_graph.DepGraph,
+	component []dep_graph.BindingKey, handled set.Set[ast.Decl],
+) {
+	inner := lvl + 1
+
+	// Phase 1: a fresh var per value binding, all defined before any body so a
+	// mutually-recursive reference resolves through the var. M2 only infers value
+	// bindings; type-sort keys are handled (as unsupported) after the value walk.
+	bindings := make(map[dep_graph.BindingKey]*componentBinding, len(component))
+	for _, key := range component {
+		if key.Kind() != dep_graph.DepKindValue {
+			continue
 		}
-		return true
-	})
+		v := c.freshAt(inner)
+		bindings[key] = &componentBinding{v: v}
+		scope.defineValue(key.Name(), ValueBinding{Type: v})
+	}
+
+	// Phase 2: infer each declaration's definition and constrain it <: its var.
+	for _, key := range component {
+		b, isValue := bindings[key]
+		if !isValue {
+			continue // non-value keys handled below
+		}
+		for _, d := range g.GetDecls(key) {
+			if handled.Contains(d) {
+				// Already inferred under another binding key. The only M2 decl that
+				// registers under several keys is a destructuring `val [a, b] = …`,
+				// which is unsupported and produces no binding either way; skipping
+				// the re-inference avoids reporting its errors once per name.
+				continue
+			}
+			handled.Add(d)
+			t, src, ok := c.inferDeclDef(scope, inner, d)
+			if !ok {
+				continue
+			}
+			if !b.bound {
+				c.constrain(d, t, b.v)
+				b.source = src
+				b.bound = true
+				_, b.isVar = d.(*ast.VarDecl)
+				continue
+			}
+			// The binding already has its primary definition. A repeated FuncDecl is
+			// a top-level overload, which M2 represents only monomorphically by
+			// constraining every arm into the same var (real overload-intersection
+			// resolution is M3). Any other repeat — a duplicate `val`/`var`, or a
+			// decl redeclaring a variable binding — keeps the first and reports.
+			if _, isFunc := d.(*ast.FuncDecl); isFunc && !b.isVar {
+				c.constrain(d, t, b.v)
+				continue
+			}
+			c.report(&DuplicateDeclarationError{
+				errSpan: errSpan{span: d.Span()},
+				Name:    key.Name(),
+			})
+		}
+	}
+
+	// Non-value keys (type aliases, classes, …) are outside the M2 subset. Report
+	// each contributing decl once, skipping any already handled by a value key (a
+	// class/enum contributes both a value and a type key for the same decl).
+	for _, key := range component {
+		if _, isValue := bindings[key]; isValue {
+			continue
+		}
+		for _, d := range g.GetDecls(key) {
+			if handled.Contains(d) {
+				continue
+			}
+			handled.Add(d)
+			c.report(&UnsupportedNodeError{
+				errSpan: errSpan{span: d.Span()},
+				Kind:    astKind(d),
+			})
+		}
+	}
+
+	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
+	// whose declarations all failed to produce a definition (missing initializer,
+	// destructuring, unsupported kind) is removed rather than left as a `never`
+	// placeholder, matching PR-2: a later reference to it is then a genuine
+	// unknown-identifier error instead of resolving to a stray binding.
+	for _, key := range component {
+		b, isValue := bindings[key]
+		if !isValue {
+			continue
+		}
+		if !b.bound {
+			delete(scope.values, key.Name())
+			continue
+		}
+		scope.defineValue(key.Name(), ValueBinding{
+			Type:   coalesce(b.v, soltype.Positive),
+			Source: b.source,
+		})
+	}
 }
