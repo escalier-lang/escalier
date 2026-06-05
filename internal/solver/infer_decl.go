@@ -33,10 +33,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 			// Destructuring patterns (TuplePat/ObjectPat) need the tuple/record
 			// types that arrive in M4. The initializer was already walked above
 			// (its errors surfaced); report the pattern and produce no binding.
-			c.report(&UnsupportedNodeError{
-				errSpan: errSpan{span: d.Pattern.Span()},
-				Kind:    astKind(d.Pattern),
-			})
+			c.reportUnsupported(d.Pattern, d.Pattern)
 			return nil, nil, false
 		}
 		return initType, &ast.NodeProvenance{Node: d}, true
@@ -46,10 +43,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		// accumulates these per-decl sources into the binding's Sources slice.
 		return b.Type, b.Sources[0], true
 	default:
-		c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: d.Span()},
-			Kind:    astKind(d),
-		})
+		c.reportUnsupported(d, d)
 		return nil, nil, false
 	}
 }
