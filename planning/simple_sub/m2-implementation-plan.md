@@ -944,9 +944,13 @@ multi-file sources, which exercises decls, functions, and SCC ordering together)
       rendered types end-to-end (table harness). *(Polymorphic `<T0>` rendering
       is M3 — M1 deferred schemes/generalization.)*
 - [x] Multi-file module resolves via the dep graph (in-memory multi-file table
-      test; no on-disk fixtures — those are M8). *(PR-6: `InferModules` merges the
-      parsed modules and drives the same dep-graph walk; `inferSources` is the
-      multi-file table harness.)*
+      test; no on-disk fixtures — those are M8). *(PR-6: no separate `InferModules`
+      entry point was needed — `parser.ParseLibFiles` already unions multiple
+      sources into one `*ast.Module` with shared path-derived namespaces, so
+      `BuildDepGraph` spans every file and `InferModule` resolves cross-file
+      references as ordinary cross-component ones. `inferSources` is the multi-file
+      table harness. The earlier `InferModules`/`mergeModules` sketch in §3.7/§5
+      was dropped in review as a redundant re-implementation of `ParseLibFiles`.)*
 - [x] Recursive SCC groups infer (monomorphically) with no placeholder/patching
       phase.
 - [x] Stdlib type names (`Promise`/`Iterable`/`AsyncIterable`/`Generator`/
