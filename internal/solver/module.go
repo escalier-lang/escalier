@@ -51,10 +51,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, d := range ns.Decls {
 			if !handled.Contains(d) {
-				c.report(&UnsupportedNodeError{
-					errSpan: errSpan{span: d.Span()},
-					Kind:    astKind(d),
-				})
+				c.reportUnsupported(d, d)
 			}
 		}
 		return true
@@ -183,10 +180,7 @@ func (c *checker) inferComponent(
 				continue
 			}
 			handled.Add(d)
-			c.report(&UnsupportedNodeError{
-				errSpan: errSpan{span: d.Span()},
-				Kind:    astKind(d),
-			})
+			c.reportUnsupported(d, d)
 		}
 	}
 
@@ -206,13 +200,19 @@ func (c *checker) inferComponent(
 		}
 		t := coalesce(b.v, soltype.Positive)
 		scope.defineValue(key.Name(), ValueBinding{Type: t, Sources: b.sources})
-		// Record the binding's final (coalesced) type in Info on the pattern. The
+		// Record the binding's final (coalesced) type in Info on the name node. The
 		// raw initializer path (inferDeclDef) no longer records it, so this is where
 		// the var-free type lands — and it is correct even for a `val` in a
 		// recursive group, where coalescing at definition time would have frozen it
-		// to `never`.
-		if vd, ok := b.primary.(*ast.VarDecl); ok {
-			c.recordType(vd.Pattern, t)
+		// to `never`. A VarDecl records on its pattern, a FuncDecl on its name, so a
+		// top-level `fn` is queryable through Info exactly like a `val`.
+		switch d := b.primary.(type) {
+		case *ast.VarDecl:
+			c.recordType(d.Pattern, t)
+		case *ast.FuncDecl:
+			if d.Name != nil {
+				c.recordType(d.Name, t)
+			}
 		}
 	}
 }

@@ -60,7 +60,7 @@ func coalesceRec(t soltype.Type, pol soltype.Polarity, seen set.Set[*soltype.Typ
 	case *soltype.RecordType:
 		fields := make([]*soltype.RecordField, len(t.Fields))
 		for i, f := range t.Fields {
-			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesce(f.Type, pol)} // covariant fields
+			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesceRec(f.Type, pol, seen)} // covariant fields
 		}
 		return &soltype.RecordType{Fields: fields}
 	case *soltype.TypeVarType:
