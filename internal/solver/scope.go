@@ -11,8 +11,13 @@ import (
 // question §7 (a): take the mechanical field-swap churn then rather than
 // over-abstract now).
 type ValueBinding struct {
-	Type   soltype.Type          // M2: monomorphic. M3 replaces with a TypeScheme.
-	Source provenance.Provenance // the introducing VarDecl/FuncDecl/param; nil for prelude
+	Type soltype.Type // M2: monomorphic. M3 replaces with a TypeScheme.
+	// Sources holds every decl that contributes to this binding, in source order:
+	// for a plain `val`/`fn` that is the single introducing decl, but a name with
+	// multiple top-level FuncDecls (overloads) — or an erroneous redeclaration —
+	// accumulates one entry per arm, including arms M2 currently rejects. This lets
+	// a future go-to-definition navigate to all of them. Empty for prelude bindings.
+	Sources []provenance.Provenance
 }
 
 // TypeBinding is a name's type-sort binding. M2 only ever populates this with
@@ -20,8 +25,14 @@ type ValueBinding struct {
 // M3+. The shape lands now because it is load-bearing for the two-map test
 // harness.
 type TypeBinding struct {
-	Type   soltype.Type
-	Source provenance.Provenance
+	Type soltype.Type
+	// Sources holds every decl that contributes to this type binding, in source
+	// order — mirroring ValueBinding.Sources. A plain `type`/`class` has a single
+	// entry; interface declaration-merging (multiple `interface T` under one name)
+	// accumulates one per arm. Empty for the prelude type placeholders. Not yet
+	// populated — M2 only seeds stdlib-type placeholders here; real type aliases
+	// and classes (and their merging) land in M3+.
+	Sources []provenance.Provenance
 }
 
 // Namespace is the third binding sort — a separate kind from a soltype.Type, so

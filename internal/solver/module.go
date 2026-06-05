@@ -64,11 +64,22 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 // componentBinding tracks the in-flight state of one value binding while its
 // strongly connected component is inferred.
 type componentBinding struct {
-	v       *soltype.TypeVarType  // the group var every body is constrained against
-	source  provenance.Provenance // the introducing decl of the primary definition
-	primary ast.Decl              // the primary definition's decl (for phase-3 Info)
-	bound   bool                  // a definition was inferred and constrained
-	isVar   bool                  // the primary definition is a `val`/`var`
+	v       *soltype.TypeVarType    // this binding's fresh var; every definition of this name is constrained <: it
+	sources []provenance.Provenance // every contributing decl, in source order (primary + rejected overload/duplicate arms)
+	// primary is the first successfully-inferred decl under this key. M2 keeps it
+	// as THE definition and rejects every later arm, so one handle suffices: it is
+	// read in phase 3 to recover a VarDecl's Pattern for Info recording, and (via
+	// isVar) to tell an overload arm from a duplicate.
+	//
+	// M3 retires it. Once overloads are represented as an IntersectionType of the
+	// per-arm signatures (the overload-intersection representation noted in
+	// inferComponent's doc; see planning/intersection_types), arms are merged
+	// rather than discarded, so a single "primary" no longer captures the binding —
+	// the full arm set does, and `sources` already holds it. The phase-3 VarDecl
+	// pattern recording would then key off the lone value decl directly instead.
+	primary ast.Decl
+	bound   bool // a definition was inferred and constrained
+	isVar   bool // the primary definition is a `val`/`var`
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -127,9 +138,13 @@ func (c *checker) inferComponent(
 			if !ok {
 				continue
 			}
+			// Accumulate every contributing decl's provenance — including the overload
+			// or duplicate arms rejected below — so a future multi-target
+			// go-to-definition can reach all of them. Only the primary's type is kept;
+			// M2 has no overload-merge (that is M3), so the extra arms still error.
+			b.sources = append(b.sources, src)
 			if !b.bound {
 				c.constrain(d, t, b.v)
-				b.source = src
 				b.primary = d
 				b.bound = true
 				_, b.isVar = d.(*ast.VarDecl)
@@ -190,7 +205,7 @@ func (c *checker) inferComponent(
 			continue
 		}
 		t := coalesce(b.v, soltype.Positive)
-		scope.defineValue(key.Name(), ValueBinding{Type: t, Source: b.source})
+		scope.defineValue(key.Name(), ValueBinding{Type: t, Sources: b.sources})
 		// Record the binding's final (coalesced) type in Info on the pattern. The
 		// raw initializer path (inferDeclDef) no longer records it, so this is where
 		// the var-free type lands — and it is correct even for a `val` in a
