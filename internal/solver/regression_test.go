@@ -27,7 +27,8 @@ import (
 // https://github.com/escalier-lang/escalier/issues/702 (add a recursion-depth
 // ceiling to coalesce so a guard bypass fails cleanly instead of crashing).
 func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
-	values, _, _ := inferSource(t, `fn f() { {x: f()} }`)
+	values, _, errs := inferSource(t, `fn f() { {x: f()} }`)
+	require.Empty(t, errs, "unexpected inference errors")
 	got := values["f"]
 	require.True(t, strings.HasPrefix(got, "fn () -> {x:"),
 		"want a function returning a record with field x, got %q", got)
