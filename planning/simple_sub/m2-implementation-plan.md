@@ -936,22 +936,24 @@ multi-file sources, which exercises decls, functions, and SCC ordering together)
 
 ## 8. M2 exit checklist
 
-- [ ] Constraint-generating walk over `*ast.Module` produces `soltype` and
+- [x] Constraint-generating walk over `*ast.Module` produces `soltype` and
       populates `Info` (no AST `InferredType()` writes).
-- [ ] Package-owned `Scope`/`Binding`/`Namespace` in `internal/solver/` (no
+- [x] Package-owned `Scope`/`Binding`/`Namespace` in `internal/solver/` (no
       `type_system` reuse).
-- [ ] Top-level `val`/`fn` from real source infer correct **monomorphic**
+- [x] Top-level `val`/`fn` from real source infer correct **monomorphic**
       rendered types end-to-end (table harness). *(Polymorphic `<T0>` rendering
       is M3 — M1 deferred schemes/generalization.)*
-- [ ] Multi-file module resolves via the dep graph (in-memory multi-file table
-      test; no on-disk fixtures — those are M8).
-- [ ] Recursive SCC groups infer (monomorphically) with no placeholder/patching
+- [x] Multi-file module resolves via the dep graph (in-memory multi-file table
+      test; no on-disk fixtures — those are M8). *(PR-6: `InferModules` merges the
+      parsed modules and drives the same dep-graph walk; `inferSources` is the
+      multi-file table harness.)*
+- [x] Recursive SCC groups infer (monomorphically) with no placeholder/patching
       phase.
-- [ ] Stdlib type names (`Promise`/`Iterable`/`AsyncIterable`/`Generator`/
+- [x] Stdlib type names (`Promise`/`Iterable`/`AsyncIterable`/`Generator`/
       `AsyncGenerator`/`IteratorResult`) resolve to **placeholder** `soltype`
       stubs without unbound-name errors (seeded in the prelude; real ingestion
       is M7).
-- [ ] `SolverError` gained `Span()`; M2 error kinds carry spans.
-- [ ] No imports of `internal/checker/` or `internal/type_system/` from the new
+- [x] `SolverError` gained `Span()`; M2 error kinds carry spans.
+- [x] No imports of `internal/checker/` or `internal/type_system/` from the new
       package (gate honored).
-- [ ] `01-milestones.md` M2 status updated.
+- [x] `01-milestones.md` M2 status updated.

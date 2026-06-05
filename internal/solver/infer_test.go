@@ -2,6 +2,7 @@ package solver
 
 import (
 	"context"
+	"sort"
 	"testing"
 	"time"
 
@@ -37,6 +38,42 @@ func inferSource(t *testing.T, src string) (values, types map[string]string, err
 	t.Helper()
 	module := parseModule(t, src)
 	scope, _, errs := InferModule(module)
+	values = renderBindings(scope.values, func(b ValueBinding) soltype.Type { return b.Type })
+	types = renderBindings(scope.types, func(b TypeBinding) soltype.Type { return b.Type })
+	return values, types, errs
+}
+
+// inferSources is the PR-6 multi-file table harness (§3.6): it takes several
+// in-memory sources keyed by file path, parses each into its own module, runs
+// InferModules over the set, and returns the rendered top-level value/type
+// bindings plus any SolverErrors. This exercises the exact dep-graph-spanning-
+// files path an on-disk fixture would, with no package.json / file-discovery
+// ceremony (the real fixture harness is M8).
+//
+// Files are processed in sorted path order so SourceIDs (and any error ordering)
+// are deterministic across runs; each file gets a distinct SourceID so the merged
+// source table has no collisions. Like inferSource, bindings are read off the
+// module scope's own maps, excluding the prelude parent.
+func inferSources(t *testing.T, srcs map[string]string) (values, types map[string]string, errs []SolverError) {
+	t.Helper()
+	paths := make([]string, 0, len(srcs))
+	for path := range srcs {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	modules := make([]*ast.Module, 0, len(paths))
+	for id, path := range paths {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{
+			{ID: id, Path: path, Contents: srcs[path]},
+		})
+		cancel()
+		require.Empty(t, parseErrors, "expected no parse errors in %s", path)
+		modules = append(modules, module)
+	}
+
+	scope, _, errs := InferModules(modules)
 	values = renderBindings(scope.values, func(b ValueBinding) soltype.Type { return b.Type })
 	types = renderBindings(scope.types, func(b TypeBinding) soltype.Type { return b.Type })
 	return values, types, errs
@@ -373,4 +410,85 @@ func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
 	require.Empty(t, values)
 	// The unsupported decl must not leak a type binding for the namespace.
 	require.NotContains(t, types, "Foo")
+}
+
+// PR-6: multi-file resolution. Several in-memory files are parsed into separate
+// modules, merged, and inferred together; a top-level `val`/`fn` in one file
+// resolves a binding from another by root-namespace short name. This is the M2
+// exit criterion — a multi-file module resolving via the dep graph — exercised
+// end-to-end through the real parser + InferModules + soltype printer. All
+// inference is MONOMORPHIC (M1 ships no schemes; <T0> generalization is M3).
+func TestInferModulesMultiFile(t *testing.T) {
+	tests := []struct {
+		name string
+		srcs map[string]string
+		want map[string]string
+	}{
+		{
+			// File b reads a `val` defined in file a by short name. The dep graph
+			// spans both files, so a's component is inferred before b's.
+			name: "ValReferencesOtherFile",
+			srcs: map[string]string{
+				"a.esc": `val x = 5`,
+				"b.esc": `val y = x`,
+			},
+			want: map[string]string{"x": "5", "y": "5"},
+		},
+		{
+			// The defining file can come later in sorted order than the using
+			// file — SCC ordering, not file order, drives inference.
+			name: "ForwardReferenceAcrossFiles",
+			srcs: map[string]string{
+				"a.esc": `val y = x`,
+				"b.esc": `val x = 5`,
+			},
+			want: map[string]string{"x": "5", "y": "5"},
+		},
+		{
+			// A function defined in one file is applied in another; the call
+			// resolves the callee's cross-file signature.
+			name: "CallFunctionFromOtherFile",
+			srcs: map[string]string{
+				"a.esc": `fn id(n: number) -> number { n }`,
+				"b.esc": `val r = id(5)`,
+			},
+			want: map[string]string{
+				"id": "fn (n: number) -> number",
+				"r":  "number",
+			},
+		},
+		{
+			// Mutually-recursive functions split across two files resolve through
+			// the shared group var, grounded by their return annotations.
+			name: "MutualRecursionAcrossFiles",
+			srcs: map[string]string{
+				"a.esc": `fn ping(n: number) -> number { pong(n) }`,
+				"b.esc": `fn pong(n: number) -> number { ping(n) }`,
+			},
+			want: map[string]string{
+				"ping": "fn (n: number) -> number",
+				"pong": "fn (n: number) -> number",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSources(t, tt.srcs)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values)
+		})
+	}
+}
+
+// An unknown identifier that no file defines stays an unbound-name error even in
+// the multi-file path: the merged dep graph has no binding for it, so the
+// reference resolves to the never placeholder and reports cleanly.
+func TestInferModulesMultiFileUnknownIdentifier(t *testing.T) {
+	values, _, errs := inferSources(t, map[string]string{
+		"a.esc": `val y = missing`,
+		"b.esc": `val z = 5`,
+	})
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, map[string]string{"y": "never", "z": "5"}, values)
 }

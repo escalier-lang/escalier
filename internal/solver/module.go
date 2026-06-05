@@ -6,6 +6,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/tidwall/btree"
 )
 
 // InferModule builds the dep graph for a single parsed module, infers every
@@ -23,10 +24,67 @@ import (
 // coalesced monomorphic types; the generalization that yields <T0> rendering is
 // M3.
 func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
+	return InferModules([]*ast.Module{module})
+}
+
+// InferModules infers a multi-file program spread across several parsed modules,
+// closing the M2 exit criterion "a multi-file module resolves via the dep graph".
+// It merges the modules into one combined *ast.Module (unioning their namespaces,
+// files, and source tables) and drives the SAME dep_graph-ordered walk as the
+// single-module path, so a `val`/`fn` in one file resolving a top-level
+// `val`/`fn` in another is just an ordinary cross-component reference that
+// BuildDepGraph topologically orders — no per-module passes, no cross-module
+// patching.
+//
+// Cross-file references in M2 use root-namespace short names (a file referring to
+// `foo` defined in a sibling file): both files derive the same namespace from
+// their paths, so their declarations land in the same dep_graph namespace and the
+// reference resolves through the shared BindingKey space. Qualified
+// namespace-member access (`Foo.bar`) is M4; third-party `@types`/`.d.ts`
+// ingestion (which would engage internal/resolver) is M7 — M2 engages neither.
+func InferModules(modules []*ast.Module) (*Scope, *Info, []SolverError) {
+	merged := mergeModules(modules)
 	c := newChecker()
 	scope := sharedPrelude().Child()
-	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(scope, 0, merged, dep_graph.BuildDepGraph(merged))
 	return scope, c.info, c.errs
+}
+
+// mergeModules unions several parsed modules into one. Declarations from files
+// that share a namespace (e.g. two root-level files, both in the "" namespace)
+// are concatenated, so BuildDepGraph sees the whole program and resolves
+// references that span files. A single-module call returns its module untouched —
+// the merge only allocates when there is more than one.
+//
+// The merge builds fresh Namespace values rather than mutating any input
+// module's, so InferModules never disturbs its arguments (a caller may infer the
+// same modules again, or hold them for the old checker). File and source tables
+// are unioned; a SourceID collision keeps the last writer, which callers avoid by
+// assigning each file a distinct ID.
+func mergeModules(modules []*ast.Module) *ast.Module {
+	if len(modules) == 1 {
+		return modules[0]
+	}
+	var namespaces btree.Map[string, *ast.Namespace]
+	files := []*ast.File{}
+	sources := map[int]*ast.Source{}
+	for _, module := range modules {
+		module.Namespaces.Scan(func(name string, ns *ast.Namespace) bool {
+			merged, ok := namespaces.Get(name)
+			if !ok {
+				merged = &ast.Namespace{Decls: []ast.Decl{}, Exported: ns.Exported}
+				namespaces.Set(name, merged)
+			}
+			merged.Decls = append(merged.Decls, ns.Decls...)
+			merged.Exported = merged.Exported || ns.Exported
+			return true
+		})
+		files = append(files, module.Files...)
+		for id, src := range module.Sources {
+			sources[id] = src
+		}
+	}
+	return ast.NewModuleWithFiles(namespaces, files, sources)
 }
 
 // inferDepGraph infers every component of g into scope. BuildDepGraph returns
