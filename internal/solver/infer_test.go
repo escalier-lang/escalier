@@ -11,6 +11,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// parseModule parses a single in-memory .esc source, fails the test on parse
+// errors, and returns the module for inference and inspection (the Info side
+// table, decl nodes). Shared by inferSource and tests that need the module
+// itself.
+func parseModule(t *testing.T, src string) *ast.Module {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{
+		{ID: 0, Path: "input.esc", Contents: src},
+	})
+	require.Empty(t, parseErrors, "expected no parse errors")
+	return module
+}
+
 // inferSource parses a single in-memory .esc source, runs InferModule, and
 // returns the rendered top-level value/type bindings plus any SolverErrors. This
 // is the PR-2 single-file table harness (§3.6) — fast, no on-disk fixtures.
@@ -20,13 +35,7 @@ import (
 // a case can assert on them (e.g. the forward-reference limitation).
 func inferSource(t *testing.T, src string) (values, types map[string]string, errs []SolverError) {
 	t.Helper()
-	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-	require.Empty(t, parseErrors, "expected no parse errors")
-
+	module := parseModule(t, src)
 	scope, _, errs := InferModule(module)
 	values = renderBindings(scope.values, func(b ValueBinding) soltype.Type { return b.Type })
 	types = renderBindings(scope.types, func(b TypeBinding) soltype.Type { return b.Type })

@@ -1,38 +1,38 @@
 package solver
 
 import (
-	"context"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
-// parseModule parses a single in-memory source and fails the test on parse
-// errors, returning the module for inspection (the Info side table, decl nodes).
-func parseModule(t *testing.T, src string) *ast.Module {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	module, parseErrors := parser.ParseLibFiles(ctx, []*ast.Source{
-		{ID: 0, Path: "input.esc", Contents: src},
-	})
-	require.Empty(t, parseErrors, "expected no parse errors")
-	return module
-}
-
 // A recursive function whose body is a record literal containing the recursive
 // call builds a cyclic var graph THROUGH a record field. coalesce's RecordType
 // case must thread the path-scoped `seen` set (like the FuncType/TupleType cases)
-// or the cycle is never detected and coalescing never terminates. A regression
-// here manifests as non-termination (runaway recursion / stack overflow) on this
-// otherwise trivial input.
+// or the cycle is never detected and coalescing never terminates.
+//
+// The assertion is intentionally loose: the test's real contract is that
+// inference TERMINATES (reaching the assertions at all proves that) and produces
+// a sane shape — a function returning a record bottoming out in `never`. The
+// exact unrolling depth (`{x: {x: never}}`) is a monomorphic-recursion artifact
+// that later coalesce/printer changes may legitimately alter; pinning it would
+// conflate "terminates" with "renders this exact shape".
+//
+// NOTE: a regression that bypasses the `seen` guard stack-overflows here, which
+// is a fatal (uncatchable) crash that takes down the whole package test binary
+// rather than failing this test in isolation. Tracked in
+// https://github.com/escalier-lang/escalier/issues/702 (add a recursion-depth
+// ceiling to coalesce so a guard bypass fails cleanly instead of crashing).
 func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
 	values, _, _ := inferSource(t, `fn f() { {x: f()} }`)
-	require.Equal(t, "fn () -> {x: {x: never}}", values["f"])
+	got := values["f"]
+	require.True(t, strings.HasPrefix(got, "fn () -> {x:"),
+		"want a function returning a record with field x, got %q", got)
+	require.Contains(t, got, "never",
+		"ungrounded recursion should bottom out in never, got %q", got)
 }
 
 // A top-level FuncDecl's inferred type must be recorded in the Info side table on
