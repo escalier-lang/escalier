@@ -120,6 +120,10 @@ polymorphism-rendering bundle — see [m1-implementation-plan.md](m1-implementat
 
 ## M2 — Parser/resolver bridge
 
+**Status: landed** (PRs #695–#703 + PR-6 multi-file resolution; see
+[m2-implementation-plan.md](m2-implementation-plan.md) §8 exit checklist — all
+items complete).
+
 Replace the spike's hand-built IR with a real constraint-generating walk over
 `*ast.Module`. This is the deferred spike "parser bridge."
 

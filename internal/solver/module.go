@@ -22,6 +22,16 @@ import (
 // Inference is MONOMORPHIC — M1 ships no schemes, so a group's vars stay as their
 // coalesced monomorphic types; the generalization that yields <T0> rendering is
 // M3.
+//
+// Multi-file (PR-6) needs no separate entry point: parser.ParseLibFiles already
+// assembles several sources into one *ast.Module, unioning files that share a
+// path-derived namespace into the same Namespace.Decls. BuildDepGraph then spans
+// every file, so a `val`/`fn` in one file resolving a top-level `val`/`fn` in
+// another is just an ordinary cross-component reference the SCC ordering already
+// handles — that is the M2 "multi-file module resolves via the dep graph" exit
+// criterion. Cross-file references in M2 use root-namespace short names; qualified
+// namespace-member access (`Foo.bar`) is M4, and third-party `@types`/`.d.ts`
+// ingestion (internal/resolver) is M7 — M2 engages neither.
 func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	scope := sharedPrelude().Child()

@@ -163,7 +163,7 @@ internal/solver/        # M1: context.go, constrain.go, coalesce.go, info.go, er
   infer.go        # M2: constraint-generating walk over *ast.Module (production typeTerm)
   infer_expr.go   # M2: per-expression-kind constraint generation
   infer_decl.go   # M2: VarDecl / FuncDecl → bindings, SCC group inference
-  module.go       # M2: InferModule(s): dep_graph SCC ordering + drive the walk
+  module.go       # M2: InferModule: dep_graph SCC ordering + drive the walk
   scope.go        # M2: Scope / Binding / Namespace (own, not type_system)
   prelude.go      # M2: global scope — operator/builtin schemes + placeholder stdlib type bindings (§3.8)
   errors.go       # bridge errors (unbound name, unsupported node) with provenance/spans
@@ -307,8 +307,9 @@ Entry point (working signature, paralleling the old driver):
 // InferModule builds the dep graph for the parsed module, infers every
 // top-level declaration in SCC order, populates Info, and returns the module
 // Scope plus errors. The package-level entry constructs a fresh checker
-// internally; multi-file callers use InferModules (§3.7). Full signatures in
-// §3.7.
+// internally. Multi-file needs no separate entry point: parser.ParseLibFiles
+// unions several sources into one *ast.Module, so BuildDepGraph spans every file
+// and InferModule resolves cross-file references (§3.6). Full signatures in §3.7.
 func InferModule(module *ast.Module) (*Scope, *Info, []SolverError)
 ```
 
@@ -401,11 +402,12 @@ infrastructure that M8 owns deliberately.
   checker-tests pattern in `internal/checker/tests/`.
 - **Multi-file / dep-graph cases:** still table-driven, but the case supplies
   **several in-memory sources** instead of one. `ast.Module` already holds
-  `Files []*File` (and `Sources`), and `InferModule`/`InferModules` take parsed
-  modules — so a case parses each source string, assembles a multi-file `Module`
-  (or several modules), drives `BuildDepGraph` across them, and asserts the
-  rendered top-level types. This exercises the exact dep-graph-spanning-files
-  path on-disk fixtures would, without `package.json` / file-discovery ceremony.
+  `Files []*File` (and `Sources`), and `parser.ParseLibFiles` unions several
+  sources into one multi-file `Module` — so a case parses all source strings in a
+  single `ParseLibFiles` call, drives `BuildDepGraph` (which spans every file) +
+  `InferModule`, and asserts the rendered top-level types. This exercises the
+  exact dep-graph-spanning-files path on-disk fixtures would, without
+  `package.json` / file-discovery ceremony.
 
 **Why no on-disk fixtures in M2.** Real `fixtures/<name>/lib/index.esc` (+
 `package.json`) directories would pull in the `resolver` / file-discovery layer
@@ -555,8 +557,10 @@ checker's `InferDepGraph`/`InferComponent`, over `soltype`:
 
 ```go
 // module.go
-func InferModule(module *ast.Module) (*Scope, *Info, []SolverError)   // PR-2 (source-order), PR-5 (SCC)
-func InferModules(modules []*ast.Module) (*Scope, *Info, []SolverError) // PR-6 (multi-file)
+// Multi-file (PR-6) needs no separate entry point — parser.ParseLibFiles unions
+// sources into one *ast.Module, so BuildDepGraph spans every file and InferModule
+// resolves cross-file references.
+func InferModule(module *ast.Module) (*Scope, *Info, []SolverError)   // PR-2 (source-order), PR-5 (SCC), PR-6 (multi-file)
 
 func (c *checker) inferDepGraph(scope *Scope, lvl int, g *dep_graph.DepGraph) // PR-5
 func (c *checker) inferComponent(scope *Scope, lvl int, g *dep_graph.DepGraph, // PR-5
@@ -645,8 +649,9 @@ func inferSource(t *testing.T, src string) (values, types map[string]string)
 
 // infer_test.go — table harness, multi-file (in-memory; no on-disk fixtures)
 func inferSources(t *testing.T, srcs map[string]string) (values, types map[string]string)
-// parses each named source, assembles a multi-file Module / modules, drives
-// BuildDepGraph + InferModule(s), returns rendered top-level types
+// parses all named sources in one parser.ParseLibFiles call (which unions them
+// into a single multi-file Module), drives BuildDepGraph + InferModule, returns
+// rendered top-level types
 ```
 
 ### 3.8 Stdlib-type placeholder seeding
@@ -848,11 +853,14 @@ multi-file sources, which exercises decls, functions, and SCC ordering together)
 
 ### PR-6 — Multi-file (cross-module) resolution + multi-file table tests  (~250 LoC)
 *(depends on PR-4 + PR-5)*
-- `module.go`: `InferModules` over multiple parsed modules; build the dep graph
-  across them; cross-module references resolve through the qualified-`BindingKey`
-  `Namespace` (`dep_graph.GetNamespace`). **M2 does not engage `internal/resolver`**
-  (it resolves `@types/*` third-party packages; M2 has no such imports — that's
-  M7; see §7).
+- `module.go`: **no new entry point** — `parser.ParseLibFiles` already unions
+  multiple sources into one `*ast.Module`, so `BuildDepGraph` spans every file and
+  the existing `InferModule` resolves cross-file references through the
+  qualified-`BindingKey` `Namespace` (`dep_graph.GetNamespace`). *(An earlier draft
+  sketched `InferModules`/`mergeModules` over several parsed modules; that was
+  dropped in review as a redundant re-implementation of `ParseLibFiles`.)* **M2
+  does not engage `internal/resolver`** (it resolves `@types/*` third-party
+  packages; M2 has no such imports — that's M7; see §7).
 - `infer_test.go`: the `inferSources` multi-file table helper (§3.7) — in-memory
   sources, **no** on-disk `fixtures/` directories (those are M8; see §3.6).
 - Tests: a two-file table case where file B references a `val`/`fn` from file A
@@ -936,22 +944,28 @@ multi-file sources, which exercises decls, functions, and SCC ordering together)
 
 ## 8. M2 exit checklist
 
-- [ ] Constraint-generating walk over `*ast.Module` produces `soltype` and
+- [x] Constraint-generating walk over `*ast.Module` produces `soltype` and
       populates `Info` (no AST `InferredType()` writes).
-- [ ] Package-owned `Scope`/`Binding`/`Namespace` in `internal/solver/` (no
+- [x] Package-owned `Scope`/`Binding`/`Namespace` in `internal/solver/` (no
       `type_system` reuse).
-- [ ] Top-level `val`/`fn` from real source infer correct **monomorphic**
+- [x] Top-level `val`/`fn` from real source infer correct **monomorphic**
       rendered types end-to-end (table harness). *(Polymorphic `<T0>` rendering
       is M3 — M1 deferred schemes/generalization.)*
-- [ ] Multi-file module resolves via the dep graph (in-memory multi-file table
-      test; no on-disk fixtures — those are M8).
-- [ ] Recursive SCC groups infer (monomorphically) with no placeholder/patching
+- [x] Multi-file module resolves via the dep graph (in-memory multi-file table
+      test; no on-disk fixtures — those are M8). *(PR-6: no separate `InferModules`
+      entry point was needed — `parser.ParseLibFiles` already unions multiple
+      sources into one `*ast.Module` with shared path-derived namespaces, so
+      `BuildDepGraph` spans every file and `InferModule` resolves cross-file
+      references as ordinary cross-component ones. `inferSources` is the multi-file
+      table harness. The earlier `InferModules`/`mergeModules` sketch in §3.7/§5
+      was dropped in review as a redundant re-implementation of `ParseLibFiles`.)*
+- [x] Recursive SCC groups infer (monomorphically) with no placeholder/patching
       phase.
-- [ ] Stdlib type names (`Promise`/`Iterable`/`AsyncIterable`/`Generator`/
+- [x] Stdlib type names (`Promise`/`Iterable`/`AsyncIterable`/`Generator`/
       `AsyncGenerator`/`IteratorResult`) resolve to **placeholder** `soltype`
       stubs without unbound-name errors (seeded in the prelude; real ingestion
       is M7).
-- [ ] `SolverError` gained `Span()`; M2 error kinds carry spans.
-- [ ] No imports of `internal/checker/` or `internal/type_system/` from the new
+- [x] `SolverError` gained `Span()`; M2 error kinds carry spans.
+- [x] No imports of `internal/checker/` or `internal/type_system/` from the new
       package (gate honored).
-- [ ] `01-milestones.md` M2 status updated.
+- [x] `01-milestones.md` M2 status updated.
