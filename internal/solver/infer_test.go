@@ -152,26 +152,28 @@ func TestInferModuleFieldReadMissingProperty(t *testing.T) {
 }
 
 // A forward reference — a decl that uses a name defined later in the source —
-// fails in PR-2 because the module driver walks decls in source order with no
-// dep-graph ordering. PR-5 adds SCC ordering and this case flips to success.
-func TestInferModuleForwardReferenceIsError(t *testing.T) {
+// failed in PR-2 (source-order walk). PR-5 orders declarations by the dep graph,
+// so x's component is inferred before y's and the reference now resolves.
+func TestInferModuleForwardReferenceResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val y = x
 		val x = 5
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "Unknown identifier: x", errs[0].Message())
-	// x is bound by the time the loop reaches it; only the forward use of x in y
-	// failed (y therefore resolves to the never placeholder report() returns).
-	require.Equal(t, map[string]string{"x": "5", "y": "never"}, values)
+	require.Empty(t, errs)
+	require.Equal(t, map[string]string{"x": "5", "y": "5"}, values)
 }
 
-// A top-level declaration outside PR-2's VarDecl coverage reports a clean
-// UnsupportedNodeError rather than panicking. (FuncDecl support lands in PR-3.)
+// A top-level declaration outside the M2 subset reports a clean
+// UnsupportedNodeError rather than panicking. A type alias is such a decl — type
+// bindings are M3+ — so it registers a type-sort dep_graph key the SCC driver
+// reports as unsupported. (FuncDecl, unsupported at the module level through
+// PR-2, is now wired in by PR-5; see the func/recursion tests.)
 func TestInferModuleUnsupportedDecl(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f() {}`)
+	_, types, errs := inferSource(t, `type Foo = number`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: FuncDecl", errs[0].Message())
+	require.Equal(t, "Unsupported in M2: TypeDecl", errs[0].Message())
+	// The unsupported decl must not leak a type binding.
+	require.NotContains(t, types, "Foo")
 }
 
 // A `val` with no initializer can't be inferred in M2 (annotation-driven binding
@@ -219,4 +221,147 @@ func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "Duplicate declaration: x", errs[0].Message())
 	require.Equal(t, map[string]string{"x": "5"}, values)
+}
+
+// PR-5: dep_graph SCC ordering wires top-level FuncDecls into the module walk and
+// makes inference order-independent. Each case asserts the rendered MONOMORPHIC
+// binding types end-to-end — recursion resolves through the group var, but M1
+// ships no schemes so nothing generalizes (no <T0>); that is M3.
+func TestInferModuleSCCOrdering(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			// A function declared before the one it calls still resolves: callee's
+			// component is inferred first, so the call sees its concrete type.
+			name: "OutOfOrderFuncReference",
+			src: `
+				fn caller(n: number) { callee(n) }
+				fn callee(n: number) -> number { n }
+			`,
+			want: map[string]string{
+				"caller": "fn (n: number) -> number",
+				"callee": "fn (n: number) -> number",
+			},
+		},
+		{
+			// A self-recursive function with no base case (M2 has no conditionals)
+			// never returns, so its return type coalesces to never. It resolves
+			// because the SCC driver pre-binds foo to a var before its body.
+			name: "SelfRecursive",
+			src:  `fn foo(x: number) { foo(x) }`,
+			want: map[string]string{"foo": "fn (x: number) -> never"},
+		},
+		{
+			// A mutually-recursive pair: each body calls the other. Return
+			// annotations ground the cycle in a concrete type, so both resolve to
+			// the annotated function type.
+			name: "MutuallyRecursiveGrounded",
+			src: `
+				fn ping(n: number) -> number { pong(n) }
+				fn pong(n: number) -> number { ping(n) }
+			`,
+			want: map[string]string{
+				"ping": "fn (n: number) -> number",
+				"pong": "fn (n: number) -> number",
+			},
+		},
+		{
+			// A chain of forward references across val and fn declarations,
+			// declared in reverse dependency order.
+			name: "ValChainForwardReference",
+			src: `
+				val z = y
+				val y = x
+				val x = 5
+			`,
+			want: map[string]string{"x": "5", "y": "5", "z": "5"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values)
+		})
+	}
+}
+
+// An ungrounded mutually-recursive group — each body calls the other with no
+// return annotation and no base case — builds a cyclic var↔var bound graph.
+// M1's coalesce had no recursion guard, so a guard-free inline walk would loop
+// here forever; PR-5 pulls the M3 path-scoped guard forward (coalesce.go,
+// m2-implementation-plan §7), collapsing the ungrounded recursive return to
+// never (⊥). The assertion is really a termination test: it must complete rather
+// than hang.
+func TestInferModuleUngroundedMutualRecursionTerminates(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn a(n: number) { b(n) }
+		fn b(n: number) { a(n) }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, map[string]string{
+		"a": "fn (n: number) -> never",
+		"b": "fn (n: number) -> never",
+	}, values)
+}
+
+// A `val` that participates in a recursive group must be constrained against its
+// peer's group var RAW and coalesced only once the group is complete. `a` (a
+// `val`) references `z`, and `z` calls `a` back, so they form one SCC; `a` sorts
+// first and is inferred before `z`. Coalescing `a`'s initializer at definition
+// time (as inferVarDecl does for body-level binds) would read `z`'s still-empty
+// var and freeze `a` to `never`; inferDeclDef instead returns the raw type, so
+// `a` correctly resolves to `z`'s function type once `z`'s body grounds the
+// return via its `-> number` annotation.
+func TestInferModuleValInRecursiveGroupUsesRawType(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		val a = z
+		fn z() -> number { a() }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, map[string]string{
+		"a": "fn () -> number",
+		"z": "fn () -> number",
+	}, values)
+}
+
+// Repeated top-level functions of the same name are overloads, which M2 does not
+// represent (overload-intersection is M3). Rather than merge the arms into one
+// var — yielding an uncallable union-of-functions binding — M2 keeps the first
+// arm (so the binding stays callable with that signature) and reports each extra
+// arm with a clear diagnostic.
+func TestInferModuleFunctionOverloadNotSupported(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) -> number { x }
+		fn f(x: string) -> string { x }
+		val r = f(5)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Function overloads are not supported in M2: f", errs[0].Message())
+	// The first arm is kept, so f stays callable and the call to f(5) resolves.
+	require.Equal(t, map[string]string{
+		"f": "fn (x: number) -> number",
+		"r": "number",
+	}, values)
+}
+
+// A declaration kind the dep graph does not model — here a `namespace` block,
+// which BuildDepGraph produces no binding key for — must still report a clean
+// UnsupportedNodeError rather than vanishing silently. The reconciliation pass in
+// inferDepGraph walks the module's own declarations and flags any the SCC walk
+// never visited.
+func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
+	values, types, errs := inferSource(t, `
+		namespace Foo {
+			val x = 5
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: NamespaceDecl", errs[0].Message())
+	require.Empty(t, values)
+	// The unsupported decl must not leak a type binding for the namespace.
+	require.NotContains(t, types, "Foo")
 }

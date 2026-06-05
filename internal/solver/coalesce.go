@@ -3,6 +3,7 @@ package solver
 import (
 	"fmt"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -19,11 +20,26 @@ import (
 // occurrence-analysis input, no named-ref output node. That whole
 // polymorphism-rendering bundle lands in M3 (§3.3).
 //
-// M1 needs no `seen` recursion guard: the M1 type set has no recursive formers
-// (no aliases, no recursive types), so a uniform-inline walk terminates on the
-// bound graph as-is. M3 adds the guard when bipolar retention and aliases make
-// recursive structures in coalesced output possible.
+// M1 had no `seen` recursion guard: the M1 type set has no recursive formers
+// (no aliases, no recursive types), so a uniform-inline walk terminates on a
+// bound graph built from non-recursive source. M2's SCC driver (PR-5) breaks
+// that assumption — a mutually-recursive group can build a cyclic var↔var bound
+// graph (constrain appends var-to-var bounds and terminates on cycles via its
+// own coinductive seen-set; coalesce would not) — so PR-5 pulls forward the
+// path-scoped recursion guard the plan slated for M3 (m2-implementation-plan §7).
+// See coalesceRec for the guard's behavior. M3 still owns the *precise* μ-bound
+// recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	return coalesceRec(t, pol, set.NewSet[*soltype.TypeVarType]())
+}
+
+// coalesceRec is coalesce's worker, threading the path-scoped set of type
+// variables currently being inlined. seen holds only the variables on the
+// *current* recursion path (added on entry, removed on exit), so a variable
+// reused in independent branches — e.g. the identity function's shared param
+// (negative) and return (positive) var — is unaffected; only re-entering a
+// variable already on the path is a genuine cycle.
+func coalesceRec(t soltype.Type, pol soltype.Polarity, seen set.Set[*soltype.TypeVarType]) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.PrimType, *soltype.LitType, *soltype.Void,
 		*soltype.NeverType, *soltype.UnknownType:
@@ -32,13 +48,13 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
 			// Params are contravariant, so flip polarity.
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesce(p.Type, pol.Flip())}
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceRec(p.Type, pol.Flip(), seen)}
 		}
-		return &soltype.FuncType{Params: params, Ret: coalesce(t.Ret, pol)} // covariant return
+		return &soltype.FuncType{Params: params, Ret: coalesceRec(t.Ret, pol, seen)} // covariant return
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
-			elems[i] = coalesce(e, pol) // covariant elements
+			elems[i] = coalesceRec(e, pol, seen) // covariant elements
 		}
 		return &soltype.TupleType{Elems: elems}
 	case *soltype.RecordType:
@@ -48,21 +64,39 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 		}
 		return &soltype.RecordType{Fields: fields}
 	case *soltype.TypeVarType:
+		// Re-entering a variable already on the current path is an ungrounded
+		// recursive position (no concrete type breaks the cycle). It collapses to
+		// the polarity identity — the same value the position degenerates to when
+		// its bounds are empty — which keeps the inline walk total. A precise
+		// μ-bound rendering of such recursion is M3.
+		if seen.Contains(t) {
+			return emptyOf(pol)
+		}
+		seen.Add(t)
+		defer seen.Remove(t)
 		// Uniform inline: drop the variable, keep only its (recursively
 		// coalesced) bounds in the current polarity.
 		bounds := make([]soltype.Type, 0, len(t.BoundsAt(pol)))
 		for _, b := range t.BoundsAt(pol) {
-			bounds = append(bounds, coalesce(b, pol))
+			bounds = append(bounds, coalesceRec(b, pol, seen))
 		}
 		if len(bounds) == 0 {
-			if pol == soltype.Positive {
-				return &soltype.NeverType{} // ⊥ — empty positive (the identity of |)
-			}
-			return &soltype.UnknownType{} // ⊤ — empty negative (the identity of &)
+			return emptyOf(pol)
 		}
 		return combine(pol, dedup(bounds))
 	}
 	panic(fmt.Sprintf("coalesce: unhandled %T", t))
+}
+
+// emptyOf returns the lattice identity for a polarity: never (⊥, the identity of
+// |) for a positive position with no lower bounds, unknown (⊤, the identity of &)
+// for a negative position with no upper bounds. Shared by the empty-bounds and
+// recursion-cycle cases, which collapse to the same value.
+func emptyOf(pol soltype.Polarity) soltype.Type {
+	if pol == soltype.Positive {
+		return &soltype.NeverType{}
+	}
+	return &soltype.UnknownType{}
 }
 
 // combine builds a soltype.UnionType (Positive) or soltype.IntersectionType

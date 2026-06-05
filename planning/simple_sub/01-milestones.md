@@ -34,6 +34,7 @@ a section recording both before M3 lands.)
 
 - [M1 — Package skeleton + `soltype`](#m1--package-skeleton--soltype)
 - [M2 — Parser/resolver bridge](#m2--parserresolver-bridge)
+- [M2.5 — Provenance side table + precise error spans](#m25--provenance-side-table--precise-error-spans)
 - [M3 — Functions, application, let-polymorphism](#m3--functions-application-let-polymorphism)
 - [M4 — Core value types: records + usage-based inference + `mut` + **lifetimes** + destructuring/`match`](#m4--core-value-types-records--usage-based-inference--mut--lifetimes--destructuringmatch)
 - [M5 — Nominal types (classes)](#m5--nominal-types-classes)
@@ -156,6 +157,64 @@ rules that *use* them land in M7 and the feature milestones).
 **Gate:** if driving from the real AST/dep-graph requires reaching back into the
 old checker's internals, the parallel-package boundary is wrong — stop and
 reassess.
+
+---
+
+## M2.5 — Provenance side table + precise error spans
+
+A focused infra milestone, **not** a language feature. M2 stamps the *umbrella*
+node's span on every constraint error — `constrain(n, lhs, rhs)` sets `n.Span()`
+on each returned error ([internal/solver/infer.go](../../internal/solver/infer.go)
+`(*checker).constrain`), so a mismatch deep inside a large declaration blames the
+whole declaration. This milestone makes blame point at the **narrowest source of
+each type that actually contributed** to the failure. It is "born-with-the-type"
+infra (the lifetime/exactness lesson again): threading a provenance entry at each
+construction site is cheap done once across M2's ~8 sites, painful to retrofit
+once M3–M6 multiply them — so it lands *before* M3.
+
+- **`Prov: Type → Origin` side table.** Promote the deferred design from
+  [02-design-notes.md §"Provenance side table"](02-design-notes.md) — a sparse
+  map keyed by `soltype.Type` pointer identity, the inverse of `Info`. M2.5 ships
+  the **leaf** variant `FromAST{Node, Kind}` only. The interior edge kinds
+  (`FromBoundPropagation`, `FromInstantiation`, `FromExtrusion`, `FromCoalesce`)
+  are deferred and **ride along** with the M3+ operations that mint them
+  (instantiation is M3; bound-propagation/coalesce/extrusion already exist but
+  their multi-hop *renderer* lands with the features that make the chains deep).
+- **Populate `FromAST` at the construction sites.** The places the M2 walk mints
+  a type from a node: literal inference, ident resolution, param binding
+  (`inferFunc`), application result var (`inferCall`), tuple elements, object
+  field values, member-access result var. A single `prov[t] = FromAST{n, kind}`
+  per site, via a node+kind-taking helper (design notes "Population discipline").
+- **Per-operand blame at the error path.** Each `SolverError` already carries
+  typed `LHS, RHS soltype.Type` references
+  ([internal/solver/errors.go](../../internal/solver/errors.go)). Replace the
+  single umbrella stamp with a lookup: map each failed operand to its narrowest
+  `FromAST` span via `Prov` and stamp the **most specific contributing node**,
+  falling back to `n` when an operand has no entry (a shared atom or a
+  synthesized bound).
+- **Multi-span errors.** Extend `errSpan` to carry a primary span plus *related*
+  spans, so a mismatch can point at **both** the expected-source and the
+  actual-source location (e.g. annotation site *and* offending literal) instead
+  of one node that merely dominates both.
+- **Honest limitation (drives the leaf/interior split).** Leaf-only blame is
+  precise whenever an operand traces directly to a literal/param/field. An
+  operand that is itself a *synthesized* type (a coalesced or propagated bound)
+  has no single AST node; chasing its blame back needs the interior edges, which
+  arrive with M3+. M2.5's fallback-to-`n` keeps those cases no worse than today.
+- **Perf invariant.** The hot `constrain`/`coalesce` loops must never consult
+  `Prov`; it is read only on error paths and by LSP/diagnostic consumers (design
+  notes), so the map-lookup cost stays off the inference critical path.
+
+**Accept:** a golden set of fixtures asserting *exact* error spans —
+`val x: number = "hi"` blames the `"hi"` literal, not the whole decl; a record
+field-type mismatch blames the offending field value; a tuple-length mismatch
+points at the tuple literal; a missing-property read blames the member's prop,
+not the receiver. Existing M2 error fixtures (which assert placeholder spans) are
+updated to the narrowest real spans.
+
+**Depends on:** M2 (the constraint-generating walk, `Info`, and the bridge error
+kinds). Precedes M3 so the table and the `FromAST` discipline exist *before*
+scheme instantiation introduces the first interior origin (`FromInstantiation`).
 
 ---
 
@@ -902,3 +961,12 @@ reduce through the M9 operator machinery.
   semantics (not old-checker output), and the second fixture harness's
   differential is a triage tool, not a parity gate. This is what lets
   intended improvements through instead of forcing old-checker parity.
+- M2.5 sits between M2 and M3 (rather than folding into M3 or deferring with the
+  rest of `Prov`) because the `FromAST` discipline is "born-with-the-type" infra:
+  threading one provenance line per construction site is cheap across M2's ~8
+  sites and compounds in cost as M3–M6 multiply them. Numbered `.5` to avoid
+  renumbering M3–M9 and their references across the docs and code comments. Its
+  scope is the *leaf* layer only; the multi-hop interior edges deliberately ride
+  along with the M3+ features that introduce deep provenance chains, so M2.5 stays
+  a small, independently-verifiable infra step (golden span fixtures) and does not
+  enlarge M3's language-feature acceptance bar.
