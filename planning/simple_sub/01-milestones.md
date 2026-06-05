@@ -162,7 +162,10 @@ reassess.
 
 ## M2.5 — Provenance side table + precise error spans
 
-A focused infra milestone, **not** a language feature. M2 stamps the *umbrella*
+A focused infra milestone, **not** a language feature. See
+[m2.5-implementation-plan.md](m2.5-implementation-plan.md) for the full PR
+breakdown, the per-operand blame design, and the construction-site population
+table. M2 stamps the *umbrella*
 node's span on every constraint error — `constrain(n, lhs, rhs)` sets `n.Span()`
 on each returned error ([internal/solver/infer.go](../../internal/solver/infer.go)
 `(*checker).constrain`), so a mismatch deep inside a large declaration blames the
