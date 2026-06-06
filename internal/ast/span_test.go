@@ -21,7 +21,7 @@ func TestSpanContainsSpan(t *testing.T) {
 	t.Run("equal span is contained", func(t *testing.T) {
 		require.True(t, outer.ContainsSpan(outer))
 	})
-	t.Run("flush at the end (exclusive end) is contained", func(t *testing.T) {
+	t.Run("flush at the end (inclusive boundary) is contained", func(t *testing.T) {
 		require.True(t, outer.ContainsSpan(sp(1, 17, 1, 20, 0)))
 	})
 	t.Run("starts before is not contained", func(t *testing.T) {

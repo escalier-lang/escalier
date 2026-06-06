@@ -142,6 +142,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				c.constrain(node, ret, annT) // body <: declared return
 			}
 			ret = annT
+		} else if !hasBody {
+			// Bodyless function with an unsupported return annotation: there is no
+			// body to recover the return type from, and leaving the synthetic Void
+			// would falsely signal "returns nothing" to callers. Fall back to
+			// unknown (⊤) — the honest "couldn't resolve the declared return"
+			// recovery. (A fresh var would coalesce to `never` in return position,
+			// which is worse.)
+			ret = &soltype.UnknownType{}
 		}
 	}
 	ft := &soltype.FuncType{Params: params, Ret: ret}

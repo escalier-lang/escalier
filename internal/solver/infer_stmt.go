@@ -51,7 +51,13 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		name, named := varName(vd)
 		if !named {
-			c.reportUnsupported(vd.Pattern)
+			// A nil pattern (hand-built AST; the parser synthesizes a placeholder)
+			// blames the decl, mirroring inferFunc — never a nil-node Span() panic.
+			if vd.Pattern != nil {
+				c.reportUnsupported(vd.Pattern)
+			} else {
+				c.reportUnsupported(vd)
+			}
 			return &soltype.Void{}
 		}
 		// Unlike the module driver (inferComponent), a body-level redeclaration is

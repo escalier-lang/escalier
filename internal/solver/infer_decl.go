@@ -32,8 +32,15 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		if _, named := varName(d); !named {
 			// Destructuring patterns (TuplePat/ObjectPat) need the tuple/record
 			// types that arrive in M4. The initializer was already walked above
-			// (its errors surfaced); report the pattern and produce no binding.
-			c.reportUnsupported(d.Pattern)
+			// (its errors surfaced); report the pattern and produce no binding. A
+			// nil pattern (not produced by the parser, which synthesizes a
+			// placeholder, but possible in a hand-built AST) blames the decl instead,
+			// mirroring inferFunc — never a nil-node Span() panic.
+			if d.Pattern != nil {
+				c.reportUnsupported(d.Pattern)
+			} else {
+				c.reportUnsupported(d)
+			}
 			return nil, nil, false
 		}
 		return initType, &ast.NodeProvenance{Node: d}, true

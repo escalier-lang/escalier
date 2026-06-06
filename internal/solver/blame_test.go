@@ -224,3 +224,19 @@ func TestUnsupportedParamAnnotationRecovers(t *testing.T) {
 	require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
 	require.Equal(t, map[string]string{"g": "fn (x: unknown) -> number"}, values)
 }
+
+// A VarDecl with a nil pattern (not produced by the parser, which synthesizes a
+// placeholder, but possible in a hand-built AST) must blame the decl without
+// panicking — honoring M2's "never a panic" guarantee now that Span() is lazy
+// (it derefs the stored node on demand). Mirrors inferFunc's nil-param fallback.
+func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
+	c := newChecker()
+	d := ast.NewVarDecl(ast.ValKind, nil, nil, numExpr(5), false, false, testSpan())
+	require.NotPanics(t, func() {
+		_, _, ok := c.inferDeclDef(NewScope(), 0, d)
+		require.False(t, ok)
+	})
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Unsupported in M2: VarDecl", c.errs[0].Message())
+	require.Equal(t, testSpan(), c.errs[0].Span()) // derefs the decl node, not a nil pattern
+}
