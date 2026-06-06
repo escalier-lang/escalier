@@ -197,32 +197,30 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 
 // --- M2.5 finding #1: unsupported-annotation recovery (no spurious `<: never`) ---
 
-// An unsupported val annotation reports ITS OWN error once and the binding
-// recovers to the initializer's inferred type — no cascade `cannot constrain e <:
-// never`, no `never`-poisoned binding.
-func TestUnsupportedValAnnotationRecovers(t *testing.T) {
-	values, _, errs := inferSource(t, `val x: Foo = 5`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
-	require.Equal(t, map[string]string{"x": "5"}, values)
-}
-
-// An unsupported function-return annotation likewise recovers: one error, and the
-// function keeps its inferred body return type instead of `never`.
-func TestUnsupportedReturnAnnotationRecovers(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() -> Foo { 5 }`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
-	require.Equal(t, map[string]string{"f": "fn () -> 5"}, values)
-}
-
-// An unsupported param annotation recovers the param to a fresh var (rendering as
-// `unknown` in contravariant position), not `never`.
-func TestUnsupportedParamAnnotationRecovers(t *testing.T) {
-	values, _, errs := inferSource(t, `fn g(x: Foo) -> number { 5 }`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
-	require.Equal(t, map[string]string{"g": "fn (x: unknown) -> number"}, values)
+// An unsupported annotation reports ITS OWN error once and the binding recovers to
+// the type it would otherwise infer — no cascade `cannot constrain e <: never`, no
+// `never`-poisoned binding. Covers each annotation position:
+//   - val: keeps the initializer's inferred type;
+//   - function return: keeps the inferred body return type;
+//   - param: recovers to a fresh var (rendering `unknown` in contravariant position).
+func TestUnsupportedAnnotationRecovers(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{"val", `val x: Foo = 5`, map[string]string{"x": "5"}},
+		{"return", `fn f() -> Foo { 5 }`, map[string]string{"f": "fn () -> 5"}},
+		{"param", `fn g(x: Foo) -> number { 5 }`, map[string]string{"g": "fn (x: unknown) -> number"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
+			require.Equal(t, tt.want, values)
+		})
+	}
 }
 
 // A VarDecl with a nil pattern (not produced by the parser, which synthesizes a
