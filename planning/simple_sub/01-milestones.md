@@ -25,8 +25,9 @@ rules. The **default is settled**: Escalier code is exact-by-default, TypeScript
 imports are inexact-by-default, and each former implements its default *as it
 lands* (M3 functions, M4 records/tuples, M5 class instances via `final`,
 M6 unions) — tests at each milestone assert what the implementation produces.
-(The usage-inferred-shape default — Policy A — and the `open` parameter marker
-that opts back into row polymorphism are not yet reflected in
+(The usage-inferred-shape default — that usage-collected shapes coalesce as
+**exact** — and the `open` parameter marker that opts back into row polymorphism
+are not yet reflected in
 [exact-types/requirements.md](../exact-types/requirements.md); the spec needs
 a section recording both before M3 lands.)
 
@@ -236,8 +237,22 @@ scheme instantiation introduces the first interior origin (`FromInstantiation`).
 
 ## M3 — Functions, application, let-polymorphism
 
-- Lambda/`fn` decls, application, multi-arg functions.
-- Level-based let-generalization (instantiate / freshenAbove).
+> **Baseline:** M2 already shipped the **monomorphic** function/application/block
+> walk (`inferFuncExpr`/`inferFunc`/`inferCall`/`inferBlock`), the dep-graph SCC
+> ordering, and recursive-group resolution (freezing each group to a coalesced
+> monotype). M3 does **not** rebuild that walk — it layers the **polymorphic**
+> machinery (and async, exactness, overloading) on top. See
+> [m3-implementation-plan.md](m3-implementation-plan.md) for the PR-by-PR plan.
+
+- Lambda/`fn` decls, application, multi-arg functions — **monomorphic forms
+  already done in M2**; M3's contribution here is making them *polymorphic* (the
+  generalization + simplification below), not building the walk.
+- Level-based let-generalization (instantiate / freshenAbove): replace M2's
+  monomorphic SCC freeze (`coalesce` to a monotype) with generalization into a
+  `PolyScheme` at the binding boundary, swap `ValueBinding.Type` for a scheme
+  (retaining its `Sources`), and add the `<T0, …>` quantifier prefix to the
+  printer. (The `coalesce` recursion `seen`-guard already shipped in M2 PR-5;
+  what remains for M3 is the precise μ-bound recursive *rendering*.)
 - The simplification pass: single-polarity elimination + co-occurrence variable
   merging (so generalized signatures render compactly, and parameter-only
   variables coalesce to `unknown` rather than a vacuous `<T0>` — a blessed
@@ -374,8 +389,9 @@ wrapper) are what first populate a lifetime. Land them together.
   β})`; field requirements accumulate as upper bounds and coalesce (negative
   position) to a record. This is what replaces `Open`/`Widenable`/
   `ArrayConstraint`. (Spike M2.) The usage-collected shape **coalesces as
-  exact** by default (Policy A — see [02-design-notes.md](02-design-notes.md)
-  §"Exactness"): the row is closed once body inference completes. Row
+  exact** by default (the exact-by-default rule — see
+  [02-design-notes.md](02-design-notes.md) §"Exactness"): the row is closed once
+  body inference completes. Row
   polymorphism is opt-in via an `open` parameter marker (keyword provisional)
   — `fn dist(open p) => ...` keeps `p` inexact so callers can pass records
   richer than the field set the body touches. The `open` marker lands here

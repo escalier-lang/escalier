@@ -687,7 +687,7 @@ subset, else an error. The `exact` flag then lands on the resulting
 
 **Inference defaults:** object/tuple/union *literals* infer as **exact**; a
 *usage-inferred* shape (from member access) **also infers as exact** — the row
-is closed once body inference completes (Policy A). Row-polymorphism is opt-in
+is closed once body inference completes (the **exact-by-default** rule). Row-polymorphism is opt-in
 via an `open` parameter marker (keyword provisional): `fn dist(open p) => ...`
 keeps `p` inexact so callers can pass records richer than the field set the body
 touches. **TS imports are inexact** for all categories
@@ -696,9 +696,9 @@ touches. **TS imports are inexact** for all categories
 Rationale: most Escalier code is application code, not generic library code, so
 biasing the default toward "exact = catch extra-field bugs at the call site" is
 the better fit for the typical audience. Library authors writing row-polymorphic
-helpers pay a one-keyword cost. The alternative (Policy B — usage-inferred
-shapes default inexact, treating the row variable as the natural meaning of a
-lower bound) was considered and rejected on default-audience grounds.
+helpers pay a one-keyword cost. The alternative (**inexact-by-default** —
+usage-inferred shapes default inexact, treating the row variable as the natural
+meaning of a lower bound) was considered and rejected on default-audience grounds.
 
 **This decision is not yet reflected in `planning/exact-types/requirements.md`;
 the spec needs a section recording it before M3 lands.**
