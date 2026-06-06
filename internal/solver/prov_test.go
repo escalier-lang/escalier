@@ -109,7 +109,8 @@ func TestProvAnnotatedParamUsesAnnotationOrigin(t *testing.T) {
 func TestProvAnnotationType(t *testing.T) {
 	c := newChecker()
 	ta := numAnn()
-	ty := c.resolveTypeAnn(ta)
+	ty, ok := c.resolveTypeAnn(ta)
+	require.True(t, ok)
 	requireOrigin(t, c, ty, ta, AnnotationType)
 }
 
@@ -132,4 +133,29 @@ func TestProvCoalescedTypeHasNoEntry(t *testing.T) {
 	co := coalesce(v, soltype.Positive) // empty bounds → never, a fresh synthesized atom
 	_, ok := c.prov.NodeFor(co)
 	require.False(t, ok, "a coalesced type must have no provenance entry")
+}
+
+// The debugProv guard (finding #5) enforces the unique-pointer invariant: recording
+// the SAME type pointer against a DIFFERENT node panics (catching a future
+// interned/coalesced-pointer reuse that would silently mis-blame), while
+// re-recording against the same node is idempotent and allowed.
+func TestProvDebugGuardCatchesConflictingOverwrite(t *testing.T) {
+	c := newChecker()
+	c.debugProv = true
+	ty := &soltype.PrimType{Prim: soltype.NumPrim}
+	nodeA := numAnn()
+	nodeB := strAnn()
+
+	c.recordProv(ty, nodeA, AnnotationType)
+	require.NotPanics(t, func() { c.recordProv(ty, nodeA, AnnotationType) }, "re-recording the same node is idempotent")
+	require.Panics(t, func() { c.recordProv(ty, nodeB, AnnotationType) }, "re-recording a different node violates the invariant")
+}
+
+// With the guard OFF (production default), a conflicting overwrite does not panic —
+// a span bug must never crash the compiler (it degrades to last-write-wins blame).
+func TestProvDebugGuardOffDoesNotPanic(t *testing.T) {
+	c := newChecker() // debugProv defaults false
+	ty := &soltype.PrimType{Prim: soltype.NumPrim}
+	c.recordProv(ty, numAnn(), AnnotationType)
+	require.NotPanics(t, func() { c.recordProv(ty, strAnn(), AnnotationType) })
 }

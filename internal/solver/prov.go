@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"fmt"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -46,11 +48,15 @@ const (
 	AnnotationType                        // a fresh PrimType from resolveTypeAnn (number/string/boolean)
 )
 
-// Provenance resolves an operand type to the AST node that minted it. M2.5's Prov
-// implements it as a single map lookup; M3+ can supply a resolver that chases
-// interior Origin edges (FromInstantiation, …) to the nearest AST leaf without
-// changing any caller — that is the "follow the provenance chain" path.
-type Provenance interface {
+// NodeResolver resolves an operand type to the AST node that minted it. M2.5's
+// Prov implements it as a single map lookup; M3+ can supply a resolver that
+// chases interior Origin edges (FromInstantiation, …) to the nearest AST leaf
+// without changing any caller — that is the "follow the provenance chain" path.
+//
+// Named NodeResolver rather than Provenance to avoid shadowing the imported
+// `provenance` package / `provenance.Provenance` binding-source marker used
+// elsewhere in this package (per CLAUDE.md).
+type NodeResolver interface {
 	NodeFor(soltype.Type) (ast.Node, bool)
 }
 
@@ -69,6 +75,19 @@ func (p Prov) NodeFor(t soltype.Type) (ast.Node, bool) {
 // construction sites call it; synthesized types (coalesced/extruded, M3+) get no
 // entry. Called only in the walk (construction), never in constrain/coalesce, so
 // the hot inference path never consults Prov (the perf invariant, §3.9).
+//
+// Invariant: every type passed here is a FRESHLY-minted, unique pointer, so a
+// record never collides with a different node. Blame correctness depends on it —
+// a reused/interned/coalesced pointer recorded twice would silently overwrite an
+// earlier node and mis-blame with no crash. The c.debugProv guard makes that
+// violation loud in tests (re-recording the same pointer against a *different*
+// node panics); it stays off in production so a span bug can never crash the
+// compiler. Re-recording the same node is idempotent and allowed.
 func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
+	if c.debugProv {
+		if prev, ok := c.prov[t].(FromAST); ok && prev.Node != n {
+			panic(fmt.Sprintf("recordProv: type %p re-recorded against a different node (was %T, now %T) — the unique-pointer invariant is violated", t, prev.Node, n))
+		}
+	}
 	c.prov[t] = FromAST{Node: n, Kind: kind}
 }

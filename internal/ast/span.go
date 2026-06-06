@@ -32,6 +32,14 @@ func (s Span) Contains(loc Location) bool {
 		(s.End.Line > loc.Line || (s.End.Line == loc.Line && s.End.Column >= loc.Column))
 }
 
+// ContainsSpan reports whether inner lies entirely within s: the same source, and
+// both of inner's endpoints are contained in s. Used to decide whether a
+// finer-grained span (e.g. an operand's source node) sits inside a coarser one
+// (e.g. a constraint site) before preferring it for blame.
+func (s Span) ContainsSpan(inner Span) bool {
+	return s.SourceID == inner.SourceID && s.Contains(inner.Start) && s.Contains(inner.End)
+}
+
 func NewSpan(start, end Location, sourceID int) Span {
 	return Span{Start: start, End: end, SourceID: sourceID}
 }

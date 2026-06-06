@@ -128,15 +128,21 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		ret = c.inferBlock(fnScope, lvl, body)
 	}
 	if sig.Return != nil {
-		annT := c.resolveTypeAnn(sig.Return)
-		// Only check the inferred body against the declared return when there IS a
-		// body. A bodyless (declare/ambient) function has no body to constrain, so
-		// it simply adopts the annotation; constraining the synthetic Void return
-		// would raise a spurious `void <: T` error.
-		if hasBody {
-			c.constrain(node, ret, annT) // body <: declared return
+		// Skip the check and adopt-the-annotation when the return annotation is
+		// unsupported (ok=false): resolveTypeAnn already reported it and handed back
+		// a `never` placeholder, so constraining the body `<: never` would cascade a
+		// spurious error and adopting it would poison the return type. Keep the
+		// inferred body type instead (error recovery).
+		if annT, ok := c.resolveTypeAnn(sig.Return); ok {
+			// Only check the inferred body against the declared return when there IS a
+			// body. A bodyless (declare/ambient) function has no body to constrain, so
+			// it simply adopts the annotation; constraining the synthetic Void return
+			// would raise a spurious `void <: T` error.
+			if hasBody {
+				c.constrain(node, ret, annT) // body <: declared return
+			}
+			ret = annT
 		}
-		ret = annT
 	}
 	ft := &soltype.FuncType{Params: params, Ret: ret}
 	// Record the function's own type against its node so a function flowing into a
@@ -150,9 +156,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 
 // paramType resolves a param's type: its annotation when present, else a fresh
 // inference variable at the current level (the spike's "fresh var per param").
+// An unsupported annotation (ok=false) already reported its own error; the param
+// adopts a fresh var rather than the `never` placeholder so the body and any
+// call site recover against an unconstrained variable instead of cascading
+// `<: never` failures.
 func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 	if p.TypeAnn != nil {
-		return c.resolveTypeAnn(p.TypeAnn)
+		if t, ok := c.resolveTypeAnn(p.TypeAnn); ok {
+			return t
+		}
 	}
 	return c.freshAt(lvl)
 }

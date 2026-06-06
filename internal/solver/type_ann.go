@@ -5,23 +5,27 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeAnn converts an M2-supported type annotation into a soltype.Type.
-// M2 needs only the primitive annotations that annotated params and return
-// types use (number/string/boolean); everything richer — type references,
-// generics, object/tuple/function annotations, unions — is represented by types
-// later milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here.
-// It takes no scope: the supported set is all closed primitives, with no name to
-// look up. Name resolution against the type scope arrives with TypeRef support.
-func (c *checker) resolveTypeAnn(ta ast.TypeAnn) soltype.Type {
+// resolveTypeAnn converts an M2-supported type annotation into a soltype.Type,
+// returning ok=false when the annotation is outside the supported set. M2 needs
+// only the primitive annotations that annotated params and return types use
+// (number/string/boolean); everything richer — type references, generics,
+// object/tuple/function annotations, unions — is represented by types later
+// milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here, with
+// ok=false and a `never` placeholder so a caller can recover by keeping the type
+// it already inferred (rather than constraining against / adopting `never`, which
+// would cascade a spurious `<: never` error and poison the binding). It takes no
+// scope: the supported set is all closed primitives, with no name to look up.
+// Name resolution against the type scope arrives with TypeRef support.
+func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
-		return c.annPrim(ta, soltype.NumPrim)
+		return c.annPrim(ta, soltype.NumPrim), true
 	case *ast.StringTypeAnn:
-		return c.annPrim(ta, soltype.StrPrim)
+		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
-		return c.annPrim(ta, soltype.BoolPrim)
+		return c.annPrim(ta, soltype.BoolPrim), true
 	default:
-		return c.reportUnsupported(ta)
+		return c.reportUnsupported(ta), false
 	}
 }
 

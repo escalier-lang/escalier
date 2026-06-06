@@ -40,8 +40,8 @@ type SolverError interface {
 // constraint (an ident's definition) or not at all (a Void result).
 type CannotConstrainError struct {
 	LHS, RHS soltype.Type
-	prov     Provenance // M2.5: type→node index; assigned after Constrain returns (§3.5)
-	site     ast.Node   // M2.5: the constraint node n — the use, the fallback when LHS has no entry
+	prov     NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
+	site     ast.Node     // M2.5: the constraint node n — the use, the fallback when LHS has no entry
 }
 
 // FuncArityMismatchError fires on FuncType <: FuncType when the two arities
@@ -52,10 +52,14 @@ type CannotConstrainError struct {
 //
 // The subject is the RHS call-shape (a fresh FuncType{args, res} minted per call,
 // recorded against the CallExpr), so Span() resolves precisely to the call;
-// Related() follows the LHS callee to a "defined here" span.
+// Related() follows the LHS callee to a "defined here" span. site is the
+// constraint node, used as a coarse fallback when neither operand resolves (e.g.
+// once M3 produces higher-order FuncArity errors whose RHS isn't a recorded
+// call-shape) so blame never degrades to the zero span.
 type FuncArityMismatchError struct {
 	LHS, RHS *soltype.FuncType
-	prov     Provenance // M2.5: type→node index (§3.5)
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
 // TupleLengthMismatchError fires on TupleType <: TupleType with different
@@ -65,10 +69,14 @@ type FuncArityMismatchError struct {
 // The subject is the LHS tuple literal (recorded by inferTuple); Related() points
 // at the RHS expected-source. Not actually reachable in M2.5 — a tuple <: tuple
 // constraint needs a tuple sink (annotation/param) resolveTypeAnn does not yet
-// produce — so its blame is wired but exercised from M4.
+// produce — so its blame is wired but exercised from M4. site is the constraint
+// node, the coarse fallback when neither tuple resolves (e.g. an M4 tuple
+// annotation whose elements aren't recorded) so blame never degrades to the zero
+// span.
 type TupleLengthMismatchError struct {
 	LHS, RHS *soltype.TupleType
-	prov     Provenance // M2.5: type→node index (§3.5)
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
 // MissingPropertyError fires on RecordType <: RecordType when the RHS requires a
@@ -81,11 +89,16 @@ type TupleLengthMismatchError struct {
 // The subject is the field's inner result var (RHS.Field(Name)), minted by
 // inferMember and recorded against the .prop identifier — so Span() blames the
 // member's prop (.foo), not the receiver. Name stays: the absent field name is
-// not recoverable from a single node (the RHS may require several fields).
+// not recoverable from a single node (the RHS may require several fields). site
+// is the constraint node, the coarse fallback when the field var has no entry —
+// reachable once M4 builds concrete record <: record requirements whose field
+// types are coalesced/annotation-minted (and therefore not recorded by
+// inferMember); until then it never fires, but it keeps blame off the zero span.
 type MissingPropertyError struct {
 	LHS, RHS *soltype.RecordType
 	Name     string
-	prov     Provenance // M2.5: type→node index (§3.5)
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback when the field var has no entry
 }
 
 func (*CannotConstrainError) isSolverError()     {}
@@ -100,43 +113,28 @@ func (e *CannotConstrainError) Span() ast.Span      { return spanOf(e.prov, e.LH
 func (e *CannotConstrainError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
 
 func (e *FuncArityMismatchError) Span() ast.Span {
-	if e.prov != nil {
-		if n, ok := e.prov.NodeFor(e.RHS); ok { // the call-shape → the CallExpr
-			return n.Span()
-		}
-		if n, ok := e.prov.NodeFor(e.LHS); ok { // degrade → the callee function
-			return n.Span()
-		}
-	}
-	return ast.Span{}
+	// RHS call-shape → the CallExpr; degrade → the callee function; else the site.
+	return spanOfFirst(e.prov, e.site, e.RHS, e.LHS)
 }
 func (e *FuncArityMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.LHS) } // the fn
 
 func (e *TupleLengthMismatchError) Span() ast.Span {
-	if e.prov != nil {
-		if n, ok := e.prov.NodeFor(e.LHS); ok { // the tuple literal
-			return n.Span()
-		}
-		if n, ok := e.prov.NodeFor(e.RHS); ok { // degrade → the other tuple
-			return n.Span()
-		}
-	}
-	return ast.Span{}
+	// LHS tuple literal → degrade to the other tuple → else the site.
+	return spanOfFirst(e.prov, e.site, e.LHS, e.RHS)
 }
 func (e *TupleLengthMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
 
 func (e *MissingPropertyError) Span() ast.Span {
-	if e.prov != nil {
-		if f, ok := e.RHS.Field(e.Name); ok { // the field's inner var → the .foo prop ident
-			if n, ok := e.prov.NodeFor(f); ok {
-				return n.Span()
-			}
-		}
-		if n, ok := e.prov.NodeFor(e.LHS); ok { // unreachable in practice → the receiver
-			return n.Span()
-		}
+	// The field's inner var → the .foo prop ident; degrade to the receiver; else
+	// the site. The field-var arm is the only one reachable in M2.5 (member
+	// access always records it); the receiver/site arms cover the M4 concrete
+	// record <: record case where the field type may be unrecorded.
+	ops := make([]soltype.Type, 0, 2)
+	if f, ok := e.RHS.Field(e.Name); ok {
+		ops = append(ops, f)
 	}
-	return ast.Span{}
+	ops = append(ops, e.LHS)
+	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.LHS) } // the receiver
 
@@ -148,30 +146,47 @@ func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e
 // site, so the use (site) wins — an ident-use error points at the use, not the
 // definition (§3.8). In M3+, NodeFor chases interior Origin edges to the nearest
 // AST leaf; in M2.5 it is a single lookup.
-func spanOf(p Provenance, op soltype.Type, site ast.Node) ast.Span {
+func spanOf(p NodeResolver, op soltype.Type, site ast.Node) ast.Span {
 	if p != nil && site != nil {
-		if n, ok := p.NodeFor(op); ok && within(site.Span(), n.Span()) {
+		if n, ok := p.NodeFor(op); ok && site.Span().ContainsSpan(n.Span()) {
 			return n.Span()
 		}
 	}
+	return spanOfNode(site)
+}
+
+// spanOfFirst returns the span of the first operand that resolves through p, in
+// the order given, falling back to the site's span (and finally the zero span
+// when there is no site). Unlike spanOf it applies no containment guard — its
+// callers' subject operands are minted *at* the constraint (a call-shape, a tuple
+// literal, a member's field var), so the first resolved operand is already the
+// narrowest blame. The site fallback keeps blame off the zero span when an
+// operand is unrecorded (a degrade path reachable from M4).
+func spanOfFirst(p NodeResolver, site ast.Node, ops ...soltype.Type) ast.Span {
+	if p != nil {
+		for _, op := range ops {
+			if n, ok := p.NodeFor(op); ok {
+				return n.Span()
+			}
+		}
+	}
+	return spanOfNode(site)
+}
+
+// spanOfNode returns site.Span(), or the zero span when site is nil. The zero
+// span only arises for a hand-built error with no site; every error the walk
+// produces carries one.
+func spanOfNode(site ast.Node) ast.Span {
 	if site != nil {
 		return site.Span()
 	}
 	return ast.Span{}
 }
 
-// within reports whether inner sits inside outer (same source, both of inner's
-// endpoints within outer). ast.Span.Contains takes a Location, so a span is
-// contained when its Start and End both are.
-func within(outer, inner ast.Span) bool {
-	return outer.SourceID == inner.SourceID &&
-		outer.Contains(inner.Start) && outer.Contains(inner.End)
-}
-
 // relatedOf resolves each operand that has an entry to a related span and drops
 // the ones that don't (no fallback — a missing related node is simply omitted),
 // deduped by span (§3.6).
-func relatedOf(p Provenance, ops ...soltype.Type) []ast.Span {
+func relatedOf(p NodeResolver, ops ...soltype.Type) []ast.Span {
 	if p == nil {
 		return nil
 	}

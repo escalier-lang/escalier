@@ -72,9 +72,16 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// related node. The constraint node is the initializer, so even the
 		// fallback span is the RHS, not the whole decl; the binding then adopts the
 		// annotated type.
-		annT := c.resolveTypeAnn(d.TypeAnn)
-		c.constrain(d.Init, initT, annT)
-		initT = annT
+		//
+		// Skip both the check and the adoption when the annotation is unsupported
+		// (ok=false): resolveTypeAnn already reported it and returned a `never`
+		// placeholder, so constraining `initT <: never` would cascade a spurious
+		// error and adopting `never` would poison the binding. Keep the inferred
+		// initializer type instead (error recovery).
+		if annT, ok := c.resolveTypeAnn(d.TypeAnn); ok {
+			c.constrain(d.Init, initT, annT)
+			initT = annT
+		}
 	}
 	return initT, true
 }

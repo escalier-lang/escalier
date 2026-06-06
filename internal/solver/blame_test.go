@@ -204,3 +204,62 @@ func TestMissingPropertyBlamePropAndRelatesReceiver(t *testing.T) {
 	require.Equal(t, propNode.Span(), e.Span())
 	require.Equal(t, []ast.Span{recvNode.Span()}, e.Related())
 }
+
+// Site fallback (M2.5 finding #2): when no operand resolves through Prov, the
+// three site-carrying constraint kinds blame the constraint node rather than
+// returning the zero span (which a consumer would mis-render as 0:0). This degrade
+// path is unreachable in M2.5 but becomes live with M4 record/tuple sinks.
+func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
+	site := ast.NewIdent("site", tspan(7, 3, 7, 12))
+
+	t.Run("FuncArity", func(t *testing.T) {
+		e := &FuncArityMismatchError{
+			LHS: &soltype.FuncType{}, RHS: &soltype.FuncType{}, prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("TupleLength", func(t *testing.T) {
+		e := &TupleLengthMismatchError{
+			LHS: &soltype.TupleType{}, RHS: &soltype.TupleType{}, prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("MissingProperty", func(t *testing.T) {
+		e := &MissingPropertyError{
+			LHS:  &soltype.RecordType{},
+			RHS:  &soltype.RecordType{Fields: []*soltype.RecordField{{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			Name: "b", prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+}
+
+// --- M2.5 finding #1: unsupported-annotation recovery (no spurious `<: never`) ---
+
+// An unsupported val annotation reports ITS OWN error once and the binding
+// recovers to the initializer's inferred type — no cascade `cannot constrain e <:
+// never`, no `never`-poisoned binding.
+func TestUnsupportedValAnnotationRecovers(t *testing.T) {
+	values, _, errs := inferSource(t, `val x: Foo = 5`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
+	require.Equal(t, map[string]string{"x": "5"}, values)
+}
+
+// An unsupported function-return annotation likewise recovers: one error, and the
+// function keeps its inferred body return type instead of `never`.
+func TestUnsupportedReturnAnnotationRecovers(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() -> Foo { 5 }`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
+	require.Equal(t, map[string]string{"f": "fn () -> 5"}, values)
+}
+
+// An unsupported param annotation recovers the param to a fresh var (rendering as
+// `unknown` in contravariant position), not `never`.
+func TestUnsupportedParamAnnotationRecovers(t *testing.T) {
+	values, _, errs := inferSource(t, `fn g(x: Foo) -> number { 5 }`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
+	require.Equal(t, map[string]string{"g": "fn (x: unknown) -> number"}, values)
+}

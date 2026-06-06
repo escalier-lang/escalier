@@ -22,6 +22,13 @@ type checker struct {
 	info *Info         // M1: node → soltype.Type side table (unexported setType)
 	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
+
+	// debugProv, when set, makes recordProv panic on a conflicting overwrite (the
+	// same type pointer recorded against a *different* node) — turning the
+	// implicit "every minted type is a unique pointer" invariant into an enforced
+	// one. Off in production (a span bug must never crash the compiler); flipped on
+	// by tests that exercise the guard. See recordProv.
+	debugProv bool
 }
 
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
@@ -37,23 +44,23 @@ func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 }
 
 // constrain asserts lhs <: rhs and, for each resulting constraint error, hands it
-// the provenance table (and, for CannotConstrainError, the constraint node n as a
-// blame fallback) so its own Span()/Related() can resolve per-operand blame
-// through Prov on demand (§3.5). The engine itself never touches Prov — the fields
-// are assigned here, after Constrain returns, so the hot loop stays off the table
-// (the perf invariant, §3.9). Bridge errors never flow through here; they
-// self-blame from their own node.
+// the provenance table and the constraint node n as a blame fallback, so its own
+// Span()/Related() can resolve per-operand blame through Prov on demand and fall
+// back to n's span (never the zero span) when an operand has no entry (§3.5). The
+// engine itself never touches Prov — the fields are assigned here, after Constrain
+// returns, so the hot loop stays off the table (the perf invariant, §3.9). Bridge
+// errors never flow through here; they self-blame from their own node.
 func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type) {
 	for _, e := range c.ctx.Constrain(lhs, rhs) {
 		switch err := e.(type) {
 		case *CannotConstrainError:
-			err.prov, err.site = c.prov, n // the only kind that still needs a site fallback
+			err.prov, err.site = c.prov, n
 		case *TupleLengthMismatchError:
-			err.prov = c.prov
+			err.prov, err.site = c.prov, n
 		case *MissingPropertyError:
-			err.prov = c.prov
+			err.prov, err.site = c.prov, n
 		case *FuncArityMismatchError:
-			err.prov = c.prov
+			err.prov, err.site = c.prov, n
 		}
 		c.errs = append(c.errs, e)
 	}
