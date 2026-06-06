@@ -30,12 +30,31 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
 }
 
 // annPrim mints a FRESH PrimType for an annotation and records it against the
-// annotation node (AnnotationType origin). The fresh-atom discipline (§3.3):
-// there is no interned `number` singleton, so each annotation's atom is its own
-// pointer and is directly recordable — which is what lets the `number` in
-// `val x: number = "hi"` resolve to the annotation as the related blame node, and
-// a prim/prim mismatch blame the offending annotation. Subtyping is unaffected:
-// constrain compares PrimType.Prim by value, not pointer.
+// annotation node (AnnotationType origin) — the "fresh-atom discipline" (§3.3).
+//
+// Why fresh, rather than a single shared/interned `number` value? Provenance is
+// the reason. The Prov side table is keyed by POINTER IDENTITY
+// (soltype.Type -> Origin), so the only way to record "this primitive came from
+// THIS annotation node" is for the primitive to be its own pointer, unique to this
+// annotation. Three consequences follow:
+//
+//   - Precise blame. A unique atom per annotation lets `val x: number = "hi"`
+//     resolve its `number` operand back to the exact annotation node — surfaced as
+//     the related "expected here" span — and lets a prim/prim mismatch blame the
+//     offending annotation instead of degrading to the constraint site (§3.3, §3.7).
+//   - No Prov-invariant conflict. recordProv requires each type pointer to map to a
+//     single node; the debugProv guard panics when a pointer is re-recorded against
+//     a DIFFERENT node (prov.go). A shared `number` would be recorded against every
+//     `number` annotation's node in turn — a conflicting overwrite. Fresh atoms each
+//     write a distinct pointer, so there is never a conflict and no last-write-wins
+//     blame.
+//   - Free, because correctness ignores identity. constrain compares PrimType.Prim
+//     BY VALUE (`r.Prim == l.Prim`, constrain.go), never by pointer, so two
+//     distinct-but-equal `number`s still subtype-match. Freshness only ever adds a
+//     redundant coinductive-`seen` entry, never a loop or a spurious mismatch.
+//
+// (soltype interns no primitive singletons anyway, so there is nothing to share —
+// minting fresh is the natural choice here, not an added cost.)
 func (c *checker) annPrim(ta ast.TypeAnn, p soltype.Prim) soltype.Type {
 	t := &soltype.PrimType{Prim: p}
 	c.recordProv(t, ta, AnnotationType)

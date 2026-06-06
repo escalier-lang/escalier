@@ -126,89 +126,50 @@ func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
 	requireBlame(t, src, errs, "Unsupported in M2: OptionalChain", "o?.a")
 }
 
-// --- PR-2 unit tests: Span()/Related() over hand-built errors + a seeded Prov ---
+// --- Site-fallback fixtures ---
 
+// A void result has no Prov entry — it is minted without an AST node — so a
+// constraint with void as its subject falls back to the constraint site, the use.
+// `fn f() {}` returns void, and `val x: number = f()` blames the `f()` call with
+// the annotation as the related expected-source. (Replaces the hand-built
+// CannotConstrain "unrecorded operand → site" unit test; its operand-within-site
+// and operand-outside-site branches are already covered by TestBlameCallArgument
+// and TestBlameIdentifierUseNotDefinition above.)
+func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
+	src := "fn f() {}\nval x: number = f()"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "cannot constrain void <: number", "f()", "number")
+}
+
+// An INLINE callee resolves its "defined here" related span — its FuncType is
+// recorded (FuncInference) against the fn expression — unlike the named callee in
+// TestBlameCallArity, whose coalesced binding has no Prov entry. So a call-arity
+// mismatch on an immediately-invoked function blames the call AND relates the
+// inline function. (The primary is the call expression; for a parenthesized callee
+// the parser's span begins at the inner `fn`, so the leading `(` is not part of
+// it.)
+func TestBlameCallArityInlineCalleeRelated(t *testing.T) {
+	src := `val r = (fn (x: number) -> number { x })(1, 2)`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"cannot constrain function of arity 1 <: function of arity 2",
+		`fn (x: number) -> number { x })(1, 2)`,
+		`fn (x: number) -> number { x }`)
+}
+
+// tspan builds a single-SourceID span from 1-indexed line/column ints — only the
+// hand-built degrade-path test below needs it.
 func tspan(sl, sc, el, ec int) ast.Span {
 	return ast.NewSpan(ast.Location{Line: sl, Column: sc}, ast.Location{Line: el, Column: ec}, 0)
 }
 
-// CannotConstrainError blames the LHS operand's node when it lies WITHIN the
-// constraint site (the f("hi") shape), and the related node follows the RHS.
-func TestCannotConstrainBlameOperandWithinSite(t *testing.T) {
-	lit := &soltype.LitType{Lit: &soltype.StrLit{Value: "hi"}}
-	litNode := ast.NewLitExpr(ast.NewString("hi", tspan(1, 11, 1, 15)))
-	prim := &soltype.PrimType{Prim: soltype.NumPrim}
-	annNode := ast.NewNumberTypeAnn(tspan(1, 20, 1, 26))
-	site := ast.NewIdent("call", tspan(1, 1, 1, 30)) // a node whose span contains litNode
-
-	prov := Prov{lit: FromAST{Node: litNode, Kind: LiteralInference}, prim: FromAST{Node: annNode, Kind: AnnotationType}}
-	e := &CannotConstrainError{LHS: lit, RHS: prim, prov: prov, site: site}
-
-	require.Equal(t, litNode.Span(), e.Span(), "operand inside the site wins")
-	require.Equal(t, []ast.Span{annNode.Span()}, e.Related(), "RHS is the related expected-source")
-}
-
-// When the LHS operand resolves OUTSIDE the constraint site (an ident's
-// definition), the containment guard falls back to the site — the use.
-func TestCannotConstrainBlameFallsBackToSiteWhenOperandOutside(t *testing.T) {
-	lit := &soltype.LitType{Lit: &soltype.StrLit{Value: "hi"}}
-	defNode := ast.NewLitExpr(ast.NewString("hi", tspan(1, 9, 1, 13))) // on line 1
-	use := ast.NewIdent("x", tspan(2, 17, 2, 18))                      // the use, on line 2 — does NOT contain defNode
-
-	prov := Prov{lit: FromAST{Node: defNode, Kind: LiteralInference}}
-	e := &CannotConstrainError{LHS: lit, RHS: &soltype.PrimType{Prim: soltype.NumPrim}, prov: prov, site: use}
-
-	require.Equal(t, use.Span(), e.Span(), "operand outside the site → blame the use")
-}
-
-// An unrecorded operand (no Prov entry) falls back to the site.
-func TestCannotConstrainBlameFallsBackForUnrecordedOperand(t *testing.T) {
-	site := ast.NewIdent("use", tspan(3, 1, 3, 10))
-	e := &CannotConstrainError{
-		LHS:  &soltype.Void{}, // never recorded
-		RHS:  &soltype.PrimType{Prim: soltype.NumPrim},
-		prov: Prov{},
-		site: site,
-	}
-	require.Equal(t, site.Span(), e.Span())
-	require.Empty(t, e.Related())
-}
-
-// FuncArityMismatchError blames the RHS call-shape (the call) and relates the LHS
-// callee.
-func TestFuncArityBlameCallAndRelatesCallee(t *testing.T) {
-	callee := &soltype.FuncType{Ret: &soltype.Void{}}
-	calleeNode := ast.NewIdent("f", tspan(1, 1, 1, 2))
-	shape := &soltype.FuncType{Ret: &soltype.Void{}}
-	callNode := ast.NewIdent("call", tspan(1, 1, 1, 8))
-
-	prov := Prov{callee: FromAST{Node: calleeNode, Kind: FuncInference}, shape: FromAST{Node: callNode, Kind: CallShape}}
-	e := &FuncArityMismatchError{LHS: callee, RHS: shape, prov: prov}
-
-	require.Equal(t, callNode.Span(), e.Span())
-	require.Equal(t, []ast.Span{calleeNode.Span()}, e.Related())
-}
-
-// MissingPropertyError blames the field's inner var (the .prop ident) and relates
-// the receiver.
-func TestMissingPropertyBlamePropAndRelatesReceiver(t *testing.T) {
-	fieldVar := &soltype.TypeVarType{ID: 1}
-	recv := &soltype.RecordType{Fields: []*soltype.RecordField{{Name: "a", Type: &soltype.PrimType{Prim: soltype.NumPrim}}}}
-	req := &soltype.RecordType{Fields: []*soltype.RecordField{{Name: "b", Type: fieldVar}}}
-	propNode := ast.NewIdentifier("b", tspan(2, 9, 2, 10))
-	recvNode := ast.NewIdent("o", tspan(1, 9, 1, 15))
-
-	prov := Prov{fieldVar: FromAST{Node: propNode, Kind: MemberAccess}, recv: FromAST{Node: recvNode, Kind: ObjectField}}
-	e := &MissingPropertyError{LHS: recv, RHS: req, Name: "b", prov: prov}
-
-	require.Equal(t, propNode.Span(), e.Span())
-	require.Equal(t, []ast.Span{recvNode.Span()}, e.Related())
-}
-
-// Site fallback (M2.5 finding #2): when no operand resolves through Prov, the
-// three site-carrying constraint kinds blame the constraint node rather than
-// returning the zero span (which a consumer would mis-render as 0:0). This degrade
-// path is unreachable in M2.5 but becomes live with M4 record/tuple sinks.
+// The three site-carrying constraint kinds degrade to the constraint site when
+// NEITHER operand resolves through Prov, rather than returning the zero span
+// (which a consumer would mis-render as 0:0). Unlike every fixture above, this path
+// is UNREACHABLE from M2.5 source — FuncArity always records the call-shape,
+// MissingProperty always records the field var, and tuple <: tuple cannot fire
+// without a tuple sink — so it must be exercised with hand-built errors and a
+// seeded Prov here; it becomes live with M4 record/tuple sinks.
 func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 	site := ast.NewIdent("site", tspan(7, 3, 7, 12))
 
