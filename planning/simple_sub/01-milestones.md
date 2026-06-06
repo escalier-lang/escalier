@@ -227,8 +227,21 @@ scheme instantiation introduces the first interior origin (`FromInstantiation`).
 
 ## M3 — Functions, application, let-polymorphism
 
-- Lambda/`fn` decls, application, multi-arg functions.
-- Level-based let-generalization (instantiate / freshenAbove).
+> **Baseline:** M2 already shipped the **monomorphic** function/application/block
+> walk (`inferFuncExpr`/`inferFunc`/`inferCall`/`inferBlock`), the dep-graph SCC
+> ordering, and recursive-group resolution (freezing each group to a coalesced
+> monotype). M3 does **not** rebuild that walk — it layers the **polymorphic**
+> machinery (and async, exactness, overloading) on top. See
+> [m3-implementation-plan.md](m3-implementation-plan.md) for the PR-by-PR plan.
+
+- Lambda/`fn` decls, application, multi-arg functions — **monomorphic forms
+  already done in M2**; M3's contribution here is making them *polymorphic* (the
+  generalization + simplification below), not building the walk.
+- Level-based let-generalization (instantiate / freshenAbove): replace M2's
+  monomorphic SCC freeze (`coalesce` to a monotype) with generalization into a
+  `PolyScheme` at the binding boundary, swap `ValueBinding.Type` for a scheme
+  (retaining its `Sources`), add the `<T0, …>` quantifier prefix to the printer,
+  and add the `coalesce` `seen`-guard M2 deferred here.
 - The simplification pass: single-polarity elimination + co-occurrence variable
   merging (so generalized signatures render compactly, and parameter-only
   variables coalesce to `unknown` rather than a vacuous `<T0>` — a blessed
