@@ -182,12 +182,15 @@ func TestInferModuleObjectsAndTuples(t *testing.T) {
 // Reading a field the receiver lacks is a constraint failure (MissingProperty);
 // the binding for the failed read resolves to the never placeholder.
 func TestInferModuleFieldReadMissingProperty(t *testing.T) {
-	values, _, errs := inferSource(t, `
+	src := `
 		val o = {a: 5}
 		val x = o.b
-	`)
+	`
+	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "object is missing property: b", errs[0].Message())
+	// M2.5: blame the member's prop, not the whole decl.
+	require.Equal(t, "b", spanText(src, errs[0].Span()))
 	require.Equal(t, map[string]string{"o": "{a: 5}", "x": "never"}, values)
 }
 
@@ -209,9 +212,12 @@ func TestInferModuleForwardReferenceResolves(t *testing.T) {
 // reports as unsupported. (FuncDecl, unsupported at the module level through
 // PR-2, is now wired in by PR-5; see the func/recursion tests.)
 func TestInferModuleUnsupportedDecl(t *testing.T) {
-	_, types, errs := inferSource(t, `type Foo = number`)
+	src := `type Foo = number`
+	_, types, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unsupported in M2: TypeDecl", errs[0].Message())
+	// M2.5: the error self-blames from the decl node.
+	require.Equal(t, src, spanText(src, errs[0].Span()))
 	// The unsupported decl must not leak a type binding.
 	require.NotContains(t, types, "Foo")
 }
@@ -221,9 +227,13 @@ func TestInferModuleUnsupportedDecl(t *testing.T) {
 // binds NOTHING, so a later reference still fails as an unknown identifier rather
 // than silently resolving to a placeholder.
 func TestInferModuleVarDeclWithoutInitializer(t *testing.T) {
-	values, _, errs := inferSource(t, `declare val x: number`)
+	src := `declare val x: number`
+	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
+	// M2.5: the error self-blames from the decl node (whose span, per the parser,
+	// covers the binder but not the trailing annotation).
+	require.Equal(t, "declare val x", spanText(src, errs[0].Span()))
 	require.Empty(t, values)
 }
 
@@ -245,21 +255,29 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 // The initializer `[1, 2]` is a tuple expression, which PR-4 now infers, so the
 // only remaining error is the destructuring pattern on the binding side.
 func TestInferModuleDestructuringPatternUnsupported(t *testing.T) {
-	values, _, errs := inferSource(t, `val [a, b] = [1, 2]`)
+	src := `val [a, b] = [1, 2]`
+	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unsupported in M2: TuplePat", errs[0].Message())
+	// M2.5: blame the offending pattern, not the whole decl.
+	require.Equal(t, "[a, b]", spanText(src, errs[0].Span()))
 	require.Empty(t, values)
 }
 
 // A duplicate top-level `val` is a redeclaration error (unlike FuncDecl
 // overloads); the first binding is kept and the second reports cleanly.
 func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
-	values, _, errs := inferSource(t, `
+	src := `
 		val x = 5
 		val x = "hi"
-	`)
+	`
+	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Duplicate declaration: x", errs[0].Message())
+	// M2.5: blame the second decl; relate the first ("previously declared here").
+	require.Equal(t, `val x = "hi"`, spanText(src, errs[0].Span()))
+	require.Len(t, errs[0].Related(), 1)
+	require.Equal(t, `val x = 5`, spanText(src, errs[0].Related()[0]))
 	require.Equal(t, map[string]string{"x": "5"}, values)
 }
 
@@ -479,11 +497,14 @@ func TestInferMultiFile(t *testing.T) {
 // the multi-file path: the combined dep graph has no binding for it, so the
 // reference resolves to the never placeholder and reports cleanly.
 func TestInferMultiFileUnknownIdentifier(t *testing.T) {
+	srcA := `val y = missing`
 	values, _, errs := inferSources(t, map[string]string{
-		"a.esc": `val y = missing`,
+		"a.esc": srcA,
 		"b.esc": `val z = 5`,
 	})
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	// M2.5: the error self-blames from the ident node.
+	require.Equal(t, "missing", spanText(srcA, errs[0].Span()))
 	require.Equal(t, map[string]string{"y": "never", "z": "5"}, values)
 }

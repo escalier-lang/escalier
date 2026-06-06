@@ -15,15 +15,25 @@ import (
 func (c *checker) resolveTypeAnn(ta ast.TypeAnn) soltype.Type {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
-		return &soltype.PrimType{Prim: soltype.NumPrim}
+		return c.annPrim(ta, soltype.NumPrim)
 	case *ast.StringTypeAnn:
-		return &soltype.PrimType{Prim: soltype.StrPrim}
+		return c.annPrim(ta, soltype.StrPrim)
 	case *ast.BooleanTypeAnn:
-		return &soltype.PrimType{Prim: soltype.BoolPrim}
+		return c.annPrim(ta, soltype.BoolPrim)
 	default:
-		return c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: ta.Span()},
-			Kind:    astKind(ta),
-		})
+		return c.reportUnsupported(ta)
 	}
+}
+
+// annPrim mints a FRESH PrimType for an annotation and records it against the
+// annotation node (AnnotationType origin). The fresh-atom discipline (§3.3):
+// there is no interned `number` singleton, so each annotation's atom is its own
+// pointer and is directly recordable — which is what lets the `number` in
+// `val x: number = "hi"` resolve to the annotation as the related blame node, and
+// a prim/prim mismatch blame the offending annotation. Subtyping is unaffected:
+// constrain compares PrimType.Prim by value, not pointer.
+func (c *checker) annPrim(ta ast.TypeAnn, p soltype.Prim) soltype.Type {
+	t := &soltype.PrimType{Prim: p}
+	c.recordProv(t, ta, AnnotationType)
+	return t
 }

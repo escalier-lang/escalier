@@ -23,10 +23,11 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 	case *ast.BoolLit:
 		lit = &soltype.BoolLit{Value: l.Value}
 	default:
-		return c.reportUnsupported(e, e.Lit)
+		return c.reportUnsupported(e.Lit)
 	}
 	t := &soltype.LitType{Lit: lit}
 	c.recordType(e, t)
+	c.recordProv(t, e, LiteralInference)
 	return t
 }
 
@@ -46,15 +47,9 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 		return b.Type
 	}
 	if _, ok := scope.GetNamespace(e.Name); ok {
-		return c.report(&NamespaceUsedAsValueError{
-			errSpan: errSpan{span: e.Span()},
-			Name:    e.Name,
-		})
+		return c.report(&NamespaceUsedAsValueError{Ident: e})
 	}
-	return c.report(&UnknownIdentifierError{
-		errSpan: errSpan{span: e.Span()},
-		Name:    e.Name,
-	})
+	return c.report(&UnknownIdentifierError{Ident: e})
 }
 
 // astKind returns a short surface name for any AST node — an expression,
@@ -92,9 +87,11 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
 	if len(sig.TypeParams) > 0 {
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
-		// which are M3. M2 is monomorphic, so diagnose the type parameters rather
-		// than silently erasing them, then continue inferring monomorphically.
-		c.reportUnsupported(node, sig.TypeParams[0])
+		// which are M3. The FuncExpr/FuncDecl kind itself is supported — it is the
+		// type-param feature that is not — so diagnose it as an unsupported feature
+		// (blaming the function node) rather than silently erasing the params, then
+		// continue inferring monomorphically.
+		c.reportUnsupportedFeature(node, "TypeParam")
 	}
 	fnScope := scope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
@@ -103,15 +100,23 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		name, ok := identPatName(p.Pattern)
 		if !ok {
 			// Destructuring params (TuplePat/ObjectPat) need record/tuple types —
-			// they arrive in M4. M2 binds IdentPat only. p.Span() dereferences
-			// p.Pattern, so fall back to the function node's span for a pattern-less
-			// param to honor M2's "never a panic" guarantee.
-			span := node.Span()
+			// they arrive in M4. M2 binds IdentPat only. A non-nil pattern blames
+			// itself (its own narrower span); a pattern-less param (not reachable
+			// from the real parser) blames the enclosing function, since Param.Span()
+			// dereferences the nil pattern — honoring M2's "never a panic" guarantee.
 			if p.Pattern != nil {
-				span = p.Span()
+				c.reportUnsupported(p.Pattern)
+			} else {
+				c.reportUnsupported(node)
 			}
-			c.report(&UnsupportedNodeError{errSpan: errSpan{span: span}, Kind: astKind(p.Pattern)})
 			name = fmt.Sprintf("arg%d", i)
+		} else if p.TypeAnn == nil {
+			// An un-annotated param's type is the fresh var minted here, so a
+			// param-type mismatch blames the param. Record against the pattern (an
+			// ast.Node; *ast.Param is not) — for an IdentPat its span is the param's.
+			// An annotated param's blame instead rides on its annotation, recorded
+			// by resolveTypeAnn.
+			c.recordProv(pt, p.Pattern, ParamBinding)
 		}
 		fnScope.defineValue(name, ValueBinding{Type: pt})
 		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt}
@@ -133,7 +138,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 		ret = annT
 	}
-	return &soltype.FuncType{Params: params, Ret: ret}
+	ft := &soltype.FuncType{Params: params, Ret: ret}
+	// Record the function's own type against its node so a function flowing into a
+	// non-function requirement blames the function, and FuncArityMismatchError can
+	// carry a "defined here" related span. (For a named callee this raw FuncType is
+	// re-minted by coalescing at binding time, so the entry is exact for inline
+	// callees; M3's FromInstantiation makes named-callee blame precise.)
+	c.recordProv(ft, node, FuncInference)
+	return ft
 }
 
 // paramType resolves a param's type: its annotation when present, else a fresh
@@ -163,7 +175,12 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		args[i] = &soltype.FuncParam{Type: c.inferExpr(scope, lvl, a)}
 	}
 	res := c.freshAt(lvl)
-	c.constrain(e, callee, &soltype.FuncType{Params: args, Ret: res})
+	c.recordProv(res, e, Application)
+	callShape := &soltype.FuncType{Params: args, Ret: res}
+	// Record the synthesized call-shape against the CallExpr so FuncArityMismatchError
+	// resolves its blame to the call.
+	c.recordProv(callShape, e, CallShape)
+	c.constrain(e, callee, callShape)
 	if fn, ok := callee.(*soltype.FuncType); ok {
 		c.constrain(e, fn.Ret, res)
 	}
@@ -183,6 +200,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	}
 	t := &soltype.TupleType{Elems: elems}
 	c.recordType(e, t)
+	c.recordProv(t, e, TupleElem)
 	return t
 }
 
@@ -207,18 +225,19 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
 			// ObjSpreadExpr, CallableExpr (method), ConstructorExpr — all M4.
-			c.reportUnsupported(elem, elem)
+			c.reportUnsupported(elem)
 			continue
 		}
 		if prop.Value == nil {
 			// Shorthand ({x}) needs the ident's binding folded in as the value — M4.
-			c.reportUnsupported(prop, prop)
+			c.reportUnsupported(prop)
 			continue
 		}
 		name, ok := objKeyName(prop.Name)
 		if !ok {
-			// Computed/numeric keys carry no static field name — M4.
-			c.reportUnsupported(prop, prop.Name)
+			// Computed/numeric keys carry no static field name — M4. Blame the key
+			// itself (its own narrower span), not the whole property.
+			c.reportUnsupported(prop.Name)
 			continue
 		}
 		ft := c.inferExpr(scope, lvl, prop.Value)
@@ -231,6 +250,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	}
 	t := &soltype.RecordType{Fields: fields}
 	c.recordType(e, t)
+	c.recordProv(t, e, ObjectField)
 	return t
 }
 
@@ -244,8 +264,10 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 	if e.OptChain {
 		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
 		// up front and do NOT descend into the receiver, so a single diagnostic
-		// stands for the construct instead of cascading the receiver's errors.
-		return c.report(&UnsupportedNodeError{errSpan: errSpan{span: e.Span()}, Kind: "OptionalChain"})
+		// stands for the construct instead of cascading the receiver's errors. The
+		// MemberExpr kind is supported — it is the optional-chain feature that is
+		// not — so this is an UnsupportedFeatureError blaming the member.
+		return c.reportUnsupportedFeature(e, "OptionalChain")
 	}
 	recv := c.inferExpr(scope, lvl, e.Object)
 	if e.Prop == nil || e.Prop.Name == "" {
@@ -258,6 +280,12 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 		return t
 	}
 	res := c.freshAt(lvl)
+	// Record the fresh result var against the .prop IDENTIFIER (not the whole
+	// MemberExpr), so a missing-property read blames the property (.foo), not the
+	// receiver. The member-requirement record {prop: res} is deliberately NOT
+	// recorded — MissingPropertyError blames this inner res var, so the record
+	// would be a dead entry (§3.3).
+	c.recordProv(res, e.Prop, MemberAccess)
 	c.constrain(e, recv, &soltype.RecordType{Fields: []*soltype.RecordField{{Name: e.Prop.Name, Type: res}}})
 	c.recordType(e, res)
 	return res

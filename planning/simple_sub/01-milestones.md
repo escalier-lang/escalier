@@ -166,6 +166,15 @@ reassess.
 
 ## M2.5 — Provenance side table + precise error spans
 
+**Status: landed** (see [m2.5-implementation-plan.md](m2.5-implementation-plan.md)
+§8 exit checklist — all items complete). The `Prov` side table, the node-derived
+`SolverError` reshape (`Span()`/`Related()`, `errSpan`/`setSpan` removed), the
+per-operand blame via `Prov`, and the `val`-annotation enabler all live in
+[internal/solver/](../../internal/solver/) ([prov.go](../../internal/solver/prov.go),
+[errors.go](../../internal/solver/errors.go)), with golden span fixtures in
+[blame_test.go](../../internal/solver/blame_test.go) and population tests in
+[prov_test.go](../../internal/solver/prov_test.go).
+
 A focused infra milestone, **not** a language feature. See
 [m2.5-implementation-plan.md](m2.5-implementation-plan.md) for the full PR
 breakdown, the per-operand blame design, and the construction-site population
