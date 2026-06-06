@@ -1877,12 +1877,13 @@ structural-width behavior (accept any record with at least the required
 fields) for exactly the parameters that want it, while every other
 parameter stays exact.
 
-The asymmetry is deliberate. **Inexact-by-default** — treating the row
-variable as the natural meaning of an accumulated lower bound, which is
-closer to how the underlying inference engine works — was considered and
-rejected on default-audience grounds. Exact-by-default makes the common
-case (application code) safe by default and asks the rarer case
-(row-polymorphic library helpers) to pay a one-keyword cost.
+The asymmetry is deliberate. We considered and rejected
+**inexact-by-default** on default-audience grounds — that alternative
+treats the row variable as the natural meaning of an accumulated lower
+bound, which is closer to how the underlying inference engine works.
+Exact-by-default makes the common case (application code) safe by default
+and asks the rarer case (row-polymorphic library helpers) to pay a
+one-keyword cost.
 
 **Scope.** Usage-based inference and the `open` marker land with
 record-typed parameters in the implementation (the SimpleSub checker's
