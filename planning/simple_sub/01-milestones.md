@@ -166,7 +166,10 @@ reassess.
 
 ## M2.5 — Provenance side table + precise error spans
 
-A focused infra milestone, **not** a language feature. M2 stamps the *umbrella*
+A focused infra milestone, **not** a language feature. See
+[m2.5-implementation-plan.md](m2.5-implementation-plan.md) for the full PR
+breakdown, the per-operand blame design, and the construction-site population
+table. M2 stamps the *umbrella*
 node's span on every constraint error — `constrain(n, lhs, rhs)` sets `n.Span()`
 on each returned error ([internal/solver/infer.go](../../internal/solver/infer.go)
 `(*checker).constrain`), so a mismatch deep inside a large declaration blames the
@@ -936,6 +939,52 @@ reduce through the M9 operator machinery.
   ([exact-types/requirements.md](../exact-types/requirements.md) §9) is also
   codegen work.
 - **M11 — LSP.** Switch the LSP to the new checker's `Scope`/`Info`.
+- **M11.5 — Diagnostics quality & error-rendering capstone.** A late,
+  corpus-driven pass that owns the **error-reporting gestalt** no single feature
+  milestone sees, and discharges the diagnostics work deferred through M2.5+. It is
+  deliberately *not* a re-litigation of per-feature message wording — that stays
+  incremental, asserted as each feature lands (the CLAUDE.md "assert the full error
+  message" convention). Its charter is the cross-cutting rendering + audit layer:
+  - **The multi-hop provenance renderer.** M2.5 ships only the `FromAST` *leaf* and
+    a single-lookup `NodeFor`; the interior `Origin` edges
+    (`FromInstantiation`/`FromBoundPropagation`/`FromExtrusion`/`FromCoalesce`) are
+    minted by M3+ but nobody *renders* the chains they form. This milestone builds
+    the renderer that walks the provenance DAG to its AST leaves — "α is `number`
+    because the literal `42` flowed into it at line 17" — the "why this type" story
+    [02-design-notes.md](02-design-notes.md) §"Provenance side table" describes and
+    M2.5 explicitly defers.
+  - **Multi-span / related-span rendering.** M2.5 *records* `Related()` (the
+    expected-source alongside the actual-source, the prior declaration alongside the
+    duplicate, the "defined here" companion to an ident-use error) but leaves
+    presentation to "when the CLI is wired." This milestone renders related spans in
+    both the CLI diagnostics and the LSP (hovers / related-information) — the surface
+    M11 stands up.
+  - **Cascading-error suppression + ordering/dedup.** Suppress derived errors that
+    exist only because of an upstream failure, and order/dedup a file's diagnostics
+    so one root cause doesn't read as ten.
+  - **Corpus-wide audit, differential against the old checker.** Run the audit over
+    the M8 fixture corpus with the old checker *still present* (this is why the
+    milestone precedes the M12 flip): its diagnostics are the parity baseline M12
+    deletes. Acceptance is a checklist applied corpus-wide — every error has a
+    precise primary span, sensible related spans, consistent expected/actual
+    framing, no duplicate/cascaded noise — with any per-feature wording fix filed in
+    place.
+
+  This milestone is also the **named home for the deferred-diagnostics backlog**, so
+  those notes get a due date rather than drifting: M2.5's "defined here" related span
+  (the `FromInstantiation` companion to an ident-use error), the zero-span fallback
+  footguns M2.5 flags for the M4-reachable error kinds, and the multi-hop renderer
+  above. Having this backstop is what lets M3–M9 ship *good-enough* errors and defer
+  polish here instead of being side-tracked chasing perfect diagnostics mid-feature.
+
+  **Accept:** the audit checklist passes across the M8 corpus (precise primary span,
+  coherent related spans, no cascades/dupes), with no diagnostic worse than the old
+  checker's; a provenance chain renders its full why-chain to AST leaves; an
+  ident-use type error shows both the use (primary) and the definition ("defined
+  here"). **Depends on:** M9 (full feature set ⇒ complete provenance DAG), M8
+  (fixture corpus + differential harness), M11 (the LSP rendering surface).
+  **Precedes:** M12 — the new checker's diagnostics should be at least at parity with
+  the old checker *before* the flip deletes the baseline.
 - **M12 — Flip & cleanup.** Make the new checker the default; retire the old
   checker + its tests; **delete** the AST `inferredType` field, the
   `type Type = type_system.Type` alias, and `tools/gen_ast`'s generation of the
@@ -974,3 +1023,13 @@ reduce through the M9 operator machinery.
   along with the M3+ features that introduce deep provenance chains, so M2.5 stays
   a small, independently-verifiable infra step (golden span fixtures) and does not
   enlarge M3's language-feature acceptance bar.
+- M11.5 (diagnostics capstone) is numbered `.5` for the same reason M2.5 is — to
+  slot between M11 and M12 without renumbering — and sits *before* the M12 flip on
+  purpose: the old checker is the parity baseline for the error-quality differential,
+  and M12 deletes it. It rides after M11 because the LSP is the rendering surface for
+  the multi-span/chain work, and after M9 because the provenance DAG it renders
+  (the M3+ interior edges) isn't complete until the last feature lands. Folding the
+  error-rendering gestalt into one late, corpus-driven pass is also what lets M3–M9
+  defer diagnostics polish — `Span()` precision and full messages still land with
+  each feature, but rendering, chain-following, and cross-feature consistency wait
+  for the capstone instead of being gold-plated mid-feature.
