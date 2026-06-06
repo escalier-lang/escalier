@@ -1833,6 +1833,66 @@ inexact constraints accept either.
   Escalier projects while plain TypeScript consumers see the erased form.
   See §9 for the full mechanism.
 
+### 8.1. Usage-Inferred Shapes and the `open` Marker
+
+§2.2.1 covers object *literals*, which infer as exact. The complementary
+case is a shape inferred not from a literal but from how a value is
+*used* — when a function parameter's record type is reconstructed from
+the fields its body accesses (usage-based inference). The same default
+applies:
+
+- **Usage-inferred shapes coalesce as exact.** When the checker
+  reconstructs a record shape from member accesses in a function body
+  (`p.x`, `p.y`, …), the accumulated field requirements close into an
+  **exact** record once body inference completes. A parameter `p` whose
+  body reads only `p.x` and `p.y` is inferred as the exact
+  `{x: number, y: number}`, not an open row — there is no implicit row
+  variable left dangling after inference.
+
+This means a caller cannot pass a record carrying *extra* fields to such a
+parameter — the same extra-property rejection an explicit exact annotation
+gives (§2.3). The motivation matches the literal case (§2.2.1): most
+Escalier code is application code, and biasing the default toward "exact,
+catch extra-field bugs at the call site" fits that audience better than
+silently accepting wider records.
+
+**Opting into row polymorphism: the `open` parameter marker.** Library
+code that genuinely wants to accept any record richer than the fields it
+touches opts in per parameter with the `open` marker (keyword
+provisional):
+
+```
+// p is inferred as the inexact {x: number, y: number, ...}; callers may
+// pass any record that has at least x and y.
+fn dist(open p) -> number {
+    sqrt(p.x * p.x + p.y * p.y)
+}
+```
+
+`open p` keeps the usage-inferred row open — `p`'s inferred type is the
+**inexact** `{x: number, y: number, ...}` instead of the exact
+`{x: number, y: number}`. This is the usage-inference analogue of writing
+a trailing `...` on an explicit object type (§2.1): it restores
+structural-width behavior (accept any record with at least the required
+fields) for exactly the parameters that want it, while every other
+parameter stays exact.
+
+The asymmetry is deliberate. **Inexact-by-default** — treating the row
+variable as the natural meaning of an accumulated lower bound, which is
+closer to how the underlying inference engine works — was considered and
+rejected on default-audience grounds. Exact-by-default makes the common
+case (application code) safe by default and asks the rarer case
+(row-polymorphic library helpers) to pay a one-keyword cost.
+
+**Scope.** Usage-based inference and the `open` marker land with
+record-typed parameters in the implementation (the SimpleSub checker's
+milestone M4); the marker keyword is provisional. This subsection records
+the *default* — usage-inferred shapes are exact, `open` opts back into row
+polymorphism — so the exactness defaults are settled before the
+function-exactness work (M3) that builds on them. See
+`planning/simple_sub/02-design-notes.md` §"Exactness" and
+`planning/simple_sub/01-milestones.md` (M4) for the implementation plan.
+
 ## 9. TypeScript Interop
 
 This section consolidates the interop story spread across §5.5 (union
