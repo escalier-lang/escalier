@@ -700,8 +700,8 @@ helpers pay a one-keyword cost. The alternative (**inexact-by-default** —
 usage-inferred shapes default inexact, treating the row variable as the natural
 meaning of a lower bound) was considered and rejected on default-audience grounds.
 
-**This decision is not yet reflected in `planning/exact-types/requirements.md`;
-the spec needs a section recording it before M3 lands.**
+**This decision is recorded in `planning/exact-types/requirements.md` §8.1
+(Usage-Inferred Shapes and the `open` Marker).**
 
 **Day-one behavior.** Escalier code is exact-by-default and TypeScript-imported
 types are inexact-by-default *from the moment each former lands* — exact

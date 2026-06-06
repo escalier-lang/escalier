@@ -27,9 +27,8 @@ lands* (M3 functions, M4 records/tuples, M5 class instances via `final`,
 M6 unions) — tests at each milestone assert what the implementation produces.
 (The usage-inferred-shape default — that usage-collected shapes coalesce as
 **exact** — and the `open` parameter marker that opts back into row polymorphism
-are not yet reflected in
-[exact-types/requirements.md](../exact-types/requirements.md); the spec needs
-a section recording both before M3 lands.)
+are recorded in
+[exact-types/requirements.md](../exact-types/requirements.md) §8.1.)
 
 ## Contents
 
