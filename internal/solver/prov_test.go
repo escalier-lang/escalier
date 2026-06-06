@@ -45,10 +45,10 @@ func TestProvTupleAndObject(t *testing.T) {
 func TestProvCallResultAndShape(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
-	scope.defineValue("inc", ValueBinding{Type: &soltype.FuncType{
+	scope.defineValue("inc", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.FuncType{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "n"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}}},
 		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},
-	}})
+	})}})
 	e := ast.NewCall(identExpr("inc"), []ast.Expr{numExpr(7)}, false, testSpan())
 
 	res := c.inferExpr(scope, 0, e)
@@ -120,7 +120,7 @@ func TestProvAnnotationType(t *testing.T) {
 func TestProvIdentRecordsNothing(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
-	scope.defineValue("x", ValueBinding{Type: &soltype.PrimType{Prim: soltype.NumPrim}})
+	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.PrimType{Prim: soltype.NumPrim})}})
 	c.inferExpr(scope, 0, identExpr("x"))
 	require.Empty(t, c.prov, "an ident use must record no provenance")
 }

@@ -17,12 +17,21 @@
 // Info side table's key type); neither ast nor type_system imports solver, so
 // the package is acyclic and additive — it shares no code with type_system.
 //
-// What M1 deliberately omits (each lands in a later milestone): the AST-driven
-// inference walk and parser/resolver bridge (M2), let-generalization and type
-// schemes (M3), the polymorphism-rendering bundle — occurrence analysis,
-// bipolar-variable retention, named-type-param refs, co-occurrence merging, and
-// the quantifier prefix in the printer (M3), records / mut / lifetimes (M4),
-// classes and the union/intersection *subtyping rules* in constrain (M5/M6), and
-// type-level operators (M5/M8). M1 ships UnionType/IntersectionType *nodes* for
-// coalesced output, but their lattice rules in constrain remain deferred.
+// M3 (PR1) adds let-generalization on top of M2's walk: TypeSchemes (poly.go —
+// MonoScheme/PolyScheme + ValueBinding.Schemes), instantiate/freshenAbove for
+// per-use fresh variables, generalization at the SCC boundary (module.go) and at
+// body-level `val`s (infer_decl.go), the inferIdent instantiation hook, the
+// FromInstantiation provenance edge (prov.go), and scheme rendering — occurrence
+// analysis + single-polarity elimination retaining genuine type parameters
+// (coalesce.go's coalesceScheme) with the printer's <T0, …> quantifier prefix
+// (soltype.PrintScheme). What remains of the polymorphism-rendering bundle is
+// PR2's CO-OCCURRENCE merging (distinct variables that always appear together),
+// which makes renders compact where the same variable isn't already shared across
+// positions; generalize's simplify hook is a no-op until then.
+//
+// What is still deferred (each lands in a later milestone): records / mut /
+// lifetimes (M4), function overloading (M3 PR6) and the probe (PR5), classes and
+// the union/intersection *subtyping rules* in constrain (M5/M6), and type-level
+// operators (M5/M8). M1 ships UnionType/IntersectionType *nodes* for coalesced
+// output, but their lattice rules in constrain remain deferred.
 package solver

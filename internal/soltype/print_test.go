@@ -90,11 +90,11 @@ func TestIsIdent(t *testing.T) {
 		{"_x", true},
 		{"a1", true},
 		{"camelCase_9", true},
-		{"café", true},     // unicode letter (continue)
-		{"naïve", true},    // unicode letter (continue)
-		{"数値", true},       // non-Latin letters
-		{"Ωmega", true},     // unicode letter (leading)
-		{"x٢", true},        // unicode digit (Arabic-Indic) after letter
+		{"café", true},  // unicode letter (continue)
+		{"naïve", true}, // unicode letter (continue)
+		{"数値", true},    // non-Latin letters
+		{"Ωmega", true}, // unicode letter (leading)
+		{"x٢", true},    // unicode digit (Arabic-Indic) after letter
 		{"", false},
 		{"1a", false},  // leading digit
 		{"٢x", false},  // leading unicode digit
@@ -178,4 +178,38 @@ func TestPrintUnnamedParamFallback(t *testing.T) {
 		Ret: boolP(),
 	}
 	require.Equal(t, "fn (arg0: number, arg1: string) -> boolean", Print(fn))
+}
+
+// TestPrintScheme covers the M3 quantifier-prefix rendering: a generalized type's
+// free variables are collected into a <T0, T1, …> prefix (named by first
+// appearance in print order) and rendered under those names, while a variable-free
+// type renders exactly as Print would.
+func TestPrintScheme(t *testing.T) {
+	t.Run("no free vars renders as Print", func(t *testing.T) {
+		ty := &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}
+		require.Equal(t, "fn (x: number) -> string", PrintScheme(ty))
+	})
+
+	t.Run("identity gets one type parameter", func(t *testing.T) {
+		a := &TypeVarType{ID: 7, Level: 1}
+		ty := &FuncType{Params: []*FuncParam{identP("x", a)}, Ret: a}
+		require.Equal(t, "fn <T0>(x: T0) -> T0", PrintScheme(ty))
+	})
+
+	t.Run("distinct vars are named by first appearance", func(t *testing.T) {
+		a := &TypeVarType{ID: 1, Level: 1}
+		b := &TypeVarType{ID: 2, Level: 1}
+		// fn (x: a, y: b) -> [b, a]: a appears first (param x), then b (param y).
+		ty := &FuncType{
+			Params: []*FuncParam{identP("x", a), identP("y", b)},
+			Ret:    &TupleType{Elems: []Type{b, a}},
+		}
+		require.Equal(t, "fn <T0, T1>(x: T0, y: T1) -> [T1, T0]", PrintScheme(ty))
+	})
+
+	t.Run("a free var keeps one name across positions", func(t *testing.T) {
+		a := &TypeVarType{ID: 3, Level: 1}
+		ty := &TupleType{Elems: []Type{a, a}}
+		require.Equal(t, "<T0> [T0, T0]", PrintScheme(ty))
+	})
 }

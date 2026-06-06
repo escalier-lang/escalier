@@ -62,24 +62,31 @@ func TestBlameCallArgument(t *testing.T) {
 	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
-// A call-arity mismatch points at the whole call. (The callee `f` is named, so its
-// binding is coalesced to a fresh FuncType pointer that has no Prov entry — the
-// "function defined here" related span resolves only for inline callees in M2.5
-// and is made precise for named callees by M3's FromInstantiation.)
+// A call-arity mismatch points at the whole call, with the callee's definition as
+// the related "function defined here" span. M2.5 resolved that related span only
+// for inline callees: a named callee's binding was COALESCED to a fresh FuncType
+// pointer with no Prov entry. M3 (PR1) generalizes instead of coalescing and
+// instantiation shares the monomorphic body unchanged, so the original FuncType
+// (recorded FuncInference against the decl) survives and the related span now
+// resolves for named callees too.
 func TestBlameCallArity(t *testing.T) {
 	src := "fn f(x: number) -> number { x }\nval r = f(1, 2)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"cannot constrain function of arity 1 <: function of arity 2", "f(1, 2)")
+		"cannot constrain function of arity 1 <: function of arity 2", "f(1, 2)",
+		"fn f(x: number) -> number { x }")
 }
 
-// A missing-property read blames the member's prop (.foo), not the receiver. (The
-// receiver `o` is named/coalesced, so its related span resolves only for an inline
-// receiver in M2.5.)
+// A missing-property read blames the member's prop (.foo), not the receiver, with
+// the receiver's definition as the related span. Like TestBlameCallArity, M2.5
+// resolved that related span only for an inline receiver (a named receiver was
+// coalesced to a fresh RecordType with no Prov entry); M3's generalize-and-share
+// instantiation keeps the original record (recorded ObjectField against the
+// literal), so the named receiver's related span now resolves.
 func TestBlameMissingProperty(t *testing.T) {
 	src := "val o = {a: 5}\nval x = o.b"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "object is missing property: b", "b")
+	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
 }
 
 // An identifier-flow mismatch blames the USE, not the definition: x's type traces

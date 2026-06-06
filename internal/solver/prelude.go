@@ -83,7 +83,9 @@ func addOperatorBindings(s *Scope) {
 
 	define := func(t soltype.Type, names ...string) {
 		for _, name := range names {
-			s.defineValue(name, ValueBinding{Type: t})
+			// Prelude operators are monomorphic over primitives — a MonoScheme that
+			// instantiates to itself (generic operators are a later milestone).
+			s.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(t)}})
 		}
 	}
 

@@ -52,7 +52,12 @@ func parseModule(t *testing.T, src string) *ast.Module {
 // Only inference errors flow back; parse errors fail the test in parseModuleFiles.
 func inferModule(module *ast.Module) (values, types map[string]string, errs []SolverError) {
 	scope, _, errs := InferModule(module)
-	values = renderBindings(scope.values, func(b ValueBinding) soltype.Type { return b.Type })
+	values = make(map[string]string, len(scope.values))
+	for name, b := range scope.values {
+		// PR1: every binding holds exactly one scheme; renderScheme adds the
+		// <T0, …> quantifier prefix when generalization left type parameters behind.
+		values[name] = renderScheme(b.Schemes[0])
+	}
 	types = renderBindings(scope.types, func(b TypeBinding) soltype.Type { return b.Type })
 	return values, types, errs
 }

@@ -33,8 +33,15 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 
 // inferIdent resolves a value-position identifier through the scope chain — the
 // production form of the spike's *Var case crossed with design-notes §"The
-// constraint-generating AST walk". In M2 (monomorphic, no schemes) it returns
-// the binding's type directly; M3 slots instantiate() in once schemes exist.
+// constraint-generating AST walk". M3 (PR1) slots in the instantiation hook M2
+// left as a TODO: an ordinary binding instantiates its sole scheme at the current
+// level, so a polymorphic let gives each use fresh variables (a MonoScheme
+// instantiates to itself, preserving M2's behavior for the monomorphic bindings).
+//
+// An overloaded binding's value-position type is the intersection of its arms,
+// resolved through the probe — that is PR6 and unreachable today (M2 rejects
+// multi-FuncDecl names, so no overloaded binding is ever bound), so PR1 asserts
+// the single-scheme invariant rather than branching on it.
 //
 // A namespace name in value position can only fail in M2: there is no legal
 // namespace-member position yet (MemberExpr is value-only and there is no
@@ -43,8 +50,11 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 // qualified Foo.bar access lands.
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
 	if b, ok := scope.GetValue(e.Name); ok {
-		c.recordType(e, b.Type)
-		return b.Type
+		// PR1 never builds an overloaded binding; the IsOverloaded value-position
+		// branch (arm intersection) is PR6.
+		t := c.instantiate(b.Schemes[0], lvl)
+		c.recordType(e, t)
+		return t
 	}
 	if _, ok := scope.GetNamespace(e.Name); ok {
 		return c.report(&NamespaceUsedAsValueError{Ident: e})
@@ -118,7 +128,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// by resolveTypeAnn.
 			c.recordProv(pt, p.Pattern, ParamBinding)
 		}
-		fnScope.defineValue(name, ValueBinding{Type: pt})
+		// A parameter binding never generalizes — its var is fixed for the body — so
+		// it is a MonoScheme; instantiate returns pt unchanged at every use.
+		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
 		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt}
 	}
 
