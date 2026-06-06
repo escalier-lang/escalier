@@ -25,8 +25,9 @@ rules. The **default is settled**: Escalier code is exact-by-default, TypeScript
 imports are inexact-by-default, and each former implements its default *as it
 lands* (M3 functions, M4 records/tuples, M5 class instances via `final`,
 M6 unions) — tests at each milestone assert what the implementation produces.
-(The usage-inferred-shape default — Policy A — and the `open` parameter marker
-that opts back into row polymorphism are not yet reflected in
+(The usage-inferred-shape default — that usage-collected shapes coalesce as
+**exact** — and the `open` parameter marker that opts back into row polymorphism
+are not yet reflected in
 [exact-types/requirements.md](../exact-types/requirements.md); the spec needs
 a section recording both before M3 lands.)
 
@@ -378,8 +379,9 @@ wrapper) are what first populate a lifetime. Land them together.
   β})`; field requirements accumulate as upper bounds and coalesce (negative
   position) to a record. This is what replaces `Open`/`Widenable`/
   `ArrayConstraint`. (Spike M2.) The usage-collected shape **coalesces as
-  exact** by default (Policy A — see [02-design-notes.md](02-design-notes.md)
-  §"Exactness"): the row is closed once body inference completes. Row
+  exact** by default (the exact-by-default rule — see
+  [02-design-notes.md](02-design-notes.md) §"Exactness"): the row is closed once
+  body inference completes. Row
   polymorphism is opt-in via an `open` parameter marker (keyword provisional)
   — `fn dist(open p) => ...` keeps `p` inexact so callers can pass records
   richer than the field set the body touches. The `open` marker lands here
