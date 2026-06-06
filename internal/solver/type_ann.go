@@ -5,25 +5,58 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeAnn converts an M2-supported type annotation into a soltype.Type.
-// M2 needs only the primitive annotations that annotated params and return
-// types use (number/string/boolean); everything richer — type references,
-// generics, object/tuple/function annotations, unions — is represented by types
-// later milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here.
-// It takes no scope: the supported set is all closed primitives, with no name to
-// look up. Name resolution against the type scope arrives with TypeRef support.
-func (c *checker) resolveTypeAnn(ta ast.TypeAnn) soltype.Type {
+// resolveTypeAnn converts an M2-supported type annotation into a soltype.Type,
+// returning ok=false when the annotation is outside the supported set. M2 needs
+// only the primitive annotations that annotated params and return types use
+// (number/string/boolean); everything richer — type references, generics,
+// object/tuple/function annotations, unions — is represented by types later
+// milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here, with
+// ok=false and a `never` placeholder so a caller can recover by keeping the type
+// it already inferred (rather than constraining against / adopting `never`, which
+// would cascade a spurious `<: never` error and poison the binding). It takes no
+// scope: the supported set is all closed primitives, with no name to look up.
+// Name resolution against the type scope arrives with TypeRef support.
+func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
-		return &soltype.PrimType{Prim: soltype.NumPrim}
+		return c.annPrim(ta, soltype.NumPrim), true
 	case *ast.StringTypeAnn:
-		return &soltype.PrimType{Prim: soltype.StrPrim}
+		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
-		return &soltype.PrimType{Prim: soltype.BoolPrim}
+		return c.annPrim(ta, soltype.BoolPrim), true
 	default:
-		return c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: ta.Span()},
-			Kind:    astKind(ta),
-		})
+		return c.reportUnsupported(ta), false
 	}
+}
+
+// annPrim mints a FRESH PrimType for an annotation and records it against the
+// annotation node (AnnotationType origin) — the "fresh-atom discipline" (§3.3).
+//
+// Why fresh, rather than a single shared/interned `number` value? Provenance is
+// the reason. The Prov side table is keyed by POINTER IDENTITY
+// (soltype.Type -> Origin), so the only way to record "this primitive came from
+// THIS annotation node" is for the primitive to be its own pointer, unique to this
+// annotation. Three consequences follow:
+//
+//   - Precise blame. A unique atom per annotation lets `val x: number = "hi"`
+//     resolve its `number` operand back to the exact annotation node — surfaced as
+//     the related "expected here" span — and lets a prim/prim mismatch blame the
+//     offending annotation instead of degrading to the constraint site (§3.3, §3.7).
+//   - No Prov-invariant conflict. recordProv requires each type pointer to map to a
+//     single node; the debugProv guard panics when a pointer is re-recorded against
+//     a DIFFERENT node (prov.go). A shared `number` would be recorded against every
+//     `number` annotation's node in turn — a conflicting overwrite. Fresh atoms each
+//     write a distinct pointer, so there is never a conflict and no last-write-wins
+//     blame.
+//   - Free, because correctness ignores identity. constrain compares PrimType.Prim
+//     BY VALUE (`r.Prim == l.Prim`, constrain.go), never by pointer, so two
+//     distinct-but-equal `number`s still subtype-match. Freshness only ever adds a
+//     redundant coinductive-`seen` entry, never a loop or a spurious mismatch.
+//
+// (soltype interns no primitive singletons anyway, so there is nothing to share —
+// minting fresh is the natural choice here, not an added cost.)
+func (c *checker) annPrim(ta ast.TypeAnn, p soltype.Prim) soltype.Type {
+	t := &soltype.PrimType{Prim: p}
+	c.recordProv(t, ta, AnnotationType)
+	return t
 }

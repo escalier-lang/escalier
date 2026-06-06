@@ -46,18 +46,18 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	case *ast.DeclStmt:
 		vd, ok := s.Decl.(*ast.VarDecl)
 		if !ok {
-			c.report(&BodyDeclNotAllowedError{
-				errSpan: errSpan{span: s.Span()},
-				Kind:    astKind(s.Decl),
-			})
+			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
 			return &soltype.Void{}
 		}
 		name, named := varName(vd)
 		if !named {
-			c.report(&UnsupportedNodeError{
-				errSpan: errSpan{span: vd.Pattern.Span()},
-				Kind:    astKind(vd.Pattern),
-			})
+			// A nil pattern (hand-built AST; the parser synthesizes a placeholder)
+			// blames the decl, mirroring inferFunc — never a nil-node Span() panic.
+			if vd.Pattern != nil {
+				c.reportUnsupported(vd.Pattern)
+			} else {
+				c.reportUnsupported(vd)
+			}
 			return &soltype.Void{}
 		}
 		// Unlike the module driver (inferComponent), a body-level redeclaration is
@@ -69,9 +69,6 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		return &soltype.Void{}
 	default:
-		return c.report(&UnsupportedNodeError{
-			errSpan: errSpan{span: s.Span()},
-			Kind:    astKind(s),
-		})
+		return c.reportUnsupported(s)
 	}
 }

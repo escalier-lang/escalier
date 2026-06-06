@@ -20,27 +20,48 @@ import (
 type checker struct {
 	ctx  *Context      // M1: freshVar(level), Constrain(lhs, rhs) []SolverError
 	info *Info         // M1: node → soltype.Type side table (unexported setType)
+	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
+
+	// debugProv, when set, makes recordProv panic on a conflicting overwrite (the
+	// same type pointer recorded against a *different* node) — turning the
+	// implicit "every minted type is a unique pointer" invariant into an enforced
+	// one. Off in production (a span bug must never crash the compiler); flipped on
+	// by tests that exercise the guard. See recordProv.
+	debugProv bool
 }
 
-// newChecker returns a checker with a fresh Context and an empty Info table.
+// newChecker returns a checker with a fresh Context, an empty Info table, and an
+// empty Prov side table.
 func newChecker() *checker {
-	return &checker{ctx: &Context{}, info: NewInfo()}
+	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}}
 }
 
-// freshAt allocates a fresh inference variable at the given level. No provenance
-// recording in M2 — the Prov side table is deferred to M3+.
+// freshAt allocates a fresh inference variable at the given level. Provenance for
+// a fresh var is recorded by its construction site (recordProv), not here.
 func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 	return c.ctx.freshVar(lvl)
 }
 
-// constrain asserts lhs <: rhs and stamps the offending node's span onto any
-// resulting SolverErrors before accumulating them. M2 does not look provenance
-// up from a side table — the span is taken directly from the AST node being
-// walked (§3.5).
+// constrain asserts lhs <: rhs and, for each resulting constraint error, hands it
+// the provenance table and the constraint node n as a blame fallback, so its own
+// Span()/Related() can resolve per-operand blame through Prov on demand and fall
+// back to n's span (never the zero span) when an operand has no entry (§3.5). The
+// engine itself never touches Prov — the fields are assigned here, after Constrain
+// returns, so the hot loop stays off the table (the perf invariant, §3.9). Bridge
+// errors never flow through here; they self-blame from their own node.
 func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type) {
 	for _, e := range c.ctx.Constrain(lhs, rhs) {
-		e.setSpan(n.Span())
+		switch err := e.(type) {
+		case *CannotConstrainError:
+			err.prov, err.site = c.prov, n
+		case *TupleLengthMismatchError:
+			err.prov, err.site = c.prov, n
+		case *MissingPropertyError:
+			err.prov, err.site = c.prov, n
+		case *FuncArityMismatchError:
+			err.prov, err.site = c.prov, n
+		}
 		c.errs = append(c.errs, e)
 	}
 }
@@ -52,14 +73,23 @@ func (c *checker) report(e SolverError) soltype.Type {
 	return &soltype.NeverType{}
 }
 
-// reportUnsupported records an UnsupportedNodeError for an AST node outside the
-// M2 subset: the span comes from spanNode, the rendered kind name from kindNode
-// (astKind). The two are usually the same node but differ when the unsupported
-// thing is a child carried by its parent — e.g. an object property's key, whose
-// span we report against the property. Returns the never placeholder so a caller
-// can `return c.reportUnsupported(...)` in value position.
-func (c *checker) reportUnsupported(spanNode ast.Node, kindNode any) soltype.Type {
-	return c.report(&UnsupportedNodeError{errSpan: errSpan{span: spanNode.Span()}, Kind: astKind(kindNode)})
+// reportUnsupported records an UnsupportedNodeError for an AST node whose kind is
+// outside the M2 subset. The node self-blames: both the span and the rendered kind
+// (astKind) come from it. When the unsupported thing is a child carried by its
+// parent — an object property's computed key, a function's destructuring pattern —
+// pass that child node directly (it embeds ast.Node and carries its own, narrower
+// span). Returns the never placeholder so a caller can `return c.reportUnsupported(n)`
+// in value position.
+func (c *checker) reportUnsupported(node ast.Node) soltype.Type {
+	return c.report(&UnsupportedNodeError{Node: node})
+}
+
+// reportUnsupportedFeature records an UnsupportedFeatureError: the node's KIND is
+// supported but a feature of it is not (optional chaining on a MemberExpr, type
+// params on a FuncExpr). The node carries the blame span; feature names what is
+// unsupported, since astKind would name the supported parent.
+func (c *checker) reportUnsupportedFeature(node ast.Node, feature string) soltype.Type {
+	return c.report(&UnsupportedFeatureError{Node: node, Feature: feature})
 }
 
 // recordType records t as the inferred type of n in the Info side table. Wraps
@@ -92,6 +122,6 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	case *ast.MemberExpr:
 		return c.inferMember(scope, lvl, e)
 	default:
-		return c.reportUnsupported(e, e)
+		return c.reportUnsupported(e)
 	}
 }

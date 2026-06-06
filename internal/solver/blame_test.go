@@ -1,0 +1,240 @@
+package solver
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/stretchr/testify/require"
+)
+
+// spanText returns the source substring covered by s. Columns are 1-indexed and
+// the end is exclusive (the lexer's convention), so a token at columns [c, c+n)
+// renders n characters. M2.5's error spans are single-line; a multi-line span is
+// not expected here and yields "".
+func spanText(src string, s ast.Span) string {
+	lines := strings.Split(src, "\n")
+	if s.Start.Line < 1 || s.Start.Line > len(lines) || s.Start.Line != s.End.Line {
+		return ""
+	}
+	line := lines[s.Start.Line-1]
+	if s.Start.Column < 1 || s.End.Column-1 > len(line) || s.Start.Column > s.End.Column {
+		return ""
+	}
+	return line[s.Start.Column-1 : s.End.Column-1]
+}
+
+// requireBlame asserts the sole error's message, the source text its primary span
+// covers, and the source text each related span covers (in order). The golden
+// span fixtures (§3.10) use it to pin exact blame against real-parser spans.
+func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary string, related ...string) {
+	t.Helper()
+	require.Len(t, errs, 1)
+	require.Equal(t, msg, errs[0].Message())
+	require.Equal(t, primary, spanText(src, errs[0].Span()), "primary blame")
+	got := []string{}
+	for _, s := range errs[0].Related() {
+		got = append(got, spanText(src, s))
+	}
+	want := related
+	if want == nil {
+		want = []string{}
+	}
+	require.Equal(t, want, got, "related blame")
+}
+
+// --- Golden span fixtures (§3.10): exact blame against real-parser spans ---
+
+// A val-annotation mismatch blames the offending literal, with the annotation as
+// the related expected-source — the milestone's headline fixture (§3.7).
+func TestBlameValAnnotationLiteral(t *testing.T) {
+	src := `val x: number = "hi"`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
+}
+
+// A call-arg mismatch blames the offending argument, with the callee's param
+// annotation as the related source.
+func TestBlameCallArgument(t *testing.T) {
+	src := "fn f(x: number) -> number { x }\nval r = f(\"hi\")"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
+}
+
+// A call-arity mismatch points at the whole call. (The callee `f` is named, so its
+// binding is coalesced to a fresh FuncType pointer that has no Prov entry — the
+// "function defined here" related span resolves only for inline callees in M2.5
+// and is made precise for named callees by M3's FromInstantiation.)
+func TestBlameCallArity(t *testing.T) {
+	src := "fn f(x: number) -> number { x }\nval r = f(1, 2)"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"cannot constrain function of arity 1 <: function of arity 2", "f(1, 2)")
+}
+
+// A missing-property read blames the member's prop (.foo), not the receiver. (The
+// receiver `o` is named/coalesced, so its related span resolves only for an inline
+// receiver in M2.5.)
+func TestBlameMissingProperty(t *testing.T) {
+	src := "val o = {a: 5}\nval x = o.b"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "object is missing property: b", "b")
+}
+
+// An identifier-flow mismatch blames the USE, not the definition: x's type traces
+// to its definition, which is not inside the use's constraint node, so the
+// containment guard falls back to the use (§3.8). The annotation is the related
+// expected-source.
+func TestBlameIdentifierUseNotDefinition(t *testing.T) {
+	src := "val x = \"hi\"\nval a: number = x"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, "x", "number")
+}
+
+// An inline receiver DOES resolve its related span: {a: 5} is used directly (not
+// coalesced through a binding), so its Prov entry survives and surfaces as the
+// receiver-related span.
+func TestBlameMissingPropertyInlineReceiverRelated(t *testing.T) {
+	src := `val x = {a: 5}.b`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
+}
+
+// --- Bridge-error span fixtures (self-blaming, no Prov) ---
+
+// An unknown identifier blames the ident itself.
+func TestBlameUnknownIdentifier(t *testing.T) {
+	src := `val y = missing`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "Unknown identifier: missing", "missing")
+}
+
+// A duplicate top-level `val` blames the second decl and exposes the first as a
+// related "previously declared here" span.
+func TestBlameDuplicateDeclarationRelatesPrevious(t *testing.T) {
+	src := "val x = 5\nval x = \"hi\""
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "Duplicate declaration: x", `val x = "hi"`, "val x = 5")
+}
+
+// An unsupported feature (optional chaining) blames the member, not a separate
+// node, and reports the feature name.
+func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
+	src := "val o = {a: 5}\nval x = o?.a"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "Unsupported in M2: OptionalChain", "o?.a")
+}
+
+// --- Site-fallback fixtures ---
+
+// A void result has no Prov entry — it is minted without an AST node — so a
+// constraint with void as its subject falls back to the constraint site, the use.
+// `fn f() {}` returns void, and `val x: number = f()` blames the `f()` call with
+// the annotation as the related expected-source. (Replaces the hand-built
+// CannotConstrain "unrecorded operand → site" unit test; its operand-within-site
+// and operand-outside-site branches are already covered by TestBlameCallArgument
+// and TestBlameIdentifierUseNotDefinition above.)
+func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
+	src := "fn f() {}\nval x: number = f()"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "cannot constrain void <: number", "f()", "number")
+}
+
+// An INLINE callee resolves its "defined here" related span — its FuncType is
+// recorded (FuncInference) against the fn expression — unlike the named callee in
+// TestBlameCallArity, whose coalesced binding has no Prov entry. So a call-arity
+// mismatch on an immediately-invoked function blames the call AND relates the
+// inline function. (The primary is the call expression; for a parenthesized callee
+// the parser's span begins at the inner `fn`, so the leading `(` is not part of
+// it.)
+func TestBlameCallArityInlineCalleeRelated(t *testing.T) {
+	src := `val r = (fn (x: number) -> number { x })(1, 2)`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"cannot constrain function of arity 1 <: function of arity 2",
+		`fn (x: number) -> number { x })(1, 2)`,
+		`fn (x: number) -> number { x }`)
+}
+
+// tspan builds a single-SourceID span from 1-indexed line/column ints — only the
+// hand-built degrade-path test below needs it.
+func tspan(sl, sc, el, ec int) ast.Span {
+	return ast.NewSpan(ast.Location{Line: sl, Column: sc}, ast.Location{Line: el, Column: ec}, 0)
+}
+
+// The three site-carrying constraint kinds degrade to the constraint site when
+// NEITHER operand resolves through Prov, rather than returning the zero span
+// (which a consumer would mis-render as 0:0). Unlike every fixture above, this path
+// is UNREACHABLE from M2.5 source — FuncArity always records the call-shape,
+// MissingProperty always records the field var, and tuple <: tuple cannot fire
+// without a tuple sink — so it must be exercised with hand-built errors and a
+// seeded Prov here; it becomes live with M4 record/tuple sinks.
+func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
+	site := ast.NewIdent("site", tspan(7, 3, 7, 12))
+
+	t.Run("FuncArity", func(t *testing.T) {
+		e := &FuncArityMismatchError{
+			LHS: &soltype.FuncType{}, RHS: &soltype.FuncType{}, prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("TupleLength", func(t *testing.T) {
+		e := &TupleLengthMismatchError{
+			LHS: &soltype.TupleType{}, RHS: &soltype.TupleType{}, prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("MissingProperty", func(t *testing.T) {
+		e := &MissingPropertyError{
+			LHS:  &soltype.RecordType{},
+			RHS:  &soltype.RecordType{Fields: []*soltype.RecordField{{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			Name: "b", prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+}
+
+// --- M2.5 finding #1: unsupported-annotation recovery (no spurious `<: never`) ---
+
+// An unsupported annotation reports ITS OWN error once and the binding recovers to
+// the type it would otherwise infer — no cascade `cannot constrain e <: never`, no
+// `never`-poisoned binding. Covers each annotation position:
+//   - val: keeps the initializer's inferred type;
+//   - function return: keeps the inferred body return type;
+//   - param: recovers to a fresh var (rendering `unknown` in contravariant position).
+func TestUnsupportedAnnotationRecovers(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{"val", `val x: Foo = 5`, map[string]string{"x": "5"}},
+		{"return", `fn f() -> Foo { 5 }`, map[string]string{"f": "fn () -> 5"}},
+		{"param", `fn g(x: Foo) -> number { 5 }`, map[string]string{"g": "fn (x: unknown) -> number"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
+			require.Equal(t, tt.want, values)
+		})
+	}
+}
+
+// A VarDecl with a nil pattern (not produced by the parser, which synthesizes a
+// placeholder, but possible in a hand-built AST) must blame the decl without
+// panicking — honoring M2's "never a panic" guarantee now that Span() is lazy
+// (it derefs the stored node on demand). Mirrors inferFunc's nil-param fallback.
+func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
+	c := newChecker()
+	d := ast.NewVarDecl(ast.ValKind, nil, nil, numExpr(5), false, false, testSpan())
+	require.NotPanics(t, func() {
+		_, _, ok := c.inferDeclDef(NewScope(), 0, d)
+		require.False(t, ok)
+	})
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Unsupported in M2: VarDecl", c.errs[0].Message())
+	require.Equal(t, testSpan(), c.errs[0].Span()) // derefs the decl node, not a nil pattern
+}

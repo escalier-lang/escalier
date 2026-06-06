@@ -15,33 +15,33 @@ import (
 // error refers to — e.g. navigate to a type's declaration — without reparsing
 // the message. Modeled on internal/checker/error.go's shape.
 //
-// M2 adds Span() ast.Span. The constraint kinds (CannotConstrainError, …) are
-// still constructed span-free inside the engine (constrain.go has no AST node
-// in hand); the M2 walk stamps the offending node's span onto each returned
-// error via the unexported setSpan at the constrain call site (see
-// (*checker).constrain). The M2 bridge kinds below carry their span from
-// construction.
+// M2.5 makes every Span() node-derived: bridge kinds self-blame from the AST node
+// they carry, and constraint kinds resolve their offending operand to its minting
+// node through the Prov side table (per-operand blame, §3.5). Related() exposes
+// secondary contributing nodes (the expected-source alongside the actual-source;
+// the prior declaration alongside the duplicate). errSpan/setSpan are gone — no
+// error is stamped after the fact.
 type SolverError interface {
 	isSolverError()
 	Message() string
-	Span() ast.Span
-	setSpan(ast.Span)
+	Span() ast.Span      // ALWAYS derived from a primary ast.Node
+	Related() []ast.Span // node-derived; empty unless the kind carries related nodes
 }
-
-// errSpan is the embeddable span carrier shared by every SolverError kind. It
-// supplies Span()/setSpan so a span-free engine error can be stamped after the
-// fact and a bridge error can be built with its span in place.
-type errSpan struct{ span ast.Span }
-
-func (e *errSpan) Span() ast.Span     { return e.span }
-func (e *errSpan) setSpan(s ast.Span) { e.span = s }
 
 // CannotConstrainError fires when a non-variable LHS/RHS pair fails to match:
 // prim/prim mismatch, lit/lit mismatch, lit/prim mismatch, and the generic
 // "no rule applies" fall-through at the end of constrain.
+//
+// LHS is the "actual" value, RHS the "expected"; blame follows LHS to its minting
+// node (when that node lies inside the constraint site — the containment guard
+// that keeps identifier-flow blame on the use, not the definition, §3.8) and falls
+// back to site otherwise. This is the only constraint kind that keeps a site
+// fallback: its actual-value operand can legitimately resolve outside the
+// constraint (an ident's definition) or not at all (a Void result).
 type CannotConstrainError struct {
-	errSpan
 	LHS, RHS soltype.Type
+	prov     NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
+	site     ast.Node     // M2.5: the constraint node n — the use, the fallback when LHS has no entry
 }
 
 // FuncArityMismatchError fires on FuncType <: FuncType when the two arities
@@ -49,17 +49,34 @@ type CannotConstrainError struct {
 // of params). Holds the full FuncTypes, not just the arities, so consumers can
 // report param/return types too. M3 narrows the firing conditions when the
 // exactness flag adds the inexact fewer-params-is-subtype arm.
+//
+// The subject is the RHS call-shape (a fresh FuncType{args, res} minted per call,
+// recorded against the CallExpr), so Span() resolves precisely to the call;
+// Related() follows the LHS callee to a "defined here" span. site is the
+// constraint node, used as a coarse fallback when neither operand resolves (e.g.
+// once M3 produces higher-order FuncArity errors whose RHS isn't a recorded
+// call-shape) so blame never degrades to the zero span.
 type FuncArityMismatchError struct {
-	errSpan
 	LHS, RHS *soltype.FuncType
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
 // TupleLengthMismatchError fires on TupleType <: TupleType with different
 // lengths (M1's exact-tuple case; M4 may narrow the firing conditions when the
 // inexact flag is added).
+//
+// The subject is the LHS tuple literal (recorded by inferTuple); Related() points
+// at the RHS expected-source. Not actually reachable in M2.5 — a tuple <: tuple
+// constraint needs a tuple sink (annotation/param) resolveTypeAnn does not yet
+// produce — so its blame is wired but exercised from M4. site is the constraint
+// node, the coarse fallback when neither tuple resolves (e.g. an M4 tuple
+// annotation whose elements aren't recorded) so blame never degrades to the zero
+// span.
 type TupleLengthMismatchError struct {
-	errSpan
 	LHS, RHS *soltype.TupleType
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
 // MissingPropertyError fires on RecordType <: RecordType when the RHS requires a
@@ -68,10 +85,20 @@ type TupleLengthMismatchError struct {
 // without that field (recv.foo where recv has no foo): the walk constrains
 // recv <: {foo: fresh}, and the absent field surfaces here. Holds both records
 // plus the missing name so consumers can inspect what was required.
+//
+// The subject is the field's inner result var (RHS.Field(Name)), minted by
+// inferMember and recorded against the .prop identifier — so Span() blames the
+// member's prop (.foo), not the receiver. Name stays: the absent field name is
+// not recoverable from a single node (the RHS may require several fields). site
+// is the constraint node, the coarse fallback when the field var has no entry —
+// reachable once M4 builds concrete record <: record requirements whose field
+// types are coalesced/annotation-minted (and therefore not recorded by
+// inferMember); until then it never fires, but it keeps blame off the zero span.
 type MissingPropertyError struct {
-	errSpan
 	LHS, RHS *soltype.RecordType
 	Name     string
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback when the field var has no entry
 }
 
 func (*CannotConstrainError) isSolverError()     {}
@@ -79,13 +106,117 @@ func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
 func (*MissingPropertyError) isSolverError()     {}
 
-// --- M2 bridge errors (carry their span from construction) ---
+// --- Per-operand blame (§3.5): each constraint kind follows its operands through
+// Prov on demand, falling back to its own site (where it keeps one) ---
+
+func (e *CannotConstrainError) Span() ast.Span      { return spanOf(e.prov, e.LHS, e.site) }
+func (e *CannotConstrainError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+
+func (e *FuncArityMismatchError) Span() ast.Span {
+	// RHS call-shape → the CallExpr; degrade → the callee function; else the site.
+	return spanOfFirst(e.prov, e.site, e.RHS, e.LHS)
+}
+func (e *FuncArityMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.LHS) } // the fn
+
+func (e *TupleLengthMismatchError) Span() ast.Span {
+	// LHS tuple literal → degrade to the other tuple → else the site.
+	return spanOfFirst(e.prov, e.site, e.LHS, e.RHS)
+}
+func (e *TupleLengthMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+
+func (e *MissingPropertyError) Span() ast.Span {
+	// The field's inner var → the .foo prop ident; degrade to the receiver; else
+	// the site. The field-var arm is the only one reachable in M2.5 (member
+	// access always records it); the receiver/site arms cover the M4 concrete
+	// record <: record case where the field type may be unrecorded.
+	ops := make([]soltype.Type, 0, 2)
+	if f, ok := e.RHS.Field(e.Name); ok {
+		ops = append(ops, f)
+	}
+	ops = append(ops, e.LHS)
+	return spanOfFirst(e.prov, e.site, ops...)
+}
+func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.LHS) } // the receiver
+
+// spanOf blames op's own source node when that node lies *within* the constraint
+// site, and the site itself otherwise (or when op has no entry). The containment
+// guard is the M2.5 fix for identifier-flow blame: for f("hi") the operand ("hi")
+// is minted inside the call, so the narrower operand wins; for val a: number = x
+// the operand (x's type) traces to x's *definition*, which is NOT inside the use
+// site, so the use (site) wins — an ident-use error points at the use, not the
+// definition (§3.8). In M3+, NodeFor chases interior Origin edges to the nearest
+// AST leaf; in M2.5 it is a single lookup.
+func spanOf(p NodeResolver, op soltype.Type, site ast.Node) ast.Span {
+	if p != nil && site != nil {
+		if n, ok := p.NodeFor(op); ok && site.Span().ContainsSpan(n.Span()) {
+			return n.Span()
+		}
+	}
+	return spanOfNode(site)
+}
+
+// spanOfFirst returns the span of the first operand that resolves through p, in
+// the order given, falling back to the site's span (and finally the zero span
+// when there is no site). Unlike spanOf it applies no containment guard — its
+// callers' subject operands are minted *at* the constraint (a call-shape, a tuple
+// literal, a member's field var), so the first resolved operand is already the
+// narrowest blame. The site fallback keeps blame off the zero span when an
+// operand is unrecorded (a degrade path reachable from M4).
+func spanOfFirst(p NodeResolver, site ast.Node, ops ...soltype.Type) ast.Span {
+	if p != nil {
+		for _, op := range ops {
+			if n, ok := p.NodeFor(op); ok {
+				return n.Span()
+			}
+		}
+	}
+	return spanOfNode(site)
+}
+
+// spanOfNode returns site.Span(), or the zero span when site is nil. The zero
+// span only arises for a hand-built error with no site; every error the walk
+// produces carries one.
+func spanOfNode(site ast.Node) ast.Span {
+	if site != nil {
+		return site.Span()
+	}
+	return ast.Span{}
+}
+
+// relatedOf resolves each operand that has an entry to a related span and drops
+// the ones that don't (no fallback — a missing related node is simply omitted),
+// deduped by span (§3.6).
+func relatedOf(p NodeResolver, ops ...soltype.Type) []ast.Span {
+	if p == nil {
+		return nil
+	}
+	var spans []ast.Span
+	for _, op := range ops {
+		if n, ok := p.NodeFor(op); ok {
+			spans = appendUnique(spans, n.Span())
+		}
+	}
+	return spans
+}
+
+// appendUnique appends s unless an equal span is already present. ast.Span is a
+// plain comparable value (Start/End Location of ints + SourceID), so == suffices.
+func appendUnique(spans []ast.Span, s ast.Span) []ast.Span {
+	for _, e := range spans {
+		if e == s {
+			return spans
+		}
+	}
+	return append(spans, s)
+}
+
+// --- M2 bridge errors (born in the walk with the offending ast.Node in hand,
+// so they self-blame: Span() is the node's own span, no post-hoc stamping) ---
 
 // UnknownIdentifierError fires when a value-position identifier resolves to no
 // binding in the scope chain.
 type UnknownIdentifierError struct {
-	errSpan
-	Name string
+	Ident *ast.IdentExpr
 }
 
 // NamespaceUsedAsValueError fires when an identifier resolves to a namespace
@@ -93,24 +224,34 @@ type UnknownIdentifierError struct {
 // values; in M2 a namespace name in value position can only fail (qualified
 // member access — Foo.bar — is M4).
 type NamespaceUsedAsValueError struct {
-	errSpan
-	Name string
+	Ident *ast.IdentExpr
 }
 
-// UnsupportedNodeError is the M2-subset guard: an AST node outside the M2 walk's
-// coverage. Unlike BodyDeclNotAllowedError this is a temporary scope gate, not a
-// permanent language rule — later milestones widen coverage and remove arms.
+// UnsupportedNodeError is the M2-subset guard: an AST node whose KIND is outside
+// the M2 walk's coverage (kind = astKind(Node)). Unlike BodyDeclNotAllowedError
+// this is a temporary scope gate, not a permanent language rule — later milestones
+// widen coverage and remove arms. The "the node is fine, a FEATURE of it isn't"
+// case (e.g. optional chaining on a supported MemberExpr) is UnsupportedFeatureError.
 type UnsupportedNodeError struct {
-	errSpan
-	Kind string
+	Node ast.Node
+}
+
+// UnsupportedFeatureError is the sibling of UnsupportedNodeError for the case
+// where the node kind IS supported but a feature of it is not — e.g. a generic
+// function (the FuncExpr is fine, type params are M3) or optional chaining (the
+// MemberExpr is fine, recv?.foo is M6). The node carries the blame span; Feature
+// names what is unsupported (not derivable from astKind, which would name the
+// supported parent).
+type UnsupportedFeatureError struct {
+	Node    ast.Node
+	Feature string
 }
 
 // BodyDeclNotAllowedError fires when a statement-level declaration in a function
 // body is anything other than a VarDecl. This is a permanent language rule
 // (§3.2), not the temporary subset gate above: body decls are VarDecl-only.
 type BodyDeclNotAllowedError struct {
-	errSpan
-	Kind string
+	Decl ast.Decl
 }
 
 // MissingInitializerError fires when a `val`/`var` declaration has no
@@ -119,17 +260,22 @@ type BodyDeclNotAllowedError struct {
 // kind rather than a generic UnsupportedNodeError: it marks an annotation-driven
 // binding the walk can't infer, not an AST node shape outside the subset.
 type MissingInitializerError struct {
-	errSpan
-	Name string // the bound name when the pattern is an IdentPat; "" otherwise
+	Decl *ast.VarDecl
 }
 
 // DuplicateDeclarationError fires when a top-level `val`/`var` rebinds a name
 // already declared in the module scope. Unlike a function (whose repeated
 // top-level declarations are overloads, supported from PR-3), a variable may be
 // declared only once per scope; the first binding is kept.
+//
+// Decl is the rejected redeclaration (the blame span); Previous is the kept first
+// declaration, surfaced via Related() as "previously declared here". Name is the
+// resolved binding-key name — retained alongside the nodes because it may be a
+// qualified key name distinct from the decl's local identifier, and the message
+// wants the canonical name (§3.4 caveat).
 type DuplicateDeclarationError struct {
-	errSpan
-	Name string
+	Decl, Previous ast.Decl
+	Name           string
 }
 
 // OverloadNotSupportedError fires when a name has more than one top-level
@@ -138,48 +284,71 @@ type DuplicateDeclarationError struct {
 // callable with that signature) and reports each extra arm, rather than merging
 // the arms into the same var — which yields an uncallable union-of-functions
 // binding whose every call fails with an opaque `function | function` mismatch.
+//
+// Decl/Previous/Name mirror DuplicateDeclarationError.
 type OverloadNotSupportedError struct {
-	errSpan
-	Name string
+	Decl, Previous ast.Decl
+	Name           string
 }
 
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
 func (*UnsupportedNodeError) isSolverError()      {}
+func (*UnsupportedFeatureError) isSolverError()   {}
 func (*BodyDeclNotAllowedError) isSolverError()   {}
 func (*MissingInitializerError) isSolverError()   {}
 func (*DuplicateDeclarationError) isSolverError() {}
 func (*OverloadNotSupportedError) isSolverError() {}
 
+func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
+func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
 func (e *UnknownIdentifierError) Message() string {
-	return "Unknown identifier: " + e.Name
+	return "Unknown identifier: " + e.Ident.Name
 }
 
+func (e *NamespaceUsedAsValueError) Span() ast.Span      { return e.Ident.Span() }
+func (e *NamespaceUsedAsValueError) Related() []ast.Span { return nil }
+func (e *NamespaceUsedAsValueError) Message() string {
+	return "Namespace used as a value: " + e.Ident.Name
+}
+
+func (e *UnsupportedNodeError) Span() ast.Span      { return e.Node.Span() }
+func (e *UnsupportedNodeError) Related() []ast.Span { return nil }
+func (e *UnsupportedNodeError) Message() string {
+	return "Unsupported in M2: " + astKind(e.Node)
+}
+
+func (e *UnsupportedFeatureError) Span() ast.Span      { return e.Node.Span() }
+func (e *UnsupportedFeatureError) Related() []ast.Span { return nil }
+func (e *UnsupportedFeatureError) Message() string {
+	return "Unsupported in M2: " + e.Feature
+}
+
+func (e *BodyDeclNotAllowedError) Span() ast.Span      { return e.Decl.Span() }
+func (e *BodyDeclNotAllowedError) Related() []ast.Span { return nil }
+func (e *BodyDeclNotAllowedError) Message() string {
+	return "Declaration not allowed in function body: " + astKind(e.Decl)
+}
+
+func (e *MissingInitializerError) Span() ast.Span      { return e.Decl.Span() }
+func (e *MissingInitializerError) Related() []ast.Span { return nil }
 func (e *MissingInitializerError) Message() string {
-	if e.Name != "" {
-		return "Variable declaration requires an initializer: " + e.Name
+	if name, ok := varName(e.Decl); ok {
+		return "Variable declaration requires an initializer: " + name
 	}
 	return "Variable declaration requires an initializer"
 }
 
+func (e *DuplicateDeclarationError) Span() ast.Span      { return e.Decl.Span() }
+func (e *DuplicateDeclarationError) Related() []ast.Span { return []ast.Span{e.Previous.Span()} }
 func (e *DuplicateDeclarationError) Message() string {
 	return "Duplicate declaration: " + e.Name
 }
 
+func (e *OverloadNotSupportedError) Span() ast.Span      { return e.Decl.Span() }
+func (e *OverloadNotSupportedError) Related() []ast.Span { return []ast.Span{e.Previous.Span()} }
 func (e *OverloadNotSupportedError) Message() string {
 	return "Function overloads are not supported in M2: " + e.Name
-}
-
-func (e *NamespaceUsedAsValueError) Message() string {
-	return "Namespace used as a value: " + e.Name
-}
-
-func (e *UnsupportedNodeError) Message() string {
-	return "Unsupported in M2: " + e.Kind
-}
-
-func (e *BodyDeclNotAllowedError) Message() string {
-	return "Declaration not allowed in function body: " + e.Kind
 }
 
 func (e *CannotConstrainError) Message() string {

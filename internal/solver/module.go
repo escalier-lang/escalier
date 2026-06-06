@@ -61,7 +61,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, d := range ns.Decls {
 			if !handled.Contains(d) {
-				c.reportUnsupported(d, d)
+				c.reportUnsupported(d)
 			}
 		}
 		return true
@@ -166,14 +166,16 @@ func (c *checker) inferComponent(
 			// variable binding — likewise keeps the first and reports.
 			if _, isFunc := d.(*ast.FuncDecl); isFunc && !b.isVar {
 				c.report(&OverloadNotSupportedError{
-					errSpan: errSpan{span: d.Span()},
-					Name:    key.Name(),
+					Decl:     d,
+					Previous: b.primary,
+					Name:     key.Name(),
 				})
 				continue
 			}
 			c.report(&DuplicateDeclarationError{
-				errSpan: errSpan{span: d.Span()},
-				Name:    key.Name(),
+				Decl:     d,
+				Previous: b.primary,
+				Name:     key.Name(),
 			})
 		}
 	}
@@ -190,7 +192,7 @@ func (c *checker) inferComponent(
 				continue
 			}
 			handled.Add(d)
-			c.reportUnsupported(d, d)
+			c.reportUnsupported(d)
 		}
 	}
 

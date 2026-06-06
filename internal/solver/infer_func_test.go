@@ -111,6 +111,27 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 	require.Equal(t, "fn () -> number", render(b.Type))
 }
 
+// A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`
+// (the honest "couldn't resolve the declared return"), not the synthetic `void`
+// (which would falsely signal "returns nothing" to callers). The annotation error
+// is still reported once. Reachable only via a nil-body AST — from source the
+// parser gives a declare fn a non-nil empty block (so hasBody is true).
+func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
+	c := newChecker()
+	// declare fn now() -> bigint   (bigint is unsupported in M2)
+	d := ast.NewFuncDecl(
+		ast.NewIdentifier("now", testSpan()), nil, nil,
+		nil, ast.NewBigintTypeAnn(testSpan()), nil,
+		nil, // no body
+		false, true, false, testSpan(),
+	)
+
+	b := c.inferFuncDecl(NewScope(), 0, d)
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Unsupported in M2: BigintTypeAnn", c.errs[0].Message())
+	require.Equal(t, "fn () -> unknown", render(b.Type))
+}
+
 // A param that arrives without a pattern must report a clean error, not panic on
 // p.Span() (which dereferences the nil pattern). Not reachable from the real
 // parser, but the walk must uphold M2's "never a panic" guarantee.

@@ -32,8 +32,15 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		if _, named := varName(d); !named {
 			// Destructuring patterns (TuplePat/ObjectPat) need the tuple/record
 			// types that arrive in M4. The initializer was already walked above
-			// (its errors surfaced); report the pattern and produce no binding.
-			c.reportUnsupported(d.Pattern, d.Pattern)
+			// (its errors surfaced); report the pattern and produce no binding. A
+			// nil pattern (not produced by the parser, which synthesizes a
+			// placeholder, but possible in a hand-built AST) blames the decl instead,
+			// mirroring inferFunc — never a nil-node Span() panic.
+			if d.Pattern != nil {
+				c.reportUnsupported(d.Pattern)
+			} else {
+				c.reportUnsupported(d)
+			}
 			return nil, nil, false
 		}
 		return initType, &ast.NodeProvenance{Node: d}, true
@@ -43,7 +50,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		// accumulates these per-decl sources into the binding's Sources slice.
 		return b.Type, b.Sources[0], true
 	default:
-		c.reportUnsupported(d, d)
+		c.reportUnsupported(d)
 		return nil, nil, false
 	}
 }
@@ -60,14 +67,30 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 // in a later PR); for now it reports MissingInitializerError and returns ok=false.
 func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, bool) {
 	if d.Init == nil {
-		name, _ := varName(d)
-		c.report(&MissingInitializerError{
-			errSpan: errSpan{span: d.Span()},
-			Name:    name,
-		})
+		c.report(&MissingInitializerError{Decl: d})
 		return nil, false
 	}
-	return c.inferExpr(scope, lvl, d.Init), true
+	initT := c.inferExpr(scope, lvl, d.Init)
+	if d.TypeAnn != nil {
+		// M2.5: constrain the initializer against the annotation (the one
+		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
+		// CannotConstrainError whose LHS (the "hi" literal) carries a
+		// LiteralInference origin — precise blame, with the annotation as the
+		// related node. The constraint node is the initializer, so even the
+		// fallback span is the RHS, not the whole decl; the binding then adopts the
+		// annotated type.
+		//
+		// Skip both the check and the adoption when the annotation is unsupported
+		// (ok=false): resolveTypeAnn already reported it and returned a `never`
+		// placeholder, so constraining `initT <: never` would cascade a spurious
+		// error and adopting `never` would poison the binding. Keep the inferred
+		// initializer type instead (error recovery).
+		if annT, ok := c.resolveTypeAnn(d.TypeAnn); ok {
+			c.constrain(d.Init, initT, annT)
+			initT = annT
+		}
+	}
+	return initT, true
 }
 
 // inferVarDecl types a `val`/`var` into a MONOMORPHIC ValueBinding, coalescing the
