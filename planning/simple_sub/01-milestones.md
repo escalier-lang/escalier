@@ -241,8 +241,9 @@ scheme instantiation introduces the first interior origin (`FromInstantiation`).
 - Level-based let-generalization (instantiate / freshenAbove): replace M2's
   monomorphic SCC freeze (`coalesce` to a monotype) with generalization into a
   `PolyScheme` at the binding boundary, swap `ValueBinding.Type` for a scheme
-  (retaining its `Sources`), add the `<T0, …>` quantifier prefix to the printer,
-  and add the `coalesce` `seen`-guard M2 deferred here.
+  (retaining its `Sources`), and add the `<T0, …>` quantifier prefix to the
+  printer. (The `coalesce` recursion `seen`-guard already shipped in M2 PR-5;
+  what remains for M3 is the precise μ-bound recursive *rendering*.)
 - The simplification pass: single-polarity elimination + co-occurrence variable
   merging (so generalized signatures render compactly, and parameter-only
   variables coalesce to `unknown` rather than a vacuous `<T0>` — a blessed

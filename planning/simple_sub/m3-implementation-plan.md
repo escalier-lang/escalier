@@ -84,8 +84,9 @@ earlier drafts of this plan assumed spike-era names that never shipped.
 1. **Let-generalization** — schemes, `instantiate`/`freshenAbove`, generalize at
    the SCC boundary (replacing M2's monomorphic freeze), the `<T0, …>` quantifier
    prefix in the printer, and the `inferIdent` instantiation hook. Plus the
-   `coalesce` `seen`-guard (M2 PR-5 forward-referenced it) and the
-   `FromInstantiation` provenance variant (extends M2.5's `Prov`).
+   `FromInstantiation` provenance variant (extends M2.5's `Prov`). (The
+   `coalesce` recursion `seen`-guard this would otherwise need already shipped in
+   M2 PR-5; M3 owns only the precise μ-bound recursive *rendering*.)
 2. **The simplification pass** — single-polarity elimination + co-occurrence
    merging, so generalized signatures render compactly and parameter-only
    variables coalesce to `unknown` rather than a vacuous `<T0>`.
@@ -424,9 +425,11 @@ to coalesced monotypes; PR1 turns that into real let-polymorphism.
   `coalesce(b.v, Positive)` → a monotype. PR1 changes it to generalize: variables
   at `Level > lvl` become quantifiable; captured outer vars do not. The result is
   a `PolyScheme`.
-- **`coalesce` `seen`-guard.** M2 PR-5 noted `coalesce` has no recursion guard;
-  generalizing recursive-group types can loop. Add the `seen`-guard here (the M1
-  deferral M2 forward-referenced).
+- **Recursive-group rendering (not the `seen`-guard).** The `coalesce`
+  path-scoped `seen`-guard that keeps the walk total over a cyclic var↔var bound
+  graph **already shipped in M2 PR-5** (`coalesceRec` in `coalesce.go`) — M3 does
+  *not* re-add it. M3 owns only the precise μ-bound recursive *rendering* of a
+  generalized recursive type.
 - **Printer `<T0, …>` prefix.** Extend `soltype.Print` to render a quantifier
   prefix for a generalized scheme's free variables (M2's printer renders only
   monotypes).
@@ -497,7 +500,8 @@ before the printer.
   parameter.
 - **Wire into `generalize`** (PR1's no-op `simplify` becomes real): occurrence
   analysis → co-occurrence → union-find → rewrite, feeding `coalesce` + the
-  printer. The `seen`-guard from PR1 covers the cyclic bound graphs this walks.
+  printer. The `coalesce` `seen`-guard (shipped in M2 PR-5) covers the cyclic
+  bound graphs this walks.
 
 **Sketch:**
 
