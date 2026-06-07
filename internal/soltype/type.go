@@ -4,7 +4,16 @@ import "fmt"
 
 // Type is the sealed interface for all soltype nodes. (Production name for the
 // spike's SimpleType; marker renamed isSimpleType -> isType.)
-type Type interface{ isType() }
+//
+// Accept threads a polarity-flipping rewriting visitor over the node (visitor.go);
+// the structural type→type transforms (coalesce / extrude / freshenAbove) are
+// implemented on top of it so variance and the rebuild-from-children boilerplate
+// live in one place. The marker isType stays unexported so the interface is sealed
+// to this package.
+type Type interface {
+	isType()
+	Accept(v TypeVisitor, pol Polarity) Type
+}
 
 // TypeVarType is an inference variable carrying Simple-sub lower/upper bound
 // lists plus the level at which it was created (for let-generalization in M3).
