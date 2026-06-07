@@ -248,11 +248,15 @@ func (p *namedPrinter) printType(t Type) string {
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	ps := make([]string, 0, len(t.Params)+1)
 	for i, param := range t.Params {
+		rest := ""
+		if param.Rest {
+			rest = "..." // a typed rest param renders `...xs: T`
+		}
 		opt := ""
 		if param.Optional {
 			opt = "?"
 		}
-		ps = append(ps, paramName(param, i)+opt+": "+p.printType(param.Type))
+		ps = append(ps, rest+paramName(param, i)+opt+": "+p.printType(param.Type))
 	}
 	if t.Inexact {
 		ps = append(ps, "...")

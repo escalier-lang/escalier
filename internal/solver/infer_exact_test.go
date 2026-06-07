@@ -112,6 +112,44 @@ func TestInferTooFewArgsRespectsOptional(t *testing.T) {
 	require.Equal(t, "Not enough arguments: expected at least 1, but got 0", errs[0].Message())
 }
 
+// A typed rest param absorbs trailing arguments, so a direct call with more args
+// than declared is NOT too-many (#677 §4.2.3) — but too-few still applies to the
+// fixed params. Rest params have no source syntax in M3 (inferFunc reports them
+// unsupported), so this is built by hand, like the inexact-callee test.
+func TestInferCallRestCalleeArity(t *testing.T) {
+	// fn g(x: number, ...rest: number): one fixed param + a rest.
+	restCallee := func() ValueBinding {
+		return ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.FuncType{
+			Params: []*soltype.FuncParam{
+				{Pattern: &soltype.IdentPat{Name: "x"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+				{Pattern: &soltype.IdentPat{Name: "rest"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}, Rest: true},
+			},
+			Ret: &soltype.PrimType{Prim: soltype.NumPrim},
+		})}}
+	}
+
+	t.Run("absorbs extra args (no too-many)", func(t *testing.T) {
+		c := newChecker()
+		scope := NewScope()
+		scope.defineValue("g", restCallee())
+		// g(1, 2, 3) — two args beyond the fixed param; the rest absorbs them.
+		e := ast.NewCall(identExpr("g"), []ast.Expr{numExpr(1), numExpr(2), numExpr(3)}, false, testSpan())
+		c.inferExpr(scope, 0, e)
+		require.Empty(t, c.errs)
+	})
+
+	t.Run("still rejects too few (required fixed params)", func(t *testing.T) {
+		c := newChecker()
+		scope := NewScope()
+		scope.defineValue("g", restCallee())
+		// g() — zero args, but x is required (the rest may be empty, x may not).
+		e := ast.NewCall(identExpr("g"), nil, false, testSpan())
+		c.inferExpr(scope, 0, e)
+		require.Len(t, c.errs, 1)
+		require.Equal(t, "Not enough arguments: expected at least 1, but got 0", c.errs[0].Message())
+	})
+}
+
 // The extra-arg lint fires for an INEXACT callee too (#677 §4.2.3: direct calls
 // reject extras regardless of exactness). An inexact function value has no source
 // syntax yet (the `...` marker rides on function-type annotations, which the solver

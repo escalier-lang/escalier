@@ -11,16 +11,28 @@ import (
 // an inexact function tolerates any number of trailing arguments as a callback.
 const unboundedArity = math.MaxInt
 
+// hasRest reports whether f's LAST parameter is a typed rest param (`...xs: T[]`).
+// A rest param binds zero or more trailing arguments, so it never counts toward the
+// required floor and lifts the accept-set upper bound to ∞ (#677 §4.2.3) — the same
+// upper-bound effect as the inexact `...` marker, reached a different way.
+func hasRest(f *soltype.FuncType) bool {
+	n := len(f.Params)
+	return n > 0 && f.Params[n-1].Rest
+}
+
 // requiredCount is the number of arguments a positional call must supply — the
-// LOWER bound of f's accept-set. Because arguments bind positionally, an optional
-// (`x?`) parameter only lowers the requirement when it is TRAILING: in fn(a, b?)
-// you may omit b, but in fn(a?, b) you cannot omit a while still supplying b, so a
-// is effectively required. So required = the position after the last non-optional
-// param = len(Params) minus the count of TRAILING optionals — NOT the count of all
-// non-optional params, which would wrongly treat a leading optional as droppable
-// and let a call leave a required trailing param unbound.
+// LOWER bound of f's accept-set. Because arguments bind positionally, a parameter
+// only lowers the requirement when it is TRAILING: a trailing rest param (zero or
+// more) and trailing optionals (`x?`) may be omitted, but in fn(a?, b) you cannot
+// omit a while still supplying b, so a is effectively required. So required = the
+// position after the last non-optional, non-rest param — NOT the count of all
+// non-optional params, which would wrongly treat a leading optional (or the rest
+// param) as droppable and let a call leave a required param unbound.
 func requiredCount(f *soltype.FuncType) int {
 	n := len(f.Params)
+	if n > 0 && f.Params[n-1].Rest {
+		n-- // a trailing rest param binds zero-or-more args, so it is never required
+	}
 	for n > 0 && f.Params[n-1].Optional {
 		n--
 	}
@@ -28,13 +40,14 @@ func requiredCount(f *soltype.FuncType) int {
 }
 
 // acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when
-// invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f is exact
-// (a finite upper bound) and unboundedArity when f is inexact. Read a supertype
-// callback slot's accept-set as "the argument counts whoever holds this slot may
-// invoke the supplied function with."
+// invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f has a
+// finite arity, and unboundedArity when its upper bound is open — either because it
+// is inexact (the `...` marker) OR because its last param is a typed rest (§4.2.3).
+// Read a supertype callback slot's accept-set as "the argument counts whoever holds
+// this slot may invoke the supplied function with."
 func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	lo = requiredCount(f)
-	if f.Inexact {
+	if f.Inexact || hasRest(f) {
 		hi = unboundedArity
 	} else {
 		hi = len(f.Params)
@@ -252,7 +265,7 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 	case *soltype.FuncType:
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache), Optional: p.Optional}
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache), Optional: p.Optional, Rest: p.Rest}
 		}
 		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache), Inexact: t.Inexact}
 	case *soltype.TupleType:

@@ -248,7 +248,9 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	fn, isConcrete := concreteFunc(callee)
 	demand := args
 	switch {
-	case isConcrete && len(args) > len(fn.Params):
+	case isConcrete && !hasRest(fn) && len(args) > len(fn.Params):
+		// A typed rest param (hasRest) absorbs any number of trailing args, so it is
+		// never "too many" — only a fixed-arity (non-rest) callee trips this lint.
 		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
 		demand = args[:len(fn.Params)]
 	case isConcrete && len(args) < requiredCount(fn):

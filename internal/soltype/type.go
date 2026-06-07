@@ -93,6 +93,12 @@ type FuncParam struct {
 	Pattern  Pat
 	Type     Type
 	Optional bool // PR4: x? — lowers `required` without changing arity (len(Params))
+	// Rest marks a typed rest param (`...xs: T[]`), which must be the LAST param: it
+	// binds zero or more trailing arguments, so it is never required and lifts the
+	// function's accept-set upper bound to ∞ (#677 §4.2.3) — distinct from the inexact
+	// `...` marker (which is callback-only). Per-extra element-type checking (§4.2.2)
+	// needs Array types and is M4; M3 models only the arity effect.
+	Rest bool
 }
 
 // FuncType is a (possibly multi-argument) function type. M3 (PR4) adds Inexact: a

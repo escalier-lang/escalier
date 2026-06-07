@@ -47,9 +47,10 @@ func coalesceRec(t soltype.Type, pol soltype.Polarity, seen set.Set[*soltype.Typ
 	case *soltype.FuncType:
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
-			// Params are contravariant, so flip polarity. Exact/Optional are surface
-			// markers, not bound-carrying, so they ride through coalescing unchanged.
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceRec(p.Type, pol.Flip(), seen), Optional: p.Optional}
+			// Params are contravariant, so flip polarity. Inexact/Optional/Rest are
+			// surface markers, not bound-carrying, so they ride through coalescing
+			// unchanged.
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceRec(p.Type, pol.Flip(), seen), Optional: p.Optional, Rest: p.Rest}
 		}
 		return &soltype.FuncType{Params: params, Ret: coalesceRec(t.Ret, pol, seen), Inexact: t.Inexact} // covariant return
 	case *soltype.TupleType:
@@ -181,7 +182,7 @@ func coalesceSchemeRec(
 	case *soltype.FuncType:
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceSchemeRec(p.Type, pol.Flip(), genLevel, occ, seen), Optional: p.Optional}
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceSchemeRec(p.Type, pol.Flip(), genLevel, occ, seen), Optional: p.Optional, Rest: p.Rest}
 		}
 		return &soltype.FuncType{Params: params, Ret: coalesceSchemeRec(t.Ret, pol, genLevel, occ, seen), Inexact: t.Inexact}
 	case *soltype.TupleType:
@@ -339,7 +340,7 @@ func equalType(a, b soltype.Type) bool {
 			return false
 		}
 		for i := range a.Params {
-			if a.Params[i].Optional != b.Params[i].Optional || !equalType(a.Params[i].Type, b.Params[i].Type) {
+			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalType(a.Params[i].Type, b.Params[i].Type) {
 				return false
 			}
 		}

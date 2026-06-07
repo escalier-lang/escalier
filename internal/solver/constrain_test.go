@@ -35,6 +35,11 @@ func optParam(name string, t soltype.Type) *soltype.FuncParam {
 	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t, Optional: true}
 }
 
+// restParam builds a typed rest param (`...name: t`), which must be the last param.
+func restParam(name string, t soltype.Type) *soltype.FuncParam {
+	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t, Rest: true}
+}
+
 // exactFn / inexactFn build function types so the accept-set tests read at a glance
 // which arm they exercise. Exact is the zero value of Inexact, so exactFn sets no
 // flag; inexactFn sets Inexact.
@@ -235,6 +240,69 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 			exactFn(num(), identParam("a", num()), optParam("b", num())),
 			exactFn(num(), identParam("a", num())),
 		))
+	})
+}
+
+// TestAcceptSetRestParam pins the arity arithmetic for a typed rest param: it lifts
+// the upper bound to ∞ and never counts toward the required floor (#677 §4.2.3).
+func TestAcceptSetRestParam(t *testing.T) {
+	t.Run("fn(a, b, ...rest): required 2, upper unbounded", func(t *testing.T) {
+		f := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("a", num()), identParam("b", num()), restParam("rest", num())}, Ret: num()}
+		require.Equal(t, 2, requiredCount(f))
+		lo, hi := acceptSet(f)
+		require.Equal(t, 2, lo)
+		require.Equal(t, unboundedArity, hi)
+	})
+
+	t.Run("fn(...rest): required 0, upper unbounded", func(t *testing.T) {
+		f := &soltype.FuncType{Params: []*soltype.FuncParam{restParam("rest", num())}, Ret: num()}
+		require.Equal(t, 0, requiredCount(f))
+		lo, hi := acceptSet(f)
+		require.Equal(t, 0, lo)
+		require.Equal(t, unboundedArity, hi)
+	})
+
+	t.Run("fn(a, b?, ...rest): required 1 (rest and trailing optional both drop out)", func(t *testing.T) {
+		f := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("a", num()), optParam("b", num()), restParam("rest", num())}, Ret: num()}
+		require.Equal(t, 1, requiredCount(f))
+	})
+}
+
+// TestConstrainFunctionRestParam exercises the accept-set subtyping rule for a typed
+// rest param, whose ∞ upper bound mirrors the inexact `...` marker.
+func TestConstrainFunctionRestParam(t *testing.T) {
+	restFn := func(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
+		return &soltype.FuncType{Params: params, Ret: ret}
+	}
+
+	// fn(a, ...rest) (accept [1, ∞)) fills a WIDER exact slot fn(a, b, c) (accept
+	// [3, 3]): the rest absorbs the slot's extra arguments — the case rest exists for.
+	t.Run("rest fn fills a wider exact slot", func(t *testing.T) {
+		c := &Context{}
+		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
+		f := exactFn(num(), identParam("a", num()), identParam("b", num()), identParam("c", num()))
+		require.Empty(t, c.Constrain(g, f))
+	})
+
+	// A rest fn and an inexact fn have the same ∞ upper bound, so a rest fn fills an
+	// inexact slot of matching required arity.
+	t.Run("rest fn fills an inexact slot", func(t *testing.T) {
+		c := &Context{}
+		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
+		f := inexactFn(num(), identParam("a", num()))
+		require.Empty(t, c.Constrain(g, f))
+	})
+
+	// An exact fn(a, b) (accept [2, 2]) is REJECTED by a `fn(...rest)` slot (accept
+	// [0, ∞)): the slot may invoke with zero args, but g demands two — a lower-bound
+	// failure (loG=2 > loF=0), exactness aside.
+	t.Run("exact fn rejected by a zero-required rest slot", func(t *testing.T) {
+		c := &Context{}
+		g := exactFn(num(), identParam("a", num()), identParam("b", num()))
+		f := restFn(num(), restParam("rest", num()))
+		require.Equal(t,
+			[]string{"cannot constrain function of arity 2 <: function of arity 1"},
+			Messages(c.Constrain(g, f)))
 	})
 }
 

@@ -19,6 +19,10 @@ func optP(name string, t Type) *FuncParam {
 	return &FuncParam{Pattern: &IdentPat{Name: name}, Type: t, Optional: true}
 }
 
+func restP(name string, t Type) *FuncParam {
+	return &FuncParam{Pattern: &IdentPat{Name: name}, Type: t, Rest: true}
+}
+
 // TestPrintRoundTrips covers the short, stable round-trips for the M1 coalesced
 // type set: primitives, literals, the lattice bounds, tuples, multi-arg
 // functions, and multi-element unions/intersections. Per CLAUDE.md these are the
@@ -83,6 +87,11 @@ func TestPrintRoundTrips(t *testing.T) {
 			"optional param renders with ?",
 			&FuncType{Params: []*FuncParam{identP("a", numP()), optP("b", strP())}, Ret: boolP()},
 			"fn (a: number, b?: string) -> boolean",
+		},
+		{
+			"rest param renders with ...",
+			&FuncType{Params: []*FuncParam{identP("a", numP()), restP("rest", strP())}, Ret: boolP()},
+			"fn (a: number, ...rest: string) -> boolean",
 		},
 
 		// Unions and intersections.
