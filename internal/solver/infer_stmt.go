@@ -39,15 +39,19 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		// PR3: a return contributes both as a candidate block-tail value (kept for
 		// continuity with M2's `{ return 5 }` block-as-expression test) AND as one
 		// of the enclosing function's return points. Bare `return` contributes Void
-		// in both slots. Outside any function (a hand-built / malformed AST — the
-		// real walk never enters a return at top-level) the funcCtx is nil and we
-		// silently skip collection rather than panicking.
+		// in both slots.
 		var t soltype.Type = &soltype.Void{}
 		if s.Expr != nil {
 			t = c.inferExpr(scope, lvl, s.Expr)
 		}
 		if c.fn != nil {
 			c.fn.returns = append(c.fn.returns, t)
+		} else {
+			// A `return` reached outside any function body — e.g. inside an `if` that
+			// is part of a top-level `val` initializer (`val x = if c { return 1 }
+			// else { 2 }`). Reject it by the walk, symmetric to AwaitOutsideAsyncError,
+			// rather than silently dropping the return point.
+			c.report(&ReturnOutsideFunctionError{Return: s})
 		}
 		return t
 	case *ast.DeclStmt:

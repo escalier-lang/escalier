@@ -57,16 +57,34 @@ func TestInferAwaitUnwrapsPromise(t *testing.T) {
 }
 
 // No auto-flatten: `await p` where `p: Promise<Promise<number>>` yields
-// `Promise<number>`. The constraint is `p <: Promise<U>`, so U = Promise<number>
-// — one layer peeled, the rest preserved. Awaited<T>'s recursive flatten is M9.
+// `Promise<number>` — one layer peeled, the rest preserved (the constraint is
+// `p <: Promise<U>`, so U = Promise<number>; Awaited<T>'s recursive flatten is M9).
+// With NO return annotation the async fn wraps that inferred return, so the external
+// type is Promise<Promise<number>> — which only holds if await peeled exactly one
+// layer (a full flatten would give `number`, wrapping to `Promise<number>`).
 func TestInferAwaitNoAutoFlatten(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		async fn f(p: Promise<Promise<number>>) {
+			return await p
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: Promise<Promise<number>>) -> Promise<Promise<number>>", values["f"])
+}
+
+// Detect-and-don't-rewrap (#5): an async fn whose return annotation is ALREADY a
+// Promise is NOT double-wrapped — `async fn () -> Promise<T>` types externally as
+// `Promise<T>`, not `Promise<Promise<T>>`. Here the body's `await p` yields
+// `Promise<number>`, which satisfies the declared `-> Promise<number>`, and the
+// external face is that same `Promise<number>` rather than a re-wrapped layer.
+func TestInferAsyncPromiseReturnAnnotationNotDoubleWrapped(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn f(p: Promise<Promise<number>>) -> Promise<number> {
 			return await p
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: Promise<Promise<number>>) -> Promise<Promise<number>>", values["f"])
+	require.Equal(t, "fn (p: Promise<Promise<number>>) -> Promise<number>", values["f"])
 }
 
 // `await` outside an `async fn` is a WALK rejection — not a type rule failure.
@@ -340,4 +358,37 @@ func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unsupported in M2: BigintTypeAnn", errs[0].Message())
 	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
+}
+
+// --- Rejected forms (#6, #7) ---
+
+// A lifetime-annotated Promise is rejected, not silently coerced to a plain
+// Promise<T> — the soltype PromiseType carries no lifetime, so accepting it would
+// drop the annotation. Both surface forms: `Promise<'a, T>` (lifetime arg) and
+// `'a Promise<T>` (leading lifetime).
+func TestInferPromiseLifetimeRejected(t *testing.T) {
+	tests := map[string]string{
+		"lifetime arg":     "fn f(p: Promise<'a, number>) { 0 }",
+		"leading lifetime": "fn f(p: 'a Promise<number>) { 0 }",
+	}
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Len(t, errs, 1)
+			require.Equal(t, "Unsupported in M2: lifetime annotation on Promise", errs[0].Message())
+		})
+	}
+}
+
+// A `return` reached outside any function — here inside an `if` that is part of a
+// top-level `val` initializer — is rejected by the walk (symmetric to
+// await-outside-async), not silently dropped. The `if` still types its branches, so
+// the binding recovers to their join.
+func TestInferReturnOutsideFunctionRejected(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		val x = if true { return 5 } else { 6 }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "return can only be used inside a function", errs[0].Message())
+	require.Equal(t, "5 | 6", values["x"])
 }

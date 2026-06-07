@@ -207,10 +207,20 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// constrain so the annotation governs the body return; the wrap is the external
 	// face. Bodyless async fns wrap too — an ambient `async fn now() -> number`
 	// types as `fn () -> Promise<number>` for callers.
+	//
+	// Detect-and-don't-rewrap: when `ret` is ALREADY a Promise — the author wrote the
+	// external form `-> Promise<T>` — wrapping again would yield `Promise<Promise<T>>`,
+	// a silent double-wrap. Skip the wrap in that case and take the annotation as the
+	// external type. This only catches a *syntactically* Promise return (an explicit
+	// `Promise<…>` annotation, or an inlined Promise literal); a return that merely
+	// COALESCES to a Promise through a variable is still a bare var here and is
+	// wrapped, matching the plan's "wrap an inferred return" model.
 	if sig.Async {
-		wrapped := &soltype.PromiseType{Inner: ret}
-		c.recordProv(wrapped, node, PromiseWrap)
-		ret = wrapped
+		if _, alreadyPromise := ret.(*soltype.PromiseType); !alreadyPromise {
+			wrapped := &soltype.PromiseType{Inner: ret}
+			c.recordProv(wrapped, node, PromiseWrap)
+			ret = wrapped
+		}
 	}
 	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
 	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it

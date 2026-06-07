@@ -32,6 +32,14 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 		// other name (or arity) reports unsupported with a `never` placeholder so
 		// the caller can recover by keeping the inferred type.
 		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
+			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
+			// supported: M3's PromiseType carries no lifetime, so silently accepting it
+			// would drop the lifetime. Reject it as an unsupported feature rather than
+			// coercing to a plain Promise<T>. (Lifetimes on referenced types land with
+			// the wider TypeRef/lifetime work.)
+			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
+				return c.reportUnsupportedFeature(ta, "lifetime annotation on Promise"), false
+			}
 			inner, ok := c.resolveTypeAnn(ta.TypeArgs[0], lvl)
 			if !ok {
 				// The inner annotation was unsupported and already reported its own

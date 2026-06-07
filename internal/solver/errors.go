@@ -331,6 +331,15 @@ type AwaitOutsideAsyncError struct {
 	Await *ast.AwaitExpr
 }
 
+// ReturnOutsideFunctionError fires when a `return` statement is reached outside
+// any function body — e.g. inside an `if` that is part of a top-level `val`
+// initializer. Symmetric to AwaitOutsideAsyncError: the walk rejects it rather
+// than silently dropping the return point (a return collected against no enclosing
+// function would otherwise vanish).
+type ReturnOutsideFunctionError struct {
+	Return *ast.ReturnStmt
+}
+
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
 func (*TooManyArgsError) isSolverError()          {}
@@ -341,7 +350,8 @@ func (*BodyDeclNotAllowedError) isSolverError()   {}
 func (*MissingInitializerError) isSolverError()   {}
 func (*DuplicateDeclarationError) isSolverError() {}
 func (*OverloadNotSupportedError) isSolverError() {}
-func (*AwaitOutsideAsyncError) isSolverError()    {}
+func (*AwaitOutsideAsyncError) isSolverError()     {}
+func (*ReturnOutsideFunctionError) isSolverError() {}
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
@@ -425,6 +435,12 @@ func (e *AwaitOutsideAsyncError) Span() ast.Span      { return e.Await.Span() }
 func (e *AwaitOutsideAsyncError) Related() []ast.Span { return nil }
 func (e *AwaitOutsideAsyncError) Message() string {
 	return "await can only be used inside an async function"
+}
+
+func (e *ReturnOutsideFunctionError) Span() ast.Span      { return e.Return.Span() }
+func (e *ReturnOutsideFunctionError) Related() []ast.Span { return nil }
+func (e *ReturnOutsideFunctionError) Message() string {
+	return "return can only be used inside a function"
 }
 
 func (e *CannotConstrainError) Message() string {
