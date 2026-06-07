@@ -569,14 +569,23 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 
 // inferIfElse types `if cond { cons } else { alt }`. The condition is
 // constrained `<: boolean`; each branch is typed (an empty / missing else
-// contributes Void); the result is a fresh join var with each branch as a lower
-// bound, so the result coalesces to the union of the branches.
+// contributes Void); the result is a fresh join var with each NON-DIVERGING
+// branch as a lower bound, so the result coalesces to the union of the branches
+// that can actually produce a value.
 //
-// Block return-point interaction: any ReturnStmt inside either branch is
-// collected on the enclosing function's funcCtx by inferStmt — independent of
-// the if's value contribution — so a `if c { return X } else { Y }` correctly
-// flows X into the function's return type AND Y into the if's value, which the
-// enclosing block joins.
+// Diverging branches contribute `never`: a branch that always exits before its
+// tail (today a trailing `return`; `throw` / `-> never` calls join this set once
+// they land — see blockDiverges) can never be the path that yields the if's
+// value, so it drops out of the branch union entirely rather than leaking its
+// operand. `val x = if c { return 1 } else { "y" }` is `"y"`, not `1 | "y"`, and
+// when both branches diverge the if's value coalesces to `never`.
+//
+// Block return-point interaction: any ReturnStmt inside either branch is still
+// collected on the enclosing function's funcCtx by inferStmt — independent of the
+// if's value contribution — so `fn f(c) { if c { return X } else { Y } }` flows X
+// into the function's return type (via the block return-point join) AND Y into
+// the if's value, which the enclosing block joins. The two roles are orthogonal:
+// X is a return point, but not part of the if-EXPRESSION's value.
 func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.Type {
 	cond := c.inferExpr(scope, lvl, e.Cond)
 	// Skip the `cond <: boolean` check when the condition already failed to type —
@@ -600,10 +609,42 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, IfElseBranch)
-	c.constrain(e, consT, res)
-	c.constrain(e, altT, res)
+	// A diverging branch contributes `never` to the value — i.e. nothing to the
+	// branch union — so skip its lower-bound constraint. inferBlock still walked it
+	// above (reporting branch-local errors and collecting its `return` as a function
+	// return point); only its block-tail VALUE is dropped here. When both branches
+	// diverge, res keeps no lower bounds and coalesces to `never`.
+	if !blockDiverges(&e.Cons) {
+		c.constrain(e, consT, res)
+	}
+	if e.Alt == nil || !altDiverges(e.Alt) {
+		c.constrain(e, altT, res)
+	}
 	c.recordType(e, res)
 	return res
+}
+
+// blockDiverges reports whether a block always exits before reaching its tail —
+// its last statement transfers control out of the block, so the block never
+// completes normally and produces no value. Today only a trailing `return`
+// qualifies; `throw` and `-> never` calls join this set once they land (mirroring
+// the old checker's blockAlwaysExits / exprAlwaysExits reachability helpers). A
+// diverging block's `return` is still a function return point — inferStmt collects
+// it independently — this only governs the block's value contribution.
+func blockDiverges(b *ast.Block) bool {
+	if len(b.Stmts) == 0 {
+		return false
+	}
+	_, ok := b.Stmts[len(b.Stmts)-1].(*ast.ReturnStmt)
+	return ok
+}
+
+// altDiverges reports whether an `else` arm always diverges. Only a block arm can
+// be dropped this way: an expression arm — including a desugared `else if` whose
+// nested IfElseExpr already drops its own diverging branches — reports any inner
+// divergence through its own value, so it never needs special handling here.
+func altDiverges(alt *ast.BlockOrExpr) bool {
+	return alt.Block != nil && blockDiverges(alt.Block)
 }
 
 // inferBlockOrExpr types an `else` arm: either a block (`else { ... }`) or a
