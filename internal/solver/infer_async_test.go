@@ -18,11 +18,12 @@ import (
 
 // --- async fn external wrap ---
 
-// `async fn () -> number { return 5 }` externally renders as
-// `fn () -> Promise<number>` — the headline async-wrap.
+// `async fn () -> Promise<number> { return 5 }`: the annotation names the EXTERNAL
+// Promise, and the body returns the unwrapped inner (`5`), constrained `5 <:
+// number`. Externally `fn () -> Promise<number>`.
 func TestInferAsyncFnWrapsReturnInPromise(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		async fn f() -> number {
+		async fn f() -> Promise<number> {
 			return 5
 		}
 	`)
@@ -46,10 +47,11 @@ func TestInferAsyncFnTailReturnWrapped(t *testing.T) {
 // --- await ---
 
 // `await p` where `p: Promise<string>` yields `string`. The fresh `U` from the
-// constraint `p <: Promise<U>` flows to `string` through bound propagation.
+// constraint `p <: Promise<U>` flows to `string` through bound propagation, and
+// that `string` body return satisfies the declared inner of `-> Promise<string>`.
 func TestInferAwaitUnwrapsPromise(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		async fn f(p: Promise<string>) -> string {
+		async fn f(p: Promise<string>) -> Promise<string> {
 			return await p
 		}
 	`)
@@ -73,19 +75,58 @@ func TestInferAwaitNoAutoFlatten(t *testing.T) {
 	require.Equal(t, "fn (p: Promise<Promise<number>>) -> Promise<Promise<number>>", values["f"])
 }
 
-// Detect-and-don't-rewrap (#5): an async fn whose return annotation is ALREADY a
-// Promise is NOT double-wrapped — `async fn () -> Promise<T>` types externally as
-// `Promise<T>`, not `Promise<Promise<T>>`. Here the body's `await p` yields
-// `Promise<number>`, which satisfies the declared `-> Promise<number>`, and the
-// external face is that same `Promise<number>` rather than a re-wrapped layer.
-func TestInferAsyncPromiseReturnAnnotationNotDoubleWrapped(t *testing.T) {
+// An explicit Promise return annotation names the EXTERNAL type directly — it is
+// not re-wrapped, and the body returns the unwrapped inner. Here `await p` (p:
+// Promise<Promise<number>>) yields `Promise<number>`, which satisfies the declared
+// inner of `-> Promise<Promise<number>>`, and the external face is exactly that
+// annotation.
+func TestInferAsyncExplicitPromiseAnnotationGovernsReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		async fn f(p: Promise<Promise<number>>) -> Promise<number> {
+		async fn f(p: Promise<Promise<number>>) -> Promise<Promise<number>> {
 			return await p
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: Promise<Promise<number>>) -> Promise<number>", values["f"])
+	require.Equal(t, "fn (p: Promise<Promise<number>>) -> Promise<Promise<number>>", values["f"])
+}
+
+// A bare (non-Promise) return annotation on an `async fn` is rejected: an async
+// function's external type is always Promise<…>, so `-> number` must be written
+// `-> Promise<number>`. Recovery wraps the inferred body return, so the function
+// still faces callers as a Promise (`Promise<5>` here).
+func TestInferAsyncBareReturnAnnotationRejected(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		async fn f() -> number {
+			return 5
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "async function return type must be a Promise; write Promise<...> or Promise<_>", errs[0].Message())
+	require.Equal(t, "fn () -> Promise<5>", values["f"])
+}
+
+// The bare-async-return error blames the offending annotation and relates the
+// enclosing function (the signature to fix).
+func TestInferAsyncBareReturnAnnotationBlame(t *testing.T) {
+	src := "async fn f() -> number { return 5 }"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"async function return type must be a Promise; write Promise<...> or Promise<_>",
+		"number",
+		"async fn f() -> number { return 5 }")
+}
+
+// `Promise<_>` lets the checker infer the inner from the body: the `_` resolves to
+// a fresh var the body's return flows into. Here `await p` yields `string`, so the
+// inferred inner is `string` and the external type is `Promise<string>`.
+func TestInferAsyncPromiseWildcardReturnInferred(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		async fn f(p: Promise<string>) -> Promise<_> {
+			return await p
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: Promise<string>) -> Promise<string>", values["f"])
 }
 
 // `await` outside an `async fn` is a WALK rejection — not a type rule failure.

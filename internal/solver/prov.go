@@ -58,6 +58,7 @@ const (
 	CallShape                             // the synthesized FuncType{args,res} from inferCall (the CallExpr)
 	MemberAccess                          // a fresh member-result var from inferMember (recorded against the .prop ident)
 	AnnotationType                        // a fresh PrimType from resolveTypeAnn (number/string/boolean)
+	WildcardAnnotation                    // a fresh var from a `_` type annotation (resolveTypeAnn), the inner the surrounding annotation infers
 	AwaitResult                           // a fresh `await`-result var from inferAwait
 	PromiseWrap                           // a PromiseType minted by wrapping an async function's external return
 	ReturnJoin                            // a fresh return-join var from inferFunc (the union of every return point)

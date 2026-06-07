@@ -395,6 +395,18 @@ wrapper) are what first populate a lifetime. Land them together.
   — `fn dist(open p) => ...` keeps `p` inexact so callers can pass records
   richer than the field set the body touches. The `open` marker lands here
   (the first milestone where record-typed params exist).
+- **`var`-binding literal widening (reassignment ergonomics).** M3's PR8 ships
+  reassignment (`a = expr`) but constrains the RHS against the binding's type *as
+  inferred*, so an un-annotated `var a = 5; a = 6` rejects (`6 <: 5`) until a `var`
+  binding **widens its literal initializer to the primitive** (`5` ⇒ `number`,
+  `"x"` ⇒ `string`) — the binding-level analog of the `widen(v)` already applied to
+  field writes (`obj.x = v`, above). It is *not* PR1 generalization (that quantifies
+  free vars and is a no-op on a var-free literal). The principled M4 form is
+  usage-based: a `var`'s type is informed by **all** its assignment sites
+  (initializer + reassignments) via the same widen + coalescing machinery, with
+  `val` left un-widened (a fixed literal singleton). Defaulting to always-widen-`var`
+  is the simple rule; the open question this milestone settles is whether a later
+  narrowing use should be allowed to reclaim the literal.
 - **`Ref` constrain rule** (single rule for the unified borrow wrapper): inner
   variance is bidirectional iff `r.mut` (read/write decomposition: covariant
   read + contravariant write when the target writes), covariant otherwise;
@@ -696,6 +708,18 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   [exact-types/requirements.md](../exact-types/requirements.md) §5.) `keyof` of an exact object and the
   element-union of an exact tuple are exact unions; their inexact counterparts
   are inexact — so this flag must be threaded by coalescing, not just stored.
+- **Former simplification — lattice identities and the `ErrorType` sentinel.** When
+  unions/intersections become real formers here, normalize them: drop duplicate and
+  subsumed members, and apply the lattice identities — `never` (⊥) drops from a
+  union (`A | never ⇒ A`), `unknown` (⊤) drops from an intersection (`A & unknown ⇒
+  A`). M3's `ErrorType` recovery sentinel ([m3 PR8](m3-implementation-plan.md)) is
+  the special case: it is elided from **both** a union and an intersection unless it
+  is the sole member (`A | error ⇒ A`, `A & error ⇒ A`; bare `error` stays) — it is
+  the join *and* meet identity, the former-level reflection of its absorbing
+  behavior in `constrain`, because it carries no information once the error is
+  reported. (In M3 this is an invariant freebie — `ErrorType` is short-circuited out
+  of every bound list, so it never reaches a former; M6 must keep it true once
+  formers can be built directly.)
 
 **Accept:** `number | string` annotation accepts `number`/rejects `boolean`;
 intersection annotation satisfied by a value at both member types; both

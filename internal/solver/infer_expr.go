@@ -182,49 +182,36 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.constrain(node, ret, joinVar)
 		ret = joinVar
 	}
-	if sig.Return != nil {
-		// Skip the check and adopt-the-annotation when the return annotation is
-		// unsupported (ok=false): resolveTypeAnn already reported it and handed back
-		// a `never` placeholder, so constraining the body `<: never` would cascade a
-		// spurious error and adopting it would poison the return type. Keep the
-		// inferred body type instead (error recovery).
+	// Return-annotation handling diverges by async-ness.
+	//
+	// Async: the function's EXTERNAL type is always `Promise<T>`, and the return
+	// annotation — when present — names that external Promise, NOT the body's value.
+	// So it must itself be a `Promise<…>`; the body returns the unwrapped inner,
+	// constrained `<: inner`, and the annotation is presented as the external type
+	// (no extra wrap). `Promise<_>` is allowed — the `_` resolves to a fresh var the
+	// body flows into, inferring the inner. With no annotation the inferred body
+	// return is wrapped. asyncReturn carries all of this (and the error/recovery
+	// for a bare annotation like `async fn () -> number`).
+	//
+	// Non-async: the annotation governs the return directly — the body is
+	// constrained `<: annotation` and the function returns the annotation (M2's
+	// rule). An unsupported annotation (ok=false) was already reported by
+	// resolveTypeAnn; recover by keeping the inferred body type (or unknown when
+	// there is no body, since a synthetic Void would falsely signal "returns
+	// nothing").
+	if sig.Async {
+		ret = c.asyncReturn(node, sig.Return, ret, hasBody, lvl)
+	} else if sig.Return != nil {
 		if annT, ok := c.resolveTypeAnn(sig.Return, lvl); ok {
-			// Only check the inferred body against the declared return when there IS a
-			// body. A bodyless (declare/ambient) function has no body to constrain, so
-			// it simply adopts the annotation; constraining the synthetic Void return
-			// would raise a spurious `void <: T` error.
+			// Only constrain the body when there IS one; a bodyless (declare/ambient)
+			// function simply adopts the annotation (constraining the synthetic Void
+			// would raise a spurious `void <: T`).
 			if hasBody {
 				c.constrain(node, ret, annT) // body <: declared return
 			}
 			ret = annT
 		} else if !hasBody {
-			// Bodyless function with an unsupported return annotation: there is no
-			// body to recover the return type from, and leaving the synthetic Void
-			// would falsely signal "returns nothing" to callers. Fall back to
-			// unknown (⊤) — the honest "couldn't resolve the declared return"
-			// recovery. (A fresh var would coalesce to `never` in return position,
-			// which is worse.)
 			ret = &soltype.UnknownType{}
-		}
-	}
-	// PR3 — `async fn` external wrap: the body has return type T, but the function
-	// types externally as `fn (...) -> Promise<T>`. Done AFTER any return-annotation
-	// constrain so the annotation governs the body return; the wrap is the external
-	// face. Bodyless async fns wrap too — an ambient `async fn now() -> number`
-	// types as `fn () -> Promise<number>` for callers.
-	//
-	// Detect-and-don't-rewrap: when `ret` is ALREADY a Promise — the author wrote the
-	// external form `-> Promise<T>` — wrapping again would yield `Promise<Promise<T>>`,
-	// a silent double-wrap. Skip the wrap in that case and take the annotation as the
-	// external type. This only catches a *syntactically* Promise return (an explicit
-	// `Promise<…>` annotation, or an inlined Promise literal); a return that merely
-	// COALESCES to a Promise through a variable is still a bare var here and is
-	// wrapped, matching the plan's "wrap an inferred return" model.
-	if sig.Async {
-		if _, alreadyPromise := ret.(*soltype.PromiseType); !alreadyPromise {
-			wrapped := &soltype.PromiseType{Inner: ret}
-			c.recordProv(wrapped, node, PromiseWrap)
-			ret = wrapped
 		}
 	}
 	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
@@ -240,6 +227,59 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
 	return ft
+}
+
+// asyncReturn computes an `async fn`'s external return type, which always faces
+// callers as `Promise<T>`. When a return annotation is present it NAMES that
+// external Promise (not the body's value), so it must itself be a `Promise<…>`:
+// the body returns the unwrapped inner, constrained `<: inner`, and the annotation
+// IS the external type — no extra wrap. `Promise<_>` works because `_` resolved to
+// a fresh var the body's return flows into, inferring the inner. A bare annotation
+// (`async fn () -> number`) is an AsyncReturnNotPromiseError; recovery wraps the
+// inferred body return so the external face stays Promise-shaped. With no
+// annotation the inferred body return (bodyType) is wrapped directly — preserving
+// M3's "wrap an inferred return" model and its no-auto-flatten behavior (a body
+// that already returns a Promise still wraps: `async fn (p: Promise<T>) { return
+// await p }` is `Promise<Promise<T>>`; Awaited<T> is M9).
+func (c *checker) asyncReturn(node ast.Node, ann ast.TypeAnn, bodyType soltype.Type, hasBody bool, lvl int) soltype.Type {
+	if ann == nil {
+		return c.wrapPromise(node, bodyType)
+	}
+	annT, ok := c.resolveTypeAnn(ann, lvl)
+	if !ok {
+		// Unsupported annotation — already reported by resolveTypeAnn. Recover as the
+		// no-annotation case would (wrap the inferred body return); a bodyless fn has
+		// no body to recover from, so wrap unknown rather than the synthetic Void.
+		if !hasBody {
+			bodyType = &soltype.UnknownType{}
+		}
+		return c.wrapPromise(node, bodyType)
+	}
+	promise, isPromise := annT.(*soltype.PromiseType)
+	if !isPromise {
+		// A non-Promise annotation on an async fn (`-> number`). Reject it, then
+		// recover exactly like the unsupported-annotation case so the external face
+		// stays Promise-shaped and callers don't cascade.
+		c.report(&AsyncReturnNotPromiseError{Return: ann, Fn: node})
+		if !hasBody {
+			bodyType = &soltype.UnknownType{}
+		}
+		return c.wrapPromise(node, bodyType)
+	}
+	// Constrain the body's (unwrapped) return against the annotation's inner, and
+	// present the annotation as the external type — it already IS the Promise.
+	if hasBody {
+		c.constrain(node, bodyType, promise.Inner) // body <: declared inner
+	}
+	return annT
+}
+
+// wrapPromise mints the external `Promise<inner>` face of an async function and
+// records its provenance (PromiseWrap) against the function node.
+func (c *checker) wrapPromise(node ast.Node, inner soltype.Type) soltype.Type {
+	wrapped := &soltype.PromiseType{Inner: inner}
+	c.recordProv(wrapped, node, PromiseWrap)
+	return wrapped
 }
 
 // paramType resolves a param's type: its annotation when present, else a fresh

@@ -71,6 +71,16 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 			return t, true
 		}
 		return c.reportUnsupported(ta), false
+	case *ast.WildcardTypeAnn:
+		// `_` in type-annotation position is an inference placeholder: mint a fresh
+		// var at the current level for the surrounding annotation to fill in. Today
+		// the only site that uses it is the inner of `Promise<_>` on an async fn's
+		// return, where the body's return flows into the var (asyncReturn), inferring
+		// the inner. Unlike the other arms it reports NO error — `_` is a supported,
+		// user-authored "infer this here" marker, not an unsupported feature.
+		t := c.freshAt(lvl)
+		c.recordProv(t, ta, WildcardAnnotation)
+		return t, true
 	default:
 		return c.reportUnsupported(ta), false
 	}
