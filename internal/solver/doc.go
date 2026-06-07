@@ -31,8 +31,8 @@
 //
 // M3 (PR5) adds the probe (probe.go): a speculation journal over the engine's
 // bound-list mutations (a per-variable length snapshot, truncated back on
-// discard) plus side-table (Info/Prov) rollback closures, with push/pop nesting
-// that hands a committed child's rollback obligation up to its parent. The active
+// discard) plus side-table (Info/Prov/errs) rollback closures, with push/pop
+// nesting that hands a committed child's rollback obligation up to its parent. The active
 // probe lives on *Context (next to the bound-mutating constrain/extrude); the
 // open/close discipline lives on the checker carrier. PR6's overload resolution
 // is its first consumer — each candidate is trialled under a probe and the losers

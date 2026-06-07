@@ -105,23 +105,13 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 	c.prov[t] = FromAST{Node: n, Kind: kind}
 }
 
-// snapshotProv captures t's current Prov entry and, under an active probe (M3
-// PR5), registers a rollback closure so a discarded speculative trial leaves Prov
-// exactly as it was. A no-op when no probe is open. Shared by both Prov writers
-// (recordProv, recordInstantiation) so every speculative side-table write is
-// reversible.
+// snapshotProv registers a probe rollback for a pending write to t's Prov entry,
+// so a discarded speculative trial leaves Prov exactly as it was. A no-op when no
+// probe is open. Shared by both Prov writers (recordProv, recordInstantiation) so
+// every speculative side-table write is reversible; delegates to the same
+// snapshotMapEntry helper as recordType's Info write.
 func (c *checker) snapshotProv(t soltype.Type) {
-	if c.ctx.probe == nil {
-		return
-	}
-	prev, had := c.prov[t]
-	c.ctx.probe.onRollback(func() {
-		if had {
-			c.prov[t] = prev
-		} else {
-			delete(c.prov, t)
-		}
-	})
+	snapshotMapEntry(c, c.prov, t)
 }
 
 // recordInstantiation records the FromInstantiation interior edge minted by

@@ -237,3 +237,60 @@ func TestProbeRollsBackExtrudeBounds(t *testing.T) {
 	require.Empty(t, high.LowerBounds, "extrude's append to the original var is rolled back")
 	require.Empty(t, high.UpperBounds)
 }
+
+// A discarded probe drops diagnostics the trial accumulated via the
+// error-collecting walk (c.report / c.constrain), so a losing speculative
+// candidate leaves no spurious errors behind; a committed probe keeps them.
+func TestProbeRollsBackErrs(t *testing.T) {
+	c := newChecker()
+	n := &ast.IdentExpr{Name: "boom"}
+
+	// A pre-probe diagnostic stays regardless of the trial's outcome.
+	c.report(&UnsupportedNodeError{Node: n})
+	require.Len(t, c.errs, 1)
+
+	discarded := c.openProbe()
+	c.report(&UnsupportedNodeError{Node: n}) // accumulated under the probe
+	require.Len(t, c.errs, 2)
+	c.closeProbe(discarded, false) // discard
+	require.Len(t, c.errs, 1, "the trial's diagnostic is dropped; the pre-probe one survives")
+
+	committed := c.openProbe()
+	c.report(&UnsupportedNodeError{Node: n})
+	c.closeProbe(committed, true) // commit
+	require.Len(t, c.errs, 2, "a committed probe keeps its diagnostics")
+}
+
+// A committed child's diagnostics are covered by a later parent discard, exactly
+// like its bound mutations — the errs snapshot rides the same nesting handoff.
+func TestProbeErrsCommittedChildCoveredByParentDiscard(t *testing.T) {
+	c := newChecker()
+	n := &ast.IdentExpr{Name: "boom"}
+
+	parent := c.openProbe()
+	c.report(&UnsupportedNodeError{Node: n}) // parent-era diagnostic
+
+	child := c.openProbe()
+	c.report(&UnsupportedNodeError{Node: n}) // child-era diagnostic
+	c.closeProbe(child, true)                // child commits
+	require.Len(t, c.errs, 2)
+
+	c.closeProbe(parent, false) // parent discards
+	require.Empty(t, c.errs, "the parent discard drops both its own and the committed child's diagnostics")
+}
+
+// A probe built directly as &Probe{} (bypassing newProbe) is still safe: touched
+// is lazily created on first record, so there is no nil-map panic.
+func TestProbeBareLiteralIsNilMapSafe(t *testing.T) {
+	c := newChecker()
+	v := c.freshAt(0)
+
+	c.ctx.probe = &Probe{} // deliberately skip newProbe
+	require.NotPanics(t, func() {
+		require.Empty(t, c.ctx.Constrain(num(), v)) // appends a bound ⇒ record(v)
+	})
+	require.Len(t, v.LowerBounds, 1)
+
+	c.ctx.probe.Discard()
+	require.Empty(t, v.LowerBounds, "the bare-literal probe still rolls back")
+}
