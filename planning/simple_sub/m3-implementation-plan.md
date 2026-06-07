@@ -1064,6 +1064,48 @@ by short-circuiting at the top of `constrain` (it absorbs but does not spread). 
 `soltype/type.go` (+ print / describe), `constrain.go` (the two arms), `infer.go`
 (`report`), and the recovery sites whose `ok=false`-skips retire.
 
+**Future direction — marking / used holes (the principled end-state).** The
+`ErrorType` sentinel is the *minimal* recovery: a single absorbing wildcard that
+suppresses cascades but carries no information — every poisoned subterm looks the
+same and the surrounding context learns nothing from it. The principled version is
+**marking-based recovery with holes**, as in Hazel's "Total Type Error Localization
+and Recovery with Holes" (POPL 2024, https://hazel.org/papers/marking-popl24.pdf):
+an ill-fitting expression is wrapped in a **non-empty ("used") hole** that acts as a
+*membrane* — internally it holds the actual (wrong) type and the localized mark, but
+at its boundary it adopts the **expected** type, so the rest of the program type-
+checks against the precise expected type rather than against a wildcard. The payoff
+over a flat `ErrorType` is twofold: (1) *better recovery* — `val x: number = "hi"`
+leaves `x: number` (not `error`), so `x + 1` and downstream inference stay precise;
+and (2) *total, principled localization* — every program (however broken) has a
+well-defined marked typing, and the mark sits on the exact offending subterm rather
+than smearing an absorbing type outward. It also subsumes the ad-hoc "adopt the
+annotation on `ok=false`" recovery the walk already does in a couple of places
+(`inferVarDeclInit`, `inferFunc`) — those are hand-rolled non-empty holes.
+
+*Feasibility for this SimpleSub-based checker: promising in spirit, not a drop-in.*
+The marking calculus is formulated **bidirectionally** (synthesis ⇒ / analysis ⇐),
+and the totality theorem leans on that structure; we are **constraint-based
+subtyping (biunification)** with no published "marked biunification" to port, so we
+would be adapting the *idea*, not the calculus. The adaptation is natural, though:
+our `constrain(actual, expected)` is exactly the analysis judgment, so the
+membrane rule becomes "on a `constrain` failure, report + mark the node (via `Prov`,
+which already pins precise blame) + let the node's recovered type be the **RHS**
+(expected), and do not propagate the actual as a bound." The side tables (`Info` for
+node→type, `Prov` for node→origin) already give us the machinery to record marks and
+boundary types, and empty holes map onto the parser's existing error nodes
+(`ErrorStmt`/synthesized placeholders) seeded with a fresh var. The genuine open
+questions are (a) what "the expected type" means when the analysis RHS is itself an
+inference *variable* rather than a concrete type (the membrane still suppresses
+cascades, but the recovered type is as under-determined as the var — less
+informative than Hazel's often-concrete analysis types), and (b) re-checking
+SimpleSub's principal-type / determinism story under marking (how a marked subterm
+interacts with var bounds and generalization), which the bidirectional totality
+proof does not hand us for free. Net: `ErrorType` is the right MVP and a clean
+stepping stone — it is a degenerate hole with no boundary type — and "holes that
+carry the expected type" is the natural follow-on once the recovery mechanism needs
+to preserve information rather than merely stop cascades. Worth a spike, likely its
+own milestone rather than part of M3.
+
 ## Risks & gates
 
 - **No M3-level go/no-go gate** (those live at M4's `Ref` rule and M7's
