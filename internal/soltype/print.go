@@ -240,17 +240,35 @@ func (p *namedPrinter) printType(t Type) string {
 // printFuncTail renders the "(params) -> ret" portion of a function, without the
 // leading "fn" keyword. Kept as a separate helper so PrintAsScheme can compose it
 // with a <...> quantifier prefix without byte-slicing the "fn " back off.
+//
+// PR4 markers: an optional parameter renders as `x?: T`, and an INEXACT function
+// renders a trailing `...` entry (`fn (x: T, ...) -> R`) so the exactness it
+// carries round-trips to surface syntax. An exact function (the common case)
+// renders with no marker.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
-	ps := make([]string, len(t.Params))
+	ps := make([]string, 0, len(t.Params)+1)
 	for i, param := range t.Params {
-		ps[i] = paramName(param, i) + ": " + p.printType(param.Type)
+		rest := ""
+		if param.Rest {
+			rest = "..." // a typed rest param renders `...xs: T`
+		}
+		opt := ""
+		if param.Optional {
+			opt = "?"
+		}
+		ps = append(ps, rest+paramName(param, i)+opt+": "+p.printType(param.Type))
+	}
+	if t.Inexact {
+		ps = append(ps, "...")
 	}
 	return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 }
 
 // paramName renders p.Pattern. M1's only Pat concrete is IdentPat; a nil or
 // otherwise-unknown pattern falls back to a positional name ("arg0", "arg1",
-// ...). M2's destructuring Pat concretes add their own arms here.
+// ...). M2's destructuring Pat concretes add their own arms here. The optional
+// `?` marker is appended by printFuncTail, not here, so callers that only want
+// the bare name (none today) stay unaffected.
 func paramName(p *FuncParam, i int) string {
 	if pat, ok := p.Pattern.(*IdentPat); ok {
 		return pat.Name

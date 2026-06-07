@@ -62,22 +62,28 @@ func TestBlameCallArgument(t *testing.T) {
 	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
-// A call-arity mismatch points at the whole call, with the callee's definition as
-// the related "function defined here" span. M2.5 resolved that related span only
-// for inline callees: a named callee's binding was COALESCED to a fresh FuncType
-// pointer with no Prov entry. M3 (PR1) generalizes instead of coalescing, and for
-// a VAR-FREE (monomorphic) callee like `f` here, instantiation shares its FuncType
-// unchanged — so the original (recorded FuncInference against the decl) survives
-// and the related span now resolves. This bound matters: a POLYMORPHIC callee,
-// whose type freshenAbove rebuilds into fresh prov-less nodes, still drops the
-// related span (the receiver analogue is documented in
-// TestBlameMissingPropertyPolymorphicReceiverLosesRelated).
-func TestBlameCallArity(t *testing.T) {
+// A too-many-args direct call is the PR4 extra-arg lint (TooManyArgsError), a
+// BRIDGE error that self-blames the whole call and relates the callee expression.
+// (It supersedes the FuncArityMismatch this fixture asserted before PR4 — too-many
+// is now the lint's uniform message, while FuncArityMismatch keeps the too-few /
+// callback-arity failures. The related span is the callee `f` here, derived from
+// the AST, not the callee's definition span resolved through Prov.)
+func TestBlameCallTooManyArgs(t *testing.T) {
 	src := "fn f(x: number) -> number { x }\nval r = f(1, 2)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"cannot constrain function of arity 1 <: function of arity 2", "f(1, 2)",
-		"fn f(x: number) -> number { x }")
+		"Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
+}
+
+// A too-few-args direct call is the PR4 too-few lint (NotEnoughArgsError), a BRIDGE
+// error symmetric to TooManyArgsError: it self-blames the whole call and relates the
+// callee expression (`f` here, from the AST — not the callee's definition resolved
+// through Prov). `f` requires two params; the call supplies one.
+func TestBlameCallTooFewArgs(t *testing.T) {
+	src := "fn f(x: number, y: number) -> number { x }\nval r = f(1)"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
 }
 
 // A missing-property read blames the member's prop (.foo), not the receiver, with
@@ -168,18 +174,17 @@ func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
 	requireBlame(t, src, errs, "cannot constrain void <: number", "f()", "number")
 }
 
-// An INLINE callee resolves its "defined here" related span — its FuncType is
-// recorded (FuncInference) against the fn expression — unlike the named callee in
-// TestBlameCallArity, whose coalesced binding has no Prov entry. So a call-arity
-// mismatch on an immediately-invoked function blames the call AND relates the
-// inline function. (The primary is the call expression; for a parenthesized callee
-// the parser's span begins at the inner `fn`, so the leading `(` is not part of
-// it.)
-func TestBlameCallArityInlineCalleeRelated(t *testing.T) {
+// The too-many-args lint on an immediately-invoked function blames the call and
+// relates the inline callee expression. TooManyArgsError is a bridge error, so the
+// related span is the callee node directly (Call.Callee.Span()), not a Prov
+// resolution — for an inline FuncExpr that is the function expression itself. (The
+// primary is the call expression; for a parenthesized callee the parser's span
+// begins at the inner `fn`, so the leading `(` is not part of it.)
+func TestBlameCallTooManyArgsInlineCalleeRelated(t *testing.T) {
 	src := `val r = (fn (x: number) -> number { x })(1, 2)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"cannot constrain function of arity 1 <: function of arity 2",
+		"Too many arguments: expected at most 1, but got 2",
 		`fn (x: number) -> number { x })(1, 2)`,
 		`fn (x: number) -> number { x }`)
 }

@@ -31,6 +31,26 @@ func identParam(name string, t soltype.Type) *soltype.FuncParam {
 	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t}
 }
 
+func optParam(name string, t soltype.Type) *soltype.FuncParam {
+	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t, Optional: true}
+}
+
+// restParam builds a typed rest param (`...name: t`), which must be the last param.
+func restParam(name string, t soltype.Type) *soltype.FuncParam {
+	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t, Rest: true}
+}
+
+// exactFn / inexactFn build function types so the accept-set tests read at a glance
+// which arm they exercise. Exact is the zero value of Inexact, so exactFn sets no
+// flag; inexactFn sets Inexact.
+func exactFn(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
+	return &soltype.FuncType{Params: params, Ret: ret}
+}
+
+func inexactFn(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
+	return &soltype.FuncType{Params: params, Ret: ret, Inexact: true}
+}
+
 func TestConstrainPrim(t *testing.T) {
 	tests := []struct {
 		name string
@@ -96,8 +116,8 @@ func TestConstrainFunctionVariance(t *testing.T) {
 	// (number) -> number  <:  (number) -> number
 	t.Run("same shape", func(t *testing.T) {
 		c := &Context{}
-		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
-		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
+		f1 := exactFn(num(), identParam("x", num()))
+		f2 := exactFn(num(), identParam("x", num()))
 		require.Empty(t, c.Constrain(f1, f2))
 	})
 
@@ -105,8 +125,8 @@ func TestConstrainFunctionVariance(t *testing.T) {
 	// 5 <: number on the param (rhs param <: lhs param), which holds.
 	t.Run("contravariant params (ok)", func(t *testing.T) {
 		c := &Context{}
-		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
-		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", numLit(5))}, Ret: num()}
+		f1 := exactFn(num(), identParam("x", num()))
+		f2 := exactFn(num(), identParam("x", numLit(5)))
 		require.Empty(t, c.Constrain(f1, f2))
 	})
 
@@ -114,65 +134,175 @@ func TestConstrainFunctionVariance(t *testing.T) {
 	// number <: 5, which fails.
 	t.Run("contravariant params (fail)", func(t *testing.T) {
 		c := &Context{}
-		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", numLit(5))}, Ret: num()}
-		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
+		f1 := exactFn(num(), identParam("x", numLit(5)))
+		f2 := exactFn(num(), identParam("x", num()))
 		require.Equal(t, []string{"cannot constrain number <: 5"}, Messages(c.Constrain(f1, f2)))
 	})
 
 	// Covariant return: (number) -> 5 <: (number) -> number requires 5 <: number.
 	t.Run("covariant return (ok)", func(t *testing.T) {
 		c := &Context{}
-		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: numLit(5)}
-		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
+		f1 := exactFn(numLit(5), identParam("x", num()))
+		f2 := exactFn(num(), identParam("x", num()))
 		require.Empty(t, c.Constrain(f1, f2))
 	})
 }
 
-func TestConstrainFunctionArity(t *testing.T) {
-	// M1 functions are exact (Escalier is exact-by-default), so subtyping
-	// requires the SAME arity — both fewer and more params are rejected,
-	// parallel to the exact-tuple same-length rule. The inexact
-	// fewer-params-is-subtype arm lands in M3 with the exactness flag; see
-	// planning/simple_sub/01-milestones.md M1 scope and accept criteria.
-
-	// Fewer params is NOT a subtype under exact arity: arity 1 <: arity 2 fails.
-	t.Run("fewer params rejected", func(t *testing.T) {
+// TestConstrainFunctionAcceptSet exercises the PR4 accept-set rule (#677 §4.2.1):
+// G <: F iff accept(G) ⊇ accept(F), with params contravariant and return covariant.
+// Read F (the RHS) as the callback slot.
+func TestConstrainFunctionAcceptSet(t *testing.T) {
+	// Two EXACT functions relate by the old same-arity rule: accept is [n, n] on both
+	// sides, so ⊇ forces equal arity.
+	t.Run("exact same arity ok", func(t *testing.T) {
 		c := &Context{}
-		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
-		f2 := &soltype.FuncType{
-			Params: []*soltype.FuncParam{identParam("x", num()), identParam("y", num())},
-			Ret:    num(),
-		}
-		errs := c.Constrain(f1, f2)
+		require.Empty(t, c.Constrain(
+			exactFn(num(), identParam("x", num())),
+			exactFn(num(), identParam("x", num())),
+		))
+	})
+
+	// An exact supplier cannot fill a WIDER exact slot: accept [1,1] does not contain
+	// the slot's count 2 (upper-bound failure, hiG < hiF).
+	t.Run("exact fn(x) rejected by fn(x, y) slot", func(t *testing.T) {
+		c := &Context{}
+		g := exactFn(num(), identParam("x", num()))
+		f := exactFn(num(), identParam("x", num()), identParam("y", num()))
+		errs := c.Constrain(g, f)
 		require.Equal(t, []string{"cannot constrain function of arity 1 <: function of arity 2"}, Messages(errs))
 		fa, ok := errs[0].(*FuncArityMismatchError)
 		require.True(t, ok)
-		require.Same(t, f1, fa.LHS)
-		require.Same(t, f2, fa.RHS)
+		require.Same(t, g, fa.LHS)
+		require.Same(t, f, fa.RHS)
 	})
 
-	// More params is also NOT a subtype: arity 2 <: arity 1 fails.
-	t.Run("more params rejected", func(t *testing.T) {
+	// The #677 callback matrix for an exact fn(x, y) slot: fn(x, y), fn(x, ...), and
+	// fn(...) are all accepted; exact fn(x) (too narrow upper bound) and a 3-param
+	// function (demands more than the slot supplies) are rejected.
+	slot := func() *soltype.FuncType { return exactFn(num(), identParam("x", num()), identParam("y", num())) }
+	t.Run("exact fn(x, y) fills fn(x, y) slot", func(t *testing.T) {
 		c := &Context{}
-		f1 := &soltype.FuncType{
-			Params: []*soltype.FuncParam{identParam("x", num()), identParam("y", num())},
-			Ret:    num(),
-		}
-		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
-		errs := c.Constrain(f1, f2)
-		require.Equal(t, []string{"cannot constrain function of arity 2 <: function of arity 1"}, Messages(errs))
-		fa, ok := errs[0].(*FuncArityMismatchError)
-		require.True(t, ok)
-		require.Same(t, f1, fa.LHS)
-		require.Same(t, f2, fa.RHS)
+		require.Empty(t, c.Constrain(exactFn(num(), identParam("x", num()), identParam("y", num())), slot()))
+	})
+	t.Run("inexact fn(x, ...) fills fn(x, y) slot", func(t *testing.T) {
+		c := &Context{}
+		// accept(G) = [1, ∞) ⊇ accept(slot) = [2, 2]; the slot's arg 2 is tolerated,
+		// the single shared param checked contravariantly.
+		require.Empty(t, c.Constrain(inexactFn(num(), identParam("x", num())), slot()))
+	})
+	t.Run("inexact fn(...) fills fn(x, y) slot", func(t *testing.T) {
+		c := &Context{}
+		// accept(G) = [0, ∞) ⊇ [2, 2]: a zero-param inexact function fills any exact
+		// slot whose required count it meets. This is the case exactness exists to permit.
+		require.Empty(t, c.Constrain(inexactFn(num()), slot()))
+	})
+	t.Run("exact fn(x) rejected by fn(x, y) slot (matrix)", func(t *testing.T) {
+		c := &Context{}
+		require.Equal(t,
+			[]string{"cannot constrain function of arity 1 <: function of arity 2"},
+			Messages(c.Constrain(exactFn(num(), identParam("x", num())), slot())))
+	})
+	t.Run("3-param fn rejected by fn(x, y) slot", func(t *testing.T) {
+		c := &Context{}
+		g := exactFn(num(), identParam("x", num()), identParam("y", num()), identParam("z", num()))
+		// accept(G) = [3, 3]; the slot supplies 2, below G's required 3 → lower-bound
+		// failure (loG > loF).
+		require.Equal(t,
+			[]string{"cannot constrain function of arity 3 <: function of arity 2"},
+			Messages(c.Constrain(g, slot())))
 	})
 
-	// Same arity is fine; variance is then checked element-wise.
-	t.Run("same arity ok", func(t *testing.T) {
+	// Exact </: inexact: an exact function's finite upper bound cannot cover an
+	// inexact slot's ∞ (the asymmetry §4.2.1.1 explains).
+	t.Run("exact fn(x) rejected by inexact fn(x, ...) slot", func(t *testing.T) {
 		c := &Context{}
-		f1 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
-		f2 := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("x", num())}, Ret: num()}
-		require.Empty(t, c.Constrain(f1, f2))
+		require.Equal(t,
+			[]string{"cannot constrain function of arity 1 <: function of arity 1"},
+			Messages(c.Constrain(exactFn(num(), identParam("x", num())), inexactFn(num(), identParam("x", num())))))
+	})
+
+	// Inexact <: inexact: the classic "fewer params is okay" rule — both upper bounds
+	// are ∞, the supplier just needs to handle the consumer's required params.
+	t.Run("inexact fn(x, ...) fills inexact fn(x, y, ...) slot", func(t *testing.T) {
+		c := &Context{}
+		require.Empty(t, c.Constrain(
+			inexactFn(num(), identParam("x", num())),
+			inexactFn(num(), identParam("x", num()), identParam("y", num())),
+		))
+	})
+
+	// Optional params lower `required` without changing arity: exact fn(a, b?)
+	// (accept [1, 2]) fills the narrower exact fn(a) slot (accept [1, 1]) — the slot
+	// never supplies the optional argument.
+	t.Run("exact fn(a, b?) fills fn(a) slot", func(t *testing.T) {
+		c := &Context{}
+		require.Empty(t, c.Constrain(
+			exactFn(num(), identParam("a", num()), optParam("b", num())),
+			exactFn(num(), identParam("a", num())),
+		))
+	})
+}
+
+// TestAcceptSetRestParam pins the arity arithmetic for a typed rest param: it lifts
+// the upper bound to ∞ and never counts toward the required floor (#677 §4.2.3).
+func TestAcceptSetRestParam(t *testing.T) {
+	t.Run("fn(a, b, ...rest): required 2, upper unbounded", func(t *testing.T) {
+		f := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("a", num()), identParam("b", num()), restParam("rest", num())}, Ret: num()}
+		require.Equal(t, 2, requiredCount(f))
+		lo, hi := acceptSet(f)
+		require.Equal(t, 2, lo)
+		require.Equal(t, unboundedArity, hi)
+	})
+
+	t.Run("fn(...rest): required 0, upper unbounded", func(t *testing.T) {
+		f := &soltype.FuncType{Params: []*soltype.FuncParam{restParam("rest", num())}, Ret: num()}
+		require.Equal(t, 0, requiredCount(f))
+		lo, hi := acceptSet(f)
+		require.Equal(t, 0, lo)
+		require.Equal(t, unboundedArity, hi)
+	})
+
+	t.Run("fn(a, b?, ...rest): required 1 (rest and trailing optional both drop out)", func(t *testing.T) {
+		f := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("a", num()), optParam("b", num()), restParam("rest", num())}, Ret: num()}
+		require.Equal(t, 1, requiredCount(f))
+	})
+}
+
+// TestConstrainFunctionRestParam exercises the accept-set subtyping rule for a typed
+// rest param, whose ∞ upper bound mirrors the inexact `...` marker.
+func TestConstrainFunctionRestParam(t *testing.T) {
+	restFn := func(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
+		return &soltype.FuncType{Params: params, Ret: ret}
+	}
+
+	// fn(a, ...rest) (accept [1, ∞)) fills a WIDER exact slot fn(a, b, c) (accept
+	// [3, 3]): the rest absorbs the slot's extra arguments — the case rest exists for.
+	t.Run("rest fn fills a wider exact slot", func(t *testing.T) {
+		c := &Context{}
+		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
+		f := exactFn(num(), identParam("a", num()), identParam("b", num()), identParam("c", num()))
+		require.Empty(t, c.Constrain(g, f))
+	})
+
+	// A rest fn and an inexact fn have the same ∞ upper bound, so a rest fn fills an
+	// inexact slot of matching required arity.
+	t.Run("rest fn fills an inexact slot", func(t *testing.T) {
+		c := &Context{}
+		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
+		f := inexactFn(num(), identParam("a", num()))
+		require.Empty(t, c.Constrain(g, f))
+	})
+
+	// An exact fn(a, b) (accept [2, 2]) is REJECTED by a `fn(...rest)` slot (accept
+	// [0, ∞)): the slot may invoke with zero args, but g demands two — a lower-bound
+	// failure (loG=2 > loF=0), exactness aside.
+	t.Run("exact fn rejected by a zero-required rest slot", func(t *testing.T) {
+		c := &Context{}
+		g := exactFn(num(), identParam("a", num()), identParam("b", num()))
+		f := restFn(num(), restParam("rest", num()))
+		require.Equal(t,
+			[]string{"cannot constrain function of arity 2 <: function of arity 1"},
+			Messages(c.Constrain(g, f)))
 	})
 }
 

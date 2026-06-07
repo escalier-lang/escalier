@@ -523,7 +523,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
 
 	p.expect(OpenParen, ConsumeOnMatch)
-	params := parseDelimSeq(p, CloseParen, Comma, p.param)
+	params, inexact := p.parseFuncParams()
 	p.expect(CloseParen, ConsumeOnMatch)
 
 	var returnType ast.TypeAnn
@@ -564,6 +564,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 		&body,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
+	fn.Inexact = inexact
 	return fn
 }
 

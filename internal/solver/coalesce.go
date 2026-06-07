@@ -47,10 +47,12 @@ func coalesceRec(t soltype.Type, pol soltype.Polarity, seen set.Set[*soltype.Typ
 	case *soltype.FuncType:
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
-			// Params are contravariant, so flip polarity.
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceRec(p.Type, pol.Flip(), seen)}
+			// Params are contravariant, so flip polarity. Inexact/Optional/Rest are
+			// surface markers, not bound-carrying, so they ride through coalescing
+			// unchanged.
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceRec(p.Type, pol.Flip(), seen), Optional: p.Optional, Rest: p.Rest}
 		}
-		return &soltype.FuncType{Params: params, Ret: coalesceRec(t.Ret, pol, seen)} // covariant return
+		return &soltype.FuncType{Params: params, Ret: coalesceRec(t.Ret, pol, seen), Inexact: t.Inexact} // covariant return
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
@@ -180,9 +182,9 @@ func coalesceSchemeRec(
 	case *soltype.FuncType:
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceSchemeRec(p.Type, pol.Flip(), genLevel, occ, seen)}
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceSchemeRec(p.Type, pol.Flip(), genLevel, occ, seen), Optional: p.Optional, Rest: p.Rest}
 		}
-		return &soltype.FuncType{Params: params, Ret: coalesceSchemeRec(t.Ret, pol, genLevel, occ, seen)}
+		return &soltype.FuncType{Params: params, Ret: coalesceSchemeRec(t.Ret, pol, genLevel, occ, seen), Inexact: t.Inexact}
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
@@ -334,11 +336,11 @@ func equalType(a, b soltype.Type) bool {
 		return ok
 	case *soltype.FuncType:
 		b, ok := b.(*soltype.FuncType)
-		if !ok || len(a.Params) != len(b.Params) {
+		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact {
 			return false
 		}
 		for i := range a.Params {
-			if !equalType(a.Params[i].Type, b.Params[i].Type) {
+			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalType(a.Params[i].Type, b.Params[i].Type) {
 				return false
 			}
 		}

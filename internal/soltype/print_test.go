@@ -15,6 +15,14 @@ func identP(name string, t Type) *FuncParam {
 	return &FuncParam{Pattern: &IdentPat{Name: name}, Type: t}
 }
 
+func optP(name string, t Type) *FuncParam {
+	return &FuncParam{Pattern: &IdentPat{Name: name}, Type: t, Optional: true}
+}
+
+func restP(name string, t Type) *FuncParam {
+	return &FuncParam{Pattern: &IdentPat{Name: name}, Type: t, Rest: true}
+}
+
 // TestPrintRoundTrips covers the short, stable round-trips for the M1 coalesced
 // type set: primitives, literals, the lattice bounds, tuples, multi-arg
 // functions, and multi-element unions/intersections. Per CLAUDE.md these are the
@@ -60,13 +68,30 @@ func TestPrintRoundTrips(t *testing.T) {
 			`{"a-b": number}`,
 		},
 
-		// Functions.
+		// Functions. A bare (exact) function renders with no trailing marker; an
+		// inexact one renders a trailing `...`, and an optional param renders `x?: T`.
 		{"nullary fn", &FuncType{Ret: numP()}, "fn () -> number"},
 		{"unary fn", &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}, "fn (x: number) -> string"},
 		{
 			"multi-arg fn",
 			&FuncType{Params: []*FuncParam{identP("a", numP()), identP("b", strP())}, Ret: boolP()},
 			"fn (a: number, b: string) -> boolean",
+		},
+		{"inexact nullary fn", &FuncType{Ret: numP(), Inexact: true}, "fn (...) -> number"},
+		{
+			"inexact fn with params",
+			&FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP(), Inexact: true},
+			"fn (x: number, ...) -> string",
+		},
+		{
+			"optional param renders with ?",
+			&FuncType{Params: []*FuncParam{identP("a", numP()), optP("b", strP())}, Ret: boolP()},
+			"fn (a: number, b?: string) -> boolean",
+		},
+		{
+			"rest param renders with ...",
+			&FuncType{Params: []*FuncParam{identP("a", numP()), restP("rest", strP())}, Ret: boolP()},
+			"fn (a: number, ...rest: string) -> boolean",
 		},
 
 		// Unions and intersections.

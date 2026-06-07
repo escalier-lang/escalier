@@ -84,18 +84,38 @@ type IdentPat struct{ Name string }
 
 func (*IdentPat) isPat() {}
 
-// FuncParam mirrors type_system.FuncParam. M1 omits Optional (no optional
-// params until M3+); Pattern is reachable only through Pat concretes M1
-// defines (IdentPat).
+// FuncParam mirrors type_system.FuncParam. Pattern is reachable only through Pat
+// concretes M1 defines (IdentPat). M3 (PR4) adds Optional: an `x?` parameter
+// lowers the function's `required` count (the accept-set lower bound) without
+// removing the parameter from the declared list — it stays at its position with
+// its type, the slot simply may go unsupplied.
 type FuncParam struct {
-	Pattern Pat
-	Type    Type
+	Pattern  Pat
+	Type     Type
+	Optional bool // PR4: x? — lowers `required` without changing arity (len(Params))
+	// Rest marks a typed rest param (`...xs: T[]`), which must be the LAST param: it
+	// binds zero or more trailing arguments, so it is never required and lifts the
+	// function's accept-set upper bound to ∞ (#677 §4.2.3) — distinct from the inexact
+	// `...` marker (which is callback-only). Per-extra element-type checking (§4.2.2)
+	// needs Array types and is M4; M3 models only the arity effect.
+	Rest bool
 }
 
-// FuncType is a (possibly multi-argument) function type.
+// FuncType is a (possibly multi-argument) function type. M3 (PR4) adds Inexact: a
+// bare `fn(p1..pn)` is exact (tolerates at most n arguments — accept-set
+// [required, n]); a `fn(p1..pn, ...)` written with a trailing `...` is inexact (it
+// tolerates extra arguments when used as a callback — accept-set [required, ∞)).
+// Exactness governs callback subtyping, not direct calls (#677); see solver's
+// acceptSet / the FuncType<:FuncType constrain rule.
+//
+// The flag is Inexact (not Exact) so the ZERO VALUE is exact, matching Escalier's
+// exact-by-default semantics: a function minted without thinking about exactness is
+// correctly exact, and the structural rewriters (coalesce, extrude, freshenAbove)
+// carry the flag through unchanged. Only the parser's `...` marker sets it.
 type FuncType struct {
-	Params []*FuncParam
-	Ret    Type
+	Params  []*FuncParam
+	Ret     Type
+	Inexact bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 }
 
 // TupleType is a fixed-length tuple type.

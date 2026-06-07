@@ -138,7 +138,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A parameter binding never generalizes — its var is fixed for the body — so
 		// it is a MonoScheme; instantiate returns pt unchanged at every use.
 		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
-		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt}
+		// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
+		// `required` count without dropping the param — carried onto the soltype so
+		// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
+		// in-body binding keeps the param's declared type (pt), NOT widened to
+		// `pt | undefined`, so a body that reads an omitted optional sees it at the
+		// narrower type. Widening needs undefined/unions (M6); M3 has neither.
+		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
 	}
 
 	var ret soltype.Type = &soltype.Void{}
@@ -171,7 +177,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			ret = &soltype.UnknownType{}
 		}
 	}
-	ft := &soltype.FuncType{Params: params, Ret: ret}
+	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
+	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it
+	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
+	// [required, ∞). Note exactness governs callback subtyping, not direct calls: an
+	// inexact value still rejects extras at a visible call site (the inferCall lint).
+	ft := &soltype.FuncType{Params: params, Ret: ret, Inexact: sig.Inexact}
 	// Record the function's own type against its node so a function flowing into a
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is
@@ -209,7 +220,10 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // so the return is wired through directly here. The callee is concrete either as a
 // bare FuncType (an inline callee) OR as a var whose lower bound is a FuncType (a
 // named/generalized callee, which inferIdent now resolves through instantiate — see
-// concreteFunc); both recover, so recovery no longer regresses for named callees.
+// resolveFunc); both recover, so recovery no longer regresses for named callees.
+//
+// PR4 adds two #677 pieces: an EXACT all-required call demand, and the extra-arg
+// lint that rejects passing more arguments than a concrete callee declares.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	args := make([]*soltype.FuncParam, len(e.Args))
@@ -218,19 +232,56 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, Application)
-	callShape := &soltype.FuncType{Params: args, Ret: res}
-	// Record the synthesized call-shape against the CallExpr so FuncArityMismatchError
-	// resolves its blame to the call.
+
+	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments
+	// — for exact AND inexact callees alike. These are call-site checks the subtype
+	// lattice does not model uniformly (an inexact callee tolerates extras as a
+	// *callback*, accept-set [required, ∞), but supplying extras to a call you can see
+	// is a mistake). They fire only when the callee is concrete; for a deferred (var)
+	// callee they are best-effort skipped while too-few still surfaces from the gate.
+	//
+	// When a lint fires, the demand is reshaped to the callee's declared arity
+	// (len(fn.Params)) so the EXACT synth's accept-set gate does NOT also report
+	// arity (the lint owns the single, uniform message; the constraint does pure
+	// type-flow on the supplied args). Too-many truncates to the prefix; too-few pads
+	// the missing slots with fresh vars, which impose no constraint on absent args.
+	fn, resolved := resolveFunc(callee)
+	demand := args
+	switch {
+	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
+		// A typed rest param (hasRest) absorbs any number of trailing args, so it is
+		// never "too many" — only a fixed-arity (non-rest) callee trips this lint.
+		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
+		demand = args[:len(fn.Params)]
+	case resolved && len(args) < requiredCount(fn):
+		c.errs = append(c.errs, &NotEnoughArgsError{Call: e, Fn: fn})
+		demand = make([]*soltype.FuncParam, len(fn.Params))
+		copy(demand, args)
+		for i := len(args); i < len(fn.Params); i++ {
+			demand[i] = &soltype.FuncParam{Type: c.freshAt(lvl)}
+		}
+	}
+
+	// callShape is built EXACT with all N params required, on purpose. That gives
+	// it accept-set [N, N] (N = arg count), so the callee <: callShape constraint
+	// reads "the callee must accept exactly N args" — it holds iff
+	// required(callee) <= N <= upper(callee). If callShape were INEXACT instead,
+	// its accept-set would widen to [N, ∞), demanding upper(callee) = ∞ and thus
+	// rejecting every call to a fixed-arity (exact) function.
+	callShape := &soltype.FuncType{Params: demand, Ret: res}
+	// Record the synthesized call-shape against the CallExpr so a FuncArityMismatchError
+	// — now only from a DEFERRED callee's too-few (or a callback-arity failure), since
+	// concrete arity faults are owned by the lints above — resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
-	if fn, ok := concreteFunc(callee); ok {
+	if resolved {
 		c.constrain(e, fn.Ret, res)
 	}
 	c.recordType(e, res)
 	return res
 }
 
-// concreteFunc resolves a callee to its concrete FuncType, used to recover a
+// resolveFunc resolves a callee to its concrete FuncType, used to recover a
 // call's return type. The callee is either a FuncType directly (an inline callee)
 // or a var whose first FuncType lower bound is the function (a named/generalized
 // callee, since inferIdent returns instantiate(scheme) — a fresh var). Looking
@@ -240,7 +291,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 // ok=false means no concrete func was found (e.g. a deferred callee with no lower
 // bound yet) — the caller skips return recovery. PR1 bindings have at most one
 // func lower bound; overload sets (PR6) resolve through resolveOverload, not here.
-func concreteFunc(t soltype.Type) (*soltype.FuncType, bool) {
+func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:
 		return t, true

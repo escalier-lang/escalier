@@ -57,6 +57,8 @@ func opFunc(ret soltype.Type, params ...soltype.Type) *soltype.FuncType {
 			Type:    p,
 		}
 	}
+	// Operators are concrete function values, hence exact (accept-set [n, n]) — the
+	// zero value of Inexact.
 	return &soltype.FuncType{Params: ps, Ret: ret}
 }
 

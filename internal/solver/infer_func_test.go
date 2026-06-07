@@ -208,7 +208,10 @@ func TestInferCallArgMismatch(t *testing.T) {
 	require.Equal(t, "number", render(got))
 }
 
-func TestInferCallArityMismatch(t *testing.T) {
+// Too-many args at a direct call is the PR4 extra-arg lint (TooManyArgsError, the
+// uniform too-many message), not a FuncArityMismatch — and the constraint receives
+// only the arity-matched prefix, so the lint is the SOLE diagnostic.
+func TestInferCallTooManyArgs(t *testing.T) {
 	c := newChecker()
 	// (fn (x: number) { x })(1, 2)
 	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
@@ -216,7 +219,24 @@ func TestInferCallArityMismatch(t *testing.T) {
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 2", c.errs[0].Message())
+	require.Equal(t, "Too many arguments: expected at most 1, but got 2", c.errs[0].Message())
+	require.Equal(t, testSpan(), c.errs[0].Span())
+	// Error recovery: the result is still the callee's return type, not `never`.
+	require.Equal(t, "number", render(got))
+}
+
+// Too-few args at a direct call is the PR4 too-few lint (NotEnoughArgsError, the
+// symmetric twin of TooManyArgsError) — the demand is padded to the callee's arity
+// so the lint is the SOLE diagnostic, not a doubled lint + FuncArityMismatch.
+func TestInferCallTooFewArgs(t *testing.T) {
+	c := newChecker()
+	// (fn (x: number, y: number) { x })(1)
+	callee := funcExpr([]*ast.Param{param("x", numAnn()), param("y", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	e := ast.NewCall(callee, []ast.Expr{numExpr(1)}, false, testSpan())
+
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Not enough arguments: expected at least 2, but got 1", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 	// Error recovery: the result is still the callee's return type, not `never`.
 	require.Equal(t, "number", render(got))

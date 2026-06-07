@@ -59,6 +59,55 @@ func parseTypeAnn(t *testing.T, input string) ast.TypeAnn {
 	return typeAnn
 }
 
+// The trailing `...` inexact marker round-trips through the printer on function
+// declarations, expressions, and type annotations (#677 §4.1).
+func TestPrintInexactFunctions(t *testing.T) {
+	opts := DefaultOptions()
+
+	// Assert on the signature substring (the body's indentation is incidental).
+	declTests := []struct {
+		name    string
+		input   string
+		wantSig string
+	}{
+		{"inexact decl", "fn f(x: number, ...) { x }", "fn f(x: number, ...) {"},
+		{"inexact nullary decl", "fn f(...) { 1 }", "fn f(...) {"},
+		{"exact decl unchanged", "fn f(x: number) { x }", "fn f(x: number) {"},
+	}
+	for _, tt := range declTests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseDecl(t, tt.input), opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if !strings.HasPrefix(result, tt.wantSig) {
+				t.Errorf("Expected prefix %q, got %q", tt.wantSig, result)
+			}
+		})
+	}
+
+	annTests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"inexact annotation", "fn(x: number, ...) -> number", "fn (x: number, ...) -> number"},
+		{"inexact nullary annotation", "fn(...) -> number", "fn (...) -> number"},
+		{"exact annotation unchanged", "fn(x: number) -> number", "fn (x: number) -> number"},
+	}
+	for _, tt := range annTests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseTypeAnn(t, tt.input), opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
 func TestPrintLiterals(t *testing.T) {
 	tests := []struct {
 		name     string

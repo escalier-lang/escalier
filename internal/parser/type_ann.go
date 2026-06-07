@@ -320,7 +320,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 
 			p.expect(OpenParen, AlwaysConsume)
 
-			funcParams := parseDelimSeq(p, CloseParen, Comma, p.param)
+			funcParams, inexact := p.parseFuncParams()
 
 			p.expect(CloseParen, AlwaysConsume)
 
@@ -346,6 +346,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				throwsType,
 				ast.NewSpan(token.Span.Start, endSpan.End, p.lexer.source.ID),
 			)
+			fnAnn.Inexact = inexact
 			typeAnn = fnAnn
 		case If: // conditional type
 			p.lexer.consume() // consume 'if'

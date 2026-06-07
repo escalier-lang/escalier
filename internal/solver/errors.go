@@ -291,8 +291,41 @@ type OverloadNotSupportedError struct {
 	Name           string
 }
 
+// TooManyArgsError fires when a DIRECT call supplies more arguments than the
+// (concrete) callee declares — the #677 §4.2.3 extra-arg lint, which rejects
+// too-many for exact AND inexact callees alike (an inexact function tolerates
+// extras only as a callback, not at a visible call site). It is the uniform
+// too-many message; the surviving FuncArityMismatchError covers "too few /
+// required" and the callback-subtyping accept-set failures.
+//
+// It is a BRIDGE error: born in inferCall with the *ast.CallExpr in hand, so it
+// self-blames (Span() is the call's own span) and relates the callee expression —
+// no Prov stamping. Fn is the resolved callee FuncType, retained so the message can
+// report the declared parameter count.
+type TooManyArgsError struct {
+	Call *ast.CallExpr
+	Fn   *soltype.FuncType
+}
+
+// NotEnoughArgsError fires when a DIRECT call supplies fewer arguments than the
+// (concrete) callee REQUIRES — the symmetric twin of TooManyArgsError. `required`
+// is the count of non-trailing-optional params (requiredCount), so an optional
+// trailing param may be omitted without tripping it. Like TooManyArgsError it is a
+// call-site lint over a concrete callee; a deferred (var) callee's too-few still
+// surfaces from the accept-set gate as FuncArityMismatchError.
+//
+// It is a BRIDGE error: born in inferCall with the *ast.CallExpr in hand, so it
+// self-blames (Span() is the call) and relates the callee expression. Fn is the
+// resolved callee FuncType, retained so the message can report the required count.
+type NotEnoughArgsError struct {
+	Call *ast.CallExpr
+	Fn   *soltype.FuncType
+}
+
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
+func (*TooManyArgsError) isSolverError()          {}
+func (*NotEnoughArgsError) isSolverError()        {}
 func (*UnsupportedNodeError) isSolverError()      {}
 func (*UnsupportedFeatureError) isSolverError()   {}
 func (*BodyDeclNotAllowedError) isSolverError()   {}
@@ -310,6 +343,33 @@ func (e *NamespaceUsedAsValueError) Span() ast.Span      { return e.Ident.Span()
 func (e *NamespaceUsedAsValueError) Related() []ast.Span { return nil }
 func (e *NamespaceUsedAsValueError) Message() string {
 	return "Namespace used as a value: " + e.Ident.Name
+}
+
+func (e *TooManyArgsError) Span() ast.Span { return e.Call.Span() }
+func (e *TooManyArgsError) Related() []ast.Span {
+	// Span() uses the call's own span and never derefs Callee; Related() does, so
+	// guard a nil Callee (not produced by the parser, but possible in a hand-built
+	// AST) to uphold the "never panic on malformed AST" guarantee.
+	if e.Call.Callee == nil {
+		return nil
+	}
+	return []ast.Span{e.Call.Callee.Span()}
+}
+func (e *TooManyArgsError) Message() string {
+	return fmt.Sprintf("Too many arguments: expected at most %d, but got %d",
+		len(e.Fn.Params), len(e.Call.Args))
+}
+
+func (e *NotEnoughArgsError) Span() ast.Span { return e.Call.Span() }
+func (e *NotEnoughArgsError) Related() []ast.Span {
+	if e.Call.Callee == nil {
+		return nil
+	}
+	return []ast.Span{e.Call.Callee.Span()}
+}
+func (e *NotEnoughArgsError) Message() string {
+	return fmt.Sprintf("Not enough arguments: expected at least %d, but got %d",
+		requiredCount(e.Fn), len(e.Call.Args))
 }
 
 func (e *UnsupportedNodeError) Span() ast.Span      { return e.Node.Span() }

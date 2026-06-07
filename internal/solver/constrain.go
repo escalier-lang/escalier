@@ -1,9 +1,59 @@
 package solver
 
 import (
+	"math"
+
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
+
+// unboundedArity is the upper end of an inexact function's accept-set ([req, ∞)):
+// an inexact function tolerates any number of trailing arguments as a callback.
+const unboundedArity = math.MaxInt
+
+// hasRest reports whether f's LAST parameter is a typed rest param (`...xs: T[]`).
+// A rest param binds zero or more trailing arguments, so it never counts toward the
+// required floor and lifts the accept-set upper bound to ∞ (#677 §4.2.3) — the same
+// upper-bound effect as the inexact `...` marker, reached a different way.
+func hasRest(f *soltype.FuncType) bool {
+	n := len(f.Params)
+	return n > 0 && f.Params[n-1].Rest
+}
+
+// requiredCount is the number of arguments a positional call must supply — the
+// LOWER bound of f's accept-set. Because arguments bind positionally, a parameter
+// only lowers the requirement when it is TRAILING: a trailing rest param (zero or
+// more) and trailing optionals (`x?`) may be omitted, but in fn(a?, b) you cannot
+// omit a while still supplying b, so a is effectively required. So required = the
+// position after the last non-optional, non-rest param — NOT the count of all
+// non-optional params, which would wrongly treat a leading optional (or the rest
+// param) as droppable and let a call leave a required param unbound.
+func requiredCount(f *soltype.FuncType) int {
+	n := len(f.Params)
+	if n > 0 && f.Params[n-1].Rest {
+		n-- // a trailing rest param binds zero-or-more args, so it is never required
+	}
+	for n > 0 && f.Params[n-1].Optional {
+		n--
+	}
+	return n
+}
+
+// acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when
+// invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f has a
+// finite arity, and unboundedArity when its upper bound is open — either because it
+// is inexact (the `...` marker) OR because its last param is a typed rest (§4.2.3).
+// Read a supertype callback slot's accept-set as "the argument counts whoever holds
+// this slot may invoke the supplied function with."
+func acceptSet(f *soltype.FuncType) (lo, hi int) {
+	lo = requiredCount(f)
+	if f.Inexact || hasRest(f) {
+		hi = unboundedArity
+	} else {
+		hi = len(f.Params)
+	}
+	return lo, hi
+}
 
 // constraintKey keys the coinductive seen-set by pointer identity (Go's
 // interface == on pointer-backed soltype concretes). Sufficient for M1: cycles
@@ -62,18 +112,39 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		}
 	case *soltype.FuncType:
 		if r, ok := rhs.(*soltype.FuncType); ok {
-			// Exact arity: M1 functions are exact (Escalier is exact-by-default),
-			// so subtyping requires the SAME number of params — parallel to the
-			// exact-tuple same-length rule below. The inexact
-			// "fewer-params-is-subtype" arm (a function ignoring extra trailing
-			// args) lands in M3 with the exactness flag (`...`), exactly as the
-			// inexact-tuple arm lands in M4. See
-			// planning/simple_sub/01-milestones.md.
-			if len(l.Params) != len(r.Params) {
+			// Accept-set subtyping (#677 §4.2.1): read r as a callback slot. l <: r
+			// iff accept(l) ⊇ accept(r) — l must tolerate every argument count a
+			// holder of r may invoke it with. With accept(l) = [loL, hiL] and
+			// accept(r) = [loR, hiR]:
+			//   - loL <= loR — l must not DEMAND more args than r might supply, and
+			//   - hiL >= hiR — l must not REFUSE an arg count r might supply.
+			// The upper-bound clause is what exactness governs (an exact l caps hiL at
+			// len(l.Params), so it can't fill a wider/inexact slot); the lower-bound
+			// clause is the `required` part (a typed-rest/optional lowers it). This
+			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
+			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
+			loL, hiL := acceptSet(l)
+			loR, hiR := acceptSet(r)
+			if loL > loR || hiL < hiR {
 				return []SolverError{&FuncArityMismatchError{LHS: l, RHS: r}}
 			}
+			// Shared positions are checked per-parameter (params contravariant,
+			// return covariant). When r is EXACT this is complete: r never supplies an
+			// argument beyond its declared params, and any extra param l declares there
+			// must be optional (the lo gate forced loL <= loR) and so is simply never
+			// passed.
+			//
+			// KNOWN GAP (M4): when r is INEXACT and l declares MORE params than r, r's
+			// `...` tail may supply arbitrarily-typed args at l's extra positions, so
+			// soundness demands `unknown <: l.Params[i].Type` there — exact-types
+			// §4.2.1.2 "Variation B", the load-bearing rejection. That check needs the
+			// `_ <: unknown` (⊤) rule constrain lacks until M6, and an inexact function
+			// is unreachable from M3 source anyway (resolveTypeAnn resolves no function
+			// annotations), so the extra positions are left unchecked here for now. For
+			// every M3-reachable input (exact functions only) the shared loop is complete.
 			var errs []SolverError
-			for i := range l.Params {
+			n := min(len(l.Params), len(r.Params))
+			for i := 0; i < n; i++ {
 				errs = append(errs, c.constrain(r.Params[i].Type, l.Params[i].Type, seen)...) // contravariant
 			}
 			return append(errs, c.constrain(l.Ret, r.Ret, seen)...) // covariant
@@ -194,9 +265,9 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 	case *soltype.FuncType:
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache)}
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache), Optional: p.Optional, Rest: p.Rest}
 		}
-		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache)}
+		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache), Inexact: t.Inexact}
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
