@@ -9,10 +9,16 @@ import (
 // tentative inference does so a *discarded* trial leaves no trace. Two kinds of
 // mutation are journaled:
 //
-//  1. Bound appends. Every TypeVarType the trial appends a bound to is recorded
-//     once, with its bound-list lengths at first touch (record). Because bound
-//     lists are append-only, that single length snapshot covers every later
-//     append, and a discard is a slice truncation back to the snapshot.
+//  1. Bound appends. Every TypeVarType the trial appends a bound to (via
+//     addLowerBound/addUpperBound) is recorded once, with its bound-list lengths
+//     at first touch (record). The length-snapshot rollback is sound only under
+//     one precondition: a journaled var's bound lists are extended by APPEND and
+//     never replaced or shortened. Initializing a FRESHLY-minted var's bounds by
+//     whole-slice assignment (freshenAbove) is exempt and need not be journaled —
+//     a fresh var is unreachable after a Discard (every surviving reference to it
+//     rides a journaled append that gets truncated), so it self-rolls-back. What
+//     must never happen is whole-slice replacement of a var that has already been
+//     recorded under the probe; rollback asserts against that.
 //  2. Side-table writes. Writes to the carrier's Info / Prov tables under the
 //     probe register an onRollback closure (the carrier owns those tables, so
 //     it registers the closures — see recordType/recordProv). A discard runs
@@ -83,12 +89,21 @@ func (p *Probe) onRollback(f func()) {
 // closure captured that key's prior value at registration time, so only unwinding
 // newest-first restores the original value. Entry truncation is reverse for
 // symmetry only — touched dedups to one entry per var, so order is moot there.
+//
+// The truncation asserts the append-only precondition rather than silently
+// clamping: a snapshot length above the current list length means a recorded
+// var's bound slice was REPLACED or shortened mid-trial (not appended to), which
+// would otherwise corrupt the var on rollback. Failing loudly turns that into an
+// immediate, located error instead of silent under-constraint.
 func (p *Probe) rollback() {
 	for i := len(p.cleanups) - 1; i >= 0; i-- {
 		p.cleanups[i]()
 	}
 	for i := len(p.entries) - 1; i >= 0; i-- {
 		e := p.entries[i]
+		if e.prevLower > len(e.v.LowerBounds) || e.prevUpper > len(e.v.UpperBounds) {
+			panic("probe.rollback: a journaled var's bounds were replaced or shortened, not appended — the append-only invariant is violated")
+		}
 		e.v.LowerBounds = e.v.LowerBounds[:e.prevLower]
 		e.v.UpperBounds = e.v.UpperBounds[:e.prevUpper]
 	}

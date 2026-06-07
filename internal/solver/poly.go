@@ -108,6 +108,11 @@ func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*solt
 		// PR1 only records the edge; the multi-hop renderer that chases it back to an
 		// AST leaf is M11.5 (NodeFor still resolves only FromAST today).
 		c.recordInstantiation(nv, t)
+		// nv is freshly minted here, so these whole-slice bound assignments are
+		// intentionally NOT journaled by the probe (see Probe's doc): a fresh var
+		// is unreachable after a Discard, so it self-rolls-back. This is the one
+		// sanctioned non-append bound write — it touches only fresh vars, never a
+		// var the probe has recorded.
 		nv.LowerBounds = c.freshenBounds(lim, t.LowerBounds, lvl, cache)
 		nv.UpperBounds = c.freshenBounds(lim, t.UpperBounds, lvl, cache)
 		return nv
