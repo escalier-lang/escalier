@@ -69,14 +69,15 @@ func TestInferOptionalParamCallArity(t *testing.T) {
 // A NON-TRAILING optional does not lower the required count: arguments bind
 // positionally, so a required param after an optional is still required. `f(1)` on
 // `fn(a?, b)` must be rejected (it would leave the required `b` unbound), even
-// though `a` is marked optional. requiredCount counts trailing optionals only.
+// though `a` is marked optional. requiredCount counts trailing optionals only, so
+// the too-few lint reports a required count of 2.
 func TestInferNonTrailingOptionalRequiresAllArgs(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(a?: number, b: number) -> number { b }
 		val r = f(1)
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", errs[0].Message())
+	require.Equal(t, "Not enough arguments: expected at least 2, but got 1", errs[0].Message())
 }
 
 // A function value declared with the trailing `...` marker now parses (PR4 parser
@@ -98,6 +99,17 @@ func TestInferInexactFunctionValue(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "Too many arguments: expected at most 1, but got 2", errs[0].Message())
 	})
+}
+
+// The too-few lint reports the REQUIRED count, not the declared count: a trailing
+// optional may be omitted, so `fn(x, y?)` called with no args needs at least 1.
+func TestInferTooFewArgsRespectsOptional(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(x: number, y?: number) -> number { x }
+		val r = f()
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Not enough arguments: expected at least 1, but got 0", errs[0].Message())
 }
 
 // The extra-arg lint fires for an INEXACT callee too (#677 §4.2.3: direct calls

@@ -307,9 +307,25 @@ type TooManyArgsError struct {
 	Fn   *soltype.FuncType
 }
 
+// NotEnoughArgsError fires when a DIRECT call supplies fewer arguments than the
+// (concrete) callee REQUIRES — the symmetric twin of TooManyArgsError. `required`
+// is the count of non-trailing-optional params (requiredCount), so an optional
+// trailing param may be omitted without tripping it. Like TooManyArgsError it is a
+// call-site lint over a concrete callee; a deferred (var) callee's too-few still
+// surfaces from the accept-set gate as FuncArityMismatchError.
+//
+// It is a BRIDGE error: born in inferCall with the *ast.CallExpr in hand, so it
+// self-blames (Span() is the call) and relates the callee expression. Fn is the
+// resolved callee FuncType, retained so the message can report the required count.
+type NotEnoughArgsError struct {
+	Call *ast.CallExpr
+	Fn   *soltype.FuncType
+}
+
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
 func (*TooManyArgsError) isSolverError()          {}
+func (*NotEnoughArgsError) isSolverError()        {}
 func (*UnsupportedNodeError) isSolverError()      {}
 func (*UnsupportedFeatureError) isSolverError()   {}
 func (*BodyDeclNotAllowedError) isSolverError()   {}
@@ -342,6 +358,18 @@ func (e *TooManyArgsError) Related() []ast.Span {
 func (e *TooManyArgsError) Message() string {
 	return fmt.Sprintf("Too many arguments: expected at most %d, but got %d",
 		len(e.Fn.Params), len(e.Call.Args))
+}
+
+func (e *NotEnoughArgsError) Span() ast.Span { return e.Call.Span() }
+func (e *NotEnoughArgsError) Related() []ast.Span {
+	if e.Call.Callee == nil {
+		return nil
+	}
+	return []ast.Span{e.Call.Callee.Span()}
+}
+func (e *NotEnoughArgsError) Message() string {
+	return fmt.Sprintf("Not enough arguments: expected at least %d, but got %d",
+		requiredCount(e.Fn), len(e.Call.Args))
 }
 
 func (e *UnsupportedNodeError) Span() ast.Span      { return e.Node.Span() }

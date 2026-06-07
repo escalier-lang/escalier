@@ -75,18 +75,15 @@ func TestBlameCallTooManyArgs(t *testing.T) {
 		"Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
 }
 
-// A too-few-args direct call still surfaces as a FuncArityMismatch through the
-// call-shape constraint (the surviving "required" check): `f` declares two params,
-// the call supplies one, so the exact demand's accept-set [1,1] is not contained in
-// the callee's [2,2]. Blame points at the whole call, with the callee's definition
-// as the related span (var-free callee, shared through instantiation — see
-// TestBlameCallTooManyArgs's note on the polymorphic bound).
+// A too-few-args direct call is the PR4 too-few lint (NotEnoughArgsError), a BRIDGE
+// error symmetric to TooManyArgsError: it self-blames the whole call and relates the
+// callee expression (`f` here, from the AST — not the callee's definition resolved
+// through Prov). `f` requires two params; the call supplies one.
 func TestBlameCallTooFewArgs(t *testing.T) {
 	src := "fn f(x: number, y: number) -> number { x }\nval r = f(1)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"cannot constrain function of arity 2 <: function of arity 1", "f(1)",
-		"fn f(x: number, y: number) -> number { x }")
+		"Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
 }
 
 // A missing-property read blames the member's prop (.foo), not the receiver, with

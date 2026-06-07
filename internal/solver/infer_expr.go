@@ -233,21 +233,31 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, Application)
 
-	// Extra-arg lint (#677 §4.2.3): a DIRECT call rejects more arguments than the
-	// callee declares — for exact AND inexact callees alike. This is a call-site
-	// check the subtype lattice deliberately does NOT model: an inexact callee
-	// tolerates extras as a *callback* (accept-set [required, ∞)), but supplying
-	// extras to a call you can see is treated as a mistake. It fires only when the
-	// callee is concrete; for a deferred (var) callee it is best-effort skipped while
-	// "too few / required" still flows through the constraint below.
+	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments
+	// — for exact AND inexact callees alike. These are call-site checks the subtype
+	// lattice does not model uniformly (an inexact callee tolerates extras as a
+	// *callback*, accept-set [required, ∞), but supplying extras to a call you can see
+	// is a mistake). They fire only when the callee is concrete; for a deferred (var)
+	// callee they are best-effort skipped while too-few still surfaces from the gate.
+	//
+	// When a lint fires, the demand is reshaped to the callee's declared arity
+	// (len(fn.Params)) so the EXACT synth's accept-set gate does NOT also report
+	// arity (the lint owns the single, uniform message; the constraint does pure
+	// type-flow on the supplied args). Too-many truncates to the prefix; too-few pads
+	// the missing slots with fresh vars, which impose no constraint on absent args.
 	fn, isConcrete := concreteFunc(callee)
 	demand := args
-	if isConcrete && len(args) > len(fn.Params) {
-		// Hand the constraint only the arity-matched prefix so the EXACT synth's
-		// accept-set gate does not ALSO report arity — the lint owns the single,
-		// uniform too-many message; the constraint does pure type-flow.
+	switch {
+	case isConcrete && len(args) > len(fn.Params):
 		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
 		demand = args[:len(fn.Params)]
+	case isConcrete && len(args) < requiredCount(fn):
+		c.errs = append(c.errs, &NotEnoughArgsError{Call: e, Fn: fn})
+		demand = make([]*soltype.FuncParam, len(fn.Params))
+		copy(demand, args)
+		for i := len(args); i < len(fn.Params); i++ {
+			demand[i] = &soltype.FuncParam{Type: c.freshAt(lvl)}
+		}
 	}
 
 	// EXACT + all-required call demand: accept(synth) = [N, N] (N = arg count), so
@@ -256,8 +266,9 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// the synth is exact by construction here; an INEXACT synth would have accept
 	// [N, ∞), forcing upper(callee) = ∞ and rejecting every call to an exact function.
 	callShape := &soltype.FuncType{Params: demand, Ret: res}
-	// Record the synthesized call-shape against the CallExpr so FuncArityMismatchError
-	// (the surviving "too few / required" path) resolves its blame to the call.
+	// Record the synthesized call-shape against the CallExpr so a FuncArityMismatchError
+	// — now only from a DEFERRED callee's too-few (or a callback-arity failure), since
+	// concrete arity faults are owned by the lints above — resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
 	if isConcrete {

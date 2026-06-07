@@ -225,9 +225,9 @@ func TestInferCallTooManyArgs(t *testing.T) {
 	require.Equal(t, "number", render(got))
 }
 
-// Too-few args still flows through the call-shape constraint as a FuncArityMismatch
-// (the surviving "required" check): the exact demand's accept-set [1,1] is not
-// contained in the callee's [2,2].
+// Too-few args at a direct call is the PR4 too-few lint (NotEnoughArgsError, the
+// symmetric twin of TooManyArgsError) — the demand is padded to the callee's arity
+// so the lint is the SOLE diagnostic, not a doubled lint + FuncArityMismatch.
 func TestInferCallTooFewArgs(t *testing.T) {
 	c := newChecker()
 	// (fn (x: number, y: number) { x })(1)
@@ -236,7 +236,7 @@ func TestInferCallTooFewArgs(t *testing.T) {
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", c.errs[0].Message())
+	require.Equal(t, "Not enough arguments: expected at least 2, but got 1", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 	// Error recovery: the result is still the callee's return type, not `never`.
 	require.Equal(t, "number", render(got))
