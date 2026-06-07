@@ -91,7 +91,7 @@ type freshener struct {
 	cache map[*soltype.TypeVarType]*soltype.TypeVarType
 }
 
-func (f *freshener) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
 	// Every variable inside t is at or below lim: nothing to freshen, SHARE the node
 	// (the original pointer flows through unchanged — Accept's identity preservation
 	// gives the same result for the structural arms too). Two consequences worth
@@ -135,21 +135,22 @@ func (f *freshener) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	// non-append bound write — it touches only fresh vars, never a var the probe has
 	// recorded. The cache is populated BEFORE the bounds are freshened so a recursive
 	// bound referencing v resolves to the in-progress nv rather than looping.
-	nv.LowerBounds = f.freshenBounds(v.LowerBounds, pol)
-	nv.UpperBounds = f.freshenBounds(v.UpperBounds, pol)
+	nv.LowerBounds = f.freshenBounds(v.LowerBounds)
+	nv.UpperBounds = f.freshenBounds(v.UpperBounds)
 	return soltype.EnterResult{Type: nv, SkipChildren: true}
 }
 
 func (f *freshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // freshenBounds freshens a var's bound list, preserving the nil-for-empty shape.
-func (f *freshener) freshenBounds(bounds []soltype.Type, pol soltype.Polarity) []soltype.Type {
+// Freshening ignores polarity (no variance flip), so it walks at a fixed Positive.
+func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 	if len(bounds) == 0 {
 		return nil
 	}
 	out := make([]soltype.Type, len(bounds))
 	for i, b := range bounds {
-		out[i] = b.Accept(f, pol)
+		out[i] = b.Accept(f, soltype.Positive)
 	}
 	return out
 }

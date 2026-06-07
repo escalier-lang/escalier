@@ -29,7 +29,6 @@ func TestAcceptThreadsPolarity(t *testing.T) {
 	d := &PrimType{Prim: StrPrim}
 	e := &PrimType{Prim: BoolPrim}
 	a := &TypeVarType{ID: 1}
-	b := &TypeVarType{ID: 2}
 
 	// fn(p: fn(q: C) -> D, a) -> fn() -> E, walked from Positive.
 	inner := &FuncType{
@@ -44,7 +43,6 @@ func TestAcceptThreadsPolarity(t *testing.T) {
 		},
 		Ret: retFn,
 	}
-	_ = b
 
 	r := &recorder{seen: map[Type]Polarity{}}
 	outer.Accept(r, Positive)
@@ -155,4 +153,49 @@ func TestAcceptReplaceAndSkipChildren(t *testing.T) {
 	require.Same(t, num, got.Elems[0], "inner was replaced by the substitute")
 	require.True(t, v.entered[inner], "the replaced node was itself entered")
 	require.False(t, v.entered[leaf], "a skipped subtree is never entered")
+}
+
+// replaceDescend replaces the node matching target with repl and DESCENDS
+// (SkipChildren=false), recording every node EnterType reaches.
+type replaceDescend struct {
+	target  Type
+	repl    Type
+	entered map[Type]bool
+}
+
+func (v *replaceDescend) EnterType(t Type, _ Polarity) EnterResult {
+	v.entered[t] = true
+	if t == v.target {
+		return EnterResult{Type: v.repl} // SkipChildren=false: rebuild from repl's children
+	}
+	return EnterResult{}
+}
+func (v *replaceDescend) ExitType(t Type, _ Polarity) Type { return t }
+
+// A same-kind replacement with SkipChildren=false rebuilds from the REPLACEMENT's
+// children, not the original's, and preserves identity when nothing under it changed.
+func TestAcceptDescendsIntoSameKindReplacement(t *testing.T) {
+	origElem := &PrimType{Prim: NumPrim}
+	replElem := &PrimType{Prim: StrPrim}
+	orig := &TupleType{Elems: []Type{origElem}}
+	repl := &TupleType{Elems: []Type{replElem}}
+
+	v := &replaceDescend{target: orig, repl: repl, entered: map[Type]bool{}}
+	got := orig.Accept(v, Positive).(*TupleType)
+
+	require.True(t, v.entered[replElem], "the replacement's child is walked")
+	require.False(t, v.entered[origElem], "the original's child is not walked")
+	require.Same(t, repl, got, "nothing changed within repl, so identity is preserved")
+}
+
+// A different-kind replacement with SkipChildren=false violates the descend
+// contract and panics with a clear message (not a bare type-assertion fault).
+func TestAcceptDescendDifferentKindPanics(t *testing.T) {
+	orig := &TupleType{Elems: []Type{&PrimType{Prim: NumPrim}}}
+	v := &replaceDescend{target: orig, repl: &PrimType{Prim: StrPrim}, entered: map[Type]bool{}}
+	require.PanicsWithValue(t,
+		"soltype.Accept: EnterType replaced *soltype.TupleType with *soltype.PrimType under "+
+			"SkipChildren=false; a same-kind replacement is required to descend "+
+			"(set SkipChildren=true to replace with a different kind)",
+		func() { orig.Accept(v, Positive) })
 }

@@ -49,6 +49,15 @@ type coalescer struct {
 func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
+		// Union/Intersection are coalesced OUTPUT only — they must never reach
+		// coalesce INPUT (type.go: "appear only as coalesced output, never as
+		// constrain inputs"). Assert that invariant, as the pre-visitor coalesceRec
+		// did with its unhandled-type panic; every other structural/atom node is
+		// rebuilt by Accept.
+		switch t.(type) {
+		case *soltype.UnionType, *soltype.IntersectionType:
+			panic(fmt.Sprintf("coalesce: unexpected coalesced-output node %T in input", t))
+		}
 		return soltype.EnterResult{} // atom / structural node: let Accept rebuild it
 	}
 	// Re-entering a variable already on the current path is an ungrounded recursive
@@ -60,13 +69,13 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	c.seen.Add(v)
+	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
 	// Uniform inline: drop the variable, keep only its (recursively coalesced)
 	// bounds in the current polarity.
 	bounds := make([]soltype.Type, 0, len(v.BoundsAt(pol)))
 	for _, b := range v.BoundsAt(pol) {
 		bounds = append(bounds, b.Accept(c, pol))
 	}
-	c.seen.Remove(v)
 	if len(bounds) == 0 {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
@@ -152,6 +161,11 @@ func analyzeOccurrences(t soltype.Type, pol soltype.Polarity, occ map[*soltype.T
 // case for variables genuinely used in one polarity — is PR2's; PR1 retains a
 // type parameter only where it is literally the same variable across positions,
 // so renders stay non-compact until then.
+//
+// TODO(#715): reimplement coalesceScheme/coalesceSchemeRec on the soltype rewriting
+// visitor (soltype.Accept), like coalesce/extrude/freshenAbove, so the structural
+// arms and the pol.Flip() variance live in one place rather than being re-spelled
+// here. PR7 left this hand-rolled because the var case carries extra retain logic.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 	occ := map[*soltype.TypeVarType]occPolarity{}
 	analyzeOccurrences(t, soltype.Positive, occ, set.NewSet[occKey]())

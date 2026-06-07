@@ -1,10 +1,13 @@
 package soltype
 
+import "fmt"
+
 // EnterResult controls traversal after EnterType.
 //
 // A non-nil Type replaces the node: with SkipChildren=false it becomes the basis
-// for the structural rebuild (its children are walked), with SkipChildren=true it
-// is handed straight to ExitType without descending. A nil Type keeps the node.
+// for the structural rebuild (its children are walked, so it MUST be the same
+// concrete kind), with SkipChildren=true it is handed straight to ExitType without
+// descending (and may be ANY kind). A nil Type keeps the node.
 type EnterResult struct {
 	Type         Type // nil = keep the node; non-nil = replace it
 	SkipChildren bool // true = skip the structural rebuild, go straight to ExitType
@@ -44,12 +47,31 @@ func acceptLeaf(t Type, v TypeVisitor, pol Polarity) Type {
 // skipReplace resolves the node a SkipChildren EnterResult hands to ExitType: the
 // replacement when one was given, else the original. No structural rebuild follows,
 // so the replacement may be ANY kind (e.g. coalesce inlining a var to a union) —
-// the same-kind type assertion the descend path needs does not apply here.
+// the same-kind requirement the descend path enforces does not apply here.
 func skipReplace(t Type, e EnterResult) Type {
 	if e.Type != nil {
 		return e.Type
 	}
 	return t
+}
+
+// descendReplacement resolves the node the descend path rebuilds children from: the
+// EnterType replacement when one was given, else the original. Because the children
+// are walked with this node's child structure, a replacement MUST be the same
+// concrete kind; a different-kind replacement under SkipChildren=false is a visitor
+// contract violation, reported with a clear message rather than a bare
+// type-assertion fault. (Use SkipChildren=true to replace with a different kind.)
+func descendReplacement[T Type](original T, e EnterResult) T {
+	if e.Type == nil {
+		return original
+	}
+	repl, ok := e.Type.(T)
+	if !ok {
+		panic(fmt.Sprintf("soltype.Accept: EnterType replaced %T with %T under "+
+			"SkipChildren=false; a same-kind replacement is required to descend "+
+			"(set SkipChildren=true to replace with a different kind)", original, e.Type))
+	}
+	return repl
 }
 
 func (t *TypeVarType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
@@ -64,25 +86,9 @@ func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
-	cur := t
-	if e.Type != nil {
-		// Descending into the replacement's children: it must be the same kind.
-		cur = e.Type.(*FuncType)
-	}
-	params := cur.Params // copy-on-write: alias until a param's type changes
-	changed := false
-	for i, p := range cur.Params {
-		pt := p.Type.Accept(v, pol.Flip()) // params contravariant
-		if pt != p.Type {
-			if !changed {
-				params = append([]*FuncParam(nil), cur.Params...)
-				changed = true
-			}
-			// Surface markers (Optional / Rest) ride through unchanged.
-			params[i] = &FuncParam{Pattern: p.Pattern, Type: pt, Optional: p.Optional, Rest: p.Rest}
-		}
-	}
-	ret := cur.Ret.Accept(v, pol) // return covariant
+	cur := descendReplacement(t, e)
+	params, changed := acceptParams(cur.Params, v, pol) // params contravariant
+	ret := cur.Ret.Accept(v, pol)                       // return covariant
 	out := cur
 	if changed || ret != cur.Ret {
 		out = &FuncType{Params: params, Ret: ret, Inexact: cur.Inexact}
@@ -95,10 +101,7 @@ func (t *TupleType) Accept(v TypeVisitor, pol Polarity) Type {
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
-	cur := t
-	if e.Type != nil {
-		cur = e.Type.(*TupleType)
-	}
+	cur := descendReplacement(t, e)
 	elems, changed := acceptTypes(cur.Elems, v, pol) // covariant
 	out := cur
 	if changed {
@@ -112,22 +115,8 @@ func (t *RecordType) Accept(v TypeVisitor, pol Polarity) Type {
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
-	cur := t
-	if e.Type != nil {
-		cur = e.Type.(*RecordType)
-	}
-	fields := cur.Fields // copy-on-write
-	changed := false
-	for i, f := range cur.Fields {
-		ft := f.Type.Accept(v, pol) // fields covariant
-		if ft != f.Type {
-			if !changed {
-				fields = append([]*RecordField(nil), cur.Fields...)
-				changed = true
-			}
-			fields[i] = &RecordField{Name: f.Name, Type: ft}
-		}
-	}
+	cur := descendReplacement(t, e)
+	fields, changed := acceptFields(cur.Fields, v, pol) // covariant
 	out := cur
 	if changed {
 		out = &RecordType{Fields: fields}
@@ -140,10 +129,7 @@ func (t *PromiseType) Accept(v TypeVisitor, pol Polarity) Type {
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
-	cur := t
-	if e.Type != nil {
-		cur = e.Type.(*PromiseType)
-	}
+	cur := descendReplacement(t, e)
 	inner := cur.Inner.Accept(v, pol) // covariant, no auto-flatten
 	out := cur
 	if inner != cur.Inner {
@@ -157,10 +143,7 @@ func (t *UnionType) Accept(v TypeVisitor, pol Polarity) Type {
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
-	cur := t
-	if e.Type != nil {
-		cur = e.Type.(*UnionType)
-	}
+	cur := descendReplacement(t, e)
 	types, changed := acceptTypes(cur.Types, v, pol)
 	out := cur
 	if changed {
@@ -174,10 +157,7 @@ func (t *IntersectionType) Accept(v TypeVisitor, pol Polarity) Type {
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
-	cur := t
-	if e.Type != nil {
-		cur = e.Type.(*IntersectionType)
-	}
+	cur := descendReplacement(t, e)
 	types, changed := acceptTypes(cur.Types, v, pol)
 	out := cur
 	if changed {
@@ -199,6 +179,42 @@ func acceptTypes(ts []Type, v TypeVisitor, pol Polarity) ([]Type, bool) {
 				changed = true
 			}
 			out[i] = ne
+		}
+	}
+	return out, changed
+}
+
+// acceptParams walks each parameter's type CONTRAVARIANTLY (pol flipped),
+// copy-on-write like acceptTypes: a changed param gets a fresh *FuncParam (surface
+// markers Optional/Rest ride through), unchanged params keep their pointer.
+func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, bool) {
+	out := ps
+	changed := false
+	for i, p := range ps {
+		pt := p.Type.Accept(v, pol.Flip())
+		if pt != p.Type {
+			if !changed {
+				out = append([]*FuncParam(nil), ps...)
+				changed = true
+			}
+			out[i] = &FuncParam{Pattern: p.Pattern, Type: pt, Optional: p.Optional, Rest: p.Rest}
+		}
+	}
+	return out, changed
+}
+
+// acceptFields walks each field's type covariantly, copy-on-write like acceptParams.
+func acceptFields(fs []*RecordField, v TypeVisitor, pol Polarity) ([]*RecordField, bool) {
+	out := fs
+	changed := false
+	for i, f := range fs {
+		ft := f.Type.Accept(v, pol)
+		if ft != f.Type {
+			if !changed {
+				out = append([]*RecordField(nil), fs...)
+				changed = true
+			}
+			out[i] = &RecordField{Name: f.Name, Type: ft}
 		}
 	}
 	return out, changed
