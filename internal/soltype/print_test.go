@@ -187,13 +187,13 @@ func TestPrintUnnamedParamFallback(t *testing.T) {
 func TestPrintScheme(t *testing.T) {
 	t.Run("no free vars renders as Print", func(t *testing.T) {
 		ty := &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}
-		require.Equal(t, "fn (x: number) -> string", PrintScheme(ty))
+		require.Equal(t, "fn (x: number) -> string", PrintAsScheme(ty))
 	})
 
 	t.Run("identity gets one type parameter", func(t *testing.T) {
 		a := &TypeVarType{ID: 7, Level: 1}
 		ty := &FuncType{Params: []*FuncParam{identP("x", a)}, Ret: a}
-		require.Equal(t, "fn <T0>(x: T0) -> T0", PrintScheme(ty))
+		require.Equal(t, "fn <T0>(x: T0) -> T0", PrintAsScheme(ty))
 	})
 
 	t.Run("distinct vars are named by first appearance", func(t *testing.T) {
@@ -204,20 +204,20 @@ func TestPrintScheme(t *testing.T) {
 			Params: []*FuncParam{identP("x", a), identP("y", b)},
 			Ret:    &TupleType{Elems: []Type{b, a}},
 		}
-		require.Equal(t, "fn <T0, T1>(x: T0, y: T1) -> [T1, T0]", PrintScheme(ty))
+		require.Equal(t, "fn <T0, T1>(x: T0, y: T1) -> [T1, T0]", PrintAsScheme(ty))
 	})
 
 	t.Run("a free var keeps one name across positions", func(t *testing.T) {
 		a := &TypeVarType{ID: 3, Level: 1}
 		ty := &TupleType{Elems: []Type{a, a}}
-		require.Equal(t, "<T0> [T0, T0]", PrintScheme(ty))
+		require.Equal(t, "<T0> [T0, T0]", PrintAsScheme(ty))
 	})
 }
 
-// PrintSchemeParams names ONLY the variables the predicate accepts as quantified
+// PrintAsSchemeWith names ONLY the variables the predicate accepts as quantified
 // type parameters; a variable it rejects (one coalescing should have inlined)
 // renders as the raw t{ID} debug anchor instead of being masked as a <Tn>
-// parameter. This preserves the leak signal that plain PrintScheme (which names
+// parameter. This preserves the leak signal that plain PrintAsScheme (which names
 // every free var) would hide.
 func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 	param := &TypeVarType{ID: 1, Level: 2}   // a genuine type parameter (Level > 1)
@@ -226,6 +226,6 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 		Params: []*FuncParam{identP("x", param)},
 		Ret:    &TupleType{Elems: []Type{param, leaked}},
 	}
-	got := PrintSchemeParams(ty, func(v *TypeVarType) bool { return v.Level > 1 })
+	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 })
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)
 }

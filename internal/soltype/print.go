@@ -46,7 +46,7 @@ func typePrec(t Type) int {
 // differential harness. It renders the M1 coalesced type set only
 // (PrimType/LitType/FuncType/TupleType/Void/NeverType/UnknownType/UnionType/
 // IntersectionType). Print itself emits no <T0, ...> quantifier prefix — a
-// monotype has no parameters to name; PrintScheme renders the generalized form.
+// monotype has no parameters to name; PrintAsScheme renders the generalized form.
 //
 // Print is distinct from solver's describe(): describe renders a RAW,
 // uncoalesced type (t0, function, number) mid-constrain for error messages,
@@ -62,10 +62,10 @@ func Print(t Type) string {
 	return (&namedPrinter{}).printType(t)
 }
 
-// PrintScheme renders a coalesced GENERALIZED type (M3): it collects the type's
+// PrintAsScheme renders a coalesced GENERALIZED type (M3): it collects the type's
 // free variables into a <T0, T1, …> quantifier prefix and renders each as its
 // assigned name. A type with no free variables renders exactly as Print would (no
-// prefix), so PrintScheme is safe on a monotype. The prefix attaches to a
+// prefix), so PrintAsScheme is safe on a monotype. The prefix attaches to a
 // function (`fn <T0>(…) -> …`, matching Escalier's generic-function surface
 // syntax); a non-function body carrying free variables — not produced by M3's
 // generalization, which only generalizes function values — falls back to a
@@ -75,25 +75,21 @@ func Print(t Type) string {
 // then return; tuple elements; record fields), so the same coalesced variable
 // renders under one name everywhere it occurs.
 //
-// PrintScheme treats EVERY free variable as a quantified parameter — for a caller
+// PrintAsScheme treats EVERY free variable as a quantified parameter — for a caller
 // that trusts its input is a fully-generalized type. The solver's renderScheme
-// uses PrintSchemeParams to restrict naming to the variables generalization
+// uses PrintAsSchemeWith to restrict naming to the variables generalization
 // actually quantified, so a stray variable is not disguised as a parameter.
-func PrintScheme(t Type) string {
-	return printScheme(t, func(*TypeVarType) bool { return true })
+func PrintAsScheme(t Type) string {
+	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true })
 }
 
-// PrintSchemeParams renders a generalized type, naming ONLY the free variables
+// PrintAsSchemeWith renders a generalized type, naming ONLY the free variables
 // isParam accepts as quantified type parameters; any other free variable renders
 // as the raw `t{ID}` debug form instead of being masked as a parameter. This
 // preserves the leak anchor: a variable coalescing failed to inline (a captured
 // var that escaped, a stray inference var) shows as `t{ID}` rather than a spurious
 // `<Tn>` that would make a malformed signature look valid.
-func PrintSchemeParams(t Type, isParam func(*TypeVarType) bool) string {
-	return printScheme(t, isParam)
-}
-
-func printScheme(t Type, isParam func(*TypeVarType) bool) string {
+func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 	names := map[*TypeVarType]string{}
 	var labels []string
 	for _, v := range freeTypeVars(t) {
@@ -168,7 +164,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 
 // namedPrinter carries the optional retained-variable → quantifier-name map for a
 // single render. names is nil for plain Print (a raw variable then renders as
-// `t{ID}`) and populated by PrintScheme (a retained variable renders as `T{i}`).
+// `t{ID}`) and populated by PrintAsScheme (a retained variable renders as `T{i}`).
 type namedPrinter struct {
 	names map[*TypeVarType]string
 }
@@ -242,7 +238,7 @@ func (p *namedPrinter) printType(t Type) string {
 }
 
 // printFuncTail renders the "(params) -> ret" portion of a function, without the
-// leading "fn" keyword. Kept as a separate helper so PrintScheme can compose it
+// leading "fn" keyword. Kept as a separate helper so PrintAsScheme can compose it
 // with a <...> quantifier prefix without byte-slicing the "fn " back off.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	ps := make([]string, len(t.Params))

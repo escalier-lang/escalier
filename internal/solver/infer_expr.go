@@ -49,13 +49,15 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 // correct here. M4 moves that error to the value-position consumer once
 // qualified Foo.bar access lands.
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
-	// A live binding always has at least one scheme (inferComponent pre-binds a
-	// fresh MonoScheme before inferring, and a failed binding is removeValue'd, not
-	// left at len 0). Guard the index anyway: the slice representation makes len>=1
-	// an invariant rather than a non-nilable field, so a malformed empty binding
-	// degrades to an unknown-identifier error here instead of an index-out-of-range
-	// panic. PR1 never builds an overloaded binding; the IsOverloaded value-position
-	// branch (arm intersection) is PR6.
+	// Any binding still in scope has at least one scheme: inferComponent pre-binds
+	// each group member to a fresh MonoScheme, and on failure deletes the binding
+	// (scope.removeValue) rather than leaving it with an empty Schemes slice. So the
+	// len > 0 check below should never fail in practice — but Schemes is a slice, not
+	// a guaranteed-non-empty field, so we guard it anyway: a malformed empty binding
+	// degrades to an unknown-identifier error here instead of panicking on Schemes[0].
+	//
+	// PR1 never builds an overloaded binding; the IsOverloaded value-position branch
+	// (arm intersection) is PR6.
 	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
 		t := c.instantiate(b.Schemes[0], lvl)
 		c.recordType(e, t)
@@ -228,16 +230,16 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	return res
 }
 
-// concreteFunc resolves a callee to the concrete FuncType to recover a call's
-// return type from. M2's inferIdent returned a binding's coalesced FuncType
-// directly, so a bare type-assertion sufficed; M3's inferIdent returns
-// instantiate(scheme), which for a named/generalized callee is a fresh var whose
-// (freshened) lower bound is the FuncType. So look through a var to its first
-// FuncType lower bound — otherwise an arity-mismatched call to a named function
-// would lose return recovery and yield `never` (the inline-callee path kept it).
-// A deferred callee with no concrete lower bound yet yields ok=false (no recovery,
-// as before). PR1 bindings have at most one func lower bound; overload sets (PR6)
-// resolve through resolveOverload, not here.
+// concreteFunc resolves a callee to its concrete FuncType, used to recover a
+// call's return type. The callee is either a FuncType directly (an inline callee)
+// or a var whose first FuncType lower bound is the function (a named/generalized
+// callee, since inferIdent returns instantiate(scheme) — a fresh var). Looking
+// through the var matters because otherwise an arity-mismatched call to a named
+// function would lose return recovery and yield `never`.
+//
+// ok=false means no concrete func was found (e.g. a deferred callee with no lower
+// bound yet) — the caller skips return recovery. PR1 bindings have at most one
+// func lower bound; overload sets (PR6) resolve through resolveOverload, not here.
 func concreteFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:

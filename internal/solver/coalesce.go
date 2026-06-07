@@ -227,7 +227,7 @@ func coalesceSchemeRec(
 }
 
 // schemeType returns a scheme's coalesced DISPLAY type (variable-free except for
-// retained type parameters), the soltype handed to soltype.PrintScheme and
+// retained type parameters), the soltype handed to soltype.PrintAsScheme and
 // recorded in Info. A MonoScheme coalesces uniformly (no retained parameters); a
 // PolyScheme retains its quantified parameters via coalesceScheme.
 func schemeType(s TypeScheme) soltype.Type {
@@ -248,13 +248,13 @@ func schemeType(s TypeScheme) soltype.Type {
 // variable that escaped coalescing (a captured var at Level <= sc.Level that was
 // not inlined) renders as the raw t{ID} debug form instead of being disguised as a
 // spurious type parameter. A MonoScheme coalesces to a var-free type, so plain
-// PrintScheme suffices.
+// PrintAsScheme suffices.
 func renderScheme(s TypeScheme) string {
 	switch sc := s.(type) {
 	case *MonoScheme:
-		return soltype.PrintScheme(coalesce(sc.Ty, soltype.Positive))
+		return soltype.PrintAsScheme(coalesce(sc.Ty, soltype.Positive))
 	case *PolyScheme:
-		return soltype.PrintSchemeParams(coalesceScheme(sc.Body, sc.Level), func(v *soltype.TypeVarType) bool {
+		return soltype.PrintAsSchemeWith(coalesceScheme(sc.Body, sc.Level), func(v *soltype.TypeVarType) bool {
 			return v.Level > sc.Level
 		})
 	}

@@ -227,7 +227,7 @@ func (c *checker) inferComponent(
 		//
 		// NOTE: for a GENERALIZED binding this display type RETAINS its quantified
 		// type-parameter variables (it is not var-free), so consumers must render it
-		// with soltype.PrintScheme — plain soltype.Print renders those vars as the
+		// with soltype.PrintAsScheme — plain soltype.Print renders those vars as the
 		// raw `t{ID}` debug form. (renderScheme is the canonical renderer.)
 		display := schemeType(scheme)
 		switch d := b.primary.(type) {

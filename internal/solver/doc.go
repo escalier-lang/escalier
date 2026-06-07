@@ -24,7 +24,7 @@
 // FromInstantiation provenance edge (prov.go), and scheme rendering — occurrence
 // analysis + single-polarity elimination retaining genuine type parameters
 // (coalesce.go's coalesceScheme) with the printer's <T0, …> quantifier prefix
-// (soltype.PrintScheme). What remains of the polymorphism-rendering bundle is
+// (soltype.PrintAsScheme). What remains of the polymorphism-rendering bundle is
 // PR2's CO-OCCURRENCE merging (distinct variables that always appear together),
 // which makes renders compact where the same variable isn't already shared across
 // positions; generalize's simplify hook is a no-op until then.
