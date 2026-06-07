@@ -108,11 +108,13 @@ earlier drafts of this plan assumed spike-era names that never shipped.
 
 ## Sequencing rationale
 
-Eight PRs (PR0–PR7) on three landed prerequisites (M1, M2, M2.5). Solid edges =
+Nine PRs (PR0–PR8) on three landed prerequisites (M1, M2, M2.5). Solid edges =
 hard dependency (downstream won't compile / pass tests without upstream); dashed
 = soft (downstream lands correctly but degraded until upstream fills it in). PR7
 is a behavior-preserving refactor (the shared `soltype` rewriting visitor) — it
-depends only on PR1 and is otherwise independent.
+depends only on PR1 and is otherwise independent. PR8 is a robustness fix (the
+error-recovery sentinel) — it depends only on M1 and M2.5, nothing depends on it,
+but it stops every error-emitting PR from cascading a spurious second diagnostic.
 
 ```mermaid
 flowchart TD
@@ -128,6 +130,7 @@ flowchart TD
     PR5[PR5: probe API]
     PR6[PR6: overloading]
     PR7[PR7: soltype rewriting visitor — refactor]
+    PR8[PR8: error-recovery type]
 
     M2 --> PR1
     M25 --> PR1
@@ -135,6 +138,8 @@ flowchart TD
     M2 --> PR4
     M25 --> PR4
     M1 --> PR5
+    M1 --> PR8
+    M25 --> PR8
     PR0 --> PR4
     PR1 --> PR2
     PR1 --> PR6
@@ -143,10 +148,11 @@ flowchart TD
     PR2 -. compact renders .-> PR1
     PR4 -. specificity accounts for exactness .-> PR6
     PR7 -. visitor available for simplify's rewrite .-> PR2
+    PR8 -. suppresses recovery cascades .-> PR3
 
     classDef prereq fill:#eee,stroke:#999,stroke-dasharray:3 3;
     classDef refactor fill:#f5f5ff,stroke:#88a,stroke-dasharray:2 2;
-    class PR7 refactor;
+    class PR7,PR8 refactor;
 ```
 
 Parallelizable tracks: the **polymorphism chain** (PR1 → PR2), **async + block
@@ -184,6 +190,13 @@ prerequisite for every error-emitting PR; only the strongest edges are drawn.
   concrete instance (the trigger to extract), hence the PR1 edge; nothing depends
   on it. Numbered last as a non-blocking cleanup, but lands cleanest right after
   PR1 so PR2's `rewrite` can reuse the visitor.
+- **PR8 (error-recovery type) depends only on M1 + M2.5.** A self-contained
+  robustness fix: one new `soltype` atom plus two short-circuit arms at the top of
+  `constrain`, repointing `report` off `never`. Nothing depends on it, but every
+  error-emitting site (PR3's `if`/`await` recovery, the `report` placeholder
+  generally) stops cascading a spurious second `cannot constrain never <: …` once
+  it lands. Numbered last alongside PR7 as a non-blocking quality fix; surfaced
+  while implementing PR3.
 
 ### Shared files & merge ordering
 
@@ -221,6 +234,15 @@ not semantic. Tracks: **A** = PR1→PR2, **B** = PR3, **C** = PR0→PR4, **D** =
   (`constrain.go` bound-append sites). Since PR7 is a pure refactor with no
   behavior change, sequence it *after* PR1/PR4/PR5 have settled those regions and
   rebase onto them — don't run it concurrently.
+- **PR8 (error-recovery type) touches `soltype/type.go` (the new `ErrorType` atom),
+  `constrain.go` (the two top-of-function short-circuits), `infer.go` (`report`),
+  and the recovery sites whose `ok=false`-skips retire.** It overlaps PR4
+  (`soltype/type.go` fields, `constrain.go` `FuncType` case) and PR5 (`constrain.go`
+  bound-append sites), but its `constrain` edit is a short-circuit *above* the
+  structural switch, so it rebases cleanly past either. Land it after PR3 (which
+  surfaces the cascade the tests assert away) and after PR7 if PR7 has landed (so
+  the `ErrorType` pass-through rides the visitor rather than another hand-rolled
+  arm); otherwise it stands alone.
 
 ## Core types added or changed in M3
 
@@ -241,6 +263,20 @@ type FuncParam struct {
     Type     Type
     Optional bool // PR4: x? — lowers `required` without changing arity
 }
+```
+
+**`ErrorType` — the error-recovery sentinel** (PR8). A new childless `soltype`
+atom, distinct from `never`/`unknown`. The latter two are coalesced-**output**
+only ([type.go](../../internal/soltype/type.go): "appear only as coalesced
+output, never as constrain inputs"); `ErrorType` is a legal constrain **input**
+that absorbs in both directions, so a reported diagnostic's placeholder never
+cascades a second one. Never user-spellable (distinct from a future `any`), minted
+only by `report`:
+
+```go
+// internal/soltype/type.go
+type ErrorType struct{} // ⊤⊥ absorbing sentinel; see PR8
+func (*ErrorType) isType() {}
 ```
 
 **Schemes** (PR1) — new file `internal/solver/poly.go`:
@@ -936,6 +972,97 @@ param's type allocates a new node but reuses the unchanged `*FuncParam`s).
 subtlety is getting the polarity-flip and the var-case `SkipChildren` short-circuit
 right, both directly asserted. Lands cleanest after PR1/PR4/PR5 settle
 `coalesce.go`/`constrain.go`/`poly.go` (see "Shared files & merge ordering").
+
+---
+
+### PR8 — Error-recovery type (the `ErrorType` absorbing sentinel)
+
+A robustness fix surfaced while implementing PR3. Today `report`
+([infer.go](../../internal/solver/infer.go)) hands back `&soltype.NeverType{}` as
+the value-position placeholder after emitting a diagnostic. But `never` (⊥) and
+`unknown` (⊤) are **coalesced-output only** in this design —
+[type.go](../../internal/soltype/type.go) is explicit that, like
+`Union`/`Intersection`, "their *subtyping rules* in constrain are M6 … these nodes
+appear only as coalesced output, never as constrain inputs." Error recovery is the
+one path that violates that invariant: it feeds a `never` back into `constrain`,
+where there is no `never <: T` (nor `T <: never`) input rule, so the placeholder
+**cascades a second, spurious `cannot constrain never <: …`** on top of the real
+error. PR3's `if <unknown> { … }` (constrains `never <: boolean`) and `await
+<unknown>` (constrains `never <: Promise<U>`) are the live cases; the walk already
+dodges the RHS half elsewhere with scattered `ok=false`-skip special-cases (e.g.
+`inferVarDeclInit`, `inferFunc`'s return-annotation arm, `resolveTypeAnn`
+recovery), which is the same problem patched site-by-site.
+
+PR8 replaces the overloaded `never` placeholder with a dedicated sentinel, so the
+fix is one mechanism instead of a guard at every constraint site:
+
+- **`soltype.ErrorType`** — a childless atom, distinct from `never`/`unknown`, that
+  is a *legal `constrain` input* and **absorbs in both directions**: any constraint
+  with an `ErrorType` operand trivially succeeds. This keeps `never` as the precise
+  lattice bottom (output-only, its M6 input rule still deferred) and gives recovery
+  its own input-legal, direction-agnostic behavior — the standard "error type" of
+  TS / Roslyn / GHC.
+- **Two short-circuit arms at the TOP of `constrain`** — before the structural
+  switch and the variable arms — so an `ErrorType` operand returns `nil`
+  immediately and **never enters a variable's bound list**. coalesce / extrude /
+  freshenAbove therefore never see it *propagated through bounds*; they need only
+  trivial childless-atom pass-through arms (since `report` can still hand an
+  `ErrorType` out as a binding's type, e.g. `val x = <unknown ident>`).
+- **`report` returns `&soltype.ErrorType{}`** instead of `&soltype.NeverType{}`.
+  Minted **only** by `report` (where a diagnostic was definitely already emitted),
+  never by `freshVar` — the discipline that keeps absorption from silently hiding a
+  genuine checker bug.
+- **Retire the now-redundant `ok=false`-skip guards** that exist purely to dodge a
+  `never`-in-RHS cascade — the constraint now absorbs on its own. *Keep* the cases
+  that adopt a **better inferred type** (a valued `val x: <bad ann> = 5` still keeps
+  `5` for downstream completions rather than poisoning `x` to `error`): PR8 changes
+  the *no-good-type* recovery, not every recovery.
+- **Internal-only.** `ErrorType` is never produced by `resolveTypeAnn` from user
+  syntax and never rendered into a signature a user authored — distinct from a
+  future user-facing `any`. It renders as `error` for diagnostics / debug only.
+
+**Sketch:**
+
+```go
+// internal/soltype/type.go — a new childless atom. LevelOf's default arm already
+// returns 0 for it; print/describe render "error".
+type ErrorType struct{}
+func (*ErrorType) isType() {}
+```
+
+```go
+// internal/solver/constrain.go — top of constrain, BEFORE the structural switch
+// and the var arms. An ErrorType operand carries an already-reported error; it
+// absorbs both ways so recovery never cascades, and short-circuiting here keeps it
+// out of every bound list.
+if _, ok := lhs.(*soltype.ErrorType); ok { return nil }
+if _, ok := rhs.(*soltype.ErrorType); ok { return nil }
+```
+
+```go
+// internal/solver/infer.go
+func (c *checker) report(e SolverError) soltype.Type {
+    c.errs = append(c.errs, e)
+    return &soltype.ErrorType{} // was &soltype.NeverType{}
+}
+```
+
+**Tests:** the PR3 cascade cases now yield **exactly one** diagnostic — `if
+<unknown> { … }` reports only the `UnknownIdentifierError` (no trailing `cannot
+constrain never <: boolean`); `await <unknown>` inside an `async fn` reports only
+the unknown identifier; an unsupported RHS annotation reports only its
+unsupported-node error. Unit `constrain` tests pin `ErrorType` absorbing as **both**
+LHS and RHS against every concrete and against a var. A value flowing through an
+error-typed binding produces no secondary errors. The existing blame / `requireBlame`
+suite passes unchanged once the redundant `ok=false`-skips are removed.
+
+**Risk:** low–medium. The real risk is **over-suppression** — an `ErrorType` that
+leaks too far would silence constraints that *should* fail, masking genuine checker
+bugs during development. Contained by the "minted only by `report`" discipline and
+by short-circuiting at the top of `constrain` (it absorbs but does not spread). The
+`soltype` fan-out is cheap (a childless atom, not a recursive former). Touches
+`soltype/type.go` (+ print / describe), `constrain.go` (the two arms), `infer.go`
+(`report`), and the recovery sites whose `ok=false`-skips retire.
 
 ## Risks & gates
 
