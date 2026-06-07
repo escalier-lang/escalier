@@ -84,18 +84,32 @@ type IdentPat struct{ Name string }
 
 func (*IdentPat) isPat() {}
 
-// FuncParam mirrors type_system.FuncParam. M1 omits Optional (no optional
-// params until M3+); Pattern is reachable only through Pat concretes M1
-// defines (IdentPat).
+// FuncParam mirrors type_system.FuncParam. Pattern is reachable only through Pat
+// concretes M1 defines (IdentPat). M3 (PR4) adds Optional: an `x?` parameter
+// lowers the function's `required` count (the accept-set lower bound) without
+// removing the parameter from the declared list — it stays at its position with
+// its type, the slot simply may go unsupplied.
 type FuncParam struct {
-	Pattern Pat
-	Type    Type
+	Pattern  Pat
+	Type     Type
+	Optional bool // PR4: x? — lowers `required` without changing arity (len(Params))
 }
 
-// FuncType is a (possibly multi-argument) function type.
+// FuncType is a (possibly multi-argument) function type. M3 (PR4) adds Exact: a
+// bare `fn(p1..pn)` is exact (it tolerates at most n arguments — accept-set
+// [required, n]); a `fn(p1..pn, ...)` written with a trailing `...` is inexact (it
+// tolerates extra arguments when used as a callback — accept-set [required, ∞)).
+// Exactness governs callback subtyping, not direct calls (#677); see solver's
+// acceptSet / the FuncType<:FuncType constrain rule.
+//
+// CAUTION: the zero value is Exact=false (inexact). A bare function VALUE is exact,
+// so every site that mints a concrete function (inferFunc, the inferCall demand,
+// prelude operators) sets Exact:true explicitly, and the structural rewriters
+// (coalesce, extrude, freshenAbove) carry the flag through unchanged.
 type FuncType struct {
 	Params []*FuncParam
 	Ret    Type
+	Exact  bool // PR4: bare fn(...) ⇒ true; fn(..., ...) ⇒ false (the zero value)
 }
 
 // TupleType is a fixed-length tuple type.

@@ -138,7 +138,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A parameter binding never generalizes — its var is fixed for the body — so
 		// it is a MonoScheme; instantiate returns pt unchanged at every use.
 		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
-		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt}
+		// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
+		// `required` count without dropping the param — carried onto the soltype so
+		// the accept-set rule and the printer (x?: T) see it.
+		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
 	}
 
 	var ret soltype.Type = &soltype.Void{}
@@ -171,7 +174,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			ret = &soltype.UnknownType{}
 		}
 	}
-	ft := &soltype.FuncType{Params: params, Ret: ret}
+	// A written function value is EXACT (accept-set [required, len(Params)]): it has a
+	// definite parameter list and rejects extra arguments. Inexactness (`...`) is a
+	// property of function-type ANNOTATIONS describing callback slots, which the
+	// solver does not resolve yet (resolveTypeAnn handles primitives only), so every
+	// function value the walk builds is exact.
+	ft := &soltype.FuncType{Params: params, Ret: ret, Exact: true}
 	// Record the function's own type against its node so a function flowing into a
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is
@@ -210,6 +218,9 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // bare FuncType (an inline callee) OR as a var whose lower bound is a FuncType (a
 // named/generalized callee, which inferIdent now resolves through instantiate — see
 // concreteFunc); both recover, so recovery no longer regresses for named callees.
+//
+// PR4 adds two #677 pieces: an EXACT all-required call demand, and the extra-arg
+// lint that rejects passing more arguments than a concrete callee declares.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	args := make([]*soltype.FuncParam, len(e.Args))
@@ -218,12 +229,35 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, Application)
-	callShape := &soltype.FuncType{Params: args, Ret: res}
+
+	// Extra-arg lint (#677 §4.2.3): a DIRECT call rejects more arguments than the
+	// callee declares — for exact AND inexact callees alike. This is a call-site
+	// check the subtype lattice deliberately does NOT model: an inexact callee
+	// tolerates extras as a *callback* (accept-set [required, ∞)), but supplying
+	// extras to a call you can see is treated as a mistake. It fires only when the
+	// callee is concrete; for a deferred (var) callee it is best-effort skipped while
+	// "too few / required" still flows through the constraint below.
+	fn, isConcrete := concreteFunc(callee)
+	demand := args
+	if isConcrete && len(args) > len(fn.Params) {
+		// Hand the constraint only the arity-matched prefix so the EXACT synth's
+		// accept-set gate does not ALSO report arity — the lint owns the single,
+		// uniform too-many message; the constraint does pure type-flow.
+		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
+		demand = args[:len(fn.Params)]
+	}
+
+	// EXACT + all-required call demand: accept(synth) = [N, N] (N = arg count), so
+	// the constraint reads exactly "callee accepts being called with N args"
+	// (required(callee) <= N <= upper(callee)). An INEXACT synth (the Go zero value)
+	// would have accept [N, ∞), forcing upper(callee) = ∞ and rejecting every call to
+	// an exact function — so Exact:true here is load-bearing, not decorative.
+	callShape := &soltype.FuncType{Params: demand, Ret: res, Exact: true}
 	// Record the synthesized call-shape against the CallExpr so FuncArityMismatchError
-	// resolves its blame to the call.
+	// (the surviving "too few / required" path) resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
-	if fn, ok := concreteFunc(callee); ok {
+	if isConcrete {
 		c.constrain(e, fn.Ret, res)
 	}
 	c.recordType(e, res)

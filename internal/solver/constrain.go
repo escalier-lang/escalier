@@ -1,9 +1,42 @@
 package solver
 
 import (
+	"math"
+
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
+
+// unboundedArity is the upper end of an inexact function's accept-set ([req, ∞)):
+// an inexact function tolerates any number of trailing arguments as a callback.
+const unboundedArity = math.MaxInt
+
+// requiredCount is the number of required (non-optional) parameters of f — the
+// LOWER bound of its accept-set. An optional (`x?`) parameter does not count.
+func requiredCount(f *soltype.FuncType) int {
+	n := 0
+	for _, p := range f.Params {
+		if !p.Optional {
+			n++
+		}
+	}
+	return n
+}
+
+// acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when
+// invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f is exact
+// (a finite upper bound) and unboundedArity when f is inexact. Read a supertype
+// callback slot's accept-set as "the argument counts whoever holds this slot may
+// invoke the supplied function with."
+func acceptSet(f *soltype.FuncType) (lo, hi int) {
+	lo = requiredCount(f)
+	if f.Exact {
+		hi = len(f.Params)
+	} else {
+		hi = unboundedArity
+	}
+	return lo, hi
+}
 
 // constraintKey keys the coinductive seen-set by pointer identity (Go's
 // interface == on pointer-backed soltype concretes). Sufficient for M1: cycles
@@ -62,18 +95,29 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		}
 	case *soltype.FuncType:
 		if r, ok := rhs.(*soltype.FuncType); ok {
-			// Exact arity: M1 functions are exact (Escalier is exact-by-default),
-			// so subtyping requires the SAME number of params — parallel to the
-			// exact-tuple same-length rule below. The inexact
-			// "fewer-params-is-subtype" arm (a function ignoring extra trailing
-			// args) lands in M3 with the exactness flag (`...`), exactly as the
-			// inexact-tuple arm lands in M4. See
-			// planning/simple_sub/01-milestones.md.
-			if len(l.Params) != len(r.Params) {
+			// Accept-set subtyping (#677 §4.2.1): read r as a callback slot. l <: r
+			// iff accept(l) ⊇ accept(r) — l must tolerate every argument count a
+			// holder of r may invoke it with. With accept(l) = [loL, hiL] and
+			// accept(r) = [loR, hiR]:
+			//   - loL <= loR — l must not DEMAND more args than r might supply, and
+			//   - hiL >= hiR — l must not REFUSE an arg count r might supply.
+			// The upper-bound clause is what exactness governs (an exact l caps hiL at
+			// len(l.Params), so it can't fill a wider/inexact slot); the lower-bound
+			// clause is the `required` part (a typed-rest/optional lowers it). This
+			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
+			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
+			loL, hiL := acceptSet(l)
+			loR, hiR := acceptSet(r)
+			if loL > loR || hiL < hiR {
 				return []SolverError{&FuncArityMismatchError{LHS: l, RHS: r}}
 			}
+			// Shared positions are checked per-parameter (params contravariant,
+			// return covariant); positions only one side declares are covered by the
+			// accept-set gate above (the slot never supplies them, or the inexact
+			// supplier tolerates them).
 			var errs []SolverError
-			for i := range l.Params {
+			n := min(len(l.Params), len(r.Params))
+			for i := 0; i < n; i++ {
 				errs = append(errs, c.constrain(r.Params[i].Type, l.Params[i].Type, seen)...) // contravariant
 			}
 			return append(errs, c.constrain(l.Ret, r.Ret, seen)...) // covariant
@@ -194,9 +238,9 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 	case *soltype.FuncType:
 		params := make([]*soltype.FuncParam, len(t.Params))
 		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache)}
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache), Optional: p.Optional}
 		}
-		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache)}
+		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache), Exact: t.Exact}
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {

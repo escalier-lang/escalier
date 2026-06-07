@@ -514,17 +514,18 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 	require.Equal(t, map[string]string{"y": "never", "z": "5"}, values)
 }
 
-// Error recovery for a NAMED callee: an arity-mismatched call still yields the
+// Error recovery for a NAMED callee: a too-many-args call still yields the
 // callee's declared return type (not `never`), matching the inline-callee recovery
-// asserted by TestInferCallArityMismatch. M3's inferIdent returns an instantiated
+// asserted by TestInferCallTooManyArgs. M3's inferIdent returns an instantiated
 // var rather than a concrete FuncType, so inferCall recovers the return through the
 // var's FuncType lower bound (concreteFunc); without that, `r` regressed to `never`.
+// PR4: too-many is the extra-arg lint (TooManyArgsError), not a FuncArityMismatch.
 func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { x }
 		val r = f(1, 2)
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 2", errs[0].Message())
+	require.Equal(t, "Too many arguments: expected at most 1, but got 2", errs[0].Message())
 	require.Equal(t, "number", values["r"], "the result recovers to the declared return, not never")
 }
