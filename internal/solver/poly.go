@@ -134,6 +134,8 @@ func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*solt
 			fields[i] = &soltype.RecordField{Name: f.Name, Type: c.freshenAbove(lim, f.Type, lvl, cache)}
 		}
 		return &soltype.RecordType{Fields: fields}
+	case *soltype.PromiseType:
+		return &soltype.PromiseType{Inner: c.freshenAbove(lim, t.Inner, lvl, cache)}
 	default:
 		// PrimType/LitType/Void/NeverType/UnknownType and the coalesced-only
 		// Union/IntersectionType have no level-bearing children reachable here.

@@ -322,6 +322,15 @@ type NotEnoughArgsError struct {
 	Fn   *soltype.FuncType
 }
 
+// AwaitOutsideAsyncError fires when an `await` expression appears outside the
+// body of an `async fn` (the walk's rule, not the type rule — per M3's plan,
+// "Awaiting outside an `async` function is rejected by the AST walk, not by the
+// type rule"). The argument is still walked (so any errors inside it surface),
+// but the await contributes a `never` placeholder so callers don't cascade.
+type AwaitOutsideAsyncError struct {
+	Await *ast.AwaitExpr
+}
+
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
 func (*TooManyArgsError) isSolverError()          {}
@@ -332,6 +341,7 @@ func (*BodyDeclNotAllowedError) isSolverError()   {}
 func (*MissingInitializerError) isSolverError()   {}
 func (*DuplicateDeclarationError) isSolverError() {}
 func (*OverloadNotSupportedError) isSolverError() {}
+func (*AwaitOutsideAsyncError) isSolverError()    {}
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
@@ -411,6 +421,12 @@ func (e *OverloadNotSupportedError) Message() string {
 	return "Function overloads are not supported in M2: " + e.Name
 }
 
+func (e *AwaitOutsideAsyncError) Span() ast.Span      { return e.Await.Span() }
+func (e *AwaitOutsideAsyncError) Related() []ast.Span { return nil }
+func (e *AwaitOutsideAsyncError) Message() string {
+	return "await can only be used inside an async function"
+}
+
 func (e *CannotConstrainError) Message() string {
 	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.LHS), describe(e.RHS))
 }
@@ -459,6 +475,8 @@ func describe(t soltype.Type) string {
 		return "tuple"
 	case *soltype.RecordType:
 		return "object"
+	case *soltype.PromiseType:
+		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.Void:
 		return "void"
 	case *soltype.NeverType:

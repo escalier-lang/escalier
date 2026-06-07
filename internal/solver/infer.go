@@ -23,12 +23,56 @@ type checker struct {
 	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
 
+	// fn is the enclosing function context for the body currently being walked —
+	// async flag (does `await` here resolve?), the live list of every ReturnStmt
+	// expression type collected from within the body so far, and the return-join
+	// var (PR3). It is nil when nothing is being walked / when we are at module
+	// top-level: a top-level `await` or `return` is therefore rejected by
+	// inferAwait / unreachable for inferStmt (top-level statements are decls).
+	// inferFunc pushes a fresh context on entry and pops it on exit, so a nested
+	// function definition has its own returns collection (a return inside an inner
+	// fn never escapes to the outer).
+	fn *funcCtx
+
 	// debugProv, when set, makes recordProv panic on a conflicting overwrite (the
 	// same type pointer recorded against a *different* node) — turning the
 	// implicit "every minted type is a unique pointer" invariant into an enforced
 	// one. Off in production (a span bug must never crash the compiler); flipped on
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
+}
+
+// funcCtx is the per-function inference context — pushed by inferFunc on entry
+// to a function body and popped on exit, with a parent pointer so a nested fn
+// can find its own (immediate) context without seeing the outer one's returns.
+// The async flag lets inferAwait diagnose a non-async use; returns accumulates
+// every ReturnStmt expression type collected from within the body (in source
+// order, valued AND bare — bare returns contribute Void) so inferFunc can join
+// them with the block tail before constraining against the return annotation,
+// finishing M2's carried-over TODO.
+type funcCtx struct {
+	async   bool
+	returns []soltype.Type
+	parent  *funcCtx
+}
+
+// pushFuncCtx enters a function body's inference context — async controls
+// whether `await` is allowed and the externally-wrapped return type. The caller
+// (inferFunc) defers popFuncCtx with the returned saved pointer; popFuncCtx
+// returns the collected returns to the caller (which joins them with the tail).
+func (c *checker) pushFuncCtx(async bool) *funcCtx {
+	saved := c.fn
+	c.fn = &funcCtx{async: async, parent: saved}
+	return saved
+}
+
+// popFuncCtx restores the previous function context and returns the collected
+// return-point types from the body just walked, so the caller can join them
+// with the block's tail value.
+func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
+	collected := c.fn.returns
+	c.fn = saved
+	return collected
 }
 
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
@@ -126,6 +170,10 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferObject(scope, lvl, e)
 	case *ast.MemberExpr:
 		return c.inferMember(scope, lvl, e)
+	case *ast.AwaitExpr:
+		return c.inferAwait(scope, lvl, e)
+	case *ast.IfElseExpr:
+		return c.inferIfElse(scope, lvl, e)
 	default:
 		return c.reportUnsupported(e)
 	}

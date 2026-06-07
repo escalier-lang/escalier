@@ -24,6 +24,24 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
 		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
+	case *ast.TypeRefTypeAnn:
+		// M3 (PR3) recognises a single generic stdlib reference: Promise<T>. The
+		// real, alias-driven TypeRef resolution arrives in M7 — until then, any
+		// other name (or arity) reports unsupported with a `never` placeholder so
+		// the caller can recover by keeping the inferred type.
+		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
+			inner, ok := c.resolveTypeAnn(ta.TypeArgs[0])
+			if !ok {
+				// The inner annotation already reported its own unsupported error and
+				// returned `never`; propagate ok=false so the caller doesn't constrain
+				// against `Promise<never>` and cascade a spurious failure.
+				return inner, false
+			}
+			t := &soltype.PromiseType{Inner: inner}
+			c.recordProv(t, ta, AnnotationType)
+			return t, true
+		}
+		return c.reportUnsupported(ta), false
 	default:
 		return c.reportUnsupported(ta), false
 	}

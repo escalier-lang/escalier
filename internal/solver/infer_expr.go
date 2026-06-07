@@ -149,8 +149,33 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 
 	var ret soltype.Type = &soltype.Void{}
 	hasBody := body != nil
+	var collected []soltype.Type
 	if hasBody {
+		// PR3: open a fresh function context so every ReturnStmt encountered while
+		// walking the body lands in our own returns list (a nested fn inside this
+		// body opens its own context, so its returns never leak out here).
+		saved := c.pushFuncCtx(sig.Async)
 		ret = c.inferBlock(fnScope, lvl, body)
+		collected = c.popFuncCtx(saved)
+	}
+	// PR3 — block return-point join. M2 only used the block tail and dropped non-
+	// tail returns; M3 joins EVERY ReturnStmt (collected above) with the tail. The
+	// join is a fresh var with each return point as a lower bound: when there is
+	// no explicit return, ret stays the tail unchanged (preserving M2's monomorphic
+	// renders); when there is at least one, all paths flow through one variable
+	// whose coalesced positive face is their union.
+	if len(collected) > 0 {
+		joinVar := c.freshAt(lvl)
+		c.recordProv(joinVar, node, ReturnJoin)
+		// Source-order constraint: collected returns first (in source order), then
+		// the block tail. When the tail IS one of the collected returns (the common
+		// `{ ... return X }` case), the duplicate bound is dedup'd at render time
+		// — the rendered union reflects source order, not constraint order.
+		for _, rt := range collected {
+			c.constrain(node, rt, joinVar)
+		}
+		c.constrain(node, ret, joinVar)
+		ret = joinVar
 	}
 	if sig.Return != nil {
 		// Skip the check and adopt-the-annotation when the return annotation is
@@ -176,6 +201,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// which is worse.)
 			ret = &soltype.UnknownType{}
 		}
+	}
+	// PR3 — `async fn` external wrap: the body has return type T, but the function
+	// types externally as `fn (...) -> Promise<T>`. Done AFTER any return-annotation
+	// constrain so the annotation governs the body return; the wrap is the external
+	// face. Bodyless async fns wrap too — an ambient `async fn now() -> number`
+	// types as `fn () -> Promise<number>` for callers.
+	if sig.Async {
+		wrapped := &soltype.PromiseType{Inner: ret}
+		c.recordProv(wrapped, node, PromiseWrap)
+		ret = wrapped
 	}
 	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
 	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it
@@ -431,4 +466,74 @@ func identPatName(pat ast.Pat) (string, bool) {
 		return ip.Name, true
 	}
 	return "", false
+}
+
+// inferAwait types `await e`. The argument is constrained `<: Promise<U>` for a
+// fresh U, and U is the await's value type — exactly the rule M3's milestone
+// pins ("`await e` requires `e <: Promise<U>` for some `U` and produces `U`",
+// 01-milestones.md §M3). No auto-flatten: U may itself be a Promise, so
+// `await Promise<Promise<T>>` yields `Promise<T>` (Awaited<T> is M9). `await`
+// outside an `async` function is rejected by the WALK (this function), not the
+// type rule — the argument is still walked so its own errors surface, and the
+// await contributes a `never` placeholder so a downstream consumer doesn't see a
+// stray inference variable that would never be solved.
+func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Type {
+	if c.fn == nil || !c.fn.async {
+		c.inferExpr(scope, lvl, e.Arg) // surface argument-side errors anyway
+		c.report(&AwaitOutsideAsyncError{Await: e})
+		t := soltype.Type(&soltype.NeverType{})
+		c.recordType(e, t)
+		return t
+	}
+	arg := c.inferExpr(scope, lvl, e.Arg)
+	res := c.freshAt(lvl)
+	c.recordProv(res, e, AwaitResult)
+	// Synthesize the Promise<U> requirement at this call site. It isn't given its
+	// own provenance — the operand the user sees blame on is the awaited expression
+	// (`e.Arg`), already recorded by inferExpr; the synthesized Promise wrapper is
+	// internal scaffolding for the constraint, not a user-authored type.
+	c.constrain(e, arg, &soltype.PromiseType{Inner: res})
+	c.recordType(e, res)
+	return res
+}
+
+// inferIfElse types `if cond { cons } else { alt }`. The condition is
+// constrained `<: boolean`; each branch is typed (an empty / missing else
+// contributes Void); the result is a fresh join var with each branch as a lower
+// bound, so the result coalesces to the union of the branches.
+//
+// Block return-point interaction: any ReturnStmt inside either branch is
+// collected on the enclosing function's funcCtx by inferStmt — independent of
+// the if's value contribution — so a `if c { return X } else { Y }` correctly
+// flows X into the function's return type AND Y into the if's value, which the
+// enclosing block joins.
+func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.Type {
+	cond := c.inferExpr(scope, lvl, e.Cond)
+	c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
+	consT := c.inferBlock(scope.Child(), lvl, &e.Cons)
+	var altT soltype.Type = &soltype.Void{}
+	if e.Alt != nil {
+		altT = c.inferBlockOrExpr(scope, lvl, e.Alt)
+	}
+	res := c.freshAt(lvl)
+	c.recordProv(res, e, IfElseBranch)
+	c.constrain(e, consT, res)
+	c.constrain(e, altT, res)
+	c.recordType(e, res)
+	return res
+}
+
+// inferBlockOrExpr types an `else` arm: either a block (`else { ... }`) or a
+// single expression (`else if ...` chains, which the parser desugars into Alt =
+// expr). A nil-block-and-nil-expr alt is treated as Void (the only honest
+// recovery for a malformed AST shape that shouldn't arise from the real parser).
+func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) soltype.Type {
+	switch {
+	case b.Block != nil:
+		return c.inferBlock(scope.Child(), lvl, b.Block)
+	case b.Expr != nil:
+		return c.inferExpr(scope, lvl, b.Expr)
+	default:
+		return &soltype.Void{}
+	}
 }

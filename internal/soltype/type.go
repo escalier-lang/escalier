@@ -152,6 +152,18 @@ func (r *RecordType) Field(name string) (Type, bool) {
 	return nil, false
 }
 
+// PromiseType is the result of an `async fn` and the requirement of an `await`.
+// M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
+// scope narrow: it is the one stdlib generic the milestone needs typed (Iterable/
+// Generator wait until M5+). The real, alias-driven `Promise<T>` lookup arrives
+// with TypeRef ingestion in M7; until then, an `async fn () -> T` mints a
+// PromiseType{T} externally and `await e` constrains `e <: PromiseType{U}` for a
+// fresh U. Inner is covariant under subtyping (Promise<L> <: Promise<R> iff
+// L <: R) and the `await` rule does NOT recursively flatten (so awaiting
+// `Promise<Promise<T>>` yields `Promise<T>`, matching the milestone's
+// no-auto-flatten contract — flattening is `Awaited<T>`, M9).
+type PromiseType struct{ Inner Type }
+
 // Void is the result type of a statement block with no value.
 type Void struct{}
 
@@ -177,6 +189,7 @@ func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
 func (*TupleType) isType()        {}
 func (*RecordType) isType()       {}
+func (*PromiseType) isType()      {}
 func (*Void) isType()             {}
 func (*NeverType) isType()        {}
 func (*UnknownType) isType()      {}
@@ -207,6 +220,8 @@ func LevelOf(t Type) int {
 			m = max(m, LevelOf(f.Type))
 		}
 		return m
+	case *PromiseType:
+		return LevelOf(t.Inner)
 	default:
 		// PrimType, LitType, Void, NeverType, UnknownType, UnionType,
 		// IntersectionType: UnionType/IntersectionType only appear in coalesced

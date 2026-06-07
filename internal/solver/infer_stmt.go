@@ -6,19 +6,16 @@ import (
 )
 
 // inferBlock types a block's statements in source order and returns the block's
-// value: the type of its last statement, or void for an empty block. The block
+// VALUE — the type of its last statement, or void for an empty block. The block
 // runs in the scope it is given — the caller establishes it (inferFunc passes
 // the param scope, so body-level val/var redeclarations overwrite alongside the
 // params, per §3.2). soltype.Void is the result of a block that ends in a
 // declaration or a value-free statement.
 //
-// TODO(M3): a non-tail ReturnStmt only contributes the last statement's type to
-// the block value, so an early return (`{ return X; Y }`) is dropped and never
-// checked against the declared return type. Harmless at the M2 bar — there is no
-// IfElseExpr (control flow), so an early return cannot arise from a real branch —
-// but once M3 adds conditionals the walk must collect every return-point type and
-// join it with the tail before constraining against the annotation. Tracked in
-// planning/simple_sub/01-milestones.md (M3).
+// Block-as-value is distinct from FUNCTION-return: a non-tail ReturnStmt is not
+// part of the block's tail value, but it IS one of the function's return points
+// — inferStmt routes those into the enclosing funcCtx for inferFunc to join with
+// the tail (PR3, replacing M2's TODO that dropped non-tail returns).
 func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) soltype.Type {
 	var result soltype.Type = &soltype.Void{}
 	for _, s := range b.Stmts {
@@ -39,10 +36,20 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	case *ast.ExprStmt:
 		return c.inferExpr(scope, lvl, s.Expr)
 	case *ast.ReturnStmt:
-		if s.Expr == nil {
-			return &soltype.Void{}
+		// PR3: a return contributes both as a candidate block-tail value (kept for
+		// continuity with M2's `{ return 5 }` block-as-expression test) AND as one
+		// of the enclosing function's return points. Bare `return` contributes Void
+		// in both slots. Outside any function (a hand-built / malformed AST — the
+		// real walk never enters a return at top-level) the funcCtx is nil and we
+		// silently skip collection rather than panicking.
+		var t soltype.Type = &soltype.Void{}
+		if s.Expr != nil {
+			t = c.inferExpr(scope, lvl, s.Expr)
 		}
-		return c.inferExpr(scope, lvl, s.Expr)
+		if c.fn != nil {
+			c.fn.returns = append(c.fn.returns, t)
+		}
+		return t
 	case *ast.DeclStmt:
 		vd, ok := s.Decl.(*ast.VarDecl)
 		if !ok {

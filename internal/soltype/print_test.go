@@ -98,6 +98,10 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"union pair", &UnionType{Types: []Type{numP(), strP()}}, "number | string"},
 		{"union triple", &UnionType{Types: []Type{numP(), strP(), boolP()}}, "number | string | boolean"},
 		{"intersection pair", &IntersectionType{Types: []Type{numP(), strP()}}, "number & string"},
+
+		// Promises (M3).
+		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
+		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

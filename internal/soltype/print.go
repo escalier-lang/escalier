@@ -148,6 +148,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, f := range t.Fields {
 				walk(f.Type)
 			}
+		case *PromiseType:
+			walk(t.Inner)
 		case *UnionType:
 			for _, m := range t.Types {
 				walk(m)
@@ -221,6 +223,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return "{" + strings.Join(fields, ", ") + "}"
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
+	case *PromiseType:
+		return "Promise<" + p.printType(t.Inner) + ">"
 	case *UnionType:
 		parts := make([]string, len(t.Types))
 		for i, m := range t.Types {

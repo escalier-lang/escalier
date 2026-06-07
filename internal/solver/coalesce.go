@@ -65,6 +65,9 @@ func coalesceRec(t soltype.Type, pol soltype.Polarity, seen set.Set[*soltype.Typ
 			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesceRec(f.Type, pol, seen)} // covariant fields
 		}
 		return &soltype.RecordType{Fields: fields}
+	case *soltype.PromiseType:
+		// Covariant inner (no auto-flatten of nested Promise<Promise<T>>).
+		return &soltype.PromiseType{Inner: coalesceRec(t.Inner, pol, seen)}
 	case *soltype.TypeVarType:
 		// Re-entering a variable already on the current path is an ungrounded
 		// recursive position (no concrete type breaks the cycle). It collapses to
@@ -133,6 +136,8 @@ func analyzeOccurrences(t soltype.Type, pol soltype.Polarity, occ map[*soltype.T
 		for _, f := range t.Fields {
 			analyzeOccurrences(f.Type, pol, occ, seen)
 		}
+	case *soltype.PromiseType:
+		analyzeOccurrences(t.Inner, pol, occ, seen)
 	case *soltype.TypeVarType:
 		if pol == soltype.Positive {
 			occ[t] |= occPos
@@ -197,6 +202,8 @@ func coalesceSchemeRec(
 			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesceSchemeRec(f.Type, pol, genLevel, occ, seen)}
 		}
 		return &soltype.RecordType{Fields: fields}
+	case *soltype.PromiseType:
+		return &soltype.PromiseType{Inner: coalesceSchemeRec(t.Inner, pol, genLevel, occ, seen)}
 	case *soltype.TypeVarType:
 		retain := t.Level > genLevel && occ[t].both()
 		if seen.Contains(t) {
@@ -372,6 +379,9 @@ func equalType(a, b soltype.Type) bool {
 			}
 		}
 		return true
+	case *soltype.PromiseType:
+		b, ok := b.(*soltype.PromiseType)
+		return ok && equalType(a.Inner, b.Inner)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		return ok && equalTypeSlice(a.Types, b.Types)
