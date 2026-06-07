@@ -248,56 +248,51 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 // cache). Keying by ID alone would reuse a Negative-polarity copy in Positive
 // position — skipping its covariant bounds — and vice versa.
 func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache map[extrudeKey]*soltype.TypeVarType) soltype.Type {
-	if soltype.LevelOf(t) <= lvl {
-		return t
-	}
-	switch t := t.(type) {
-	case *soltype.TypeVarType:
-		key := extrudeKey{id: t.ID, pol: pol}
-		if nv, ok := cache[key]; ok {
-			return nv
-		}
-		nv := c.freshVar(lvl)
-		cache[key] = nv
-		// t is the original (possibly pre-probe) var — its append is the one a
-		// Discard must truncate. nv was just minted here, so journaling it is a
-		// harmless no-op (a fresh var is unreachable after a Discard); it goes
-		// through the helpers only to keep a single uniform append path.
-		if pol == soltype.Positive {
-			c.addUpperBound(t, nv)
-			for _, lb := range t.LowerBounds {
-				c.addLowerBound(nv, c.extrude(lb, pol, lvl, cache))
-			}
-		} else {
-			c.addLowerBound(t, nv)
-			for _, ub := range t.UpperBounds {
-				c.addUpperBound(nv, c.extrude(ub, pol, lvl, cache))
-			}
-		}
-		return nv
-	case *soltype.FuncType:
-		params := make([]*soltype.FuncParam, len(t.Params))
-		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache), Optional: p.Optional, Rest: p.Rest}
-		}
-		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache), Inexact: t.Inexact}
-	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = c.extrude(e, pol, lvl, cache)
-		}
-		return &soltype.TupleType{Elems: elems}
-	case *soltype.RecordType:
-		fields := make([]*soltype.RecordField, len(t.Fields))
-		for i, f := range t.Fields {
-			// Fields are covariant (read-only records in M2), so no polarity flip.
-			fields[i] = &soltype.RecordField{Name: f.Name, Type: c.extrude(f.Type, pol, lvl, cache)}
-		}
-		return &soltype.RecordType{Fields: fields}
-	case *soltype.PromiseType:
-		// Covariant inner — no polarity flip.
-		return &soltype.PromiseType{Inner: c.extrude(t.Inner, pol, lvl, cache)}
-	default:
-		return t
-	}
+	return t.Accept(&extruder{c: c, lvl: lvl, cache: cache}, pol)
 }
+
+// extruder is the soltype-visitor form of extrude. The structural arms and the
+// variance flip come from soltype.Accept; the level prune and the var node — which
+// mints a fresh var, wires it to the original through the polarity-appropriate
+// bound direction, and mutates the original mid-walk — are the bespoke content,
+// handled in EnterType.
+type extruder struct {
+	c     *Context
+	lvl   int
+	cache map[extrudeKey]*soltype.TypeVarType
+}
+
+func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	// A subtree with no variable above lvl extrudes to itself (identity-shared).
+	if soltype.LevelOf(t) <= e.lvl {
+		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return soltype.EnterResult{} // structural node: let Accept rebuild it
+	}
+	key := extrudeKey{id: v.ID, pol: pol}
+	if nv, ok := e.cache[key]; ok {
+		return soltype.EnterResult{Type: nv, SkipChildren: true}
+	}
+	nv := e.c.freshVar(e.lvl)
+	e.cache[key] = nv
+	// v is the original (possibly pre-probe) var — its append is the one a Discard
+	// must truncate. nv was just minted here, so journaling it is a harmless no-op
+	// (a fresh var is unreachable after a Discard); it goes through the helpers
+	// only to keep a single uniform append path.
+	if pol == soltype.Positive {
+		e.c.addUpperBound(v, nv)
+		for _, lb := range v.LowerBounds {
+			e.c.addLowerBound(nv, lb.Accept(e, pol))
+		}
+	} else {
+		e.c.addLowerBound(v, nv)
+		for _, ub := range v.UpperBounds {
+			e.c.addUpperBound(nv, ub.Accept(e, pol))
+		}
+	}
+	return soltype.EnterResult{Type: nv, SkipChildren: true}
+}
+
+func (e *extruder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }

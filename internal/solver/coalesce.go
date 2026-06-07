@@ -30,68 +30,50 @@ import (
 // See coalesceRec for the guard's behavior. M3 still owns the *precise* μ-bound
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	return coalesceRec(t, pol, set.NewSet[*soltype.TypeVarType]())
+	return t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
 }
 
-// coalesceRec is coalesce's worker, threading the path-scoped set of type
-// variables currently being inlined. seen holds only the variables on the
-// *current* recursion path (added on entry, removed on exit), so a variable
-// reused in independent branches — e.g. the identity function's shared param
-// (negative) and return (positive) var — is unaffected; only re-entering a
-// variable already on the path is a genuine cycle.
-func coalesceRec(t soltype.Type, pol soltype.Polarity, seen set.Set[*soltype.TypeVarType]) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.PrimType, *soltype.LitType, *soltype.Void,
-		*soltype.NeverType, *soltype.UnknownType:
-		return t // atoms pass through
-	case *soltype.FuncType:
-		params := make([]*soltype.FuncParam, len(t.Params))
-		for i, p := range t.Params {
-			// Params are contravariant, so flip polarity. Inexact/Optional/Rest are
-			// surface markers, not bound-carrying, so they ride through coalescing
-			// unchanged.
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceRec(p.Type, pol.Flip(), seen), Optional: p.Optional, Rest: p.Rest}
-		}
-		return &soltype.FuncType{Params: params, Ret: coalesceRec(t.Ret, pol, seen), Inexact: t.Inexact} // covariant return
-	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = coalesceRec(e, pol, seen) // covariant elements
-		}
-		return &soltype.TupleType{Elems: elems}
-	case *soltype.RecordType:
-		fields := make([]*soltype.RecordField, len(t.Fields))
-		for i, f := range t.Fields {
-			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesceRec(f.Type, pol, seen)} // covariant fields
-		}
-		return &soltype.RecordType{Fields: fields}
-	case *soltype.PromiseType:
-		// Covariant inner (no auto-flatten of nested Promise<Promise<T>>).
-		return &soltype.PromiseType{Inner: coalesceRec(t.Inner, pol, seen)}
-	case *soltype.TypeVarType:
-		// Re-entering a variable already on the current path is an ungrounded
-		// recursive position (no concrete type breaks the cycle). It collapses to
-		// the polarity identity — the same value the position degenerates to when
-		// its bounds are empty — which keeps the inline walk total. A precise
-		// μ-bound rendering of such recursion is M3.
-		if seen.Contains(t) {
-			return emptyOf(pol)
-		}
-		seen.Add(t)
-		defer seen.Remove(t)
-		// Uniform inline: drop the variable, keep only its (recursively
-		// coalesced) bounds in the current polarity.
-		bounds := make([]soltype.Type, 0, len(t.BoundsAt(pol)))
-		for _, b := range t.BoundsAt(pol) {
-			bounds = append(bounds, coalesceRec(b, pol, seen))
-		}
-		if len(bounds) == 0 {
-			return emptyOf(pol)
-		}
-		return combine(pol, dedup(bounds))
-	}
-	panic(fmt.Sprintf("coalesce: unhandled %T", t))
+// coalescer is the soltype-visitor form of coalesce. The structural arms and the
+// variance flip come from soltype.Accept (the shared rewriting visitor); the var
+// node — whose bounds are a side graph, not tree children — is the whole content
+// here, handled in EnterType. seen is the path-scoped set of variables currently
+// being inlined: it holds only the variables on the *current* recursion path
+// (added before descending into bounds, removed after), so a variable reused in
+// independent branches — e.g. the identity function's shared param (negative) and
+// return (positive) var — is unaffected; only re-entering a variable already on
+// the path is a genuine cycle.
+type coalescer struct {
+	seen set.Set[*soltype.TypeVarType]
 }
+
+func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return soltype.EnterResult{} // atom / structural node: let Accept rebuild it
+	}
+	// Re-entering a variable already on the current path is an ungrounded recursive
+	// position (no concrete type breaks the cycle). It collapses to the polarity
+	// identity — the same value the position degenerates to when its bounds are
+	// empty — which keeps the inline walk total. A precise μ-bound rendering of
+	// such recursion is M3.
+	if c.seen.Contains(v) {
+		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
+	}
+	c.seen.Add(v)
+	// Uniform inline: drop the variable, keep only its (recursively coalesced)
+	// bounds in the current polarity.
+	bounds := make([]soltype.Type, 0, len(v.BoundsAt(pol)))
+	for _, b := range v.BoundsAt(pol) {
+		bounds = append(bounds, b.Accept(c, pol))
+	}
+	c.seen.Remove(v)
+	if len(bounds) == 0 {
+		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
+	}
+	return soltype.EnterResult{Type: combine(pol, dedup(bounds)), SkipChildren: true}
+}
+
+func (c *coalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // occPolarity is the set of polarities a variable occurs in within a type — the
 // occurrence input single-polarity elimination needs to decide which variables a

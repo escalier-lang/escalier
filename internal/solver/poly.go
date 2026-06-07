@@ -75,13 +75,32 @@ func (c *checker) instantiate(s TypeScheme, lvl int) soltype.Type {
 // three onto a shared soltype rewriting visitor with no behavior change. Unlike
 // those two it ignores polarity (it freshens uniformly, no variance flip).
 func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) soltype.Type {
+	return t.Accept(&freshener{c: c, lim: lim, lvl: lvl, cache: cache}, soltype.Positive)
+}
+
+// freshener is the soltype-visitor form of freshenAbove. The structural arms come
+// from soltype.Accept; the level prune and the var node are the bespoke content.
+// Unlike coalesce/extrude it IGNORES polarity (it freshens uniformly, no variance
+// flip) — the shared visitor still flips on func params, harmlessly, because
+// EnterType/ExitType never consult pol. The start polarity is therefore arbitrary
+// (Positive).
+type freshener struct {
+	c     *checker
+	lim   int
+	lvl   int
+	cache map[*soltype.TypeVarType]*soltype.TypeVarType
+}
+
+func (f *freshener) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	// Every variable inside t is at or below lim: nothing to freshen, SHARE the node
-	// (the original pointer flows through unchanged). Two consequences worth naming:
+	// (the original pointer flows through unchanged — Accept's identity preservation
+	// gives the same result for the structural arms too). Two consequences worth
+	// naming:
 	//
 	//  1. (Soundness coupling) LevelOf returns a *TypeVarType's own Level only — it
 	//     does NOT descend into the var's bounds, and returns 0 for Union/Intersection.
-	//     This early return is therefore sound only because the MLsub level invariant
-	//     holds (a var's level >= the level of everything in its bounds, maintained by
+	//     This prune is therefore sound only because the MLsub level invariant holds
+	//     (a var's level >= the level of everything in its bounds, maintained by
 	//     constrain/extrude) and raw scheme bodies contain no Union/Intersection. The
 	//     analogous extrude (constrain.go) rests on the same assumption. If a future
 	//     change breaks either, a Level>lim var could hide under a shared node and two
@@ -94,62 +113,43 @@ func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*solt
 	//     "unique pointer per mint" property recordProv's debugProv guard assumes does
 	//     not hold for these shared nodes. Anything recording provenance against an
 	//     instantiated node must account for the sharing.
-	if soltype.LevelOf(t) <= lim {
-		return t
+	if soltype.LevelOf(t) <= f.lim {
+		return soltype.EnterResult{Type: t, SkipChildren: true}
 	}
-	switch t := t.(type) {
-	case *soltype.TypeVarType:
-		if nv, ok := cache[t]; ok {
-			return nv
-		}
-		nv := c.freshAt(lvl)
-		cache[t] = nv
-		// Mint the FromInstantiation interior edge: the fresh var was copied from t.
-		// PR1 only records the edge; the multi-hop renderer that chases it back to an
-		// AST leaf is M11.5 (NodeFor still resolves only FromAST today).
-		c.recordInstantiation(nv, t)
-		// nv is freshly minted here, so these whole-slice bound assignments are
-		// intentionally NOT journaled by the probe (see Probe's doc): a fresh var
-		// is unreachable after a Discard, so it self-rolls-back. This is the one
-		// sanctioned non-append bound write — it touches only fresh vars, never a
-		// var the probe has recorded.
-		nv.LowerBounds = c.freshenBounds(lim, t.LowerBounds, lvl, cache)
-		nv.UpperBounds = c.freshenBounds(lim, t.UpperBounds, lvl, cache)
-		return nv
-	case *soltype.FuncType:
-		params := make([]*soltype.FuncParam, len(t.Params))
-		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.freshenAbove(lim, p.Type, lvl, cache), Optional: p.Optional, Rest: p.Rest}
-		}
-		return &soltype.FuncType{Params: params, Ret: c.freshenAbove(lim, t.Ret, lvl, cache), Inexact: t.Inexact}
-	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = c.freshenAbove(lim, e, lvl, cache)
-		}
-		return &soltype.TupleType{Elems: elems}
-	case *soltype.RecordType:
-		fields := make([]*soltype.RecordField, len(t.Fields))
-		for i, f := range t.Fields {
-			fields[i] = &soltype.RecordField{Name: f.Name, Type: c.freshenAbove(lim, f.Type, lvl, cache)}
-		}
-		return &soltype.RecordType{Fields: fields}
-	case *soltype.PromiseType:
-		return &soltype.PromiseType{Inner: c.freshenAbove(lim, t.Inner, lvl, cache)}
-	default:
-		// PrimType/LitType/Void/NeverType/UnknownType and the coalesced-only
-		// Union/IntersectionType have no level-bearing children reachable here.
-		return t
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return soltype.EnterResult{} // structural node: let Accept rebuild it
 	}
+	if nv, ok := f.cache[v]; ok {
+		return soltype.EnterResult{Type: nv, SkipChildren: true}
+	}
+	nv := f.c.freshAt(f.lvl)
+	f.cache[v] = nv
+	// Mint the FromInstantiation interior edge: the fresh var was copied from v.
+	// PR1 only records the edge; the multi-hop renderer that chases it back to an
+	// AST leaf is M11.5 (NodeFor still resolves only FromAST today).
+	f.c.recordInstantiation(nv, v)
+	// nv is freshly minted here, so these whole-slice bound assignments are
+	// intentionally NOT journaled by the probe (see Probe's doc): a fresh var is
+	// unreachable after a Discard, so it self-rolls-back. This is the one sanctioned
+	// non-append bound write — it touches only fresh vars, never a var the probe has
+	// recorded. The cache is populated BEFORE the bounds are freshened so a recursive
+	// bound referencing v resolves to the in-progress nv rather than looping.
+	nv.LowerBounds = f.freshenBounds(v.LowerBounds, pol)
+	nv.UpperBounds = f.freshenBounds(v.UpperBounds, pol)
+	return soltype.EnterResult{Type: nv, SkipChildren: true}
 }
 
-func (c *checker) freshenBounds(lim int, bounds []soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) []soltype.Type {
+func (f *freshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// freshenBounds freshens a var's bound list, preserving the nil-for-empty shape.
+func (f *freshener) freshenBounds(bounds []soltype.Type, pol soltype.Polarity) []soltype.Type {
 	if len(bounds) == 0 {
 		return nil
 	}
 	out := make([]soltype.Type, len(bounds))
 	for i, b := range bounds {
-		out[i] = c.freshenAbove(lim, b, lvl, cache)
+		out[i] = b.Accept(f, pol)
 	}
 	return out
 }
