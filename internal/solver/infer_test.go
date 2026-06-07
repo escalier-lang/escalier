@@ -518,7 +518,7 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 // callee's declared return type (not `never`), matching the inline-callee recovery
 // asserted by TestInferCallTooManyArgs. M3's inferIdent returns an instantiated
 // var rather than a concrete FuncType, so inferCall recovers the return through the
-// var's FuncType lower bound (concreteFunc); without that, `r` regressed to `never`.
+// var's FuncType lower bound (resolveFunc); without that, `r` regressed to `never`.
 // PR4: too-many is the extra-arg lint (TooManyArgsError), not a FuncArityMismatch.
 func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `

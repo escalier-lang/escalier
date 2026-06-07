@@ -220,7 +220,7 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // so the return is wired through directly here. The callee is concrete either as a
 // bare FuncType (an inline callee) OR as a var whose lower bound is a FuncType (a
 // named/generalized callee, which inferIdent now resolves through instantiate — see
-// concreteFunc); both recover, so recovery no longer regresses for named callees.
+// resolveFunc); both recover, so recovery no longer regresses for named callees.
 //
 // PR4 adds two #677 pieces: an EXACT all-required call demand, and the extra-arg
 // lint that rejects passing more arguments than a concrete callee declares.
@@ -245,15 +245,15 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// arity (the lint owns the single, uniform message; the constraint does pure
 	// type-flow on the supplied args). Too-many truncates to the prefix; too-few pads
 	// the missing slots with fresh vars, which impose no constraint on absent args.
-	fn, isConcrete := concreteFunc(callee)
+	fn, resolved := resolveFunc(callee)
 	demand := args
 	switch {
-	case isConcrete && !hasRest(fn) && len(args) > len(fn.Params):
+	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
 		// A typed rest param (hasRest) absorbs any number of trailing args, so it is
 		// never "too many" — only a fixed-arity (non-rest) callee trips this lint.
 		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
 		demand = args[:len(fn.Params)]
-	case isConcrete && len(args) < requiredCount(fn):
+	case resolved && len(args) < requiredCount(fn):
 		c.errs = append(c.errs, &NotEnoughArgsError{Call: e, Fn: fn})
 		demand = make([]*soltype.FuncParam, len(fn.Params))
 		copy(demand, args)
@@ -262,25 +262,26 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		}
 	}
 
-	// EXACT + all-required call demand: accept(synth) = [N, N] (N = arg count), so
-	// the constraint reads exactly "callee accepts being called with N args"
-	// (required(callee) <= N <= upper(callee)). Exact is the zero value of Inexact, so
-	// the synth is exact by construction here; an INEXACT synth would have accept
-	// [N, ∞), forcing upper(callee) = ∞ and rejecting every call to an exact function.
+	// callShape is built EXACT with all N params required, on purpose. That gives
+	// it accept-set [N, N] (N = arg count), so the callee <: callShape constraint
+	// reads "the callee must accept exactly N args" — it holds iff
+	// required(callee) <= N <= upper(callee). If callShape were INEXACT instead,
+	// its accept-set would widen to [N, ∞), demanding upper(callee) = ∞ and thus
+	// rejecting every call to a fixed-arity (exact) function.
 	callShape := &soltype.FuncType{Params: demand, Ret: res}
 	// Record the synthesized call-shape against the CallExpr so a FuncArityMismatchError
 	// — now only from a DEFERRED callee's too-few (or a callback-arity failure), since
 	// concrete arity faults are owned by the lints above — resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
-	if isConcrete {
+	if resolved {
 		c.constrain(e, fn.Ret, res)
 	}
 	c.recordType(e, res)
 	return res
 }
 
-// concreteFunc resolves a callee to its concrete FuncType, used to recover a
+// resolveFunc resolves a callee to its concrete FuncType, used to recover a
 // call's return type. The callee is either a FuncType directly (an inline callee)
 // or a var whose first FuncType lower bound is the function (a named/generalized
 // callee, since inferIdent returns instantiate(scheme) — a fresh var). Looking
@@ -290,7 +291,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 // ok=false means no concrete func was found (e.g. a deferred callee with no lower
 // bound yet) — the caller skips return recovery. PR1 bindings have at most one
 // func lower bound; overload sets (PR6) resolve through resolveOverload, not here.
-func concreteFunc(t soltype.Type) (*soltype.FuncType, bool) {
+func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:
 		return t, true
