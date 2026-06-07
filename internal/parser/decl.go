@@ -1073,7 +1073,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		p.lexer.consume()
 	}
 
-	params := parseDelimSeq(p, CloseParen, Comma, p.param)
+	params, inexact := p.parseFuncParams()
 
 	token = p.lexer.peek()
 	if token.Type != CloseParen {
@@ -1122,6 +1122,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		ident, lifetimeParams, typeParams, params, returnType, throwsType, &body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
+	fd.Inexact = inexact
 	return fd
 }
 

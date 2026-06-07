@@ -79,6 +79,27 @@ func TestInferNonTrailingOptionalRequiresAllArgs(t *testing.T) {
 	require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", errs[0].Message())
 }
 
+// A function value declared with the trailing `...` marker now parses (PR4 parser
+// support) and is inferred INEXACT: its rendered type carries the `...`, but the
+// direct-call lint still rejects extra args (§4.2.3 — inexactness governs callback
+// subtyping, not direct calls).
+func TestInferInexactFunctionValue(t *testing.T) {
+	t.Run("renders with the inexact marker", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f(x: number, ...) -> number { x }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (x: number, ...) -> number", values["f"])
+	})
+
+	t.Run("direct call still rejects extra args", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn f(x: number, ...) -> number { x }
+			val r = f(1, 2)
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "Too many arguments: expected at most 1, but got 2", errs[0].Message())
+	})
+}
+
 // The extra-arg lint fires for an INEXACT callee too (#677 §4.2.3: direct calls
 // reject extras regardless of exactness). An inexact function value has no source
 // syntax yet (the `...` marker rides on function-type annotations, which the solver

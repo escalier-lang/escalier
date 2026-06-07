@@ -177,12 +177,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			ret = &soltype.UnknownType{}
 		}
 	}
-	// A written function value is EXACT (accept-set [required, len(Params)]): it has a
-	// definite parameter list and rejects extra arguments. Inexactness (`...`) is a
-	// property of function-type ANNOTATIONS describing callback slots, which the
-	// solver does not resolve yet (resolveTypeAnn handles primitives only), so every
-	// function value the walk builds is exact.
-	ft := &soltype.FuncType{Params: params, Ret: ret, Exact: true}
+	// A bare function value is EXACT (accept-set [required, len(Params)]): it rejects
+	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it
+	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
+	// [required, ∞). Note exactness governs callback subtyping, not direct calls: an
+	// inexact value still rejects extras at a visible call site (the inferCall lint).
+	ft := &soltype.FuncType{Params: params, Ret: ret, Exact: !sig.Inexact}
 	// Record the function's own type against its node so a function flowing into a
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is

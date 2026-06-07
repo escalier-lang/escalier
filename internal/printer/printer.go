@@ -1004,6 +1004,12 @@ func (p *Printer) printFuncSig(sig *ast.FuncSig) {
 			p.writeString(", ")
 		}
 	}
+	if sig.Inexact {
+		if len(sig.Params) > 0 {
+			p.writeString(", ")
+		}
+		p.writeString("...")
+	}
 	p.writeString(")")
 
 	if sig.Return != nil {
@@ -1430,6 +1436,12 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 		if i < len(typ.Params)-1 {
 			p.writeString(", ")
 		}
+	}
+	if typ.Inexact {
+		if len(typ.Params) > 0 {
+			p.writeString(", ")
+		}
+		p.writeString("...")
 	}
 	p.writeString(")")
 

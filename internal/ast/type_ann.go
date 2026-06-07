@@ -439,6 +439,7 @@ type FuncTypeAnn struct {
 	Params         []*Param
 	Return         TypeAnn
 	Throws         TypeAnn // optionanl
+	Inexact        bool    // trailing `...` marker: fn(a, ...) tolerates extra args (#677 §4.1)
 	span           Span
 	inferredType   Type
 }
