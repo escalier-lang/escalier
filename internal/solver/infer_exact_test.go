@@ -115,7 +115,8 @@ func TestInferTooFewArgsRespectsOptional(t *testing.T) {
 // A typed rest param absorbs trailing arguments, so a direct call with more args
 // than declared is NOT too-many (#677 §4.2.3) — but too-few still applies to the
 // fixed params. Rest params have no source syntax in M3 (inferFunc reports them
-// unsupported), so this is built by hand, like the inexact-callee test.
+// unsupported), so this is built by hand — unlike the inexact `...` marker, which is
+// source-expressible and covered via inferSource in TestInferInexactFunctionValue.
 func TestInferCallRestCalleeArity(t *testing.T) {
 	// fn g(x: number, ...rest: number): one fixed param + a rest.
 	restCallee := func() ValueBinding {
@@ -148,24 +149,4 @@ func TestInferCallRestCalleeArity(t *testing.T) {
 		require.Len(t, c.errs, 1)
 		require.Equal(t, "Not enough arguments: expected at least 1, but got 0", c.errs[0].Message())
 	})
-}
-
-// The extra-arg lint fires for an INEXACT callee too (#677 §4.2.3: direct calls
-// reject extras regardless of exactness). An inexact function value has no source
-// syntax yet (the `...` marker rides on function-type annotations, which the solver
-// does not resolve), so this is exercised over a hand-built inexact binding.
-func TestInferCallInexactCalleeRejectsExtraArgs(t *testing.T) {
-	c := newChecker()
-	scope := NewScope()
-	scope.defineValue("g", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.FuncType{
-		Params:  []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}}},
-		Ret:     &soltype.PrimType{Prim: soltype.NumPrim},
-		Inexact: true, // inexact: tolerates extras as a CALLBACK, but not at a direct call
-	})}})
-	// g(1, 2) — one extra positional argument beyond the single declared param.
-	e := ast.NewCall(identExpr("g"), []ast.Expr{numExpr(1), numExpr(2)}, false, testSpan())
-
-	c.inferExpr(scope, 0, e)
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "Too many arguments: expected at most 1, but got 2", c.errs[0].Message())
 }
