@@ -327,8 +327,13 @@ type NotEnoughArgsError struct {
 // "Awaiting outside an `async` function is rejected by the AST walk, not by the
 // type rule"). The argument is still walked (so any errors inside it surface),
 // but the await contributes a `never` placeholder so callers don't cascade.
+//
+// EnclosingFn is the (non-async) function the await sits in, when there is one —
+// the function the user would mark `async` to fix the error, surfaced via
+// Related(). It is nil when the await is at module top-level (no enclosing fn).
 type AwaitOutsideAsyncError struct {
-	Await *ast.AwaitExpr
+	Await       *ast.AwaitExpr
+	EnclosingFn ast.Node
 }
 
 // ReturnOutsideFunctionError fires when a `return` statement is reached outside
@@ -431,8 +436,15 @@ func (e *OverloadNotSupportedError) Message() string {
 	return "Function overloads are not supported in M2: " + e.Name
 }
 
-func (e *AwaitOutsideAsyncError) Span() ast.Span      { return e.Await.Span() }
-func (e *AwaitOutsideAsyncError) Related() []ast.Span { return nil }
+func (e *AwaitOutsideAsyncError) Span() ast.Span { return e.Await.Span() }
+func (e *AwaitOutsideAsyncError) Related() []ast.Span {
+	// Point at the enclosing function (the one to make `async`) when there is one;
+	// empty at module top-level.
+	if e.EnclosingFn != nil {
+		return []ast.Span{e.EnclosingFn.Span()}
+	}
+	return nil
+}
 func (e *AwaitOutsideAsyncError) Message() string {
 	return "await can only be used inside an async function"
 }
@@ -492,6 +504,11 @@ func describe(t soltype.Type) string {
 	case *soltype.RecordType:
 		return "object"
 	case *soltype.PromiseType:
+		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
+		// object above. That is deliberate and consistent with the Union/Intersection
+		// arms below, which also recurse: a Promise's single type argument is compact
+		// and informative (`Promise<number>`), whereas a function/tuple/record would
+		// be verbose spelled out, so those stay nominal.
 		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.Void:
 		return "void"

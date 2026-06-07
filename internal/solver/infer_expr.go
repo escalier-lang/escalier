@@ -154,7 +154,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// PR3: open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
-		saved := c.pushFuncCtx(sig.Async)
+		saved := c.pushFuncCtx(sig.Async, node)
 		ret = c.inferBlock(fnScope, lvl, body)
 		collected = c.popFuncCtx(saved)
 	}
@@ -164,13 +164,18 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// no explicit return, ret stays the tail unchanged (preserving M2's monomorphic
 	// renders); when there is at least one, all paths flow through one variable
 	// whose coalesced positive face is their union.
-	if len(collected) > 0 {
+	//
+	// Fast path: a single return that IS the block tail (`fn f() { … return X }`,
+	// where inferStmt returns the return's value as the tail too — same pointer).
+	// ret already IS that return, so minting a join var would add a pointless
+	// indirection plus two redundant constraints the coalescer must later dedup.
+	if len(collected) > 0 && !(len(collected) == 1 && collected[0] == ret) {
 		joinVar := c.freshAt(lvl)
 		c.recordProv(joinVar, node, ReturnJoin)
 		// Source-order constraint: collected returns first (in source order), then
-		// the block tail. When the tail IS one of the collected returns (the common
-		// `{ ... return X }` case), the duplicate bound is dedup'd at render time
-		// — the rendered union reflects source order, not constraint order.
+		// the block tail. When the tail IS one of the collected returns, the
+		// duplicate bound is dedup'd at render time — the rendered union reflects
+		// source order, not constraint order.
 		for _, rt := range collected {
 			c.constrain(node, rt, joinVar)
 		}
@@ -490,7 +495,14 @@ func identPatName(pat ast.Pat) (string, bool) {
 func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Type {
 	if c.fn == nil || !c.fn.async {
 		c.inferExpr(scope, lvl, e.Arg) // surface argument-side errors anyway
-		c.report(&AwaitOutsideAsyncError{Await: e})
+		// When the await sits in a (non-async) function, point Related() at that
+		// function — it is the one to mark `async`. At module top-level there is no
+		// enclosing function, so EnclosingFn stays nil and Related() is empty.
+		var enclosing ast.Node
+		if c.fn != nil {
+			enclosing = c.fn.node
+		}
+		c.report(&AwaitOutsideAsyncError{Await: e, EnclosingFn: enclosing})
 		t := soltype.Type(&soltype.NeverType{})
 		c.recordType(e, t)
 		return t
@@ -533,6 +545,12 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	// reported. PR8's error-recovery type makes this guard unnecessary (it absorbs
 	// in constrain); see isRecoveryPlaceholder.
 	if !isRecoveryPlaceholder(cond) {
+		// The synthesized `boolean` requirement is intentionally NOT recorded in Prov
+		// (so a `string <: boolean` failure has no "expected boolean here" related
+		// span): it is a language rule, not a user-authored annotation, so there is no
+		// source node to anchor it to — recording it against e.Cond would only make
+		// Related() echo Span(). This matches inferAwait's synthesized Promise and
+		// inferMember's synthesized record requirement, both deliberately unrecorded.
 		c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
 	}
 	consT := c.inferBlock(scope.Child(), lvl, &e.Cons)
@@ -552,6 +570,13 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 // single expression (`else if ...` chains, which the parser desugars into Alt =
 // expr). A nil-block-and-nil-expr alt is treated as Void (the only honest
 // recovery for a malformed AST shape that shouldn't arise from the real parser).
+//
+// Scoping: a BLOCK runs in a child scope (it may declare body-local val/var), an
+// EXPRESSION runs in the enclosing scope. This is not an asymmetry — it is the
+// walk's uniform rule (only blocks introduce a scope; sub-expressions are always
+// typed in the current scope, as inferCall/inferTuple/inferMember do, since an
+// expression never binds a name). An `else if`'s nested IfElseExpr childs its own
+// cons/alt in turn, so each block still gets exactly one scope.
 func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) soltype.Type {
 	switch {
 	case b.Block != nil:

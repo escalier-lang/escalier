@@ -31,6 +31,14 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 		// real, alias-driven TypeRef resolution arrives in M7 — until then, any
 		// other name (or arity) reports unsupported with a `never` placeholder so
 		// the caller can recover by keeping the inferred type.
+		//
+		// FOOTGUN (removed in M7): this matches the bare NAME "Promise" WITHOUT
+		// consulting the type scope, so it would preempt any user-defined
+		// `type Promise<T> = …` alias. That is harmless today (user type aliases
+		// don't resolve yet, and the prelude only seeds Promise as an opaque
+		// placeholder), but M7's scope-driven TypeRef resolution MUST replace this
+		// hardcoded check — resolve the name through the scope first — so a real
+		// alias wins instead of being silently shadowed by this stub.
 		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
 			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
 			// supported: M3's PromiseType carries no lifetime, so silently accepting it

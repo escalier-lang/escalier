@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,6 +99,33 @@ func TestInferAwaitOutsideAsyncRejected(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t, "await can only be used inside an async function", errs[0].Message())
+}
+
+// The await-outside-async error points Related() at the enclosing (non-async)
+// function — the one to mark `async` — so an IDE can offer the fix. Primary span is
+// the await; related is the whole enclosing fn.
+func TestInferAwaitOutsideAsyncBlamesEnclosingFn(t *testing.T) {
+	src := "fn f(p: Promise<string>) { await p }"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"await can only be used inside an async function", "await p",
+		"fn f(p: Promise<string>) { await p }")
+}
+
+// At module top-level there is no enclosing function, so Related() is empty (there
+// is nothing to mark `async`). Built directly so the awaited value resolves cleanly
+// and the only error is the await itself.
+func TestInferAwaitOutsideAsyncTopLevelNoRelated(t *testing.T) {
+	c := newChecker()
+	scope := NewScope()
+	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{
+		monoScheme(&soltype.PromiseType{Inner: &soltype.PrimType{Prim: soltype.StrPrim}}),
+	}})
+	// await x, with no enclosing function context (c.fn == nil).
+	c.inferExpr(scope, 0, ast.NewAwait(identExpr("x"), testSpan()))
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "await can only be used inside an async function", c.errs[0].Message())
+	require.Empty(t, c.errs[0].Related())
 }
 
 // `await` of a non-Promise concrete fails through constrain — the rule
