@@ -183,7 +183,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// a `never` placeholder, so constraining the body `<: never` would cascade a
 		// spurious error and adopting it would poison the return type. Keep the
 		// inferred body type instead (error recovery).
-		if annT, ok := c.resolveTypeAnn(sig.Return); ok {
+		if annT, ok := c.resolveTypeAnn(sig.Return, lvl); ok {
 			// Only check the inferred body against the declared return when there IS a
 			// body. A bodyless (declare/ambient) function has no body to constrain, so
 			// it simply adopts the annotation; constraining the synthetic Void return
@@ -235,7 +235,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 // `<: never` failures.
 func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 	if p.TypeAnn != nil {
-		if t, ok := c.resolveTypeAnn(p.TypeAnn); ok {
+		if t, ok := c.resolveTypeAnn(p.TypeAnn, lvl); ok {
 			return t
 		}
 	}
@@ -488,11 +488,19 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, AwaitResult)
-	// Synthesize the Promise<U> requirement at this call site. It isn't given its
-	// own provenance — the operand the user sees blame on is the awaited expression
-	// (`e.Arg`), already recorded by inferExpr; the synthesized Promise wrapper is
-	// internal scaffolding for the constraint, not a user-authored type.
-	c.constrain(e, arg, &soltype.PromiseType{Inner: res})
+	// Skip the `arg <: Promise<U>` requirement when the argument already failed to
+	// type — its value is the `never` recovery placeholder, and constraining `never
+	// <: Promise<U>` would cascade a spurious second diagnostic on top of the one
+	// already reported. res then stays unbound and coalesces to `never`, the right
+	// recovery for awaiting something broken. PR8's error-recovery type makes this
+	// guard unnecessary (it absorbs in constrain); see isRecoveryPlaceholder.
+	if !isRecoveryPlaceholder(arg) {
+		// Synthesize the Promise<U> requirement at this call site. It isn't given its
+		// own provenance — the operand the user sees blame on is the awaited expression
+		// (`e.Arg`), already recorded by inferExpr; the synthesized Promise wrapper is
+		// internal scaffolding for the constraint, not a user-authored type.
+		c.constrain(e, arg, &soltype.PromiseType{Inner: res})
+	}
 	c.recordType(e, res)
 	return res
 }
@@ -509,7 +517,14 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 // enclosing block joins.
 func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.Type {
 	cond := c.inferExpr(scope, lvl, e.Cond)
-	c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
+	// Skip the `cond <: boolean` check when the condition already failed to type —
+	// its value is the `never` recovery placeholder, and constraining `never <:
+	// boolean` would cascade a spurious second diagnostic on top of the one already
+	// reported. PR8's error-recovery type makes this guard unnecessary (it absorbs
+	// in constrain); see isRecoveryPlaceholder.
+	if !isRecoveryPlaceholder(cond) {
+		c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
+	}
 	consT := c.inferBlock(scope.Child(), lvl, &e.Cons)
 	var altT soltype.Type = &soltype.Void{}
 	if e.Alt != nil {
@@ -536,4 +551,22 @@ func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) so
 	default:
 		return &soltype.Void{}
 	}
+}
+
+// isRecoveryPlaceholder reports whether t is the `never` value c.report leaves in
+// expression position after it has ALREADY emitted a diagnostic. The walk never
+// mints a raw NeverType any other way — never/unknown are coalesced-OUTPUT only
+// (soltype/type.go), so a raw NeverType flowing out of inferExpr is always that
+// recovery placeholder. Callers skip constraining against it so the single error
+// already reported doesn't cascade a second, spurious `cannot constrain never <:
+// …` (constrain has no `never <: T` input rule today, and adding one would not
+// help — recovery must also absorb on the RHS, which a real bottom must not).
+//
+// PR8 (planning/simple_sub/m3-implementation-plan.md) introduces a dedicated
+// ErrorType recovery sentinel that absorbs in BOTH directions inside constrain;
+// once it lands, report returns that sentinel and these guard call sites — and
+// this helper — are removed.
+func isRecoveryPlaceholder(t soltype.Type) bool {
+	_, ok := t.(*soltype.NeverType)
+	return ok
 }

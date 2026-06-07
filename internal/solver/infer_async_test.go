@@ -272,3 +272,72 @@ func TestInferNestedFnReturnsScoped(t *testing.T) {
 	require.Empty(t, c.errs)
 	require.Equal(t, "fn () -> fn (x: number) -> number", render(got))
 }
+
+// --- Error-recovery: no cascading on a failed sub-expression ---
+//
+// A reported diagnostic leaves a `never` placeholder in expression position
+// (c.report). Feeding that back into constrain has no `never <: T` input rule, so
+// the if-condition and await-argument checks would each cascade a spurious second
+// `cannot constrain never <: …` on top of the real error. inferIfElse/inferAwait
+// guard against the placeholder so exactly ONE diagnostic surfaces. (PR8 replaces
+// the guard with a dedicated error-recovery type that absorbs in constrain.)
+
+// A failed `if` condition (unknown identifier) yields a single UnknownIdentifierError
+// — not also a `never <: boolean`. The branches still type, so the if value is their
+// join.
+func TestInferIfElseUnknownConditionNoCascade(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn pick() {
+			if undeclared { 1 } else { 2 }
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: undeclared", errs[0].Message())
+	require.Equal(t, "fn () -> 1 | 2", values["pick"])
+}
+
+// A failed `await` argument (unknown identifier) yields a single
+// UnknownIdentifierError — not also a `never <: Promise<…>`. The await result is
+// left unbound and coalesces to `never`, so the async fn externally returns
+// Promise<never>.
+func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		async fn f() {
+			await undeclared
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: undeclared", errs[0].Message())
+	require.Equal(t, "fn () -> Promise<never>", values["f"])
+}
+
+// An unsupported INNER of a supported `Promise<…>` keeps the Promise wrapper: the
+// param stays Promise-shaped (recovered inner = a fresh var) rather than collapsing
+// to a bare var, and only the inner's own unsupported error is reported. Here the
+// param is unused, so its recovered inner var coalesces to `unknown` (contravariant,
+// no bounds).
+func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: Promise<bigint>) {
+			0
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: BigintTypeAnn", errs[0].Message())
+	require.Equal(t, "fn (p: Promise<unknown>) -> 0", values["f"])
+}
+
+// When the recovered Promise inner is actually used (returned), it behaves like any
+// unconstrained variable: it generalizes to a type parameter, so the wrapper carries
+// through both positions as Promise<T0>. Proves the recovery is a real fresh var,
+// not a poisoned `never`/`unknown` (which would have cascaded or frozen).
+func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: Promise<bigint>) {
+			p
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported in M2: BigintTypeAnn", errs[0].Message())
+	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
+}

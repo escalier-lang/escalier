@@ -13,10 +13,12 @@ import (
 // milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here, with
 // ok=false and a `never` placeholder so a caller can recover by keeping the type
 // it already inferred (rather than constraining against / adopting `never`, which
-// would cascade a spurious `<: never` error and poison the binding). It takes no
-// scope: the supported set is all closed primitives, with no name to look up.
-// Name resolution against the type scope arrives with TypeRef support.
-func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
+// would cascade a spurious `<: never` error and poison the binding). It takes the
+// current inference level `lvl` so a supported generic with an UNSUPPORTED inner (a
+// malformed `Promise<…>`) can recover its inner to a fresh var at the right level
+// while keeping the wrapper; the primitive arms ignore lvl. Full name resolution
+// against the type scope still arrives with TypeRef support (M7).
+func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
 		return c.annPrim(ta, soltype.NumPrim), true
@@ -30,12 +32,23 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
 		// other name (or arity) reports unsupported with a `never` placeholder so
 		// the caller can recover by keeping the inferred type.
 		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
-			inner, ok := c.resolveTypeAnn(ta.TypeArgs[0])
+			inner, ok := c.resolveTypeAnn(ta.TypeArgs[0], lvl)
 			if !ok {
-				// The inner annotation already reported its own unsupported error and
-				// returned `never`; propagate ok=false so the caller doesn't constrain
-				// against `Promise<never>` and cascade a spurious failure.
-				return inner, false
+				// The inner annotation was unsupported and already reported its own
+				// error. The Promise itself IS supported, so keep the WRAPPER rather
+				// than collapsing the whole annotation to the bare-var recovery the
+				// caller applies on ok=false: `p: Promise<bad>` should stay Promise-
+				// shaped (so `await p` and the rendered signature read as a Promise),
+				// not degrade to an unconstrained var. Recover the inner to a fresh var
+				// — cascade-safe in BOTH directions (an initializer flowing into
+				// `Promise<freshVar>` constrains the var without failing; a `never` or
+				// `unknown` inner would instead cascade a spurious `<: never` / `<:
+				// unknown`, since constrain has no rule for either as an input).
+				//
+				// PR8 (planning/simple_sub/m3-implementation-plan.md) replaces this
+				// fresh var with the dedicated error-recovery type, so the recovered
+				// inner reads as `error` rather than as an anonymous coalesced var.
+				inner = c.freshAt(lvl)
 			}
 			t := &soltype.PromiseType{Inner: inner}
 			c.recordProv(t, ta, AnnotationType)
