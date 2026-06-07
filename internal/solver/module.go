@@ -87,6 +87,7 @@ type componentBinding struct {
 	primary ast.Decl
 	bound   bool // a definition was inferred and constrained
 	isVar   bool // the primary definition is a `val`/`var`
+	mutable bool // PR8: the primary definition is a `var` (VarKind) — reassignable
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -157,7 +158,11 @@ func (c *checker) inferComponent(
 				c.constrain(d, t, b.v)
 				b.primary = d
 				b.bound = true
-				_, b.isVar = d.(*ast.VarDecl)
+				vd, isVarDecl := d.(*ast.VarDecl)
+				b.isVar = isVarDecl
+				// PR8: a top-level `var` is reassignable (e.g. from a function body that
+				// closes over it); `val`/`fn` are not.
+				b.mutable = isVarDecl && vd.Kind == ast.VarKind
 				continue
 			}
 			// The binding already has its primary definition. A repeated FuncDecl is
@@ -218,7 +223,7 @@ func (c *checker) inferComponent(
 		// parameter, captured outer variables do not — turning M2's monomorphic
 		// freeze into real let-polymorphism (PR1).
 		scheme := c.generalize(b.v, lvl)
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources})
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Mutable: b.mutable})
 		// Record the binding's final (coalesced) DISPLAY type in Info on the name
 		// node, so it is queryable even for a `val` in a recursive group (where
 		// coalescing at definition time would have frozen it to `never`). A VarDecl

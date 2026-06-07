@@ -20,6 +20,12 @@ type ValueBinding struct {
 	// accumulates one entry per arm, including arms M2 currently rejects. This lets
 	// a future go-to-definition navigate to all of them. Empty for prelude bindings.
 	Sources []provenance.Provenance
+	// Mutable reports whether the binding may be REASSIGNED (`a = expr`). PR8 sets it
+	// true only for a `var` declaration (VarKind); a `val`, a function, a parameter,
+	// and every prelude binding leave it at the zero value (false), so reassigning
+	// any of those is a CannotAssignToImmutableError. This is the binding-level gate
+	// only — `mut`-field / aliasing / lifetime-transition mutability is M4.
+	Mutable bool
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST

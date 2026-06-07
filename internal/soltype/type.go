@@ -192,6 +192,18 @@ type UnknownType struct{}
 type UnionType struct{ Types []Type }
 type IntersectionType struct{ Types []Type }
 
+// ErrorType is the error-recovery sentinel (M3 PR8) — a childless atom distinct
+// from never (⊥) and unknown (⊤). Unlike those two, which are coalesced-OUTPUT
+// only ("appear only as coalesced output, never as constrain inputs", above),
+// ErrorType is a legal constrain INPUT that ABSORBS in both directions: any
+// constraint with an ErrorType operand trivially succeeds. report (solver) mints
+// it as the value-position placeholder after emitting a diagnostic, so the
+// placeholder never cascades a second, spurious failure — the standard "error
+// type" of TS / Roslyn / GHC. It is never user-spellable (distinct from a future
+// `any`) and never produced from user syntax; it renders as `error` for
+// diagnostics/debug only.
+type ErrorType struct{} // ⊤⊥ absorbing sentinel; see PR8
+
 func (*TypeVarType) isType()      {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
@@ -204,6 +216,7 @@ func (*NeverType) isType()        {}
 func (*UnknownType) isType()      {}
 func (*UnionType) isType()        {}
 func (*IntersectionType) isType() {}
+func (*ErrorType) isType()        {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -232,8 +245,9 @@ func LevelOf(t Type) int {
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	default:
-		// PrimType, LitType, Void, NeverType, UnknownType, UnionType,
-		// IntersectionType: UnionType/IntersectionType only appear in coalesced
+		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType, UnionType,
+		// IntersectionType: ErrorType is a childless sentinel (level 0);
+		// UnionType/IntersectionType only appear in coalesced
 		// output, where every TypeVarType has been inlined — so they contain no
 		// level-bearing nodes reachable to LevelOf in M1. M6 (when these become
 		// constrain inputs via user annotations) adds the recursive arms

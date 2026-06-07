@@ -252,6 +252,10 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 	require.Len(t, errs, 2)
 	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
 	require.Equal(t, "Unknown identifier: x", errs[1].Message())
+	// PR8: the unknown reference recovers to the ErrorType sentinel, but on the
+	// top-level SCC path that placeholder is constrained into the binding's group var
+	// — where the absorbing short-circuit records NO bound, so the var stays unbound
+	// and coalesces to `never` (a fresh unbound var at each use, which can't cascade).
 	require.Equal(t, map[string]string{"y": "never"}, values)
 }
 
@@ -511,6 +515,9 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
 	// M2.5: the error self-blames from the ident node.
 	require.Equal(t, "missing", spanText(srcA, errs[0].Span()))
+	// PR8: the unknown reference recovers to the ErrorType sentinel; on the top-level
+	// SCC path that absorbs into the binding's group var (no bound recorded), so the
+	// var stays unbound and coalesces to `never`.
 	require.Equal(t, map[string]string{"y": "never", "z": "5"}, values)
 }
 

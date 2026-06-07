@@ -399,6 +399,81 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	return nil, false
 }
 
+// inferAssign types a reassignment `target = rhs` — the only BinaryExpr form the
+// M3 walk handles. The RHS is typed first (so its own errors surface regardless of
+// the target's validity), then the target is resolved and gated:
+//
+//   - The target must be a place: an IdentExpr resolving to a value binding. A
+//     literal, call, member, or any other non-place LHS is an
+//     InvalidAssignmentTargetError (member targets `obj.x = …` need record types,
+//     M4). An ident that resolves to no binding is an UnknownIdentifierError.
+//   - The binding must be mutable: only a `var` is reassignable. A `val`, function,
+//     parameter, or prelude binding is a CannotAssignToImmutableError.
+//
+// On success the RHS is constrained `<: target` (the binding's coalesced type),
+// the new-solver form of the old checker's `Unify(rightType, leftType)`: the value
+// being stored must be a subtype of the slot. Reassigning an annotated `var a:
+// number = 5` with `a = 6` checks; an un-annotated `var a = 5` keeps the literal
+// type `5`, so `a = 6` does NOT check until `var` literal widening (M4).
+//
+// The assignment EXPRESSION's own value type is void (assignment is
+// statement-shaped); flowing it through a binding yields `void`.
+func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
+	rhs := c.inferExpr(scope, lvl, e.Right)
+	voidT := soltype.Type(&soltype.Void{})
+	c.recordType(e, voidT)
+
+	target, ok := e.Left.(*ast.IdentExpr)
+	if !ok {
+		// A non-place LHS (literal, call, member, …). Member targets land in M4; every
+		// other shape is never assignable.
+		c.report(&InvalidAssignmentTargetError{Target: e.Left})
+		return voidT
+	}
+	b, found := scope.GetValue(target.Name)
+	if !found || len(b.Schemes) == 0 {
+		// Surface the unbound target the same way a value-position read would, so an
+		// assignment to an undeclared name isn't silently accepted.
+		c.report(&UnknownIdentifierError{Ident: target})
+		return voidT
+	}
+	if !b.Mutable {
+		c.report(&CannotAssignToImmutableError{
+			Assign: e,
+			Name:   target.Name,
+			Decl:   bindingDecl(b),
+		})
+		return voidT
+	}
+	// The RHS must be a subtype of the target binding's type. Use the binding's
+	// COALESCED type (schemeType — what Info records and the printer renders), not a
+	// fresh instantiation: instantiating a generalized binding yields a var carrying
+	// only its LOWER bounds (the read/covariant face), so `a = "x"` for `var a:
+	// number` would merely add another lower bound and wrongly succeed. The coalesced
+	// type is the concrete slot type — `number` for an annotated var, the literal `5`
+	// for an un-annotated one (so `a = 6` ⇒ `6 <: 5` does NOT check until M4 `var`
+	// literal widening). The constraint node is the whole assignment, so a mismatch
+	// blames the assignment via the existing CannotConstrainError.
+	targetT := schemeType(b.Schemes[0])
+	c.recordType(target, targetT)
+	c.constrain(e, rhs, targetT)
+	return voidT
+}
+
+// bindingDecl returns the AST node of the binding's introducing declaration — the
+// "declared immutable here" related span for CannotAssignToImmutableError — or nil
+// when the binding has no source node (a parameter or prelude binding). It reads
+// the first Source: a plain `val`/`var`/`fn` has exactly one.
+func bindingDecl(b ValueBinding) ast.Node {
+	if len(b.Sources) == 0 {
+		return nil
+	}
+	if np, ok := b.Sources[0].(*ast.NodeProvenance); ok {
+		return np.Node
+	}
+	return nil
+}
+
 // inferTuple types a tuple literal as a soltype.TupleType of its element types
 // and records it in Info. Elements are typed left-to-right in the current scope.
 // A spread element ([...xs]) is an ArraySpreadExpr, which is not in the M2 walk,
@@ -546,27 +621,26 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 		if c.fn != nil {
 			enclosing = c.fn.node
 		}
-		c.report(&AwaitOutsideAsyncError{Await: e, EnclosingFn: enclosing})
-		t := soltype.Type(&soltype.NeverType{})
+		// report returns the ErrorType recovery placeholder (PR8), so the rejected
+		// await never cascades a downstream `<unknown> <: T` on top of this error.
+		t := c.report(&AwaitOutsideAsyncError{Await: e, EnclosingFn: enclosing})
 		c.recordType(e, t)
 		return t
 	}
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, AwaitResult)
-	// Skip the `arg <: Promise<U>` requirement when the argument already failed to
-	// type — its value is the `never` recovery placeholder, and constraining `never
-	// <: Promise<U>` would cascade a spurious second diagnostic on top of the one
-	// already reported. res then stays unbound and coalesces to `never`, the right
-	// recovery for awaiting something broken. PR8's error-recovery type makes this
-	// guard unnecessary (it absorbs in constrain); see isRecoveryPlaceholder.
-	if !isRecoveryPlaceholder(arg) {
-		// Synthesize the Promise<U> requirement at this call site. It isn't given its
-		// own provenance — the operand the user sees blame on is the awaited expression
-		// (`e.Arg`), already recorded by inferExpr; the synthesized Promise wrapper is
-		// internal scaffolding for the constraint, not a user-authored type.
-		c.constrain(e, arg, &soltype.PromiseType{Inner: res})
-	}
+	// Synthesize the Promise<U> requirement at this call site. It isn't given its
+	// own provenance — the operand the user sees blame on is the awaited expression
+	// (`e.Arg`), already recorded by inferExpr; the synthesized Promise wrapper is
+	// internal scaffolding for the constraint, not a user-authored type.
+	//
+	// PR8: a failed argument is the ErrorType recovery placeholder, which absorbs in
+	// constrain, so `<unknown> <: Promise<U>` no longer cascades a spurious second
+	// diagnostic — res then stays unbound and coalesces to `never`, the right
+	// recovery for awaiting something broken. The M2-era isRecoveryPlaceholder guard
+	// this site used is gone.
+	c.constrain(e, arg, &soltype.PromiseType{Inner: res})
 	c.recordType(e, res)
 	return res
 }
@@ -592,20 +666,17 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 // X is a return point, but not part of the if-EXPRESSION's value.
 func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.Type {
 	cond := c.inferExpr(scope, lvl, e.Cond)
-	// Skip the `cond <: boolean` check when the condition already failed to type —
-	// its value is the `never` recovery placeholder, and constraining `never <:
-	// boolean` would cascade a spurious second diagnostic on top of the one already
-	// reported. PR8's error-recovery type makes this guard unnecessary (it absorbs
-	// in constrain); see isRecoveryPlaceholder.
-	if !isRecoveryPlaceholder(cond) {
-		// The synthesized `boolean` requirement is intentionally NOT recorded in Prov
-		// (so a `string <: boolean` failure has no "expected boolean here" related
-		// span): it is a language rule, not a user-authored annotation, so there is no
-		// source node to anchor it to — recording it against e.Cond would only make
-		// Related() echo Span(). This matches inferAwait's synthesized Promise and
-		// inferMember's synthesized record requirement, both deliberately unrecorded.
-		c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
-	}
+	// The synthesized `boolean` requirement is intentionally NOT recorded in Prov
+	// (so a `string <: boolean` failure has no "expected boolean here" related
+	// span): it is a language rule, not a user-authored annotation, so there is no
+	// source node to anchor it to — recording it against e.Cond would only make
+	// Related() echo Span(). This matches inferAwait's synthesized Promise and
+	// inferMember's synthesized record requirement, both deliberately unrecorded.
+	//
+	// PR8: a failed condition is the ErrorType recovery placeholder, which absorbs
+	// in constrain, so `<unknown> <: boolean` no longer cascades a spurious second
+	// diagnostic — the M2-era isRecoveryPlaceholder guard this site used is gone.
+	c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
 	consT, consDiverges := c.inferBlock(scope.Child(), lvl, &e.Cons)
 	var altT soltype.Type = &soltype.Void{}
 	altDiverges := false
@@ -739,22 +810,4 @@ func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) (s
 	default:
 		return &soltype.Void{}, false
 	}
-}
-
-// isRecoveryPlaceholder reports whether t is the `never` value c.report leaves in
-// expression position after it has ALREADY emitted a diagnostic. The walk never
-// mints a raw NeverType any other way — never/unknown are coalesced-OUTPUT only
-// (soltype/type.go), so a raw NeverType flowing out of inferExpr is always that
-// recovery placeholder. Callers skip constraining against it so the single error
-// already reported doesn't cascade a second, spurious `cannot constrain never <:
-// …` (constrain has no `never <: T` input rule today, and adding one would not
-// help — recovery must also absorb on the RHS, which a real bottom must not).
-//
-// PR8 (planning/simple_sub/m3-implementation-plan.md) introduces a dedicated
-// ErrorType recovery sentinel that absorbs in BOTH directions inside constrain;
-// once it lands, report returns that sentinel and these guard call sites — and
-// this helper — are removed.
-func isRecoveryPlaceholder(t soltype.Type) bool {
-	_, ok := t.(*soltype.NeverType)
-	return ok
 }

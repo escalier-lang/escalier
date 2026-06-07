@@ -340,6 +340,9 @@ func equalType(a, b soltype.Type) bool {
 	case *soltype.UnknownType:
 		_, ok := b.(*soltype.UnknownType)
 		return ok
+	case *soltype.ErrorType:
+		_, ok := b.(*soltype.ErrorType)
+		return ok
 	case *soltype.FuncType:
 		b, ok := b.(*soltype.FuncType)
 		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact {

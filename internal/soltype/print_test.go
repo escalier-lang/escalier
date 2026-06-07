@@ -44,10 +44,11 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"str literal", &LitType{Lit: &StrLit{Value: "hello"}}, `"hello"`},
 		{"bool literal", &LitType{Lit: &BoolLit{Value: true}}, "true"},
 
-		// Lattice bounds and void.
+		// Lattice bounds, void, and the error-recovery sentinel.
 		{"never", &NeverType{}, "never"},
 		{"unknown", &UnknownType{}, "unknown"},
 		{"void", &Void{}, "void"},
+		{"error", &ErrorType{}, "error"}, // PR8 recovery sentinel
 
 		// Tuples.
 		{"empty tuple", &TupleType{}, "[]"},

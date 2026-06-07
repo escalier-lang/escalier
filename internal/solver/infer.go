@@ -116,11 +116,17 @@ func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type) {
 	}
 }
 
-// report accumulates a structured error and returns a placeholder type so a
-// caller can `return c.report(...)` in value position.
+// report accumulates a structured error and returns the error-recovery sentinel
+// (PR8) so a caller can `return c.report(...)` in value position. ErrorType
+// absorbs in both directions inside constrain, so this placeholder never cascades
+// a second, spurious failure — replacing M2's overloaded `never` placeholder
+// (never is the lattice bottom, coalesced-output only, with no constrain-input
+// rule). It is minted ONLY here, where a diagnostic was definitely emitted, never
+// by freshVar — the discipline that keeps absorption from silently hiding a
+// genuine checker bug.
 func (c *checker) report(e SolverError) soltype.Type {
 	c.errs = append(c.errs, e)
-	return &soltype.NeverType{}
+	return &soltype.ErrorType{}
 }
 
 // reportUnsupported records an UnsupportedNodeError for an AST node whose kind is
@@ -158,8 +164,9 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 // inferExpr dispatches on the concrete expression kind. PR-1 wired the two leaf
 // cases (literals, identifiers); PR-3 adds the function/application walk
 // (FuncExpr, CallExpr — the block/statement walk they drive lives in
-// infer_stmt.go); PR-4 adds tuples, object literals, and member access. Every
-// remaining kind falls through to a clean UnsupportedNodeError (never a panic).
+// infer_stmt.go); PR-4 adds tuples, object literals, and member access; M3 adds
+// await/if-else and (PR8) the assignment form of BinaryExpr. Every remaining kind
+// falls through to a clean UnsupportedNodeError (never a panic).
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	switch e := e.(type) {
 	case *ast.LiteralExpr:
@@ -180,6 +187,14 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferAwait(scope, lvl, e)
 	case *ast.IfElseExpr:
 		return c.inferIfElse(scope, lvl, e)
+	case *ast.BinaryExpr:
+		// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
+		// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude
+		// bindings, a separate unlanded PR, so it stays UnsupportedNodeError.
+		if e.Op == ast.Assign {
+			return c.inferAssign(scope, lvl, e)
+		}
+		return c.reportUnsupported(e)
 	default:
 		return c.reportUnsupported(e)
 	}

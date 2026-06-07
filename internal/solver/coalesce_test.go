@@ -17,6 +17,7 @@ func TestCoalesceAtomsPassThrough(t *testing.T) {
 		{"void", &soltype.Void{}},
 		{"never", &soltype.NeverType{}},
 		{"unknown", &soltype.UnknownType{}},
+		{"error", &soltype.ErrorType{}}, // PR8 recovery sentinel: a childless atom
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

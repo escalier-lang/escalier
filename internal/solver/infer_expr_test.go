@@ -45,7 +45,7 @@ func TestInferLiteralUnsupported(t *testing.T) {
 	c := newChecker()
 	e := ast.NewLitExpr(ast.NewNull(testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.NeverType{}, got)
+	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: NullLit", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
@@ -79,7 +79,7 @@ func TestInferIdentUnknown(t *testing.T) {
 	c := newChecker()
 	e := ast.NewIdent("nope", testSpan())
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.NeverType{}, got)
+	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unknown identifier: nope", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
@@ -92,7 +92,7 @@ func TestInferIdentNamespaceUsedAsValue(t *testing.T) {
 
 	e := ast.NewIdent("Foo", testSpan())
 	got := c.inferExpr(scope, 0, e)
-	require.IsType(t, &soltype.NeverType{}, got)
+	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Namespace used as a value: Foo", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
@@ -105,7 +105,7 @@ func TestInferExprUnsupportedNode(t *testing.T) {
 	e := ast.NewBinary(left, right, ast.Plus, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.NeverType{}, got)
+	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: BinaryExpr", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())

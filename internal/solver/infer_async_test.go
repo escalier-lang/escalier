@@ -130,8 +130,8 @@ func TestInferAsyncPromiseWildcardReturnInferred(t *testing.T) {
 }
 
 // `await` outside an `async fn` is a WALK rejection — not a type rule failure.
-// The AwaitOutsideAsyncError carries the await node and produces a `never`
-// placeholder so a downstream consumer doesn't cascade.
+// The AwaitOutsideAsyncError carries the await node and produces the ErrorType
+// recovery placeholder (PR8) so a downstream consumer doesn't cascade.
 func TestInferAwaitOutsideAsyncRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: Promise<string>) {
@@ -362,12 +362,12 @@ func TestInferNestedFnReturnsScoped(t *testing.T) {
 
 // --- Error-recovery: no cascading on a failed sub-expression ---
 //
-// A reported diagnostic leaves a `never` placeholder in expression position
-// (c.report). Feeding that back into constrain has no `never <: T` input rule, so
-// the if-condition and await-argument checks would each cascade a spurious second
-// `cannot constrain never <: …` on top of the real error. inferIfElse/inferAwait
-// guard against the placeholder so exactly ONE diagnostic surfaces. (PR8 replaces
-// the guard with a dedicated error-recovery type that absorbs in constrain.)
+// A reported diagnostic leaves the ErrorType recovery placeholder in expression
+// position (c.report, PR8). ErrorType absorbs in both directions inside constrain,
+// so the if-condition and await-argument checks no longer cascade a spurious second
+// `cannot constrain … <: …` on top of the real error — exactly ONE diagnostic
+// surfaces. (Before PR8, inferIfElse/inferAwait hand-guarded against a `never`
+// placeholder at each site; PR8 retired those guards for the absorbing sentinel.)
 
 // A failed `if` condition (unknown identifier) yields a single UnknownIdentifierError
 // — not also a `never <: boolean`. The branches still type, so the if value is their
