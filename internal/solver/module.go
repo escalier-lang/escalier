@@ -123,7 +123,10 @@ func (c *checker) inferComponent(
 		}
 		v := c.freshAt(inner)
 		bindings[key] = &componentBinding{v: v}
-		scope.defineValue(key.Name(), ValueBinding{Type: v})
+		// Pre-bind the group var as a MonoScheme so a mutually-recursive reference
+		// resolves through the var itself (instantiate returns it unchanged) before
+		// generalization happens in phase 3.
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(v)}})
 	}
 
 	// Phase 2: infer each declaration's definition and constrain it <: its var.
@@ -210,20 +213,29 @@ func (c *checker) inferComponent(
 			scope.removeValue(key.Name())
 			continue
 		}
-		t := coalesce(b.v, soltype.Positive)
-		scope.defineValue(key.Name(), ValueBinding{Type: t, Sources: b.sources})
-		// Record the binding's final (coalesced) type in Info on the name node. The
-		// raw initializer path (inferDeclDef) no longer records it, so this is where
-		// the var-free type lands — and it is correct even for a `val` in a
-		// recursive group, where coalescing at definition time would have frozen it
-		// to `never`. A VarDecl records on its pattern, a FuncDecl on its name, so a
-		// top-level `fn` is queryable through Info exactly like a `val`.
+		// Generalize the group var at the component's level (was: coalesce to a
+		// monotype). Every variable at Level > lvl becomes a quantified type
+		// parameter, captured outer variables do not — turning M2's monomorphic
+		// freeze into real let-polymorphism (PR1).
+		scheme := c.generalize(b.v, lvl)
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources})
+		// Record the binding's final (coalesced) DISPLAY type in Info on the name
+		// node, so it is queryable even for a `val` in a recursive group (where
+		// coalescing at definition time would have frozen it to `never`). A VarDecl
+		// records on its pattern, a FuncDecl on its name, so a top-level `fn` is
+		// queryable through Info exactly like a `val`.
+		//
+		// NOTE: for a GENERALIZED binding this display type RETAINS its quantified
+		// type-parameter variables (it is not var-free), so consumers must render it
+		// with soltype.PrintAsScheme — plain soltype.Print renders those vars as the
+		// raw `t{ID}` debug form. (renderScheme is the canonical renderer.)
+		display := schemeType(scheme)
 		switch d := b.primary.(type) {
 		case *ast.VarDecl:
-			c.recordType(d.Pattern, t)
+			c.recordType(d.Pattern, display)
 		case *ast.FuncDecl:
 			if d.Name != nil {
-				c.recordType(d.Name, t)
+				c.recordType(d.Name, display)
 			}
 		}
 	}

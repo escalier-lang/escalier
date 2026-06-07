@@ -60,3 +60,32 @@ func TestInferModuleFuncDeclRecordsInfoType(t *testing.T) {
 	require.NotNil(t, got, "FuncDecl type not recorded in Info")
 	require.Equal(t, "fn (x: number) -> number", soltype.Print(got))
 }
+
+// A POLYMORPHIC binding's Info entry retains its quantified type-parameter vars, so
+// it must be rendered with soltype.PrintAsScheme (the var-aware renderer); plain
+// soltype.Print shows the raw t{ID} debug form. (PR1: the recorded display type is
+// NOT var-free for generalized bindings — the inverse of
+// TestInferModuleFuncDeclRecordsInfoType, whose fixture is monomorphic.)
+func TestInferModulePolymorphicFuncDeclInfoNeedsPrintScheme(t *testing.T) {
+	module := parseModule(t, `fn id(x) { x }`)
+	_, info, errs := InferModule(module)
+	require.Empty(t, errs)
+
+	var id *ast.FuncDecl
+	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, d := range ns.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Name != nil && fd.Name.Name == "id" {
+				id = fd
+				return false
+			}
+		}
+		return true
+	})
+	require.NotNil(t, id, "id decl not found")
+
+	got := info.TypeOf(id.Name)
+	require.NotNil(t, got, "FuncDecl type not recorded in Info")
+	require.Equal(t, "fn <T0>(x: T0) -> T0", soltype.PrintAsScheme(got))
+	require.NotEqual(t, soltype.PrintAsScheme(got), soltype.Print(got),
+		"plain Print leaks raw var IDs for a generalized binding; consumers must use PrintAsScheme")
+}

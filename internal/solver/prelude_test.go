@@ -32,7 +32,7 @@ func TestPreludeOperatorBindings(t *testing.T) {
 		t.Run(tt.op, func(t *testing.T) {
 			b, ok := s.GetValue(tt.op)
 			require.True(t, ok, "operator %q should be bound in the prelude", tt.op)
-			require.Equal(t, tt.want, soltype.Print(b.Type))
+			require.Equal(t, tt.want, renderBinding(b))
 		})
 	}
 }

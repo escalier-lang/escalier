@@ -17,6 +17,13 @@ func render(t soltype.Type) string {
 	return soltype.Print(coalesce(t, soltype.Positive))
 }
 
+// renderBinding renders a value binding's (sole, in PR1) scheme to its Escalier
+// type string — the test-side view of what a name resolves to, including any
+// <T0, …> quantifier prefix generalization left behind.
+func renderBinding(b ValueBinding) string {
+	return renderScheme(b.Schemes[0])
+}
+
 // --- FuncExpr ---
 
 func TestInferFuncExprAnnotated(t *testing.T) {
@@ -106,9 +113,9 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 		false, true, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn () -> number", render(b.Type))
+	require.Equal(t, "fn () -> number", render(ty))
 }
 
 // A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`
@@ -126,10 +133,10 @@ func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 		false, true, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: BigintTypeAnn", c.errs[0].Message())
-	require.Equal(t, "fn () -> unknown", render(b.Type))
+	require.Equal(t, "fn () -> unknown", render(ty))
 }
 
 // A param that arrives without a pattern must report a clean error, not panic on
@@ -218,10 +225,10 @@ func TestInferCallArityMismatch(t *testing.T) {
 func TestInferCallThroughBinding(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
-	scope.defineValue("inc", ValueBinding{Type: &soltype.FuncType{
+	scope.defineValue("inc", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.FuncType{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "n"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}}},
 		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},
-	}})
+	})}})
 	// inc(7)
 	e := ast.NewCall(identExpr("inc"), []ast.Expr{numExpr(7)}, false, testSpan())
 
@@ -299,9 +306,9 @@ func TestInferFuncDecl(t *testing.T) {
 		false, false, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn (x: number) -> number", render(b.Type))
+	require.Equal(t, "fn (x: number) -> number", render(ty))
 }
 
 // A truly recursive function: foo's body calls itself. PR-3 has no SCC driver
@@ -314,7 +321,7 @@ func TestInferFuncDecl(t *testing.T) {
 func TestInferFuncDeclSelfReference(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
-	scope.defineValue("foo", ValueBinding{Type: c.freshAt(1)})
+	scope.defineValue("foo", ValueBinding{Schemes: []TypeScheme{monoScheme(c.freshAt(1))}})
 	// fn foo(x: number) { foo(x) }
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("foo", testSpan()), nil, nil,
@@ -323,9 +330,9 @@ func TestInferFuncDeclSelfReference(t *testing.T) {
 		false, false, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(scope, 0, d)
+	ty, _ := c.inferFuncDecl(scope, 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn (x: number) -> never", render(b.Type))
+	require.Equal(t, "fn (x: number) -> never", render(ty))
 }
 
 // A FuncExpr may be assigned to a body-level `val` inside a FuncDecl (the way a
@@ -346,7 +353,7 @@ func TestInferFuncDeclBodyFuncValDecl(t *testing.T) {
 		false, false, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn () -> fn (x: number) -> number", render(b.Type))
+	require.Equal(t, "fn () -> fn (x: number) -> number", render(ty))
 }

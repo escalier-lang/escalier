@@ -45,10 +45,12 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		}
 		return initType, &ast.NodeProvenance{Node: d}, true
 	case *ast.FuncDecl:
-		b := c.inferFuncDecl(scope, lvl, d)
-		// inferFuncDecl always records exactly one source (this decl); inferComponent
-		// accumulates these per-decl sources into the binding's Sources slice.
-		return b.Type, b.Sources[0], true
+		// inferFuncDecl returns the RAW func type and its source directly;
+		// inferComponent constrains that raw type into the group var, generalizes
+		// once the group is complete, and accumulates the per-decl source into the
+		// binding's Sources slice.
+		t, src := c.inferFuncDecl(scope, lvl, d)
+		return t, src, true
 	default:
 		c.reportUnsupported(d)
 		return nil, nil, false
@@ -93,20 +95,27 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	return initT, true
 }
 
-// inferVarDecl types a `val`/`var` into a MONOMORPHIC ValueBinding, coalescing the
-// initializer at Positive polarity now (coalesce-at-binding, §7) so the stored type
-// is var-free and stable. This is the body-level path (§3.2), safe to coalesce
-// eagerly because a body-level `val` is never part of a recursive top-level group;
-// the SCC driver keeps the raw type instead (see inferDeclDef). ok=false when there
-// is no initializer.
+// inferVarDecl types a body-level `val`/`var` into a GENERALIZED ValueBinding —
+// the let-polymorphism rule (M3, PR1) that replaces M2's coalesce-at-binding
+// freeze. It infers the initializer one level deeper (lvl+1) and generalizes at
+// lvl: variables created in the RHS (level > lvl) become reusable type parameters,
+// while variables captured from an enclosing scope (level <= lvl) stay shared — so
+// `fn (y) { val getY = fn () { y }; [getY(), getY()] }` keeps getY's captured `y`
+// instead of freezing it to `never`, the bug eager coalescing caused. A body-level
+// `val` is never recursive (the name is bound only after its initializer is typed),
+// so there is no pre-binding/group var; the SCC driver owns the recursive top-level
+// path (see inferDeclDef). ok=false when there is no initializer.
 func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBinding, bool) {
-	initType, ok := c.inferVarDeclInit(scope, lvl, d)
+	initType, ok := c.inferVarDeclInit(scope, lvl+1, d)
 	if !ok {
 		return ValueBinding{}, false
 	}
-	t := coalesce(initType, soltype.Positive)
-	c.recordType(d.Pattern, t)
-	return ValueBinding{Type: t, Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}}}, true
+	scheme := c.generalize(initType, lvl)
+	// The recorded display type retains any quantified type-parameter vars (it is
+	// not var-free), so Info consumers must render it with soltype.PrintAsScheme, not
+	// plain soltype.Print — same contract as the top-level path (see module.go).
+	c.recordType(d.Pattern, schemeType(scheme))
+	return ValueBinding{Schemes: []TypeScheme{scheme}, Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}}}, true
 }
 
 // varName returns the bound name of a VarDecl whose pattern is an IdentPat, with
@@ -120,15 +129,17 @@ func varName(d *ast.VarDecl) (string, bool) {
 	return "", false
 }
 
-// inferFuncDecl types a function declaration into a monomorphic ValueBinding,
-// reusing the shared inferFunc core (infer_expr.go) on the decl's signature and
-// body. Like inferVarDecl it returns the binding rather than defining it, so the
-// caller owns scope placement: the SCC driver (inferComponent) binds a
+// inferFuncDecl types a function declaration and returns its RAW (un-coalesced,
+// variable-carrying) func type plus its provenance, NOT a ValueBinding: the SCC
+// driver (inferComponent) owns scope placement and generalization. It binds a
 // self/mutually recursive group to a fresh var first so each body can see itself
-// (and its group peers), then rebinds to the inferred type. Repeated top-level
-// FuncDecls under one name are constrained into the same var as monomorphic
-// overload arms; the overload-intersection representation is M3.
-func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) ValueBinding {
+// (and its group peers), constrains this raw type into that var, and generalizes
+// the group once complete (PR1). Returning the raw type directly (rather than
+// round-tripping through a single-MonoScheme ValueBinding) removes the unchecked
+// `.(*MonoScheme)` assertion the SCC driver would otherwise need. Repeated
+// top-level FuncDecls under one name are constrained into the same var as
+// monomorphic overload arms; the overload-intersection representation is M3.
+func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) (soltype.Type, provenance.Provenance) {
 	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d)
-	return ValueBinding{Type: t, Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}}}
+	return t, &ast.NodeProvenance{Node: d}
 }

@@ -5,13 +5,15 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// ValueBinding is a name's value-sort binding. In M2 it holds a plain
-// MONOMORPHIC soltype.Type — M1 ships no schemes, so there is no generalization
-// yet. M3 swaps Type for a TypeScheme when let-generalization lands (open
-// question §7 (a): take the mechanical field-swap churn then rather than
-// over-abstract now).
+// ValueBinding is a name's value-sort binding. M3 (PR1) replaces M2's plain
+// MONOMORPHIC soltype.Type with a *slice* of TypeSchemes: exactly one for an
+// ordinary value (the let-generalization swap), and — once PR6 lands — more than
+// one for an overload set, in declaration order. Holding the slice now (rather
+// than a nullable OverloadSet field) makes "is the scheme nil when overloaded?"
+// unrepresentable: cardinality is just len(Schemes), and Schemes[i] lines up with
+// the arm at Sources[i].
 type ValueBinding struct {
-	Type soltype.Type // M2: monomorphic. M3 replaces with a TypeScheme.
+	Schemes []TypeScheme // 1 = ordinary binding; >1 = overload set (PR6)
 	// Sources holds every decl that contributes to this binding, in source order:
 	// for a plain `val`/`fn` that is the single introducing decl, but a name with
 	// multiple top-level FuncDecls (overloads) — or an erroneous redeclaration —
@@ -19,6 +21,14 @@ type ValueBinding struct {
 	// a future go-to-definition navigate to all of them. Empty for prelude bindings.
 	Sources []provenance.Provenance
 }
+
+// IsOverloaded reports whether this binding is an overload set. Consumers MUST
+// check it before routing: an ordinary call (false) keeps M2's shipped
+// subtype-constraint path, while an overloaded call (true) goes through
+// resolveOverload (PR6). inferIdent's value-position lookup branches on it too.
+// PR1 only ever builds single-scheme bindings, so this is always false today; the
+// helper lands now so the ordinary path reads !b.IsOverloaded() from the start.
+func (b ValueBinding) IsOverloaded() bool { return len(b.Schemes) > 1 }
 
 // TypeBinding is a name's type-sort binding. M2 only ever populates this with
 // the hand-seeded stdlib-type placeholders (§3.8); real type aliases/classes are

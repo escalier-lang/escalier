@@ -1,0 +1,168 @@
+package solver
+
+import "github.com/escalier-lang/escalier/internal/soltype"
+
+// TypeScheme is a name's generalized type — the M3 replacement for M2's plain
+// soltype.Type binding. A MonoScheme is a value that does not generalize (a
+// parameter, a current-level RHS during inference, a body-level `val`, a prelude
+// operator); a PolyScheme carries a generalize-level so each use can be
+// instantiated with fresh variables (let-polymorphism). The IsAnnotated bit is
+// forward-looking metadata for PR6's overload-recursion gate — PR1 sets it false
+// and never reads it.
+type TypeScheme interface {
+	isScheme()
+	// IsAnnotated reports whether this scheme came from a user-written signature.
+	// PR1 always returns false; PR6 sets it per overload arm and folds it over a
+	// binding's arms for the mutual-recursion-needs-annotation rule.
+	IsAnnotated() bool
+}
+
+// MonoScheme is a non-generalized type. instantiate returns its Ty unchanged, so
+// every use shares the same variables — the monomorphic discipline M2 had for
+// every binding, now scoped to the bindings that genuinely must not generalize.
+type MonoScheme struct {
+	Ty        soltype.Type
+	Annotated bool // PR6 only — consulted solely for overload arms
+}
+
+// PolyScheme is a generalized type. Body is the RAW (variable-carrying) type so
+// instantiate can freshen it; every variable in Body with Level > Level is a
+// quantified type parameter (freshened per use), variables at Level <= Level are
+// captured from an enclosing scope (shared across uses). Level is the level the
+// binding was generalized at (the SCC component's level).
+type PolyScheme struct {
+	Level     int
+	Body      soltype.Type
+	Annotated bool // PR6 only — set per overload arm; folds for the recursion gate
+}
+
+func (*MonoScheme) isScheme() {}
+func (*PolyScheme) isScheme() {}
+
+func (s *MonoScheme) IsAnnotated() bool { return s.Annotated }
+func (s *PolyScheme) IsAnnotated() bool { return s.Annotated }
+
+// monoScheme wraps a raw type as a single-scheme value binding's scheme — the
+// common case for the param/prelude/body-level/raw-def bindings PR1 does not
+// generalize.
+func monoScheme(t soltype.Type) TypeScheme { return &MonoScheme{Ty: t} }
+
+// instantiate produces a usable type from a scheme at level lvl. A MonoScheme
+// instantiates to its type unchanged; a PolyScheme freshens every quantified
+// variable (Level > scheme.Level) with a fresh variable at lvl, bounds and all,
+// so two uses of a polymorphic binding never share inference variables. This is
+// the inferIdent value-position hook M2 left as a TODO — M2 returned the binding
+// type directly; PR1 routes it through here.
+func (c *checker) instantiate(s TypeScheme, lvl int) soltype.Type {
+	switch sc := s.(type) {
+	case *MonoScheme:
+		return sc.Ty
+	case *PolyScheme:
+		return c.freshenAbove(sc.Level, sc.Body, lvl, map[*soltype.TypeVarType]*soltype.TypeVarType{})
+	}
+	panic("instantiate: unknown TypeScheme")
+}
+
+// freshenAbove copies t, replacing each variable with Level > lim by a fresh
+// variable at lvl (its bounds freshened too) and sharing every variable at
+// Level <= lim. It is the per-use instantiation copy: the cache maps an original
+// variable to its single fresh counterpart so repeated occurrences (and cyclic
+// bounds) of one variable stay one variable. The fresh variable is inserted into
+// the cache BEFORE its bounds are freshened so a recursive bound that references
+// the original resolves to the in-progress copy rather than looping.
+//
+// PR1 lands this hand-rolled, parallel to coalesce/extrude; PR7 collapses all
+// three onto a shared soltype rewriting visitor with no behavior change. Unlike
+// those two it ignores polarity (it freshens uniformly, no variance flip).
+func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) soltype.Type {
+	// Every variable inside t is at or below lim: nothing to freshen, SHARE the node
+	// (the original pointer flows through unchanged). Two consequences worth naming:
+	//
+	//  1. (Soundness coupling) LevelOf returns a *TypeVarType's own Level only — it
+	//     does NOT descend into the var's bounds, and returns 0 for Union/Intersection.
+	//     This early return is therefore sound only because the MLsub level invariant
+	//     holds (a var's level >= the level of everything in its bounds, maintained by
+	//     constrain/extrude) and raw scheme bodies contain no Union/Intersection. The
+	//     analogous extrude (constrain.go) rests on the same assumption. If a future
+	//     change breaks either, a Level>lim var could hide under a shared node and two
+	//     instantiations would alias a variable that should have been fresh — revisit
+	//     when Union/Intersection become constrain inputs (M6).
+	//  2. (Identity) The shared subtree's pointer is reused across every instantiation
+	//     and the scheme body, so compound nodes are NOT uniquely minted per use. Prov
+	//     and Info are pointer-keyed; a shared monomorphic node keeps its one original
+	//     entry (which is what lets a concrete callee's blame resolve), but the
+	//     "unique pointer per mint" property recordProv's debugProv guard assumes does
+	//     not hold for these shared nodes. Anything recording provenance against an
+	//     instantiated node must account for the sharing.
+	if soltype.LevelOf(t) <= lim {
+		return t
+	}
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		if nv, ok := cache[t]; ok {
+			return nv
+		}
+		nv := c.freshAt(lvl)
+		cache[t] = nv
+		// Mint the FromInstantiation interior edge: the fresh var was copied from t.
+		// PR1 only records the edge; the multi-hop renderer that chases it back to an
+		// AST leaf is M11.5 (NodeFor still resolves only FromAST today).
+		c.recordInstantiation(nv, t)
+		nv.LowerBounds = c.freshenBounds(lim, t.LowerBounds, lvl, cache)
+		nv.UpperBounds = c.freshenBounds(lim, t.UpperBounds, lvl, cache)
+		return nv
+	case *soltype.FuncType:
+		params := make([]*soltype.FuncParam, len(t.Params))
+		for i, p := range t.Params {
+			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.freshenAbove(lim, p.Type, lvl, cache)}
+		}
+		return &soltype.FuncType{Params: params, Ret: c.freshenAbove(lim, t.Ret, lvl, cache)}
+	case *soltype.TupleType:
+		elems := make([]soltype.Type, len(t.Elems))
+		for i, e := range t.Elems {
+			elems[i] = c.freshenAbove(lim, e, lvl, cache)
+		}
+		return &soltype.TupleType{Elems: elems}
+	case *soltype.RecordType:
+		fields := make([]*soltype.RecordField, len(t.Fields))
+		for i, f := range t.Fields {
+			fields[i] = &soltype.RecordField{Name: f.Name, Type: c.freshenAbove(lim, f.Type, lvl, cache)}
+		}
+		return &soltype.RecordType{Fields: fields}
+	default:
+		// PrimType/LitType/Void/NeverType/UnknownType and the coalesced-only
+		// Union/IntersectionType have no level-bearing children reachable here.
+		return t
+	}
+}
+
+func (c *checker) freshenBounds(lim int, bounds []soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) []soltype.Type {
+	if len(bounds) == 0 {
+		return nil
+	}
+	out := make([]soltype.Type, len(bounds))
+	for i, b := range bounds {
+		out[i] = c.freshenAbove(lim, b, lvl, cache)
+	}
+	return out
+}
+
+// generalize turns the inferred type of a binding (its SCC group var) into a
+// PolyScheme quantified at lvl: every variable with Level > lvl becomes a type
+// parameter, captured outer variables (Level <= lvl) stay monomorphic. Body is
+// kept RAW for instantiation — coalescing for display happens later (schemeType /
+// renderScheme), never here.
+//
+// simplify is the PR2 hook (single-polarity elimination + co-occurrence merging);
+// PR1 lands it as a no-op so renders are non-compact until PR2 wires it in.
+func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
+	t = c.simplify(t, lvl)
+	return &PolyScheme{Level: lvl, Body: t}
+}
+
+// simplify is the PR2 simplification pass, a no-op in PR1. PR2 replaces the body
+// with occurrence analysis → co-occurrence union-find → rewrite so generalized
+// signatures render compactly and parameter-only variables coalesce to `unknown`.
+func (c *checker) simplify(t soltype.Type, _ int) soltype.Type {
+	return t
+}

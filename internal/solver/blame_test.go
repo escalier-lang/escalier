@@ -62,22 +62,49 @@ func TestBlameCallArgument(t *testing.T) {
 	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
-// A call-arity mismatch points at the whole call. (The callee `f` is named, so its
-// binding is coalesced to a fresh FuncType pointer that has no Prov entry — the
-// "function defined here" related span resolves only for inline callees in M2.5
-// and is made precise for named callees by M3's FromInstantiation.)
+// A call-arity mismatch points at the whole call, with the callee's definition as
+// the related "function defined here" span. M2.5 resolved that related span only
+// for inline callees: a named callee's binding was COALESCED to a fresh FuncType
+// pointer with no Prov entry. M3 (PR1) generalizes instead of coalescing, and for
+// a VAR-FREE (monomorphic) callee like `f` here, instantiation shares its FuncType
+// unchanged — so the original (recorded FuncInference against the decl) survives
+// and the related span now resolves. This bound matters: a POLYMORPHIC callee,
+// whose type freshenAbove rebuilds into fresh prov-less nodes, still drops the
+// related span (the receiver analogue is documented in
+// TestBlameMissingPropertyPolymorphicReceiverLosesRelated).
 func TestBlameCallArity(t *testing.T) {
 	src := "fn f(x: number) -> number { x }\nval r = f(1, 2)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"cannot constrain function of arity 1 <: function of arity 2", "f(1, 2)")
+		"cannot constrain function of arity 1 <: function of arity 2", "f(1, 2)",
+		"fn f(x: number) -> number { x }")
 }
 
-// A missing-property read blames the member's prop (.foo), not the receiver. (The
-// receiver `o` is named/coalesced, so its related span resolves only for an inline
-// receiver in M2.5.)
+// A missing-property read blames the member's prop (.foo), not the receiver, with
+// the receiver's definition as the related span. Like TestBlameCallArity, M2.5
+// resolved that related span only for an inline receiver (a named receiver was
+// coalesced to a fresh RecordType with no Prov entry); M3's generalize-and-share
+// instantiation keeps a VAR-FREE receiver's original record — here `{a: 5}` is
+// monomorphic, so it is shared unchanged through instantiation (recorded
+// ObjectField against the literal) — so the named receiver's related span now
+// resolves. A receiver whose value flowed through an instantiation that REBUILT it
+// (e.g. the result of a polymorphic call) does not keep the entry; see
+// TestBlameMissingPropertyPolymorphicReceiverLosesRelated.
 func TestBlameMissingProperty(t *testing.T) {
 	src := "val o = {a: 5}\nval x = o.b"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
+}
+
+// The bound of M3's related-span improvement: a receiver derived from a
+// POLYMORPHIC call loses its related "defined here" span. Instantiating `mk`
+// freshens its body, rebuilding the record into a fresh pointer with no Prov
+// entry, so the missing-property error carries no related receiver span — unlike
+// the direct var-free literal in TestBlameMissingProperty. Documents that the
+// improvement holds for var-free callees/receivers, not values that flowed through
+// instantiation.
+func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
+	src := "val mk = fn (v) { {a: v} }\nval o = mk(5)\nval x = o.b"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "object is missing property: b", "b")
 }

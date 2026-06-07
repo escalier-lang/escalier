@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // Precedence levels for type operators, matching the Escalier parser (and
@@ -43,10 +45,8 @@ func typePrec(t Type) int {
 // forms so the two checkers' rendered types stay string-comparable in M7's
 // differential harness. It renders the M1 coalesced type set only
 // (PrimType/LitType/FuncType/TupleType/Void/NeverType/UnknownType/UnionType/
-// IntersectionType). There is no <T0, ...> quantifier prefix in M1 — no named
-// refs exist to collect, since coalescing always inlines variables; that
-// machinery lands in M3 with the rest of the polymorphism-rendering bundle
-// (§3.3).
+// IntersectionType). Print itself emits no <T0, ...> quantifier prefix — a
+// monotype has no parameters to name; PrintAsScheme renders the generalized form.
 //
 // Print is distinct from solver's describe(): describe renders a RAW,
 // uncoalesced type (t0, function, number) mid-constrain for error messages,
@@ -59,30 +59,143 @@ func typePrec(t Type) int {
 // at binding boundaries, so a consumer may legitimately print an inner node's
 // still-raw type (M2 plan §7).
 func Print(t Type) string {
-	return printType(t)
+	return (&namedPrinter{}).printType(t)
+}
+
+// PrintAsScheme renders a coalesced GENERALIZED type (M3): it collects the type's
+// free variables into a <T0, T1, …> quantifier prefix and renders each as its
+// assigned name. A type with no free variables renders exactly as Print would (no
+// prefix), so PrintAsScheme is safe on a monotype. The prefix attaches to a
+// function (`fn <T0>(…) -> …`, matching Escalier's generic-function surface
+// syntax); a non-function body carrying free variables — not produced by M3's
+// generalization, which only generalizes function values — falls back to a
+// leading <…> group.
+//
+// Variables are named by first appearance in print order (params left to right,
+// then return; tuple elements; record fields), so the same coalesced variable
+// renders under one name everywhere it occurs.
+//
+// PrintAsScheme treats EVERY free variable as a quantified parameter — for a caller
+// that trusts its input is a fully-generalized type. The solver's renderScheme
+// uses PrintAsSchemeWith to restrict naming to the variables generalization
+// actually quantified, so a stray variable is not disguised as a parameter.
+func PrintAsScheme(t Type) string {
+	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true })
+}
+
+// PrintAsSchemeWith renders a generalized type, naming ONLY the free variables
+// isParam accepts as quantified type parameters; any other free variable renders
+// as the raw `t{ID}` debug form instead of being masked as a parameter. This
+// preserves the leak anchor: a variable coalescing failed to inline (a captured
+// var that escaped, a stray inference var) shows as `t{ID}` rather than a spurious
+// `<Tn>` that would make a malformed signature look valid.
+func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
+	names := map[*TypeVarType]string{}
+	var labels []string
+	for _, v := range freeTypeVars(t) {
+		if !isParam(v) {
+			continue // non-parameter free var → left unnamed → renders as t{ID}
+		}
+		name := typeParamName(len(labels))
+		names[v] = name
+		labels = append(labels, name)
+	}
+	if len(labels) == 0 {
+		// No quantified parameters: render as a plain (possibly raw-var) type, which
+		// keeps a leaked variable visible as t{ID}.
+		return Print(t)
+	}
+	p := &namedPrinter{names: names}
+	prefix := "<" + strings.Join(labels, ", ") + ">"
+	if ft, ok := t.(*FuncType); ok {
+		return "fn " + prefix + p.printFuncTail(ft)
+	}
+	return prefix + " " + p.printType(t)
+}
+
+// typeParamName is the surface name for the i-th quantified type parameter: T0,
+// T1, …, matching the planned `fn <T0>(x: T0) -> T0` rendering.
+func typeParamName(i int) string {
+	return "T" + strconv.Itoa(i)
+}
+
+// freeTypeVars collects the TypeVarTypes appearing in t in first-appearance print
+// order. It does NOT descend into a variable's bound lists — a coalesced display
+// type already carries the relevant structure inline (a retained variable's
+// bounds are sibling union/intersection members), so the variable node is a leaf
+// here.
+func freeTypeVars(t Type) []*TypeVarType {
+	var out []*TypeVarType
+	seen := set.NewSet[*TypeVarType]()
+	var walk func(Type)
+	walk = func(t Type) {
+		switch t := t.(type) {
+		case *TypeVarType:
+			if !seen.Contains(t) {
+				seen.Add(t)
+				out = append(out, t)
+			}
+		case *FuncType:
+			for _, p := range t.Params {
+				walk(p.Type)
+			}
+			walk(t.Ret)
+		case *TupleType:
+			for _, e := range t.Elems {
+				walk(e)
+			}
+		case *RecordType:
+			for _, f := range t.Fields {
+				walk(f.Type)
+			}
+		case *UnionType:
+			for _, m := range t.Types {
+				walk(m)
+			}
+		case *IntersectionType:
+			for _, m := range t.Types {
+				walk(m)
+			}
+		}
+	}
+	walk(t)
+	return out
+}
+
+// namedPrinter carries the optional retained-variable → quantifier-name map for a
+// single render. names is nil for plain Print (a raw variable then renders as
+// `t{ID}`) and populated by PrintAsScheme (a retained variable renders as `T{i}`).
+type namedPrinter struct {
+	names map[*TypeVarType]string
 }
 
 // printTypeMinPrec prints a child type, wrapping it in parentheses when its
 // precedence is below the required minimum — mirrors type_system's helper of the
 // same shape, so e.g. a function inside a union renders as
 // `(fn () -> number) | string`.
-func printTypeMinPrec(t Type, minPrec int) string {
-	result := printType(t)
+func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
+	result := p.printType(t)
 	if typePrec(t) < minPrec {
 		return "(" + result + ")"
 	}
 	return result
 }
 
-func printType(t Type) string {
+func (p *namedPrinter) printType(t Type) string {
 	switch t := t.(type) {
 	case *TypeVarType:
-		// A raw, un-coalesced variable. Coalesced output never contains one (every
-		// variable is inlined to its bounds, m1-implementation-plan Delta #1), but
-		// the M2 walk records raw, var-carrying types in its Info side table and
-		// only coalesces at binding boundaries — so a consumer printing an inner
-		// node's type directly may hand Print a live variable. Render it as `t{ID}`
-		// (matching solver's describe()) rather than panicking. See the M2 plan §7.
+		// A retained type parameter renders under its assigned name; otherwise a
+		// raw, un-coalesced variable. Coalesced monotype output never contains one
+		// (every variable is inlined to its bounds, m1-implementation-plan Delta #1),
+		// but the M2 walk records raw, var-carrying types in Info and only coalesces
+		// at binding boundaries — so a consumer printing an inner node's type
+		// directly may hand Print a live variable. Render it as `t{ID}` (matching
+		// solver's describe()) rather than panicking. See the M2 plan §7.
+		if p.names != nil {
+			if name, ok := p.names[t]; ok {
+				return name
+			}
+		}
 		return "t" + strconv.Itoa(t.ID)
 	case *PrimType:
 		return printPrim(t.Prim)
@@ -97,27 +210,27 @@ func printType(t Type) string {
 	case *TupleType:
 		elems := make([]string, len(t.Elems))
 		for i, e := range t.Elems {
-			elems[i] = printType(e)
+			elems[i] = p.printType(e)
 		}
 		return "[" + strings.Join(elems, ", ") + "]"
 	case *RecordType:
 		fields := make([]string, len(t.Fields))
 		for i, f := range t.Fields {
-			fields[i] = printRecordFieldName(f.Name) + ": " + printType(f.Type)
+			fields[i] = printRecordFieldName(f.Name) + ": " + p.printType(f.Type)
 		}
 		return "{" + strings.Join(fields, ", ") + "}"
 	case *FuncType:
-		return "fn " + printFuncTail(t)
+		return "fn " + p.printFuncTail(t)
 	case *UnionType:
 		parts := make([]string, len(t.Types))
 		for i, m := range t.Types {
-			parts[i] = printTypeMinPrec(m, precUnion)
+			parts[i] = p.printTypeMinPrec(m, precUnion)
 		}
 		return strings.Join(parts, " | ")
 	case *IntersectionType:
 		parts := make([]string, len(t.Types))
 		for i, m := range t.Types {
-			parts[i] = printTypeMinPrec(m, precIntersection)
+			parts[i] = p.printTypeMinPrec(m, precIntersection)
 		}
 		return strings.Join(parts, " & ")
 	}
@@ -125,14 +238,14 @@ func printType(t Type) string {
 }
 
 // printFuncTail renders the "(params) -> ret" portion of a function, without the
-// leading "fn" keyword. Kept as a separate helper so M3 can compose it with a
-// <...> quantifier prefix without byte-slicing the "fn " back off.
-func printFuncTail(t *FuncType) string {
+// leading "fn" keyword. Kept as a separate helper so PrintAsScheme can compose it
+// with a <...> quantifier prefix without byte-slicing the "fn " back off.
+func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	ps := make([]string, len(t.Params))
-	for i, p := range t.Params {
-		ps[i] = paramName(p, i) + ": " + printType(p.Type)
+	for i, param := range t.Params {
+		ps[i] = paramName(param, i) + ": " + p.printType(param.Type)
 	}
-	return "(" + strings.Join(ps, ", ") + ") -> " + printType(t.Ret)
+	return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 }
 
 // paramName renders p.Pattern. M1's only Pat concrete is IdentPat; a nil or

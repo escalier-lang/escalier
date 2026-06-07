@@ -54,7 +54,7 @@ func TestInferLiteralUnsupported(t *testing.T) {
 func TestInferIdentResolvesBinding(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
-	scope.defineValue("x", ValueBinding{Type: &soltype.PrimType{Prim: soltype.NumPrim}})
+	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.PrimType{Prim: soltype.NumPrim})}})
 
 	e := ast.NewIdent("x", testSpan())
 	got := c.inferExpr(scope, 0, e)
@@ -66,7 +66,7 @@ func TestInferIdentResolvesBinding(t *testing.T) {
 func TestInferIdentResolvesThroughParent(t *testing.T) {
 	c := newChecker()
 	parent := NewScope()
-	parent.defineValue("y", ValueBinding{Type: &soltype.LitType{Lit: &soltype.StrLit{Value: "hi"}}})
+	parent.defineValue("y", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.LitType{Lit: &soltype.StrLit{Value: "hi"}})}})
 	child := parent.Child()
 
 	e := ast.NewIdent("y", testSpan())

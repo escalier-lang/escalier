@@ -52,7 +52,12 @@ func parseModule(t *testing.T, src string) *ast.Module {
 // Only inference errors flow back; parse errors fail the test in parseModuleFiles.
 func inferModule(module *ast.Module) (values, types map[string]string, errs []SolverError) {
 	scope, _, errs := InferModule(module)
-	values = renderBindings(scope.values, func(b ValueBinding) soltype.Type { return b.Type })
+	values = make(map[string]string, len(scope.values))
+	for name, b := range scope.values {
+		// PR1: every binding holds exactly one scheme; renderScheme adds the
+		// <T0, …> quantifier prefix when generalization left type parameters behind.
+		values[name] = renderScheme(b.Schemes[0])
+	}
 	types = renderBindings(scope.types, func(b TypeBinding) soltype.Type { return b.Type })
 	return values, types, errs
 }
@@ -507,4 +512,19 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 	// M2.5: the error self-blames from the ident node.
 	require.Equal(t, "missing", spanText(srcA, errs[0].Span()))
 	require.Equal(t, map[string]string{"y": "never", "z": "5"}, values)
+}
+
+// Error recovery for a NAMED callee: an arity-mismatched call still yields the
+// callee's declared return type (not `never`), matching the inline-callee recovery
+// asserted by TestInferCallArityMismatch. M3's inferIdent returns an instantiated
+// var rather than a concrete FuncType, so inferCall recovers the return through the
+// var's FuncType lower bound (concreteFunc); without that, `r` regressed to `never`.
+func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) -> number { x }
+		val r = f(1, 2)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 2", errs[0].Message())
+	require.Equal(t, "number", values["r"], "the result recovers to the declared return, not never")
 }

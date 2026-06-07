@@ -12,14 +12,15 @@ import (
 // the leaf/interior split in planning/simple_sub/m2.5-implementation-plan.md §3.8).
 // Keyed by pointer identity, exactly like Info.
 //
-// M2.5 ships only the FromAST leaf variant. The interior edge variants
-// (FromBoundPropagation/FromInstantiation/FromExtrusion/FromCoalesce) ride along
-// with the M3+ operations that mint them — which is why Origin is an interface,
-// so M3 adds a variant rather than changing the map's value type.
+// M2.5 shipped the FromAST leaf variant; M3 (PR1) adds the first interior edge,
+// FromInstantiation. The remaining interior variants
+// (FromBoundPropagation/FromExtrusion/FromCoalesce) ride along with the later
+// operations that mint them — which is why Origin is an interface, so each adds a
+// variant rather than changing the map's value type.
 type Prov map[soltype.Type]Origin
 
-// Origin is a tagged sum naming the kind of hop that minted a type. M2.5 ships only
-// the FromAST leaf; the interior edge variants are deferred to M3+.
+// Origin is a tagged sum naming the kind of hop that minted a type. M2.5 shipped
+// the FromAST leaf; M3 adds FromInstantiation; the rest are deferred.
 type Origin interface{ isOrigin() }
 
 // FromAST is the leaf: a direct AST cause for a freshly-minted type.
@@ -29,6 +30,17 @@ type FromAST struct {
 }
 
 func (FromAST) isOrigin() {}
+
+// FromInstantiation is the first interior edge (M3, PR1): a variable minted by
+// instantiating a polymorphic scheme (freshenAbove) copied it from From, the
+// pre-freshening type. It carries no AST node of its own — the renderer that
+// chases the From chain back to the nearest AST leaf is deferred to M11.5, so
+// NodeFor still resolves only FromAST. PR1 mints the edge; nothing reads it yet.
+type FromInstantiation struct {
+	From soltype.Type
+}
+
+func (FromInstantiation) isOrigin() {}
 
 // ASTOriginKind tags WHY a node minted a type, so a renderer/LSP can phrase blame
 // ("the literal here", "this argument", "field `x`") without re-deriving it from
@@ -90,4 +102,19 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 		}
 	}
 	c.prov[t] = FromAST{Node: n, Kind: kind}
+}
+
+// recordInstantiation records the FromInstantiation interior edge minted by
+// freshenAbove: nv (a freshly-minted instantiation var) was copied from `from`.
+// It routes through the same debugProv unique-pointer guard as recordProv rather
+// than writing c.prov directly, so an accidental double-mint against an existing
+// entry is loud in tests. nv is always fresh here, so the guard never fires in
+// practice — it backstops a future change that reuses a pointer.
+func (c *checker) recordInstantiation(nv *soltype.TypeVarType, from soltype.Type) {
+	if c.debugProv {
+		if prev, ok := c.prov[nv]; ok {
+			panic(fmt.Sprintf("recordInstantiation: var %p already has provenance (%T) — the unique-pointer invariant is violated", nv, prev))
+		}
+	}
+	c.prov[nv] = FromInstantiation{From: from}
 }
