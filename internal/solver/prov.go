@@ -101,7 +101,27 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 			panic(fmt.Sprintf("recordProv: type %p re-recorded against a different node (was %T, now %T) — the unique-pointer invariant is violated", t, prev.Node, n))
 		}
 	}
+	c.snapshotProv(t)
 	c.prov[t] = FromAST{Node: n, Kind: kind}
+}
+
+// snapshotProv captures t's current Prov entry and, under an active probe (M3
+// PR5), registers a rollback closure so a discarded speculative trial leaves Prov
+// exactly as it was. A no-op when no probe is open. Shared by both Prov writers
+// (recordProv, recordInstantiation) so every speculative side-table write is
+// reversible.
+func (c *checker) snapshotProv(t soltype.Type) {
+	if c.ctx.probe == nil {
+		return
+	}
+	prev, had := c.prov[t]
+	c.ctx.probe.onRollback(func() {
+		if had {
+			c.prov[t] = prev
+		} else {
+			delete(c.prov, t)
+		}
+	})
 }
 
 // recordInstantiation records the FromInstantiation interior edge minted by
@@ -116,5 +136,6 @@ func (c *checker) recordInstantiation(nv *soltype.TypeVarType, from soltype.Type
 			panic(fmt.Sprintf("recordInstantiation: var %p already has provenance (%T) — the unique-pointer invariant is violated", nv, prev))
 		}
 	}
+	c.snapshotProv(nv)
 	c.prov[nv] = FromInstantiation{From: from}
 }

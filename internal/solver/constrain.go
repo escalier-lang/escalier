@@ -204,6 +204,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 	// lhs is a variable: record rhs as an upper bound, propagate existing lowers.
 	if lv, ok := lhs.(*soltype.TypeVarType); ok {
 		if soltype.LevelOf(rhs) <= lv.Level {
+			c.recordMutation(lv)
 			lv.UpperBounds = append(lv.UpperBounds, rhs)
 			var errs []SolverError
 			for _, lb := range lv.LowerBounds {
@@ -218,6 +219,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 	// rhs is a variable: symmetric — record lhs as a lower bound, propagate uppers.
 	if rv, ok := rhs.(*soltype.TypeVarType); ok {
 		if soltype.LevelOf(lhs) <= rv.Level {
+			c.recordMutation(rv)
 			rv.LowerBounds = append(rv.LowerBounds, lhs)
 			var errs []SolverError
 			for _, ub := range rv.UpperBounds {
@@ -251,13 +253,17 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 		nv := c.freshVar(lvl)
 		cache[key] = nv
 		if pol == soltype.Positive {
+			c.recordMutation(t)
 			t.UpperBounds = append(t.UpperBounds, nv)
 			for _, lb := range t.LowerBounds {
+				c.recordMutation(nv)
 				nv.LowerBounds = append(nv.LowerBounds, c.extrude(lb, pol, lvl, cache))
 			}
 		} else {
+			c.recordMutation(t)
 			t.LowerBounds = append(t.LowerBounds, nv)
 			for _, ub := range t.UpperBounds {
+				c.recordMutation(nv)
 				nv.UpperBounds = append(nv.UpperBounds, c.extrude(ub, pol, lvl, cache))
 			}
 		}

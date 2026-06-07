@@ -96,7 +96,21 @@ func (c *checker) reportUnsupportedFeature(node ast.Node, feature string) soltyp
 // the unexported setType — which is why the whole M2 walk lives in package
 // solver. The AST stays untouched (no InferredType() writes); Info is the single
 // source of truth for node→type.
+//
+// Under a probe (M3 PR5) the prior entry is captured and a rollback closure
+// registered, so a discarded speculative trial leaves Info exactly as it was —
+// the entry restored if n had one, deleted if it did not.
 func (c *checker) recordType(n ast.Node, t soltype.Type) {
+	if c.ctx.probe != nil {
+		prev, had := c.info.types[n]
+		c.ctx.probe.onRollback(func() {
+			if had {
+				c.info.types[n] = prev
+			} else {
+				delete(c.info.types, n)
+			}
+		})
+	}
 	c.info.setType(n, t)
 }
 

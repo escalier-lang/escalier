@@ -1,0 +1,156 @@
+package solver
+
+import (
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
+
+// Probe is the M3 (PR5) speculation journal: it records the mutations a
+// tentative inference does so a *discarded* trial leaves no trace. Two kinds of
+// mutation are journaled:
+//
+//  1. Bound appends. Every TypeVarType the trial appends a bound to is recorded
+//     once, with its bound-list lengths at first touch (record). Because bound
+//     lists are append-only, that single length snapshot covers every later
+//     append, and a discard is a slice truncation back to the snapshot.
+//  2. Side-table writes. Writes to the carrier's Info / Prov tables under the
+//     probe register an onRollback closure (the carrier owns those tables, so
+//     it registers the closures — see recordType/recordProv). A discard runs
+//     them so no stray node→type / type→origin entry survives a losing trial.
+//
+// Probes nest. A committed child hands its rollback obligation up to its parent
+// (Commit), so a later parent discard still undoes the committed child's work; a
+// top-level commit makes the mutations permanent and drops the journal. The
+// active probe lives on *Context (the engine's bound-mutating core is there); the
+// push/pop discipline and side-table registration live on the checker carrier
+// (openProbe/closeProbe), which owns Info/Prov. PR6 (overloading) is the first
+// consumer: each candidate overload is trialled under a probe and the losers
+// rolled back.
+//
+// Deviation from the plan's sketch: the plan typed the journal over a `Bounded`
+// interface (boundLengths/truncateBounds) to abstract "things with bound lists".
+// Go can't add those (unexported) methods to soltype.TypeVarType from this
+// package, and M3 has exactly one bounded type, so the journal holds the concrete
+// *soltype.TypeVarType and truncates its exported bound fields directly — keeping
+// the speculation-only truncate out of soltype's public surface. If a second
+// bounded type appears, reintroduce the interface (with exported methods on the
+// soltype types) then.
+type Probe struct {
+	entries  []probeEntry                  // one per touched variable, in first-touch order
+	touched  set.Set[*soltype.TypeVarType] // dedup: a var is journaled at most once per probe
+	cleanups []func()                      // Info / Prov rollback closures, registration order
+	parent   *Probe                        // enclosing probe (nil at top level)
+	done     bool                          // Commit/Discard are idempotent and mutually exclusive
+}
+
+// probeEntry snapshots one variable's bound-list lengths at the moment the probe
+// first touched it. A discard truncates LowerBounds/UpperBounds back to these
+// lengths, dropping exactly the bounds the trial appended.
+type probeEntry struct {
+	v         *soltype.TypeVarType
+	prevLower int
+	prevUpper int
+}
+
+// newProbe returns a probe whose parent is the currently-active probe (or nil),
+// with its dedup set initialized so record/Commit never touch a nil map.
+func newProbe(parent *Probe) *Probe {
+	return &Probe{parent: parent, touched: set.NewSet[*soltype.TypeVarType]()}
+}
+
+// record snapshots v's current bound-list lengths the first time this probe sees
+// v. It MUST be called before the append that mutates v, so the snapshot captures
+// the pre-append lengths; later appends to the same v are no-ops (the lists are
+// append-only, so the first snapshot already covers them).
+func (p *Probe) record(v *soltype.TypeVarType) {
+	if p.touched.Contains(v) {
+		return
+	}
+	p.touched.Add(v)
+	p.entries = append(p.entries, probeEntry{v: v, prevLower: len(v.LowerBounds), prevUpper: len(v.UpperBounds)})
+}
+
+// onRollback registers a closure to undo a side-table write (Info / Prov) made
+// under this probe. A discard runs the closures (see rollback); a commit hands
+// them to the parent (or drops them at top level).
+func (p *Probe) onRollback(f func()) {
+	p.cleanups = append(p.cleanups, f)
+}
+
+// rollback reverts every mutation journaled under this probe. Cleanups run before
+// bound truncation (side tables first) and in REVERSE registration order (LIFO):
+// a single Info/Prov key may be written more than once under the probe, and each
+// closure captured that key's prior value at registration time, so only unwinding
+// newest-first restores the original value. Entry truncation is reverse for
+// symmetry only — touched dedups to one entry per var, so order is moot there.
+func (p *Probe) rollback() {
+	for i := len(p.cleanups) - 1; i >= 0; i-- {
+		p.cleanups[i]()
+	}
+	for i := len(p.entries) - 1; i >= 0; i-- {
+		e := p.entries[i]
+		e.v.LowerBounds = e.v.LowerBounds[:e.prevLower]
+		e.v.UpperBounds = e.v.UpperBounds[:e.prevUpper]
+	}
+}
+
+// Discard rolls back every mutation journaled under this probe. Idempotent: a
+// second Discard (or a Discard after Commit) is a no-op.
+func (p *Probe) Discard() {
+	if p.done {
+		return
+	}
+	p.rollback()
+	p.done = true
+}
+
+// Commit keeps this probe's mutations. At top level the mutations become
+// permanent and the journal is dropped. With a parent, the rollback obligation is
+// handed up so a later parent Discard still undoes this committed child's work:
+// each touched var the parent has NOT yet journaled is inherited with the child's
+// snapshot (the var's state before any parent-or-child mutation); a var the parent
+// already journaled keeps the parent's earlier (≤) snapshot. Cleanups append after
+// the parent's so global registration order — and thus the LIFO rollback — is
+// preserved. Idempotent and mutually exclusive with Discard.
+func (p *Probe) Commit() {
+	if p.done {
+		return
+	}
+	p.done = true
+	parent := p.parent
+	if parent == nil {
+		p.entries = nil
+		p.cleanups = nil
+		return
+	}
+	for _, e := range p.entries {
+		if parent.touched.Contains(e.v) {
+			continue
+		}
+		parent.touched.Add(e.v)
+		parent.entries = append(parent.entries, e)
+	}
+	parent.cleanups = append(parent.cleanups, p.cleanups...)
+	p.entries = nil
+	p.cleanups = nil
+}
+
+// openProbe pushes a fresh probe as the active one and returns it. Pair every
+// openProbe with a closeProbe so ctx.probe never dangles.
+func (c *checker) openProbe() *Probe {
+	p := newProbe(c.ctx.probe)
+	c.ctx.probe = p
+	return p
+}
+
+// closeProbe runs the probe's outcome (Commit when commit is true, else Discard)
+// and restores the engine's active-probe pointer to the enclosing probe, so the
+// current-probe pointer follows the open/close stack exactly.
+func (c *checker) closeProbe(p *Probe, commit bool) {
+	if commit {
+		p.Commit()
+	} else {
+		p.Discard()
+	}
+	c.ctx.probe = p.parent
+}
