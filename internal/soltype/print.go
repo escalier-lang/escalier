@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // Precedence levels for type operators, matching the Escalier parser (and
@@ -72,17 +74,40 @@ func Print(t Type) string {
 // Variables are named by first appearance in print order (params left to right,
 // then return; tuple elements; record fields), so the same coalesced variable
 // renders under one name everywhere it occurs.
+//
+// PrintScheme treats EVERY free variable as a quantified parameter — for a caller
+// that trusts its input is a fully-generalized type. The solver's renderScheme
+// uses PrintSchemeParams to restrict naming to the variables generalization
+// actually quantified, so a stray variable is not disguised as a parameter.
 func PrintScheme(t Type) string {
-	vars := freeTypeVars(t)
-	if len(vars) == 0 {
-		return Print(t)
-	}
-	names := make(map[*TypeVarType]string, len(vars))
-	labels := make([]string, len(vars))
-	for i, v := range vars {
-		name := typeParamName(i)
+	return printScheme(t, func(*TypeVarType) bool { return true })
+}
+
+// PrintSchemeParams renders a generalized type, naming ONLY the free variables
+// isParam accepts as quantified type parameters; any other free variable renders
+// as the raw `t{ID}` debug form instead of being masked as a parameter. This
+// preserves the leak anchor: a variable coalescing failed to inline (a captured
+// var that escaped, a stray inference var) shows as `t{ID}` rather than a spurious
+// `<Tn>` that would make a malformed signature look valid.
+func PrintSchemeParams(t Type, isParam func(*TypeVarType) bool) string {
+	return printScheme(t, isParam)
+}
+
+func printScheme(t Type, isParam func(*TypeVarType) bool) string {
+	names := map[*TypeVarType]string{}
+	var labels []string
+	for _, v := range freeTypeVars(t) {
+		if !isParam(v) {
+			continue // non-parameter free var → left unnamed → renders as t{ID}
+		}
+		name := typeParamName(len(labels))
 		names[v] = name
-		labels[i] = name
+		labels = append(labels, name)
+	}
+	if len(labels) == 0 {
+		// No quantified parameters: render as a plain (possibly raw-var) type, which
+		// keeps a leaked variable visible as t{ID}.
+		return Print(t)
 	}
 	p := &namedPrinter{names: names}
 	prefix := "<" + strings.Join(labels, ", ") + ">"
@@ -105,13 +130,13 @@ func typeParamName(i int) string {
 // here.
 func freeTypeVars(t Type) []*TypeVarType {
 	var out []*TypeVarType
-	seen := map[*TypeVarType]bool{}
+	seen := set.NewSet[*TypeVarType]()
 	var walk func(Type)
 	walk = func(t Type) {
 		switch t := t.(type) {
 		case *TypeVarType:
-			if !seen[t] {
-				seen[t] = true
+			if !seen.Contains(t) {
+				seen.Add(t)
 				out = append(out, t)
 			}
 		case *FuncType:

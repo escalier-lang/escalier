@@ -75,7 +75,25 @@ func (c *checker) instantiate(s TypeScheme, lvl int) soltype.Type {
 // three onto a shared soltype rewriting visitor with no behavior change. Unlike
 // those two it ignores polarity (it freshens uniformly, no variance flip).
 func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) soltype.Type {
-	// Every variable inside t is at or below lim: nothing to freshen, share it.
+	// Every variable inside t is at or below lim: nothing to freshen, SHARE the node
+	// (the original pointer flows through unchanged). Two consequences worth naming:
+	//
+	//  1. (Soundness coupling) LevelOf returns a *TypeVarType's own Level only — it
+	//     does NOT descend into the var's bounds, and returns 0 for Union/Intersection.
+	//     This early return is therefore sound only because the MLsub level invariant
+	//     holds (a var's level >= the level of everything in its bounds, maintained by
+	//     constrain/extrude) and raw scheme bodies contain no Union/Intersection. The
+	//     analogous extrude (constrain.go) rests on the same assumption. If a future
+	//     change breaks either, a Level>lim var could hide under a shared node and two
+	//     instantiations would alias a variable that should have been fresh — revisit
+	//     when Union/Intersection become constrain inputs (M6).
+	//  2. (Identity) The shared subtree's pointer is reused across every instantiation
+	//     and the scheme body, so compound nodes are NOT uniquely minted per use. Prov
+	//     and Info are pointer-keyed; a shared monomorphic node keeps its one original
+	//     entry (which is what lets a concrete callee's blame resolve), but the
+	//     "unique pointer per mint" property recordProv's debugProv guard assumes does
+	//     not hold for these shared nodes. Anything recording provenance against an
+	//     instantiated node must account for the sharing.
 	if soltype.LevelOf(t) <= lim {
 		return t
 	}
@@ -89,7 +107,7 @@ func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*solt
 		// Mint the FromInstantiation interior edge: the fresh var was copied from t.
 		// PR1 only records the edge; the multi-hop renderer that chases it back to an
 		// AST leaf is M11.5 (NodeFor still resolves only FromAST today).
-		c.prov[nv] = FromInstantiation{From: t}
+		c.recordInstantiation(nv, t)
 		nv.LowerBounds = c.freshenBounds(lim, t.LowerBounds, lvl, cache)
 		nv.UpperBounds = c.freshenBounds(lim, t.UpperBounds, lvl, cache)
 		return nv

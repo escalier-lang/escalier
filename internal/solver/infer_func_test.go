@@ -113,9 +113,9 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 		false, true, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn () -> number", renderBinding(b))
+	require.Equal(t, "fn () -> number", render(ty))
 }
 
 // A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`
@@ -133,10 +133,10 @@ func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 		false, true, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: BigintTypeAnn", c.errs[0].Message())
-	require.Equal(t, "fn () -> unknown", renderBinding(b))
+	require.Equal(t, "fn () -> unknown", render(ty))
 }
 
 // A param that arrives without a pattern must report a clean error, not panic on
@@ -306,9 +306,9 @@ func TestInferFuncDecl(t *testing.T) {
 		false, false, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn (x: number) -> number", renderBinding(b))
+	require.Equal(t, "fn (x: number) -> number", render(ty))
 }
 
 // A truly recursive function: foo's body calls itself. PR-3 has no SCC driver
@@ -330,9 +330,9 @@ func TestInferFuncDeclSelfReference(t *testing.T) {
 		false, false, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(scope, 0, d)
+	ty, _ := c.inferFuncDecl(scope, 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn (x: number) -> never", renderBinding(b))
+	require.Equal(t, "fn (x: number) -> never", render(ty))
 }
 
 // A FuncExpr may be assigned to a body-level `val` inside a FuncDecl (the way a
@@ -353,7 +353,7 @@ func TestInferFuncDeclBodyFuncValDecl(t *testing.T) {
 		false, false, false, testSpan(),
 	)
 
-	b := c.inferFuncDecl(NewScope(), 0, d)
+	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn () -> fn (x: number) -> number", renderBinding(b))
+	require.Equal(t, "fn () -> fn (x: number) -> number", render(ty))
 }

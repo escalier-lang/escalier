@@ -242,8 +242,23 @@ func schemeType(s TypeScheme) soltype.Type {
 
 // renderScheme renders a scheme to its Escalier type-annotation string, with a
 // <T0, …> quantifier prefix when generalization left type parameters behind.
+//
+// For a PolyScheme it names only the variables generalization quantified — those
+// with Level > sc.Level, the exact retention criterion coalesceScheme uses — so a
+// variable that escaped coalescing (a captured var at Level <= sc.Level that was
+// not inlined) renders as the raw t{ID} debug form instead of being disguised as a
+// spurious type parameter. A MonoScheme coalesces to a var-free type, so plain
+// PrintScheme suffices.
 func renderScheme(s TypeScheme) string {
-	return soltype.PrintScheme(schemeType(s))
+	switch sc := s.(type) {
+	case *MonoScheme:
+		return soltype.PrintScheme(coalesce(sc.Ty, soltype.Positive))
+	case *PolyScheme:
+		return soltype.PrintSchemeParams(coalesceScheme(sc.Body, sc.Level), func(v *soltype.TypeVarType) bool {
+			return v.Level > sc.Level
+		})
+	}
+	panic(fmt.Sprintf("renderScheme: unknown TypeScheme %T", s))
 }
 
 // emptyOf returns the lattice identity for a polarity: never (⊥, the identity of

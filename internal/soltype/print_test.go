@@ -213,3 +213,19 @@ func TestPrintScheme(t *testing.T) {
 		require.Equal(t, "<T0> [T0, T0]", PrintScheme(ty))
 	})
 }
+
+// PrintSchemeParams names ONLY the variables the predicate accepts as quantified
+// type parameters; a variable it rejects (one coalescing should have inlined)
+// renders as the raw t{ID} debug anchor instead of being masked as a <Tn>
+// parameter. This preserves the leak signal that plain PrintScheme (which names
+// every free var) would hide.
+func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
+	param := &TypeVarType{ID: 1, Level: 2}   // a genuine type parameter (Level > 1)
+	leaked := &TypeVarType{ID: 99, Level: 0} // a var that should have been inlined
+	ty := &FuncType{
+		Params: []*FuncParam{identP("x", param)},
+		Ret:    &TupleType{Elems: []Type{param, leaked}},
+	}
+	got := PrintSchemeParams(ty, func(v *TypeVarType) bool { return v.Level > 1 })
+	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)
+}

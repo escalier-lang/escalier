@@ -49,9 +49,14 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 // correct here. M4 moves that error to the value-position consumer once
 // qualified Foo.bar access lands.
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
-	if b, ok := scope.GetValue(e.Name); ok {
-		// PR1 never builds an overloaded binding; the IsOverloaded value-position
-		// branch (arm intersection) is PR6.
+	// A live binding always has at least one scheme (inferComponent pre-binds a
+	// fresh MonoScheme before inferring, and a failed binding is removeValue'd, not
+	// left at len 0). Guard the index anyway: the slice representation makes len>=1
+	// an invariant rather than a non-nilable field, so a malformed empty binding
+	// degrades to an unknown-identifier error here instead of an index-out-of-range
+	// panic. PR1 never builds an overloaded binding; the IsOverloaded value-position
+	// branch (arm intersection) is PR6.
+	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
 		t := c.instantiate(b.Schemes[0], lvl)
 		c.recordType(e, t)
 		return t
@@ -199,7 +204,10 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // declared return type even when the arguments don't match, so a downstream
 // expression sees the real return type rather than a poisoned `never`. constrain
 // short-circuits its FuncType arity arm before propagating the return into res,
-// so when the callee is a concrete function its return is wired through directly.
+// so the return is wired through directly here. The callee is concrete either as a
+// bare FuncType (an inline callee) OR as a var whose lower bound is a FuncType (a
+// named/generalized callee, which inferIdent now resolves through instantiate — see
+// concreteFunc); both recover, so recovery no longer regresses for named callees.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	args := make([]*soltype.FuncParam, len(e.Args))
@@ -213,11 +221,35 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
 	c.constrain(e, callee, callShape)
-	if fn, ok := callee.(*soltype.FuncType); ok {
+	if fn, ok := concreteFunc(callee); ok {
 		c.constrain(e, fn.Ret, res)
 	}
 	c.recordType(e, res)
 	return res
+}
+
+// concreteFunc resolves a callee to the concrete FuncType to recover a call's
+// return type from. M2's inferIdent returned a binding's coalesced FuncType
+// directly, so a bare type-assertion sufficed; M3's inferIdent returns
+// instantiate(scheme), which for a named/generalized callee is a fresh var whose
+// (freshened) lower bound is the FuncType. So look through a var to its first
+// FuncType lower bound — otherwise an arity-mismatched call to a named function
+// would lose return recovery and yield `never` (the inline-callee path kept it).
+// A deferred callee with no concrete lower bound yet yields ok=false (no recovery,
+// as before). PR1 bindings have at most one func lower bound; overload sets (PR6)
+// resolve through resolveOverload, not here.
+func concreteFunc(t soltype.Type) (*soltype.FuncType, bool) {
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		return t, true
+	case *soltype.TypeVarType:
+		for _, lb := range t.LowerBounds {
+			if fn, ok := lb.(*soltype.FuncType); ok {
+				return fn, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // inferTuple types a tuple literal as a soltype.TupleType of its element types

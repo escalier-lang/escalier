@@ -103,3 +103,18 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 	}
 	c.prov[t] = FromAST{Node: n, Kind: kind}
 }
+
+// recordInstantiation records the FromInstantiation interior edge minted by
+// freshenAbove: nv (a freshly-minted instantiation var) was copied from `from`.
+// It routes through the same debugProv unique-pointer guard as recordProv rather
+// than writing c.prov directly, so an accidental double-mint against an existing
+// entry is loud in tests. nv is always fresh here, so the guard never fires in
+// practice — it backstops a future change that reuses a pointer.
+func (c *checker) recordInstantiation(nv *soltype.TypeVarType, from soltype.Type) {
+	if c.debugProv {
+		if prev, ok := c.prov[nv]; ok {
+			panic(fmt.Sprintf("recordInstantiation: var %p already has provenance (%T) — the unique-pointer invariant is violated", nv, prev))
+		}
+	}
+	c.prov[nv] = FromInstantiation{From: from}
+}
