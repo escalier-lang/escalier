@@ -204,7 +204,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 	// lhs is a variable: record rhs as an upper bound, propagate existing lowers.
 	if lv, ok := lhs.(*soltype.TypeVarType); ok {
 		if soltype.LevelOf(rhs) <= lv.Level {
-			lv.UpperBounds = append(lv.UpperBounds, rhs)
+			c.addUpperBound(lv, rhs)
 			var errs []SolverError
 			for _, lb := range lv.LowerBounds {
 				errs = append(errs, c.constrain(lb, rhs, seen)...)
@@ -218,7 +218,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 	// rhs is a variable: symmetric — record lhs as a lower bound, propagate uppers.
 	if rv, ok := rhs.(*soltype.TypeVarType); ok {
 		if soltype.LevelOf(lhs) <= rv.Level {
-			rv.LowerBounds = append(rv.LowerBounds, lhs)
+			c.addLowerBound(rv, lhs)
 			var errs []SolverError
 			for _, ub := range rv.UpperBounds {
 				errs = append(errs, c.constrain(lhs, ub, seen)...)
@@ -250,15 +250,19 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 		}
 		nv := c.freshVar(lvl)
 		cache[key] = nv
+		// t is the original (possibly pre-probe) var — its append is the one a
+		// Discard must truncate. nv was just minted here, so journaling it is a
+		// harmless no-op (a fresh var is unreachable after a Discard); it goes
+		// through the helpers only to keep a single uniform append path.
 		if pol == soltype.Positive {
-			t.UpperBounds = append(t.UpperBounds, nv)
+			c.addUpperBound(t, nv)
 			for _, lb := range t.LowerBounds {
-				nv.LowerBounds = append(nv.LowerBounds, c.extrude(lb, pol, lvl, cache))
+				c.addLowerBound(nv, c.extrude(lb, pol, lvl, cache))
 			}
 		} else {
-			t.LowerBounds = append(t.LowerBounds, nv)
+			c.addLowerBound(t, nv)
 			for _, ub := range t.UpperBounds {
-				nv.UpperBounds = append(nv.UpperBounds, c.extrude(ub, pol, lvl, cache))
+				c.addUpperBound(nv, c.extrude(ub, pol, lvl, cache))
 			}
 		}
 		return nv

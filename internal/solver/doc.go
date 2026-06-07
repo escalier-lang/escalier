@@ -29,9 +29,18 @@
 // which makes renders compact where the same variable isn't already shared across
 // positions; generalize's simplify hook is a no-op until then.
 //
+// M3 (PR5) adds the probe (probe.go): a speculation journal over the engine's
+// bound-list mutations (a per-variable length snapshot, truncated back on
+// discard) plus side-table (Info/Prov/errs) rollback closures, with push/pop
+// nesting that hands a committed child's rollback obligation up to its parent. The active
+// probe lives on *Context (next to the bound-mutating constrain/extrude); the
+// open/close discipline lives on the checker carrier. PR6's overload resolution
+// is its first consumer — each candidate is trialled under a probe and the losers
+// rolled back — but it is general speculation infrastructure reused beyond M3.
+//
 // What is still deferred (each lands in a later milestone): records / mut /
-// lifetimes (M4), function overloading (M3 PR6) and the probe (PR5), classes and
-// the union/intersection *subtyping rules* in constrain (M5/M6), and type-level
+// lifetimes (M4), function overloading (M3 PR6), classes and the
+// union/intersection *subtyping rules* in constrain (M5/M6), and type-level
 // operators (M5/M8). M1 ships UnionType/IntersectionType *nodes* for coalesced
 // output, but their lattice rules in constrain remain deferred.
 package solver
