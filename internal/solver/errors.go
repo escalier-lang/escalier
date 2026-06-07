@@ -329,8 +329,16 @@ func (e *NamespaceUsedAsValueError) Message() string {
 	return "Namespace used as a value: " + e.Ident.Name
 }
 
-func (e *TooManyArgsError) Span() ast.Span      { return e.Call.Span() }
-func (e *TooManyArgsError) Related() []ast.Span { return []ast.Span{e.Call.Callee.Span()} }
+func (e *TooManyArgsError) Span() ast.Span { return e.Call.Span() }
+func (e *TooManyArgsError) Related() []ast.Span {
+	// Span() uses the call's own span and never derefs Callee; Related() does, so
+	// guard a nil Callee (not produced by the parser, but possible in a hand-built
+	// AST) to uphold the "never panic on malformed AST" guarantee.
+	if e.Call.Callee == nil {
+		return nil
+	}
+	return []ast.Span{e.Call.Callee.Span()}
+}
 func (e *TooManyArgsError) Message() string {
 	return fmt.Sprintf("Too many arguments: expected at most %d, but got %d",
 		len(e.Fn.Params), len(e.Call.Args))

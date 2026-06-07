@@ -140,7 +140,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
 		// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
 		// `required` count without dropping the param — carried onto the soltype so
-		// the accept-set rule and the printer (x?: T) see it.
+		// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
+		// in-body binding keeps the param's declared type (pt), NOT widened to
+		// `pt | undefined`, so a body that reads an omitted optional sees it at the
+		// narrower type. Widening needs undefined/unions (M6); M3 has neither.
 		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
 	}
 

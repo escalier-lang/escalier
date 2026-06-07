@@ -66,6 +66,19 @@ func TestInferOptionalParamCallArity(t *testing.T) {
 	})
 }
 
+// A NON-TRAILING optional does not lower the required count: arguments bind
+// positionally, so a required param after an optional is still required. `f(1)` on
+// `fn(a?, b)` must be rejected (it would leave the required `b` unbound), even
+// though `a` is marked optional. requiredCount counts trailing optionals only.
+func TestInferNonTrailingOptionalRequiresAllArgs(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(a?: number, b: number) -> number { b }
+		val r = f(1)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", errs[0].Message())
+}
+
 // The extra-arg lint fires for an INEXACT callee too (#677 §4.2.3: direct calls
 // reject extras regardless of exactness). An inexact function value has no source
 // syntax yet (the `...` marker rides on function-type annotations, which the solver

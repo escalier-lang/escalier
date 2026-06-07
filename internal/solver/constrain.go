@@ -11,14 +11,18 @@ import (
 // an inexact function tolerates any number of trailing arguments as a callback.
 const unboundedArity = math.MaxInt
 
-// requiredCount is the number of required (non-optional) parameters of f — the
-// LOWER bound of its accept-set. An optional (`x?`) parameter does not count.
+// requiredCount is the number of arguments a positional call must supply — the
+// LOWER bound of f's accept-set. Because arguments bind positionally, an optional
+// (`x?`) parameter only lowers the requirement when it is TRAILING: in fn(a, b?)
+// you may omit b, but in fn(a?, b) you cannot omit a while still supplying b, so a
+// is effectively required. So required = the position after the last non-optional
+// param = len(Params) minus the count of TRAILING optionals — NOT the count of all
+// non-optional params, which would wrongly treat a leading optional as droppable
+// and let a call leave a required trailing param unbound.
 func requiredCount(f *soltype.FuncType) int {
-	n := 0
-	for _, p := range f.Params {
-		if !p.Optional {
-			n++
-		}
+	n := len(f.Params)
+	for n > 0 && f.Params[n-1].Optional {
+		n--
 	}
 	return n
 }
@@ -112,9 +116,19 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 				return []SolverError{&FuncArityMismatchError{LHS: l, RHS: r}}
 			}
 			// Shared positions are checked per-parameter (params contravariant,
-			// return covariant); positions only one side declares are covered by the
-			// accept-set gate above (the slot never supplies them, or the inexact
-			// supplier tolerates them).
+			// return covariant). When r is EXACT this is complete: r never supplies an
+			// argument beyond its declared params, and any extra param l declares there
+			// must be optional (the lo gate forced loL <= loR) and so is simply never
+			// passed.
+			//
+			// KNOWN GAP (M4): when r is INEXACT and l declares MORE params than r, r's
+			// `...` tail may supply arbitrarily-typed args at l's extra positions, so
+			// soundness demands `unknown <: l.Params[i].Type` there — exact-types
+			// §4.2.1.2 "Variation B", the load-bearing rejection. That check needs the
+			// `_ <: unknown` (⊤) rule constrain lacks until M6, and an inexact function
+			// is unreachable from M3 source anyway (resolveTypeAnn resolves no function
+			// annotations), so the extra positions are left unchecked here for now. For
+			// every M3-reachable input (exact functions only) the shared loop is complete.
 			var errs []SolverError
 			n := min(len(l.Params), len(r.Params))
 			for i := 0; i < n; i++ {
