@@ -23,12 +23,62 @@ type checker struct {
 	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
 
+	// fn is the enclosing function context for the body currently being walked —
+	// its async flag (does `await` here resolve?), the function's AST node (for
+	// await-outside-async blame), and the live list of every ReturnStmt expression
+	// type collected from the body so far (PR3). It is nil at module top-level (and
+	// inside a top-level `val` initializer): a top-level `await` is rejected by
+	// inferAwait, and a top-level `return` — reachable inside an `if` in a `val`
+	// initializer — by inferStmt's ReturnOutsideFunctionError. inferFunc pushes a
+	// fresh context on entry and pops it on exit, so a nested function has its own
+	// returns collection (a return inside an inner fn never escapes to the outer).
+	fn *funcCtx
+
 	// debugProv, when set, makes recordProv panic on a conflicting overwrite (the
 	// same type pointer recorded against a *different* node) — turning the
 	// implicit "every minted type is a unique pointer" invariant into an enforced
 	// one. Off in production (a span bug must never crash the compiler); flipped on
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
+}
+
+// funcCtx is the per-function inference context — pushed by inferFunc on entry to
+// a function body and popped on exit. The async flag lets inferAwait diagnose a
+// non-async use (and drives the external Promise wrap); node is the enclosing
+// function's AST node, surfaced as the "make this async" related span on an
+// await-outside-async error; returns accumulates every ReturnStmt expression type
+// collected from the body (in source order, valued AND bare — bare returns
+// contribute Void) so inferFunc can join them with the block tail before
+// constraining against the return annotation, finishing M2's carried-over TODO.
+//
+// Nesting is handled by save/restore through the pointer pushFuncCtx returns, not a
+// parent chain on the struct: a nested fn opens its own ctx (so its returns never
+// leak to the outer), and the outer is restored verbatim on pop.
+type funcCtx struct {
+	async   bool
+	node    ast.Node
+	returns []soltype.Type
+}
+
+// pushFuncCtx enters the inference context for function `node` (async controls
+// whether `await` is allowed and the external Promise wrap). It returns the
+// PREVIOUS context; the caller restores it by handing that pointer to popFuncCtx
+// after walking the body. Push/pop is straight-line, not deferred: the caller needs
+// popFuncCtx's returned return-points as a value, and the walk reports errors rather
+// than panicking, so there is no unwind to guard against.
+func (c *checker) pushFuncCtx(async bool, node ast.Node) *funcCtx {
+	saved := c.fn
+	c.fn = &funcCtx{async: async, node: node}
+	return saved
+}
+
+// popFuncCtx restores the previous function context (the pointer pushFuncCtx
+// returned) and hands back the return-point types collected from the body just
+// walked, so the caller can join them with the block's tail value.
+func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
+	collected := c.fn.returns
+	c.fn = saved
+	return collected
 }
 
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
@@ -126,6 +176,10 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferObject(scope, lvl, e)
 	case *ast.MemberExpr:
 		return c.inferMember(scope, lvl, e)
+	case *ast.AwaitExpr:
+		return c.inferAwait(scope, lvl, e)
+	case *ast.IfElseExpr:
+		return c.inferIfElse(scope, lvl, e)
 	default:
 		return c.reportUnsupported(e)
 	}

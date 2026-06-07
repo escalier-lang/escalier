@@ -195,6 +195,15 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			}
 			return errs
 		}
+	case *soltype.PromiseType:
+		if r, ok := rhs.(*soltype.PromiseType); ok {
+			// PromiseType is covariant in its Inner: Promise<L> <: Promise<R> iff
+			// L <: R. No auto-flatten — `await Promise<Promise<T>>` yields
+			// `Promise<T>` (Awaited<T> lands in M9). When the two sides are unrelated
+			// concretes (e.g. Promise<L> <: Tuple), fall through to the generic
+			// CannotConstrainError below, matching the function/tuple/record arms.
+			return c.constrain(l.Inner, r.Inner, seen)
+		}
 	case *soltype.Void:
 		if _, ok := rhs.(*soltype.Void); ok {
 			return nil
@@ -285,6 +294,9 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 			fields[i] = &soltype.RecordField{Name: f.Name, Type: c.extrude(f.Type, pol, lvl, cache)}
 		}
 		return &soltype.RecordType{Fields: fields}
+	case *soltype.PromiseType:
+		// Covariant inner — no polarity flip.
+		return &soltype.PromiseType{Inner: c.extrude(t.Inner, pol, lvl, cache)}
 	default:
 		return t
 	}

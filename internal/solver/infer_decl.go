@@ -87,7 +87,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
-		if annT, ok := c.resolveTypeAnn(d.TypeAnn); ok {
+		if annT, ok := c.resolveTypeAnn(d.TypeAnn, lvl); ok {
 			c.constrain(d.Init, initT, annT)
 			initT = annT
 		}

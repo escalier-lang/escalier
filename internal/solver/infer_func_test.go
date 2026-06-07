@@ -278,8 +278,12 @@ func TestInferBlockEmptyIsVoid(t *testing.T) {
 
 func TestInferBlockReturnStmt(t *testing.T) {
 	c := newChecker()
+	// A return is only legal inside a function body, so push a func context the way
+	// inferFunc does — otherwise the walk (correctly) reports ReturnOutsideFunction.
+	saved := c.pushFuncCtx(false, nil)
 	// { return 5 }
 	got := c.inferBlock(NewScope(), 0, block(returnStmt(numExpr(5))))
+	c.popFuncCtx(saved)
 	require.Empty(t, c.errs)
 	require.Equal(t, "5", render(got))
 }

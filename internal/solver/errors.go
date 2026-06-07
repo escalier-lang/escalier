@@ -322,6 +322,44 @@ type NotEnoughArgsError struct {
 	Fn   *soltype.FuncType
 }
 
+// AwaitOutsideAsyncError fires when an `await` expression appears outside the
+// body of an `async fn` (the walk's rule, not the type rule — per M3's plan,
+// "Awaiting outside an `async` function is rejected by the AST walk, not by the
+// type rule"). The argument is still walked (so any errors inside it surface),
+// but the await contributes a `never` placeholder so callers don't cascade.
+//
+// EnclosingFn is the (non-async) function the await sits in, when there is one —
+// the function the user would mark `async` to fix the error, surfaced via
+// Related(). It is nil when the await is at module top-level (no enclosing fn).
+type AwaitOutsideAsyncError struct {
+	Await       *ast.AwaitExpr
+	EnclosingFn ast.Node
+}
+
+// ReturnOutsideFunctionError fires when a `return` statement is reached outside
+// any function body — e.g. inside an `if` that is part of a top-level `val`
+// initializer. Symmetric to AwaitOutsideAsyncError: the walk rejects it rather
+// than silently dropping the return point (a return collected against no enclosing
+// function would otherwise vanish).
+type ReturnOutsideFunctionError struct {
+	Return *ast.ReturnStmt
+}
+
+// AsyncReturnNotPromiseError fires when an `async fn` declares a return annotation
+// that is not a `Promise<…>`. An async function's external type is always
+// `Promise<T>`, so the annotation NAMES that Promise; a bare type
+// (`async fn () -> number`) is rejected — write `-> Promise<number>`, or
+// `-> Promise<_>` to let the checker infer the inner from the body.
+//
+// Like AwaitOutsideAsyncError it is a WALK rejection, not a type-rule failure:
+// born in inferFunc (asyncReturn) with the annotation and function nodes in hand,
+// so it self-blames from the annotation's span and relates the function via
+// Related() (the signature the user would fix).
+type AsyncReturnNotPromiseError struct {
+	Return ast.TypeAnn // the offending (non-Promise) return annotation
+	Fn     ast.Node    // the enclosing async function, surfaced via Related()
+}
+
 func (*UnknownIdentifierError) isSolverError()    {}
 func (*NamespaceUsedAsValueError) isSolverError() {}
 func (*TooManyArgsError) isSolverError()          {}
@@ -332,6 +370,9 @@ func (*BodyDeclNotAllowedError) isSolverError()   {}
 func (*MissingInitializerError) isSolverError()   {}
 func (*DuplicateDeclarationError) isSolverError() {}
 func (*OverloadNotSupportedError) isSolverError() {}
+func (*AwaitOutsideAsyncError) isSolverError()      {}
+func (*ReturnOutsideFunctionError) isSolverError()  {}
+func (*AsyncReturnNotPromiseError) isSolverError()  {}
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
@@ -411,6 +452,39 @@ func (e *OverloadNotSupportedError) Message() string {
 	return "Function overloads are not supported in M2: " + e.Name
 }
 
+func (e *AwaitOutsideAsyncError) Span() ast.Span { return e.Await.Span() }
+func (e *AwaitOutsideAsyncError) Related() []ast.Span {
+	// Point at the enclosing function (the one to make `async`) when there is one;
+	// empty at module top-level.
+	if e.EnclosingFn != nil {
+		return []ast.Span{e.EnclosingFn.Span()}
+	}
+	return nil
+}
+func (e *AwaitOutsideAsyncError) Message() string {
+	return "await can only be used inside an async function"
+}
+
+func (e *ReturnOutsideFunctionError) Span() ast.Span      { return e.Return.Span() }
+func (e *ReturnOutsideFunctionError) Related() []ast.Span { return nil }
+func (e *ReturnOutsideFunctionError) Message() string {
+	return "return can only be used inside a function"
+}
+
+func (e *AsyncReturnNotPromiseError) Span() ast.Span { return e.Return.Span() }
+func (e *AsyncReturnNotPromiseError) Related() []ast.Span {
+	// Point at the enclosing async function (the signature to fix). Guard a nil Fn
+	// to uphold the "never panic on malformed AST" guarantee, even though inferFunc
+	// always supplies the function node.
+	if e.Fn == nil {
+		return nil
+	}
+	return []ast.Span{e.Fn.Span()}
+}
+func (e *AsyncReturnNotPromiseError) Message() string {
+	return "async function return type must be a Promise; write Promise<...> or Promise<_>"
+}
+
 func (e *CannotConstrainError) Message() string {
 	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.LHS), describe(e.RHS))
 }
@@ -459,6 +533,13 @@ func describe(t soltype.Type) string {
 		return "tuple"
 	case *soltype.RecordType:
 		return "object"
+	case *soltype.PromiseType:
+		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
+		// object above. That is deliberate and consistent with the Union/Intersection
+		// arms below, which also recurse: a Promise's single type argument is compact
+		// and informative (`Promise<number>`), whereas a function/tuple/record would
+		// be verbose spelled out, so those stay nominal.
+		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.Void:
 		return "void"
 	case *soltype.NeverType:

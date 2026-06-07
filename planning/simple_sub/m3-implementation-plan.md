@@ -108,11 +108,15 @@ earlier drafts of this plan assumed spike-era names that never shipped.
 
 ## Sequencing rationale
 
-Eight PRs (PR0–PR7) on three landed prerequisites (M1, M2, M2.5). Solid edges =
+Nine PRs (PR0–PR8) on three landed prerequisites (M1, M2, M2.5). Solid edges =
 hard dependency (downstream won't compile / pass tests without upstream); dashed
 = soft (downstream lands correctly but degraded until upstream fills it in). PR7
 is a behavior-preserving refactor (the shared `soltype` rewriting visitor) — it
-depends only on PR1 and is otherwise independent.
+depends only on PR1 and is otherwise independent. PR8 bundles the error-recovery
+sentinel (a robustness fix that depends only on M1 and M2.5, and stops every
+error-emitting PR from cascading a spurious second diagnostic) with reassignment
+typing (`a = expr`, the first `BinaryExpr` form the walk handles — needs M2's
+expression walk). Nothing depends on PR8.
 
 ```mermaid
 flowchart TD
@@ -128,6 +132,7 @@ flowchart TD
     PR5[PR5: probe API]
     PR6[PR6: overloading]
     PR7[PR7: soltype rewriting visitor — refactor]
+    PR8[PR8: error-recovery type + reassignment]
 
     M2 --> PR1
     M25 --> PR1
@@ -135,6 +140,9 @@ flowchart TD
     M2 --> PR4
     M25 --> PR4
     M1 --> PR5
+    M1 --> PR8
+    M2 --> PR8
+    M25 --> PR8
     PR0 --> PR4
     PR1 --> PR2
     PR1 --> PR6
@@ -143,10 +151,11 @@ flowchart TD
     PR2 -. compact renders .-> PR1
     PR4 -. specificity accounts for exactness .-> PR6
     PR7 -. visitor available for simplify's rewrite .-> PR2
+    PR8 -. suppresses recovery cascades .-> PR3
 
     classDef prereq fill:#eee,stroke:#999,stroke-dasharray:3 3;
     classDef refactor fill:#f5f5ff,stroke:#88a,stroke-dasharray:2 2;
-    class PR7 refactor;
+    class PR7,PR8 refactor;
 ```
 
 Parallelizable tracks: the **polymorphism chain** (PR1 → PR2), **async + block
@@ -184,6 +193,16 @@ prerequisite for every error-emitting PR; only the strongest edges are drawn.
   concrete instance (the trigger to extract), hence the PR1 edge; nothing depends
   on it. Numbered last as a non-blocking cleanup, but lands cleanest right after
   PR1 so PR2's `rewrite` can reuse the visitor.
+- **PR8 (error-recovery type + reassignment) depends on M1 + M2 + M2.5.** Part 1,
+  the error-recovery sentinel, is a self-contained robustness fix on M1 + M2.5: one
+  new `soltype` atom plus two short-circuit arms at the top of `constrain`,
+  repointing `report` off `never`, so every error-emitting site (PR3's `if`/`await`
+  recovery, the `report` placeholder generally) stops cascading a spurious second
+  `cannot constrain never <: …`. Part 2, reassignment typing (`a = expr`), adds the
+  first `BinaryExpr` arm to the M2 expression walk (assignment op only; operator
+  schemes stay unsupported) plus a `Mutable` flag on `ValueBinding`. Nothing depends
+  on PR8. Numbered last alongside PR7 as a non-blocking quality fix / gap-closer;
+  the sentinel surfaced while implementing PR3.
 
 ### Shared files & merge ordering
 
@@ -221,6 +240,18 @@ not semantic. Tracks: **A** = PR1→PR2, **B** = PR3, **C** = PR0→PR4, **D** =
   (`constrain.go` bound-append sites). Since PR7 is a pure refactor with no
   behavior change, sequence it *after* PR1/PR4/PR5 have settled those regions and
   rebase onto them — don't run it concurrently.
+- **PR8 (error-recovery type + reassignment) touches, for Part 1, `soltype/type.go`
+  (the new `ErrorType` atom), `constrain.go` (the two top-of-function
+  short-circuits), `infer.go` (`report`), and the recovery sites whose
+  `ok=false`-skips retire; for Part 2, `infer_expr.go` (the `BinaryExpr`/`Assign`
+  arm + `inferAssign`), `scope.go` (`ValueBinding.Mutable`), `infer_decl.go`
+  (set `Mutable` from `VarDecl.Kind`), and `errors.go` (the two assignment errors).** Part 1
+  overlaps PR4 (`soltype/type.go` fields, `constrain.go` `FuncType` case) and PR5
+  (`constrain.go` bound-append sites), but its `constrain` edit is a short-circuit
+  *above* the structural switch, so it rebases cleanly past either; Part 2's files
+  are otherwise PR8-private. Land it after PR3 (which surfaces the cascade the tests
+  assert away) and after PR7 if PR7 has landed (so the `ErrorType` pass-through rides
+  the visitor rather than another hand-rolled arm); otherwise it stands alone.
 
 ## Core types added or changed in M3
 
@@ -241,6 +272,20 @@ type FuncParam struct {
     Type     Type
     Optional bool // PR4: x? — lowers `required` without changing arity
 }
+```
+
+**`ErrorType` — the error-recovery sentinel** (PR8). A new childless `soltype`
+atom, distinct from `never`/`unknown`. The latter two are coalesced-**output**
+only ([type.go](../../internal/soltype/type.go): "appear only as coalesced
+output, never as constrain inputs"); `ErrorType` is a legal constrain **input**
+that absorbs in both directions, so a reported diagnostic's placeholder never
+cascades a second one. Never user-spellable (distinct from a future `any`), minted
+only by `report`:
+
+```go
+// internal/soltype/type.go
+type ErrorType struct{} // ⊤⊥ absorbing sentinel; see PR8
+func (*ErrorType) isType() {}
 ```
 
 **Schemes** (PR1) — new file `internal/solver/poly.go`:
@@ -937,6 +982,263 @@ subtlety is getting the polarity-flip and the var-case `SkipChildren` short-circ
 right, both directly asserted. Lands cleanest after PR1/PR4/PR5 settle
 `coalesce.go`/`constrain.go`/`poly.go` (see "Shared files & merge ordering").
 
+---
+
+### PR8 — Error-recovery type (`ErrorType` sentinel) + reassignment typing
+
+PR8 bundles two pieces that are small on their own and reinforce each other in
+test: (1) the `ErrorType` absorbing sentinel (a robustness fix surfaced while
+implementing PR3), and (2) **reassignment typing** (`a = expr`) — the first
+`BinaryExpr` form the walk handles, an otherwise-untracked gap in the plan. The
+pairing is deliberate: reassigning *through* a broken binding (`var a = <unknown>;
+a = 5`) is exactly the case the sentinel must absorb cleanly, so the reassignment
+walk gives the sentinel a real binding-reuse test and the sentinel gives the
+reassignment walk its error-recovery story. They share no code, so review may split
+them; the two **Tests** / **Risk** notes below are tagged per piece.
+
+#### Part 1 — the `ErrorType` absorbing sentinel
+
+A robustness fix surfaced while implementing PR3. Today `report`
+([infer.go](../../internal/solver/infer.go)) hands back `&soltype.NeverType{}` as
+the value-position placeholder after emitting a diagnostic. But `never` (⊥) and
+`unknown` (⊤) are **coalesced-output only** in this design —
+[type.go](../../internal/soltype/type.go) is explicit that, like
+`Union`/`Intersection`, "their *subtyping rules* in constrain are M6 … these nodes
+appear only as coalesced output, never as constrain inputs." Error recovery is the
+one path that violates that invariant: it feeds a `never` back into `constrain`,
+where there is no `never <: T` (nor `T <: never`) input rule, so the placeholder
+**cascades a second, spurious `cannot constrain never <: …`** on top of the real
+error. PR3's `if <unknown> { … }` (constrains `never <: boolean`) and `await
+<unknown>` (constrains `never <: Promise<U>`) are the live cases; the walk already
+dodges the RHS half elsewhere with scattered `ok=false`-skip special-cases (e.g.
+`inferVarDeclInit`, `inferFunc`'s return-annotation arm, `resolveTypeAnn`
+recovery), which is the same problem patched site-by-site.
+
+PR8 replaces the overloaded `never` placeholder with a dedicated sentinel, so the
+fix is one mechanism instead of a guard at every constraint site:
+
+- **`soltype.ErrorType`** — a childless atom, distinct from `never`/`unknown`, that
+  is a *legal `constrain` input* and **absorbs in both directions**: any constraint
+  with an `ErrorType` operand trivially succeeds. This keeps `never` as the precise
+  lattice bottom (output-only, its M6 input rule still deferred) and gives recovery
+  its own input-legal, direction-agnostic behavior — the standard "error type" of
+  TS / Roslyn / GHC.
+- **Two short-circuit arms at the TOP of `constrain`** — before the structural
+  switch and the variable arms — so an `ErrorType` operand returns `nil`
+  immediately and **never enters a variable's bound list**. coalesce / extrude /
+  freshenAbove therefore never see it *propagated through bounds*; they need only
+  trivial childless-atom pass-through arms (since `report` can still hand an
+  `ErrorType` out as a binding's type, e.g. `val x = <unknown ident>`).
+- **`ErrorType` is the identity element for type *formers* — dropped from unions
+  AND intersections (an M6 rule; a freebie invariant in M3).** Because the two
+  short-circuits keep it out of every bound list, `ErrorType` cannot reach a
+  coalesced `UnionType`/`IntersectionType` in M3 — `A | B | error` simply can't
+  arise (an erroring `if`/`return` branch is already dropped from the join; see
+  `TestInferIfElseUnknownConditionNoCascade`). When **M6** makes unions/intersections
+  real formers, preserve that: **elide `ErrorType` from a union or an intersection
+  unless it is the sole member** (then it stays, rendering `error`). It is the join
+  *and* meet identity — `A | error ⇒ A`, `A & error ⇒ A` — the former-level
+  reflection of its constrain-level absorption: it carries no information (the error
+  was already reported), so it must neither widen a union nor narrow an intersection.
+  This is what distinguishes it from the genuine lattice bounds M6 also simplifies:
+  `never` (⊥) is dropped from unions only, `unknown` (⊤) from intersections only;
+  `ErrorType` drops from **both**, marking it a sentinel *outside* the lattice rather
+  than a bound within it.
+- **`report` returns `&soltype.ErrorType{}`** instead of `&soltype.NeverType{}`.
+  Minted **only** by `report` (where a diagnostic was definitely already emitted),
+  never by `freshVar` — the discipline that keeps absorption from silently hiding a
+  genuine checker bug.
+- **Retire the now-redundant `ok=false`-skip guards** that exist purely to dodge a
+  `never`-in-RHS cascade — the constraint now absorbs on its own. *Keep* the cases
+  that adopt a **better inferred type** (a valued `val x: <bad ann> = 5` still keeps
+  `5` for downstream completions rather than poisoning `x` to `error`): PR8 changes
+  the *no-good-type* recovery, not every recovery.
+- **Internal-only.** `ErrorType` is never produced by `resolveTypeAnn` from user
+  syntax and never rendered into a signature a user authored — distinct from a
+  future user-facing `any`. It renders as `error` for diagnostics / debug only.
+
+**Sketch:**
+
+```go
+// internal/soltype/type.go — a new childless atom. LevelOf's default arm already
+// returns 0 for it; print/describe render "error".
+type ErrorType struct{}
+func (*ErrorType) isType() {}
+```
+
+```go
+// internal/solver/constrain.go — top of constrain, BEFORE the structural switch
+// and the var arms. An ErrorType operand carries an already-reported error; it
+// absorbs both ways so recovery never cascades, and short-circuiting here keeps it
+// out of every bound list.
+if _, ok := lhs.(*soltype.ErrorType); ok { return nil }
+if _, ok := rhs.(*soltype.ErrorType); ok { return nil }
+```
+
+```go
+// internal/solver/infer.go
+func (c *checker) report(e SolverError) soltype.Type {
+    c.errs = append(c.errs, e)
+    return &soltype.ErrorType{} // was &soltype.NeverType{}
+}
+```
+
+**Tests (Part 1 — `ErrorType`).** the PR3 cascade cases now yield **exactly one**
+diagnostic — `if
+<unknown> { … }` reports only the `UnknownIdentifierError` (no trailing `cannot
+constrain never <: boolean`); `await <unknown>` inside an `async fn` reports only
+the unknown identifier; an unsupported RHS annotation reports only its
+unsupported-node error. Unit `constrain` tests pin `ErrorType` absorbing as **both**
+LHS and RHS against every concrete and against a var. A value flowing through an
+error-typed binding produces no secondary errors. The existing blame / `requireBlame`
+suite passes unchanged once the redundant `ok=false`-skips are removed.
+
+**Risk (Part 1 — `ErrorType`).** low–medium. The real risk is **over-suppression** — an `ErrorType` that
+leaks too far would silence constraints that *should* fail, masking genuine checker
+bugs during development. Contained by the "minted only by `report`" discipline and
+by short-circuiting at the top of `constrain` (it absorbs but does not spread). The
+`soltype` fan-out is cheap (a childless atom, not a recursive former). Touches
+`soltype/type.go` (+ print / describe), `constrain.go` (the two arms), `infer.go`
+(`report`), and the recovery sites whose `ok=false`-skips retire.
+
+**Future direction — marking / used holes (the principled end-state).** The
+`ErrorType` sentinel is the *minimal* recovery: a single absorbing wildcard that
+suppresses cascades but carries no information — every poisoned subterm looks the
+same and the surrounding context learns nothing from it. The principled version is
+**marking-based recovery with holes**, as in Hazel's "Total Type Error Localization
+and Recovery with Holes" (POPL 2024, https://hazel.org/papers/marking-popl24.pdf):
+an ill-fitting expression is wrapped in a **non-empty ("used") hole** that acts as a
+*membrane* — internally it holds the actual (wrong) type and the localized mark, but
+at its boundary it adopts the **expected** type, so the rest of the program type-
+checks against the precise expected type rather than against a wildcard. The payoff
+over a flat `ErrorType` is twofold. (1) *Uniform recovery* — the membrane adopts
+the expected type at **every** analysis sink, generalizing the two adoptions the
+walk hand-rolls today (`inferVarDeclInit` constrains `val x: T = …` then adopts `T`;
+`inferFunc` adopts `-> T`) to the sinks they never reach: a call argument `f(bad)`
+would recover at `f`'s parameter type, a tuple element at its annotated slot, and so
+on — positions where flat `ErrorType` instead absorbs the constraint and records
+nothing about what was expected there. (The annotated binding the original draft
+cited, `val x: number = "hi"`, is *not* a motivator: that hand-rolled adoption
+already lands `x: number`, not `error` — [infer_decl.go](../../internal/solver/infer_decl.go)
+`initT = annT` after the failed `"hi" <: number` — so holes **subsume** it, they do
+not improve on it. And on the genuine gap, the un-adopted sinks, the recovered type
+is still only as good as the expected type the context supplies — see open question
+(a) below.) (2) *Total, principled localization* — every program (however broken)
+has a well-defined marked typing, with the mark on the exact offending subterm
+rather than an absorbing type smeared outward, folding the two hand-rolled adoptions
+into one rule.
+
+*Feasibility for this SimpleSub-based checker: promising in spirit, not a drop-in.*
+The marking calculus is formulated **bidirectionally** (synthesis ⇒ / analysis ⇐),
+and the totality theorem leans on that structure; we are **constraint-based
+subtyping (biunification)** with no published "marked biunification" to port, so we
+would be adapting the *idea*, not the calculus. The adaptation is natural, though:
+our `constrain(actual, expected)` is exactly the analysis judgment, so the
+membrane rule becomes "on a `constrain` failure, report + mark the node (via `Prov`,
+which already pins precise blame) + let the node's recovered type be the **RHS**
+(expected), and do not propagate the actual as a bound." The side tables (`Info` for
+node→type, `Prov` for node→origin) already give us the machinery to record marks and
+boundary types, and empty holes map onto the parser's existing error nodes
+(`ErrorStmt`/synthesized placeholders) seeded with a fresh var. The genuine open
+questions are (a) what "the expected type" means when the analysis RHS is itself an
+inference *variable* rather than a concrete type (the membrane still suppresses
+cascades, but the recovered type is as under-determined as the var — less
+informative than Hazel's often-concrete analysis types), and (b) re-checking
+SimpleSub's principal-type / determinism story under marking (how a marked subterm
+interacts with var bounds and generalization), which the bidirectional totality
+proof does not hand us for free. Net: `ErrorType` is the right MVP and a clean
+stepping stone — it is a degenerate hole with no boundary type — and "holes that
+carry the expected type" is the natural follow-on once the recovery mechanism needs
+to preserve information rather than merely stop cascades. Worth a spike, likely its
+own milestone rather than part of M3.
+
+#### Part 2 — reassignment typing (`a = expr`)
+
+`a = 5` parses as an `ast.BinaryExpr` with `Op = ast.Assign` (`"="`), today caught
+by `inferExpr`'s default arm → `UnsupportedNodeError`. PR8 wires the **assignment
+op only**; the arithmetic / comparison / logical operators (`+`, `==`, `&&`, `++`)
+stay unsupported — their operator-scheme walk over the M2 prelude bindings is a
+separate, still-unlanded PR (see the latent-trap note in `prelude.go`'s
+`addOperatorBindings`). So the new `BinaryExpr` arm dispatches `Op == ast.Assign`
+to a dedicated `inferAssign` and leaves every other op falling through unchanged.
+
+- **LValue.** M3's assignable target is an `IdentExpr` resolved to a `ValueBinding`
+  in scope. A member target (`obj.x = …`) needs record types and lands in M4; a
+  non-place LHS (literal, call, …) is an `InvalidAssignmentTargetError`. (The old
+  checker already branches IdentExpr vs member in its Assign arm,
+  [infer_expr.go](../../internal/checker/infer_expr.go).)
+- **Mutability.** Only a `var` binding is reassignable; reassigning a `val`, a
+  function, a parameter, or a prelude binding is a `CannotAssignToImmutableError`.
+  `ValueBinding` carries no mut-ness today ([scope.go](../../internal/solver/scope.go) —
+  only `Schemes`/`Sources`), so add a `Mutable bool` set from the introducing
+  `VarDecl.Kind == ast.VarKind` (the decl is already in `Sources`). This is the
+  **binding-level** gate only — `mut`-field / aliasing / lifetime-transition
+  mutability (the old checker's `check_transitions.go`: *"cannot assign … still used
+  mutably"*) is M4's, deferred here.
+- **Type rule.** `constrain(rhs, target)` — the RHS must be a subtype of the
+  target binding's (instantiated) type, the new-solver form of the old checker's
+  `Unify(rightType, leftType)` in its Assign arm. M3 constrains against the
+  binding's type **as inferred**: for an annotated `var a: number = 5` that is
+  `number`, so `a = 6` checks; for an un-annotated `var a = 5` it is the literal
+  `5`, so reassigning a *different* literal (`a = 6` ⇒ `6 <: 5`) does **not** check
+  until **literal widening of `var` bindings, deferred to M4** (it folds into M4's
+  usage-based inference and the `widen(v)` it already applies to field writes — see
+  M4 §"usage-based inference"). M3 tests therefore annotate the `var`. The
+  assignment **expression's** own value type is `void` (M3 choice: assignment is
+  statement-shaped; the old checker hands back `never`, but `void` fits the walk's
+  expression-value model and avoids minting a ⊥ in synthesized position).
+- **New errors** (M2.5 blame model): `InvalidAssignmentTargetError` (blames the
+  LHS) and `CannotAssignToImmutableError` (blames the assignment, relates the `val`
+  decl — the "declared immutable here" span). The RHS/target mismatch reuses
+  `constrain`'s existing `CannotConstrainError`.
+
+**Sketch:**
+
+```go
+// internal/solver/scope.go — ValueBinding gains a mut flag. Default false:
+// val / fn / param / prelude are immutable; only a `var` decl sets it true.
+type ValueBinding struct {
+    Schemes []TypeScheme
+    Sources []provenance.Provenance
+    Mutable bool // PR8: `var` bindings are reassignable; everything else is not
+}
+```
+
+```go
+// internal/solver/infer_expr.go — the ONLY BinaryExpr form PR8 handles. Every
+// other operator stays UnsupportedNodeError (the operator-scheme walk is a
+// separate, unlanded PR).
+case *ast.BinaryExpr:
+    if e.Op == ast.Assign {
+        return c.inferAssign(scope, lvl, e)
+    }
+    return c.reportUnsupported(e)
+```
+
+**Tests (Part 2 — reassignment).**
+- `var a: number = 5; a = 6` type-checks; `var a: number = 5; a = "x"` reports a
+  single `CannotConstrainError` (`"x" <: number`, full message). (Un-annotated
+  `var a = 5; a = 6` does **not** check in M3 — `6 <: 5` — pending M4 `var`
+  widening; assert that as the interim behavior so the M4 change is visible.)
+- `val a = 5; a = 6` reports `CannotAssignToImmutableError` blaming the assignment
+  and relating the `val a` decl; a parameter and a function name likewise reject
+  reassignment.
+- `5 = a` and `f() = a` report `InvalidAssignmentTargetError` (blames the LHS).
+- Value position: `var a: number = 5; val b = (a = 6)` ⇒ `b: void`.
+- **Synergy with Part 1 (the headline test the pairing buys):** `var a = missing;
+  a = 5; a = "hello"` reports **exactly one** error — the `UnknownIdentifierError`
+  on line 1. `a` is `ErrorType`, so `5 <: ErrorType` and `"hello" <: ErrorType` both
+  absorb; without Part 1 the two reassignments would each cascade a spurious
+  `cannot constrain … <: never`.
+
+**Risk (Part 2 — reassignment).** low. A localized `inferExpr` arm + `inferAssign`,
+a one-field `ValueBinding` addition, and one `constrain` against the binding's
+existing type — no novel design call now that widening moves to M4. Touches
+`infer_expr.go` (arm + `inferAssign`), `scope.go` (`Mutable` field), `infer_decl.go`
+(set `Mutable` from `VarDecl.Kind`), `errors.go` (two new errors). `var` literal
+widening (so un-annotated `var a = 5; a = 6` checks), member targets, and
+`mut`-field / alias / lifetime transitions all remain M4.
+
 ## Risks & gates
 
 - **No M3-level go/no-go gate** (those live at M4's `Ref` rule and M7's
@@ -967,6 +1269,11 @@ M3 is done when, against **real source**:
 - Overloaded free `fn` declarations resolve at call sites per the documented
   specificity rule; mutually-recursive overloaded participants without annotations
   are rejected with a full error message. *(PR6, on the PR5 probe)*
+- Reassignment: `var a: number = 5; a = 6` type-checks and `a = "x"` reports the
+  single subtype error; reassigning a `val` or a non-place target is rejected with a
+  full error message; reassigning *through* a broken binding (`var a = <unknown>;
+  a = 5`) yields exactly one diagnostic. (`var` literal widening so un-annotated
+  `var a = 5; a = 6` checks is M4.) *(PR8)*
 
 All assertions are full error messages (via M2.5's `requireBlame` span harness)
 and Escalier-syntax rendered types in the solver package's table tests.

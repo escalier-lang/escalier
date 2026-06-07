@@ -13,10 +13,12 @@ import (
 // milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here, with
 // ok=false and a `never` placeholder so a caller can recover by keeping the type
 // it already inferred (rather than constraining against / adopting `never`, which
-// would cascade a spurious `<: never` error and poison the binding). It takes no
-// scope: the supported set is all closed primitives, with no name to look up.
-// Name resolution against the type scope arrives with TypeRef support.
-func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
+// would cascade a spurious `<: never` error and poison the binding). It takes the
+// current inference level `lvl` so a supported generic with an UNSUPPORTED inner (a
+// malformed `Promise<…>`) can recover its inner to a fresh var at the right level
+// while keeping the wrapper; the primitive arms ignore lvl. Full name resolution
+// against the type scope still arrives with TypeRef support (M7).
+func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
 		return c.annPrim(ta, soltype.NumPrim), true
@@ -24,6 +26,61 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn) (soltype.Type, bool) {
 		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
+	case *ast.TypeRefTypeAnn:
+		// M3 (PR3) recognises a single generic stdlib reference: Promise<T>. The
+		// real, alias-driven TypeRef resolution arrives in M7 — until then, any
+		// other name (or arity) reports unsupported with a `never` placeholder so
+		// the caller can recover by keeping the inferred type.
+		//
+		// FOOTGUN (removed in M7): this matches the bare NAME "Promise" WITHOUT
+		// consulting the type scope, so it would preempt any user-defined
+		// `type Promise<T> = …` alias. That is harmless today (user type aliases
+		// don't resolve yet, and the prelude only seeds Promise as an opaque
+		// placeholder), but M7's scope-driven TypeRef resolution MUST replace this
+		// hardcoded check — resolve the name through the scope first — so a real
+		// alias wins instead of being silently shadowed by this stub.
+		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
+			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
+			// supported: M3's PromiseType carries no lifetime, so silently accepting it
+			// would drop the lifetime. Reject it as an unsupported feature rather than
+			// coercing to a plain Promise<T>. (Lifetimes on referenced types land with
+			// the wider TypeRef/lifetime work.)
+			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
+				return c.reportUnsupportedFeature(ta, "lifetime annotation on Promise"), false
+			}
+			inner, ok := c.resolveTypeAnn(ta.TypeArgs[0], lvl)
+			if !ok {
+				// The inner annotation was unsupported and already reported its own
+				// error. The Promise itself IS supported, so keep the WRAPPER rather
+				// than collapsing the whole annotation to the bare-var recovery the
+				// caller applies on ok=false: `p: Promise<bad>` should stay Promise-
+				// shaped (so `await p` and the rendered signature read as a Promise),
+				// not degrade to an unconstrained var. Recover the inner to a fresh var
+				// — cascade-safe in BOTH directions (an initializer flowing into
+				// `Promise<freshVar>` constrains the var without failing; a `never` or
+				// `unknown` inner would instead cascade a spurious `<: never` / `<:
+				// unknown`, since constrain has no rule for either as an input).
+				//
+				// PR8 (planning/simple_sub/m3-implementation-plan.md) replaces this
+				// fresh var with the dedicated error-recovery type, so the recovered
+				// inner reads as `error` rather than as an anonymous coalesced var.
+				inner = c.freshAt(lvl)
+			}
+			t := &soltype.PromiseType{Inner: inner}
+			c.recordProv(t, ta, AnnotationType)
+			return t, true
+		}
+		return c.reportUnsupported(ta), false
+	case *ast.WildcardTypeAnn:
+		// `_` in type-annotation position is an inference placeholder: mint a fresh
+		// var at the current level for the surrounding annotation to fill in. Today
+		// the only site that uses it is the inner of `Promise<_>` on an async fn's
+		// return, where the body's return flows into the var (asyncReturn), inferring
+		// the inner. Unlike the other arms it reports NO error — `_` is a supported,
+		// user-authored "infer this here" marker, not an unsupported feature.
+		t := c.freshAt(lvl)
+		c.recordProv(t, ta, WildcardAnnotation)
+		return t, true
 	default:
 		return c.reportUnsupported(ta), false
 	}
