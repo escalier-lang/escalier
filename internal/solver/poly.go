@@ -116,7 +116,7 @@ func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*solt
 		for i, p := range t.Params {
 			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.freshenAbove(lim, p.Type, lvl, cache), Optional: p.Optional}
 		}
-		return &soltype.FuncType{Params: params, Ret: c.freshenAbove(lim, t.Ret, lvl, cache), Exact: t.Exact}
+		return &soltype.FuncType{Params: params, Ret: c.freshenAbove(lim, t.Ret, lvl, cache), Inexact: t.Inexact}
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {

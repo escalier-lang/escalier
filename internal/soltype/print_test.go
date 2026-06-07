@@ -66,22 +66,22 @@ func TestPrintRoundTrips(t *testing.T) {
 
 		// Functions. A bare (exact) function renders with no trailing marker; an
 		// inexact one renders a trailing `...`, and an optional param renders `x?: T`.
-		{"nullary fn", &FuncType{Ret: numP(), Exact: true}, "fn () -> number"},
-		{"unary fn", &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP(), Exact: true}, "fn (x: number) -> string"},
+		{"nullary fn", &FuncType{Ret: numP()}, "fn () -> number"},
+		{"unary fn", &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}, "fn (x: number) -> string"},
 		{
 			"multi-arg fn",
-			&FuncType{Params: []*FuncParam{identP("a", numP()), identP("b", strP())}, Ret: boolP(), Exact: true},
+			&FuncType{Params: []*FuncParam{identP("a", numP()), identP("b", strP())}, Ret: boolP()},
 			"fn (a: number, b: string) -> boolean",
 		},
-		{"inexact nullary fn", &FuncType{Ret: numP()}, "fn (...) -> number"},
+		{"inexact nullary fn", &FuncType{Ret: numP(), Inexact: true}, "fn (...) -> number"},
 		{
 			"inexact fn with params",
-			&FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()},
+			&FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP(), Inexact: true},
 			"fn (x: number, ...) -> string",
 		},
 		{
 			"optional param renders with ?",
-			&FuncType{Params: []*FuncParam{identP("a", numP()), optP("b", strP())}, Ret: boolP(), Exact: true},
+			&FuncType{Params: []*FuncParam{identP("a", numP()), optP("b", strP())}, Ret: boolP()},
 			"fn (a: number, b?: string) -> boolean",
 		},
 
@@ -131,7 +131,7 @@ func TestIsIdent(t *testing.T) {
 func TestPrintNestedPrecedence(t *testing.T) {
 	// A function inside a union: precFunc < precUnion, so the function is parenthesized.
 	t.Run("function in union", func(t *testing.T) {
-		ty := &UnionType{Types: []Type{&FuncType{Ret: numP(), Exact: true}, strP()}}
+		ty := &UnionType{Types: []Type{&FuncType{Ret: numP()}, strP()}}
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`(fn () -> number) | string`))
 	})
 
@@ -145,7 +145,7 @@ func TestPrintNestedPrecedence(t *testing.T) {
 	// A function inside a tuple is delimited by brackets, so it needs no parens.
 	t.Run("function in tuple", func(t *testing.T) {
 		ty := &TupleType{Elems: []Type{
-			&FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP(), Exact: true},
+			&FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()},
 			boolP(),
 		}}
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`[fn (x: number) -> string, boolean]`))
@@ -155,7 +155,7 @@ func TestPrintNestedPrecedence(t *testing.T) {
 	// no parens, and a function as a field value is delimited by the field's `:`.
 	t.Run("record in union", func(t *testing.T) {
 		ty := &UnionType{Types: []Type{
-			&RecordType{Fields: []*RecordField{{Name: "f", Type: &FuncType{Ret: numP(), Exact: true}}}},
+			&RecordType{Fields: []*RecordField{{Name: "f", Type: &FuncType{Ret: numP()}}}},
 			strP(),
 		}}
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`{f: fn () -> number} | string`))
@@ -176,7 +176,6 @@ func TestPrintRawTypeVar(t *testing.T) {
 		fn := &FuncType{
 			Params: []*FuncParam{identP("x", &TypeVarType{ID: 0})},
 			Ret:    &TypeVarType{ID: 0},
-			Exact:  true,
 		}
 		require.Equal(t, "fn (x: t0) -> t0", Print(fn))
 	})
@@ -192,8 +191,7 @@ func TestPrintUnnamedParamFallback(t *testing.T) {
 			{Pattern: nil, Type: numP()},
 			{Pattern: nil, Type: strP()},
 		},
-		Ret:   boolP(),
-		Exact: true,
+		Ret: boolP(),
 	}
 	require.Equal(t, "fn (arg0: number, arg1: string) -> boolean", Print(fn))
 }
@@ -204,13 +202,13 @@ func TestPrintUnnamedParamFallback(t *testing.T) {
 // type renders exactly as Print would.
 func TestPrintScheme(t *testing.T) {
 	t.Run("no free vars renders as Print", func(t *testing.T) {
-		ty := &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP(), Exact: true}
+		ty := &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}
 		require.Equal(t, "fn (x: number) -> string", PrintAsScheme(ty))
 	})
 
 	t.Run("identity gets one type parameter", func(t *testing.T) {
 		a := &TypeVarType{ID: 7, Level: 1}
-		ty := &FuncType{Params: []*FuncParam{identP("x", a)}, Ret: a, Exact: true}
+		ty := &FuncType{Params: []*FuncParam{identP("x", a)}, Ret: a}
 		require.Equal(t, "fn <T0>(x: T0) -> T0", PrintAsScheme(ty))
 	})
 
@@ -221,7 +219,6 @@ func TestPrintScheme(t *testing.T) {
 		ty := &FuncType{
 			Params: []*FuncParam{identP("x", a), identP("y", b)},
 			Ret:    &TupleType{Elems: []Type{b, a}},
-			Exact:  true,
 		}
 		require.Equal(t, "fn <T0, T1>(x: T0, y: T1) -> [T1, T0]", PrintAsScheme(ty))
 	})
@@ -244,7 +241,6 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 	ty := &FuncType{
 		Params: []*FuncParam{identP("x", param)},
 		Ret:    &TupleType{Elems: []Type{param, leaked}},
-		Exact:  true,
 	}
 	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 })
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)

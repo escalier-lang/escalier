@@ -51,7 +51,7 @@ func coalesceRec(t soltype.Type, pol soltype.Polarity, seen set.Set[*soltype.Typ
 			// markers, not bound-carrying, so they ride through coalescing unchanged.
 			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceRec(p.Type, pol.Flip(), seen), Optional: p.Optional}
 		}
-		return &soltype.FuncType{Params: params, Ret: coalesceRec(t.Ret, pol, seen), Exact: t.Exact} // covariant return
+		return &soltype.FuncType{Params: params, Ret: coalesceRec(t.Ret, pol, seen), Inexact: t.Inexact} // covariant return
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
@@ -183,7 +183,7 @@ func coalesceSchemeRec(
 		for i, p := range t.Params {
 			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceSchemeRec(p.Type, pol.Flip(), genLevel, occ, seen), Optional: p.Optional}
 		}
-		return &soltype.FuncType{Params: params, Ret: coalesceSchemeRec(t.Ret, pol, genLevel, occ, seen), Exact: t.Exact}
+		return &soltype.FuncType{Params: params, Ret: coalesceSchemeRec(t.Ret, pol, genLevel, occ, seen), Inexact: t.Inexact}
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
@@ -335,7 +335,7 @@ func equalType(a, b soltype.Type) bool {
 		return ok
 	case *soltype.FuncType:
 		b, ok := b.(*soltype.FuncType)
-		if !ok || len(a.Params) != len(b.Params) || a.Exact != b.Exact {
+		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact {
 			return false
 		}
 		for i := range a.Params {

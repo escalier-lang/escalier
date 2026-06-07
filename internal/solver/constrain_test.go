@@ -35,14 +35,15 @@ func optParam(name string, t soltype.Type) *soltype.FuncParam {
 	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t, Optional: true}
 }
 
-// exactFn / inexactFn build function types with the PR4 exactness flag set
-// explicitly, so the accept-set tests read at a glance which arm they exercise.
+// exactFn / inexactFn build function types so the accept-set tests read at a glance
+// which arm they exercise. Exact is the zero value of Inexact, so exactFn sets no
+// flag; inexactFn sets Inexact.
 func exactFn(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
-	return &soltype.FuncType{Params: params, Ret: ret, Exact: true}
+	return &soltype.FuncType{Params: params, Ret: ret}
 }
 
 func inexactFn(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
-	return &soltype.FuncType{Params: params, Ret: ret, Exact: false}
+	return &soltype.FuncType{Params: params, Ret: ret, Inexact: true}
 }
 
 func TestConstrainPrim(t *testing.T) {

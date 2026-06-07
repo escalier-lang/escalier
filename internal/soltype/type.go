@@ -95,21 +95,21 @@ type FuncParam struct {
 	Optional bool // PR4: x? — lowers `required` without changing arity (len(Params))
 }
 
-// FuncType is a (possibly multi-argument) function type. M3 (PR4) adds Exact: a
-// bare `fn(p1..pn)` is exact (it tolerates at most n arguments — accept-set
+// FuncType is a (possibly multi-argument) function type. M3 (PR4) adds Inexact: a
+// bare `fn(p1..pn)` is exact (tolerates at most n arguments — accept-set
 // [required, n]); a `fn(p1..pn, ...)` written with a trailing `...` is inexact (it
 // tolerates extra arguments when used as a callback — accept-set [required, ∞)).
 // Exactness governs callback subtyping, not direct calls (#677); see solver's
 // acceptSet / the FuncType<:FuncType constrain rule.
 //
-// CAUTION: the zero value is Exact=false (inexact). A bare function VALUE is exact,
-// so every site that mints a concrete function (inferFunc, the inferCall demand,
-// prelude operators) sets Exact:true explicitly, and the structural rewriters
-// (coalesce, extrude, freshenAbove) carry the flag through unchanged.
+// The flag is Inexact (not Exact) so the ZERO VALUE is exact, matching Escalier's
+// exact-by-default semantics: a function minted without thinking about exactness is
+// correctly exact, and the structural rewriters (coalesce, extrude, freshenAbove)
+// carry the flag through unchanged. Only the parser's `...` marker sets it.
 type FuncType struct {
-	Params []*FuncParam
-	Ret    Type
-	Exact  bool // PR4: bare fn(...) ⇒ true; fn(..., ...) ⇒ false (the zero value)
+	Params  []*FuncParam
+	Ret     Type
+	Inexact bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 }
 
 // TupleType is a fixed-length tuple type.

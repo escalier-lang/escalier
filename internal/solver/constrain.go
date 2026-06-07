@@ -34,10 +34,10 @@ func requiredCount(f *soltype.FuncType) int {
 // invoke the supplied function with."
 func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	lo = requiredCount(f)
-	if f.Exact {
-		hi = len(f.Params)
-	} else {
+	if f.Inexact {
 		hi = unboundedArity
+	} else {
+		hi = len(f.Params)
 	}
 	return lo, hi
 }
@@ -254,7 +254,7 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 		for i, p := range t.Params {
 			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: c.extrude(p.Type, pol.Flip(), lvl, cache), Optional: p.Optional}
 		}
-		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache), Exact: t.Exact}
+		return &soltype.FuncType{Params: params, Ret: c.extrude(t.Ret, pol, lvl, cache), Inexact: t.Inexact}
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {

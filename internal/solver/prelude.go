@@ -57,8 +57,9 @@ func opFunc(ret soltype.Type, params ...soltype.Type) *soltype.FuncType {
 			Type:    p,
 		}
 	}
-	// Operators are concrete function values, hence exact (accept-set [n, n]).
-	return &soltype.FuncType{Params: ps, Ret: ret, Exact: true}
+	// Operators are concrete function values, hence exact (accept-set [n, n]) — the
+	// zero value of Inexact.
+	return &soltype.FuncType{Params: ps, Ret: ret}
 }
 
 // addOperatorBindings seeds the built-in operators, every one monomorphic over

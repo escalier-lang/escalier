@@ -108,9 +108,9 @@ func TestInferCallInexactCalleeRejectsExtraArgs(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
 	scope.defineValue("g", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.FuncType{
-		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}}},
-		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},
-		Exact:  false, // inexact: tolerates extras as a CALLBACK, but not at a direct call
+		Params:  []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}}},
+		Ret:     &soltype.PrimType{Prim: soltype.NumPrim},
+		Inexact: true, // inexact: tolerates extras as a CALLBACK, but not at a direct call
 	})}})
 	// g(1, 2) — one extra positional argument beyond the single declared param.
 	e := ast.NewCall(identExpr("g"), []ast.Expr{numExpr(1), numExpr(2)}, false, testSpan())

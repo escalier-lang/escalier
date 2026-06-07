@@ -254,7 +254,7 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 		}
 		ps = append(ps, paramName(param, i)+opt+": "+p.printType(param.Type))
 	}
-	if !t.Exact {
+	if t.Inexact {
 		ps = append(ps, "...")
 	}
 	return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)

@@ -177,12 +177,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			ret = &soltype.UnknownType{}
 		}
 	}
-	// A bare function value is EXACT (accept-set [required, len(Params)]): it rejects
+	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
 	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it
 	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
 	// [required, ∞). Note exactness governs callback subtyping, not direct calls: an
 	// inexact value still rejects extras at a visible call site (the inferCall lint).
-	ft := &soltype.FuncType{Params: params, Ret: ret, Exact: !sig.Inexact}
+	ft := &soltype.FuncType{Params: params, Ret: ret, Inexact: sig.Inexact}
 	// Record the function's own type against its node so a function flowing into a
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is
@@ -252,10 +252,10 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 
 	// EXACT + all-required call demand: accept(synth) = [N, N] (N = arg count), so
 	// the constraint reads exactly "callee accepts being called with N args"
-	// (required(callee) <= N <= upper(callee)). An INEXACT synth (the Go zero value)
-	// would have accept [N, ∞), forcing upper(callee) = ∞ and rejecting every call to
-	// an exact function — so Exact:true here is load-bearing, not decorative.
-	callShape := &soltype.FuncType{Params: demand, Ret: res, Exact: true}
+	// (required(callee) <= N <= upper(callee)). Exact is the zero value of Inexact, so
+	// the synth is exact by construction here; an INEXACT synth would have accept
+	// [N, ∞), forcing upper(callee) = ∞ and rejecting every call to an exact function.
+	callShape := &soltype.FuncType{Params: demand, Ret: res}
 	// Record the synthesized call-shape against the CallExpr so FuncArityMismatchError
 	// (the surviving "too few / required" path) resolves its blame to the call.
 	c.recordProv(callShape, e, CallShape)
