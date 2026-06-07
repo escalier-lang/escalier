@@ -3,6 +3,7 @@ package soltype
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,11 +128,11 @@ func TestAcceptCopyOnWrite(t *testing.T) {
 type recordEntered struct {
 	target  Type
 	repl    Type
-	entered map[Type]bool
+	entered set.Set[Type]
 }
 
 func (v *recordEntered) EnterType(t Type, _ Polarity) EnterResult {
-	v.entered[t] = true
+	v.entered.Add(t)
 	if t == v.target {
 		return EnterResult{Type: v.repl, SkipChildren: true}
 	}
@@ -147,12 +148,12 @@ func TestAcceptReplaceAndSkipChildren(t *testing.T) {
 	inner := &TupleType{Elems: []Type{leaf}}
 	outer := &TupleType{Elems: []Type{inner}}
 
-	v := &recordEntered{target: inner, repl: num, entered: map[Type]bool{}}
+	v := &recordEntered{target: inner, repl: num, entered: set.NewSet[Type]()}
 	got := outer.Accept(v, Positive).(*TupleType)
 
 	require.Same(t, num, got.Elems[0], "inner was replaced by the substitute")
-	require.True(t, v.entered[inner], "the replaced node was itself entered")
-	require.False(t, v.entered[leaf], "a skipped subtree is never entered")
+	require.True(t, v.entered.Contains(inner), "the replaced node was itself entered")
+	require.False(t, v.entered.Contains(leaf), "a skipped subtree is never entered")
 }
 
 // replaceDescend replaces the node matching target with repl and DESCENDS
@@ -160,11 +161,11 @@ func TestAcceptReplaceAndSkipChildren(t *testing.T) {
 type replaceDescend struct {
 	target  Type
 	repl    Type
-	entered map[Type]bool
+	entered set.Set[Type]
 }
 
 func (v *replaceDescend) EnterType(t Type, _ Polarity) EnterResult {
-	v.entered[t] = true
+	v.entered.Add(t)
 	if t == v.target {
 		return EnterResult{Type: v.repl} // SkipChildren=false: rebuild from repl's children
 	}
@@ -180,11 +181,11 @@ func TestAcceptDescendsIntoSameKindReplacement(t *testing.T) {
 	orig := &TupleType{Elems: []Type{origElem}}
 	repl := &TupleType{Elems: []Type{replElem}}
 
-	v := &replaceDescend{target: orig, repl: repl, entered: map[Type]bool{}}
+	v := &replaceDescend{target: orig, repl: repl, entered: set.NewSet[Type]()}
 	got := orig.Accept(v, Positive).(*TupleType)
 
-	require.True(t, v.entered[replElem], "the replacement's child is walked")
-	require.False(t, v.entered[origElem], "the original's child is not walked")
+	require.True(t, v.entered.Contains(replElem), "the replacement's child is walked")
+	require.False(t, v.entered.Contains(origElem), "the original's child is not walked")
 	require.Same(t, repl, got, "nothing changed within repl, so identity is preserved")
 }
 
@@ -192,7 +193,7 @@ func TestAcceptDescendsIntoSameKindReplacement(t *testing.T) {
 // contract and panics with a clear message (not a bare type-assertion fault).
 func TestAcceptDescendDifferentKindPanics(t *testing.T) {
 	orig := &TupleType{Elems: []Type{&PrimType{Prim: NumPrim}}}
-	v := &replaceDescend{target: orig, repl: &PrimType{Prim: StrPrim}, entered: map[Type]bool{}}
+	v := &replaceDescend{target: orig, repl: &PrimType{Prim: StrPrim}, entered: set.NewSet[Type]()}
 	require.PanicsWithValue(t,
 		"soltype.Accept: EnterType replaced *soltype.TupleType with *soltype.PrimType under "+
 			"SkipChildren=false; a same-kind replacement is required to descend "+
