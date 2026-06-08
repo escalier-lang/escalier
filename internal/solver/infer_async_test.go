@@ -505,20 +505,25 @@ func TestInferIfElseDivergingBranchTailReturnJoin(t *testing.T) {
 	require.Equal(t, `fn (c: boolean) -> 3 | ["z"]`, values["f"])
 }
 
-// When BOTH branches diverge, the if produces no value at all: res keeps no lower
-// bounds and coalesces to `never`, so the `val x` it initializes binds `x : never`
-// (the bottom type — no path reaches it with a value). The tuple tail `[x]` makes
-// that observable: `[never]`, distinct from the early-return points. The two early
-// returns are still function return points, so the function returns 1 | 2 | [never]
-// — a bug that leaked either branch into x would render the element as [1], [2], or
-// [1 | 2] instead of [never].
+// When BOTH branches of an `if` diverge, the if's VALUE has no contributing branch
+// and coalesces to `never` (the bottom type — no path through the `if` yields a
+// value). Observed at top level so the if-value is read straight off the binding,
+// with no dead-code tail to muddy it: each `return` outside a function is also
+// reported (symmetric to TestInferReturnOutsideFunctionRejected). A bug that failed
+// to drop a diverging branch would surface here as `1 | 2` instead of `never`.
+//
+// NOTE: this deliberately observes the if-EXPRESSION's value, not a function's
+// return type. Inside a function, `val x = if c { return 1 } else { return 2 }`
+// makes every following statement unreachable, but the solver does not yet drop
+// that dead code from the block/function value (it still contributes `[never]` for
+// a `[x]` tail). That statement-level reachability gap is tracked in #719; #714
+// scoped only the if-expression value, which this test pins.
 func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(c: boolean) {
-			val x = if c { return 1 } else { return 2 }
-			[x]
-		}
+		val x = if true { return 1 } else { return 2 }
 	`)
-	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> 1 | 2 | [never]`, values["f"])
+	require.Len(t, errs, 2)
+	require.Equal(t, "return can only be used inside a function", errs[0].Message())
+	require.Equal(t, "return can only be used inside a function", errs[1].Message())
+	require.Equal(t, "never", values["x"])
 }
