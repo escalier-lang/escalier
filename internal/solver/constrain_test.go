@@ -350,6 +350,46 @@ func TestConstrainVoid(t *testing.T) {
 		Messages(c.Constrain(&soltype.Void{}, num())))
 }
 
+// PR8: the ErrorType recovery sentinel ABSORBS in both directions — a constraint
+// with an ErrorType operand trivially succeeds, so a reported diagnostic's
+// placeholder never cascades. Pinned against every concrete shape, on both sides.
+func TestConstrainErrorTypeAbsorbs(t *testing.T) {
+	errT := func() soltype.Type { return &soltype.ErrorType{} }
+	concretes := []struct {
+		name string
+		t    soltype.Type
+	}{
+		{"number", num()},
+		{"literal", numLit(5)},
+		{"function", exactFn(num(), identParam("x", num()))},
+		{"tuple", &soltype.TupleType{Elems: []soltype.Type{num()}}},
+		{"void", &soltype.Void{}},
+		{"error", errT()},
+	}
+	for _, tc := range concretes {
+		t.Run("error <: "+tc.name, func(t *testing.T) {
+			c := &Context{}
+			require.Empty(t, c.Constrain(errT(), tc.t))
+		})
+		t.Run(tc.name+" <: error", func(t *testing.T) {
+			c := &Context{}
+			require.Empty(t, c.Constrain(tc.t, errT()))
+		})
+	}
+}
+
+// PR8: ErrorType short-circuits ABOVE the variable arms, so it never enters a
+// var's bound list — coalesce / extrude / freshenAbove then never see it
+// propagated through bounds.
+func TestConstrainErrorTypeNeverEntersVarBounds(t *testing.T) {
+	c := &Context{}
+	a := c.freshVar(0)
+	require.Empty(t, c.Constrain(a, &soltype.ErrorType{}))
+	require.Empty(t, a.UpperBounds, "ErrorType must not be recorded as an upper bound")
+	require.Empty(t, c.Constrain(&soltype.ErrorType{}, a))
+	require.Empty(t, a.LowerBounds, "ErrorType must not be recorded as a lower bound")
+}
+
 func TestConstrainVariableBinding(t *testing.T) {
 	// α <: number records number as an upper bound of α.
 	c := &Context{}

@@ -207,6 +207,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return "never"
 	case *UnknownType:
 		return "unknown"
+	case *ErrorType:
+		return "error"
 	case *Void:
 		return "void"
 	case *TupleType:

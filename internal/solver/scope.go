@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -20,6 +21,14 @@ type ValueBinding struct {
 	// accumulates one entry per arm, including arms M2 currently rejects. This lets
 	// a future go-to-definition navigate to all of them. Empty for prelude bindings.
 	Sources []provenance.Provenance
+	// Kind is the binding's declaration kind: VarKind for a reassignable `var`,
+	// ValKind for everything else (a `val`, a function, a parameter, and every
+	// prelude binding — all left at the zero value, ValKind). inferAssign gates
+	// reassignment on Kind == VarKind, reporting CannotAssignToImmutableError for any
+	// other kind. This is the binding-level REASSIGNABILITY gate only — deliberately
+	// SEPARATE from type-level mutability (`mut`-field / aliasing / lifetime
+	// transitions, M4), which is a property of the TYPE, not of this binding.
+	Kind ast.VariableKind
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST

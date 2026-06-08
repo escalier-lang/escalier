@@ -61,9 +61,11 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 				// `unknown` inner would instead cascade a spurious `<: never` / `<:
 				// unknown`, since constrain has no rule for either as an input).
 				//
-				// PR8 (planning/simple_sub/m3-implementation-plan.md) replaces this
-				// fresh var with the dedicated error-recovery type, so the recovered
-				// inner reads as `error` rather than as an anonymous coalesced var.
+				// PR8 (planning/simple_sub/m3-implementation-plan.md) deliberately
+				// KEEPS this fresh var rather than substituting its ErrorType sentinel:
+				// PR8 repoints only the no-good-type recovery, and this one yields a
+				// strictly better type — the fresh var generalizes (`Promise<_>` ⇒
+				// `Promise<T0>`) where ErrorType would freeze it to `Promise<error>`.
 				inner = c.freshAt(lvl)
 			}
 			t := &soltype.PromiseType{Inner: inner}

@@ -360,19 +360,50 @@ type AsyncReturnNotPromiseError struct {
 	Fn     ast.Node    // the enclosing async function, surfaced via Related()
 }
 
-func (*UnknownIdentifierError) isSolverError()    {}
-func (*NamespaceUsedAsValueError) isSolverError() {}
-func (*TooManyArgsError) isSolverError()          {}
-func (*NotEnoughArgsError) isSolverError()        {}
-func (*UnsupportedNodeError) isSolverError()      {}
-func (*UnsupportedFeatureError) isSolverError()   {}
-func (*BodyDeclNotAllowedError) isSolverError()   {}
-func (*MissingInitializerError) isSolverError()   {}
-func (*DuplicateDeclarationError) isSolverError() {}
-func (*OverloadNotSupportedError) isSolverError() {}
-func (*AwaitOutsideAsyncError) isSolverError()      {}
-func (*ReturnOutsideFunctionError) isSolverError()  {}
-func (*AsyncReturnNotPromiseError) isSolverError()  {}
+// InvalidAssignmentTargetError fires when the left-hand side of an assignment
+// (`a = expr`) is not an assignable place. M3's only assignable target is an
+// IdentExpr resolving to a `var` binding; a literal, call, or any other non-place
+// LHS is rejected here. (A member target `obj.x = …` needs record types and lands
+// in M4 — it is also reported here until then.)
+//
+// It is a BRIDGE error: born in inferAssign with the offending LHS node in hand,
+// so it self-blames (Span() is the LHS's own span); it carries no related node.
+type InvalidAssignmentTargetError struct {
+	Target ast.Expr // the non-place LHS (blame span)
+}
+
+// CannotAssignToImmutableError fires when a reassignment (`a = expr`) targets a
+// binding that is not a `var` — a `val`, a function, a parameter, or a prelude
+// binding. The binding-level mutability gate (PR8); `mut`-field / alias / lifetime
+// mutability is M4.
+//
+// It is a BRIDGE error: born in inferAssign with the assignment node in hand, so
+// it self-blames the whole assignment (Span()). Decl is the introducing
+// declaration — surfaced via Related() as the "declared immutable here" span,
+// resolved for a `val`/`fn` decl AND for a parameter (its pattern) — or nil for a
+// prelude binding that carries no source node. Name is the target identifier, for
+// the message.
+type CannotAssignToImmutableError struct {
+	Assign *ast.BinaryExpr // the assignment (blame span)
+	Name   string          // the target binding's name
+	Decl   ast.Node        // the introducing decl, related; nil for prelude bindings
+}
+
+func (*UnknownIdentifierError) isSolverError()       {}
+func (*NamespaceUsedAsValueError) isSolverError()    {}
+func (*InvalidAssignmentTargetError) isSolverError() {}
+func (*CannotAssignToImmutableError) isSolverError() {}
+func (*TooManyArgsError) isSolverError()             {}
+func (*NotEnoughArgsError) isSolverError()           {}
+func (*UnsupportedNodeError) isSolverError()         {}
+func (*UnsupportedFeatureError) isSolverError()      {}
+func (*BodyDeclNotAllowedError) isSolverError()      {}
+func (*MissingInitializerError) isSolverError()      {}
+func (*DuplicateDeclarationError) isSolverError()    {}
+func (*OverloadNotSupportedError) isSolverError()    {}
+func (*AwaitOutsideAsyncError) isSolverError()       {}
+func (*ReturnOutsideFunctionError) isSolverError()   {}
+func (*AsyncReturnNotPromiseError) isSolverError()   {}
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
@@ -384,6 +415,26 @@ func (e *NamespaceUsedAsValueError) Span() ast.Span      { return e.Ident.Span()
 func (e *NamespaceUsedAsValueError) Related() []ast.Span { return nil }
 func (e *NamespaceUsedAsValueError) Message() string {
 	return "Namespace used as a value: " + e.Ident.Name
+}
+
+func (e *InvalidAssignmentTargetError) Span() ast.Span      { return e.Target.Span() }
+func (e *InvalidAssignmentTargetError) Related() []ast.Span { return nil }
+func (e *InvalidAssignmentTargetError) Message() string {
+	return "Invalid assignment target: " + astKind(e.Target)
+}
+
+func (e *CannotAssignToImmutableError) Span() ast.Span { return e.Assign.Span() }
+func (e *CannotAssignToImmutableError) Related() []ast.Span {
+	// Point at the introducing declaration (the "declared immutable here" span) when
+	// there is one — a `val`/`fn` decl or a parameter's pattern; a prelude binding
+	// carries no source node, so the related list is then empty.
+	if e.Decl == nil {
+		return nil
+	}
+	return []ast.Span{e.Decl.Span()}
+}
+func (e *CannotAssignToImmutableError) Message() string {
+	return "Cannot assign to immutable binding: " + e.Name
 }
 
 func (e *TooManyArgsError) Span() ast.Span { return e.Call.Span() }
@@ -546,6 +597,8 @@ func describe(t soltype.Type) string {
 		return "never"
 	case *soltype.UnknownType:
 		return "unknown"
+	case *soltype.ErrorType:
+		return "error"
 	case *soltype.UnionType:
 		return joinDescribe(t.Types, " | ")
 	case *soltype.IntersectionType:

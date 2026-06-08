@@ -142,6 +142,62 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 
 func (f *freshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
+// freshenAll returns a copy of t with EVERY TypeVarType replaced by a fresh var at
+// lvl (its bounds copied), sharing no var with the input. Unlike freshenAbove it
+// applies no level prune, so it descends through every former — including the
+// coalesced Union/Intersection nodes whose LevelOf is 0 (which freshenAbove's
+// LevelOf prune would skip) — and freshens vars wherever they occur.
+//
+// inferAssign uses it on a binding's coalesced slot type: coalesceScheme RETAINS
+// type-parameter vars by pointer, so constraining the RHS against that type would
+// mutate the binding's own vars and poison a reassigned polymorphic var for every
+// later use. Freshening first makes the constraint mutate throwaway copies instead.
+// A var-free input (the common annotated/literal case) is returned unchanged.
+func (c *checker) freshenAll(t soltype.Type, lvl int) soltype.Type {
+	return t.Accept(&allFreshener{c: c, lvl: lvl, cache: map[*soltype.TypeVarType]*soltype.TypeVarType{}}, soltype.Positive)
+}
+
+// allFreshener is the soltype-visitor form of freshenAll: it replaces every var
+// (no level prune; that is the only difference from freshener) and lets Accept
+// rebuild/descend through the structural and union/intersection nodes. It ignores
+// polarity (it freshens uniformly).
+type allFreshener struct {
+	c     *checker
+	lvl   int
+	cache map[*soltype.TypeVarType]*soltype.TypeVarType
+}
+
+func (f *allFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return soltype.EnterResult{} // structural / atom node: let Accept rebuild or descend
+	}
+	if nv, ok := f.cache[v]; ok {
+		return soltype.EnterResult{Type: nv, SkipChildren: true}
+	}
+	nv := f.c.freshAt(f.lvl)
+	f.cache[v] = nv // populate BEFORE bounds so a cyclic bound referencing v resolves to nv
+	nv.LowerBounds = f.freshenBounds(v.LowerBounds)
+	nv.UpperBounds = f.freshenBounds(v.UpperBounds)
+	// SkipChildren is a no-op for a var (Accept treats it as a leaf), but we set it
+	// honestly: the var's bounds are a side graph, not tree children, so we freshen
+	// them above rather than letting the walk descend.
+	return soltype.EnterResult{Type: nv, SkipChildren: true}
+}
+
+func (f *allFreshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+func (f *allFreshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
+	if len(bounds) == 0 {
+		return nil
+	}
+	out := make([]soltype.Type, len(bounds))
+	for i, b := range bounds {
+		out[i] = b.Accept(f, soltype.Positive)
+	}
+	return out
+}
+
 // freshenBounds freshens a var's bound list, preserving the nil-for-empty shape.
 // Freshening ignores polarity (no variance flip), so it walks at a fixed Positive.
 func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {

@@ -29,16 +29,16 @@ func TestInferTupleEmpty(t *testing.T) {
 }
 
 // A spread element ([...a]) is an ArraySpreadExpr, which the M2 walk does not
-// cover; inferExpr reports it as unsupported and drops a never placeholder into
-// the tuple slot, so the tuple still builds (no panic) and the spread's value `a`
-// is never walked — so no cascading unknown-identifier error. Tuple/array spread
-// is M4.
+// cover; inferExpr reports it as unsupported and drops the error-recovery
+// placeholder (PR8) into the tuple slot, so the tuple still builds (no panic) and
+// the spread's value `a` is never walked — so no cascading unknown-identifier
+// error. Tuple/array spread is M4.
 func TestInferTupleSpreadUnsupported(t *testing.T) {
 	c := newChecker()
 	// [...a]
 	e := tupleExpr(ast.NewArraySpread(identExpr("a"), testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
-	require.Equal(t, "[never]", render(got))
+	require.Equal(t, "[error]", render(got))
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: ArraySpreadExpr", c.errs[0].Message())
 }
@@ -158,7 +158,7 @@ func TestInferMemberOptionalChainUnsupported(t *testing.T) {
 	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("a", testSpan()), true, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.NeverType{}, got)
+	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported in M2: OptionalChain", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
@@ -179,15 +179,17 @@ func TestInferMemberOptionalChainDoesNotDescendIntoReceiver(t *testing.T) {
 
 // A malformed `recv.` (no valid property name) leaves Prop.Name empty; the
 // parser has already reported the missing identifier, so the walk must NOT layer
-// a spurious "object is missing property: " on top. It yields a never
-// placeholder and reports nothing.
+// a spurious "object is missing property: " on top. It yields the ErrorType
+// recovery sentinel (PR8) — not a raw never — so that if the read flows into a
+// sink (`if recv. {}`, `await recv.`, `var x = recv.`) the sentinel absorbs in
+// constrain rather than cascading `never <: …`. It reports nothing itself.
 func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 	c := newChecker()
 	// recv = {a: 5}; access with an empty property name (as the parser builds for `recv.`)
 	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("", testSpan()), false, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.NeverType{}, got)
+	require.IsType(t, &soltype.ErrorType{}, got)
 	require.Empty(t, c.errs) // no spurious MissingPropertyError
 	require.Same(t, got, c.info.TypeOf(e))
 }

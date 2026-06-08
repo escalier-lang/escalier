@@ -252,7 +252,10 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 	require.Len(t, errs, 2)
 	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
 	require.Equal(t, "Unknown identifier: x", errs[1].Message())
-	require.Equal(t, map[string]string{"y": "never"}, values)
+	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
+	// sentinel (`val y = <unknown>`) recovers AS `error` rather than freezing to
+	// `never`, so downstream uses of y absorb instead of cascading `<: never`.
+	require.Equal(t, map[string]string{"y": "error"}, values)
 }
 
 // A destructuring pattern is IdentPat-only-gated in M2 (M4 adds tuple/record
@@ -511,7 +514,9 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
 	// M2.5: the error self-blames from the ident node.
 	require.Equal(t, "missing", spanText(srcA, errs[0].Span()))
-	require.Equal(t, map[string]string{"y": "never", "z": "5"}, values)
+	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
+	// sentinel recovers AS `error` rather than freezing to `never`.
+	require.Equal(t, map[string]string{"y": "error", "z": "5"}, values)
 }
 
 // Error recovery for a NAMED callee: a too-many-args call still yields the

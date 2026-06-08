@@ -87,6 +87,21 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 	}
 	seen.Add(key)
 
+	// Error-recovery sentinel (PR8): an ErrorType operand carries an
+	// already-reported diagnostic, so it ABSORBS in both directions — the
+	// constraint trivially succeeds. Short-circuiting here, ABOVE the structural
+	// switch and the variable arms, keeps it out of every bound list, so a
+	// reported diagnostic's placeholder never cascades a second, spurious failure
+	// (and coalesce / extrude / freshenAbove never see it propagated through
+	// bounds). Unlike never (⊥) / unknown (⊤), which are coalesced-output only,
+	// ErrorType is a legal constrain input.
+	if _, ok := lhs.(*soltype.ErrorType); ok {
+		return nil
+	}
+	if _, ok := rhs.(*soltype.ErrorType); ok {
+		return nil
+	}
+
 	// Structural cases first; fall through to the variable cases when a side
 	// that didn't match here is a TypeVarType.
 	switch l := lhs.(type) {
