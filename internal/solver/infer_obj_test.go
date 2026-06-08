@@ -179,15 +179,17 @@ func TestInferMemberOptionalChainDoesNotDescendIntoReceiver(t *testing.T) {
 
 // A malformed `recv.` (no valid property name) leaves Prop.Name empty; the
 // parser has already reported the missing identifier, so the walk must NOT layer
-// a spurious "object is missing property: " on top. It yields a never
-// placeholder and reports nothing.
+// a spurious "object is missing property: " on top. It yields the ErrorType
+// recovery sentinel (PR8) — not a raw never — so that if the read flows into a
+// sink (`if recv. {}`, `await recv.`, `var x = recv.`) the sentinel absorbs in
+// constrain rather than cascading `never <: …`. It reports nothing itself.
 func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 	c := newChecker()
 	// recv = {a: 5}; access with an empty property name (as the parser builds for `recv.`)
 	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("", testSpan()), false, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.NeverType{}, got)
+	require.IsType(t, &soltype.ErrorType{}, got)
 	require.Empty(t, c.errs) // no spurious MissingPropertyError
 	require.Same(t, got, c.info.TypeOf(e))
 }

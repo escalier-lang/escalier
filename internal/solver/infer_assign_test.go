@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
 )
 
@@ -119,4 +120,106 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 	src := "fn f() { nope = 5 }"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "Unknown identifier: nope", "nope")
+}
+
+// Reassigning a POLYMORPHIC var must not corrupt the binding. inferAssign freshens
+// the binding's coalesced slot type before constraining, so the RHS flows into
+// throwaway copies rather than the binding's retained type-parameter vars; `id`
+// keeps its generic type and a later `id("hello")` still type-checks.
+func TestInferAssignPolyVarNoCorruption(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		var id = fn (x) { x }
+		fn f() { id = fn (n: number) -> number { n } }
+		val r = id("hello")
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(x: T0) -> T0", values["id"]) // not the corrupted fn <T0>(x: T0 & number) -> T0 | number
+	require.Equal(t, `"hello"`, values["r"])
+}
+
+// A broken TOP-LEVEL binding recovers AS the error sentinel (Fix A), so reassigning
+// it yields exactly one diagnostic — the same single-error guarantee the body-level
+// path gives. Before the fix the top-level group var coalesced to `never` and the
+// reassignment cascaded `cannot constrain 5 <: never`.
+func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		var a = missing
+		fn f() { a = 5 }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, "error", values["a"]) // recovered as the sentinel, not never
+}
+
+// Reassigning a union-typed var applies the union-RHS rule: a member assigns, a
+// non-member is rejected once. (Union subtyping in general is M6; inferAssign trials
+// the members under a probe so a legal member assignment isn't wrongly rejected.)
+func TestInferAssignUnionTarget(t *testing.T) {
+	t.Run("member assigns", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn f(c: boolean) {
+				var a = if c { 1 } else { 2 }
+				a = 1
+			}
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("non-member rejected once", func(t *testing.T) {
+		src := "fn f(c: boolean) {\n  var a = if c { 1 } else { 2 }\n  a = 3\n}"
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain 3 <: 1 | 2", errs[0].Message())
+	})
+}
+
+// A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring
+// inferIdent's value-position behavior (not UnknownIdentifier). Hand-built because
+// namespace declarations are themselves unsupported in M3, so a namespace never
+// enters scope via real source — same construction as TestInferIdentNamespaceUsedAsValue.
+func TestInferAssignNamespaceTarget(t *testing.T) {
+	c := newChecker()
+	scope := NewScope()
+	scope.defineNamespace("Foo", &Namespace{Name: "Foo"})
+	e := ast.NewBinary(identExpr("Foo"), numExpr(5), ast.Assign, testSpan())
+	c.inferExpr(scope, 0, e)
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Namespace used as a value: Foo", c.errs[0].Message())
+}
+
+// A member target (obj.x = …) is a valid-but-deferred (M4) place, reported as an
+// unsupported feature — distinct from a fundamentally invalid target like `5 = a`.
+func TestInferAssignMemberTargetUnsupported(t *testing.T) {
+	src := "val o = {x: 5}\nfn f() { o.x = 6 }"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "Unsupported in M2: assignment to a member or index", "o.x")
+}
+
+// An immutable target with an independently-broken RHS reports BOTH errors — they
+// are two distinct problems, not a cascade (the immutable target never reaches
+// constrain). Pinned so the behavior is explicit.
+func TestInferAssignImmutableWithBadRHSReportsBoth(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		val a = 5
+		fn f() { a = missing }
+	`)
+	require.Equal(t, []string{
+		"Unknown identifier: missing",
+		"Cannot assign to immutable binding: a",
+	}, Messages(errs))
+}
+
+// A malformed assignment node with a nil operand (hand-built; the real parser
+// substitutes ast.NewError) must not panic — it blames the whole expression.
+func TestInferAssignNilOperandDoesNotPanic(t *testing.T) {
+	c := newChecker()
+	e := ast.NewBinary(nil, numExpr(5), ast.Assign, testSpan())
+	require.NotPanics(t, func() {
+		c.inferExpr(NewScope(), 0, e)
+		for _, er := range c.errs { // force lazy Span()/Message()
+			_ = er.Span()
+			_ = er.Message()
+		}
+	})
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "Unsupported in M2: BinaryExpr", c.errs[0].Message())
 }

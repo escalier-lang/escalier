@@ -88,6 +88,12 @@ type componentBinding struct {
 	bound   bool // a definition was inferred and constrained
 	isVar   bool // the primary definition is a `val`/`var`
 	mutable bool // PR8: the primary definition is a `var` (VarKind) — reassignable
+	// recovered marks that a contributing definition was WHOLLY the ErrorType recovery
+	// sentinel (e.g. `val a = <unknown ident>`). ErrorType absorbs in constrain, so it
+	// leaves no bound on the group var; phase 3 uses this to recover the binding AS
+	// ErrorType rather than freezing an unbound var to `never` (which would cascade
+	// `<: never` at every later use). See PR8 / inferComponent phase 3.
+	recovered bool
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -154,6 +160,12 @@ func (c *checker) inferComponent(
 			// go-to-definition can reach all of them. Only the primary's type is kept;
 			// M2 has no overload-merge (that is M3), so the extra arms still error.
 			b.sources = append(b.sources, src)
+			// PR8: a definition that is wholly the ErrorType recovery sentinel leaves no
+			// bound on the group var (ErrorType absorbs in constrain). Remember it so
+			// phase 3 can recover the binding as ErrorType instead of `never`.
+			if _, isErr := t.(*soltype.ErrorType); isErr {
+				b.recovered = true
+			}
 			if !b.bound {
 				c.constrain(d, t, b.v)
 				b.primary = d
@@ -222,7 +234,20 @@ func (c *checker) inferComponent(
 		// monotype). Every variable at Level > lvl becomes a quantified type
 		// parameter, captured outer variables do not — turning M2's monomorphic
 		// freeze into real let-polymorphism (PR1).
-		scheme := c.generalize(b.v, lvl)
+		//
+		// PR8: a binding whose definition was wholly the ErrorType sentinel left its
+		// group var with no bound (ErrorType absorbs in constrain), so generalizing it
+		// would freeze the binding to `never` and cascade `<: never` at every later use
+		// (a reassignment, a call arg, …). Recover it AS the error sentinel instead,
+		// matching the body-level path (inferVarDecl) and keeping downstream uses
+		// absorbing. Guarded by an empty group var so a binding that ALSO picked up a
+		// real type (a recovered overload arm alongside a good one) still generalizes.
+		var scheme TypeScheme
+		if b.recovered && len(b.v.LowerBounds) == 0 {
+			scheme = &MonoScheme{Ty: &soltype.ErrorType{}}
+		} else {
+			scheme = c.generalize(b.v, lvl)
+		}
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Mutable: b.mutable})
 		// Record the binding's final (coalesced) DISPLAY type in Info on the name
 		// node, so it is queryable even for a `val` in a recursive group (where

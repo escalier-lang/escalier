@@ -419,22 +419,41 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 // The assignment EXPRESSION's own value type is void (assignment is
 // statement-shaped); flowing it through a binding yields `void`.
 func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
-	rhs := c.inferExpr(scope, lvl, e.Right)
 	voidT := soltype.Type(&soltype.Void{})
+	// Guard a malformed assignment node (the real parser substitutes ast.NewError for
+	// a missing operand, so this is unreachable from source — but a hand-built AST
+	// could have a nil operand). Blame the whole expression rather than dereferencing
+	// a nil operand in inferExpr / InvalidAssignmentTargetError later.
+	if e.Left == nil || e.Right == nil {
+		return c.reportUnsupported(e)
+	}
+	rhs := c.inferExpr(scope, lvl, e.Right)
 	c.recordType(e, voidT)
 
 	target, ok := e.Left.(*ast.IdentExpr)
 	if !ok {
-		// A non-place LHS (literal, call, member, …). Member targets land in M4; every
-		// other shape is never assignable.
-		c.report(&InvalidAssignmentTargetError{Target: e.Left})
+		// A member/index target (obj.x = …, xs[i] = …) is a structurally VALID place
+		// whose type rule needs record/array types — deferred to M4 — so report it as
+		// an unsupported feature, distinct from a fundamentally invalid target like
+		// `5 = x` or `f() = x`, which is an InvalidAssignmentTargetError.
+		switch e.Left.(type) {
+		case *ast.MemberExpr, *ast.IndexExpr:
+			c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+		default:
+			c.report(&InvalidAssignmentTargetError{Target: e.Left})
+		}
 		return voidT
 	}
 	b, found := scope.GetValue(target.Name)
 	if !found || len(b.Schemes) == 0 {
-		// Surface the unbound target the same way a value-position read would, so an
-		// assignment to an undeclared name isn't silently accepted.
-		c.report(&UnknownIdentifierError{Ident: target})
+		// Not a value binding. Mirror inferIdent's value-position behavior: a name that
+		// resolves to a namespace reports NamespaceUsedAsValue; otherwise it is an
+		// unknown identifier.
+		if _, isNS := scope.GetNamespace(target.Name); isNS {
+			c.report(&NamespaceUsedAsValueError{Ident: target})
+		} else {
+			c.report(&UnknownIdentifierError{Ident: target})
+		}
 		return voidT
 	}
 	if !b.Mutable {
@@ -452,12 +471,46 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// number` would merely add another lower bound and wrongly succeed. The coalesced
 	// type is the concrete slot type — `number` for an annotated var, the literal `5`
 	// for an un-annotated one (so `a = 6` ⇒ `6 <: 5` does NOT check until M4 `var`
-	// literal widening). The constraint node is the whole assignment, so a mismatch
-	// blames the assignment via the existing CannotConstrainError.
-	targetT := schemeType(b.Schemes[0])
+	// literal widening).
+	//
+	// freshenAll copies the coalesced type so constraining the RHS cannot mutate
+	// type-parameter vars the coalesced form still shares with the binding
+	// (coalesceScheme retains them by pointer): without the copy, reassigning a
+	// polymorphic var would poison it for every later use. A var-free coalesced type
+	// (the common annotated/literal case) freshens to itself.
+	//
+	// b.Schemes[0]: a mutable binding is always single-scheme — overload sets come
+	// only from FuncDecls, which are immutable (Mutable is false), so they are
+	// rejected by the !b.Mutable gate above before reaching here.
+	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
-	c.constrain(e, rhs, targetT)
+	c.constrainAssign(e, rhs, targetT)
 	return voidT
+}
+
+// constrainAssign asserts `rhs <: targetT` for a reassignment. For a UNION target it
+// applies the union-RHS rule — X <: (A | B) iff X <: A or X <: B — by trying each
+// member speculatively under a probe, committing the first that holds. constrain
+// itself has no UnionType-RHS rule until M6, so without this a legal assignment of a
+// union member (`var a = if c { 1 } else { 2 }; a = 1`) would be wrongly rejected.
+// A non-union target takes the ordinary single-constraint path.
+func (c *checker) constrainAssign(n ast.Node, rhs, targetT soltype.Type) {
+	union, ok := targetT.(*soltype.UnionType)
+	if !ok {
+		c.constrain(n, rhs, targetT)
+		return
+	}
+	for _, member := range union.Types {
+		p := c.openProbe()
+		errs := c.ctx.Constrain(rhs, member)
+		c.closeProbe(p, len(errs) == 0) // commit the first member that holds; else roll back
+		if len(errs) == 0 {
+			return
+		}
+	}
+	// No member matched: report once against the whole union (CannotConstrainError),
+	// blaming the assignment.
+	c.constrain(n, rhs, targetT)
 }
 
 // bindingDecl returns the AST node of the binding's introducing declaration — the
@@ -560,8 +613,11 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 		// A malformed `recv.` with no valid property name: the parser already
 		// reported the missing identifier, so constraining recv <: {"": res} here
 		// would only layer a spurious "object is missing property: " on top. Yield
-		// a never placeholder without reporting or constraining.
-		t := soltype.Type(&soltype.NeverType{})
+		// the ErrorType recovery sentinel (PR8) — NOT a raw never — so that if this
+		// read flows into a sink (`if recv. {}`, `await recv.`, `var x = recv.`) the
+		// sentinel absorbs in constrain rather than cascading `never <: …`. report
+		// already emitted the diagnostic here (via the parser), so no extra error.
+		t := soltype.Type(&soltype.ErrorType{})
 		c.recordType(e, t)
 		return t
 	}
