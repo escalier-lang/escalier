@@ -439,6 +439,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		return c.reportUnsupported(e)
 	}
 	rhs := c.inferExpr(scope, lvl, e.Right)
+	// Record void on e up front as the recovery type: every error path below returns
+	// voidT without recording a type, so this guarantees the node is typed on failure.
+	// The success path overwrites it with the stored value's type (see end of function).
 	c.recordType(e, voidT)
 
 	target, ok := e.Left.(*ast.IdentExpr)
@@ -489,6 +492,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// (coalesceScheme retains them by pointer): without the copy, reassigning a
 	// polymorphic var would poison it for every later use. A var-free coalesced type
 	// (the common annotated/literal case) freshens to itself.
+	//
+	// A probe can't do this: Discard would also roll back the constraint's real errors
+	// and the RHS's bound, while Commit would keep the binding poisoning — we need to
+	// suppress one side effect, not the whole trial. freshenAll isolates just the var.
 	//
 	// b.Schemes[0]: a reassignable binding is always single-scheme — overload sets
 	// come only from FuncDecls, whose Kind is never VarKind, so they are rejected by

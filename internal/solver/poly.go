@@ -179,6 +179,9 @@ func (f *allFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Ent
 	f.cache[v] = nv // populate BEFORE bounds so a cyclic bound referencing v resolves to nv
 	nv.LowerBounds = f.freshenBounds(v.LowerBounds)
 	nv.UpperBounds = f.freshenBounds(v.UpperBounds)
+	// SkipChildren is a no-op for a var (Accept treats it as a leaf), but we set it
+	// honestly: the var's bounds are a side graph, not tree children, so we freshen
+	// them above rather than letting the walk descend.
 	return soltype.EnterResult{Type: nv, SkipChildren: true}
 }
 
