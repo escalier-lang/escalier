@@ -467,49 +467,58 @@ func TestInferReturnOutsideFunctionRejected(t *testing.T) {
 // the binding it initializes sees only the non-diverging branch. When control
 // reaches `val x = …`, the `c == true` path has already returned from the
 // function, so the only path that produces a value for x is the `else`.
+//
+// The tail wraps x in a tuple — `[x]` — so x's inferred type is OBSERVABLE in the
+// function's return distinctly from the early-return point. A bare `x` tail would
+// not discriminate: `return 1` makes `1` a function return point regardless, so
+// both the correct `x : "y"` and the buggy `x : 1 | "y"` render the function as
+// `1 | "y"` (the leaked `1` is absorbed by the return point). Inside the tuple the
+// leak cannot hide — correct gives `["y"]`, the bug would give `[1 | "y"]`.
 func TestInferIfElseDivergingBranchDropsFromValue(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(c: boolean) {
 			val x = if c { return 1 } else { "y" }
-			x
+			[x]
 		}
 	`)
 	require.Empty(t, errs)
-	// x is "y", not 1 | "y" — the `return 1` branch never yields a value for x.
-	// The function returns 1 | "y": the early return IS a function return point
-	// (joined with the tail x), even though it is not part of the if's value.
-	require.Equal(t, `fn (c: boolean) -> 1 | "y"`, values["f"])
+	// x is "y", not 1 | "y" — so the tuple tail is ["y"]. The function returns
+	// 1 | ["y"]: the early `return 1` IS a function return point (joined with the
+	// tail), even though it is not part of x's value. A buggy leak would surface
+	// here as 1 | [1 | "y"].
+	require.Equal(t, `fn (c: boolean) -> 1 | ["y"]`, values["f"])
 }
 
-// The dual of the above: when the diverging-branch `if` is the function's TAIL,
-// the function's return type still includes the early return. The if's value is
-// the non-diverging branch ("y"), and the block return-point join folds in the
-// collected `return 1`, so the function returns 1 | "y".
+// The dual of the above: when the diverging-branch `if` is the function's TAIL
+// value, the function's return type still includes the early return. The if's
+// value is the non-diverging branch ("z"), wrapped in a tuple so it is observable
+// distinctly from the collected `return 3`; the block return-point join folds in
+// that return, so the function returns 3 | ["z"] (a bug that leaked the diverging
+// branch into the if's value would render 3 | [3 | "z"]).
 func TestInferIfElseDivergingBranchTailReturnJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(c: boolean) {
-			if c { return 1 } else { "y" }
+			[if c { return 3 } else { "z" }]
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> 1 | "y"`, values["f"])
+	require.Equal(t, `fn (c: boolean) -> 3 | ["z"]`, values["f"])
 }
 
 // When BOTH branches diverge, the if produces no value at all: res keeps no lower
-// bounds and coalesces to `never`. The two early returns are still function return
-// points, so the function returns 1 | 2 — but the `val x` the if initializes binds
-// `x : never`, the bottom type (no path reaches it with a value). `next` is typed
-// against that `never` binding, and `never` is a subtype of everything, so the use
-// is well-typed; the function's tail value (`next`) is what its return reflects.
+// bounds and coalesces to `never`, so the `val x` it initializes binds `x : never`
+// (the bottom type — no path reaches it with a value). The tuple tail `[x]` makes
+// that observable: `[never]`, distinct from the early-return points. The two early
+// returns are still function return points, so the function returns 1 | 2 | [never]
+// — a bug that leaked either branch into x would render the element as [1], [2], or
+// [1 | 2] instead of [never].
 func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(c: boolean) {
 			val x = if c { return 1 } else { return 2 }
-			x
+			[x]
 		}
 	`)
 	require.Empty(t, errs)
-	// Tail is `x : never`; the early returns 1 and 2 are the function's return
-	// points, joined with the never tail to 1 | 2 (never drops out of the union).
-	require.Equal(t, `fn (c: boolean) -> 1 | 2`, values["f"])
+	require.Equal(t, `fn (c: boolean) -> 1 | 2 | [never]`, values["f"])
 }
