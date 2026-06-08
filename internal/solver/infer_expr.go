@@ -657,7 +657,16 @@ func stmtDiverges(s ast.Stmt) bool {
 	}
 }
 
-// exprDiverges mirrors the checker's exprAlwaysExits. ThrowExpr / MatchExpr /
+// exprDiverges mirrors the checker's exprAlwaysExits. It is a structural AND-fold
+// over specific child positions — an `if`/`else` diverges only if BOTH arms do, a
+// `match` only if EVERY arm does, a block only on its LAST statement — not a walk
+// that visits every node, so the AST visitor is deliberately not used here: a
+// visitor would flatten the tree and lose the which-child/AND structure, and force
+// suppressing descent into the parts that must be ignored (the `if` condition, call
+// arguments). The recursive switch is the right shape; the visitor is for the dual
+// problem of collecting every `return` regardless of position.
+//
+// ThrowExpr / MatchExpr /
 // DoExpr are not yet walked by the solver (inferExpr reports them unsupported), so
 // these arms are unreachable from real source TODAY; they are kept in place so a
 // form's divergence is already recognised the moment its inferExpr case lands,
