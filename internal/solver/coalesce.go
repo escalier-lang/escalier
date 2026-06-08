@@ -60,52 +60,30 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 		}
 		return soltype.EnterResult{} // atom / structural node: let Accept rebuild it
 	}
-	// Uniform inline: drop the variable, keep only its (recursively coalesced)
-	// bounds in the current polarity. A cycle back to a variable already on the
-	// path is an ungrounded recursive position (no concrete type breaks the cycle)
-	// and collapses to the polarity identity — the same value the position
-	// degenerates to when its bounds are empty — keeping the inline walk total.
-	parts, cycle := walkVarBounds(v, pol, c, c.seen, false)
-	if cycle || len(parts) == 0 {
+	// Re-entering a variable already on the current path is an ungrounded recursive
+	// position (no concrete type breaks the cycle). It collapses to the polarity
+	// identity — the same value the position degenerates to when its bounds are
+	// empty — which keeps the inline walk total. A precise μ-bound rendering of
+	// such recursion is M3.
+	if c.seen.Contains(v) {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: combine(pol, dedup(parts)), SkipChildren: true}
+	c.seen.Add(v)
+	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
+	// Uniform inline: drop the variable, keep only its (recursively coalesced)
+	// bounds in the current polarity.
+	bs := v.BoundsAt(pol)
+	bounds := make([]soltype.Type, 0, len(bs))
+	for _, b := range bs {
+		bounds = append(bounds, b.Accept(c, pol))
+	}
+	if len(bounds) == 0 {
+		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
+	}
+	return soltype.EnterResult{Type: combine(pol, dedup(bounds)), SkipChildren: true}
 }
 
 func (c *coalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
-
-// walkVarBounds is the shared var-walk for coalesce-input visitors: it manages the
-// path-scoped `seen` cycle guard and recursively coalesces each bound through vis
-// at pol. Returns (parts, cycle). On a cycle (v already on the path) it returns
-// (nil, true) and the caller picks the cycle shape (polarity identity for inline,
-// the variable itself for retain). Otherwise it returns the coalesced bounds; with
-// includeSelf=true the slice is pre-sized with v at index 0 (variable first, so it
-// names earliest in combine), folding the retain-case prepend into a single
-// allocation. Empty parts (only possible with includeSelf=false and zero bounds)
-// signal the empty-bounds collapse the caller turns into emptyOf(pol).
-func walkVarBounds(
-	v *soltype.TypeVarType, pol soltype.Polarity, vis soltype.TypeVisitor,
-	seen set.Set[*soltype.TypeVarType], includeSelf bool,
-) ([]soltype.Type, bool) {
-	if seen.Contains(v) {
-		return nil, true
-	}
-	seen.Add(v)
-	defer seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
-	bs := v.BoundsAt(pol)
-	n := len(bs)
-	if includeSelf {
-		n++
-	}
-	parts := make([]soltype.Type, 0, n)
-	if includeSelf {
-		parts = append(parts, v)
-	}
-	for _, b := range bs {
-		parts = append(parts, b.Accept(vis, pol))
-	}
-	return parts, false
-}
 
 // occPolarity is the set of polarities a variable occurs in within a type — the
 // occurrence input single-polarity elimination needs to decide which variables a
@@ -220,11 +198,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		return soltype.EnterResult{} // atom / structural node: let Accept rebuild it
 	}
 	retain := v.Level > c.genLevel && c.occ[v].both()
-	// includeSelf=retain puts v at index 0 of the parts slice — variable first, so it
-	// names earliest in combine and stays distinct in dedup. Empty bounds under retain
-	// leave parts=[v], which combine collapses to just v; no extra empty-bounds branch.
-	parts, cycle := walkVarBounds(v, pol, c, c.seen, retain)
-	if cycle {
+	if c.seen.Contains(v) {
 		// A cycle back to a variable already on the path: a retained type parameter
 		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
 		// an inlined variable collapses to the polarity identity.
@@ -233,7 +207,26 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	if !retain && len(parts) == 0 {
+	c.seen.Add(v)
+	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
+	// Variable first when retained, so it names earliest in combine and stays
+	// distinct in dedup from any bound that resolves back to v (via cycle). Pre-size
+	// the slice with v at index 0 instead of appending then prepending.
+	bs := v.BoundsAt(pol)
+	n := len(bs)
+	if retain {
+		n++
+	}
+	parts := make([]soltype.Type, 0, n)
+	if retain {
+		parts = append(parts, v)
+	}
+	for _, b := range bs {
+		parts = append(parts, b.Accept(c, pol))
+	}
+	if len(parts) == 0 {
+		// Only reachable with !retain and no bounds — empty bounds under retain
+		// already leave parts=[v]. Collapse to the polarity identity.
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	return soltype.EnterResult{Type: combine(pol, dedup(parts)), SkipChildren: true}
