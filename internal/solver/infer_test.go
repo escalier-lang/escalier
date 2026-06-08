@@ -54,7 +54,17 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 	scope, _, errs := InferModule(module)
 	values = make(map[string]string, len(scope.values))
 	for name, b := range scope.values {
-		// PR1: every binding holds exactly one scheme; renderScheme adds the
+		if b.IsOverloaded() {
+			// PR6: an overload set renders as the intersection of its arms (declaration
+			// order), matching the value-position type of the overloaded name.
+			arms := make([]soltype.Type, len(b.Schemes))
+			for i, s := range b.Schemes {
+				arms[i] = schemeType(s)
+			}
+			values[name] = soltype.Print(&soltype.IntersectionType{Types: arms})
+			continue
+		}
+		// PR1: an ordinary binding holds exactly one scheme; renderScheme adds the
 		// <T0, …> quantifier prefix when generalization left type parameters behind.
 		values[name] = renderScheme(b.Schemes[0])
 	}
@@ -394,23 +404,22 @@ func TestInferModuleValInRecursiveGroupUsesRawType(t *testing.T) {
 	}, values)
 }
 
-// Repeated top-level functions of the same name are overloads, which M2 does not
-// represent (overload-intersection is M3). Rather than merge the arms into one
-// var — yielding an uncallable union-of-functions binding — M2 keeps the first
-// arm (so the binding stays callable with that signature) and reports each extra
-// arm with a clear diagnostic.
-func TestInferModuleFunctionOverloadNotSupported(t *testing.T) {
+// PR6: repeated top-level functions of the same name are an OVERLOAD SET. The
+// binding renders as the intersection of its arms, and a call resolves to the arm
+// whose parameter accepts the argument — f(5) picks the number arm, f("hi") the
+// string arm. (This replaces M2's interim OverloadNotSupportedError.)
+func TestInferModuleFunctionOverloadResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { x }
 		fn f(x: string) -> string { x }
 		val r = f(5)
+		val s = f("hi")
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "Function overloads are not supported in M2: f", errs[0].Message())
-	// The first arm is kept, so f stays callable and the call to f(5) resolves.
+	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
-		"f": "fn (x: number) -> number",
+		"f": "(fn (x: number) -> number) & (fn (x: string) -> string)",
 		"r": "number",
+		"s": "string",
 	}, values)
 }
 

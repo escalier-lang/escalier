@@ -57,10 +57,18 @@ func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Ty
 	// a guaranteed-non-empty field, so we guard it anyway: a malformed empty binding
 	// degrades to an unknown-identifier error here instead of panicking on Schemes[0].
 	//
-	// PR1 never builds an overloaded binding; the IsOverloaded value-position branch
-	// (arm intersection) is PR6.
+	// An overloaded name in VALUE position (PR6) — `val g = f`, or `f` passed as an
+	// argument — is the intersection of its arms (the one scoped lattice exception;
+	// see overloadIntersection and constrain's IntersectionType arm). A direct call
+	// `f(x)` never reaches here: inferCall intercepts the overloaded callee and routes
+	// it through resolveOverload before typing the callee as a value.
 	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
-		t := c.instantiate(b.Schemes[0], lvl)
+		var t soltype.Type
+		if b.IsOverloaded() {
+			t = c.overloadIntersection(lvl, b)
+		} else {
+			t = c.instantiate(b.Schemes[0], lvl)
+		}
 		c.recordType(e, t)
 		return t
 	}
@@ -328,6 +336,17 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // PR4 adds two #677 pieces: an EXACT all-required call demand, and the extra-arg
 // lint that rejects passing more arguments than a concrete callee declares.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
+	// PR6: a DIRECT call to an overloaded name resolves against the overload set
+	// (resolveOverload, a phase distinct from constrain) rather than the
+	// single-subtype-constraint path — the disjunction stays out of the lattice for
+	// call resolution. A call THROUGH an intermediate binding (`g = f; g(x)`) does not
+	// match here (the callee is not the overloaded name itself); it routes through the
+	// value-position intersection and constrain's IntersectionType arm instead.
+	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
+		if b, found := scope.GetValue(ident.Name); found && b.IsOverloaded() {
+			return c.inferOverloadedCall(scope, lvl, e, b)
+		}
+	}
 	callee := c.inferExpr(scope, lvl, e.Callee)
 	args := make([]*soltype.FuncParam, len(e.Args))
 	for i, a := range e.Args {
@@ -382,6 +401,24 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	}
 	c.recordType(e, res)
 	return res
+}
+
+// inferOverloadedCall types a direct call to an overloaded name (PR6). It types the
+// arguments, records the callee's overload type (the arm intersection) for Info, and
+// resolves the call against the overload set through resolveOverload — which trials
+// each arm under a probe and commits the winner. Unlike the ordinary path it emits no
+// callee <: callShape constraint: overload resolution is a separate phase that owns
+// the arity/argument checking (the TooManyArgs/NotEnoughArgs lints do not apply —
+// arity is the per-arm gate, and a no-match is a NoMatchingOverloadError).
+func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b ValueBinding) soltype.Type {
+	args := make([]soltype.Type, len(e.Args))
+	for i, a := range e.Args {
+		args[i] = c.inferExpr(scope, lvl, a)
+	}
+	c.recordType(e.Callee, c.overloadIntersection(lvl, b))
+	ret := c.resolveOverload(lvl, b, args, e)
+	c.recordType(e, ret)
+	return ret
 }
 
 // resolveFunc resolves a callee to its concrete FuncType, used to recover a

@@ -38,9 +38,31 @@
 // is its first consumer — each candidate is trialled under a probe and the losers
 // rolled back — but it is general speculation infrastructure reused beyond M3.
 //
+// M3 (PR6) adds function overloading for free functions (overload.go): a name with
+// more than one top-level FuncDecl binds to a multi-scheme ValueBinding
+// (b.IsOverloaded()), one scheme per arm in declaration order. Resolution is a phase
+// DISTINCT from constrain — the "callable in several ways" disjunction stays out of
+// the subtype lattice — so inferCall routes a direct overloaded call through
+// resolveOverload, which trials each arm under a PR5 probe and commits the winner.
+// The ONE documented specificity rule (reused by M4 object-arg and M5 method
+// overloads): for ground-enough arguments, arms are tried most-specific-first, where
+// arm A outranks B iff they share an arity and A's parameters are pointwise
+// structural subtypes of B's with at least one strict — so a concrete `(x: number)`
+// beats a generic `(x: T)`; incomparable arms (and arms ranked under
+// not-ground-enough arguments) fall back to DECLARATION ORDER via a stable sort. A
+// mutually-recursive overloaded function must have fully-annotated arms (the overload
+// set has to be ground before bodies are inferred); self-recursion is softer and
+// ungated. The one scoped lattice exception is the VALUE-position type of an
+// overloaded name — the IntersectionType of its arms (overloadIntersection), built
+// lazily at inferIdent — which flows into a function slot via constrain's
+// function-intersection-LHS arm `(A & B) <: C` iff `A <: C` or `B <: C`, itself
+// implemented as the same ordered probe first-match (not naive constraint
+// propagation).
+//
 // What is still deferred (each lands in a later milestone): records / mut /
-// lifetimes (M4), function overloading (M3 PR6), classes and the
-// union/intersection *subtyping rules* in constrain (M5/M6), and type-level
-// operators (M5/M8). M1 ships UnionType/IntersectionType *nodes* for coalesced
-// output, but their lattice rules in constrain remain deferred.
+// lifetimes (M4), classes and the general union/intersection *subtyping rules* in
+// constrain (M5/M6), and type-level operators (M5/M8). M1 ships
+// UnionType/IntersectionType *nodes* for coalesced output; their general lattice
+// rules in constrain remain deferred (PR6 adds only the function-intersection-LHS
+// arm above).
 package solver

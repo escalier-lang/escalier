@@ -278,17 +278,34 @@ type DuplicateDeclarationError struct {
 	Name           string
 }
 
-// OverloadNotSupportedError fires when a name has more than one top-level
-// FuncDecl. Function overloading needs the overload-intersection representation
-// that lands in M3; M2 keeps the first declaration (so the binding stays
-// callable with that signature) and reports each extra arm, rather than merging
-// the arms into the same var — which yields an uncallable union-of-functions
-// binding whose every call fails with an opaque `function | function` mismatch.
+// NoMatchingOverloadError fires when a call to an overloaded name (PR6) matches
+// none of the overload set's arms — every candidate either disagreed on arity or
+// failed to accept the supplied argument types. It replaces M2's interim
+// OverloadNotSupportedError (overloading is now real).
 //
-// Decl/Previous/Name mirror DuplicateDeclarationError.
-type OverloadNotSupportedError struct {
-	Decl, Previous ast.Decl
-	Name           string
+// It is a BRIDGE error: born in resolveOverload with the *ast.CallExpr in hand, so
+// it self-blames (Span() is the call) and relates the callee expression. Candidates
+// holds the overload arms (declaration order) so the message can list the
+// signatures that were tried.
+type NoMatchingOverloadError struct {
+	Call       *ast.CallExpr
+	Candidates []TypeScheme
+}
+
+// UnannotatedRecursiveOverloadError fires when an overloaded function participates
+// in a mutually-recursive group (a dep-graph component with more than one binding)
+// without fully-annotated overload signatures (PR6). Fixed-point iteration over
+// overload choices is not guaranteed to converge under subtyping, so the overload
+// set must be ground before the group is inferred; self-recursion (a singleton
+// component) is softer and does not trip this. The binding degrades to its first
+// arm so a later reference still resolves.
+//
+// It is a BRIDGE error: born in checkOverloadAnnotations with the offending arm's
+// declaration in hand, so it self-blames (Span() is the first unannotated arm).
+// Name is the overloaded binding's name for the message.
+type UnannotatedRecursiveOverloadError struct {
+	Decl ast.Decl
+	Name string
 }
 
 // TooManyArgsError fires when a DIRECT call supplies more arguments than the
@@ -389,21 +406,22 @@ type CannotAssignToImmutableError struct {
 	Decl   ast.Node        // the introducing decl, related; nil for prelude bindings
 }
 
-func (*UnknownIdentifierError) isSolverError()       {}
-func (*NamespaceUsedAsValueError) isSolverError()    {}
-func (*InvalidAssignmentTargetError) isSolverError() {}
-func (*CannotAssignToImmutableError) isSolverError() {}
-func (*TooManyArgsError) isSolverError()             {}
-func (*NotEnoughArgsError) isSolverError()           {}
-func (*UnsupportedNodeError) isSolverError()         {}
-func (*UnsupportedFeatureError) isSolverError()      {}
-func (*BodyDeclNotAllowedError) isSolverError()      {}
-func (*MissingInitializerError) isSolverError()      {}
-func (*DuplicateDeclarationError) isSolverError()    {}
-func (*OverloadNotSupportedError) isSolverError()    {}
-func (*AwaitOutsideAsyncError) isSolverError()       {}
-func (*ReturnOutsideFunctionError) isSolverError()   {}
-func (*AsyncReturnNotPromiseError) isSolverError()   {}
+func (*UnknownIdentifierError) isSolverError()            {}
+func (*NamespaceUsedAsValueError) isSolverError()         {}
+func (*InvalidAssignmentTargetError) isSolverError()      {}
+func (*CannotAssignToImmutableError) isSolverError()      {}
+func (*TooManyArgsError) isSolverError()                  {}
+func (*NotEnoughArgsError) isSolverError()                {}
+func (*UnsupportedNodeError) isSolverError()              {}
+func (*UnsupportedFeatureError) isSolverError()           {}
+func (*BodyDeclNotAllowedError) isSolverError()           {}
+func (*MissingInitializerError) isSolverError()           {}
+func (*DuplicateDeclarationError) isSolverError()         {}
+func (*NoMatchingOverloadError) isSolverError()           {}
+func (*UnannotatedRecursiveOverloadError) isSolverError() {}
+func (*AwaitOutsideAsyncError) isSolverError()            {}
+func (*ReturnOutsideFunctionError) isSolverError()        {}
+func (*AsyncReturnNotPromiseError) isSolverError()        {}
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
@@ -497,10 +515,27 @@ func (e *DuplicateDeclarationError) Message() string {
 	return "Duplicate declaration: " + e.Name
 }
 
-func (e *OverloadNotSupportedError) Span() ast.Span      { return e.Decl.Span() }
-func (e *OverloadNotSupportedError) Related() []ast.Span { return []ast.Span{e.Previous.Span()} }
-func (e *OverloadNotSupportedError) Message() string {
-	return "Function overloads are not supported in M2: " + e.Name
+func (e *NoMatchingOverloadError) Span() ast.Span { return e.Call.Span() }
+func (e *NoMatchingOverloadError) Related() []ast.Span {
+	if e.Call.Callee == nil {
+		return nil
+	}
+	return []ast.Span{e.Call.Callee.Span()}
+}
+func (e *NoMatchingOverloadError) Message() string {
+	var sb strings.Builder
+	sb.WriteString("No matching overload for this call")
+	for _, s := range e.Candidates {
+		sb.WriteString("\n  ")
+		sb.WriteString(renderScheme(s))
+	}
+	return sb.String()
+}
+
+func (e *UnannotatedRecursiveOverloadError) Span() ast.Span      { return e.Decl.Span() }
+func (e *UnannotatedRecursiveOverloadError) Related() []ast.Span { return nil }
+func (e *UnannotatedRecursiveOverloadError) Message() string {
+	return "Overloaded function in a recursive group must have fully-annotated signatures: " + e.Name
 }
 
 func (e *AwaitOutsideAsyncError) Span() ast.Span { return e.Await.Span() }

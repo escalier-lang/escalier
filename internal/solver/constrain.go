@@ -223,6 +223,43 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		if _, ok := rhs.(*soltype.Void); ok {
 			return nil
 		}
+	case *soltype.IntersectionType:
+		// Function-intersection LHS (PR6 scoped lattice exception): (A & B & …) <: rhs
+		// iff SOME member <: rhs. This is the ONE place the overload disjunction touches
+		// the lattice — reached only when an overloaded value (inferIdent synthesizes the
+		// arm intersection) flows into a constraint, e.g. a let-bound overload called
+		// through the binding (`g = f; g(x)`). The disjunction stays confined to the
+		// speculation phase: each member is trialled under a probe in declaration order,
+		// the first success commits its bounds and the losers roll back — the same
+		// ordered first-match resolveOverload uses, relocated into constrain. General
+		// IntersectionType subtyping (objects, distribution, normalization) is out of M3;
+		// a coalesced intersection never reaches constrain as input (the design keeps
+		// these output-only), so this arm is overload-synthesis-only.
+		//
+		// Collapse only against a CONCRETE demand. When rhs is a variable (the overloaded
+		// value flowing INTO a binding, `intersection <: b.v`), fall through to the var
+		// arm below so the intersection is recorded WHOLE as a lower bound and preserved
+		// — collapsing it here would prematurely pick one arm and lose the overload set.
+		// The collapse then fires later, when the var is constrained against a concrete
+		// function demand (a call shape) and the intersection propagates to it.
+		if _, rhsIsVar := rhs.(*soltype.TypeVarType); !rhsIsVar {
+			var lastErrs []SolverError
+			for _, m := range l.Types {
+				p := newProbe(c.probe)
+				c.probe = p
+				// A cloned seen keeps each arm's coinductive cache independent, so a failed
+				// arm's entries can't wrongly short-circuit a later arm to success.
+				errs := c.constrain(m, rhs, seen.Clone())
+				c.probe = p.parent
+				if len(errs) == 0 {
+					p.Commit()
+					return nil
+				}
+				p.Discard()
+				lastErrs = errs
+			}
+			return lastErrs
+		}
 	}
 
 	// lhs is a variable: record rhs as an upper bound, propagate existing lowers.

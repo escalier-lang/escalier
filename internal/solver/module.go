@@ -68,22 +68,23 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	})
 }
 
+// overloadArm is one collected arm of an overload set (PR6): a top-level FuncDecl's
+// raw inferred type plus whether its signature is fully annotated (the recursion
+// gate) and the decl itself (for per-arm Info recording in phase 3).
+type overloadArm struct {
+	decl      *ast.FuncDecl
+	t         soltype.Type // the arm's RAW (variable-carrying) inferred FuncType
+	annotated bool
+}
+
 // componentBinding tracks the in-flight state of one value binding while its
 // strongly connected component is inferred.
 type componentBinding struct {
 	v       *soltype.TypeVarType    // this binding's fresh var; every definition of this name is constrained <: it
-	sources []provenance.Provenance // every contributing decl, in source order (primary + rejected overload/duplicate arms)
-	// primary is the first successfully-inferred decl under this key. M2 keeps it
-	// as THE definition and rejects every later arm, so one handle suffices: it is
-	// read in phase 3 to recover a VarDecl's Pattern for Info recording, and (via
-	// isVar) to tell an overload arm from a duplicate.
-	//
-	// M3 retires it. Once overloads are represented as an IntersectionType of the
-	// per-arm signatures (the overload-intersection representation noted in
-	// inferComponent's doc; see planning/intersection_types), arms are merged
-	// rather than discarded, so a single "primary" no longer captures the binding —
-	// the full arm set does, and `sources` already holds it. The phase-3 VarDecl
-	// pattern recording would then key off the lone value decl directly instead.
+	sources []provenance.Provenance // every contributing decl, in source order (primary + overload/duplicate arms)
+	// primary is the first successfully-inferred decl under this key — read in phase
+	// 3 to recover a VarDecl's Pattern (or a single FuncDecl's Name) for Info
+	// recording, and (via isVar) to tell an overload arm from a duplicate.
 	primary ast.Decl
 	bound   bool             // a definition was inferred and constrained
 	isVar   bool             // the primary definition is a `val`/`var`
@@ -94,6 +95,11 @@ type componentBinding struct {
 	// ErrorType rather than freezing an unbound var to `never` (which would cascade
 	// `<: never` at every later use). See PR8 / inferComponent phase 3.
 	recovered bool
+	// arms collects every top-level FuncDecl under this key (PR6). len <= 1 is an
+	// ordinary function (or a non-function binding, len == 0); len > 1 is an overload
+	// set, bound as a multi-scheme ValueBinding in phase 3. arms[i] lines up with the
+	// FuncDecl's entry in sources.
+	arms []overloadArm
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -119,6 +125,15 @@ func (c *checker) inferComponent(
 	component []dep_graph.BindingKey, handled set.Set[ast.Decl],
 ) {
 	inner := lvl + 1
+
+	// Recursion gate (PR6): an overloaded function in a mutually-recursive component
+	// (more than one binding) must have fully-annotated arms, since the overload set
+	// has to be ground before bodies are inferred — fixed-point iteration over
+	// overload choices is not guaranteed to converge under subtyping. The gate reports
+	// the offending participants and returns the set of keys to degrade to a single
+	// arm (so a later reference still resolves). Self-recursion (a singleton
+	// component) is softer and is not gated.
+	rejected := c.checkOverloadAnnotations(g, component)
 
 	// Phase 1: a fresh var per value binding, all defined before any body so a
 	// mutually-recursive reference resolves through the var. M2 only infers value
@@ -155,10 +170,9 @@ func (c *checker) inferComponent(
 			if !ok {
 				continue
 			}
-			// Accumulate every contributing decl's provenance — including the overload
-			// or duplicate arms rejected below — so a future multi-target
-			// go-to-definition can reach all of them. Only the primary's type is kept;
-			// M2 has no overload-merge (that is M3), so the extra arms still error.
+			// Accumulate every contributing decl's provenance — every overload arm and
+			// any duplicate arm — so a future multi-target go-to-definition can reach
+			// all of them. sources[i] lines up with the overload arm at arms[i].
 			b.sources = append(b.sources, src)
 			// PR8: a definition that is wholly the ErrorType recovery sentinel leaves no
 			// bound on the group var (ErrorType absorbs in constrain). Remember it so
@@ -166,6 +180,7 @@ func (c *checker) inferComponent(
 			if _, isErr := t.(*soltype.ErrorType); isErr {
 				b.recovered = true
 			}
+			fd, isFunc := d.(*ast.FuncDecl)
 			if !b.bound {
 				c.constrain(d, t, b.v)
 				b.primary = d
@@ -178,21 +193,20 @@ func (c *checker) inferComponent(
 				if isVarDecl {
 					b.kind = vd.Kind
 				}
+				// PR6: the first FuncDecl arm of a (possibly overloaded) function.
+				if isFunc {
+					b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
+				}
 				continue
 			}
-			// The binding already has its primary definition. A repeated FuncDecl is
-			// a top-level overload: M2 has no overload-intersection representation
-			// (that is M3), so it keeps the first arm — leaving the binding callable
-			// with that signature — and reports each extra arm, rather than merging
-			// the arms into the same var (which yields an uncallable union binding).
-			// Any other repeat — a duplicate `val`/`var`, or a decl redeclaring a
-			// variable binding — likewise keeps the first and reports.
-			if _, isFunc := d.(*ast.FuncDecl); isFunc && !b.isVar {
-				c.report(&OverloadNotSupportedError{
-					Decl:     d,
-					Previous: b.primary,
-					Name:     key.Name(),
-				})
+			// The binding already has its primary definition. A repeated FuncDecl is a
+			// top-level OVERLOAD (PR6): collect the arm (already inferred independently
+			// above) rather than rejecting it; phase 3 binds the full set as a
+			// multi-scheme overload binding. Any other repeat — a duplicate `val`/`var`,
+			// or a FuncDecl repeating a variable binding (a value cannot be overloaded) —
+			// keeps the first and reports.
+			if isFunc && !b.isVar {
+				b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
 				continue
 			}
 			c.report(&DuplicateDeclarationError{
@@ -233,10 +247,31 @@ func (c *checker) inferComponent(
 			scope.removeValue(key.Name())
 			continue
 		}
+		// Overload set (PR6): a name with more than one FuncDecl arm, unless the
+		// recursion gate rejected it (a mutually-recursive unannotated overload, which
+		// degrades to its first arm below). Generalize each arm into its own scheme and
+		// bind the name to the multi-scheme overload set (b.IsOverloaded()); record each
+		// arm's display type on its own FuncDecl name for Info.
+		if len(b.arms) > 1 && !rejected.Contains(key) {
+			schemes := make([]TypeScheme, len(b.arms))
+			for i, arm := range b.arms {
+				sc := c.generalize(arm.t, lvl)
+				if ps, ok := sc.(*PolyScheme); ok {
+					ps.Annotated = arm.annotated
+				}
+				schemes[i] = sc
+				if arm.decl.Name != nil {
+					c.recordType(arm.decl.Name, schemeType(sc))
+				}
+			}
+			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes, Sources: b.sources})
+			continue
+		}
 		// Generalize the group var at the component's level (was: coalesce to a
 		// monotype). Every variable at Level > lvl becomes a quantified type
 		// parameter, captured outer variables do not — turning M2's monomorphic
-		// freeze into real let-polymorphism (PR1).
+		// freeze into real let-polymorphism (PR1). A rejected overload degrades here to
+		// its first arm: b.v carries only the primary (first arm) definition.
 		//
 		// PR8: a binding whose definition was wholly the ErrorType sentinel left its
 		// group var with no bound (ErrorType absorbs in constrain), so generalizing it
@@ -272,4 +307,42 @@ func (c *checker) inferComponent(
 			}
 		}
 	}
+}
+
+// checkOverloadAnnotations enforces the PR6 recursion gate and returns the set of
+// overloaded keys that failed it (to be degraded to their first arm in phase 3). A
+// singleton component is never gated — self-recursion is softer — so only a
+// genuinely mutually-recursive group (more than one binding) requires its overloaded
+// members to have fully-annotated arms. For each overloaded member whose arms are
+// not all annotated, it reports an UnannotatedRecursiveOverloadError blaming the
+// first unannotated arm.
+func (c *checker) checkOverloadAnnotations(
+	g *dep_graph.DepGraph, component []dep_graph.BindingKey,
+) set.Set[dep_graph.BindingKey] {
+	rejected := set.NewSet[dep_graph.BindingKey]()
+	if len(component) <= 1 {
+		return rejected // self-recursion is softer; only mutual recursion is gated
+	}
+	for _, key := range component {
+		if key.Kind() != dep_graph.DepKindValue {
+			continue
+		}
+		var funcs []*ast.FuncDecl
+		for _, d := range g.GetDecls(key) {
+			if fd, ok := d.(*ast.FuncDecl); ok {
+				funcs = append(funcs, fd)
+			}
+		}
+		if len(funcs) <= 1 {
+			continue // not an overload set
+		}
+		for _, fd := range funcs {
+			if !isFullyAnnotated(fd.FuncSig) {
+				c.report(&UnannotatedRecursiveOverloadError{Decl: fd, Name: key.Name()})
+				rejected.Add(key)
+				break // one diagnostic per overloaded binding (blame the first gap)
+			}
+		}
+	}
+	return rejected
 }
