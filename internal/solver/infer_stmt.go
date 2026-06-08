@@ -6,22 +6,34 @@ import (
 )
 
 // inferBlock types a block's statements in source order and returns the block's
-// VALUE — the type of its last statement, or void for an empty block. The block
-// runs in the scope it is given — the caller establishes it (inferFunc passes
-// the param scope, so body-level val/var redeclarations overwrite alongside the
-// params, per §3.2). soltype.Void is the result of a block that ends in a
-// declaration or a value-free statement.
+// VALUE — the type of its last statement, or void for an empty block — together
+// with whether the block DIVERGES (always transfers control out before reaching
+// its tail, so it completes no value). The block runs in the scope it is given —
+// the caller establishes it (inferFunc passes the param scope, so body-level
+// val/var redeclarations overwrite alongside the params, per §3.2). soltype.Void
+// is the result of a block that ends in a declaration or a value-free statement.
+//
+// The divergence flag is the single source of truth for "this block produces no
+// value": a VALUE-position caller (an if/else branch today; do/match arms when
+// they land) drops a diverging block from its branch union — see blockDiverges.
+// The flag is computed here, in the one node that knows the block's tail, so
+// every present and future block-as-value consumer reads it instead of
+// re-deriving divergence syntactically at each call site.
 //
 // Block-as-value is distinct from FUNCTION-return: a non-tail ReturnStmt is not
 // part of the block's tail value, but it IS one of the function's return points
 // — inferStmt routes those into the enclosing funcCtx for inferFunc to join with
-// the tail (PR3, replacing M2's TODO that dropped non-tail returns).
-func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) soltype.Type {
+// the tail (PR3, replacing M2's TODO that dropped non-tail returns). inferFunc
+// therefore IGNORES the divergence flag: it wants the tail value for the join, so
+// `fn f() { return 5 }` still returns `5` (the operand, collected and joined),
+// while `val x = if c { return 5 } else { 6 }` sees the cons branch diverge and
+// binds `x : 6`.
+func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type, bool) {
 	var result soltype.Type = &soltype.Void{}
 	for _, s := range b.Stmts {
 		result = c.inferStmt(scope, lvl, s)
 	}
-	return result
+	return result, blockDiverges(b)
 }
 
 // inferStmt types a single statement and returns the value it contributes to

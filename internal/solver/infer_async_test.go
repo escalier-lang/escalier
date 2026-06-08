@@ -494,3 +494,22 @@ func TestInferIfElseDivergingBranchTailReturnJoin(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, `fn (c: boolean) -> 1 | "y"`, values["f"])
 }
+
+// When BOTH branches diverge, the if produces no value at all: res keeps no lower
+// bounds and coalesces to `never`. The two early returns are still function return
+// points, so the function returns 1 | 2 — but the `val x` the if initializes binds
+// `x : never`, the bottom type (no path reaches it with a value). `next` is typed
+// against that `never` binding, and `never` is a subtype of everything, so the use
+// is well-typed; the function's tail value (`next`) is what its return reflects.
+func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(c: boolean) {
+			val x = if c { return 1 } else { return 2 }
+			x
+		}
+	`)
+	require.Empty(t, errs)
+	// Tail is `x : never`; the early returns 1 and 2 are the function's return
+	// points, joined with the never tail to 1 | 2 (never drops out of the union).
+	require.Equal(t, `fn (c: boolean) -> 1 | 2`, values["f"])
+}
