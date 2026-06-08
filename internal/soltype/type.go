@@ -244,14 +244,28 @@ func LevelOf(t Type) int {
 		return m
 	case *PromiseType:
 		return LevelOf(t.Inner)
+	case *UnionType:
+		m := 0
+		for _, e := range t.Types {
+			m = max(m, LevelOf(e))
+		}
+		return m
+	case *IntersectionType:
+		// PR6: an overloaded value's arm IntersectionType is a constrain/freshen INPUT
+		// (the scoped lattice exception), and a generic arm carries variables, so the
+		// level MUST reflect its members — otherwise freshenAbove's level prune treats
+		// the whole intersection as level 0 and SHARES the generic arm's variables across
+		// instantiations (aliasing two uses of a let-bound overload). UnionType recurses
+		// for symmetry. (Coalesced-output unions/intersections contain no live vars, so
+		// this still returns 0 for them.)
+		m := 0
+		for _, e := range t.Types {
+			m = max(m, LevelOf(e))
+		}
+		return m
 	default:
-		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType, UnionType,
-		// IntersectionType: ErrorType is a childless sentinel (level 0);
-		// UnionType/IntersectionType only appear in coalesced
-		// output, where every TypeVarType has been inlined — so they contain no
-		// level-bearing nodes reachable to LevelOf in M1. M6 (when these become
-		// constrain inputs via user annotations) adds the recursive arms
-		// alongside the distributivity rules in constrain.
+		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType: childless leaves
+		// (ErrorType is a sentinel, level 0).
 		return 0
 	}
 }

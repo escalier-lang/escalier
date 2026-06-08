@@ -33,14 +33,19 @@ import (
 // NoMatchingOverloadError and returns the recovery placeholder.
 func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, call *ast.CallExpr) soltype.Type {
 	for _, idx := range c.overloadOrder(b.Schemes, args) {
+		// Open the probe BEFORE instantiating so the instantiation's side-table writes
+		// (freshenAbove's FromInstantiation Prov entries, recorded via snapshotProv only
+		// when a probe is active) are journaled and rolled back with a losing trial —
+		// upholding the "a losing trial leaves no Info/Prov entries" guarantee.
+		p := c.openProbe()
 		inst, ok := c.instantiate(b.Schemes[idx], lvl).(*soltype.FuncType)
 		if !ok {
 			// An overload arm that is not a function scheme cannot match a call. This
 			// should not arise (every arm comes from a FuncDecl), but skip rather than
 			// type-assert-panic on a malformed set.
+			c.closeProbe(p, false)
 			continue
 		}
-		p := c.openProbe()
 		matched := c.tryOverloadArm(args, inst)
 		c.closeProbe(p, matched)
 		if matched {
@@ -81,23 +86,56 @@ func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) bo
 }
 
 // overloadOrder returns the indices of schemes in the order arms should be tried:
-// most-specific-first (stable, so declaration order breaks specificity ties) when
-// the arguments are ground enough to rank, else plain declaration order.
+// most-specific-first (declaration order breaks specificity ties) when the arguments
+// are ground enough to rank, else plain declaration order.
 func (c *checker) overloadOrder(schemes []TypeScheme, args []soltype.Type) []int {
-	order := make([]int, len(schemes))
+	if !groundEnough(args) {
+		order := make([]int, len(schemes))
+		for i := range order {
+			order[i] = i
+		}
+		return order // not ground enough to rank: declaration-order first-match
+	}
+	funcs := make([]*soltype.FuncType, len(schemes))
+	for i, s := range schemes {
+		funcs[i] = schemeFunc(s)
+	}
+	return specificityOrder(funcs)
+}
+
+// specificityOrder returns funcs' indices most-specific-first, with declaration
+// order breaking ties. It ranks each arm by its DOMINATION COUNT — how many other
+// arms are strictly more specific than it — and sorts ascending on that count. This
+// is the load-bearing fix for the partial-order/sort hazard: specificity
+// (moreSpecific) is only a PARTIAL order, so feeding it straight to sort.SliceStable
+// violates the strict-weak-ordering contract (incomparability is non-transitive).
+// The domination count is a total order on integers, so the sort is well-defined; a
+// maximal (dominated-by-none) arm gets count 0 and sorts first, and equal counts keep
+// declaration order via the stable sort. Shared by overloadOrder (direct calls) and
+// constrain's IntersectionType arm (value-position calls) so both resolve in the same
+// order. A nil entry (non-function arm) sorts last.
+func specificityOrder(funcs []*soltype.FuncType) []int {
+	order := make([]int, len(funcs))
 	for i := range order {
 		order[i] = i
 	}
-	if !groundEnough(args) {
-		return order // not ground enough to rank: declaration-order first-match
-	}
-	sort.SliceStable(order, func(i, j int) bool {
-		fi := schemeFunc(schemes[order[i]])
-		fj := schemeFunc(schemes[order[j]])
-		if fi == nil || fj == nil {
-			return false // a non-function arm cannot be ranked; leave order unchanged
+	dominators := make([]int, len(funcs))
+	for i := range funcs {
+		if funcs[i] == nil {
+			dominators[i] = len(funcs) + 1 // non-function arms sort last
+			continue
 		}
-		return moreSpecific(fi, fj) < 0
+		for j := range funcs {
+			if i == j || funcs[j] == nil {
+				continue
+			}
+			if moreSpecific(funcs[j], funcs[i]) < 0 {
+				dominators[i]++
+			}
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return dominators[order[a]] < dominators[order[b]]
 	})
 	return order
 }

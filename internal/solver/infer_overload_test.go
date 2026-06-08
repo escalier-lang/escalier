@@ -142,6 +142,64 @@ func TestInferOverloadValuePosition(t *testing.T) {
 	require.Equal(t, "string", values["s"])
 }
 
+// A GENERIC overload arm used through a let-binding is freshened per use, not shared:
+// g("hi") and g(true) resolve the generic 1-param arm independently, so they keep
+// distinct types instead of cross-contaminating to "hi" | true. (Guards the
+// soltype.LevelOf recursion into IntersectionType — without it freshenAbove prunes
+// the level-0 intersection and aliases the arm's type variable across uses.)
+func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x) { x }
+		fn f(x, y) { x }
+		val g = f
+		val a = g("hi")
+		val b = g(true)
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `"hi"`, values["a"], "the generic arm is freshened per use, not aliased")
+	require.Equal(t, "true", values["b"])
+}
+
+// Value-position resolution uses the SAME specificity order as a direct call: a
+// concrete arm declared after a generic one wins for a matching concrete argument,
+// whether the callee is the overloaded name directly or a let-bound alias.
+func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
+	direct, _, errs := inferSource(t, `
+		fn f(x) { x }
+		fn f(x: string) -> boolean { true }
+		val r = f("hi")
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "boolean", direct["r"], "direct call picks the more specific arm")
+
+	binding, _, errs := inferSource(t, `
+		fn f(x) { x }
+		fn f(x: string) -> boolean { true }
+		val g = f
+		val r = g("hi")
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "boolean", binding["r"], "a call through a binding resolves to the same arm as the direct call")
+}
+
+// Three mixed arms (concrete-literal-ish, concrete-prim, generic) rank by specificity
+// without relying on a non-transitive comparator: each ground call selects the arm
+// that accepts its argument, most-specific-first with declaration-order tiebreak.
+func TestInferOverloadThreeArmSpecificity(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x) { x }
+		fn f(x: number) -> boolean { true }
+		fn f(x: string) -> string { x }
+		val p = f(5)
+		val q = f("hi")
+		val r = f(true)
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "boolean", values["p"], "number arm")
+	require.Equal(t, "string", values["q"], "string arm")
+	require.Equal(t, "true", values["r"], "falls back to the generic arm")
+}
+
 // Resolution rollback (exercising the PR5 probe): the first-tried arm (string) is a
 // non-match for a number-bounded argument variable; its speculative `arg <: string`
 // upper bound must be rolled back, so after resolution the argument var carries ONLY

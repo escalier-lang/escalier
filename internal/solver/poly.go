@@ -98,14 +98,15 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	// naming:
 	//
 	//  1. (Soundness coupling) LevelOf returns a *TypeVarType's own Level only — it
-	//     does NOT descend into the var's bounds, and returns 0 for Union/Intersection.
-	//     This prune is therefore sound only because the MLsub level invariant holds
-	//     (a var's level >= the level of everything in its bounds, maintained by
-	//     constrain/extrude) and raw scheme bodies contain no Union/Intersection. The
-	//     analogous extrude (constrain.go) rests on the same assumption. If a future
-	//     change breaks either, a Level>lim var could hide under a shared node and two
-	//     instantiations would alias a variable that should have been fresh — revisit
-	//     when Union/Intersection become constrain inputs (M6).
+	//     does NOT descend into the var's bounds — so this prune is sound only because
+	//     the MLsub level invariant holds (a var's level >= the level of everything in
+	//     its bounds, maintained by constrain/extrude). LevelOf DOES recurse into the
+	//     structural formers, INCLUDING Union/Intersection (PR6 made an overloaded
+	//     value's arm IntersectionType a legal scheme-body/constrain input — see
+	//     soltype.LevelOf): without that, a generic arm's Level>lim var would hide under
+	//     the level-0 intersection and two instantiations of a let-bound overload would
+	//     alias a variable that should have been fresh. The analogous extrude
+	//     (constrain.go) rests on the same level invariant.
 	//  2. (Identity) The shared subtree's pointer is reused across every instantiation
 	//     and the scheme body, so compound nodes are NOT uniquely minted per use. Prov
 	//     and Info are pointer-keyed; a shared monomorphic node keeps its one original
