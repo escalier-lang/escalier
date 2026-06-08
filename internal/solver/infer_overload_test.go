@@ -111,6 +111,38 @@ func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 		errs[0].Message())
 }
 
+// A self-recursive fully-annotated overload type-checks: each arm's recursive call
+// resolves against the whole pre-bound overload set (the number arm's f(x) hits the
+// number arm, the string arm's hits the string arm), so neither arm is wrongly
+// checked against the other. (Before the pre-binding fix this reported two spurious
+// `cannot constrain` errors because the recursive reference saw only the first arm.)
+func TestInferOverloadSelfRecursiveAnnotated(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) -> number { f(x) }
+		fn f(x: string) -> string { f(x) }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
+}
+
+// A fully-annotated overload that is MUTUALLY recursive with another binding which
+// also CAPTURES it as a value resolves cleanly: the overload set is pre-bound before
+// any body, so both the recursive calls and the value capture (`val h = f`) inside
+// the component see the whole set, not a single first-arm var.
+func TestInferOverloadMutualRecursionValueCapture(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) -> number { g(x) }
+		fn f(x: string) -> number { g(5) }
+		fn g(n: number) -> number {
+			val h = f
+			h(n)
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> number)", values["f"])
+	require.Equal(t, "fn (n: number) -> number", values["g"])
+}
+
 // The gate is scoped to MUTUAL recursion: a non-recursive annotated overload whose
 // arms merely call another (non-recursive) function is fine, since its component is
 // a singleton — the gate never fires and the set binds normally.

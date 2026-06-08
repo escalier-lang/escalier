@@ -100,6 +100,15 @@ type componentBinding struct {
 	// set, bound as a multi-scheme ValueBinding in phase 3. arms[i] lines up with the
 	// FuncDecl's entry in sources.
 	arms []overloadArm
+	// prebound marks an overload set whose arms are ALL fully annotated, so phase 1
+	// could build their signatures (body-free) and pre-bind the whole set in scope
+	// (b.arms holds the signature types). References WITHIN the component — recursive
+	// calls and value captures — then resolve against the set rather than a single
+	// first-arm var; phase 2 only checks each arm's body. An overload with any
+	// un-annotated arm cannot be pre-bound (its signature isn't known without inferring
+	// the body), so it stays on the ordinary group-var path and cannot be mutually
+	// recursive (the gate forbids it). See checkOverloadAnnotations / annotatedOverloadArms.
+	prebound bool
 }
 
 // inferComponent infers one strongly connected component — a group of
@@ -143,6 +152,33 @@ func (c *checker) inferComponent(
 		if key.Kind() != dep_graph.DepKindValue {
 			continue
 		}
+		// PR6: a fully-annotated overload set is pre-bound to the whole SET, built from
+		// arm signatures alone (body-free), so references within the component resolve
+		// against every arm via resolveOverload instead of seeing only a single
+		// first-arm group var (which would make a recursive arm — or a value capture —
+		// type-check against the wrong overload). The recursion gate guarantees a
+		// mutually-recursive overload IS fully annotated, so this is exactly the set it
+		// requires to be ground before bodies are inferred.
+		if !rejected.Contains(key) {
+			if armDecls := annotatedOverloadArms(g, key); armDecls != nil {
+				arms := make([]overloadArm, len(armDecls))
+				schemes := make([]TypeScheme, len(armDecls))
+				for i, fd := range armDecls {
+					// Build the signature body-free under a discarded probe: the arm is fully
+					// annotated, so the signature is concrete (no bounds to roll back), and
+					// discarding keeps phase 2's inferFunc — which re-derives the signature
+					// while checking the body — the single reporter of any signature error.
+					p := c.openProbe()
+					sig := c.inferFunc(scope, inner, fd.FuncSig, nil, fd)
+					c.closeProbe(p, false)
+					arms[i] = overloadArm{decl: fd, t: sig, annotated: true}
+					schemes[i] = monoScheme(sig)
+				}
+				bindings[key] = &componentBinding{arms: arms, bound: true, prebound: true}
+				scope.defineValue(key.Name(), ValueBinding{Schemes: schemes})
+				continue
+			}
+		}
 		v := c.freshAt(inner)
 		bindings[key] = &componentBinding{v: v}
 		// Pre-bind the group var as a MonoScheme so a mutually-recursive reference
@@ -156,6 +192,19 @@ func (c *checker) inferComponent(
 		b, isValue := bindings[key]
 		if !isValue {
 			continue // non-value keys handled below
+		}
+		if b.prebound {
+			// The signatures are already bound (phase 1); only check each arm's body. The
+			// body sees the whole overload set, so a recursive call resolves through
+			// resolveOverload against every arm. inferFunc re-derives the (concrete)
+			// signature and constrains the body against the return annotation, reporting
+			// any body error exactly once.
+			for _, arm := range b.arms {
+				handled.Add(arm.decl)
+				b.sources = append(b.sources, &ast.NodeProvenance{Node: arm.decl})
+				c.inferFunc(scope, inner, arm.decl.FuncSig, arm.decl.Body, arm.decl)
+			}
+			continue
 		}
 		for _, d := range g.GetDecls(key) {
 			if handled.Contains(d) {
@@ -345,4 +394,34 @@ func (c *checker) checkOverloadAnnotations(
 		}
 	}
 	return rejected
+}
+
+// annotatedOverloadArms returns key's FuncDecls when it is a pure function-overload
+// set that can be PRE-BOUND from signatures alone (PR6): more than one FuncDecl, NO
+// `val`/`var` mixed under the name (a value cannot be overloaded), and every arm fully
+// annotated (so its signature is known without inferring the body). Returns nil
+// otherwise — those keys take the ordinary group-var path, where each arm is inferred
+// independently and the set is assembled in phase 3.
+func annotatedOverloadArms(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncDecl {
+	if key.Kind() != dep_graph.DepKindValue {
+		return nil
+	}
+	decls := g.GetDecls(key)
+	funcs := make([]*ast.FuncDecl, 0, len(decls))
+	for _, d := range decls {
+		fd, ok := d.(*ast.FuncDecl)
+		if !ok {
+			return nil // a val/var shares this name: not a pure overload set
+		}
+		funcs = append(funcs, fd)
+	}
+	if len(funcs) <= 1 {
+		return nil // not an overload set
+	}
+	for _, fd := range funcs {
+		if !isFullyAnnotated(fd.FuncSig) {
+			return nil // an un-annotated arm can't be pre-bound from its signature
+		}
+	}
+	return funcs
 }
