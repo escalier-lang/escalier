@@ -72,8 +72,9 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
 	// Uniform inline: drop the variable, keep only its (recursively coalesced)
 	// bounds in the current polarity.
-	bounds := make([]soltype.Type, 0, len(v.BoundsAt(pol)))
-	for _, b := range v.BoundsAt(pol) {
+	bs := v.BoundsAt(pol)
+	bounds := make([]soltype.Type, 0, len(bs))
+	for _, b := range bs {
 		bounds = append(bounds, b.Accept(c, pol))
 	}
 	if len(bounds) == 0 {
@@ -161,75 +162,77 @@ func analyzeOccurrences(t soltype.Type, pol soltype.Polarity, occ map[*soltype.T
 // case for variables genuinely used in one polarity — is PR2's; PR1 retains a
 // type parameter only where it is literally the same variable across positions,
 // so renders stay non-compact until then.
-//
-// TODO(#715): reimplement coalesceScheme/coalesceSchemeRec on the soltype rewriting
-// visitor (soltype.Accept), like coalesce/extrude/freshenAbove, so the structural
-// arms and the pol.Flip() variance live in one place rather than being re-spelled
-// here. PR7 left this hand-rolled because the var case carries extra retain logic.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 	occ := map[*soltype.TypeVarType]occPolarity{}
 	analyzeOccurrences(t, soltype.Positive, occ, set.NewSet[occKey]())
-	return coalesceSchemeRec(t, soltype.Positive, genLevel, occ, set.NewSet[*soltype.TypeVarType]())
+	return t.Accept(&schemeCoalescer{
+		occ:      occ,
+		genLevel: genLevel,
+		seen:     set.NewSet[*soltype.TypeVarType](),
+	}, soltype.Positive)
 }
 
-func coalesceSchemeRec(
-	t soltype.Type, pol soltype.Polarity, genLevel int,
-	occ map[*soltype.TypeVarType]occPolarity, seen set.Set[*soltype.TypeVarType],
-) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.PrimType, *soltype.LitType, *soltype.Void,
-		*soltype.NeverType, *soltype.UnknownType:
-		return t
-	case *soltype.FuncType:
-		params := make([]*soltype.FuncParam, len(t.Params))
-		for i, p := range t.Params {
-			params[i] = &soltype.FuncParam{Pattern: p.Pattern, Type: coalesceSchemeRec(p.Type, pol.Flip(), genLevel, occ, seen), Optional: p.Optional, Rest: p.Rest}
-		}
-		return &soltype.FuncType{Params: params, Ret: coalesceSchemeRec(t.Ret, pol, genLevel, occ, seen), Inexact: t.Inexact}
-	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = coalesceSchemeRec(e, pol, genLevel, occ, seen)
-		}
-		return &soltype.TupleType{Elems: elems}
-	case *soltype.RecordType:
-		fields := make([]*soltype.RecordField, len(t.Fields))
-		for i, f := range t.Fields {
-			fields[i] = &soltype.RecordField{Name: f.Name, Type: coalesceSchemeRec(f.Type, pol, genLevel, occ, seen)}
-		}
-		return &soltype.RecordType{Fields: fields}
-	case *soltype.PromiseType:
-		return &soltype.PromiseType{Inner: coalesceSchemeRec(t.Inner, pol, genLevel, occ, seen)}
-	case *soltype.TypeVarType:
-		retain := t.Level > genLevel && occ[t].both()
-		if seen.Contains(t) {
-			// A cycle back to a variable already on the path: a retained type
-			// parameter keeps its name (a rough μ-reference, refined in M3's precise
-			// μ-rendering), an inlined variable collapses to the polarity identity.
-			if retain {
-				return t
-			}
-			return emptyOf(pol)
-		}
-		seen.Add(t)
-		defer seen.Remove(t)
-		bounds := make([]soltype.Type, 0, len(t.BoundsAt(pol)))
-		for _, b := range t.BoundsAt(pol) {
-			bounds = append(bounds, coalesceSchemeRec(b, pol, genLevel, occ, seen))
-		}
-		if retain {
-			// Keep the variable as a named type parameter, merged with its coalesced
-			// bounds (variable first, so it names earliest): v | bounds in positive
-			// position, v & bounds in negative. Empty bounds ⇒ just the variable.
-			return combine(pol, dedup(append([]soltype.Type{t}, bounds...)))
-		}
-		if len(bounds) == 0 {
-			return emptyOf(pol)
-		}
-		return combine(pol, dedup(bounds))
-	}
-	panic(fmt.Sprintf("coalesceScheme: unhandled %T", t))
+// schemeCoalescer is the soltype-visitor form of coalesceScheme — same shape as
+// coalescer (the structural arms and the pol.Flip() variance come from
+// soltype.Accept; the var node's side-graph bounds are walked here in EnterType),
+// extended with the retain decision: a variable quantifiable at genLevel that
+// occurs in both polarities is KEPT as a named type parameter (merged with its
+// coalesced bounds) instead of being inlined. Every other variable is inlined
+// exactly as coalescer does — so on a body with no both-polarity quantifiable
+// variable this reduces, node for node, to a plain coalesce.
+type schemeCoalescer struct {
+	occ      map[*soltype.TypeVarType]occPolarity
+	genLevel int
+	seen     set.Set[*soltype.TypeVarType]
 }
+
+func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		// Same invariant as coalescer: Union/Intersection are coalesced OUTPUT only
+		// and must never appear in a raw scheme body.
+		switch t.(type) {
+		case *soltype.UnionType, *soltype.IntersectionType:
+			panic(fmt.Sprintf("coalesceScheme: unexpected coalesced-output node %T in input", t))
+		}
+		return soltype.EnterResult{} // atom / structural node: let Accept rebuild it
+	}
+	retain := v.Level > c.genLevel && c.occ[v].both()
+	if c.seen.Contains(v) {
+		// A cycle back to a variable already on the path: a retained type parameter
+		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
+		// an inlined variable collapses to the polarity identity.
+		if retain {
+			return soltype.EnterResult{Type: v, SkipChildren: true}
+		}
+		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
+	}
+	c.seen.Add(v)
+	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
+	// Variable first when retained, so it names earliest in combine and stays
+	// distinct in dedup from any bound that resolves back to v (via cycle). Pre-size
+	// the slice with v at index 0 instead of appending then prepending.
+	bs := v.BoundsAt(pol)
+	n := len(bs)
+	if retain {
+		n++
+	}
+	parts := make([]soltype.Type, 0, n)
+	if retain {
+		parts = append(parts, v)
+	}
+	for _, b := range bs {
+		parts = append(parts, b.Accept(c, pol))
+	}
+	if len(parts) == 0 {
+		// Only reachable with !retain and no bounds — empty bounds under retain
+		// already leave parts=[v]. Collapse to the polarity identity.
+		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
+	}
+	return soltype.EnterResult{Type: combine(pol, dedup(parts)), SkipChildren: true}
+}
+
+func (c *schemeCoalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // schemeType returns a scheme's coalesced DISPLAY type (variable-free except for
 // retained type parameters), the soltype handed to soltype.PrintAsScheme and
