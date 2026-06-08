@@ -155,7 +155,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node)
-		ret = c.inferBlock(fnScope, lvl, body)
+		// The function body wants the TAIL value for the return-point join (a
+		// diverging `{ return 5 }` body still returns 5, collected into c.fn.returns
+		// below), so the divergence flag is irrelevant here — only value-position
+		// callers (inferIfElse) consult it.
+		ret, _ = c.inferBlock(fnScope, lvl, body)
 		collected = c.popFuncCtx(saved)
 	}
 	// PR3 — block return-point join. M2 only used the block tail and dropped non-
@@ -569,14 +573,23 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 
 // inferIfElse types `if cond { cons } else { alt }`. The condition is
 // constrained `<: boolean`; each branch is typed (an empty / missing else
-// contributes Void); the result is a fresh join var with each branch as a lower
-// bound, so the result coalesces to the union of the branches.
+// contributes Void); the result is a fresh join var with each NON-DIVERGING
+// branch as a lower bound, so the result coalesces to the union of the branches
+// that can actually produce a value.
 //
-// Block return-point interaction: any ReturnStmt inside either branch is
-// collected on the enclosing function's funcCtx by inferStmt — independent of
-// the if's value contribution — so a `if c { return X } else { Y }` correctly
-// flows X into the function's return type AND Y into the if's value, which the
-// enclosing block joins.
+// Diverging branches contribute `never`: a branch that always exits before its
+// tail (today a trailing `return`; `throw` / `-> never` calls join this set once
+// they land — see blockDiverges) can never be the path that yields the if's
+// value, so it drops out of the branch union entirely rather than leaking its
+// operand. `val x = if c { return 1 } else { "y" }` is `"y"`, not `1 | "y"`, and
+// when both branches diverge the if's value coalesces to `never`.
+//
+// Block return-point interaction: any ReturnStmt inside either branch is still
+// collected on the enclosing function's funcCtx by inferStmt — independent of the
+// if's value contribution — so `fn f(c) { if c { return X } else { Y } }` flows X
+// into the function's return type (via the block return-point join) AND Y into
+// the if's value, which the enclosing block joins. The two roles are orthogonal:
+// X is a return point, but not part of the if-EXPRESSION's value.
 func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.Type {
 	cond := c.inferExpr(scope, lvl, e.Cond)
 	// Skip the `cond <: boolean` check when the condition already failed to type —
@@ -593,23 +606,123 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 		// inferMember's synthesized record requirement, both deliberately unrecorded.
 		c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
 	}
-	consT := c.inferBlock(scope.Child(), lvl, &e.Cons)
+	consT, consDiverges := c.inferBlock(scope.Child(), lvl, &e.Cons)
 	var altT soltype.Type = &soltype.Void{}
+	altDiverges := false
 	if e.Alt != nil {
-		altT = c.inferBlockOrExpr(scope, lvl, e.Alt)
+		altT, altDiverges = c.inferBlockOrExpr(scope, lvl, e.Alt)
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, IfElseBranch)
-	c.constrain(e, consT, res)
-	c.constrain(e, altT, res)
+	// A diverging branch contributes `never` to the value — i.e. nothing to the
+	// branch union — so skip its lower-bound constraint. inferBlock still walked it
+	// above (reporting branch-local errors and collecting its `return` as a function
+	// return point); only its block-tail VALUE is dropped here. When both branches
+	// diverge, res keeps no lower bounds and coalesces to `never`.
+	if !consDiverges {
+		c.constrain(e, consT, res)
+	}
+	if !altDiverges {
+		c.constrain(e, altT, res)
+	}
 	c.recordType(e, res)
 	return res
 }
 
+// blockDiverges reports whether a block always transfers control out before
+// reaching its tail — its last statement diverges — so the block completes no
+// value and contributes `never` to any value-position consumer. A diverging
+// block's `return` is still a function return point — inferStmt collects it
+// independently — this governs only the block's VALUE contribution.
+//
+// This trio (blockDiverges / stmtDiverges / exprDiverges / blockOrExprDiverges)
+// mirrors the old checker's blockAlwaysExits / stmtAlwaysExits / exprAlwaysExits
+// (internal/checker/infer_func.go) so the two analyses extend in lockstep: when a
+// new diverging form is recognised in one, add the matching arm in the other.
+func blockDiverges(b *ast.Block) bool {
+	if b == nil || len(b.Stmts) == 0 {
+		return false
+	}
+	return stmtDiverges(b.Stmts[len(b.Stmts)-1])
+}
+
+func stmtDiverges(s ast.Stmt) bool {
+	switch s := s.(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.ExprStmt:
+		return exprDiverges(s.Expr)
+	default:
+		return false
+	}
+}
+
+// exprDiverges mirrors the checker's exprAlwaysExits. It is a structural AND-fold
+// over specific child positions — an `if`/`else` diverges only if BOTH arms do, a
+// `match` only if EVERY arm does, a block only on its LAST statement — not a walk
+// that visits every node, so the AST visitor is deliberately not used here: a
+// visitor would flatten the tree and lose the which-child/AND structure, and force
+// suppressing descent into the parts that must be ignored (the `if` condition, call
+// arguments). The recursive switch is the right shape; the visitor is for the dual
+// problem of collecting every `return` regardless of position.
+//
+// ThrowExpr / MatchExpr /
+// DoExpr are not yet walked by the solver (inferExpr reports them unsupported), so
+// these arms are unreachable from real source TODAY; they are kept in place so a
+// form's divergence is already recognised the moment its inferExpr case lands,
+// matching the checker rather than re-discovering divergence later. The checker's
+// CallExpr `-> never` arm is deliberately omitted: the solver represents a call's
+// result as an unresolved variable mid-walk (bounds lists, not a single prunable
+// Instance), so "this call returns never" is a coalescing-time fact — revisit when
+// `-> never` calls reach the solver.
+func exprDiverges(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.ThrowExpr:
+		return true
+	case *ast.IfElseExpr:
+		// Without an `else`, fall-through is reachable when the condition is false.
+		if e.Alt == nil {
+			return false
+		}
+		return blockDiverges(&e.Cons) && blockOrExprDiverges(e.Alt)
+	case *ast.MatchExpr:
+		// A match diverges only if EVERY arm does. Exhaustiveness is checked
+		// elsewhere; a non-exhaustive match conservatively does not diverge (the
+		// safe default — a false negative just keeps a value where there is none).
+		if len(e.Cases) == 0 {
+			return false
+		}
+		for _, arm := range e.Cases {
+			if !blockOrExprDiverges(&arm.Body) {
+				return false
+			}
+		}
+		return true
+	case *ast.DoExpr:
+		return blockDiverges(&e.Body)
+	default:
+		return false
+	}
+}
+
+func blockOrExprDiverges(b *ast.BlockOrExpr) bool {
+	switch {
+	case b.Block != nil:
+		return blockDiverges(b.Block)
+	case b.Expr != nil:
+		return exprDiverges(b.Expr)
+	default:
+		return false
+	}
+}
+
 // inferBlockOrExpr types an `else` arm: either a block (`else { ... }`) or a
 // single expression (`else if ...` chains, which the parser desugars into Alt =
-// expr). A nil-block-and-nil-expr alt is treated as Void (the only honest
-// recovery for a malformed AST shape that shouldn't arise from the real parser).
+// expr). It returns the arm's value together with whether the arm DIVERGES (so
+// inferIfElse drops it from the branch union, exactly as it drops a diverging
+// block branch). A nil-block-and-nil-expr alt is treated as a non-diverging Void
+// (the only honest recovery for a malformed AST shape that shouldn't arise from
+// the real parser).
 //
 // Scoping: a BLOCK runs in a child scope (it may declare body-local val/var), an
 // EXPRESSION runs in the enclosing scope. This is not an asymmetry — it is the
@@ -617,14 +730,14 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 // typed in the current scope, as inferCall/inferTuple/inferMember do, since an
 // expression never binds a name). An `else if`'s nested IfElseExpr childs its own
 // cons/alt in turn, so each block still gets exactly one scope.
-func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) soltype.Type {
+func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) (soltype.Type, bool) {
 	switch {
 	case b.Block != nil:
 		return c.inferBlock(scope.Child(), lvl, b.Block)
 	case b.Expr != nil:
-		return c.inferExpr(scope, lvl, b.Expr)
+		return c.inferExpr(scope, lvl, b.Expr), exprDiverges(b.Expr)
 	default:
-		return &soltype.Void{}
+		return &soltype.Void{}, false
 	}
 }
 

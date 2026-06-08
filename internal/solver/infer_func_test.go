@@ -264,15 +264,17 @@ func TestInferBlockResultIsLastStmt(t *testing.T) {
 	// { 1; "two" }
 	b := block(exprStmt(numExpr(1)), exprStmt(strExpr("two")))
 
-	got := c.inferBlock(NewScope(), 0, b)
+	got, diverges := c.inferBlock(NewScope(), 0, b)
 	require.Empty(t, c.errs)
+	require.False(t, diverges)
 	require.Equal(t, `"two"`, render(got))
 }
 
 func TestInferBlockEmptyIsVoid(t *testing.T) {
 	c := newChecker()
-	got := c.inferBlock(NewScope(), 0, block())
+	got, diverges := c.inferBlock(NewScope(), 0, block())
 	require.Empty(t, c.errs)
+	require.False(t, diverges)
 	require.Equal(t, "void", render(got))
 }
 
@@ -282,9 +284,13 @@ func TestInferBlockReturnStmt(t *testing.T) {
 	// inferFunc does — otherwise the walk (correctly) reports ReturnOutsideFunction.
 	saved := c.pushFuncCtx(false, nil)
 	// { return 5 }
-	got := c.inferBlock(NewScope(), 0, block(returnStmt(numExpr(5))))
+	got, diverges := c.inferBlock(NewScope(), 0, block(returnStmt(numExpr(5))))
 	c.popFuncCtx(saved)
 	require.Empty(t, c.errs)
+	// The block's tail VALUE is still 5 (inferFunc uses it for the return-point
+	// join, so `fn () { return 5 }` returns 5), but the block DIVERGES — a
+	// value-position consumer (an if/else branch) drops it from its branch union.
+	require.True(t, diverges)
 	require.Equal(t, "5", render(got))
 }
 
@@ -299,8 +305,9 @@ func TestInferBlockRedeclarationRebinds(t *testing.T) {
 		ast.NewDeclStmt(valDecl("x", nil, numExpr(5)), testSpan()),
 		exprStmt(identExpr("x")),
 	)
-	got := c.inferBlock(NewScope(), 0, b)
+	got, diverges := c.inferBlock(NewScope(), 0, b)
 	require.Empty(t, c.errs)
+	require.False(t, diverges)
 	require.Equal(t, "5", render(got))
 }
 

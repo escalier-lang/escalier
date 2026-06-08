@@ -451,13 +451,79 @@ func TestInferPromiseLifetimeRejected(t *testing.T) {
 
 // A `return` reached outside any function — here inside an `if` that is part of a
 // top-level `val` initializer — is rejected by the walk (symmetric to
-// await-outside-async), not silently dropped. The `if` still types its branches, so
-// the binding recovers to their join.
+// await-outside-async), not silently dropped. The `if` still types its branches,
+// and the `return 5` branch DIVERGES, so it contributes `never` to the if's value
+// (not `5`): the binding recovers to the non-diverging branch alone, `6`.
 func TestInferReturnOutsideFunctionRejected(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val x = if true { return 5 } else { 6 }
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t, "return can only be used inside a function", errs[0].Message())
-	require.Equal(t, "5 | 6", values["x"])
+	require.Equal(t, "6", values["x"])
+}
+
+// A diverging `if` branch (early return) contributes `never` to the if's VALUE, so
+// the binding it initializes sees only the non-diverging branch. When control
+// reaches `val x = …`, the `c == true` path has already returned from the
+// function, so the only path that produces a value for x is the `else`.
+//
+// The tail wraps x in a tuple — `[x]` — so x's inferred type is OBSERVABLE in the
+// function's return distinctly from the early-return point. A bare `x` tail would
+// not discriminate: `return 1` makes `1` a function return point regardless, so
+// both the correct `x : "y"` and the buggy `x : 1 | "y"` render the function as
+// `1 | "y"` (the leaked `1` is absorbed by the return point). Inside the tuple the
+// leak cannot hide — correct gives `["y"]`, the bug would give `[1 | "y"]`.
+func TestInferIfElseDivergingBranchDropsFromValue(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(c: boolean) {
+			val x = if c { return 1 } else { "y" }
+			[x]
+		}
+	`)
+	require.Empty(t, errs)
+	// x is "y", not 1 | "y" — so the tuple tail is ["y"]. The function returns
+	// 1 | ["y"]: the early `return 1` IS a function return point (joined with the
+	// tail), even though it is not part of x's value. A buggy leak would surface
+	// here as 1 | [1 | "y"].
+	require.Equal(t, `fn (c: boolean) -> 1 | ["y"]`, values["f"])
+}
+
+// The dual of the above: when the diverging-branch `if` is the function's TAIL
+// value, the function's return type still includes the early return. The if's
+// value is the non-diverging branch ("z"), wrapped in a tuple so it is observable
+// distinctly from the collected `return 3`; the block return-point join folds in
+// that return, so the function returns 3 | ["z"] (a bug that leaked the diverging
+// branch into the if's value would render 3 | [3 | "z"]).
+func TestInferIfElseDivergingBranchTailReturnJoin(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(c: boolean) {
+			[if c { return 3 } else { "z" }]
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (c: boolean) -> 3 | ["z"]`, values["f"])
+}
+
+// When BOTH branches of an `if` diverge, the if's VALUE has no contributing branch
+// and coalesces to `never` (the bottom type — no path through the `if` yields a
+// value). Observed at top level so the if-value is read straight off the binding,
+// with no dead-code tail to muddy it: each `return` outside a function is also
+// reported (symmetric to TestInferReturnOutsideFunctionRejected). A bug that failed
+// to drop a diverging branch would surface here as `1 | 2` instead of `never`.
+//
+// NOTE: this deliberately observes the if-EXPRESSION's value, not a function's
+// return type. Inside a function, `val x = if c { return 1 } else { return 2 }`
+// makes every following statement unreachable, but the solver does not yet drop
+// that dead code from the block/function value (it still contributes `[never]` for
+// a `[x]` tail). That statement-level reachability gap is tracked in #719; #714
+// scoped only the if-expression value, which this test pins.
+func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		val x = if true { return 1 } else { return 2 }
+	`)
+	require.Len(t, errs, 2)
+	require.Equal(t, "return can only be used inside a function", errs[0].Message())
+	require.Equal(t, "return can only be used inside a function", errs[1].Message())
+	require.Equal(t, "never", values["x"])
 }
