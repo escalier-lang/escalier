@@ -301,19 +301,26 @@ func (c *checker) inferComponent(
 		// degrades to its first arm below). Generalize each arm into its own scheme and
 		// bind the name to the multi-scheme overload set (b.IsOverloaded()); record each
 		// arm's display type on its own FuncDecl name for Info.
+		//
+		// Sources is built from the arms here (not b.sources), so Schemes[i], the arm at
+		// arms[i], and Sources[i] all line up — b.sources also carries any rejected
+		// duplicate-declaration decls, which would desync the per-scheme index a
+		// multi-target go-to-definition relies on.
 		if len(b.arms) > 1 && !rejected.Contains(key) {
 			schemes := make([]TypeScheme, len(b.arms))
+			srcs := make([]provenance.Provenance, len(b.arms))
 			for i, arm := range b.arms {
 				sc := c.generalize(arm.t, lvl)
 				if ps, ok := sc.(*PolyScheme); ok {
 					ps.Annotated = arm.annotated
 				}
 				schemes[i] = sc
+				srcs[i] = &ast.NodeProvenance{Node: arm.decl}
 				if arm.decl.Name != nil {
 					c.recordType(arm.decl.Name, schemeType(sc))
 				}
 			}
-			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes, Sources: b.sources})
+			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes, Sources: srcs})
 			continue
 		}
 		// Generalize the group var at the component's level (was: coalesce to a
@@ -373,17 +380,9 @@ func (c *checker) checkOverloadAnnotations(
 		return rejected // self-recursion is softer; only mutual recursion is gated
 	}
 	for _, key := range component {
-		if key.Kind() != dep_graph.DepKindValue {
-			continue
-		}
-		var funcs []*ast.FuncDecl
-		for _, d := range g.GetDecls(key) {
-			if fd, ok := d.(*ast.FuncDecl); ok {
-				funcs = append(funcs, fd)
-			}
-		}
+		funcs := pureFuncOverloadDecls(g, key)
 		if len(funcs) <= 1 {
-			continue // not an overload set
+			continue // not an overload set (a mixed val/var name is a duplicate, not gated here)
 		}
 		for _, fd := range funcs {
 			if !isFullyAnnotated(fd.FuncSig) {
@@ -396,13 +395,12 @@ func (c *checker) checkOverloadAnnotations(
 	return rejected
 }
 
-// annotatedOverloadArms returns key's FuncDecls when it is a pure function-overload
-// set that can be PRE-BOUND from signatures alone (PR6): more than one FuncDecl, NO
-// `val`/`var` mixed under the name (a value cannot be overloaded), and every arm fully
-// annotated (so its signature is known without inferring the body). Returns nil
-// otherwise — those keys take the ordinary group-var path, where each arm is inferred
-// independently and the set is assembled in phase 3.
-func annotatedOverloadArms(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncDecl {
+// pureFuncOverloadDecls returns the FuncDecls bound to key when the name is bound
+// ONLY by FuncDecls (a candidate overload set — the slice may have length 1), or nil
+// when a `val`/`var` shares the name (then it is a duplicate-declaration situation,
+// not an overload). Shared by the recursion gate and annotatedOverloadArms so both
+// classify a name as an overload set the same way.
+func pureFuncOverloadDecls(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncDecl {
 	if key.Kind() != dep_graph.DepKindValue {
 		return nil
 	}
@@ -415,6 +413,17 @@ func annotatedOverloadArms(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*a
 		}
 		funcs = append(funcs, fd)
 	}
+	return funcs
+}
+
+// annotatedOverloadArms returns key's FuncDecls when it is a pure function-overload
+// set that can be PRE-BOUND from signatures alone (PR6): more than one FuncDecl, NO
+// `val`/`var` mixed under the name, and every arm fully annotated (so its signature
+// is known without inferring the body). Returns nil otherwise — those keys take the
+// ordinary group-var path, where each arm is inferred independently and the set is
+// assembled in phase 3.
+func annotatedOverloadArms(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncDecl {
+	funcs := pureFuncOverloadDecls(g, key)
 	if len(funcs) <= 1 {
 		return nil // not an overload set
 	}

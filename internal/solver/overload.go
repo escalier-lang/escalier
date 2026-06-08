@@ -62,21 +62,23 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 // error-RETURNING Context.Constrain (not the accumulating checker.constrain) so a
 // rejected argument never reaches c.errs even before the probe's errs rollback.
 //
-// Arity follows the direct-call rule (#677): too few (below requiredCount) or too
-// many (above the declared params, unless the arm is inexact or has a rest) is a
-// non-match. Extra arguments an inexact/rest arm absorbs impose no per-element
-// constraint here (that check needs Array types — M4).
+// Arity follows the direct-call accept-set (#677), reusing acceptSet so the overload
+// arity gate and the FuncType<:FuncType constraint gate can never drift: a count
+// below the lower bound (too few) or above the upper bound (too many, unless the arm
+// is inexact or has a rest) is a non-match. Extra arguments an inexact/rest arm
+// absorbs impose no per-element constraint here (that check needs Array types — M4).
 func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) bool {
 	n := len(args)
-	if n < requiredCount(inst) {
-		return false
-	}
-	if !inst.Inexact && !hasRest(inst) && n > len(inst.Params) {
+	if lo, hi := acceptSet(inst); n < lo || n > hi {
 		return false
 	}
 	for i, arg := range args {
-		if i >= len(inst.Params) {
-			break // extra args absorbed by a rest/inexact tail
+		if i >= len(inst.Params) || inst.Params[i].Rest {
+			// Past the fixed params, or AT a trailing rest param: the rest/inexact tail
+			// absorbs this and every later argument. Don't constrain a scalar argument
+			// against the rest param's ARRAY element type (Params[i].Type is `T[]`) —
+			// per-element checking is M4.
+			break
 		}
 		if errs := c.ctx.Constrain(arg, inst.Params[i].Type); len(errs) > 0 {
 			return false
@@ -145,6 +147,14 @@ func specificityOrder(funcs []*soltype.FuncType) []int {
 // variable (a bare var with no bounds either way). A literal, a concrete type, or a
 // var already pinned by some bound is ground enough; an untouched parameter var is
 // not, so the call falls back to declaration-order first-match.
+//
+// The check is intentionally SHALLOW (top-level args only): a structural argument
+// that merely WRAPS an unconstrained var — a tuple/record/func holding a bare var —
+// is treated as ground. That is harmless because such a compound never disambiguates
+// overloads under the specificity comparator anyway: structuralSubtype returns false
+// for compound shapes, so they rank as a tie and the order collapses to declaration
+// order — exactly what the not-ground-enough fallback would produce. Recursing would
+// only defer more calls for no change in the resolved arm.
 func groundEnough(args []soltype.Type) bool {
 	for _, a := range args {
 		if v, ok := a.(*soltype.TypeVarType); ok && len(v.LowerBounds) == 0 && len(v.UpperBounds) == 0 {
@@ -238,6 +248,20 @@ func (c *checker) overloadIntersection(lvl int, b ValueBinding) soltype.Type {
 	arms := make([]soltype.Type, len(b.Schemes))
 	for i, s := range b.Schemes {
 		arms[i] = c.instantiate(s, lvl)
+	}
+	return &soltype.IntersectionType{Types: arms}
+}
+
+// overloadDisplayType builds the COALESCED display type of an overloaded name — the
+// IntersectionType of its arms' display types (schemeType per arm). Unlike
+// overloadIntersection it mints no fresh inference variables (it coalesces the schemes
+// rather than instantiating them), so it is the right form for an Info record such as
+// an overloaded call's callee, where the recorded type is for tooling/hover and no
+// inference flows out of it — avoiding a second per-arm instantiation per call.
+func overloadDisplayType(b ValueBinding) soltype.Type {
+	arms := make([]soltype.Type, len(b.Schemes))
+	for i, s := range b.Schemes {
+		arms[i] = schemeType(s)
 	}
 	return &soltype.IntersectionType{Types: arms}
 }

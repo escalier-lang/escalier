@@ -49,11 +49,8 @@ type coalescer struct {
 func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
-		// Atom or structural node — let Accept rebuild it from coalesced children.
-		// This includes a UnionType/IntersectionType: pre-PR6 those appeared only as
-		// coalesced OUTPUT, but PR6 feeds an overloaded value's arm IntersectionType as
-		// INPUT (the scoped lattice exception; see overloadIntersection), so coalesce
-		// must recurse into its members rather than reject it.
+		// Atom or structural node — let Accept rebuild it from coalesced children
+		// (including an overload-arm Union/Intersection input — the scoped lattice exception; see overloadIntersection).
 		return soltype.EnterResult{}
 	}
 	// Re-entering a variable already on the current path is an ungrounded recursive
@@ -110,50 +107,48 @@ type occKey struct {
 // outward comes out as occPos alone. coalesceScheme then retains the former as a
 // quantified type parameter and inlines the latter to its bound.
 func analyzeOccurrences(t soltype.Type, pol soltype.Polarity, occ map[*soltype.TypeVarType]occPolarity, seen set.Set[occKey]) {
-	switch t := t.(type) {
-	case *soltype.FuncType:
-		for _, p := range t.Params {
-			analyzeOccurrences(p.Type, pol.Flip(), occ, seen) // params contravariant
-		}
-		analyzeOccurrences(t.Ret, pol, occ, seen) // covariant return
-	case *soltype.TupleType:
-		for _, e := range t.Elems {
-			analyzeOccurrences(e, pol, occ, seen)
-		}
-	case *soltype.RecordType:
-		for _, f := range t.Fields {
-			analyzeOccurrences(f.Type, pol, occ, seen)
-		}
-	case *soltype.PromiseType:
-		analyzeOccurrences(t.Inner, pol, occ, seen)
-	case *soltype.UnionType:
-		// PR6: an overloaded value's arm intersection can carry variables (a generic
-		// overload arm); record them so coalesceScheme retains genuine type parameters
-		// rather than rendering them raw. UnionType is here for symmetry — coalesced
-		// output never re-enters occurrence analysis, but a synthesized one is harmless.
-		for _, m := range t.Types {
-			analyzeOccurrences(m, pol, occ, seen)
-		}
-	case *soltype.IntersectionType:
-		for _, m := range t.Types {
-			analyzeOccurrences(m, pol, occ, seen)
-		}
-	case *soltype.TypeVarType:
-		if pol == soltype.Positive {
-			occ[t] |= occPos
-		} else {
-			occ[t] |= occNeg
-		}
-		k := occKey{t, pol}
-		if seen.Contains(k) {
-			return
-		}
-		seen.Add(k)
-		for _, b := range t.BoundsAt(pol) {
-			analyzeOccurrences(b, pol, occ, seen)
-		}
-	}
+	// Drive the structural descent through the shared soltype visitor (the same
+	// rewriting walk coalescer/schemeCoalescer use), so the variance flip on func
+	// params and the recursion into every former — FuncType/Tuple/Record/Promise AND
+	// the overload-arm Union/Intersection PR6 feeds as input — live in one place
+	// (soltype.Accept) instead of a hand-rolled switch that must track every type kind.
+	// The returned (identity-preserving) type is discarded; the analysis is the
+	// EnterType side effect on occ/seen.
+	t.Accept(&occVisitor{occ: occ, seen: seen}, pol)
 }
+
+// occVisitor is the soltype-visitor form of analyzeOccurrences. Like coalescer it
+// handles the var node itself in EnterType — recording the polarity it was reached in,
+// then walking the var's BoundsAt(pol) side graph (guarded by the (var, pol) seen-set)
+// — and lets Accept descend every structural node (atoms pass through, func params
+// flip).
+type occVisitor struct {
+	occ  map[*soltype.TypeVarType]occPolarity
+	seen set.Set[occKey]
+}
+
+func (o *occVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	v, ok := t.(*soltype.TypeVarType)
+	if !ok {
+		return soltype.EnterResult{} // structural/atom node: let Accept descend
+	}
+	if pol == soltype.Positive {
+		o.occ[v] |= occPos
+	} else {
+		o.occ[v] |= occNeg
+	}
+	k := occKey{v, pol}
+	if o.seen.Contains(k) {
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	o.seen.Add(k)
+	for _, b := range v.BoundsAt(pol) {
+		b.Accept(o, pol)
+	}
+	return soltype.EnterResult{SkipChildren: true}
+}
+
+func (o *occVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // coalesceScheme coalesces a generalized scheme's RAW body for DISPLAY, retaining
 // the variables that are genuine type parameters as named references while
@@ -197,10 +192,8 @@ type schemeCoalescer struct {
 func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
-		// Atom or structural node — let Accept rebuild it from coalesced children. As
-		// in coalescer, this now includes a UnionType/IntersectionType (PR6 feeds an
-		// overloaded value's arm intersection through here as a raw scheme body, the
-		// scoped lattice exception).
+		// Atom or structural node — let Accept rebuild it from coalesced children
+		// (including an overload-arm Union/Intersection input — the scoped lattice exception; see overloadIntersection).
 		return soltype.EnterResult{}
 	}
 	retain := v.Level > c.genLevel && c.occ[v].both()

@@ -415,7 +415,10 @@ func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b 
 	for i, a := range e.Args {
 		args[i] = c.inferExpr(scope, lvl, a)
 	}
-	c.recordType(e.Callee, c.overloadIntersection(lvl, b))
+	// Record the callee's display type for Info (hover) via overloadDisplayType, which
+	// coalesces the schemes rather than instantiating them — resolveOverload below does
+	// the (only) per-arm instantiation needed to type the call.
+	c.recordType(e.Callee, overloadDisplayType(b))
 	ret := c.resolveOverload(lvl, b, args, e)
 	c.recordType(e, ret)
 	return ret

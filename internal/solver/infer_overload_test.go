@@ -266,3 +266,34 @@ func TestResolveOverloadRollsBackLosingArm(t *testing.T) {
 	require.Len(t, argVar.UpperBounds, 1, "the losing string arm's speculative upper bound was rolled back")
 	require.Equal(t, num(), argVar.UpperBounds[0], "only the winning number arm's bound survives")
 }
+
+// An overload binding's Sources lines up one-to-one with its Schemes (each arm
+// contributes one of each), so a multi-target go-to-definition can map Schemes[i] to
+// the decl at Sources[i].
+func TestInferOverloadBindingSourcesAlignWithSchemes(t *testing.T) {
+	scope, _, errs := InferModule(parseModule(t, `
+		fn f(x: number) -> number { x }
+		fn f(x: string) -> string { x }
+	`))
+	require.Empty(t, errs)
+	b, ok := scope.GetValue("f")
+	require.True(t, ok)
+	require.True(t, b.IsOverloaded())
+	require.Len(t, b.Schemes, 2)
+	require.Len(t, b.Sources, 2, "Sources lines up one-to-one with Schemes")
+}
+
+// A name bound by FuncDecls AND a `val` is not a pure overload set: the functions
+// overload and the `val` is reported as a duplicate declaration (the shared
+// pure-overload classifier keeps the gate and the binding consistent).
+func TestInferOverloadMixedWithValIsDuplicate(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) -> number { x }
+		fn f(x: string) -> string { x }
+		val f = 5
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Duplicate declaration: f", errs[0].Message())
+	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"],
+		"the two functions still overload; only the val is rejected")
+}
