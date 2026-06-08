@@ -379,13 +379,14 @@ type InvalidAssignmentTargetError struct {
 //
 // It is a BRIDGE error: born in inferAssign with the assignment node in hand, so
 // it self-blames the whole assignment (Span()). Decl is the introducing
-// declaration — surfaced via Related() as the "declared immutable here" span — or
-// nil for a parameter / prelude binding that carries no source node. Name is the
-// target identifier, for the message.
+// declaration — surfaced via Related() as the "declared immutable here" span,
+// resolved for a `val`/`fn` decl AND for a parameter (its pattern) — or nil for a
+// prelude binding that carries no source node. Name is the target identifier, for
+// the message.
 type CannotAssignToImmutableError struct {
 	Assign *ast.BinaryExpr // the assignment (blame span)
 	Name   string          // the target binding's name
-	Decl   ast.Node        // the introducing decl, related; nil for params/prelude
+	Decl   ast.Node        // the introducing decl, related; nil for prelude bindings
 }
 
 func (*UnknownIdentifierError) isSolverError()       {}
@@ -425,8 +426,8 @@ func (e *InvalidAssignmentTargetError) Message() string {
 func (e *CannotAssignToImmutableError) Span() ast.Span { return e.Assign.Span() }
 func (e *CannotAssignToImmutableError) Related() []ast.Span {
 	// Point at the introducing declaration (the "declared immutable here" span) when
-	// there is one; a parameter or prelude binding carries no source node, so the
-	// related list is then empty.
+	// there is one — a `val`/`fn` decl or a parameter's pattern; a prelude binding
+	// carries no source node, so the related list is then empty.
 	if e.Decl == nil {
 		return nil
 	}

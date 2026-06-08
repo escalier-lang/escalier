@@ -11,9 +11,10 @@ import (
 //
 // `a = expr` parses as an ast.BinaryExpr with Op == ast.Assign — the only binary
 // operator the M3 walk handles. The target must be a mutable (`var`) place; the
-// RHS must be a subtype of the binding's type; the assignment expression itself is
-// void. Reassignment lives in expression position, so these tests exercise it
-// inside a function body (or a top-level `val` initializer).
+// RHS must be a subtype of the binding's type; the assignment expression evaluates
+// to the value just stored, so its type is the target's slot type. Reassignment
+// lives in expression position, so these tests exercise it inside a function body
+// (or a top-level `val` initializer).
 
 // An annotated `var` reassignment type-checks when the RHS is a subtype of the
 // declared type, and reports a single CannotConstrainError otherwise. The `var` is
@@ -27,7 +28,7 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 		`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["a"])
-		require.Equal(t, "fn () -> void", values["f"]) // the assignment expr is void
+		require.Equal(t, "fn () -> number", values["f"]) // the tail assignment evaluates to a's slot type
 	})
 	t.Run("mismatched type reports one subtype error", func(t *testing.T) {
 		src := "var a: number = 5\nfn f() { a = \"x\" }"
@@ -67,8 +68,9 @@ func TestInferAssignToImmutableNonVal(t *testing.T) {
 	t.Run("parameter", func(t *testing.T) {
 		src := "fn f(p: number) { p = 6 }"
 		_, _, errs := inferSource(t, src)
-		// A parameter has no source decl node, so Related() is empty.
-		requireBlame(t, src, errs, "Cannot assign to immutable binding: p", "p = 6")
+		// A parameter's binding records its pattern as the source, so Related() points
+		// at the param ("declared immutable here").
+		requireBlame(t, src, errs, "Cannot assign to immutable binding: p", "p = 6", "p")
 	})
 }
 
@@ -87,14 +89,15 @@ func TestInferAssignInvalidTarget(t *testing.T) {
 	})
 }
 
-// The assignment expression's own value type is void: `val b = (a = 6)` ⇒ b: void.
-func TestInferAssignValuePositionIsVoid(t *testing.T) {
+// The assignment expression evaluates to the value just stored, so its type is the
+// target's slot type: `val b = (a = 6)` for `var a: number` ⇒ b: number.
+func TestInferAssignValuePositionIsTargetType(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		var a: number = 5
 		val b = (a = 6)
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "void", values["b"])
+	require.Equal(t, "number", values["b"])
 }
 
 // Headline synergy with Part 1 (the ErrorType sentinel): reassigning THROUGH a
@@ -170,6 +173,28 @@ func TestInferAssignUnionTarget(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "cannot constrain 3 <: 1 | 2", errs[0].Message())
 	})
+}
+
+// KNOWN GAP (M6): assigning an inference-variable RHS into a union target
+// over-narrows the variable. `a = x` for an un-annotated param `x` and `a: 1 | 2`
+// commits the first matching member (`x <: 1`), so `x` infers as `1` rather than
+// the sound `1 | 2`. This is INCOMPLETE, not unsound (the committed bound is always
+// stronger than required, so no invalid program is accepted), and it is not fixable
+// in constrainAssign — falling through to constrain(rhs, union) injects the
+// coalesced union node into rhs's bound list and panics the coalescer. The correct
+// fix is M6's first-class union subtyping with inference variables. This pins the
+// interim behavior so the M6 change is visible: when it lands, `x` becomes `1 | 2`
+// and this assertion must be updated. See constrainAssign's KNOWN GAP note.
+func TestInferAssignUnionTargetVarRHSOverNarrows(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(c: boolean, x) {
+			var a = if c { 1 } else { 2 }
+			a = x
+		}
+	`)
+	require.Empty(t, errs)
+	// M6 target: "fn (c: boolean, x: 1 | 2) -> 1 | 2".
+	require.Equal(t, "fn (c: boolean, x: 1) -> 1 | 2", values["f"])
 }
 
 // A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring

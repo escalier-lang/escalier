@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -115,6 +116,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
 		name, ok := identPatName(p.Pattern)
+		var sources []provenance.Provenance
 		if !ok {
 			// Destructuring params (TuplePat/ObjectPat) need record/tuple types —
 			// they arrive in M4. M2 binds IdentPat only. A non-nil pattern blames
@@ -127,17 +129,24 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				c.reportUnsupported(node)
 			}
 			name = fmt.Sprintf("arg%d", i)
-		} else if p.TypeAnn == nil {
-			// An un-annotated param's type is the fresh var minted here, so a
-			// param-type mismatch blames the param. Record against the pattern (an
-			// ast.Node; *ast.Param is not) — for an IdentPat its span is the param's.
-			// An annotated param's blame instead rides on its annotation, recorded
-			// by resolveTypeAnn.
-			c.recordProv(pt, p.Pattern, ParamBinding)
+			// Leave sources empty: the synthetic arg%d name is not a real place, so
+			// there is nothing useful for go-to-definition or a related span to point at.
+		} else {
+			// The param's IdentPat IS its definition site, so record it as the binding's
+			// source — symmetric to a val/var/fn binding (inferVarDecl/module.go). This
+			// lets CannotAssignToImmutableError point "declared immutable here" at the
+			// parameter (see bindingDecl). p.Pattern is an ast.Node (*ast.Param is not).
+			sources = []provenance.Provenance{&ast.NodeProvenance{Node: p.Pattern}}
+			if p.TypeAnn == nil {
+				// An un-annotated param's type is the fresh var minted here, so a
+				// param-type mismatch blames the param. An annotated param's blame
+				// instead rides on its annotation, recorded by resolveTypeAnn.
+				c.recordProv(pt, p.Pattern, ParamBinding)
+			}
 		}
 		// A parameter binding never generalizes — its var is fixed for the body — so
 		// it is a MonoScheme; instantiate returns pt unchanged at every use.
-		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
+		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}, Sources: sources})
 		// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
 		// `required` count without dropping the param — carried onto the soltype so
 		// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
@@ -407,8 +416,8 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 //     literal, call, member, or any other non-place LHS is an
 //     InvalidAssignmentTargetError (member targets `obj.x = …` need record types,
 //     M4). An ident that resolves to no binding is an UnknownIdentifierError.
-//   - The binding must be mutable: only a `var` is reassignable. A `val`, function,
-//     parameter, or prelude binding is a CannotAssignToImmutableError.
+//   - The binding must be reassignable: only a `var` (Kind == VarKind) is. A `val`,
+//     function, parameter, or prelude binding is a CannotAssignToImmutableError.
 //
 // On success the RHS is constrained `<: target` (the binding's coalesced type),
 // the new-solver form of the old checker's `Unify(rightType, leftType)`: the value
@@ -416,8 +425,10 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 // number = 5` with `a = 6` checks; an un-annotated `var a = 5` keeps the literal
 // type `5`, so `a = 6` does NOT check until `var` literal widening (M4).
 //
-// The assignment EXPRESSION's own value type is void (assignment is
-// statement-shaped); flowing it through a binding yields `void`.
+// The assignment EXPRESSION evaluates to the value just stored, so its type is the
+// target binding's slot type — `val b = (a = 6)` for `var a: number` yields
+// `b: number`. On an error path (invalid / immutable / unknown target) no value is
+// stored, so it recovers to `void`.
 func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
 	voidT := soltype.Type(&soltype.Void{})
 	// Guard a malformed assignment node (the real parser substitutes ast.NewError for
@@ -456,7 +467,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 		return voidT
 	}
-	if !b.Mutable {
+	if b.Kind != ast.VarKind {
 		c.report(&CannotAssignToImmutableError{
 			Assign: e,
 			Name:   target.Name,
@@ -479,13 +490,22 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// polymorphic var would poison it for every later use. A var-free coalesced type
 	// (the common annotated/literal case) freshens to itself.
 	//
-	// b.Schemes[0]: a mutable binding is always single-scheme — overload sets come
-	// only from FuncDecls, which are immutable (Mutable is false), so they are
-	// rejected by the !b.Mutable gate above before reaching here.
+	// b.Schemes[0]: a reassignable binding is always single-scheme — overload sets
+	// come only from FuncDecls, whose Kind is never VarKind, so they are rejected by
+	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
 	c.constrainAssign(e, rhs, targetT)
-	return voidT
+	// The assignment evaluates to the value just stored — the SAME read face as
+	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
+	// instantiate (the read face), NOT the coalesced write-face targetT: targetT is a
+	// display type that may be a Union/Intersection node, and re-injecting it into the
+	// constraint graph here would later crash the coalescer when this value flows on
+	// (e.g. as a function-body tail). This overwrites the `void` recorded for e above,
+	// which now serves only as the error-path recovery value.
+	valueT := c.instantiate(b.Schemes[0], lvl)
+	c.recordType(e, valueT)
+	return valueT
 }
 
 // constrainAssign asserts `rhs <: targetT` for a reassignment. For a UNION target it
@@ -494,6 +514,18 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // itself has no UnionType-RHS rule until M6, so without this a legal assignment of a
 // union member (`var a = if c { 1 } else { 2 }; a = 1`) would be wrongly rejected.
 // A non-union target takes the ordinary single-constraint path.
+//
+// KNOWN GAP (M6): when `rhs` is (or contains) an inference variable, committing the
+// first matching member over-narrows it. `var a = 1 | 2; a = x` for an un-annotated
+// param `x` commits `x <: 1` and infers `x: 1` instead of the sound `x: 1 | 2`,
+// which can wrongly reject a later use of `x` that needs `2`. This is INCOMPLETE,
+// not unsound — the committed bound is always stronger than required, so no invalid
+// program is accepted. It is not fixable here: the obvious "don't commit, fall
+// through to constrain(rhs, targetT)" injects the COALESCED union node into rhs's
+// bound list and panics the coalescer (coalesced output must never re-enter the
+// graph). A correct fix needs first-class union subtyping with inference variables
+// — M6's deferred union/intersection rules in constrain. Pinned by
+// TestInferAssignUnionTargetVarRHSOverNarrows.
 func (c *checker) constrainAssign(n ast.Node, rhs, targetT soltype.Type) {
 	union, ok := targetT.(*soltype.UnionType)
 	if !ok {
@@ -515,8 +547,9 @@ func (c *checker) constrainAssign(n ast.Node, rhs, targetT soltype.Type) {
 
 // bindingDecl returns the AST node of the binding's introducing declaration — the
 // "declared immutable here" related span for CannotAssignToImmutableError — or nil
-// when the binding has no source node (a parameter or prelude binding). It reads
-// the first Source: a plain `val`/`var`/`fn` has exactly one.
+// when the binding has no source node (a prelude binding, or the synthetic
+// placeholder for an unsupported param). It reads the first Source: a plain
+// `val`/`var`/`fn` — and now a parameter — has exactly one.
 func bindingDecl(b ValueBinding) ast.Node {
 	if len(b.Sources) == 0 {
 		return nil

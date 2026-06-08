@@ -85,9 +85,9 @@ type componentBinding struct {
 	// the full arm set does, and `sources` already holds it. The phase-3 VarDecl
 	// pattern recording would then key off the lone value decl directly instead.
 	primary ast.Decl
-	bound   bool // a definition was inferred and constrained
-	isVar   bool // the primary definition is a `val`/`var`
-	mutable bool // PR8: the primary definition is a `var` (VarKind) — reassignable
+	bound   bool             // a definition was inferred and constrained
+	isVar   bool             // the primary definition is a `val`/`var`
+	kind    ast.VariableKind // PR8: the primary definition's kind — VarKind ⇒ reassignable
 	// recovered marks that a contributing definition was WHOLLY the ErrorType recovery
 	// sentinel (e.g. `val a = <unknown ident>`). ErrorType absorbs in constrain, so it
 	// leaves no bound on the group var; phase 3 uses this to recover the binding AS
@@ -172,9 +172,12 @@ func (c *checker) inferComponent(
 				b.bound = true
 				vd, isVarDecl := d.(*ast.VarDecl)
 				b.isVar = isVarDecl
-				// PR8: a top-level `var` is reassignable (e.g. from a function body that
-				// closes over it); `val`/`fn` are not.
-				b.mutable = isVarDecl && vd.Kind == ast.VarKind
+				// PR8: carry the decl's kind so phase 3 can gate reassignment — a top-level
+				// `var` is reassignable (e.g. from a function body that closes over it);
+				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
+				if isVarDecl {
+					b.kind = vd.Kind
+				}
 				continue
 			}
 			// The binding already has its primary definition. A repeated FuncDecl is
@@ -248,7 +251,7 @@ func (c *checker) inferComponent(
 		} else {
 			scheme = c.generalize(b.v, lvl)
 		}
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Mutable: b.mutable})
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind})
 		// Record the binding's final (coalesced) DISPLAY type in Info on the name
 		// node, so it is queryable even for a `val` in a recursive group (where
 		// coalescing at definition time would have frozen it to `never`). A VarDecl

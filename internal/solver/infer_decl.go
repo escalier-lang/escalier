@@ -115,12 +115,12 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 	// not var-free), so Info consumers must render it with soltype.PrintAsScheme, not
 	// plain soltype.Print — same contract as the top-level path (see module.go).
 	c.recordType(d.Pattern, schemeType(scheme))
-	// PR8: a `var` binding is reassignable; a `val` is not. Mutability is a property
-	// of the introducing decl's kind, carried so inferAssign can gate reassignment.
+	// PR8: carry the introducing decl's kind so inferAssign can gate reassignment —
+	// only a `var` is reassignable, a `val` is not.
 	return ValueBinding{
 		Schemes: []TypeScheme{scheme},
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}},
-		Mutable: d.Kind == ast.VarKind,
+		Kind:    d.Kind,
 	}, true
 }
 
