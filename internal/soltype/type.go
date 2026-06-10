@@ -244,14 +244,36 @@ func LevelOf(t Type) int {
 		return m
 	case *PromiseType:
 		return LevelOf(t.Inner)
+	// Union and Intersection recurse into their members for the same reason, but only
+	// the IntersectionType arm is load-bearing today. overloadIntersection (solver) is
+	// the ONE producer of a lattice node carrying LIVE inference variables that flows
+	// into freshenAbove — a let-bound overload's value-position type, whose generic arm
+	// holds a Level>0 var. If LevelOf returned 0 here, freshenAbove's level prune would
+	// treat the whole intersection as level 0, SHARE it, and alias that var across
+	// instantiations (two uses of the overload would cross-contaminate). So the level
+	// MUST reflect the members. UnionType has no such producer — every soltype.UnionType
+	// is coalesce OUTPUT (var-free) — so its recursion is currently dead, kept for
+	// symmetry and for when the type set grows a union with live vars (e.g. a generic
+	// union annotation). Coalesced-output unions/intersections hold no live vars, so
+	// both arms still return 0 for them.
+	case *UnionType:
+		return maxMemberLevel(t.Types)
+	case *IntersectionType:
+		return maxMemberLevel(t.Types)
 	default:
-		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType, UnionType,
-		// IntersectionType: ErrorType is a childless sentinel (level 0);
-		// UnionType/IntersectionType only appear in coalesced
-		// output, where every TypeVarType has been inlined — so they contain no
-		// level-bearing nodes reachable to LevelOf in M1. M6 (when these become
-		// constrain inputs via user annotations) adds the recursive arms
-		// alongside the distributivity rules in constrain.
+		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType: childless leaves
+		// (ErrorType is a sentinel, level 0).
 		return 0
 	}
+}
+
+// maxMemberLevel returns the highest LevelOf across a Union/Intersection's members,
+// 0 for an empty slice. Shared by the two lattice arms of LevelOf so their identical
+// recursion lives in one place.
+func maxMemberLevel(types []Type) int {
+	m := 0
+	for _, e := range types {
+		m = max(m, LevelOf(e))
+	}
+	return m
 }

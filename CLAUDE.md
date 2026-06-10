@@ -28,6 +28,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - When traversing tree-like structures, use the existing visitor for that tree — see [internal/ast/visitor.go](internal/ast/visitor.go) for AST and [internal/type_system/visitor.go](internal/type_system/visitor.go) for types. Don't hand-roll a new traversal.
 - Use the `Set` ADT from [internal/set/](internal/set/) (`set.NewSet[T]()`, `set.FromSlice(...)`) instead of `map[T]struct{}` or `map[T]bool`.
 - Don't shadow Go builtins (`any`, `error`, `new`, `len`, etc.) or imported type/package aliases with local identifiers. Pick a distinct name (e.g. `anyT`, `errVal`).
+- Avoid parentheticals in comments — they make comments hard to read, especially when nested or combined with em-dashes. Rewrite the aside as a plain sentence, fold it into the main clause, or drop it. Reserve parentheses for short, essential clarifications like a code reference or a concrete example. Prefer several short sentences over one sentence carrying multiple asides.
 
 ## Writing tests
 
@@ -48,3 +49,33 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 ## GitHub issues
 
 - When creating issues with `gh`, do not escape strings or backticks in the Markdown body — `gh` passes the body through as-is, and escaping produces literal backslashes in the rendered issue.
+
+# Writing Prose: Punctuation and sentence structure
+
+- Use colons only for their standard jobs: introducing a list, a definition, or
+  a direct elaboration that completes the clause before it. Do not use a colon
+  mid-sentence to tack on an aside or a second thought. If you're tempted to
+  write "X does Y: which means Z", rewrite it as two sentences or join with a
+  conjunction.
+- Don't use a colon where a comma, dash, or period would read more naturally.
+  A colon makes the reader stop and expect a list or payoff; if none follows,
+  it's jarring.
+- Avoid parentheticals. They interrupt the sentence and force the reader to
+  hold the main clause in mind while processing the aside. In almost every case
+  one of these is better:
+    - Cut the parenthetical entirely if it's not load-bearing.
+    - Promote it to its own sentence if it matters.
+    - Fold it into the sentence with a comma if it's short and essential.
+- Never nest a parenthetical inside another, and never stack two parentheticals
+  in one sentence.
+- Don't use parentheses to define or gloss a term inline. Define it in the
+  preceding or following sentence instead.
+- Prefer short, complete sentences over long ones held together by dashes,
+  semicolons, and asides. One idea per sentence.
+- When explaining a process with multiple steps, lay the steps out as a list
+  rather than stringing them through a paragraph. Use a numbered list when the
+  order matters and a bulleted list when it doesn't. One step per item reads far
+  more easily than steps joined by semicolons or "then ... then ...".
+- Read each sentence as if a human has to parse it left to right with no
+  rereading. If understanding it requires jumping back to an earlier clause,
+  restructure it.

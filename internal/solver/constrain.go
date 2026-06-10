@@ -223,6 +223,49 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		if _, ok := rhs.(*soltype.Void); ok {
 			return nil
 		}
+	case *soltype.IntersectionType:
+		// Function-intersection LHS (PR6 scoped lattice exception): (A & B & …) <: rhs
+		// iff SOME member <: rhs. This is the ONE place the overload disjunction touches
+		// the lattice — reached only when an overloaded value (inferIdent synthesizes the
+		// arm intersection) flows into a constraint, e.g. a let-bound overload called
+		// through the binding (`g = f; g(x)`). The disjunction stays confined to the
+		// speculation phase: each member is trialled under a probe in SPECIFICITY order
+		// (the same specificityOrder resolveOverload uses for a direct call, so a call
+		// through a binding resolves to the same arm a direct call would), the first
+		// success commits its bounds and the losers roll back. General IntersectionType
+		// subtyping (objects, distribution, normalization) is out of M3; a coalesced
+		// intersection never reaches constrain as input (the design keeps these
+		// output-only), so this arm is overload-synthesis-only.
+		//
+		// Collapse only against a CONCRETE demand. If rhs is a variable — the overloaded
+		// value is flowing INTO a binding (`intersection <: b.v`) — don't collapse here.
+		// Fall through to the var arm below, which records the intersection WHOLE as a
+		// lower bound. Collapsing now would commit to one arm prematurely and discard the
+		// rest of the overload set. The collapse fires later instead, once that var is
+		// constrained against a concrete function demand (a call shape) and the whole
+		// intersection propagates to it.
+		if _, rhsIsVar := rhs.(*soltype.TypeVarType); !rhsIsVar && len(l.Types) > 0 {
+			funcs := make([]*soltype.FuncType, len(l.Types))
+			for i, m := range l.Types {
+				funcs[i], _ = m.(*soltype.FuncType)
+			}
+			var lastErrs []SolverError
+			for _, idx := range specificityOrder(funcs) {
+				p := newProbe(c.probe)
+				c.probe = p
+				// A cloned seen keeps each arm's coinductive cache independent, so a failed
+				// arm's entries can't wrongly short-circuit a later arm to success.
+				errs := c.constrain(l.Types[idx], rhs, seen.Clone())
+				c.probe = p.parent
+				if len(errs) == 0 {
+					p.Commit()
+					return nil
+				}
+				p.Discard()
+				lastErrs = errs
+			}
+			return lastErrs
+		}
 	}
 
 	// lhs is a variable: record rhs as an upper bound, propagate existing lowers.
