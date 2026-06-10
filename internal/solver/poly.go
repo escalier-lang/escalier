@@ -218,16 +218,10 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // kept RAW for instantiation — coalescing for display happens later (schemeType /
 // renderScheme), never here.
 //
-// simplify is the PR2 hook (single-polarity elimination + co-occurrence merging);
-// PR1 lands it as a no-op so renders are non-compact until PR2 wires it in.
+// Simplification (single-polarity elimination + co-occurrence merging, PR2) is not
+// applied to the raw body: it runs at DISPLAY time inside coalesceScheme, so the
+// body keeps every variable for instantiation while the rendered signature stays
+// compact. See simplify.go.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
-	t = c.simplify(t, lvl)
 	return &PolyScheme{Level: lvl, Body: t}
-}
-
-// simplify is the PR2 simplification pass, a no-op in PR1. PR2 replaces the body
-// with occurrence analysis → co-occurrence union-find → rewrite so generalized
-// signatures render compactly and parameter-only variables coalesce to `unknown`.
-func (c *checker) simplify(t soltype.Type, _ int) soltype.Type {
-	return t
 }

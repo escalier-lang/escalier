@@ -10,13 +10,12 @@ import (
 // every top-level binding to a coalesced monotype; PR1 generalizes at the SCC
 // boundary so a polymorphic binding is instantiated fresh per use.
 //
-// Where a render is compact already in PR1 (the type parameter is literally the
-// same variable across positions, e.g. identity) the test pins the rendered
-// signature, exercising the printer's <T0, …> prefix. Where the compact form
-// needs simplification (PR2's co-occurrence merging), the test asserts the
-// two-types-of-use BEHAVIOR instead — per the plan, "assert two-types-of-use
-// behavior rather than the printed signature where simplification is
-// load-bearing."
+// Each test pins the rendered signature, exercising the printer's <T0, …> prefix.
+// Identity is compact from the same variable appearing in both positions; the
+// captured-param case (InnerCapturesOuterParam) needs PR2's co-occurrence merging
+// to collapse its three always-together variables into one type parameter. The
+// two-types-of-use BEHAVIOR is asserted alongside the render as the real proof of
+// polymorphism.
 
 // A top-level identity generalizes to fn <T0>(x: T0) -> T0. The two-types-of-use
 // behavior is the real proof of polymorphism: a monomorphic id would constrain
@@ -64,10 +63,12 @@ func TestInferModuleIdentityPolymorphism(t *testing.T) {
 
 // A body-level inner function that captures an outer parameter keeps the capture
 // through generalization (M2's eager body-level coalescing froze it to `never`).
-// PR1's render is non-compact — `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`, which PR2's
-// co-occurrence merging collapses to `fn <T0>(y: T0) -> [T0, T0]` — so the
-// contract here is BEHAVIOR: applying outer to 5 yields [5, 5], proving y reaches
-// both result positions through the captured inner function.
+// The param flows to both tuple positions through two fresh result variables, so
+// the raw scheme carries three distinct quantified variables — PR1 rendered the
+// non-compact `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`. PR2's co-occurrence merging
+// recognises that the three always appear together and collapses them to one type
+// parameter: `fn <T0>(y: T0) -> [T0, T0]`. Applying outer to 5 still yields [5, 5],
+// confirming the merge preserves the input→output connection.
 func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val outer = fn (y) {
@@ -77,9 +78,8 @@ func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 		val r = outer(5)
 	`)
 	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(y: T0) -> [T0, T0]", values["outer"], "co-occurring variables merge to one type parameter")
 	require.Equal(t, "[5, 5]", values["r"], "the captured outer param reaches both result positions")
-	// outer is generalized (not frozen): its signature carries a quantifier prefix.
-	require.Contains(t, values["outer"], "fn <", "outer should generalize over its captured param")
 }
 
 // Let-polymorphism extends to body-level `val`s: an inner polymorphic function
@@ -94,6 +94,15 @@ func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{"f": `fn () -> [5, "hi"]`}, values)
+}
+
+// Two parameters that flow to independent result positions do NOT co-occur, so
+// co-occurrence merging leaves them as distinct type parameters — the counterpart
+// to InnerCapturesOuterParam, where the variables always appeared together.
+func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
+	values, _, errs := inferSource(t, `fn pair(a, b) { [a, b] }`)
+	require.Empty(t, errs)
+	require.Equal(t, map[string]string{"pair": "fn <T0, T1>(a: T0, b: T1) -> [T0, T1]"}, values)
 }
 
 // A polymorphic function with a parameter-only variable: the second param is
