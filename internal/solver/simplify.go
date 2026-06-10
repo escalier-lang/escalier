@@ -154,7 +154,7 @@ func (m *mirror) effectiveBounds(v *soltype.TypeVarType, pol soltype.Polarity) [
 // graph terminating.
 type symOccVisitor struct {
 	m    *mirror
-	occ  map[*soltype.TypeVarType]occPolarity
+	occ  map[int]occPolarity // keyed by TypeVarType.ID
 	seen set.Set[occKey]
 }
 
@@ -164,9 +164,9 @@ func (o *symOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 		return soltype.EnterResult{} // structural / atom node: let Accept descend
 	}
 	if pol == soltype.Positive {
-		o.occ[v] |= occPos
+		o.occ[v.ID] |= occPos
 	} else {
-		o.occ[v] |= occNeg
+		o.occ[v.ID] |= occNeg
 	}
 	k := occKey{v, pol}
 	if o.seen.Contains(k) {
@@ -310,12 +310,8 @@ func simplifyScheme(body soltype.Type, genLevel int) *schemeSimplification {
 
 	m := buildMirror(vars)
 
-	occVar := map[*soltype.TypeVarType]occPolarity{}
-	body.Accept(&symOccVisitor{m: m, occ: occVar, seen: set.NewSet[occKey]()}, soltype.Positive)
-	occByID := make(map[int]occPolarity, len(occVar))
-	for v, o := range occVar {
-		occByID[v.ID] = o
-	}
+	occByID := map[int]occPolarity{}
+	body.Accept(&symOccVisitor{m: m, occ: occByID, seen: set.NewSet[occKey]()}, soltype.Positive)
 
 	coOcc := map[coKey]set.Set[int]{}
 	body.Accept(&coOccVisitor{m: m, coOcc: coOcc, seen: set.NewSet[coKey]()}, soltype.Positive)

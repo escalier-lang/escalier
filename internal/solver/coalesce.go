@@ -160,6 +160,16 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// Representative first when retained, so it names earliest in combine and stays
 	// distinct in dedup from any bound that resolves back to it (via cycle). Pre-size
 	// the slice with rep at index 0 instead of appending then prepending.
+	//
+	// The cycle guard is keyed by rep, but the bounds walked here are v's OWN
+	// (v.BoundsAt), not the representative's. When a sibling class member nested in
+	// v's bounds resolves to a rep already on the path, it short-circuits to the name
+	// without walking its bounds. That drops no information because constrain
+	// propagates a concrete bound to every variable along a var↔var subtyping chain,
+	// so the merged class's reachable concrete bounds already sit on v (the
+	// first-encountered member). This relies on the body being propagation-closed —
+	// which every body reaching coalesceScheme is, since it is rendered only after
+	// its component is fully constrained.
 	bs := v.BoundsAt(pol)
 	n := len(bs)
 	if retain {
@@ -191,7 +201,7 @@ func schemeType(s TypeScheme) soltype.Type {
 	case *MonoScheme:
 		return coalesce(sc.Ty, soltype.Positive)
 	case *PolyScheme:
-		return coalesceScheme(sc.Body, sc.Level)
+		return sc.display()
 	}
 	panic(fmt.Sprintf("schemeType: unknown TypeScheme %T", s))
 }
@@ -210,7 +220,7 @@ func renderScheme(s TypeScheme) string {
 	case *MonoScheme:
 		return soltype.PrintAsScheme(coalesce(sc.Ty, soltype.Positive))
 	case *PolyScheme:
-		return soltype.PrintAsSchemeWith(coalesceScheme(sc.Body, sc.Level), func(v *soltype.TypeVarType) bool {
+		return soltype.PrintAsSchemeWith(sc.display(), func(v *soltype.TypeVarType) bool {
 			return v.Level > sc.Level
 		})
 	}

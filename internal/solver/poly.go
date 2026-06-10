@@ -34,10 +34,25 @@ type PolyScheme struct {
 	Level     int
 	Body      soltype.Type
 	Annotated bool // PR6 only — set per overload arm; folds for the recursion gate
+
+	// coalesced memoizes the display type. Body is immutable after generalization
+	// (later components instantiate fresh copies rather than constrain it), so the
+	// co-occurrence analysis behind coalesceScheme is run once and shared by both
+	// display consumers — schemeType (Info) and renderScheme (string).
+	coalesced soltype.Type
 }
 
 func (*MonoScheme) isScheme() {}
 func (*PolyScheme) isScheme() {}
+
+// display returns the scheme's coalesced display type, computing it on first use
+// and caching it. See the coalesced field for why the cache never goes stale.
+func (sc *PolyScheme) display() soltype.Type {
+	if sc.coalesced == nil {
+		sc.coalesced = coalesceScheme(sc.Body, sc.Level)
+	}
+	return sc.coalesced
+}
 
 func (s *MonoScheme) IsAnnotated() bool { return s.Annotated }
 func (s *PolyScheme) IsAnnotated() bool { return s.Annotated }
