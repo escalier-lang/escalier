@@ -244,28 +244,36 @@ func LevelOf(t Type) int {
 		return m
 	case *PromiseType:
 		return LevelOf(t.Inner)
+	// Union and Intersection recurse into their members for the same reason, but only
+	// the IntersectionType arm is load-bearing today. overloadIntersection (solver) is
+	// the ONE producer of a lattice node carrying LIVE inference variables that flows
+	// into freshenAbove — a let-bound overload's value-position type, whose generic arm
+	// holds a Level>0 var. If LevelOf returned 0 here, freshenAbove's level prune would
+	// treat the whole intersection as level 0, SHARE it, and alias that var across
+	// instantiations (two uses of the overload would cross-contaminate). So the level
+	// MUST reflect the members. UnionType has no such producer — every soltype.UnionType
+	// is coalesce OUTPUT (var-free) — so its recursion is currently dead, kept for
+	// symmetry and for when the type set grows a union with live vars (e.g. a generic
+	// union annotation). Coalesced-output unions/intersections hold no live vars, so
+	// both arms still return 0 for them.
 	case *UnionType:
-		m := 0
-		for _, e := range t.Types {
-			m = max(m, LevelOf(e))
-		}
-		return m
+		return maxMemberLevel(t.Types)
 	case *IntersectionType:
-		// PR6: an overloaded value's arm IntersectionType is a constrain/freshen INPUT
-		// (the scoped lattice exception), and a generic arm carries variables, so the
-		// level MUST reflect its members — otherwise freshenAbove's level prune treats
-		// the whole intersection as level 0 and SHARES the generic arm's variables across
-		// instantiations (aliasing two uses of a let-bound overload). UnionType recurses
-		// for symmetry. (Coalesced-output unions/intersections contain no live vars, so
-		// this still returns 0 for them.)
-		m := 0
-		for _, e := range t.Types {
-			m = max(m, LevelOf(e))
-		}
-		return m
+		return maxMemberLevel(t.Types)
 	default:
 		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType: childless leaves
 		// (ErrorType is a sentinel, level 0).
 		return 0
 	}
+}
+
+// maxMemberLevel returns the highest LevelOf across a Union/Intersection's members,
+// 0 for an empty slice. Shared by the two lattice arms of LevelOf so their identical
+// recursion lives in one place.
+func maxMemberLevel(types []Type) int {
+	m := 0
+	for _, e := range types {
+		m = max(m, LevelOf(e))
+	}
+	return m
 }

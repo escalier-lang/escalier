@@ -237,12 +237,13 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		// intersection never reaches constrain as input (the design keeps these
 		// output-only), so this arm is overload-synthesis-only.
 		//
-		// Collapse only against a CONCRETE demand. When rhs is a variable (the overloaded
-		// value flowing INTO a binding, `intersection <: b.v`), fall through to the var
-		// arm below so the intersection is recorded WHOLE as a lower bound and preserved
-		// — collapsing it here would prematurely pick one arm and lose the overload set.
-		// The collapse then fires later, when the var is constrained against a concrete
-		// function demand (a call shape) and the intersection propagates to it.
+		// Collapse only against a CONCRETE demand. If rhs is a variable — the overloaded
+		// value is flowing INTO a binding (`intersection <: b.v`) — don't collapse here.
+		// Fall through to the var arm below, which records the intersection WHOLE as a
+		// lower bound. Collapsing now would commit to one arm prematurely and discard the
+		// rest of the overload set. The collapse fires later instead, once that var is
+		// constrained against a concrete function demand (a call shape) and the whole
+		// intersection propagates to it.
 		if _, rhsIsVar := rhs.(*soltype.TypeVarType); !rhsIsVar && len(l.Types) > 0 {
 			funcs := make([]*soltype.FuncType, len(l.Types))
 			for i, m := range l.Types {

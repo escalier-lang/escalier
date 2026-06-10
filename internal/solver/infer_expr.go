@@ -336,12 +336,11 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // PR4 adds two #677 pieces: an EXACT all-required call demand, and the extra-arg
 // lint that rejects passing more arguments than a concrete callee declares.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
-	// PR6: a DIRECT call to an overloaded name resolves against the overload set
-	// (resolveOverload, a phase distinct from constrain) rather than the
-	// single-subtype-constraint path — the disjunction stays out of the lattice for
-	// call resolution. A call THROUGH an intermediate binding (`g = f; g(x)`) does not
-	// match here (the callee is not the overloaded name itself); it routes through the
-	// value-position intersection and constrain's IntersectionType arm instead.
+	// PR6: a DIRECT call to an overloaded name resolves against the overload set via
+	// resolveOverload, a phase distinct from constrain — so the disjunction stays out of
+	// the lattice. A call through an intermediate binding (`g = f; g(x)`) doesn't match
+	// here; it routes through the value-position intersection (constrain's
+	// IntersectionType arm) instead.
 	if ident, ok := e.Callee.(*ast.IdentExpr); ok {
 		if b, found := scope.GetValue(ident.Name); found && b.IsOverloaded() {
 			return c.inferOverloadedCall(scope, lvl, e, b)
@@ -403,13 +402,13 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	return res
 }
 
-// inferOverloadedCall types a direct call to an overloaded name (PR6). It types the
-// arguments, records the callee's overload type (the arm intersection) for Info, and
-// resolves the call against the overload set through resolveOverload — which trials
-// each arm under a probe and commits the winner. Unlike the ordinary path it emits no
-// callee <: callShape constraint: overload resolution is a separate phase that owns
-// the arity/argument checking (the TooManyArgs/NotEnoughArgs lints do not apply —
-// arity is the per-arm gate, and a no-match is a NoMatchingOverloadError).
+// inferOverloadedCall types a direct call to an overloaded name (PR6). It infers
+// the types of the arguments, records the callee's overload type for Info, and
+// resolves the call through resolveOverload, which trials each arm under a probe
+// and commits the winner. Unlike the ordinary path it emits no callee <: callShape
+// constraint.  Overload resolution is a separate phase that owns arity and argument
+// checking. The TooManyArgs and NotEnoughArgs lints don't apply – arity is the
+// per-arm gate, and a no-match becomes a NoMatchingOverloadError.
 func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b ValueBinding) soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {

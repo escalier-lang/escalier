@@ -212,7 +212,7 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 	return out
 }
 
-// generalize turns the inferred type of a binding (its SCC group var) into a
+// generalize turns the inferred type of a binding (its binding var) into a
 // PolyScheme quantified at lvl: every variable with Level > lvl becomes a type
 // parameter, captured outer variables (Level <= lvl) stay monomorphic. Body is
 // kept RAW for instantiation — coalescing for display happens later (schemeType /

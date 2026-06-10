@@ -308,6 +308,20 @@ type UnannotatedRecursiveOverloadError struct {
 	Name string
 }
 
+// DuplicateOverloadError fires when two arms of an overload set (PR6) are
+// indistinguishable for dispatch: they share an arity and have pointwise-equal
+// parameter types, so no call could ever select one over the other. An overload set
+// compiles to a single runtime function that dispatches on argument types, so two
+// arms accepting exactly the same arguments cannot be told apart at codegen.
+//
+// It is a BRIDGE error: born in the overload-set builder (module.go) with the
+// colliding arms in hand, so it self-blames the duplicate (later) arm and relates the
+// earlier arm it collides with. Name is the overloaded binding's name for the message.
+type DuplicateOverloadError struct {
+	Decl, Previous ast.Decl
+	Name           string
+}
+
 // TooManyArgsError fires when a DIRECT call supplies more arguments than the
 // (concrete) callee declares — the #677 §4.2.3 extra-arg lint, which rejects
 // too-many for exact AND inexact callees alike (an inexact function tolerates
@@ -419,6 +433,7 @@ func (*MissingInitializerError) isSolverError()           {}
 func (*DuplicateDeclarationError) isSolverError()         {}
 func (*NoMatchingOverloadError) isSolverError()           {}
 func (*UnannotatedRecursiveOverloadError) isSolverError() {}
+func (*DuplicateOverloadError) isSolverError()            {}
 func (*AwaitOutsideAsyncError) isSolverError()            {}
 func (*ReturnOutsideFunctionError) isSolverError()        {}
 func (*AsyncReturnNotPromiseError) isSolverError()        {}
@@ -536,6 +551,12 @@ func (e *UnannotatedRecursiveOverloadError) Span() ast.Span      { return e.Decl
 func (e *UnannotatedRecursiveOverloadError) Related() []ast.Span { return nil }
 func (e *UnannotatedRecursiveOverloadError) Message() string {
 	return "Overloaded function in a recursive group must have fully-annotated signatures: " + e.Name
+}
+
+func (e *DuplicateOverloadError) Span() ast.Span      { return e.Decl.Span() }
+func (e *DuplicateOverloadError) Related() []ast.Span { return []ast.Span{e.Previous.Span()} }
+func (e *DuplicateOverloadError) Message() string {
+	return "Overload arms must have distinguishable parameter types: " + e.Name
 }
 
 func (e *AwaitOutsideAsyncError) Span() ast.Span { return e.Await.Span() }

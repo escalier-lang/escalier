@@ -8,13 +8,13 @@ import (
 
 // inferDeclDef infers one top-level declaration for the SCC driver
 // (inferComponent) and returns its RAW (un-coalesced, variable-carrying) type to
-// constrain against the binding's group var, the decl's provenance, and ok=false
+// constrain against the binding's binding var, the decl's provenance, and ok=false
 // when it introduces no value. It does NOT bind the name — inferComponent owns
 // scope placement.
 //
-// The type MUST stay raw: inferComponent coalesces the group var once, after every
+// The type MUST stay raw: inferComponent coalesces the binding var once, after every
 // group member has constrained it (phase 3). Coalescing a `val` initializer here
-// would read a recursive peer's still-empty group var and freeze the binding to
+// would read a recursive peer's still-empty binding var and freeze the binding to
 // `never` — the bug behind splitting this out of inferVarDecl.
 //
 // ok=false cases, each already reported:
@@ -46,7 +46,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		return initType, &ast.NodeProvenance{Node: d}, true
 	case *ast.FuncDecl:
 		// inferFuncDecl returns the RAW func type and its source directly;
-		// inferComponent constrains that raw type into the group var, generalizes
+		// inferComponent constrains that raw type into the binding var, generalizes
 		// once the group is complete, and accumulates the per-decl source into the
 		// binding's Sources slice.
 		t, src := c.inferFuncDecl(scope, lvl, d)
@@ -61,7 +61,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 // (un-coalesced) type, ok=false when there's no initializer (MissingInitializerError
 // reported). Shared core of both binding paths; they differ only in WHEN they
 // coalesce: inferDeclDef (SCC driver) keeps it raw so inferComponent coalesces the
-// group var once at completion, while inferVarDecl (body-level) coalesces it now.
+// binding var once at completion, while inferVarDecl (body-level) coalesces it now.
 // Walks the initializer regardless so a malformed RHS still surfaces errors, and
 // binds nothing — the caller owns scope placement.
 //
@@ -103,7 +103,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // `fn (y) { val getY = fn () { y }; [getY(), getY()] }` keeps getY's captured `y`
 // instead of freezing it to `never`, the bug eager coalescing caused. A body-level
 // `val` is never recursive (the name is bound only after its initializer is typed),
-// so there is no pre-binding/group var; the SCC driver owns the recursive top-level
+// so there is no pre-binding or binding var; the SCC driver owns the recursive top-level
 // path (see inferDeclDef). ok=false when there is no initializer.
 func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBinding, bool) {
 	initType, ok := c.inferVarDeclInit(scope, lvl+1, d)

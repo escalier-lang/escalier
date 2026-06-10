@@ -1,9 +1,12 @@
 package solver
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -43,17 +46,44 @@ func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	require.Equal(t, "5", values["b"])
 }
 
-// Declaration-order tie-break: when two arms both accept the argument and neither
-// is more specific (here identical parameter types), the FIRST-declared arm wins,
-// so r takes the first arm's return type.
-func TestInferOverloadDeclarationOrderTieBreak(t *testing.T) {
-	values, _, errs := inferSource(t, `
+// Two arms with identical parameter types are REJECTED: an overload set compiles to a
+// single runtime function that dispatches on argument types, so two arms accepting
+// exactly the same arguments cannot be told apart at codegen. The error blames the
+// later arm and relates the earlier one.
+func TestInferOverloadDuplicateParamTypesRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
 		fn f(x: number) -> string { "a" }
 		fn f(x: number) -> boolean { true }
 		val r = f(5)
 	`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"Overload arms must have distinguishable parameter types: f",
+		errs[0].Message())
+}
+
+// Cross-file declaration order is pinned to SOURCE POSITION (file path alphabetically,
+// then line/column), NOT to the order the parser received the files. Two arms of f
+// live in separate files with DISTINCT parameter types (a.esc takes number, b.esc
+// takes string); the value-position intersection must list them in path-alphabetical
+// order — a.esc's number arm first, b.esc's string arm second. The files are handed to
+// the parser in REVERSE-alphabetical order (b.esc first, so it gets the lower
+// SourceID); the path-alphabetical arm (a.esc) must still come first regardless.
+func TestInferOverloadCrossFileDeclarationOrder(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	sources := []*ast.Source{
+		{ID: 0, Path: "b.esc", Contents: `fn f(x: string) -> boolean { true }`},
+		{ID: 1, Path: "a.esc", Contents: "fn f(x: number) -> string { \"s\" }\nval r = f(5)"},
+	}
+	module, parseErrs := parser.ParseLibFiles(ctx, sources)
+	require.Empty(t, parseErrs, "expected no parse errors")
+	values, _, errs := inferModule(module)
 	require.Empty(t, errs)
-	require.Equal(t, "string", values["r"], "the first-declared matching arm wins on a specificity tie")
+	require.Equal(t, "string", values["r"],
+		"f(5) selects a.esc's number arm")
+	require.Equal(t, "(fn (x: number) -> string) & (fn (x: string) -> boolean)", values["f"],
+		"the value-position intersection lists arms in path-alphabetical order (a.esc, then b.esc)")
 }
 
 // Specificity beats declaration order: a concrete arm declared AFTER a generic one
@@ -69,9 +99,11 @@ func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	require.Equal(t, "boolean", values["r"], "the more specific (string) arm outranks the earlier generic arm")
 }
 
-// A not-ground-enough call (the argument is a still-unconstrained parameter
-// variable) falls back to declaration-order first-match: f(y) inside `fn (y) {…}`
-// resolves to the first arm and pins y to that arm's parameter type.
+// A call with an unconstrained argument (a still-unconstrained parameter variable)
+// falls back to declaration-order first-match: f(y) inside `fn (y) {…}` resolves to
+// the first arm and pins y to that arm's parameter type. This over-narrows the
+// enclosing function (g then rejects a later g("hi")) — a documented MVP limitation
+// whose real fix (deferred resolution) is tracked in #723.
 func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { x }
@@ -80,7 +112,7 @@ func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (y: number) -> number", values["g"],
-		"an unground argument defers to declaration-order first-match, pinning y to the first arm")
+		"an unconstrained argument defers to declaration-order first-match, pinning y to the first arm")
 }
 
 // No arm accepts the argument ⇒ NoMatchingOverloadError listing the candidates.
@@ -150,10 +182,10 @@ func TestInferOverloadNonRecursiveAnnotatedAllowed(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn g(z: number) -> number { z }
 		fn f(x: number) -> number { g(x) }
-		fn f(x: number) -> string { "s" }
+		fn f(x: string) -> string { "s" }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "(fn (x: number) -> number) & (fn (x: number) -> string)", values["f"])
+	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
 }
 
 // Value-position use (PR6 scoped lattice exception): a let-bound overloaded name is
@@ -215,8 +247,8 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 }
 
 // Three mixed arms (concrete-literal-ish, concrete-prim, generic) rank by specificity
-// without relying on a non-transitive comparator: each ground call selects the arm
-// that accepts its argument, most-specific-first with declaration-order tiebreak.
+// without relying on a non-transitive comparator: each call with a concrete argument
+// selects the arm that accepts it, most-specific-first with declaration-order tiebreak.
 func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x) { x }
@@ -253,8 +285,8 @@ func TestResolveOverloadRollsBackLosingArm(t *testing.T) {
 	// Overload set in declaration order: string arm first, number arm second.
 	b := ValueBinding{Schemes: []TypeScheme{monoScheme(strFn), monoScheme(numFn)}}
 
-	// The argument is a variable carrying a number-literal lower bound — ground enough
-	// to rank, but incompatible with the string arm (5 </: string).
+	// The argument is a variable carrying a number-literal lower bound — constrained
+	// enough to rank, but incompatible with the string arm (5 </: string).
 	argVar := c.freshAt(0)
 	argVar.LowerBounds = []soltype.Type{&soltype.LitType{Lit: &soltype.NumLit{Value: 5}}}
 
@@ -283,9 +315,9 @@ func TestInferOverloadBindingSourcesAlignWithSchemes(t *testing.T) {
 	require.Len(t, b.Sources, 2, "Sources lines up one-to-one with Schemes")
 }
 
-// A name bound by FuncDecls AND a `val` is not a pure overload set: the functions
-// overload and the `val` is reported as a duplicate declaration (the shared
-// pure-overload classifier keeps the gate and the binding consistent).
+// A name bound by FuncDecls AND a `val` is not function-only, so it is not an overload
+// set: the functions overload and the `val` is reported as a duplicate declaration. The
+// shared funcOnlyDecls classifier keeps the gate and the binding consistent.
 func TestInferOverloadMixedWithValIsDuplicate(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { x }
@@ -296,4 +328,20 @@ func TestInferOverloadMixedWithValIsDuplicate(t *testing.T) {
 	require.Equal(t, "Duplicate declaration: f", errs[0].Message())
 	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"],
 		"the two functions still overload; only the val is rejected")
+}
+
+// The duplicate is rejected even when the val and the fn live in SEPARATE files of the
+// same lib namespace: the dep graph keys by qualified name across all files, so a fn
+// and a val sharing a name collide under one value binding regardless of file. The
+// first-declared decl wins and the other is a duplicate; here a.esc's fn is primary and
+// b.esc's val is reported.
+func TestInferOverloadMixedWithValCrossFileIsDuplicate(t *testing.T) {
+	values, _, errs := inferSources(t, map[string]string{
+		"a.esc": `fn f(x: number) -> number { x }`,
+		"b.esc": `val f = 5`,
+	})
+	require.Len(t, errs, 1)
+	require.Equal(t, "Duplicate declaration: f", errs[0].Message())
+	require.Equal(t, "fn (x: number) -> number", values["f"],
+		"the cross-file val is rejected; the fn binding survives")
 }
