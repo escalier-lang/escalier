@@ -20,8 +20,8 @@ import (
 // each call yielding that arm's return type.
 func TestInferOverloadResolvesByArgType(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { x }
-		fn f(x: string) -> string { x }
+		fn f(x: number) -> number { return x }
+		fn f(x: string) -> string { return x }
 		val r = f(5)
 		val s = f("hi")
 	`)
@@ -36,8 +36,8 @@ func TestInferOverloadResolvesByArgType(t *testing.T) {
 // f(5, "hi") the 2-param arm.
 func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { x }
-		fn f(x, y) { x }
+		fn f(x) { return x }
+		fn f(x, y) { return x }
 		val a = f(5)
 		val b = f(5, "hi")
 	`)
@@ -52,8 +52,8 @@ func TestInferOverloadDispatchesOnArity(t *testing.T) {
 // later arm and relates the earlier one.
 func TestInferOverloadDuplicateParamTypesRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(x: number) -> string { "a" }
-		fn f(x: number) -> boolean { true }
+		fn f(x: number) -> string { return "a" }
+		fn f(x: number) -> boolean { return true }
 		val r = f(5)
 	`)
 	require.Len(t, errs, 1)
@@ -73,8 +73,8 @@ func TestInferOverloadCrossFileDeclarationOrder(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	sources := []*ast.Source{
-		{ID: 0, Path: "b.esc", Contents: `fn f(x: string) -> boolean { true }`},
-		{ID: 1, Path: "a.esc", Contents: "fn f(x: number) -> string { \"s\" }\nval r = f(5)"},
+		{ID: 0, Path: "b.esc", Contents: `fn f(x: string) -> boolean { return true }`},
+		{ID: 1, Path: "a.esc", Contents: "fn f(x: number) -> string { return \"s\" }\nval r = f(5)"},
 	}
 	module, parseErrs := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrs, "expected no parse errors")
@@ -91,8 +91,8 @@ func TestInferOverloadCrossFileDeclarationOrder(t *testing.T) {
 // the string arm even though the generic arm is declared first and would also match.
 func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { x }
-		fn f(x: string) -> boolean { true }
+		fn f(x) { return x }
+		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
 	require.Empty(t, errs)
@@ -106,9 +106,9 @@ func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 // whose real fix (deferred resolution) is tracked in #723.
 func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { x }
-		fn f(x: string) -> string { x }
-		val g = fn (y) { f(y) }
+		fn f(x: number) -> number { return x }
+		fn f(x: string) -> string { return x }
+		val g = fn (y) { return f(y) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (y: number) -> number", values["g"],
@@ -118,8 +118,8 @@ func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 // No arm accepts the argument ⇒ NoMatchingOverloadError listing the candidates.
 func TestInferOverloadNoMatch(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(x: number) -> number { x }
-		fn f(x: string) -> string { x }
+		fn f(x: number) -> number { return x }
+		fn f(x: string) -> string { return x }
 		val r = f(true)
 	`)
 	require.Len(t, errs, 1)
@@ -150,8 +150,8 @@ func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 // `cannot constrain` errors because the recursive reference saw only the first arm.)
 func TestInferOverloadSelfRecursiveAnnotated(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { f(x) }
-		fn f(x: string) -> string { f(x) }
+		fn f(x: number) -> number { return f(x) }
+		fn f(x: string) -> string { return f(x) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
@@ -163,11 +163,11 @@ func TestInferOverloadSelfRecursiveAnnotated(t *testing.T) {
 // the component see the whole set, not a single first-arm var.
 func TestInferOverloadMutualRecursionValueCapture(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { g(x) }
-		fn f(x: string) -> number { g(5) }
+		fn f(x: number) -> number { return g(x) }
+		fn f(x: string) -> number { return g(5) }
 		fn g(n: number) -> number {
 			val h = f
-			h(n)
+			return h(n)
 		}
 	`)
 	require.Empty(t, errs)
@@ -180,9 +180,9 @@ func TestInferOverloadMutualRecursionValueCapture(t *testing.T) {
 // a singleton — the gate never fires and the set binds normally.
 func TestInferOverloadNonRecursiveAnnotatedAllowed(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn g(z: number) -> number { z }
-		fn f(x: number) -> number { g(x) }
-		fn f(x: string) -> string { "s" }
+		fn g(z: number) -> number { return z }
+		fn f(x: number) -> number { return g(x) }
+		fn f(x: string) -> string { return "s" }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
@@ -193,8 +193,8 @@ func TestInferOverloadNonRecursiveAnnotatedAllowed(t *testing.T) {
 // via constrain's function-intersection-LHS arm — g(5) ⇒ number, g("hi") ⇒ string.
 func TestInferOverloadValuePosition(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { x }
-		fn f(x: string) -> string { x }
+		fn f(x: number) -> number { return x }
+		fn f(x: string) -> string { return x }
 		val g = f
 		val r = g(5)
 		val s = g("hi")
@@ -213,8 +213,8 @@ func TestInferOverloadValuePosition(t *testing.T) {
 // the level-0 intersection and aliases the arm's type variable across uses.)
 func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { x }
-		fn f(x, y) { x }
+		fn f(x) { return x }
+		fn f(x, y) { return x }
 		val g = f
 		val a = g("hi")
 		val b = g(true)
@@ -229,16 +229,16 @@ func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 // whether the callee is the overloaded name directly or a let-bound alias.
 func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	direct, _, errs := inferSource(t, `
-		fn f(x) { x }
-		fn f(x: string) -> boolean { true }
+		fn f(x) { return x }
+		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "boolean", direct["r"], "direct call picks the more specific arm")
 
 	binding, _, errs := inferSource(t, `
-		fn f(x) { x }
-		fn f(x: string) -> boolean { true }
+		fn f(x) { return x }
+		fn f(x: string) -> boolean { return true }
 		val g = f
 		val r = g("hi")
 	`)
@@ -251,9 +251,9 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 // selects the arm that accepts it, most-specific-first with declaration-order tiebreak.
 func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { x }
-		fn f(x: number) -> boolean { true }
-		fn f(x: string) -> string { x }
+		fn f(x) { return x }
+		fn f(x: number) -> boolean { return true }
+		fn f(x: string) -> string { return x }
 		val p = f(5)
 		val q = f("hi")
 		val r = f(true)
@@ -304,8 +304,8 @@ func TestResolveOverloadRollsBackLosingArm(t *testing.T) {
 // the decl at Sources[i].
 func TestInferOverloadBindingSourcesAlignWithSchemes(t *testing.T) {
 	scope, _, errs := InferModule(parseModule(t, `
-		fn f(x: number) -> number { x }
-		fn f(x: string) -> string { x }
+		fn f(x: number) -> number { return x }
+		fn f(x: string) -> string { return x }
 	`))
 	require.Empty(t, errs)
 	b, ok := scope.GetValue("f")
@@ -320,8 +320,8 @@ func TestInferOverloadBindingSourcesAlignWithSchemes(t *testing.T) {
 // shared funcOnlyDecls classifier keeps the gate and the binding consistent.
 func TestInferOverloadMixedWithValIsDuplicate(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { x }
-		fn f(x: string) -> string { x }
+		fn f(x: number) -> number { return x }
+		fn f(x: string) -> string { return x }
 		val f = 5
 	`)
 	require.Len(t, errs, 1)
@@ -337,7 +337,7 @@ func TestInferOverloadMixedWithValIsDuplicate(t *testing.T) {
 // b.esc's val is reported.
 func TestInferOverloadMixedWithValCrossFileIsDuplicate(t *testing.T) {
 	values, _, errs := inferSources(t, map[string]string{
-		"a.esc": `fn f(x: number) -> number { x }`,
+		"a.esc": `fn f(x: number) -> number { return x }`,
 		"b.esc": `val f = 5`,
 	})
 	require.Len(t, errs, 1)

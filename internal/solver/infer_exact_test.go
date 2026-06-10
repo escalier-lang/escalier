@@ -16,7 +16,7 @@ import (
 // force the callee inexact, rejecting every call to an exact function.
 func TestInferCallExactArityTypeChecks(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number, y: number) -> number { x }
+		fn f(x: number, y: number) -> number { return x }
 		val r = f(1, 2)
 	`)
 	require.Empty(t, errs)
@@ -28,7 +28,7 @@ func TestInferCallExactArityTypeChecks(t *testing.T) {
 // receives only the arity-matched prefix, so its accept-set gate stays silent.
 func TestInferCallExactTooManyArgsSingleDiagnostic(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(x: number, y: number) -> number { x }
+		fn f(x: number, y: number) -> number { return x }
 		val r = f(1, 2, 3)
 	`)
 	require.Len(t, errs, 1)
@@ -39,7 +39,7 @@ func TestInferCallExactTooManyArgsSingleDiagnostic(t *testing.T) {
 // renders as `y?: T` and lowers the function's required count (the accept-set lower
 // bound) without changing arity.
 func TestInferOptionalParamRenders(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(x: number, y?: number) -> number { x }`)
+	values, _, errs := inferSource(t, `fn f(x: number, y?: number) -> number { return x }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (x: number, y?: number) -> number", values["f"])
 }
@@ -49,7 +49,7 @@ func TestInferOptionalParamRenders(t *testing.T) {
 func TestInferOptionalParamCallArity(t *testing.T) {
 	t.Run("omitted and supplied both type-check", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(x: number, y?: number) -> number { x }
+			fn f(x: number, y?: number) -> number { return x }
 			val a = f(1)
 			val b = f(1, 2)
 		`)
@@ -58,7 +58,7 @@ func TestInferOptionalParamCallArity(t *testing.T) {
 
 	t.Run("overflow trips the lint", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(x: number, y?: number) -> number { x }
+			fn f(x: number, y?: number) -> number { return x }
 			val c = f(1, 2, 3)
 		`)
 		require.Len(t, errs, 1)
@@ -73,7 +73,7 @@ func TestInferOptionalParamCallArity(t *testing.T) {
 // the too-few lint reports a required count of 2.
 func TestInferNonTrailingOptionalRequiresAllArgs(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(a?: number, b: number) -> number { b }
+		fn f(a?: number, b: number) -> number { return b }
 		val r = f(1)
 	`)
 	require.Len(t, errs, 1)
@@ -86,14 +86,14 @@ func TestInferNonTrailingOptionalRequiresAllArgs(t *testing.T) {
 // subtyping, not direct calls).
 func TestInferInexactFunctionValue(t *testing.T) {
 	t.Run("renders with the inexact marker", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f(x: number, ...) -> number { x }`)
+		values, _, errs := inferSource(t, `fn f(x: number, ...) -> number { return x }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (x: number, ...) -> number", values["f"])
 	})
 
 	t.Run("direct call still rejects extra args", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(x: number, ...) -> number { x }
+			fn f(x: number, ...) -> number { return x }
 			val r = f(1, 2)
 		`)
 		require.Len(t, errs, 1)
@@ -105,7 +105,7 @@ func TestInferInexactFunctionValue(t *testing.T) {
 // optional may be omitted, so `fn(x, y?)` called with no args needs at least 1.
 func TestInferTooFewArgsRespectsOptional(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(x: number, y?: number) -> number { x }
+		fn f(x: number, y?: number) -> number { return x }
 		val r = f()
 	`)
 	require.Len(t, errs, 1)

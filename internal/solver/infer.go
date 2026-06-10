@@ -48,8 +48,8 @@ type checker struct {
 // function's AST node, surfaced as the "make this async" related span on an
 // await-outside-async error; returns accumulates every ReturnStmt expression type
 // collected from the body (in source order, valued AND bare — bare returns
-// contribute Void) so inferFunc can join them with the block tail before
-// constraining against the return annotation, finishing M2's carried-over TODO.
+// contribute Void) so inferFunc can join them into the function's return type
+// before constraining against the return annotation.
 //
 // Nesting is handled by save/restore through the pointer pushFuncCtx returns, not a
 // parent chain on the struct: a nested fn opens its own ctx (so its returns never
@@ -74,7 +74,7 @@ func (c *checker) pushFuncCtx(async bool, node ast.Node) *funcCtx {
 
 // popFuncCtx restores the previous function context (the pointer pushFuncCtx
 // returned) and hands back the return-point types collected from the body just
-// walked, so the caller can join them with the block's tail value.
+// walked, so the caller can join them into the function's return type.
 func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 	collected := c.fn.returns
 	c.fn = saved

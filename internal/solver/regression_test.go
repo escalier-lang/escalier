@@ -27,7 +27,7 @@ import (
 // https://github.com/escalier-lang/escalier/issues/702 (add a recursion-depth
 // ceiling to coalesce so a guard bypass fails cleanly instead of crashing).
 func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() { {x: f()} }`)
+	values, _, errs := inferSource(t, `fn f() { return {x: f()} }`)
 	require.Empty(t, errs, "unexpected inference errors")
 	got := values["f"]
 	require.True(t, strings.HasPrefix(got, "fn () -> {x:"),
@@ -40,7 +40,7 @@ func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
 // its name node, the same way a top-level `val` records on its pattern. Without
 // this, tooling can query a `val`'s type via Info but not a `fn`'s.
 func TestInferModuleFuncDeclRecordsInfoType(t *testing.T) {
-	module := parseModule(t, `fn foo(x: number) -> number { x }`)
+	module := parseModule(t, `fn foo(x: number) -> number { return x }`)
 	_, info, errs := InferModule(module)
 	require.Empty(t, errs)
 
@@ -67,7 +67,7 @@ func TestInferModuleFuncDeclRecordsInfoType(t *testing.T) {
 // NOT var-free for generalized bindings — the inverse of
 // TestInferModuleFuncDeclRecordsInfoType, whose fixture is monomorphic.)
 func TestInferModulePolymorphicFuncDeclInfoNeedsPrintScheme(t *testing.T) {
-	module := parseModule(t, `fn id(x) { x }`)
+	module := parseModule(t, `fn id(x) { return x }`)
 	_, info, errs := InferModule(module)
 	require.Empty(t, errs)
 

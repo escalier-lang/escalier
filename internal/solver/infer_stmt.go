@@ -20,14 +20,15 @@ import (
 // every present and future block-as-value consumer reads it instead of
 // re-deriving divergence syntactically at each call site.
 //
-// Block-as-value is distinct from FUNCTION-return: a non-tail ReturnStmt is not
-// part of the block's tail value, but it IS one of the function's return points
-// — inferStmt routes those into the enclosing funcCtx for inferFunc to join with
-// the tail (PR3, replacing M2's TODO that dropped non-tail returns). inferFunc
-// therefore IGNORES the divergence flag: it wants the tail value for the join, so
-// `fn f() { return 5 }` still returns `5` (the operand, collected and joined),
-// while `val x = if c { return 5 } else { 6 }` sees the cons branch diverge and
-// binds `x : 6`.
+// Block-as-value is distinct from FUNCTION-return: a ReturnStmt is one of the
+// function's return points whether or not it is the block's last statement —
+// inferStmt routes every return into the enclosing funcCtx for inferFunc to
+// join into the function's return type. inferFunc IGNORES both the tail and the
+// divergence flag: a function body's last expression is NOT an implicit return
+// (mirroring the old checker's inferFuncBody), so `fn f() { 5 }` returns void
+// while `fn f() { return 5 }` returns `5` (the operand, collected and joined).
+// Value-position consumers still use the tail: `val x = if c { return 5 } else
+// { 6 }` sees the cons branch diverge and binds `x : 6`.
 func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type, bool) {
 	var result soltype.Type = &soltype.Void{}
 	for _, s := range b.Stmts {
@@ -48,10 +49,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	case *ast.ExprStmt:
 		return c.inferExpr(scope, lvl, s.Expr)
 	case *ast.ReturnStmt:
-		// PR3: a return contributes both as a candidate block-tail value (kept for
-		// continuity with M2's `{ return 5 }` block-as-expression test) AND as one
-		// of the enclosing function's return points. Bare `return` contributes Void
-		// in both slots.
+		// A return contributes both as the block's tail value (consumed only by
+		// value-position blocks; inferFunc discards the tail) AND as one of the
+		// enclosing function's return points. Bare `return` contributes Void in
+		// both slots.
 		var t soltype.Type = &soltype.Void{}
 		if s.Expr != nil {
 			t = c.inferExpr(scope, lvl, s.Expr)

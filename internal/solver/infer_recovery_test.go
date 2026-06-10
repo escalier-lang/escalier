@@ -21,10 +21,10 @@ import (
 // error survives.
 func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn id(x: number) -> number { x }
+		fn id(x: number) -> number { return x }
 		fn f() {
 			var a = missing
-			id(a)
+			return id(a)
 		}
 	`)
 	require.Len(t, errs, 1)

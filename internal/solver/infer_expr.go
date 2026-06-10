@@ -104,12 +104,13 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // inferFunc is the shared function-typing core for FuncExpr and FuncDecl. It
 // opens a child scope, binds each param (its annotation resolved to a soltype,
 // or a fresh var when un-annotated), types the body block in that scope, and
-// builds the n-ary soltype.FuncType. When the signature carries a return
-// annotation the inferred body type is constrained against it and the annotated
-// type becomes the function's return type; otherwise the body type is the
-// return type directly. A bodyless (declare/ambient) function adopts its return
-// annotation without constraining anything. node supplies the span stamped onto
-// a return-annotation constraint failure.
+// builds the n-ary soltype.FuncType. The return type is built solely from the
+// body's `return` statements (joinReturnPoints); a body with no return produces
+// void. When the signature carries a return annotation the inferred return is
+// constrained against it and the annotated type becomes the function's return
+// type. A bodyless (declare/ambient) function adopts its return annotation
+// without constraining anything. node supplies the span stamped onto a
+// return-annotation constraint failure.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
 	if len(sig.TypeParams) > 0 {
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
@@ -166,42 +167,19 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 
 	var ret soltype.Type = &soltype.Void{}
 	hasBody := body != nil
-	var collected []soltype.Type
 	if hasBody {
 		// PR3: open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node)
-		// The function body wants the TAIL value for the return-point join (a
-		// diverging `{ return 5 }` body still returns 5, collected into c.fn.returns
-		// below), so the divergence flag is irrelevant here — only value-position
-		// callers (inferIfElse) consult it.
-		ret, _ = c.inferBlock(fnScope, lvl, body)
-		collected = c.popFuncCtx(saved)
-	}
-	// PR3 — block return-point join. M2 only used the block tail and dropped non-
-	// tail returns; M3 joins EVERY ReturnStmt (collected above) with the tail. The
-	// join is a fresh var with each return point as a lower bound: when there is
-	// no explicit return, ret stays the tail unchanged (preserving M2's monomorphic
-	// renders); when there is at least one, all paths flow through one variable
-	// whose coalesced positive face is their union.
-	//
-	// Fast path: a single return that IS the block tail (`fn f() { … return X }`,
-	// where inferStmt returns the return's value as the tail too — same pointer).
-	// ret already IS that return, so minting a join var would add a pointless
-	// indirection plus two redundant constraints the coalescer must later dedup.
-	if len(collected) > 0 && !(len(collected) == 1 && collected[0] == ret) {
-		joinVar := c.freshAt(lvl)
-		c.recordProv(joinVar, node, ReturnJoin)
-		// Source-order constraint: collected returns first (in source order), then
-		// the block tail. When the tail IS one of the collected returns, the
-		// duplicate bound is dedup'd at render time — the rendered union reflects
-		// source order, not constraint order.
-		for _, rt := range collected {
-			c.constrain(node, rt, joinVar)
-		}
-		c.constrain(node, ret, joinVar)
-		ret = joinVar
+		// Walk the body for type-checking and to collect its ReturnStmts; the
+		// block's TAIL value is intentionally discarded. Unlike a value-position
+		// block, where the last expression IS the block's value, a function body's
+		// last expression is NOT an implicit return — only an explicit `return`
+		// produces the function's value. This mirrors the old checker's
+		// inferFuncBody.
+		c.inferBlock(fnScope, lvl, body)
+		ret = c.joinReturnPoints(node, lvl, c.popFuncCtx(saved))
 	}
 	// Return-annotation handling diverges by async-ness.
 	//
@@ -248,6 +226,31 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
 	return ft
+}
+
+// joinReturnPoints builds a function's return type from the ReturnStmt types
+// collected while walking its body. No returns means the body produces no value,
+// so the function returns void. A return-less body that always diverges via
+// `throw` would be `never` in the old checker, but that case is deferred: throw,
+// do, and match are not walked yet, and a raw NeverType here would break the
+// recovery-placeholder invariant (see isRecoveryPlaceholder). A single return is
+// the return type directly — no join var, no indirection. Multiple returns flow
+// through a fresh join variable whose coalesced positive face is their union,
+// constrained in source order so the rendered union reflects source order.
+func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.Type) soltype.Type {
+	switch len(collected) {
+	case 0:
+		return &soltype.Void{}
+	case 1:
+		return collected[0]
+	default:
+		joinVar := c.freshAt(lvl)
+		c.recordProv(joinVar, node, ReturnJoin)
+		for _, rt := range collected {
+			c.constrain(node, rt, joinVar)
+		}
+		return joinVar
+	}
 }
 
 // asyncReturn computes an `async fn`'s external return type, which always faces
@@ -547,7 +550,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// instantiate (the read face), NOT the coalesced write-face targetT: targetT is a
 	// display type that may be a Union/Intersection node, and re-injecting it into the
 	// constraint graph here would later crash the coalescer when this value flows on
-	// (e.g. as a function-body tail). This overwrites the `void` recorded for e above,
+	// (e.g. through a `return`). This overwrites the `void` recorded for e above,
 	// which now serves only as the error-path recovery value.
 	valueT := c.instantiate(b.Schemes[0], lvl)
 	c.recordType(e, valueT)
@@ -795,10 +798,10 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 //
 // Block return-point interaction: any ReturnStmt inside either branch is still
 // collected on the enclosing function's funcCtx by inferStmt — independent of the
-// if's value contribution — so `fn f(c) { if c { return X } else { Y } }` flows X
-// into the function's return type (via the block return-point join) AND Y into
-// the if's value, which the enclosing block joins. The two roles are orthogonal:
-// X is a return point, but not part of the if-EXPRESSION's value.
+// if's value contribution — so `fn f(c) { val x = if c { return X } else { Y } }`
+// flows X into the function's return type (via joinReturnPoints) AND Y into the
+// if's value, which binds x. The two roles are orthogonal: X is a return point,
+// but not part of the if-EXPRESSION's value.
 func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.Type {
 	cond := c.inferExpr(scope, lvl, e.Cond)
 	// The synthesized `boolean` requirement is intentionally NOT recorded in Prov

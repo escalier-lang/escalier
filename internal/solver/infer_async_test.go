@@ -8,13 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// PR3 — async / await / block return-point join, against real source through
+// PR3 — async / await / return-point join, against real source through
 // inferSource. The PR builds on M2's monomorphic walk: the body of an `async fn`
 // types exactly like a plain function, then its EXTERNAL return wraps in
-// Promise<T>; `await e` constrains `e <: Promise<U>` and yields `U`; non-tail
-// ReturnStmts join with the block tail before constraining against the return
-// annotation. No auto-flatten of nested Promise<Promise<T>> — that is M9's
-// Awaited<T>.
+// Promise<T>; `await e` constrains `e <: Promise<U>` and yields `U`; the
+// collected ReturnStmts join before constraining against the return annotation.
+// No auto-flatten of nested Promise<Promise<T>> — that is M9's Awaited<T>.
 
 // --- async fn external wrap ---
 
@@ -31,17 +30,17 @@ func TestInferAsyncFnWrapsReturnInPromise(t *testing.T) {
 	require.Equal(t, "fn () -> Promise<number>", values["f"])
 }
 
-// An async fn with no explicit return — the body's tail is its return — still
-// wraps externally. Here the tail value is the literal "hi", so externally
-// `Promise<"hi">`.
-func TestInferAsyncFnTailReturnWrapped(t *testing.T) {
+// An async fn with no explicit return produces no value — a body's last
+// expression is NOT an implicit return — so the external wrap is Promise<void>,
+// not Promise<"hi">.
+func TestInferAsyncFnNoReturnIsPromiseVoid(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn greet() {
 			"hi"
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn () -> Promise<"hi">`, values["greet"])
+	require.Equal(t, `fn () -> Promise<void>`, values["greet"])
 }
 
 // --- await ---
@@ -191,7 +190,7 @@ func TestInferAwaitInNestedAsyncOK(t *testing.T) {
 			val inner = async fn () {
 				return await p
 			}
-			inner
+			return inner
 		}
 	`)
 	require.Empty(t, errs)
@@ -230,11 +229,9 @@ func TestInferBlockReturnJoinAcrossIf(t *testing.T) {
 	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["h"])
 }
 
-// An early return inside one branch, with the other branch producing the tail.
-// Both return points contribute to the function's return type — neither path is
-// dropped. With no else, the if's value is `void | <cons>`; the tail `"x"` is
-// the fall-through; together with the collected `return 1`, the function
-// returns `1 | "x"`.
+// An early return inside one branch plus a fall-through return: both return
+// points contribute to the function's return type — neither path is dropped —
+// and the join checks against the annotation.
 func TestInferBlockReturnAnnotationCheckedAgainstAllReturns(t *testing.T) {
 	// `return 1` inside the if, return-annotation number — should type-check.
 	_, _, errs := inferSource(t, `
@@ -279,25 +276,26 @@ func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 
 // --- IfElseExpr value ---
 
-// An if/else used as an expression is the join of its branches. Without
+// An if/else used as an expression is the join of its branches, observed
+// through an explicit `return` (a bare tail would be discarded). Without
 // generalization on the binding (PR1's value-only generalization for `val =
 // fn`), the binding here is monomorphic-frozen to the join.
 func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {
-			if c { 1 } else { "x" }
+			return if c { 1 } else { "x" }
 		}
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["pick"])
 }
 
-// An if WITHOUT else folds in void from the missing alt — `if c { 5 }` as a
-// tail expression is `5 | void`.
+// An if WITHOUT else folds in void from the missing alt — `return if c { 5 }`
+// returns `5 | void`.
 func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {
-			if c { 5 }
+			return if c { 5 }
 		}
 	`)
 	require.Empty(t, errs)
@@ -346,14 +344,14 @@ func TestInferFnMultipleBareReturnsCollapse(t *testing.T) {
 }
 
 // A nested return is collected on the INNER funcCtx, not the outer one. After
-// the inner fn ends, the outer's returns list is still empty — the body's tail
-// (the inner fn's type) is the outer return, unwrapped.
+// the inner fn ends, the outer's returns list holds only the outer's own
+// `return` of the inner fn — the inner's `return x` never leaks out.
 func TestInferNestedFnReturnsScoped(t *testing.T) {
 	c := newChecker()
-	// fn outer() { fn (x: number) { return x } }
+	// fn outer() { return fn (x: number) { return x } }
 	inner := funcExpr([]*ast.Param{param("x", numAnn())}, nil,
 		block(returnStmt(identExpr("x"))))
-	outer := funcExpr(nil, nil, block(exprStmt(inner)))
+	outer := funcExpr(nil, nil, block(returnStmt(inner)))
 
 	got := c.inferExpr(NewScope(), 0, outer)
 	require.Empty(t, c.errs)
@@ -375,7 +373,7 @@ func TestInferNestedFnReturnsScoped(t *testing.T) {
 func TestInferIfElseUnknownConditionNoCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick() {
-			if undeclared { 1 } else { 2 }
+			return if undeclared { 1 } else { 2 }
 		}
 	`)
 	require.Len(t, errs, 1)
@@ -390,7 +388,7 @@ func TestInferIfElseUnknownConditionNoCascade(t *testing.T) {
 func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn f() {
-			await undeclared
+			return await undeclared
 		}
 	`)
 	require.Len(t, errs, 1)
@@ -406,7 +404,7 @@ func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
 func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p: Promise<bigint>) {
-			0
+			return 0
 		}
 	`)
 	require.Len(t, errs, 1)
@@ -421,7 +419,7 @@ func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p: Promise<bigint>) {
-			p
+			return p
 		}
 	`)
 	require.Len(t, errs, 1)
@@ -468,37 +466,38 @@ func TestInferReturnOutsideFunctionRejected(t *testing.T) {
 // reaches `val x = …`, the `c == true` path has already returned from the
 // function, so the only path that produces a value for x is the `else`.
 //
-// The tail wraps x in a tuple — `[x]` — so x's inferred type is OBSERVABLE in the
-// function's return distinctly from the early-return point. A bare `x` tail would
-// not discriminate: `return 1` makes `1` a function return point regardless, so
-// both the correct `x : "y"` and the buggy `x : 1 | "y"` render the function as
-// `1 | "y"` (the leaked `1` is absorbed by the return point). Inside the tuple the
-// leak cannot hide — correct gives `["y"]`, the bug would give `[1 | "y"]`.
+// The final statement returns x wrapped in a tuple — `return [x]` — so x's
+// inferred type is OBSERVABLE in the function's return distinctly from the
+// early-return point. A bare `return x` would not discriminate: `return 1` makes
+// `1` a function return point regardless, so both the correct `x : "y"` and the
+// buggy `x : 1 | "y"` render the function as `1 | "y"` (the leaked `1` is
+// absorbed by the return point). Inside the tuple the leak cannot hide — correct
+// gives `["y"]`, the bug would give `[1 | "y"]`.
 func TestInferIfElseDivergingBranchDropsFromValue(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(c: boolean) {
 			val x = if c { return 1 } else { "y" }
-			[x]
+			return [x]
 		}
 	`)
 	require.Empty(t, errs)
-	// x is "y", not 1 | "y" — so the tuple tail is ["y"]. The function returns
+	// x is "y", not 1 | "y" — so the returned tuple is ["y"]. The function returns
 	// 1 | ["y"]: the early `return 1` IS a function return point (joined with the
-	// tail), even though it is not part of x's value. A buggy leak would surface
-	// here as 1 | [1 | "y"].
+	// final return), even though it is not part of x's value. A buggy leak would
+	// surface here as 1 | [1 | "y"].
 	require.Equal(t, `fn (c: boolean) -> 1 | ["y"]`, values["f"])
 }
 
-// The dual of the above: when the diverging-branch `if` is the function's TAIL
-// value, the function's return type still includes the early return. The if's
-// value is the non-diverging branch ("z"), wrapped in a tuple so it is observable
-// distinctly from the collected `return 3`; the block return-point join folds in
-// that return, so the function returns 3 | ["z"] (a bug that leaked the diverging
-// branch into the if's value would render 3 | [3 | "z"]).
-func TestInferIfElseDivergingBranchTailReturnJoin(t *testing.T) {
+// The dual of the above: when the diverging-branch `if` is part of the RETURNED
+// expression, the function's return type still includes the early return. The
+// if's value is the non-diverging branch ("z"), wrapped in a tuple so it is
+// observable distinctly from the collected `return 3`; the return-point join
+// folds in that return, so the function returns 3 | ["z"] (a bug that leaked the
+// diverging branch into the if's value would render 3 | [3 | "z"]).
+func TestInferIfElseDivergingBranchReturnJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(c: boolean) {
-			[if c { return 3 } else { "z" }]
+			return [if c { return 3 } else { "z" }]
 		}
 	`)
 	require.Empty(t, errs)
@@ -507,17 +506,10 @@ func TestInferIfElseDivergingBranchTailReturnJoin(t *testing.T) {
 
 // When BOTH branches of an `if` diverge, the if's VALUE has no contributing branch
 // and coalesces to `never` (the bottom type — no path through the `if` yields a
-// value). Observed at top level so the if-value is read straight off the binding,
-// with no dead-code tail to muddy it: each `return` outside a function is also
-// reported (symmetric to TestInferReturnOutsideFunctionRejected). A bug that failed
-// to drop a diverging branch would surface here as `1 | 2` instead of `never`.
-//
-// NOTE: this deliberately observes the if-EXPRESSION's value, not a function's
-// return type. Inside a function, `val x = if c { return 1 } else { return 2 }`
-// makes every following statement unreachable, but the solver does not yet drop
-// that dead code from the block/function value (it still contributes `[never]` for
-// a `[x]` tail). That statement-level reachability gap is tracked in #719; #714
-// scoped only the if-expression value, which this test pins.
+// value). Observed at top level so the if-value is read straight off the binding:
+// each `return` outside a function is also reported (symmetric to
+// TestInferReturnOutsideFunctionRejected). A bug that failed to drop a diverging
+// branch would surface here as `1 | 2` instead of `never`.
 func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val x = if true { return 1 } else { return 2 }
@@ -526,4 +518,32 @@ func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
 	require.Equal(t, "return can only be used inside a function", errs[0].Message())
 	require.Equal(t, "return can only be used inside a function", errs[1].Message())
 	require.Equal(t, "never", values["x"])
+}
+
+// #719/#720: dead code after a diverging statement no longer contributes to the
+// function's value. Both branches return, so x's initializer diverges entirely
+// and the unreachable `[x]` statement is walked but discarded — the function's
+// return type is exactly the join of its return points, 1 | 2.
+func TestInferDeadTailAfterDivergingValDiscarded(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(c: boolean) {
+			val x = if c { return 1 } else { return 2 }
+			[x]
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (c: boolean) -> 1 | 2", values["f"])
+}
+
+// #719/#720: a statement after a `return` is dead code and does not contribute
+// to the function's value — `fn g() { return 1; 2 }` is `1`, not `1 | 2`.
+func TestInferStatementAfterReturnDiscarded(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn g() {
+			return 1
+			2
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> 1", values["g"])
 }
