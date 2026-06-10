@@ -100,7 +100,7 @@ func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 // co-occurrence merging leaves them as distinct type parameters — the counterpart
 // to InnerCapturesOuterParam, where the variables always appeared together.
 func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
-	values, _, errs := inferSource(t, `fn pair(a, b) { [a, b] }`)
+	values, _, errs := inferSource(t, `fn pair(a, b) { return [a, b] }`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{"pair": "fn <T0, T1>(a: T0, b: T1) -> [T0, T1]"}, values)
 }
