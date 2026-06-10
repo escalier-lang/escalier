@@ -57,7 +57,7 @@ func TestBlameValAnnotationLiteral(t *testing.T) {
 // A call-arg mismatch blames the offending argument, with the callee's param
 // annotation as the related source.
 func TestBlameCallArgument(t *testing.T) {
-	src := "fn f(x: number) -> number { x }\nval r = f(\"hi\")"
+	src := "fn f(x: number) -> number { return x }\nval r = f(\"hi\")"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
 }
@@ -69,7 +69,7 @@ func TestBlameCallArgument(t *testing.T) {
 // callback-arity failures. The related span is the callee `f` here, derived from
 // the AST, not the callee's definition span resolved through Prov.)
 func TestBlameCallTooManyArgs(t *testing.T) {
-	src := "fn f(x: number) -> number { x }\nval r = f(1, 2)"
+	src := "fn f(x: number) -> number { return x }\nval r = f(1, 2)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
 		"Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
@@ -80,7 +80,7 @@ func TestBlameCallTooManyArgs(t *testing.T) {
 // callee expression (`f` here, from the AST — not the callee's definition resolved
 // through Prov). `f` requires two params; the call supplies one.
 func TestBlameCallTooFewArgs(t *testing.T) {
-	src := "fn f(x: number, y: number) -> number { x }\nval r = f(1)"
+	src := "fn f(x: number, y: number) -> number { return x }\nval r = f(1)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
 		"Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
@@ -110,7 +110,7 @@ func TestBlameMissingProperty(t *testing.T) {
 // improvement holds for var-free callees/receivers, not values that flowed through
 // instantiation.
 func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
-	src := "val mk = fn (v) { {a: v} }\nval o = mk(5)\nval x = o.b"
+	src := "val mk = fn (v) { return {a: v} }\nval o = mk(5)\nval x = o.b"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "object is missing property: b", "b")
 }
@@ -181,12 +181,12 @@ func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
 // primary is the call expression; for a parenthesized callee the parser's span
 // begins at the inner `fn`, so the leading `(` is not part of it.)
 func TestBlameCallTooManyArgsInlineCalleeRelated(t *testing.T) {
-	src := `val r = (fn (x: number) -> number { x })(1, 2)`
+	src := `val r = (fn (x: number) -> number { return x })(1, 2)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
 		"Too many arguments: expected at most 1, but got 2",
-		`fn (x: number) -> number { x })(1, 2)`,
-		`fn (x: number) -> number { x }`)
+		`fn (x: number) -> number { return x })(1, 2)`,
+		`fn (x: number) -> number { return x }`)
 }
 
 // tspan builds a single-SourceID span from 1-indexed line/column ints — only the
@@ -242,8 +242,8 @@ func TestUnsupportedAnnotationRecovers(t *testing.T) {
 		want map[string]string
 	}{
 		{"val", `val x: Foo = 5`, map[string]string{"x": "5"}},
-		{"return", `fn f() -> Foo { 5 }`, map[string]string{"f": "fn () -> 5"}},
-		{"param", `fn g(x: Foo) -> number { 5 }`, map[string]string{"g": "fn (x: unknown) -> number"}},
+		{"return", `fn f() -> Foo { return 5 }`, map[string]string{"f": "fn () -> 5"}},
+		{"param", `fn g(x: Foo) -> number { return 5 }`, map[string]string{"g": "fn (x: unknown) -> number"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

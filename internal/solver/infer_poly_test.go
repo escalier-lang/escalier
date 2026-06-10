@@ -26,14 +26,14 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 	t.Run("render", func(t *testing.T) {
 		// Identity's param and return are the same variable, so its render is
 		// compact even before PR2 — this pins the <T0> quantifier prefix.
-		values, _, errs := inferSource(t, `fn id(x) { x }`)
+		values, _, errs := inferSource(t, `fn id(x) { return x }`)
 		require.Empty(t, errs)
 		require.Equal(t, map[string]string{"id": "fn <T0>(x: T0) -> T0"}, values)
 	})
 
 	t.Run("two types of use", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			val id = fn (x) { x }
+			val id = fn (x) { return x }
 			val a = id(5)
 			val b = id("hi")
 		`)
@@ -52,8 +52,8 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 // every remaining variable coalesces to a concrete literal.
 func TestInferModuleIdentityPolymorphism(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		val identity = fn (x) { x }
-		val pair = fn () { [identity("hello"), identity(5)] }
+		val identity = fn (x) { return x }
+		val pair = fn () { return [identity("hello"), identity(5)] }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
@@ -71,8 +71,8 @@ func TestInferModuleIdentityPolymorphism(t *testing.T) {
 func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val outer = fn (y) {
-			val getY = fn () { y }
-			[getY(), getY()]
+			val getY = fn () { return y }
+			return [getY(), getY()]
 		}
 		val r = outer(5)
 	`)
@@ -88,8 +88,8 @@ func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val f = fn () {
-			val id = fn (x) { x }
-			[id(5), id("hi")]
+			val id = fn (x) { return x }
+			return [id(5), id("hi")]
 		}
 	`)
 	require.Empty(t, errs)
@@ -102,7 +102,7 @@ func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 // Per-call instantiation keeps k(1, "z") and k("s", true) at distinct types.
 func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		val k = fn (x, y) { x }
+		val k = fn (x, y) { return x }
 		val a = k(1, "z")
 		val b = k("s", true)
 	`)
@@ -121,8 +121,8 @@ func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 // real contract is that inference TERMINATES rather than hangs.
 func TestInferModuleRecursiveGroupGeneralizesWithoutLooping(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn ping(n) { pong(n) }
-		fn pong(n) { ping(n) }
+		fn ping(n) { return pong(n) }
+		fn pong(n) { return ping(n) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{

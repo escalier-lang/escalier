@@ -28,8 +28,8 @@ func renderBinding(b ValueBinding) string {
 
 func TestInferFuncExprAnnotated(t *testing.T) {
 	c := newChecker()
-	// fn (x: number) { x }
-	e := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	// fn (x: number) { return x }
+	e := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Empty(t, c.errs)
@@ -43,8 +43,8 @@ func TestInferFuncExprAnnotated(t *testing.T) {
 // a <T0> quantifier.
 func TestInferFuncExprUnannotatedIsMonomorphic(t *testing.T) {
 	c := newChecker()
-	// fn (x) { x }
-	e := funcExpr([]*ast.Param{param("x", nil)}, nil, block(exprStmt(identExpr("x"))))
+	// fn (x) { return x }
+	e := funcExpr([]*ast.Param{param("x", nil)}, nil, block(returnStmt(identExpr("x"))))
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Empty(t, c.errs)
@@ -53,11 +53,11 @@ func TestInferFuncExprUnannotatedIsMonomorphic(t *testing.T) {
 
 func TestInferFuncExprMultiParam(t *testing.T) {
 	c := newChecker()
-	// fn (x: number, y: string) { y }
+	// fn (x: number, y: string) { return y }
 	e := funcExpr(
 		[]*ast.Param{param("x", numAnn()), param("y", strAnn())},
 		nil,
-		block(exprStmt(identExpr("y"))),
+		block(returnStmt(identExpr("y"))),
 	)
 
 	got := c.inferExpr(NewScope(), 0, e)
@@ -67,8 +67,8 @@ func TestInferFuncExprMultiParam(t *testing.T) {
 
 func TestInferFuncExprReturnAnnotationAccepted(t *testing.T) {
 	c := newChecker()
-	// fn (x: number) -> number { x }
-	e := funcExpr([]*ast.Param{param("x", numAnn())}, numAnn(), block(exprStmt(identExpr("x"))))
+	// fn (x: number) -> number { return x }
+	e := funcExpr([]*ast.Param{param("x", numAnn())}, numAnn(), block(returnStmt(identExpr("x"))))
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Empty(t, c.errs)
@@ -77,8 +77,8 @@ func TestInferFuncExprReturnAnnotationAccepted(t *testing.T) {
 
 func TestInferFuncExprReturnAnnotationMismatch(t *testing.T) {
 	c := newChecker()
-	// fn () -> number { "hello" }
-	e := funcExpr(nil, numAnn(), block(exprStmt(strExpr("hello"))))
+	// fn () -> number { return "hello" }
+	e := funcExpr(nil, numAnn(), block(returnStmt(strExpr("hello"))))
 
 	c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
@@ -86,14 +86,14 @@ func TestInferFuncExprReturnAnnotationMismatch(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// A body-level val is visible to later statements and to the tail expression
-// that becomes the function's result.
+// A body-level val is visible to later statements, including the return that
+// becomes the function's result.
 func TestInferFuncExprBodyValDecl(t *testing.T) {
 	c := newChecker()
-	// fn () { val y = 5; y }
+	// fn () { val y = 5; return y }
 	e := funcExpr(nil, nil, block(
 		ast.NewDeclStmt(valDecl("y", nil, numExpr(5)), testSpan()),
-		exprStmt(identExpr("y")),
+		returnStmt(identExpr("y")),
 	))
 
 	got := c.inferExpr(NewScope(), 0, e)
@@ -184,8 +184,8 @@ func TestInferFuncExprGenericUnsupported(t *testing.T) {
 
 func TestInferCallResolvesReturn(t *testing.T) {
 	c := newChecker()
-	// (fn (x: number) { x })(5)
-	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	// (fn (x: number) { return x })(5)
+	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{numExpr(5)}, false, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
@@ -196,8 +196,8 @@ func TestInferCallResolvesReturn(t *testing.T) {
 
 func TestInferCallArgMismatch(t *testing.T) {
 	c := newChecker()
-	// (fn (x: number) { x })("hello")
-	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	// (fn (x: number) { return x })("hello")
+	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{strExpr("hello")}, false, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
@@ -213,8 +213,8 @@ func TestInferCallArgMismatch(t *testing.T) {
 // only the arity-matched prefix, so the lint is the SOLE diagnostic.
 func TestInferCallTooManyArgs(t *testing.T) {
 	c := newChecker()
-	// (fn (x: number) { x })(1, 2)
-	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	// (fn (x: number) { return x })(1, 2)
+	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{numExpr(1), numExpr(2)}, false, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
@@ -230,8 +230,8 @@ func TestInferCallTooManyArgs(t *testing.T) {
 // so the lint is the SOLE diagnostic, not a doubled lint + FuncArityMismatch.
 func TestInferCallTooFewArgs(t *testing.T) {
 	c := newChecker()
-	// (fn (x: number, y: number) { x })(1)
-	callee := funcExpr([]*ast.Param{param("x", numAnn()), param("y", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	// (fn (x: number, y: number) { return x })(1)
+	callee := funcExpr([]*ast.Param{param("x", numAnn()), param("y", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{numExpr(1)}, false, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
@@ -287,9 +287,10 @@ func TestInferBlockReturnStmt(t *testing.T) {
 	got, diverges := c.inferBlock(NewScope(), 0, block(returnStmt(numExpr(5))))
 	c.popFuncCtx(saved)
 	require.Empty(t, c.errs)
-	// The block's tail VALUE is still 5 (inferFunc uses it for the return-point
-	// join, so `fn () { return 5 }` returns 5), but the block DIVERGES — a
-	// value-position consumer (an if/else branch) drops it from its branch union.
+	// The block's tail VALUE is still 5 (a value-position block keeps it), but the
+	// block DIVERGES — a value-position consumer (an if/else branch) drops it from
+	// its branch union. inferFunc itself ignores the tail; the return reaches the
+	// function's type as a collected return point.
 	require.True(t, diverges)
 	require.Equal(t, "5", render(got))
 }
@@ -329,11 +330,11 @@ func TestInferStmtBodyDeclNotAllowed(t *testing.T) {
 
 func TestInferFuncDecl(t *testing.T) {
 	c := newChecker()
-	// fn id(x: number) { x }
+	// fn id(x: number) { return x }
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("id", testSpan()), nil, nil,
 		[]*ast.Param{param("x", numAnn())}, nil, nil,
-		block(exprStmt(identExpr("x"))),
+		block(returnStmt(identExpr("x"))),
 		false, false, false, testSpan(),
 	)
 
@@ -353,11 +354,11 @@ func TestInferFuncDeclSelfReference(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
 	scope.defineValue("foo", ValueBinding{Schemes: []TypeScheme{monoScheme(c.freshAt(1))}})
-	// fn foo(x: number) { foo(x) }
+	// fn foo(x: number) { return foo(x) }
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("foo", testSpan()), nil, nil,
 		[]*ast.Param{param("x", numAnn())}, nil, nil,
-		block(exprStmt(ast.NewCall(identExpr("foo"), []ast.Expr{identExpr("x")}, false, testSpan()))),
+		block(returnStmt(ast.NewCall(identExpr("foo"), []ast.Expr{identExpr("x")}, false, testSpan()))),
 		false, false, false, testSpan(),
 	)
 
@@ -369,17 +370,17 @@ func TestInferFuncDeclSelfReference(t *testing.T) {
 // A FuncExpr may be assigned to a body-level `val` inside a FuncDecl (the way a
 // function value is introduced in a body, since body decls are VarDecl-only).
 // The bound name resolves to the function type, and the enclosing function
-// returns it as its tail value.
+// returns it.
 func TestInferFuncDeclBodyFuncValDecl(t *testing.T) {
 	c := newChecker()
-	// fn outer() { val f = fn (x: number) { x }; f }
-	inner := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(exprStmt(identExpr("x"))))
+	// fn outer() { val f = fn (x: number) { return x }; return f }
+	inner := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("outer", testSpan()), nil, nil,
 		nil, nil, nil,
 		block(
 			ast.NewDeclStmt(valDecl("f", nil, inner), testSpan()),
-			exprStmt(identExpr("f")),
+			returnStmt(identExpr("f")),
 		),
 		false, false, false, testSpan(),
 	)

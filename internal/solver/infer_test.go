@@ -299,6 +299,30 @@ func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
 	require.Equal(t, map[string]string{"x": "5"}, values)
 }
 
+// #720: a function body's last expression is NOT an implicit return — only an
+// explicit `return` produces the function's value, mirroring the old checker's
+// inferFuncBody. The bare tail is still walked for its checking side effects,
+// but its value is discarded and the body returns void.
+func TestInferFuncBodyTailIsNotImplicitReturn(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f() { 5 }
+		fn g() { return 5 }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> void", values["f"])
+	require.Equal(t, "fn () -> 5", values["g"])
+}
+
+// The discarded tail is still type-checked: an error inside it is reported even
+// though its value never reaches the function's return type.
+func TestInferFuncBodyDiscardedTailStillChecked(t *testing.T) {
+	src := `fn f() { missing }`
+	values, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, "fn () -> void", values["f"])
+}
+
 // PR-5: dep_graph SCC ordering wires top-level FuncDecls into the module walk and
 // makes inference order-independent. Each case asserts the rendered MONOMORPHIC
 // binding types end-to-end — recursion resolves through the group var, but M1
@@ -314,8 +338,8 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			// component is inferred first, so the call sees its concrete type.
 			name: "OutOfOrderFuncReference",
 			src: `
-				fn caller(n: number) { callee(n) }
-				fn callee(n: number) -> number { n }
+				fn caller(n: number) { return callee(n) }
+				fn callee(n: number) -> number { return n }
 			`,
 			want: map[string]string{
 				"caller": "fn (n: number) -> number",
@@ -327,7 +351,7 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			// never returns, so its return type coalesces to never. It resolves
 			// because the SCC driver pre-binds foo to a var before its body.
 			name: "SelfRecursive",
-			src:  `fn foo(x: number) { foo(x) }`,
+			src:  `fn foo(x: number) { return foo(x) }`,
 			want: map[string]string{"foo": "fn (x: number) -> never"},
 		},
 		{
@@ -336,8 +360,8 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			// the annotated function type.
 			name: "MutuallyRecursiveGrounded",
 			src: `
-				fn ping(n: number) -> number { pong(n) }
-				fn pong(n: number) -> number { ping(n) }
+				fn ping(n: number) -> number { return pong(n) }
+				fn pong(n: number) -> number { return ping(n) }
 			`,
 			want: map[string]string{
 				"ping": "fn (n: number) -> number",
@@ -374,8 +398,8 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 // than hang.
 func TestInferModuleUngroundedMutualRecursionTerminates(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn a(n: number) { b(n) }
-		fn b(n: number) { a(n) }
+		fn a(n: number) { return b(n) }
+		fn b(n: number) { return a(n) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
@@ -395,7 +419,7 @@ func TestInferModuleUngroundedMutualRecursionTerminates(t *testing.T) {
 func TestInferModuleValInRecursiveGroupUsesRawType(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val a = z
-		fn z() -> number { a() }
+		fn z() -> number { return a() }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{
@@ -410,8 +434,8 @@ func TestInferModuleValInRecursiveGroupUsesRawType(t *testing.T) {
 // string arm. (This replaces M2's interim OverloadNotSupportedError.)
 func TestInferModuleFunctionOverloadResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { x }
-		fn f(x: string) -> string { x }
+		fn f(x: number) -> number { return x }
+		fn f(x: string) -> string { return x }
 		val r = f(5)
 		val s = f("hi")
 	`)
@@ -479,7 +503,7 @@ func TestInferMultiFile(t *testing.T) {
 			// resolves the callee's cross-file signature.
 			name: "CallFunctionFromOtherFile",
 			srcs: map[string]string{
-				"a.esc": `fn id(n: number) -> number { n }`,
+				"a.esc": `fn id(n: number) -> number { return n }`,
 				"b.esc": `val r = id(5)`,
 			},
 			want: map[string]string{
@@ -492,8 +516,8 @@ func TestInferMultiFile(t *testing.T) {
 			// the shared group var, grounded by their return annotations.
 			name: "MutualRecursionAcrossFiles",
 			srcs: map[string]string{
-				"a.esc": `fn ping(n: number) -> number { pong(n) }`,
-				"b.esc": `fn pong(n: number) -> number { ping(n) }`,
+				"a.esc": `fn ping(n: number) -> number { return pong(n) }`,
+				"b.esc": `fn pong(n: number) -> number { return ping(n) }`,
 			},
 			want: map[string]string{
 				"ping": "fn (n: number) -> number",
@@ -536,7 +560,7 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 // PR4: too-many is the extra-arg lint (TooManyArgsError), not a FuncArityMismatch.
 func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { x }
+		fn f(x: number) -> number { return x }
 		val r = f(1, 2)
 	`)
 	require.Len(t, errs, 1)

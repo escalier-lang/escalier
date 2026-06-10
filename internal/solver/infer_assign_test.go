@@ -28,7 +28,7 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 		`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["a"])
-		require.Equal(t, "fn () -> number", values["f"]) // the tail assignment evaluates to a's slot type
+		require.Equal(t, "fn () -> void", values["f"]) // no return, so the body produces no value
 	})
 	t.Run("mismatched type reports one subtype error", func(t *testing.T) {
 		src := "var a: number = 5\nfn f() { a = \"x\" }"
@@ -60,10 +60,10 @@ func TestInferAssignToValRejected(t *testing.T) {
 // introducing declaration source node, so its error has no related span.
 func TestInferAssignToImmutableNonVal(t *testing.T) {
 	t.Run("function name", func(t *testing.T) {
-		src := "fn h() -> number { 5 }\nfn f() { h = 6 }"
+		src := "fn h() -> number { return 5 }\nfn f() { h = 6 }"
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs,
-			"Cannot assign to immutable binding: h", "h = 6", "fn h() -> number { 5 }")
+			"Cannot assign to immutable binding: h", "h = 6", "fn h() -> number { return 5 }")
 	})
 	t.Run("parameter", func(t *testing.T) {
 		src := "fn f(p: number) { p = 6 }"
@@ -83,7 +83,7 @@ func TestInferAssignInvalidTarget(t *testing.T) {
 		requireBlame(t, src, errs, "Invalid assignment target: LiteralExpr", "5")
 	})
 	t.Run("call target", func(t *testing.T) {
-		src := "fn f() -> number { 5 }\nvar a: number = 0\nfn g() { f() = a }"
+		src := "fn f() -> number { return 5 }\nvar a: number = 0\nfn g() { f() = a }"
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs, "Invalid assignment target: CallExpr", "f()")
 	})
@@ -131,8 +131,8 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 // keeps its generic type and a later `id("hello")` still type-checks.
 func TestInferAssignPolyVarNoCorruption(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		var id = fn (x) { x }
-		fn f() { id = fn (n: number) -> number { n } }
+		var id = fn (x) { return x }
+		fn f() { id = fn (n: number) -> number { return n } }
 		val r = id("hello")
 	`)
 	require.Empty(t, errs)
@@ -193,8 +193,8 @@ func TestInferAssignUnionTargetVarRHSOverNarrows(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	// M6 target: "fn (c: boolean, x: 1 | 2) -> 1 | 2".
-	require.Equal(t, "fn (c: boolean, x: 1) -> 1 | 2", values["f"])
+	// M6 target: "fn (c: boolean, x: 1 | 2) -> void".
+	require.Equal(t, "fn (c: boolean, x: 1) -> void", values["f"])
 }
 
 // A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring
