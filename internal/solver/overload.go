@@ -9,11 +9,10 @@ import (
 )
 
 // Overload resolution, introduced in PR6. A name with more than one top-level FuncDecl
-// is an overload set. Its ValueBinding carries one TypeScheme per arm, which is what
-// b.IsOverloaded() reports, ordered by source position. armPosLess in module.go defines
-// that order as file path, then line, then column. A set whose arms span several files
-// in a lib/ therefore reads top-to-bottom, file by file alphabetically, independent of
-// the order sources reached the parser.
+// is an overload set. Its ValueBinding carries one TypeScheme per arm ordered by source
+// position. armPosLess in module.go defines that order as file path, then line, then column.
+// A set whose arms span several files in a lib/ therefore reads top-to-bottom, file by
+// file alphabetically, independent of the order sources reached the parser.
 //
 // Resolution is a phase distinct from constrain. The disjunction "callable in several
 // ways" stays out of the subtype lattice. It is driven by the PR5 probe. Each candidate
@@ -34,7 +33,7 @@ import (
 // When an argument is still a fully-unconstrained variable, the call cannot rank arms
 // confidently, so resolution defers to plain declaration-order first-match. This is the
 // documented MVP fallback, with no speculative pinning and backtracking. The first arm
-// whose argument constraints succeed wins. Its bounds commit and the rest roll back.
+// whose argument constraints succeed wins. Its bounds are committed and the rest roll back.
 
 // resolveOverload picks one arm of the overload set b for the call and returns that
 // arm's instantiated return type. It commits the winning arm's argument constraints and
@@ -118,15 +117,25 @@ func (c *checker) overloadOrder(schemes []TypeScheme, args []soltype.Type) []int
 }
 
 // specificityOrder returns funcs' indices most-specific-first, with declaration order
-// breaking ties. It ranks each arm by its domination count, the number of other arms
-// strictly more specific than it, and sorts ascending on that count.
+// breaking ties. It ranks each arm by its DOMINATION COUNT — the number of other arms
+// strictly more specific than it, i.e. that "dominate" it — and sorts ascending on that
+// count, so an arm dominated by nobody comes first and the generic catch-all that every
+// other arm beats comes last.
 //
-// This is the load-bearing fix for the partial-order sort hazard. The moreSpecific
-// relation is only a partial order, so feeding it straight to sort.SliceStable would
-// violate the strict-weak-ordering contract, because incomparability is non-transitive.
-// The domination count is a total order on integers, so the sort is well-defined. An arm
-// dominated by none gets count 0 and sorts first. Equal counts keep declaration order
-// through the stable sort.
+// For example, given arms (x: number), (x: T), and (x: string): each concrete arm is
+// dominated by nobody (number and string are incomparable), so both get count 0; the
+// generic (x: T) is dominated by both, count 2. Ascending order is therefore number,
+// string, T — the concretes first (their tie kept in declaration order), the generic last.
+//
+// The domination count exists to dodge a partial-order sort hazard. The moreSpecific
+// relation is only a partial order: some arm pairs are incomparable (the tie cases —
+// different literal tags, disjoint shapes, different arities), and incomparability is not
+// transitive (A incomparable to B and B to C does not make A incomparable to C). Feeding
+// moreSpecific straight to sort.SliceStable would therefore violate the strict-weak-ordering
+// contract and yield undefined results. Projecting each arm onto its integer domination
+// count yields a TOTAL order on integers, so the sort is well-defined. An arm dominated by
+// none gets count 0 and sorts first; equal counts keep declaration order through the
+// stable sort.
 //
 // overloadOrder uses this for direct calls and constrain's IntersectionType arm uses it
 // for value-position calls, so both resolve in the same order. A nil entry is a
@@ -157,21 +166,14 @@ func specificityOrder(funcs []*soltype.FuncType) []int {
 	return order
 }
 
-// hasUnconstrainedArg reports whether any call argument is a fully-unconstrained
-// inference variable, a bare var with no bounds in either direction. Such an argument
-// carries no type information to rank overloads by. A literal, a concrete type, or a var
-// already pinned by some bound is fine. An untouched parameter var is not, so its
-// presence makes the call fall back to declaration-order first-match. That fallback
-// over-narrows the enclosing function, since it pins the arg to the first arm. The real
-// fix is to defer resolution until the arg is grounded, tracked in #723.
+// hasUnconstrainedArg reports whether any top-level call argument is a fully-unconstrained
+// inference variable — a bare var with no bounds either way, which carries no type
+// information to rank overloads by. overloadOrder treats a true result as "can't rank the
+// arms" and falls back to declaration order (see there and #723).
 //
-// The check is intentionally shallow and looks at top-level args only. A structural
-// argument that merely WRAPS an unconstrained var does NOT count, for example a tuple,
-// record, or func holding a bare var. That is harmless, because such a compound never
-// disambiguates overloads under the specificity comparator. structuralSubtype returns
-// false for compound shapes, so they rank as a tie and the order collapses to
-// declaration order, exactly what this fallback would produce. Recursing would only
-// defer more calls with no change in the resolved arm.
+// The check is shallow by design: a compound that merely WRAPS a bare var (a tuple,
+// record, or func) doesn't count, since structuralSubtype ranks such shapes as a tie and
+// the order collapses to declaration order anyway.
 func hasUnconstrainedArg(args []soltype.Type) bool {
 	return slices.ContainsFunc(args, isUnconstrainedVar)
 }
@@ -212,11 +214,17 @@ func moreSpecific(a, b *soltype.FuncType) int {
 	}
 	aSubB, bSubA := true, true
 	for i := range a.Params {
-		if !structuralSubtype(a.Params[i].Type, b.Params[i].Type) {
+		// Each flag is monotonic (only ever flips true→false), so guard its call: once a
+		// direction is broken, further structuralSubtype calls for it are wasted. When BOTH
+		// are broken the result is already a 0 tie, so stop early.
+		if aSubB && !structuralSubtype(a.Params[i].Type, b.Params[i].Type) {
 			aSubB = false
 		}
-		if !structuralSubtype(b.Params[i].Type, a.Params[i].Type) {
+		if bSubA && !structuralSubtype(b.Params[i].Type, a.Params[i].Type) {
 			bSubA = false
+		}
+		if !aSubB && !bSubA {
+			return 0
 		}
 	}
 	if aSubB && !bSubA {
@@ -228,15 +236,15 @@ func moreSpecific(a, b *soltype.FuncType) int {
 	return 0
 }
 
-// equallySpecific reports whether two arms are INDISTINGUISHABLE for overload dispatch.
-// They share an arity and each parameter is a structural subtype of its counterpart in
-// BOTH directions, so neither arm is more specific and no argument could ever select one
-// over the other. This is a strict subset of moreSpecific's tie result, the 0 case,
-// which ALSO covers incomparable arms of disjoint shape such as number versus string
-// that a call CAN still tell apart. Two type-variable params count as equal, since
-// structuralSubtype treats a var as TOP in both directions, so two fully-generic arms
-// collide too. The overload-set builder in module.go uses this to reject a set whose
-// arms codegen could not tell apart, because codegen dispatches on parameter types.
+// equallySpecific reports whether two arms are INDISTINGUISHABLE for overload dispatch:
+// they share an arity and each parameter is structurally equivalent to its counterpart (a
+// mutual structural subtype — so two unconstrained-var params count as equal, both TOP).
+// Neither arm is then more specific and no argument could select one over the other.
+//
+// This is a STRICT subset of moreSpecific's 0 tie, which also covers incomparable arms of
+// disjoint shape (number vs string) that a call CAN still tell apart. The overload-set
+// builder in module.go uses it to reject a set whose arms codegen could not dispatch,
+// since codegen dispatches on parameter types.
 func equallySpecific(a, b *soltype.FuncType) bool {
 	if len(a.Params) != len(b.Params) {
 		return false
