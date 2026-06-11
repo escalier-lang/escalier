@@ -11,6 +11,9 @@ import (
 // boundary so a polymorphic binding is instantiated fresh per use.
 //
 // Each test pins the rendered signature, exercising the printer's <T0, …> prefix.
+// A render is COMPACT when the signature names the fewest type parameters it can,
+// with no two always-together variables left as separate parameters.
+//
 // Identity is compact from the same variable appearing in both positions; the
 // captured-param case (InnerCapturesOuterParam) needs PR2's co-occurrence merging
 // to collapse its three always-together variables into one type parameter. The

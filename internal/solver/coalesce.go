@@ -107,12 +107,16 @@ type occKey struct {
 // reduces, node for node, to coalesce(t, Positive), keeping every monomorphic
 // render unchanged.
 //
-// simplifyScheme (PR2) supplies the co-occurrence union-find: distinct quantified
-// variables that always appear together resolve to one representative, so they
-// share a single type parameter — outer's `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`
-// renders `fn <T0>(y: T0) -> [T0, T0]`. With no merges and no symmetrized
-// occurrence, each variable is its own representative and the retain decision is
-// exactly PR1's per-variable both-polarities check.
+// simplifyScheme (PR2) runs the co-occurrence analysis up front and hands the
+// coalescer the resulting merge classes, which it only reads. Distinct quantified
+// variables that always appear together resolve to one representative and so share
+// a single type parameter. That collapses outer's
+// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` to `fn <T0>(y: T0) -> [T0, T0]`.
+//
+// The retain decision degenerates to PR1's when nothing merges and symmetrization
+// surfaces no extra occurrence. Each variable is then its own representative with
+// its own polarities, so the check is exactly PR1's per-variable both-polarities
+// test.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 	return t.Accept(&schemeCoalescer{
 		simp:     simplifyScheme(t, genLevel),
@@ -121,16 +125,20 @@ func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 	}, soltype.Positive)
 }
 
-// schemeCoalescer is the soltype-visitor form of coalesceScheme — same shape as
-// coalescer (the structural arms and the pol.Flip() variance come from
-// soltype.Accept; the var node's side-graph bounds are walked here in EnterType),
-// extended with the retain decision: a variable whose representative is
-// quantifiable at genLevel and occurs in both polarities is KEPT as a named type
-// parameter (merged with its coalesced bounds) instead of being inlined. Every
-// other variable is inlined exactly as coalescer does — so on a body with no
-// both-polarity quantifiable variable this reduces, node for node, to a plain
-// coalesce. Each variable resolves through simp to its co-occurrence
-// representative, so every member of a merged class renders as the same parameter.
+// schemeCoalescer is the soltype-visitor form of coalesceScheme. It has the same
+// shape as coalescer. The structural arms and the pol.Flip() variance come from
+// soltype.Accept, and the var node's side-graph bounds are walked here in
+// EnterType.
+//
+// It adds the retain decision. A variable is KEPT as a named type parameter when
+// its representative is quantifiable at genLevel and occurs in both polarities. A
+// kept variable is merged with its coalesced bounds rather than inlined. Every
+// other variable is inlined exactly as coalescer does. So on a body with no
+// both-polarity quantifiable variable, this reduces node for node to a plain
+// coalesce.
+//
+// Each variable resolves through simp to its co-occurrence representative, so
+// every member of a merged class renders as the same parameter.
 type schemeCoalescer struct {
 	simp     *schemeSimplification
 	genLevel int
@@ -157,20 +165,13 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	}
 	c.seen.Add(rep)
 	defer c.seen.Remove(rep) // path-scoped: pop on the way back up (panic-safe)
-	// Representative first when retained, so it names earliest in combine and stays
-	// distinct in dedup from any bound that resolves back to it (via cycle). Pre-size
-	// the slice with rep at index 0 instead of appending then prepending.
-	//
-	// The cycle guard is keyed by rep, but the bounds walked here are v's OWN
-	// (v.BoundsAt), not the representative's. When a sibling class member nested in
-	// v's bounds resolves to a rep already on the path, it short-circuits to the name
-	// without walking its bounds. That drops no information because constrain
-	// propagates a concrete bound to every variable along a var↔var subtyping chain,
-	// so the merged class's reachable concrete bounds already sit on v (the
-	// first-encountered member). This relies on the body being propagation-closed —
-	// which every body reaching coalesceScheme is, since it is rendered only after
-	// its component is fully constrained.
+
+	// v's own bounds, not the representative's.
 	bs := v.BoundsAt(pol)
+
+	// Pre-size parts with rep at index 0 when retaining, rather than appending then
+	// prepending. At the front, rep appears first in the union or intersection combine
+	// builds, and dedup keeps it distinct from any bound that cycles back to it.
 	n := len(bs)
 	if retain {
 		n++
@@ -179,6 +180,14 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	if retain {
 		parts = append(parts, rep)
 	}
+	// Recursively coalesce each bound. When a bound is another member of v's class
+	// whose rep is already on the path, the seen guard short-circuits it to the name
+	// and its own bounds go unwalked. No information is lost. constrain copies a
+	// concrete bound to every variable along a var↔var subtyping chain, so the class's
+	// reachable concrete bounds already sit on v, the first member reached. This holds
+	// because the body is propagation-closed, meaning every variable already carries
+	// the bounds propagated to it. coalesceScheme renders a component only after it is
+	// fully constrained, so that is always true here.
 	for _, b := range bs {
 		parts = append(parts, b.Accept(c, pol))
 	}
