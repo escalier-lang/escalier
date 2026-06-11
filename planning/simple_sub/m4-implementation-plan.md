@@ -316,19 +316,52 @@ func (c *Context) constrainLt(lhs, rhs Lifetime)
 func (c *Context) addLowerLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime)
 func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime)
 
-// Probe today snapshots *TypeVarType lengths. M4 widens the journal entry to
-// the Bounded interface (02-design-notes §"probe-API sketches") so both sorts
-// share one entry shape and one rollback:
-type Bounded interface {
-    boundLengths() (lower, upper int)
-    truncateBounds(lower, upper int)
-}
-// implemented by *soltype.TypeVarType and *soltype.LifetimeVar
+// Probe today holds the CONCRETE *soltype.TypeVarType and truncates its exported
+// bound fields inline on discard (probe.go's probeEntry.v is *TypeVarType, not an
+// interface). The 02-design-notes "probe-API sketches" proposed a `Bounded`
+// interface with UNEXPORTED methods — but probe.go:45-52 records that this was
+// tried and REJECTED: Go won't let `solver` attach the unexported boundLengths/
+// truncateBounds to a `soltype` type, and an interface in `solver` over unexported
+// methods is unsatisfiable by a `soltype` type across the package boundary. M3 had
+// one bounded sort, so it kept the concrete entry.
+//
+// M4 adds a SECOND bounded sort (LifetimeVar), which is the trigger probe.go's
+// comment names ("if a second bounded type appears, reintroduce the interface with
+// EXPORTED methods on the soltype types"). So the correct M4 move is the EXPORTED
+// form:
+//
+//   // package soltype — exported, so cross-package satisfaction works:
+//   func (v *TypeVarType) BoundLengths() (int, int)
+//   func (v *TypeVarType) TruncateBounds(lower, upper int)
+//   func (v *LifetimeVar) BoundLengths() (int, int)
+//   func (v *LifetimeVar) TruncateBounds(lower, upper int)
+//
+//   // package solver:
+//   type Bounded interface {
+//       BoundLengths() (lower, upper int)
+//       TruncateBounds(lower, upper int)
+//   }
+//   // probeEntry.v becomes Bounded; *TypeVarType and *LifetimeVar both satisfy it.
+//
+// COST (eyes-open): exporting TruncateBounds publishes a speculation-only "rewind
+// my bounds to a checkpoint" verb on soltype's public surface, callable from any
+// importer with no probe checkpoint — a silent-corruption footgun (a stray
+// `v.TruncateBounds(0, 0)` drops solved bounds, surfacing later as a wrong
+// coalesced type, not a panic). Mitigation: a doc comment on the exported methods
+// ("speculation-internal; call only through Probe"). The alternative — duplicating
+// the inline truncate per sort, no interface — keeps the surface clean at the cost
+// of two near-identical discard paths; pick the interface only once the second
+// sort makes the duplication real.
 ```
 
 ### Field write + read-after-write (`solver/infer_expr.go`)
 
 ```go
+// NEW HELPER (B3 authors it; not yet in the production solver — only the spike
+// has it, internal/simplesub/constrain.go). widen generalizes a literal to its
+// primitive (5 ⇒ number, "x" ⇒ string) and passes non-literals through:
+//   func widen(t soltype.Type) soltype.Type
+//
 // Extends inferAssign's existing member/index branch (today:
 // reportUnsupportedFeature, infer_expr.go:495). C3 ships with Lt: nil — no
 // borrows exist yet, every receiver is owned — and D2 flips the requirement's
@@ -391,13 +424,20 @@ func (c *checker) attachParamLifetimes(t soltype.Type) soltype.Type {
 ### Namespace member lookup (`solver/infer_expr.go`, Phase F)
 
 ```go
-// resolvePath resolves an ident/member/index chain to Value | Namespace (a name
-// is never both — scope invariant). The object/index position tolerates a
-// namespace; every other value position rejects one — so
-// NamespaceUsedAsValueError moves OFF inferIdent to the value-position
-// consumer and fires once for both f(Foo) and f(A.B). Namespace lookup is a
-// direct, non-lexical read of the namespace's own maps (no parent walk).
-// Index keys must be statically constant strings.
+// resolvePath (NEW) resolves an ident/member/index chain to Value | Namespace (a
+// name is never both — scope invariant); pathResult (NEW) is its sum return. The
+// object/index position tolerates a namespace; every other value position rejects
+// one — so NamespaceUsedAsValueError moves OFF inferIdent to the value-position
+// consumer and fires once for both f(Foo) and f(A.B).
+//
+// Namespace lookup reads the namespace's OWN maps directly — soltype's `Namespace`
+// (scope.go:61-66) is a struct of FIELDS (Values / Types / Nested), with NO
+// methods today: read `ns.Values[name]` / `ns.Nested[name]` inline, non-lexical
+// (no parent walk), unlike Scope.GetValue/GetType/GetNamespace which DO walk
+// parents. (01-milestones.md names hypothetical LookupValue/LookupNamespace
+// helpers; those don't exist yet — add them as thin wrappers over the fields if
+// the inline reads get repetitive, but they are not shipped API.) Index keys must
+// be statically constant strings.
 // New errors: UnknownNamespaceMemberError, DynamicNamespaceIndexError.
 func (c *checker) resolvePath(scope *Scope, e ast.Expr) pathResult
 ```
@@ -454,9 +494,11 @@ messages. The gate (C2) sits 3rd on the critical path.
   A, spec §8.1). Mut-record merging is added by C3.
 - **B2 — The `open` parameter marker** (~120). Parser marker + keep-inexact
   flag on the closed shape. Spelling gated; semantics are what M4 proves.
-- **B3 — `var` literal widening** (~150). The principled usage-based form from
-  the milestone: a `var`'s type is informed by all assignment sites via
-  `widen` + the same coalescing; `val` stays a literal singleton. Retires
+- **B3 — `var` literal widening** (~150). **Authors the `widen` helper**
+  (`func widen(t soltype.Type) soltype.Type`, ported from the spike — not yet in
+  the production solver; C3's field-write reuses it). The principled usage-based
+  form from the milestone: a `var`'s type is informed by all assignment sites
+  via `widen` + the same coalescing; `val` stays a literal singleton. Retires
   PR8's documented `var a = 5; a = 6` failure.
 
 ### Phase C — Borrows & mutability (**the gate**)
@@ -473,8 +515,9 @@ messages. The gate (C2) sits 3rd on the critical path.
   mut-decay allowed, reverse rejected; full messages. **Stop and reassess
   before any later phase if this does not encode cleanly.**
 - **C3 — Field-write inference + read-after-write** (~200). Replace
-  `inferAssign`'s member-branch stub per the sketch (`Lt: nil`); `widen` on
-  write; multi-write merge (mut-record case of B1's merge); the `written`
+  `inferAssign`'s member-branch stub per the sketch (`Lt: nil`); reuse B3's
+  `widen` on write; multi-write merge (mut-record case of B1's merge); the
+  `written`
   read-after-write map on the checker. Acceptance: `fn foo(obj) { obj.x = 5;
   obj.y = 10 }` ⇒ `(obj: mut {x: number, y: number}) -> unit`; write-then-read
   ⇒ `number`.
@@ -483,8 +526,11 @@ messages. The gate (C2) sits 3rd on the critical path.
 
 - **D1 — Lifetime sort + probe extension** (~220). `LifetimeVar`/
   `StaticLifetime`; `constrainLt` with journal-gated appends
-  (`addLowerLtBound`/`addUpperLtBound`); the probe's entry widened to
-  `Bounded` so both sorts roll back through one journal; lifetime printing.
+  (`addLowerLtBound`/`addUpperLtBound`); extend the probe to the second sort by
+  reintroducing the `Bounded` interface with **exported** `BoundLengths`/
+  `TruncateBounds` on both soltype types (the path `probe.go:45-52` prescribes
+  for "a second bounded type" — *not* the rejected unexported form), so both
+  sorts roll back through one journal; lifetime printing.
 - **D2 — Activate the rule + borrow origination** (~160). Turn on step 3 and
   the escape guards; `attachParamLifetimes`; **flip C3's write-requirement
   lifetime from `nil` to a fresh var** and re-run C3's acceptance (borrowed
@@ -568,10 +614,14 @@ union is the milestone's M4 acceptance. No fixture harness yet (M8).
 - **The gate (C2)** remains the dominant risk, front-loaded with an explicit
   stop-and-reassess. The spike proved the algorithm; the residual risk is the
   production encoding (visitor, journal-gated bounds, blame spans).
-- **Probe × lifetimes (D1).** Widening the journal to `Bounded` touches M3's
-  speculation infrastructure used by overload resolution — the "appends only
-  through journaling helpers" invariant must hold for the new sort from day
-  one, or a discarded overload trial could leak lifetime bounds.
+- **Probe × lifetimes (D1).** Reintroducing the `Bounded` interface touches M3's
+  speculation infrastructure used by overload resolution. Two constraints:
+  (a) it must use **exported** methods on the soltype types — the unexported
+  form is unsatisfiable across the package boundary, which is why `probe.go`
+  shipped the concrete-type journal instead (probe.go:45-52); (b) the "appends
+  only through journaling helpers" invariant must hold for the new sort from day
+  one, or a discarded overload trial could leak lifetime bounds. The exported
+  `TruncateBounds` is a public-surface footgun — document it speculation-internal.
 - **Elision branching on `Mut` (D4)**: the immutable-elide case **must** drop
   the wrapper or it reconstructs the forbidden degenerate cell; `NewRef`'s
   invariant (plus a printer assertion) is the backstop.
