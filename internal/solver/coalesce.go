@@ -98,93 +98,49 @@ type occKey struct {
 	pol soltype.Polarity
 }
 
-// analyzeOccurrences walks the bound graph rooted at t (the same traversal
-// coalesce uses: covariant children at pol, contravariant func params flipped,
-// each variable's BoundsAt(pol)) recording into occ which polarities every
-// variable occurs in. A variable appearing in both a covariant and a
-// contravariant position — the identity function's shared param/return var — comes
-// out as occPos|occNeg; a result/indirection variable that only ever flows
-// outward comes out as occPos alone. coalesceScheme then retains the former as a
-// quantified type parameter and inlines the latter to its bound.
-func analyzeOccurrences(t soltype.Type, pol soltype.Polarity, occ map[*soltype.TypeVarType]occPolarity, seen set.Set[occKey]) {
-	// Drive the structural descent through the shared soltype visitor (the same
-	// rewriting walk coalescer/schemeCoalescer use), so the variance flip on func
-	// params and the recursion into every former — FuncType/Tuple/Record/Promise AND
-	// the overload-arm Union/Intersection PR6 feeds as input — live in one place
-	// (soltype.Accept) instead of a hand-rolled switch that must track every type kind.
-	// The returned (identity-preserving) type is discarded; the analysis is the
-	// EnterType side effect on occ/seen.
-	t.Accept(&occVisitor{occ: occ, seen: seen}, pol)
-}
-
-// occVisitor is the soltype-visitor form of analyzeOccurrences. Like coalescer it
-// handles the var node itself in EnterType — recording the polarity it was reached in,
-// then walking the var's BoundsAt(pol) side graph (guarded by the (var, pol) seen-set)
-// — and lets Accept descend every structural node (atoms pass through, func params
-// flip).
-type occVisitor struct {
-	occ  map[*soltype.TypeVarType]occPolarity
-	seen set.Set[occKey]
-}
-
-func (o *occVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	v, ok := t.(*soltype.TypeVarType)
-	if !ok {
-		return soltype.EnterResult{} // structural/atom node: let Accept descend
-	}
-	if pol == soltype.Positive {
-		o.occ[v] |= occPos
-	} else {
-		o.occ[v] |= occNeg
-	}
-	k := occKey{v, pol}
-	if o.seen.Contains(k) {
-		return soltype.EnterResult{SkipChildren: true}
-	}
-	o.seen.Add(k)
-	for _, b := range v.BoundsAt(pol) {
-		b.Accept(o, pol)
-	}
-	return soltype.EnterResult{SkipChildren: true}
-}
-
-func (o *occVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
-
 // coalesceScheme coalesces a generalized scheme's RAW body for DISPLAY, retaining
 // the variables that are genuine type parameters as named references while
-// inlining the rest to their bounds. A variable is retained iff it is
-// quantifiable (Level > genLevel) AND occurs in both polarities (single-polarity
-// elimination); every other variable is inlined exactly as coalesce does — so on
-// a body with no both-polarity quantifiable variable this reduces, node for node,
-// to coalesce(t, Positive), keeping every monomorphic render unchanged.
+// inlining the rest to their bounds. A variable is retained iff its co-occurrence
+// representative is quantifiable (Level > genLevel) AND occurs in both polarities
+// (single-polarity elimination); every other variable is inlined exactly as
+// coalesce does — so on a body with no both-polarity quantifiable variable this
+// reduces, node for node, to coalesce(t, Positive), keeping every monomorphic
+// render unchanged.
 //
-// This is the minimum needed to render a generalized scheme without the
-// always-pre-bound SCC indirection variable (a positive-only var) corrupting the
-// output. The remaining simplification — CO-OCCURRENCE merging of *distinct*
-// variables that always appear together, and the `parameter-only var ⇒ unknown`
-// case for variables genuinely used in one polarity — is PR2's; PR1 retains a
-// type parameter only where it is literally the same variable across positions,
-// so renders stay non-compact until then.
+// simplifyScheme (PR2) runs the co-occurrence analysis up front and hands the
+// coalescer the resulting merge classes, which it only reads. Distinct quantified
+// variables that always appear together resolve to one representative and so share
+// a single type parameter. That collapses outer's
+// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` to `fn <T0>(y: T0) -> [T0, T0]`.
+//
+// The retain decision degenerates to PR1's when nothing merges and symmetrization
+// surfaces no extra occurrence. Each variable is then its own representative with
+// its own polarities, so the check is exactly PR1's per-variable both-polarities
+// test.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
-	occ := map[*soltype.TypeVarType]occPolarity{}
-	analyzeOccurrences(t, soltype.Positive, occ, set.NewSet[occKey]())
 	return t.Accept(&schemeCoalescer{
-		occ:      occ,
+		simp:     simplifyScheme(t, genLevel),
 		genLevel: genLevel,
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
 }
 
-// schemeCoalescer is the soltype-visitor form of coalesceScheme — same shape as
-// coalescer (the structural arms and the pol.Flip() variance come from
-// soltype.Accept; the var node's side-graph bounds are walked here in EnterType),
-// extended with the retain decision: a variable quantifiable at genLevel that
-// occurs in both polarities is KEPT as a named type parameter (merged with its
-// coalesced bounds) instead of being inlined. Every other variable is inlined
-// exactly as coalescer does — so on a body with no both-polarity quantifiable
-// variable this reduces, node for node, to a plain coalesce.
+// schemeCoalescer is the soltype-visitor form of coalesceScheme. It has the same
+// shape as coalescer. The structural arms and the pol.Flip() variance come from
+// soltype.Accept, and the var node's side-graph bounds are walked here in
+// EnterType.
+//
+// It adds the retain decision. A variable is KEPT as a named type parameter when
+// its representative is quantifiable at genLevel and occurs in both polarities. A
+// kept variable is merged with its coalesced bounds rather than inlined. Every
+// other variable is inlined exactly as coalescer does. So on a body with no
+// both-polarity quantifiable variable, this reduces node for node to a plain
+// coalesce.
+//
+// Each variable resolves through simp to its co-occurrence representative, so
+// every member of a merged class renders as the same parameter.
 type schemeCoalescer struct {
-	occ      map[*soltype.TypeVarType]occPolarity
+	simp     *schemeSimplification
 	genLevel int
 	seen     set.Set[*soltype.TypeVarType]
 }
@@ -196,36 +152,48 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// (including an overload-arm Union/Intersection input — the scoped lattice exception; see overloadIntersection).
 		return soltype.EnterResult{}
 	}
-	retain := v.Level > c.genLevel && c.occ[v].both()
-	if c.seen.Contains(v) {
+	rep := c.simp.rep(v)
+	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both()
+	if c.seen.Contains(rep) {
 		// A cycle back to a variable already on the path: a retained type parameter
 		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
 		// an inlined variable collapses to the polarity identity.
 		if retain {
-			return soltype.EnterResult{Type: v, SkipChildren: true}
+			return soltype.EnterResult{Type: rep, SkipChildren: true}
 		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	c.seen.Add(v)
-	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
-	// Variable first when retained, so it names earliest in combine and stays
-	// distinct in dedup from any bound that resolves back to v (via cycle). Pre-size
-	// the slice with v at index 0 instead of appending then prepending.
+	c.seen.Add(rep)
+	defer c.seen.Remove(rep) // path-scoped: pop on the way back up (panic-safe)
+
+	// v's own bounds, not the representative's.
 	bs := v.BoundsAt(pol)
+
+	// Pre-size parts with rep at index 0 when retaining, rather than appending then
+	// prepending. At the front, rep appears first in the union or intersection combine
+	// builds, and dedup keeps it distinct from any bound that cycles back to it.
 	n := len(bs)
 	if retain {
 		n++
 	}
 	parts := make([]soltype.Type, 0, n)
 	if retain {
-		parts = append(parts, v)
+		parts = append(parts, rep)
 	}
+	// Recursively coalesce each bound. When a bound is another member of v's class
+	// whose rep is already on the path, the seen guard short-circuits it to the name
+	// and its own bounds go unwalked. No information is lost. constrain copies a
+	// concrete bound to every variable along a var↔var subtyping chain, so the class's
+	// reachable concrete bounds already sit on v, the first member reached. This holds
+	// because the body is propagation-closed, meaning every variable already carries
+	// the bounds propagated to it. coalesceScheme renders a component only after it is
+	// fully constrained, so that is always true here.
 	for _, b := range bs {
 		parts = append(parts, b.Accept(c, pol))
 	}
 	if len(parts) == 0 {
 		// Only reachable with !retain and no bounds — empty bounds under retain
-		// already leave parts=[v]. Collapse to the polarity identity.
+		// already leave parts=[rep]. Collapse to the polarity identity.
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	return soltype.EnterResult{Type: combine(pol, dedup(parts)), SkipChildren: true}
@@ -242,7 +210,7 @@ func schemeType(s TypeScheme) soltype.Type {
 	case *MonoScheme:
 		return coalesce(sc.Ty, soltype.Positive)
 	case *PolyScheme:
-		return coalesceScheme(sc.Body, sc.Level)
+		return sc.display()
 	}
 	panic(fmt.Sprintf("schemeType: unknown TypeScheme %T", s))
 }
@@ -261,7 +229,7 @@ func renderScheme(s TypeScheme) string {
 	case *MonoScheme:
 		return soltype.PrintAsScheme(coalesce(sc.Ty, soltype.Positive))
 	case *PolyScheme:
-		return soltype.PrintAsSchemeWith(coalesceScheme(sc.Body, sc.Level), func(v *soltype.TypeVarType) bool {
+		return soltype.PrintAsSchemeWith(sc.display(), func(v *soltype.TypeVarType) bool {
 			return v.Level > sc.Level
 		})
 	}

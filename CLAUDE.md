@@ -79,3 +79,23 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - Read each sentence as if a human has to parse it left to right with no
   rereading. If understanding it requires jumping back to an earlier clause,
   restructure it.
+
+# Writing Prose: Word choice and explaining code
+
+- Define a technical or coined term the first time you use it. Terms like
+  "co-occurrence", "representative", or "closure" mean nothing to a reader who
+  lacks your context. Give a one-line plain-language definition before you rely
+  on the term, not after.
+- Ground an abstract claim in a concrete example. When a comment cites specific
+  output such as a rendered type or an inferred value, include the source
+  snippet that produces it. The reader can then trace where the output comes
+  from instead of taking it on faith.
+- Use precise verbs. Replace vague verbs like "supplies", "handles", "drives",
+  and "manages" with the actual action: produces, reads, returns, mutates,
+  consults. A vague verb hides what the code does.
+- Name the value, not the technique that produced it. Don't write "union-find"
+  when you mean the merge classes it computed, or "the visitor" when you mean
+  the walk's result. Refer to the thing the code hands around.
+- Treat a comment as draft-then-revise, not one-shot. After writing any comment
+  longer than a sentence or two, reread it as someone with no prior context.
+  Fix every unexplained term and every sentence that needs a second pass.

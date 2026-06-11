@@ -24,10 +24,22 @@
 // FromInstantiation provenance edge (prov.go), and scheme rendering — occurrence
 // analysis + single-polarity elimination retaining genuine type parameters
 // (coalesce.go's coalesceScheme) with the printer's <T0, …> quantifier prefix
-// (soltype.PrintAsScheme). What remains of the polymorphism-rendering bundle is
-// PR2's CO-OCCURRENCE merging (distinct variables that always appear together),
-// which makes renders compact where the same variable isn't already shared across
-// positions; generalize's simplify hook is a no-op until then.
+// (soltype.PrintAsScheme).
+//
+// M3 (PR2) completes scheme rendering with CO-OCCURRENCE merging (simplify.go):
+// distinct quantified variables that always appear together are unioned over a
+// symmetrized bound graph, so coalesceScheme renders them as one type parameter.
+// The parameter in
+//
+//	val outer = fn (y) {
+//		val getY = fn () { return y }
+//		return [getY(), getY()]
+//	}
+//
+// reaches both tuple slots through two result variables, so the raw
+// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` becomes `fn <T0>(y: T0) -> [T0, T0]`.
+// Simplification runs at display time, leaving the raw scheme body intact for
+// instantiation.
 //
 // M3 (PR5) adds the probe (probe.go): a speculation journal over the engine's
 // bound-list mutations (a per-variable length snapshot, truncated back on

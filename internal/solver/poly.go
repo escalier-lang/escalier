@@ -34,10 +34,30 @@ type PolyScheme struct {
 	Level     int
 	Body      soltype.Type
 	Annotated bool // PR6 only — set per overload arm; folds for the recursion gate
+
+	// coalesced memoizes the display type. A Body is immutable after
+	// generalization. Later components instantiate fresh copies rather than
+	// constraining it. Because of that immutability, coalesceScheme's co-occurrence
+	// analysis runs once and is shared by both display consumers: schemeType for the
+	// Info side table and renderScheme for the printed string.
+	coalesced soltype.Type
 }
 
 func (*MonoScheme) isScheme() {}
 func (*PolyScheme) isScheme() {}
+
+// display returns the scheme's coalesced display type, computing it once via
+// coalesceScheme and caching it in sc.coalesced. The cache holds a DISPLAY type
+// only. Callers that need a usable scheme must not read it as one. The
+// reassignment path copies the result with freshenAll before constraining, so the
+// cached type is never mutated. See the coalesced field for why the cache never
+// goes stale.
+func (sc *PolyScheme) display() soltype.Type {
+	if sc.coalesced == nil {
+		sc.coalesced = coalesceScheme(sc.Body, sc.Level)
+	}
+	return sc.coalesced
+}
 
 func (s *MonoScheme) IsAnnotated() bool { return s.Annotated }
 func (s *PolyScheme) IsAnnotated() bool { return s.Annotated }
@@ -218,16 +238,10 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // kept RAW for instantiation — coalescing for display happens later (schemeType /
 // renderScheme), never here.
 //
-// simplify is the PR2 hook (single-polarity elimination + co-occurrence merging);
-// PR1 lands it as a no-op so renders are non-compact until PR2 wires it in.
+// Simplification is not applied to the raw body. Single-polarity elimination and
+// co-occurrence merging run at DISPLAY time inside coalesceScheme, so the body
+// keeps every variable for instantiation while the rendered signature stays
+// compact. See simplify.go.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
-	t = c.simplify(t, lvl)
 	return &PolyScheme{Level: lvl, Body: t}
-}
-
-// simplify is the PR2 simplification pass, a no-op in PR1. PR2 replaces the body
-// with occurrence analysis → co-occurrence union-find → rewrite so generalized
-// signatures render compactly and parameter-only variables coalesce to `unknown`.
-func (c *checker) simplify(t soltype.Type, _ int) soltype.Type {
-	return t
 }
