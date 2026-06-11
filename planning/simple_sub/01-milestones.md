@@ -512,6 +512,18 @@ production scale. If it cannot be encoded cleanly against the real AST, the
 whole migration is in question — this is the gate to clear before investing
 further.
 
+**Deferred out of M4** (tracked at their target milestones, not lost):
+
+- **Object-argument overload specificity (#723)** — records make the documented
+  first-match fallback observable; the principled field-subsumption ranking lands
+  in **M5**. M4 only pins the cases with `#723`-tagged tests.
+- **Function-arm Variation-B gap** — unchecked extra positions against an inexact
+  callback need the `_ <: unknown` (⊤) rule, which lands in **M6**. M4 excludes
+  function annotations and fails the branch loud, keeping the path closed.
+- **Rest-param element checking (#677)** — `...xs: T[]` element checking needs
+  `Array<T>`, so it lands in **M7**. M4 stays arity-only and marks the
+  `FuncParam.Rest` note "M7."
+
 ---
 
 ## M5 — Nominal types (classes)
@@ -651,6 +663,15 @@ two method-specific wrinkles:
   same one that resolves `p.x`). Plug overload selection into *that* path —
   it has the declared class in hand and never has to invent an arrow type for
   subtyping to chew on.
+- **Object-argument overload specificity (#723; deferred from M4).** M4's record
+  types made the documented first-match fallback observable on object-typed
+  arguments: `moreSpecific`/`structuralSubtype` (overload.go) ranks record-shaped
+  args as a tie, so resolution collapses to declaration order. M5 owns the fix —
+  classes are where multi-arm object overloads proliferate — ranking record/class
+  args by field-set subsumption and exactness (a superset-of-fields or exact arg
+  dominates), the object analogue of M3's arity/exactness ranking. M4 only pins
+  the observable cases with `#723`-tagged tests so any later arm-choice change is
+  intentional.
 
 See M3 for the full set of recommendations; everything there applies to
 methods unchanged.
@@ -720,6 +741,15 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   reported. (In M3 this is an invariant freebie — `ErrorType` is short-circuited out
   of every bound list, so it never reaches a former; M6 must keep it true once
   formers can be built directly.)
+- **The `_ <: unknown` (⊤) subtyping rule — closes M4's Variation-B gap
+  (deferred from M4).** With `unknown` a real former here, add the rule that makes
+  it the top of the lattice (everything is a subtype of `unknown`). M4 left a
+  KNOWN GAP in `constrain`'s function arm: an inexact callback that may supply
+  extra arguments needs an `unknown`-against-param check at those positions
+  (exact-types §4.2.1.2 "Variation B"), which this rule supplies. M4 keeps the
+  path closed — A3 adds no function annotations and the extra-position branch
+  fails loud via `reportUnsupportedFeature` — so the gap is unreachable until this
+  rule lands and that guard is removed.
 
 **Accept:** `number | string` annotation accepts `number`/rejects `boolean`;
 intersection annotation satisfied by a value at both member types; both
@@ -779,6 +809,12 @@ now resolve to real `soltype` structures rather than opaque placeholders.
   from day one, so they live in the M2 prelude (a port of the old checker's
   `addOperatorBindings`). M7 ports *type* ingestion (`.d.ts`/interop → `soltype`),
   not the value-level operator env.
+- **Rest-param element checking (#677; deferred from M4).** Typed rest params
+  `...xs: T[]` check each trailing argument against `T`, which needs `Array<T>` to
+  resolve — so the element type only exists once this milestone lands. M4 kept
+  rest params arity-only (trailing args unchecked, a documented hole) and marked
+  `FuncParam.Rest`'s note "M7." Wire the element check here against the real
+  `Array<T>`, dropping the arity-only restriction.
 
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
 `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
