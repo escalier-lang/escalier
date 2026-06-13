@@ -75,7 +75,8 @@ func TestInferAssignToImmutableNonVal(t *testing.T) {
 }
 
 // A non-place target — a literal or a call — is an InvalidAssignmentTargetError that
-// blames the target. (Member targets `obj.x = …` need record types and land in M4.)
+// blames the target. A member or index target takes a separate path: it is a valid
+// place pending object/array types (M4), so it reports an UnsupportedFeatureError.
 func TestInferAssignInvalidTarget(t *testing.T) {
 	t.Run("literal target", func(t *testing.T) {
 		src := "val a = 5\nfn g() { 5 = a }"

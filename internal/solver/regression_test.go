@@ -16,7 +16,7 @@ import (
 //
 // The assertion is intentionally loose: the test's real contract is that
 // inference TERMINATES (reaching the assertions at all proves that) and produces
-// a sane shape — a function returning a record bottoming out in `never`. The
+// a sane shape — a function returning an object bottoming out in `never`. The
 // exact unrolling depth (`{x: {x: never}}`) is a monomorphic-recursion artifact
 // that later coalesce/printer changes may legitimately alter; pinning it would
 // conflate "terminates" with "renders this exact shape".

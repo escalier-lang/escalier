@@ -459,8 +459,9 @@ type AsyncReturnNotPromiseError struct {
 // InvalidAssignmentTargetError fires when the left-hand side of an assignment
 // (`a = expr`) is not an assignable place. M3's only assignable target is an
 // IdentExpr resolving to a `var` binding; a literal, call, or any other non-place
-// target is rejected here. (A member target `obj.x = …` needs record types and lands
-// in M4 — it is also reported here until then.)
+// target is rejected here. A member or index target such as `obj.x = …` is instead
+// reported as an UnsupportedFeatureError: it is a valid place whose type rule needs
+// object/array types (M4), not a fundamentally invalid target.
 //
 // It is a BRIDGE error: born in inferAssign with the offending target node in hand,
 // so it self-blames (Span() is the target's own span); it carries no related node.

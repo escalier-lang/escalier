@@ -201,11 +201,17 @@ width-tolerant:
 case *soltype.ObjectType:
     if sup, ok := super.(*soltype.ObjectType); ok {
         var errs []SolverError
-        for _, superElem := range sup.Elems {            // depth: members covariant
-            superProp := superElem.(*soltype.PropertyElem) // M4: every elem is a property
+        for _, superElem := range sup.Elems {              // depth: members covariant
+            superProp := soltype.AsProperty(superElem)     // M4: every elem is a property
             subProp, ok := sub.Prop(superProp.Name)
             if !ok {
-                errs = append(errs, &MissingPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
+                if !superProp.Optional {                   // an optional super prop may be absent
+                    errs = append(errs, &MissingPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
+                }
+                continue
+            }
+            if subProp.Optional && !superProp.Optional {   // optional source can't fill a required slot
+                errs = append(errs, &OptionalPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
                 continue
             }
             errs = append(errs, c.constrain(subProp.Type, superProp.Type, seen)...)
@@ -218,7 +224,7 @@ case *soltype.ObjectType:
                 errs = append(errs, &InexactIntoExactError{Sub: sub, Super: sup})
             }
             for _, subElem := range sub.Elems {
-                subProp := subElem.(*soltype.PropertyElem)
+                subProp := soltype.AsProperty(subElem)
                 if _, ok := sup.Prop(subProp.Name); !ok {
                     errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
                 }
@@ -555,7 +561,7 @@ these arms it must add.
     inexact) and concrete subtyping (super exact).
   - **Errors:** new, same field/blame shape as `MissingPropertyError`
     (errors.go:97):
-    - `InexactIntoExactError{Sub, Super *soltype.ObjectType}`
+    - `InexactIntoExactError{Sub, Super *soltype.ObjectType; prov; site}`
     - `ExtraPropertyError{Sub, Super *soltype.ObjectType; Name string; prov; site}`
   - **Accept:**
     - exact `{x, y}` `<:` inexact `{x, y, ...}` succeeds
