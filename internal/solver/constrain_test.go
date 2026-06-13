@@ -489,24 +489,50 @@ func TestConstrainObject(t *testing.T) {
 			lhs:  exactObj(propElem("a", num())),
 			rhs:  inexactObj(),
 		},
-		// KNOWN LIMITATION (A1): the constrain arm treats every RHS property as
-		// required and ignores PropertyElem.Optional — optional-property subtyping is
-		// not modelled yet (no optional property is constructible from source until
-		// object annotations in A3). These two cases PIN today's behavior so the gap
-		// is visible and a future optional-subtyping change is forced to update them.
-		// With correct optional semantics, the first SUCCEEDS (an optional target
-		// property may be absent) and the second is REJECTED (an optional source
-		// property may be absent where the target requires it).
+		// PropertyElem.Optional is part of the object shape, so subtyping is
+		// presence-aware: an optional target property may be absent on the source,
+		// and a required source property fills an optional target slot, but an
+		// optional source property cannot fill a required target slot.
 		{
-			name: "optional target property treated as required (A1 limitation)",
+			// {} <: {x?: number}: an optional target property may be absent.
+			name: "absent source satisfies optional target property",
 			lhs:  exactObj(),
 			rhs:  exactObj(optProp("x", num())),
-			want: []string{"object is missing property: x"},
 		},
 		{
-			name: "optional source into required target accepted (A1 limitation)",
+			// {x?: number} <: {x: number}: the source may omit x, so it cannot fill a
+			// required slot.
+			name: "optional source rejected by required target",
 			lhs:  exactObj(optProp("x", num())),
 			rhs:  exactObj(propElem("x", num())),
+			want: []string{"object property is optional but required: x"},
+			check: func(t *testing.T, lhs, rhs soltype.Type, errs []SolverError) {
+				op, ok := errs[0].(*OptionalPropertyError)
+				require.True(t, ok)
+				require.Same(t, lhs, op.LHS)
+				require.Same(t, rhs, op.RHS)
+				require.Equal(t, "x", op.Name)
+			},
+		},
+		{
+			// {x: number} <: {x?: number}: a required property fills an optional slot.
+			name: "required source fills optional target property",
+			lhs:  exactObj(propElem("x", num())),
+			rhs:  exactObj(optProp("x", num())),
+		},
+		{
+			// {x?: number} <: {x?: number}: optional on both, types covariant.
+			name: "optional on both sides ok",
+			lhs:  exactObj(optProp("x", numLit(5))),
+			rhs:  exactObj(optProp("x", num())),
+		},
+		{
+			// An optional source property still recurses covariantly into an optional
+			// target property, so an incompatible type is caught.
+			name: "optional on both sides depth mismatch",
+			lhs:  exactObj(optProp("x", num())),
+			rhs:  exactObj(optProp("x", str())),
+			want: []string{"cannot constrain number <: string"},
 		},
 		{
 			// A non-object RHS falls through the object arm to the generic

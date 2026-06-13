@@ -188,13 +188,28 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			//
 			// Depth first: every property the RHS requires must be present on the
 			// LHS, matched by name (Prop), and the shared property types are
-			// covariant. A required property the LHS lacks is a MissingPropertyError.
+			// covariant. PropertyElem.Optional makes presence part of the shape, so
+			// the loop is presence-aware before recursing on the property type:
+			//   - absent on the LHS: a MissingPropertyError only when the RHS
+			//     property is REQUIRED; an optional RHS property may be absent.
+			//   - present on both, optional on the LHS but required on the RHS: the
+			//     source may omit it, so it cannot fill a required slot —
+			//     OptionalPropertyError, and skip the covariant type check (the
+			//     presence mismatch already rejects the constraint).
+			//   - otherwise (required<:required, required<:optional, optional<:
+			//     optional): covariant on the property type.
 			var errs []SolverError
 			for _, re := range r.Elems {
 				rp := soltype.AsProperty(re) // M4: every elem is a property
 				lp, ok := l.Prop(rp.Name)
 				if !ok {
-					errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rp.Name})
+					if !rp.Optional {
+						errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rp.Name})
+					}
+					continue
+				}
+				if lp.Optional && !rp.Optional {
+					errs = append(errs, &OptionalPropertyError{LHS: l, RHS: r, Name: rp.Name})
 					continue
 				}
 				errs = append(errs, c.constrain(lp.Type, rp.Type, seen)...) // covariant

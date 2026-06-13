@@ -121,12 +121,26 @@ type ExtraPropertyError struct {
 	site     ast.Node     // M2.5: constraint node fallback
 }
 
+// OptionalPropertyError fires on ObjectType <: ObjectType when a property is
+// optional on the LHS source but required on the RHS target: the source may omit
+// the property, so it cannot satisfy a target that requires it present (the object
+// analogue of TypeScript's "Property 'x' is optional in type … but required in
+// type …"). The converse — a required source property filling an optional target
+// slot — is fine, so only this direction errors.
+type OptionalPropertyError struct {
+	LHS, RHS *soltype.ObjectType
+	Name     string
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback
+}
+
 func (*CannotConstrainError) isSolverError()     {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
 func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
 func (*ExtraPropertyError) isSolverError()       {}
+func (*OptionalPropertyError) isSolverError()    {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -176,6 +190,18 @@ func (e *ExtraPropertyError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *ExtraPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+
+func (e *OptionalPropertyError) Span() ast.Span {
+	// The optional property lives on the LHS source; blame it, degrade to the RHS
+	// target, else the site (same shape as ExtraPropertyError).
+	ops := make([]soltype.Type, 0, 2)
+	if p, ok := e.LHS.Prop(e.Name); ok {
+		ops = append(ops, p.Type)
+	}
+	ops = append(ops, e.LHS)
+	return spanOfFirst(e.prov, e.site, ops...)
+}
+func (e *OptionalPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -655,6 +681,10 @@ func (e *InexactIntoExactError) Message() string {
 
 func (e *ExtraPropertyError) Message() string {
 	return "object has extra property: " + e.Name
+}
+
+func (e *OptionalPropertyError) Message() string {
+	return "object property is optional but required: " + e.Name
 }
 
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,

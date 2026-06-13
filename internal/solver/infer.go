@@ -113,6 +113,8 @@ func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type) {
 			err.prov, err.site = c.prov, n
 		case *ExtraPropertyError:
 			err.prov, err.site = c.prov, n
+		case *OptionalPropertyError:
+			err.prov, err.site = c.prov, n
 		case *FuncArityMismatchError:
 			err.prov, err.site = c.prov, n
 		}

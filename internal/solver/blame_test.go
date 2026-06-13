@@ -239,13 +239,21 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 		}
 		require.Equal(t, site.Span(), e.Span())
 	})
+	t.Run("OptionalProperty", func(t *testing.T) {
+		e := &OptionalPropertyError{
+			LHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}, Optional: true}}},
+			RHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			Name: "b", prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
 }
 
 // checker.constrain stamps prov + the constraint node onto EVERY constraint-error
 // kind it forwards, so each error's Span() resolves to a real source span instead
-// of the zero span. The object-exactness errors (InexactIntoExactError,
-// ExtraPropertyError) were added in M4 A1; this pins that their switch arms exist
-// — a missing arm leaves prov/site nil and Span() degrades to 0:0. Exercised
+// of the zero span. The object errors (InexactIntoExactError, ExtraPropertyError,
+// OptionalPropertyError) were added in M4 A1; this pins that their switch arms
+// exist — a missing arm leaves prov/site nil and Span() degrades to 0:0. Exercised
 // directly through c.constrain because an exact-object sink is not reachable from
 // source until object annotations land (A3).
 func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
@@ -266,6 +274,17 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 		c.constrain(node, inexactObj(propElem("x", num())), exactObj(propElem("x", num())))
 		require.Len(t, c.errs, 1)
 		require.IsType(t, &InexactIntoExactError{}, c.errs[0])
+		require.Equal(t, node.Span(), c.errs[0].Span())
+	})
+
+	t.Run("OptionalPropertyError", func(t *testing.T) {
+		c := newChecker()
+		// {x?: number} <: {x: number}: an optional source cannot fill a required slot.
+		c.constrain(node,
+			exactObj(&soltype.PropertyElem{Name: "x", Type: num(), Optional: true}),
+			exactObj(propElem("x", num())))
+		require.Len(t, c.errs, 1)
+		require.IsType(t, &OptionalPropertyError{}, c.errs[0])
 		require.Equal(t, node.Span(), c.errs[0].Span())
 	})
 }
