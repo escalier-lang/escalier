@@ -152,13 +152,19 @@ func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	// lifetime is not a Type, so Accept never walks it; only the lifetime-aware
 	// passes (D4) do.
 	inner := cur.Inner.Accept(v, pol)
-	out := cur
+	var out Type = cur
 	if inner != cur.Inner {
-		ri, ok := inner.(RefInner)
-		if !ok {
-			panic(fmt.Sprintf("soltype.RefType.Accept: inner rewrote to non-RefInner %T", inner))
+		if ri, ok := inner.(RefInner); ok {
+			out = &RefType{Mut: cur.Mut, Lt: cur.Lt, Inner: ri}
+		} else {
+			// The inner rewrote to a non-borrowable type — e.g. coalescing a borrowed
+			// inference variable `mut β` whose β inlines to a union, never, or a
+			// primitive. A borrow of a non-RefInner is meaningless: a `mut number` is a
+			// JS no-op, exactly the degenerate case the RefInner set excludes. Peel the
+			// wrapper and yield the bare inner, mirroring NewRef's collapse of the
+			// (false, nil) cell.
+			out = inner
 		}
-		out = &RefType{Mut: cur.Mut, Lt: cur.Lt, Inner: ri}
 	}
 	return v.ExitType(out, pol)
 }

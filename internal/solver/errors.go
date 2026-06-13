@@ -134,6 +134,30 @@ type OptionalPropertyError struct {
 	site       ast.Node     // M2.5: constraint node fallback
 }
 
+// MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
+// borrow but the super is mutable: writing through the mutable target would mutate a
+// value the source only lent out as read-only, so an immutable reference cannot fill
+// a mutable slot. The reverse — a mutable source decaying to an immutable target — is
+// fine, so only this direction errors. It also fires for `{x} <: mut {x}`, where the
+// bare source is wrapped as an immutable view before re-dispatch.
+type MutabilityMismatchError struct {
+	Sub, Super *soltype.RefType
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback
+}
+
+// BorrowEscapeError fires when a borrow outlives the slot it flows into: a borrowed
+// value (Lt != nil) constrained against an owned slot (Lt == nil), either a bare
+// supertype or a RefType super with no lifetime. The firing path is INERT in C2 —
+// every RefType carries Lt == nil until the lifetime sort lands (D1) and borrows
+// originate (D2) — so the struct is wired now and exercised from D2.
+type BorrowEscapeError struct {
+	Sub   *soltype.RefType
+	Super soltype.Type
+	prov  NodeResolver // M2.5: type→node index (§3.5)
+	site  ast.Node     // M2.5: constraint node fallback
+}
+
 func (*CannotConstrainError) isSolverError()     {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
@@ -141,6 +165,8 @@ func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
 func (*ExtraPropertyError) isSolverError()       {}
 func (*OptionalPropertyError) isSolverError()    {}
+func (*MutabilityMismatchError) isSolverError()  {}
+func (*BorrowEscapeError) isSolverError()        {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -202,6 +228,20 @@ func (e *OptionalPropertyError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *OptionalPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *MutabilityMismatchError) Span() ast.Span {
+	// The immutable source borrow is the actual value; blame it, degrade to the
+	// mutable target, else the site.
+	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
+}
+func (e *MutabilityMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *BorrowEscapeError) Span() ast.Span {
+	// The escaping borrow is the subject; blame it, degrade to the slot it escaped
+	// into, else the site.
+	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
+}
+func (e *BorrowEscapeError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -688,6 +728,16 @@ func (e *OptionalPropertyError) Message() string {
 	return "object property is optional but required: " + e.Name
 }
 
+func (e *MutabilityMismatchError) Message() string {
+	return fmt.Sprintf("cannot constrain immutable %s <: mutable %s",
+		describe(e.Sub.Inner), describe(e.Super.Inner))
+}
+
+func (e *BorrowEscapeError) Message() string {
+	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s",
+		describe(e.Sub), describe(e.Super))
+}
+
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,
 // function, number). Distinct from soltype.Print, which renders coalesced
 // output as user-facing Escalier syntax (see m1-implementation-plan §2.2). It
@@ -725,6 +775,16 @@ func describe(t soltype.Type) string {
 		// and informative (`Promise<number>`), whereas a function/tuple/record would
 		// be verbose spelled out, so those stay nominal.
 		return "Promise<" + describe(t.Inner) + ">"
+	case *soltype.RefType:
+		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
+		// recursing like the Promise arm. The immutable-borrow and lifetime prefixes
+		// (`'a object`) join once the lifetime sort lands (D1); Lt is always nil here,
+		// so only `mut` appears.
+		prefix := ""
+		if t.Mut {
+			prefix = "mut "
+		}
+		return prefix + describe(t.Inner)
 	case *soltype.Void:
 		return "void"
 	case *soltype.NeverType:

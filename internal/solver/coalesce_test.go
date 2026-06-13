@@ -116,6 +116,31 @@ func TestCoalesceStructuralRecursion(t *testing.T) {
 	require.True(t, equalType(want, got))
 }
 
+// TestCoalesceBorrowedVarInnerPeels pins review finding 1: coalescing a borrow whose
+// inner is an inference variable inlines that variable to its bounds. RefInner admits
+// *TypeVarType, so `mut β` is well-formed mid-inference. When β inlines to a
+// non-borrowable type — a primitive bound, or never for empty bounds — the borrow
+// wrapper must PEEL to the bare inner rather than panic: a `mut number` is a JS
+// no-op, so the coalesced display is just the inner.
+func TestCoalesceBorrowedVarInnerPeels(t *testing.T) {
+	t.Run("inner var with a primitive bound peels to the primitive", func(t *testing.T) {
+		c := &Context{}
+		a := c.freshVar(0)
+		a.LowerBounds = []soltype.Type{num()}
+		ref := &soltype.RefType{Mut: true, Inner: a}
+		got := coalesce(ref, soltype.Positive)
+		require.True(t, equalType(num(), got))
+	})
+
+	t.Run("inner var with empty bounds peels to never", func(t *testing.T) {
+		c := &Context{}
+		a := c.freshVar(0)
+		ref := &soltype.RefType{Mut: true, Inner: a}
+		got := coalesce(ref, soltype.Positive)
+		require.IsType(t, &soltype.NeverType{}, got)
+	})
+}
+
 // equalType on ObjectType must discriminate on the Inexact flag and on each
 // property's Optional marker (mirroring the FuncType arm's Inexact / param-Optional
 // checks), and must be order-independent. Without the Optional check (M4 A1 review
