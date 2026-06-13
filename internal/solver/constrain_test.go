@@ -713,6 +713,23 @@ func TestConstrainRefAgainstVar(t *testing.T) {
 	})
 }
 
+// TestConstrainRefInnerInvariantViaBounds is the gate's load-bearing property: a
+// variable INSIDE a mutable inner is invariant, pinned from BOTH directions through
+// the ordinary bound machinery with no special journaling. `mut {x: β} <: mut {x:
+// number}` adds number as β's upper bound (the covariant read view) AND as its lower
+// bound (the contravariant write view), so β coalesces to number in either polarity.
+// This is what "encodes cleanly against the journal" means for the gate.
+func TestConstrainRefInnerInvariantViaBounds(t *testing.T) {
+	c := &Context{}
+	b := c.freshVar(0)
+	require.Empty(t, c.Constrain(
+		mutRef(exactObj(propElem("x", b))),
+		mutRef(exactObj(propElem("x", num()))),
+	))
+	require.True(t, equalType(num(), coalesce(b, soltype.Positive)), "lower bound (write view)")
+	require.True(t, equalType(num(), coalesce(b, soltype.Negative)), "upper bound (read view)")
+}
+
 func TestConstrainVoid(t *testing.T) {
 	c := &Context{}
 	require.Empty(t, c.Constrain(&soltype.Void{}, &soltype.Void{}))
