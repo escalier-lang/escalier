@@ -53,10 +53,10 @@ func inexactFn(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType
 
 func TestConstrainPrim(t *testing.T) {
 	tests := []struct {
-		name string
-		lhs  soltype.Type
-		rhs  soltype.Type
-		want []string
+		name  string
+		sub   soltype.Type
+		super soltype.Type
+		want  []string
 	}{
 		{"number <: number", num(), num(), nil},
 		{"string <: string", str(), str(), nil},
@@ -66,7 +66,7 @@ func TestConstrainPrim(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Context{}
-			errs := c.Constrain(tt.lhs, tt.rhs)
+			errs := c.Constrain(tt.sub, tt.super)
 			require.Equal(t, tt.want, Messages(errs))
 		})
 	}
@@ -74,21 +74,21 @@ func TestConstrainPrim(t *testing.T) {
 
 func TestConstrainPrimMismatchStructure(t *testing.T) {
 	c := &Context{}
-	lhs, rhs := num(), str()
-	errs := c.Constrain(lhs, rhs)
+	sub, super := num(), str()
+	errs := c.Constrain(sub, super)
 	require.Len(t, errs, 1)
 	cc, ok := errs[0].(*CannotConstrainError)
 	require.True(t, ok)
-	require.Same(t, soltype.Type(lhs), cc.LHS)
-	require.Same(t, soltype.Type(rhs), cc.RHS)
+	require.Same(t, soltype.Type(sub), cc.Sub)
+	require.Same(t, soltype.Type(super), cc.Super)
 }
 
 func TestConstrainLiteral(t *testing.T) {
 	tests := []struct {
-		name string
-		lhs  soltype.Type
-		rhs  soltype.Type
-		want []string
+		name  string
+		sub   soltype.Type
+		super soltype.Type
+		want  []string
 	}{
 		{"5 <: number", numLit(5), num(), nil},
 		{`"hello" <: string`, strLit("hello"), str(), nil},
@@ -106,7 +106,7 @@ func TestConstrainLiteral(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Context{}
-			errs := c.Constrain(tt.lhs, tt.rhs)
+			errs := c.Constrain(tt.sub, tt.super)
 			require.Equal(t, tt.want, Messages(errs))
 		})
 	}
@@ -122,7 +122,7 @@ func TestConstrainFunctionVariance(t *testing.T) {
 	})
 
 	// Contravariant params: (number) -> number <: (5) -> number requires
-	// 5 <: number on the param (rhs param <: lhs param), which holds.
+	// 5 <: number on the param (super param <: sub param), which holds.
 	t.Run("contravariant params (ok)", func(t *testing.T) {
 		c := &Context{}
 		f1 := exactFn(num(), identParam("x", num()))
@@ -150,7 +150,7 @@ func TestConstrainFunctionVariance(t *testing.T) {
 
 // TestConstrainFunctionAcceptSet exercises the PR4 accept-set rule (#677 §4.2.1):
 // G <: F iff accept(G) ⊇ accept(F), with params contravariant and return covariant.
-// Read F (the RHS) as the callback slot.
+// Read F (the super) as the callback slot.
 func TestConstrainFunctionAcceptSet(t *testing.T) {
 	// Two EXACT functions relate by the old same-arity rule: accept is [n, n] on both
 	// sides, so ⊇ forces equal arity.
@@ -172,8 +172,8 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 		require.Equal(t, []string{"cannot constrain function of arity 1 <: function of arity 2"}, Messages(errs))
 		fa, ok := errs[0].(*FuncArityMismatchError)
 		require.True(t, ok)
-		require.Same(t, g, fa.LHS)
-		require.Same(t, f, fa.RHS)
+		require.Same(t, g, fa.Sub)
+		require.Same(t, f, fa.Super)
 	})
 
 	// The #677 callback matrix for an exact fn(x, y) slot: fn(x, y), fn(x, ...), and
@@ -338,8 +338,8 @@ func TestConstrainTuple(t *testing.T) {
 		require.Equal(t, []string{"cannot constrain tuple of length 2 <: tuple of length 1"}, Messages(errs))
 		tl, ok := errs[0].(*TupleLengthMismatchError)
 		require.True(t, ok)
-		require.Same(t, t1, tl.LHS)
-		require.Same(t, t2, tl.RHS)
+		require.Same(t, t1, tl.Sub)
+		require.Same(t, t2, tl.Super)
 	})
 }
 
@@ -359,7 +359,7 @@ func inexactObj(elems ...soltype.ObjTypeElem) *soltype.ObjectType {
 }
 
 // TestConstrainObject exercises the one-way object exactness rule (A1): width
-// tolerance is inexactness on the RHS, and an exact RHS fixes its member set.
+// tolerance is inexactness on the super, and an exact super fixes its member set.
 //
 // want is the expected rendered messages (nil for a clean constraint); check, when
 // set, runs extra structural assertions (the specific error type, the operand
@@ -369,63 +369,63 @@ func TestConstrainObject(t *testing.T) {
 		return &soltype.PropertyElem{Name: name, Type: ty, Optional: true}
 	}
 	tests := []struct {
-		name     string
-		lhs, rhs soltype.Type
-		want     []string
-		check    func(t *testing.T, lhs, rhs soltype.Type, errs []SolverError)
+		name       string
+		sub, super soltype.Type
+		want       []string
+		check      func(t *testing.T, sub, super soltype.Type, errs []SolverError)
 	}{
 		{
 			// {x: 5} <: {x: number}
 			// Depth is covariant: checks 5 <: number on the shared property. Same
 			// member set on both sides, so the exact gate passes.
-			name: "exact same member set, covariant depth",
-			lhs:  exactObj(propElem("x", numLit(5))),
-			rhs:  exactObj(propElem("x", num())),
+			name:  "exact same member set, covariant depth",
+			sub:   exactObj(propElem("x", numLit(5))),
+			super: exactObj(propElem("x", num())),
 		},
 		{
 			// {x: number, y: number} <: {x: number, ...}
-			// Width is the inexact-target case: the LHS drops the extra y because the
-			// RHS only requires "has at least x".
-			name: "exact fills inexact (width)",
-			lhs:  exactObj(propElem("x", num()), propElem("y", num())),
-			rhs:  inexactObj(propElem("x", num())),
+			// Width is the inexact-target case: the sub drops the extra y because the
+			// super only requires "has at least x".
+			name:  "exact fills inexact (width)",
+			sub:   exactObj(propElem("x", num()), propElem("y", num())),
+			super: inexactObj(propElem("x", num())),
 		},
 		{
 			// {x: number, y: number, ...} <: {x: number, ...}
-			// Width again with an inexact source: an inexact LHS still satisfies an
-			// inexact RHS, dropping the extra y.
-			name: "inexact fills inexact (width)",
-			lhs:  inexactObj(propElem("x", num()), propElem("y", num())),
-			rhs:  inexactObj(propElem("x", num())),
+			// Width again with an inexact source: an inexact sub still satisfies an
+			// inexact super, dropping the extra y.
+			name:  "inexact fills inexact (width)",
+			sub:   inexactObj(propElem("x", num()), propElem("y", num())),
+			super: inexactObj(propElem("x", num())),
 		},
 		{
 			// {x: number} <: {y: number, ...}
-			// A required property the LHS lacks is a MissingPropertyError, regardless
-			// of the RHS's exactness.
-			name: "missing required property",
-			lhs:  exactObj(propElem("x", num())),
-			rhs:  inexactObj(propElem("y", num())),
-			want: []string{"object is missing property: y"},
-			check: func(t *testing.T, lhs, rhs soltype.Type, errs []SolverError) {
+			// A required property the sub lacks is a MissingPropertyError, regardless
+			// of the super's exactness.
+			name:  "missing required property",
+			sub:   exactObj(propElem("x", num())),
+			super: inexactObj(propElem("y", num())),
+			want:  []string{"object is missing property: y"},
+			check: func(t *testing.T, sub, super soltype.Type, errs []SolverError) {
 				mp, ok := errs[0].(*MissingPropertyError)
 				require.True(t, ok)
-				require.Same(t, lhs, mp.LHS)
-				require.Same(t, rhs, mp.RHS)
+				require.Same(t, sub, mp.Sub)
+				require.Same(t, super, mp.Super)
 			},
 		},
 		{
 			// {x: number, y: number} <: {x: number}
-			// An extra property on the LHS is rejected against an exact RHS, one error
+			// An extra property on the sub is rejected against an exact super, one error
 			// per extra property.
-			name: "extra property rejected by exact target",
-			lhs:  exactObj(propElem("x", num()), propElem("y", num())),
-			rhs:  exactObj(propElem("x", num())),
-			want: []string{"object has extra property: y"},
-			check: func(t *testing.T, lhs, rhs soltype.Type, errs []SolverError) {
+			name:  "extra property rejected by exact target",
+			sub:   exactObj(propElem("x", num()), propElem("y", num())),
+			super: exactObj(propElem("x", num())),
+			want:  []string{"object has extra property: y"},
+			check: func(t *testing.T, sub, super soltype.Type, errs []SolverError) {
 				ep, ok := errs[0].(*ExtraPropertyError)
 				require.True(t, ok)
-				require.Same(t, lhs, ep.LHS)
-				require.Same(t, rhs, ep.RHS)
+				require.Same(t, sub, ep.Sub)
+				require.Same(t, super, ep.Super)
 				require.Equal(t, "y", ep.Name)
 			},
 		},
@@ -433,78 +433,78 @@ func TestConstrainObject(t *testing.T) {
 			// {x: number, ...} <: {x: number}
 			// An inexact source cannot satisfy an exact target — the open `...` tail
 			// may carry properties the target does not declare.
-			name: "inexact rejected by exact target",
-			lhs:  inexactObj(propElem("x", num())),
-			rhs:  exactObj(propElem("x", num())),
-			want: []string{"cannot constrain inexact object <: exact object"},
-			check: func(t *testing.T, lhs, rhs soltype.Type, errs []SolverError) {
+			name:  "inexact rejected by exact target",
+			sub:   inexactObj(propElem("x", num())),
+			super: exactObj(propElem("x", num())),
+			want:  []string{"cannot constrain inexact object <: exact object"},
+			check: func(t *testing.T, sub, super soltype.Type, errs []SolverError) {
 				ie, ok := errs[0].(*InexactIntoExactError)
 				require.True(t, ok)
-				require.Same(t, lhs, ie.LHS)
-				require.Same(t, rhs, ie.RHS)
+				require.Same(t, sub, ie.Sub)
+				require.Same(t, super, ie.Super)
 			},
 		},
 		{
 			// {x: {a: number}} <: {x: {a: string}}
 			// Depth is recursive: a shared property whose types don't relate surfaces
 			// the inner failure, threaded through the path-scoped seen set.
-			name: "nested depth mismatch surfaces inner error",
-			lhs:  exactObj(propElem("x", exactObj(propElem("a", num())))),
-			rhs:  exactObj(propElem("x", exactObj(propElem("a", str())))),
-			want: []string{"cannot constrain number <: string"},
+			name:  "nested depth mismatch surfaces inner error",
+			sub:   exactObj(propElem("x", exactObj(propElem("a", num())))),
+			super: exactObj(propElem("x", exactObj(propElem("a", str())))),
+			want:  []string{"cannot constrain number <: string"},
 		},
 		{
 			// {x: {a: 5}} <: {x: {a: number}}
 			// Recursive depth that checks: the inner 5 <: number holds.
-			name: "nested depth covariant ok",
-			lhs:  exactObj(propElem("x", exactObj(propElem("a", numLit(5))))),
-			rhs:  exactObj(propElem("x", exactObj(propElem("a", num())))),
+			name:  "nested depth covariant ok",
+			sub:   exactObj(propElem("x", exactObj(propElem("a", numLit(5))))),
+			super: exactObj(propElem("x", exactObj(propElem("a", num())))),
 		},
 		{
 			// {a: number, b: number, c: number} <: {a: number}
 			// Every extra property on the source against an exact target fires its own
 			// ExtraPropertyError, in source-property order.
-			name: "multiple extra properties each report",
-			lhs:  exactObj(propElem("a", num()), propElem("b", num()), propElem("c", num())),
-			rhs:  exactObj(propElem("a", num())),
-			want: []string{"object has extra property: b", "object has extra property: c"},
+			name:  "multiple extra properties each report",
+			sub:   exactObj(propElem("a", num()), propElem("b", num()), propElem("c", num())),
+			super: exactObj(propElem("a", num())),
+			want:  []string{"object has extra property: b", "object has extra property: c"},
 		},
 		{
 			// {a: number, c: number} <: {a: number, b: number}
 			// A missing required property and an extra property both fire in one
-			// constraint: the RHS-required loop reports the missing one first, then the
-			// LHS-extra loop reports the extra.
-			name: "missing and extra combined against exact target",
-			lhs:  exactObj(propElem("a", num()), propElem("c", num())),
-			rhs:  exactObj(propElem("a", num()), propElem("b", num())),
-			want: []string{"object is missing property: b", "object has extra property: c"},
+			// constraint: the super-required loop reports the missing one first, then the
+			// sub-extra loop reports the extra.
+			name:  "missing and extra combined against exact target",
+			sub:   exactObj(propElem("a", num()), propElem("c", num())),
+			super: exactObj(propElem("a", num()), propElem("b", num())),
+			want:  []string{"object is missing property: b", "object has extra property: c"},
 		},
 		// Boundary member sets against the exactness gate.
 		{
 			// {} <: {a: number}
-			name: "empty exact missing required",
-			lhs:  exactObj(),
-			rhs:  exactObj(propElem("a", num())),
-			want: []string{"object is missing property: a"},
+			name:  "empty exact missing required",
+			sub:   exactObj(),
+			super: exactObj(propElem("a", num())),
+			want:  []string{"object is missing property: a"},
 		},
 		{
 			// {a: number} <: {}
-			name: "extra against empty exact",
-			lhs:  exactObj(propElem("a", num())),
-			rhs:  exactObj(),
-			want: []string{"object has extra property: a"},
+			name:  "extra against empty exact",
+			sub:   exactObj(propElem("a", num())),
+			super: exactObj(),
+			want:  []string{"object has extra property: a"},
 		},
 		{
 			// {} <: {}
-			name: "empty exact <: empty exact ok",
-			lhs:  exactObj(),
-			rhs:  exactObj(),
+			name:  "empty exact <: empty exact ok",
+			sub:   exactObj(),
+			super: exactObj(),
 		},
 		{
 			// {a: number} <: {...}
-			name: "exact fills empty inexact (width)",
-			lhs:  exactObj(propElem("a", num())),
-			rhs:  inexactObj(),
+			name:  "exact fills empty inexact (width)",
+			sub:   exactObj(propElem("a", num())),
+			super: inexactObj(),
 		},
 		// PropertyElem.Optional is part of the object shape, so subtyping is
 		// presence-aware: an optional target property may be absent on the source,
@@ -512,62 +512,62 @@ func TestConstrainObject(t *testing.T) {
 		// optional source property cannot fill a required target slot.
 		{
 			// {} <: {x?: number}: an optional target property may be absent.
-			name: "absent source satisfies optional target property",
-			lhs:  exactObj(),
-			rhs:  exactObj(optProp("x", num())),
+			name:  "absent source satisfies optional target property",
+			sub:   exactObj(),
+			super: exactObj(optProp("x", num())),
 		},
 		{
 			// {x?: number} <: {x: number}: the source may omit x, so it cannot fill a
 			// required slot.
-			name: "optional source rejected by required target",
-			lhs:  exactObj(optProp("x", num())),
-			rhs:  exactObj(propElem("x", num())),
-			want: []string{"object property is optional but required: x"},
-			check: func(t *testing.T, lhs, rhs soltype.Type, errs []SolverError) {
+			name:  "optional source rejected by required target",
+			sub:   exactObj(optProp("x", num())),
+			super: exactObj(propElem("x", num())),
+			want:  []string{"object property is optional but required: x"},
+			check: func(t *testing.T, sub, super soltype.Type, errs []SolverError) {
 				op, ok := errs[0].(*OptionalPropertyError)
 				require.True(t, ok)
-				require.Same(t, lhs, op.LHS)
-				require.Same(t, rhs, op.RHS)
+				require.Same(t, sub, op.Sub)
+				require.Same(t, super, op.Super)
 				require.Equal(t, "x", op.Name)
 			},
 		},
 		{
 			// {x: number} <: {x?: number}: a required property fills an optional slot.
-			name: "required source fills optional target property",
-			lhs:  exactObj(propElem("x", num())),
-			rhs:  exactObj(optProp("x", num())),
+			name:  "required source fills optional target property",
+			sub:   exactObj(propElem("x", num())),
+			super: exactObj(optProp("x", num())),
 		},
 		{
 			// {x?: number} <: {x?: number}: optional on both, types covariant.
-			name: "optional on both sides ok",
-			lhs:  exactObj(optProp("x", numLit(5))),
-			rhs:  exactObj(optProp("x", num())),
+			name:  "optional on both sides ok",
+			sub:   exactObj(optProp("x", numLit(5))),
+			super: exactObj(optProp("x", num())),
 		},
 		{
 			// An optional source property still recurses covariantly into an optional
 			// target property, so an incompatible type is caught.
-			name: "optional on both sides depth mismatch",
-			lhs:  exactObj(optProp("x", num())),
-			rhs:  exactObj(optProp("x", str())),
-			want: []string{"cannot constrain number <: string"},
+			name:  "optional on both sides depth mismatch",
+			sub:   exactObj(optProp("x", num())),
+			super: exactObj(optProp("x", str())),
+			want:  []string{"cannot constrain number <: string"},
 		},
 		{
 			// {a: 5} <: number
-			// A non-object RHS falls through the object arm to the generic
+			// A non-object super falls through the object arm to the generic
 			// CannotConstrainError, whose message renders the object via describe.
-			name: "object <: non-object renders via describe",
-			lhs:  exactObj(propElem("a", numLit(5))),
-			rhs:  num(),
-			want: []string{"cannot constrain object <: number"},
+			name:  "object <: non-object renders via describe",
+			sub:   exactObj(propElem("a", numLit(5))),
+			super: num(),
+			want:  []string{"cannot constrain object <: number"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Context{}
-			errs := c.Constrain(tt.lhs, tt.rhs)
+			errs := c.Constrain(tt.sub, tt.super)
 			require.Equal(t, tt.want, Messages(errs))
 			if tt.check != nil {
-				tt.check(t, tt.lhs, tt.rhs, errs)
+				tt.check(t, tt.sub, tt.super, errs)
 			}
 		})
 	}
@@ -662,7 +662,7 @@ func TestConstrainExtrusion(t *testing.T) {
 	low := c.freshVar(0)  // level 0
 	high := c.freshVar(1) // level 1
 
-	// low <: high. low (level 0) is the lhs variable; high (level 1) lives above
+	// low <: high. low (level 0) is the sub variable; high (level 1) lives above
 	// low's level, so it is extruded down to a fresh level-0 variable before
 	// being recorded as low's upper bound.
 	require.Empty(t, c.Constrain(low, high))

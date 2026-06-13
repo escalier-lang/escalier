@@ -190,7 +190,7 @@ func TestInferOverloadNonRecursiveAnnotatedAllowed(t *testing.T) {
 
 // Value-position use (PR6 scoped lattice exception): a let-bound overloaded name is
 // the INTERSECTION of its arms, and calling THROUGH that binding resolves each call
-// via constrain's function-intersection-LHS arm — g(5) ⇒ number, g("hi") ⇒ string.
+// via constrain's function-intersection-sub arm — g(5) ⇒ number, g("hi") ⇒ string.
 func TestInferOverloadValuePosition(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return x }

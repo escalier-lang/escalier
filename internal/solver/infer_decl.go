@@ -76,11 +76,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	if d.TypeAnn != nil {
 		// M2.5: constrain the initializer against the annotation (the one
 		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
-		// CannotConstrainError whose LHS (the "hi" literal) carries a
+		// CannotConstrainError whose Sub (the "hi" literal) carries a
 		// LiteralInference origin — precise blame, with the annotation as the
 		// related node. The constraint node is the initializer, so even the
-		// fallback span is the RHS, not the whole decl; the binding then adopts the
-		// annotated type.
+		// fallback span is the initializer, not the whole decl; the binding then
+		// adopts the annotated type.
 		//
 		// Skip both the check and the adoption when the annotation is unsupported
 		// (ok=false): resolveTypeAnn already reported it and returned a `never`

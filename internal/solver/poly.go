@@ -170,7 +170,7 @@ func (f *freshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { 
 // LevelOf prune would skip) — and freshens vars wherever they occur.
 //
 // inferAssign uses it on a binding's coalesced slot type: coalesceScheme RETAINS
-// type-parameter vars by pointer, so constraining the RHS against that type would
+// type-parameter vars by pointer, so constraining the source against that type would
 // mutate the binding's own vars and poison a reassigned polymorphic var for every
 // later use. Freshening first makes the constraint mutate throwaway copies instead.
 // A var-free input (the common annotated/literal case) is returned unchanged.

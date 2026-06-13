@@ -207,52 +207,52 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 
 	t.Run("FuncArity", func(t *testing.T) {
 		e := &FuncArityMismatchError{
-			LHS:  &soltype.FuncType{Params: make([]*soltype.FuncParam, 2)},
-			RHS:  &soltype.FuncType{Params: make([]*soltype.FuncParam, 1)},
-			prov: Prov{}, site: site,
+			Sub:   &soltype.FuncType{Params: make([]*soltype.FuncParam, 2)},
+			Super: &soltype.FuncType{Params: make([]*soltype.FuncParam, 1)},
+			prov:  Prov{}, site: site,
 		}
 		require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("TupleLength", func(t *testing.T) {
 		e := &TupleLengthMismatchError{
-			LHS:  &soltype.TupleType{Elems: []soltype.Type{num(), num()}},
-			RHS:  &soltype.TupleType{Elems: []soltype.Type{num()}},
-			prov: Prov{}, site: site,
+			Sub:   &soltype.TupleType{Elems: []soltype.Type{num(), num()}},
+			Super: &soltype.TupleType{Elems: []soltype.Type{num()}},
+			prov:  Prov{}, site: site,
 		}
 		require.Equal(t, "cannot constrain tuple of length 2 <: tuple of length 1", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("MissingProperty", func(t *testing.T) {
 		e := &MissingPropertyError{
-			LHS:  &soltype.ObjectType{},
-			RHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
-			Name: "b", prov: Prov{}, site: site,
+			Sub:   &soltype.ObjectType{},
+			Super: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			Name:  "b", prov: Prov{}, site: site,
 		}
 		require.Equal(t, "object is missing property: b", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("InexactIntoExact", func(t *testing.T) {
 		e := &InexactIntoExactError{
-			LHS: &soltype.ObjectType{Inexact: true}, RHS: &soltype.ObjectType{}, prov: Prov{}, site: site,
+			Sub: &soltype.ObjectType{Inexact: true}, Super: &soltype.ObjectType{}, prov: Prov{}, site: site,
 		}
 		require.Equal(t, "cannot constrain inexact object <: exact object", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("ExtraProperty", func(t *testing.T) {
 		e := &ExtraPropertyError{
-			LHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
-			RHS:  &soltype.ObjectType{},
-			Name: "b", prov: Prov{}, site: site,
+			Sub:   &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			Super: &soltype.ObjectType{},
+			Name:  "b", prov: Prov{}, site: site,
 		}
 		require.Equal(t, "object has extra property: b", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("OptionalProperty", func(t *testing.T) {
 		e := &OptionalPropertyError{
-			LHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}, Optional: true}}},
-			RHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
-			Name: "b", prov: Prov{}, site: site,
+			Sub:   &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}, Optional: true}}},
+			Super: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			Name:  "b", prov: Prov{}, site: site,
 		}
 		require.Equal(t, site.Span(), e.Span())
 	})

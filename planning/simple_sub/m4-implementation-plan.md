@@ -187,7 +187,7 @@ func (o *ObjectType) Prop(name string) (*PropertyElem, bool)
 
 type TupleType struct {
     Elems   []Type
-    Inexact bool // `[A, B, ...]` ⇒ true: longer <: shorter becomes legal vs an inexact RHS
+    Inexact bool // `[A, B, ...]` ⇒ true: longer <: shorter becomes legal vs an inexact super
 }
 ```
 
@@ -199,28 +199,28 @@ width-tolerant:
 
 ```go
 case *soltype.ObjectType:
-    if r, ok := rhs.(*soltype.ObjectType); ok {
+    if sup, ok := super.(*soltype.ObjectType); ok {
         var errs []SolverError
-        for _, re := range r.Elems {                 // depth: members covariant
-            rp := re.(*soltype.PropertyElem)         // M4: every elem is a property
-            lp, ok := l.Prop(rp.Name)
+        for _, superElem := range sup.Elems {            // depth: members covariant
+            superProp := superElem.(*soltype.PropertyElem) // M4: every elem is a property
+            subProp, ok := sub.Prop(superProp.Name)
             if !ok {
-                errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rp.Name})
+                errs = append(errs, &MissingPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
                 continue
             }
-            errs = append(errs, c.constrain(lp.Type, rp.Type, seen)...)
+            errs = append(errs, c.constrain(subProp.Type, superProp.Type, seen)...)
         }
         // One-way exactness (02-design-notes §"Exactness"):
         //   exact <: inexact    ok (width)      inexact <: inexact   ok (width)
         //   exact <: exact      same member set inexact <: exact     rejected
-        if !r.Inexact {
-            if l.Inexact {
-                errs = append(errs, &InexactIntoExactError{LHS: l, RHS: r})
+        if !sup.Inexact {
+            if sub.Inexact {
+                errs = append(errs, &InexactIntoExactError{Sub: sub, Super: sup})
             }
-            for _, le := range l.Elems {
-                lp := le.(*soltype.PropertyElem)
-                if _, ok := r.Prop(lp.Name); !ok {
-                    errs = append(errs, &ExtraPropertyError{LHS: l, RHS: r, Name: lp.Name})
+            for _, subElem := range sub.Elems {
+                subProp := subElem.(*soltype.PropertyElem)
+                if _, ok := sup.Prop(subProp.Name); !ok {
+                    errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
                 }
             }
         }
@@ -303,33 +303,33 @@ func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type
 // unified wrapper. Lifetime steps are written now, inert while Lt == nil (C2),
 // activated in D2.
 case *soltype.RefType:
-    if r, ok := rhs.(*soltype.RefType); ok {
+    if sup, ok := super.(*soltype.RefType); ok {
         // 1. mutability compatibility — can't widen immutable to mutable.
-        if !l.Mut && r.Mut {
-            return []SolverError{&MutabilityMismatchError{LHS: l, RHS: r}}
+        if !sub.Mut && sup.Mut {
+            return []SolverError{&MutabilityMismatchError{Sub: sub, Super: sup}}
         }
         // 2. inner variance — bidirectional iff the TARGET writes (read/write
-        //    decomposition = invariance). Mut-decay (l.Mut && !r.Mut) falls
+        //    decomposition = invariance). Mut-decay (sub.Mut && !sup.Mut) falls
         //    through to the covariant-only read view.
-        errs := c.constrain(l.Inner, r.Inner, seen)
-        if r.Mut {
-            errs = append(errs, c.constrain(r.Inner, l.Inner, seen)...)
+        errs := c.constrain(sub.Inner, sup.Inner, seen)
+        if sup.Mut {
+            errs = append(errs, c.constrain(sup.Inner, sub.Inner, seen)...)
         }
         // 3. lifetime — covariant when both present.
         switch {
-        case l.Lt != nil && r.Lt != nil:
-            c.constrainLt(r.Lt, l.Lt)
-        case l.Lt == nil && r.Lt != nil: // owned source satisfies any borrow slot
-        case l.Lt != nil && r.Lt == nil: // borrow into owned slot: escape
-            errs = append(errs, &BorrowEscapeError{LHS: l, RHS: r})
+        case sub.Lt != nil && sup.Lt != nil:
+            c.constrainLt(sup.Lt, sub.Lt)
+        case sub.Lt == nil && sup.Lt != nil: // owned source satisfies any borrow slot
+        case sub.Lt != nil && sup.Lt == nil: // borrow into owned slot: escape
+            errs = append(errs, &BorrowEscapeError{Sub: sub, Super: sup})
         }
         return errs
     }
     // RefType <: bare: legal only for an owned value (no lifetime); peel.
-    if l.Lt != nil {
-        return []SolverError{&BorrowEscapeError{LHS: l, RHS: rhs}}
+    if sub.Lt != nil {
+        return []SolverError{&BorrowEscapeError{Sub: sub, Super: super}}
     }
-    return c.constrain(l.Inner, rhs, seen)
+    return c.constrain(sub.Inner, super, seen)
 ```
 
 ```go
@@ -337,9 +337,9 @@ case *soltype.RefType:
 // wrap the source as an immutable no-lifetime view and re-dispatch into the
 // RefType<:RefType branch. Construct the struct literal DIRECTLY — NewRef would
 // collapse (false, nil) back to the bare inner and recurse forever.
-if r, ok := rhs.(*soltype.RefType); ok {
-    if inner, ok := asRefInner(lhs); ok {
-        return c.constrain(&soltype.RefType{Mut: false, Lt: nil, Inner: inner}, r, seen)
+if sup, ok := super.(*soltype.RefType); ok {
+    if inner, ok := asRefInner(sub); ok {
+        return c.constrain(&soltype.RefType{Mut: false, Lt: nil, Inner: inner}, sup, seen)
     }
 }
 ```
@@ -365,10 +365,10 @@ type Context struct {
 
 // constrainLt mirrors constrain over the outlives lattice: var-left gains an
 // upper bound, var-right a lower bound, var-to-var records both; 'static is
-// top (X <: 'static always holds); (lhs, rhs)-keyed seen-set for cycles.
+// top (X <: 'static always holds); (sub, super)-keyed seen-set for cycles.
 // Bound appends go ONLY through addLowerLtBound/addUpperLtBound — the journal
 // invariant extends to the second sort:
-func (c *Context) constrainLt(lhs, rhs Lifetime)
+func (c *Context) constrainLt(sub, super Lifetime)
 func (c *Context) addLowerLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime)
 func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime)
 
@@ -404,8 +404,8 @@ func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime)
 // and re-runs C3's acceptance.
 func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m *ast.MemberExpr) soltype.Type {
     recv := c.inferExpr(scope, lvl, m.Object)
-    rhs := c.inferExpr(scope, lvl, e.Right)
-    w := widen(rhs) // 5 ⇒ number: a later write may store any number
+    source := c.inferExpr(scope, lvl, e.Right)
+    w := widen(source) // 5 ⇒ number: a later write may store any number
     req := &soltype.RefType{Mut: true, Lt: nil /* D2: c.freshLifetime() */,
         Inner: &soltype.ObjectType{
             Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
@@ -551,12 +551,12 @@ these arms it must add.
     requirement (infer_expr.go:716) to `Inexact: true` so member access stays
     "has at least this field," now expressed *as inexactness* rather than as an
     unconditionally width-tolerant arm. This is the split the milestone calls
-    for: the same `ObjectType <: ObjectType` rule serves both selection (RHS
-    inexact) and concrete subtyping (RHS exact).
+    for: the same `ObjectType <: ObjectType` rule serves both selection (super
+    inexact) and concrete subtyping (super exact).
   - **Errors:** new, same field/blame shape as `MissingPropertyError`
     (errors.go:97):
-    - `InexactIntoExactError{LHS, RHS *soltype.ObjectType}`
-    - `ExtraPropertyError{LHS, RHS *soltype.ObjectType; Name string; prov; site}`
+    - `InexactIntoExactError{Sub, Super *soltype.ObjectType}`
+    - `ExtraPropertyError{Sub, Super *soltype.ObjectType; Name string; prov; site}`
   - **Accept:**
     - exact `{x, y}` `<:` inexact `{x, y, ...}` succeeds
     - inexact `<:` exact and extra-member-on-exact reject (full messages)
@@ -662,7 +662,7 @@ these arms it must add.
     direct-call extra-arg rule. It fires in the walk at literal-vs-annotation sites
     (annotated `val`/`var`, later call args and returns), not in the
     `ObjectType <: ObjectType` / tuple constrain arm. Reuse A1's `ExtraPropertyError`
-    for objects; add an analogous excess-element error for tuples. A non-literal RHS
+    for objects; add an analogous excess-element error for tuples. A non-literal source
     is unaffected — it takes ordinary width subtyping. M4 has only the untyped `...`
     tail; the typed-tail escape (an index signature that types the extras) rides M9,
     so until then an untyped-extras "bag" must use the variable escape hatch.
@@ -679,7 +679,7 @@ these arms it must add.
       ...} = v` (non-literal ⇒ width subtyping)
     - `val r: {x: number} = {x: 1, y: 2}` rejects (exact target, `ExtraPropertyError`)
     - tuple: `val t: [number, ...] = [1, 2, 3]` rejects (excess element on a
-      literal); the same RHS through a variable checks
+      literal); the same source through a variable checks
     - tuple annotations round-trip through the printer
 
 ### Phase B — Usage-based inference refinement
@@ -738,7 +738,7 @@ these arms it must add.
   - **Algorithm:** in `inferVarDecl` (infer_decl.go:108), a `var` binding's
     initializer type is widened before generalization, and — the principled
     milestone form — informed by **all** assignment sites: collect the
-    initializer plus every later `a = e` RHS and coalesce their widened types
+    initializer plus every later `a = e` source and coalesce their widened types
     (the binding's type is the join). **Widening is gated on mutability** — only
     a mutable cell widens, because only a mutable cell may later hold a different
     value of the same primitive. A `var` binding widens; a `val` is left
@@ -747,7 +747,7 @@ these arms it must add.
     new-checker form of the old checker's `Widenable` type-var flag, which gates
     `widenLiteral` to mutable bindings (unify.go:2260). This retires PR8's
     documented `var a = 5; a = 6` failure (infer_expr.go:532 note).
-    Reassignment's RHS-vs-binding constrain (inferAssign, infer_expr.go:540s) now
+    Reassignment's source-vs-binding constrain (inferAssign, infer_expr.go:540s) now
     checks against the widened binding type.
   - **Accept:**
     - `var a = 5; a = 6` checks (binding is `number`)
@@ -815,12 +815,12 @@ these arms it must add.
       false, Lt: nil, Inner: inner}` via a struct literal (**not** `NewRef`, which
       would collapse it and recurse forever) and re-dispatch
   - **Errors:**
-    - `MutabilityMismatchError{LHS, RHS *soltype.RefType}`
-    - `BorrowEscapeError{LHS, RHS}` (the latter's firing path is inert until D2)
+    - `MutabilityMismatchError{Sub, Super *soltype.RefType}`
+    - `BorrowEscapeError{Sub, Super}` (the latter's firing path is inert until D2)
   - **Accept (the gate):**
     - `mut {x, y} <: mut {x, ...}` **fails** (invariance — the write view's
       contravariant `{x, ...} <: {x, y}` is missing a field) while immutable
-      `{x, y} <: {x, ...}` width-**succeeds** (inexact RHS)
+      `{x, y} <: {x, ...}` width-**succeeds** (inexact super)
     - mut-decay `mut {x} <: {x}` allowed, the reverse `{x} <: mut {x}` rejected
     - full messages
 
@@ -838,9 +838,9 @@ these arms it must add.
   - **Algorithm — replace the member-target stub** (infer_expr.go:494-500, today
     `reportUnsupportedFeature("assignment to a member or index")`): implement
     `inferMemberAssign` per the sketch:
-    - infer receiver + RHS
-    - `widen` the RHS
-    - constrain `recv <: RefType{Mut: true, Lt: nil, Inner: {field: widen(rhs),
+    - infer receiver + source
+    - `widen` the source
+    - constrain `recv <: RefType{Mut: true, Lt: nil, Inner: {field: widen(source),
       Inexact: true}}`
     - record `written[recvID,field]`
     - return the stored value
@@ -852,7 +852,7 @@ these arms it must add.
     concrete type instead of a fresh var, so `obj.x = 5; obj.x` is `number`.
     **Write-after-read** needs no map support — it falls out of ordinary
     constraint accumulation: the earlier read emits `recv <: {x: β, ...}` and the
-    later write emits `recv <: mut {x: widen(rhs), ...}`, both upper-bound
+    later write emits `recv <: mut {x: widen(source), ...}`, both upper-bound
     constraints that merge, so the read's `β` picks up the field type through the
     bound graph. The `written` map is purely a read-after-write precision win
     (return the concrete stored type, not a coalesced var); the reverse order
@@ -908,7 +908,7 @@ these arms it must add.
   - **Algorithm — `constrainLt`** (ported from `simplesub/lifetime.go:61`):
     mirrors `constrain` over the outlives lattice — a var on the left gains an
     upper bound, on the right a lower bound, var-to-var records both;
-    `'static` is top (`X <: 'static` always holds); a `(lhs, rhs)`-keyed
+    `'static` is top (`X <: 'static` always holds); a `(sub, super)`-keyed
     seen-set terminates cycles. Bound appends go **only** through new
     `addLowerLtBound`/`addUpperLtBound` helpers that journal before appending —
     the same discipline as `addLowerBound`/`addUpperBound` (context.go:36).

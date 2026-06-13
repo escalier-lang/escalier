@@ -217,7 +217,7 @@ func TestProbeOutcomeIsIdempotent(t *testing.T) {
 	require.Empty(t, q.LowerBounds)
 }
 
-// Bounds appended by extrude (extrusion of a higher-level rhs down to lv's level)
+// Bounds appended by extrude (extrusion of a higher-level super down to subVar's level)
 // are journaled too: extrude mutates the ORIGINAL variable's bounds, and a
 // discard must truncate those back. Constraining a low-level var against a
 // higher-level var forces extrusion through the recorded append sites.

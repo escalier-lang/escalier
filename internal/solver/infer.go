@@ -18,7 +18,7 @@ import (
 // not model cleanly. The shape matches both the simplesub spike's typeTerm and
 // the old checker's inferExpr. See m2-implementation-plan §3.2.
 type checker struct {
-	ctx  *Context      // M1: freshVar(level), Constrain(lhs, rhs) []SolverError
+	ctx  *Context      // M1: freshVar(level), Constrain(sub, super) []SolverError
 	info *Info         // M1: node → soltype.Type side table (unexported setType)
 	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
@@ -93,15 +93,20 @@ func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 	return c.ctx.freshVar(lvl)
 }
 
-// constrain asserts lhs <: rhs and, for each resulting constraint error, hands it
-// the provenance table and the constraint node n as a blame fallback, so its own
-// Span()/Related() can resolve per-operand blame through Prov on demand and fall
-// back to n's span (never the zero span) when an operand has no entry (§3.5). The
-// engine itself never touches Prov — the fields are assigned here, after Constrain
-// returns, so the hot loop stays off the table (the perf invariant, §3.9). Bridge
-// errors never flow through here; they self-blame from their own node.
-func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type) {
-	for _, e := range c.ctx.Constrain(lhs, rhs) {
+// constrain asserts source <: target and, for each resulting constraint error,
+// hands it the provenance table and the constraint node n as a blame fallback, so
+// its own Span()/Related() can resolve per-operand blame through Prov on demand and
+// fall back to n's span (never the zero span) when an operand has no entry (§3.5).
+// The engine itself never touches Prov — the fields are assigned here, after
+// Constrain returns, so the hot loop stays off the table (the perf invariant,
+// §3.9). Bridge errors never flow through here; they self-blame from their own node.
+//
+// source is the value being checked, target the expected type — these map to the
+// engine's sub/super (Context.Constrain). The data-flow names hold here because no
+// contravariant flip has happened yet; note the syntactic LHS of `x = e` is the
+// target, not the source.
+func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
+	for _, e := range c.ctx.Constrain(source, target) {
 		switch err := e.(type) {
 		case *CannotConstrainError:
 			err.prov, err.site = c.prov, n

@@ -64,7 +64,7 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 // redundant cache entries, not infinite loops. M4's recursive types (aliases,
 // letrec) must preserve this property — see m1-implementation-plan §3.3
 // "Forward requirements for the named-ref node design".
-type constraintKey struct{ lhs, rhs soltype.Type }
+type constraintKey struct{ sub, super soltype.Type }
 
 // extrudeKey keys extrude's per-extrusion cache by both the origin variable's
 // ID and the polarity it was reached in, so the same variable copied in
@@ -74,14 +74,20 @@ type extrudeKey struct {
 	pol soltype.Polarity
 }
 
-// Constrain asserts lhs <: rhs, mutating bound lists. An empty result means
+// Constrain asserts sub <: super, mutating bound lists. An empty result means
 // success.
-func (c *Context) Constrain(lhs, rhs soltype.Type) []SolverError {
-	return c.constrain(lhs, rhs, set.NewSet[constraintKey]())
+//
+// Naming: sub is the subtype — the source value being checked; super is the
+// supertype — the target/expected type. Note this is the REVERSE of an
+// assignment's syntactic LHS/RHS: in `x = e`, the value `e` is sub and the target
+// `x` is super. The checker-level wrapper (checker.constrain) names these
+// source/target, which map to sub/super here.
+func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
+	return c.constrain(sub, super, set.NewSet[constraintKey]())
 }
 
-func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) []SolverError {
-	key := constraintKey{lhs, rhs}
+func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]) []SolverError {
+	key := constraintKey{sub, super}
 	if seen.Contains(key) {
 		return nil
 	}
@@ -95,160 +101,160 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 	// (and coalesce / extrude / freshenAbove never see it propagated through
 	// bounds). Unlike never (⊥) / unknown (⊤), which are coalesced-output only,
 	// ErrorType is a legal constrain input.
-	if _, ok := lhs.(*soltype.ErrorType); ok {
+	if _, ok := sub.(*soltype.ErrorType); ok {
 		return nil
 	}
-	if _, ok := rhs.(*soltype.ErrorType); ok {
+	if _, ok := super.(*soltype.ErrorType); ok {
 		return nil
 	}
 
 	// Structural cases first; fall through to the variable cases when a side
 	// that didn't match here is a TypeVarType.
-	switch l := lhs.(type) {
+	switch sub := sub.(type) {
 	case *soltype.PrimType:
-		if r, ok := rhs.(*soltype.PrimType); ok {
-			if r.Prim == l.Prim {
+		if sup, ok := super.(*soltype.PrimType); ok {
+			if sup.Prim == sub.Prim {
 				return nil
 			}
-			return []SolverError{&CannotConstrainError{LHS: l, RHS: r}}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
 	case *soltype.LitType:
-		if r, ok := rhs.(*soltype.LitType); ok {
-			if l.Equal(r) {
+		if sup, ok := super.(*soltype.LitType); ok {
+			if sub.Equal(sup) {
 				return nil
 			}
-			return []SolverError{&CannotConstrainError{LHS: l, RHS: r}}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
-		if r, ok := rhs.(*soltype.PrimType); ok {
-			if primOf(l.Lit) == r.Prim {
+		if sup, ok := super.(*soltype.PrimType); ok {
+			if primOf(sub.Lit) == sup.Prim {
 				return nil // a literal is a subtype of its primitive
 			}
-			return []SolverError{&CannotConstrainError{LHS: l, RHS: r}}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
 	case *soltype.FuncType:
-		if r, ok := rhs.(*soltype.FuncType); ok {
-			// Accept-set subtyping (#677 §4.2.1): read r as a callback slot. l <: r
-			// iff accept(l) ⊇ accept(r) — l must tolerate every argument count a
-			// holder of r may invoke it with. With accept(l) = [loL, hiL] and
-			// accept(r) = [loR, hiR]:
-			//   - loL <= loR — l must not DEMAND more args than r might supply, and
-			//   - hiL >= hiR — l must not REFUSE an arg count r might supply.
-			// The upper-bound clause is what exactness governs (an exact l caps hiL at
-			// len(l.Params), so it can't fill a wider/inexact slot); the lower-bound
+		if sup, ok := super.(*soltype.FuncType); ok {
+			// Accept-set subtyping (#677 §4.2.1): read super as a callback slot.
+			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
+			// argument count a holder of super may invoke it with. With
+			// accept(sub) = [loSub, hiSub] and accept(super) = [loSup, hiSup]:
+			//   - loSub <= loSup — sub must not DEMAND more args than super might supply,
+			//   - hiSub >= hiSup — sub must not REFUSE an arg count super might supply.
+			// The upper-bound clause is what exactness governs (an exact sub caps hiSub
+			// at len(sub.Params), so it can't fill a wider/inexact slot); the lower-bound
 			// clause is the `required` part (a typed-rest/optional lowers it). This
 			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
 			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
-			loL, hiL := acceptSet(l)
-			loR, hiR := acceptSet(r)
-			if loL > loR || hiL < hiR {
-				return []SolverError{&FuncArityMismatchError{LHS: l, RHS: r}}
+			loSub, hiSub := acceptSet(sub)
+			loSup, hiSup := acceptSet(sup)
+			if loSub > loSup || hiSub < hiSup {
+				return []SolverError{&FuncArityMismatchError{Sub: sub, Super: sup}}
 			}
 			// Shared positions are checked per-parameter (params contravariant,
-			// return covariant). When r is EXACT this is complete: r never supplies an
-			// argument beyond its declared params, and any extra param l declares there
-			// must be optional (the lo gate forced loL <= loR) and so is simply never
-			// passed.
+			// return covariant). When super is EXACT this is complete: super never
+			// supplies an argument beyond its declared params, and any extra param sub
+			// declares there must be optional (the lo gate forced loSub <= loSup) and so
+			// is simply never passed.
 			//
-			// KNOWN GAP (M4): when r is INEXACT and l declares MORE params than r, r's
-			// `...` tail may supply arbitrarily-typed args at l's extra positions, so
-			// soundness demands `unknown <: l.Params[i].Type` there — exact-types
-			// §4.2.1.2 "Variation B", the load-bearing rejection. That check needs the
-			// `_ <: unknown` (⊤) rule constrain lacks until M6, and an inexact function
-			// is unreachable from M3 source anyway (resolveTypeAnn resolves no function
-			// annotations), so the extra positions are left unchecked here for now. For
-			// every M3-reachable input (exact functions only) the shared loop is complete.
+			// KNOWN GAP (M4): when super is INEXACT and sub declares MORE params than
+			// super, super's `...` tail may supply arbitrarily-typed args at sub's extra
+			// positions, so soundness demands `unknown <: sub.Params[i].Type` there —
+			// exact-types §4.2.1.2 "Variation B", the load-bearing rejection. That check
+			// needs the `_ <: unknown` (⊤) rule constrain lacks until M6, and an inexact
+			// function is unreachable from M3 source anyway (resolveTypeAnn resolves no
+			// function annotations), so the extra positions are left unchecked here for
+			// now. For every M3-reachable input (exact functions only) the loop is complete.
 			var errs []SolverError
-			n := min(len(l.Params), len(r.Params))
+			n := min(len(sub.Params), len(sup.Params))
 			for i := 0; i < n; i++ {
-				errs = append(errs, c.constrain(r.Params[i].Type, l.Params[i].Type, seen)...) // contravariant
+				errs = append(errs, c.constrain(sup.Params[i].Type, sub.Params[i].Type, seen)...) // contravariant
 			}
-			return append(errs, c.constrain(l.Ret, r.Ret, seen)...) // covariant
+			return append(errs, c.constrain(sub.Ret, sup.Ret, seen)...) // covariant
 		}
 	case *soltype.TupleType:
-		if r, ok := rhs.(*soltype.TupleType); ok {
+		if sup, ok := super.(*soltype.TupleType); ok {
 			// Same length, element-wise covariant. M1's TupleType has no exact
 			// flag — same-length is the *exact <: exact* case applied
 			// implicitly; M4 adds the exact flag and the inexact arm.
-			if len(l.Elems) != len(r.Elems) {
-				return []SolverError{&TupleLengthMismatchError{LHS: l, RHS: r}}
+			if len(sub.Elems) != len(sup.Elems) {
+				return []SolverError{&TupleLengthMismatchError{Sub: sub, Super: sup}}
 			}
 			var errs []SolverError
-			for i := range l.Elems {
-				errs = append(errs, c.constrain(l.Elems[i], r.Elems[i], seen)...) // covariant
+			for i := range sub.Elems {
+				errs = append(errs, c.constrain(sub.Elems[i], sup.Elems[i], seen)...) // covariant
 			}
 			return errs
 		}
 	case *soltype.ObjectType:
-		if r, ok := rhs.(*soltype.ObjectType); ok {
+		if sup, ok := super.(*soltype.ObjectType); ok {
 			// One ObjectType <: ObjectType rule serves both uses the M2 arm
-			// conflated: member-access field SELECTION (the RHS is an inexact
+			// conflated: member-access field SELECTION (the super is an inexact
 			// "has at least this field" requirement minted by inferMember) and
 			// concrete object <: object SUBTYPING for object-typed params/annotations.
 			// The Inexact flag is the split — width tolerance IS inexactness.
 			//
-			// Depth first: every property the RHS requires must be present on the
-			// LHS, matched by name (Prop), and the shared property types are
+			// Depth first: every property the super requires must be present on the
+			// sub, matched by name (Prop), and the shared property types are
 			// covariant. PropertyElem.Optional makes presence part of the shape, so
 			// the loop is presence-aware before recursing on the property type:
-			//   - absent on the LHS: a MissingPropertyError only when the RHS
-			//     property is REQUIRED; an optional RHS property may be absent.
-			//   - present on both, optional on the LHS but required on the RHS: the
+			//   - absent on the sub: a MissingPropertyError only when the super
+			//     property is REQUIRED; an optional super property may be absent.
+			//   - present on both, optional on the sub but required on the super: the
 			//     source may omit it, so it cannot fill a required slot —
 			//     OptionalPropertyError, and skip the covariant type check (the
 			//     presence mismatch already rejects the constraint).
 			//   - otherwise (required<:required, required<:optional, optional<:
 			//     optional): covariant on the property type.
 			var errs []SolverError
-			for _, re := range r.Elems {
-				rp := soltype.AsProperty(re) // M4: every elem is a property
-				lp, ok := l.Prop(rp.Name)
+			for _, superElem := range sup.Elems {
+				superProp := soltype.AsProperty(superElem) // M4: every elem is a property
+				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
-					if !rp.Optional {
-						errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rp.Name})
+					if !superProp.Optional {
+						errs = append(errs, &MissingPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
 					}
 					continue
 				}
-				if lp.Optional && !rp.Optional {
-					errs = append(errs, &OptionalPropertyError{LHS: l, RHS: r, Name: rp.Name})
+				if subProp.Optional && !superProp.Optional {
+					errs = append(errs, &OptionalPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
 					continue
 				}
-				errs = append(errs, c.constrain(lp.Type, rp.Type, seen)...) // covariant
+				errs = append(errs, c.constrain(subProp.Type, superProp.Type, seen)...) // covariant
 			}
 			// One-way exactness (02-design-notes §"Exactness"):
 			//   exact <: inexact    ok (width)      inexact <: inexact   ok (width)
 			//   exact <: exact      same member set  inexact <: exact     rejected
-			// When the RHS is inexact, width tolerance is the complete rule and the
-			// depth loop above is all there is. When the RHS is exact, the LHS may
+			// When the super is inexact, width tolerance is the complete rule and the
+			// depth loop above is all there is. When the super is exact, the sub may
 			// carry no extra properties and may not itself be inexact.
-			if !r.Inexact {
-				if l.Inexact {
-					errs = append(errs, &InexactIntoExactError{LHS: l, RHS: r})
+			if !sup.Inexact {
+				if sub.Inexact {
+					errs = append(errs, &InexactIntoExactError{Sub: sub, Super: sup})
 				}
-				for _, le := range l.Elems {
-					lp := soltype.AsProperty(le)
-					if _, ok := r.Prop(lp.Name); !ok {
-						errs = append(errs, &ExtraPropertyError{LHS: l, RHS: r, Name: lp.Name})
+				for _, subElem := range sub.Elems {
+					subProp := soltype.AsProperty(subElem)
+					if _, ok := sup.Prop(subProp.Name); !ok {
+						errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
 					}
 				}
 			}
 			return errs
 		}
 	case *soltype.PromiseType:
-		if r, ok := rhs.(*soltype.PromiseType); ok {
+		if sup, ok := super.(*soltype.PromiseType); ok {
 			// PromiseType is covariant in its Inner: Promise<L> <: Promise<R> iff
 			// L <: R. No auto-flatten — `await Promise<Promise<T>>` yields
 			// `Promise<T>` (Awaited<T> lands in M9). When the two sides are unrelated
 			// concretes (e.g. Promise<L> <: Tuple), fall through to the generic
 			// CannotConstrainError below, matching the function/tuple/record arms.
-			return c.constrain(l.Inner, r.Inner, seen)
+			return c.constrain(sub.Inner, sup.Inner, seen)
 		}
 	case *soltype.Void:
-		if _, ok := rhs.(*soltype.Void); ok {
+		if _, ok := super.(*soltype.Void); ok {
 			return nil
 		}
 	case *soltype.IntersectionType:
-		// Function-intersection LHS (PR6 scoped lattice exception): (A & B & …) <: rhs
-		// iff SOME member <: rhs. This is the ONE place the overload disjunction touches
+		// Function-intersection sub (PR6 scoped lattice exception): (A & B & …) <: super
+		// iff SOME member <: super. This is the ONE place the overload disjunction touches
 		// the lattice — reached only when an overloaded value (inferIdent synthesizes the
 		// arm intersection) flows into a constraint, e.g. a let-bound overload called
 		// through the binding (`g = f; g(x)`). The disjunction stays confined to the
@@ -260,16 +266,16 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		// intersection never reaches constrain as input (the design keeps these
 		// output-only), so this arm is overload-synthesis-only.
 		//
-		// Collapse only against a CONCRETE demand. If rhs is a variable — the overloaded
+		// Collapse only against a CONCRETE demand. If super is a variable — the overloaded
 		// value is flowing INTO a binding (`intersection <: b.v`) — don't collapse here.
 		// Fall through to the var arm below, which records the intersection WHOLE as a
 		// lower bound. Collapsing now would commit to one arm prematurely and discard the
 		// rest of the overload set. The collapse fires later instead, once that var is
 		// constrained against a concrete function demand (a call shape) and the whole
 		// intersection propagates to it.
-		if _, rhsIsVar := rhs.(*soltype.TypeVarType); !rhsIsVar && len(l.Types) > 0 {
-			funcs := make([]*soltype.FuncType, len(l.Types))
-			for i, m := range l.Types {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && len(sub.Types) > 0 {
+			funcs := make([]*soltype.FuncType, len(sub.Types))
+			for i, m := range sub.Types {
 				funcs[i], _ = m.(*soltype.FuncType)
 			}
 			var lastErrs []SolverError
@@ -278,7 +284,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 				c.probe = p
 				// A cloned seen keeps each arm's coinductive cache independent, so a failed
 				// arm's entries can't wrongly short-circuit a later arm to success.
-				errs := c.constrain(l.Types[idx], rhs, seen.Clone())
+				errs := c.constrain(sub.Types[idx], super, seen.Clone())
 				c.probe = p.parent
 				if len(errs) == 0 {
 					p.Commit()
@@ -291,34 +297,34 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 		}
 	}
 
-	// lhs is a variable: record rhs as an upper bound, propagate existing lowers.
-	if lv, ok := lhs.(*soltype.TypeVarType); ok {
-		if soltype.LevelOf(rhs) <= lv.Level {
-			c.addUpperBound(lv, rhs)
+	// sub is a variable: record super as an upper bound, propagate existing lowers.
+	if subVar, ok := sub.(*soltype.TypeVarType); ok {
+		if soltype.LevelOf(super) <= subVar.Level {
+			c.addUpperBound(subVar, super)
 			var errs []SolverError
-			for _, lb := range lv.LowerBounds {
-				errs = append(errs, c.constrain(lb, rhs, seen)...)
+			for _, lb := range subVar.LowerBounds {
+				errs = append(errs, c.constrain(lb, super, seen)...)
 			}
 			return errs
 		}
-		// rhs lives at a higher level: extrude it down so it isn't wrongly
-		// generalized at lv's level.
-		return c.constrain(lhs, c.extrude(rhs, soltype.Negative, lv.Level, map[extrudeKey]*soltype.TypeVarType{}), seen)
+		// super lives at a higher level: extrude it down so it isn't wrongly
+		// generalized at subVar's level.
+		return c.constrain(sub, c.extrude(super, soltype.Negative, subVar.Level, map[extrudeKey]*soltype.TypeVarType{}), seen)
 	}
-	// rhs is a variable: symmetric — record lhs as a lower bound, propagate uppers.
-	if rv, ok := rhs.(*soltype.TypeVarType); ok {
-		if soltype.LevelOf(lhs) <= rv.Level {
-			c.addLowerBound(rv, lhs)
+	// super is a variable: symmetric — record sub as a lower bound, propagate uppers.
+	if superVar, ok := super.(*soltype.TypeVarType); ok {
+		if soltype.LevelOf(sub) <= superVar.Level {
+			c.addLowerBound(superVar, sub)
 			var errs []SolverError
-			for _, ub := range rv.UpperBounds {
-				errs = append(errs, c.constrain(lhs, ub, seen)...)
+			for _, ub := range superVar.UpperBounds {
+				errs = append(errs, c.constrain(sub, ub, seen)...)
 			}
 			return errs
 		}
-		return c.constrain(c.extrude(lhs, soltype.Positive, rv.Level, map[extrudeKey]*soltype.TypeVarType{}), rhs, seen)
+		return c.constrain(c.extrude(sub, soltype.Positive, superVar.Level, map[extrudeKey]*soltype.TypeVarType{}), super, seen)
 	}
 
-	return []SolverError{&CannotConstrainError{LHS: lhs, RHS: rhs}}
+	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
 // extrude copies t so that variables above lvl are replaced by fresh variables

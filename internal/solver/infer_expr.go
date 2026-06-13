@@ -453,18 +453,18 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	return nil, false
 }
 
-// inferAssign types a reassignment `target = rhs` — the only BinaryExpr form the
-// M3 walk handles. The RHS is typed first (so its own errors surface regardless of
-// the target's validity), then the target is resolved and gated:
+// inferAssign types a reassignment `target = source` — the only BinaryExpr form the
+// M3 walk handles. The source value is typed first (so its own errors surface
+// regardless of the target's validity), then the target is resolved and gated:
 //
 //   - The target must be a place: an IdentExpr resolving to a value binding. A
-//     literal, call, member, or any other non-place LHS is an
+//     literal, call, member, or any other non-place target is an
 //     InvalidAssignmentTargetError (member targets `obj.x = …` need record types,
 //     M4). An ident that resolves to no binding is an UnknownIdentifierError.
 //   - The binding must be reassignable: only a `var` (Kind == VarKind) is. A `val`,
 //     function, parameter, or prelude binding is a CannotAssignToImmutableError.
 //
-// On success the RHS is constrained `<: target` (the binding's coalesced type),
+// On success the source is constrained `<: target` (the binding's coalesced type),
 // the new-solver form of the old checker's `Unify(rightType, leftType)`: the value
 // being stored must be a subtype of the slot. Reassigning an annotated `var a:
 // number = 5` with `a = 6` checks; an un-annotated `var a = 5` keeps the literal
@@ -483,7 +483,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if e.Left == nil || e.Right == nil {
 		return c.reportUnsupported(e)
 	}
-	rhs := c.inferExpr(scope, lvl, e.Right)
+	sourceT := c.inferExpr(scope, lvl, e.Right)
 	// Record void on e up front as the recovery type: every error path below returns
 	// voidT without recording a type, so this guarantees the node is typed on failure.
 	// The success path overwrites it with the stored value's type (see end of function).
@@ -523,7 +523,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		})
 		return voidT
 	}
-	// The RHS must be a subtype of the target binding's type. Use the binding's
+	// The source value must be a subtype of the target binding's type. Use the binding's
 	// COALESCED type (schemeType — what Info records and the printer renders), not a
 	// fresh instantiation: instantiating a generalized binding yields a var carrying
 	// only its LOWER bounds (the read/covariant face), so `a = "x"` for `var a:
@@ -532,14 +532,14 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// for an un-annotated one (so `a = 6` ⇒ `6 <: 5` does NOT check until M4 `var`
 	// literal widening).
 	//
-	// freshenAll copies the coalesced type so constraining the RHS cannot mutate
+	// freshenAll copies the coalesced type so constraining the source cannot mutate
 	// type-parameter vars the coalesced form still shares with the binding
 	// (coalesceScheme retains them by pointer): without the copy, reassigning a
 	// polymorphic var would poison it for every later use. A var-free coalesced type
 	// (the common annotated/literal case) freshens to itself.
 	//
 	// A probe can't do this: Discard would also roll back the constraint's real errors
-	// and the RHS's bound, while Commit would keep the binding poisoning — we need to
+	// and the source's bound, while Commit would keep the binding poisoning — we need to
 	// suppress one side effect, not the whole trial. freshenAll isolates just the var.
 	//
 	// b.Schemes[0]: a reassignable binding is always single-scheme — overload sets
@@ -547,7 +547,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
-	c.constrainAssign(e, rhs, targetT)
+	c.constrainAssign(e, sourceT, targetT)
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
 	// instantiate (the read face), NOT the coalesced write-face targetT: targetT is a
@@ -560,33 +560,33 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	return valueT
 }
 
-// constrainAssign asserts `rhs <: targetT` for a reassignment. For a UNION target it
-// applies the union-RHS rule — X <: (A | B) iff X <: A or X <: B — by trying each
-// member speculatively under a probe, committing the first that holds. constrain
-// itself has no UnionType-RHS rule until M6, so without this a legal assignment of a
+// constrainAssign asserts `source <: target` for a reassignment. For a UNION target
+// it applies the union-target rule — X <: (A | B) iff X <: A or X <: B — by trying
+// each member speculatively under a probe, committing the first that holds. constrain
+// itself has no UnionType-super rule until M6, so without this a legal assignment of a
 // union member (`var a = if c { 1 } else { 2 }; a = 1`) would be wrongly rejected.
 // A non-union target takes the ordinary single-constraint path.
 //
-// KNOWN GAP (M6): when `rhs` is (or contains) an inference variable, committing the
+// KNOWN GAP (M6): when `source` is (or contains) an inference variable, committing the
 // first matching member over-narrows it. `var a = 1 | 2; a = x` for an un-annotated
 // param `x` commits `x <: 1` and infers `x: 1` instead of the sound `x: 1 | 2`,
 // which can wrongly reject a later use of `x` that needs `2`. This is INCOMPLETE,
 // not unsound — the committed bound is always stronger than required, so no invalid
 // program is accepted. It is not fixable here: the obvious "don't commit, fall
-// through to constrain(rhs, targetT)" injects the COALESCED union node into rhs's
+// through to constrain(source, target)" injects the COALESCED union node into source's
 // bound list and panics the coalescer (coalesced output must never re-enter the
 // graph). A correct fix needs first-class union subtyping with inference variables
 // — M6's deferred union/intersection rules in constrain. Pinned by
 // TestInferAssignUnionTargetVarRHSOverNarrows.
-func (c *checker) constrainAssign(n ast.Node, rhs, targetT soltype.Type) {
-	union, ok := targetT.(*soltype.UnionType)
+func (c *checker) constrainAssign(n ast.Node, source, target soltype.Type) {
+	union, ok := target.(*soltype.UnionType)
 	if !ok {
-		c.constrain(n, rhs, targetT)
+		c.constrain(n, source, target)
 		return
 	}
 	for _, member := range union.Types {
 		p := c.openProbe()
-		errs := c.ctx.Constrain(rhs, member)
+		errs := c.ctx.Constrain(source, member)
 		c.closeProbe(p, len(errs) == 0) // commit the first member that holds; else roll back
 		if len(errs) == 0 {
 			return
@@ -594,7 +594,7 @@ func (c *checker) constrainAssign(n ast.Node, rhs, targetT soltype.Type) {
 	}
 	// No member matched: report once against the whole union (CannotConstrainError),
 	// blaming the assignment.
-	c.constrain(n, rhs, targetT)
+	c.constrain(n, source, target)
 }
 
 // bindingDecl returns the AST node of the binding's introducing declaration — the
