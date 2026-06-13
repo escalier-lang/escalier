@@ -570,6 +570,15 @@ these arms it must add.
       cur.Inexact}`)
     - `equalType`'s tuple arm
     - `printType`'s tuple case (a trailing `, ...`)
+  - **Parser prerequisite (consumed by A3, not A2):** A2 adds `Inexact` to the
+    *soltype* `TupleType`, but the AST `TupleTypeAnn` has no `Inexact` field and
+    the parser rejects a bare trailing `...` in a tuple annotation
+    (`[number, ...]` → "expected type annotation after '...'"; `...T` parses only
+    as a `RestSpreadTypeAnn` element, which requires a following type). The same
+    is true of `ObjectTypeAnn` for A1's object `Inexact`. A2's own constrain/print
+    tests build `TupleType`/`ObjectType` values directly, so this does **not**
+    block A2 — it is a prerequisite for A3's `{x, ...}` / `[number, ...]`
+    annotation resolution. See A3's Parser prerequisite note.
   - **Algorithm — tuple constrain arm** (constrain.go:162): replace the strict
     `len(l.Elems) != len(r.Elems)` reject with the exactness-aware rule — when
     `r` is exact, lengths must match; when `r` is inexact, `len(l) >= len(r)`
@@ -609,7 +618,28 @@ these arms it must add.
     - a constant numeric key resolves, a dynamic key errors
 
 - **A3 — Object/tuple/`mut`/lifetime type annotations** (~180).
-  - **Files:** `solver/type_ann.go`, plus tests.
+  - **Files:** `internal/parser/type_ann.go` + `internal/ast/type_ann.go` (the
+    parser prerequisite below), `solver/type_ann.go`, plus tests.
+  - **Parser prerequisite (do this first).** `resolveTypeAnn` can only honor a
+    trailing `...` if the parser produces one, and today it does not. `ObjectTypeAnn`
+    and `TupleTypeAnn` (`internal/ast/type_ann.go`) carry **no `Inexact` field** —
+    only `FuncExpr`/`FuncTypeAnn` do — and a bare trailing `...` in an object or
+    tuple annotation is a **parse error** (`{x: number, ...}` and `[number, ...]`
+    both report "expected type annotation after '...'"); `...T` parses only as a
+    `RestSpreadTypeAnn` *element*, which requires a following type. So before the
+    `... ⇒ Inexact: true` arm and every `{x, ...}` / `[number, ...]` acceptance
+    test below, the parser must:
+    1. add `Inexact bool` to `ObjectTypeAnn` and `TupleTypeAnn`, and
+    2. recognize a bare trailing `...` before `}` / `]` as that marker instead of
+       erroring on a value-less rest-spread (the lookahead `parseFuncParams`
+       already uses for `fn(x, ...)` is the model).
+
+    The `mut`/lifetime annotation forms likewise need parser support before the
+    C1-gated arms land — confirm `mut {x}` and `'a T` parse (lifetime parsing
+    exists, see `internal/parser/lifetime_test.go`). This is parser-side work,
+    separate from and upstream of `resolveTypeAnn`; it does NOT touch the
+    A1 → C1 → C2 path to the gate, whose constrain-rule tests build `soltype`
+    values directly.
   - **Algorithm — extend `resolveTypeAnn`** (type_ann.go:21, today
     primitives + `Promise<T>` only):
     - add arms for object-type and tuple-type annotations (building
