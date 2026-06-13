@@ -4,7 +4,7 @@ import "github.com/escalier-lang/escalier/internal/soltype"
 
 // TypeScheme is a name's generalized type — the M3 replacement for M2's plain
 // soltype.Type binding. A MonoScheme is a value that does not generalize (a
-// parameter, a current-level RHS during inference, a body-level `val`, a prelude
+// parameter, a current-level initializer during inference, a body-level `val`, a prelude
 // operator); a PolyScheme carries a generalize-level so each use can be
 // instantiated with fresh variables (let-polymorphism). The IsAnnotated bit is
 // forward-looking metadata for PR6's overload-recursion gate — PR1 sets it false

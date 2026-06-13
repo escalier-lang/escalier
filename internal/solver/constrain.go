@@ -78,10 +78,9 @@ type extrudeKey struct {
 // success.
 //
 // Naming: sub is the subtype — the source value being checked; super is the
-// supertype — the target/expected type. Note this is the REVERSE of an
-// assignment's syntactic LHS/RHS: in `x = e`, the value `e` is sub and the target
-// `x` is super. The checker-level wrapper (checker.constrain) names these
-// source/target, which map to sub/super here.
+// supertype — the target/expected type. In `x = e`, the value `e` is sub and the
+// target `x` is the super. The checker-level wrapper (checker.constrain) names
+// these source/target, which map to sub/super here.
 func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 	return c.constrain(sub, super, set.NewSet[constraintKey]())
 }

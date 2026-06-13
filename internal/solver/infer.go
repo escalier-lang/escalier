@@ -103,8 +103,8 @@ func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 //
 // source is the value being checked, target the expected type — these map to the
 // engine's sub/super (Context.Constrain). The data-flow names hold here because no
-// contravariant flip has happened yet; note the syntactic LHS of `x = e` is the
-// target, not the source.
+// contravariant flip has happened yet: in `x = e`, `e` is the source and `x` is
+// the target.
 func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 	for _, e := range c.ctx.Constrain(source, target) {
 		switch err := e.(type) {
