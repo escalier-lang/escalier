@@ -424,7 +424,7 @@ wrapper) are what first populate a lifetime. Land them together.
   'static`. (Spike M4.)
 - **Destructuring patterns + the `match` expression form.** `IdentPat` (M1, the
   only `Pat` concrete through M2–M3) is joined here by the structural concretes —
-  `TuplePat`, `RecordPat`, and literal patterns — now that tuple/record types
+  `TuplePat`, `ObjectPat`, and literal patterns — now that tuple/record types
   exist to type them. The *same* `Pat` machinery powers both **binding
   destructuring** (`val {x, y} = p`, `val [a, b] = t`, and the identical forms in
   function params) and **`match` arms**: a pattern dispatches through the usage /
@@ -512,23 +512,40 @@ production scale. If it cannot be encoded cleanly against the real AST, the
 whole migration is in question — this is the gate to clear before investing
 further.
 
+**Deferred out of M4** (tracked at their target milestones, not lost):
+
+- **Object-argument overload specificity (#723)** — records make the documented
+  first-match fallback observable; the principled field-subsumption ranking lands
+  in **M5**. M4 only pins the cases with `#723`-tagged tests.
+- **Function-arm Variation-B gap** — unchecked extra positions against an inexact
+  callback need the `_ <: unknown` (⊤) rule, which lands in **M6**. M4 excludes
+  function annotations and fails the branch loud, keeping the path closed.
+- **Rest-param element checking (#677)** — `...xs: T[]` element checking needs
+  `Array<T>`, so it lands in **M7**. M4 stays arity-only and marks the
+  `FuncParam.Rest` note "M7."
+
 ---
 
 ## M5 — Nominal types (classes)
 
 Escalier's `class` declarations introduce **nominal** types: a value of class
-`Point` is not assignable to a bare structural `{x: number}` (and vice versa)
-even when the fields line up. SimpleSub is fundamentally structural, so nominal
+`Point` is not assignable to an **exact** structural `{x: number}`, nor is a
+structural object ever assignable to `Point`, even when the fields line up. A
+class instance *does* satisfy an **inexact** object target structurally; the
+target-dispatched rule below makes the target's exactness the deciding factor.
+SimpleSub is fundamentally structural, so nominal
 types are layered on as atomic lattice elements with an explicit
 **declared-subtype graph** feeding `constrain` — the design sketched in
 [`03-references.md`](03-references.md). Lifetimes and `mut` ride on classes
 exactly as they do on records (introduced in M4), so this milestone reuses the
 M4 substrate without retrofitting.
 
-- A `Class` SimpleType `{name, args, lt, final}` that is **atomic from
-  `constrain`'s perspective**: subtyping never looks at its members structurally.
-  Member *lookup* (`p.x`, `p.method()`) resolves through the declared body —
-  that's a separate path from subtyping.
+- A `Class` SimpleType `{name, args, lt, final}` plus the structural member view
+  it projects. Against a **class target**, subtyping is nominal and never looks at
+  members structurally. Against a **structural object target**, the class projects
+  its members and the structural width rule applies — target-dispatched, per the
+  M4 plan's design-revision note. Member *lookup* (`p.x`, `p.method()`) resolves
+  through the declared body either way, a separate path from subtyping.
 - **Class-instance exactness comes from `final`**
   ([exact-types/requirements.md](../exact-types/requirements.md) §2.6). A class instance
   type is **inexact by default** (subclasses may add members, so it behaves like
@@ -540,9 +557,12 @@ M4 substrate without retrofitting.
 - **Nominal subtyping rule.** `Class<A, args_A> <: Class<B, args_B>` succeeds
   iff (a) `A == B` (per-position check on args, with variance per parameter —
   see below), or (b) `A extends B` (transitively) in the declared-subtype graph
-  built from each class's `Extends`/`Implements`. Mixed
-  `Class <: structural record` (and the reverse) rejects: a `Point` is not a
-  `{x: number}`.
+  built from each class's `Extends`/`Implements`. A `Class` against a structural
+  object target dispatches on the target's exactness: an **exact** object target
+  rejects, since a `Point` is not an exact `{x: number}`, while an **inexact**
+  `{x: number, ...}` target **admits** a structurally-conforming class instance
+  via the structural width rule. The reverse — a structural object against a
+  `Class` target — always rejects: a `{x: number}` is not a `Point`.
 - **`match` extends to nominal patterns; destructuring stays separate from
   assignability.** M5 adds **enum/class constructor patterns** to the `match`
   expression introduced in M4 (structural patterns there), plus
@@ -551,8 +571,11 @@ M4 substrate without retrofitting.
   `let {x, y} = point` (and the equivalent `match` arm) still succeeds against a
   `Point` because patterns dispatch through member lookup, **not** subtyping —
   the same path that resolves `p.x`. The assignment forms
-  `var foo: {x: number, y: number} = Point(5, 10)` and
-  `var bar: Point = {x: 5, y: 10}` both remain rejected by the nominal rule above.
+  `var foo: {x: number, y: number} = Point(5, 10)` (an exact target) and
+  `var bar: Point = {x: 5, y: 10}` both remain rejected. The inexact form
+  `var foo: {x: number, y: number, ...} = Point(5, 10)` is **accepted** under the
+  target-dispatched rule above: an inexact object target admits a
+  structurally-conforming class instance.
 - **Per-type-parameter variance via polarity (Option 2).** Each class's type
   parameters get their variance inferred from how they appear in the class body,
   exactly as SimpleSub already does for inference variables. A parameter that
@@ -651,6 +674,15 @@ two method-specific wrinkles:
   same one that resolves `p.x`). Plug overload selection into *that* path —
   it has the declared class in hand and never has to invent an arrow type for
   subtyping to chew on.
+- **Object-argument overload specificity (#723; deferred from M4).** M4's record
+  types made the documented first-match fallback observable on object-typed
+  arguments: `moreSpecific`/`structuralSubtype` (overload.go) ranks record-shaped
+  args as a tie, so resolution collapses to declaration order. M5 owns the fix —
+  classes are where multi-arm object overloads proliferate — ranking record/class
+  args by field-set subsumption and exactness (a superset-of-fields or exact arg
+  dominates), the object analogue of M3's arity/exactness ranking. M4 only pins
+  the observable cases with `#723`-tagged tests so any later arm-choice change is
+  intentional.
 
 See M3 for the full set of recommendations; everything there applies to
 methods unchanged.
@@ -720,6 +752,15 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   reported. (In M3 this is an invariant freebie — `ErrorType` is short-circuited out
   of every bound list, so it never reaches a former; M6 must keep it true once
   formers can be built directly.)
+- **The `_ <: unknown` (⊤) subtyping rule — closes M4's Variation-B gap
+  (deferred from M4).** With `unknown` a real former here, add the rule that makes
+  it the top of the lattice (everything is a subtype of `unknown`). M4 left a
+  KNOWN GAP in `constrain`'s function arm: an inexact callback that may supply
+  extra arguments needs an `unknown`-against-param check at those positions
+  (exact-types §4.2.1.2 "Variation B"), which this rule supplies. M4 keeps the
+  path closed — A3 adds no function annotations and the extra-position branch
+  fails loud via `reportUnsupportedFeature` — so the gap is unreachable until this
+  rule lands and that guard is removed.
 
 **Accept:** `number | string` annotation accepts `number`/rejects `boolean`;
 intersection annotation satisfied by a value at both member types; both
@@ -779,6 +820,21 @@ now resolve to real `soltype` structures rather than opaque placeholders.
   from day one, so they live in the M2 prelude (a port of the old checker's
   `addOperatorBindings`). M7 ports *type* ingestion (`.d.ts`/interop → `soltype`),
   not the value-level operator env.
+- **Rest-param element checking (#677; deferred from M4).** Typed rest params
+  `...xs: T[]` check each trailing argument against `T`, which needs `Array<T>` to
+  resolve — so the element type only exists once this milestone lands. M4 kept
+  rest params arity-only (trailing args unchecked, a documented hole) and marked
+  `FuncParam.Rest`'s note "M7." Wire the element check here against the real
+  `Array<T>`, dropping the arity-only restriction.
+- **Variadic tuple types `[number, ...Array<number>]`.** A tuple with a fixed
+  prefix and a *typed*, unbounded, homogeneous tail — distinct from M4's `Inexact`
+  tuple flag `[A, B, ...]`, which means "at least these, then *unknown*." The typed
+  tail needs `Array<T>`, so it lands here with the rest of library type resolution.
+  Add a typed rest/variadic element to `TupleType` — a tail carrying its element
+  type, not just a boolean flag — plus the variadic-tuple subtyping rules, e.g.
+  `[number, number] <: [number, ...Array<number>]` and
+  `[number, ...Array<number>] <: Array<number>`. The `infer`-matching form
+  `T extends [any, ...infer R] ? R : never` is M9 (conditional + `infer`), not here.
 
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
 `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
@@ -888,6 +944,27 @@ the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
   - Key remapping via `as` clauses.
   - Combinations with `keyof` / indexed access in the value position (the
     pattern underlying `Pick`, `Omit`, `Partial`, `Required`, `Readonly`).
+- **Object spread types `{...A, x: T}`** — first-class object spread types,
+  parallel to Escalier's tuple spread types and modeled on Flow; TypeScript has
+  no equivalent. A reducible operator: it reduces when the operand grounds, with
+  the rightmost field winning on overlap, and stays residual when the operand is
+  an abstract type parameter, reduced post-coalescing like the operators above.
+  Exactness threads from the operand, so a spread of an inexact object is inexact.
+  **Optional-field overlap uses Flow-faithful show-through union:** when a later
+  operand's *optional* field overlaps an earlier key, the values union rather than
+  override. Required-in-earlier with optional-in-later yields `T | U` **required**;
+  optional with optional yields `(T | U)?`. For example, `{...A, ...B}` with
+  `A = {k: number}` and `B = {k?: string}` reduces to `k: number | string`,
+  required. Object rest/spread in both literals and type annotations lands here,
+  not M4.
+- **Tuple spread types `[...P, x]`** — the positional analogue of object spread,
+  spreading one tuple type into another. Same reducible-operator shape: it splices
+  when the operand grounds to a concrete tuple and stays residual when the operand
+  is an abstract type parameter, reduced post-coalescing. M4 already handles the
+  concrete case for tuple *literals* — `[...pair, 3]` where `pair` is a known
+  tuple — but not the abstract-operand type. This is distinct from a typed variadic
+  tail like `[number, ...Array<number>]`, which is M7: that needs `Array` and is an
+  unbounded homogeneous tail, not a splice.
 - **Template literal types** — string-literal types built from interpolated
   type unions (e.g. `` `on${Capitalize<K>}` ``), including the intrinsic
   string-manipulation operators `Uppercase`/`Lowercase`/`Capitalize`/
@@ -895,7 +972,8 @@ the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
 - **Exactness propagation through operators**
   ([exact-types/requirements.md](../exact-types/requirements.md) §7): `keyof T`
   is exact iff `T`'s key set is exact; `T[K]`, conditional results, mapped
-  types, and template literals derive exactness from their inputs. This is the
+  types, object spread, and template literals derive exactness from their inputs.
+  This is the
   first milestone where exactness must *propagate through reduction*, not just
   be checked — it builds on the flag laid down in M3–M6. The
   `Exact<T>`/`Inexact<T>` type-level utilities also land here (they are type

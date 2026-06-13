@@ -60,8 +60,8 @@ Object literals are inferred as **exact** types:
 
 ```
 val p = {x: 1, y: 2}                    // inferred as exact {x: number, y: number}
-val q: InexactPoint = {x: 1, y: 2}      // okay — exact widens to inexact on assignment
-val r: InexactPoint = {x: 1, y: 2, z: 3} // okay — assigning to inexact target
+val q: InexactPoint = {x: 1, y: 2}      // okay — declared properties only
+val r: InexactPoint = {x: 1, y: 2, z: 3} // Error — excess property `z` on a literal (see §2.2.4)
 val s: ExactPoint = {x: 1, y: 2, z: 3}   // Error — extra property `z` on exact target
 ```
 
@@ -99,6 +99,41 @@ For an inexact `o`, all three fall back to TypeScript's permissive types:
 `Object.keys(o): Array<string>`, `Object.values(o): Array<unknown>`, and
 `Object.entries(o): Array<[string, unknown]>` — the unknown extra properties
 prevent any tighter typing.
+
+#### 2.2.4. Excess Property Checking on Literals
+
+Assigning an object **literal** directly to a known or contextual type rejects
+properties the target does not declare, **regardless of the target's exactness**.
+This is the object twin of the direct-call rule (§4.2.3): the exact/inexact
+distinction governs **subtyping** — which *values* may flow into a slot — not
+direct literal construction. A property the target's shape does not name is
+statically inaccessible through that type and is almost always a typo or a
+leftover, so it is flagged where it is written.
+
+```
+type InexactPoint = { x: number, y: number, ... }
+
+val r: InexactPoint = { x: 1, y: 2, z: 3 }   // Error — excess property `z`
+```
+
+The check fires against the **untyped** open tail (`...`) only. A typed index
+signature (§2.7) *types* its extra properties instead of discarding them, so
+extras that satisfy the signature are accepted — exactly as a typed rest
+parameter admits extra arguments while an inexact `(...)` function does not
+(§4.2.3). A "bag" of arbitrary members is therefore expressed with an index
+signature, not a bare `...` (§10.4).
+
+Assigning through a variable opts out: a non-literal value is checked by ordinary
+width subtyping rather than as a fresh construction site.
+
+```
+val tmp = { x: 1, y: 2, z: 3 }       // exact { x: number, y: number, z: number }
+val r: InexactPoint = tmp            // okay — width subtyping; `z` is simply forgotten
+```
+
+The check applies wherever a literal meets a contextual type — annotated
+bindings, function arguments against a parameter type, and return positions — not
+only at `val`/`var` bindings.
 
 ### 2.3. Type-Checking Rules
 
@@ -343,7 +378,7 @@ Tuple literals are inferred as **exact**:
 
 ```
 val t = ["hello", 42]                // inferred as exact [string, number]
-val u: InexactTuple = ["hello", 42, true] // okay — extra element on inexact target
+val u: InexactTuple = ["hello", 42, true] // Error — excess element on a literal (see §3.2.4)
 val v: ExactTuple = ["hello", 42, true]   // Error — extra element on exact target
 ```
 
@@ -365,6 +400,34 @@ For an exact tuple, `length` is the literal numeric type (`2` for
 `[string, number]`). For an inexact tuple, `length` is `number` with a known
 lower bound (effectively `number`, with the documented minimum equal to the
 number of declared elements).
+
+#### 3.2.4. Excess Element Checking on Literals
+
+Assigning a tuple **literal** directly to a known or contextual type rejects
+elements beyond the target's declared shape, **regardless of exactness** — the
+positional twin of excess-property checking (§2.2.4) and the direct-call
+extra-argument rule (§4.2.3), since a tuple is an argument-list-shaped value.
+
+```
+type InexactPair = [number, number, ...]
+
+val u: InexactPair = [1, 2, 3]   // Error — excess element at index 2
+```
+
+As with objects, this fires against the **untyped** open tail (`...`) only. A
+typed rest element *types* its extras, so a literal's trailing elements that
+satisfy the rest element type are accepted:
+
+```
+val w: [string, ...Array<number>] = ["a", 1, 2]   // okay — 1, 2 typed by the rest element
+```
+
+Assigning through a variable opts out, as for objects:
+
+```
+val tmp = [1, 2, 3]
+val u: InexactPair = tmp          // okay — width subtyping; the third element is forgotten
+```
 
 ### 3.3. Type-Checking Rules
 
@@ -901,6 +964,12 @@ The exact/inexact distinction does **not** affect direct calls; it governs
 function-typed slot expects it. An inexact type's tolerance for extras is a
 statement about how the function may be *invoked through a slot that holds it*,
 not a license to pass extras at a visible call site.
+
+The same direct-construction-site principle governs object literals (§2.2.4) and
+tuple literals (§3.2.4): an excess property or element written on a literal is
+rejected regardless of the target's exactness, while a typed tail — a rest
+parameter, a typed tuple rest element, or an object index signature — types its
+extras and admits them.
 
 #### 4.2.4. `Parameters<T>` and `infer` on Function Parameter Lists
 
@@ -1992,21 +2061,32 @@ would be invoked with a second argument it refuses. This is exactly why
 `std:array` splits `map` (unary) from `mapi` (binary) rather than exposing
 one binary slot — see §11.1.
 
-### 10.4. Mixed: An Inexact Object as a Bag
+### 10.4. Mixed: A Typed Bag via an Index Signature
+
+A "bag" that carries arbitrary extra members declares a **typed index
+signature** so those members are typed rather than discarded. The extras are then
+accepted at a literal site because the index signature types them — the object
+analogue of a typed rest parameter (§4.2.3), not the untyped `...` tail.
 
 ```
 type Headers = {
     "content-type": string,
     "content-length": number,
-    ...                            // explicitly inexact: other headers are allowed
+    [key: string]: string | number,   // typed extras
 }
 
 val h: Headers = {
     "content-type": "text/plain",
     "content-length": 11,
-    "x-custom": "ok",              // okay — inexact permits extras
+    "x-custom": "ok",                  // okay — typed by the index signature
 }
 ```
+
+Writing the same extra against a bare untyped `...` tail is rejected at the
+literal site (§2.2.4), because an untyped extra is statically inaccessible and
+almost always a mistake. To attach genuinely untyped extra data, assign through a
+variable, which is checked by ordinary width subtyping rather than as a fresh
+literal.
 
 ## 11. `std:*` and `dom:*` Module Adjustments
 

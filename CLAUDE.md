@@ -2,6 +2,13 @@
 
 Escalier is a programming language with a Go-based compiler. The compiler pipeline lives under [internal/](internal/) and the CLI entry points under [cmd/](cmd/).
 
+## Responding in conversation
+
+- Be concise. Lead with the direct answer, usually one or two sentences, and stop there.
+- Don't pre-empt follow-up questions with extra sections, caveats, or trade-off surveys. The user will ask about anything they want expanded.
+- Don't give a long version followed by a short recap — just give the short version.
+- No multi-heading structure unless asked. This applies to analysis and planning questions too, not just quick lookups.
+
 ## Repo layout
 
 - [internal/lexer_util/](internal/lexer_util/), [internal/parser/](internal/parser/) — lexing and parsing
