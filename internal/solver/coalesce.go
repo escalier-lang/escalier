@@ -334,15 +334,17 @@ func equalType(a, b soltype.Type) bool {
 		return true
 	case *soltype.ObjectType:
 		b, ok := b.(*soltype.ObjectType)
+		// Inexact flags must be equal — an open object never equals a closed one.
+		// This mirrors the FuncType arm's a.Inexact discriminator.
 		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
-		// Objects are equal up to property order — match by name (ObjectType.Prop),
-		// not position. Well-formed objects have unique property names (the solver
-		// dedups on construction), so equal lengths plus every a-property matching a
-		// b-property by name, type, and optionality (and equal Inexact flags) is a
-		// full structural match. Inexact and Optional mirror the FuncType arm's
-		// a.Inexact / param-Optional discriminators.
+		// Objects are equal up to property order, so match each property by name
+		// via ObjectType.Prop rather than by position. The solver dedups property
+		// names on construction, so names are unique. Equal lengths plus every
+		// a-property matching a b-property by name, type, and optionality is then a
+		// full structural match. Optional mirrors the FuncType arm's param-Optional
+		// discriminator.
 		for _, ae := range a.Elems {
 			ap := soltype.AsProperty(ae)
 			bp, ok := b.Prop(ap.Name)

@@ -375,25 +375,31 @@ func TestConstrainObject(t *testing.T) {
 		check    func(t *testing.T, lhs, rhs soltype.Type, errs []SolverError)
 	}{
 		{
-			// Depth is covariant: {x: 5} <: {x: number} checks 5 <: number on the
-			// shared property. Same member set on both sides, so the exact gate passes.
+			// {x: 5} <: {x: number}
+			// Depth is covariant: checks 5 <: number on the shared property. Same
+			// member set on both sides, so the exact gate passes.
 			name: "exact same member set, covariant depth",
 			lhs:  exactObj(propElem("x", numLit(5))),
 			rhs:  exactObj(propElem("x", num())),
 		},
 		{
-			// Width is the inexact-target case: exact {x, y} <: inexact {x, ...} drops
-			// the extra y because the RHS only requires "has at least x".
+			// {x: number, y: number} <: {x: number, ...}
+			// Width is the inexact-target case: the LHS drops the extra y because the
+			// RHS only requires "has at least x".
 			name: "exact fills inexact (width)",
 			lhs:  exactObj(propElem("x", num()), propElem("y", num())),
 			rhs:  inexactObj(propElem("x", num())),
 		},
 		{
+			// {x: number, y: number, ...} <: {x: number, ...}
+			// Width again with an inexact source: an inexact LHS still satisfies an
+			// inexact RHS, dropping the extra y.
 			name: "inexact fills inexact (width)",
 			lhs:  inexactObj(propElem("x", num()), propElem("y", num())),
 			rhs:  inexactObj(propElem("x", num())),
 		},
 		{
+			// {x: number} <: {y: number, ...}
 			// A required property the LHS lacks is a MissingPropertyError, regardless
 			// of the RHS's exactness.
 			name: "missing required property",
@@ -408,6 +414,7 @@ func TestConstrainObject(t *testing.T) {
 			},
 		},
 		{
+			// {x: number, y: number} <: {x: number}
 			// An extra property on the LHS is rejected against an exact RHS, one error
 			// per extra property.
 			name: "extra property rejected by exact target",
@@ -423,6 +430,7 @@ func TestConstrainObject(t *testing.T) {
 			},
 		},
 		{
+			// {x: number, ...} <: {x: number}
 			// An inexact source cannot satisfy an exact target — the open `...` tail
 			// may carry properties the target does not declare.
 			name: "inexact rejected by exact target",
@@ -437,6 +445,7 @@ func TestConstrainObject(t *testing.T) {
 			},
 		},
 		{
+			// {x: {a: number}} <: {x: {a: string}}
 			// Depth is recursive: a shared property whose types don't relate surfaces
 			// the inner failure, threaded through the path-scoped seen set.
 			name: "nested depth mismatch surfaces inner error",
@@ -445,11 +454,14 @@ func TestConstrainObject(t *testing.T) {
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
+			// {x: {a: 5}} <: {x: {a: number}}
+			// Recursive depth that checks: the inner 5 <: number holds.
 			name: "nested depth covariant ok",
 			lhs:  exactObj(propElem("x", exactObj(propElem("a", numLit(5))))),
 			rhs:  exactObj(propElem("x", exactObj(propElem("a", num())))),
 		},
 		{
+			// {a: number, b: number, c: number} <: {a: number}
 			// Every extra property on the source against an exact target fires its own
 			// ExtraPropertyError, in source-property order.
 			name: "multiple extra properties each report",
@@ -458,6 +470,7 @@ func TestConstrainObject(t *testing.T) {
 			want: []string{"object has extra property: b", "object has extra property: c"},
 		},
 		{
+			// {a: number, c: number} <: {a: number, b: number}
 			// A missing required property and an extra property both fire in one
 			// constraint: the RHS-required loop reports the missing one first, then the
 			// LHS-extra loop reports the extra.
@@ -468,23 +481,27 @@ func TestConstrainObject(t *testing.T) {
 		},
 		// Boundary member sets against the exactness gate.
 		{
+			// {} <: {a: number}
 			name: "empty exact missing required",
 			lhs:  exactObj(),
 			rhs:  exactObj(propElem("a", num())),
 			want: []string{"object is missing property: a"},
 		},
 		{
+			// {a: number} <: {}
 			name: "extra against empty exact",
 			lhs:  exactObj(propElem("a", num())),
 			rhs:  exactObj(),
 			want: []string{"object has extra property: a"},
 		},
 		{
+			// {} <: {}
 			name: "empty exact <: empty exact ok",
 			lhs:  exactObj(),
 			rhs:  exactObj(),
 		},
 		{
+			// {a: number} <: {...}
 			name: "exact fills empty inexact (width)",
 			lhs:  exactObj(propElem("a", num())),
 			rhs:  inexactObj(),
@@ -535,6 +552,7 @@ func TestConstrainObject(t *testing.T) {
 			want: []string{"cannot constrain number <: string"},
 		},
 		{
+			// {a: 5} <: number
 			// A non-object RHS falls through the object arm to the generic
 			// CannotConstrainError, whose message renders the object via describe.
 			name: "object <: non-object renders via describe",

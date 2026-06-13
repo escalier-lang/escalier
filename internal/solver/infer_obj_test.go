@@ -201,6 +201,11 @@ func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 // tests only read a field off a literal receiver.
 func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
 	t.Run("wider object is accepted", func(t *testing.T) {
+		// Today `p` is inferred INEXACT (`{a: number, ...}`), so a wider argument
+		// checks. M4 phase B PR B1 ("close usage-inferred shapes to exact") will
+		// seal `p` to exact `{a: number}`, after which this wider call REJECTS `b`
+		// as an extra property. PR B2's `open` marker (`fn f(open p)`) will restore
+		// the inexact, row-polymorphic form. Revisit this case when B1/B2 land.
 		src := `
 			fn f(p) { return p.a }
 			val r = f({a: 1, b: 2})

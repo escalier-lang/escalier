@@ -207,14 +207,20 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 
 	t.Run("FuncArity", func(t *testing.T) {
 		e := &FuncArityMismatchError{
-			LHS: &soltype.FuncType{}, RHS: &soltype.FuncType{}, prov: Prov{}, site: site,
+			LHS:  &soltype.FuncType{Params: make([]*soltype.FuncParam, 2)},
+			RHS:  &soltype.FuncType{Params: make([]*soltype.FuncParam, 1)},
+			prov: Prov{}, site: site,
 		}
+		require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("TupleLength", func(t *testing.T) {
 		e := &TupleLengthMismatchError{
-			LHS: &soltype.TupleType{}, RHS: &soltype.TupleType{}, prov: Prov{}, site: site,
+			LHS:  &soltype.TupleType{Elems: []soltype.Type{num(), num()}},
+			RHS:  &soltype.TupleType{Elems: []soltype.Type{num()}},
+			prov: Prov{}, site: site,
 		}
+		require.Equal(t, "cannot constrain tuple of length 2 <: tuple of length 1", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("MissingProperty", func(t *testing.T) {
@@ -223,12 +229,14 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 			RHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
 			Name: "b", prov: Prov{}, site: site,
 		}
+		require.Equal(t, "object is missing property: b", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("InexactIntoExact", func(t *testing.T) {
 		e := &InexactIntoExactError{
 			LHS: &soltype.ObjectType{Inexact: true}, RHS: &soltype.ObjectType{}, prov: Prov{}, site: site,
 		}
+		require.Equal(t, "cannot constrain inexact object <: exact object", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("ExtraProperty", func(t *testing.T) {
@@ -237,6 +245,7 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 			RHS:  &soltype.ObjectType{},
 			Name: "b", prov: Prov{}, site: site,
 		}
+		require.Equal(t, "object has extra property: b", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("OptionalProperty", func(t *testing.T) {
@@ -265,6 +274,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 		c.constrain(node, exactObj(propElem("x", num()), propElem("y", num())), exactObj(propElem("x", num())))
 		require.Len(t, c.errs, 1)
 		require.IsType(t, &ExtraPropertyError{}, c.errs[0])
+		require.Equal(t, "object has extra property: y", c.errs[0].Message())
 		require.Equal(t, node.Span(), c.errs[0].Span())
 	})
 
@@ -274,6 +284,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 		c.constrain(node, inexactObj(propElem("x", num())), exactObj(propElem("x", num())))
 		require.Len(t, c.errs, 1)
 		require.IsType(t, &InexactIntoExactError{}, c.errs[0])
+		require.Equal(t, "cannot constrain inexact object <: exact object", c.errs[0].Message())
 		require.Equal(t, node.Span(), c.errs[0].Span())
 	})
 

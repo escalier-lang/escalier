@@ -683,6 +683,14 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 // from the plan's §3.2 table. The requirement is INEXACT: a member read asks
 // only that the receiver has AT LEAST this property, so width tolerance is
 // expressed as inexactness rather than as an unconditionally width-tolerant arm.
+//
+// This inexactness currently flows out to the inferred param type. A param used
+// only through member reads coalesces to its upper bound, so `fn (p) { p.foo }`
+// infers an inexact param `{foo: number, ...}`. M4 phase B PR B1 ("close
+// usage-inferred shapes to exact") will seal that coalesced result to exact via
+// the Policy-A close, rendering `{foo: number}`. The per-access requirement
+// minted here stays inexact; only the coalesced result is closed.
+//
 // The ObjectType <: ObjectType arm of constrain lowers res from the receiver's
 // matching property (so res coalesces to that property's type); a receiver
 // missing the property surfaces as a MissingPropertyError stamped with the
