@@ -151,6 +151,11 @@ type MutabilityMismatchError struct {
 // supertype or a RefType super with no lifetime. The firing path is INERT in C2 —
 // every RefType carries Lt == nil until the lifetime sort lands (D1) and borrows
 // originate (D2) — so the struct is wired now and exercised from D2.
+//
+// It is intentionally UNTESTED until then, and currently unconstructible: soltype.Lifetime
+// has no concrete implementors, so no non-nil Lt exists to drive any firing branch.
+// The Message format and the describe-the-whole-borrow choice are first observed in
+// D2; coverage of Message/Span/Related is deferred to that PR.
 type BorrowEscapeError struct {
 	Sub   *soltype.RefType
 	Super soltype.Type

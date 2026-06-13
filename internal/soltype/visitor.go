@@ -151,6 +151,14 @@ func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	// their own cache, exactly as the spike's extrude treated a Mut inner. The
 	// lifetime is not a Type, so Accept never walks it; only the lifetime-aware
 	// passes (D4) do.
+	//
+	// KNOWN GAP (D2): C2's constrain rule makes a Mut borrow's inner INVARIANT (it
+	// adds both a read and a write constraint), but this single covariant visit means
+	// extrude/freshenAbove wire an out-of-level inner var through only one bound
+	// direction. This is inert today — no inference path mints a RefType, so extrude
+	// never sees a real Mut borrow — and Accept is shared with coalesce, which WANTS a
+	// single covariant visit, so the fix belongs in extrude/freshenAbove (not here)
+	// once borrows originate (D2) and the case becomes reachable and testable.
 	inner := cur.Inner.Accept(v, pol)
 	var out Type = cur
 	if inner != cur.Inner {

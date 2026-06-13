@@ -348,16 +348,14 @@ func propElem(name string, t soltype.Type) *soltype.PropertyElem {
 	return &soltype.PropertyElem{Name: name, Type: t}
 }
 
-// mutRef / immutRef build borrow wrappers for the RefType constrain tests (C2).
-// Lt is always nil in C2 (the lifetime sort lands in D1), so only the owned-mutable
-// (mut) and the degenerate immutable-no-lifetime view are constructible — the latter
-// is what bare <: RefType mints internally to re-dispatch a borrowable source.
+// mutRef builds an owned-mutable borrow for the RefType constrain tests (C2). Lt is
+// always nil in C2 — the lifetime sort lands in D1 — so the owned-mutable wrapper is
+// the only meaningful borrow constructible here. A real immutable borrow needs a
+// lifetime (`Mut: false, Lt: 'a`), so its helper arrives in D2; the bare <: RefType
+// arm mints the degenerate `Mut: false, Lt: nil` view internally with a struct
+// literal, not through a helper.
 func mutRef(inner soltype.RefInner) *soltype.RefType {
 	return &soltype.RefType{Mut: true, Inner: inner}
-}
-
-func immutRef(inner soltype.RefInner) *soltype.RefType {
-	return &soltype.RefType{Mut: false, Inner: inner}
 }
 
 // TestConstrainDescribesRefOperand pins review finding 2: describe must NAME a

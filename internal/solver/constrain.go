@@ -263,6 +263,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			//    invariance. So `mut {x, y} <: mut {x, ...}` rejects (the write view's
 			//    `{x, ...} <: {x, y}` is missing y), while `{x, y} <: {x, ...}` as bare
 			//    objects width-succeeds.
+			//
+			//    The write view gates on `sup.Mut`, which is load-bearing-equivalent to
+			//    `sub.Mut && sup.Mut`: the mutability check above already returned for
+			//    `!sub.Mut && sup.Mut`, so reaching here with sup.Mut implies sub.Mut.
+			//    If that earlier gate is ever weakened, re-gate the write view explicitly
+			//    or it would impose a spurious contravariant constraint on an immutable
+			//    source.
 			errs := c.constrain(sub.Inner, sup.Inner, seen)
 			if sup.Mut {
 				errs = append(errs, c.constrain(sup.Inner, sub.Inner, seen)...)
