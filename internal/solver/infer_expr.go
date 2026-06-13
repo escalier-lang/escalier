@@ -44,38 +44,94 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 // multi-FuncDecl names, so no overloaded binding is ever bound), so PR1 asserts
 // the single-scheme invariant rather than branching on it.
 //
-// A namespace name in value position can only fail in M2: there is no legal
-// namespace-member position yet (MemberExpr is value-only and there is no
-// IndexExpr), so raising NamespaceUsedAsValueError on any namespace name is
-// correct here. M4 moves that error to the value-position consumer once
-// qualified Foo.bar access lands.
+// A namespace name in value position is an error — namespaces are a separate
+// binding sort and never flow as values. M4 moves that rejection OFF inferIdent
+// to the value-position consumer (demandValue): a namespace is legal in the
+// OBJECT position of a member/index chain (Foo.bar, A.B.c), so resolvePath
+// surfaces it and only a consumer that needs a value rejects it. The error then
+// fires once for both `f(Foo)` and a partial chain `f(A.B)`.
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
-	// Any binding still in scope has at least one scheme: inferComponent pre-binds
-	// each group member to a fresh MonoScheme, and on failure deletes the binding
-	// (scope.removeValue) rather than leaving it with an empty Schemes slice. So the
-	// len > 0 check below should never fail in practice — but Schemes is a slice, not
-	// a guaranteed-non-empty field, so we guard it anyway: a malformed empty binding
-	// degrades to an unknown-identifier error here instead of panicking on Schemes[0].
-	//
-	// An overloaded name in VALUE position (PR6) — `val g = f`, or `f` passed as an
-	// argument — is the intersection of its arms (the one scoped lattice exception;
-	// see overloadIntersection and constrain's IntersectionType arm). A direct call
-	// `f(x)` never reaches here: inferCall intercepts the overloaded callee and routes
-	// it through resolveOverload before typing the callee as a value.
+	return c.demandValue(c.resolveIdentPath(scope, lvl, e), e)
+}
+
+// pathResult is the sum returned by resolvePath: a path expression resolves to
+// EITHER a value (its instantiated type, in value) OR a namespace (ns), or it
+// failed (err, with the diagnostic already reported, the caller should recover).
+// At most one of value/ns is set; err is set instead when resolution reported an
+// error. The value arm may itself hold the ErrorType recovery sentinel — that is a
+// value, not an err — so a malformed-but-already-reported leaf does not double-report.
+type pathResult struct {
+	value soltype.Type
+	ns    *Namespace
+	err   bool
+}
+
+// resolvePath resolves an ident / member / index chain to a value or a namespace
+// WITHOUT demanding either: the OBJECT position of a member/index tolerates a
+// namespace (so Foo.bar and A.B.c walk through), while demandValue — called by
+// every value-position consumer — rejects a namespace result. Any other
+// expression kind in path position is an ordinary value expression.
+func (c *checker) resolvePath(scope *Scope, lvl int, e ast.Expr) pathResult {
+	switch e := e.(type) {
+	case *ast.IdentExpr:
+		return c.resolveIdentPath(scope, lvl, e)
+	case *ast.MemberExpr:
+		return c.resolveMemberPath(scope, lvl, e)
+	case *ast.IndexExpr:
+		return c.resolveIndexPath(scope, lvl, e)
+	default:
+		return pathResult{value: c.inferExpr(scope, lvl, e)}
+	}
+}
+
+// demandValue collapses a pathResult for a value-position consumer: a namespace
+// result becomes a NamespaceUsedAsValueError blaming node, and an already-reported
+// failure recovers to the ErrorType sentinel.
+func (c *checker) demandValue(r pathResult, node ast.Expr) soltype.Type {
+	switch {
+	case r.err:
+		return &soltype.ErrorType{}
+	case r.ns != nil:
+		return c.report(&NamespaceUsedAsValueError{Node: node, NS: r.ns})
+	default:
+		return r.value
+	}
+}
+
+// resolveIdentPath looks a bare identifier up in the value sort first, then the
+// namespace sort, returning whichever it finds.
+//
+// Any binding still in scope has at least one scheme: inferComponent pre-binds
+// each group member to a fresh MonoScheme, and on failure deletes the binding
+// (scope.removeValue) rather than leaving it with an empty Schemes slice. So the
+// len > 0 check should never fail in practice — but Schemes is a slice, not a
+// guaranteed-non-empty field, so we guard it anyway: a malformed empty binding
+// degrades to an unknown-identifier error instead of panicking on Schemes[0].
+func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr) pathResult {
 	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
-		var t soltype.Type
-		if b.IsOverloaded() {
-			t = c.overloadIntersection(lvl, b)
-		} else {
-			t = c.instantiate(b.Schemes[0], lvl)
-		}
+		t := c.bindingValue(lvl, b)
 		c.recordType(e, t)
-		return t
+		return pathResult{value: t}
 	}
-	if _, ok := scope.GetNamespace(e.Name); ok {
-		return c.report(&NamespaceUsedAsValueError{Ident: e})
+	if ns, ok := scope.GetNamespace(e.Name); ok {
+		return pathResult{ns: ns}
 	}
-	return c.report(&UnknownIdentifierError{Ident: e})
+	c.report(&UnknownIdentifierError{Ident: e})
+	return pathResult{err: true}
+}
+
+// bindingValue instantiates a value binding at lvl for value position. An
+// overloaded binding (PR6) — `val g = f`, or `f` passed as an argument — is the
+// intersection of its arms (the one scoped lattice exception; see
+// overloadIntersection and constrain's IntersectionType arm). An ordinary binding
+// instantiates its sole scheme, so each use gets fresh variables. A direct call
+// `f(x)` to an overloaded name never reaches here: inferCall intercepts the
+// overloaded callee and routes it through resolveOverload first.
+func (c *checker) bindingValue(lvl int, b ValueBinding) soltype.Type {
+	if b.IsOverloaded() {
+		return c.overloadIntersection(lvl, b)
+	}
+	return c.instantiate(b.Schemes[0], lvl)
 }
 
 // astKind returns a short surface name for any AST node — an expression,
@@ -508,8 +564,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// Not a value binding. Mirror inferIdent's value-position behavior: a name that
 		// resolves to a namespace reports NamespaceUsedAsValue; otherwise it is an
 		// unknown identifier.
-		if _, isNS := scope.GetNamespace(target.Name); isNS {
-			c.report(&NamespaceUsedAsValueError{Ident: target})
+		if ns, isNS := scope.GetNamespace(target.Name); isNS {
+			c.report(&NamespaceUsedAsValueError{Node: target, NS: ns})
 		} else {
 			c.report(&UnknownIdentifierError{Ident: target})
 		}
@@ -678,34 +734,38 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	return t
 }
 
-// inferMember types a field read (recv.prop). It types the receiver, allocates a
-// fresh result var, and constrains recv <: {prop: res, ...} — the basic form
-// from the plan's §3.2 table. The requirement is INEXACT: a member read asks
-// only that the receiver has AT LEAST this property, so width tolerance is
-// expressed as inexactness rather than as an unconditionally width-tolerant arm.
-//
-// This inexactness currently flows out to the inferred param type. A param used
-// only through member reads coalesces to its upper bound, so `fn (p) { p.foo }`
-// infers an inexact param `{foo: number, ...}`. M4 phase B PR B1 ("close
-// usage-inferred shapes to exact") will seal that coalesced result to exact via
-// the Policy-A close, rendering `{foo: number}`. The per-access requirement
-// minted here stays inexact; only the coalesced result is closed.
-//
-// The ObjectType <: ObjectType arm of constrain lowers res from the receiver's
-// matching property (so res coalesces to that property's type); a receiver
-// missing the property surfaces as a MissingPropertyError stamped with the
-// member's span. Optional chaining (recv?.prop) needs union/undefined handling
-// and is M6.
+// inferMember types a field read (recv.prop) in value position: it resolves the
+// member as a path and demands a value, so a property read returns its type while
+// a member that resolves to a namespace (A.B used as a value) is rejected.
+// Optional chaining (recv?.prop) needs union/undefined handling and is M6.
 func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.Type {
+	return c.demandValue(c.resolveMemberPath(scope, lvl, e), e)
+}
+
+// inferIndex types `obj[index]` in value position — today only namespace index
+// access (Foo["bar"]); value indexing is M7.
+func (c *checker) inferIndex(scope *Scope, lvl int, e *ast.IndexExpr) soltype.Type {
+	return c.demandValue(c.resolveIndexPath(scope, lvl, e), e)
+}
+
+// resolveMemberPath resolves `obj.prop`. It first resolves the object as a path —
+// so a namespace object (Foo.bar, A.B.c) walks through as a non-lexical member
+// lookup — and otherwise types the object as an ordinary value receiver and reads
+// the property structurally.
+func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pathResult {
 	if e.OptChain {
 		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
 		// up front and do NOT descend into the receiver, so a single diagnostic
 		// stands for the construct instead of cascading the receiver's errors. The
 		// MemberExpr kind is supported — it is the optional-chain feature that is
 		// not — so this is an UnsupportedFeatureError blaming the member.
-		return c.reportUnsupportedFeature(e, "OptionalChain")
+		c.reportUnsupportedFeature(e, "OptionalChain")
+		return pathResult{err: true}
 	}
-	recv := c.inferExpr(scope, lvl, e.Object)
+	obj := c.resolvePath(scope, lvl, e.Object)
+	if obj.err {
+		return pathResult{err: true}
+	}
 	if e.Prop == nil || e.Prop.Name == "" {
 		// A malformed `recv.` with no valid property name: the parser already
 		// reported the missing identifier, so constraining recv <: {"": res} here
@@ -716,8 +776,31 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 		// already emitted the diagnostic here (via the parser), so no extra error.
 		t := soltype.Type(&soltype.ErrorType{})
 		c.recordType(e, t)
-		return t
+		return pathResult{value: t}
 	}
+	if obj.ns != nil {
+		return c.resolveNamespaceMember(lvl, e, obj.ns, e.Prop.Name)
+	}
+	return c.valueMember(lvl, e, obj.value)
+}
+
+// valueMember reads property prop off a value receiver: it allocates a fresh
+// result var and constrains recv <: {prop: res, ...} — the basic form from the
+// plan's §3.2 table. The requirement is INEXACT: a member read asks only that the
+// receiver has AT LEAST this property, so width tolerance is expressed as
+// inexactness rather than as an unconditionally width-tolerant arm.
+//
+// This inexactness currently flows out to the inferred param type. A param used
+// only through member reads coalesces to its upper bound, so `fn (p) { p.foo }`
+// infers an inexact param `{foo: number, ...}`. M4 phase B PR B1 ("close
+// usage-inferred shapes to exact") will seal that coalesced result to exact via
+// the Policy-A close, rendering `{foo: number}`. The per-access requirement minted
+// here stays inexact; only the coalesced result is closed.
+//
+// The ObjectType <: ObjectType arm of constrain lowers res from the receiver's
+// matching property (so res coalesces to that property's type); a receiver missing
+// the property surfaces as a MissingPropertyError stamped with the member's span.
+func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type) pathResult {
 	res := c.freshAt(lvl)
 	// Record the fresh result var against the .prop IDENTIFIER (not the whole
 	// MemberExpr), so a missing-property read blames the property (.foo), not the
@@ -730,7 +813,67 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 		Inexact: true, // "has at least this property" — width tolerance is inexactness
 	})
 	c.recordType(e, res)
-	return res
+	return pathResult{value: res}
+}
+
+// resolveIndexPath resolves `obj[index]`. A namespace object is indexed by a
+// constant string key — Foo["bar"] is the bracket form of Foo.bar — while a
+// dynamic key (Foo[k]) is rejected. A value object indexed is array/index-type
+// territory (M7), so it stays unsupported here.
+func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr) pathResult {
+	if e.OptChain {
+		c.reportUnsupportedFeature(e, "OptionalChain")
+		return pathResult{err: true}
+	}
+	obj := c.resolvePath(scope, lvl, e.Object)
+	if obj.err {
+		return pathResult{err: true}
+	}
+	if obj.ns != nil {
+		name, ok := constStringKey(e.Index)
+		if !ok {
+			c.report(&DynamicNamespaceIndexError{Index: e, NS: obj.ns})
+			return pathResult{err: true}
+		}
+		return c.resolveNamespaceMember(lvl, e, obj.ns, name)
+	}
+	// Indexing a value (array element / index-signature read) needs Array and index
+	// types, which land in M7; until then the index form over a value is outside the
+	// supported subset.
+	c.reportUnsupported(e)
+	return pathResult{err: true}
+}
+
+// resolveNamespaceMember looks name up in ns directly and non-lexically — a
+// namespace member resolution reads the namespace's OWN maps, never walking a
+// parent scope (unlike Scope.GetValue/GetType/GetNamespace). A nested namespace is
+// returned as a namespace so a longer chain keeps walking; a value member is
+// instantiated and recorded against node; an absent name is an
+// UnknownNamespaceMemberError. node is the member/index expression, for blame and
+// the Info record.
+func (c *checker) resolveNamespaceMember(lvl int, node ast.Expr, ns *Namespace, name string) pathResult {
+	if nested, ok := ns.Nested[name]; ok {
+		return pathResult{ns: nested}
+	}
+	if b, ok := ns.Values[name]; ok && len(b.Schemes) > 0 {
+		t := c.bindingValue(lvl, b)
+		c.recordType(node, t)
+		return pathResult{value: t}
+	}
+	c.report(&UnknownNamespaceMemberError{Node: node, NS: ns, Name: name})
+	return pathResult{err: true}
+}
+
+// constStringKey reads a statically-constant string index key. Only a string
+// literal qualifies — Foo["bar"]; a numeric, identifier, or otherwise dynamic key
+// returns false so the caller can reject it.
+func constStringKey(e ast.Expr) (string, bool) {
+	if lit, ok := e.(*ast.LiteralExpr); ok {
+		if s, ok := lit.Lit.(*ast.StrLit); ok {
+			return s.Value, true
+		}
+	}
+	return "", false
 }
 
 // objKeyName reads the static field name of an object-literal key. M2 records
