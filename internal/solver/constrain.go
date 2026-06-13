@@ -191,10 +191,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			// covariant. A required property the LHS lacks is a MissingPropertyError.
 			var errs []SolverError
 			for _, re := range r.Elems {
-				rp, ok := re.(*soltype.PropertyElem) // M4: every elem is a property
-				if !ok {
-					continue
-				}
+				rp := soltype.AsProperty(re) // M4: every elem is a property
 				lp, ok := l.Prop(rp.Name)
 				if !ok {
 					errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rp.Name})
@@ -213,10 +210,7 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 					errs = append(errs, &InexactIntoExactError{LHS: l, RHS: r})
 				}
 				for _, le := range l.Elems {
-					lp, ok := le.(*soltype.PropertyElem)
-					if !ok {
-						continue
-					}
+					lp := soltype.AsProperty(le)
 					if _, ok := r.Prop(lp.Name); !ok {
 						errs = append(errs, &ExtraPropertyError{LHS: l, RHS: r, Name: lp.Name})
 					}

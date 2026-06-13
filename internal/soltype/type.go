@@ -178,6 +178,23 @@ func (o *ObjectType) Prop(name string) (*PropertyElem, bool) {
 	return nil, false
 }
 
+// AsProperty narrows an ObjTypeElem to its *PropertyElem. M4 ships PropertyElem
+// as the only ObjTypeElem kind, so any other element is a bug: a later member
+// kind (method/getter/setter in M5, index signature or object rest/spread in M9)
+// wired up without extending the call site that processes every element. It
+// panics rather than silently skipping, matching type_system's unknown-element
+// convention (print_type.go panics on an unhandled ObjTypeElem) and the M4 plan's
+// standing rule that a missed element kind must fail loudly, not vanish from
+// subtyping, equality, or rendering. Use it at sites that must visit EVERY
+// element; name lookups like Prop legitimately skip non-matching kinds instead.
+func AsProperty(e ObjTypeElem) *PropertyElem {
+	p, ok := e.(*PropertyElem)
+	if !ok {
+		panic(fmt.Sprintf("AsProperty: unhandled ObjTypeElem %T", e))
+	}
+	return p
+}
+
 // PromiseType is the result of an `async fn` and the requirement of an `await`.
 // M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
 // scope narrow: it is the one stdlib generic the milestone needs typed (Iterable/
@@ -256,9 +273,7 @@ func LevelOf(t Type) int {
 	case *ObjectType:
 		m := 0
 		for _, e := range t.Elems {
-			if p, ok := e.(*PropertyElem); ok {
-				m = max(m, LevelOf(p.Type))
-			}
+			m = max(m, LevelOf(AsProperty(e).Type))
 		}
 		return m
 	case *PromiseType:

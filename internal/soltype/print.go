@@ -146,9 +146,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *ObjectType:
 			for _, e := range t.Elems {
-				if p, ok := e.(*PropertyElem); ok {
-					walk(p.Type)
-				}
+				walk(AsProperty(e).Type)
 			}
 		case *PromiseType:
 			walk(t.Inner)
@@ -222,10 +220,7 @@ func (p *namedPrinter) printType(t Type) string {
 	case *ObjectType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
-			prop, ok := e.(*PropertyElem)
-			if !ok {
-				continue
-			}
+			prop := AsProperty(e)
 			opt := ""
 			if prop.Optional {
 				opt = "?"

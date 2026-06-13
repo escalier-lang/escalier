@@ -211,10 +211,7 @@ func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeEle
 	out := es
 	changed := false
 	for i, e := range es {
-		p, ok := e.(*PropertyElem)
-		if !ok {
-			continue
-		}
+		p := AsProperty(e)
 		pt := p.Type.Accept(v, pol)
 		if pt != p.Type {
 			if !changed {

@@ -225,6 +225,49 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 		}
 		require.Equal(t, site.Span(), e.Span())
 	})
+	t.Run("InexactIntoExact", func(t *testing.T) {
+		e := &InexactIntoExactError{
+			LHS: &soltype.ObjectType{Inexact: true}, RHS: &soltype.ObjectType{}, prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("ExtraProperty", func(t *testing.T) {
+		e := &ExtraPropertyError{
+			LHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			RHS:  &soltype.ObjectType{},
+			Name: "b", prov: Prov{}, site: site,
+		}
+		require.Equal(t, site.Span(), e.Span())
+	})
+}
+
+// checker.constrain stamps prov + the constraint node onto EVERY constraint-error
+// kind it forwards, so each error's Span() resolves to a real source span instead
+// of the zero span. The object-exactness errors (InexactIntoExactError,
+// ExtraPropertyError) were added in M4 A1; this pins that their switch arms exist
+// — a missing arm leaves prov/site nil and Span() degrades to 0:0. Exercised
+// directly through c.constrain because an exact-object sink is not reachable from
+// source until object annotations land (A3).
+func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
+	node := ast.NewIdent("site", tspan(4, 2, 4, 6))
+
+	t.Run("ExtraPropertyError", func(t *testing.T) {
+		c := newChecker()
+		// exact {x, y} <: exact {x}: y is an extra property on the source.
+		c.constrain(node, exactObj(propElem("x", num()), propElem("y", num())), exactObj(propElem("x", num())))
+		require.Len(t, c.errs, 1)
+		require.IsType(t, &ExtraPropertyError{}, c.errs[0])
+		require.Equal(t, node.Span(), c.errs[0].Span())
+	})
+
+	t.Run("InexactIntoExactError", func(t *testing.T) {
+		c := newChecker()
+		// inexact {x, ...} <: exact {x}: an inexact source cannot fill an exact sink.
+		c.constrain(node, inexactObj(propElem("x", num())), exactObj(propElem("x", num())))
+		require.Len(t, c.errs, 1)
+		require.IsType(t, &InexactIntoExactError{}, c.errs[0])
+		require.Equal(t, node.Span(), c.errs[0].Span())
+	})
 }
 
 // --- M2.5 finding #1: unsupported-annotation recovery (no spurious `<: never`) ---
