@@ -139,6 +139,30 @@ func (t *PromiseType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The inner is visited ONCE in the current polarity — the read view. When Mut,
+	// the inner is also a write view (the contravariant constrain step in C2), but
+	// the rewriting transforms visit it a single time and share fresh vars through
+	// their own cache, exactly as the spike's extrude treated a Mut inner. The
+	// lifetime is not a Type, so Accept never walks it; only the lifetime-aware
+	// passes (D4) do.
+	inner := cur.Inner.Accept(v, pol)
+	out := cur
+	if inner != cur.Inner {
+		ri, ok := inner.(RefInner)
+		if !ok {
+			panic(fmt.Sprintf("soltype.RefType.Accept: inner rewrote to non-RefInner %T", inner))
+		}
+		out = &RefType{Mut: cur.Mut, Lt: cur.Lt, Inner: ri}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *UnionType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

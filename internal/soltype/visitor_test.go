@@ -232,3 +232,28 @@ func TestAcceptObjectIdentityPreservation(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: num}}, Inexact: true}
 	require.Same(t, obj, obj.Accept(identityVisitor{}, Positive), "an unchanged ObjectType keeps its pointer")
 }
+
+// A no-op rewrite over a RefType keeps its pointer all the way down (copy-on-write).
+func TestAcceptRefIdentityPreservation(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	ref := &RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: num}}}}
+	require.Same(t, ref, ref.Accept(identityVisitor{}, Positive), "an unchanged RefType keeps its pointer")
+}
+
+// Rewriting a variable inside a borrow rebuilds the RefType, carries the Mut marker
+// through, and keeps the result a well-formed RefInner inner.
+func TestAcceptRefCopyOnWrite(t *testing.T) {
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	inner := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: a}}}
+	ref := &RefType{Mut: true, Inner: inner}
+
+	got := ref.Accept(&replaceVar{target: a, repl: str}, Positive).(*RefType)
+
+	require.NotSame(t, ref, got, "a changed inner forces a new RefType")
+	require.True(t, got.Mut, "the rebuilt RefType keeps its Mut marker")
+	require.Nil(t, got.Lt, "the lifetime carries through unchanged")
+	gotInner := got.Inner.(*ObjectType)
+	require.NotSame(t, inner, gotInner, "the changed inner is a fresh object")
+	require.Same(t, str, gotInner.Elems[0].(*PropertyElem).Type, "the variable took the replacement")
+}

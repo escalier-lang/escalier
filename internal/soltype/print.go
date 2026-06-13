@@ -10,13 +10,14 @@ import (
 )
 
 // Precedence levels for type operators, matching the Escalier parser (and
-// type_system/print_type.go). Higher values bind more tightly. M1 carries only
-// the subset reachable from coalesced output — functions, unions, intersections,
-// and atoms; type_system's precPrefix (keyof/mut/...) has no M1 analogue yet.
+// type_system/print_type.go). Higher values bind more tightly. M4 adds precPrefix
+// for the `mut`/lifetime borrow prefix (RefType); type_system's other prefix forms
+// (keyof, ...T) land with their later milestones.
 const (
 	precFunc         = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
 	precUnion        = 3 // A | B
 	precIntersection = 4 // A & B
+	precPrefix       = 5 // mut T, 'a T — a borrow prefix binds looser than an atom
 	precAtom         = 6 // primary types, never need parens
 )
 
@@ -29,6 +30,8 @@ func typePrec(t Type) int {
 		return precUnion
 	case *IntersectionType:
 		return precIntersection
+	case *RefType:
+		return precPrefix
 	default:
 		// PrimType, LitType, TupleType, ObjectType, Void, NeverType, UnknownType —
 		// atoms (ObjectType is brace-delimited, so it never needs parens). A
@@ -150,6 +153,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *PromiseType:
 			walk(t.Inner)
+		case *RefType:
+			walk(t.Inner)
 		case *UnionType:
 			for _, m := range t.Types {
 				walk(m)
@@ -235,6 +240,16 @@ func (p *namedPrinter) printType(t Type) string {
 		return "fn " + p.printFuncTail(t)
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
+	case *RefType:
+		// `mut {x: number}`, `mut [number]`. The immutable-borrow and lifetime
+		// prefixes (`'a {…}`, `mut 'a {…}`) render once D1 adds the lifetime sort;
+		// Lt is always nil here, so only the `mut` prefix appears. The inner prints
+		// at precPrefix so a looser inner (a union/function) gets parenthesized.
+		prefix := ""
+		if t.Mut {
+			prefix = "mut "
+		}
+		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:
 		parts := make([]string, len(t.Types))
 		for i, m := range t.Types {

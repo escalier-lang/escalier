@@ -195,6 +195,46 @@ func AsProperty(e ObjTypeElem) *PropertyElem {
 	return p
 }
 
+// RefType is the single wrapper for borrows and mutability. A bare value is owned
+// and immutable; wrapping it in a RefType marks it mutable, borrowed, or both:
+//
+//	Mut=false Lt=nil   forbidden degenerate cell — NewRef returns the bare Inner
+//	Mut=false Lt='a    immutable borrow
+//	Mut=true  Lt=nil   owned mutable
+//	Mut=true  Lt='a    mutable borrow
+//
+// The single RefType<:RefType constrain rule (M4 C2) reads Mut for inner variance
+// and Lt for the lifetime outlives check; until then a RefType only carries data.
+// Lt is always nil in C1 — the Lifetime sort and its constrain rule arrive in M4
+// D1/D2, so the immutable-borrow and lifetime forms above are reachable only then.
+type RefType struct {
+	Mut   bool
+	Lt    Lifetime // nilable; always nil until the lifetime sort lands (D1)
+	Inner RefInner
+}
+
+// RefInner is the sealed set of types that may sit inside a RefType. PrimType /
+// LitType / FuncType / PromiseType are deliberately excluded: a promise or function
+// reference is shared, not borrowed, and a `mut` primitive is a JS no-op. Excluding
+// PromiseType blocks borrowing the promise itself — there is no `mut Promise` or
+// `'a Promise`. It does NOT block the promise's payload from being a borrow:
+// `Promise<mut 'a Point>` is a PromiseType whose type argument is a RefType, which
+// is well-formed.
+//
+// M4 admits ObjectType / TupleType / TypeVarType. The TypeVarType arm covers a
+// borrow whose content is still an inference variable; the content invariant — that
+// it resolves to a borrowable type — is checked at constrain time. UnionType /
+// IntersectionType (M6 inputs), AliasType (M7), and ClassType (M5) add their
+// isRefInner arms with those milestones.
+type RefInner interface {
+	Type
+	isRefInner()
+}
+
+func (*ObjectType) isRefInner()  {}
+func (*TupleType) isRefInner()   {}
+func (*TypeVarType) isRefInner() {}
+
 // PromiseType is the result of an `async fn` and the requirement of an `await`.
 // M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
 // scope narrow: it is the one stdlib generic the milestone needs typed (Iterable/
@@ -244,6 +284,7 @@ func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
 func (*TupleType) isType()        {}
 func (*ObjectType) isType()       {}
+func (*RefType) isType()          {}
 func (*PromiseType) isType()      {}
 func (*Void) isType()             {}
 func (*NeverType) isType()        {}
@@ -277,6 +318,10 @@ func LevelOf(t Type) int {
 		}
 		return m
 	case *PromiseType:
+		return LevelOf(t.Inner)
+	case *RefType:
+		// Inner is a RefInner, which embeds Type; the borrow wrapper itself carries
+		// no variable, so the level is its content's.
 		return LevelOf(t.Inner)
 	// Union and Intersection recurse into their members for the same reason, but only
 	// the IntersectionType arm is load-bearing today. overloadIntersection (solver) is

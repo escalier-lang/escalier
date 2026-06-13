@@ -120,6 +120,19 @@ func TestPrintRoundTrips(t *testing.T) {
 		// Promises (M3).
 		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
 		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
+
+		// Borrows (M4). Lt is always nil in C1, so only the owned-mutable form
+		// renders; the inner object/tuple is brace/bracket-delimited, so no parens.
+		{
+			"mut object",
+			&RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
+			"mut {x: number}",
+		},
+		{
+			"mut tuple",
+			&RefType{Mut: true, Inner: &TupleType{Elems: []Type{numP(), strP()}}},
+			"mut [number, string]",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -101,6 +101,19 @@ func TestLevelOf(t *testing.T) {
 			}},
 			want: 5,
 		},
+		{
+			// A borrow carries no variable itself, so its level is its content's —
+			// the same hazard as the ObjectType arm: a wrong 0 would let a Level>0
+			// borrowed value be shared and aliased across instantiations.
+			name: "ref: level of its inner",
+			ty:   &RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: v5}}}},
+			want: 5,
+		},
+		{
+			name: "ref over a concrete inner is level 0",
+			ty:   &RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: num}}}},
+			want: 0,
+		},
 	}
 
 	for _, tt := range tests {
