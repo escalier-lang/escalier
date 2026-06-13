@@ -25,24 +25,29 @@ Facts that changed or sharpened the original plan, from the code on main:
    `infer_expr.go` / `infer_decl.go` / `infer_stmt.go`, `module.go`,
    `overload.go`, `poly.go`, `prelude.go`, `probe.go`, `prov.go`, `scope.go`,
    `simplify.go`, `type_ann.go`.
-2. **`RecordType` already exists** (M2): `Fields []*RecordField{Name, Type}` —
-   an **ordered slice with last-wins dedup**, not a map; `Field(name)` is the
-   canonical lookup. Record/tuple **literal inference already works**
+2. **`RecordType` already exists** (M2) and **A1 promotes it to `ObjectType`**
+   (see Key types below): today it is `Fields []*RecordField{Name, Type}` — an
+   **ordered slice with last-wins dedup**, not a map; `Field(name)` is the
+   canonical lookup. A1 widens that to an ordered `[]ObjTypeElem` element list
+   carrying property elements only in M4; method/getter/setter members arrive in
+   M5, and index signatures plus the object rest/spread `RestElem` in M9.
+   Object/tuple **literal inference already works**
    (`inferObject` / tuple walk), as does **member-read usage inference**:
    `inferMember` lowers `recv.prop` to `constrain(recv, {prop: β})`
    ([infer_expr.go:716](../../internal/solver/infer_expr.go)). M4 does *not*
-   introduce these — it refines them.
+   introduce these — it refines them and ports them onto `ObjectType`.
 3. **The exactness flag is spelled `Inexact`**, not `exact` — `FuncType.Inexact`
    (M3 PR4) deliberately makes the **zero value exact**, matching
    exact-by-default, so structural rewriters carry the flag through unchanged.
-   `RecordType`/`TupleType` follow the same convention; conveniently, every
-   record/tuple M2 already mints becomes exact *by zero value*.
-4. **One width-tolerant record arm exists and is explicitly provisional.** The
+   `ObjectType`/`TupleType` follow the same convention; conveniently, every
+   object/tuple M2 already mints becomes exact *by zero value*.
+4. **One width-tolerant object arm exists and is explicitly provisional.** The
    `RecordType <: RecordType` case in
    [constrain.go:181](../../internal/solver/constrain.go) serves only member
    access and carries a long comment: M4 must split the **field-selection
-   requirement** (width-tolerant) from **concrete record `<:` record**
-   (exact-by-default). Likewise the tuple arm is exact-only ("M4 adds the exact
+   requirement** (width-tolerant) from **concrete object `<:` object**
+   (exact-by-default), reworking the arm as the `ObjectType` arm. Likewise the
+   tuple arm is exact-only ("M4 adds the exact
    flag and the inexact arm") and the function arm has a **KNOWN GAP (M4)**
    note for inexact-callback extra positions (Variation B, needs the `⊤` rule —
    see Open Questions).
@@ -84,7 +89,7 @@ Facts that changed or sharpened the original plan, from the code on main:
     the value-position consumer and adds member *lookup*.
 12. **`resolveTypeAnn` covers only primitives + `Promise<T>`**
     ([type_ann.go](../../internal/solver/type_ann.go)). M4's acceptance tests
-    need record/tuple annotations (incl. the trailing `...` and `mut`/lifetime
+    need object/tuple annotations (incl. the trailing `...` and `mut`/lifetime
     forms), so the annotation surface must grow accordingly.
 13. **Milestone renumbering**: library type resolution is the new M7, the
     fixture harness is **M8**, type-level operators **M9**, codegen **M10**.
@@ -92,14 +97,14 @@ Facts that changed or sharpened the original plan, from the code on main:
     the original plan's "spec must be written first" risk is **resolved**.
 14. **The milestone itself grew**: M4 now also owns **destructuring patterns +
     the `match` expression form**, **namespace member lookup**, **`var`-binding
-    literal widening**, and the selection-vs-concrete record split (all in
+    literal widening**, and the selection-vs-concrete object split (all in
     [01-milestones.md](01-milestones.md) §M4).
 
 ## Why M4 is "the big one"
 
 Records, `mut`, and lifetimes are inseparable: lifetimes ride on borrows,
-records are the first borrowable value, and `mut` borrows are what first
-populate a lifetime. The milestone names the `RefType` rule's `mut`-driven inner
+records are the first borrowable value, and borrows are what first populate a
+lifetime. The milestone names the `RefType` rule's `mut`-driven inner
 invariance as the **HIGHEST-RISK gate**: if it cannot be encoded cleanly against
 the real AST, the whole migration is in question. The PR sequence below reaches
 the gate after only the minimum prerequisite work, and nothing expensive
@@ -109,19 +114,21 @@ the gate after only the minimum prerequisite work, and nothing expensive
 
 In (per the updated milestone):
 
-1. `Inexact` flag on `RecordType`/`TupleType`; exact/inexact subtyping rules;
-   the selection-vs-concrete record split; tuple inexact arm + tuple spread.
-2. Record/tuple type annotations (incl. `...`, `mut`, lifetimes) in
+1. Promote `RecordType` to `ObjectType` (element list); `Inexact` flag on
+   `ObjectType`/`TupleType`; exact/inexact subtyping rules; the
+   selection-vs-concrete object split; tuple inexact arm + tuple spread.
+2. Object/tuple type annotations (incl. `...`, `mut`, lifetimes) in
    `resolveTypeAnn`.
-3. Usage-based inference *refinement*: negative-position record merging at
-   coalesce; Policy-A exact closing; the `open` parameter marker.
+3. Usage-based inference *refinement*: negative-position object merging at
+   coalesce; closing a usage-inferred object to exact once body inference
+   completes, so callers can't pass extra fields; the `open` parameter marker.
 4. `var`-binding literal widening (usage-based over all assignment sites).
 5. The unified `RefType{Mut, Lt, Inner}` wrapper + the single constrain rule
    (**the gate**); field-write inference via `inferAssign`'s member branch;
    read-after-write.
 6. Lifetimes as a second sort (`LifetimeVar`, `constrainLt`, probe extension,
    borrow origination, joins, escape, display-time coalescing + elision).
-7. Destructuring patterns (`TuplePat`/`RecordPat`/literal patterns) + the
+7. Destructuring patterns (`TuplePat`/`ObjectPat`/literal patterns) + the
    `match` expression over structural patterns, with exactness-driven
    exhaustiveness.
 8. Namespace member lookup (`resolvePath`, `Foo.bar`, `Foo["x"]`, new errors).
@@ -139,16 +146,44 @@ Out: classes (M5), union/intersection constrain rules and optional chaining
 Sketches use the **shipped conventions**: exported fields, `Inexact` (zero value
 = exact), `[]SolverError`, journal-gated bound appends, visitor `Accept`.
 
-### Exactness on the existing carriers (`soltype/type.go`)
+### Object & tuple carriers (`soltype/type.go`)
+
+M4 promotes M2's `RecordType{Fields}` to an **`ObjectType` carrying an ordered
+element list** — the structural member representation shared by object literals,
+object/interface annotations, and (M5) class instance bodies, so one
+structural-decomposition routine serves all three. M4 ships only
+`PropertyElem`; `MethodElem`/`GetterElem`/`SetterElem` arrive in M5, and
+`IndexSigElem` plus `RestElem` (object rest/spread) in M9, each a new
+`ObjTypeElem` arm.
 
 ```go
-// RecordType gains Inexact (M3's FuncType convention: zero value = exact, so
-// every record M2 already mints — literals, member requirements before this
-// milestone — is exact by default with no construction-site churn).
-type RecordType struct {
-    Fields  []*RecordField // ordered, name-deduped (last wins); Field(name) lookup
-    Inexact bool           // trailing `...` ⇒ true
+// ObjectType replaces RecordType. Inexact follows M3's FuncType convention
+// (zero value = exact), so every object M2 already mints — literals, member
+// requirements before this milestone — is exact by default with no
+// construction-site churn.
+type ObjectType struct {
+    Elems   []ObjTypeElem // ordered, name-deduped (last wins); Prop(name) lookup
+    Inexact bool          // trailing `...` ⇒ true
 }
+
+// ObjTypeElem is the sealed set of object members (mirrors type_system's
+// ObjTypeElem). M4 ships PropertyElem only.
+type ObjTypeElem interface{ isObjTypeElem() }
+
+type PropertyElem struct {
+    Name     string
+    Type     Type
+    Optional bool // `x?: T`; the M9 object-spread show-through rule keys off it
+}
+func (*PropertyElem) isObjTypeElem() {}
+// + MethodElem/GetterElem/SetterElem (M5), IndexSigElem and RestElem (M9; the
+// latter carries an object rest/spread `...P`). A method's type is a FuncType;
+// getters are covariant and setters contravariant, so each new arm also extends
+// the polarity-threading visitor — the standing-rule checklist.
+
+// Prop returns the named property and whether it is present. M4's Elems are all
+// PropertyElem; M5 widens the lookup to method/getter/setter members.
+func (o *ObjectType) Prop(name string) (*PropertyElem, bool)
 
 type TupleType struct {
     Elems   []Type
@@ -157,38 +192,53 @@ type TupleType struct {
 ```
 
 The **selection-vs-concrete split** falls out of the flag: `inferMember`'s
-synthesized requirement becomes `{prop: β, Inexact: true}` ("has at least this
-field" — width-tolerance *is* inexactness), and the record arm then implements
-the one-way rule uniformly instead of being unconditionally width-tolerant:
+synthesized requirement becomes an inexact one-property object `{prop: β, ...}`
+("has at least this field" — width-tolerance *is* inexactness), and the object
+arm then implements the one-way rule uniformly instead of being unconditionally
+width-tolerant:
 
 ```go
-case *soltype.RecordType:
-    if r, ok := rhs.(*soltype.RecordType); ok {
+case *soltype.ObjectType:
+    if r, ok := rhs.(*soltype.ObjectType); ok {
         var errs []SolverError
-        for _, rf := range r.Fields {               // depth: fields covariant
-            lt, ok := l.Field(rf.Name)
+        for _, re := range r.Elems {                 // depth: members covariant
+            rp := re.(*soltype.PropertyElem)         // M4: every elem is a property
+            lp, ok := l.Prop(rp.Name)
             if !ok {
-                errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rf.Name})
+                errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rp.Name})
                 continue
             }
-            errs = append(errs, c.constrain(lt, rf.Type, seen)...)
+            errs = append(errs, c.constrain(lp.Type, rp.Type, seen)...)
         }
         // One-way exactness (02-design-notes §"Exactness"):
-        //   exact <: inexact   ok (width)     inexact <: inexact   ok (width)
-        //   exact <: exact     same field set inexact <: exact     rejected
+        //   exact <: inexact    ok (width)      inexact <: inexact   ok (width)
+        //   exact <: exact      same member set inexact <: exact     rejected
         if !r.Inexact {
             if l.Inexact {
                 errs = append(errs, &InexactIntoExactError{LHS: l, RHS: r})
             }
-            for _, lf := range l.Fields {
-                if _, ok := r.Field(lf.Name); !ok {
-                    errs = append(errs, &ExtraPropertyError{LHS: l, RHS: r, Name: lf.Name})
+            for _, le := range l.Elems {
+                lp := le.(*soltype.PropertyElem)
+                if _, ok := r.Prop(lp.Name); !ok {
+                    errs = append(errs, &ExtraPropertyError{LHS: l, RHS: r, Name: lp.Name})
                 }
             }
         }
         return errs
     }
 ```
+
+**Target-dispatched subtyping (forward note for M5).** The arm above is the
+*structural-object target* case. M5 adds the dispatch keyed on the target's
+nature: a **class** target uses nominal subtyping (declared-subtype graph +
+per-parameter variance, subclasses allowed where covariant), while a class
+*source* against an **inexact** object target projects its members through this
+same structural width rule. So the `Inexact` flag is what gates whether a class
+instance satisfies a structural object type — an exact target rejects, an inexact
+target admits. M5's `ClassType` reuses this `ObjectType` element list for its body
+and adds the nominal identity on top. M4 has no classes, so only the object-target
+arm ships here; the dispatch shape is recorded so M5 slots into it. See
+[01-milestones.md](01-milestones.md) §M5.
 
 ### The borrow wrapper (`soltype/type.go`)
 
@@ -204,13 +254,19 @@ type RefType struct {
 }
 
 // RefInner is the sealed set of types that may sit inside a RefType.
-// PrimType/LitType/FuncType/PromiseType/nested RefType are deliberately excluded
-// (a promise/function reference is shared, not borrowed; mut number is a JS no-op).
+// PrimType/LitType/FuncType/PromiseType/nested RefType are deliberately excluded:
+// a promise/function reference is shared, not borrowed, and a mut number is a JS
+// no-op. Excluding PromiseType blocks borrowing the promise itself — there is no
+// `mut Promise` or `'a Promise`. It does NOT block the promise's PAYLOAD from
+// being a borrow: `Promise<mut 'a Point>` is a PromiseType whose type argument is
+// a RefType, which is well-formed. That payload lifetime propagates through
+// `await` and escapes to 'static only on the ordinary borrow-escape condition
+// (D3), not because it sits in a promise.
 type RefInner interface {
     Type
     isRefInner()
 }
-func (*RecordType) isRefInner()  {}
+func (*ObjectType) isRefInner()  {}
 func (*TupleType) isRefInner()   {}
 func (*TypeVarType) isRefInner() {} // mid-inference; checked at constrain time
 // + UnionType/IntersectionType (M6 inputs), AliasType (M7), ClassType (M5).
@@ -334,8 +390,11 @@ func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime)
 
 ```go
 // NEW HELPER (B3 authors it; not yet in the production solver — only the spike
-// has it, internal/simplesub/constrain.go). widen generalizes a literal to its
-// primitive (5 ⇒ number, "x" ⇒ string) and passes non-literals through:
+// has it, internal/simplesub/constrain.go). widen lowers a literal to its
+// primitive (5 ⇒ number, "x" ⇒ string, true ⇒ boolean) and recurses into
+// ObjectType/TupleType, widening each member/element; a RefType is peeled, its
+// inner widened, and re-wrapped. Other types pass through. Mirrors
+// internal/checker's widenLiteral/widenObjectLiterals/widenTupleLiterals.
 //   func widen(t soltype.Type) soltype.Type
 //
 // Extends inferAssign's existing member/index branch (today:
@@ -348,8 +407,8 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
     rhs := c.inferExpr(scope, lvl, e.Right)
     w := widen(rhs) // 5 ⇒ number: a later write may store any number
     req := &soltype.RefType{Mut: true, Lt: nil /* D2: c.freshLifetime() */,
-        Inner: &soltype.RecordType{
-            Fields:  []*soltype.RecordField{{Name: m.Prop.Name, Type: w}},
+        Inner: &soltype.ObjectType{
+            Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
             Inexact: true, // "must accept a write to this field", not a full shape
         }}
     c.constrain(e, recv, req)
@@ -454,48 +513,56 @@ result (`LevelOf` defaulting to 0 — see its `IntersectionType` comment for why
 that corrupts `freshenAbove`). Each PR's "structures" list calls out which of
 these arms it must add.
 
-### Phase A — Records & tuples completion (the M2 leftovers)
+### Phase A — Objects & tuples completion (the M2 leftovers)
 
-- **A1 — `Inexact` flag + record exactness rules + the selection split**
-  (~200).
+- **A1 — `ObjectType` element list + `Inexact` flag + object exactness rules + the
+  selection split** (~230).
   - **Files:** `soltype/type.go`, `soltype/visitor.go`, `soltype/print.go`,
     `solver/constrain.go`, `solver/infer_expr.go`, `solver/errors.go`,
     `solver/coalesce.go`.
   - **Structures:**
-    - add `Inexact bool` to `RecordType` (zero value = exact, the
-      `FuncType.Inexact` convention — every record M2 mints stays exact with no
+    - **promote `RecordType{Fields []*RecordField}` to `ObjectType{Elems
+      []ObjTypeElem}`** (see Key types): a sealed `ObjTypeElem` interface with the
+      single `PropertyElem{Name, Type, Optional}` concrete in M4. The rename
+      threads through every site that switches over the type set; method/getter/
+      setter (M5), index signatures (M9), and the object rest/spread `RestElem`
+      (M9) add `ObjTypeElem` arms later.
+    - add `Inexact bool` to `ObjectType` (zero value = exact, the
+      `FuncType.Inexact` convention — every object M2 mints stays exact with no
       construction churn).
-    - `visitor.go`'s `RecordType.Accept` must carry the flag on rebuild:
-      `out = &RecordType{Fields: fields, Inexact: cur.Inexact}` (today line 123
-      drops it — a latent bug the new field exposes).
-    - `equalType`'s `RecordType` arm gains `a.Inexact != b.Inexact` as a
+    - `visitor.go`'s `ObjectType.Accept` must carry the flag on rebuild:
+      `out = &ObjectType{Elems: elems, Inexact: cur.Inexact}` (today the
+      `RecordType` rebuild at line 123 drops it — a latent bug the new field
+      exposes).
+    - `equalType`'s `ObjectType` arm gains `a.Inexact != b.Inexact` as a
       discriminator (mirrors the `FuncType` arm's `a.Inexact != b.Inexact` at
       coalesce.go:315).
-    - `print.go` appends a trailing `...` entry in the record case when `Inexact`
+    - `print.go` appends a trailing `...` entry in the object case when `Inexact`
       (mirroring `printFuncTail`'s `if t.Inexact { ps = append(ps, "...") }`).
-  - **Algorithm — the record constrain arm** (constrain.go:181, replacing the
-    "this is NOT the final semantics" body):
-    - keep the per-field covariant loop (depth subtyping)
+  - **Algorithm — the object constrain arm** (constrain.go:181, replacing the
+    "this is NOT the final semantics" body, now over `ObjectType`):
+    - keep the per-member covariant loop (depth subtyping); in M4 every elem is a
+      `PropertyElem`, so the loop reads `r.Prop(name)` / `l.Prop(name)`
     - then add the one-way exactness gate: when `!r.Inexact`, reject `l.Inexact`
-      (an `InexactIntoExactError`) and reject any field on `l` absent from `r`
-      (`ExtraPropertyError` per extra field)
+      (an `InexactIntoExactError`) and reject any property on `l` absent from `r`
+      (`ExtraPropertyError` per extra property)
     - when `r.Inexact`, the existing width-tolerant loop is complete and unchanged
   - **Algorithm — selection vs concrete:** flip `inferMember`'s synthesized
     requirement (infer_expr.go:716) to `Inexact: true` so member access stays
     "has at least this field," now expressed *as inexactness* rather than as an
     unconditionally width-tolerant arm. This is the split the milestone calls
-    for: the same `RecordType <: RecordType` rule serves both selection (RHS
+    for: the same `ObjectType <: ObjectType` rule serves both selection (RHS
     inexact) and concrete subtyping (RHS exact).
   - **Errors:** new, same field/blame shape as `MissingPropertyError`
     (errors.go:97):
-    - `InexactIntoExactError{LHS, RHS *soltype.RecordType}`
-    - `ExtraPropertyError{LHS, RHS *soltype.RecordType; Name string; prov; site}`
+    - `InexactIntoExactError{LHS, RHS *soltype.ObjectType}`
+    - `ExtraPropertyError{LHS, RHS *soltype.ObjectType; Name string; prov; site}`
   - **Accept:**
     - exact `{x, y}` `<:` inexact `{x, y, ...}` succeeds
     - inexact `<:` exact and extra-member-on-exact reject (full messages)
     - existing member-access tests stay green (selection is now the inexact path)
 
-- **A2 — Tuple inexactness + tuple spread + computed-key story** (~170).
+- **A2 — Tuple inexactness + tuple spread + object-literal walk (computed keys, spread deferral)** (~170).
   - **Files:** `soltype/type.go`, `soltype/visitor.go`, `soltype/print.go`,
     `solver/constrain.go`, `solver/coalesce.go`, `solver/infer_expr.go`.
   - **Structures:** add `Inexact bool` to `TupleType` and thread it through:
@@ -516,43 +583,78 @@ these arms it must add.
     - require it to be a `TupleType`
     - splice its element types into the literal's `Elems`
 
-    A non-tuple spread operand is a typed error.
+    A non-tuple spread operand is a typed error. M4 handles only this **concrete
+    literal splice**. Two type-level cousins defer: a tuple spread *type* over an
+    abstract operand (`[...P, x]`) is M9 — reduce-when-ground, parallel to object
+    spread — and a typed variadic tail (`[number, ...Array<number>]`) is M7, which
+    needs `Array` plus a typed rest element on `TupleType`. See 01-milestones.md
+    §§M7, M9.
   - **Algorithm — object computed/numeric keys** (inferObject, infer_expr.go:660
     `objKeyName` fail path): a statically-constant string/numeric key resolves
     to a field name; a genuinely dynamic key (`{[k]: v}`) stays a typed error
     (full index-signature support rides M9 index types). Keep the last-wins
     dedup invariant.
+  - **Algorithm — object spread in literals is deferred to M9.** `{...p}` in an
+    object literal is *not* handled in M4. Object rest/spread lands in M9 as a
+    `RestElem` object element with the type-level-operator reduction machinery,
+    using Flow-faithful show-through
+    union for optional-field overlap — see the M9 object-spread note in
+    [01-milestones.md](01-milestones.md). M4's object-literal walk reports `{...p}`
+    as an unsupported feature. Only the concrete tuple-literal splice above stays
+    in M4; object rest/spread and the type-level tuple cousins defer, per the
+    tuple-spread note above.
   - **Accept:**
     - `[1, 2]` `<:` `[number, ...]` succeeds, `<:` `[number]` rejects
     - a spread `[...pair, 3]` builds the spliced tuple
     - a constant numeric key resolves, a dynamic key errors
 
-- **A3 — Record/tuple/`mut`/lifetime type annotations** (~180).
+- **A3 — Object/tuple/`mut`/lifetime type annotations** (~180).
   - **Files:** `solver/type_ann.go`, plus tests.
   - **Algorithm — extend `resolveTypeAnn`** (type_ann.go:21, today
     primitives + `Promise<T>` only):
     - add arms for object-type and tuple-type annotations (building
-      `RecordType`/`TupleType`, honoring a trailing `...` ⇒ `Inexact: true`)
+      `ObjectType`/`TupleType`, honoring a trailing `...` ⇒ `Inexact: true`).
+      Spread/variadic *elements* inside an annotation — object `{...P}`, tuple
+      `[...P]`, variadic `[number, ...Array<number>]` — are **not** handled here;
+      they defer with their type-level features (M9/M7, per A2's tuple-spread note)
     - add arms for the `mut`/lifetime annotation forms, which lower to `RefType`
       (`mut T` ⇒ `RefType{Mut: true}`, `'a T` ⇒ `RefType{Mut: false, Lt: …}`)
 
     **Ordering caveat:** `RefType` does not exist until C1, so A3 lands the
-    record/tuple annotation arms now and gates the `mut`/lifetime arms behind C1
+    object/tuple annotation arms now and gates the `mut`/lifetime arms behind C1
     (until then a `mut`/`'a` annotation keeps today's `reportUnsupportedFeature`
     + recovery-var behavior). Track the gated arms as a one-line follow-up in
     C1's checklist.
+  - **Algorithm — literal excess-member check** (new; exact-types §§2.2.4, 3.2.4):
+    once annotations resolve, a syntactic object/tuple **literal** checked against
+    an object/tuple annotation rejects members absent from the target's declared
+    set, **even when the target is inexact** — the construction-site twin of the
+    direct-call extra-arg rule. It fires in the walk at literal-vs-annotation sites
+    (annotated `val`/`var`, later call args and returns), not in the
+    `ObjectType <: ObjectType` / tuple constrain arm. Reuse A1's `ExtraPropertyError`
+    for objects; add an analogous excess-element error for tuples. A non-literal RHS
+    is unaffected — it takes ordinary width subtyping. M4 has only the untyped `...`
+    tail; the typed-tail escape (an index signature that types the extras) rides M9,
+    so until then an untyped-extras "bag" must use the variable escape hatch.
   - **Why first-ish:** every annotation-side acceptance test in Phase A/B/D
     (`var p: {x, y, ...} = …`, `fn f(p: mut {x: number}) …`) needs this; it is
     a leaf with no dependency on the constraint changes.
   - **Accept:**
-    - `val r: {x: number, ...} = {x: 1, y: 2}` checks (inexact target admits the
-      extra field)
-    - `val r: {x: number} = {x: 1, y: 2}` rejects (exact target)
+    - `val r: {x: number, y: number, ...} = {x: 1, y: 2}` checks (the literal's
+      fields are all declared; the inexact tail goes unused)
+    - `val r: {x: number, ...} = {x: 1, y: 2}` **rejects** — excess property `y` on
+      a literal even against an inexact target (exact-types §2.2.4, parallel to the
+      direct-call extra-arg rejection)
+    - the variable escape hatch checks: `val v = {x: 1, y: 2}; val r: {x: number,
+      ...} = v` (non-literal ⇒ width subtyping)
+    - `val r: {x: number} = {x: 1, y: 2}` rejects (exact target, `ExtraPropertyError`)
+    - tuple: `val t: [number, ...] = [1, 2, 3]` rejects (excess element on a
+      literal); the same RHS through a variable checks
     - tuple annotations round-trip through the printer
 
 ### Phase B — Usage-based inference refinement
 
-- **B1 — Negative-position record merging + Policy-A exact closing** (~190).
+- **B1 — Negative-position object merging + closing usage-inferred shapes to exact** (~190).
   - **Files:** `solver/coalesce.go`, plus tests.
   - **Background:** today `combine` (coalesce.go:254) builds a bare
     `IntersectionType` of a negative variable's upper bounds. When two of those
@@ -561,19 +663,19 @@ these arms it must add.
     `{a: β, b: γ}`.
   - **Algorithm — port the spike's `mergeObjects`** into the negative
     (`Negative` polarity) path of `combine`: before wrapping parts in an
-    `IntersectionType`, fold all `RecordType` parts into one record (union the
-    field sets; a field appearing in several parts becomes the intersection of
-    its types). This is the production analogue of `simplesub/coalesce.go`'s
-    `mergeObjects`/`mergeObjectGroup`, rewritten over `soltype.RecordType`'s
-    slice fields and `Field(name)` lookup, using the existing `combine`/`dedup`
-    structure. Mut-record merging (`mut {x} & mut {y}` ⇒ `mut {x, y}`) is
+    `IntersectionType`, fold all `ObjectType` parts into one object (union the
+    property sets; a property appearing in several parts becomes the intersection
+    of its types). This is the production analogue of `simplesub/coalesce.go`'s
+    `mergeObjects`/`mergeObjectGroup`, rewritten over `soltype.ObjectType`'s
+    element list and `Prop(name)` lookup, using the existing `combine`/`dedup`
+    structure. Mut-object merging (`mut {x} & mut {y}` ⇒ `mut {x, y}`) is
     deferred to C3 once `RefType` exists.
-  - **Algorithm — Policy-A close:** the merged usage record closes to **exact**
+  - **Algorithm — Policy-A close:** the merged usage object closes to **exact**
     (`Inexact: false`) at this display-time fold — the row is sealed once body
     inference completes (spec §8.1). The per-access requirements stay inexact
     (A1); only the *coalesced* result is exact. `open` (B2) is the opt-out.
   - **Accept:** `fn (p) { p.a; p.b }` infers a param rendering `{a: …, b: …}`
-    (one exact record), not `{a: …} & {b: …}`.
+    (one exact object), not `{a: …} & {b: …}`.
 
 - **B2 — The `open` parameter marker** (~120).
   - **Files:** parser hook (provisional keyword), `solver/infer_expr.go` (param
@@ -582,8 +684,8 @@ these arms it must add.
     cheapest form is a `set.Set[*soltype.TypeVarType]` of open param vars on the
     checker, consulted in B1's close step.
   - **Algorithm:** when a param is marked `open`, B1's Policy-A close leaves its
-    usage record `Inexact: true` (row-polymorphic) so callers may pass richer
-    records. Everything else is unchanged.
+    usage object `Inexact: true` (row-polymorphic) so callers may pass richer
+    objects. Everything else is unchanged.
   - **Accept:**
     - `fn dist(open p) { p.x; p.y }` renders an inexact `{x, y, ...}` param
     - an un-`open` peer renders exact `{x, y}`
@@ -593,22 +695,37 @@ these arms it must add.
   - **Files:** `solver/constrain.go` or a new `solver/widen.go` (the helper),
     `solver/infer_decl.go`, plus tests.
   - **Structures/helper:** author `func widen(t soltype.Type) soltype.Type`
-    (ported from `simplesub/constrain.go`): a `LitType` widens to its `PrimType`
-    (`5` ⇒ `number`, `"x"` ⇒ `string`, `true` ⇒ `boolean`); every other type
-    passes through. C3's field-write reuses it.
+    (ported from `simplesub/constrain.go`, extended to match `internal/checker`'s
+    `widenLiteral`/`widenObjectLiterals`/`widenTupleLiterals` at unify.go:2614):
+    a `LitType` widens to its `PrimType` (`5` ⇒ `number`, `"x"` ⇒ `string`,
+    `true` ⇒ `boolean`); an `ObjectType`/`TupleType` widens **recursively** —
+    map `widen` over each property value / element, preserving `Inexact`; a
+    `RefType` is peeled, its inner widened, and re-wrapped
+    (`NewRef(mut, lt, widen(inner))`); every other type passes through. So
+    `{x: 0, y: 0}` widens to `{x: number, y: number}` and `[1, 2]` to
+    `[number, number]`, recursively through nesting. C3's field-write reuses it,
+    so writing a compound value widens it too.
   - **Algorithm:** in `inferVarDecl` (infer_decl.go:108), a `var` binding's
     initializer type is widened before generalization, and — the principled
     milestone form — informed by **all** assignment sites: collect the
     initializer plus every later `a = e` RHS and coalesce their widened types
-    (the binding's type is the join). A `val` is left un-widened (a fixed
-    literal singleton). This retires PR8's documented `var a = 5; a = 6` failure
-    (infer_expr.go:532 note). Reassignment's RHS-vs-binding constrain
-    (inferAssign, infer_expr.go:540s) now checks against the widened binding
-    type.
+    (the binding's type is the join). **Widening is gated on mutability** — only
+    a mutable cell widens, because only a mutable cell may later hold a different
+    value of the same primitive. A `var` binding widens; a `val` is left
+    un-widened (a fixed literal singleton); and C3's field-write path widens
+    because writing through a `mut` receiver is itself a mutation. This is the
+    new-checker form of the old checker's `Widenable` type-var flag, which gates
+    `widenLiteral` to mutable bindings (unify.go:2260). This retires PR8's
+    documented `var a = 5; a = 6` failure (infer_expr.go:532 note).
+    Reassignment's RHS-vs-binding constrain (inferAssign, infer_expr.go:540s) now
+    checks against the widened binding type.
   - **Accept:**
     - `var a = 5; a = 6` checks (binding is `number`)
     - `val a = 5; a = 6` still rejects (`CannotAssignToImmutableError`)
     - `var a = 5` with no reassignment still renders `number` (default-widen)
+    - `var p = {x: 0, y: 0}` renders `{x: number, y: number}` and `var t = [1, 2]`
+      renders `[number, number]` (recursive object/tuple widen)
+    - nesting widens through: `var n = {p: {x: 0}}` renders `{p: {x: number}}`
 
 ### Phase C — Borrows & mutability (**the gate**)
 
@@ -619,7 +736,7 @@ these arms it must add.
   - **Structures:**
     - add `RefType{Mut bool; Lt Lifetime; Inner RefInner}`
     - the sealed `RefInner interface { Type; isRefInner() }`, with `isRefInner`
-      on `RecordType`/`TupleType`/`TypeVarType` (and forward-declared for
+      on `ObjectType`/`TupleType`/`TypeVarType` (and forward-declared for
       `UnionType`/`IntersectionType`/`AliasType`/`ClassType`)
     - `Lifetime` is a placeholder interface here (`type Lifetime interface{
       isLifetime() }` with no concretes yet — D1 adds them); C1 only ever sets
@@ -671,9 +788,9 @@ these arms it must add.
     - `MutabilityMismatchError{LHS, RHS *soltype.RefType}`
     - `BorrowEscapeError{LHS, RHS}` (the latter's firing path is inert until D2)
   - **Accept (the gate):**
-    - `mut {x, y} <: mut {x}` **fails** (invariance — the write view's
-      contravariant `{x} <: {x, y}` is missing a field) while immutable
-      `{x, y} <: {x}` width-**succeeds** (inexact RHS)
+    - `mut {x, y} <: mut {x, ...}` **fails** (invariance — the write view's
+      contravariant `{x, ...} <: {x, y}` is missing a field) while immutable
+      `{x, y} <: {x, ...}` width-**succeeds** (inexact RHS)
     - mut-decay `mut {x} <: {x}` allowed, the reverse `{x} <: mut {x}` rejected
     - full messages
 
@@ -683,7 +800,7 @@ these arms it must add.
 - **C3 — Field-write inference + read-after-write** (~200).
   - **Files:** `solver/infer_expr.go` (the `inferAssign` member branch),
     `solver/infer.go` (the `written` map on the checker), `solver/coalesce.go`
-    (mut-record merge), plus tests.
+    (whole-object mut merge), plus tests.
   - **Structures:** add `written map[fieldKey]soltype.Type` to the checker
     (`fieldKey struct{ recvID int; field string }`, ported from
     `simplesub/constrain.go:14`); records the widened type stored into a
@@ -703,14 +820,48 @@ these arms it must add.
   - **Algorithm — read-after-write:** `inferMember` (infer_expr.go:687) consults
     `written` first: a read of a just-written field returns the recorded
     concrete type instead of a fresh var, so `obj.x = 5; obj.x` is `number`.
-  - **Algorithm — mut-record merge:** extend B1's `mergeObjects` fold to the
-    `RefType{Mut: true, Inner: RecordType}` case so multiple writes merge into
-    one mutable record (`mut {x} & mut {y}` ⇒ `mut {x, y}`) — the spike's
-    `mergeObjects` handled `Mut`-wrapped objects the same way.
+    **Write-after-read** needs no map support — it falls out of ordinary
+    constraint accumulation: the earlier read emits `recv <: {x: β, ...}` and the
+    later write emits `recv <: mut {x: widen(rhs), ...}`, both upper-bound
+    constraints that merge, so the read's `β` picks up the field type through the
+    bound graph. The `written` map is purely a read-after-write precision win
+    (return the concrete stored type, not a coalesced var); the reverse order
+    already works, and an incompatible read-then-write surfaces as a normal
+    constrain error.
+  - **Algorithm — whole-object `mut` merge (follows `internal/checker`, not the
+    spike's partition):** extend B1's `mergeObjects` fold over the receiver's
+    accumulated selections so that **if any field was written, every selection —
+    reads and writes alike — folds into one `mut` object**; with no write, the
+    reads fold into a bare (immutable) object. So `obj.x = 5; obj.y = 10` ⇒
+    `mut {x: number, y: number}` and the mixed `val x = obj.bar; obj.baz = 5` ⇒
+    `mut {bar: T0, baz: number}` — a single object, **not** the spike's
+    `{bar: T0} & mut {baz: number}` intersection. Read-only fields keep their
+    inferred (generalized) vars with no per-field mutability marker; this mirrors
+    `finalizeOpenObject` (generalize.go:510), which wraps the whole object in `mut`
+    once any property's `Written` flag is set, and matches the inferred types in
+    `internal/checker/tests/row_types_test.go` (`TestRowTypesPropertyAccess`).
+    Multiple writes still merge the same way (`mut {x} & mut {y}` ⇒ `mut {x, y}`);
+    the change is that bare reads now fold into the `mut` object too rather than
+    staying a separate intersection member.
+  - **Tradeoff (accepted):** wrapping the whole object in `mut` makes its
+    read-only fields invariant rather than covariant. For a **generalized**
+    function this is invisible — a read-only field is a fresh-per-call type
+    parameter (`T0` above), so each call instantiates it independently. It differs
+    from per-field variance only when the field var is *shared and not generalized*
+    — a recursive-group member checked before generalization, say — a narrow case
+    `internal/checker` already accepts in exchange for the simpler single-object
+    type. The spike's intersection is therefore dropped.
   - **Accept:**
     - `fn foo(obj) { obj.x = 5; obj.y = 10 }` ⇒ `(obj: mut {x: number, y: number})
       -> unit`
     - `fn foo(obj) { obj.x = 5; return obj.x }` ⇒ `... -> number`
+    - mixed read + write folds into one `mut` object:
+      `fn foo(obj) { val x = obj.bar; obj.baz = 5 }` ⇒
+      `fn <T0>(obj: mut {bar: T0, baz: number}) -> void` (row_types_test.go), not
+      an intersection
+    - a compound written value widens recursively via the shared `widen` (B3): in
+      `fn foo(obj) { obj.p = {x: 0} }`, `obj`'s `p` field is `{x: number}`, not
+      `{x: 0}`
 
 ### Phase D — Lifetimes (second sort)
 
@@ -778,7 +929,7 @@ these arms it must add.
   - **Files:** `solver/infer_stmt.go` / wherever the M3 return-point join lives,
     `solver/infer_expr.go` (escape sites).
   - **Algorithm — joins:** when the M3 return-point join (or an `if`/`match`
-    branch join) unifies two borrowed records with distinct lifetimes, mint a
+    branch join) unifies two borrowed objects with distinct lifetimes, mint a
     fresh **join** lifetime var and `constrainLt` each source lifetime into it
     (so it coalesces to `'a | 'b`). The join var is *not* a param lifetime —
     only its reachable param-lifetime members are named (the spike's
@@ -786,10 +937,30 @@ these arms it must add.
   - **Algorithm — escape:** a value flowing into module/static storage (a
     top-level binding, a global write) constrains its lifetime `<: 'static`
     (`constrainLt(lt, &StaticLifetime{})`), which coalesces to `'static`.
+  - **A promise payload is not a special escape site (no new code).** A borrow
+    inside a promise payload `Promise<mut 'a Point>` carries `'a` like any other
+    container — a record `{p: mut 'a Point}` behaves the same. `await` propagates
+    it unchanged: M3's rule `constrain(e <: Promise<U>)` resolves `U` to
+    `mut 'a Point`, so awaiting within `'a`'s region keeps the borrow at `'a`. The
+    payload escapes to `'static` only when the promise or the awaited result
+    actually outlives `'a` — stored in static/top-level storage, or returned past
+    `'a`'s scope — which is the same condition as the escape rule above. Excluding
+    `PromiseType` from `RefInner` forbids borrowing the promise itself, not a
+    borrowed payload, so this case falls out of the existing await + escape rules
+    with no promise-specific handling.
+  - **Finer point for a test, not a rule:** awaiting the same promise multiple
+    times returns the **exact same reference**, not a copy — promises memoize their
+    fulfillment value. So a *mutable*-borrow payload is not duplicated by repeated
+    awaits; two live bindings to that one reference are ordinary `mut` aliasing,
+    governed by the Phase-G liveness/uniqueness checking, not this lifetime rule or
+    anything promise-specific.
   - **Accept:**
     - `ConditionalUnionReturn` (return one of two mut borrows) ⇒ `mut ('a | 'b)
       {x: number}`
     - `EscapingRefIntoStatic` ⇒ `mut 'static`
+    - `AwaitedRefStaysBorrowed`: awaiting `Promise<mut 'a Point>` within `'a`'s
+      region yields `mut 'a Point` (no escape); storing that promise top-level
+      escapes it to `mut 'static`
 
 - **D4 — Display-time lifetime coalescing + elision** (~200).
   - **Files:** new lifetime-occurrence logic alongside `solver/simplify.go` /
@@ -832,7 +1003,7 @@ these arms it must add.
     general pattern binding), `solver/infer_expr.go` (param patterns), plus a
     pattern-typing helper.
   - **Structures:**
-    - add `TuplePat{Elems []Pat}`, `RecordPat{Fields []*RecordPatField}`, and
+    - add `TuplePat{Elems []Pat}`, `ObjectPat{Fields []*ObjectPatField}`, and
       literal patterns as `Pat` concretes (soltype's `Pat` interface was reserved
       for exactly this — type.go's `Pat` comment)
     - `print.go`'s `paramName` (print.go:278) gains arms for the new pattern
@@ -840,11 +1011,14 @@ these arms it must add.
     - `varName` (infer_decl.go:131, today IdentPat-only) generalizes to return the
       full set of bound names
   - **Algorithm — pattern typing:** a pattern dispatches through the
-    **member-lookup constraint path**, not subtyping: a `RecordPat{x, y}`
+    **member-lookup constraint path**, not subtyping: a `ObjectPat{x, y}`
     against a scrutinee `s` emits `constrain(s <: {x: βx, y: βy, Inexact:
     true})` (the same inexact requirement `inferMember` uses) and binds `x`/`y`
     to `βx`/`βy`; a `TuplePat[a, b]` emits `constrain(s <: [αa, αb])` (exact
-    length for an exact tuple pattern). A missing field / wrong arity surfaces
+    length for an exact tuple pattern). Because the object requirement is
+    **inexact**, a pattern may bind a *subset* of the scrutinee's fields —
+    `val {x} = p` on `p: {x, y}` binds `x` and tolerates the unmentioned `y`. Only
+    a field the scrutinee *lacks* (or a wrong tuple arity) is rejected, surfacing
     the existing `MissingPropertyError`/`TupleLengthMismatchError`. Patterns
     peel any `RefType` via `carrierOf` before matching (works on owned values
     before Phase D; borrowed scrutinees once D lands). Used uniformly by `val`
@@ -852,6 +1026,8 @@ these arms it must add.
   - **Accept:**
     - `val {x, y} = p` binds `x`/`y` at their field types and rejects a missing
       field
+    - partial destructuring is fine: `val p = {x: 5, y: 10}; val {x} = p` binds
+      `x` and tolerates the unmentioned `y` (the pattern requirement is inexact)
     - `val [a, b] = t` binds per slot and rejects wrong arity
     - a destructured param `fn (({x, y})) { … }` types the same way
 
@@ -862,15 +1038,17 @@ these arms it must add.
     pattern against the scrutinee (E1) in a child scope carrying the arm's
     bindings, then infer the arm body; join the arm body types via the M3
     return-point join (the same join D3 hooks lifetimes into).
-  - **Algorithm — exhaustiveness from exactness:** an **exact** record/tuple
+  - **Algorithm — exhaustiveness from exactness:** an **exact** object/tuple
     scrutinee whose arms cover its shape needs no catch-all; an **inexact**
-    scrutinee requires a catch-all arm (a missing one is a typed error).
-    Constructor/enum patterns and enum-exhaustive `match` are M5; union-scrutinee
-    exhaustiveness is M6 — E2 lays the form and the structural-pattern path they
-    both extend.
+    scrutinee requires a catch-all arm (a missing one is a typed error). E2 reads
+    only the `Inexact` field on `ObjectType`/`TupleType` (A1/A2); there is **no**
+    `UnionType.Inexact` in M4 — that flag, and the union-`match` exhaustiveness it
+    drives, lands with M6's "Union exactness flag." Constructor/enum patterns and
+    enum-exhaustive `match` are M5; union-scrutinee exhaustiveness is M6 — E2 lays
+    the form and the structural-pattern path they both extend.
   - **Accept:**
     - a `match` over structural patterns binds and type-checks each arm
-    - an exact-record scrutinee with a complete pattern set needs no catch-all, an
+    - an exact-object scrutinee with a complete pattern set needs no catch-all, an
       inexact one does (full error on the missing catch-all)
 
 ### Phase F — Namespace member lookup (parallel track)
@@ -921,13 +1099,34 @@ these arms it must add.
 
 - **G2 — Collapse the static-alias escape hatches** (~120).
   - **Files:** `solver/transitions.go`.
+  - **Background:** the old checker can't see a value that escapes past the call
+    boundary — stored via a `'static` callee parameter, say — so it approximates the
+    resulting permanent outside alias with two booleans on the alias set,
+    `HasStaticMutAlias` / `HasStaticImmAlias` (liveness/alias.go:32-33). They are set
+    by `AliasTracker.MarkStatic` at `'static`-param call sites and treated as
+    always-live aliases. Rule 1 consults the mut bit, Rule 2 the immut bit
+    (check_transitions.go:145, :149); the two are independent because one value can
+    escape twice, once each way.
   - **Algorithm:**
-    - drop the `HasStaticMutAlias` / `HasStaticImmAlias` bits
-    - where the old code consulted them, query the lifetime sort directly — a
-      value whose lifetime is constrained `<: 'static` (D3's escape output) is the
-      first-class signal the bits approximated
+    - drop `HasStaticMutAlias` / `HasStaticImmAlias`, `MarkStatic`, and the
+      call-site marking that sets them
+    - where the old code consulted them, query the lifetime sort directly — a value
+      whose borrow lifetime is constrained `<: 'static` (D3's escape output) is the
+      permanent outside alias the bit stood for, and the escaped borrow's
+      `RefType.Mut` supplies its mutability: Rule 1 fires when a *mutable* borrow
+      escaped to `'static`, Rule 2 when an *immutable* one did. `'static` gives the
+      always-live semantics for free — such a reference outlives the function by
+      definition, so no liveness check applies, exactly as the bits had none.
 
     This is the one genuinely new logic in the port; it depends on D3.
+  - **Coupling to pin down (AST ↔ type sides).** The transition checker runs over
+    liveness/AST, not `soltype` — `checkMutabilityTransition` talks only to
+    `liveness.Liveness`/`liveness.AliasTracker`, which G1 keeps verbatim. So G2 must
+    give it a way to reach the inferred `<: 'static` constraints for a value: a
+    bridge from a liveness `VarID` to that value's `soltype` borrow(s) and their
+    lifetime bounds. That bridge is the new seam the old boolean approximation
+    avoided — design it explicitly rather than letting the transition pass reach
+    into inference ad hoc.
   - **Accept:** the static-escape transition cases pass via lifetime queries
     rather than the dropped bits.
 
@@ -946,7 +1145,7 @@ F1             (independent; any time — only M2's Namespace)
 
 Critical path to the gate: **A1 → C1 → C2** — three PRs. B, E, F are parallel
 tracks off A1; nothing downstream of the gate starts before C2 clears. B1's
-`mergeObjects` fold is reused by C3 (mut-record merge) and the `widen` helper
+`mergeObjects` fold is reused by C3 (whole-object mut merge) and the `widen` helper
 authored in B3 is reused by C3, so land B before C3 even though B is otherwise
 independent of the gate. Total ≈ 3.0k non-test LoC across 17 PRs, with the
 single highest-risk change (C2) isolated to ~180 reviewable lines.
@@ -960,7 +1159,7 @@ tests keyed by name over real parsed source where the walk supports it,
 asserting rendered types (`render`/`PrintAsScheme` output) and **full** error
 messages via the typed `SolverError`s — authored against intended semantics,
 not old-checker output. Blame-span assertions follow the M2.5 pattern
-(`blame_test.go`). Inline snapshots for large trees (nested borrowed records
+(`blame_test.go`). Inline snapshots for large trees (nested borrowed objects
 with per-field lifetimes). Each PR carries the acceptance set named above; the
 union is the milestone's M4 acceptance. No fixture harness yet (M8).
 
@@ -985,15 +1184,15 @@ union is the milestone's M4 acceptance. No fixture harness yet (M8).
 
 ## Open questions
 
-- **Deferred overload resolution (#723).** M4's record types make the
+- **Deferred overload resolution (#723).** M4's object types make the
   documented first-match fallback *observable* on object-typed arguments
   (today it only over-narrows function-typed ones). The real fix is scoped
   M4/M5; if object-arg overload tests start failing on arm choice rather than
   typing, that is #723, not a regression in these PRs.
   - **Decision (deferred to M5).** Keep resolution out of M4's scope. The
     fallback to declaration order fires because `moreSpecific`/`structuralSubtype`
-    (overload.go) ranks record-shaped args as a tie. The principled fix is to
-    rank record args by field-set subsumption and exactness — a record covering
+    (overload.go) ranks object-shaped args as a tie. The principled fix is to
+    rank object args by field-set subsumption and exactness — an object covering
     more required fields, or the exact one, dominates, the object analogue of the
     existing arity/exactness ranking for functions. Land that in M5, where
     classes first produce multi-arm object overloads. For M4, pin the observable
