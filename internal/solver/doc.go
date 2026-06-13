@@ -5,7 +5,7 @@
 //
 //   - fresh inference variables that carry lower/upper *bound lists* plus a level
 //     (for let-generalization in a later milestone),
-//   - a constrain(lhs <: rhs) primitive with a coinductive seen-cache, plus
+//   - a constrain(sub <: super) primitive with a coinductive seen-cache, plus
 //     level-aware extrusion, and
 //   - polarity-driven coalescing that inlines every variable to its bounds,
 //     returning a native soltype.Type.
@@ -68,5 +68,5 @@
 // fallback over-narrows the enclosing function, and the real fix rides with M4/M5
 // object-arg and method overloads (#723). M1 ships UnionType/IntersectionType *nodes*
 // for coalesced output; their general lattice rules in constrain remain deferred (PR6
-// adds only the function-intersection-LHS arm above).
+// adds only the function-intersection-sub arm above).
 package solver

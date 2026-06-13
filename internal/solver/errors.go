@@ -28,20 +28,20 @@ type SolverError interface {
 	Related() []ast.Span // node-derived; empty unless the kind carries related nodes
 }
 
-// CannotConstrainError fires when a non-variable LHS/RHS pair fails to match:
+// CannotConstrainError fires when a non-variable sub/super pair fails to match:
 // prim/prim mismatch, lit/lit mismatch, lit/prim mismatch, and the generic
 // "no rule applies" fall-through at the end of constrain.
 //
-// LHS is the "actual" value, RHS the "expected"; blame follows LHS to its minting
+// Sub is the "actual" value, Super the "expected"; blame follows Sub to its minting
 // node (when that node lies inside the constraint site — the containment guard
 // that keeps identifier-flow blame on the use, not the definition, §3.8) and falls
 // back to site otherwise. This is the only constraint kind that keeps a site
 // fallback: its actual-value operand can legitimately resolve outside the
 // constraint (an ident's definition) or not at all (a Void result).
 type CannotConstrainError struct {
-	LHS, RHS soltype.Type
-	prov     NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
-	site     ast.Node     // M2.5: the constraint node n — the use, the fallback when LHS has no entry
+	Sub, Super soltype.Type
+	prov       NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
+	site       ast.Node     // M2.5: the constraint node n — the use, the fallback when Sub has no entry
 }
 
 // FuncArityMismatchError fires on FuncType <: FuncType when the two arities
@@ -50,88 +50,88 @@ type CannotConstrainError struct {
 // report param/return types too. M3 narrows the firing conditions when the
 // exactness flag adds the inexact fewer-params-is-subtype arm.
 //
-// The subject is the RHS call-shape (a fresh FuncType{args, res} minted per call,
+// The subject is the super call-shape (a fresh FuncType{args, res} minted per call,
 // recorded against the CallExpr), so Span() resolves precisely to the call;
-// Related() follows the LHS callee to a "defined here" span. site is the
+// Related() follows the sub callee to a "defined here" span. site is the
 // constraint node, used as a coarse fallback when neither operand resolves (e.g.
-// once M3 produces higher-order FuncArity errors whose RHS isn't a recorded
+// once M3 produces higher-order FuncArity errors whose super isn't a recorded
 // call-shape) so blame never degrades to the zero span.
 type FuncArityMismatchError struct {
-	LHS, RHS *soltype.FuncType
-	prov     NodeResolver // M2.5: type→node index (§3.5)
-	site     ast.Node     // M2.5: constraint node fallback when no operand resolves
+	Sub, Super *soltype.FuncType
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
 // TupleLengthMismatchError fires on TupleType <: TupleType with different
 // lengths (M1's exact-tuple case; M4 may narrow the firing conditions when the
 // inexact flag is added).
 //
-// The subject is the LHS tuple literal (recorded by inferTuple); Related() points
-// at the RHS expected-source. Not actually reachable in M2.5 — a tuple <: tuple
+// The subject is the sub tuple literal (recorded by inferTuple); Related() points
+// at the super expected-source. Not actually reachable in M2.5 — a tuple <: tuple
 // constraint needs a tuple sink (annotation/param) resolveTypeAnn does not yet
 // produce — so its blame is wired but exercised from M4. site is the constraint
 // node, the coarse fallback when neither tuple resolves (e.g. an M4 tuple
 // annotation whose elements aren't recorded) so blame never degrades to the zero
 // span.
 type TupleLengthMismatchError struct {
-	LHS, RHS *soltype.TupleType
-	prov     NodeResolver // M2.5: type→node index (§3.5)
-	site     ast.Node     // M2.5: constraint node fallback when no operand resolves
+	Sub, Super *soltype.TupleType
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
-// MissingPropertyError fires on ObjectType <: ObjectType when the RHS requires a
-// property the LHS lacks — the object analogue of FuncArityMismatchError /
+// MissingPropertyError fires on ObjectType <: ObjectType when the super requires a
+// property the sub lacks — the object analogue of FuncArityMismatchError /
 // TupleLengthMismatchError. It is the failure behind a field read on an object
 // without that property (recv.foo where recv has no foo): the walk constrains
 // recv <: {foo: fresh, ...}, and the absent property surfaces here. Holds both
 // objects plus the missing name so consumers can inspect what was required.
 //
-// The subject is the property's inner result var (RHS.Prop(Name)), minted by
+// The subject is the property's inner result var (Super.Prop(Name)), minted by
 // inferMember and recorded against the .prop identifier — so Span() blames the
 // member's prop (.foo), not the receiver. Name stays: the absent property name is
-// not recoverable from a single node (the RHS may require several properties).
+// not recoverable from a single node (the super may require several properties).
 // site is the constraint node, the coarse fallback when the property var has no
 // entry — reachable for a concrete object <: object requirement whose property
 // types are coalesced/annotation-minted (and therefore not recorded by
 // inferMember); for member access it never fires, but it keeps blame off the zero
 // span.
 type MissingPropertyError struct {
-	LHS, RHS *soltype.ObjectType
-	Name     string
-	prov     NodeResolver // M2.5: type→node index (§3.5)
-	site     ast.Node     // M2.5: constraint node fallback when the property var has no entry
+	Sub, Super *soltype.ObjectType
+	Name       string
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback when the property var has no entry
 }
 
-// InexactIntoExactError fires on ObjectType <: ObjectType when the RHS is exact
-// but the LHS is inexact: an inexact source carries an open `...` tail of unknown
+// InexactIntoExactError fires on ObjectType <: ObjectType when the super is exact
+// but the sub is inexact: an inexact source carries an open `...` tail of unknown
 // properties, so it cannot satisfy an exact target that fixes its member set.
 type InexactIntoExactError struct {
-	LHS, RHS *soltype.ObjectType
-	prov     NodeResolver // M2.5: type→node index (§3.5)
-	site     ast.Node     // M2.5: constraint node fallback
+	Sub, Super *soltype.ObjectType
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback
 }
 
-// ExtraPropertyError fires on ObjectType <: ObjectType when the RHS is exact and
-// the LHS carries a property the RHS does not declare — width is rejected against
+// ExtraPropertyError fires on ObjectType <: ObjectType when the super is exact and
+// the sub carries a property the super does not declare — width is rejected against
 // an exact target. One error fires per extra property, carrying its name.
 type ExtraPropertyError struct {
-	LHS, RHS *soltype.ObjectType
-	Name     string
-	prov     NodeResolver // M2.5: type→node index (§3.5)
-	site     ast.Node     // M2.5: constraint node fallback
+	Sub, Super *soltype.ObjectType
+	Name       string
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback
 }
 
 // OptionalPropertyError fires on ObjectType <: ObjectType when a property is
-// optional on the LHS source but required on the RHS target: the source may omit
+// optional on the sub (source) but required on the super (target): the source may omit
 // the property, so it cannot satisfy a target that requires it present (the object
 // analogue of TypeScript's "Property 'x' is optional in type … but required in
 // type …"). The converse — a required source property filling an optional target
 // slot — is fine, so only this direction errors.
 type OptionalPropertyError struct {
-	LHS, RHS *soltype.ObjectType
-	Name     string
-	prov     NodeResolver // M2.5: type→node index (§3.5)
-	site     ast.Node     // M2.5: constraint node fallback
+	Sub, Super *soltype.ObjectType
+	Name       string
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback
 }
 
 func (*CannotConstrainError) isSolverError()     {}
@@ -145,20 +145,20 @@ func (*OptionalPropertyError) isSolverError()    {}
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
 
-func (e *CannotConstrainError) Span() ast.Span      { return spanOf(e.prov, e.LHS, e.site) }
-func (e *CannotConstrainError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+func (e *CannotConstrainError) Span() ast.Span      { return spanOf(e.prov, e.Sub, e.site) }
+func (e *CannotConstrainError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *FuncArityMismatchError) Span() ast.Span {
-	// RHS call-shape → the CallExpr; degrade → the callee function; else the site.
-	return spanOfFirst(e.prov, e.site, e.RHS, e.LHS)
+	// super call-shape → the CallExpr; degrade → the callee function; else the site.
+	return spanOfFirst(e.prov, e.site, e.Super, e.Sub)
 }
-func (e *FuncArityMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.LHS) } // the fn
+func (e *FuncArityMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.Sub) } // the fn
 
 func (e *TupleLengthMismatchError) Span() ast.Span {
-	// LHS tuple literal → degrade to the other tuple → else the site.
-	return spanOfFirst(e.prov, e.site, e.LHS, e.RHS)
+	// sub tuple literal → degrade to the other tuple → else the site.
+	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
 }
-func (e *TupleLengthMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+func (e *TupleLengthMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *MissingPropertyError) Span() ast.Span {
 	// The property's inner var → the .foo prop ident; degrade to the receiver;
@@ -166,42 +166,42 @@ func (e *MissingPropertyError) Span() ast.Span {
 	// access (which always records it); the receiver/site arms cover the concrete
 	// object <: object case where the property type may be unrecorded.
 	ops := make([]soltype.Type, 0, 2)
-	if p, ok := e.RHS.Prop(e.Name); ok {
+	if p, ok := e.Super.Prop(e.Name); ok {
 		ops = append(ops, p.Type)
 	}
-	ops = append(ops, e.LHS)
+	ops = append(ops, e.Sub)
 	return spanOfFirst(e.prov, e.site, ops...)
 }
-func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.LHS) } // the receiver
+func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Sub) } // the receiver
 
 func (e *InexactIntoExactError) Span() ast.Span {
-	return spanOfFirst(e.prov, e.site, e.LHS, e.RHS)
+	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
 }
-func (e *InexactIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+func (e *InexactIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *ExtraPropertyError) Span() ast.Span {
-	// The extra property lives on the LHS source; blame it, degrade to the RHS
-	// target, else the site.
+	// The extra property lives on the sub (source); blame it, degrade to the super
+	// (target), else the site.
 	ops := make([]soltype.Type, 0, 2)
-	if p, ok := e.LHS.Prop(e.Name); ok {
+	if p, ok := e.Sub.Prop(e.Name); ok {
 		ops = append(ops, p.Type)
 	}
-	ops = append(ops, e.LHS)
+	ops = append(ops, e.Sub)
 	return spanOfFirst(e.prov, e.site, ops...)
 }
-func (e *ExtraPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+func (e *ExtraPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *OptionalPropertyError) Span() ast.Span {
-	// The optional property lives on the LHS source; blame it, degrade to the RHS
-	// target, else the site (same shape as ExtraPropertyError).
+	// The optional property lives on the sub (source); blame it, degrade to the super
+	// (target), else the site (same shape as ExtraPropertyError).
 	ops := make([]soltype.Type, 0, 2)
-	if p, ok := e.LHS.Prop(e.Name); ok {
+	if p, ok := e.Sub.Prop(e.Name); ok {
 		ops = append(ops, p.Type)
 	}
-	ops = append(ops, e.LHS)
+	ops = append(ops, e.Sub)
 	return spanOfFirst(e.prov, e.site, ops...)
 }
-func (e *OptionalPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+func (e *OptionalPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -459,13 +459,14 @@ type AsyncReturnNotPromiseError struct {
 // InvalidAssignmentTargetError fires when the left-hand side of an assignment
 // (`a = expr`) is not an assignable place. M3's only assignable target is an
 // IdentExpr resolving to a `var` binding; a literal, call, or any other non-place
-// LHS is rejected here. (A member target `obj.x = …` needs record types and lands
-// in M4 — it is also reported here until then.)
+// target is rejected here. A member or index target such as `obj.x = …` is instead
+// reported as an UnsupportedFeatureError: it is a valid place whose type rule needs
+// object/array types (M4), not a fundamentally invalid target.
 //
-// It is a BRIDGE error: born in inferAssign with the offending LHS node in hand,
-// so it self-blames (Span() is the LHS's own span); it carries no related node.
+// It is a BRIDGE error: born in inferAssign with the offending target node in hand,
+// so it self-blames (Span() is the target's own span); it carries no related node.
 type InvalidAssignmentTargetError struct {
-	Target ast.Expr // the non-place LHS (blame span)
+	Target ast.Expr // the non-place assignment target (blame span)
 }
 
 // CannotAssignToImmutableError fires when a reassignment (`a = expr`) targets a
@@ -658,17 +659,17 @@ func (e *AsyncReturnNotPromiseError) Message() string {
 }
 
 func (e *CannotConstrainError) Message() string {
-	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.LHS), describe(e.RHS))
+	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.Sub), describe(e.Super))
 }
 
 func (e *FuncArityMismatchError) Message() string {
 	return fmt.Sprintf("cannot constrain function of arity %d <: function of arity %d",
-		len(e.LHS.Params), len(e.RHS.Params))
+		len(e.Sub.Params), len(e.Super.Params))
 }
 
 func (e *TupleLengthMismatchError) Message() string {
 	return fmt.Sprintf("cannot constrain tuple of length %d <: tuple of length %d",
-		len(e.LHS.Elems), len(e.RHS.Elems))
+		len(e.Sub.Elems), len(e.Super.Elems))
 }
 
 func (e *MissingPropertyError) Message() string {

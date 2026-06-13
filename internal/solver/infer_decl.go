@@ -20,7 +20,7 @@ import (
 // ok=false cases, each already reported:
 //   - VarDecl without an initializer → MissingInitializerError
 //   - VarDecl with a destructuring pattern → UnsupportedNodeError (initializer
-//     still walked first, so a malformed RHS surfaces its own errors)
+//     still walked first, so it surfaces its own errors)
 //   - any decl kind outside the M2 subset → UnsupportedNodeError
 func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type, provenance.Provenance, bool) {
 	switch d := d.(type) {
@@ -62,7 +62,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 // reported). Shared core of both binding paths; they differ only in WHEN they
 // coalesce: inferDeclDef (SCC driver) keeps it raw so inferComponent coalesces the
 // binding var once at completion, while inferVarDecl (body-level) coalesces it now.
-// Walks the initializer regardless so a malformed RHS still surfaces errors, and
+// Walks the initializer regardless so it still surfaces its own errors, and
 // binds nothing — the caller owns scope placement.
 //
 // A `val`/`var` with no initializer needs a type annotation (TypeAnn support lands
@@ -76,11 +76,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	if d.TypeAnn != nil {
 		// M2.5: constrain the initializer against the annotation (the one
 		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
-		// CannotConstrainError whose LHS (the "hi" literal) carries a
+		// CannotConstrainError whose Sub (the "hi" literal) carries a
 		// LiteralInference origin — precise blame, with the annotation as the
 		// related node. The constraint node is the initializer, so even the
-		// fallback span is the RHS, not the whole decl; the binding then adopts the
-		// annotated type.
+		// fallback span is the initializer, not the whole decl; the binding then
+		// adopts the annotated type.
 		//
 		// Skip both the check and the adoption when the annotation is unsupported
 		// (ok=false): resolveTypeAnn already reported it and returned a `never`
@@ -98,7 +98,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // inferVarDecl types a body-level `val`/`var` into a GENERALIZED ValueBinding —
 // the let-polymorphism rule (M3, PR1) that replaces M2's coalesce-at-binding
 // freeze. It infers the initializer one level deeper (lvl+1) and generalizes at
-// lvl: variables created in the RHS (level > lvl) become reusable type parameters,
+// lvl: variables created in the initializer (level > lvl) become reusable type parameters,
 // while variables captured from an enclosing scope (level <= lvl) stay shared — so
 // `fn (y) { val getY = fn () { y }; [getY(), getY()] }` keeps getY's captured `y`
 // instead of freezing it to `never`, the bug eager coalescing caused. A body-level

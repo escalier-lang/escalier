@@ -70,7 +70,7 @@ func opFunc(ret soltype.Type, params ...soltype.Type) *soltype.FuncType {
 // LATENT TRAP for PR-3 (==/!= over unknown): the equality operators are seeded
 // with `unknown` (⊤) parameters, but M1's constrain has NO `T <: UnknownType`
 // rule — its switch handles prim/lit/func/tuple/void plus the two TypeVar arms,
-// and an UnknownType RHS falls through to CannotConstrainError. Nothing applies
+// and an UnknownType super falls through to CannotConstrainError. Nothing applies
 // the operators in PR-1 (BinaryExpr is still UnsupportedNodeError), so this is
 // inert today; but the moment the operator/call walk lands, `1 == 2` will
 // constrain `1 <: unknown` and fail with a spurious "cannot constrain 1 <:

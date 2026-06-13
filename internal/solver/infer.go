@@ -18,7 +18,7 @@ import (
 // not model cleanly. The shape matches both the simplesub spike's typeTerm and
 // the old checker's inferExpr. See m2-implementation-plan §3.2.
 type checker struct {
-	ctx  *Context      // M1: freshVar(level), Constrain(lhs, rhs) []SolverError
+	ctx  *Context      // M1: freshVar(level), Constrain(sub, super) []SolverError
 	info *Info         // M1: node → soltype.Type side table (unexported setType)
 	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
 	errs []SolverError // accumulated; mirrors the spike's []error threading
@@ -93,15 +93,26 @@ func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 	return c.ctx.freshVar(lvl)
 }
 
-// constrain asserts lhs <: rhs and, for each resulting constraint error, hands it
-// the provenance table and the constraint node n as a blame fallback, so its own
-// Span()/Related() can resolve per-operand blame through Prov on demand and fall
-// back to n's span (never the zero span) when an operand has no entry (§3.5). The
-// engine itself never touches Prov — the fields are assigned here, after Constrain
-// returns, so the hot loop stays off the table (the perf invariant, §3.9). Bridge
+// constrain asserts source <: target, then stamps blame onto each resulting error.
+//
+// The operands map onto the engine's sub/super names (Context.Constrain):
+//   - source is sub: the value being checked.
+//   - target is super: the expected type.
+//
+// These data-flow names hold here because no contravariant flip has happened yet.
+// In `x = e`, `e` is the source and `x` is the target.
+//
+// For each error Constrain returns:
+//  1. Assign the Prov table and the constraint node n to the error.
+//  2. The error's Span()/Related() then resolve per-operand blame through Prov on
+//     demand. When an operand has no Prov entry, blame falls back to n's span,
+//     never the zero span (§3.5).
+//
+// The engine never touches Prov. These fields are assigned after Constrain returns,
+// so the hot loop stays off the table. That is the perf invariant, §3.9. Bridge
 // errors never flow through here; they self-blame from their own node.
-func (c *checker) constrain(n ast.Node, lhs, rhs soltype.Type) {
-	for _, e := range c.ctx.Constrain(lhs, rhs) {
+func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
+	for _, e := range c.ctx.Constrain(source, target) {
 		switch err := e.(type) {
 		case *CannotConstrainError:
 			err.prov, err.site = c.prov, n

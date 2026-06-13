@@ -11,12 +11,12 @@ import (
 //
 // `a = expr` parses as an ast.BinaryExpr with Op == ast.Assign — the only binary
 // operator the M3 walk handles. The target must be a mutable (`var`) place; the
-// RHS must be a subtype of the binding's type; the assignment expression evaluates
+// source must be a subtype of the binding's type; the assignment expression evaluates
 // to the value just stored, so its type is the target's slot type. Reassignment
 // lives in expression position, so these tests exercise it inside a function body
 // (or a top-level `val` initializer).
 
-// An annotated `var` reassignment type-checks when the RHS is a subtype of the
+// An annotated `var` reassignment type-checks when the source is a subtype of the
 // declared type, and reports a single CannotConstrainError otherwise. The `var` is
 // annotated because un-annotated `var` literal widening is M4 (see the literal case
 // below).
@@ -74,8 +74,9 @@ func TestInferAssignToImmutableNonVal(t *testing.T) {
 	})
 }
 
-// A non-place LHS — a literal or a call — is an InvalidAssignmentTargetError that
-// blames the LHS. (Member targets `obj.x = …` need record types and land in M4.)
+// A non-place target — a literal or a call — is an InvalidAssignmentTargetError that
+// blames the target. A member or index target takes a separate path: it is a valid
+// place pending object/array types (M4), so it reports an UnsupportedFeatureError.
 func TestInferAssignInvalidTarget(t *testing.T) {
 	t.Run("literal target", func(t *testing.T) {
 		src := "val a = 5\nfn g() { 5 = a }"
@@ -126,7 +127,7 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 }
 
 // Reassigning a POLYMORPHIC var must not corrupt the binding. inferAssign freshens
-// the binding's coalesced slot type before constraining, so the RHS flows into
+// the binding's coalesced slot type before constraining, so the source flows into
 // throwaway copies rather than the binding's retained type-parameter vars; `id`
 // keeps its generic type and a later `id("hello")` still type-checks.
 func TestInferAssignPolyVarNoCorruption(t *testing.T) {
@@ -154,7 +155,7 @@ func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 	require.Equal(t, "error", values["a"]) // recovered as the sentinel, not never
 }
 
-// Reassigning a union-typed var applies the union-RHS rule: a member assigns, a
+// Reassigning a union-typed var applies the union-target rule: a member assigns, a
 // non-member is rejected once. (Union subtyping in general is M6; inferAssign trials
 // the members under a probe so a legal member assignment isn't wrongly rejected.)
 func TestInferAssignUnionTarget(t *testing.T) {
@@ -175,13 +176,13 @@ func TestInferAssignUnionTarget(t *testing.T) {
 	})
 }
 
-// KNOWN GAP (M6): assigning an inference-variable RHS into a union target
+// KNOWN GAP (M6): assigning an inference-variable source into a union target
 // over-narrows the variable. `a = x` for an un-annotated param `x` and `a: 1 | 2`
 // commits the first matching member (`x <: 1`), so `x` infers as `1` rather than
 // the sound `1 | 2`. This is INCOMPLETE, not unsound (the committed bound is always
 // stronger than required, so no invalid program is accepted), and it is not fixable
-// in constrainAssign — falling through to constrain(rhs, union) injects the
-// coalesced union node into rhs's bound list and panics the coalescer. The correct
+// in constrainAssign — falling through to constrain(source, union) injects the
+// coalesced union node into source's bound list and panics the coalescer. The correct
 // fix is M6's first-class union subtyping with inference variables. This pins the
 // interim behavior so the M6 change is visible: when it lands, `x` becomes `1 | 2`
 // and this assertion must be updated. See constrainAssign's KNOWN GAP note.
@@ -219,7 +220,7 @@ func TestInferAssignMemberTargetUnsupported(t *testing.T) {
 	requireBlame(t, src, errs, "Unsupported in M2: assignment to a member or index", "o.x")
 }
 
-// An immutable target with an independently-broken RHS reports BOTH errors — they
+// An immutable target with an independently-broken source reports BOTH errors — they
 // are two distinct problems, not a cascade (the immutable target never reaches
 // constrain). Pinned so the behavior is explicit.
 func TestInferAssignImmutableWithBadRHSReportsBoth(t *testing.T) {

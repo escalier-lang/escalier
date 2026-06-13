@@ -71,7 +71,7 @@ breakdown, design rationale, and per-file sketches.
   multi-bound coalesced output. `Polarity` enum lives in `soltype` so
   `TypeVarType.BoundsAt(pol)` can take it without inverting the
   `soltype`/`solver` package boundary.
-- **The constraint engine** — `constrain(lhs <: rhs)` with the coinductive
+- **The constraint engine** — `constrain(sub <: super)` with the coinductive
   seen-cache (pointer-identity keying, sufficient for M1's non-recursive
   type set), the structural cases (`PrimType`/`LitType`/`FuncType`/
   `TupleType`/`Void`) for the M1 set, the variable cases (bound-append +
@@ -179,7 +179,7 @@ A focused infra milestone, **not** a language feature. See
 [m2.5-implementation-plan.md](m2.5-implementation-plan.md) for the full PR
 breakdown, the per-operand blame design, and the construction-site population
 table. M2 stamps the *umbrella*
-node's span on every constraint error — `constrain(n, lhs, rhs)` sets `n.Span()`
+node's span on every constraint error — `constrain(n, source, target)` sets `n.Span()`
 on each returned error ([internal/solver/infer.go](../../internal/solver/infer.go)
 `(*checker).constrain`), so a mismatch deep inside a large declaration blames the
 whole declaration. This milestone makes blame point at the **narrowest source of
@@ -202,7 +202,7 @@ once M3–M6 multiply them — so it lands *before* M3.
   field values, member-access result var. A single `prov[t] = FromAST{n, kind}`
   per site, via a node+kind-taking helper (design notes "Population discipline").
 - **Per-operand blame at the error path.** Each `SolverError` already carries
-  typed `LHS, RHS soltype.Type` references
+  typed `Sub, Super soltype.Type` references
   ([internal/solver/errors.go](../../internal/solver/errors.go)). Replace the
   single umbrella stamp with a lookup: map each failed operand to its narrowest
   `FromAST` span via `Prov` and stamp the **most specific contributing node**,
@@ -396,7 +396,7 @@ wrapper) are what first populate a lifetime. Land them together.
   richer than the field set the body touches. The `open` marker lands here
   (the first milestone where record-typed params exist).
 - **`var`-binding literal widening (reassignment ergonomics).** M3's PR8 ships
-  reassignment (`a = expr`) but constrains the RHS against the binding's type *as
+  reassignment (`a = expr`) but constrains the source against the binding's type *as
   inferred*, so an un-annotated `var a = 5; a = 6` rejects (`6 <: 5`) until a `var`
   binding **widens its literal initializer to the primitive** (`5` ⇒ `number`,
   `"x"` ⇒ `string`) — the binding-level analog of the `widen(v)` already applied to
