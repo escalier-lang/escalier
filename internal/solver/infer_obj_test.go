@@ -217,5 +217,10 @@ func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
 		require.Equal(t, "object is missing property: a", errs[0].Message())
+		// Blame the offending argument {b: 2} — the object that lacks the field — not
+		// the whole call. The requirement's field var is freshened on instantiation
+		// and carries no prov, so MissingPropertyError's blame degrades to the LHS
+		// (the argument object literal), which inferObject did record.
+		require.Equal(t, "{b: 2}", spanText(src, errs[0].Span()))
 	})
 }
