@@ -89,8 +89,8 @@ func TestBlameCallTooFewArgs(t *testing.T) {
 // A missing-property read blames the member's prop (.foo), not the receiver, with
 // the receiver's definition as the related span. Like TestBlameCallArity, M2.5
 // resolved that related span only for an inline receiver (a named receiver was
-// coalesced to a fresh RecordType with no Prov entry); M3's generalize-and-share
-// instantiation keeps a VAR-FREE receiver's original record — here `{a: 5}` is
+// coalesced to a fresh ObjectType with no Prov entry); M3's generalize-and-share
+// instantiation keeps a VAR-FREE receiver's original object — here `{a: 5}` is
 // monomorphic, so it is shared unchanged through instantiation (recorded
 // ObjectField against the literal) — so the named receiver's related span now
 // resolves. A receiver whose value flowed through an instantiation that REBUILT it
@@ -207,23 +207,96 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 
 	t.Run("FuncArity", func(t *testing.T) {
 		e := &FuncArityMismatchError{
-			LHS: &soltype.FuncType{}, RHS: &soltype.FuncType{}, prov: Prov{}, site: site,
+			LHS:  &soltype.FuncType{Params: make([]*soltype.FuncParam, 2)},
+			RHS:  &soltype.FuncType{Params: make([]*soltype.FuncParam, 1)},
+			prov: Prov{}, site: site,
 		}
+		require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("TupleLength", func(t *testing.T) {
 		e := &TupleLengthMismatchError{
-			LHS: &soltype.TupleType{}, RHS: &soltype.TupleType{}, prov: Prov{}, site: site,
+			LHS:  &soltype.TupleType{Elems: []soltype.Type{num(), num()}},
+			RHS:  &soltype.TupleType{Elems: []soltype.Type{num()}},
+			prov: Prov{}, site: site,
 		}
+		require.Equal(t, "cannot constrain tuple of length 2 <: tuple of length 1", e.Message())
 		require.Equal(t, site.Span(), e.Span())
 	})
 	t.Run("MissingProperty", func(t *testing.T) {
 		e := &MissingPropertyError{
-			LHS:  &soltype.RecordType{},
-			RHS:  &soltype.RecordType{Fields: []*soltype.RecordField{{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			LHS:  &soltype.ObjectType{},
+			RHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			Name: "b", prov: Prov{}, site: site,
+		}
+		require.Equal(t, "object is missing property: b", e.Message())
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("InexactIntoExact", func(t *testing.T) {
+		e := &InexactIntoExactError{
+			LHS: &soltype.ObjectType{Inexact: true}, RHS: &soltype.ObjectType{}, prov: Prov{}, site: site,
+		}
+		require.Equal(t, "cannot constrain inexact object <: exact object", e.Message())
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("ExtraProperty", func(t *testing.T) {
+		e := &ExtraPropertyError{
+			LHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			RHS:  &soltype.ObjectType{},
+			Name: "b", prov: Prov{}, site: site,
+		}
+		require.Equal(t, "object has extra property: b", e.Message())
+		require.Equal(t, site.Span(), e.Span())
+	})
+	t.Run("OptionalProperty", func(t *testing.T) {
+		e := &OptionalPropertyError{
+			LHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}, Optional: true}}},
+			RHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
 			Name: "b", prov: Prov{}, site: site,
 		}
 		require.Equal(t, site.Span(), e.Span())
+	})
+}
+
+// checker.constrain stamps prov + the constraint node onto EVERY constraint-error
+// kind it forwards, so each error's Span() resolves to a real source span instead
+// of the zero span. The object errors (InexactIntoExactError, ExtraPropertyError,
+// OptionalPropertyError) were added in M4 A1; this pins that their switch arms
+// exist — a missing arm leaves prov/site nil and Span() degrades to 0:0. Exercised
+// directly through c.constrain because an exact-object sink is not reachable from
+// source until object annotations land (A3).
+func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
+	node := ast.NewIdent("site", tspan(4, 2, 4, 6))
+
+	t.Run("ExtraPropertyError", func(t *testing.T) {
+		c := newChecker()
+		// exact {x, y} <: exact {x}: y is an extra property on the source.
+		c.constrain(node, exactObj(propElem("x", num()), propElem("y", num())), exactObj(propElem("x", num())))
+		require.Len(t, c.errs, 1)
+		require.IsType(t, &ExtraPropertyError{}, c.errs[0])
+		require.Equal(t, "object has extra property: y", c.errs[0].Message())
+		require.Equal(t, node.Span(), c.errs[0].Span())
+	})
+
+	t.Run("InexactIntoExactError", func(t *testing.T) {
+		c := newChecker()
+		// inexact {x, ...} <: exact {x}: an inexact source cannot fill an exact sink.
+		c.constrain(node, inexactObj(propElem("x", num())), exactObj(propElem("x", num())))
+		require.Len(t, c.errs, 1)
+		require.IsType(t, &InexactIntoExactError{}, c.errs[0])
+		require.Equal(t, "cannot constrain inexact object <: exact object", c.errs[0].Message())
+		require.Equal(t, node.Span(), c.errs[0].Span())
+	})
+
+	t.Run("OptionalPropertyError", func(t *testing.T) {
+		c := newChecker()
+		// {x?: number} <: {x: number}: an optional source cannot fill a required slot.
+		c.constrain(node,
+			exactObj(&soltype.PropertyElem{Name: "x", Type: num(), Optional: true}),
+			exactObj(propElem("x", num())))
+		require.Len(t, c.errs, 1)
+		require.IsType(t, &OptionalPropertyError{}, c.errs[0])
+		require.Equal(t, node.Span(), c.errs[0].Span())
 	})
 }
 

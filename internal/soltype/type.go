@@ -130,35 +130,69 @@ type FuncType struct {
 // TupleType is a fixed-length tuple type.
 type TupleType struct{ Elems []Type }
 
-// RecordType is a record/object type with named value fields. M2 ships the
-// BASIC width-and-depth-subtyping form that record literals and field reads
-// need ({a: 5}, recv.a); the richer object system — optional fields, methods,
-// getters/setters, index signatures, spreads, `mut`, and usage-inference — is
-// M4. It mirrors the role of type_system.ObjectType but carries only named
-// value fields (no method/getter/setter/mapped elements yet), so it stays a
-// flat list of Name→Type fields. Subtyping matches fields by name (order is
-// irrelevant); the slice order is preserved only for stable rendering.
-type RecordType struct{ Fields []*RecordField }
-
-// RecordField is one named field of a RecordType.
-type RecordField struct {
-	Name string
-	Type Type
+// ObjectType is the structural object type — the carrier for object literals,
+// object/interface annotations, and (M5) class instance bodies, so one
+// structural-decomposition routine serves all three. It promotes M2's
+// RecordType{Fields} to an ordered element list. M4 ships only PropertyElem;
+// MethodElem/GetterElem/SetterElem arrive in M5, and IndexSigElem plus the
+// object rest/spread RestElem in M9, each a new ObjTypeElem arm.
+//
+// Inexact follows M3's FuncType convention: the zero value is exact, matching
+// Escalier's exact-by-default semantics, so every object M2 already mints —
+// literals, member-access requirements — is exact by default with no
+// construction-site churn. Only the parser's trailing `...` marker sets it.
+// Subtyping matches elements by name (order is irrelevant); the slice order is
+// preserved only for stable rendering.
+type ObjectType struct {
+	Elems   []ObjTypeElem // ordered, name-deduped (last wins); Prop(name) lookup
+	Inexact bool          // trailing `...` ⇒ true
 }
 
-// Field returns the type of the named field and whether it is present. Field
-// names are unique in a well-formed RecordType — the constraint solver dedups
-// duplicate keys (last value wins) when it builds a record from a literal — so
-// the first match is the field. The scan is linear because records are small;
-// it is the single canonical field lookup shared by constraining, structural
-// equality, and member access.
-func (r *RecordType) Field(name string) (Type, bool) {
-	for _, f := range r.Fields {
-		if f.Name == name {
-			return f.Type, true
+// ObjTypeElem is the sealed set of object members, mirroring type_system's
+// ObjTypeElem. M4 ships PropertyElem only; method/getter/setter members (M5),
+// index signatures and the object rest/spread (M9) add arms later.
+type ObjTypeElem interface{ isObjTypeElem() }
+
+// PropertyElem is one named value property of an ObjectType.
+type PropertyElem struct {
+	Name     string
+	Type     Type
+	Optional bool // `x?: T`; the M9 object-spread show-through rule keys off it
+}
+
+func (*PropertyElem) isObjTypeElem() {}
+
+// Prop returns the named property and whether it is present. Property names are
+// unique in a well-formed ObjectType — the constraint solver dedups duplicate
+// keys (last value wins) when it builds an object from a literal — so the first
+// match is the property. The scan is linear because objects are small; it is the
+// single canonical property lookup shared by constraining, structural equality,
+// and member access. M4's Elems are all PropertyElem; M5 widens the lookup to
+// method/getter/setter members.
+func (o *ObjectType) Prop(name string) (*PropertyElem, bool) {
+	for _, e := range o.Elems {
+		if p, ok := e.(*PropertyElem); ok && p.Name == name {
+			return p, true
 		}
 	}
 	return nil, false
+}
+
+// AsProperty narrows an ObjTypeElem to its *PropertyElem. M4 ships PropertyElem
+// as the only ObjTypeElem kind, so any other element is a bug: a later member
+// kind (method/getter/setter in M5, index signature or object rest/spread in M9)
+// wired up without extending the call site that processes every element. It
+// panics rather than silently skipping, matching type_system's unknown-element
+// convention (print_type.go panics on an unhandled ObjTypeElem) and the M4 plan's
+// standing rule that a missed element kind must fail loudly, not vanish from
+// subtyping, equality, or rendering. Use it at sites that must visit EVERY
+// element; name lookups like Prop legitimately skip non-matching kinds instead.
+func AsProperty(e ObjTypeElem) *PropertyElem {
+	p, ok := e.(*PropertyElem)
+	if !ok {
+		panic(fmt.Sprintf("AsProperty: unhandled ObjTypeElem %T", e))
+	}
+	return p
 }
 
 // PromiseType is the result of an `async fn` and the requirement of an `await`.
@@ -209,7 +243,7 @@ func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
 func (*TupleType) isType()        {}
-func (*RecordType) isType()       {}
+func (*ObjectType) isType()       {}
 func (*PromiseType) isType()      {}
 func (*Void) isType()             {}
 func (*NeverType) isType()        {}
@@ -236,10 +270,10 @@ func LevelOf(t Type) int {
 			m = max(m, LevelOf(e))
 		}
 		return m
-	case *RecordType:
+	case *ObjectType:
 		m := 0
-		for _, f := range t.Fields {
-			m = max(m, LevelOf(f.Type))
+		for _, e := range t.Elems {
+			m = max(m, LevelOf(AsProperty(e).Type))
 		}
 		return m
 	case *PromiseType:

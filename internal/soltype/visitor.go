@@ -111,16 +111,16 @@ func (t *TupleType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
-func (t *RecordType) Accept(v TypeVisitor, pol Polarity) Type {
+func (t *ObjectType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	fields, changed := acceptFields(cur.Fields, v, pol) // covariant
+	elems, changed := acceptObjElems(cur.Elems, v, pol) // covariant
 	out := cur
 	if changed {
-		out = &RecordType{Fields: fields}
+		out = &ObjectType{Elems: elems, Inexact: cur.Inexact}
 	}
 	return v.ExitType(out, pol)
 }
@@ -204,18 +204,21 @@ func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, b
 	return out, changed
 }
 
-// acceptFields walks each field's type covariantly, copy-on-write like acceptParams.
-func acceptFields(fs []*RecordField, v TypeVisitor, pol Polarity) ([]*RecordField, bool) {
-	out := fs
+// acceptObjElems walks each property's type covariantly, copy-on-write like
+// acceptParams. M4's elements are all PropertyElem; later member kinds add their
+// own variance treatment here.
+func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeElem, bool) {
+	out := es
 	changed := false
-	for i, f := range fs {
-		ft := f.Type.Accept(v, pol)
-		if ft != f.Type {
+	for i, e := range es {
+		p := AsProperty(e)
+		pt := p.Type.Accept(v, pol)
+		if pt != p.Type {
 			if !changed {
-				out = append([]*RecordField(nil), fs...)
+				out = append([]ObjTypeElem(nil), es...)
 				changed = true
 			}
-			out[i] = &RecordField{Name: f.Name, Type: ft}
+			out[i] = &PropertyElem{Name: p.Name, Type: pt, Optional: p.Optional}
 		}
 	}
 	return out, changed

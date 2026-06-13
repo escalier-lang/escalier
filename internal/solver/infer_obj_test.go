@@ -85,10 +85,10 @@ func TestInferObjectDuplicateKeyLastWins(t *testing.T) {
 	require.Empty(t, c.errs)
 	require.Equal(t, `{a: "x", b: 2}`, render(got))
 
-	rec, ok := got.(*soltype.RecordType)
+	obj, ok := got.(*soltype.ObjectType)
 	require.True(t, ok)
-	require.Len(t, rec.Fields, 2) // the duplicate `a` was collapsed, not appended
-	require.True(t, equalType(rec, rec), "equalType must be reflexive for a deduped record")
+	require.Len(t, obj.Elems, 2) // the duplicate `a` was collapsed, not appended
+	require.True(t, equalType(obj, obj), "equalType must be reflexive for a deduped object")
 }
 
 // Shorthand ({x}) is a property with no value — deferred to M4. It reports a
@@ -192,4 +192,40 @@ func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 	require.IsType(t, &soltype.ErrorType{}, got)
 	require.Empty(t, c.errs) // no spurious MissingPropertyError
 	require.Same(t, got, c.info.TypeOf(e))
+}
+
+// Width tolerance through inference, not a literal: a function that reads a field
+// of its param synthesizes an inexact "has at least this field" requirement, so a
+// caller may pass a WIDER object. This exercises the selection-vs-concrete split
+// (A1) end-to-end through generalization and a call, where the existing member
+// tests only read a field off a literal receiver.
+func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
+	t.Run("wider object is accepted", func(t *testing.T) {
+		// Today `p` is inferred INEXACT (`{a: number, ...}`), so a wider argument
+		// checks. M4 phase B PR B1 ("close usage-inferred shapes to exact") will
+		// seal `p` to exact `{a: number}`, after which this wider call REJECTS `b`
+		// as an extra property. PR B2's `open` marker (`fn f(open p)`) will restore
+		// the inexact, row-polymorphic form. Revisit this case when B1/B2 land.
+		src := `
+			fn f(p) { return p.a }
+			val r = f({a: 1, b: 2})
+		`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+
+	t.Run("missing field is rejected at the call", func(t *testing.T) {
+		src := `
+			fn f(p) { return p.a }
+			val r = f({b: 2})
+		`
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object is missing property: a", errs[0].Message())
+		// Blame the offending argument {b: 2} — the object that lacks the field — not
+		// the whole call. The requirement's field var is freshened on instantiation
+		// and carries no prov, so MissingPropertyError's blame degrades to the LHS
+		// (the argument object literal), which inferObject did record.
+		require.Equal(t, "{b: 2}", spanText(src, errs[0].Span()))
+	})
 }

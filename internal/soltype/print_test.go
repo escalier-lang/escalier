@@ -54,19 +54,36 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"empty tuple", &TupleType{}, "[]"},
 		{"pair tuple", &TupleType{Elems: []Type{numP(), strP()}}, "[number, string]"},
 
-		// Records.
-		{"empty record", &RecordType{}, "{}"},
+		// Objects.
+		{"empty object", &ObjectType{}, "{}"},
 		{
-			"two-field record",
-			&RecordType{Fields: []*RecordField{{Name: "a", Type: numP()}, {Name: "b", Type: strP()}}},
+			"two-property object",
+			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP()}, &PropertyElem{Name: "b", Type: strP()}}},
 			"{a: number, b: string}",
 		},
 		{
-			// A field name that isn't a valid identifier (e.g. from a string-literal
-			// key) is quoted so the rendered record stays parseable.
-			"non-identifier field name is quoted",
-			&RecordType{Fields: []*RecordField{{Name: "a-b", Type: numP()}}},
+			// A property name that isn't a valid identifier (e.g. from a string-literal
+			// key) is quoted so the rendered object stays parseable.
+			"non-identifier property name is quoted",
+			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a-b", Type: numP()}}},
 			`{"a-b": number}`,
+		},
+		{
+			// An inexact object renders a trailing `...`, mirroring inexact functions.
+			"inexact object renders trailing ...",
+			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP()}}, Inexact: true},
+			"{a: number, ...}",
+		},
+		{
+			"inexact empty object",
+			&ObjectType{Inexact: true},
+			"{...}",
+		},
+		{
+			// An optional property renders `x?: T`.
+			"optional property renders ?",
+			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP(), Optional: true}}},
+			"{a?: number}",
 		},
 
 		// Functions. A bare (exact) function renders with no trailing marker; an
@@ -165,11 +182,11 @@ func TestPrintNestedPrecedence(t *testing.T) {
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`[fn (x: number) -> string, boolean]`))
 	})
 
-	// A record is brace-delimited (an atom), so a record nested in a union needs
-	// no parens, and a function as a field value is delimited by the field's `:`.
-	t.Run("record in union", func(t *testing.T) {
+	// An object is brace-delimited (an atom), so an object nested in a union needs
+	// no parens, and a function as a property value is delimited by the property's `:`.
+	t.Run("object in union", func(t *testing.T) {
 		ty := &UnionType{Types: []Type{
-			&RecordType{Fields: []*RecordField{{Name: "f", Type: &FuncType{Ret: numP()}}}},
+			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "f", Type: &FuncType{Ret: numP()}}}},
 			strP(),
 		}}
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`{f: fn () -> number} | string`))
@@ -241,6 +258,18 @@ func TestPrintScheme(t *testing.T) {
 		a := &TypeVarType{ID: 3, Level: 1}
 		ty := &TupleType{Elems: []Type{a, a}}
 		require.Equal(t, "<T0> [T0, T0]", PrintAsScheme(ty))
+	})
+
+	t.Run("object property vars are named in property order", func(t *testing.T) {
+		a := &TypeVarType{ID: 1, Level: 1}
+		b := &TypeVarType{ID: 2, Level: 1}
+		// fn () -> {a: a, b: b}: freeTypeVars walks the return object's properties in
+		// order, so a names T0 (property a) and b names T1 (property b).
+		ty := &FuncType{Ret: &ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "a", Type: a},
+			&PropertyElem{Name: "b", Type: b},
+		}}}
+		require.Equal(t, "fn <T0, T1>() -> {a: T0, b: T1}", PrintAsScheme(ty))
 	})
 }
 

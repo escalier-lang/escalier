@@ -332,18 +332,23 @@ func equalType(a, b soltype.Type) bool {
 			}
 		}
 		return true
-	case *soltype.RecordType:
-		b, ok := b.(*soltype.RecordType)
-		if !ok || len(a.Fields) != len(b.Fields) {
+	case *soltype.ObjectType:
+		b, ok := b.(*soltype.ObjectType)
+		// Inexact flags must be equal — an open object never equals a closed one.
+		// This mirrors the FuncType arm's a.Inexact discriminator.
+		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
-		// Records are equal up to field order — match by name (RecordType.Field),
-		// not position. Well-formed records have unique field names (the solver
-		// dedups on construction), so equal lengths plus every a-field matching a
-		// b-field by name is a full structural match.
-		for _, f := range a.Fields {
-			bt, ok := b.Field(f.Name)
-			if !ok || !equalType(f.Type, bt) {
+		// Objects are equal up to property order, so match each property by name
+		// via ObjectType.Prop rather than by position. The solver dedups property
+		// names on construction, so names are unique. Equal lengths plus every
+		// a-property matching a b-property by name, type, and optionality is then a
+		// full structural match. Optional mirrors the FuncType arm's param-Optional
+		// discriminator.
+		for _, ae := range a.Elems {
+			ap := soltype.AsProperty(ae)
+			bp, ok := b.Prop(ap.Name)
+			if !ok || ap.Optional != bp.Optional || !equalType(ap.Type, bp.Type) {
 				return false
 			}
 		}

@@ -628,23 +628,23 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	return t
 }
 
-// inferObject types an object literal as a soltype.RecordType. M2 covers the
-// basic case only: a `name: value` property with a static (identifier or string)
-// key. The forms it does not cover each report an UnsupportedNodeError and are
-// skipped rather than panicking (the deeper object system is M4):
+// inferObject types an object literal as an exact soltype.ObjectType. M2 covers
+// the basic case only: a `name: value` property with a static (identifier or
+// string) key. The forms it does not cover each report an UnsupportedNodeError
+// and are skipped rather than panicking (the deeper object system is M4):
 //   - spreads ({...o}) and method/constructor elements,
 //   - computed ({[k]: v}) and numeric ({0: v}) keys,
 //   - shorthand ({x}, i.e. a property with no value).
 //
-// Usage-inference depth (e.g. inferring an open record from how a value is used)
-// is explicitly M4; M2 builds the closed record the literal spells out.
+// Usage-inference depth (e.g. inferring an open object from how a value is used)
+// is explicitly M4; M2 builds the closed object the literal spells out.
 //
 // Duplicate keys follow JavaScript semantics: the last value wins, keeping the
-// field at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
-// field names unique, the invariant RecordType.Field / equalType rely on.
+// property at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
+// property names unique, the invariant ObjectType.Prop / equalType rely on.
 func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type {
-	fields := make([]*soltype.RecordField, 0, len(e.Elems))
-	pos := make(map[string]int, len(e.Elems)) // field name → index in fields, for last-wins dedup
+	elems := make([]soltype.ObjTypeElem, 0, len(e.Elems))
+	pos := make(map[string]int, len(e.Elems)) // property name → index in elems, for last-wins dedup
 	for _, elem := range e.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
@@ -659,31 +659,43 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		}
 		name, ok := objKeyName(prop.Name)
 		if !ok {
-			// Computed/numeric keys carry no static field name — M4. Blame the key
-			// itself (its own narrower span), not the whole property.
+			// Computed/numeric keys carry no static property name — M4. Blame the
+			// key itself (its own narrower span), not the whole property.
 			c.reportUnsupported(prop.Name)
 			continue
 		}
 		ft := c.inferExpr(scope, lvl, prop.Value)
 		if i, dup := pos[name]; dup {
-			fields[i] = &soltype.RecordField{Name: name, Type: ft} // last value wins, first position kept
+			elems[i] = &soltype.PropertyElem{Name: name, Type: ft} // last value wins, first position kept
 			continue
 		}
-		pos[name] = len(fields)
-		fields = append(fields, &soltype.RecordField{Name: name, Type: ft})
+		pos[name] = len(elems)
+		elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft})
 	}
-	t := &soltype.RecordType{Fields: fields}
+	t := &soltype.ObjectType{Elems: elems}
 	c.recordType(e, t)
 	c.recordProv(t, e, ObjectField)
 	return t
 }
 
 // inferMember types a field read (recv.prop). It types the receiver, allocates a
-// fresh result var, and constrains recv <: {prop: res} — the basic form from the
-// plan's §3.2 table. The record <: record arm of constrain lowers res from the
-// receiver's matching field (so res coalesces to that field's type); a receiver
-// missing the field surfaces as a MissingPropertyError stamped with the member's
-// span. Optional chaining (recv?.prop) needs union/undefined handling and is M6.
+// fresh result var, and constrains recv <: {prop: res, ...} — the basic form
+// from the plan's §3.2 table. The requirement is INEXACT: a member read asks
+// only that the receiver has AT LEAST this property, so width tolerance is
+// expressed as inexactness rather than as an unconditionally width-tolerant arm.
+//
+// This inexactness currently flows out to the inferred param type. A param used
+// only through member reads coalesces to its upper bound, so `fn (p) { p.foo }`
+// infers an inexact param `{foo: number, ...}`. M4 phase B PR B1 ("close
+// usage-inferred shapes to exact") will seal that coalesced result to exact via
+// the Policy-A close, rendering `{foo: number}`. The per-access requirement
+// minted here stays inexact; only the coalesced result is closed.
+//
+// The ObjectType <: ObjectType arm of constrain lowers res from the receiver's
+// matching property (so res coalesces to that property's type); a receiver
+// missing the property surfaces as a MissingPropertyError stamped with the
+// member's span. Optional chaining (recv?.prop) needs union/undefined handling
+// and is M6.
 func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.Type {
 	if e.OptChain {
 		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
@@ -713,7 +725,10 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 	// recorded — MissingPropertyError blames this inner res var, so the record
 	// would be a dead entry (§3.3).
 	c.recordProv(res, e.Prop, MemberAccess)
-	c.constrain(e, recv, &soltype.RecordType{Fields: []*soltype.RecordField{{Name: e.Prop.Name, Type: res}}})
+	c.constrain(e, recv, &soltype.ObjectType{
+		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: e.Prop.Name, Type: res}},
+		Inexact: true, // "has at least this property" — width tolerance is inexactness
+	})
 	c.recordType(e, res)
 	return res
 }

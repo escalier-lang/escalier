@@ -71,6 +71,36 @@ func TestLevelOf(t *testing.T) {
 			}},
 			want: 5,
 		},
+		{
+			// LevelOf must descend into ObjectType property types — its arm drives
+			// freshenAbove's level prune, and a wrong 0 would let a Level>0 object be
+			// shared and aliased across instantiations (the IntersectionType comment
+			// in LevelOf explains the same hazard).
+			name: "object: max over property types",
+			ty: &ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "a", Type: num},
+				&PropertyElem{Name: "b", Type: v2},
+				&PropertyElem{Name: "c", Type: v5},
+			}},
+			want: 5,
+		},
+		{
+			name: "object with concrete-only properties is level 0",
+			ty: &ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "a", Type: num},
+			}},
+			want: 0,
+		},
+		{
+			name: "nested function inside object",
+			ty: &ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "f", Type: &FuncType{
+					Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: v5}},
+					Ret:    num,
+				}},
+			}},
+			want: 5,
+		},
 	}
 
 	for _, tt := range tests {

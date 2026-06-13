@@ -115,3 +115,55 @@ func TestCoalesceStructuralRecursion(t *testing.T) {
 	}
 	require.True(t, equalType(want, got))
 }
+
+// equalType on ObjectType must discriminate on the Inexact flag and on each
+// property's Optional marker (mirroring the FuncType arm's Inexact / param-Optional
+// checks), and must be order-independent. Without the Optional check (M4 A1 review
+// fix #2) {a: T} and {a?: T} would compare equal and coalesce/simplify would drop
+// optionality.
+func TestEqualTypeObject(t *testing.T) {
+	optProp := func(name string, ty soltype.Type) *soltype.PropertyElem {
+		return &soltype.PropertyElem{Name: name, Type: ty, Optional: true}
+	}
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "equal up to property order",
+			a:    exactObj(propElem("a", num()), propElem("b", str())),
+			b:    exactObj(propElem("b", str()), propElem("a", num())),
+			want: true,
+		},
+		{
+			name: "Inexact differs",
+			a:    exactObj(propElem("a", num())),
+			b:    inexactObj(propElem("a", num())),
+			want: false,
+		},
+		{
+			name: "Optional differs",
+			a:    exactObj(propElem("a", num())),
+			b:    exactObj(optProp("a", num())),
+			want: false,
+		},
+		{
+			name: "property type differs",
+			a:    exactObj(propElem("a", num())),
+			b:    exactObj(propElem("a", str())),
+			want: false,
+		},
+		{
+			name: "property set size differs",
+			a:    exactObj(propElem("a", num())),
+			b:    exactObj(propElem("a", num()), propElem("b", str())),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}

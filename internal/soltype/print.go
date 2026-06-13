@@ -30,8 +30,8 @@ func typePrec(t Type) int {
 	case *IntersectionType:
 		return precIntersection
 	default:
-		// PrimType, LitType, TupleType, RecordType, Void, NeverType, UnknownType —
-		// atoms (RecordType is brace-delimited, so it never needs parens). A
+		// PrimType, LitType, TupleType, ObjectType, Void, NeverType, UnknownType —
+		// atoms (ObjectType is brace-delimited, so it never needs parens). A
 		// raw TypeVarType (which appears only when printing an un-coalesced type,
 		// see printType) is also an atom (rendered as `t{ID}`), so it lands here.
 		return precAtom
@@ -144,9 +144,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, e := range t.Elems {
 				walk(e)
 			}
-		case *RecordType:
-			for _, f := range t.Fields {
-				walk(f.Type)
+		case *ObjectType:
+			for _, e := range t.Elems {
+				walk(AsProperty(e).Type)
 			}
 		case *PromiseType:
 			walk(t.Inner)
@@ -217,12 +217,20 @@ func (p *namedPrinter) printType(t Type) string {
 			elems[i] = p.printType(e)
 		}
 		return "[" + strings.Join(elems, ", ") + "]"
-	case *RecordType:
-		fields := make([]string, len(t.Fields))
-		for i, f := range t.Fields {
-			fields[i] = printRecordFieldName(f.Name) + ": " + p.printType(f.Type)
+	case *ObjectType:
+		elems := make([]string, 0, len(t.Elems)+1)
+		for _, e := range t.Elems {
+			prop := AsProperty(e)
+			opt := ""
+			if prop.Optional {
+				opt = "?"
+			}
+			elems = append(elems, printObjectKeyName(prop.Name)+opt+": "+p.printType(prop.Type))
 		}
-		return "{" + strings.Join(fields, ", ") + "}"
+		if t.Inexact {
+			elems = append(elems, "...")
+		}
+		return "{" + strings.Join(elems, ", ") + "}"
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
 	case *PromiseType:
@@ -282,11 +290,11 @@ func paramName(p *FuncParam, i int) string {
 	return "arg" + strconv.Itoa(i)
 }
 
-// printRecordFieldName renders a record field name as Escalier surface syntax:
+// printObjectKeyName renders an object property name as Escalier surface syntax:
 // a bare label when the name is a valid identifier, otherwise a quoted string
 // key (e.g. "a-b", a key that came from a string-literal property). This keeps
-// the rendered record parseable; an unquoted "a-b" would corrupt the type.
-func printRecordFieldName(name string) string {
+// the rendered object parseable; an unquoted "a-b" would corrupt the type.
+func printObjectKeyName(name string) string {
 	if isIdent(name) {
 		return name
 	}

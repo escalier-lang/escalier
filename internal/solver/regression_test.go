@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A recursive function whose body is a record literal containing the recursive
-// call builds a cyclic var graph THROUGH a record field. coalesce's RecordType
+// A recursive function whose body is an object literal containing the recursive
+// call builds a cyclic var graph THROUGH an object property. coalesce's ObjectType
 // case must thread the path-scoped `seen` set (like the FuncType/TupleType cases)
 // or the cycle is never detected and coalescing never terminates.
 //
