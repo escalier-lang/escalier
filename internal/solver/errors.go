@@ -79,32 +79,54 @@ type TupleLengthMismatchError struct {
 	site     ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
-// MissingPropertyError fires on RecordType <: RecordType when the RHS requires a
-// field the LHS lacks — the record analogue of FuncArityMismatchError /
-// TupleLengthMismatchError. It is the failure behind a field read on a record
-// without that field (recv.foo where recv has no foo): the walk constrains
-// recv <: {foo: fresh}, and the absent field surfaces here. Holds both records
-// plus the missing name so consumers can inspect what was required.
+// MissingPropertyError fires on ObjectType <: ObjectType when the RHS requires a
+// property the LHS lacks — the object analogue of FuncArityMismatchError /
+// TupleLengthMismatchError. It is the failure behind a field read on an object
+// without that property (recv.foo where recv has no foo): the walk constrains
+// recv <: {foo: fresh, ...}, and the absent property surfaces here. Holds both
+// objects plus the missing name so consumers can inspect what was required.
 //
-// The subject is the field's inner result var (RHS.Field(Name)), minted by
+// The subject is the property's inner result var (RHS.Prop(Name)), minted by
 // inferMember and recorded against the .prop identifier — so Span() blames the
-// member's prop (.foo), not the receiver. Name stays: the absent field name is
-// not recoverable from a single node (the RHS may require several fields). site
-// is the constraint node, the coarse fallback when the field var has no entry —
-// reachable once M4 builds concrete record <: record requirements whose field
+// member's prop (.foo), not the receiver. Name stays: the absent property name is
+// not recoverable from a single node (the RHS may require several properties).
+// site is the constraint node, the coarse fallback when the property var has no
+// entry — reachable for a concrete object <: object requirement whose property
 // types are coalesced/annotation-minted (and therefore not recorded by
-// inferMember); until then it never fires, but it keeps blame off the zero span.
+// inferMember); for member access it never fires, but it keeps blame off the zero
+// span.
 type MissingPropertyError struct {
-	LHS, RHS *soltype.RecordType
+	LHS, RHS *soltype.ObjectType
 	Name     string
 	prov     NodeResolver // M2.5: type→node index (§3.5)
-	site     ast.Node     // M2.5: constraint node fallback when the field var has no entry
+	site     ast.Node     // M2.5: constraint node fallback when the property var has no entry
+}
+
+// InexactIntoExactError fires on ObjectType <: ObjectType when the RHS is exact
+// but the LHS is inexact: an inexact source carries an open `...` tail of unknown
+// properties, so it cannot satisfy an exact target that fixes its member set.
+type InexactIntoExactError struct {
+	LHS, RHS *soltype.ObjectType
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback
+}
+
+// ExtraPropertyError fires on ObjectType <: ObjectType when the RHS is exact and
+// the LHS carries a property the RHS does not declare — width is rejected against
+// an exact target. One error fires per extra property, carrying its name.
+type ExtraPropertyError struct {
+	LHS, RHS *soltype.ObjectType
+	Name     string
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback
 }
 
 func (*CannotConstrainError) isSolverError()     {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
 func (*MissingPropertyError) isSolverError()     {}
+func (*InexactIntoExactError) isSolverError()    {}
+func (*ExtraPropertyError) isSolverError()       {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -125,18 +147,35 @@ func (e *TupleLengthMismatchError) Span() ast.Span {
 func (e *TupleLengthMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
 
 func (e *MissingPropertyError) Span() ast.Span {
-	// The field's inner var → the .foo prop ident; degrade to the receiver; else
-	// the site. The field-var arm is the only one reachable in M2.5 (member
-	// access always records it); the receiver/site arms cover the M4 concrete
-	// record <: record case where the field type may be unrecorded.
+	// The property's inner var → the .foo prop ident; degrade to the receiver;
+	// else the site. The property-var arm is the only one reachable from member
+	// access (which always records it); the receiver/site arms cover the concrete
+	// object <: object case where the property type may be unrecorded.
 	ops := make([]soltype.Type, 0, 2)
-	if f, ok := e.RHS.Field(e.Name); ok {
-		ops = append(ops, f)
+	if p, ok := e.RHS.Prop(e.Name); ok {
+		ops = append(ops, p.Type)
 	}
 	ops = append(ops, e.LHS)
 	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.LHS) } // the receiver
+
+func (e *InexactIntoExactError) Span() ast.Span {
+	return spanOfFirst(e.prov, e.site, e.LHS, e.RHS)
+}
+func (e *InexactIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
+
+func (e *ExtraPropertyError) Span() ast.Span {
+	// The extra property lives on the LHS source; blame it, degrade to the RHS
+	// target, else the site.
+	ops := make([]soltype.Type, 0, 2)
+	if p, ok := e.LHS.Prop(e.Name); ok {
+		ops = append(ops, p.Type)
+	}
+	ops = append(ops, e.LHS)
+	return spanOfFirst(e.prov, e.site, ops...)
+}
+func (e *ExtraPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.RHS) }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -610,6 +649,14 @@ func (e *MissingPropertyError) Message() string {
 	return "object is missing property: " + e.Name
 }
 
+func (e *InexactIntoExactError) Message() string {
+	return "cannot constrain inexact object <: exact object"
+}
+
+func (e *ExtraPropertyError) Message() string {
+	return "object has extra property: " + e.Name
+}
+
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,
 // function, number). Distinct from soltype.Print, which renders coalesced
 // output as user-facing Escalier syntax (see m1-implementation-plan §2.2). It
@@ -638,7 +685,7 @@ func describe(t soltype.Type) string {
 		return "function"
 	case *soltype.TupleType:
 		return "tuple"
-	case *soltype.RecordType:
+	case *soltype.ObjectType:
 		return "object"
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/

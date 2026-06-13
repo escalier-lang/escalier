@@ -178,35 +178,49 @@ func (c *Context) constrain(lhs, rhs soltype.Type, seen set.Set[constraintKey]) 
 			}
 			return errs
 		}
-	case *soltype.RecordType:
-		if r, ok := rhs.(*soltype.RecordType); ok {
-			// M2 serves exactly one consumer through this arm: member-access field
-			// selection. inferMember lowers `recv.foo` to `constrain(recv, {foo:
-			// fresh})` (m2-implementation-plan.md §3.2), where the RHS lists only the
-			// field being read. That is a "has-field" REQUIREMENT, not a concrete
-			// record type, so the rule here is intentionally width-tolerant: every
-			// field the RHS requires must be present on the LHS (the LHS may carry
-			// MORE fields), and the shared fields are covariant (depth). Fields are
-			// matched by name (RecordType.Field), so source order is irrelevant.
+	case *soltype.ObjectType:
+		if r, ok := rhs.(*soltype.ObjectType); ok {
+			// One ObjectType <: ObjectType rule serves both uses the M2 arm
+			// conflated: member-access field SELECTION (the RHS is an inexact
+			// "has at least this field" requirement minted by inferMember) and
+			// concrete object <: object SUBTYPING for object-typed params/annotations.
+			// The Inexact flag is the split — width tolerance IS inexactness.
 			//
-			// This is NOT the final record-subtyping semantics. Escalier records are
-			// exact-by-default (01-milestones.md:278-282): exact <: exact requires the
-			// SAME field set (no width), and width is only the inexact <: inexact case
-			// behind the `...` flag. M4 differentiates the two uses the plan conflates
-			// here — the member-access field-selection requirement (width-tolerant,
-			// this arm) vs. concrete record <: record subtyping for record-typed
-			// params/annotations (exact, like the tuple same-length and function
-			// same-arity arms above). M2 has neither record annotations nor deep
-			// record params, so the exact path is unreachable and only this
-			// selection arm exists; `mut`-driven field invariance also lands in M4.
+			// Depth first: every property the RHS requires must be present on the
+			// LHS, matched by name (Prop), and the shared property types are
+			// covariant. A required property the LHS lacks is a MissingPropertyError.
 			var errs []SolverError
-			for _, rf := range r.Fields {
-				lt, ok := l.Field(rf.Name)
+			for _, re := range r.Elems {
+				rp, ok := re.(*soltype.PropertyElem) // M4: every elem is a property
 				if !ok {
-					errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rf.Name})
 					continue
 				}
-				errs = append(errs, c.constrain(lt, rf.Type, seen)...) // covariant
+				lp, ok := l.Prop(rp.Name)
+				if !ok {
+					errs = append(errs, &MissingPropertyError{LHS: l, RHS: r, Name: rp.Name})
+					continue
+				}
+				errs = append(errs, c.constrain(lp.Type, rp.Type, seen)...) // covariant
+			}
+			// One-way exactness (02-design-notes §"Exactness"):
+			//   exact <: inexact    ok (width)      inexact <: inexact   ok (width)
+			//   exact <: exact      same member set  inexact <: exact     rejected
+			// When the RHS is inexact, width tolerance is the complete rule and the
+			// depth loop above is all there is. When the RHS is exact, the LHS may
+			// carry no extra properties and may not itself be inexact.
+			if !r.Inexact {
+				if l.Inexact {
+					errs = append(errs, &InexactIntoExactError{LHS: l, RHS: r})
+				}
+				for _, le := range l.Elems {
+					lp, ok := le.(*soltype.PropertyElem)
+					if !ok {
+						continue
+					}
+					if _, ok := r.Prop(lp.Name); !ok {
+						errs = append(errs, &ExtraPropertyError{LHS: l, RHS: r, Name: lp.Name})
+					}
+				}
 			}
 			return errs
 		}

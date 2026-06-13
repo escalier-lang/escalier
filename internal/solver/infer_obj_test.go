@@ -85,10 +85,10 @@ func TestInferObjectDuplicateKeyLastWins(t *testing.T) {
 	require.Empty(t, c.errs)
 	require.Equal(t, `{a: "x", b: 2}`, render(got))
 
-	rec, ok := got.(*soltype.RecordType)
+	obj, ok := got.(*soltype.ObjectType)
 	require.True(t, ok)
-	require.Len(t, rec.Fields, 2) // the duplicate `a` was collapsed, not appended
-	require.True(t, equalType(rec, rec), "equalType must be reflexive for a deduped record")
+	require.Len(t, obj.Elems, 2) // the duplicate `a` was collapsed, not appended
+	require.True(t, equalType(obj, obj), "equalType must be reflexive for a deduped object")
 }
 
 // Shorthand ({x}) is a property with no value — deferred to M4. It reports a

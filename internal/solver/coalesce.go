@@ -332,18 +332,23 @@ func equalType(a, b soltype.Type) bool {
 			}
 		}
 		return true
-	case *soltype.RecordType:
-		b, ok := b.(*soltype.RecordType)
-		if !ok || len(a.Fields) != len(b.Fields) {
+	case *soltype.ObjectType:
+		b, ok := b.(*soltype.ObjectType)
+		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
-		// Records are equal up to field order — match by name (RecordType.Field),
-		// not position. Well-formed records have unique field names (the solver
-		// dedups on construction), so equal lengths plus every a-field matching a
-		// b-field by name is a full structural match.
-		for _, f := range a.Fields {
-			bt, ok := b.Field(f.Name)
-			if !ok || !equalType(f.Type, bt) {
+		// Objects are equal up to property order — match by name (ObjectType.Prop),
+		// not position. Well-formed objects have unique property names (the solver
+		// dedups on construction), so equal lengths plus every a-property matching a
+		// b-property by name (and equal Inexact flags) is a full structural match.
+		// Inexact mirrors the FuncType arm's a.Inexact != b.Inexact discriminator.
+		for _, ae := range a.Elems {
+			ap, ok := ae.(*soltype.PropertyElem)
+			if !ok {
+				continue
+			}
+			bp, ok := b.Prop(ap.Name)
+			if !ok || !equalType(ap.Type, bp.Type) {
 				return false
 			}
 		}

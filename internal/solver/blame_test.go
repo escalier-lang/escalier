@@ -89,8 +89,8 @@ func TestBlameCallTooFewArgs(t *testing.T) {
 // A missing-property read blames the member's prop (.foo), not the receiver, with
 // the receiver's definition as the related span. Like TestBlameCallArity, M2.5
 // resolved that related span only for an inline receiver (a named receiver was
-// coalesced to a fresh RecordType with no Prov entry); M3's generalize-and-share
-// instantiation keeps a VAR-FREE receiver's original record — here `{a: 5}` is
+// coalesced to a fresh ObjectType with no Prov entry); M3's generalize-and-share
+// instantiation keeps a VAR-FREE receiver's original object — here `{a: 5}` is
 // monomorphic, so it is shared unchanged through instantiation (recorded
 // ObjectField against the literal) — so the named receiver's related span now
 // resolves. A receiver whose value flowed through an instantiation that REBUILT it
@@ -219,8 +219,8 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 	})
 	t.Run("MissingProperty", func(t *testing.T) {
 		e := &MissingPropertyError{
-			LHS:  &soltype.RecordType{},
-			RHS:  &soltype.RecordType{Fields: []*soltype.RecordField{{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
+			LHS:  &soltype.ObjectType{},
+			RHS:  &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "b", Type: &soltype.TypeVarType{ID: 9}}}},
 			Name: "b", prov: Prov{}, site: site,
 		}
 		require.Equal(t, site.Span(), e.Span())

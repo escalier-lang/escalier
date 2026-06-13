@@ -343,6 +343,97 @@ func TestConstrainTuple(t *testing.T) {
 	})
 }
 
+// propElem builds a PropertyElem so the object accept-set tests read at a glance.
+func propElem(name string, t soltype.Type) *soltype.PropertyElem {
+	return &soltype.PropertyElem{Name: name, Type: t}
+}
+
+// exactObj / inexactObj build object types so the tests show which arm they
+// exercise. Exact is the zero value of Inexact, so exactObj sets no flag.
+func exactObj(elems ...soltype.ObjTypeElem) *soltype.ObjectType {
+	return &soltype.ObjectType{Elems: elems}
+}
+
+func inexactObj(elems ...soltype.ObjTypeElem) *soltype.ObjectType {
+	return &soltype.ObjectType{Elems: elems, Inexact: true}
+}
+
+// TestConstrainObject exercises the one-way object exactness rule (A1): width
+// tolerance is inexactness on the RHS, and an exact RHS fixes its member set.
+func TestConstrainObject(t *testing.T) {
+	// Depth is covariant: {x: 5} <: {x: number} checks 5 <: number on the shared
+	// property. Same member set on both sides, so the exact-target gate passes.
+	t.Run("exact same member set, covariant depth", func(t *testing.T) {
+		c := &Context{}
+		require.Empty(t, c.Constrain(
+			exactObj(propElem("x", numLit(5))),
+			exactObj(propElem("x", num())),
+		))
+	})
+
+	// Width is the inexact-target case: exact {x, y} <: inexact {x, ...} drops the
+	// extra y because the RHS only requires "has at least x".
+	t.Run("exact fills inexact (width)", func(t *testing.T) {
+		c := &Context{}
+		require.Empty(t, c.Constrain(
+			exactObj(propElem("x", num()), propElem("y", num())),
+			inexactObj(propElem("x", num())),
+		))
+	})
+
+	// inexact <: inexact is also width-tolerant.
+	t.Run("inexact fills inexact (width)", func(t *testing.T) {
+		c := &Context{}
+		require.Empty(t, c.Constrain(
+			inexactObj(propElem("x", num()), propElem("y", num())),
+			inexactObj(propElem("x", num())),
+		))
+	})
+
+	// A required property the LHS lacks is a MissingPropertyError, regardless of
+	// the RHS's exactness.
+	t.Run("missing required property", func(t *testing.T) {
+		c := &Context{}
+		l := exactObj(propElem("x", num()))
+		r := inexactObj(propElem("y", num()))
+		errs := c.Constrain(l, r)
+		require.Equal(t, []string{"object is missing property: y"}, Messages(errs))
+		mp, ok := errs[0].(*MissingPropertyError)
+		require.True(t, ok)
+		require.Same(t, l, mp.LHS)
+		require.Same(t, r, mp.RHS)
+	})
+
+	// An extra property on the LHS is rejected against an exact RHS, one error per
+	// extra property.
+	t.Run("extra property rejected by exact target", func(t *testing.T) {
+		c := &Context{}
+		l := exactObj(propElem("x", num()), propElem("y", num()))
+		r := exactObj(propElem("x", num()))
+		errs := c.Constrain(l, r)
+		require.Equal(t, []string{"object has extra property: y"}, Messages(errs))
+		ep, ok := errs[0].(*ExtraPropertyError)
+		require.True(t, ok)
+		require.Same(t, l, ep.LHS)
+		require.Same(t, r, ep.RHS)
+		require.Equal(t, "y", ep.Name)
+	})
+
+	// An inexact source cannot satisfy an exact target — the open `...` tail may
+	// carry properties the target does not declare.
+	t.Run("inexact rejected by exact target", func(t *testing.T) {
+		c := &Context{}
+		l := inexactObj(propElem("x", num()))
+		r := exactObj(propElem("x", num()))
+		errs := c.Constrain(l, r)
+		require.Equal(t, []string{"cannot constrain inexact object <: exact object"}, Messages(errs))
+		ie, ok := errs[0].(*InexactIntoExactError)
+		require.True(t, ok)
+		require.Same(t, l, ie.LHS)
+		require.Same(t, r, ie.RHS)
+	})
+}
+
 func TestConstrainVoid(t *testing.T) {
 	c := &Context{}
 	require.Empty(t, c.Constrain(&soltype.Void{}, &soltype.Void{}))
