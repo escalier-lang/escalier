@@ -193,3 +193,29 @@ func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 	require.Empty(t, c.errs) // no spurious MissingPropertyError
 	require.Same(t, got, c.info.TypeOf(e))
 }
+
+// Width tolerance through inference, not a literal: a function that reads a field
+// of its param synthesizes an inexact "has at least this field" requirement, so a
+// caller may pass a WIDER object. This exercises the selection-vs-concrete split
+// (A1) end-to-end through generalization and a call, where the existing member
+// tests only read a field off a literal receiver.
+func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
+	t.Run("wider object is accepted", func(t *testing.T) {
+		src := `
+			fn f(p) { return p.a }
+			val r = f({a: 1, b: 2})
+		`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+
+	t.Run("missing field is rejected at the call", func(t *testing.T) {
+		src := `
+			fn f(p) { return p.a }
+			val r = f({b: 2})
+		`
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object is missing property: a", errs[0].Message())
+	})
+}

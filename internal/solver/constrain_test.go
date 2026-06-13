@@ -432,6 +432,73 @@ func TestConstrainObject(t *testing.T) {
 		require.Same(t, l, ie.LHS)
 		require.Same(t, r, ie.RHS)
 	})
+
+	// Depth is recursive: a shared property whose types don't relate surfaces the
+	// inner failure, threaded through the path-scoped seen set.
+	t.Run("nested depth mismatch surfaces inner error", func(t *testing.T) {
+		c := &Context{}
+		l := exactObj(propElem("x", exactObj(propElem("a", num()))))
+		r := exactObj(propElem("x", exactObj(propElem("a", str()))))
+		require.Equal(t, []string{"cannot constrain number <: string"}, Messages(c.Constrain(l, r)))
+	})
+
+	t.Run("nested depth covariant ok", func(t *testing.T) {
+		c := &Context{}
+		l := exactObj(propElem("x", exactObj(propElem("a", numLit(5)))))
+		r := exactObj(propElem("x", exactObj(propElem("a", num()))))
+		require.Empty(t, c.Constrain(l, r))
+	})
+
+	// Every extra property on the source against an exact target fires its own
+	// ExtraPropertyError, in source-property order.
+	t.Run("multiple extra properties each report", func(t *testing.T) {
+		c := &Context{}
+		l := exactObj(propElem("a", num()), propElem("b", num()), propElem("c", num()))
+		r := exactObj(propElem("a", num()))
+		require.Equal(t,
+			[]string{"object has extra property: b", "object has extra property: c"},
+			Messages(c.Constrain(l, r)))
+	})
+
+	// A missing required property and an extra property both fire in one
+	// constraint: the RHS-required loop reports the missing one first, then the
+	// LHS-extra loop reports the extra.
+	t.Run("missing and extra combined against exact target", func(t *testing.T) {
+		c := &Context{}
+		l := exactObj(propElem("a", num()), propElem("c", num()))
+		r := exactObj(propElem("a", num()), propElem("b", num()))
+		require.Equal(t,
+			[]string{"object is missing property: b", "object has extra property: c"},
+			Messages(c.Constrain(l, r)))
+	})
+
+	// Boundary member sets against the exactness gate.
+	t.Run("empty exact missing required", func(t *testing.T) {
+		c := &Context{}
+		require.Equal(t, []string{"object is missing property: a"},
+			Messages(c.Constrain(exactObj(), exactObj(propElem("a", num())))))
+	})
+	t.Run("extra against empty exact", func(t *testing.T) {
+		c := &Context{}
+		require.Equal(t, []string{"object has extra property: a"},
+			Messages(c.Constrain(exactObj(propElem("a", num())), exactObj())))
+	})
+	t.Run("empty exact <: empty exact ok", func(t *testing.T) {
+		c := &Context{}
+		require.Empty(t, c.Constrain(exactObj(), exactObj()))
+	})
+	t.Run("exact fills empty inexact (width)", func(t *testing.T) {
+		c := &Context{}
+		require.Empty(t, c.Constrain(exactObj(propElem("a", num())), inexactObj()))
+	})
+
+	// A non-object RHS falls through the object arm to the generic
+	// CannotConstrainError, whose message renders the object via describe ("object").
+	t.Run("object <: non-object renders via describe", func(t *testing.T) {
+		c := &Context{}
+		require.Equal(t, []string{"cannot constrain object <: number"},
+			Messages(c.Constrain(exactObj(propElem("a", numLit(5))), num())))
+	})
 }
 
 func TestConstrainVoid(t *testing.T) {

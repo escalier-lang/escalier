@@ -259,6 +259,18 @@ func TestPrintScheme(t *testing.T) {
 		ty := &TupleType{Elems: []Type{a, a}}
 		require.Equal(t, "<T0> [T0, T0]", PrintAsScheme(ty))
 	})
+
+	t.Run("object property vars are named in property order", func(t *testing.T) {
+		a := &TypeVarType{ID: 1, Level: 1}
+		b := &TypeVarType{ID: 2, Level: 1}
+		// fn () -> {a: a, b: b}: freeTypeVars walks the return object's properties in
+		// order, so a names T0 (property a) and b names T1 (property b).
+		ty := &FuncType{Ret: &ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "a", Type: a},
+			&PropertyElem{Name: "b", Type: b},
+		}}}
+		require.Equal(t, "fn <T0, T1>() -> {a: T0, b: T1}", PrintAsScheme(ty))
+	})
 }
 
 // PrintAsSchemeWith names ONLY the variables the predicate accepts as quantified

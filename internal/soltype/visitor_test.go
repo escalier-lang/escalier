@@ -200,3 +200,35 @@ func TestAcceptDescendDifferentKindPanics(t *testing.T) {
 			"(set SkipChildren=true to replace with a different kind)",
 		func() { orig.Accept(v, Positive) })
 }
+
+// An Accept rewrite over an inexact ObjectType carries the Inexact flag onto the
+// rebuilt object. The old RecordType rebuild had no flag to carry; the M4
+// ObjectType.Accept must copy it (visitor.go), or a coalesce/extrude/freshenAbove
+// pass would silently turn an inexact object exact. This pins the property the A1
+// plan flagged as a latent bug the new field exposes.
+func TestAcceptObjectPreservesInexact(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	p0 := &PropertyElem{Name: "x", Type: a, Optional: true}
+	p1 := &PropertyElem{Name: "y", Type: num}
+	obj := &ObjectType{Elems: []ObjTypeElem{p0, p1}, Inexact: true}
+
+	got := obj.Accept(&replaceVar{target: a, repl: str}, Positive).(*ObjectType)
+
+	require.NotSame(t, obj, got, "a changed property forces a new object")
+	require.True(t, got.Inexact, "the rebuilt object keeps its Inexact marker")
+	gp0 := got.Elems[0].(*PropertyElem)
+	require.Same(t, str, gp0.Type, "the changed property took the replacement")
+	require.NotSame(t, p0, gp0, "the changed property is a fresh *PropertyElem")
+	require.True(t, gp0.Optional, "the changed property keeps its Optional marker")
+	require.Same(t, p1, got.Elems[1], "the unchanged property keeps its *PropertyElem pointer")
+}
+
+// An unchanged inexact ObjectType keeps its pointer (copy-on-write): a no-op
+// rewrite allocates nothing.
+func TestAcceptObjectIdentityPreservation(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	obj := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: num}}, Inexact: true}
+	require.Same(t, obj, obj.Accept(identityVisitor{}, Positive), "an unchanged ObjectType keeps its pointer")
+}
