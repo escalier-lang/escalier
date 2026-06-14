@@ -329,12 +329,35 @@ type UnknownIdentifierError struct {
 	Ident *ast.IdentExpr
 }
 
-// NamespaceUsedAsValueError fires when an identifier resolves to a namespace
-// rather than a value. Namespaces are a separate binding sort and never flow as
-// values; in M2 a namespace name in value position can only fail (qualified
-// member access — Foo.bar — is M4).
+// NamespaceUsedAsValueError fires when a path expression resolves to a namespace
+// in value position. Namespaces are a separate binding sort and never flow as
+// values. M4 moves the rejection off inferIdent to the value-position consumer
+// (demandValue): a namespace is legal in the object position of a member/index
+// chain, so this fires for both a bare `f(Foo)` and a partial chain `f(A.B)` where
+// the chain stops at a namespace. Node is the offending path expression (the blame
+// span); NS is the namespace it resolved to.
 type NamespaceUsedAsValueError struct {
-	Ident *ast.IdentExpr
+	Node ast.Expr
+	NS   *Namespace
+}
+
+// UnknownNamespaceMemberError fires when a namespace member access (Foo.bar or the
+// constant-keyed Foo["bar"]) names a member the namespace does not declare —
+// neither a value nor a nested namespace. Node is the member/index expression (the
+// blame span); NS is the namespace; Name is the absent member.
+type UnknownNamespaceMemberError struct {
+	Node ast.Expr
+	NS   *Namespace
+	Name string
+}
+
+// DynamicNamespaceIndexError fires when a namespace is indexed by a non-constant
+// key (Foo[k]). A namespace member is resolved statically, so an index into one
+// must be a constant string literal — Foo["bar"], the bracket form of Foo.bar.
+// Index is the offending index expression (the blame span); NS is the namespace.
+type DynamicNamespaceIndexError struct {
+	Index ast.Expr
+	NS    *Namespace
 }
 
 // UnsupportedNodeError is the M2-subset guard: an AST node whose KIND is outside
@@ -533,6 +556,8 @@ type CannotAssignToImmutableError struct {
 
 func (*UnknownIdentifierError) isSolverError()            {}
 func (*NamespaceUsedAsValueError) isSolverError()         {}
+func (*UnknownNamespaceMemberError) isSolverError()       {}
+func (*DynamicNamespaceIndexError) isSolverError()        {}
 func (*InvalidAssignmentTargetError) isSolverError()      {}
 func (*CannotAssignToImmutableError) isSolverError()      {}
 func (*TooManyArgsError) isSolverError()                  {}
@@ -555,10 +580,22 @@ func (e *UnknownIdentifierError) Message() string {
 	return "Unknown identifier: " + e.Ident.Name
 }
 
-func (e *NamespaceUsedAsValueError) Span() ast.Span      { return e.Ident.Span() }
+func (e *NamespaceUsedAsValueError) Span() ast.Span      { return e.Node.Span() }
 func (e *NamespaceUsedAsValueError) Related() []ast.Span { return nil }
 func (e *NamespaceUsedAsValueError) Message() string {
-	return "Namespace used as a value: " + e.Ident.Name
+	return "Namespace used as a value: " + e.NS.Name
+}
+
+func (e *UnknownNamespaceMemberError) Span() ast.Span      { return e.Node.Span() }
+func (e *UnknownNamespaceMemberError) Related() []ast.Span { return nil }
+func (e *UnknownNamespaceMemberError) Message() string {
+	return "Namespace " + e.NS.Name + " has no member: " + e.Name
+}
+
+func (e *DynamicNamespaceIndexError) Span() ast.Span      { return e.Index.Span() }
+func (e *DynamicNamespaceIndexError) Related() []ast.Span { return nil }
+func (e *DynamicNamespaceIndexError) Message() string {
+	return "Namespace " + e.NS.Name + " can only be indexed by a constant string"
 }
 
 func (e *InvalidAssignmentTargetError) Span() ast.Span      { return e.Target.Span() }

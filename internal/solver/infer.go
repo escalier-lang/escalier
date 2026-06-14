@@ -204,6 +204,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferObject(scope, lvl, e)
 	case *ast.MemberExpr:
 		return c.inferMember(scope, lvl, e)
+	case *ast.IndexExpr:
+		return c.inferIndex(scope, lvl, e)
 	case *ast.AwaitExpr:
 		return c.inferAwait(scope, lvl, e)
 	case *ast.IfElseExpr:
