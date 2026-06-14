@@ -142,22 +142,54 @@ func TestWidenHelper(t *testing.T) {
 	})
 }
 
-// Widening fires only on a SYNTACTIC literal initializer. A `var` initialized
-// from a binding reference infers a type variable (not a bare literal), which
-// widen passes through, so the binding keeps the referenced literal type and a
-// later reassignment of a different value is rejected. This pins the known limit
-// of default-widen: it does not chase a literal that flows through a reference,
-// unlike the principled "join over all assignment sites" form (M4 plan B3).
-func TestInferVarWideningOnlyDirectLiteral(t *testing.T) {
-	t.Run("var from a val reference keeps the literal", func(t *testing.T) {
+// Widening reaches a literal that flows through a binding reference, not only a
+// syntactic literal initializer. `var y = x` (where x is a literal `val`) infers
+// y's initializer as a type variable, but the binding var's Widenable flag rides
+// through coalescing and lowers the inlined literal, so y widens to the primitive
+// and a later reassignment of the same primitive checks — the reference case
+// behaves like a direct literal.
+func TestInferVarWideningThroughReference(t *testing.T) {
+	t.Run("var from a val reference widens to the primitive", func(t *testing.T) {
 		values, _, errs := inferSource(t, "val x = 5\nvar y = x")
 		require.Empty(t, errs)
-		require.Equal(t, "5", values["y"])
+		require.Equal(t, "number", values["y"])
 	})
-	t.Run("reassigning the un-widened var is rejected", func(t *testing.T) {
-		src := "val x = 5\nvar y = x\nfn f() { y = 6 }"
-		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, "cannot constrain 6 <: 5", "6", "5")
+	t.Run("reassigning the widened var checks", func(t *testing.T) {
+		values, _, errs := inferSource(t, "val x = 5\nvar y = x\nfn f() { y = 6 }")
+		require.Empty(t, errs)
+		require.Equal(t, "number", values["y"])
+	})
+	// Reference widening rides the Widenable flag at coalesce time (display, the
+	// reassignment slot, the binding's own type), but the literal still flows into
+	// the bound graph unwidened, so a read of the reference-widened var into a new
+	// binding keeps the precise literal: `val z = y` ⇒ z: 5. A direct literal
+	// widens at the constraint level instead, so ITS reads widen (see
+	// TestInferVarWideningPropagatesToReads). z: 5 is sound — z is an immutable
+	// snapshot of the value 5 — and this pins the narrow remaining corner.
+	t.Run("reading a reference-widened var keeps the literal", func(t *testing.T) {
+		values, _, errs := inferSource(t, "val x = 5\nvar y = x\nval z = y")
+		require.Empty(t, errs)
+		require.Equal(t, "number", values["y"])
+		require.Equal(t, "5", values["z"])
+	})
+}
+
+// A read of a directly-widened `var` into another binding widens too: the eager
+// constraint-level widening of a direct literal propagates through the bound
+// graph, so `var a = 5; val z = a` ⇒ z: number, matching `a`'s own widened type
+// (unlike the reference corner above, where the literal reaches the reader
+// unwidened).
+func TestInferVarWideningPropagatesToReads(t *testing.T) {
+	t.Run("scalar read widens", func(t *testing.T) {
+		values, _, errs := inferSource(t, "var a = 5\nval z = a")
+		require.Empty(t, errs)
+		require.Equal(t, "number", values["a"])
+		require.Equal(t, "number", values["z"])
+	})
+	t.Run("object read widens", func(t *testing.T) {
+		values, _, errs := inferSource(t, "var p = {x: 0}\nval q = p")
+		require.Empty(t, errs)
+		require.Equal(t, "{x: number}", values["q"])
 	})
 }
 
