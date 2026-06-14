@@ -36,13 +36,15 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 6   | Validation diff                            | FR9        | ⬜      | §5         | Receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
 | 7   | Integration as classification source       | FR8        | ⬜      | §6         | Converter ranks facts above name tiers; redundant `mutabilityOverrides` entries removed |
 | 8   | Param-mut and lifetime-alias outputs       | FR2, FR4   | ⬜      | §7         | Param-mut emitted with non-mutating default; alias facts surfaced to lifetime hand-editing |
-| 9   | Maintenance workflow                       | NFR        | ⬜      | §7         | Spec-bump runbook; `--check`-style drift report in CI |
+| 9   | Throw-set extraction + coercion filter     | FR10, FR11 | ⬜      | §4, §7     | Throw set computed by the §4.1 fixpoint over guard-annotated calls; coercion filter prunes type-guard `TypeError`s; surviving domain throws land in `facts.json` |
+| 10  | Maintenance workflow                       | NFR        | ⬜      | §7         | Spec-bump runbook; `--check`-style drift report in CI |
 
 **Dependency graph** (edges are "must land before"):
 
 ```
 §1 ── §2 ── §3 ── §4 ── §5 ── §6 ── §7 ──┬── §8
-                                          └── §9
+                                          ├── §9  (throws)
+                                          └── §10 (maintenance)
 ```
 
 ## §1. Feasibility spike
@@ -112,8 +114,10 @@ spelling. This is the only Scala we write, and it contains no analysis.
   mutability or alias decision. The shape it must surface per function:
   the formal parameters in order, with the receiver as index 0 for
   builtin methods; every `Let` binding's target and source; every
-  abstract-operation call with its callee name and argument expressions;
-  every internal-slot write with its object expression and slot name;
+  abstract-operation call with its callee name, argument expressions,
+  and completion guard (`?` / `!` / plain, needed for the throw-set
+  fixpoint in §9); every internal-slot write with its object expression
+  and slot name; every explicit `Throw` step with its exception type;
   every return with its value expression.
 - Write the result to `tools/spec-extract/cfg.json` and commit it. The
   file is large; it is an intermediate regenerated only on a spec bump,
@@ -423,7 +427,90 @@ the converter and checker test suites.
 from `returns` facts to the lifetime annotations a human would write for
 the receiver-returning methods (`fill`, `sort`, `reverse`, `Map.set`).
 
-## §9. Maintenance workflow
+## §9. Throw-set extraction and coercion filter (FR10, FR11)
+
+**Goal.** Produce the `throws` candidate set for each method, reusing the
+§4 machinery with a throw transfer function and then pruning the
+type-guard noise.
+
+### §9.1. Throw-set fixpoint (FR10)
+
+Compute `Throws(F) ⊆ ErrorType`, the exception types `F` can raise,
+directly or transitively. The structure is identical to the §4.1
+mutation-summary fixpoint: a worklist over the call graph, a per-call
+transfer, re-enqueue callers on change. The transfer differs and depends
+on each call's completion guard, which §3 now records on the `Node`.
+
+```
+Throws : map[FuncName] Set[ErrorType]   // {TypeError, RangeError, ...}
+ThrowSites : map[FuncName] []ThrowSite  // provenance for the §9.2 filter
+
+worklist = all funcs
+while worklist nonempty:
+    F = worklist.pop()
+    before = Throws[F].copy()
+    for node in F.Nodes:
+        switch node.Kind:
+        case Throw:                                 // explicit "Throw a T exception"
+            Throws[F].add(node.ErrorType)
+            ThrowSites[F].append(ThrowSite{ Type: node.ErrorType, Origin: Direct })
+        case Call:
+            switch node.Guard:
+            case GuardBang:    pass                  // ! asserts no abrupt completion
+            case GuardPlain:   pass                  // result not completion-checked
+            case GuardQuestion:                      // ? propagates the callee's throws
+                for t in Throws[node.Callee]:
+                    Throws[F].add(t)
+                    ThrowSites[F].append(ThrowSite{ Type: t, Origin: Via(node.Callee) })
+    if Throws[F] != before: worklist.push(callers(F))
+```
+
+`ThrowSite.Origin` records whether a throw is raised directly in `F` or
+propagated from a named callee. The §9.2 filter reads this provenance to
+decide whether a throw is a coercion type-guard. There is no seed map as
+in §4.1; throws originate only at explicit `Throw` nodes and flow
+outward through `?`.
+
+### §9.2. Coercion filter (FR11)
+
+Prune throws whose provenance is a coercion of an already-typed receiver
+or parameter, because Escalier's static types make those paths
+unreachable.
+
+```
+CoercionAOs = { ToObject, RequireObjectCoercible,
+                ToString, ToNumber, ToNumeric, ToPrimitive }
+
+func filterThrows(M) []ErrorType:
+    kept = {}
+    for site in ThrowSites[M]:
+        if site.Type == TypeError && viaCoercionOfTypedValue(M, site):
+            continue                                  // statically precluded
+        kept.add(site.Type)
+    return sorted(kept)
+
+// viaCoercionOfTypedValue: the throw propagated (via ?) from a coercion
+// AO whose argument origin is the receiver or a parameter. Those
+// arguments carry a known Escalier type, so the coercion cannot fail.
+func viaCoercionOfTypedValue(M, site) bool:
+    if site.Origin is Via(callee) && callee in CoercionAOs:
+        arg0 = argOriginAtCallSite(M, callee)         // §4.2 origin of the coerced value
+        return arg0 is Param(_)                        // receiver = Param(0) included
+    return false
+```
+
+A `RangeError`, `SyntaxError`, `URIError`, or a `TypeError` raised by an
+explicit domain check rather than a coercion survives. The kept set is
+written to `MethodFact.Throws` (Appendix B). Each filter decision is
+recorded for review, since FR11 is a heuristic.
+
+**Gate.** Spot-check: `Number.prototype.toFixed` keeps `RangeError`
+(out-of-range `fractionDigits`) and drops the receiver-coercion
+`TypeError`; `decodeURIComponent` keeps `URIError`; `Array.prototype.push`
+keeps nothing. The dropped type-guard throws are listed in the review
+report.
+
+## §10. Maintenance workflow
 
 **Goal.** Make spec-edition bumps a repeatable runbook.
 
@@ -475,19 +562,31 @@ const (
     NodeLet       NodeKind = "let"       // bind Target = Source
     NodeCall      NodeKind = "call"      // optional Target = Callee(Args...)
     NodeSlotWrite NodeKind = "slotwrite" // write Object.Slot
+    NodeThrow     NodeKind = "throw"     // Throw a <ErrorType> exception
     NodeReturn    NodeKind = "return"    // return Value
     NodeBranch    NodeKind = "branch"    // control flow; carries no data we analyze
 )
 
+// Guard is the completion-record guard on a call, needed for the §9
+// throw-set fixpoint. ? propagates abrupt completions; ! asserts none.
+type Guard string
+const (
+    GuardQuestion Guard = "?"     // Let x be ? Foo(...)
+    GuardBang     Guard = "!"     // Let x be ! Foo(...)
+    GuardPlain    Guard = "plain" // result not completion-checked
+)
+
 type Node struct {
-    Kind   NodeKind `json:"kind"`
-    Target string   `json:"target,omitempty"` // Let target, or Call result binding
-    Source *Expr    `json:"source,omitempty"` // Let
-    Callee string   `json:"callee,omitempty"` // Call: abstract-operation name
-    Args   []Expr   `json:"args,omitempty"`   // Call
-    Object *Expr    `json:"object,omitempty"` // SlotWrite
-    Slot   string   `json:"slot,omitempty"`   // SlotWrite, e.g. "[[MapData]]"
-    Value  *Expr    `json:"value,omitempty"`  // Return
+    Kind      NodeKind `json:"kind"`
+    Target    string   `json:"target,omitempty"`    // Let target, or Call result binding
+    Source    *Expr    `json:"source,omitempty"`    // Let
+    Callee    string   `json:"callee,omitempty"`    // Call: abstract-operation name
+    Args      []Expr   `json:"args,omitempty"`      // Call
+    Guard     Guard    `json:"guard,omitempty"`     // Call: ? / ! / plain
+    Object    *Expr    `json:"object,omitempty"`    // SlotWrite
+    Slot      string   `json:"slot,omitempty"`      // SlotWrite, e.g. "[[MapData]]"
+    ErrorType string   `json:"errorType,omitempty"` // Throw: "TypeError", "RangeError", ...
+    Value     *Expr    `json:"value,omitempty"`     // Return
 }
 
 type ExprKind string
@@ -541,6 +640,7 @@ type MethodFact struct {
     MutatesParams   []int     `json:"mutatesParams"`         // zero-based param indices
     Returns         AliasKind `json:"returns"`
     ParamIndex      int       `json:"paramIndex,omitempty"`  // when Returns == "param"
+    Throws          []string  `json:"throws"`                // domain error types post-filter (FR11)
     Classified      bool      `json:"classified"`            // false ⇒ FR5 fall-through
 }
 ```

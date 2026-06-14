@@ -34,12 +34,15 @@ name heuristics.
 
 ## Goals
 
-- Derive, per `std:*` builtin method, three facts from the ECMA-262
+- Derive, per `std:*` builtin method, four facts from the ECMA-262
   algorithm semantics:
   1. whether the method mutates its receiver (`self` vs `mut self`);
   2. whether it mutates any non-receiver parameter;
   3. whether its return value aliases the receiver or a parameter, as a
-     seed for lifetime annotation.
+     seed for lifetime annotation;
+  4. which exception types the method can throw, as a candidate set for
+     the `throws` clause (`FuncType.Throws`), pruned of the coercion
+     throws the type system already precludes.
 - Emit those facts as a committed JSON artifact keyed by canonical spec
   name, consumed by the bootstrap converter as a classification source
   ranked above the name-based tiers.
@@ -58,12 +61,14 @@ name heuristics.
   extended attributes are the analogous machine-readable signals; that
   is a separate extractor for `web:*`. Node builtins have neither and
   stay hand-authored.
-- **`throws` annotations.** ECMA-262 abrupt completions could in
-  principle seed `throws`, but that is tracked separately under the
-  builtins workstream's hand-curation plan
+- **Fully automatic `throws` annotations.** ECMA-262 abrupt completions
+  do seed `throws`, and this workstream emits the candidate set (FR10,
+  FR11). But the raw set over-approximates badly, so the spec output is a
+  starting point a human prunes, not a final annotation. This refines
+  rather than replaces the builtins workstream's hand-curation plan
   ([../builtins/requirements.md](../builtins/requirements.md), FR10
-  "throws annotations are hand-curated for now"). This workstream emits
-  only mutability and alias facts.
+  "throws annotations are hand-curated for now"): the spec generates the
+  ~50 high-value entries instead of hand-curating them from scratch.
 - **Porting ESMeta.** We do not reimplement ECMA-262's algorithm-step
   grammar. ESMeta already parses the spec into a control-flow graph; we
   consume that graph and decline to recreate it.
@@ -76,10 +81,10 @@ name heuristics.
   ([../lifetimes/requirements.md](../lifetimes/requirements.md)). See
   the confidence ranking below.
 
-## The three determinations and their confidence
+## The determinations and their confidence
 
-The three asks do not carry equal value, and the requirements reflect
-that ranking.
+The asks do not carry equal value, and the requirements reflect that
+ranking.
 
 1. **Receiver mutability — high confidence, high payoff.** The receiver
    is always `this value`, usually bound via `O ← ? ToObject(this
@@ -110,6 +115,18 @@ that ranking.
    return-fresh cases without per-method data. The alias facts are a
    secondary output of the same analysis, surfaced to a human editing
    lifetime annotations, not an automatic annotator.
+
+4. **Thrown exceptions — medium confidence, curation-grade.** The
+   algorithm names the exception types it can raise, directly and
+   transitively through `?`-guarded calls. This is mechanically sound
+   but over-approximates: most methods coerce the receiver and arguments
+   up front, and those coercions can throw `TypeError` on a wrong
+   dynamic type that Escalier's static types already rule out. So the
+   raw throw set is dominated by type-guard noise. After the coercion
+   filter (FR11) the residue is the domain throws worth annotating —
+   `RangeError`, `URIError`, `SyntaxError`, and the non-coercion
+   `TypeError`s. The output is a curation candidate set, better than
+   hand-curating from scratch but not a finished annotation.
 
 ## Functional requirements
 
@@ -210,13 +227,19 @@ provenance:
 
 ```json
 {
-  "Array.prototype.push":  { "mutatesReceiver": true,  "mutatesParams": [], "returns": "fresh",    "classified": true },
-  "Array.prototype.fill":  { "mutatesReceiver": true,  "mutatesParams": [], "returns": "receiver", "classified": true },
-  "Array.prototype.slice": { "mutatesReceiver": false, "mutatesParams": [], "returns": "fresh",    "classified": true },
-  "Map.prototype.set":     { "mutatesReceiver": true,  "mutatesParams": [], "returns": "receiver", "classified": true },
-  "String.prototype.replace": { "mutatesReceiver": false, "mutatesParams": [], "returns": "fresh", "classified": true }
+  "Array.prototype.push":  { "mutatesReceiver": true,  "mutatesParams": [], "returns": "fresh",    "throws": [],            "classified": true },
+  "Array.prototype.fill":  { "mutatesReceiver": true,  "mutatesParams": [], "returns": "receiver", "throws": [],            "classified": true },
+  "Array.prototype.slice": { "mutatesReceiver": false, "mutatesParams": [], "returns": "fresh",    "throws": [],            "classified": true },
+  "Map.prototype.set":     { "mutatesReceiver": true,  "mutatesParams": [], "returns": "receiver", "throws": [],            "classified": true },
+  "Number.prototype.toFixed": { "mutatesReceiver": false, "mutatesParams": [], "returns": "fresh", "throws": ["RangeError"], "classified": true }
 }
 ```
+
+The `throws` array holds the domain exception types that survive the
+coercion filter (FR11). `Number.prototype.toFixed` throws `RangeError`
+when its `fractionDigits` argument is out of the 0–100 range — a domain
+throw the type system cannot preclude — so it is recorded, while the
+`TypeError` from coercing a non-number receiver is filtered out.
 
 The key space covers prototype methods (`X.prototype.method`), static
 methods (`X.method`), and symbol-keyed methods, addressed by FR7.
@@ -273,6 +296,59 @@ disagreement is reviewed: either the facts source is correct and the
 hand override was a workaround now subsumed, or the facts source has a
 bug to fix. The diff is the gate that justifies deleting override
 entries.
+
+### FR10. Throw-set extraction
+
+For each builtin method the analysis computes the set of exception types
+the algorithm can raise, by the same inter-procedural fixpoint as the
+mutation summary (FR2) over the same control-flow graph, with a throw
+transfer function:
+
+- a `Throw a *T* exception` step contributes `T` to the function's throw
+  set, where `T` is one of `TypeError`, `RangeError`, `SyntaxError`,
+  `ReferenceError`, `URIError`, `AggregateError`;
+- a call guarded by `?` contributes the callee's entire throw set,
+  because `?` propagates any abrupt completion;
+- a call guarded by `!` contributes nothing, because `!` asserts the
+  operation never returns an abrupt completion;
+- a plain unguarded call whose result is not completion-checked
+  contributes nothing to the throw set on that path.
+
+The `?` / `!` / plain distinction is essential and must be carried from
+the spec into the control-flow graph. This is why throws extraction
+relies on ESMeta's completion-record modeling rather than the shallow
+`spec.html` fallback, which would have to recover the guards from markup
+itself. A method whose throw paths cannot be resolved is left out of the
+throw set and flagged, never guessed. The FR5 bias applied to throws is
+to under-report rather than over-report a throw the type system would
+force a caller to handle.
+
+### FR11. Coercion filter
+
+The raw throw set from FR10 over-approximates, because nearly every
+algorithm begins by coercing its receiver and arguments, and those
+coercions throw `TypeError` on a wrong dynamic type. Escalier's static
+types already preclude those paths, so the raw set is dominated by
+`TypeError`s a well-typed caller can never trigger.
+
+The filter discounts a throw when its origin is a coercion of an
+already-typed value:
+
+- `TypeError` raised inside `ToObject(this value)` or
+  `RequireObjectCoercible(this value)`. The receiver type is statically
+  known, so the null/undefined-receiver path is unreachable.
+- `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`,
+  `ToPrimitive`, or `ToObject` applied to a parameter whose Escalier
+  type is already the coerced type.
+
+A throw survives the filter when it originates from an explicit domain
+check — an `If <condition>, throw a *RangeError*` over a value range, a
+`SyntaxError` from a parse step, a `URIError` from a decode step, or a
+`TypeError` not attributable to a receiver or parameter coercion. The
+surviving set is what FR6 records in `throws`. The filter is a heuristic
+over throw provenance, so its decisions are reported per method for
+review, consistent with the curation-grade confidence of this
+determination.
 
 ## Non-functional requirements
 
