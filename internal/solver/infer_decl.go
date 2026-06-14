@@ -73,7 +73,8 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		return nil, false
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
-	if d.TypeAnn != nil {
+	switch {
+	case d.TypeAnn != nil:
 		// M2.5: constrain the initializer against the annotation (the one
 		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
 		// CannotConstrainError whose Sub (the "hi" literal) carries a
@@ -92,6 +93,18 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
+	case d.Kind == ast.VarKind:
+		// M4 B3: eager-widen a DIRECT literal initializer to its primitive at the
+		// constraint level (`5` ⇒ number), recursively through objects/tuples. This
+		// is the constraint-level half of widening: the widened type propagates
+		// through the bound graph, so a read of the binding widens too
+		// (`var a = 5; val z = a` ⇒ z: number). A literal that arrives through a
+		// REFERENCE (`var y = x`) is a type variable here, which widen passes
+		// through unchanged. The binding var's Widenable flag widens that at coalesce
+		// time. That covers display, the reassignment slot, and the binding's own
+		// rendered type. A `val` keeps its literal singleton; only a mutable cell
+		// widens.
+		initT = widen(initT)
 	}
 	return initT, true
 }
@@ -181,7 +194,27 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 	if !ok {
 		return ValueBinding{}, false
 	}
-	scheme := c.generalize(initType, lvl)
+	bound := initType
+	// M4 B3: an un-annotated body-level `var` widens at coalesce time like its
+	// top-level peer. The top-level SCC path flags the binding var it already
+	// mints; a body-level binding has none — it generalizes the initializer
+	// directly — so wrap the initializer in a fresh widenable var (initType <: v)
+	// and generalize that. The flag rides v through coalescing, so the recorded
+	// display type, the reassignment slot, and any read of the binding all widen
+	// consistently. An annotated `var` adopts its annotation and needs no widening.
+	//
+	// Skip the wrap when the initializer recovered to the ErrorType sentinel: it
+	// absorbs in constrain, so `initType <: v` would leave v with no lower bound,
+	// coalescing to `never` and cascading a spurious error at every reassignment.
+	// Generalizing the ErrorType directly keeps the absorbing recovery binding.
+	_, isErr := initType.(*soltype.ErrorType)
+	if d.Kind == ast.VarKind && d.TypeAnn == nil && !isErr {
+		v := c.freshAt(lvl + 1)
+		v.Widenable = true
+		c.constrain(d.Init, initType, v)
+		bound = v
+	}
+	scheme := c.generalize(bound, lvl)
 	// The recorded display type retains any quantified type-parameter vars (it is
 	// not var-free), so Info consumers must render it with soltype.PrintAsScheme, not
 	// plain soltype.Print — same contract as the top-level path (see module.go).

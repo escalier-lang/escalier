@@ -254,6 +254,13 @@ func (c *checker) inferComponent(
 				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
 				if isVarDecl {
 					b.kind = vd.Kind
+					// M4 B3: an un-annotated `var` widens at coalesce time, so its literal
+					// initializer reads back as the primitive (`var a = 5` ⇒ number) and a
+					// later reassignment of the same primitive checks. An annotated `var`
+					// adopts its annotation, which needs no widening.
+					if vd.Kind == ast.VarKind && vd.TypeAnn == nil {
+						b.v.Widenable = true
+					}
 				}
 				// PR6: when the primary decl is a function, record it as the first arm. If
 				// more FuncDecls follow under this name it becomes an overload set; otherwise

@@ -27,6 +27,15 @@ type TypeVarType struct {
 	// bounds stays inexact (row-polymorphic) instead of closing to exact. It has
 	// no effect on constraint solving.
 	Open bool
+	// Widenable marks the binding var of an un-annotated `var` (M4 B3). Like Open
+	// it is read only at coalescing: a widenable var's coalesced value has its
+	// literals lowered to their primitives (`5` ⇒ number) in covariant position,
+	// so a mutable cell reads back as the primitive it may later hold. It has no
+	// effect on constraint solving. This stays sound while the only position that
+	// demands a literal super-type is the reassignment slot — itself a coalesced
+	// view — because no other site can observe the literal the graph still holds;
+	// literal type annotations (a second such site) are a later milestone.
+	Widenable bool
 }
 
 // BoundsAt returns the bounds relevant to a polarity: lowers in Positive

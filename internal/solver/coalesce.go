@@ -74,10 +74,32 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	if len(bounds) == 0 {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: combine(pol, dedup(bounds), v.Open), SkipChildren: true}
+	return soltype.EnterResult{Type: widenVar(v, pol, combine(pol, dedup(bounds), v.Open)), SkipChildren: true}
 }
 
 func (c *coalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// widenVar lowers a widenable `var` binding's coalesced value to its primitive
+// (M4 B3) when it is read in covariant (Positive) position — `var a = 5` ⇒
+// number, `var p = {x: 0}` ⇒ {x: number}. It runs AFTER combine, so a union of
+// literals from distinct branches (`var a = if c { 1 } else { 2 }`) is left as
+// `1 | 2`: widen passes a UnionType through, matching the reassignment rule that
+// rejects `a = 3` there. It is a no-op for a non-widenable var, in negative
+// position, or on a type carrying no literal (a function, a captured var).
+//
+// Both coalescers call it for parallelism with v.Open. The schemeCoalescer call
+// is the live one: a widenable var is always a binding var, which generalizes to
+// a PolyScheme and so renders through coalesceScheme. The plain coalescer call is
+// DEFENSIVE — no current path coalesces a widenable var outside a scheme — kept
+// so the flag is honored identically should one arise. TestWidenVar exercises the
+// helper logic directly to cover both. The helper has no test reaching the plain
+// coalescer through real source, by the same PolyScheme reasoning.
+func widenVar(v *soltype.TypeVarType, pol soltype.Polarity, t soltype.Type) soltype.Type {
+	if v.Widenable && pol == soltype.Positive {
+		return widen(t)
+	}
+	return t
+}
 
 // occPolarity is the set of polarities a variable occurs in within a type — the
 // occurrence input single-polarity elimination needs to decide which variables a
@@ -197,7 +219,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// already leave parts=[rep]. Collapse to the polarity identity.
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: combine(pol, dedup(parts), v.Open), SkipChildren: true}
+	return soltype.EnterResult{Type: widenVar(v, pol, combine(pol, dedup(parts), v.Open)), SkipChildren: true}
 }
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }

@@ -149,6 +149,13 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	}
 	nv := f.c.freshAt(f.lvl)
 	nv.Open = v.Open // carry the `open` param marker onto the instantiated copy
+	// Carry `var` widenability onto the copy, mirroring Open. DEFENSIVE: no current
+	// path observes it — a read of a widened binding gets the literal propagated
+	// concretely through the bound graph (constrain copies a var's concrete bounds
+	// along var↔var edges), routing around this freshened copy, so its flag never
+	// changes an outcome today. Kept parallel to Open so a future path that does
+	// coalesce a freshened binding var widens consistently. See TestFreshenCopiesWidenable.
+	nv.Widenable = v.Widenable
 	f.cache[v] = nv
 	// Mint the FromInstantiation interior edge: the fresh var was copied from v.
 	// PR1 only records the edge; the multi-hop renderer that chases it back to an
