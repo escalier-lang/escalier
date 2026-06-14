@@ -129,6 +129,36 @@ func TestInferMemberAssignVariableValueNotLinked(t *testing.T) {
 	require.Equal(t, "fn (obj: mut {x: unknown}, v: unknown) -> void", values["foo"])
 }
 
+// Writing one field of a concretely-typed (annotated) mut object checks: the field
+// write lowers to the inexact requirement `mut {x, ...}`, and the RefType rule's
+// per-field write view pins x invariantly while tolerating the object's other
+// declared fields. Before the per-field write view this reported spurious
+// "missing property: y" / "inexact <: exact" errors.
+func TestInferMemberAssignAnnotatedMutObject(t *testing.T) {
+	values, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = 5 }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {x: number, y: string}) -> void", values["f"])
+}
+
+// The named field stays invariant: storing a string into a number field of an
+// annotated mut object is rejected in both directions (the read view number <:
+// string and the write-back string <: number), so the relaxation is width-only.
+func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
+	_, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = \"bad\" }")
+	require.Equal(t, []string{
+		"cannot constrain number <: string",
+		"cannot constrain string <: number",
+	}, Messages(errs))
+}
+
+// Writing a field absent from an EXACT annotated mut object still errors: the read
+// view demands the object carry the written field.
+func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
+	src := "fn f(obj: mut {x: number}) { obj.z = 5 }"
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{"object is missing property: z"}, Messages(errs))
+}
+
 // KNOWN GAP: two writes of INCOMPATIBLE types to one field produce an uninhabited
 // `number & string` rather than an error — each write is an independent upper bound
 // on the receiver var with no constraint relating them. Pinned so the gap is

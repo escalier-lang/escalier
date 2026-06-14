@@ -424,13 +424,16 @@ case RefType <: RefType:
         return mutabilityError
     }
 
-    // 2. Inner variance — bidirectional iff the *target* is mutable
-    //    (read view always; write view only when the target writes).
+    // 2. Inner variance — covariant read view always; when the *target* is
+    //    mutable, a contravariant write view PER NAMED FIELD makes each field the
+    //    target names invariant. The write view ranges over the target's fields
+    //    only (constrainWriteBack), so an inexact target tolerates extra fields on
+    //    the source while pinning its named fields — `mut {x, y} <: mut {x, ...}`
+    //    holds (x invariant, y hidden and not writable through the target), while
+    //    `mut {x: Cat} <: mut {x: Animal}` still fails (x is invariant).
+    constrain(l.inner, r.inner, seen)        // read view (covariant)
     if r.mut {
-        constrain(l.inner, r.inner, seen)
-        constrain(r.inner, l.inner, seen)
-    } else {
-        constrain(l.inner, r.inner, seen)
+        constrainWriteBack(r.inner, l.inner, seen) // write view (per named field)
     }
 
     // 3. Lifetime — covariant when both present.
