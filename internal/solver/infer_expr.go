@@ -679,13 +679,17 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 }
 
 // recordWritten remembers that field `name` of receiver `recv` was written with
-// type `t`, so a later read returns it (read-after-write; see valueProp). Only a
-// VARIABLE receiver has a stable ID to key on; a non-variable receiver — a literal
-// or another expression — cannot be read back through the same binding, so there is
-// nothing to record.
+// type `t`, so a later read in the same function body returns it (read-after-write;
+// see valueProp). Only a VARIABLE receiver has a stable ID to key on; a non-variable
+// receiver — a literal or another expression — cannot be read back through the same
+// binding, so there is nothing to record. The cache is per function body (c.fn): a
+// write at module top-level (c.fn == nil) records nothing, which is sound.
 func (c *checker) recordWritten(recv soltype.Type, name string, t soltype.Type) {
+	if c.fn == nil {
+		return
+	}
 	if v, ok := recv.(*soltype.TypeVarType); ok {
-		c.written[fieldKey{recvID: v.ID, field: name}] = t
+		c.fn.written[fieldKey{recvID: v.ID, field: name}] = t
 	}
 }
 
@@ -929,10 +933,12 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// this value therefore blames its constraint site rather than this `.prop`, the
 	// same graceful site fallback a Prov-less type takes everywhere (see
 	// TestBlameVoidSubjectFallsBackToCallSite).
-	if v, ok := recv.(*soltype.TypeVarType); ok {
-		if t, found := c.written[fieldKey{recvID: v.ID, field: name}]; found {
-			c.recordType(blame, t)
-			return pathResult{value: t}
+	if c.fn != nil {
+		if v, ok := recv.(*soltype.TypeVarType); ok {
+			if t, found := c.fn.written[fieldKey{recvID: v.ID, field: name}]; found {
+				c.recordType(blame, t)
+				return pathResult{value: t}
+			}
 		}
 	}
 	res := c.freshAt(lvl)
