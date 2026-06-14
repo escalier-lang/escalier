@@ -1,6 +1,9 @@
 package solver
 
-import "github.com/escalier-lang/escalier/internal/soltype"
+import (
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
 
 // TypeScheme is a name's generalized type — the M3 replacement for M2's plain
 // soltype.Type binding. A MonoScheme is a value that does not generalize (a
@@ -244,6 +247,68 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // co-occurrence merging run at DISPLAY time inside coalesceScheme, so the body
 // keeps every variable for instantiation while the rendered signature stays
 // compact. See simplify.go.
+//
+// sealUsageObjects runs first, the one body rewrite generalize performs: it is the
+// finalize point where a non-escaping usage-inferred object closes to exact in the
+// OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
+	c.sealUsageObjects(t, lvl)
 	return &PolyScheme{Level: lvl, Body: t}
+}
+
+// sealUsageObjects is the operative half of Policy A (B2). Body inference records a
+// member access `p.x` as an INEXACT upper bound `{x: β, ...}` on the receiver var,
+// and it must stay inexact while the body is walked: two exact requirements on one
+// var contradict (`p <: {x}` and `p <: {y}` cannot both hold for an object with
+// both fields), so the full field set is only known once inference completes. This
+// runs at that point — generalization — and seals each qualifying var's inexact
+// member-access objects into one EXACT object, replacing them in the var's upper
+// bounds. instantiate then freshens an exact requirement, so a call passing an
+// object with extra fields is rejected.
+//
+// A var is sealed only when ALL of these hold, so the row stays open exactly where
+// it must:
+//   - it is not `open` (the explicit row-polymorphic opt-out, B2),
+//   - it occurs only in NEGATIVE position: a var that also reaches an output
+//     position escapes, and its object must keep the open row so the returned value
+//     retains the caller's extra fields (`fn (obj) { obj.x; return obj }`),
+//   - it has no lower bounds: nothing concrete flows into it, so it is a pure usage
+//     requirement and sealing cannot contradict an incoming value, and
+//   - its upper bounds include at least one inexact object.
+//
+// Only quantifiable vars (Level > lvl) are candidates, matching simplifyScheme: a
+// captured outer var is shared with an enclosing scope and must not be resealed.
+// The walk reaches param vars through the binding var's bounds and descends nested
+// receivers, so `fn (obj) { obj.a.b }` seals both `{a: …}` and the inner `{b: …}`.
+func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
+	vars := map[int]*soltype.TypeVarType{}
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	m := buildMirror(vars)
+	occ := map[int]occPolarity{}
+	t.Accept(&symOccVisitor{m: m, occ: occ, seen: set.NewSet[occKey]()}, soltype.Positive)
+
+	for id, v := range vars {
+		if v.Open || v.Level <= lvl || len(v.LowerBounds) > 0 {
+			continue
+		}
+		o := occ[id]
+		if !occHas(o, soltype.Negative) || occHas(o, soltype.Positive) {
+			continue // unused, or escapes to an output position — keep the open row
+		}
+		var objs []*soltype.ObjectType
+		var others []soltype.Type
+		for _, b := range v.UpperBounds {
+			if ob, ok := b.(*soltype.ObjectType); ok && ob.Inexact {
+				objs = append(objs, ob)
+			} else {
+				others = append(others, b)
+			}
+		}
+		if len(objs) == 0 {
+			continue
+		}
+		// mergeObjectGroup folds the per-access objects into one exact object (the
+		// same fold display uses); the closed object replaces the inexact ones.
+		v.UpperBounds = append(others, mergeObjectGroup(objs, false))
+	}
 }

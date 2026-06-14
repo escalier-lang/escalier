@@ -194,20 +194,27 @@ func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 	require.Same(t, got, c.info.TypeOf(e))
 }
 
-// Width tolerance through inference, not a literal: a function that reads a field
-// of its param synthesizes an inexact "has at least this field" requirement, so a
-// caller may pass a WIDER object. This exercises the selection-vs-concrete split
-// (A1) end-to-end through generalization and a call, where the existing member
-// tests only read a field off a literal receiver.
+// A function reading a field of its param synthesizes an inexact "has at least this
+// field" requirement during body inference (A1's selection-vs-concrete split), then
+// SEALS it to exact at generalization (B1/B2's operative close): `p` is `non-open`
+// and never escapes — `p.a`'s result is returned, but `p` itself is not — so its
+// requirement closes to exact `{a: number}` and a wider argument is rejected. An
+// `open` param keeps the row-polymorphic form and accepts the wider object. This
+// exercises the close end-to-end through generalization and a call.
 func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
-	t.Run("wider object is accepted", func(t *testing.T) {
-		// Today `p` is inferred INEXACT (`{a: number, ...}`), so a wider argument
-		// checks. M4 phase B PR B1 ("close usage-inferred shapes to exact") will
-		// seal `p` to exact `{a: number}`, after which this wider call REJECTS `b`
-		// as an extra property. PR B2's `open` marker (`fn f(open p)`) will restore
-		// the inexact, row-polymorphic form. Revisit this case when B1/B2 land.
+	t.Run("wider object is rejected for a closed param", func(t *testing.T) {
 		src := `
 			fn f(p) { return p.a }
+			val r = f({a: 1, b: 2})
+		`
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object has extra property: b", errs[0].Message())
+	})
+
+	t.Run("wider object is accepted for an open param", func(t *testing.T) {
+		src := `
+			fn f(open p) { return p.a }
 			val r = f({a: 1, b: 2})
 		`
 		_, _, errs := inferSource(t, src)
@@ -220,8 +227,12 @@ func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
 			val r = f({b: 2})
 		`
 		_, _, errs := inferSource(t, src)
-		require.Len(t, errs, 1)
+		// {b: 2} fails the sealed exact `{a: T}` requirement on two counts: the
+		// missing `a` and the extra `b`. The object arm reports missing properties
+		// before extra ones.
+		require.Len(t, errs, 2)
 		require.Equal(t, "object is missing property: a", errs[0].Message())
+		require.Equal(t, "object has extra property: b", errs[1].Message())
 		// Blame the offending argument {b: 2} — the object that lacks the field — not
 		// the whole call. The requirement's field var is freshened on instantiation
 		// and carries no prov, so MissingPropertyError's blame degrades to the Sub
