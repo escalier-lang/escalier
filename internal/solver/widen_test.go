@@ -122,6 +122,13 @@ func TestWidenHelper(t *testing.T) {
 			in:   &soltype.RefType{Mut: true, Inner: objLit},
 			want: "mut {x: number}",
 		},
+		{
+			name: "object property keeps its optional flag while widening",
+			in: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "x", Type: &soltype.LitType{Lit: &soltype.NumLit{Value: 5}}, Optional: true},
+			}},
+			want: "{x?: number}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -197,7 +204,77 @@ func TestInferVarWideningPropagatesToReads(t *testing.T) {
 // top-level inferDeclDef/SCC path the other tests exercise), so reassigning it
 // inside the same function checks and the binding reads back as the primitive.
 func TestInferVarWideningBodyLevel(t *testing.T) {
-	values, _, errs := inferSource(t, "fn f() { var a = 5\n  a = 6\n  return a }")
-	require.Empty(t, errs)
-	require.Equal(t, "fn () -> number", values["f"])
+	t.Run("direct literal widens and reassigns", func(t *testing.T) {
+		values, _, errs := inferSource(t, "fn f() { var a = 5\n  a = 6\n  return a }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> number", values["f"])
+	})
+	// A body-level `var` initialized from a REFERENCE widens via the wrapper var's
+	// Widenable flag, so the reassignment slot is the primitive and `y = 6` checks
+	// — the body-level twin of TestInferVarWideningThroughReference.
+	t.Run("reference widens and reassigns", func(t *testing.T) {
+		_, _, errs := inferSource(t, "fn f() { val x = 5\n  var y = x\n  y = 6 }")
+		require.Empty(t, errs)
+	})
+}
+
+// Widening through a reference reaches the structural carriers, not only scalars:
+// `val o = {x: 0}; var p = o` widens p to {x: number}, and the tuple form to
+// [number, number]. This exercises the Widenable flag driving widen's RECURSION
+// at coalesce time, distinct from the eager direct-literal path that widens
+// `var p = {x: 0}` at the constraint level.
+func TestInferVarWideningReferenceStructural(t *testing.T) {
+	t.Run("object", func(t *testing.T) {
+		values, _, errs := inferSource(t, "val o = {x: 0}\nvar p = o")
+		require.Empty(t, errs)
+		require.Equal(t, "{x: number}", values["p"])
+	})
+	t.Run("tuple", func(t *testing.T) {
+		values, _, errs := inferSource(t, "val o = [1, 2]\nvar p = o")
+		require.Empty(t, errs)
+		require.Equal(t, "[number, number]", values["p"])
+	})
+}
+
+// widenVar is the shared helper both coalescers call. It is unit-tested directly
+// because the plain-coalescer call site is unreachable through real source (a
+// widenable var is always a binding var, which renders through coalesceScheme),
+// and because the negative-polarity no-op cannot arise for a binding var either.
+// It widens only a widenable var read in covariant (Positive) position.
+func TestWidenVar(t *testing.T) {
+	lit := func() soltype.Type { return &soltype.LitType{Lit: &soltype.NumLit{Value: 5}} }
+	widenable := &soltype.TypeVarType{ID: 1, Widenable: true}
+	plain := &soltype.TypeVarType{ID: 2}
+	tests := []struct {
+		name string
+		v    *soltype.TypeVarType
+		pol  soltype.Polarity
+		want string
+	}{
+		{"widenable positive widens", widenable, soltype.Positive, "number"},
+		{"widenable negative is a no-op", widenable, soltype.Negative, "5"},
+		{"non-widenable positive is a no-op", plain, soltype.Positive, "5"},
+		{"non-widenable negative is a no-op", plain, soltype.Negative, "5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, soltype.Print(widenVar(tt.v, tt.pol, lit())))
+		})
+	}
+}
+
+// The freshener copies the Widenable flag onto an instantiated binding var. This
+// behavior is currently unreachable from source — a read of a widened binding
+// gets the literal propagated concretely, routing around the freshened copy — so
+// it is pinned here directly as the defensive contract that keeps Widenable
+// parallel to Open. See the freshener note in poly.go.
+func TestFreshenCopiesWidenable(t *testing.T) {
+	c := newChecker()
+	v := c.freshAt(1)
+	v.Widenable = true
+	out := c.freshenAbove(0, v, 0, map[*soltype.TypeVarType]*soltype.TypeVarType{})
+	nv, ok := out.(*soltype.TypeVarType)
+	require.True(t, ok)
+	require.NotSame(t, v, nv) // a fresh copy, not the original
+	require.True(t, nv.Widenable)
 }
