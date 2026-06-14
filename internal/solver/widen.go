@@ -55,6 +55,14 @@ func widen(t soltype.Type) soltype.Type {
 			return soltype.NewRef(t.Mut, t.Lt, inner)
 		}
 		return t
+	case *soltype.TypeVarType:
+		// A variable carries bounds, not a value, so there is nothing concrete to
+		// widen here, and it must stay a variable: it is a node in the bound graph,
+		// and replacing it would sever the propagation that lets reads of the binding
+		// pick up the widened primitive. A literal that reaches the binding through a
+		// variable (`var y = x`) is widened later by widenVar at coalesce time, which
+		// runs after every variable has been inlined to its bounds.
+		return t
 	default:
 		return t
 	}

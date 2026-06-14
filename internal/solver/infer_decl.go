@@ -100,10 +100,10 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// through the bound graph, so a read of the binding widens too
 		// (`var a = 5; val z = a` ⇒ z: number). A literal that arrives through a
 		// REFERENCE (`var y = x`) is a type variable here, which widen passes
-		// through unchanged; the binding var's Widenable flag widens that at
-		// coalesce time for display, the reassignment slot, and the binding's own
-		// rendered type. A `val` keeps its literal singleton — only a mutable cell
-		// widens, the new-checker form of the old checker's `Widenable` flag.
+		// through unchanged. The binding var's Widenable flag widens that at coalesce
+		// time. That covers display, the reassignment slot, and the binding's own
+		// rendered type. A `val` keeps its literal singleton; only a mutable cell
+		// widens.
 		initT = widen(initT)
 	}
 	return initT, true
