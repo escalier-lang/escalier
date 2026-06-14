@@ -835,6 +835,53 @@ now resolve to real `soltype` structures rather than opaque placeholders.
   `[number, number] <: [number, ...Array<number>]` and
   `[number, ...Array<number>] <: Array<number>`. The `infer`-matching form
   `T extends [any, ...infer R] ? R : never` is M9 (conditional + `infer`), not here.
+- **Index-read usage inference + tuple/array closing (the M4 object-close analogue,
+  deferred from M4).** M4 shipped `.prop` usage inference plus the close-to-exact
+  seal for objects: `inferMember` lowers `recv.prop` to an inexact one-property
+  requirement, and `sealUsageObjects` (M4 B2, `solver/poly.go`) folds those
+  requirements into one exact object at generalization unless the var escapes to an
+  output position or is marked `open`. **Index reads got none of this** — the
+  `inferExpr` dispatch (`solver/infer.go`) sends `*ast.IndexExpr` to the
+  `reportUnsupported` default, because the read shape depends on whether the
+  receiver is a tuple or an `Array`, and `Array` only exists at this milestone. Wire
+  it here:
+    - **`inferIndex` (NEW), constant numeric key.** `recv[0]` lowers to an inexact
+      *tuple* requirement "has at least a slot at this index" — the positional twin
+      of `inferMember`'s `{prop: β, ...}` object requirement. So `recv[0]; recv[1]`
+      lands two inexact tuple upper bounds on the receiver var, mirroring the
+      object path. The result type is the element var β. This is the new-checker
+      port of the reference checker's "single literal index infers a tuple"
+      behavior (`checker/tests/row_types_test.go` `NumericIndex` /
+      `ArrayElementReadAccess`).
+    - **Tuple merge-by-position.** Where the object fold (`mergeObjectGroup`) unions
+      properties by NAME, the tuple fold unions slots by INDEX: `recv[0]; recv[2]`
+      requires length ≥ 3, with index 1 a hole filled by a fresh var, and a slot
+      required at several indices intersects its element types (`recv[0] <: β` and
+      `recv[0] <: γ` ⇒ slot 0 is `β & γ`), exactly as the object fold intersects a
+      shared property. Add this as a `mergeTupleGroup` beside `mergeObjectGroup`.
+    - **Seal arm.** `sealUsageObjects` grows a `TupleType` arm beside its
+      `ObjectType` arm, reusing the SAME gating verbatim: a var that is not `open`,
+      occurs only negatively, and has no lower bounds gets its inexact tuple upper
+      bounds folded into one exact tuple, so `fn f(t) { t[0]; t[1] }` seals to
+      `[T0, T1]` and a caller passing a longer tuple is rejected. An escaping
+      receiver (`fn f(t) { t[0]; return t }`) is NOT sealed and keeps its open row
+      so the returned tuple retains the caller's extra elements, and `open` leaves
+      the A2 inexact `[T0, ...]` form — both fall straight out of the existing
+      escape/`open` checks, no new gating. The exact rendered form of an escaping
+      tuple row follows whatever the object case renders (today `{x} & T0`); the
+      tuple row's display is settled when this lands, not specified here.
+    - **Dynamic key → `Array`, not tuple.** A non-constant key (`recv[i]`) cannot
+      address a positional slot, so it infers an `Array`/index-signature read
+      against the now-resolvable `Array<T>` rather than a tuple requirement. **The
+      index-signature inference itself is M9** (index types); until then a dynamic
+      key against a non-array receiver is a typed error, consistent with M4's
+      object computed-key handling and the M9 index-signature deferral. So M7 owns
+      constant-index tuple inference and array reads; M9 owns index signatures.
+    - **Index WRITES** (`recv[0] = v`) extend C3's `inferMemberAssign` the same way
+      — M4 kept the `*ast.IndexExpr` write sub-case as `reportUnsupported` with a
+      "needs Array types — M7" note (m4-implementation-plan §C3). The write path
+      reuses the tuple/array read classification above plus C3's `mut` receiver
+      requirement and `widen`.
 
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
 `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
@@ -843,9 +890,15 @@ from "std:array"` / `"web:dom"` resolves member types; the M3 `await` and M5
 `for (x in xs)` rules now exercise against the **real** `Promise`/`Iterable`
 (replacing the M2 placeholders); operator-dependent utility types remain stubbed
 pending M9, and which names are stubbed is reported, not silently dropped.
+`fn f(t) { t[0]; t[1] }` infers and SEALS the param to exact `[T0, T1]`, rejecting a
+longer-tuple argument, while `fn f(open t) { … }` stays inexact `[T0, ...]` and
+`fn f(t) { t[0]; return t }` is not sealed (the open row is preserved) — the tuple
+analogue of M4's object close; a dynamic-key read resolves against the real
+`Array<T>`.
 
-**Depends on:** M3 (generics), M4 (objects/records), M5 (classes / methods /
-`final`), M6 (unions). **Feeds:** M8 — the real-package differential cannot run
+**Depends on:** M3 (generics), M4 (objects/records — `sealUsageObjects`, the close
+machinery this extends), M5 (classes / methods / `final`), M6 (unions). **Feeds:**
+M8 — the real-package differential cannot run
 the existing `fixtures/` tree (which uses `console`/`Array`/`Promise`/…) without
 real lib types.
 
