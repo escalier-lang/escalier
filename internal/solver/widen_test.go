@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,4 +80,92 @@ func TestInferVarWideningReassignment(t *testing.T) {
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs, `cannot constrain "x" <: number`, `"x"`)
 	})
+}
+
+// widen's structural arms are exercised directly here because no M4 source can
+// yet produce a borrow-typed or inexact var initializer — C3's field-write path
+// is the first consumer of the RefType arm, and inexactness only reaches a var
+// binding through annotations (which take the annotation, not widening). These
+// pin the helper's full contract — literal lowering, recursive object/tuple
+// descent preserving Inexact, RefType peel/re-wrap preserving Mut, and
+// passthrough of already-widened or still-variable types — that C3 relies on.
+func TestWidenHelper(t *testing.T) {
+	numLit := &soltype.LitType{Lit: &soltype.NumLit{Value: 5}}
+	objLit := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+		&soltype.PropertyElem{Name: "x", Type: &soltype.LitType{Lit: &soltype.NumLit{Value: 5}}},
+	}}
+
+	tests := []struct {
+		name string
+		in   soltype.Type
+		want string
+	}{
+		{"number literal", numLit, "number"},
+		{"string literal", &soltype.LitType{Lit: &soltype.StrLit{Value: "x"}}, "string"},
+		{"bool literal", &soltype.LitType{Lit: &soltype.BoolLit{Value: true}}, "boolean"},
+		{
+			name: "inexact object preserves the tail",
+			in: &soltype.ObjectType{Inexact: true, Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "x", Type: &soltype.LitType{Lit: &soltype.NumLit{Value: 5}}},
+			}},
+			want: "{x: number, ...}",
+		},
+		{
+			name: "inexact tuple preserves the tail",
+			in: &soltype.TupleType{Inexact: true, Elems: []soltype.Type{
+				&soltype.LitType{Lit: &soltype.NumLit{Value: 1}},
+			}},
+			want: "[number, ...]",
+		},
+		{
+			name: "mut borrow widens inner and keeps Mut",
+			in:   &soltype.RefType{Mut: true, Inner: objLit},
+			want: "mut {x: number}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, soltype.Print(widen(tt.in)))
+		})
+	}
+
+	// A type with no literal to lower passes through by identity — widen neither
+	// rebuilds nor mutates it. A PrimType is already widened; a TypeVarType is
+	// left for the solver (widen never follows its bounds).
+	t.Run("already-primitive passes through unchanged", func(t *testing.T) {
+		prim := &soltype.PrimType{Prim: soltype.NumPrim}
+		require.Same(t, prim, widen(prim))
+	})
+	t.Run("type variable passes through unchanged", func(t *testing.T) {
+		tv := &soltype.TypeVarType{ID: 1}
+		require.Same(t, tv, widen(tv))
+	})
+}
+
+// Widening fires only on a SYNTACTIC literal initializer. A `var` initialized
+// from a binding reference infers a type variable (not a bare literal), which
+// widen passes through, so the binding keeps the referenced literal type and a
+// later reassignment of a different value is rejected. This pins the known limit
+// of default-widen: it does not chase a literal that flows through a reference,
+// unlike the principled "join over all assignment sites" form (M4 plan B3).
+func TestInferVarWideningOnlyDirectLiteral(t *testing.T) {
+	t.Run("var from a val reference keeps the literal", func(t *testing.T) {
+		values, _, errs := inferSource(t, "val x = 5\nvar y = x")
+		require.Empty(t, errs)
+		require.Equal(t, "5", values["y"])
+	})
+	t.Run("reassigning the un-widened var is rejected", func(t *testing.T) {
+		src := "val x = 5\nvar y = x\nfn f() { y = 6 }"
+		_, _, errs := inferSource(t, src)
+		requireBlame(t, src, errs, "cannot constrain 6 <: 5", "6", "5")
+	})
+}
+
+// A body-level `var` widens through the inferVarDecl path (distinct from the
+// top-level inferDeclDef/SCC path the other tests exercise), so reassigning it
+// inside the same function checks and the binding reads back as the primitive.
+func TestInferVarWideningBodyLevel(t *testing.T) {
+	values, _, errs := inferSource(t, "fn f() { var a = 5\n  a = 6\n  return a }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> number", values["f"])
 }
