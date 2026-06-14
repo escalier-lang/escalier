@@ -532,8 +532,8 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 // On success the source is constrained `<: target` (the binding's coalesced type),
 // the new-solver form of the old checker's `Unify(rightType, leftType)`: the value
 // being stored must be a subtype of the slot. Reassigning an annotated `var a:
-// number = 5` with `a = 6` checks; an un-annotated `var a = 5` keeps the literal
-// type `5`, so `a = 6` does NOT check until `var` literal widening (M4).
+// number = 5` with `a = 6` checks; an un-annotated `var a = 5` now widens its
+// binding to `number` (M4 B3), so `a = 6` checks there too.
 //
 // The assignment EXPRESSION evaluates to the value just stored, so its type is the
 // target binding's slot type — `val b = (a = 6)` for `var a: number` yields
@@ -593,9 +593,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// fresh instantiation: instantiating a generalized binding yields a var carrying
 	// only its LOWER bounds (the read/covariant face), so `a = "x"` for `var a:
 	// number` would merely add another lower bound and wrongly succeed. The coalesced
-	// type is the concrete slot type — `number` for an annotated var, the literal `5`
-	// for an un-annotated one (so `a = 6` ⇒ `6 <: 5` does NOT check until M4 `var`
-	// literal widening).
+	// type is the concrete slot type — `number` for an annotated var, and (since M4
+	// B3) the widened `number` for an un-annotated `var a = 5`, so `a = 6` ⇒
+	// `6 <: number` checks.
 	//
 	// freshenAll copies the coalesced type so constraining the source cannot mutate
 	// type-parameter vars the coalesced form still shares with the binding

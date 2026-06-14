@@ -73,7 +73,8 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		return nil, false
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
-	if d.TypeAnn != nil {
+	switch {
+	case d.TypeAnn != nil:
 		// M2.5: constrain the initializer against the annotation (the one
 		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
 		// CannotConstrainError whose Sub (the "hi" literal) carries a
@@ -92,6 +93,15 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
+	case d.Kind == ast.VarKind:
+		// M4 B3: an un-annotated `var` binding widens its initializer's literal
+		// types to their primitives (recursively through objects/tuples/borrows),
+		// because a mutable cell may later hold a different value of the same
+		// primitive — `var a = 5; a = 6` checks once the binding is `number`. A
+		// `val` is left un-widened: it is a fixed singleton, so its inferred type
+		// keeps the literal. Widening is thus gated on mutability, the
+		// new-checker form of the old checker's `Widenable` type-var flag.
+		initT = widen(initT)
 	}
 	return initT, true
 }

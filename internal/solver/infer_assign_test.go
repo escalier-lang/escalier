@@ -17,9 +17,7 @@ import (
 // (or a top-level `val` initializer).
 
 // An annotated `var` reassignment type-checks when the source is a subtype of the
-// declared type, and reports a single CannotConstrainError otherwise. The `var` is
-// annotated because un-annotated `var` literal widening is M4 (see the literal case
-// below).
+// declared type, and reports a single CannotConstrainError otherwise.
 func TestInferAssignAnnotatedVar(t *testing.T) {
 	t.Run("matching type checks", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
@@ -37,14 +35,13 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 	})
 }
 
-// An un-annotated `var a = 5` infers the literal type `5`, so reassigning a
-// DIFFERENT literal (`a = 6` ⇒ `6 <: 5`) does NOT check in M3 — `var` literal
-// widening is deferred to M4. This pins the interim behavior so the M4 change is
-// visible: when widening lands, this assignment will type-check.
-func TestInferAssignUnannotatedVarLiteralNotWidened(t *testing.T) {
-	src := "var a = 5\nfn f() { a = 6 }"
-	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "cannot constrain 6 <: 5", "6", "5")
+// An un-annotated `var a = 5` widens its binding to `number` (M4 B3), so
+// reassigning a DIFFERENT literal of the same primitive (`a = 6` ⇒ `6 <: number`)
+// checks. A `val` keeps the literal singleton (see TestInferAssignToValRejected).
+func TestInferAssignUnannotatedVarLiteralWidened(t *testing.T) {
+	values, _, errs := inferSource(t, "var a = 5\nfn f() { a = 6 }")
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["a"])
 }
 
 // Reassigning a `val` is rejected: only a `var` is reassignable. The error blames
